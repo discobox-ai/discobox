@@ -1,0 +1,50 @@
+// Package api registers the public Huma operations for the sandbox manager.
+package api
+
+import (
+	"context"
+
+	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/obot-platform/disco2/internal/model"
+)
+
+// ProjectService provides read-only access to projects.
+type ProjectService interface {
+	ListProjects(ctx context.Context) ([]model.Project, error)
+	GetProject(ctx context.Context, projectID string) (*model.Project, error)
+}
+
+// SandboxService manages sandboxes within a project.
+type SandboxService interface {
+	ListSandboxes(ctx context.Context, projectID string) ([]model.Sandbox, error)
+	CreateSandbox(ctx context.Context, projectID string, input CreateSandboxBody) (*model.Sandbox, error)
+	GetSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
+	UpdateSandbox(ctx context.Context, projectID, sandboxID string, input UpdateSandboxBody) (*model.Sandbox, error)
+	DeleteSandbox(ctx context.Context, projectID, sandboxID string) error
+	StartSandbox(ctx context.Context, projectID, sandboxID string, input StartSandboxBody) (*model.Sandbox, error)
+	StopSandbox(ctx context.Context, projectID, sandboxID string, input StopSandboxBody) (*model.Sandbox, error)
+	RestartSandbox(ctx context.Context, projectID, sandboxID string, input RestartSandboxBody) (*model.Sandbox, error)
+}
+
+// ProjectEventService provides project-scoped event replay and live subscription.
+type ProjectEventService interface {
+	MaxProjectEventSeq(ctx context.Context, projectID string) (int64, error)
+	ListProjectEventsAfterSeq(ctx context.Context, projectID string, afterSeq int64, resourceTypes []string) ([]model.ProjectEvent, error)
+	ListProjectResourceSnapshots(ctx context.Context, projectID string, resourceTypes []string, seq int64) ([]model.ProjectEvent, error)
+	SubscribeProjectEvents(ctx context.Context, projectID string) (<-chan model.ProjectEvent, func(), error)
+}
+
+// Services groups the dependencies needed by the API operations.
+type Services struct {
+	Projects  ProjectService
+	Sandboxes SandboxService
+	Events    ProjectEventService
+}
+
+// Register registers all public API operations.
+func Register(api huma.API, services Services) {
+	RegisterProjectOperations(api, services.Projects)
+	RegisterSandboxOperations(api, services.Sandboxes)
+	RegisterProjectEventOperations(api, services.Events)
+}
