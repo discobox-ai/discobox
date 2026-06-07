@@ -122,6 +122,21 @@ func (p *Project) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
+// ProjectUserKey stores per-project, per-user sandbox trust key material.
+type ProjectUserKey struct {
+	ProjectID                  string    `gorm:"column:project_id;primaryKey;type:text" json:"-"`
+	UserID                     string    `gorm:"column:user_id;primaryKey;type:text" json:"-"`
+	SandboxPublicKey           string    `gorm:"column:sandbox_public_key;not null;type:text" json:"-"`
+	EncryptedSandboxPrivateKey []byte    `gorm:"column:encrypted_sandbox_private_key;not null" json:"-"`
+	CreatedAt                  time.Time `gorm:"autoCreateTime" json:"-"`
+	UpdatedAt                  time.Time `gorm:"autoUpdateTime" json:"-"`
+
+	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
+	User    *User    `gorm:"foreignKey:UserID" json:"-"`
+}
+
+func (ProjectUserKey) TableName() string { return "project_user_keys" }
+
 // Sandbox is the managed runtime/session unit.
 type Sandbox struct {
 	ID                  string  `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID" format:"uuid"`
@@ -244,6 +259,7 @@ func AllModels() []any {
 	return []any{
 		&User{},
 		&Project{},
+		&ProjectUserKey{},
 		&Sandbox{},
 		&SandboxProviderInstance{},
 		&ProjectEvent{},

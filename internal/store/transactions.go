@@ -16,6 +16,7 @@ func (s *Store) Transaction(ctx context.Context, fn func(txStore *Store, txDB *g
 			read:              tx,
 			publisher:         s.publisher,
 			afterCommitEvents: &events,
+			sealer:            s.sealer,
 		}
 		return fn(txStore, tx)
 	}); err != nil {

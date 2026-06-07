@@ -1,12 +1,14 @@
 package store_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
 
 	"github.com/obot-platform/disco2/internal/database"
 	"github.com/obot-platform/disco2/internal/model"
+	"github.com/obot-platform/disco2/internal/secrets"
 	"github.com/obot-platform/disco2/internal/store"
 )
 
@@ -47,7 +49,58 @@ func TestGetSandboxWithGeneration(t *testing.T) {
 	}
 }
 
+func TestSandboxSecretStateEncryptedAtRest(t *testing.T) {
+	ctx := context.Background()
+	key, err := secrets.GenerateBase64Key()
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	sealer, err := secrets.NewAESGCMSealerFromBase64Key(key)
+	if err != nil {
+		t.Fatalf("new sealer: %v", err)
+	}
+	s, db := newTestStoreWithDB(t, sealer)
+	plaintext := []byte("provider secret state")
+	sandbox := &model.Sandbox{
+		ID:              "sandbox-secret",
+		ProjectID:       "project-1",
+		CreatedByUserID: "user-1",
+		Name:            "secret",
+		SecretState:     plaintext,
+	}
+	if err := s.CreateSandbox(ctx, sandbox); err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+
+	var row struct {
+		SecretState []byte
+	}
+	if err := db.Write.WithContext(ctx).
+		Model(&model.Sandbox{}).
+		Select("secret_state").
+		Where("id = ?", sandbox.ID).
+		Scan(&row).Error; err != nil {
+		t.Fatalf("read raw secret state: %v", err)
+	}
+	if bytes.Equal(row.SecretState, plaintext) {
+		t.Fatalf("raw secret state equals plaintext")
+	}
+
+	got, err := s.GetSandbox(ctx, sandbox.ProjectID, sandbox.ID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	if !bytes.Equal(got.SecretState, plaintext) {
+		t.Fatalf("decrypted secret state = %q, want %q", string(got.SecretState), string(plaintext))
+	}
+}
+
 func newTestStore(t *testing.T) *store.Store {
+	s, _ := newTestStoreWithDB(t, nil)
+	return s
+}
+
+func newTestStoreWithDB(t *testing.T, sealer secrets.Sealer) (*store.Store, *database.DB) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -83,5 +136,5 @@ func newTestStore(t *testing.T) *store.Store {
 		t.Fatalf("create project: %v", err)
 	}
 
-	return store.New(db.Write, db.Read)
+	return store.New(db.Write, db.Read).WithSealer(sealer), db
 }

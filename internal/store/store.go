@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/obot-platform/disco2/internal/model"
+	"github.com/obot-platform/disco2/internal/secrets"
 )
 
 var (
@@ -21,6 +22,7 @@ type Store struct {
 	read              *gorm.DB
 	publisher         EventPublisher
 	afterCommitEvents *[]model.ProjectEvent
+	sealer            secrets.Sealer
 }
 
 type EventPublisher interface {
@@ -36,6 +38,11 @@ func New(write, read *gorm.DB, publisher ...EventPublisher) *Store {
 		p = publisher[0]
 	}
 	return &Store{write: write, read: read, publisher: p}
+}
+
+func (s *Store) WithSealer(sealer secrets.Sealer) *Store {
+	s.sealer = sealer
+	return s
 }
 
 func mapNotFound(err error) error {

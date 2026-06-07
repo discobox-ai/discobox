@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"gorm.io/gorm"
 
@@ -29,12 +30,24 @@ func (s *Store) ListSandboxes(ctx context.Context, projectID string) ([]model.Sa
 		Where("project_id = ?", projectID).
 		Order("created_at ASC").
 		Find(&sandboxes).Error
-	return sandboxes, err
+	if err != nil {
+		return nil, err
+	}
+	for i := range sandboxes {
+		if err := s.openSandboxSecretState(ctx, &sandboxes[i]); err != nil {
+			return nil, err
+		}
+	}
+	return sandboxes, nil
 }
 
 func (s *Store) CreateSandbox(ctx context.Context, sandbox *model.Sandbox) error {
 	_, err := withResourceEvent(ctx, s, model.EventActionCreated, func(tx *gorm.DB) (*model.Sandbox, error) {
-		if err := tx.Create(sandbox).Error; err != nil {
+		persisted, err := s.sealSandboxForWrite(ctx, sandbox)
+		if err != nil {
+			return nil, err
+		}
+		if err := tx.Create(persisted).Error; err != nil {
 			return nil, err
 		}
 		return sandbox, nil
@@ -65,6 +78,9 @@ func (s *Store) GetSandbox(ctx context.Context, projectID, sandboxID string, opt
 		}
 		return nil, mapNotFound(err)
 	}
+	if err := s.openSandboxSecretState(ctx, &sandbox); err != nil {
+		return nil, err
+	}
 	return &sandbox, nil
 }
 
@@ -77,8 +93,12 @@ func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, optio
 	}
 
 	_, err := withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.Sandbox, error) {
+		persisted, err := s.sealSandboxForWrite(ctx, sandbox)
+		if err != nil {
+			return nil, err
+		}
 		if opts.generation == nil {
-			if err := tx.Save(sandbox).Error; err != nil {
+			if err := tx.Save(persisted).Error; err != nil {
 				return nil, err
 			}
 			return sandbox, nil
@@ -87,7 +107,7 @@ func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, optio
 		result := tx.Model(&model.Sandbox{}).
 			Where("project_id = ? AND id = ? AND generation = ?", sandbox.ProjectID, sandbox.ID, *opts.generation).
 			Select("*").
-			Updates(sandbox)
+			Updates(persisted)
 		if result.Error != nil {
 			return nil, result.Error
 		}
@@ -121,5 +141,48 @@ func (s *Store) ListSandboxSnapshots(ctx context.Context, projectID string) ([]m
 		Where("project_id = ?", projectID).
 		Order("created_at ASC").
 		Find(&sandboxes).Error
-	return sandboxes, err
+	if err != nil {
+		return nil, err
+	}
+	for i := range sandboxes {
+		if err := s.openSandboxSecretState(ctx, &sandboxes[i]); err != nil {
+			return nil, err
+		}
+	}
+	return sandboxes, nil
+}
+
+func (s *Store) sealSandboxForWrite(ctx context.Context, sandbox *model.Sandbox) (*model.Sandbox, error) {
+	if sandbox.ID == "" {
+		if err := sandbox.BeforeCreate(nil); err != nil {
+			return nil, err
+		}
+	}
+	persisted := *sandbox
+	if s.sealer == nil || len(sandbox.SecretState) == 0 {
+		persisted.SecretState = append([]byte(nil), sandbox.SecretState...)
+		return &persisted, nil
+	}
+	ciphertext, err := s.sealer.Seal(ctx, "sandboxes.secret_state", sandboxSecretResourceID(sandbox), sandbox.SecretState)
+	if err != nil {
+		return nil, fmt.Errorf("encrypt sandbox secret state: %w", err)
+	}
+	persisted.SecretState = ciphertext
+	return &persisted, nil
+}
+
+func (s *Store) openSandboxSecretState(ctx context.Context, sandbox *model.Sandbox) error {
+	if s.sealer == nil || len(sandbox.SecretState) == 0 {
+		return nil
+	}
+	plaintext, err := s.sealer.Open(ctx, "sandboxes.secret_state", sandboxSecretResourceID(sandbox), sandbox.SecretState)
+	if err != nil {
+		return fmt.Errorf("decrypt sandbox secret state: %w", err)
+	}
+	sandbox.SecretState = plaintext
+	return nil
+}
+
+func sandboxSecretResourceID(sandbox *model.Sandbox) string {
+	return sandbox.ProjectID + "/" + sandbox.ID
 }

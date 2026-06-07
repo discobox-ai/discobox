@@ -15,6 +15,8 @@ import (
 	"github.com/obot-platform/disco2/internal/events"
 	"github.com/obot-platform/disco2/internal/jobs"
 	"github.com/obot-platform/disco2/internal/orchestration"
+	"github.com/obot-platform/disco2/internal/sandboxauth"
+	"github.com/obot-platform/disco2/internal/secrets"
 	"github.com/obot-platform/disco2/internal/service"
 	"github.com/obot-platform/disco2/internal/store"
 	"github.com/obot-platform/disco2/jobqueue"
@@ -26,10 +28,43 @@ const (
 	Version = "0.1.0"
 )
 
+// DatabaseRouterOptions controls database-backed router wiring.
+type DatabaseRouterOptions struct {
+	JobMaxAttempts int
+
+	SecretSealer secrets.Sealer
+
+	DispatcherEnabled            bool
+	DispatcherPollInterval       time.Duration
+	DispatcherJobTimeout         time.Duration
+	DispatcherStaleJobTimeout    time.Duration
+	DispatcherImmediateExecution bool
+	DispatcherDefaultConcurrency int
+
+	SandboxReconcileJobConcurrency int
+}
+
+// DefaultDatabaseRouterOptions returns the production defaults for the
+// database-backed app.
+func DefaultDatabaseRouterOptions() DatabaseRouterOptions {
+	return DatabaseRouterOptions{
+		JobMaxAttempts:                 3,
+		DispatcherEnabled:              true,
+		DispatcherPollInterval:         time.Second,
+		DispatcherJobTimeout:           time.Minute,
+		DispatcherStaleJobTimeout:      5 * time.Minute,
+		DispatcherImmediateExecution:   true,
+		DispatcherDefaultConcurrency:   1,
+		SandboxReconcileJobConcurrency: 4,
+	}
+}
+
 // NewRouter creates a chi router with all Huma operations registered.
 func NewRouter(services api.Services) (*chi.Mux, huma.API) {
 	router := chi.NewRouter()
-	humaAPI := humachi.New(router, huma.DefaultConfig(Name, Version))
+	config := huma.DefaultConfig(Name, Version)
+	config.DocsRenderer = huma.DocsRendererSwaggerUI
+	humaAPI := humachi.New(router, config)
 	api.Register(humaAPI, services)
 	return router, humaAPI
 }
@@ -45,35 +80,52 @@ func NewStubbedRouter() (*chi.Mux, huma.API) {
 }
 
 // NewDatabaseRouter creates a router backed by the database service.
-func NewDatabaseRouter(ctx context.Context, db *database.DB) (*chi.Mux, huma.API, error) {
+func NewDatabaseRouter(ctx context.Context, db *database.DB, options ...DatabaseRouterOptions) (*chi.Mux, huma.API, error) {
+	opts := DefaultDatabaseRouterOptions()
+	if len(options) > 0 {
+		opts = options[0]
+	}
+
 	broker := events.NewBroker()
-	appStore := store.New(db.Write, db.Read, broker)
+	appStore := store.New(db.Write, db.Read, broker).WithSealer(opts.SecretSealer)
 	jobStore := gormstore.New(db.Write, db.Read)
 	queueConfig := jobqueue.QueueConfig{
-		DefaultMaxAttempts: 3,
+		DefaultMaxAttempts: opts.JobMaxAttempts,
 	}
-	dispatcher := jobqueue.NewDispatcher(jobStore, jobqueue.DispatcherConfig{
-		SingleNode:         true,
-		PollInterval:       time.Second,
-		JobTimeout:         time.Minute,
-		StaleJobTimeout:    5 * time.Minute,
-		ImmediateExecution: true,
-		DefaultConcurrency: 1,
-	})
+	var notifyNewJob func()
+	var dispatcher *jobqueue.Dispatcher
+	if opts.DispatcherEnabled {
+		dispatcher = jobqueue.NewDispatcher(jobStore, jobqueue.DispatcherConfig{
+			SingleNode:         true,
+			PollInterval:       opts.DispatcherPollInterval,
+			JobTimeout:         opts.DispatcherJobTimeout,
+			StaleJobTimeout:    opts.DispatcherStaleJobTimeout,
+			ImmediateExecution: opts.DispatcherImmediateExecution,
+			DefaultConcurrency: opts.DispatcherDefaultConcurrency,
+		})
+		notifyNewJob = dispatcher.NotifyNewJob
+	}
 	ensureJob := func(ctx context.Context, txDB *gorm.DB, payload jobqueue.Payload) (*jobqueue.Job, bool, error) {
 		return gormstore.New(txDB, txDB).EnsureActiveJobForPayload(ctx, payload, queueConfig)
 	}
-	services := service.New(appStore, orchestration.New(appStore, ensureJob, dispatcher.NotifyNewJob), broker)
-	sandboxReconciler := service.NewSandboxReconciler(appStore, service.NewSandboxOperations())
-	if err := dispatcher.Register(jobs.NewSandboxReconcileExecutor(sandboxReconciler), jobqueue.WithConcurrency(4)); err != nil {
-		return nil, nil, err
+	services := service.New(appStore, orchestration.New(appStore, ensureJob, notifyNewJob), broker)
+	if opts.SecretSealer != nil {
+		services.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.SecretSealer))
+	}
+	if dispatcher != nil {
+		sandboxReconciler := service.NewSandboxReconciler(appStore, services.NewSandboxOperations())
+		if err := dispatcher.Register(jobs.NewSandboxReconcileExecutor(sandboxReconciler), jobqueue.WithConcurrency(opts.SandboxReconcileJobConcurrency)); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	if err := services.InitializeDefaults(ctx); err != nil {
 		return nil, nil, err
 	}
-	if err := dispatcher.Start(ctx); err != nil {
-		return nil, nil, err
+	if dispatcher != nil {
+		if err := dispatcher.Start(ctx); err != nil {
+			return nil, nil, err
+		}
 	}
 	router, api := NewRouter(api.Services{
 		Projects:  services,
