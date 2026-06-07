@@ -6,9 +6,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/CreateSandboxBody.json"
-            ],
+            "example": "https://example.com/schemas/CreateSandboxBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -70,18 +68,14 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/ErrorModel.json"
-            ],
+            "example": "https://example.com/schemas/ErrorModel.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
           },
           "detail": {
             "description": "A human-readable explanation specific to this occurrence of the problem.",
-            "examples": [
-              "Property foo is required but is missing."
-            ],
+            "example": "Property foo is required but is missing.",
             "type": "string"
           },
           "errors": {
@@ -89,40 +83,30 @@
             "items": {
               "$ref": "#/components/schemas/ErrorDetail"
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "nullable": true,
+            "type": "array"
           },
           "instance": {
             "description": "A URI reference that identifies the specific occurrence of the problem.",
-            "examples": [
-              "https://example.com/error-log/abc123"
-            ],
+            "example": "https://example.com/error-log/abc123",
             "format": "uri",
             "type": "string"
           },
           "status": {
             "description": "HTTP status code",
-            "examples": [
-              400
-            ],
+            "example": 400,
             "format": "int64",
             "type": "integer"
           },
           "title": {
             "description": "A short, human-readable summary of the problem type. This value should not change between occurrences of the error.",
-            "examples": [
-              "Bad Request"
-            ],
+            "example": "Bad Request",
             "type": "string"
           },
           "type": {
             "default": "about:blank",
             "description": "A URI reference to human-readable documentation for the error.",
-            "examples": [
-              "https://example.com/errors/example"
-            ],
+            "example": "https://example.com/errors/example",
             "format": "uri",
             "type": "string"
           }
@@ -134,9 +118,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/ListProjectsBody.json"
-            ],
+            "example": "https://example.com/schemas/ListProjectsBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -146,10 +128,8 @@
             "items": {
               "$ref": "#/components/schemas/Project"
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "nullable": true,
+            "type": "array"
           }
         },
         "required": [
@@ -162,9 +142,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/ListSandboxesBody.json"
-            ],
+            "example": "https://example.com/schemas/ListSandboxesBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -174,10 +152,8 @@
             "items": {
               "$ref": "#/components/schemas/Sandbox"
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "nullable": true,
+            "type": "array"
           }
         },
         "required": [
@@ -190,9 +166,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/Project.json"
-            ],
+            "example": "https://example.com/schemas/Project.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -230,20 +204,16 @@
             "items": {
               "$ref": "#/components/schemas/SandboxProviderInstance"
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "nullable": true,
+            "type": "array"
           },
           "sandboxes": {
             "description": "Project sandboxes",
             "items": {
               "$ref": "#/components/schemas/Sandbox"
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "nullable": true,
+            "type": "array"
           },
           "slug": {
             "description": "URL-safe project slug",
@@ -347,10 +317,8 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "nullable": true,
+            "type": "array"
           },
           "seq": {
             "description": "Sequence used as the list baseline",
@@ -380,10 +348,8 @@
             "items": {
               "type": "string"
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "nullable": true,
+            "type": "array"
           },
           "seq": {
             "description": "Sequence used as the list baseline",
@@ -473,9 +439,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/RestartSandboxBody.json"
-            ],
+            "example": "https://example.com/schemas/RestartSandboxBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -492,9 +456,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/Sandbox.json"
-            ],
+            "example": "https://example.com/schemas/Sandbox.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -701,10 +663,8 @@
             "items": {
               "$ref": "#/components/schemas/Sandbox"
             },
-            "type": [
-              "array",
-              "null"
-            ]
+            "nullable": true,
+            "type": "array"
           },
           "type": {
             "description": "Provider type",
@@ -733,9 +693,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/StartSandboxBody.json"
-            ],
+            "example": "https://example.com/schemas/StartSandboxBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -752,9 +710,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/StopSandboxBody.json"
-            ],
+            "example": "https://example.com/schemas/StopSandboxBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -771,9 +727,7 @@
         "properties": {
           "$schema": {
             "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/schemas/UpdateSandboxBody.json"
-            ],
+            "example": "https://example.com/schemas/UpdateSandboxBody.json",
             "format": "uri",
             "readOnly": true,
             "type": "string"
@@ -867,7 +821,7 @@
     "title": "Disco2 Sandbox Manager",
     "version": "0.1.0"
   },
-  "openapi": "3.1.0",
+  "openapi": "3.0.3",
   "paths": {
     "/projects": {
       "get": {
@@ -969,10 +923,8 @@
               "items": {
                 "type": "string"
               },
-              "type": [
-                "array",
-                "null"
-              ]
+              "nullable": true,
+              "type": "array"
             }
           },
           {
