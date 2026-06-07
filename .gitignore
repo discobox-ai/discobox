@@ -1,0 +1,6 @@
+build/
+build-errors.log
+.direnv/
+.env
+.env.*
+!.env.example

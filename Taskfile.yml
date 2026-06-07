@@ -1,0 +1,83 @@
+version: "3"
+
+vars:
+  BINARY: build/discobot-server
+  MAIN: ./cmd/discobot-server
+  PACKAGES: ./...
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  build:
+    desc: Compile discobot-server
+    cmds:
+      - go build -o {{.BINARY}} {{.MAIN}}
+
+  compile:
+    desc: Alias for build
+    cmds:
+      - task: build
+
+  debug-build:
+    desc: Compile discobot-server with debugger-friendly flags
+    cmds:
+      - go build -gcflags="all=-N -l" -o {{.BINARY}} {{.MAIN}}
+
+  debug:
+    desc: Build and run discobot-server under Delve
+    deps:
+      - debug-build
+    cmds:
+      - dlv exec {{.BINARY}}
+
+  run:
+    desc: Build and run discobot-server
+    deps:
+      - build
+    cmds:
+      - ./{{.BINARY}}
+
+  dev:
+    desc: Run discobot-server with Air hot reload
+    cmds:
+      - go tool air
+
+  test:
+    desc: Run root module tests
+    cmds:
+      - go test {{.PACKAGES}}
+
+  test:docker:
+    desc: Run Docker provider integration tests
+    cmds:
+      - DISCO2_DOCKER_INTEGRATION=1 go test ./internal/sandbox/docker -run Integration -count=1 -v
+
+  test:all:
+    desc: Run root and nested module tests
+    cmds:
+      - go test {{.PACKAGES}}
+      - cd gormdb && go test ./...
+      - cd jobqueue && go test ./...
+
+  check:
+    desc: Run static checks
+    cmds:
+      - go tool golangci-lint run
+
+  check:fix:
+    desc: Run static checks and apply safe fixes
+    cmds:
+      - go tool golangci-lint run --fix
+
+  generate:
+    desc: Regenerate generated files
+    cmds:
+      - go generate {{.PACKAGES}}
+
+  clean:
+    desc: Remove local build artifacts
+    cmds:
+      - rm -rf build build-errors.log
