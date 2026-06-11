@@ -358,13 +358,13 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/obot-platform/disco2/gormdb v0.0.0
-	github.com/obot-platform/disco2/jobqueue v0.0.0
+	github.com/obot-platform/disco2/orchestration v0.0.0
 	golang.org/x/text v0.37.0 // indirect
 )
 
 replace github.com/obot-platform/disco2/gormdb => ./gormdb
 
-replace github.com/obot-platform/disco2/jobqueue => ./jobqueue
+replace github.com/obot-platform/disco2/orchestration => ./orchestration
 
 tool (
 	github.com/air-verse/air

@@ -31,7 +31,13 @@ type SandboxOutput struct {
 	Body model.Sandbox
 }
 
+type AcceptedSandboxOutput struct {
+	Status int `status:"202"`
+	Body   model.Sandbox
+}
+
 type DeleteSandboxOutput struct {
+	Status int `status:"202"`
 }
 
 type CreateSandboxBody struct {
@@ -118,17 +124,18 @@ func RegisterSandboxOperations(api huma.API, service SandboxService) {
 	})
 
 	huma.Register(api, huma.Operation{
-		OperationID: "create-sandbox",
-		Method:      http.MethodPost,
-		Path:        "/projects/{projectId}/sandboxes",
-		Summary:     "Create a sandbox",
-		Tags:        []string{"Sandboxes"},
-	}, func(ctx context.Context, input *CreateSandboxInput) (*SandboxOutput, error) {
+		OperationID:   "create-sandbox",
+		Method:        http.MethodPost,
+		Path:          "/projects/{projectId}/sandboxes",
+		DefaultStatus: http.StatusAccepted,
+		Summary:       "Create a sandbox",
+		Tags:          []string{"Sandboxes"},
+	}, func(ctx context.Context, input *CreateSandboxInput) (*AcceptedSandboxOutput, error) {
 		sandbox, err := service.CreateSandbox(ctx, input.ProjectID, input.Body)
 		if err != nil {
 			return nil, err
 		}
-		return &SandboxOutput{Body: *sandbox}, nil
+		return &AcceptedSandboxOutput{Status: http.StatusAccepted, Body: *sandbox}, nil
 	})
 
 	huma.Register(api, huma.Operation{
@@ -160,57 +167,61 @@ func RegisterSandboxOperations(api huma.API, service SandboxService) {
 	})
 
 	huma.Register(api, huma.Operation{
-		OperationID: "delete-sandbox",
-		Method:      http.MethodDelete,
-		Path:        "/projects/{projectId}/sandboxes/{sandboxId}",
-		Summary:     "Delete a sandbox",
-		Tags:        []string{"Sandboxes"},
+		OperationID:   "delete-sandbox",
+		Method:        http.MethodDelete,
+		Path:          "/projects/{projectId}/sandboxes/{sandboxId}",
+		DefaultStatus: http.StatusAccepted,
+		Summary:       "Delete a sandbox",
+		Tags:          []string{"Sandboxes"},
 	}, func(ctx context.Context, input *SandboxPathInput) (*DeleteSandboxOutput, error) {
 		if err := service.DeleteSandbox(ctx, input.ProjectID, input.SandboxID); err != nil {
 			return nil, err
 		}
-		return &DeleteSandboxOutput{}, nil
+		return &DeleteSandboxOutput{Status: http.StatusAccepted}, nil
 	})
 
 	huma.Register(api, huma.Operation{
-		OperationID: "start-sandbox",
-		Method:      http.MethodPost,
-		Path:        "/projects/{projectId}/sandboxes/{sandboxId}/start",
-		Summary:     "Start a sandbox",
-		Tags:        []string{"Sandboxes"},
-	}, func(ctx context.Context, input *StartSandboxInput) (*SandboxOutput, error) {
+		OperationID:   "start-sandbox",
+		Method:        http.MethodPost,
+		Path:          "/projects/{projectId}/sandboxes/{sandboxId}/start",
+		DefaultStatus: http.StatusAccepted,
+		Summary:       "Start a sandbox",
+		Tags:          []string{"Sandboxes"},
+	}, func(ctx context.Context, input *StartSandboxInput) (*AcceptedSandboxOutput, error) {
 		sandbox, err := service.StartSandbox(ctx, input.ProjectID, input.SandboxID, input.Body)
 		if err != nil {
 			return nil, err
 		}
-		return &SandboxOutput{Body: *sandbox}, nil
+		return &AcceptedSandboxOutput{Status: http.StatusAccepted, Body: *sandbox}, nil
 	})
 
 	huma.Register(api, huma.Operation{
-		OperationID: "stop-sandbox",
-		Method:      http.MethodPost,
-		Path:        "/projects/{projectId}/sandboxes/{sandboxId}/stop",
-		Summary:     "Stop a sandbox",
-		Tags:        []string{"Sandboxes"},
-	}, func(ctx context.Context, input *StopSandboxInput) (*SandboxOutput, error) {
+		OperationID:   "stop-sandbox",
+		Method:        http.MethodPost,
+		Path:          "/projects/{projectId}/sandboxes/{sandboxId}/stop",
+		DefaultStatus: http.StatusAccepted,
+		Summary:       "Stop a sandbox",
+		Tags:          []string{"Sandboxes"},
+	}, func(ctx context.Context, input *StopSandboxInput) (*AcceptedSandboxOutput, error) {
 		sandbox, err := service.StopSandbox(ctx, input.ProjectID, input.SandboxID, input.Body)
 		if err != nil {
 			return nil, err
 		}
-		return &SandboxOutput{Body: *sandbox}, nil
+		return &AcceptedSandboxOutput{Status: http.StatusAccepted, Body: *sandbox}, nil
 	})
 
 	huma.Register(api, huma.Operation{
-		OperationID: "restart-sandbox",
-		Method:      http.MethodPost,
-		Path:        "/projects/{projectId}/sandboxes/{sandboxId}/restart",
-		Summary:     "Restart a sandbox",
-		Tags:        []string{"Sandboxes"},
-	}, func(ctx context.Context, input *RestartSandboxInput) (*SandboxOutput, error) {
+		OperationID:   "restart-sandbox",
+		Method:        http.MethodPost,
+		Path:          "/projects/{projectId}/sandboxes/{sandboxId}/restart",
+		DefaultStatus: http.StatusAccepted,
+		Summary:       "Restart a sandbox",
+		Tags:          []string{"Sandboxes"},
+	}, func(ctx context.Context, input *RestartSandboxInput) (*AcceptedSandboxOutput, error) {
 		sandbox, err := service.RestartSandbox(ctx, input.ProjectID, input.SandboxID, input.Body)
 		if err != nil {
 			return nil, err
 		}
-		return &SandboxOutput{Body: *sandbox}, nil
+		return &AcceptedSandboxOutput{Status: http.StatusAccepted, Body: *sandbox}, nil
 	})
 }

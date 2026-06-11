@@ -5,7 +5,7 @@ FROM golang:1.26-bookworm AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 COPY gormdb/go.mod gormdb/go.sum ./gormdb/
-COPY jobqueue/go.mod jobqueue/go.sum ./jobqueue/
+COPY orchestration/go.mod orchestration/go.sum ./orchestration/
 RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/disco2-worker-agent ./cmd/disco2-worker-agent

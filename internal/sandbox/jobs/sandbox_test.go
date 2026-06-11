@@ -1,0 +1,45 @@
+package jobs_test
+
+import (
+	"context"
+	"errors"
+	"testing"
+
+	"github.com/obot-platform/disco2/internal/sandbox/jobs"
+	"github.com/obot-platform/disco2/orchestration"
+)
+
+type fakeSandboxReconciler struct {
+	assertErr      error
+	reconcileCalls int
+}
+
+func (r *fakeSandboxReconciler) AssertSandboxGeneration(context.Context, string, string, int64) error {
+	return r.assertErr
+}
+
+func (r *fakeSandboxReconciler) ReconcileSandboxJob(context.Context, string, string, string, int64) error {
+	r.reconcileCalls++
+	return nil
+}
+
+func TestSandboxReconcileExecutorAssertsGenerationBeforeExecute(t *testing.T) {
+	reconciler := &fakeSandboxReconciler{assertErr: orchestration.Superseded("sandbox generation changed")}
+	executor := jobs.NewSandboxReconcileExecutor(reconciler)
+	job, err := orchestration.JobFromPayload(jobs.SandboxReconcilePayload{
+		ProjectID:  "project-1",
+		SandboxID:  "sandbox-1",
+		Generation: 1,
+	}, orchestration.QueueConfig{DefaultMaxAttempts: 1})
+	if err != nil {
+		t.Fatalf("job from payload: %v", err)
+	}
+	job.ID = "job-1"
+
+	if err := executor.AssertGeneration(context.Background(), job); !errors.Is(err, orchestration.ErrJobCanceled) {
+		t.Fatalf("assert generation error = %v, want ErrJobCanceled", err)
+	}
+	if reconciler.reconcileCalls != 0 {
+		t.Fatalf("reconcile calls = %d, want 0", reconciler.reconcileCalls)
+	}
+}

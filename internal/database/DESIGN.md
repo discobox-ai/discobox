@@ -27,7 +27,7 @@ Migrations are intentionally split:
 
 - `MigrateGlobal` creates only global tables.
 - `MigrateTenant` creates only tenant-scoped tables and the tenant-local durable
-  jobqueue tables.
+  orchestration tables.
 
 The deprecated `Migrate` helper remains tenant-scoped for compatibility. New
 callers should choose `MigrateGlobal` or `MigrateTenant` explicitly. This

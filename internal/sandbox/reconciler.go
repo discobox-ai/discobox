@@ -10,7 +10,7 @@ import (
 	"github.com/obot-platform/disco2/internal/model"
 	"github.com/obot-platform/disco2/internal/sandboxauth"
 	"github.com/obot-platform/disco2/internal/store"
-	"github.com/obot-platform/disco2/jobqueue"
+	"github.com/obot-platform/disco2/orchestration"
 )
 
 type SandboxReconciler struct {
@@ -58,13 +58,26 @@ func WithSandboxAuthenticator(auth SandboxAuthenticator) SandboxReconcilerOption
 	}
 }
 
+func (r *SandboxReconciler) AssertSandboxGeneration(ctx context.Context, projectID, sandboxID string, generation int64) error {
+	if _, err := r.store.GetSandbox(ctx, projectID, sandboxID, store.WithGeneration(generation)); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
+		}
+		if errors.Is(err, store.ErrGenerationConflict) {
+			return orchestration.Superseded("sandbox generation changed")
+		}
+		return err
+	}
+	return nil
+}
+
 func (r *SandboxReconciler) ReconcileSandboxJob(ctx context.Context, projectID, sandboxID, jobID string, generation int64) error {
 	sandbox, err := r.store.GetSandbox(ctx, projectID, sandboxID, store.WithGeneration(generation))
 	if errors.Is(err, store.ErrNotFound) {
 		return nil
 	}
 	if errors.Is(err, store.ErrGenerationConflict) {
-		return jobqueue.Canceled("sandbox generation changed")
+		return orchestration.Superseded("sandbox generation changed")
 	}
 	if err != nil {
 		return err
@@ -176,7 +189,7 @@ func (r *SandboxReconciler) delete(ctx context.Context, sandbox *model.Sandbox, 
 func (r *SandboxReconciler) update(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
 	if err := r.store.UpdateSandbox(ctx, sandbox, store.WithGeneration(generation)); err != nil {
 		if errors.Is(err, store.ErrGenerationConflict) {
-			return jobqueue.Canceled("sandbox generation changed")
+			return orchestration.Superseded("sandbox generation changed")
 		}
 		return err
 	}

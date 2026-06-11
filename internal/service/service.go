@@ -2,17 +2,19 @@
 package service
 
 import (
+	"context"
 	"errors"
 
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/obot-platform/disco2/internal/events"
-	"github.com/obot-platform/disco2/internal/orchestration"
 	"github.com/obot-platform/disco2/internal/sandbox"
+	"github.com/obot-platform/disco2/internal/sandbox/jobs"
 	sandboxprovider "github.com/obot-platform/disco2/internal/sandbox/provider"
 	sandboxservice "github.com/obot-platform/disco2/internal/sandbox/service"
 	"github.com/obot-platform/disco2/internal/sandboxauth"
 	"github.com/obot-platform/disco2/internal/store"
+	"github.com/obot-platform/disco2/orchestration"
 )
 
 const (
@@ -28,19 +30,16 @@ type Service struct {
 	broker *events.Broker
 }
 
-func New(store *store.Store, orchestrator *orchestration.Orchestrator, broker ...*events.Broker) *Service {
-	if orchestrator == nil {
-		panic("service orchestrator is required")
-	}
+func New(store *store.Store, queueConfig orchestration.QueueConfig, notifyNewJob func(context.Context), broker ...*events.Broker) *Service {
 	var b *events.Broker
 	if len(broker) > 0 {
 		b = broker[0]
 	}
 	manager := sandbox.NewProviderManager()
 	sandboxprovider.RegisterBuiltInSandboxProviderFactories(manager, store)
-	sandboxOrchestrator := sandbox.NewSandboxOrchestrator(store, orchestrator)
+	sandboxSubmitter := jobs.NewSandboxSubmitter(store, queueConfig, notifyNewJob)
 	return &Service{
-		Service: sandboxservice.NewService(store, sandboxOrchestrator, manager, DefaultUserID),
+		Service: sandboxservice.NewService(store, sandboxSubmitter, manager, DefaultUserID),
 		store:   store,
 		broker:  b,
 	}

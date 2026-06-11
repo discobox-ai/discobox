@@ -40,7 +40,7 @@ func (p *WorkerProvider) EnsureProviderInstance(ctx context.Context, store any, 
 	return p.EnsureWorkerPool(ctx, workerStore, project, provider)
 }
 
-func (p *WorkerProvider) Create(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {
+func (p *WorkerProvider) Create(ctx context.Context, ref sandbox.SandboxRef, _ []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {
 	if p.store == nil {
 		return nil, nil, fmt.Errorf("worker store is required")
 	}
@@ -63,7 +63,7 @@ func (p *WorkerProvider) Create(ctx context.Context, ref sandbox.SandboxRef, sta
 		return nil, nil, err
 	}
 	runtimeSandbox := workerRuntimeSandbox(ref.SandboxID, worker)
-	state, err = json.Marshal(runtimeSandbox)
+	state, err := json.Marshal(runtimeSandbox)
 	if err != nil {
 		return nil, nil, err
 	}

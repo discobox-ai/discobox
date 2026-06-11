@@ -15,8 +15,8 @@ import (
 
 func decodeCreateSandboxResponse(resp *http.Response) (res *Sandbox, _ error) {
 	switch resp.StatusCode {
-	case 200:
-		// Code 200.
+	case 202:
+		// Code 202.
 		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 		if err != nil {
 			return res, errors.Wrap(err, "parse media type")
@@ -215,11 +215,11 @@ func decodeCreateSandboxProviderInstanceResponse(resp *http.Response) (res *Sand
 	return res, errors.Wrap(defRes, "error")
 }
 
-func decodeDeleteSandboxResponse(resp *http.Response) (res *DeleteSandboxNoContent, _ error) {
+func decodeDeleteSandboxResponse(resp *http.Response) (res *DeleteSandboxAccepted, _ error) {
 	switch resp.StatusCode {
-	case 204:
-		// Code 204.
-		return &DeleteSandboxNoContent{}, nil
+	case 202:
+		// Code 202.
+		return &DeleteSandboxAccepted{}, nil
 	}
 	// Convenient error response.
 	defRes, err := func() (res *ErrorModelStatusCode, err error) {
@@ -1136,8 +1136,8 @@ func decodeRegisterWorkerResponse(resp *http.Response) (res *RegisterWorkerRespo
 
 func decodeRestartSandboxResponse(resp *http.Response) (res *Sandbox, _ error) {
 	switch resp.StatusCode {
-	case 200:
-		// Code 200.
+	case 202:
+		// Code 202.
 		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 		if err != nil {
 			return res, errors.Wrap(err, "parse media type")
@@ -1237,8 +1237,8 @@ func decodeRestartSandboxResponse(resp *http.Response) (res *Sandbox, _ error) {
 
 func decodeStartSandboxResponse(resp *http.Response) (res *Sandbox, _ error) {
 	switch resp.StatusCode {
-	case 200:
-		// Code 200.
+	case 202:
+		// Code 202.
 		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 		if err != nil {
 			return res, errors.Wrap(err, "parse media type")
@@ -1338,8 +1338,8 @@ func decodeStartSandboxResponse(resp *http.Response) (res *Sandbox, _ error) {
 
 func decodeStopSandboxResponse(resp *http.Response) (res *Sandbox, _ error) {
 	switch resp.StatusCode {
-	case 200:
-		// Code 200.
+	case 202:
+		// Code 202.
 		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 		if err != nil {
 			return res, errors.Wrap(err, "parse media type")

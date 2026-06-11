@@ -14,13 +14,12 @@ import (
 	"github.com/obot-platform/disco2/internal/api"
 	"github.com/obot-platform/disco2/internal/database"
 	"github.com/obot-platform/disco2/internal/events"
-	"github.com/obot-platform/disco2/internal/orchestration"
 	"github.com/obot-platform/disco2/internal/sandboxauth"
 	"github.com/obot-platform/disco2/internal/secrets"
 	"github.com/obot-platform/disco2/internal/service"
 	"github.com/obot-platform/disco2/internal/store"
 	"github.com/obot-platform/disco2/internal/tenantctx"
-	"github.com/obot-platform/disco2/jobqueue"
+	"github.com/obot-platform/disco2/orchestration"
 )
 
 const (
@@ -97,15 +96,12 @@ func NewDatabaseRouter(ctx context.Context, resolver *database.Resolver, options
 
 	broker := events.NewBroker()
 	appStore := store.New(resolver, store.WithPublisher(broker), store.WithSealer(opts.SecretSealer))
-	queueConfig := jobqueue.QueueConfig{
+	queueConfig := orchestration.QueueConfig{
 		DefaultMaxAttempts: opts.JobMaxAttempts,
 	}
 	tenantJobs := newTenantJobManager(ctx, appStore, opts)
 	notifyNewJob := tenantJobs.NotifyNewJob
-	ensureJob := func(ctx context.Context, txStore *store.Store, payload jobqueue.Payload) (*jobqueue.Job, bool, error) {
-		return txStore.EnsureActiveJobForPayload(ctx, payload, queueConfig)
-	}
-	services := service.New(appStore, orchestration.New(appStore, ensureJob, notifyNewJob), broker)
+	services := service.New(appStore, queueConfig, notifyNewJob, broker)
 	tenantJobs.SetService(services)
 	if opts.SecretSealer != nil {
 		services.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.SecretSealer))

@@ -3315,6 +3315,12 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 		json.EncodeDateTime(e, s.UpdatedAt)
 	}
 	{
+		if s.WorkerId.Set {
+			e.FieldStart("workerId")
+			s.WorkerId.Encode(e)
+		}
+	}
+	{
 		if s.WorkingDirectory.Set {
 			e.FieldStart("workingDirectory")
 			s.WorkingDirectory.Encode(e)
@@ -3322,7 +3328,7 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandbox = [30]string{
+var jsonFieldsNameOfSandbox = [31]string{
 	0:  "$schema",
 	1:  "activeOperation",
 	2:  "cpuVcpus",
@@ -3352,7 +3358,8 @@ var jsonFieldsNameOfSandbox = [30]string{
 	26: "statusMessage",
 	27: "storageBytes",
 	28: "updatedAt",
-	29: "workingDirectory",
+	29: "workerId",
+	30: "workingDirectory",
 }
 
 // Decode decodes Sandbox from json.
@@ -3680,6 +3687,16 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"updatedAt\"")
+			}
+		case "workerId":
+			if err := func() error {
+				s.WorkerId.Reset()
+				if err := s.WorkerId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workerId\"")
 			}
 		case "workingDirectory":
 			if err := func() error {

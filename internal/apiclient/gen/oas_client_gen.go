@@ -378,7 +378,7 @@ func (c *Client) DeleteSandbox(ctx context.Context, params DeleteSandboxParams) 
 	return err
 }
 
-func (c *Client) sendDeleteSandbox(ctx context.Context, params DeleteSandboxParams) (res *DeleteSandboxNoContent, err error) {
+func (c *Client) sendDeleteSandbox(ctx context.Context, params DeleteSandboxParams) (res *DeleteSandboxAccepted, err error) {
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("delete-sandbox"),
 		semconv.HTTPRequestMethodKey.String("DELETE"),

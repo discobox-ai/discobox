@@ -263,7 +263,7 @@ func (d *Driver) do(ctx context.Context, method, path string, in, out any) error
 
 func instanceFromDroplet(d droplet, agentPort int) *vm.Instance {
 	createdAt, _ := time.Parse(time.RFC3339, d.CreatedAt)
-	status := sandbox.StatusCreated
+	var status sandbox.Status
 	var startedAt *time.Time
 	var stoppedAt *time.Time
 	switch d.Status {

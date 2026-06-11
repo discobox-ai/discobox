@@ -16,7 +16,7 @@ Examples:
   source <(disco2 completion bash)
   disco2 completion zsh > "${fpath[1]}/_disco2"
   disco2 completion fish > ~/.config/fish/completions/disco2.fish`,
-		Args: cobra.ExactValidArgs(1),
+		Args: cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 		ValidArgs: []string{
 			"bash",
 			"zsh",

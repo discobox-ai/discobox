@@ -70,4 +70,4 @@ Reconciliation coordination and provider mechanics are separate:
 - `SandboxReconciler` loads generation-scoped resources, writes lifecycle
   progress, maps generation conflicts to canceled jobs, and chooses the operation.
 - `SandboxOperations` performs provider/domain work such as start, stop, restart,
-  and delete. It should not know about API DTOs, resource events, or jobqueue.
+  and delete. It should not know about API DTOs, resource events, or orchestration.

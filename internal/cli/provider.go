@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/go-faster/jx"
@@ -212,58 +211,6 @@ func addProviderConfigFlags(cmd *cobra.Command, opts *providerCreateOptions) {
 	cmd.Flags().IntVar(&opts.minHealthy, "min-healthy-workers", 0, "Minimum ready, schedulable, non-degraded warm workers")
 }
 
-func providerCreateBody(opts providerCreateOptions) (*apiclientgen.CreateSandboxProviderInstanceBody, error) {
-	body := &apiclientgen.CreateSandboxProviderInstanceBody{Name: opts.name, Type: opts.providerType}
-	config := strings.TrimSpace(opts.config)
-	if config == "" && opts.providerType == "digitalocean" {
-		m := map[string]any{"tokenEnv": opts.doTokenEnv, "poolSize": opts.poolSize}
-		if opts.minWorkers > 0 {
-			m["minWorkers"] = opts.minWorkers
-		}
-		if opts.maxWorkers > 0 {
-			m["maxWorkers"] = opts.maxWorkers
-		}
-		if opts.minHealthy > 0 {
-			m["minHealthyWorkers"] = opts.minHealthy
-		}
-		if opts.doToken != "" {
-			m["token"] = opts.doToken
-		}
-		if opts.controlPlaneURL != "" {
-			m["controlPlaneUrl"] = opts.controlPlaneURL
-		}
-		if opts.apiBaseURL != "" {
-			m["apiBaseUrl"] = opts.apiBaseURL
-		}
-		if opts.region != "" {
-			m["region"] = opts.region
-		}
-		if opts.size != "" {
-			m["size"] = opts.size
-		}
-		if opts.image != "" {
-			m["image"] = opts.image
-		}
-		if values := splitCSV(opts.sshKeys); len(values) > 0 {
-			m["sshKeys"] = values
-		}
-		if values := splitCSV(opts.tags); len(values) > 0 {
-			m["tags"] = values
-		}
-		data, err := json.Marshal(m)
-		if err != nil {
-			return nil, err
-		}
-		config = string(data)
-	}
-	raw, err := rawJSON(config)
-	if err != nil {
-		return nil, err
-	}
-	body.SetConfig(raw)
-	return body, nil
-}
-
 func providerUpdateBody(cmd *cobra.Command, opts providerUpdateOptions, current *apiclientgen.SandboxProviderInstance) (*apiclientgen.UpdateSandboxProviderInstanceBody, error) {
 	body := &apiclientgen.UpdateSandboxProviderInstanceBody{}
 	if cmd.Flags().Changed("name") {
@@ -375,5 +322,3 @@ func splitCSV(value string) []string {
 	}
 	return out
 }
-
-func providerBool(value bool) string { return strconv.FormatBool(value) }

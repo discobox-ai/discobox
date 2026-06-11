@@ -25,7 +25,7 @@ Models are split by database/schema scope:
 - Global scope: `Tenant`, `User`.
 - Tenant scope: `Project`, `Sandbox`, `SandboxProviderInstance`, `Worker`,
   worker tokens, sandbox access issuer keys, project events, and tenant-local
-  jobqueue tables.
+  orchestration tables.
 
 Tenant-scoped rows still carry `tenant_id` and user ID columns so tokens,
 events, and audit records are self-describing. Those columns are shard

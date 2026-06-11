@@ -4,11 +4,11 @@ import (
 	"context"
 	"sync"
 
-	"github.com/obot-platform/disco2/internal/jobs"
+	"github.com/obot-platform/disco2/internal/sandbox/jobs"
 	"github.com/obot-platform/disco2/internal/service"
 	"github.com/obot-platform/disco2/internal/store"
 	"github.com/obot-platform/disco2/internal/tenantctx"
-	"github.com/obot-platform/disco2/jobqueue"
+	"github.com/obot-platform/disco2/orchestration"
 )
 
 type tenantJobManager struct {
@@ -18,11 +18,11 @@ type tenantJobManager struct {
 	opts    DatabaseRouterOptions
 
 	mu          sync.Mutex
-	dispatchers map[string]*jobqueue.Dispatcher
+	dispatchers map[string]*orchestration.Dispatcher
 }
 
 func newTenantJobManager(ctx context.Context, store *store.Store, opts DatabaseRouterOptions) *tenantJobManager {
-	return &tenantJobManager{rootCtx: ctx, store: store, opts: opts, dispatchers: map[string]*jobqueue.Dispatcher{}}
+	return &tenantJobManager{rootCtx: ctx, store: store, opts: opts, dispatchers: map[string]*orchestration.Dispatcher{}}
 }
 
 func (m *tenantJobManager) SetService(svc *service.Service) {
@@ -42,14 +42,14 @@ func (m *tenantJobManager) EnsureStarted(ctx context.Context) error {
 	if m.dispatchers[tenantID] != nil {
 		return nil
 	}
-	dispatcher := jobqueue.NewDispatcher(m.store, jobqueue.DispatcherConfig{
+	dispatcher := orchestration.NewDispatcher(m.store, orchestration.DispatcherConfig{
 		SingleNode:         true,
 		PollInterval:       m.opts.DispatcherPollInterval,
 		JobTimeout:         m.opts.DispatcherJobTimeout,
 		StaleJobTimeout:    m.opts.DispatcherStaleJobTimeout,
 		ImmediateExecution: m.opts.DispatcherImmediateExecution,
 		DefaultConcurrency: m.opts.DispatcherDefaultConcurrency,
-		JobContext: func(ctx context.Context, job *jobqueue.Job) context.Context {
+		JobContext: func(ctx context.Context, job *orchestration.Job) context.Context {
 			if job.TenantID == "" {
 				return ctx
 			}
@@ -57,7 +57,7 @@ func (m *tenantJobManager) EnsureStarted(ctx context.Context) error {
 		},
 	})
 	sandboxReconciler := m.svc.NewSandboxReconciler()
-	if err := dispatcher.Register(jobs.NewSandboxReconcileExecutor(sandboxReconciler), jobqueue.WithConcurrency(m.opts.SandboxReconcileJobConcurrency)); err != nil {
+	if err := dispatcher.Register(jobs.NewSandboxReconcileExecutor(sandboxReconciler), orchestration.WithConcurrency(m.opts.SandboxReconcileJobConcurrency)); err != nil {
 		return err
 	}
 	dispatcherCtx := tenantctx.WithTenantID(m.rootCtx, tenantID)

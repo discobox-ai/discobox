@@ -852,6 +852,10 @@
             "format": "date-time",
             "type": "string"
           },
+          "workerId": {
+            "description": "Assigned worker ID, when scheduled through a worker-backed provider",
+            "type": "string"
+          },
           "workingDirectory": {
             "description": "Working directory inside the sandbox",
             "type": "string"
@@ -2181,7 +2185,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2189,7 +2193,7 @@
                 }
               }
             },
-            "description": "OK"
+            "description": "Accepted"
           },
           "default": {
             "content": {
@@ -2236,8 +2240,8 @@
           }
         ],
         "responses": {
-          "204": {
-            "description": "No Content"
+          "202": {
+            "description": "Accepted"
           },
           "default": {
             "content": {
@@ -2410,7 +2414,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2418,7 +2422,7 @@
                 }
               }
             },
-            "description": "OK"
+            "description": "Accepted"
           },
           "default": {
             "content": {
@@ -2475,7 +2479,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2483,7 +2487,7 @@
                 }
               }
             },
-            "description": "OK"
+            "description": "Accepted"
           },
           "default": {
             "content": {
@@ -2540,7 +2544,7 @@
           "required": true
         },
         "responses": {
-          "200": {
+          "202": {
             "content": {
               "application/json": {
                 "schema": {
@@ -2548,7 +2552,7 @@
                 }
               }
             },
-            "description": "OK"
+            "description": "Accepted"
           },
           "default": {
             "content": {

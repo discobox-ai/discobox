@@ -67,4 +67,4 @@ The control plane stores only token hashes in the tenant-scoped `worker_auth_tok
 
 ## Tenant/global schema separation
 
-Only global identity tables live in the global schema/database. Provider instances, workers, worker bootstrap/auth tokens, sandboxes, project events, and jobqueue tables are tenant-scoped and are included only in tenant migrations.
+Only global identity tables live in the global schema/database. Provider instances, workers, worker bootstrap/auth tokens, sandboxes, project events, and orchestration tables are tenant-scoped and are included only in tenant migrations.

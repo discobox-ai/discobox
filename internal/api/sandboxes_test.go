@@ -94,7 +94,7 @@ func TestStartSandbox(t *testing.T) {
 	created := createSandbox(t, h, "alpha")
 
 	resp := h.Post(sandboxURL(created.ID)+"/start", map[string]any{})
-	if resp.Code != http.StatusOK {
+	if resp.Code != http.StatusAccepted {
 		t.Fatalf("start sandbox status = %d, body = %s", resp.Code, resp.Body.String())
 	}
 	started := decodeSandbox(t, resp.Body.Bytes())
@@ -114,7 +114,7 @@ func TestStopSandbox(t *testing.T) {
 	created := createSandbox(t, h, "alpha")
 
 	resp := h.Post(sandboxURL(created.ID)+"/stop", map[string]any{})
-	if resp.Code != http.StatusOK {
+	if resp.Code != http.StatusAccepted {
 		t.Fatalf("stop sandbox status = %d, body = %s", resp.Code, resp.Body.String())
 	}
 	stopped := decodeSandbox(t, resp.Body.Bytes())
@@ -134,7 +134,7 @@ func TestRestartSandbox(t *testing.T) {
 	created := createSandbox(t, h, "alpha")
 
 	resp := h.Post(sandboxURL(created.ID)+"/restart", map[string]any{})
-	if resp.Code != http.StatusOK {
+	if resp.Code != http.StatusAccepted {
 		t.Fatalf("restart sandbox status = %d, body = %s", resp.Code, resp.Body.String())
 	}
 	restarted := decodeSandbox(t, resp.Body.Bytes())
@@ -154,7 +154,7 @@ func TestDeleteSandbox(t *testing.T) {
 	created := createSandbox(t, h, "alpha")
 
 	resp := h.Delete(sandboxURL(created.ID))
-	if resp.Code != http.StatusNoContent {
+	if resp.Code != http.StatusAccepted {
 		t.Fatalf("delete sandbox status = %d, body = %s", resp.Code, resp.Body.String())
 	}
 

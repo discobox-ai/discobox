@@ -9,13 +9,12 @@ import (
 	"github.com/obot-platform/disco2/internal/api"
 	"github.com/obot-platform/disco2/internal/database"
 	"github.com/obot-platform/disco2/internal/events"
-	"github.com/obot-platform/disco2/internal/jobs"
 	"github.com/obot-platform/disco2/internal/model"
-	"github.com/obot-platform/disco2/internal/orchestration"
 	"github.com/obot-platform/disco2/internal/sandbox"
+	"github.com/obot-platform/disco2/internal/sandbox/jobs"
 	"github.com/obot-platform/disco2/internal/service"
 	"github.com/obot-platform/disco2/internal/store"
-	"github.com/obot-platform/disco2/jobqueue"
+	"github.com/obot-platform/disco2/orchestration"
 )
 
 func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {
@@ -39,8 +38,35 @@ func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {
 	}
 
 	err = reconciler.ReconcileSandboxJob(ctx, service.DefaultProjectID, sandbox.ID, "stale-job", sandbox.Generation)
-	if !errors.Is(err, jobqueue.ErrJobCanceled) {
+	if !errors.Is(err, orchestration.ErrJobCanceled) {
 		t.Fatalf("stale reconcile error = %v, want ErrJobCanceled", err)
+	}
+}
+
+func TestSandboxIntentCreatesGenerationScopedJobs(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSandboxTestService(t, nil)
+
+	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, api.CreateSandboxBody{Name: "alpha"})
+	if err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	if created.LastJobID == nil {
+		t.Fatal("create last job ID is nil")
+	}
+
+	started, err := svc.StartSandbox(ctx, service.DefaultProjectID, created.ID, api.StartSandboxBody{})
+	if err != nil {
+		t.Fatalf("start sandbox: %v", err)
+	}
+	if started.LastJobID == nil {
+		t.Fatal("start last job ID is nil")
+	}
+	if started.Generation != created.Generation+1 {
+		t.Fatalf("start generation = %d, want %d", started.Generation, created.Generation+1)
+	}
+	if *started.LastJobID == *created.LastJobID {
+		t.Fatalf("start reused create job ID %s; want a generation-scoped job", *started.LastJobID)
 	}
 }
 
@@ -57,14 +83,14 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 			t.Fatalf("close db: %v", err)
 		}
 	})
-	if err := db.Migrate(ctx); err != nil {
+	if err := db.MigrateTenant(ctx); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}
 
 	broker := events.NewBroker()
 	appStore := store.New(database.StaticResolver{DB: db}, store.WithPublisher(broker), store.WithDefaultTenantID(service.DefaultTenantID))
-	queueConfig := jobqueue.QueueConfig{DefaultMaxAttempts: 3}
-	dispatcher := jobqueue.NewDispatcher(appStore, jobqueue.DispatcherConfig{
+	queueConfig := orchestration.QueueConfig{DefaultMaxAttempts: 3}
+	dispatcher := orchestration.NewDispatcher(appStore, orchestration.DispatcherConfig{
 		SingleNode:         true,
 		PollInterval:       10 * time.Millisecond,
 		JobTimeout:         time.Second,
@@ -72,10 +98,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 		ImmediateExecution: true,
 		DefaultConcurrency: 1,
 	})
-	ensureJob := func(ctx context.Context, txStore *store.Store, payload jobqueue.Payload) (*jobqueue.Job, bool, error) {
-		return txStore.EnsureActiveJobForPayload(ctx, payload, queueConfig)
-	}
-	svc := service.New(appStore, orchestration.New(appStore, ensureJob, func(context.Context) { dispatcher.NotifyNewJob() }), broker)
+	svc := service.New(appStore, queueConfig, func(context.Context) { dispatcher.NotifyNewJob() }, broker)
 	reconciler := sandbox.NewSandboxReconciler(appStore)
 	if err := dispatcher.Register(jobs.NewSandboxReconcileExecutor(reconciler)); err != nil {
 		t.Fatalf("register executor: %v", err)
@@ -156,21 +179,18 @@ func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sand
 			t.Fatalf("close db: %v", err)
 		}
 	})
-	if err := db.Migrate(ctx); err != nil {
+	if err := db.MigrateTenant(ctx); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}
 
 	broker := events.NewBroker()
 	appStore := store.New(database.StaticResolver{DB: db}, store.WithPublisher(broker), store.WithDefaultTenantID(service.DefaultTenantID))
-	queueConfig := jobqueue.QueueConfig{DefaultMaxAttempts: 3}
-	ensureJob := func(ctx context.Context, txStore *store.Store, payload jobqueue.Payload) (*jobqueue.Job, bool, error) {
-		return txStore.EnsureActiveJobForPayload(ctx, payload, queueConfig)
-	}
+	queueConfig := orchestration.QueueConfig{DefaultMaxAttempts: 3}
 	var notifyContext func(context.Context)
 	if notify != nil {
 		notifyContext = func(context.Context) { notify() }
 	}
-	svc := service.New(appStore, orchestration.New(appStore, ensureJob, notifyContext), broker)
+	svc := service.New(appStore, queueConfig, notifyContext, broker)
 	if err := svc.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}

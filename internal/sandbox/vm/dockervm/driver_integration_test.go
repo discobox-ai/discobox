@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -87,7 +88,7 @@ func TestDockerVMIntegrationLifecycle(t *testing.T) {
 	if err := driver.DeleteVM(ctx, inst.ID, true); err != nil {
 		t.Fatalf("delete vm: %v", err)
 	}
-	if _, err := driver.InspectVM(ctx, inst.ID); err != sandbox.ErrNotFound {
+	if _, err := driver.InspectVM(ctx, inst.ID); !errors.Is(err, sandbox.ErrNotFound) {
 		t.Fatalf("inspect after delete err = %v, want ErrNotFound", err)
 	}
 }

@@ -204,8 +204,8 @@ func (s *CreateSandboxProviderInstanceBody) SetType(val string) {
 	s.Type = val
 }
 
-// DeleteSandboxNoContent is response for DeleteSandbox operation.
-type DeleteSandboxNoContent struct{}
+// DeleteSandboxAccepted is response for DeleteSandbox operation.
+type DeleteSandboxAccepted struct{}
 
 // DeleteSandboxProviderInstanceNoContent is response for DeleteSandboxProviderInstance operation.
 type DeleteSandboxProviderInstanceNoContent struct{}
@@ -1970,6 +1970,8 @@ type Sandbox struct {
 	StorageBytes int64 `json:"storageBytes"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
+	// Assigned worker ID, when scheduled through a worker-backed provider.
+	WorkerId OptString `json:"workerId"`
 	// Working directory inside the sandbox.
 	WorkingDirectory OptString `json:"workingDirectory"`
 }
@@ -2117,6 +2119,11 @@ func (s *Sandbox) GetStorageBytes() int64 {
 // GetUpdatedAt returns the value of UpdatedAt.
 func (s *Sandbox) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
+}
+
+// GetWorkerId returns the value of WorkerId.
+func (s *Sandbox) GetWorkerId() OptString {
+	return s.WorkerId
 }
 
 // GetWorkingDirectory returns the value of WorkingDirectory.
@@ -2267,6 +2274,11 @@ func (s *Sandbox) SetStorageBytes(val int64) {
 // SetUpdatedAt sets the value of UpdatedAt.
 func (s *Sandbox) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
+}
+
+// SetWorkerId sets the value of WorkerId.
+func (s *Sandbox) SetWorkerId(val OptString) {
+	s.WorkerId = val
 }
 
 // SetWorkingDirectory sets the value of WorkingDirectory.

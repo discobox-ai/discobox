@@ -18,7 +18,7 @@ High-level flow:
 API / CLI
   -> service layer accepts intent
   -> store persists resource changes
-  -> orchestration ensures a durable reconcile job
+  -> orchestration appends a durable reconcile job
   -> job executor/reconciler performs provider work
   -> store updates observed state
 ```
@@ -29,8 +29,7 @@ Important package docs:
 | --- | --- |
 | `internal/database` | Database setup and tenant database resolution. |
 | `internal/model` | Data model, lifecycle-bearing resources, planned tenant/worker model. |
-| `internal/orchestration` | Desired-state reconciliation pattern. |
 | `internal/service` | Sandbox lifecycle and service/reconciler behavior. |
 | `internal/sandboxauth` | Sandbox access and worker auth design notes. |
-| `jobqueue` | Durable job queue behavior. |
+| `orchestration` | Durable jobs and desired-state reconciliation submission. |
 | `gormdb` | Database setup helper. |

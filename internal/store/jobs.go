@@ -9,13 +9,13 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/obot-platform/disco2/jobqueue"
+	"github.com/obot-platform/disco2/orchestration"
 )
 
 const leaderID = "default"
 
 // CreateJob persists a new pending job.
-func (s *Store) CreateJob(ctx context.Context, job *jobqueue.Job, options ...jobqueue.CreateJobOption) error {
+func (s *Store) CreateJob(ctx context.Context, job *orchestration.Job, options ...orchestration.CreateJobOption) error {
 	tenantID, err := s.tenantID(ctx)
 	if err != nil {
 		return err
@@ -24,18 +24,18 @@ func (s *Store) CreateJob(ctx context.Context, job *jobqueue.Job, options ...job
 	if err != nil {
 		return err
 	}
-	opts := jobqueue.ResolveCreateJobOptions(options...)
+	opts := orchestration.ResolveCreateJobOptions(options...)
 	now := time.Now()
 	job.TenantID = tenantID
 	if job.ID == "" {
 		var err error
-		job.ID, err = jobqueue.NewID()
+		job.ID, err = orchestration.NewID()
 		if err != nil {
 			return err
 		}
 	}
 	if job.Status == "" {
-		job.Status = jobqueue.StatusPending
+		job.Status = orchestration.StatusPending
 	}
 	if job.MaxAttempts < 1 {
 		job.MaxAttempts = 1
@@ -57,7 +57,7 @@ func (s *Store) CreateJob(ctx context.Context, job *jobqueue.Job, options ...job
 	row := rowFromJob(job, activeResourceKey)
 	if err := write.Create(row).Error; err != nil {
 		if isUniqueConstraintError(err) {
-			return jobqueue.ErrJobAlreadyExists
+			return orchestration.ErrJobAlreadyExists
 		}
 		return err
 	}
@@ -65,58 +65,8 @@ func (s *Store) CreateJob(ctx context.Context, job *jobqueue.Job, options ...job
 	return nil
 }
 
-// EnsureActiveJobForPayload returns an active job for payload's resource,
-// creating one when needed. This is intended for database-first orchestration
-// paths that need the job row to be part of a larger transaction.
-func (s *Store) EnsureActiveJobForPayload(ctx context.Context, payload jobqueue.Payload, cfg jobqueue.QueueConfig) (*jobqueue.Job, bool, error) {
-	resource := payload.Resource()
-	allowDuplicates := false
-	if d, ok := payload.(jobqueue.DuplicateAllower); ok {
-		allowDuplicates = d.AllowDuplicates()
-	}
-
-	if !allowDuplicates && resource.Type != "" && resource.ID != "" {
-		job, err := s.getLatestPendingJobForResource(ctx, resource)
-		if err == nil {
-			updated, updateErr := s.updatePendingJobFromPayload(ctx, job.ID, payload, cfg)
-			if updateErr != nil {
-				return nil, false, updateErr
-			}
-			return updated, false, nil
-		}
-		if !errors.Is(err, jobqueue.ErrJobNotFound) {
-			return nil, false, err
-		}
-	}
-
-	job, err := jobqueue.JobFromPayload(payload, cfg)
-	if err != nil {
-		return nil, false, err
-	}
-
-	var opts []jobqueue.CreateJobOption
-	if !allowDuplicates && resource.Type != "" && resource.ID != "" {
-		opts = append(opts, jobqueue.WithUniqueResource())
-	}
-	if err := s.CreateJob(ctx, job, opts...); err != nil {
-		if errors.Is(err, jobqueue.ErrJobAlreadyExists) && resource.Type != "" && resource.ID != "" {
-			existing, getErr := s.getLatestPendingJobForResource(ctx, resource)
-			if getErr != nil {
-				return nil, false, getErr
-			}
-			updated, updateErr := s.updatePendingJobFromPayload(ctx, existing.ID, payload, cfg)
-			if updateErr != nil {
-				return nil, false, updateErr
-			}
-			return updated, false, nil
-		}
-		return nil, false, err
-	}
-	return job, true, nil
-}
-
 // GetJob loads one job by ID.
-func (s *Store) GetJob(ctx context.Context, id string) (*jobqueue.Job, error) {
+func (s *Store) GetJob(ctx context.Context, id string) (*orchestration.Job, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
@@ -128,7 +78,7 @@ func (s *Store) GetJob(ctx context.Context, id string) (*jobqueue.Job, error) {
 	var row jobRow
 	if err := read.First(&row, "tenant_id = ? AND id = ?", tenantID, id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, jobqueue.ErrJobNotFound
+			return nil, orchestration.ErrJobNotFound
 		}
 		return nil, err
 	}
@@ -137,7 +87,7 @@ func (s *Store) GetJob(ctx context.Context, id string) (*jobqueue.Job, error) {
 }
 
 // GetLatestJobForResource returns the newest job for a resource.
-func (s *Store) GetLatestJobForResource(ctx context.Context, resource jobqueue.Resource) (*jobqueue.Job, error) {
+func (s *Store) GetLatestJobForResource(ctx context.Context, resource orchestration.Resource) (*orchestration.Job, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
@@ -152,7 +102,7 @@ func (s *Store) GetLatestJobForResource(ctx context.Context, resource jobqueue.R
 		Order("created_at DESC").
 		First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, jobqueue.ErrJobNotFound
+			return nil, orchestration.ErrJobNotFound
 		}
 		return nil, err
 	}
@@ -162,7 +112,7 @@ func (s *Store) GetLatestJobForResource(ctx context.Context, resource jobqueue.R
 
 // HasActiveJobForResource reports whether any pending or running job exists for
 // the resource, regardless of job type.
-func (s *Store) HasActiveJobForResource(ctx context.Context, resource jobqueue.Resource) (bool, error) {
+func (s *Store) HasActiveJobForResource(ctx context.Context, resource orchestration.Resource) (bool, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return false, err
@@ -177,78 +127,14 @@ func (s *Store) HasActiveJobForResource(ctx context.Context, resource jobqueue.R
 			tenantID,
 			resource.Type,
 			resource.ID,
-			[]jobqueue.Status{jobqueue.StatusPending, jobqueue.StatusRunning},
+			[]orchestration.Status{orchestration.StatusPending, orchestration.StatusRunning},
 		).
 		Count(&count).Error
 	return count > 0, err
 }
 
-func (s *Store) getLatestPendingJobForResource(ctx context.Context, resource jobqueue.Resource) (*jobqueue.Job, error) {
-	read, err := s.getRead(ctx)
-	if err != nil {
-		return nil, err
-	}
-	tenantID, err := s.tenantID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var row jobRow
-	if err := read.
-		Where("tenant_id = ? AND resource_type = ? AND resource_id = ? AND status = ?",
-			tenantID,
-			resource.Type,
-			resource.ID,
-			jobqueue.StatusPending,
-		).
-		Order("created_at DESC").
-		First(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, jobqueue.ErrJobNotFound
-		}
-		return nil, err
-	}
-	job := row.toJob()
-	return &job, nil
-}
-
-func (s *Store) updatePendingJobFromPayload(ctx context.Context, id string, payload jobqueue.Payload, cfg jobqueue.QueueConfig) (*jobqueue.Job, error) {
-	write, err := s.getWrite(ctx)
-	if err != nil {
-		return nil, err
-	}
-	tenantID, err := s.tenantID(ctx)
-	if err != nil {
-		return nil, err
-	}
-	job, err := jobqueue.JobFromPayload(payload, cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	now := time.Now()
-	result := write.Model(&jobRow{}).
-		Where("tenant_id = ? AND id = ? AND status = ?", tenantID, id, jobqueue.StatusPending).
-		Updates(map[string]any{
-			"type":          job.Type,
-			"payload":       job.Payload,
-			"priority":      job.Priority,
-			"max_attempts":  job.MaxAttempts,
-			"scheduled_at":  job.ScheduledAt,
-			"resource_type": job.Resource.Type,
-			"resource_id":   job.Resource.ID,
-			"updated_at":    now,
-		})
-	if result.Error != nil {
-		return nil, result.Error
-	}
-	if result.RowsAffected == 0 {
-		return nil, jobqueue.ErrJobNotFound
-	}
-	return s.GetJob(ctx, id)
-}
-
 // ClaimJob atomically claims one runnable job of the given types.
-func (s *Store) ClaimJob(ctx context.Context, types []jobqueue.Type, workerID string) (*jobqueue.Job, error) {
+func (s *Store) ClaimJob(ctx context.Context, types []orchestration.Type, workerID string) (*orchestration.Job, error) {
 	if len(types) == 0 {
 		return nil, nil
 	}
@@ -262,12 +148,12 @@ func (s *Store) ClaimJob(ctx context.Context, types []jobqueue.Type, workerID st
 	}
 
 	now := time.Now()
-	var claimed *jobqueue.Job
+	var claimed *orchestration.Job
 
 	err = write.Transaction(func(tx *gorm.DB) error {
 		var candidates []jobRow
 		if err := tx.
-			Where("tenant_id = ? AND type IN ? AND status = ? AND scheduled_at <= ?", tenantID, types, jobqueue.StatusPending, now).
+			Where("tenant_id = ? AND type IN ? AND status = ? AND scheduled_at <= ?", tenantID, types, orchestration.StatusPending, now).
 			Order("priority DESC, scheduled_at ASC, created_at ASC").
 			Limit(50).
 			Find(&candidates).Error; err != nil {
@@ -282,7 +168,7 @@ func (s *Store) ClaimJob(ctx context.Context, types []jobqueue.Type, workerID st
 						tenantID,
 						candidate.ResourceType,
 						candidate.ResourceID,
-						jobqueue.StatusRunning,
+						orchestration.StatusRunning,
 						candidate.ID,
 					).
 					Count(&running).Error; err != nil {
@@ -295,9 +181,9 @@ func (s *Store) ClaimJob(ctx context.Context, types []jobqueue.Type, workerID st
 
 			startedAt := now
 			result := tx.Model(&jobRow{}).
-				Where("tenant_id = ? AND id = ? AND status = ?", tenantID, candidate.ID, jobqueue.StatusPending).
+				Where("tenant_id = ? AND id = ? AND status = ?", tenantID, candidate.ID, orchestration.StatusPending).
 				Updates(map[string]any{
-					"status":              jobqueue.StatusRunning,
+					"status":              orchestration.StatusRunning,
 					"worker_id":           workerID,
 					"started_at":          startedAt,
 					"attempts":            gorm.Expr("attempts + ?", 1),
@@ -342,7 +228,7 @@ func (s *Store) CompleteJob(ctx context.Context, id string) error {
 	return write.Model(&jobRow{}).
 		Where("tenant_id = ? AND id = ?", tenantID, id).
 		Updates(map[string]any{
-			"status":              jobqueue.StatusCompleted,
+			"status":              orchestration.StatusCompleted,
 			"active_resource_key": nil,
 			"completed_at":        now,
 			"updated_at":          now,
@@ -363,7 +249,7 @@ func (s *Store) CancelJob(ctx context.Context, id string, message string) error 
 	return write.Model(&jobRow{}).
 		Where("tenant_id = ? AND id = ?", tenantID, id).
 		Updates(map[string]any{
-			"status":              jobqueue.StatusCanceled,
+			"status":              orchestration.StatusCanceled,
 			"active_resource_key": nil,
 			"error":               message,
 			"completed_at":        now,
@@ -385,7 +271,7 @@ func (s *Store) FailJob(ctx context.Context, id string, message string, retryBac
 		var row jobRow
 		if err := tx.First(&row, "tenant_id = ? AND id = ?", tenantID, id).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return jobqueue.ErrJobNotFound
+				return orchestration.ErrJobNotFound
 			}
 			return err
 		}
@@ -393,16 +279,11 @@ func (s *Store) FailJob(ctx context.Context, id string, message string, retryBac
 		now := time.Now()
 		if row.Attempts < row.MaxAttempts {
 			delay := time.Duration(row.Attempts) * retryBackoff
-			var pendingResourceKey *string
-			if row.ResourceType != "" && row.ResourceID != "" {
-				key := tenantResourceKey(tenantID, jobqueue.Resource{Type: row.ResourceType, ID: row.ResourceID})
-				pendingResourceKey = &key
-			}
 			return tx.Model(&jobRow{}).
 				Where("tenant_id = ? AND id = ?", tenantID, id).
 				Updates(map[string]any{
-					"status":              jobqueue.StatusPending,
-					"active_resource_key": pendingResourceKey,
+					"status":              orchestration.StatusPending,
+					"active_resource_key": nil,
 					"error":               message,
 					"worker_id":           nil,
 					"started_at":          nil,
@@ -414,7 +295,7 @@ func (s *Store) FailJob(ctx context.Context, id string, message string, retryBac
 		return tx.Model(&jobRow{}).
 			Where("tenant_id = ? AND id = ?", tenantID, id).
 			Updates(map[string]any{
-				"status":              jobqueue.StatusFailed,
+				"status":              orchestration.StatusFailed,
 				"active_resource_key": nil,
 				"error":               message,
 				"completed_at":        now,
@@ -435,9 +316,9 @@ func (s *Store) CleanupStaleJobs(ctx context.Context, staleAfter time.Duration) 
 	}
 	cutoff := time.Now().Add(-staleAfter)
 	result := write.Model(&jobRow{}).
-		Where("tenant_id = ? AND status = ? AND started_at <= ?", tenantID, jobqueue.StatusRunning, cutoff).
+		Where("tenant_id = ? AND status = ? AND started_at <= ?", tenantID, orchestration.StatusRunning, cutoff).
 		Updates(map[string]any{
-			"status":     jobqueue.StatusPending,
+			"status":     orchestration.StatusPending,
 			"worker_id":  nil,
 			"started_at": nil,
 			"updated_at": time.Now(),
@@ -514,31 +395,31 @@ func (s *Store) ReleaseLeadership(ctx context.Context, workerID string) error {
 }
 
 type jobRow struct {
-	ID                string          `gorm:"primaryKey;type:text"`
-	TenantID          string          `gorm:"column:tenant_id;not null;type:text;index"`
-	Type              jobqueue.Type   `gorm:"not null;type:text;index:idx_jobqueue_ready,priority:2"`
-	Payload           json.RawMessage `gorm:"type:text;not null"`
-	Status            jobqueue.Status `gorm:"not null;type:text;index:idx_jobqueue_ready,priority:1"`
-	Priority          int             `gorm:"not null;default:0;index:idx_jobqueue_priority"`
-	Attempts          int             `gorm:"not null;default:0"`
-	MaxAttempts       int             `gorm:"column:max_attempts;not null;default:1"`
-	Error             *string         `gorm:"type:text"`
-	WorkerID          *string         `gorm:"column:worker_id;type:text"`
-	ScheduledAt       time.Time       `gorm:"column:scheduled_at;not null;index:idx_jobqueue_ready,priority:3"`
-	StartedAt         *time.Time      `gorm:"column:started_at"`
-	CompletedAt       *time.Time      `gorm:"column:completed_at"`
-	ResourceType      string          `gorm:"column:resource_type;type:text;index:idx_jobqueue_resource,priority:1"`
-	ResourceID        string          `gorm:"column:resource_id;type:text;index:idx_jobqueue_resource,priority:2"`
-	ActiveResourceKey *string         `gorm:"column:active_resource_key;type:text;uniqueIndex:idx_jobqueue_active_resource_key"`
-	CreatedAt         time.Time       `gorm:"autoCreateTime;index:idx_jobqueue_ready,priority:4"`
-	UpdatedAt         time.Time       `gorm:"autoUpdateTime"`
+	ID                string               `gorm:"primaryKey;type:text"`
+	TenantID          string               `gorm:"column:tenant_id;not null;type:text;index"`
+	Type              orchestration.Type   `gorm:"not null;type:text;index:idx_jobqueue_ready,priority:2"`
+	Payload           json.RawMessage      `gorm:"type:text;not null"`
+	Status            orchestration.Status `gorm:"not null;type:text;index:idx_jobqueue_ready,priority:1"`
+	Priority          int                  `gorm:"not null;default:0;index:idx_jobqueue_priority"`
+	Attempts          int                  `gorm:"not null;default:0"`
+	MaxAttempts       int                  `gorm:"column:max_attempts;not null;default:1"`
+	Error             *string              `gorm:"type:text"`
+	WorkerID          *string              `gorm:"column:worker_id;type:text"`
+	ScheduledAt       time.Time            `gorm:"column:scheduled_at;not null;index:idx_jobqueue_ready,priority:3"`
+	StartedAt         *time.Time           `gorm:"column:started_at"`
+	CompletedAt       *time.Time           `gorm:"column:completed_at"`
+	ResourceType      string               `gorm:"column:resource_type;type:text;index:idx_jobqueue_resource,priority:1"`
+	ResourceID        string               `gorm:"column:resource_id;type:text;index:idx_jobqueue_resource,priority:2"`
+	ActiveResourceKey *string              `gorm:"column:active_resource_key;type:text;uniqueIndex:idx_jobqueue_active_resource_key"`
+	CreatedAt         time.Time            `gorm:"autoCreateTime;index:idx_jobqueue_ready,priority:4"`
+	UpdatedAt         time.Time            `gorm:"autoUpdateTime"`
 }
 
 func (jobRow) TableName() string {
 	return "jobqueue_jobs"
 }
 
-func rowFromJob(job *jobqueue.Job, activeResourceKey *string) *jobRow {
+func rowFromJob(job *orchestration.Job, activeResourceKey *string) *jobRow {
 	return &jobRow{
 		ID:                job.ID,
 		TenantID:          job.TenantID,
@@ -561,8 +442,8 @@ func rowFromJob(job *jobqueue.Job, activeResourceKey *string) *jobRow {
 	}
 }
 
-func (r jobRow) toJob() jobqueue.Job {
-	return jobqueue.Job{
+func (r jobRow) toJob() orchestration.Job {
+	return orchestration.Job{
 		ID:          r.ID,
 		TenantID:    r.TenantID,
 		Type:        r.Type,
@@ -576,7 +457,7 @@ func (r jobRow) toJob() jobqueue.Job {
 		ScheduledAt: r.ScheduledAt,
 		StartedAt:   r.StartedAt,
 		CompletedAt: r.CompletedAt,
-		Resource: jobqueue.Resource{
+		Resource: orchestration.Resource{
 			Type: r.ResourceType,
 			ID:   r.ResourceID,
 		},
@@ -585,11 +466,11 @@ func (r jobRow) toJob() jobqueue.Job {
 	}
 }
 
-func resourceKey(resource jobqueue.Resource) string {
+func resourceKey(resource orchestration.Resource) string {
 	return resource.Type + "\x00" + resource.ID
 }
 
-func tenantResourceKey(tenantID string, resource jobqueue.Resource) string {
+func tenantResourceKey(tenantID string, resource orchestration.Resource) string {
 	return tenantID + "\x00" + resourceKey(resource)
 }
 

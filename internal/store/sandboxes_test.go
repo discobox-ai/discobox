@@ -113,7 +113,7 @@ func newTestStoreWithDB(t *testing.T, sealer secrets.Sealer) (*store.Store, *dat
 			t.Fatalf("close db: %v", err)
 		}
 	})
-	if err := db.Migrate(ctx); err != nil {
+	if err := db.MigrateTenant(ctx); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}
 
