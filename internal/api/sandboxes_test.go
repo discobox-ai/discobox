@@ -28,8 +28,11 @@ func TestCreateSandbox(t *testing.T) {
 	if created.LastOperationStatus != model.SandboxOperationStatusPending {
 		t.Fatalf("created operation status = %q, want %q", created.LastOperationStatus, model.SandboxOperationStatusPending)
 	}
-	if created.CreatedBy == nil {
-		t.Fatal("expected createdBy to be populated")
+	if created.CreatedByUserID == "" {
+		t.Fatal("expected createdByUserId")
+	}
+	if created.CreatedBy != nil {
+		t.Fatal("expected createdBy to be omitted from tenant-scoped response")
 	}
 	if created.SourceURL == nil || *created.SourceURL != "https://example.com/repo.git" {
 		t.Fatalf("sourceUrl = %v, want https://example.com/repo.git", created.SourceURL)

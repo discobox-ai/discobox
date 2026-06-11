@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	"github.com/obot-platform/disco2/internal/model"
 )
 
 // Provider abstracts sandbox runtime environments.
@@ -23,11 +25,13 @@ type Provider interface {
 	AcquireHTTPClient(ctx context.Context, ref SandboxRef, state []byte) (*HTTPClientLease, error)
 }
 
-// SandboxRef identifies the sandbox and its project ownership context.
+// SandboxRef identifies the sandbox and its tenant/project ownership context.
 //
-// ProjectID is required because many providers use project scope for placement,
-// shared caches, VM selection, resource settings, and cleanup.
+// TenantID is the database shard key and must be propagated into VM worker boot
+// metadata. ProjectID is required because many providers use project scope for
+// placement, shared caches, VM selection, resource settings, and cleanup.
 type SandboxRef struct {
+	TenantID  string
 	SandboxID string
 	ProjectID string
 }
@@ -90,6 +94,9 @@ type CreateOptions struct {
 	OAuthRedirectBase  string
 	Resources          ResourceConfig
 	ProviderInstanceID string
+	CPUVCPUs           float64
+	MemoryBytes        int64
+	StorageBytes       int64
 }
 
 // PrepareStateProvider can precompute provider-owned state before creation.
@@ -105,6 +112,12 @@ type WatchProvider interface {
 // ReconcileProvider can repair provider runtime state after process startup.
 type ReconcileProvider interface {
 	Reconcile(ctx context.Context) error
+}
+
+// ProviderInstanceEnsurer can react to provider-instance create/update or
+// provider-specific events. Implementations decide what "ensuring" means.
+type ProviderInstanceEnsurer interface {
+	EnsureProviderInstance(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance) error
 }
 
 // ProjectRemover can remove all provider-managed resources for a project.

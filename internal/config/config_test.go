@@ -10,6 +10,7 @@ import (
 
 func TestLoadDefaults(t *testing.T) {
 	clearConfigEnv(t)
+	t.Setenv("DISCO2_TENANT_ID", "tenant-1")
 
 	cfg, err := Load()
 	if err != nil {
@@ -18,6 +19,9 @@ func TestLoadDefaults(t *testing.T) {
 
 	if cfg.Port != 8080 {
 		t.Fatalf("Port = %d, want 8080", cfg.Port)
+	}
+	if cfg.TenantID != "tenant-1" {
+		t.Fatalf("TenantID = %q, want tenant-1", cfg.TenantID)
 	}
 	if cfg.DatabaseDSN == "" {
 		t.Fatalf("DatabaseDSN is empty")
@@ -52,6 +56,7 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	t.Setenv("DISCO2_CONFIG_DIR", "/tmp/disco2/config")
 	t.Setenv("DISCO2_CACHE_DIR", "/tmp/disco2/cache")
 	t.Setenv("DISCO2_STATE_DIR", "/tmp/disco2/state")
+	t.Setenv("DISCO2_TENANT_ID", "tenant-2")
 	t.Setenv("DATABASE_DSN", "postgres://user:pass@localhost/disco2")
 	t.Setenv("DATABASE_READ_DSN", "postgres://user:pass@localhost/disco2_read")
 	t.Setenv("DATABASE_DRIVER", "postgres")
@@ -84,6 +89,9 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.StateDir != "/tmp/disco2/state" {
 		t.Fatalf("StateDir = %q", cfg.StateDir)
+	}
+	if cfg.TenantID != "tenant-2" {
+		t.Fatalf("TenantID = %q, want tenant-2", cfg.TenantID)
 	}
 	if cfg.DatabaseDSN != "postgres://user:pass@localhost/disco2" {
 		t.Fatalf("DatabaseDSN = %q", cfg.DatabaseDSN)
@@ -126,6 +134,7 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 func TestLoadUsesDataDirForDefaultDatabaseDSN(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("DISCO2_DATA_DIR", "/tmp/disco2-data")
+	t.Setenv("DISCO2_TENANT_ID", "tenant-1")
 
 	cfg, err := Load()
 	if err != nil {
@@ -157,6 +166,7 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			clearConfigEnv(t)
+			t.Setenv("DISCO2_TENANT_ID", "tenant-1")
 			t.Setenv(tt.key, tt.val)
 
 			if _, err := Load(); err == nil {
@@ -174,6 +184,7 @@ func clearConfigEnv(t *testing.T) {
 		"DISCO2_CONFIG_DIR",
 		"DISCO2_CACHE_DIR",
 		"DISCO2_STATE_DIR",
+		"DISCO2_TENANT_ID",
 		"DATABASE_DSN",
 		"DATABASE_READ_DSN",
 		"DATABASE_DRIVER",

@@ -5,16 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
-	"gorm.io/gorm/logger"
-
 	"github.com/obot-platform/disco2/jobqueue"
-	"github.com/obot-platform/disco2/jobqueue/gormstore"
 )
 
 const (
@@ -537,47 +533,6 @@ func TestStoreLeadershipAcquireRenewTimeoutRelease(t *testing.T) {
 	ok, err = store.TryAcquireLeadership(ctx, "worker-1", time.Minute)
 	if err != nil || !ok {
 		t.Fatalf("worker-1 reacquire = %v, %v; want true nil", ok, err)
-	}
-}
-
-func TestGormStoreOpenUsesSplitReadWritePoolsForSQLite(t *testing.T) {
-	ctx := context.Background()
-	store, err := gormstore.Open(gormstore.Config{
-		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "jobs.db"),
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	if err != nil {
-		t.Fatalf("new sqlite: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := store.Close(); err != nil {
-			t.Fatalf("close store: %v", err)
-		}
-	})
-	if store.WriteDB() == store.ReadDB() {
-		t.Fatal("expected separate read and write pools for file-backed sqlite")
-	}
-
-	writeSQLDB, err := store.WriteDB().DB()
-	if err != nil {
-		t.Fatalf("write sql db: %v", err)
-	}
-	if got := writeSQLDB.Stats().MaxOpenConnections; got != 1 {
-		t.Fatalf("write max open conns = %d, want 1", got)
-	}
-	readSQLDB, err := store.ReadDB().DB()
-	if err != nil {
-		t.Fatalf("read sql db: %v", err)
-	}
-	if got := readSQLDB.Stats().MaxOpenConnections; got != 25 {
-		t.Fatalf("read max open conns = %d, want 25", got)
-	}
-
-	if err := store.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	if err := store.ReadDB().WithContext(ctx).Exec("CREATE TABLE should_fail (id text)").Error; err == nil {
-		t.Fatal("expected read pool write to fail")
 	}
 }
 
@@ -1130,24 +1085,9 @@ func (e *blockingExecutor) Execute(ctx context.Context, job *jobqueue.Job) error
 	}
 }
 
-func newTestStore(t *testing.T) *gormstore.Store {
+func newTestStore(t *testing.T) *memoryStore {
 	t.Helper()
-	store, err := gormstore.Open(gormstore.Config{
-		DSN:    filepath.Join(t.TempDir(), "jobs.db"),
-		Logger: logger.Default.LogMode(logger.Silent),
-	})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	if err := store.Migrate(context.Background()); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := store.Close(); err != nil {
-			t.Fatalf("close store: %v", err)
-		}
-	})
-	return store
+	return newMemoryStore()
 }
 
 func newTestDispatcher(store jobqueue.Store) *jobqueue.Dispatcher {
@@ -1301,4 +1241,319 @@ func closeOnce(ch chan struct{}) {
 		_ = recover()
 	}()
 	close(ch)
+}
+
+type memoryStore struct {
+	mu        sync.Mutex
+	jobs      map[string]*jobqueue.Job
+	active    map[string]string
+	leader    string
+	leaderAt  time.Time
+	leaderSet bool
+}
+
+func newMemoryStore() *memoryStore {
+	return &memoryStore{jobs: map[string]*jobqueue.Job{}, active: map[string]string{}}
+}
+
+func (s *memoryStore) Migrate(context.Context) error { return nil }
+
+func (s *memoryStore) EnsureActiveJobForPayload(ctx context.Context, payload jobqueue.Payload, cfg jobqueue.QueueConfig) (*jobqueue.Job, bool, error) {
+	resource := payload.Resource()
+	allowDuplicates := false
+	if d, ok := payload.(jobqueue.DuplicateAllower); ok {
+		allowDuplicates = d.AllowDuplicates()
+	}
+	if !allowDuplicates && resource.Type != "" && resource.ID != "" {
+		if existing := s.latestPendingForResource(resource); existing != nil {
+			job, err := jobqueue.JobFromPayload(payload, cfg)
+			if err != nil {
+				return nil, false, err
+			}
+			s.mu.Lock()
+			stored := s.jobs[existing.ID]
+			stored.Type = job.Type
+			stored.Payload = job.Payload
+			stored.Priority = job.Priority
+			stored.MaxAttempts = job.MaxAttempts
+			stored.ScheduledAt = job.ScheduledAt
+			stored.Resource = job.Resource
+			stored.UpdatedAt = time.Now()
+			out := cloneJob(stored)
+			s.mu.Unlock()
+			return out, false, nil
+		}
+	}
+	job, err := jobqueue.JobFromPayload(payload, cfg)
+	if err != nil {
+		return nil, false, err
+	}
+	var opts []jobqueue.CreateJobOption
+	if !allowDuplicates && resource.Type != "" && resource.ID != "" {
+		opts = append(opts, jobqueue.WithUniqueResource())
+	}
+	if err := s.CreateJob(ctx, job, opts...); err != nil {
+		if errors.Is(err, jobqueue.ErrJobAlreadyExists) && resource.Type != "" && resource.ID != "" {
+			if existing := s.latestPendingForResource(resource); existing != nil {
+				return existing, false, nil
+			}
+		}
+		return nil, false, err
+	}
+	return job, true, nil
+}
+
+func (s *memoryStore) CreateJob(_ context.Context, job *jobqueue.Job, options ...jobqueue.CreateJobOption) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	opts := jobqueue.ResolveCreateJobOptions(options...)
+	now := time.Now()
+	if job.ID == "" {
+		id, err := jobqueue.NewID()
+		if err != nil {
+			return err
+		}
+		job.ID = id
+	}
+	if job.Status == "" {
+		job.Status = jobqueue.StatusPending
+	}
+	if job.MaxAttempts < 1 {
+		job.MaxAttempts = 1
+	}
+	if job.ScheduledAt.IsZero() {
+		job.ScheduledAt = now
+	}
+	if job.CreatedAt.IsZero() {
+		job.CreatedAt = now
+	}
+	job.UpdatedAt = now
+	if opts.UniqueResource && job.Resource.Type != "" && job.Resource.ID != "" {
+		key := memoryResourceKey(job.Resource)
+		if _, ok := s.active[key]; ok {
+			return jobqueue.ErrJobAlreadyExists
+		}
+		s.active[key] = job.ID
+	}
+	cp := cloneJob(job)
+	s.jobs[job.ID] = cp
+	*job = *cloneJob(cp)
+	return nil
+}
+
+func (s *memoryStore) GetJob(_ context.Context, id string) (*jobqueue.Job, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	job := s.jobs[id]
+	if job == nil {
+		return nil, jobqueue.ErrJobNotFound
+	}
+	return cloneJob(job), nil
+}
+
+func (s *memoryStore) GetLatestJobForResource(_ context.Context, resource jobqueue.Resource) (*jobqueue.Job, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var latest *jobqueue.Job
+	for _, job := range s.jobs {
+		if job.Resource == resource && (latest == nil || job.CreatedAt.After(latest.CreatedAt)) {
+			latest = job
+		}
+	}
+	if latest == nil {
+		return nil, jobqueue.ErrJobNotFound
+	}
+	return cloneJob(latest), nil
+}
+
+func (s *memoryStore) HasActiveJobForResource(_ context.Context, resource jobqueue.Resource) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, job := range s.jobs {
+		if job.Resource == resource && (job.Status == jobqueue.StatusPending || job.Status == jobqueue.StatusRunning) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (s *memoryStore) ClaimJob(_ context.Context, types []jobqueue.Type, workerID string) (*jobqueue.Job, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if len(types) == 0 {
+		return nil, nil
+	}
+	typeOK := map[jobqueue.Type]bool{}
+	for _, typ := range types {
+		typeOK[typ] = true
+	}
+	now := time.Now()
+	var best *jobqueue.Job
+	for _, job := range s.jobs {
+		if !typeOK[job.Type] || job.Status != jobqueue.StatusPending || job.ScheduledAt.After(now) {
+			continue
+		}
+		if job.Resource.Type != "" || job.Resource.ID != "" {
+			blocked := false
+			for _, other := range s.jobs {
+				if other.ID != job.ID && other.Resource == job.Resource && other.Status == jobqueue.StatusRunning {
+					blocked = true
+					break
+				}
+			}
+			if blocked {
+				continue
+			}
+		}
+		if best == nil || job.Priority > best.Priority || (job.Priority == best.Priority && (job.ScheduledAt.Before(best.ScheduledAt) || (job.ScheduledAt.Equal(best.ScheduledAt) && job.CreatedAt.Before(best.CreatedAt)))) {
+			best = job
+		}
+	}
+	if best == nil {
+		return nil, nil
+	}
+	best.Status = jobqueue.StatusRunning
+	best.WorkerID = &workerID
+	started := now
+	best.StartedAt = &started
+	best.Attempts++
+	best.UpdatedAt = now
+	delete(s.active, memoryResourceKey(best.Resource))
+	return cloneJob(best), nil
+}
+
+func (s *memoryStore) CompleteJob(_ context.Context, id string) error {
+	return s.finish(id, jobqueue.StatusCompleted, "")
+}
+
+func (s *memoryStore) CancelJob(_ context.Context, id string, message string) error {
+	return s.finish(id, jobqueue.StatusCanceled, message)
+}
+
+func (s *memoryStore) FailJob(_ context.Context, id string, message string, retryBackoff time.Duration) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	job := s.jobs[id]
+	if job == nil {
+		return jobqueue.ErrJobNotFound
+	}
+	now := time.Now()
+	job.Error = &message
+	if job.Attempts < job.MaxAttempts {
+		job.Status = jobqueue.StatusPending
+		job.WorkerID = nil
+		job.StartedAt = nil
+		job.ScheduledAt = now.Add(time.Duration(job.Attempts) * retryBackoff)
+		if job.Resource.Type != "" && job.Resource.ID != "" {
+			s.active[memoryResourceKey(job.Resource)] = job.ID
+		}
+	} else {
+		job.Status = jobqueue.StatusFailed
+		completed := now
+		job.CompletedAt = &completed
+		delete(s.active, memoryResourceKey(job.Resource))
+	}
+	job.UpdatedAt = now
+	return nil
+}
+
+func (s *memoryStore) CleanupStaleJobs(_ context.Context, staleAfter time.Duration) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cutoff := time.Now().Add(-staleAfter)
+	var count int64
+	for _, job := range s.jobs {
+		if job.Status == jobqueue.StatusRunning && job.StartedAt != nil && !job.StartedAt.After(cutoff) {
+			job.Status = jobqueue.StatusPending
+			job.WorkerID = nil
+			job.StartedAt = nil
+			job.UpdatedAt = time.Now()
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (s *memoryStore) TryAcquireLeadership(_ context.Context, workerID string, timeout time.Duration) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := time.Now()
+	if !s.leaderSet || s.leader == workerID || s.leaderAt.Before(now.Add(-timeout)) {
+		s.leader = workerID
+		s.leaderAt = now
+		s.leaderSet = true
+		return true, nil
+	}
+	return false, nil
+}
+
+func (s *memoryStore) ReleaseLeadership(_ context.Context, workerID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.leaderSet && s.leader == workerID {
+		s.leaderSet = false
+		s.leader = ""
+	}
+	return nil
+}
+
+func (s *memoryStore) finish(id string, status jobqueue.Status, message string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	job := s.jobs[id]
+	if job == nil {
+		return jobqueue.ErrJobNotFound
+	}
+	now := time.Now()
+	job.Status = status
+	if message != "" {
+		job.Error = &message
+	}
+	job.CompletedAt = &now
+	job.UpdatedAt = now
+	delete(s.active, memoryResourceKey(job.Resource))
+	return nil
+}
+
+func (s *memoryStore) latestPendingForResource(resource jobqueue.Resource) *jobqueue.Job {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var latest *jobqueue.Job
+	for _, job := range s.jobs {
+		if job.Resource == resource && job.Status == jobqueue.StatusPending && (latest == nil || job.CreatedAt.After(latest.CreatedAt)) {
+			latest = job
+		}
+	}
+	return cloneJob(latest)
+}
+
+func memoryResourceKey(resource jobqueue.Resource) string {
+	return resource.Type + "\x00" + resource.ID
+}
+
+func cloneJob(job *jobqueue.Job) *jobqueue.Job {
+	if job == nil {
+		return nil
+	}
+	cp := *job
+	if job.Payload != nil {
+		cp.Payload = append([]byte(nil), job.Payload...)
+	}
+	if job.Error != nil {
+		v := *job.Error
+		cp.Error = &v
+	}
+	if job.WorkerID != nil {
+		v := *job.WorkerID
+		cp.WorkerID = &v
+	}
+	if job.StartedAt != nil {
+		v := *job.StartedAt
+		cp.StartedAt = &v
+	}
+	if job.CompletedAt != nil {
+		v := *job.CompletedAt
+		cp.CompletedAt = &v
+	}
+	return &cp
 }

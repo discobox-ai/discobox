@@ -24,6 +24,34 @@ func encodeCreateSandboxRequest(
 	return nil
 }
 
+func encodeCreateSandboxProviderInstanceRequest(
+	req *CreateSandboxProviderInstanceBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeRegisterWorkerRequest(
+	req *RegisterWorkerBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeRestartSandboxRequest(
 	req *RestartSandboxBody,
 	r *http.Request,
@@ -68,6 +96,34 @@ func encodeStopSandboxRequest(
 
 func encodeUpdateSandboxRequest(
 	req *UpdateSandboxBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeUpdateSandboxProviderInstanceRequest(
+	req *UpdateSandboxProviderInstanceBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeUpdateWorkerStatusRequest(
+	req *UpdateWorkerStatusBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

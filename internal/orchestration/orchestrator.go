@@ -22,12 +22,12 @@ type LifecycleResource interface {
 type Orchestrator struct {
 	store  *store.Store
 	ensure JobEnsurer
-	notify func()
+	notify func(context.Context)
 }
 
-type JobEnsurer func(ctx context.Context, txDB *gorm.DB, payload jobqueue.Payload) (*jobqueue.Job, bool, error)
+type JobEnsurer func(ctx context.Context, txStore *store.Store, payload jobqueue.Payload) (*jobqueue.Job, bool, error)
 
-func New(store *store.Store, ensure JobEnsurer, notify func()) *Orchestrator {
+func New(store *store.Store, ensure JobEnsurer, notify func(context.Context)) *Orchestrator {
 	if ensure == nil {
 		panic("orchestration job ensurer is required")
 	}
@@ -55,7 +55,7 @@ func Begin[T LifecycleResource](
 	var resource T
 	jobCreated := false
 
-	if err := o.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+	if err := o.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
 		var err error
 		resource, err = prepare(ctx, txStore)
 		if err != nil {
@@ -68,7 +68,7 @@ func Begin[T LifecycleResource](
 			fn(resource)
 		}
 
-		job, created, err := o.ensure(ctx, txDB, payload(resource))
+		job, created, err := o.ensure(ctx, txStore, payload(resource))
 		var jobID *string
 		if errors.Is(err, jobqueue.ErrJobAlreadyExists) {
 			err = nil
@@ -89,7 +89,7 @@ func Begin[T LifecycleResource](
 	}
 
 	if jobCreated && o.notify != nil {
-		o.notify()
+		o.notify(ctx)
 	}
 	return resource, nil
 }

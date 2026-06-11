@@ -20,6 +20,7 @@ const defaultLocalProjectID = "00000000-0000-0000-0000-000000000002"
 type App struct {
 	serverURL string
 	projectID string
+	tenantID  string
 	token     string
 	output    string
 }
@@ -37,11 +38,14 @@ func NewRootCommand() *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCO2_SERVER", defaultServerURL), "Disco2 API server URL")
 	cmd.PersistentFlags().StringVarP(&app.projectID, "project", "p", envOrDefault("DISCO2_PROJECT", defaultProjectAlias), "Project ID for this invocation; use local for the built-in local project")
+	cmd.PersistentFlags().StringVar(&app.tenantID, "tenant", envOrDefault("DISCO2_TENANT_ID", ""), "Tenant ID for API requests")
 	cmd.PersistentFlags().StringVar(&app.token, "token", os.Getenv("DISCO2_TOKEN"), "Bearer token for API requests")
 	cmd.PersistentFlags().StringVarP(&app.output, "output", "o", "table", "Output format: table or json")
 
 	cmd.AddCommand(app.newSandboxCommand())
+	cmd.AddCommand(app.newProviderCommand())
 	cmd.AddCommand(app.newEventsCommand())
+	cmd.AddCommand(app.newCompletionCommand())
 	return cmd
 }
 
@@ -77,25 +81,32 @@ func (a *App) eventClient() (*apiclient.EventClient, error) {
 }
 
 func (a *App) httpClient() *http.Client {
-	if strings.TrimSpace(a.token) == "" {
+	if strings.TrimSpace(a.token) == "" && strings.TrimSpace(a.tenantID) == "" {
 		return http.DefaultClient
 	}
 	return &http.Client{
-		Transport: bearerTokenTransport{
-			token: strings.TrimSpace(a.token),
-			base:  http.DefaultTransport,
+		Transport: requestHeaderTransport{
+			token:    strings.TrimSpace(a.token),
+			tenantID: strings.TrimSpace(a.tenantID),
+			base:     http.DefaultTransport,
 		},
 	}
 }
 
-type bearerTokenTransport struct {
-	token string
-	base  http.RoundTripper
+type requestHeaderTransport struct {
+	token    string
+	tenantID string
+	base     http.RoundTripper
 }
 
-func (t bearerTokenTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t requestHeaderTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	cloned := req.Clone(req.Context())
-	cloned.Header.Set("Authorization", "Bearer "+t.token)
+	if t.token != "" {
+		cloned.Header.Set("Authorization", "Bearer "+t.token)
+	}
+	if t.tenantID != "" {
+		cloned.Header.Set("X-Disco2-Tenant-ID", t.tenantID)
+	}
 	base := t.base
 	if base == nil {
 		base = http.DefaultTransport

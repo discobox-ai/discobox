@@ -33,12 +33,24 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/sandboxes
 	CreateSandbox(ctx context.Context, request *CreateSandboxBody, params CreateSandboxParams) (*Sandbox, error)
+	// CreateSandboxProviderInstance invokes create-sandbox-provider-instance operation.
+	//
+	// Create a sandbox provider instance.
+	//
+	// POST /projects/{projectId}/providers
+	CreateSandboxProviderInstance(ctx context.Context, request *CreateSandboxProviderInstanceBody, params CreateSandboxProviderInstanceParams) (*SandboxProviderInstance, error)
 	// DeleteSandbox invokes delete-sandbox operation.
 	//
 	// Delete a sandbox.
 	//
 	// DELETE /projects/{projectId}/sandboxes/{sandboxId}
 	DeleteSandbox(ctx context.Context, params DeleteSandboxParams) error
+	// DeleteSandboxProviderInstance invokes delete-sandbox-provider-instance operation.
+	//
+	// Delete a sandbox provider instance.
+	//
+	// DELETE /projects/{projectId}/providers/{providerId}
+	DeleteSandboxProviderInstance(ctx context.Context, params DeleteSandboxProviderInstanceParams) error
 	// GetProject invokes get-project operation.
 	//
 	// Get a project.
@@ -51,18 +63,42 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/sandboxes/{sandboxId}
 	GetSandbox(ctx context.Context, params GetSandboxParams) (*Sandbox, error)
+	// GetSandboxProviderInstance invokes get-sandbox-provider-instance operation.
+	//
+	// Get a sandbox provider instance.
+	//
+	// GET /projects/{projectId}/providers/{providerId}
+	GetSandboxProviderInstance(ctx context.Context, params GetSandboxProviderInstanceParams) (*SandboxProviderInstance, error)
 	// ListProjects invokes list-projects operation.
 	//
 	// List projects.
 	//
 	// GET /projects
 	ListProjects(ctx context.Context) (*ListProjectsBody, error)
+	// ListSandboxProviderCatalog invokes list-sandbox-provider-catalog operation.
+	//
+	// List sandbox provider catalog.
+	//
+	// GET /providers/catalog
+	ListSandboxProviderCatalog(ctx context.Context) (*ListSandboxProviderCatalogBody, error)
+	// ListSandboxProviderInstances invokes list-sandbox-provider-instances operation.
+	//
+	// List sandbox provider instances.
+	//
+	// GET /projects/{projectId}/providers
+	ListSandboxProviderInstances(ctx context.Context, params ListSandboxProviderInstancesParams) (*ListSandboxProviderInstancesBody, error)
 	// ListSandboxes invokes list-sandboxes operation.
 	//
 	// List sandboxes.
 	//
 	// GET /projects/{projectId}/sandboxes
 	ListSandboxes(ctx context.Context, params ListSandboxesParams) (*ListSandboxesBody, error)
+	// RegisterWorker invokes register-worker operation.
+	//
+	// Register a bootstrapped worker.
+	//
+	// POST /api/workers/register
+	RegisterWorker(ctx context.Context, request *RegisterWorkerBody) (*RegisterWorkerResponseBody, error)
 	// RestartSandbox invokes restart-sandbox operation.
 	//
 	// Restart a sandbox.
@@ -87,6 +123,18 @@ type Invoker interface {
 	//
 	// PATCH /projects/{projectId}/sandboxes/{sandboxId}
 	UpdateSandbox(ctx context.Context, request *UpdateSandboxBody, params UpdateSandboxParams) (*Sandbox, error)
+	// UpdateSandboxProviderInstance invokes update-sandbox-provider-instance operation.
+	//
+	// Update a sandbox provider instance.
+	//
+	// PATCH /projects/{projectId}/providers/{providerId}
+	UpdateSandboxProviderInstance(ctx context.Context, request *UpdateSandboxProviderInstanceBody, params UpdateSandboxProviderInstanceParams) (*SandboxProviderInstance, error)
+	// UpdateWorkerStatus invokes update-worker-status operation.
+	//
+	// Update worker status.
+	//
+	// POST /api/workers/status
+	UpdateWorkerStatus(ctx context.Context, request *UpdateWorkerStatusBody) (*Worker, error)
 }
 
 // Client implements OAS client.
@@ -224,6 +272,102 @@ func (c *Client) sendCreateSandbox(ctx context.Context, request *CreateSandboxBo
 	return result, nil
 }
 
+// CreateSandboxProviderInstance invokes create-sandbox-provider-instance operation.
+//
+// Create a sandbox provider instance.
+//
+// POST /projects/{projectId}/providers
+func (c *Client) CreateSandboxProviderInstance(ctx context.Context, request *CreateSandboxProviderInstanceBody, params CreateSandboxProviderInstanceParams) (*SandboxProviderInstance, error) {
+	res, err := c.sendCreateSandboxProviderInstance(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendCreateSandboxProviderInstance(ctx context.Context, request *CreateSandboxProviderInstanceBody, params CreateSandboxProviderInstanceParams) (res *SandboxProviderInstance, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("create-sandbox-provider-instance"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/providers"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CreateSandboxProviderInstanceOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/providers"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeCreateSandboxProviderInstanceRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCreateSandboxProviderInstanceResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // DeleteSandbox invokes delete-sandbox operation.
 //
 // Delete a sandbox.
@@ -328,6 +472,117 @@ func (c *Client) sendDeleteSandbox(ctx context.Context, params DeleteSandboxPara
 
 	stage = "DecodeResponse"
 	result, err := decodeDeleteSandboxResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// DeleteSandboxProviderInstance invokes delete-sandbox-provider-instance operation.
+//
+// Delete a sandbox provider instance.
+//
+// DELETE /projects/{projectId}/providers/{providerId}
+func (c *Client) DeleteSandboxProviderInstance(ctx context.Context, params DeleteSandboxProviderInstanceParams) error {
+	_, err := c.sendDeleteSandboxProviderInstance(ctx, params)
+	return err
+}
+
+func (c *Client) sendDeleteSandboxProviderInstance(ctx context.Context, params DeleteSandboxProviderInstanceParams) (res *DeleteSandboxProviderInstanceNoContent, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("delete-sandbox-provider-instance"),
+		semconv.HTTPRequestMethodKey.String("DELETE"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/providers/{providerId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DeleteSandboxProviderInstanceOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/providers/"
+	{
+		// Encode "providerId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "providerId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.UUIDToString(params.ProviderId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "DELETE", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDeleteSandboxProviderInstanceResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -538,6 +793,117 @@ func (c *Client) sendGetSandbox(ctx context.Context, params GetSandboxParams) (r
 	return result, nil
 }
 
+// GetSandboxProviderInstance invokes get-sandbox-provider-instance operation.
+//
+// Get a sandbox provider instance.
+//
+// GET /projects/{projectId}/providers/{providerId}
+func (c *Client) GetSandboxProviderInstance(ctx context.Context, params GetSandboxProviderInstanceParams) (*SandboxProviderInstance, error) {
+	res, err := c.sendGetSandboxProviderInstance(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetSandboxProviderInstance(ctx context.Context, params GetSandboxProviderInstanceParams) (res *SandboxProviderInstance, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-sandbox-provider-instance"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/providers/{providerId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetSandboxProviderInstanceOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/providers/"
+	{
+		// Encode "providerId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "providerId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.UUIDToString(params.ProviderId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetSandboxProviderInstanceResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // ListProjects invokes list-projects operation.
 //
 // List projects.
@@ -605,6 +971,173 @@ func (c *Client) sendListProjects(ctx context.Context) (res *ListProjectsBody, e
 
 	stage = "DecodeResponse"
 	result, err := decodeListProjectsResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListSandboxProviderCatalog invokes list-sandbox-provider-catalog operation.
+//
+// List sandbox provider catalog.
+//
+// GET /providers/catalog
+func (c *Client) ListSandboxProviderCatalog(ctx context.Context) (*ListSandboxProviderCatalogBody, error) {
+	res, err := c.sendListSandboxProviderCatalog(ctx)
+	return res, err
+}
+
+func (c *Client) sendListSandboxProviderCatalog(ctx context.Context) (res *ListSandboxProviderCatalogBody, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-sandbox-provider-catalog"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/providers/catalog"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListSandboxProviderCatalogOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [1]string
+	pathParts[0] = "/providers/catalog"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListSandboxProviderCatalogResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListSandboxProviderInstances invokes list-sandbox-provider-instances operation.
+//
+// List sandbox provider instances.
+//
+// GET /projects/{projectId}/providers
+func (c *Client) ListSandboxProviderInstances(ctx context.Context, params ListSandboxProviderInstancesParams) (*ListSandboxProviderInstancesBody, error) {
+	res, err := c.sendListSandboxProviderInstances(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListSandboxProviderInstances(ctx context.Context, params ListSandboxProviderInstancesParams) (res *ListSandboxProviderInstancesBody, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-sandbox-provider-instances"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/providers"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListSandboxProviderInstancesOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/providers"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListSandboxProviderInstancesResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -698,6 +1231,83 @@ func (c *Client) sendListSandboxes(ctx context.Context, params ListSandboxesPara
 
 	stage = "DecodeResponse"
 	result, err := decodeListSandboxesResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// RegisterWorker invokes register-worker operation.
+//
+// Register a bootstrapped worker.
+//
+// POST /api/workers/register
+func (c *Client) RegisterWorker(ctx context.Context, request *RegisterWorkerBody) (*RegisterWorkerResponseBody, error) {
+	res, err := c.sendRegisterWorker(ctx, request)
+	return res, err
+}
+
+func (c *Client) sendRegisterWorker(ctx context.Context, request *RegisterWorkerBody) (res *RegisterWorkerResponseBody, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("register-worker"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/workers/register"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, RegisterWorkerOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [1]string
+	pathParts[0] = "/api/workers/register"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeRegisterWorkerRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeRegisterWorkerResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -1157,6 +1767,197 @@ func (c *Client) sendUpdateSandbox(ctx context.Context, request *UpdateSandboxBo
 
 	stage = "DecodeResponse"
 	result, err := decodeUpdateSandboxResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// UpdateSandboxProviderInstance invokes update-sandbox-provider-instance operation.
+//
+// Update a sandbox provider instance.
+//
+// PATCH /projects/{projectId}/providers/{providerId}
+func (c *Client) UpdateSandboxProviderInstance(ctx context.Context, request *UpdateSandboxProviderInstanceBody, params UpdateSandboxProviderInstanceParams) (*SandboxProviderInstance, error) {
+	res, err := c.sendUpdateSandboxProviderInstance(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendUpdateSandboxProviderInstance(ctx context.Context, request *UpdateSandboxProviderInstanceBody, params UpdateSandboxProviderInstanceParams) (res *SandboxProviderInstance, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("update-sandbox-provider-instance"),
+		semconv.HTTPRequestMethodKey.String("PATCH"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/providers/{providerId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, UpdateSandboxProviderInstanceOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/providers/"
+	{
+		// Encode "providerId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "providerId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.UUIDToString(params.ProviderId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PATCH", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeUpdateSandboxProviderInstanceRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeUpdateSandboxProviderInstanceResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// UpdateWorkerStatus invokes update-worker-status operation.
+//
+// Update worker status.
+//
+// POST /api/workers/status
+func (c *Client) UpdateWorkerStatus(ctx context.Context, request *UpdateWorkerStatusBody) (*Worker, error) {
+	res, err := c.sendUpdateWorkerStatus(ctx, request)
+	return res, err
+}
+
+func (c *Client) sendUpdateWorkerStatus(ctx context.Context, request *UpdateWorkerStatusBody) (res *Worker, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("update-worker-status"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/workers/status"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, UpdateWorkerStatusOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [1]string
+	pathParts[0] = "/api/workers/status"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeUpdateWorkerStatusRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeUpdateWorkerStatusResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

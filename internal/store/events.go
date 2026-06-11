@@ -7,8 +7,12 @@ import (
 )
 
 func (s *Store) MaxProjectEventSeq(ctx context.Context, projectID string) (int64, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return 0, err
+	}
 	var seq *int64
-	err := s.read.WithContext(ctx).
+	err = read.
 		Model(&model.ProjectEvent{}).
 		Where("project_id = ?", projectID).
 		Select("MAX(seq)").
@@ -20,14 +24,18 @@ func (s *Store) MaxProjectEventSeq(ctx context.Context, projectID string) (int64
 }
 
 func (s *Store) ListProjectEventsAfterSeq(ctx context.Context, projectID string, afterSeq int64, resourceTypes []string) ([]model.ProjectEvent, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var events []model.ProjectEvent
-	query := s.read.WithContext(ctx).
+	query := read.
 		Where("project_id = ? AND seq > ?", projectID, afterSeq).
 		Order("seq ASC")
 	if len(resourceTypes) > 0 {
 		query = query.Where("resource_type IN ?", resourceTypes)
 	}
-	err := query.Find(&events).Error
+	err = query.Find(&events).Error
 	return events, err
 }
 

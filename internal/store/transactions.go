@@ -9,15 +9,13 @@ import (
 )
 
 func (s *Store) Transaction(ctx context.Context, fn func(txStore *Store, txDB *gorm.DB) error) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
 	var events []model.ProjectEvent
-	if err := s.write.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		txStore := &Store{
-			write:             tx,
-			read:              tx,
-			publisher:         s.publisher,
-			afterCommitEvents: &events,
-			sealer:            s.sealer,
-		}
+	if err := write.Transaction(func(tx *gorm.DB) error {
+		txStore := s.withTx(tx, tx, &events)
 		return fn(txStore, tx)
 	}); err != nil {
 		return err

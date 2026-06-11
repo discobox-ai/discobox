@@ -14,6 +14,7 @@ import (
 )
 
 const (
+	defaultTenantID  = "00000000-0000-0000-0000-000000000000"
 	defaultUserID    = "00000000-0000-0000-0000-000000000001"
 	defaultProjectID = "00000000-0000-0000-0000-000000000002"
 )
@@ -22,33 +23,48 @@ const (
 // layers are being designed.
 type Stub struct {
 	mu        sync.Mutex
+	tenant    model.Tenant
 	user      model.User
 	project   model.Project
+	providers map[string]model.SandboxProviderInstance
 	sandboxes map[string]model.Sandbox
 }
 
 func NewStub() *Stub {
 	now := time.Now().UTC()
+	tenant := model.Tenant{
+		ID:        defaultTenantID,
+		Name:      "Default Tenant",
+		Slug:      "default",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}
 	user := model.User{
 		ID:        defaultUserID,
+		TenantID:  tenant.ID,
 		Email:     "local@example.com",
 		Provider:  "local",
 		Subject:   "local",
+		Tenant:    &tenant,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
 	project := model.Project{
 		ID:          defaultProjectID,
+		TenantID:    tenant.ID,
 		OwnerUserID: user.ID,
 		Name:        "Default Project",
 		Slug:        "default",
+		Tenant:      &tenant,
 		Owner:       &user,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
 	return &Stub{
+		tenant:    tenant,
 		user:      user,
 		project:   project,
+		providers: make(map[string]model.SandboxProviderInstance),
 		sandboxes: make(map[string]model.Sandbox),
 	}
 }
@@ -228,6 +244,92 @@ func (s *Stub) SubscribeProjectEvents(ctx context.Context, projectID string) (<-
 	return ch, unsubscribe, nil
 }
 
+func (s *Stub) ListSandboxProviderCatalogItems(context.Context) ([]api.SandboxProviderCatalogItem, error) {
+	return []api.SandboxProviderCatalogItem{{ID: "digitalocean", Name: "DigitalOcean", Available: true, BuiltIn: true}}, nil
+}
+
+func (s *Stub) ListSandboxProviderInstances(_ context.Context, projectID string) ([]model.SandboxProviderInstance, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, huma.Error404NotFound("project not found")
+	}
+	return s.sortedProviders(), nil
+}
+
+func (s *Stub) CreateSandboxProviderInstance(_ context.Context, projectID string, input api.CreateSandboxProviderInstanceBody) (*model.SandboxProviderInstance, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, huma.Error404NotFound("project not found")
+	}
+	now := time.Now().UTC()
+	provider := model.SandboxProviderInstance{ID: id.NewString(), ProjectID: projectID, Type: input.Type, Name: input.Name, Config: input.Config, CreatedAt: now, UpdatedAt: now}
+	s.providers[provider.ID] = provider
+	if s.project.DefaultSandboxProviderID == "" {
+		s.project.DefaultSandboxProviderID = provider.ID
+	}
+	return &provider, nil
+}
+
+func (s *Stub) GetSandboxProviderInstance(_ context.Context, projectID, providerID string) (*model.SandboxProviderInstance, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, huma.Error404NotFound("project not found")
+	}
+	provider, ok := s.providers[providerID]
+	if !ok {
+		return nil, huma.Error404NotFound("provider instance not found")
+	}
+	return &provider, nil
+}
+
+func (s *Stub) UpdateSandboxProviderInstance(_ context.Context, projectID, providerID string, input api.UpdateSandboxProviderInstanceBody) (*model.SandboxProviderInstance, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, huma.Error404NotFound("project not found")
+	}
+	provider, ok := s.providers[providerID]
+	if !ok {
+		return nil, huma.Error404NotFound("provider instance not found")
+	}
+	if input.Name != nil {
+		provider.Name = *input.Name
+	}
+	if input.Config != nil {
+		provider.Config = input.Config
+	}
+	if input.Disabled != nil {
+		provider.Disabled = *input.Disabled
+	}
+	provider.UpdatedAt = time.Now().UTC()
+	s.providers[provider.ID] = provider
+	return &provider, nil
+}
+
+func (s *Stub) DeleteSandboxProviderInstance(_ context.Context, projectID, providerID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return huma.Error404NotFound("project not found")
+	}
+	if _, ok := s.providers[providerID]; !ok {
+		return huma.Error404NotFound("provider instance not found")
+	}
+	delete(s.providers, providerID)
+	return nil
+}
+
+func (s *Stub) RegisterWorker(context.Context, api.RegisterWorkerBody) (*api.RegisterWorkerResponseBody, error) {
+	return &api.RegisterWorkerResponseBody{AuthToken: "stub"}, nil
+}
+
+func (s *Stub) UpdateWorkerStatus(context.Context, string, api.UpdateWorkerStatusBody) (*model.Worker, error) {
+	return &model.Worker{}, nil
+}
+
 func (s *Stub) beginSandboxOperation(projectID, sandboxID string, spec model.OperationSpec) (*model.Sandbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -257,8 +359,26 @@ func (s *Stub) getSandbox(projectID, sandboxID string) (model.Sandbox, error) {
 func (s *Stub) projectWithSandboxes() model.Project {
 	project := s.project
 	project.Owner = &s.user
+	project.SandboxProviderInstances = s.sortedProviders()
 	project.Sandboxes = s.sortedSandboxes()
 	return project
+}
+
+func (s *Stub) sortedProviders() []model.SandboxProviderInstance {
+	providers := make([]model.SandboxProviderInstance, 0, len(s.providers))
+	for _, provider := range s.providers {
+		providers = append(providers, provider)
+	}
+	slices.SortFunc(providers, func(a, b model.SandboxProviderInstance) int {
+		if a.CreatedAt.Before(b.CreatedAt) {
+			return -1
+		}
+		if a.CreatedAt.After(b.CreatedAt) {
+			return 1
+		}
+		return 0
+	})
+	return providers
 }
 
 func (s *Stub) sortedSandboxes() []model.Sandbox {

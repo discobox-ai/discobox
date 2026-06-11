@@ -55,6 +55,10 @@ type DispatcherConfig struct {
 	// should only discover new work through polling.
 	ImmediateExecution bool
 
+	// JobContext can attach application context derived from the claimed job before
+	// executing it and updating its terminal state.
+	JobContext func(context.Context, *Job) context.Context
+
 	// DefaultConcurrency is the per-job-type concurrency limit used when an
 	// executor is registered without WithConcurrency. Values less than one should
 	// be treated as one.
@@ -218,7 +222,11 @@ func (d *Dispatcher) DrainAndStop(ctx context.Context) error {
 	}
 
 	if !d.cfg.SingleNode && d.IsLeader() {
-		if err := d.store.ReleaseLeadership(context.Background(), d.workerID); err != nil && retErr == nil {
+		releaseCtx := context.Background()
+		if d.ctx != nil {
+			releaseCtx = context.WithoutCancel(d.ctx)
+		}
+		if err := d.store.ReleaseLeadership(releaseCtx, d.workerID); err != nil && retErr == nil {
 			retErr = err
 		}
 	}
@@ -316,24 +324,28 @@ func (d *Dispatcher) processAvailableJobs() {
 }
 
 func (d *Dispatcher) executeJob(job *Job) {
+	jobCtx := d.ctx
+	if d.cfg.JobContext != nil {
+		jobCtx = d.cfg.JobContext(jobCtx, job)
+	}
 	executor, ok := d.executors[job.Type]
 	if !ok {
-		_ = d.store.FailJob(d.ctx, job.ID, ErrExecutorNotRegistered.Error(), d.cfg.RetryBackoff)
+		_ = d.store.FailJob(jobCtx, job.ID, ErrExecutorNotRegistered.Error(), d.cfg.RetryBackoff)
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(d.ctx, d.cfg.JobTimeout)
+	ctx, cancel := context.WithTimeout(jobCtx, d.cfg.JobTimeout)
 	defer cancel()
 
 	if err := executor.Execute(ctx, job); err != nil {
 		if errors.Is(err, ErrJobCanceled) {
-			_ = d.store.CancelJob(d.ctx, job.ID, err.Error())
+			_ = d.store.CancelJob(ctx, job.ID, err.Error())
 			return
 		}
-		_ = d.store.FailJob(d.ctx, job.ID, err.Error(), d.cfg.RetryBackoff)
+		_ = d.store.FailJob(ctx, job.ID, err.Error(), d.cfg.RetryBackoff)
 		return
 	}
-	_ = d.store.CompleteJob(d.ctx, job.ID)
+	_ = d.store.CompleteJob(ctx, job.ID)
 }
 
 func (d *Dispatcher) staleCleanupLoop() {

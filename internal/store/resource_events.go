@@ -19,7 +19,11 @@ func withResourceEvent[T eventResource](ctx context.Context, s *Store, action st
 	var zero T
 	var result T
 	var event model.ProjectEvent
-	if err := s.write.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return zero, err
+	}
+	if err := write.Transaction(func(tx *gorm.DB) error {
 		var err error
 		result, err = mutate(tx)
 		if err != nil {

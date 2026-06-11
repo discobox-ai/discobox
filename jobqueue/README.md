@@ -218,20 +218,14 @@ Important expectations:
 - `CleanupStaleJobs` recovers abandoned running jobs.
 - Leadership methods are no-ops only for deployments using `SingleNode`.
 
-## GORM Store
+## Store Implementations
 
-`gormstore` provides the built-in GORM implementation:
+`jobqueue` owns the queue and dispatcher abstractions, but not a database
+persistence implementation. Applications provide an implementation of the
+`jobqueue.Store` interface and pass the same store to both `NewQueue` and
+`NewDispatcher`:
 
 ```go
-store, err := gormstore.Open(gormstore.Config{DSN: "jobs.db"})
-if err != nil {
-    return err
-}
-if err := store.Migrate(ctx); err != nil {
-    return err
-}
-defer store.Close()
-
 queue := jobqueue.NewQueue(store, jobqueue.QueueConfig{
     DefaultPriority:    10,
     DefaultMaxAttempts: 3,
@@ -248,18 +242,9 @@ dispatcher := jobqueue.NewDispatcher(store, jobqueue.DispatcherConfig{
 })
 ```
 
-Postgres uses the same generic API:
-
-```go
-store, err := gormstore.Open(gormstore.Config{
-    DSN: "postgres://user:pass@localhost/jobs?sslmode=disable",
-})
-```
-
-The GORM store creates two tables:
-
-- `jobqueue_jobs`
-- `jobqueue_leaders`
+For multi-process deployments, the store implementation must provide durable
+job state and leadership methods. The server application in this repository
+implements persistence in its own storage layer.
 
 ## Leader Election
 

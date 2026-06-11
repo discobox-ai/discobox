@@ -41,6 +41,9 @@ type CreateSandboxBody struct {
 	SourceURL          *string         `json:"sourceUrl,omitempty" doc:"Source repository or archive URL" format:"uri"`
 	SourceRef          *string         `json:"sourceRef,omitempty" doc:"Source branch, tag, or commit"`
 	WorkingDirectory   *string         `json:"workingDirectory,omitempty" doc:"Working directory inside the sandbox"`
+	CPUVCPUs           float64         `json:"cpuVcpus,omitempty" doc:"Requested CPU capacity in vCPUs"`
+	MemoryBytes        int64           `json:"memoryBytes,omitempty" doc:"Requested memory capacity in bytes"`
+	StorageBytes       int64           `json:"storageBytes,omitempty" doc:"Requested storage capacity in bytes"`
 	RuntimeState       json.RawMessage `json:"runtimeState,omitempty" doc:"Initial non-secret provider runtime state"`
 }
 
@@ -56,6 +59,9 @@ type UpdateSandboxBody struct {
 	SourceURL          *string         `json:"sourceUrl,omitempty" doc:"Source repository or archive URL" format:"uri"`
 	SourceRef          *string         `json:"sourceRef,omitempty" doc:"Source branch, tag, or commit"`
 	WorkingDirectory   *string         `json:"workingDirectory,omitempty" doc:"Working directory inside the sandbox"`
+	CPUVCPUs           *float64        `json:"cpuVcpus,omitempty" doc:"Requested CPU capacity in vCPUs"`
+	MemoryBytes        *int64          `json:"memoryBytes,omitempty" doc:"Requested memory capacity in bytes"`
+	StorageBytes       *int64          `json:"storageBytes,omitempty" doc:"Requested storage capacity in bytes"`
 	RuntimeState       json.RawMessage `json:"runtimeState,omitempty" doc:"Non-secret provider runtime state"`
 }
 

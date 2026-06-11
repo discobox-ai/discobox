@@ -30,6 +30,9 @@ type Job struct {
 	// ID is the stable job identifier assigned by the Store.
 	ID string `json:"id"`
 
+	// TenantID identifies the tenant context used to execute this job.
+	TenantID string `json:"tenantId,omitempty"`
+
 	// Type selects the registered Executor.
 	Type Type `json:"type"`
 

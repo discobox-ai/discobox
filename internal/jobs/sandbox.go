@@ -26,7 +26,7 @@ func (p SandboxReconcilePayload) Resource() jobqueue.Resource {
 }
 
 func (p SandboxReconcilePayload) MaxAttempts() int {
-	return 3
+	return 1
 }
 
 type SandboxReconciler interface {

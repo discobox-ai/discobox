@@ -12,12 +12,26 @@ type CreateSandboxParams struct {
 	ProjectId uuid.UUID
 }
 
+// CreateSandboxProviderInstanceParams is parameters of create-sandbox-provider-instance operation.
+type CreateSandboxProviderInstanceParams struct {
+	// Project ID.
+	ProjectId uuid.UUID
+}
+
 // DeleteSandboxParams is parameters of delete-sandbox operation.
 type DeleteSandboxParams struct {
 	// Project ID.
 	ProjectId uuid.UUID
 	// Sandbox ID.
 	SandboxId uuid.UUID
+}
+
+// DeleteSandboxProviderInstanceParams is parameters of delete-sandbox-provider-instance operation.
+type DeleteSandboxProviderInstanceParams struct {
+	// Project ID.
+	ProjectId uuid.UUID
+	// Provider instance ID.
+	ProviderId uuid.UUID
 }
 
 // GetProjectParams is parameters of get-project operation.
@@ -32,6 +46,20 @@ type GetSandboxParams struct {
 	ProjectId uuid.UUID
 	// Sandbox ID.
 	SandboxId uuid.UUID
+}
+
+// GetSandboxProviderInstanceParams is parameters of get-sandbox-provider-instance operation.
+type GetSandboxProviderInstanceParams struct {
+	// Project ID.
+	ProjectId uuid.UUID
+	// Provider instance ID.
+	ProviderId uuid.UUID
+}
+
+// ListSandboxProviderInstancesParams is parameters of list-sandbox-provider-instances operation.
+type ListSandboxProviderInstancesParams struct {
+	// Project ID.
+	ProjectId uuid.UUID
 }
 
 // ListSandboxesParams is parameters of list-sandboxes operation.
@@ -70,4 +98,12 @@ type UpdateSandboxParams struct {
 	ProjectId uuid.UUID
 	// Sandbox ID.
 	SandboxId uuid.UUID
+}
+
+// UpdateSandboxProviderInstanceParams is parameters of update-sandbox-provider-instance operation.
+type UpdateSandboxProviderInstanceParams struct {
+	// Project ID.
+	ProjectId uuid.UUID
+	// Provider instance ID.
+	ProviderId uuid.UUID
 }

@@ -12,11 +12,25 @@ both GORM persistence tags and JSON/Huma API-facing tags.
 | `Project` | Tenant-scoped group for sandboxes, provider configuration, and project events. |
 | `Sandbox` | Main managed runtime/session resource. Belongs to a project and is orchestrated. |
 | `SandboxProviderInstance` | Project-scoped provider configuration for creating and managing sandboxes. |
-| `Worker` | Planned provider-backed runtime worker for launching sandboxes. Has its own identity and public key; private key stays on the worker. |
+| `Worker` | Provider-backed runtime worker for launching sandboxes. Has its own identity and public key; private key stays on the worker. Prewarmed workers belong to a provider instance/pool and can host many sandboxes. Scheduling uses `ready`, `schedulable`, and `degraded` columns; detailed condition data is opaque JSON for display. |
 | `WorkerBootstrapToken` | Planned short-lived, one-time token used by a new worker to register its public key. |
 | `WorkerAuthToken` | Planned short-lived runtime token issued after the worker proves possession of its private key; may be stateless. |
 | `SandboxAccessIssuerKey` | Design-level name for the current `ProjectUserKey`: per-project, per-user issuer key used by the control plane to sign sandbox access tokens. |
 | `ProjectEvent` | Append-only project-scoped resource event for list/watch sync and replay. |
+
+## Persistence Scope
+
+Models are split by database/schema scope:
+
+- Global scope: `Tenant`, `User`.
+- Tenant scope: `Project`, `Sandbox`, `SandboxProviderInstance`, `Worker`,
+  worker tokens, sandbox access issuer keys, project events, and tenant-local
+  jobqueue tables.
+
+Tenant-scoped rows still carry `tenant_id` and user ID columns so tokens,
+events, and audit records are self-describing. Those columns are shard
+boundaries and references to global identities; they are not foreign keys from
+tenant databases back into the global schema.
 
 ## Shared Lifecycle Shape
 
@@ -42,6 +56,7 @@ Lifecycle fields include:
 erDiagram
     TENANT ||--o{ USER : has
     TENANT ||--o{ PROJECT : has
+    TENANT ||--o{ WORKER : has
 
     USER ||--o{ PROJECT : owns
     USER ||--o{ SANDBOX : creates
@@ -55,8 +70,8 @@ erDiagram
 
     SANDBOX_PROVIDER_INSTANCE ||--o{ SANDBOX : manages
     SANDBOX_PROVIDER_INSTANCE ||--o{ WORKER : runs
-    SANDBOX ||--o{ WORKER : uses
     WORKER ||--o{ WORKER_BOOTSTRAP_TOKEN : registers_with
+    WORKER ||--o{ WORKER_AUTH_TOKEN : authenticates_with
 
     TENANT {
         string id
@@ -99,11 +114,16 @@ erDiagram
 
     WORKER {
         string id
-        string sandbox_id
+        string tenant_id
+        string project_id
         string provider_instance_id
         string identity
         string public_key
         string key_type
+        bool ready
+        bool schedulable
+        bool degraded
+        json conditions
         datetime registered_at
         datetime last_seen_at
         datetime revoked_at
@@ -111,10 +131,22 @@ erDiagram
 
     WORKER_BOOTSTRAP_TOKEN {
         string id
+        string tenant_id
         string worker_id
         bytes token_hash
         datetime expires_at
         datetime used_at
+        datetime revoked_at
+    }
+
+    WORKER_AUTH_TOKEN {
+        string id
+        string tenant_id
+        string worker_id
+        bytes token_hash
+        datetime issued_at
+        datetime expires_at
+        datetime last_used_at
         datetime revoked_at
     }
 
@@ -139,3 +171,25 @@ erDiagram
 ```
 
 Auth flows are documented in `internal/sandboxauth/DESIGN.md`.
+
+Tenant database resolution is documented in `internal/database/DESIGN.md`.
+
+## Worker Scheduling Status
+
+Workers report three scheduling-relevant booleans directly on the worker row:
+
+- `ready`: the worker agent/runtime is healthy.
+- `schedulable`: the worker is willing to pull new sandbox work.
+- `degraded`: the worker can still accept fallback work but should not be
+  preferred.
+
+Any richer Kubernetes-style conditions or pressure details are stored as an
+opaque `conditions` JSON blob for display and diagnostics. The control plane
+does not interpret that blob for scheduling.
+
+The worker decides when local compute/storage/memory pressure should change
+`schedulable` or `degraded`. The control plane uses a coarse preference:
+
+- preferred: `ready=true`, `schedulable=true`, `degraded=false`.
+- degraded: `ready=true`, `schedulable=true`, `degraded=true`.
+- unavailable: not ready, not schedulable, drained, deleted, or revoked.

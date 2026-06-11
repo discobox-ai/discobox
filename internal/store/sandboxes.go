@@ -23,9 +23,13 @@ func WithGeneration(generation int64) SandboxGetOption {
 }
 
 func (s *Store) ListSandboxes(ctx context.Context, projectID string) ([]model.Sandbox, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var sandboxes []model.Sandbox
-	err := s.read.WithContext(ctx).
-		Preload("CreatedBy").
+	err = read.
+		Preload("Project").
 		Preload("ProviderInstance").
 		Where("project_id = ?", projectID).
 		Order("created_at ASC").
@@ -63,15 +67,19 @@ func (s *Store) GetSandbox(ctx context.Context, projectID, sandboxID string, opt
 		}
 	}
 
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var sandbox model.Sandbox
-	query := s.read.WithContext(ctx).
-		Preload("CreatedBy").
+	query := read.
+		Preload("Project").
 		Preload("ProviderInstance").
 		Where("project_id = ? AND id = ?", projectID, sandboxID)
 	if opts.generation != nil {
 		query = query.Where("generation = ?", *opts.generation)
 	}
-	err := query.First(&sandbox).Error
+	err = query.First(&sandbox).Error
 	if err != nil {
 		if opts.generation != nil && errors.Is(mapNotFound(err), ErrNotFound) {
 			return nil, ErrGenerationConflict
@@ -134,9 +142,13 @@ func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string) 
 }
 
 func (s *Store) ListSandboxSnapshots(ctx context.Context, projectID string) ([]model.Sandbox, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var sandboxes []model.Sandbox
-	err := s.read.WithContext(ctx).
-		Preload("CreatedBy").
+	err = read.
+		Preload("Project").
 		Preload("ProviderInstance").
 		Where("project_id = ?", projectID).
 		Order("created_at ASC").

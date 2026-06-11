@@ -4,3 +4,7 @@ build-errors.log
 .env
 .env.*
 !.env.example
+.discobot/cache/
+.discobot/config/
+.discobot/data/
+.discobot/state/

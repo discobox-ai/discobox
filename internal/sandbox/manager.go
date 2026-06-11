@@ -2,6 +2,7 @@ package sandbox
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -28,14 +29,23 @@ func PlatformDefaultProvider() string {
 // ProviderFactory builds a provider from a saved provider instance.
 type ProviderFactory func(ctx context.Context, instance *model.SandboxProviderInstance) (Provider, error)
 
+// ProviderConfigValidator validates persisted provider-instance configuration.
+type ProviderConfigValidator func(config json.RawMessage) error
+
+// ProviderConfigValidatorProvider can validate provider-instance configuration.
+type ProviderConfigValidatorProvider interface {
+	ValidateConfig(config json.RawMessage) error
+}
+
 // ProviderManager manages registered providers, definitions, and factories.
 type ProviderManager struct {
-	mu        sync.RWMutex
-	providers map[string]Provider
-	defs      map[string]ProviderDefinition
-	factories map[string]ProviderFactory
-	cache     map[string]cachedProvider
-	defaultID string
+	mu         sync.RWMutex
+	providers  map[string]Provider
+	defs       map[string]ProviderDefinition
+	factories  map[string]ProviderFactory
+	validators map[string]ProviderConfigValidator
+	cache      map[string]cachedProvider
+	defaultID  string
 }
 
 type cachedProvider struct {
@@ -46,11 +56,12 @@ type cachedProvider struct {
 // NewProviderManager creates an empty provider manager.
 func NewProviderManager() *ProviderManager {
 	return &ProviderManager{
-		providers: make(map[string]Provider),
-		defs:      make(map[string]ProviderDefinition),
-		factories: make(map[string]ProviderFactory),
-		cache:     make(map[string]cachedProvider),
-		defaultID: PlatformDefaultProvider(),
+		providers:  make(map[string]Provider),
+		defs:       make(map[string]ProviderDefinition),
+		factories:  make(map[string]ProviderFactory),
+		validators: make(map[string]ProviderConfigValidator),
+		cache:      make(map[string]cachedProvider),
+		defaultID:  PlatformDefaultProvider(),
 	}
 }
 
@@ -66,6 +77,9 @@ func (m *ProviderManager) RegisterProvider(id string, provider Provider) {
 	if dp, ok := provider.(DefinitionProvider); ok {
 		m.defs[id] = dp.Definition()
 	}
+	if validator, ok := provider.(ProviderConfigValidatorProvider); ok {
+		m.validators[id] = validator.ValidateConfig
+	}
 }
 
 // RegisterFactory registers a provider-instance factory for a provider type.
@@ -77,6 +91,17 @@ func (m *ProviderManager) RegisterFactory(providerType string, factory ProviderF
 		return
 	}
 	m.factories[providerType] = factory
+}
+
+// RegisterProviderConfigValidator registers config validation for a provider type.
+func (m *ProviderManager) RegisterProviderConfigValidator(providerType string, validator ProviderConfigValidator) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if validator == nil {
+		delete(m.validators, providerType)
+		return
+	}
+	m.validators[providerType] = validator
 }
 
 // RegisterProviderDefinition registers provider metadata without an implementation.
@@ -201,6 +226,17 @@ func (m *ProviderManager) ListProviderStatuses() map[string]ProviderStatus {
 		statuses[id] = statusFor(provider)
 	}
 	return statuses
+}
+
+// ValidateProviderConfig validates config for a registered provider type.
+func (m *ProviderManager) ValidateProviderConfig(providerType string, config json.RawMessage) error {
+	m.mu.RLock()
+	validator := m.validators[providerType]
+	m.mu.RUnlock()
+	if validator == nil {
+		return nil
+	}
+	return validator(config)
 }
 
 // ResolveForSandbox returns the provider for a sandbox record.

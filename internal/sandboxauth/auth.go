@@ -19,6 +19,13 @@ import (
 
 const TokenTTL = 12 * time.Hour
 
+type TokenClaims struct {
+	TenantID  string
+	ProjectID string
+	SandboxID string
+	UserID    string
+}
+
 type UserStore interface {
 	GetProjectUserKey(ctx context.Context, projectID, userID string) (*model.ProjectUserKey, error)
 	CreateProjectUserKeyIfMissing(ctx context.Context, key *model.ProjectUserKey) (bool, error)
@@ -39,8 +46,8 @@ func (m *Manager) EnsureTrustKey(ctx context.Context, projectID, userID string) 
 	}
 	key, err := m.store.GetProjectUserKey(ctx, projectID, userID)
 	if err == nil {
-		if key.SandboxPublicKey != "" && len(key.EncryptedSandboxPrivateKey) > 0 {
-			return key.SandboxPublicKey, nil
+		if key.PublicKey != "" && len(key.EncryptedPrivateKey) > 0 {
+			return key.PublicKey, nil
 		}
 		return "", fmt.Errorf("project user sandbox trust key is incomplete")
 	}
@@ -52,15 +59,16 @@ func (m *Manager) EnsureTrustKey(ctx context.Context, projectID, userID string) 
 		return "", err
 	}
 	resourceID := keyResourceID(projectID, userID)
-	encryptedPrivateKey, err := m.sealer.Seal(ctx, "project_user_keys.sandbox_private_key", resourceID, []byte(privateKey))
+	encryptedPrivateKey, err := m.sealer.Seal(ctx, "sandbox_access_issuer_keys.private_key", resourceID, []byte(privateKey))
 	if err != nil {
 		return "", err
 	}
 	created, err := m.store.CreateProjectUserKeyIfMissing(ctx, &model.ProjectUserKey{
-		ProjectID:                  projectID,
-		UserID:                     userID,
-		SandboxPublicKey:           publicKey,
-		EncryptedSandboxPrivateKey: encryptedPrivateKey,
+		ProjectID:           projectID,
+		UserID:              userID,
+		PublicKey:           publicKey,
+		EncryptedPrivateKey: encryptedPrivateKey,
+		KeyType:             "ed25519",
 	})
 	if err != nil {
 		return "", err
@@ -72,27 +80,27 @@ func (m *Manager) EnsureTrustKey(ctx context.Context, projectID, userID string) 
 	if err != nil {
 		return "", err
 	}
-	if reloaded.SandboxPublicKey == "" || len(reloaded.EncryptedSandboxPrivateKey) == 0 {
+	if reloaded.PublicKey == "" || len(reloaded.EncryptedPrivateKey) == 0 {
 		return "", fmt.Errorf("sandbox trust key was not stored")
 	}
-	return reloaded.SandboxPublicKey, nil
+	return reloaded.PublicKey, nil
 }
 
-func (m *Manager) CreateToken(ctx context.Context, projectID, userID string) (string, error) {
-	if m == nil || m.store == nil || m.sealer == nil || projectID == "" || userID == "" {
+func (m *Manager) CreateToken(ctx context.Context, claims TokenClaims) (string, error) {
+	if m == nil || m.store == nil || m.sealer == nil || claims.TenantID == "" || claims.ProjectID == "" || claims.UserID == "" {
 		return "", nil
 	}
-	key, err := m.store.GetProjectUserKey(ctx, projectID, userID)
+	key, err := m.store.GetProjectUserKey(ctx, claims.ProjectID, claims.UserID)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return "", nil
 		}
 		return "", err
 	}
-	if len(key.EncryptedSandboxPrivateKey) == 0 {
+	if len(key.EncryptedPrivateKey) == 0 {
 		return "", nil
 	}
-	privateKeyText, err := m.sealer.Open(ctx, "project_user_keys.sandbox_private_key", keyResourceID(projectID, userID), key.EncryptedSandboxPrivateKey)
+	privateKeyText, err := m.sealer.Open(ctx, "sandbox_access_issuer_keys.private_key", keyResourceID(claims.ProjectID, claims.UserID), key.EncryptedPrivateKey)
 	if err != nil {
 		return "", err
 	}
@@ -100,7 +108,7 @@ func (m *Manager) CreateToken(ctx context.Context, projectID, userID string) (st
 	if err != nil {
 		return "", err
 	}
-	return CreateToken(privateKey, TokenTTL)
+	return CreateToken(privateKey, claims, TokenTTL)
 }
 
 func GenerateKeyPair() (publicKey, privateKey string, err error) {
@@ -122,7 +130,7 @@ func DecodePrivateKey(value string) (ed25519.PrivateKey, error) {
 	return ed25519.PrivateKey(raw), nil
 }
 
-func CreateToken(privateKey ed25519.PrivateKey, ttl time.Duration) (string, error) {
+func CreateToken(privateKey ed25519.PrivateKey, claims TokenClaims, ttl time.Duration) (string, error) {
 	pasetoKey, err := paseto.NewV4AsymmetricSecretKeyFromEd25519(privateKey)
 	if err != nil {
 		return "", err
@@ -137,6 +145,12 @@ func CreateToken(privateKey ed25519.PrivateKey, ttl time.Duration) (string, erro
 	token.SetNotBefore(now.Add(-time.Second))
 	token.SetExpiration(now.Add(ttl))
 	token.SetJti(encode(nonce))
+	token.SetString("tenant_id", claims.TenantID)
+	token.SetString("project_id", claims.ProjectID)
+	token.SetString("user_id", claims.UserID)
+	if claims.SandboxID != "" {
+		token.SetString("sandbox_id", claims.SandboxID)
+	}
 	return token.V4Sign(pasetoKey, nil), nil
 }
 

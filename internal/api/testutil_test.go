@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2/humatest"
-	"gorm.io/gorm"
 
 	"github.com/obot-platform/disco2/internal/api"
 	"github.com/obot-platform/disco2/internal/database"
@@ -18,7 +17,6 @@ import (
 	"github.com/obot-platform/disco2/internal/service"
 	"github.com/obot-platform/disco2/internal/store"
 	"github.com/obot-platform/disco2/jobqueue"
-	"github.com/obot-platform/disco2/jobqueue/gormstore"
 )
 
 type testAPI struct {
@@ -44,13 +42,13 @@ func newTestAPI(t *testing.T) testAPI {
 	}
 
 	broker := events.NewBroker()
-	appStore := store.New(db.Write, db.Read, broker)
+	appStore := store.New(database.StaticResolver{DB: db}, store.WithPublisher(broker), store.WithDefaultTenantID(service.DefaultTenantID))
 	queueConfig := jobqueue.QueueConfig{DefaultMaxAttempts: 3}
-	ensureJob := func(ctx context.Context, txDB *gorm.DB, payload jobqueue.Payload) (*jobqueue.Job, bool, error) {
-		return gormstore.New(txDB, txDB).EnsureActiveJobForPayload(ctx, payload, queueConfig)
+	ensureJob := func(ctx context.Context, txStore *store.Store, payload jobqueue.Payload) (*jobqueue.Job, bool, error) {
+		return txStore.EnsureActiveJobForPayload(ctx, payload, queueConfig)
 	}
 	services := service.New(appStore, orchestration.New(appStore, ensureJob, nil), broker)
-	if err := services.InitializeDefaults(ctx); err != nil {
+	if err := services.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
 
@@ -58,6 +56,8 @@ func newTestAPI(t *testing.T) testAPI {
 	api.Register(h, api.Services{
 		Projects:  services,
 		Sandboxes: services,
+		Providers: services,
+		Workers:   services,
 		Events:    services,
 	})
 	return testAPI{handler: handler, h: h}

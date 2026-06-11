@@ -59,6 +59,43 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apiclientgen.Sandbo
 	return tw.Flush()
 }
 
+func (a *App) writeProviderCatalog(cmd *cobra.Command, providers []apiclientgen.SandboxProviderCatalogItem) error {
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"providers": providers})
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tNAME\tAVAILABLE\tBUILT-IN\tDESCRIPTION")
+	for _, provider := range providers {
+		fmt.Fprintf(tw, "%s\t%s\t%t\t%t\t%s\n", provider.ID, provider.Name, provider.Available, provider.BuiltIn, provider.Description.Or(""))
+	}
+	return tw.Flush()
+}
+
+func (a *App) writeProvider(cmd *cobra.Command, provider *apiclientgen.SandboxProviderInstance) error {
+	if provider == nil {
+		return nil
+	}
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), provider)
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tDISABLED\tUPDATED")
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\n", provider.ID, provider.Name, provider.Type, provider.Disabled, formatTime(provider.UpdatedAt))
+	return tw.Flush()
+}
+
+func (a *App) writeProviders(cmd *cobra.Command, providers []apiclientgen.SandboxProviderInstance) error {
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"providers": providers})
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tDISABLED\tUPDATED")
+	for _, provider := range providers {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\n", provider.ID, provider.Name, provider.Type, provider.Disabled, formatTime(provider.UpdatedAt))
+	}
+	return tw.Flush()
+}
+
 func parseUUIDArg(value, name string) (uuid.UUID, error) {
 	id, err := uuid.Parse(value)
 	if err != nil {

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/obot-platform/disco2/internal/app"
+	"github.com/obot-platform/disco2/internal/server"
 )
 
 func main() {
@@ -15,7 +15,7 @@ func main() {
 	downgrade := flag.Bool("downgrade", false, "write OpenAPI 3.0.3 for tools that do not support OpenAPI 3.1")
 	flag.Parse()
 
-	_, api := app.NewStubbedRouter()
+	_, api := server.NewStubbedRouter()
 	var data []byte
 	var err error
 	if *downgrade {

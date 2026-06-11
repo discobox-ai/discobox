@@ -7,25 +7,14 @@ import (
 	"github.com/obot-platform/disco2/internal/model"
 )
 
-// InitializeDefaults creates the single default user and project used before
+// InitializeDefaults creates the single default project used before
 // user/project management APIs exist.
-func (s *Service) InitializeDefaults(ctx context.Context) error {
+func (s *Service) InitializeDefaults(ctx context.Context, tenantID, userID string) error {
 	now := time.Now().UTC()
-	user := &model.User{
-		ID:        DefaultUserID,
-		Email:     "local@example.com",
-		Provider:  "local",
-		Subject:   "local",
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-	if err := s.store.UpsertUser(ctx, user); err != nil {
-		return err
-	}
-
 	project := &model.Project{
 		ID:          DefaultProjectID,
-		OwnerUserID: user.ID,
+		TenantID:    tenantID,
+		OwnerUserID: userID,
 		Name:        "Default Project",
 		Slug:        "default",
 		CreatedAt:   now,

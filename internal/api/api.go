@@ -27,6 +27,20 @@ type SandboxService interface {
 	RestartSandbox(ctx context.Context, projectID, sandboxID string, input RestartSandboxBody) (*model.Sandbox, error)
 }
 
+type SandboxProviderInstanceService interface {
+	ListSandboxProviderCatalogItems(ctx context.Context) ([]SandboxProviderCatalogItem, error)
+	ListSandboxProviderInstances(ctx context.Context, projectID string) ([]model.SandboxProviderInstance, error)
+	CreateSandboxProviderInstance(ctx context.Context, projectID string, input CreateSandboxProviderInstanceBody) (*model.SandboxProviderInstance, error)
+	GetSandboxProviderInstance(ctx context.Context, projectID, providerID string) (*model.SandboxProviderInstance, error)
+	UpdateSandboxProviderInstance(ctx context.Context, projectID, providerID string, input UpdateSandboxProviderInstanceBody) (*model.SandboxProviderInstance, error)
+	DeleteSandboxProviderInstance(ctx context.Context, projectID, providerID string) error
+}
+
+type WorkerService interface {
+	RegisterWorker(ctx context.Context, input RegisterWorkerBody) (*RegisterWorkerResponseBody, error)
+	UpdateWorkerStatus(ctx context.Context, authorization string, input UpdateWorkerStatusBody) (*model.Worker, error)
+}
+
 // ProjectEventService provides project-scoped event replay and live subscription.
 type ProjectEventService interface {
 	MaxProjectEventSeq(ctx context.Context, projectID string) (int64, error)
@@ -39,12 +53,16 @@ type ProjectEventService interface {
 type Services struct {
 	Projects  ProjectService
 	Sandboxes SandboxService
+	Providers SandboxProviderInstanceService
+	Workers   WorkerService
 	Events    ProjectEventService
 }
 
 // Register registers all public API operations.
 func Register(api huma.API, services Services) {
 	RegisterProjectOperations(api, services.Projects)
+	RegisterSandboxProviderInstanceOperations(api, services.Providers)
+	RegisterWorkerOperations(api, services.Workers)
 	RegisterSandboxOperations(api, services.Sandboxes)
 	RegisterProjectEventOperations(api, services.Events)
 }

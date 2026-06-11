@@ -24,6 +24,11 @@ Notes:
 - Bootstrap tokens are short-lived, one-time use, and stored only as hashes.
 - `WorkerAuthToken` may be stateless.
 - Worker authorization should be scoped to assigned work and provider/sandbox scope.
+- Worker bootstrap and runtime auth must identify the tenant before database
+  lookup. For SQLite this is required to resolve the correct tenant database
+  file before validating the token or worker key. A worker should present
+  `tenant_id` with its worker ID/bootstrap token, and issued worker runtime
+  tokens must include a tenant claim.
 
 ## Sandbox Auth: Access Delegation
 
@@ -52,6 +57,24 @@ Current details:
 - Signing key type is Ed25519 / PASETO v4 public.
 - Key scope is `(projectID, userID)`, not individual sandbox.
 - Encryption associated data binds ciphertext to the `projectID/userID` identity.
+- Issued sandbox access tokens include `tenant_id`, `project_id`,
+  `sandbox_id`, and `user_id` claims. The tenant claim is derived from the
+  sandbox's project and is the database shard key for later authenticated
+  requests.
+
+## Tenant Binding
+
+Authentication must always establish tenant before resource access:
+
+- User auth maps the user/session to a tenant membership.
+- Sandbox auth maps the sandbox token to the tenant that owns the sandbox's
+  project.
+- Worker auth maps bootstrap/runtime credentials to the tenant that owns the
+  worker's sandbox/provider scope.
+
+For Postgres, the tenant is used as an authorization and query boundary within
+the shared database. For SQLite, the tenant is also required to choose the
+database file before loading resource rows.
 
 ## Key Ownership
 

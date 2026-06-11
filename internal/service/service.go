@@ -9,22 +9,23 @@ import (
 	"github.com/obot-platform/disco2/internal/events"
 	"github.com/obot-platform/disco2/internal/orchestration"
 	"github.com/obot-platform/disco2/internal/sandbox"
+	sandboxprovider "github.com/obot-platform/disco2/internal/sandbox/provider"
+	sandboxservice "github.com/obot-platform/disco2/internal/sandbox/service"
 	"github.com/obot-platform/disco2/internal/sandboxauth"
 	"github.com/obot-platform/disco2/internal/store"
 )
 
 const (
+	DefaultTenantID  = "00000000-0000-0000-0000-000000000000"
 	DefaultUserID    = "00000000-0000-0000-0000-000000000001"
 	DefaultProjectID = "00000000-0000-0000-0000-000000000002"
 )
 
 // Service implements the API service interfaces using the database store.
 type Service struct {
-	store            *store.Store
-	broker           *events.Broker
-	sandboxes        *SandboxOrchestrator
-	sandboxProviders *sandbox.ProviderManager
-	sandboxAuth      *sandboxauth.Manager
+	*sandboxservice.Service
+	store  *store.Store
+	broker *events.Broker
 }
 
 func New(store *store.Store, orchestrator *orchestration.Orchestrator, broker ...*events.Broker) *Service {
@@ -36,16 +37,17 @@ func New(store *store.Store, orchestrator *orchestration.Orchestrator, broker ..
 		b = broker[0]
 	}
 	manager := sandbox.NewProviderManager()
+	sandboxprovider.RegisterBuiltInSandboxProviderFactories(manager, store)
+	sandboxOrchestrator := sandbox.NewSandboxOrchestrator(store, orchestrator)
 	return &Service{
-		store:            store,
-		broker:           b,
-		sandboxes:        NewSandboxOrchestrator(store, orchestrator),
-		sandboxProviders: manager,
+		Service: sandboxservice.NewService(store, sandboxOrchestrator, manager, DefaultUserID),
+		store:   store,
+		broker:  b,
 	}
 }
 
 func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
-	s.sandboxAuth = manager
+	s.Service.SetSandboxAuthManager(manager)
 }
 
 func apiError(err error, notFoundMessage string) error {

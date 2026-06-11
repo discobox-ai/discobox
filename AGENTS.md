@@ -5,7 +5,7 @@
 - `cmd/discobot-server`: HTTP server entrypoint.
 - `cmd/openapi`: OpenAPI generation entrypoint used by `go generate`.
 - `internal/api`: Huma/chi API operation definitions and tests.
-- `internal/app`: application wiring.
+- `internal/server`: server startup and HTTP router wiring.
 - `internal/model`: combined GORM/API resource models.
 - `internal/store`: database access, split by resource.
 - `internal/service`: API services, sandbox orchestration, reconciliation, and operations.

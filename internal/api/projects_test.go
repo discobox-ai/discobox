@@ -39,7 +39,10 @@ func TestProjectOperations(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &project); err != nil {
 		t.Fatalf("decode project: %v", err)
 	}
-	if project.Owner == nil {
-		t.Fatal("expected project owner to be populated")
+	if project.OwnerUserID != service.DefaultUserID {
+		t.Fatalf("ownerUserId = %q, want %q", project.OwnerUserID, service.DefaultUserID)
+	}
+	if project.Owner != nil {
+		t.Fatal("expected project owner to be omitted from tenant-scoped response")
 	}
 }

@@ -28,6 +28,9 @@ type Config struct {
 	CacheDir  string
 	StateDir  string
 
+	// Tenant settings.
+	TenantID string
+
 	// Database settings.
 	DatabaseDSN     string
 	DatabaseReadDSN string
@@ -59,6 +62,7 @@ func Load() (*Config, error) {
 	cfg.ConfigDir = getEnv("DISCO2_CONFIG_DIR", filepath.Join(xdg.ConfigHome, appName))
 	cfg.CacheDir = getEnv("DISCO2_CACHE_DIR", filepath.Join(xdg.CacheHome, appName))
 	cfg.StateDir = getEnv("DISCO2_STATE_DIR", filepath.Join(xdg.StateHome, appName))
+	cfg.TenantID = getEnv("DISCO2_TENANT_ID", "")
 
 	cfg.DatabaseDSN = getEnv("DATABASE_DSN", defaultDatabaseDSN(cfg.DataDir))
 	cfg.DatabaseReadDSN = getEnv("DATABASE_READ_DSN", "")

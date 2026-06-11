@@ -1,0 +1,7 @@
+.git
+.discobot/cache
+.discobot/config
+.discobot/data
+.discobot/state
+build
+**/.DS_Store

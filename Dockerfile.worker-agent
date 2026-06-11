@@ -1,0 +1,58 @@
+# syntax=docker/dockerfile:1
+
+FROM golang:1.26-bookworm AS build
+
+WORKDIR /src
+COPY go.mod go.sum ./
+COPY gormdb/go.mod gormdb/go.sum ./gormdb/
+COPY jobqueue/go.mod jobqueue/go.sum ./jobqueue/
+RUN go mod download
+COPY . .
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/disco2-worker-agent ./cmd/disco2-worker-agent
+
+FROM ubuntu:24.04
+
+ENV container=docker
+ENV DISCO2_AGENT_PORT=3002
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        curl \
+        dbus \
+        systemd \
+        systemd-sysv \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* \
+    && systemctl mask \
+        dev-hugepages.mount \
+        sys-fs-fuse-connections.mount \
+        systemd-remount-fs.service \
+        getty.target \
+        console-getty.service
+
+COPY --from=build /out/disco2-worker-agent /usr/local/bin/disco2-worker-agent
+
+RUN cat >/etc/systemd/system/disco2-worker-agent.service <<'EOF'
+[Unit]
+Description=Disco2 worker agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+Environment=DISCO2_AGENT_PORT=3002
+PassEnvironment=DISCO2_CONTROL_PLANE_URL DISCO2_TENANT_ID DISCO2_PROJECT_ID DISCO2_SANDBOX_ID DISCO2_WORKER_ID DISCO2_WORKER_BOOTSTRAP_TOKEN DISCO2_AGENT_PORT
+ExecStart=/usr/local/bin/disco2-worker-agent
+Restart=always
+RestartSec=2s
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+RUN systemctl enable disco2-worker-agent.service
+
+EXPOSE 3002
+STOPSIGNAL SIGRTMIN+3
+CMD ["/sbin/init"]

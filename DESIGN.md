@@ -27,6 +27,7 @@ Important package docs:
 
 | Package | Design notes |
 | --- | --- |
+| `internal/database` | Database setup and tenant database resolution. |
 | `internal/model` | Data model, lifecycle-bearing resources, planned tenant/worker model. |
 | `internal/orchestration` | Desired-state reconciliation pattern. |
 | `internal/service` | Sandbox lifecycle and service/reconciler behavior. |

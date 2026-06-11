@@ -9,7 +9,7 @@ import (
 
 	"github.com/obot-platform/disco2/gormdb"
 	"github.com/obot-platform/disco2/internal/model"
-	"github.com/obot-platform/disco2/jobqueue/gormstore"
+	"github.com/obot-platform/disco2/internal/store"
 )
 
 // DB wraps the application write/read GORM pools.
@@ -46,12 +46,27 @@ func New(cfg Config) (*DB, error) {
 	}, nil
 }
 
-// Migrate runs GORM AutoMigrate for application models.
+// Migrate runs tenant-scoped migrations.
+//
+// Deprecated: use MigrateTenant for tenant databases or MigrateGlobal for the
+// global database. This method remains tenant-scoped to avoid accidentally
+// creating tenant data tables in the global schema.
 func (db *DB) Migrate(ctx context.Context) error {
-	if err := db.Write.WithContext(ctx).AutoMigrate(model.AllModels()...); err != nil {
+	return db.MigrateTenant(ctx)
+}
+
+// MigrateGlobal runs migrations for global, non-tenant tables only.
+func (db *DB) MigrateGlobal(ctx context.Context) error {
+	return db.Write.WithContext(ctx).AutoMigrate(model.GlobalModels()...)
+}
+
+// MigrateTenant runs migrations for tenant-scoped tables and the tenant-local
+// durable job queue only.
+func (db *DB) MigrateTenant(ctx context.Context) error {
+	if err := db.Write.WithContext(ctx).AutoMigrate(model.TenantModels()...); err != nil {
 		return err
 	}
-	return gormstore.New(db.Write, db.Read).Migrate(ctx)
+	return db.Write.WithContext(ctx).AutoMigrate(store.JobModels()...)
 }
 
 // Close closes the underlying database pools.

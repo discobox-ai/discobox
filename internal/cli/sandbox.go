@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/go-faster/jx"
 	"github.com/google/uuid"
@@ -21,7 +23,12 @@ type sandboxCreateOptions struct {
 	sourceURL          string
 	sourceRef          string
 	workingDirectory   string
+	cpuVCPUs           float64
+	memoryBytes        int64
+	storageBytes       int64
 	runtimeState       string
+	wait               bool
+	waitTimeout        time.Duration
 }
 
 type sandboxUpdateOptions sandboxCreateOptions
@@ -105,6 +112,12 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 			sandbox, err := client.CreateSandbox(cmd.Context(), body, apiclientgen.CreateSandboxParams{ProjectId: projectID})
 			if err != nil {
 				return err
+			}
+			if opts.wait {
+				sandbox, err = a.waitForSandbox(cmd, client, projectID, sandbox.ID, opts.waitTimeout)
+				if err != nil {
+					return err
+				}
 			}
 			return a.writeSandbox(cmd, sandbox)
 		},
@@ -257,7 +270,12 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.sourceURL, "source-url", "", "Source repository or archive URL")
 	cmd.Flags().StringVar(&opts.sourceRef, "source-ref", "", "Source branch, tag, or commit")
 	cmd.Flags().StringVar(&opts.workingDirectory, "working-directory", "", "Working directory inside the sandbox")
+	cmd.Flags().Float64Var(&opts.cpuVCPUs, "cpu-vcpus", 0, "Requested CPU capacity in vCPUs")
+	cmd.Flags().Int64Var(&opts.memoryBytes, "memory-bytes", 0, "Requested memory capacity in bytes")
+	cmd.Flags().Int64Var(&opts.storageBytes, "storage-bytes", 0, "Requested storage capacity in bytes")
 	cmd.Flags().StringVar(&opts.runtimeState, "runtime-state", "", "Initial runtime state as JSON or @path")
+	cmd.Flags().BoolVar(&opts.wait, "wait", false, "Wait for sandbox to reach running or fail")
+	cmd.Flags().DurationVar(&opts.waitTimeout, "wait-timeout", 2*time.Minute, "Maximum time to wait")
 }
 
 func addUpdateFlags(cmd *cobra.Command, opts *sandboxUpdateOptions) {
@@ -267,6 +285,9 @@ func addUpdateFlags(cmd *cobra.Command, opts *sandboxUpdateOptions) {
 	cmd.Flags().StringVar(&opts.sourceURL, "source-url", "", "Source repository or archive URL")
 	cmd.Flags().StringVar(&opts.sourceRef, "source-ref", "", "Source branch, tag, or commit")
 	cmd.Flags().StringVar(&opts.workingDirectory, "working-directory", "", "Working directory inside the sandbox")
+	cmd.Flags().Float64Var(&opts.cpuVCPUs, "cpu-vcpus", 0, "Requested CPU capacity in vCPUs")
+	cmd.Flags().Int64Var(&opts.memoryBytes, "memory-bytes", 0, "Requested memory capacity in bytes")
+	cmd.Flags().Int64Var(&opts.storageBytes, "storage-bytes", 0, "Requested storage capacity in bytes")
 	cmd.Flags().StringVar(&opts.runtimeState, "runtime-state", "", "Runtime state as JSON or @path")
 }
 
@@ -276,6 +297,15 @@ func createSandboxBody(opts sandboxCreateOptions) (*apiclientgen.CreateSandboxBo
 	body.SetProviderInstanceId(optString(opts.providerInstanceID))
 	body.SetSourceRef(optString(opts.sourceRef))
 	body.SetWorkingDirectory(optString(opts.workingDirectory))
+	if opts.cpuVCPUs > 0 {
+		body.SetCpuVcpus(apiclientgen.NewOptFloat64(opts.cpuVCPUs))
+	}
+	if opts.memoryBytes > 0 {
+		body.SetMemoryBytes(apiclientgen.NewOptInt64(opts.memoryBytes))
+	}
+	if opts.storageBytes > 0 {
+		body.SetStorageBytes(apiclientgen.NewOptInt64(opts.storageBytes))
+	}
 	if opts.sourceURL != "" {
 		u, err := url.Parse(opts.sourceURL)
 		if err != nil {
@@ -308,6 +338,15 @@ func updateSandboxBody(cmd *cobra.Command, opts sandboxUpdateOptions) (*apiclien
 	if cmd.Flags().Changed("working-directory") {
 		body.SetWorkingDirectory(apiclientgen.NewOptString(opts.workingDirectory))
 	}
+	if cmd.Flags().Changed("cpu-vcpus") {
+		body.SetCpuVcpus(apiclientgen.NewOptFloat64(opts.cpuVCPUs))
+	}
+	if cmd.Flags().Changed("memory-bytes") {
+		body.SetMemoryBytes(apiclientgen.NewOptInt64(opts.memoryBytes))
+	}
+	if cmd.Flags().Changed("storage-bytes") {
+		body.SetStorageBytes(apiclientgen.NewOptInt64(opts.storageBytes))
+	}
 	if cmd.Flags().Changed("source-url") {
 		u, err := url.Parse(opts.sourceURL)
 		if err != nil {
@@ -323,6 +362,34 @@ func updateSandboxBody(cmd *cobra.Command, opts sandboxUpdateOptions) (*apiclien
 		body.SetRuntimeState(state)
 	}
 	return body, nil
+}
+
+func (a *App) waitForSandbox(cmd *cobra.Command, client *apiclientgen.Client, projectID, sandboxID uuid.UUID, timeout time.Duration) (*apiclientgen.Sandbox, error) {
+	ctx := cmd.Context()
+	if timeout > 0 {
+		var cancel func()
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		sandbox, err := client.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
+		if err != nil {
+			return nil, err
+		}
+		if sandbox.Phase == "running" && sandbox.LastOperationStatus == "success" {
+			return sandbox, nil
+		}
+		if sandbox.Phase == "failed" || sandbox.LastOperationStatus == "failed" {
+			return sandbox, fmt.Errorf("sandbox failed: phase=%s lastOperationStatus=%s", sandbox.Phase, sandbox.LastOperationStatus)
+		}
+		select {
+		case <-ctx.Done():
+			return sandbox, ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 func runtimeState(value string) (jx.Raw, error) {

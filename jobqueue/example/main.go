@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/obot-platform/disco2/jobqueue"
-	"github.com/obot-platform/disco2/jobqueue/gormstore"
 )
 
 func main() {
@@ -23,17 +21,8 @@ func main() {
 	}
 	defer os.RemoveAll(dir)
 
-	store, err := gormstore.Open(gormstore.Config{DSN: filepath.Join(dir, "example.db")})
-	if err != nil {
-		log.Fatalf("open database: %v", err)
-	}
-	defer store.Close()
-
-	if err := store.Migrate(ctx); err != nil {
-		log.Fatalf("migrate database: %v", err)
-	}
-
-	app, err := NewApp(store, newMemorySandboxService())
+	jobStore := newMemoryStore()
+	app, err := NewApp(jobStore, newMemorySandboxService())
 	if err != nil {
 		log.Fatalf("create app: %v", err)
 	}
@@ -55,7 +44,7 @@ func main() {
 	}
 	fmt.Printf("enqueued %s job %s\n", provisionJob.Type, provisionJob.ID)
 
-	if err := waitForStatus(ctx, store, provisionJob.ID, jobqueue.StatusCompleted); err != nil {
+	if err := waitForStatus(ctx, jobStore, provisionJob.ID, jobqueue.StatusCompleted); err != nil {
 		log.Fatalf("wait provision: %v", err)
 	}
 	fmt.Printf("completed %s job %s\n", provisionJob.Type, provisionJob.ID)
@@ -66,7 +55,7 @@ func main() {
 	}
 	fmt.Printf("enqueued %s job %s\n", deleteJob.Type, deleteJob.ID)
 
-	if err := waitForStatus(ctx, store, deleteJob.ID, jobqueue.StatusCompleted); err != nil {
+	if err := waitForStatus(ctx, jobStore, deleteJob.ID, jobqueue.StatusCompleted); err != nil {
 		log.Fatalf("wait delete: %v", err)
 	}
 	fmt.Printf("completed %s job %s\n", deleteJob.Type, deleteJob.ID)
