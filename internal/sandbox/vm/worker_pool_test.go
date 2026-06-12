@@ -8,6 +8,7 @@ import (
 
 	"github.com/obot-platform/discobox/internal/model"
 	"github.com/obot-platform/discobox/internal/sandbox"
+	"github.com/obot-platform/discobox/internal/store"
 )
 
 func TestDesiredAdditionalWorkersLaunchesReplacementForOnlyDegradedWorker(t *testing.T) {
@@ -81,19 +82,70 @@ func TestWorkerProviderCreateClaimsWorkerAndReturnsWorkerID(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	if workerStore.sandbox == nil {
-		t.Fatal("expected worker claim")
+		t.Fatal("expected schedulable worker lookup")
 	}
 	if workerStore.sandbox.ID != "sandbox-1" || workerStore.sandbox.ProjectID != "project-1" || workerStore.sandbox.CPUVCPUs != 2 || workerStore.sandbox.MemoryBytes != 1024 || workerStore.sandbox.StorageBytes != 2048 {
-		t.Fatalf("claimed sandbox = %#v", workerStore.sandbox)
+		t.Fatalf("schedulable worker sandbox = %#v", workerStore.sandbox)
 	}
 	if workerStore.sandbox.ProviderInstanceID == nil || *workerStore.sandbox.ProviderInstanceID != "provider-1" {
-		t.Fatalf("claimed provider instance = %v, want provider-1", workerStore.sandbox.ProviderInstanceID)
+		t.Fatalf("schedulable worker provider instance = %v, want provider-1", workerStore.sandbox.ProviderInstanceID)
 	}
 	if runtimeSandbox == nil || runtimeSandbox.Metadata["worker_id"] != "worker-1" {
 		t.Fatalf("runtime sandbox = %#v, want worker_id metadata", runtimeSandbox)
 	}
 	if len(state) == 0 {
 		t.Fatal("expected provider state")
+	}
+}
+
+func TestWorkerProviderCreateEnsuresCapacityAndWaitsForWorker(t *testing.T) {
+	oldTimeout := workerCapacityWaitTimeout
+	oldInterval := workerCapacityPollInterval
+	workerCapacityWaitTimeout = 50 * time.Millisecond
+	workerCapacityPollInterval = time.Millisecond
+	t.Cleanup(func() {
+		workerCapacityWaitTimeout = oldTimeout
+		workerCapacityPollInterval = oldInterval
+	})
+
+	workerStore := &capacityWaitWorkerStore{
+		project:  &model.Project{ID: "project-1", TenantID: "tenant-1"},
+		provider: &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "digitalocean", Name: "do"},
+		worker:   &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true},
+	}
+	provider := NewWorkerProvider(nil, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}, nil, workerStore)
+
+	runtimeSandbox, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{ProviderInstanceID: "provider-1"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if workerStore.createdWorkers != 1 {
+		t.Fatalf("created workers = %d, want 1", workerStore.createdWorkers)
+	}
+	if runtimeSandbox == nil || runtimeSandbox.Metadata["worker_id"] != "worker-1" {
+		t.Fatalf("runtime sandbox = %#v, want worker-1", runtimeSandbox)
+	}
+}
+
+func TestWorkerProviderCreateReturnsNoCapacityAfterWait(t *testing.T) {
+	oldTimeout := workerCapacityWaitTimeout
+	oldInterval := workerCapacityPollInterval
+	workerCapacityWaitTimeout = 2 * time.Millisecond
+	workerCapacityPollInterval = time.Millisecond
+	t.Cleanup(func() {
+		workerCapacityWaitTimeout = oldTimeout
+		workerCapacityPollInterval = oldInterval
+	})
+
+	workerStore := &capacityWaitWorkerStore{
+		project:  &model.Project{ID: "project-1", TenantID: "tenant-1"},
+		provider: &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "digitalocean", Name: "do"},
+	}
+	provider := NewWorkerProvider(nil, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}, nil, workerStore)
+
+	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{ProviderInstanceID: "provider-1"})
+	if !errors.Is(err, sandbox.ErrNoSandboxCapacity) {
+		t.Fatalf("create error = %v, want ErrNoSandboxCapacity", err)
 	}
 }
 
@@ -107,17 +159,48 @@ func (s *recordingWorkerStore) ListWorkers(context.Context, string, string) ([]m
 	return nil, nil
 }
 
-func (s *recordingWorkerStore) CreateWorkerWithBootstrapToken(context.Context, *model.Worker, *model.WorkerBootstrapToken) error {
-	return nil
+func (s *recordingWorkerStore) CreateWorker(_ context.Context, worker *model.Worker) (*model.Worker, error) {
+	return worker, nil
 }
 
-func (s *recordingWorkerStore) ClaimWorker(_ context.Context, sandbox *model.Sandbox) (*model.Worker, error) {
+func (s *recordingWorkerStore) FindSchedulableWorker(_ context.Context, sandbox *model.Sandbox) (*model.Worker, error) {
 	s.sandbox = sandbox
 	if s.err != nil {
 		return nil, s.err
 	}
 	if s.worker == nil {
 		return nil, errors.New("worker is nil")
+	}
+	return s.worker, nil
+}
+
+type capacityWaitWorkerStore struct {
+	project        *model.Project
+	provider       *model.SandboxProviderInstance
+	worker         *model.Worker
+	createdWorkers int
+}
+
+func (s *capacityWaitWorkerStore) ListWorkers(context.Context, string, string) ([]model.Worker, error) {
+	return nil, nil
+}
+
+func (s *capacityWaitWorkerStore) GetProject(context.Context, string) (*model.Project, error) {
+	return s.project, nil
+}
+
+func (s *capacityWaitWorkerStore) GetSandboxProviderInstance(context.Context, string, string) (*model.SandboxProviderInstance, error) {
+	return s.provider, nil
+}
+
+func (s *capacityWaitWorkerStore) CreateWorker(_ context.Context, worker *model.Worker) (*model.Worker, error) {
+	s.createdWorkers++
+	return worker, nil
+}
+
+func (s *capacityWaitWorkerStore) FindSchedulableWorker(context.Context, *model.Sandbox) (*model.Worker, error) {
+	if s.createdWorkers == 0 || s.worker == nil {
+		return nil, store.ErrNotFound
 	}
 	return s.worker, nil
 }

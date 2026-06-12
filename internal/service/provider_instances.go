@@ -91,17 +91,38 @@ func (s *Service) UpdateSandboxProviderInstance(ctx context.Context, projectID, 
 	if err := s.store.UpdateSandboxProviderInstance(ctx, provider); err != nil {
 		return nil, err
 	}
-	project, _ := s.store.GetProject(ctx, projectID)
-	if project != nil && !provider.Disabled {
-		if err := s.ensureSandboxProviderInstance(ctx, project, provider); err != nil {
-			return nil, err
-		}
-	}
 	return s.store.GetSandboxProviderInstance(ctx, projectID, providerID)
 }
 
 func (s *Service) DeleteSandboxProviderInstance(ctx context.Context, projectID, providerID string) error {
 	return apiError(s.store.DeleteSandboxProviderInstance(ctx, projectID, providerID), "provider instance not found")
+}
+
+// EnsureExistingSandboxProviderInstances runs provider instance startup reconciliation
+// for persisted provider instances. Runtime-driven worker scaling after this point
+// belongs inside the provider implementation.
+func (s *Service) EnsureExistingSandboxProviderInstances(ctx context.Context) error {
+	projects, err := s.store.ListProjects(ctx)
+	if err != nil {
+		return err
+	}
+	for i := range projects {
+		project := &projects[i]
+		providers, err := s.store.ListSandboxProviderInstances(ctx, project.ID)
+		if err != nil {
+			return err
+		}
+		for i := range providers {
+			provider := &providers[i]
+			if provider.Disabled {
+				continue
+			}
+			if err := s.ensureSandboxProviderInstance(ctx, project, provider); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (s *Service) ensureSandboxProviderInstance(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance) error {
@@ -116,5 +137,9 @@ func (s *Service) ensureSandboxProviderInstance(ctx context.Context, project *mo
 	if !ok {
 		return nil
 	}
-	return ensurer.EnsureProviderInstance(ctx, s.store, project, provider)
+	providerStore := any(s.store)
+	if s.workerStore != nil {
+		providerStore = s.workerStore
+	}
+	return ensurer.EnsureProviderInstance(ctx, providerStore, project, provider)
 }

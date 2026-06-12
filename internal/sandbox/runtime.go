@@ -120,6 +120,12 @@ type ProviderInstanceEnsurer interface {
 	EnsureProviderInstance(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance) error
 }
 
+// WorkerRuntimeReconciler reconciles provider-owned runtime state for a worker
+// resource. The caller owns worker lifecycle persistence and job semantics.
+type WorkerRuntimeReconciler interface {
+	ReconcileWorker(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error
+}
+
 // ProjectRemover can remove all provider-managed resources for a project.
 type ProjectRemover interface {
 	RemoveProject(ctx context.Context, projectID string) error

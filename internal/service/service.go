@@ -26,8 +26,9 @@ const (
 // Service implements the API service interfaces using the database store.
 type Service struct {
 	*sandboxservice.Service
-	store  *store.Store
-	broker *events.Broker
+	store       *store.Store
+	broker      *events.Broker
+	workerStore any
 }
 
 func New(store *store.Store, queueConfig orchestration.QueueConfig, notifyNewJob func(context.Context), broker ...*events.Broker) *Service {
@@ -36,12 +37,15 @@ func New(store *store.Store, queueConfig orchestration.QueueConfig, notifyNewJob
 		b = broker[0]
 	}
 	manager := sandbox.NewProviderManager()
-	sandboxprovider.RegisterBuiltInSandboxProviderFactories(manager, store)
 	sandboxSubmitter := jobs.NewSandboxSubmitter(store, queueConfig, notifyNewJob)
+	workerSubmitter := jobs.NewWorkerSubmitter(store, queueConfig, notifyNewJob)
+	workerStore := newWorkerStore(store, workerSubmitter)
+	sandboxprovider.RegisterBuiltInSandboxProviderFactories(manager, workerStore)
 	return &Service{
-		Service: sandboxservice.NewService(store, sandboxSubmitter, manager, DefaultUserID),
-		store:   store,
-		broker:  b,
+		Service:     sandboxservice.NewService(store, sandboxSubmitter, manager, DefaultUserID, workerStore),
+		store:       store,
+		broker:      b,
+		workerStore: workerStore,
 	}
 }
 

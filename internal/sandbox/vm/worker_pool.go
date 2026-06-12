@@ -18,8 +18,12 @@ const defaultWorkerBootstrapTTL = 30 * time.Minute
 // control plane. Providers own the scaling policy; the store owns persistence.
 type WorkerStore interface {
 	ListWorkers(ctx context.Context, projectID, providerID string) ([]model.Worker, error)
-	CreateWorkerWithBootstrapToken(ctx context.Context, worker *model.Worker, token *model.WorkerBootstrapToken) error
-	ClaimWorker(ctx context.Context, sandbox *model.Sandbox) (*model.Worker, error)
+	CreateWorker(ctx context.Context, worker *model.Worker) (*model.Worker, error)
+	FindSchedulableWorker(ctx context.Context, sandbox *model.Sandbox) (*model.Worker, error)
+}
+
+type WorkerBootstrapStore interface {
+	CreateWorkerBootstrapToken(ctx context.Context, token *model.WorkerBootstrapToken) error
 }
 
 // WorkerLauncher starts the provider-specific runtime node for a persisted worker.
@@ -109,7 +113,7 @@ func DesiredAdditionalWorkers(workers []model.Worker, cfg WorkerPoolConfig) int 
 }
 
 // EnsureWorkerPool reconciles a VM provider's warm worker pool.
-func EnsureWorkerPool(ctx context.Context, store WorkerStore, project *model.Project, provider *model.SandboxProviderInstance, cfg WorkerPoolConfig, launch WorkerLauncher) error {
+func EnsureWorkerPool(ctx context.Context, store WorkerStore, project *model.Project, provider *model.SandboxProviderInstance, cfg WorkerPoolConfig) error {
 	if store == nil {
 		return fmt.Errorf("worker store is required")
 	}
@@ -119,23 +123,17 @@ func EnsureWorkerPool(ctx context.Context, store WorkerStore, project *model.Pro
 	if provider == nil || provider.Disabled {
 		return nil
 	}
-	if launch == nil {
-		return fmt.Errorf("worker launcher is required")
-	}
 	workers, err := store.ListWorkers(ctx, provider.ProjectID, provider.ID)
 	if err != nil {
 		return err
 	}
 	additional := DesiredAdditionalWorkers(workers, cfg)
 	for i := 0; i < additional; i++ {
-		worker, token, err := createWorker(ctx, store, project, provider, len(workers)+1)
+		worker, err := createWorker(ctx, store, project, provider, len(workers)+1)
 		if err != nil {
 			return err
 		}
 		workers = append(workers, *worker)
-		if err := launch(ctx, project, provider, worker, token); err != nil {
-			return err
-		}
 	}
 	return nil
 }
@@ -156,34 +154,46 @@ func healthyWorker(worker *model.Worker) bool {
 	return activeWorker(worker) && worker.Ready && worker.Schedulable && !worker.Degraded
 }
 
-func createWorker(ctx context.Context, store WorkerStore, project *model.Project, provider *model.SandboxProviderInstance, ordinal int) (*model.Worker, string, error) {
+func createWorker(ctx context.Context, store WorkerStore, project *model.Project, provider *model.SandboxProviderInstance, ordinal int) (*model.Worker, error) {
 	workerID, err := id.New()
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	token, err := randomWorkerToken()
-	if err != nil {
-		return nil, "", err
-	}
-	hash := sha256.Sum256([]byte(token))
 	worker := &model.Worker{
 		ID:                 workerID,
 		TenantID:           project.TenantID,
 		ProjectID:          project.ID,
 		ProviderInstanceID: provider.ID,
 		Identity:           fmt.Sprintf("%s/%s/%d", provider.ID, workerID, ordinal),
-		ResourceLifecycle:  model.NewResourceLifecycle(model.WorkerCreateOperation, nil),
 	}
+	return store.CreateWorker(ctx, worker)
+}
+
+func CreateWorkerBootstrap(ctx context.Context, store WorkerBootstrapStore, project *model.Project, worker *model.Worker) (string, error) {
+	if store == nil {
+		return "", fmt.Errorf("worker store is required")
+	}
+	if project == nil {
+		return "", fmt.Errorf("project is required")
+	}
+	if worker == nil {
+		return "", fmt.Errorf("worker is required")
+	}
+	token, err := randomWorkerToken()
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.Sum256([]byte(token))
 	bootstrapToken := &model.WorkerBootstrapToken{
 		TenantID:  project.TenantID,
-		WorkerID:  workerID,
+		WorkerID:  worker.ID,
 		TokenHash: hash[:],
 		ExpiresAt: time.Now().UTC().Add(defaultWorkerBootstrapTTL),
 	}
-	if err := store.CreateWorkerWithBootstrapToken(ctx, worker, bootstrapToken); err != nil {
-		return nil, "", err
+	if err := store.CreateWorkerBootstrapToken(ctx, bootstrapToken); err != nil {
+		return "", err
 	}
-	return worker, token, nil
+	return token, nil
 }
 
 func randomWorkerToken() (string, error) {

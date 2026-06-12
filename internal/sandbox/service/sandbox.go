@@ -24,17 +24,22 @@ type Service struct {
 	store            *store.Store
 	sandboxes        *jobs.SandboxSubmitter
 	sandboxProviders *sandbox.ProviderManager
+	providerStore    any
 	sandboxAuth      *sandboxauth.Manager
 	defaultUserID    string
 }
 
-func NewService(store *store.Store, sandboxes *jobs.SandboxSubmitter, manager *sandbox.ProviderManager, defaultUserID string) *Service {
-	return &Service{
+func NewService(store *store.Store, sandboxes *jobs.SandboxSubmitter, manager *sandbox.ProviderManager, defaultUserID string, providerStore ...any) *Service {
+	svc := &Service{
 		store:            store,
 		sandboxes:        sandboxes,
 		sandboxProviders: manager,
 		defaultUserID:    defaultUserID,
 	}
+	if len(providerStore) > 0 {
+		svc.providerStore = providerStore[0]
+	}
+	return svc
 }
 
 func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
@@ -209,6 +214,14 @@ func (s *Service) NewSandboxReconciler() *sandbox.SandboxReconciler {
 		s.store,
 		sandbox.WithSandboxProviderManager(s.sandboxProviders),
 		sandbox.WithSandboxAuthenticator(s.sandboxAuth),
+	)
+}
+
+// NewWorkerReconciler returns a provider-manager-backed worker reconciler.
+func (s *Service) NewWorkerReconciler() *sandbox.WorkerReconciler {
+	return sandbox.NewWorkerReconciler(
+		s.store,
+		sandbox.WithWorkerProviderManager(s.sandboxProviders),
 	)
 }
 

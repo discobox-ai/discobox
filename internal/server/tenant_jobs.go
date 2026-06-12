@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/obot-platform/discobox/internal/sandbox/jobs"
 	"github.com/obot-platform/discobox/internal/service"
@@ -60,8 +61,18 @@ func (m *tenantJobManager) EnsureStarted(ctx context.Context) error {
 	if err := dispatcher.Register(jobs.NewSandboxReconcileExecutor(sandboxReconciler), orchestration.WithConcurrency(m.opts.SandboxReconcileJobConcurrency)); err != nil {
 		return err
 	}
+	workerReconciler := m.svc.NewWorkerReconciler()
+	if err := dispatcher.Register(jobs.NewWorkerReconcileExecutor(workerReconciler), orchestration.WithConcurrency(m.opts.SandboxReconcileJobConcurrency)); err != nil {
+		return err
+	}
 	dispatcherCtx := tenantctx.WithTenantID(m.rootCtx, tenantID)
 	if err := dispatcher.Start(dispatcherCtx); err != nil {
+		return err
+	}
+	if err := m.svc.EnsureExistingSandboxProviderInstances(dispatcherCtx); err != nil {
+		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(dispatcherCtx), 10*time.Second)
+		defer cancel()
+		_ = dispatcher.DrainAndStop(stopCtx)
 		return err
 	}
 	m.dispatchers[tenantID] = dispatcher

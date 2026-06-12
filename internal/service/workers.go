@@ -51,13 +51,6 @@ func (s *Service) UpdateWorkerStatus(ctx context.Context, authorization string, 
 	if err != nil {
 		return nil, apiError(err, "worker not found")
 	}
-	if worker.ProviderInstanceID != "" {
-		if project, projectErr := s.store.GetProject(ctx, worker.ProjectID); projectErr == nil {
-			if provider, providerErr := s.store.GetSandboxProviderInstance(ctx, worker.ProjectID, worker.ProviderInstanceID); providerErr == nil {
-				_ = s.ensureSandboxProviderInstance(ctx, project, provider)
-			}
-		}
-	}
 	return worker, nil
 }
 

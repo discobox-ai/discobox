@@ -13,6 +13,16 @@ import (
 	"github.com/obot-platform/discobox/internal/workeragent"
 )
 
+const (
+	defaultWorkerCapacityWaitTimeout  = 30 * time.Second
+	defaultWorkerCapacityPollInterval = time.Second
+)
+
+var (
+	workerCapacityWaitTimeout  = defaultWorkerCapacityWaitTimeout
+	workerCapacityPollInterval = defaultWorkerCapacityPollInterval
+)
+
 // WorkerProvider is a VM-backed sandbox provider with a warm worker pool.
 //
 // The embedded Provider owns VM runtime mechanics. WorkerProvider owns the
@@ -24,12 +34,17 @@ type WorkerProvider struct {
 	store      WorkerStore
 }
 
+type ProviderInstanceStore interface {
+	GetProject(ctx context.Context, projectID string) (*model.Project, error)
+	GetSandboxProviderInstance(ctx context.Context, projectID, providerID string) (*model.SandboxProviderInstance, error)
+}
+
 func NewWorkerProvider(provider *Provider, poolConfig WorkerPoolConfig, launch WorkerLauncher, store WorkerStore) *WorkerProvider {
 	return &WorkerProvider{Provider: provider, poolConfig: poolConfig, launch: launch, store: store}
 }
 
 func (p *WorkerProvider) EnsureWorkerPool(ctx context.Context, store WorkerStore, project *model.Project, provider *model.SandboxProviderInstance) error {
-	return EnsureWorkerPool(ctx, store, project, provider, p.poolConfig, p.launch)
+	return EnsureWorkerPool(ctx, store, project, provider, p.poolConfig)
 }
 
 func (p *WorkerProvider) EnsureProviderInstance(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance) error {
@@ -38,6 +53,25 @@ func (p *WorkerProvider) EnsureProviderInstance(ctx context.Context, store any, 
 		return fmt.Errorf("worker store is required")
 	}
 	return p.EnsureWorkerPool(ctx, workerStore, project, provider)
+}
+
+type WorkerBootstrapTokenStore interface {
+	CreateWorkerBootstrapToken(ctx context.Context, token *model.WorkerBootstrapToken) error
+}
+
+func (p *WorkerProvider) ReconcileWorker(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error {
+	bootstrapStore, ok := store.(WorkerBootstrapTokenStore)
+	if !ok {
+		return fmt.Errorf("worker bootstrap token store is required")
+	}
+	if p.launch == nil {
+		return fmt.Errorf("worker launcher is required")
+	}
+	token, err := CreateWorkerBootstrap(ctx, bootstrapStore, project, worker)
+	if err != nil {
+		return err
+	}
+	return p.launch(ctx, project, provider, worker, token)
 }
 
 func (p *WorkerProvider) Create(ctx context.Context, ref sandbox.SandboxRef, _ []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {
@@ -55,11 +89,8 @@ func (p *WorkerProvider) Create(ctx context.Context, ref sandbox.SandboxRef, _ [
 	if providerInstanceID != "" {
 		sb.ProviderInstanceID = &providerInstanceID
 	}
-	worker, err := p.store.ClaimWorker(ctx, sb)
+	worker, err := p.findSchedulableWorker(ctx, sb)
 	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil, nil, sandbox.ErrNoSandboxCapacity
-		}
 		return nil, nil, err
 	}
 	runtimeSandbox := workerRuntimeSandbox(ref.SandboxID, worker)
@@ -68,6 +99,64 @@ func (p *WorkerProvider) Create(ctx context.Context, ref sandbox.SandboxRef, _ [
 		return nil, nil, err
 	}
 	return runtimeSandbox, state, nil
+}
+
+func (p *WorkerProvider) findSchedulableWorker(ctx context.Context, sb *model.Sandbox) (*model.Worker, error) {
+	worker, err := p.store.FindSchedulableWorker(ctx, sb)
+	if err == nil {
+		return worker, nil
+	}
+	if !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+	if err := p.ensureWorkerCapacity(ctx, sb); err != nil {
+		return nil, err
+	}
+	return p.waitForSchedulableWorker(ctx, sb)
+}
+
+func (p *WorkerProvider) ensureWorkerCapacity(ctx context.Context, sb *model.Sandbox) error {
+	if sb == nil || sb.ProviderInstanceID == nil || *sb.ProviderInstanceID == "" {
+		return sandbox.ErrNoSandboxCapacity
+	}
+	providerStore, ok := p.store.(ProviderInstanceStore)
+	if !ok {
+		return sandbox.ErrNoSandboxCapacity
+	}
+	project, err := providerStore.GetProject(ctx, sb.ProjectID)
+	if err != nil {
+		return err
+	}
+	provider, err := providerStore.GetSandboxProviderInstance(ctx, sb.ProjectID, *sb.ProviderInstanceID)
+	if err != nil {
+		return err
+	}
+	return p.EnsureWorkerPool(ctx, p.store, project, provider)
+}
+
+func (p *WorkerProvider) waitForSchedulableWorker(ctx context.Context, sb *model.Sandbox) (*model.Worker, error) {
+	deadline := time.Now().Add(workerCapacityWaitTimeout)
+	for {
+		worker, err := p.store.FindSchedulableWorker(ctx, sb)
+		if err == nil {
+			return worker, nil
+		}
+		if !errors.Is(err, store.ErrNotFound) {
+			return nil, err
+		}
+		if workerCapacityWaitTimeout <= 0 || !time.Now().Before(deadline) {
+			return nil, sandbox.ErrNoSandboxCapacity
+		}
+		timer := time.NewTimer(workerCapacityPollInterval)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func (p *WorkerProvider) Start(_ context.Context, ref sandbox.SandboxRef, state []byte) (*sandbox.Sandbox, []byte, error) {

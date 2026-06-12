@@ -11,6 +11,18 @@ import (
 	"github.com/obot-platform/discobox/internal/model"
 )
 
+type WorkerGetOption func(*workerGetOptions)
+
+type workerGetOptions struct {
+	generation *int64
+}
+
+func WithWorkerGeneration(generation int64) WorkerGetOption {
+	return func(opts *workerGetOptions) {
+		opts.generation = &generation
+	}
+}
+
 func (s *Store) ListSandboxProviderInstances(ctx context.Context, projectID string) ([]model.SandboxProviderInstance, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
@@ -70,6 +82,24 @@ func (s *Store) DeleteSandboxProviderInstance(ctx context.Context, projectID, pr
 	return nil
 }
 
+func (s *Store) CreateWorker(ctx context.Context, worker *model.Worker) error {
+	_, err := withResourceEvent(ctx, s, model.EventActionCreated, func(tx *gorm.DB) (*model.Worker, error) {
+		if err := tx.Create(worker).Error; err != nil {
+			return nil, err
+		}
+		return worker, nil
+	})
+	return err
+}
+
+func (s *Store) CreateWorkerBootstrapToken(ctx context.Context, token *model.WorkerBootstrapToken) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	return write.Create(token).Error
+}
+
 func (s *Store) CreateWorkerWithBootstrapToken(ctx context.Context, worker *model.Worker, token *model.WorkerBootstrapToken) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
@@ -97,16 +127,61 @@ func (s *Store) ListWorkers(ctx context.Context, projectID, providerID string) (
 	return workers, err
 }
 
-func (s *Store) GetWorker(ctx context.Context, workerID string) (*model.Worker, error) {
+func (s *Store) GetWorker(ctx context.Context, workerID string, options ...WorkerGetOption) (*model.Worker, error) {
+	var opts workerGetOptions
+	for _, option := range options {
+		if option != nil {
+			option(&opts)
+		}
+	}
+
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var worker model.Worker
-	if err := read.First(&worker, "id = ?", workerID).Error; err != nil {
+	query := read.Where("id = ?", workerID)
+	if opts.generation != nil {
+		query = query.Where("generation = ?", *opts.generation)
+	}
+	if err := query.First(&worker).Error; err != nil {
+		if opts.generation != nil && errors.Is(mapNotFound(err), ErrNotFound) {
+			return nil, ErrGenerationConflict
+		}
 		return nil, mapNotFound(err)
 	}
 	return &worker, nil
+}
+
+func (s *Store) UpdateWorker(ctx context.Context, worker *model.Worker, options ...WorkerGetOption) error {
+	var opts workerGetOptions
+	for _, option := range options {
+		if option != nil {
+			option(&opts)
+		}
+	}
+
+	_, err := withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.Worker, error) {
+		if opts.generation == nil {
+			if err := tx.Save(worker).Error; err != nil {
+				return nil, err
+			}
+			return worker, nil
+		}
+
+		result := tx.Model(&model.Worker{}).
+			Where("id = ? AND generation = ?", worker.ID, *opts.generation).
+			Select("*").
+			Updates(worker)
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil, ErrGenerationConflict
+		}
+		return worker, nil
+	})
+	return err
 }
 
 func (s *Store) RegisterWorker(ctx context.Context, tenantID, workerID string, tokenHash []byte, publicKey, keyType string, authTokenHash []byte, authExpiresAt time.Time) (*model.Worker, error) {
@@ -212,7 +287,7 @@ func (s *Store) UpdateWorkerStatus(ctx context.Context, tenantID, workerID strin
 	return &worker, nil
 }
 
-func (s *Store) ClaimWorker(ctx context.Context, sandbox *model.Sandbox) (*model.Worker, error) {
+func (s *Store) FindSchedulableWorker(ctx context.Context, sandbox *model.Sandbox) (*model.Worker, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err

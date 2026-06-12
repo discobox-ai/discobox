@@ -43,16 +43,16 @@ func TestWorkerRegisterStatusAndClaim(t *testing.T) {
 	if !updated.Degraded || updated.AvailableCPUVCPUs != 2 || updated.AvailableMemoryBytes != 4<<30 || updated.AvailableStorageBytes != 10<<30 || string(updated.Conditions) == "" {
 		t.Fatalf("updated worker = %#v", updated)
 	}
-	claimed, err := s.ClaimWorker(ctx, sandboxForClaim("project-1", "provider-1", 1, 1<<30, 1<<30))
+	claimed, err := s.FindSchedulableWorker(ctx, sandboxForClaim("project-1", "provider-1", 1, 1<<30, 1<<30))
 	if err != nil {
-		t.Fatalf("claim worker: %v", err)
+		t.Fatalf("find schedulable worker: %v", err)
 	}
 	if claimed.ID != worker.ID {
 		t.Fatalf("claimed %q, want %q", claimed.ID, worker.ID)
 	}
 }
 
-func TestClaimWorkerSamplesTwoAndPicksBestResourceFit(t *testing.T) {
+func TestFindSchedulableWorkerSamplesTwoAndPicksBestResourceFit(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 
@@ -71,16 +71,16 @@ func TestClaimWorkerSamplesTwoAndPicksBestResourceFit(t *testing.T) {
 		}
 	}
 
-	claimed, err := s.ClaimWorker(ctx, sandboxForClaim("project-1", provider.ID, 1, 1<<30, 5<<30))
+	claimed, err := s.FindSchedulableWorker(ctx, sandboxForClaim("project-1", provider.ID, 1, 1<<30, 5<<30))
 	if err != nil {
-		t.Fatalf("claim worker: %v", err)
+		t.Fatalf("find schedulable worker: %v", err)
 	}
 	if claimed.ID != "worker-high" {
-		t.Fatalf("claimed worker = %q, want worker-high", claimed.ID)
+		t.Fatalf("schedulable worker = %q, want worker-high", claimed.ID)
 	}
 }
 
-func TestClaimWorkerRequiresResourceFit(t *testing.T) {
+func TestFindSchedulableWorkerRequiresResourceFit(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 
@@ -105,9 +105,51 @@ func TestClaimWorkerRequiresResourceFit(t *testing.T) {
 		t.Fatalf("create worker: %v", err)
 	}
 
-	_, err := s.ClaimWorker(ctx, sandboxForClaim("project-1", provider.ID, 2, 1<<30, 1<<30))
+	_, err := s.FindSchedulableWorker(ctx, sandboxForClaim("project-1", provider.ID, 2, 1<<30, 1<<30))
 	if !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("claim worker error = %v, want ErrNotFound", err)
+		t.Fatalf("find schedulable worker error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestWorkerGenerationOptions(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	provider := &model.SandboxProviderInstance{ID: "provider-generation", ProjectID: "project-1", Type: "digitalocean", Name: "do"}
+	if err := s.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	worker := &model.Worker{
+		ID:                 "worker-generation",
+		TenantID:           "tenant-1",
+		ProjectID:          "project-1",
+		ProviderInstanceID: provider.ID,
+		Identity:           "worker-generation",
+	}
+	if err := s.CreateWorker(ctx, worker); err != nil {
+		t.Fatalf("create worker: %v", err)
+	}
+
+	got, err := s.GetWorker(ctx, worker.ID, store.WithWorkerGeneration(worker.Generation))
+	if err != nil {
+		t.Fatalf("get matching generation: %v", err)
+	}
+	if got.ID != worker.ID {
+		t.Fatalf("worker id = %q, want %q", got.ID, worker.ID)
+	}
+
+	if _, err := s.GetWorker(ctx, worker.ID, store.WithWorkerGeneration(worker.Generation+1)); !errors.Is(err, store.ErrGenerationConflict) {
+		t.Fatalf("get stale generation error = %v, want ErrGenerationConflict", err)
+	}
+
+	worker.Identity = "worker-generation-renamed"
+	if err := s.UpdateWorker(ctx, worker, store.WithWorkerGeneration(worker.Generation)); err != nil {
+		t.Fatalf("update matching generation: %v", err)
+	}
+
+	worker.Identity = "worker-generation-stale"
+	if err := s.UpdateWorker(ctx, worker, store.WithWorkerGeneration(worker.Generation+1)); !errors.Is(err, store.ErrGenerationConflict) {
+		t.Fatalf("update stale generation error = %v, want ErrGenerationConflict", err)
 	}
 }
 
