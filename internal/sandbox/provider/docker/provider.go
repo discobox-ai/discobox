@@ -42,11 +42,8 @@ func Decode(data json.RawMessage) (Config, error) {
 }
 
 func Validate(data json.RawMessage) error {
-	cfg, err := Decode(data)
-	if err != nil {
-		return err
-	}
-	return vmprovider.RequireControlPlaneURL(ProviderType, cfg.ControlPlaneURL)
+	_, err := Decode(data)
+	return err
 }
 
 func NewFromInstance(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {

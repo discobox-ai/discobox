@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"net/http"
+	"runtime"
 	"testing"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/obot-platform/discobox/internal/sandboxauth"
 	"github.com/obot-platform/discobox/internal/service"
 	"github.com/obot-platform/discobox/internal/store"
+	"github.com/obot-platform/discobox/orchestration"
 )
 
 func TestSandboxReconcilerDelegatesToProvider(t *testing.T) {
@@ -223,6 +225,65 @@ func TestCreateSandboxProviderInstanceAllowsMissingName(t *testing.T) {
 	}
 	if provider.Name != "" {
 		t.Fatalf("provider name = %q, want empty", provider.Name)
+	}
+}
+
+func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
+	ctx := context.Background()
+	appStore := newProviderCatalogTestStore(t)
+	svc := service.New(appStore, orchestration.QueueConfig{DefaultMaxAttempts: 3}, nil)
+
+	if err := svc.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID); err != nil {
+		t.Fatalf("initialize defaults: %v", err)
+	}
+	providers, err := svc.ListSandboxProviderInstances(ctx, service.DefaultProjectID)
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	if len(providers) != 1 {
+		t.Fatalf("providers len = %d, want 1", len(providers))
+	}
+	if providers[0].ID != service.DefaultProviderInstanceID || !providers[0].BuiltIn {
+		t.Fatalf("provider = %#v, want built-in default id", providers[0])
+	}
+	if runtime.GOOS == "linux" {
+		if providers[0].Type != "docker" || providers[0].Disabled {
+			t.Fatalf("linux provider = %#v, want enabled docker", providers[0])
+		}
+		if len(providers[0].Config) != 0 {
+			t.Fatalf("provider config = %s, want empty default config", providers[0].Config)
+		}
+	}
+	if _, err := appStore.GetServerState(ctx, "defaults.default_sandbox_provider.installed"); err != nil {
+		t.Fatalf("get install state: %v", err)
+	}
+
+	if err := svc.DeleteSandboxProviderInstance(ctx, service.DefaultProjectID, service.DefaultProviderInstanceID); err != nil {
+		t.Fatalf("delete provider: %v", err)
+	}
+	if err := svc.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID); err != nil {
+		t.Fatalf("initialize defaults after provider delete: %v", err)
+	}
+	providers, err = svc.ListSandboxProviderInstances(ctx, service.DefaultProjectID)
+	if err != nil {
+		t.Fatalf("list providers after delete: %v", err)
+	}
+	if len(providers) != 0 {
+		t.Fatalf("providers len after delete = %d, want 0", len(providers))
+	}
+
+	if err := appStore.DeleteServerState(ctx, "defaults.default_sandbox_provider.installed"); err != nil {
+		t.Fatalf("delete install state: %v", err)
+	}
+	if err := svc.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID); err != nil {
+		t.Fatalf("initialize defaults after state clear: %v", err)
+	}
+	providers, err = svc.ListSandboxProviderInstances(ctx, service.DefaultProjectID)
+	if err != nil {
+		t.Fatalf("list providers after state clear: %v", err)
+	}
+	if len(providers) != 1 || providers[0].ID != service.DefaultProviderInstanceID {
+		t.Fatalf("providers after state clear = %#v, want recreated default", providers)
 	}
 }
 

@@ -104,7 +104,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 		t.Fatalf("register executor: %v", err)
 	}
 
-	if err := svc.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID); err != nil {
+	if err := svc.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
 	if err := dispatcher.Start(ctx); err != nil {
@@ -191,7 +191,7 @@ func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sand
 		notifyContext = func(context.Context) { notify() }
 	}
 	svc := service.New(appStore, queueConfig, notifyContext, broker)
-	if err := svc.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID); err != nil {
+	if err := svc.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
 	return svc, svc.NewSandboxReconciler()

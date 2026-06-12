@@ -96,7 +96,6 @@ func NewDatabaseRouter(ctx context.Context, resolver *database.Resolver, options
 	if opts.TenantID == "" {
 		opts.TenantID = service.DefaultTenantID
 	}
-
 	broker := events.NewBroker()
 	appStore := store.New(resolver, store.WithPublisher(broker), store.WithSealer(opts.SecretSealer), store.WithDefaultTenantID(opts.TenantID))
 	queueConfig := orchestration.QueueConfig{

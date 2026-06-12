@@ -2,6 +2,9 @@ package docker
 
 import (
 	"testing"
+
+	"github.com/obot-platform/discobox/internal/sandbox/vm"
+	"github.com/obot-platform/discobox/internal/workeragent"
 )
 
 func TestDefinitionIncludesSystemdConfig(t *testing.T) {
@@ -10,13 +13,24 @@ func TestDefinitionIncludesSystemdConfig(t *testing.T) {
 		t.Fatalf("name = %q", def.Name)
 	}
 	keys := map[string]bool{}
+	var controlPlaneRequired, controlPlaneAdvanced bool
 	for _, field := range def.ConfigFields {
 		keys[field.Key] = true
+		if field.Key == "controlPlaneUrl" {
+			controlPlaneRequired = field.Required
+			controlPlaneAdvanced = field.Advanced
+		}
 	}
 	for _, key := range []string{"controlPlaneUrl", "image", "systemd", "privileged", "poolSize"} {
 		if !keys[key] {
 			t.Fatalf("definition missing config key %q", key)
 		}
+	}
+	if controlPlaneRequired {
+		t.Fatalf("controlPlaneUrl is required, want optional")
+	}
+	if !controlPlaneAdvanced {
+		t.Fatalf("controlPlaneUrl advanced = false, want true")
 	}
 }
 
@@ -54,5 +68,29 @@ func TestNewDriverWithClientHonorsPrivilegedOverride(t *testing.T) {
 	d := NewDriverWithClient(nil, Config{Systemd: true, Privileged: &privileged})
 	if d.privileged {
 		t.Fatalf("privileged override ignored")
+	}
+}
+
+func TestContainerBootConfigDerivesControlPlaneURL(t *testing.T) {
+	t.Setenv("PORT", "9090")
+	d := NewDriverWithClient(nil, Config{})
+	boot := d.containerBootConfig(vm.BootConfig{Env: map[string]string{
+		workeragent.EnvTenantID: "tenant-1",
+	}})
+	if got := boot.Env[workeragent.EnvControlPlaneURL]; got != "http://host.docker.internal:9090" {
+		t.Fatalf("control plane url = %q", got)
+	}
+	if got := boot.Env[workeragent.EnvTenantID]; got != "tenant-1" {
+		t.Fatalf("tenant ID = %q", got)
+	}
+}
+
+func TestContainerBootConfigPreservesConfiguredControlPlaneURL(t *testing.T) {
+	d := NewDriverWithClient(nil, Config{})
+	boot := d.containerBootConfig(vm.BootConfig{Env: map[string]string{
+		workeragent.EnvControlPlaneURL: "http://control.example",
+	}})
+	if got := boot.Env[workeragent.EnvControlPlaneURL]; got != "http://control.example" {
+		t.Fatalf("control plane url = %q", got)
 	}
 }

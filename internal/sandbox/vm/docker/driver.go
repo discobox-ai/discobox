@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -26,12 +27,15 @@ import (
 
 	"github.com/obot-platform/discobox/internal/sandbox"
 	"github.com/obot-platform/discobox/internal/sandbox/vm"
+	"github.com/obot-platform/discobox/internal/workeragent"
 )
 
 const (
 	ProviderType      = "docker"
 	defaultImage      = "ghcr.io/obot-platform/discobox-systemd:latest"
 	defaultAgentPort  = 3002
+	defaultServerPort = "8080"
+	dockerHostGateway = "host.docker.internal"
 	labelManaged      = "discobox.vm.managed"
 	labelInstanceID   = "discobox.vm.instance_id"
 	labelProjectID    = "discobox.project_id"
@@ -78,7 +82,7 @@ func Definition() sandbox.ProviderDefinition {
 		Icon:        "docker",
 		Description: "Runs VM-style warm workers as Docker containers, optionally with systemd as PID 1.",
 		ConfigFields: []sandbox.ProviderConfigField{
-			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Required: true, Placeholder: "http://host.docker.internal:8080"},
+			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: "http://host.docker.internal:8080", Advanced: true},
 			{Key: "host", Label: "Docker Host", Type: "string", Advanced: true},
 			{Key: "image", Label: "Image", Type: "string", Placeholder: defaultImage},
 			{Key: "network", Label: "Docker Network", Type: "string", Advanced: true},
@@ -224,10 +228,12 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 		return nil, fmt.Errorf("invalid agent port %d", d.agentPort)
 	}
 	labels := d.containerLabels(spec)
+	derivedControlPlaneURL := strings.TrimSpace(spec.Boot.Env[workeragent.EnvControlPlaneURL]) == ""
+	boot := d.containerBootConfig(spec.Boot)
 	config := &container.Config{
 		Image:        image,
 		Labels:       labels,
-		Env:          envList(spec.Boot.Env),
+		Env:          envList(boot.Env),
 		Cmd:          d.command,
 		ExposedPorts: network.PortSet{exposedPort: struct{}{}},
 	}
@@ -236,6 +242,9 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 		PortBindings: network.PortMap{
 			exposedPort: []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1")}},
 		},
+	}
+	if derivedControlPlaneURL && controlPlaneURLUsesHostGateway(boot.Env[workeragent.EnvControlPlaneURL]) {
+		hostConfig.ExtraHosts = append(hostConfig.ExtraHosts, dockerHostGateway+":host-gateway")
 	}
 	if d.cgroupNSMode != "" {
 		hostConfig.CgroupnsMode = container.CgroupnsMode(d.cgroupNSMode)
@@ -266,6 +275,31 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 		return nil, err
 	}
 	return d.instanceFromInspect(inspect.Container), nil
+}
+
+func (d *Driver) containerBootConfig(boot vm.BootConfig) vm.BootConfig {
+	if strings.TrimSpace(boot.Env[workeragent.EnvControlPlaneURL]) != "" {
+		return boot
+	}
+	env := make(map[string]string, len(boot.Env)+1)
+	for key, value := range boot.Env {
+		env[key] = value
+	}
+	env[workeragent.EnvControlPlaneURL] = defaultDockerControlPlaneURL()
+	boot.Env = env
+	return boot
+}
+
+func defaultDockerControlPlaneURL() string {
+	port := strings.TrimSpace(os.Getenv("PORT"))
+	if port == "" {
+		port = defaultServerPort
+	}
+	return "http://" + dockerHostGateway + ":" + port
+}
+
+func controlPlaneURLUsesHostGateway(value string) bool {
+	return strings.Contains(value, "://"+dockerHostGateway) || strings.HasPrefix(value, dockerHostGateway+":")
 }
 
 func (d *Driver) StartVM(ctx context.Context, id string) (*vm.Instance, error) {

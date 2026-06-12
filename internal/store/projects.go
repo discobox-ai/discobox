@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 
 	"github.com/obot-platform/discobox/internal/model"
 )
@@ -20,6 +21,23 @@ func (s *Store) UpsertProject(ctx context.Context, project *model.Project) error
 		return err
 	}
 	return write.Save(project).Error
+}
+
+func (s *Store) CreateProjectIfNotExists(ctx context.Context, project *model.Project) (*model.Project, error) {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out model.Project
+	if err := write.First(&out, "id = ?", project.ID).Error; err == nil {
+		return &out, nil
+	} else if !errors.Is(mapNotFound(err), ErrNotFound) {
+		return nil, err
+	}
+	if err := write.Create(project).Error; err != nil {
+		return nil, err
+	}
+	return project, nil
 }
 
 func (s *Store) ListProjects(ctx context.Context) ([]model.Project, error) {
