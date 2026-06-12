@@ -78,6 +78,7 @@ type WorkerProviderConfig struct {
 	AgentPort       int
 	WorkerPool      vm.WorkerPoolConfig
 	WorkerStore     vm.WorkerStore
+	EnsureWorkers   bool
 }
 
 func NewWorkerProvider(ctx context.Context, cfg WorkerProviderConfig, newProvider NewProviderFunc) (sandbox.Provider, error) {
@@ -89,7 +90,7 @@ func NewWorkerProvider(ctx context.Context, cfg WorkerProviderConfig, newProvide
 	if err != nil {
 		return nil, err
 	}
-	return vm.NewWorkerProvider(provider, cfg.WorkerPool, func(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string) error {
+	workerProvider := vm.NewWorkerProvider(provider, cfg.WorkerPool, func(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string) error {
 		return vm.LaunchWorker(ctx, project, provider, worker, token, vm.LaunchWorkerConfig{
 			ControlPlaneURL: cfg.ControlPlaneURL,
 			DefaultImage:    cfg.DefaultImage,
@@ -98,5 +99,9 @@ func NewWorkerProvider(ctx context.Context, cfg WorkerProviderConfig, newProvide
 				return newProvider(ctx, vmCfg)
 			},
 		})
-	}, cfg.WorkerStore), nil
+	}, cfg.WorkerStore)
+	if cfg.EnsureWorkers {
+		workerProvider.EnsureRunningWorkers()
+	}
+	return workerProvider, nil
 }

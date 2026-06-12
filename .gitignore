@@ -1,5 +1,6 @@
 build/
 build-errors.log
+.tmp/
 .direnv/
 .env
 .env.*

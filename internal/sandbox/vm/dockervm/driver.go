@@ -194,6 +194,22 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 	}
 	name := containerName(spec.Name)
 	if existing, err := d.client.ContainerInspect(ctx, name, client.ContainerInspectOptions{}); err == nil {
+		image := strings.TrimSpace(spec.Image)
+		if image == "" {
+			image = d.image
+		}
+		if existing.Container.Config != nil && existing.Container.Config.Image != image {
+			if _, err := d.client.ContainerRemove(ctx, existing.Container.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
+				return nil, err
+			}
+		} else {
+			return d.instanceFromInspect(existing.Container), nil
+		}
+	} else if !cerrdefs.IsNotFound(err) {
+		return nil, err
+	}
+
+	if existing, err := d.client.ContainerInspect(ctx, name, client.ContainerInspectOptions{}); err == nil {
 		return d.instanceFromInspect(existing.Container), nil
 	} else if !cerrdefs.IsNotFound(err) {
 		return nil, err

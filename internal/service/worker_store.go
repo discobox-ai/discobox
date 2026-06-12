@@ -33,6 +33,10 @@ func (s *workerStore) CreateWorker(ctx context.Context, worker *model.Worker) (*
 	return s.workers.Create(ctx, worker)
 }
 
+func (s *workerStore) CreateWorkerBootstrapToken(ctx context.Context, token *model.WorkerBootstrapToken) error {
+	return s.store.CreateWorkerBootstrapToken(ctx, token)
+}
+
 func (s *workerStore) FindSchedulableWorker(ctx context.Context, sandbox *model.Sandbox) (*model.Worker, error) {
 	return s.store.FindSchedulableWorker(ctx, sandbox)
 }

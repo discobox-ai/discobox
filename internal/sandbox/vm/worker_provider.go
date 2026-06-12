@@ -29,9 +29,10 @@ var (
 // Disco worker-pool behavior that only applies to VM/worker-backed providers.
 type WorkerProvider struct {
 	*Provider
-	poolConfig WorkerPoolConfig
-	launch     WorkerLauncher
-	store      WorkerStore
+	poolConfig           WorkerPoolConfig
+	launch               WorkerLauncher
+	store                WorkerStore
+	ensureRunningWorkers bool
 }
 
 type ProviderInstanceStore interface {
@@ -44,7 +45,13 @@ func NewWorkerProvider(provider *Provider, poolConfig WorkerPoolConfig, launch W
 }
 
 func (p *WorkerProvider) EnsureWorkerPool(ctx context.Context, store WorkerStore, project *model.Project, provider *model.SandboxProviderInstance) error {
-	return EnsureWorkerPool(ctx, store, project, provider, p.poolConfig)
+	if err := EnsureWorkerPool(ctx, store, project, provider, p.poolConfig); err != nil {
+		return err
+	}
+	if !p.ensureRunningWorkers {
+		return nil
+	}
+	return p.ensureActiveWorkers(ctx, store, project, provider)
 }
 
 func (p *WorkerProvider) EnsureProviderInstance(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance) error {
@@ -72,6 +79,33 @@ func (p *WorkerProvider) ReconcileWorker(ctx context.Context, store any, project
 		return err
 	}
 	return p.launch(ctx, project, provider, worker, token)
+}
+
+func (p *WorkerProvider) EnsureRunningWorkers() {
+	p.ensureRunningWorkers = true
+}
+
+func (p *WorkerProvider) ensureActiveWorkers(ctx context.Context, store WorkerStore, project *model.Project, provider *model.SandboxProviderInstance) error {
+	workers, err := store.ListWorkers(ctx, provider.ProjectID, provider.ID)
+	if err != nil {
+		return err
+	}
+	for i := range workers {
+		worker := &workers[i]
+		if !reconciledActiveWorker(worker) {
+			continue
+		}
+		if err := p.ReconcileWorker(ctx, store, project, provider, worker); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func reconciledActiveWorker(worker *model.Worker) bool {
+	return activeWorker(worker) &&
+		worker.ObservedGeneration == worker.Generation &&
+		worker.LastOperationStatus == model.OperationStatusSuccess
 }
 
 func (p *WorkerProvider) Create(ctx context.Context, ref sandbox.SandboxRef, _ []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {

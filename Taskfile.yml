@@ -54,9 +54,22 @@ tasks:
       - ./{{.BINARY}}
 
   dev:
-    desc: Run discobot-server with Air hot reload
+    desc: Run discobot-server with Air hot reload and worker-agent image rebuilds
     cmds:
-      - go tool air
+      - |
+        bash -c '
+        set -euo pipefail
+        go run ./cmd/discobox-worker-agent-watch &
+        watch_pid=$!
+        cleanup() { kill "$watch_pid" 2>/dev/null || true; }
+        trap cleanup EXIT INT TERM
+        go tool air
+        '
+
+  dev:worker-agent-image-watch:
+    desc: Rebuild the Docker VM worker-agent image when its Docker inputs change
+    cmds:
+      - go run ./cmd/discobox-worker-agent-watch
 
   test:
     desc: Run root module tests

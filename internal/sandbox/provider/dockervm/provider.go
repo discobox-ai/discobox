@@ -3,6 +3,8 @@ package dockervm
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"strings"
 
 	"github.com/obot-platform/discobox/internal/model"
 	"github.com/obot-platform/discobox/internal/sandbox"
@@ -56,15 +58,24 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 	if err != nil {
 		return nil, err
 	}
+	cfg.Image = configuredWorkerImage(cfg.Image)
 	return vmprovider.NewWorkerProvider(ctx, vmprovider.WorkerProviderConfig{
 		ControlPlaneURL: cfg.ControlPlaneURL,
 		DefaultImage:    cfg.Image,
 		AgentPort:       cfg.AgentPort,
 		WorkerPool:      cfg.WorkerPoolConfig(),
 		WorkerStore:     workerStore,
+		EnsureWorkers:   true,
 	}, func(ctx context.Context, vmConfig vm.Config) (*vm.Provider, error) {
 		return newProvider(ctx, cfg, vmConfig)
 	})
+}
+
+func configuredWorkerImage(image string) string {
+	if value := strings.TrimSpace(os.Getenv("DISCOBOX_DOCKER_VM_WORKER_IMAGE")); value != "" {
+		return value
+	}
+	return image
 }
 
 func newProvider(ctx context.Context, cfg Config, vmConfig vm.Config) (*vm.Provider, error) {
