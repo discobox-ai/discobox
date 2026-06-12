@@ -58,7 +58,7 @@ func TestNewDriverWithClientSystemdDefaults(t *testing.T) {
 	if !d.privileged {
 		t.Fatalf("privileged = false, want true for systemd")
 	}
-	if len(d.command) != 1 || d.command[0] != "/sbin/init" {
+	if len(d.command) != 1 || d.command[0] != "/usr/local/bin/discobox-worker-agent" {
 		t.Fatalf("command = %#v", d.command)
 	}
 }
@@ -92,5 +92,23 @@ func TestContainerBootConfigPreservesConfiguredControlPlaneURL(t *testing.T) {
 	}})
 	if got := boot.Env[workeragent.EnvControlPlaneURL]; got != "http://control.example" {
 		t.Fatalf("control plane url = %q", got)
+	}
+}
+
+func TestContainerNameUsesWorkerID(t *testing.T) {
+	if got := containerName("worker:one", "sandbox:one"); got != "discobox-vm-worker-one" {
+		t.Fatalf("container name = %q", got)
+	}
+	if got := containerName("", "sandbox:one"); got != "discobox-vm-sandbox-one" {
+		t.Fatalf("fallback container name = %q", got)
+	}
+}
+
+func TestScopedVolumeNameUsesWorkerID(t *testing.T) {
+	if got := scopedVolumeName("worker:one", "docker"); got != "discobox-worker-worker-one-docker" {
+		t.Fatalf("volume name = %q", got)
+	}
+	if got := scopedVolumeName("", "discobox"); got != "discobox-worker-unknown-discobox" {
+		t.Fatalf("fallback volume name = %q", got)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"runtime"
 	"strconv"
 	"strings"
@@ -20,6 +21,14 @@ func RunCommand(ctx context.Context, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
+	systemd, err := startSystemdNamespace(ctx, logger)
+	if err != nil {
+		return err
+	}
+	stopReaper := startChildReaper(ctx, logger, managedChildProcesses(systemd))
+	defer stopReaper()
+	defer stopSystemd(systemd)
+
 	bootstrap := FromEnv()
 	registration, err := Run(ctx, Config{Bootstrap: bootstrap})
 	if err != nil {
@@ -52,6 +61,13 @@ func RunCommand(ctx context.Context, logger *slog.Logger) error {
 	logger.Info("worker marked ready", "workerID", bootstrap.WorkerID)
 
 	return Serve(ctx, logger, bootstrap, registration)
+}
+
+func stopSystemd(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	_ = cmd.Process.Signal(syscall.SIGTERM)
 }
 
 // Serve starts the worker-agent HTTP server.

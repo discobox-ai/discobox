@@ -20,6 +20,7 @@ RUN apt-get update \
         ca-certificates \
         curl \
         dbus \
+        docker.io \
         systemd \
         systemd-sysv \
     && apt-get clean \
@@ -33,26 +34,10 @@ RUN apt-get update \
 
 COPY --from=build /out/discobox-worker-agent /usr/local/bin/discobox-worker-agent
 
-RUN cat >/etc/systemd/system/discobox-worker-agent.service <<'EOF'
-[Unit]
-Description=Discobox worker agent
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-Environment=DISCOBOX_AGENT_PORT=3002
-PassEnvironment=DISCOBOX_CONTROL_PLANE_URL DISCOBOX_TENANT_ID DISCOBOX_PROJECT_ID DISCOBOX_SANDBOX_ID DISCOBOX_WORKER_ID DISCOBOX_WORKER_BOOTSTRAP_TOKEN DISCOBOX_AGENT_PORT
-ExecStart=/usr/local/bin/discobox-worker-agent
-Restart=always
-RestartSec=2s
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-RUN systemctl enable discobox-worker-agent.service
+RUN mkdir -p /var/lib/docker /var/lib/discobox \
+    && systemctl enable docker.service
 
 EXPOSE 3002
+VOLUME ["/var/lib/docker", "/var/lib/discobox"]
 STOPSIGNAL SIGRTMIN+3
-CMD ["/sbin/init"]
+ENTRYPOINT ["/usr/local/bin/discobox-worker-agent"]

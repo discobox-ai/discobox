@@ -261,7 +261,7 @@ func TestProviderCreateCommandConsumesDebugGlobalFlag(t *testing.T) {
 	if !strings.Contains(debugOutput, "> GET "+server.URL+"/providers/catalog") {
 		t.Fatalf("debug output = %q, want catalog request", debugOutput)
 	}
-	if !strings.Contains(debugOutput, "> POST "+server.URL+"/projects/00000000-0000-0000-0000-000000000002/providers") {
+	if !strings.Contains(debugOutput, "> POST "+server.URL+"/projects/default/providers") {
 		t.Fatalf("debug output = %q, want provider create request", debugOutput)
 	}
 }

@@ -41,6 +41,7 @@ const (
 	labelProjectID    = "discobox.project_id"
 	labelTenantID     = "discobox.tenant_id"
 	labelSandboxID    = "discobox.sandbox_id"
+	labelWorkerID     = "discobox.worker_id"
 	labelProviderType = "discobox.provider_type"
 )
 
@@ -149,7 +150,7 @@ func NewDriverWithClient(cli *client.Client, cfg Config) *Driver {
 	}
 	command := append([]string(nil), cfg.Command...)
 	if len(command) == 0 && systemd {
-		command = []string{"/sbin/init"}
+		command = []string{"/usr/local/bin/discobox-worker-agent"}
 	}
 	labels := make(map[string]string, len(cfg.Labels)+2)
 	for key, value := range cfg.Labels {
@@ -196,7 +197,9 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 	if d == nil || d.client == nil {
 		return nil, errors.New("docker client is required")
 	}
-	name := containerName(spec.Name)
+	boot := d.containerBootConfig(spec.Boot)
+	workerID := strings.TrimSpace(boot.Env[workeragent.EnvWorkerID])
+	name := containerName(workerID, spec.Name)
 	if existing, err := d.client.ContainerInspect(ctx, name, client.ContainerInspectOptions{}); err == nil {
 		image := strings.TrimSpace(spec.Image)
 		if image == "" {
@@ -229,7 +232,6 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 	}
 	labels := d.containerLabels(spec)
 	derivedControlPlaneURL := strings.TrimSpace(spec.Boot.Env[workeragent.EnvControlPlaneURL]) == ""
-	boot := d.containerBootConfig(spec.Boot)
 	config := &container.Config{
 		Image:        image,
 		Labels:       labels,
@@ -251,7 +253,11 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 	}
 	if d.systemd {
 		hostConfig.Tmpfs = map[string]string{"/run": "rw,noexec,nosuid,size=64m", "/run/lock": "rw,noexec,nosuid,size=64m", "/tmp": "rw,size=64m"}
-		hostConfig.Mounts = append(hostConfig.Mounts, mount.Mount{Type: mount.TypeBind, Source: "/sys/fs/cgroup", Target: "/sys/fs/cgroup", ReadOnly: false})
+		hostConfig.Mounts = append(hostConfig.Mounts,
+			mount.Mount{Type: mount.TypeBind, Source: "/sys/fs/cgroup", Target: "/sys/fs/cgroup", ReadOnly: false},
+			mount.Mount{Type: mount.TypeVolume, Source: scopedVolumeName(workerID, "docker"), Target: "/var/lib/docker"},
+			mount.Mount{Type: mount.TypeVolume, Source: scopedVolumeName(workerID, "discobox"), Target: "/var/lib/discobox"},
+		)
 	}
 	if spec.Resources.MemoryMB > 0 {
 		hostConfig.Memory = int64(spec.Resources.MemoryMB) * 1024 * 1024
@@ -369,6 +375,7 @@ func (d *Driver) containerLabels(spec vm.InstanceSpec) map[string]string {
 	labels[labelTenantID] = spec.Ref.TenantID
 	labels[labelProjectID] = spec.Ref.ProjectID
 	labels[labelSandboxID] = spec.Ref.SandboxID
+	labels[labelWorkerID] = strings.TrimSpace(spec.Boot.Env[workeragent.EnvWorkerID])
 	return labels
 }
 
@@ -437,13 +444,29 @@ func mapDockerNotFound(err error) error {
 
 var invalidContainerName = regexp.MustCompile(`[^a-zA-Z0-9_.-]+`)
 
-func containerName(name string) string {
+func containerName(workerID, name string) string {
+	if workerID != "" {
+		name = workerID
+	}
 	name = invalidContainerName.ReplaceAllString(name, "-")
 	name = strings.Trim(name, "-_.")
 	if name == "" {
 		name = "vm"
 	}
 	return "discobox-vm-" + name
+}
+
+func scopedVolumeName(workerID, suffix string) string {
+	name := workerID
+	if strings.TrimSpace(name) == "" {
+		name = "unknown"
+	}
+	name = invalidContainerName.ReplaceAllString(name, "-")
+	name = strings.Trim(name, "-_.")
+	if name == "" {
+		name = "unknown"
+	}
+	return "discobox-worker-" + name + "-" + suffix
 }
 
 func envList(values map[string]string) []string {

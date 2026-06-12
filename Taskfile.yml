@@ -59,6 +59,7 @@ tasks:
       - |
         bash -c '
         set -euo pipefail
+        touch .env
         go run ./cmd/discobox-worker-agent-watch &
         watch_pid=$!
         cleanup() { kill "$watch_pid" 2>/dev/null || true; }
