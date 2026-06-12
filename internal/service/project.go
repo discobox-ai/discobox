@@ -92,8 +92,13 @@ func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context) err
 			if !errors.Is(err, store.ErrNotFound) {
 				return err
 			}
-			if err := txStore.CreateSandboxProviderInstance(ctx, defaultProvider); err != nil {
-				return err
+			if err := txStore.RestoreSandboxProviderInstance(ctx, defaultProvider); err != nil {
+				if !errors.Is(err, store.ErrNotFound) {
+					return err
+				}
+				if err := txStore.CreateSandboxProviderInstance(ctx, defaultProvider); err != nil {
+					return err
+				}
 			}
 		}
 		if project.DefaultSandboxProviderID == "" {

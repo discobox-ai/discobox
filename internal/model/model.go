@@ -108,11 +108,12 @@ var (
 
 // Tenant is the top-level boundary for users, projects, and their resources.
 type Tenant struct {
-	ID        string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable tenant ID"`
-	Name      string    `gorm:"not null;type:text" json:"name" doc:"Tenant display name" maxLength:"200"`
-	Slug      string    `gorm:"uniqueIndex;not null;type:text" json:"slug" doc:"URL-safe tenant slug" pattern:"^[a-z0-9][a-z0-9-]*$"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	ID        string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable tenant ID"`
+	Name      string         `gorm:"not null;type:text" json:"name" doc:"Tenant display name" maxLength:"200"`
+	Slug      string         `gorm:"uniqueIndex;not null;type:text" json:"slug" doc:"URL-safe tenant slug" pattern:"^[a-z0-9][a-z0-9-]*$"`
+	CreatedAt time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
 	Users []User `gorm:"foreignKey:TenantID" json:"users,omitempty" doc:"Tenant users"`
 }
@@ -132,15 +133,16 @@ func (t *Tenant) BeforeCreate(_ *gorm.DB) error {
 
 // User represents an authenticated user.
 type User struct {
-	ID        string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable user ID"`
-	TenantID  string    `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID"`
-	Email     string    `gorm:"uniqueIndex;not null;type:text" json:"email" doc:"User email address" format:"email"`
-	Name      *string   `gorm:"type:text" json:"name,omitempty" doc:"Display name"`
-	AvatarURL *string   `gorm:"column:avatar_url;type:text" json:"avatarUrl,omitempty" doc:"Avatar image URL" format:"uri"`
-	Provider  string    `gorm:"not null;type:text;uniqueIndex:idx_user_provider_subject" json:"provider" doc:"Authentication provider"`
-	Subject   string    `gorm:"not null;type:text;uniqueIndex:idx_user_provider_subject" json:"subject" doc:"Provider subject identifier"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	ID        string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable user ID"`
+	TenantID  string         `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID"`
+	Email     string         `gorm:"uniqueIndex;not null;type:text" json:"email" doc:"User email address" format:"email"`
+	Name      *string        `gorm:"type:text" json:"name,omitempty" doc:"Display name"`
+	AvatarURL *string        `gorm:"column:avatar_url;type:text" json:"avatarUrl,omitempty" doc:"Avatar image URL" format:"uri"`
+	Provider  string         `gorm:"not null;type:text;uniqueIndex:idx_user_provider_subject" json:"provider" doc:"Authentication provider"`
+	Subject   string         `gorm:"not null;type:text;uniqueIndex:idx_user_provider_subject" json:"subject" doc:"Provider subject identifier"`
+	CreatedAt time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
 	Tenant *Tenant `gorm:"foreignKey:TenantID" json:"tenant,omitempty" doc:"Tenant"`
 }
@@ -160,15 +162,16 @@ func (u *User) BeforeCreate(_ *gorm.DB) error {
 
 // Project groups sandboxes and provider configuration.
 type Project struct {
-	ID                       string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable project ID"`
-	TenantID                 string    `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID"`
-	OwnerUserID              string    `gorm:"column:owner_user_id;not null;type:text;index" json:"ownerUserId" doc:"Owning user ID"`
-	Name                     string    `gorm:"not null;type:text" json:"name" doc:"Project display name" maxLength:"200"`
-	Slug                     string    `gorm:"uniqueIndex;not null;type:text" json:"slug" doc:"URL-safe project slug" pattern:"^[a-z0-9][a-z0-9-]*$"`
-	Default                  bool      `gorm:"column:default_project;not null;default:false;index" json:"default" doc:"Whether this is the user's/default tenant project"`
-	DefaultSandboxProviderID string    `gorm:"column:default_sandbox_provider_id;type:text;default:''" json:"defaultSandboxProviderId,omitempty" doc:"Default sandbox provider instance ID"`
-	CreatedAt                time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt                time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	ID                       string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable project ID"`
+	TenantID                 string         `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID"`
+	OwnerUserID              string         `gorm:"column:owner_user_id;not null;type:text;index" json:"ownerUserId" doc:"Owning user ID"`
+	Name                     string         `gorm:"not null;type:text" json:"name" doc:"Project display name" maxLength:"200"`
+	Slug                     string         `gorm:"uniqueIndex;not null;type:text" json:"slug" doc:"URL-safe project slug" pattern:"^[a-z0-9][a-z0-9-]*$"`
+	Default                  bool           `gorm:"column:default_project;not null;default:false;index" json:"default" doc:"Whether this is the user's/default tenant project"`
+	DefaultSandboxProviderID string         `gorm:"column:default_sandbox_provider_id;type:text;default:''" json:"defaultSandboxProviderId,omitempty" doc:"Default sandbox provider instance ID"`
+	CreatedAt                time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt                time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	DeletedAt                gorm.DeletedAt `gorm:"index" json:"-"`
 
 	Tenant                   *Tenant                   `gorm:"-" json:"tenant,omitempty" doc:"Tenant"`
 	Owner                    *User                     `gorm:"-" json:"owner,omitempty" doc:"Project owner"`
@@ -192,11 +195,12 @@ func (p *Project) BeforeCreate(_ *gorm.DB) error {
 
 // ProjectMember grants a user access to a project.
 type ProjectMember struct {
-	ProjectID string    `gorm:"column:project_id;primaryKey;type:text" json:"projectId" doc:"Project ID"`
-	UserID    string    `gorm:"column:user_id;primaryKey;type:text" json:"userId" doc:"User ID"`
-	Role      string    `gorm:"not null;type:text;default:'member'" json:"role" doc:"Project role"`
-	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	ProjectID string         `gorm:"column:project_id;primaryKey;type:text" json:"projectId" doc:"Project ID"`
+	UserID    string         `gorm:"column:user_id;primaryKey;type:text" json:"userId" doc:"User ID"`
+	Role      string         `gorm:"not null;type:text;default:'member'" json:"role" doc:"Project role"`
+	CreatedAt time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 	User    *User    `gorm:"-" json:"-"`
@@ -313,6 +317,7 @@ type SandboxProviderInstance struct {
 	Disabled        bool            `gorm:"column:disabled;not null;default:false" json:"disabled" doc:"Whether this provider is disabled"`
 	CreatedAt       time.Time       `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt       time.Time       `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	DeletedAt       gorm.DeletedAt  `gorm:"index" json:"-"`
 
 	Project   *Project  `gorm:"foreignKey:ProjectID" json:"-"`
 	Sandboxes []Sandbox `gorm:"foreignKey:ProviderInstanceID" json:"sandboxes,omitempty" doc:"Sandboxes using this provider"`

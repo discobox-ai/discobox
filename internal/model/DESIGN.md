@@ -41,6 +41,20 @@ only unique within one tenant. For project-scoped rows, `project_id` is a
 sufficient boundary because projects are tenant-scoped; for tenant-level rows,
 use `tenant_id`.
 
+## Deletes
+
+Mutable resource models use GORM's native soft-delete support by including a
+`gorm.DeletedAt` field tagged with `gorm:"index" json:"-"`. Normal GORM
+queries automatically exclude soft-deleted rows, while `Unscoped()` is reserved
+for explicit administrative, recovery, or purge paths.
+
+Do not add ad-hoc `deleted` booleans or nullable deletion timestamps for primary
+resources. Use `gorm.DeletedAt` so deletes flow through GORM's built-in
+`Delete` behavior and query scoping. Append-only/audit rows and operational
+state rows that intentionally rely on hard deletes, such as project events or
+server initialization state, should document that exception instead of adding
+soft-delete fields.
+
 ## Shared Lifecycle Shape
 
 Orchestrated resources embed `ResourceLifecycle`.
