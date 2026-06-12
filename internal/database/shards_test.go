@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/obot-platform/disco2/gormdb"
-	"github.com/obot-platform/disco2/internal/database"
+	"github.com/obot-platform/discobox/gormdb"
+	"github.com/obot-platform/discobox/internal/database"
 )
 
 func TestTenantSQLiteDSN(t *testing.T) {
@@ -18,27 +18,27 @@ func TestTenantSQLiteDSN(t *testing.T) {
 	}{
 		{
 			name:     "sqlite3 prefix",
-			baseDSN:  "sqlite3:///data/disco2.db",
+			baseDSN:  "sqlite3:///data/discobox.db",
 			tenantID: "tenant-1",
-			want:     "sqlite3:///data/disco2.tenant-1.db",
+			want:     "sqlite3:///data/discobox.tenant-1.db",
 		},
 		{
 			name:     "sqlite prefix",
-			baseDSN:  "sqlite:///data/disco2.sqlite",
+			baseDSN:  "sqlite:///data/discobox.sqlite",
 			tenantID: "tenant-1",
-			want:     "sqlite:///data/disco2.tenant-1.sqlite",
+			want:     "sqlite:///data/discobox.tenant-1.sqlite",
 		},
 		{
 			name:     "file prefix",
-			baseDSN:  "file:/data/disco2.db",
+			baseDSN:  "file:/data/discobox.db",
 			tenantID: "tenant-1",
-			want:     "file:/data/disco2.tenant-1.db",
+			want:     "file:/data/discobox.tenant-1.db",
 		},
 		{
 			name:     "raw path",
-			baseDSN:  "/data/disco2.db",
+			baseDSN:  "/data/discobox.db",
 			tenantID: "tenant-1",
-			want:     "/data/disco2.tenant-1.db",
+			want:     "/data/discobox.tenant-1.db",
 		},
 		{
 			name:     "memory unchanged",
@@ -59,7 +59,7 @@ func TestTenantSQLiteDSN(t *testing.T) {
 func TestResolverCreatesSQLiteDatabasePerTenant(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	baseDSN := "sqlite3://" + filepath.Join(dir, "disco2.db")
+	baseDSN := "sqlite3://" + filepath.Join(dir, "discobox.db")
 	resolver := database.NewResolver(database.ResolverConfig{
 		Config: database.Config{
 			Driver: gormdb.DriverSQLite,
@@ -87,7 +87,7 @@ func TestResolverCreatesSQLiteDatabasePerTenant(t *testing.T) {
 	if _, err := resolver.Resolve(ctx, "../bad"); err == nil {
 		t.Fatalf("resolve unsafe tenant ID succeeded")
 	}
-	for _, file := range []string{"disco2.tenant-1.db", "disco2.tenant-2.db"} {
+	for _, file := range []string{"discobox.tenant-1.db", "discobox.tenant-2.db"} {
 		if !fileExists(filepath.Join(dir, file)) {
 			t.Fatalf("expected tenant database %s to exist", file)
 		}
@@ -97,7 +97,7 @@ func TestResolverCreatesSQLiteDatabasePerTenant(t *testing.T) {
 func TestGlobalAndTenantSQLiteSchemasAreSeparated(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	baseDSN := "sqlite3://" + filepath.Join(dir, "disco2.db")
+	baseDSN := "sqlite3://" + filepath.Join(dir, "discobox.db")
 	resolver := database.NewResolver(database.ResolverConfig{
 		Config: database.Config{
 			Driver: gormdb.DriverSQLite,
@@ -148,7 +148,7 @@ func TestResolverCachesSQLiteTenantDatabase(t *testing.T) {
 	resolver := database.NewResolver(database.ResolverConfig{
 		Config: database.Config{
 			Driver: gormdb.DriverSQLite,
-			DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "disco2.db"),
+			DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
 		},
 	})
 	t.Cleanup(func() {

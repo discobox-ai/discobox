@@ -12,10 +12,10 @@ import (
 
 	"github.com/adrg/xdg"
 
-	"github.com/obot-platform/disco2/gormdb"
+	"github.com/obot-platform/discobox/gormdb"
 )
 
-const appName = "disco2"
+const appName = "discobox"
 
 // Config holds all configuration for discobot-server.
 type Config struct {
@@ -58,18 +58,18 @@ func Load() (*Config, error) {
 
 	cfg.Port = getEnvInt("PORT", 8080)
 
-	cfg.DataDir = getEnv("DISCO2_DATA_DIR", filepath.Join(xdg.DataHome, appName))
-	cfg.ConfigDir = getEnv("DISCO2_CONFIG_DIR", filepath.Join(xdg.ConfigHome, appName))
-	cfg.CacheDir = getEnv("DISCO2_CACHE_DIR", filepath.Join(xdg.CacheHome, appName))
-	cfg.StateDir = getEnv("DISCO2_STATE_DIR", filepath.Join(xdg.StateHome, appName))
-	cfg.TenantID = getEnv("DISCO2_TENANT_ID", "")
+	cfg.DataDir = getEnv("DISCOBOX_DATA_DIR", filepath.Join(xdg.DataHome, appName))
+	cfg.ConfigDir = getEnv("DISCOBOX_CONFIG_DIR", filepath.Join(xdg.ConfigHome, appName))
+	cfg.CacheDir = getEnv("DISCOBOX_CACHE_DIR", filepath.Join(xdg.CacheHome, appName))
+	cfg.StateDir = getEnv("DISCOBOX_STATE_DIR", filepath.Join(xdg.StateHome, appName))
+	cfg.TenantID = getEnv("DISCOBOX_TENANT_ID", "")
 
 	cfg.DatabaseDSN = getEnv("DATABASE_DSN", defaultDatabaseDSN(cfg.DataDir))
 	cfg.DatabaseReadDSN = getEnv("DATABASE_READ_DSN", "")
 	cfg.DatabaseDriver = getEnvDriver("DATABASE_DRIVER", gormdb.DetectDriver(cfg.DatabaseDSN))
 
 	cfg.JobMaxAttempts = getEnvInt("JOB_MAX_ATTEMPTS", 3)
-	cfg.EncryptionKey = getEnv("DISCO2_ENCRYPTION_KEY", "")
+	cfg.EncryptionKey = getEnv("DISCOBOX_ENCRYPTION_KEY", "")
 
 	cfg.DispatcherEnabled = getEnvBool("DISPATCHER_ENABLED", true)
 	cfg.DispatcherPollInterval = getEnvDuration("DISPATCHER_POLL_INTERVAL", time.Second)
@@ -83,16 +83,16 @@ func Load() (*Config, error) {
 		return nil, fmt.Errorf("PORT must be between 1 and 65535")
 	}
 	if cfg.DataDir == "" {
-		return nil, fmt.Errorf("DISCO2_DATA_DIR is required")
+		return nil, fmt.Errorf("DISCOBOX_DATA_DIR is required")
 	}
 	if cfg.ConfigDir == "" {
-		return nil, fmt.Errorf("DISCO2_CONFIG_DIR is required")
+		return nil, fmt.Errorf("DISCOBOX_CONFIG_DIR is required")
 	}
 	if cfg.CacheDir == "" {
-		return nil, fmt.Errorf("DISCO2_CACHE_DIR is required")
+		return nil, fmt.Errorf("DISCOBOX_CACHE_DIR is required")
 	}
 	if cfg.StateDir == "" {
-		return nil, fmt.Errorf("DISCO2_STATE_DIR is required")
+		return nil, fmt.Errorf("DISCOBOX_STATE_DIR is required")
 	}
 	if cfg.DatabaseDSN == "" {
 		return nil, fmt.Errorf("DATABASE_DSN is required")
@@ -125,7 +125,7 @@ func Load() (*Config, error) {
 }
 
 func defaultDatabaseDSN(dataDir string) string {
-	return "sqlite3://" + filepath.Join(dataDir, "disco2.db")
+	return "sqlite3://" + filepath.Join(dataDir, "discobox.db")
 }
 
 func getEnv(key, defaultValue string) string {

@@ -6,7 +6,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/obot-platform/disco2/internal/model"
+	"github.com/obot-platform/discobox/internal/model"
 )
 
 type eventResource interface {

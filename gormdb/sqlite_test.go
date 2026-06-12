@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/disco2/gormdb"
+	"github.com/obot-platform/discobox/gormdb"
 )
 
 func TestDetectDriver(t *testing.T) {

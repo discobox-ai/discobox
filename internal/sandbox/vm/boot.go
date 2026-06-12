@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/disco2/internal/sandbox"
-	"github.com/obot-platform/disco2/internal/workeragent"
+	"github.com/obot-platform/discobox/internal/sandbox"
+	"github.com/obot-platform/discobox/internal/workeragent"
 )
 
 // InstanceSpec is the driver-neutral VM launch request.
@@ -82,12 +82,12 @@ func BuildBootConfig(input BootInput) BootConfig {
 	}
 }
 
-// KernelCommandLine renders boot env as disco2.key=value kernel args.
+// KernelCommandLine renders boot env as discobox.key=value kernel args.
 func KernelCommandLine(env map[string]string) []string {
 	keys := sortedKeys(env)
 	args := make([]string, 0, len(keys))
 	for _, key := range keys {
-		args = append(args, fmt.Sprintf("disco2.%s=%s", strings.ToLower(key), quoteKernelArg(env[key])))
+		args = append(args, fmt.Sprintf("discobox.%s=%s", strings.ToLower(key), quoteKernelArg(env[key])))
 	}
 	return args
 }
@@ -98,7 +98,7 @@ func CloudInitUserData(env map[string]string) string {
 	var b strings.Builder
 	b.WriteString("#cloud-config\n")
 	b.WriteString("write_files:\n")
-	b.WriteString("  - path: /etc/disco2/worker.env\n")
+	b.WriteString("  - path: /etc/discobox/worker.env\n")
 	b.WriteString("    permissions: '0600'\n")
 	b.WriteString("    content: |\n")
 	for _, key := range sortedKeys(env) {
@@ -109,7 +109,7 @@ func CloudInitUserData(env map[string]string) string {
 		b.WriteString("\n")
 	}
 	b.WriteString("runcmd:\n")
-	b.WriteString("  - [ systemctl, restart, disco2-worker-agent ]\n")
+	b.WriteString("  - [ systemctl, restart, discobox-worker-agent ]\n")
 	return b.String()
 }
 

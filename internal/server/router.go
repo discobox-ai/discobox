@@ -11,19 +11,19 @@ import (
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/obot-platform/disco2/internal/api"
-	"github.com/obot-platform/disco2/internal/database"
-	"github.com/obot-platform/disco2/internal/events"
-	"github.com/obot-platform/disco2/internal/sandboxauth"
-	"github.com/obot-platform/disco2/internal/secrets"
-	"github.com/obot-platform/disco2/internal/service"
-	"github.com/obot-platform/disco2/internal/store"
-	"github.com/obot-platform/disco2/internal/tenantctx"
-	"github.com/obot-platform/disco2/orchestration"
+	"github.com/obot-platform/discobox/internal/api"
+	"github.com/obot-platform/discobox/internal/database"
+	"github.com/obot-platform/discobox/internal/events"
+	"github.com/obot-platform/discobox/internal/sandboxauth"
+	"github.com/obot-platform/discobox/internal/secrets"
+	"github.com/obot-platform/discobox/internal/service"
+	"github.com/obot-platform/discobox/internal/store"
+	"github.com/obot-platform/discobox/internal/tenantctx"
+	"github.com/obot-platform/discobox/orchestration"
 )
 
 const (
-	Name    = "Disco2 Sandbox Manager"
+	Name    = "Discobox Sandbox Manager"
 	Version = "0.1.0"
 )
 
@@ -134,7 +134,7 @@ func tenantMiddleware(jobs *tenantJobManager) func(http.Handler) http.Handler {
 				next.ServeHTTP(w, r)
 				return
 			}
-			tenantID := strings.TrimSpace(r.Header.Get("X-Disco2-Tenant-ID"))
+			tenantID := strings.TrimSpace(r.Header.Get("X-Discobox-Tenant-ID"))
 			if tenantID == "" {
 				http.Error(w, "tenant ID is required", http.StatusBadRequest)
 				return

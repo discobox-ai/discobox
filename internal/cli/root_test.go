@@ -52,7 +52,7 @@ func TestProjectUUIDRejectsEmptyExplicitProject(t *testing.T) {
 
 func TestHTTPClientAddsTenantAndAuthorizationHeaders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("X-Disco2-Tenant-ID"); got != "tenant-1" {
+		if got := r.Header.Get("X-Discobox-Tenant-ID"); got != "tenant-1" {
 			t.Fatalf("tenant header = %q, want tenant-1", got)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer token-1" {

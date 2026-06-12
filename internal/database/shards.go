@@ -11,7 +11,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/obot-platform/disco2/gormdb"
+	"github.com/obot-platform/discobox/gormdb"
 )
 
 var safeTenantID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -208,7 +208,7 @@ func (r *Resolver) resolveGlobalLocked(ctx context.Context) (*DB, error) {
 // TenantSQLiteDSN returns a tenant-specific SQLite DSN derived from baseDSN.
 //
 // For file-backed SQLite, the tenant ID is inserted into the file name:
-// sqlite3:///data/disco2.db + tenant-1 => sqlite3:///data/disco2.tenant-1.db
+// sqlite3:///data/discobox.db + tenant-1 => sqlite3:///data/discobox.tenant-1.db
 //
 // In-memory SQLite cannot be file-sharded, so it is returned unchanged.
 func TenantSQLiteDSN(baseDSN, tenantID string) string {

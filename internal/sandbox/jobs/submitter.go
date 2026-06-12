@@ -5,9 +5,9 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/obot-platform/disco2/internal/model"
-	"github.com/obot-platform/disco2/internal/store"
-	"github.com/obot-platform/disco2/orchestration"
+	"github.com/obot-platform/discobox/internal/model"
+	"github.com/obot-platform/discobox/internal/store"
+	"github.com/obot-platform/discobox/orchestration"
 )
 
 type SandboxID struct {

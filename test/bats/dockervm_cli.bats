@@ -7,17 +7,17 @@ setup_file() {
   command -v docker >/dev/null 2>&1 || skip "docker is required"
   docker info >/dev/null 2>&1 || skip "docker daemon is required"
 
-  export DISCO2_BATS_TMP="$BATS_SUITE_TMPDIR/disco2-dockervm"
-  export DISCO2_BATS_DATA_DIR="$DISCO2_BATS_TMP/data"
-  export DISCO2_BATS_CONFIG_DIR="$DISCO2_BATS_TMP/config"
-  export DISCO2_BATS_CACHE_DIR="$DISCO2_BATS_TMP/cache"
-  export DISCO2_BATS_STATE_DIR="$DISCO2_BATS_TMP/state"
-  export DISCO2_BATS_DB="$DISCO2_BATS_TMP/disco2.sqlite"
-  export DISCO2_BATS_TENANT_DB="$DISCO2_BATS_TMP/disco2.00000000-0000-0000-0000-000000000000.sqlite"
-  export DISCO2_BATS_SERVER_LOG="$DISCO2_BATS_TMP/server.log"
-  mkdir -p "$DISCO2_BATS_DATA_DIR" "$DISCO2_BATS_CONFIG_DIR" "$DISCO2_BATS_CACHE_DIR" "$DISCO2_BATS_STATE_DIR"
+  export DISCOBOX_BATS_TMP="$BATS_SUITE_TMPDIR/discobox-dockervm"
+  export DISCOBOX_BATS_DATA_DIR="$DISCOBOX_BATS_TMP/data"
+  export DISCOBOX_BATS_CONFIG_DIR="$DISCOBOX_BATS_TMP/config"
+  export DISCOBOX_BATS_CACHE_DIR="$DISCOBOX_BATS_TMP/cache"
+  export DISCOBOX_BATS_STATE_DIR="$DISCOBOX_BATS_TMP/state"
+  export DISCOBOX_BATS_DB="$DISCOBOX_BATS_TMP/discobox.sqlite"
+  export DISCOBOX_BATS_TENANT_DB="$DISCOBOX_BATS_TMP/discobox.00000000-0000-0000-0000-000000000000.sqlite"
+  export DISCOBOX_BATS_SERVER_LOG="$DISCOBOX_BATS_TMP/server.log"
+  mkdir -p "$DISCOBOX_BATS_DATA_DIR" "$DISCOBOX_BATS_CONFIG_DIR" "$DISCOBOX_BATS_CACHE_DIR" "$DISCOBOX_BATS_STATE_DIR"
 
-  export DISCO2_BATS_PORT="$(python3 - <<'PY'
+  export DISCOBOX_BATS_PORT="$(python3 - <<'PY'
 import socket
 s = socket.socket()
 s.bind(("127.0.0.1", 0))
@@ -25,55 +25,55 @@ print(s.getsockname()[1])
 s.close()
 PY
 )"
-  export DISCO2_BATS_SERVER="http://127.0.0.1:$DISCO2_BATS_PORT"
+  export DISCOBOX_BATS_SERVER="http://127.0.0.1:$DISCOBOX_BATS_PORT"
 
   go build -o build/discobot-server ./cmd/discobot-server
-  go build -o build/disco2 ./cmd/disco2
-  docker build -f Dockerfile.worker-agent -t disco2-worker-agent:local .
+  go build -o build/discobox ./cmd/discobox
+  docker build -f Dockerfile.worker-agent -t discobox-worker-agent:local .
 
-  PORT="$DISCO2_BATS_PORT" \
-  DATABASE_DSN="$DISCO2_BATS_DB" \
-  DISCO2_DATA_DIR="$DISCO2_BATS_DATA_DIR" \
-  DISCO2_CONFIG_DIR="$DISCO2_BATS_CONFIG_DIR" \
-  DISCO2_CACHE_DIR="$DISCO2_BATS_CACHE_DIR" \
-  DISCO2_STATE_DIR="$DISCO2_BATS_STATE_DIR" \
-  DISCO2_TENANT_ID="00000000-0000-0000-0000-000000000000" \
+  PORT="$DISCOBOX_BATS_PORT" \
+  DATABASE_DSN="$DISCOBOX_BATS_DB" \
+  DISCOBOX_DATA_DIR="$DISCOBOX_BATS_DATA_DIR" \
+  DISCOBOX_CONFIG_DIR="$DISCOBOX_BATS_CONFIG_DIR" \
+  DISCOBOX_CACHE_DIR="$DISCOBOX_BATS_CACHE_DIR" \
+  DISCOBOX_STATE_DIR="$DISCOBOX_BATS_STATE_DIR" \
+  DISCOBOX_TENANT_ID="00000000-0000-0000-0000-000000000000" \
   DISPATCHER_ENABLED=true \
   DISPATCHER_POLL_INTERVAL=200ms \
   DISPATCHER_IMMEDIATE_EXECUTION=true \
-    ./build/discobot-server >"$DISCO2_BATS_SERVER_LOG" 2>&1 &
-  export DISCO2_BATS_SERVER_PID="$!"
+    ./build/discobot-server >"$DISCOBOX_BATS_SERVER_LOG" 2>&1 &
+  export DISCOBOX_BATS_SERVER_PID="$!"
 
   for _ in {1..100}; do
-    if curl -fsS "$DISCO2_BATS_SERVER/openapi.json" >/dev/null 2>&1; then
+    if curl -fsS "$DISCOBOX_BATS_SERVER/openapi.json" >/dev/null 2>&1; then
       return 0
     fi
-    if ! kill -0 "$DISCO2_BATS_SERVER_PID" 2>/dev/null; then
-      cat "$DISCO2_BATS_SERVER_LOG" >&2 || true
+    if ! kill -0 "$DISCOBOX_BATS_SERVER_PID" 2>/dev/null; then
+      cat "$DISCOBOX_BATS_SERVER_LOG" >&2 || true
       return 1
     fi
     sleep 0.1
   done
 
-  cat "$DISCO2_BATS_SERVER_LOG" >&2 || true
+  cat "$DISCOBOX_BATS_SERVER_LOG" >&2 || true
   return 1
 }
 
 teardown_file() {
   cd "$REPO_ROOT"
-  if [ -n "${DISCO2_BATS_SERVER_PID:-}" ] && kill -0 "$DISCO2_BATS_SERVER_PID" 2>/dev/null; then
-    kill "$DISCO2_BATS_SERVER_PID" 2>/dev/null || true
-    wait "$DISCO2_BATS_SERVER_PID" 2>/dev/null || true
+  if [ -n "${DISCOBOX_BATS_SERVER_PID:-}" ] && kill -0 "$DISCOBOX_BATS_SERVER_PID" 2>/dev/null; then
+    kill "$DISCOBOX_BATS_SERVER_PID" 2>/dev/null || true
+    wait "$DISCOBOX_BATS_SERVER_PID" 2>/dev/null || true
   fi
 
   docker rm -f $(docker ps -aq \
-    --filter "ancestor=disco2-worker-agent:local" \
-    --filter "label=disco2.provider_type=dockervm" \
-    --filter "label=disco2.project_id=00000000-0000-0000-0000-000000000002") >/dev/null 2>&1 || true
+    --filter "ancestor=discobox-worker-agent:local" \
+    --filter "label=discobox.provider_type=dockervm" \
+    --filter "label=discobox.project_id=00000000-0000-0000-0000-000000000002") >/dev/null 2>&1 || true
 }
 
 cli() {
-  "$REPO_ROOT/build/disco2" --server "$DISCO2_BATS_SERVER" --project local --output json "$@"
+  "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" --project local --output json "$@"
 }
 
 json_get() {
@@ -82,7 +82,7 @@ json_get() {
 
 wait_for_worker_ready() {
   local provider_id="$1"
-  if python3 - "$DISCO2_BATS_TENANT_DB" "$provider_id" <<'PY'
+  if python3 - "$DISCOBOX_BATS_TENANT_DB" "$provider_id" <<'PY'
 import sqlite3
 import sys
 import time
@@ -115,18 +115,18 @@ PY
     return 0
   fi
   echo "server log:" >&2
-  tail -200 "$DISCO2_BATS_SERVER_LOG" >&2 || true
+  tail -200 "$DISCOBOX_BATS_SERVER_LOG" >&2 || true
   echo "dockervm containers:" >&2
   docker ps -a \
-    --filter "label=disco2.provider_instance_id=$provider_id" \
+    --filter "label=discobox.provider_instance_id=$provider_id" \
     --format 'table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Names}}' >&2 || true
-  for container in $(docker ps -aq --filter "label=disco2.provider_instance_id=$provider_id"); do
+  for container in $(docker ps -aq --filter "label=discobox.provider_instance_id=$provider_id"); do
     echo "logs for $container:" >&2
     docker logs "$container" >&2 || true
     echo "systemctl status for $container:" >&2
-    docker exec "$container" systemctl --no-pager status disco2-worker-agent.service >&2 || true
+    docker exec "$container" systemctl --no-pager status discobox-worker-agent.service >&2 || true
     echo "journal for $container:" >&2
-    docker exec "$container" journalctl --no-pager -u disco2-worker-agent.service >&2 || true
+    docker exec "$container" journalctl --no-pager -u discobox-worker-agent.service >&2 || true
   done
   return 1
 }
@@ -146,12 +146,12 @@ host_gateway() {
 @test "provider create and sandbox create work with dockervm" {
   local gateway control_plane config provider_json provider_id sandbox_json sandbox_id worker_id
   gateway="$(host_gateway)"
-  control_plane="http://$gateway:$DISCO2_BATS_PORT"
+  control_plane="http://$gateway:$DISCOBOX_BATS_PORT"
   config="$(python3 - <<PY
 import json
 print(json.dumps({
     "controlPlaneUrl": "$control_plane",
-    "image": "disco2-worker-agent:local",
+    "image": "discobox-worker-agent:local",
     "poolSize": 1,
     "systemd": True,
     "privileged": True,

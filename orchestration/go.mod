@@ -1,4 +1,4 @@
-module github.com/obot-platform/disco2/orchestration
+module github.com/obot-platform/discobox/orchestration
 
 go 1.26
 
@@ -24,7 +24,7 @@ require (
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/mattn/go-isatty v0.0.17 // indirect
-	github.com/obot-platform/disco2/gormdb v0.0.0
+	github.com/obot-platform/discobox/gormdb v0.0.0
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	golang.org/x/sys v0.28.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
@@ -34,4 +34,4 @@ require (
 	modernc.org/sqlite v1.23.1 // indirect
 )
 
-replace github.com/obot-platform/disco2/gormdb => ../gormdb
+replace github.com/obot-platform/discobox/gormdb => ../gormdb

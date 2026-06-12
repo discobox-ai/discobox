@@ -1,6 +1,6 @@
 # gormdb
 
-`gormdb` opens GORM connection pools for the database backends used by Disco2.
+`gormdb` opens GORM connection pools for the database backends used by Discobox.
 
 The public API is intentionally a single generic opener:
 

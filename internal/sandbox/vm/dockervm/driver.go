@@ -24,20 +24,20 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
-	"github.com/obot-platform/disco2/internal/sandbox"
-	"github.com/obot-platform/disco2/internal/sandbox/vm"
+	"github.com/obot-platform/discobox/internal/sandbox"
+	"github.com/obot-platform/discobox/internal/sandbox/vm"
 )
 
 const (
 	ProviderType      = "dockervm"
-	defaultImage      = "ghcr.io/obot-platform/disco2-systemd:latest"
+	defaultImage      = "ghcr.io/obot-platform/discobox-systemd:latest"
 	defaultAgentPort  = 3002
-	labelManaged      = "disco2.vm.managed"
-	labelInstanceID   = "disco2.vm.instance_id"
-	labelProjectID    = "disco2.project_id"
-	labelTenantID     = "disco2.tenant_id"
-	labelSandboxID    = "disco2.sandbox_id"
-	labelProviderType = "disco2.provider_type"
+	labelManaged      = "discobox.vm.managed"
+	labelInstanceID   = "discobox.vm.instance_id"
+	labelProjectID    = "discobox.project_id"
+	labelTenantID     = "discobox.tenant_id"
+	labelSandboxID    = "discobox.sandbox_id"
+	labelProviderType = "discobox.provider_type"
 )
 
 // Config configures a Docker-backed VM driver.
@@ -393,7 +393,7 @@ func containerName(name string) string {
 	if name == "" {
 		name = "vm"
 	}
-	return "disco2-vm-" + name
+	return "discobox-vm-" + name
 }
 
 func envList(values map[string]string) []string {

@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/disco2/internal/sandbox"
-	"github.com/obot-platform/disco2/internal/sandbox/vm"
-	"github.com/obot-platform/disco2/internal/sandbox/vm/digitalocean"
-	"github.com/obot-platform/disco2/internal/workeragent"
+	"github.com/obot-platform/discobox/internal/sandbox"
+	"github.com/obot-platform/discobox/internal/sandbox/vm"
+	"github.com/obot-platform/discobox/internal/sandbox/vm/digitalocean"
+	"github.com/obot-platform/discobox/internal/workeragent"
 )
 
 func TestCreateVMSendsDropletRequestWithCloudInitAndTags(t *testing.T) {
@@ -57,7 +57,7 @@ func TestCreateVMSendsDropletRequestWithCloudInitAndTags(t *testing.T) {
 	})
 	inst, err := driver.CreateVM(context.Background(), vm.InstanceSpec{
 		Ref:   sandbox.SandboxRef{TenantID: "tenant-1", ProjectID: "project-1", SandboxID: "sandbox-1"},
-		Name:  "disco2-project-1-sandbox-1",
+		Name:  "discobox-project-1-sandbox-1",
 		Image: "custom-image",
 		Boot:  boot,
 	})
@@ -67,7 +67,7 @@ func TestCreateVMSendsDropletRequestWithCloudInitAndTags(t *testing.T) {
 	if inst.ID != "42" {
 		t.Fatalf("instance id = %q", inst.ID)
 	}
-	if got["name"] != "disco2-project-1-sandbox-1" {
+	if got["name"] != "discobox-project-1-sandbox-1" {
 		t.Fatalf("name = %#v", got["name"])
 	}
 	if got["region"] != "sfo3" || got["size"] != "s-2vcpu-2gb" || got["image"] != "custom-image" {
@@ -79,7 +79,7 @@ func TestCreateVMSendsDropletRequestWithCloudInitAndTags(t *testing.T) {
 	if got["user_data"] == "" {
 		t.Fatalf("expected cloud-init user_data")
 	}
-	wantTags := []any{"existing", "disco2", "disco2-tenant-tenant-1", "disco2-project-project-1", "disco2-sandbox-sandbox-1"}
+	wantTags := []any{"existing", "discobox", "discobox-tenant-tenant-1", "discobox-project-project-1", "discobox-sandbox-sandbox-1"}
 	if !reflect.DeepEqual(got["tags"], wantTags) {
 		t.Fatalf("tags = %#v", got["tags"])
 	}
@@ -153,7 +153,7 @@ func writeDroplet(t *testing.T, w http.ResponseWriter, status string) {
 	if err := json.NewEncoder(w).Encode(map[string]any{
 		"droplet": map[string]any{
 			"id":         42,
-			"name":       "disco2-project-1-sandbox-1",
+			"name":       "discobox-project-1-sandbox-1",
 			"status":     status,
 			"created_at": "2026-06-10T00:00:00Z",
 			"size_slug":  "s-2vcpu-2gb",

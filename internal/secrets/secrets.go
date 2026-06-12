@@ -15,7 +15,7 @@ import (
 
 const (
 	keySize = 32
-	prefix  = "disco2:v1:"
+	prefix  = "discobox:v1:"
 )
 
 // Sealer encrypts and decrypts data at rest.
@@ -79,7 +79,7 @@ func DecodeBase64Key(value string) ([]byte, error) {
 }
 
 // GenerateBase64Key returns a new base64-encoded 32-byte key suitable for
-// DISCO2_ENCRYPTION_KEY.
+// DISCOBOX_ENCRYPTION_KEY.
 func GenerateBase64Key() (string, error) {
 	key := make([]byte, keySize)
 	if _, err := io.ReadFull(rand.Reader, key); err != nil {

@@ -8,14 +8,14 @@ import (
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/obot-platform/disco2/internal/api"
-	"github.com/obot-platform/disco2/internal/id"
-	"github.com/obot-platform/disco2/internal/model"
+	"github.com/obot-platform/discobox/internal/api"
+	"github.com/obot-platform/discobox/internal/id"
+	"github.com/obot-platform/discobox/internal/model"
 
-	"github.com/obot-platform/disco2/internal/sandbox"
-	"github.com/obot-platform/disco2/internal/sandbox/jobs"
-	"github.com/obot-platform/disco2/internal/sandboxauth"
-	"github.com/obot-platform/disco2/internal/store"
+	"github.com/obot-platform/discobox/internal/sandbox"
+	"github.com/obot-platform/discobox/internal/sandbox/jobs"
+	"github.com/obot-platform/discobox/internal/sandboxauth"
+	"github.com/obot-platform/discobox/internal/store"
 )
 
 // Service owns sandbox API behavior, orchestration, provider catalog state, and

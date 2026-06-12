@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	apiclientgen "github.com/obot-platform/disco2/internal/apiclient/gen"
+	apiclientgen "github.com/obot-platform/discobox/internal/apiclient/gen"
 )
 
 func TestProjectsSeq(t *testing.T) {

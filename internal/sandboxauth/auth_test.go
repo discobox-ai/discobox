@@ -11,10 +11,10 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 
-	"github.com/obot-platform/disco2/internal/model"
-	"github.com/obot-platform/disco2/internal/sandboxauth"
-	"github.com/obot-platform/disco2/internal/secrets"
-	"github.com/obot-platform/disco2/internal/store"
+	"github.com/obot-platform/discobox/internal/model"
+	"github.com/obot-platform/discobox/internal/sandboxauth"
+	"github.com/obot-platform/discobox/internal/secrets"
+	"github.com/obot-platform/discobox/internal/store"
 )
 
 func TestManagerEnsuresTrustKeyOnceAndCreatesVerifiableToken(t *testing.T) {

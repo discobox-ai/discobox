@@ -5,7 +5,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/obot-platform/disco2/internal/secrets"
+	"github.com/obot-platform/discobox/internal/secrets"
 )
 
 func TestAESGCMSealerRoundTripAndAssociatedData(t *testing.T) {
@@ -26,8 +26,8 @@ func TestAESGCMSealerRoundTripAndAssociatedData(t *testing.T) {
 	if bytes.Equal(ciphertext, plaintext) {
 		t.Fatal("ciphertext equals plaintext")
 	}
-	if !bytes.HasPrefix(ciphertext, []byte("disco2:v1:")) {
-		t.Fatalf("ciphertext prefix = %q, want disco2:v1", string(ciphertext[:min(len(ciphertext), len("disco2:v1:"))]))
+	if !bytes.HasPrefix(ciphertext, []byte("discobox:v1:")) {
+		t.Fatalf("ciphertext prefix = %q, want discobox:v1", string(ciphertext[:min(len(ciphertext), len("discobox:v1:"))]))
 	}
 
 	opened, err := sealer.Open(context.Background(), "purpose", "resource-1", ciphertext)

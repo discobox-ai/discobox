@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/obot-platform/disco2/internal/model"
-	"github.com/obot-platform/disco2/internal/sandbox"
-	"github.com/obot-platform/disco2/internal/sandbox/provider/vmprovider"
-	"github.com/obot-platform/disco2/internal/sandbox/vm"
-	dockerdriver "github.com/obot-platform/disco2/internal/sandbox/vm/dockervm"
+	"github.com/obot-platform/discobox/internal/model"
+	"github.com/obot-platform/discobox/internal/sandbox"
+	"github.com/obot-platform/discobox/internal/sandbox/provider/vmprovider"
+	"github.com/obot-platform/discobox/internal/sandbox/vm"
+	dockerdriver "github.com/obot-platform/discobox/internal/sandbox/vm/dockervm"
 )
 
 const ProviderType = dockerdriver.ProviderType

@@ -11,7 +11,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/obot-platform/disco2/internal/id"
+	"github.com/obot-platform/discobox/internal/id"
 )
 
 const (

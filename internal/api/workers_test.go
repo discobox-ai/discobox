@@ -10,8 +10,8 @@ import (
 
 	"github.com/danielgtaylor/huma/v2/humatest"
 
-	"github.com/obot-platform/disco2/internal/api"
-	"github.com/obot-platform/disco2/internal/model"
+	"github.com/obot-platform/discobox/internal/api"
+	"github.com/obot-platform/discobox/internal/model"
 )
 
 func TestWorkerStatusPassesAuthorizationHeader(t *testing.T) {

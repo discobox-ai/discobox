@@ -7,9 +7,9 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
-	"github.com/obot-platform/disco2/gormdb"
-	"github.com/obot-platform/disco2/internal/model"
-	"github.com/obot-platform/disco2/internal/store"
+	"github.com/obot-platform/discobox/gormdb"
+	"github.com/obot-platform/discobox/internal/model"
+	"github.com/obot-platform/discobox/internal/store"
 )
 
 // DB wraps the application write/read GORM pools.

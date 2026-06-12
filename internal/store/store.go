@@ -7,9 +7,9 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/obot-platform/disco2/internal/model"
-	"github.com/obot-platform/disco2/internal/secrets"
-	"github.com/obot-platform/disco2/internal/tenantctx"
+	"github.com/obot-platform/discobox/internal/model"
+	"github.com/obot-platform/discobox/internal/secrets"
+	"github.com/obot-platform/discobox/internal/tenantctx"
 )
 
 var (

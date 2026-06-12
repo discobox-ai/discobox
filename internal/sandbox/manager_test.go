@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/disco2/internal/model"
-	"github.com/obot-platform/disco2/internal/sandbox"
+	"github.com/obot-platform/discobox/internal/model"
+	"github.com/obot-platform/discobox/internal/sandbox"
 )
 
 func TestProviderManagerRegisterStatusAndDefinitions(t *testing.T) {

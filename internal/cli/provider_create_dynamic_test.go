@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	apiclientgen "github.com/obot-platform/disco2/internal/apiclient/gen"
+	apiclientgen "github.com/obot-platform/discobox/internal/apiclient/gen"
 )
 
 func TestProviderCreateHelpDoesNotHitAPI(t *testing.T) {
@@ -30,7 +30,7 @@ func TestProviderCreateHelpDoesNotHitAPI(t *testing.T) {
 	if hit {
 		t.Fatalf("plain provider create --help hit API server")
 	}
-	if !strings.Contains(out.String(), "disco2 provider catalog") || !strings.Contains(out.String(), "--help=PROVIDER") {
+	if !strings.Contains(out.String(), "discobox provider catalog") || !strings.Contains(out.String(), "--help=PROVIDER") {
 		t.Fatalf("help output = %q, want provider catalog and --help=PROVIDER hints", out.String())
 	}
 }

@@ -8,11 +8,11 @@ import (
 
 	"github.com/joho/godotenv"
 
-	"github.com/obot-platform/disco2/internal/config"
-	"github.com/obot-platform/disco2/internal/database"
-	"github.com/obot-platform/disco2/internal/model"
-	"github.com/obot-platform/disco2/internal/secrets"
-	"github.com/obot-platform/disco2/internal/service"
+	"github.com/obot-platform/discobox/internal/config"
+	"github.com/obot-platform/discobox/internal/database"
+	"github.com/obot-platform/discobox/internal/model"
+	"github.com/obot-platform/discobox/internal/secrets"
+	"github.com/obot-platform/discobox/internal/service"
 )
 
 // Run loads configuration, initializes storage and services, and starts the HTTP server.

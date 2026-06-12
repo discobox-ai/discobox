@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/disco2/internal/model"
+	"github.com/obot-platform/discobox/internal/model"
 )
 
 func TestWorkerSchedulingPreferenceFromStatusColumns(t *testing.T) {

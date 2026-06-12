@@ -15,8 +15,8 @@ Tenant ID is the database shard key.
   tenant connections with that schema in the `search_path`.
 - For SQLite, each tenant resolves to a separate database file. The resolver
   inserts the tenant ID into the configured SQLite file name. For example,
-  `sqlite3:///data/disco2.db` and tenant `tenant-1` resolves to
-  `sqlite3:///data/disco2.tenant-1.db`.
+  `sqlite3:///data/discobox.db` and tenant `tenant-1` resolves to
+  `sqlite3:///data/discobox.tenant-1.db`.
 
 The resolver opens global and tenant databases lazily, caches connections, and
 can run scoped migrations when each database/schema is first opened.

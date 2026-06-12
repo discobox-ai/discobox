@@ -14,11 +14,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/moby/moby/client"
 
-	"github.com/obot-platform/disco2/internal/sandbox"
-	"github.com/obot-platform/disco2/internal/sandbox/vm"
+	"github.com/obot-platform/discobox/internal/sandbox"
+	"github.com/obot-platform/discobox/internal/sandbox/vm"
 )
 
-const dockerVMIntegrationEnv = "DISCO2_DOCKER_VM_INTEGRATION"
+const dockerVMIntegrationEnv = "DISCOBOX_DOCKER_VM_INTEGRATION"
 
 func TestDockerVMIntegrationLifecycle(t *testing.T) {
 	if os.Getenv(dockerVMIntegrationEnv) != "1" {
@@ -26,9 +26,9 @@ func TestDockerVMIntegrationLifecycle(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	image := os.Getenv("DISCO2_DOCKER_VM_TEST_IMAGE")
+	image := os.Getenv("DISCOBOX_DOCKER_VM_TEST_IMAGE")
 	if image == "" {
-		image = "disco2-dockervm-sleep:test-" + uuid.NewString()
+		image = "discobox-dockervm-sleep:test-" + uuid.NewString()
 		buildDockerImage(t, ctx, "testdata/sleep/Dockerfile", image)
 	}
 
@@ -42,8 +42,8 @@ func TestDockerVMIntegrationLifecycle(t *testing.T) {
 		Name:  "integration-" + uuid.NewString(),
 		Image: image,
 		Boot: vm.BootConfig{Env: map[string]string{
-			"DISCO2_TENANT_ID": ref.TenantID,
-			"DISCO2_WORKER_ID": "worker-" + uuid.NewString(),
+			"DISCOBOX_TENANT_ID": ref.TenantID,
+			"DISCOBOX_WORKER_ID": "worker-" + uuid.NewString(),
 		}},
 		Metadata: map[string]string{"test": "dockervm"},
 	})
@@ -99,9 +99,9 @@ func TestDockerVMIntegrationSystemdContainer(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	image := os.Getenv("DISCO2_DOCKER_VM_SYSTEMD_IMAGE")
+	image := os.Getenv("DISCOBOX_DOCKER_VM_SYSTEMD_IMAGE")
 	if image == "" {
-		image = "disco2-dockervm-systemd:test-" + uuid.NewString()
+		image = "discobox-dockervm-systemd:test-" + uuid.NewString()
 		buildDockerImage(t, ctx, "testdata/systemd/Dockerfile", image)
 	}
 
@@ -112,7 +112,7 @@ func TestDockerVMIntegrationSystemdContainer(t *testing.T) {
 	inst, err := driver.CreateVM(ctx, vm.InstanceSpec{
 		Ref:  sandbox.SandboxRef{TenantID: "tenant-" + uuid.NewString(), ProjectID: "project-" + uuid.NewString(), SandboxID: "sandbox-" + uuid.NewString()},
 		Name: "systemd-" + uuid.NewString(),
-		Boot: vm.BootConfig{Env: map[string]string{"DISCO2_WORKER_ID": "worker-" + uuid.NewString()}},
+		Boot: vm.BootConfig{Env: map[string]string{"DISCOBOX_WORKER_ID": "worker-" + uuid.NewString()}},
 	})
 	if err != nil {
 		t.Fatalf("create systemd vm: %v", err)

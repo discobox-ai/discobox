@@ -5,12 +5,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/disco2/gormdb"
+	"github.com/obot-platform/discobox/gormdb"
 )
 
 func TestLoadDefaults(t *testing.T) {
 	clearConfigEnv(t)
-	t.Setenv("DISCO2_TENANT_ID", "tenant-1")
+	t.Setenv("DISCOBOX_TENANT_ID", "tenant-1")
 
 	cfg, err := Load()
 	if err != nil {
@@ -29,7 +29,7 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.DataDir == "" || cfg.ConfigDir == "" || cfg.CacheDir == "" || cfg.StateDir == "" {
 		t.Fatalf("expected all XDG directories to be set")
 	}
-	if cfg.DatabaseDSN != "sqlite3://"+filepath.Join(cfg.DataDir, "disco2.db") {
+	if cfg.DatabaseDSN != "sqlite3://"+filepath.Join(cfg.DataDir, "discobox.db") {
 		t.Fatalf("DatabaseDSN = %q, want sqlite database under DataDir %q", cfg.DatabaseDSN, cfg.DataDir)
 	}
 	if cfg.DatabaseDriver != gormdb.DriverSQLite {
@@ -52,13 +52,13 @@ func TestLoadDefaults(t *testing.T) {
 func TestLoadEnvironmentOverrides(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("PORT", "9090")
-	t.Setenv("DISCO2_DATA_DIR", "/tmp/disco2/data")
-	t.Setenv("DISCO2_CONFIG_DIR", "/tmp/disco2/config")
-	t.Setenv("DISCO2_CACHE_DIR", "/tmp/disco2/cache")
-	t.Setenv("DISCO2_STATE_DIR", "/tmp/disco2/state")
-	t.Setenv("DISCO2_TENANT_ID", "tenant-2")
-	t.Setenv("DATABASE_DSN", "postgres://user:pass@localhost/disco2")
-	t.Setenv("DATABASE_READ_DSN", "postgres://user:pass@localhost/disco2_read")
+	t.Setenv("DISCOBOX_DATA_DIR", "/tmp/discobox/data")
+	t.Setenv("DISCOBOX_CONFIG_DIR", "/tmp/discobox/config")
+	t.Setenv("DISCOBOX_CACHE_DIR", "/tmp/discobox/cache")
+	t.Setenv("DISCOBOX_STATE_DIR", "/tmp/discobox/state")
+	t.Setenv("DISCOBOX_TENANT_ID", "tenant-2")
+	t.Setenv("DATABASE_DSN", "postgres://user:pass@localhost/discobox")
+	t.Setenv("DATABASE_READ_DSN", "postgres://user:pass@localhost/discobox_read")
 	t.Setenv("DATABASE_DRIVER", "postgres")
 	t.Setenv("JOB_MAX_ATTEMPTS", "7")
 	t.Setenv("DISPATCHER_ENABLED", "false")
@@ -68,7 +68,7 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	t.Setenv("DISPATCHER_IMMEDIATE_EXECUTION", "false")
 	t.Setenv("DISPATCHER_DEFAULT_CONCURRENCY", "3")
 	t.Setenv("SANDBOX_RECONCILE_JOB_CONCURRENCY", "9")
-	t.Setenv("DISCO2_ENCRYPTION_KEY", "key")
+	t.Setenv("DISCOBOX_ENCRYPTION_KEY", "key")
 
 	cfg, err := Load()
 	if err != nil {
@@ -78,28 +78,28 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	if cfg.Port != 9090 {
 		t.Fatalf("Port = %d, want 9090", cfg.Port)
 	}
-	if cfg.DataDir != "/tmp/disco2/data" {
+	if cfg.DataDir != "/tmp/discobox/data" {
 		t.Fatalf("DataDir = %q", cfg.DataDir)
 	}
-	if cfg.ConfigDir != "/tmp/disco2/config" {
+	if cfg.ConfigDir != "/tmp/discobox/config" {
 		t.Fatalf("ConfigDir = %q", cfg.ConfigDir)
 	}
-	if cfg.CacheDir != "/tmp/disco2/cache" {
+	if cfg.CacheDir != "/tmp/discobox/cache" {
 		t.Fatalf("CacheDir = %q", cfg.CacheDir)
 	}
-	if cfg.StateDir != "/tmp/disco2/state" {
+	if cfg.StateDir != "/tmp/discobox/state" {
 		t.Fatalf("StateDir = %q", cfg.StateDir)
 	}
 	if cfg.TenantID != "tenant-2" {
 		t.Fatalf("TenantID = %q, want tenant-2", cfg.TenantID)
 	}
-	if cfg.DatabaseDSN != "postgres://user:pass@localhost/disco2" {
+	if cfg.DatabaseDSN != "postgres://user:pass@localhost/discobox" {
 		t.Fatalf("DatabaseDSN = %q", cfg.DatabaseDSN)
 	}
 	if cfg.DatabaseDriver != gormdb.DriverPostgres {
 		t.Fatalf("DatabaseDriver = %q, want %q", cfg.DatabaseDriver, gormdb.DriverPostgres)
 	}
-	if cfg.DatabaseReadDSN != "postgres://user:pass@localhost/disco2_read" {
+	if cfg.DatabaseReadDSN != "postgres://user:pass@localhost/discobox_read" {
 		t.Fatalf("DatabaseReadDSN = %q", cfg.DatabaseReadDSN)
 	}
 	if cfg.JobMaxAttempts != 7 {
@@ -133,15 +133,15 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 
 func TestLoadUsesDataDirForDefaultDatabaseDSN(t *testing.T) {
 	clearConfigEnv(t)
-	t.Setenv("DISCO2_DATA_DIR", "/tmp/disco2-data")
-	t.Setenv("DISCO2_TENANT_ID", "tenant-1")
+	t.Setenv("DISCOBOX_DATA_DIR", "/tmp/discobox-data")
+	t.Setenv("DISCOBOX_TENANT_ID", "tenant-1")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	want := "sqlite3://" + filepath.Join("/tmp/disco2-data", "disco2.db")
+	want := "sqlite3://" + filepath.Join("/tmp/discobox-data", "discobox.db")
 	if cfg.DatabaseDSN != want {
 		t.Fatalf("DatabaseDSN = %q, want %q", cfg.DatabaseDSN, want)
 	}
@@ -166,7 +166,7 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			clearConfigEnv(t)
-			t.Setenv("DISCO2_TENANT_ID", "tenant-1")
+			t.Setenv("DISCOBOX_TENANT_ID", "tenant-1")
 			t.Setenv(tt.key, tt.val)
 
 			if _, err := Load(); err == nil {
@@ -180,11 +180,11 @@ func clearConfigEnv(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
 		"PORT",
-		"DISCO2_DATA_DIR",
-		"DISCO2_CONFIG_DIR",
-		"DISCO2_CACHE_DIR",
-		"DISCO2_STATE_DIR",
-		"DISCO2_TENANT_ID",
+		"DISCOBOX_DATA_DIR",
+		"DISCOBOX_CONFIG_DIR",
+		"DISCOBOX_CACHE_DIR",
+		"DISCOBOX_STATE_DIR",
+		"DISCOBOX_TENANT_ID",
 		"DATABASE_DSN",
 		"DATABASE_READ_DSN",
 		"DATABASE_DRIVER",
@@ -196,7 +196,7 @@ func clearConfigEnv(t *testing.T) {
 		"DISPATCHER_IMMEDIATE_EXECUTION",
 		"DISPATCHER_DEFAULT_CONCURRENCY",
 		"SANDBOX_RECONCILE_JOB_CONCURRENCY",
-		"DISCO2_ENCRYPTION_KEY",
+		"DISCOBOX_ENCRYPTION_KEY",
 	} {
 		t.Setenv(key, "")
 	}

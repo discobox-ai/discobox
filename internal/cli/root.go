@@ -9,8 +9,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
-	"github.com/obot-platform/disco2/internal/apiclient"
-	apiclientgen "github.com/obot-platform/disco2/internal/apiclient/gen"
+	"github.com/obot-platform/discobox/internal/apiclient"
+	apiclientgen "github.com/obot-platform/discobox/internal/apiclient/gen"
 )
 
 const defaultServerURL = "http://localhost:8080"
@@ -28,18 +28,18 @@ type App struct {
 func NewRootCommand() *cobra.Command {
 	app := &App{}
 	cmd := &cobra.Command{
-		Use:           "disco2",
-		Short:         "Disco2 command line client",
+		Use:           "discobox",
+		Short:         "Discobox command line client",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(_ *cobra.Command, _ []string) error {
 			return app.validate()
 		},
 	}
-	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCO2_SERVER", defaultServerURL), "Disco2 API server URL")
-	cmd.PersistentFlags().StringVarP(&app.projectID, "project", "p", envOrDefault("DISCO2_PROJECT", defaultProjectAlias), "Project ID for this invocation; use local for the built-in local project")
-	cmd.PersistentFlags().StringVar(&app.tenantID, "tenant", envOrDefault("DISCO2_TENANT_ID", ""), "Tenant ID for API requests")
-	cmd.PersistentFlags().StringVar(&app.token, "token", os.Getenv("DISCO2_TOKEN"), "Bearer token for API requests")
+	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCOBOX_SERVER", defaultServerURL), "Discobox API server URL")
+	cmd.PersistentFlags().StringVarP(&app.projectID, "project", "p", envOrDefault("DISCOBOX_PROJECT", defaultProjectAlias), "Project ID for this invocation; use local for the built-in local project")
+	cmd.PersistentFlags().StringVar(&app.tenantID, "tenant", envOrDefault("DISCOBOX_TENANT_ID", ""), "Tenant ID for API requests")
+	cmd.PersistentFlags().StringVar(&app.token, "token", os.Getenv("DISCOBOX_TOKEN"), "Bearer token for API requests")
 	cmd.PersistentFlags().StringVarP(&app.output, "output", "o", "table", "Output format: table or json")
 
 	cmd.AddCommand(app.newSandboxCommand())
@@ -105,7 +105,7 @@ func (t requestHeaderTransport) RoundTrip(req *http.Request) (*http.Response, er
 		cloned.Header.Set("Authorization", "Bearer "+t.token)
 	}
 	if t.tenantID != "" {
-		cloned.Header.Set("X-Disco2-Tenant-ID", t.tenantID)
+		cloned.Header.Set("X-Discobox-Tenant-ID", t.tenantID)
 	}
 	base := t.base
 	if base == nil {

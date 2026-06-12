@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/disco2/internal/sandbox"
-	"github.com/obot-platform/disco2/internal/workeragent"
+	"github.com/obot-platform/discobox/internal/sandbox"
+	"github.com/obot-platform/discobox/internal/workeragent"
 )
 
 const defaultAgentPort = 3002
@@ -307,7 +307,7 @@ func sandboxFromInstance(ref sandbox.SandboxRef, inst *Instance, agentPort int) 
 }
 
 func instanceName(ref sandbox.SandboxRef) string {
-	parts := []string{"disco2", ref.ProjectID, ref.SandboxID}
+	parts := []string{"discobox", ref.ProjectID, ref.SandboxID}
 	return strings.ReplaceAll(strings.Join(parts, "-"), "_", "-")
 }
 

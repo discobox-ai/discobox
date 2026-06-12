@@ -7,11 +7,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/obot-platform/disco2/internal/model"
-	"github.com/obot-platform/disco2/internal/sandbox"
-	"github.com/obot-platform/disco2/internal/sandbox/provider/vmprovider"
-	"github.com/obot-platform/disco2/internal/sandbox/vm"
-	dodriver "github.com/obot-platform/disco2/internal/sandbox/vm/digitalocean"
+	"github.com/obot-platform/discobox/internal/model"
+	"github.com/obot-platform/discobox/internal/sandbox"
+	"github.com/obot-platform/discobox/internal/sandbox/provider/vmprovider"
+	"github.com/obot-platform/discobox/internal/sandbox/vm"
+	dodriver "github.com/obot-platform/discobox/internal/sandbox/vm/digitalocean"
 )
 
 const ProviderType = dodriver.ProviderType

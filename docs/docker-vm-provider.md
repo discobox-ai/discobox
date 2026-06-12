@@ -25,7 +25,7 @@ dockervm
 ## Worker agent image
 
 `Dockerfile.worker-agent` builds a systemd-capable Docker VM image with the real
-`disco2-worker-agent` binary installed as a systemd service. The agent reads the
+`discobox-worker-agent` binary installed as a systemd service. The agent reads the
 VM boot metadata from environment variables, registers with the control plane,
 marks the worker ready/schedulable, and serves health metadata on the configured
 agent port.
@@ -35,7 +35,7 @@ Build it locally with:
 ```bash
 task build:worker-agent-image
 # or
-docker build -f Dockerfile.worker-agent -t disco2-worker-agent:local .
+docker build -f Dockerfile.worker-agent -t discobox-worker-agent:local .
 ```
 
 ## Example provider config
@@ -45,7 +45,7 @@ For the systemd worker-agent image:
 ```json
 {
   "controlPlaneUrl": "http://host.docker.internal:8080",
-  "image": "disco2-worker-agent:local",
+  "image": "discobox-worker-agent:local",
   "poolSize": 1,
   "systemd": true,
   "privileged": true,
@@ -74,10 +74,10 @@ pulling a project-published image.
 To run the Docker lifecycle tests:
 
 ```bash
-DISCO2_DOCKER_VM_INTEGRATION=1 go test ./internal/sandbox/vm/dockervm -run Integration -count=1 -v
+DISCOBOX_DOCKER_VM_INTEGRATION=1 go test ./internal/sandbox/vm/dockervm -run Integration -count=1 -v
 ```
 
 The systemd test builds `testdata/systemd/Dockerfile` automatically. It requires
 a Docker environment that allows privileged containers and cgroup mounts. You can
-override the image by setting `DISCO2_DOCKER_VM_SYSTEMD_IMAGE` if you want to use
+override the image by setting `DISCOBOX_DOCKER_VM_SYSTEMD_IMAGE` if you want to use
 a prebuilt local image.

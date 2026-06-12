@@ -1,5 +1,5 @@
 {
-  description = "Development shell for disco2";
+  description = "Development shell for discobox";
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
@@ -42,7 +42,7 @@
             };
 
             shellHook = ''
-              export DISCO2_ROOT="$PWD"
+              export DISCOBOX_ROOT="$PWD"
             '';
           };
         }

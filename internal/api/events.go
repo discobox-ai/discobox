@@ -9,7 +9,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/sse"
 
-	"github.com/obot-platform/disco2/internal/model"
+	"github.com/obot-platform/discobox/internal/model"
 )
 
 type ProjectEventsInput struct {

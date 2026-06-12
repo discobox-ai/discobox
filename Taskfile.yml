@@ -3,8 +3,8 @@ version: "3"
 vars:
   BINARY: build/discobot-server
   MAIN: ./cmd/discobot-server
-  CLI_BINARY: build/disco2
-  CLI_MAIN: ./cmd/disco2
+  CLI_BINARY: build/discobox
+  CLI_MAIN: ./cmd/discobox
   PACKAGES: ./...
 
 tasks:
@@ -14,20 +14,20 @@ tasks:
       - task --list
 
   build:
-    desc: Compile discobot-server and disco2 CLI
+    desc: Compile discobot-server and discobox CLI
     cmds:
       - go build -o {{.BINARY}} {{.MAIN}}
       - go build -o {{.CLI_BINARY}} {{.CLI_MAIN}}
 
   build:cli:
-    desc: Compile disco2 CLI
+    desc: Compile discobox CLI
     cmds:
       - go build -o {{.CLI_BINARY}} {{.CLI_MAIN}}
 
   build:worker-agent-image:
     desc: Build the systemd Docker VM worker image
     cmds:
-      - docker build -f Dockerfile.worker-agent -t disco2-worker-agent:local .
+      - docker build -f Dockerfile.worker-agent -t discobox-worker-agent:local .
 
   compile:
     desc: Alias for build
@@ -66,7 +66,7 @@ tasks:
   test:docker:
     desc: Run Docker provider integration tests
     cmds:
-      - DISCO2_DOCKER_INTEGRATION=1 go test ./internal/sandbox/docker -run Integration -count=1 -v
+      - DISCOBOX_DOCKER_INTEGRATION=1 go test ./internal/sandbox/docker -run Integration -count=1 -v
 
   test:dockervm:bats:
     desc: Run Docker VM provider CLI Bats integration test

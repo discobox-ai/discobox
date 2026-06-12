@@ -11,7 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
-	apiclientgen "github.com/obot-platform/disco2/internal/apiclient/gen"
+	apiclientgen "github.com/obot-platform/discobox/internal/apiclient/gen"
 )
 
 func writeJSON(w io.Writer, value any) error {

@@ -9,7 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/obot-platform/disco2/internal/workeragent"
+	"github.com/obot-platform/discobox/internal/workeragent"
 )
 
 func TestRunRegistersWorkerWithGeneratedPublicKey(t *testing.T) {
@@ -50,8 +50,8 @@ func TestHTTPClientRegistersWorker(t *testing.T) {
 		if r.URL.Path != "/api/workers/register" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}
-		if r.Header.Get("X-Disco2-Tenant-ID") != "tenant-1" {
-			t.Fatalf("tenant header = %q", r.Header.Get("X-Disco2-Tenant-ID"))
+		if r.Header.Get("X-Discobox-Tenant-ID") != "tenant-1" {
+			t.Fatalf("tenant header = %q", r.Header.Get("X-Discobox-Tenant-ID"))
 		}
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Fatalf("decode request: %v", err)

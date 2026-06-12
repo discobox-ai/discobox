@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	apiclientgen "github.com/obot-platform/disco2/internal/apiclient/gen"
+	apiclientgen "github.com/obot-platform/discobox/internal/apiclient/gen"
 )
 
 type dynamicProviderCreateOptions struct {
@@ -290,8 +290,8 @@ func writeProviderCreateStaticHelp(cmd *cobra.Command) {
 	fmt.Fprintln(cmd.OutOrStdout(), cmd.Long)
 	fmt.Fprintln(cmd.OutOrStdout())
 	fmt.Fprintln(cmd.OutOrStdout(), "Provider discovery:")
-	fmt.Fprintln(cmd.OutOrStdout(), "      disco2 provider catalog          List available provider types")
-	fmt.Fprintln(cmd.OutOrStdout(), "      disco2 provider create --help=PROVIDER")
+	fmt.Fprintln(cmd.OutOrStdout(), "      discobox provider catalog          List available provider types")
+	fmt.Fprintln(cmd.OutOrStdout(), "      discobox provider create --help=PROVIDER")
 	fmt.Fprintln(cmd.OutOrStdout(), "                                      Show provider-specific create flags")
 	fmt.Fprintln(cmd.OutOrStdout())
 	fmt.Fprintln(cmd.OutOrStdout(), "Common Flags:")
@@ -307,7 +307,7 @@ func writeProviderCreateHelp(w io.Writer, provider apiclientgen.SandboxProviderC
 	if description, ok := provider.Description.Get(); ok && strings.TrimSpace(description) != "" {
 		fmt.Fprintf(w, "%s\n\n", description)
 	}
-	fmt.Fprintf(w, "Usage:\n  disco2 provider create --type %s --name NAME [provider flags]\n\n", provider.ID)
+	fmt.Fprintf(w, "Usage:\n  discobox provider create --type %s --name NAME [provider flags]\n\n", provider.ID)
 	fmt.Fprintln(w, "Common Flags:")
 	fmt.Fprintln(w, "      --name string     Provider instance name (required)")
 	fmt.Fprintf(w, "      --type string     Provider type (default %q)\n", provider.ID)

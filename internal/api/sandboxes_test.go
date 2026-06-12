@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/obot-platform/disco2/internal/api"
-	"github.com/obot-platform/disco2/internal/model"
+	"github.com/obot-platform/discobox/internal/api"
+	"github.com/obot-platform/discobox/internal/model"
 )
 
 func TestCreateSandbox(t *testing.T) {

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/disco2/internal/model"
-	"github.com/obot-platform/disco2/internal/store"
+	"github.com/obot-platform/discobox/internal/model"
+	"github.com/obot-platform/discobox/internal/store"
 )
 
 func TestWorkerRegisterStatusAndClaim(t *testing.T) {

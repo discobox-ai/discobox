@@ -6,15 +6,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/disco2/internal/api"
-	"github.com/obot-platform/disco2/internal/database"
-	"github.com/obot-platform/disco2/internal/events"
-	"github.com/obot-platform/disco2/internal/model"
-	"github.com/obot-platform/disco2/internal/sandbox"
-	"github.com/obot-platform/disco2/internal/sandbox/jobs"
-	"github.com/obot-platform/disco2/internal/service"
-	"github.com/obot-platform/disco2/internal/store"
-	"github.com/obot-platform/disco2/orchestration"
+	"github.com/obot-platform/discobox/internal/api"
+	"github.com/obot-platform/discobox/internal/database"
+	"github.com/obot-platform/discobox/internal/events"
+	"github.com/obot-platform/discobox/internal/model"
+	"github.com/obot-platform/discobox/internal/sandbox"
+	"github.com/obot-platform/discobox/internal/sandbox/jobs"
+	"github.com/obot-platform/discobox/internal/service"
+	"github.com/obot-platform/discobox/internal/store"
+	"github.com/obot-platform/discobox/orchestration"
 )
 
 func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {

@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/obot-platform/disco2/internal/model"
-	"github.com/obot-platform/disco2/internal/sandbox"
-	"github.com/obot-platform/disco2/internal/sandbox/vm"
+	"github.com/obot-platform/discobox/internal/model"
+	"github.com/obot-platform/discobox/internal/sandbox"
+	"github.com/obot-platform/discobox/internal/sandbox/vm"
 )
 
 // StringList accepts either a JSON array of strings or a comma-separated string.

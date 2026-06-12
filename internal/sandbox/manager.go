@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/obot-platform/disco2/internal/model"
+	"github.com/obot-platform/discobox/internal/model"
 )
 
 // PlatformDefaultProvider returns the default provider type for the OS.

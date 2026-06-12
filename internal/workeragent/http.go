@@ -82,7 +82,7 @@ func (c *HTTPClient) RegisterWorker(ctx context.Context, req RegisterRequest) (*
 		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("X-Disco2-Tenant-ID", req.TenantID)
+	httpReq.Header.Set("X-Discobox-Tenant-ID", req.TenantID)
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
 		return nil, err
@@ -117,7 +117,7 @@ func (c *HTTPClient) UpdateWorkerStatus(ctx context.Context, req StatusRequest) 
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+strings.TrimSpace(req.AuthToken))
-	httpReq.Header.Set("X-Disco2-Tenant-ID", req.TenantID)
+	httpReq.Header.Set("X-Discobox-Tenant-ID", req.TenantID)
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
 		return err

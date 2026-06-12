@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/obot-platform/disco2/internal/server"
+	"github.com/obot-platform/discobox/internal/server"
 )
 
 func main() {

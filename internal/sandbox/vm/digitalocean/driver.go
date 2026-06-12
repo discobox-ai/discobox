@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/disco2/internal/sandbox"
-	"github.com/obot-platform/disco2/internal/sandbox/vm"
+	"github.com/obot-platform/discobox/internal/sandbox"
+	"github.com/obot-platform/discobox/internal/sandbox/vm"
 )
 
 const (
@@ -321,10 +321,10 @@ func effectiveSize(defaultSize string, resources sandbox.ResourceConfig) string 
 func dropletTags(defaultTags []string, spec vm.InstanceSpec) []string {
 	tags := append([]string(nil), defaultTags...)
 	for _, tag := range []string{
-		"disco2",
-		"disco2-tenant-" + safeTag(spec.Ref.TenantID),
-		"disco2-project-" + safeTag(spec.Ref.ProjectID),
-		"disco2-sandbox-" + safeTag(spec.Ref.SandboxID),
+		"discobox",
+		"discobox-tenant-" + safeTag(spec.Ref.TenantID),
+		"discobox-project-" + safeTag(spec.Ref.ProjectID),
+		"discobox-sandbox-" + safeTag(spec.Ref.SandboxID),
 	} {
 		if strings.TrimRight(tag, "-") != tag || strings.HasSuffix(tag, "-") {
 			continue

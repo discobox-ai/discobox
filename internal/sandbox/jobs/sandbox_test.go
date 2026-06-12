@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/obot-platform/disco2/internal/sandbox/jobs"
-	"github.com/obot-platform/disco2/orchestration"
+	"github.com/obot-platform/discobox/internal/sandbox/jobs"
+	"github.com/obot-platform/discobox/orchestration"
 )
 
 type fakeSandboxReconciler struct {

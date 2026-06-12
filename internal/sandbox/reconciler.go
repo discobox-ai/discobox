@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/obot-platform/disco2/internal/model"
-	"github.com/obot-platform/disco2/internal/sandboxauth"
-	"github.com/obot-platform/disco2/internal/store"
-	"github.com/obot-platform/disco2/orchestration"
+	"github.com/obot-platform/discobox/internal/model"
+	"github.com/obot-platform/discobox/internal/sandboxauth"
+	"github.com/obot-platform/discobox/internal/store"
+	"github.com/obot-platform/discobox/orchestration"
 )
 
 type SandboxReconciler struct {
@@ -51,7 +51,7 @@ func WithSandboxProviderManager(manager *ProviderManager) SandboxReconcilerOptio
 
 // WithSandboxAuthenticator injects trust-key authentication into sandbox
 // creation. When configured, sandbox starts ensure the creating user has a
-// public trust key and pass it to the runtime as DISCO2_TRUST_KEY.
+// public trust key and pass it to the runtime as DISCOBOX_TRUST_KEY.
 func WithSandboxAuthenticator(auth SandboxAuthenticator) SandboxReconcilerOption {
 	return func(reconciler *SandboxReconciler) {
 		reconciler.auth = auth
@@ -323,7 +323,7 @@ func (r *SandboxReconciler) applyTrustKey(ctx context.Context, sb *model.Sandbox
 	if opts.Env == nil {
 		opts.Env = map[string]string{}
 	}
-	opts.Env["DISCO2_TRUST_KEY"] = trustKey
+	opts.Env["DISCOBOX_TRUST_KEY"] = trustKey
 	return nil
 }
 
@@ -386,12 +386,12 @@ func ensureSandboxImage(ctx context.Context, provider Provider, opts *CreateOpti
 func (r *SandboxReconciler) createOptionsFromSandbox(sb *model.Sandbox) CreateOptions {
 	opts := CreateOptions{
 		Labels: map[string]string{
-			"disco2.project_id": sb.ProjectID,
-			"disco2.sandbox_id": sb.ID,
+			"discobox.project_id": sb.ProjectID,
+			"discobox.sandbox_id": sb.ID,
 		},
 	}
 	if sb.Project != nil && sb.Project.TenantID != "" {
-		opts.Labels["disco2.tenant_id"] = sb.Project.TenantID
+		opts.Labels["discobox.tenant_id"] = sb.Project.TenantID
 	}
 	if sb.ProviderInstanceID != nil {
 		opts.ProviderInstanceID = *sb.ProviderInstanceID

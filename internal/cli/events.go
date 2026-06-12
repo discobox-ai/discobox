@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/obot-platform/disco2/internal/apiclient"
+	"github.com/obot-platform/discobox/internal/apiclient"
 )
 
 type eventsOptions struct {

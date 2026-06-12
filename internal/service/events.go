@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/obot-platform/disco2/internal/id"
-	"github.com/obot-platform/disco2/internal/model"
+	"github.com/obot-platform/discobox/internal/id"
+	"github.com/obot-platform/discobox/internal/model"
 )
 
 func (s *Service) MaxProjectEventSeq(ctx context.Context, projectID string) (int64, error) {

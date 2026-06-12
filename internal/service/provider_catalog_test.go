@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/disco2/internal/api"
-	"github.com/obot-platform/disco2/internal/database"
-	"github.com/obot-platform/disco2/internal/model"
-	"github.com/obot-platform/disco2/internal/sandbox"
-	"github.com/obot-platform/disco2/internal/sandboxauth"
-	"github.com/obot-platform/disco2/internal/service"
-	"github.com/obot-platform/disco2/internal/store"
+	"github.com/obot-platform/discobox/internal/api"
+	"github.com/obot-platform/discobox/internal/database"
+	"github.com/obot-platform/discobox/internal/model"
+	"github.com/obot-platform/discobox/internal/sandbox"
+	"github.com/obot-platform/discobox/internal/sandboxauth"
+	"github.com/obot-platform/discobox/internal/service"
+	"github.com/obot-platform/discobox/internal/store"
 )
 
 func TestSandboxReconcilerDelegatesToProvider(t *testing.T) {
@@ -130,7 +130,7 @@ func TestSandboxReconcilerInjectsTrustKey(t *testing.T) {
 	if auth.projectID != service.DefaultProjectID {
 		t.Fatalf("auth project id = %q, want %q", auth.projectID, service.DefaultProjectID)
 	}
-	if got := provider.createOptions.Env["DISCO2_TRUST_KEY"]; got != "public-key" {
+	if got := provider.createOptions.Env["DISCOBOX_TRUST_KEY"]; got != "public-key" {
 		t.Fatalf("trust key env = %q, want public-key", got)
 	}
 }

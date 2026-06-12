@@ -7,10 +7,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/obot-platform/disco2/internal/model"
-	"github.com/obot-platform/disco2/internal/sandbox"
-	"github.com/obot-platform/disco2/internal/store"
-	"github.com/obot-platform/disco2/internal/workeragent"
+	"github.com/obot-platform/discobox/internal/model"
+	"github.com/obot-platform/discobox/internal/sandbox"
+	"github.com/obot-platform/discobox/internal/store"
+	"github.com/obot-platform/discobox/internal/workeragent"
 )
 
 // WorkerProvider is a VM-backed sandbox provider with a warm worker pool.
@@ -140,7 +140,7 @@ func LaunchWorker(ctx context.Context, project *model.Project, provider *model.S
 	if err != nil {
 		return err
 	}
-	labels := map[string]string{"disco2.worker_id": worker.ID, "disco2.provider_instance_id": provider.ID}
+	labels := map[string]string{"discobox.worker_id": worker.ID, "discobox.provider_instance_id": provider.ID}
 	for key, value := range cfg.Labels {
 		labels[key] = value
 	}

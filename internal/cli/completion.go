@@ -13,9 +13,9 @@ func (a *App) newCompletionCommand() *cobra.Command {
 		Long: `Generate shell completion script.
 
 Examples:
-  source <(disco2 completion bash)
-  disco2 completion zsh > "${fpath[1]}/_disco2"
-  disco2 completion fish > ~/.config/fish/completions/disco2.fish`,
+  source <(discobox completion bash)
+  discobox completion zsh > "${fpath[1]}/_discobox"
+  discobox completion fish > ~/.config/fish/completions/discobox.fish`,
 		Args: cobra.MatchAll(cobra.ExactArgs(1), cobra.OnlyValidArgs),
 		ValidArgs: []string{
 			"bash",

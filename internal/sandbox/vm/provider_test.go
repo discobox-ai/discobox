@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/disco2/internal/sandbox"
-	"github.com/obot-platform/disco2/internal/sandbox/vm"
-	"github.com/obot-platform/disco2/internal/workeragent"
+	"github.com/obot-platform/discobox/internal/sandbox"
+	"github.com/obot-platform/discobox/internal/sandbox/vm"
+	"github.com/obot-platform/discobox/internal/workeragent"
 )
 
 func TestBuildBootConfigIncludesTenantAndWorkerRegistration(t *testing.T) {
@@ -36,7 +36,7 @@ func TestBuildBootConfigIncludesTenantAndWorkerRegistration(t *testing.T) {
 		t.Fatalf("cloud-init userdata does not contain bootstrap token env")
 	}
 	joined := strings.Join(boot.KernelCommandLine, " ")
-	if !strings.Contains(joined, "disco2.disco2_tenant_id=tenant-1") {
+	if !strings.Contains(joined, "discobox.discobox_tenant_id=tenant-1") {
 		t.Fatalf("kernel args = %q", joined)
 	}
 }

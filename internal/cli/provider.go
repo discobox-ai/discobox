@@ -9,7 +9,7 @@ import (
 	"github.com/go-faster/jx"
 	"github.com/spf13/cobra"
 
-	apiclientgen "github.com/obot-platform/disco2/internal/apiclient/gen"
+	apiclientgen "github.com/obot-platform/discobox/internal/apiclient/gen"
 )
 
 type providerCreateOptions struct {
@@ -112,9 +112,9 @@ Provider-specific flags are loaded from the server catalog only when this
 subcommand runs. Use --help=<provider> to show provider-specific options.
 
 Examples:
-  disco2 provider create --help
-  disco2 provider create --help=digitalocean
-  disco2 provider create --type digitalocean --name do --control-plane-url https://example.com --token-env DIGITALOCEAN_ACCESS_TOKEN`,
+  discobox provider create --help
+  discobox provider create --help=digitalocean
+  discobox provider create --type digitalocean --name do --control-plane-url https://example.com --token-env DIGITALOCEAN_ACCESS_TOKEN`,
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		DisableFlagParsing: true,
 		RunE:               a.runProviderCreate,

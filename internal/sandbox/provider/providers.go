@@ -1,10 +1,10 @@
 package provider
 
 import (
-	"github.com/obot-platform/disco2/internal/sandbox"
-	"github.com/obot-platform/disco2/internal/sandbox/provider/digitalocean"
-	"github.com/obot-platform/disco2/internal/sandbox/provider/dockervm"
-	"github.com/obot-platform/disco2/internal/sandbox/vm"
+	"github.com/obot-platform/discobox/internal/sandbox"
+	"github.com/obot-platform/discobox/internal/sandbox/provider/digitalocean"
+	"github.com/obot-platform/discobox/internal/sandbox/provider/dockervm"
+	"github.com/obot-platform/discobox/internal/sandbox/vm"
 )
 
 func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, workerStore vm.WorkerStore) {

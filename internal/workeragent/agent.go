@@ -14,13 +14,13 @@ import (
 )
 
 const (
-	EnvControlPlaneURL = "DISCO2_CONTROL_PLANE_URL"
-	EnvTenantID        = "DISCO2_TENANT_ID"
-	EnvProjectID       = "DISCO2_PROJECT_ID"
-	EnvSandboxID       = "DISCO2_SANDBOX_ID"
-	EnvWorkerID        = "DISCO2_WORKER_ID"
-	EnvBootstrapToken  = "DISCO2_WORKER_BOOTSTRAP_TOKEN"
-	EnvAgentPort       = "DISCO2_AGENT_PORT"
+	EnvControlPlaneURL = "DISCOBOX_CONTROL_PLANE_URL"
+	EnvTenantID        = "DISCOBOX_TENANT_ID"
+	EnvProjectID       = "DISCOBOX_PROJECT_ID"
+	EnvSandboxID       = "DISCOBOX_SANDBOX_ID"
+	EnvWorkerID        = "DISCOBOX_WORKER_ID"
+	EnvBootstrapToken  = "DISCOBOX_WORKER_BOOTSTRAP_TOKEN"
+	EnvAgentPort       = "DISCOBOX_AGENT_PORT"
 )
 
 // Bootstrap is the VM boot contract used by the control plane and worker agent.

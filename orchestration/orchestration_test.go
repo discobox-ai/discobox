@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/disco2/orchestration"
+	"github.com/obot-platform/discobox/orchestration"
 )
 
 const (

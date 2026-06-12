@@ -45,7 +45,7 @@ name is `SandboxAccessIssuerKey`.
 3. If missing, the control plane generates an Ed25519 keypair.
 4. The public key is stored on the issuer key row.
 5. The private key is encrypted and stored on the issuer key row.
-6. The sandbox runtime receives the public trust key as DISCO2_TRUST_KEY.
+6. The sandbox runtime receives the public trust key as DISCOBOX_TRUST_KEY.
 7. When sandbox access is needed, the control plane decrypts the private key.
 8. The control plane signs a short-lived PASETO token with that private key.
 9. The token can be used with the sandbox side that trusts the matching public key.

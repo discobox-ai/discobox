@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/obot-platform/disco2/internal/id"
-	"github.com/obot-platform/disco2/internal/model"
+	"github.com/obot-platform/discobox/internal/id"
+	"github.com/obot-platform/discobox/internal/model"
 )
 
 const defaultWorkerBootstrapTTL = 30 * time.Minute

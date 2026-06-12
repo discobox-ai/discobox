@@ -7,14 +7,14 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
-	"github.com/obot-platform/disco2/internal/events"
-	"github.com/obot-platform/disco2/internal/sandbox"
-	"github.com/obot-platform/disco2/internal/sandbox/jobs"
-	sandboxprovider "github.com/obot-platform/disco2/internal/sandbox/provider"
-	sandboxservice "github.com/obot-platform/disco2/internal/sandbox/service"
-	"github.com/obot-platform/disco2/internal/sandboxauth"
-	"github.com/obot-platform/disco2/internal/store"
-	"github.com/obot-platform/disco2/orchestration"
+	"github.com/obot-platform/discobox/internal/events"
+	"github.com/obot-platform/discobox/internal/sandbox"
+	"github.com/obot-platform/discobox/internal/sandbox/jobs"
+	sandboxprovider "github.com/obot-platform/discobox/internal/sandbox/provider"
+	sandboxservice "github.com/obot-platform/discobox/internal/sandbox/service"
+	"github.com/obot-platform/discobox/internal/sandboxauth"
+	"github.com/obot-platform/discobox/internal/store"
+	"github.com/obot-platform/discobox/orchestration"
 )
 
 const (
