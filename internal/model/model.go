@@ -165,12 +165,14 @@ type Project struct {
 	OwnerUserID              string    `gorm:"column:owner_user_id;not null;type:text;index" json:"ownerUserId" doc:"Owning user ID" format:"uuid"`
 	Name                     string    `gorm:"not null;type:text" json:"name" doc:"Project display name" maxLength:"200"`
 	Slug                     string    `gorm:"uniqueIndex;not null;type:text" json:"slug" doc:"URL-safe project slug" pattern:"^[a-z0-9][a-z0-9-]*$"`
+	Default                  bool      `gorm:"column:default_project;not null;default:false;index" json:"default" doc:"Whether this is the user's/default tenant project"`
 	DefaultSandboxProviderID string    `gorm:"column:default_sandbox_provider_id;type:text;default:''" json:"defaultSandboxProviderId,omitempty" doc:"Default sandbox provider instance ID"`
 	CreatedAt                time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt                time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Tenant                   *Tenant                   `gorm:"-" json:"tenant,omitempty" doc:"Tenant"`
 	Owner                    *User                     `gorm:"-" json:"owner,omitempty" doc:"Project owner"`
+	Members                  []ProjectMember           `gorm:"foreignKey:ProjectID" json:"members,omitempty" doc:"Project members"`
 	Sandboxes                []Sandbox                 `gorm:"foreignKey:ProjectID" json:"sandboxes,omitempty" doc:"Project sandboxes"`
 	SandboxProviderInstances []SandboxProviderInstance `gorm:"foreignKey:ProjectID" json:"sandboxProviderInstances,omitempty" doc:"Sandbox provider instances"`
 }
@@ -187,6 +189,20 @@ func (p *Project) BeforeCreate(_ *gorm.DB) error {
 	}
 	return nil
 }
+
+// ProjectMember grants a user access to a project.
+type ProjectMember struct {
+	ProjectID string    `gorm:"column:project_id;primaryKey;type:text" json:"projectId" doc:"Project ID" format:"uuid"`
+	UserID    string    `gorm:"column:user_id;primaryKey;type:text" json:"userId" doc:"User ID" format:"uuid"`
+	Role      string    `gorm:"not null;type:text;default:'member'" json:"role" doc:"Project role"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+
+	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
+	User    *User    `gorm:"-" json:"-"`
+}
+
+func (ProjectMember) TableName() string { return "project_members" }
 
 // ServerState stores generic tenant-local server settings and one-time state
 // flags. Delete a row to allow its associated initialization to run again.
@@ -504,6 +520,7 @@ func GlobalModels() []any {
 func TenantModels() []any {
 	return []any{
 		&Project{},
+		&ProjectMember{},
 		&ServerState{},
 		&SandboxAccessIssuerKey{},
 		&Sandbox{},

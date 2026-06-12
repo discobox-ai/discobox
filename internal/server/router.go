@@ -3,8 +3,6 @@ package server
 
 import (
 	"context"
-	"net/http"
-	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -16,6 +14,8 @@ import (
 	"github.com/obot-platform/discobox/internal/events"
 	"github.com/obot-platform/discobox/internal/sandboxauth"
 	"github.com/obot-platform/discobox/internal/secrets"
+	"github.com/obot-platform/discobox/internal/server/defaults"
+	"github.com/obot-platform/discobox/internal/server/middleware"
 	"github.com/obot-platform/discobox/internal/service"
 	"github.com/obot-platform/discobox/internal/store"
 	"github.com/obot-platform/discobox/internal/tenantctx"
@@ -108,12 +108,21 @@ func NewDatabaseRouter(ctx context.Context, resolver *database.Resolver, options
 	if opts.SecretSealer != nil {
 		services.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.SecretSealer))
 	}
+	if err := defaults.InitializeIdentity(ctx, resolver, opts.TenantID, opts.UserID); err != nil {
+		return nil, nil, err
+	}
 	initCtx := tenantctx.WithTenantID(ctx, opts.TenantID)
 	if err := services.InitializeDefaults(initCtx, opts.TenantID, opts.UserID); err != nil {
 		return nil, nil, err
 	}
 	router := chi.NewRouter()
-	router.Use(tenantMiddleware(tenantJobs))
+	router.Use(middleware.Authentication(
+		middleware.WorkerAuthenticator{},
+		middleware.DefaultUserAuthenticator{TenantID: opts.TenantID, UserID: opts.UserID},
+	))
+	router.Use(middleware.Tenant(tenantJobs, opts.TenantID))
+	router.Use(middleware.ProjectAuthorization(appStore))
+	router.Use(middleware.GenericAuthorization)
 	config := huma.DefaultConfig(Name, Version)
 	config.DocsRenderer = huma.DocsRendererScalar
 	humaAPI := humachi.New(router, config)
@@ -125,29 +134,4 @@ func NewDatabaseRouter(ctx context.Context, resolver *database.Resolver, options
 		Events:    services,
 	})
 	return router, humaAPI, nil
-}
-
-func tenantMiddleware(jobs *tenantJobManager) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isTenantOptionalPath(r.URL.Path) {
-				next.ServeHTTP(w, r)
-				return
-			}
-			tenantID := strings.TrimSpace(r.Header.Get("X-Discobox-Tenant-ID"))
-			if tenantID == "" {
-				tenantID = jobs.opts.TenantID
-			}
-			ctx := tenantctx.WithTenantID(r.Context(), tenantID)
-			if err := jobs.EnsureStarted(ctx); err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-}
-
-func isTenantOptionalPath(path string) bool {
-	return path == "/openapi.json" || path == "/docs" || strings.HasPrefix(path, "/docs/")
 }

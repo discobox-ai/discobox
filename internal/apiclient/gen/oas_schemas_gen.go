@@ -724,6 +724,69 @@ func (o OptNilErrorDetailArray) Or(d []ErrorDetail) []ErrorDetail {
 	return d
 }
 
+// NewOptNilProjectMemberArray returns new OptNilProjectMemberArray with value set to v.
+func NewOptNilProjectMemberArray(v []ProjectMember) OptNilProjectMemberArray {
+	return OptNilProjectMemberArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilProjectMemberArray is optional nullable []ProjectMember.
+type OptNilProjectMemberArray struct {
+	Value []ProjectMember
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilProjectMemberArray was set.
+func (o OptNilProjectMemberArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilProjectMemberArray) Reset() {
+	var v []ProjectMember
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilProjectMemberArray) SetTo(v []ProjectMember) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilProjectMemberArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilProjectMemberArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []ProjectMember
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilProjectMemberArray) Get() (v []ProjectMember, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilProjectMemberArray) Or(d []ProjectMember) []ProjectMember {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptNilProviderConfigFieldArray returns new OptNilProviderConfigFieldArray with value set to v.
 func NewOptNilProviderConfigFieldArray(v []ProviderConfigField) OptNilProviderConfigFieldArray {
 	return OptNilProviderConfigFieldArray{
@@ -1413,10 +1476,14 @@ type Project struct {
 	Schema OptURI `json:"$schema"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
+	// Whether this is the user's/default tenant project.
+	Default bool `json:"default"`
 	// Default sandbox provider instance ID.
 	DefaultSandboxProviderId OptString `json:"defaultSandboxProviderId"`
 	// Stable project ID.
 	ID uuid.UUID `json:"id"`
+	// Project members.
+	Members OptNilProjectMemberArray `json:"members"`
 	// Project display name.
 	Name string `json:"name"`
 	// Project owner.
@@ -1447,6 +1514,11 @@ func (s *Project) GetCreatedAt() time.Time {
 	return s.CreatedAt
 }
 
+// GetDefault returns the value of Default.
+func (s *Project) GetDefault() bool {
+	return s.Default
+}
+
 // GetDefaultSandboxProviderId returns the value of DefaultSandboxProviderId.
 func (s *Project) GetDefaultSandboxProviderId() OptString {
 	return s.DefaultSandboxProviderId
@@ -1455,6 +1527,11 @@ func (s *Project) GetDefaultSandboxProviderId() OptString {
 // GetID returns the value of ID.
 func (s *Project) GetID() uuid.UUID {
 	return s.ID
+}
+
+// GetMembers returns the value of Members.
+func (s *Project) GetMembers() OptNilProjectMemberArray {
+	return s.Members
 }
 
 // GetName returns the value of Name.
@@ -1512,6 +1589,11 @@ func (s *Project) SetCreatedAt(val time.Time) {
 	s.CreatedAt = val
 }
 
+// SetDefault sets the value of Default.
+func (s *Project) SetDefault(val bool) {
+	s.Default = val
+}
+
 // SetDefaultSandboxProviderId sets the value of DefaultSandboxProviderId.
 func (s *Project) SetDefaultSandboxProviderId(val OptString) {
 	s.DefaultSandboxProviderId = val
@@ -1520,6 +1602,11 @@ func (s *Project) SetDefaultSandboxProviderId(val OptString) {
 // SetID sets the value of ID.
 func (s *Project) SetID(val uuid.UUID) {
 	s.ID = val
+}
+
+// SetMembers sets the value of Members.
+func (s *Project) SetMembers(val OptNilProjectMemberArray) {
+	s.Members = val
 }
 
 // SetName sets the value of Name.
@@ -1565,6 +1652,70 @@ func (s *Project) SetTenantId(val uuid.UUID) {
 // SetUpdatedAt sets the value of UpdatedAt.
 func (s *Project) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
+}
+
+// Ref: #/components/schemas/ProjectMember
+type ProjectMember struct {
+	// Creation timestamp.
+	CreatedAt time.Time `json:"createdAt"`
+	// Project ID.
+	ProjectId uuid.UUID `json:"projectId"`
+	// Project role.
+	Role string `json:"role"`
+	// Last update timestamp.
+	UpdatedAt time.Time `json:"updatedAt"`
+	// User ID.
+	UserId uuid.UUID `json:"userId"`
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *ProjectMember) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *ProjectMember) GetProjectId() uuid.UUID {
+	return s.ProjectId
+}
+
+// GetRole returns the value of Role.
+func (s *ProjectMember) GetRole() string {
+	return s.Role
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *ProjectMember) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// GetUserId returns the value of UserId.
+func (s *ProjectMember) GetUserId() uuid.UUID {
+	return s.UserId
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *ProjectMember) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *ProjectMember) SetProjectId(val uuid.UUID) {
+	s.ProjectId = val
+}
+
+// SetRole sets the value of Role.
+func (s *ProjectMember) SetRole(val string) {
+	s.Role = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *ProjectMember) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+// SetUserId sets the value of UserId.
+func (s *ProjectMember) SetUserId(val uuid.UUID) {
+	s.UserId = val
 }
 
 // Ref: #/components/schemas/ProviderConfigField

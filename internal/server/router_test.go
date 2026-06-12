@@ -84,3 +84,43 @@ func TestNewDatabaseRouterFallsBackToDefaultTenant(t *testing.T) {
 		t.Fatalf("tenant ID = %q, want %q", body.Projects[0].TenantID, service.DefaultTenantID)
 	}
 }
+
+func TestNewDatabaseRouterResolvesDefaultProjectAlias(t *testing.T) {
+	ctx := context.Background()
+	resolver := database.NewResolver(database.ResolverConfig{
+		Config: database.Config{
+			Driver: gormdb.DriverSQLite,
+			DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+		},
+		MigrateOnOpen: true,
+	})
+	t.Cleanup(func() {
+		if err := resolver.Close(); err != nil {
+			t.Fatalf("close resolver: %v", err)
+		}
+	})
+
+	router, _, err := NewDatabaseRouter(ctx, resolver, DatabaseRouterOptions{
+		DispatcherEnabled: false,
+	})
+	if err != nil {
+		t.Fatalf("new database router: %v", err)
+	}
+
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/projects/default", nil))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("GET /projects/default status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+
+	var project model.Project
+	if err := json.Unmarshal(resp.Body.Bytes(), &project); err != nil {
+		t.Fatalf("decode project: %v", err)
+	}
+	if project.ID != service.DefaultProjectID {
+		t.Fatalf("project ID = %q, want %q", project.ID, service.DefaultProjectID)
+	}
+	if !project.Default {
+		t.Fatal("expected default project flag")
+	}
+}

@@ -9,6 +9,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/obot-platform/discobox/internal/api"
+	"github.com/obot-platform/discobox/internal/authctx"
 	"github.com/obot-platform/discobox/internal/id"
 	"github.com/obot-platform/discobox/internal/model"
 
@@ -95,6 +96,10 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input api
 	if strings.TrimSpace(input.Name) == "" {
 		return nil, fmt.Errorf("sandbox name is required")
 	}
+	userID := s.defaultUserID
+	if authenticatedUserID, err := authctx.UserID(ctx); err == nil {
+		userID = authenticatedUserID
+	}
 	sandboxID, err := id.New()
 	if err != nil {
 		return nil, err
@@ -102,7 +107,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input api
 	sandbox := &model.Sandbox{
 		ID:                 sandboxID,
 		ProjectID:          projectID,
-		CreatedByUserID:    s.defaultUserID,
+		CreatedByUserID:    userID,
 		ProviderInstanceID: providerID,
 		Name:               input.Name,
 		Description:        input.Description,

@@ -9,6 +9,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/obot-platform/discobox/internal/authctx"
 	"github.com/obot-platform/discobox/internal/model"
 	"github.com/obot-platform/discobox/internal/store"
 )
@@ -46,10 +47,20 @@ func (s *Service) InitializeDefaults(ctx context.Context, tenantID, userID strin
 		OwnerUserID: userID,
 		Name:        "Default Project",
 		Slug:        "default",
+		Default:     true,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
 	if _, err := s.store.CreateProjectIfNotExists(ctx, project); err != nil {
+		return err
+	}
+	if _, err := s.store.CreateProjectMemberIfNotExists(ctx, &model.ProjectMember{
+		ProjectID: DefaultProjectID,
+		UserID:    userID,
+		Role:      "owner",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
 		return err
 	}
 	if opts.skipProvider {
@@ -135,6 +146,9 @@ func defaultSandboxProviderForOS() *model.SandboxProviderInstance {
 }
 
 func (s *Service) ListProjects(ctx context.Context) ([]model.Project, error) {
+	if userID, err := authctx.UserID(ctx); err == nil {
+		return s.store.ListProjectsForUser(ctx, userID)
+	}
 	return s.store.ListProjects(ctx)
 }
 
