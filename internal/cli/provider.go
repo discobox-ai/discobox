@@ -63,7 +63,7 @@ func (a *App) newProviderCatalogCommand() *cobra.Command {
 
 func (a *App) newProviderListCommand() *cobra.Command {
 	return &cobra.Command{Use: "list", Short: "List provider instances", RunE: func(cmd *cobra.Command, _ []string) error {
-		projectID, err := a.projectUUID()
+		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
 		}
@@ -81,7 +81,7 @@ func (a *App) newProviderListCommand() *cobra.Command {
 
 func (a *App) newProviderGetCommand() *cobra.Command {
 	return &cobra.Command{Use: "get PROVIDER_ID", Short: "Get a provider instance", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		projectID, err := a.projectUUID()
+		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
 		}
@@ -93,7 +93,7 @@ func (a *App) newProviderGetCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		provider, err := client.GetSandboxProviderInstance(cmd.Context(), apiclientgen.GetSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID})
+		provider, err := client.GetSandboxProviderInstance(cmd.Context(), apiclientgen.GetSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID.String()})
 		if err != nil {
 			return err
 		}
@@ -139,7 +139,7 @@ Examples:
 func (a *App) newProviderUpdateCommand() *cobra.Command {
 	var opts providerUpdateOptions
 	cmd := &cobra.Command{Use: "update PROVIDER_ID", Short: "Update a provider instance", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		projectID, err := a.projectUUID()
+		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
 		}
@@ -151,7 +151,7 @@ func (a *App) newProviderUpdateCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		current, err := client.GetSandboxProviderInstance(cmd.Context(), apiclientgen.GetSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID})
+		current, err := client.GetSandboxProviderInstance(cmd.Context(), apiclientgen.GetSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID.String()})
 		if err != nil {
 			return err
 		}
@@ -159,7 +159,7 @@ func (a *App) newProviderUpdateCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		provider, err := client.UpdateSandboxProviderInstance(cmd.Context(), body, apiclientgen.UpdateSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID})
+		provider, err := client.UpdateSandboxProviderInstance(cmd.Context(), body, apiclientgen.UpdateSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID.String()})
 		if err != nil {
 			return err
 		}
@@ -172,7 +172,7 @@ func (a *App) newProviderUpdateCommand() *cobra.Command {
 
 func (a *App) newProviderDeleteCommand() *cobra.Command {
 	return &cobra.Command{Use: "delete PROVIDER_ID", Short: "Delete a provider instance", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		projectID, err := a.projectUUID()
+		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
 		}
@@ -184,7 +184,7 @@ func (a *App) newProviderDeleteCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if err := client.DeleteSandboxProviderInstance(cmd.Context(), apiclientgen.DeleteSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID}); err != nil {
+		if err := client.DeleteSandboxProviderInstance(cmd.Context(), apiclientgen.DeleteSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID.String()}); err != nil {
 			return err
 		}
 		fmt.Fprintln(cmd.OutOrStdout(), "deleted")

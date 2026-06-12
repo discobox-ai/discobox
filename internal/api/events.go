@@ -13,7 +13,7 @@ import (
 )
 
 type ProjectEventsInput struct {
-	ProjectID  string   `path:"projectId" doc:"Project ID" format:"uuid"`
+	ProjectID  string   `path:"projectId" doc:"Project ID"`
 	Resources  []string `query:"resources" doc:"Resource types to watch. Repeat the parameter or use comma-separated values. Defaults to sandbox."`
 	AfterSeq   int64    `query:"afterSeq" default:"-1" doc:"Replay changes after this sequence. Omit for list-watch baseline behavior. A value of 0 starts at the current max sequence." minimum:"-1"`
 	List       bool     `query:"list" doc:"When afterSeq is omitted, send a full list of requested resources before live changes"`
@@ -25,14 +25,14 @@ type ResourceChangedEvent model.ProjectEvent
 type ResourceListedEvent model.ProjectEvent
 
 type ResourceListStartEvent struct {
-	ProjectID string    `json:"projectId" doc:"Project ID" format:"uuid"`
+	ProjectID string    `json:"projectId" doc:"Project ID"`
 	Resources []string  `json:"resources" doc:"Resource types included in the list"`
 	Seq       int64     `json:"seq" doc:"Sequence used as the list baseline" minimum:"0"`
 	StartedAt time.Time `json:"startedAt" doc:"List start timestamp" format:"date-time"`
 }
 
 type ResourceListFinishEvent struct {
-	ProjectID  string    `json:"projectId" doc:"Project ID" format:"uuid"`
+	ProjectID  string    `json:"projectId" doc:"Project ID"`
 	Resources  []string  `json:"resources" doc:"Resource types included in the list"`
 	Seq        int64     `json:"seq" doc:"Sequence used as the list baseline" minimum:"0"`
 	FinishedAt time.Time `json:"finishedAt" doc:"List finish timestamp" format:"date-time"`

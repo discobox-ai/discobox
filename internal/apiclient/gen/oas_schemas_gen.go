@@ -9,7 +9,6 @@ import (
 
 	"github.com/go-faster/errors"
 	"github.com/go-faster/jx"
-	"github.com/google/uuid"
 )
 
 func (s *ErrorModelStatusCode) Error() string {
@@ -1332,52 +1331,6 @@ func (o OptURI) Or(d url.URL) url.URL {
 	return d
 }
 
-// NewOptUUID returns new OptUUID with value set to v.
-func NewOptUUID(v uuid.UUID) OptUUID {
-	return OptUUID{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptUUID is optional uuid.UUID.
-type OptUUID struct {
-	Value uuid.UUID
-	Set   bool
-}
-
-// IsSet returns true if OptUUID was set.
-func (o OptUUID) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptUUID) Reset() {
-	var v uuid.UUID
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptUUID) SetTo(v uuid.UUID) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptUUID) Get() (v uuid.UUID, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptUUID) Or(d uuid.UUID) uuid.UUID {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptUser returns new OptUser with value set to v.
 func NewOptUser(v User) OptUser {
 	return OptUser{
@@ -1481,7 +1434,7 @@ type Project struct {
 	// Default sandbox provider instance ID.
 	DefaultSandboxProviderId OptString `json:"defaultSandboxProviderId"`
 	// Stable project ID.
-	ID uuid.UUID `json:"id"`
+	ID string `json:"id"`
 	// Project members.
 	Members OptNilProjectMemberArray `json:"members"`
 	// Project display name.
@@ -1489,7 +1442,7 @@ type Project struct {
 	// Project owner.
 	Owner OptUser `json:"owner"`
 	// Owning user ID.
-	OwnerUserId uuid.UUID `json:"ownerUserId"`
+	OwnerUserId string `json:"ownerUserId"`
 	// Sandbox provider instances.
 	SandboxProviderInstances OptNilSandboxProviderInstanceArray `json:"sandboxProviderInstances"`
 	// Project sandboxes.
@@ -1499,7 +1452,7 @@ type Project struct {
 	// Tenant.
 	Tenant OptTenant `json:"tenant"`
 	// Tenant ID.
-	TenantId uuid.UUID `json:"tenantId"`
+	TenantId string `json:"tenantId"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -1525,7 +1478,7 @@ func (s *Project) GetDefaultSandboxProviderId() OptString {
 }
 
 // GetID returns the value of ID.
-func (s *Project) GetID() uuid.UUID {
+func (s *Project) GetID() string {
 	return s.ID
 }
 
@@ -1545,7 +1498,7 @@ func (s *Project) GetOwner() OptUser {
 }
 
 // GetOwnerUserId returns the value of OwnerUserId.
-func (s *Project) GetOwnerUserId() uuid.UUID {
+func (s *Project) GetOwnerUserId() string {
 	return s.OwnerUserId
 }
 
@@ -1570,7 +1523,7 @@ func (s *Project) GetTenant() OptTenant {
 }
 
 // GetTenantId returns the value of TenantId.
-func (s *Project) GetTenantId() uuid.UUID {
+func (s *Project) GetTenantId() string {
 	return s.TenantId
 }
 
@@ -1600,7 +1553,7 @@ func (s *Project) SetDefaultSandboxProviderId(val OptString) {
 }
 
 // SetID sets the value of ID.
-func (s *Project) SetID(val uuid.UUID) {
+func (s *Project) SetID(val string) {
 	s.ID = val
 }
 
@@ -1620,7 +1573,7 @@ func (s *Project) SetOwner(val OptUser) {
 }
 
 // SetOwnerUserId sets the value of OwnerUserId.
-func (s *Project) SetOwnerUserId(val uuid.UUID) {
+func (s *Project) SetOwnerUserId(val string) {
 	s.OwnerUserId = val
 }
 
@@ -1645,7 +1598,7 @@ func (s *Project) SetTenant(val OptTenant) {
 }
 
 // SetTenantId sets the value of TenantId.
-func (s *Project) SetTenantId(val uuid.UUID) {
+func (s *Project) SetTenantId(val string) {
 	s.TenantId = val
 }
 
@@ -1659,13 +1612,13 @@ type ProjectMember struct {
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
 	// Project ID.
-	ProjectId uuid.UUID `json:"projectId"`
+	ProjectId string `json:"projectId"`
 	// Project role.
 	Role string `json:"role"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
 	// User ID.
-	UserId uuid.UUID `json:"userId"`
+	UserId string `json:"userId"`
 }
 
 // GetCreatedAt returns the value of CreatedAt.
@@ -1674,7 +1627,7 @@ func (s *ProjectMember) GetCreatedAt() time.Time {
 }
 
 // GetProjectId returns the value of ProjectId.
-func (s *ProjectMember) GetProjectId() uuid.UUID {
+func (s *ProjectMember) GetProjectId() string {
 	return s.ProjectId
 }
 
@@ -1689,7 +1642,7 @@ func (s *ProjectMember) GetUpdatedAt() time.Time {
 }
 
 // GetUserId returns the value of UserId.
-func (s *ProjectMember) GetUserId() uuid.UUID {
+func (s *ProjectMember) GetUserId() string {
 	return s.UserId
 }
 
@@ -1699,7 +1652,7 @@ func (s *ProjectMember) SetCreatedAt(val time.Time) {
 }
 
 // SetProjectId sets the value of ProjectId.
-func (s *ProjectMember) SetProjectId(val uuid.UUID) {
+func (s *ProjectMember) SetProjectId(val string) {
 	s.ProjectId = val
 }
 
@@ -1714,7 +1667,7 @@ func (s *ProjectMember) SetUpdatedAt(val time.Time) {
 }
 
 // SetUserId sets the value of UserId.
-func (s *ProjectMember) SetUserId(val uuid.UUID) {
+func (s *ProjectMember) SetUserId(val string) {
 	s.UserId = val
 }
 
@@ -2074,7 +2027,7 @@ type Sandbox struct {
 	// Creating user.
 	CreatedBy OptUser `json:"createdBy"`
 	// Creating user ID.
-	CreatedByUserId uuid.UUID `json:"createdByUserId"`
+	CreatedByUserId string `json:"createdByUserId"`
 	// Sandbox description.
 	Description OptString `json:"description"`
 	// Requested steady state for reconciliation.
@@ -2084,11 +2037,11 @@ type Sandbox struct {
 	// Latest desired-state generation.
 	Generation int64 `json:"generation"`
 	// Stable sandbox ID.
-	ID uuid.UUID `json:"id"`
+	ID string `json:"id"`
 	// Last observed activity timestamp.
 	LastActiveAt OptDateTime `json:"lastActiveAt"`
 	// Most recent lifecycle job ID.
-	LastJobId OptUUID `json:"lastJobId"`
+	LastJobId OptString `json:"lastJobId"`
 	// Status of the most recent operation.
 	LastOperationStatus SandboxLastOperationStatus `json:"lastOperationStatus"`
 	// Requested memory capacity in bytes.
@@ -2100,7 +2053,7 @@ type Sandbox struct {
 	// Observed lifecycle phase.
 	Phase SandboxPhase `json:"phase"`
 	// Project ID.
-	ProjectId uuid.UUID `json:"projectId"`
+	ProjectId string `json:"projectId"`
 	// Sandbox provider instance.
 	ProviderInstance OptSandboxProviderInstance `json:"providerInstance"`
 	// Sandbox provider instance ID.
@@ -2153,7 +2106,7 @@ func (s *Sandbox) GetCreatedBy() OptUser {
 }
 
 // GetCreatedByUserId returns the value of CreatedByUserId.
-func (s *Sandbox) GetCreatedByUserId() uuid.UUID {
+func (s *Sandbox) GetCreatedByUserId() string {
 	return s.CreatedByUserId
 }
 
@@ -2178,7 +2131,7 @@ func (s *Sandbox) GetGeneration() int64 {
 }
 
 // GetID returns the value of ID.
-func (s *Sandbox) GetID() uuid.UUID {
+func (s *Sandbox) GetID() string {
 	return s.ID
 }
 
@@ -2188,7 +2141,7 @@ func (s *Sandbox) GetLastActiveAt() OptDateTime {
 }
 
 // GetLastJobId returns the value of LastJobId.
-func (s *Sandbox) GetLastJobId() OptUUID {
+func (s *Sandbox) GetLastJobId() OptString {
 	return s.LastJobId
 }
 
@@ -2218,7 +2171,7 @@ func (s *Sandbox) GetPhase() SandboxPhase {
 }
 
 // GetProjectId returns the value of ProjectId.
-func (s *Sandbox) GetProjectId() uuid.UUID {
+func (s *Sandbox) GetProjectId() string {
 	return s.ProjectId
 }
 
@@ -2308,7 +2261,7 @@ func (s *Sandbox) SetCreatedBy(val OptUser) {
 }
 
 // SetCreatedByUserId sets the value of CreatedByUserId.
-func (s *Sandbox) SetCreatedByUserId(val uuid.UUID) {
+func (s *Sandbox) SetCreatedByUserId(val string) {
 	s.CreatedByUserId = val
 }
 
@@ -2333,7 +2286,7 @@ func (s *Sandbox) SetGeneration(val int64) {
 }
 
 // SetID sets the value of ID.
-func (s *Sandbox) SetID(val uuid.UUID) {
+func (s *Sandbox) SetID(val string) {
 	s.ID = val
 }
 
@@ -2343,7 +2296,7 @@ func (s *Sandbox) SetLastActiveAt(val OptDateTime) {
 }
 
 // SetLastJobId sets the value of LastJobId.
-func (s *Sandbox) SetLastJobId(val OptUUID) {
+func (s *Sandbox) SetLastJobId(val OptString) {
 	s.LastJobId = val
 }
 
@@ -2373,7 +2326,7 @@ func (s *Sandbox) SetPhase(val SandboxPhase) {
 }
 
 // SetProjectId sets the value of ProjectId.
-func (s *Sandbox) SetProjectId(val uuid.UUID) {
+func (s *Sandbox) SetProjectId(val string) {
 	s.ProjectId = val
 }
 
@@ -2809,11 +2762,11 @@ type SandboxProviderInstance struct {
 	// Whether this provider is disabled.
 	Disabled bool `json:"disabled"`
 	// Stable provider instance ID.
-	ID uuid.UUID `json:"id"`
+	ID string `json:"id"`
 	// Provider display name.
 	Name string `json:"name"`
 	// Project ID.
-	ProjectId uuid.UUID `json:"projectId"`
+	ProjectId string `json:"projectId"`
 	// Sandboxes using this provider.
 	Sandboxes OptNilSandboxArray `json:"sandboxes"`
 	// Provider type.
@@ -2850,7 +2803,7 @@ func (s *SandboxProviderInstance) GetDisabled() bool {
 }
 
 // GetID returns the value of ID.
-func (s *SandboxProviderInstance) GetID() uuid.UUID {
+func (s *SandboxProviderInstance) GetID() string {
 	return s.ID
 }
 
@@ -2860,7 +2813,7 @@ func (s *SandboxProviderInstance) GetName() string {
 }
 
 // GetProjectId returns the value of ProjectId.
-func (s *SandboxProviderInstance) GetProjectId() uuid.UUID {
+func (s *SandboxProviderInstance) GetProjectId() string {
 	return s.ProjectId
 }
 
@@ -2910,7 +2863,7 @@ func (s *SandboxProviderInstance) SetDisabled(val bool) {
 }
 
 // SetID sets the value of ID.
-func (s *SandboxProviderInstance) SetID(val uuid.UUID) {
+func (s *SandboxProviderInstance) SetID(val string) {
 	s.ID = val
 }
 
@@ -2920,7 +2873,7 @@ func (s *SandboxProviderInstance) SetName(val string) {
 }
 
 // SetProjectId sets the value of ProjectId.
-func (s *SandboxProviderInstance) SetProjectId(val uuid.UUID) {
+func (s *SandboxProviderInstance) SetProjectId(val string) {
 	s.ProjectId = val
 }
 
@@ -3005,7 +2958,7 @@ type Tenant struct {
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
 	// Stable tenant ID.
-	ID uuid.UUID `json:"id"`
+	ID string `json:"id"`
 	// Tenant display name.
 	Name string `json:"name"`
 	// URL-safe tenant slug.
@@ -3022,7 +2975,7 @@ func (s *Tenant) GetCreatedAt() time.Time {
 }
 
 // GetID returns the value of ID.
-func (s *Tenant) GetID() uuid.UUID {
+func (s *Tenant) GetID() string {
 	return s.ID
 }
 
@@ -3052,7 +3005,7 @@ func (s *Tenant) SetCreatedAt(val time.Time) {
 }
 
 // SetID sets the value of ID.
-func (s *Tenant) SetID(val uuid.UUID) {
+func (s *Tenant) SetID(val string) {
 	s.ID = val
 }
 
@@ -3388,7 +3341,7 @@ type User struct {
 	// User email address.
 	Email string `json:"email"`
 	// Stable user ID.
-	ID uuid.UUID `json:"id"`
+	ID string `json:"id"`
 	// Display name.
 	Name OptString `json:"name"`
 	// Authentication provider.
@@ -3398,7 +3351,7 @@ type User struct {
 	// Tenant.
 	Tenant OptTenant `json:"tenant"`
 	// Tenant ID.
-	TenantId uuid.UUID `json:"tenantId"`
+	TenantId string `json:"tenantId"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -3419,7 +3372,7 @@ func (s *User) GetEmail() string {
 }
 
 // GetID returns the value of ID.
-func (s *User) GetID() uuid.UUID {
+func (s *User) GetID() string {
 	return s.ID
 }
 
@@ -3444,7 +3397,7 @@ func (s *User) GetTenant() OptTenant {
 }
 
 // GetTenantId returns the value of TenantId.
-func (s *User) GetTenantId() uuid.UUID {
+func (s *User) GetTenantId() string {
 	return s.TenantId
 }
 
@@ -3469,7 +3422,7 @@ func (s *User) SetEmail(val string) {
 }
 
 // SetID sets the value of ID.
-func (s *User) SetID(val uuid.UUID) {
+func (s *User) SetID(val string) {
 	s.ID = val
 }
 
@@ -3494,7 +3447,7 @@ func (s *User) SetTenant(val OptTenant) {
 }
 
 // SetTenantId sets the value of TenantId.
-func (s *User) SetTenantId(val uuid.UUID) {
+func (s *User) SetTenantId(val string) {
 	s.TenantId = val
 }
 
@@ -3528,13 +3481,13 @@ type Worker struct {
 	// Latest desired-state generation.
 	Generation int64 `json:"generation"`
 	// Stable worker ID.
-	ID uuid.UUID `json:"id"`
+	ID string `json:"id"`
 	// Worker identity.
 	Identity string `json:"identity"`
 	// Worker key type.
 	KeyType OptString `json:"keyType"`
 	// Most recent lifecycle job ID.
-	LastJobId OptUUID `json:"lastJobId"`
+	LastJobId OptString `json:"lastJobId"`
 	// Status of the most recent operation.
 	LastOperationStatus WorkerLastOperationStatus `json:"lastOperationStatus"`
 	// Last heartbeat timestamp.
@@ -3544,11 +3497,11 @@ type Worker struct {
 	// Observed lifecycle phase.
 	Phase WorkerPhase `json:"phase"`
 	// Project ID.
-	ProjectId uuid.UUID `json:"projectId"`
+	ProjectId string `json:"projectId"`
 	// Sandbox provider instance.
 	ProviderInstance OptSandboxProviderInstance `json:"providerInstance"`
 	// Sandbox provider instance ID.
-	ProviderInstanceId uuid.UUID `json:"providerInstanceId"`
+	ProviderInstanceId string `json:"providerInstanceId"`
 	// Worker public key.
 	PublicKey OptString `json:"publicKey"`
 	// Whether the worker is alive and healthy.
@@ -3564,7 +3517,7 @@ type Worker struct {
 	// Tenant.
 	Tenant OptTenant `json:"tenant"`
 	// Tenant ID.
-	TenantId uuid.UUID `json:"tenantId"`
+	TenantId string `json:"tenantId"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -3625,7 +3578,7 @@ func (s *Worker) GetGeneration() int64 {
 }
 
 // GetID returns the value of ID.
-func (s *Worker) GetID() uuid.UUID {
+func (s *Worker) GetID() string {
 	return s.ID
 }
 
@@ -3640,7 +3593,7 @@ func (s *Worker) GetKeyType() OptString {
 }
 
 // GetLastJobId returns the value of LastJobId.
-func (s *Worker) GetLastJobId() OptUUID {
+func (s *Worker) GetLastJobId() OptString {
 	return s.LastJobId
 }
 
@@ -3665,7 +3618,7 @@ func (s *Worker) GetPhase() WorkerPhase {
 }
 
 // GetProjectId returns the value of ProjectId.
-func (s *Worker) GetProjectId() uuid.UUID {
+func (s *Worker) GetProjectId() string {
 	return s.ProjectId
 }
 
@@ -3675,7 +3628,7 @@ func (s *Worker) GetProviderInstance() OptSandboxProviderInstance {
 }
 
 // GetProviderInstanceId returns the value of ProviderInstanceId.
-func (s *Worker) GetProviderInstanceId() uuid.UUID {
+func (s *Worker) GetProviderInstanceId() string {
 	return s.ProviderInstanceId
 }
 
@@ -3715,7 +3668,7 @@ func (s *Worker) GetTenant() OptTenant {
 }
 
 // GetTenantId returns the value of TenantId.
-func (s *Worker) GetTenantId() uuid.UUID {
+func (s *Worker) GetTenantId() string {
 	return s.TenantId
 }
 
@@ -3780,7 +3733,7 @@ func (s *Worker) SetGeneration(val int64) {
 }
 
 // SetID sets the value of ID.
-func (s *Worker) SetID(val uuid.UUID) {
+func (s *Worker) SetID(val string) {
 	s.ID = val
 }
 
@@ -3795,7 +3748,7 @@ func (s *Worker) SetKeyType(val OptString) {
 }
 
 // SetLastJobId sets the value of LastJobId.
-func (s *Worker) SetLastJobId(val OptUUID) {
+func (s *Worker) SetLastJobId(val OptString) {
 	s.LastJobId = val
 }
 
@@ -3820,7 +3773,7 @@ func (s *Worker) SetPhase(val WorkerPhase) {
 }
 
 // SetProjectId sets the value of ProjectId.
-func (s *Worker) SetProjectId(val uuid.UUID) {
+func (s *Worker) SetProjectId(val string) {
 	s.ProjectId = val
 }
 
@@ -3830,7 +3783,7 @@ func (s *Worker) SetProviderInstance(val OptSandboxProviderInstance) {
 }
 
 // SetProviderInstanceId sets the value of ProviderInstanceId.
-func (s *Worker) SetProviderInstanceId(val uuid.UUID) {
+func (s *Worker) SetProviderInstanceId(val string) {
 	s.ProviderInstanceId = val
 }
 
@@ -3870,7 +3823,7 @@ func (s *Worker) SetTenant(val OptTenant) {
 }
 
 // SetTenantId sets the value of TenantId.
-func (s *Worker) SetTenantId(val uuid.UUID) {
+func (s *Worker) SetTenantId(val string) {
 	s.TenantId = val
 }
 

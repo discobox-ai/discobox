@@ -31,12 +31,12 @@ type ListSandboxProviderCatalogBody struct {
 }
 
 type ProviderInstanceCollectionPathInput struct {
-	ProjectID string `path:"projectId" doc:"Project ID" format:"uuid"`
+	ProjectID string `path:"projectId" doc:"Project ID"`
 }
 
 type ProviderInstancePathInput struct {
-	ProjectID  string `path:"projectId" doc:"Project ID" format:"uuid"`
-	ProviderID string `path:"providerId" doc:"Provider instance ID" format:"uuid"`
+	ProjectID  string `path:"projectId" doc:"Project ID"`
+	ProviderID string `path:"providerId" doc:"Provider instance ID"`
 }
 
 type CreateSandboxProviderInstanceBody struct {
@@ -52,13 +52,13 @@ type UpdateSandboxProviderInstanceBody struct {
 }
 
 type CreateSandboxProviderInstanceInput struct {
-	ProjectID string                            `path:"projectId" doc:"Project ID" format:"uuid"`
+	ProjectID string                            `path:"projectId" doc:"Project ID"`
 	Body      CreateSandboxProviderInstanceBody `json:"body"`
 }
 
 type UpdateSandboxProviderInstanceInput struct {
-	ProjectID  string                            `path:"projectId" doc:"Project ID" format:"uuid"`
-	ProviderID string                            `path:"providerId" doc:"Provider instance ID" format:"uuid"`
+	ProjectID  string                            `path:"projectId" doc:"Project ID"`
+	ProviderID string                            `path:"providerId" doc:"Provider instance ID"`
 	Body       UpdateSandboxProviderInstanceBody `json:"body"`
 }
 

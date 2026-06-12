@@ -278,7 +278,6 @@
           },
           "id": {
             "description": "Stable project ID",
-            "format": "uuid",
             "type": "string"
           },
           "members": {
@@ -300,7 +299,6 @@
           },
           "ownerUserId": {
             "description": "Owning user ID",
-            "format": "uuid",
             "type": "string"
           },
           "sandboxProviderInstances": {
@@ -330,7 +328,6 @@
           },
           "tenantId": {
             "description": "Tenant ID",
-            "format": "uuid",
             "type": "string"
           },
           "updatedAt": {
@@ -361,7 +358,6 @@
           },
           "projectId": {
             "description": "Project ID",
-            "format": "uuid",
             "type": "string"
           },
           "role": {
@@ -375,7 +371,6 @@
           },
           "userId": {
             "description": "User ID",
-            "format": "uuid",
             "type": "string"
           }
         },
@@ -544,12 +539,10 @@
           },
           "id": {
             "description": "Stable event ID",
-            "format": "uuid",
             "type": "string"
           },
           "projectId": {
             "description": "Project ID",
-            "format": "uuid",
             "type": "string"
           },
           "resourceId": {
@@ -594,7 +587,6 @@
           },
           "projectId": {
             "description": "Project ID",
-            "format": "uuid",
             "type": "string"
           },
           "resources": {
@@ -625,7 +617,6 @@
         "properties": {
           "projectId": {
             "description": "Project ID",
-            "format": "uuid",
             "type": "string"
           },
           "resources": {
@@ -679,12 +670,10 @@
           },
           "id": {
             "description": "Stable event ID",
-            "format": "uuid",
             "type": "string"
           },
           "projectId": {
             "description": "Project ID",
-            "format": "uuid",
             "type": "string"
           },
           "resourceId": {
@@ -773,7 +762,6 @@
           },
           "createdByUserId": {
             "description": "Creating user ID",
-            "format": "uuid",
             "type": "string"
           },
           "description": {
@@ -800,7 +788,6 @@
           },
           "id": {
             "description": "Stable sandbox ID",
-            "format": "uuid",
             "type": "string"
           },
           "lastActiveAt": {
@@ -810,7 +797,6 @@
           },
           "lastJobId": {
             "description": "Most recent lifecycle job ID",
-            "format": "uuid",
             "type": "string"
           },
           "lastOperationStatus": {
@@ -855,7 +841,6 @@
           },
           "projectId": {
             "description": "Project ID",
-            "format": "uuid",
             "type": "string"
           },
           "providerInstance": {
@@ -1008,7 +993,6 @@
           },
           "id": {
             "description": "Stable provider instance ID",
-            "format": "uuid",
             "type": "string"
           },
           "name": {
@@ -1018,7 +1002,6 @@
           },
           "projectId": {
             "description": "Project ID",
-            "format": "uuid",
             "type": "string"
           },
           "sandboxes": {
@@ -1103,7 +1086,6 @@
           },
           "id": {
             "description": "Stable tenant ID",
-            "format": "uuid",
             "type": "string"
           },
           "name": {
@@ -1292,7 +1274,6 @@
           },
           "id": {
             "description": "Stable user ID",
-            "format": "uuid",
             "type": "string"
           },
           "name": {
@@ -1313,7 +1294,6 @@
           },
           "tenantId": {
             "description": "Tenant ID",
-            "format": "uuid",
             "type": "string"
           },
           "updatedAt": {
@@ -1401,7 +1381,6 @@
           },
           "id": {
             "description": "Stable worker ID",
-            "format": "uuid",
             "type": "string"
           },
           "identity": {
@@ -1414,7 +1393,6 @@
           },
           "lastJobId": {
             "description": "Most recent lifecycle job ID",
-            "format": "uuid",
             "type": "string"
           },
           "lastOperationStatus": {
@@ -1454,7 +1432,6 @@
           },
           "projectId": {
             "description": "Project ID",
-            "format": "uuid",
             "type": "string"
           },
           "providerInstance": {
@@ -1463,7 +1440,6 @@
           },
           "providerInstanceId": {
             "description": "Sandbox provider instance ID",
-            "format": "uuid",
             "type": "string"
           },
           "publicKey": {
@@ -1498,7 +1474,6 @@
           },
           "tenantId": {
             "description": "Tenant ID",
-            "format": "uuid",
             "type": "string"
           },
           "updatedAt": {
@@ -1672,7 +1647,6 @@
             "required": true,
             "schema": {
               "description": "Project ID",
-              "format": "uuid",
               "type": "string"
             }
           }
@@ -1716,7 +1690,6 @@
             "required": true,
             "schema": {
               "description": "Project ID",
-              "format": "uuid",
               "type": "string"
             }
           },
@@ -1917,7 +1890,6 @@
             "required": true,
             "schema": {
               "description": "Project ID",
-              "format": "uuid",
               "type": "string"
             }
           }
@@ -1959,7 +1931,6 @@
             "required": true,
             "schema": {
               "description": "Project ID",
-              "format": "uuid",
               "type": "string"
             }
           }
@@ -2013,7 +1984,6 @@
             "required": true,
             "schema": {
               "description": "Project ID",
-              "format": "uuid",
               "type": "string"
             }
           },
@@ -2024,7 +1994,6 @@
             "required": true,
             "schema": {
               "description": "Provider instance ID",
-              "format": "uuid",
               "type": "string"
             }
           }
@@ -2059,7 +2028,6 @@
             "required": true,
             "schema": {
               "description": "Project ID",
-              "format": "uuid",
               "type": "string"
             }
           },
@@ -2070,7 +2038,6 @@
             "required": true,
             "schema": {
               "description": "Provider instance ID",
-              "format": "uuid",
               "type": "string"
             }
           }
@@ -2112,7 +2079,6 @@
             "required": true,
             "schema": {
               "description": "Project ID",
-              "format": "uuid",
               "type": "string"
             }
           },
@@ -2123,7 +2089,6 @@
             "required": true,
             "schema": {
               "description": "Provider instance ID",
-              "format": "uuid",
               "type": "string"
             }
           }
@@ -2177,7 +2142,6 @@
             "required": true,
             "schema": {
               "description": "Project ID",
-              "format": "uuid",
               "type": "string"
             }
           }
@@ -2219,7 +2183,6 @@
             "required": true,
             "schema": {
               "description": "Project ID",
-              "format": "uuid",
               "type": "string"
             }
           }
@@ -2273,7 +2236,6 @@
             "required": true,
             "schema": {
               "description": "Project ID",
-              "format": "uuid",
               "type": "string"
             }
           },
@@ -2284,7 +2246,6 @@
             "required": true,
             "schema": {
               "description": "Sandbox ID",
-              "format": "uuid",
               "type": "string"
             }
           }
@@ -2319,7 +2280,6 @@
             "required": true,
             "schema": {
               "description": "Project ID",
-              "format": "uuid",
               "type": "string"
             }
           },
@@ -2330,7 +2290,6 @@
             "required": true,
             "schema": {
               "description": "Sandbox ID",
-              "format": "uuid",
               "type": "string"
             }
           }
@@ -2372,7 +2331,6 @@
             "required": true,
             "schema": {
               "description": "Project ID",
-              "format": "uuid",
               "type": "string"
             }
           },
@@ -2383,7 +2341,6 @@
             "required": true,
             "schema": {
               "description": "Sandbox ID",
-              "format": "uuid",
               "type": "string"
             }
           }
@@ -2437,7 +2394,6 @@
             "required": true,
             "schema": {
               "description": "Project ID",
-              "format": "uuid",
               "type": "string"
             }
           },
@@ -2448,7 +2404,6 @@
             "required": true,
             "schema": {
               "description": "Sandbox ID",
-              "format": "uuid",
               "type": "string"
             }
           }
@@ -2502,7 +2457,6 @@
             "required": true,
             "schema": {
               "description": "Project ID",
-              "format": "uuid",
               "type": "string"
             }
           },
@@ -2513,7 +2467,6 @@
             "required": true,
             "schema": {
               "description": "Sandbox ID",
-              "format": "uuid",
               "type": "string"
             }
           }
@@ -2567,7 +2520,6 @@
             "required": true,
             "schema": {
               "description": "Project ID",
-              "format": "uuid",
               "type": "string"
             }
           },
@@ -2578,7 +2530,6 @@
             "required": true,
             "schema": {
               "description": "Sandbox ID",
-              "format": "uuid",
               "type": "string"
             }
           }

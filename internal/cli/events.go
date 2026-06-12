@@ -26,7 +26,7 @@ func (a *App) newEventsCommand() *cobra.Command {
 		Use:   "events",
 		Short: "Stream project events",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			projectID, err := a.projectUUID()
+			projectID, err := a.projectIDValue()
 			if err != nil {
 				return err
 			}

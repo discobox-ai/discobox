@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
 	"github.com/obot-platform/discobox/internal/apiclient"
@@ -16,8 +15,7 @@ import (
 )
 
 const defaultServerURL = "http://localhost:8080"
-const defaultProjectAlias = "local"
-const defaultLocalProjectID = "00000000-0000-0000-0000-000000000002"
+const defaultProjectAlias = "default"
 
 type App struct {
 	serverURL string
@@ -42,7 +40,7 @@ func NewRootCommand() *cobra.Command {
 		},
 	}
 	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCOBOX_SERVER", defaultServerURL), "Discobox API server URL")
-	cmd.PersistentFlags().StringVarP(&app.projectID, "project", "p", envOrDefault("DISCOBOX_PROJECT", defaultProjectAlias), "Project ID for this invocation; use local for the built-in local project")
+	cmd.PersistentFlags().StringVarP(&app.projectID, "project", "p", envOrDefault("DISCOBOX_PROJECT", defaultProjectAlias), "Project ID for this invocation; use default for the user's default project")
 	cmd.PersistentFlags().StringVar(&app.tenantID, "tenant", envOrDefault("DISCOBOX_TENANT_ID", ""), "Tenant ID for API requests")
 	cmd.PersistentFlags().StringVar(&app.token, "token", os.Getenv("DISCOBOX_TOKEN"), "Bearer token for API requests")
 	cmd.PersistentFlags().StringVarP(&app.output, "output", "o", "table", "Output format: table or json")
@@ -64,18 +62,12 @@ func (a *App) validate() error {
 	}
 }
 
-func (a *App) projectUUID() (uuid.UUID, error) {
-	if strings.TrimSpace(a.projectID) == "" {
-		return uuid.Nil, errMissingProject
+func (a *App) projectIDValue() (string, error) {
+	projectID := strings.TrimSpace(a.projectID)
+	if projectID == "" {
+		return "", errMissingProject
 	}
-	if strings.EqualFold(strings.TrimSpace(a.projectID), defaultProjectAlias) {
-		return uuid.Parse(defaultLocalProjectID)
-	}
-	id, err := uuid.Parse(a.projectID)
-	if err != nil {
-		return uuid.Nil, err
-	}
-	return id, nil
+	return projectID, nil
 }
 
 func (a *App) apiClient() (*apiclientgen.Client, error) {

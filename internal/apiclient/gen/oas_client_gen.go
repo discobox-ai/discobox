@@ -233,7 +233,7 @@ func (c *Client) sendCreateSandbox(ctx context.Context, request *CreateSandboxBo
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -329,7 +329,7 @@ func (c *Client) sendCreateSandboxProviderInstance(ctx context.Context, request 
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -425,7 +425,7 @@ func (c *Client) sendDeleteSandbox(ctx context.Context, params DeleteSandboxPara
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -444,7 +444,7 @@ func (c *Client) sendDeleteSandbox(ctx context.Context, params DeleteSandboxPara
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.SandboxId))
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -536,7 +536,7 @@ func (c *Client) sendDeleteSandboxProviderInstance(ctx context.Context, params D
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -555,7 +555,7 @@ func (c *Client) sendDeleteSandboxProviderInstance(ctx context.Context, params D
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.ProviderId))
+			return e.EncodeValue(conv.StringToString(params.ProviderId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -647,7 +647,7 @@ func (c *Client) sendGetProject(ctx context.Context, params GetProjectParams) (r
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -739,7 +739,7 @@ func (c *Client) sendGetSandbox(ctx context.Context, params GetSandboxParams) (r
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -758,7 +758,7 @@ func (c *Client) sendGetSandbox(ctx context.Context, params GetSandboxParams) (r
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.SandboxId))
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -850,7 +850,7 @@ func (c *Client) sendGetSandboxProviderInstance(ctx context.Context, params GetS
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -869,7 +869,7 @@ func (c *Client) sendGetSandboxProviderInstance(ctx context.Context, params GetS
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.ProviderId))
+			return e.EncodeValue(conv.StringToString(params.ProviderId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -1109,7 +1109,7 @@ func (c *Client) sendListSandboxProviderInstances(ctx context.Context, params Li
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -1202,7 +1202,7 @@ func (c *Client) sendListSandboxes(ctx context.Context, params ListSandboxesPara
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -1372,7 +1372,7 @@ func (c *Client) sendRestartSandbox(ctx context.Context, request *RestartSandbox
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -1391,7 +1391,7 @@ func (c *Client) sendRestartSandbox(ctx context.Context, request *RestartSandbox
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.SandboxId))
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -1487,7 +1487,7 @@ func (c *Client) sendStartSandbox(ctx context.Context, request *StartSandboxBody
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -1506,7 +1506,7 @@ func (c *Client) sendStartSandbox(ctx context.Context, request *StartSandboxBody
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.SandboxId))
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -1602,7 +1602,7 @@ func (c *Client) sendStopSandbox(ctx context.Context, request *StopSandboxBody, 
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -1621,7 +1621,7 @@ func (c *Client) sendStopSandbox(ctx context.Context, request *StopSandboxBody, 
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.SandboxId))
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -1717,7 +1717,7 @@ func (c *Client) sendUpdateSandbox(ctx context.Context, request *UpdateSandboxBo
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -1736,7 +1736,7 @@ func (c *Client) sendUpdateSandbox(ctx context.Context, request *UpdateSandboxBo
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.SandboxId))
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -1831,7 +1831,7 @@ func (c *Client) sendUpdateSandboxProviderInstance(ctx context.Context, request 
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.ProjectId))
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -1850,7 +1850,7 @@ func (c *Client) sendUpdateSandboxProviderInstance(ctx context.Context, request 
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.UUIDToString(params.ProviderId))
+			return e.EncodeValue(conv.StringToString(params.ProviderId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}

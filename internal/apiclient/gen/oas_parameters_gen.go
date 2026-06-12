@@ -2,108 +2,104 @@
 
 package apiclientgen
 
-import (
-	"github.com/google/uuid"
-)
-
 // CreateSandboxParams is parameters of create-sandbox operation.
 type CreateSandboxParams struct {
 	// Project ID.
-	ProjectId uuid.UUID
+	ProjectId string
 }
 
 // CreateSandboxProviderInstanceParams is parameters of create-sandbox-provider-instance operation.
 type CreateSandboxProviderInstanceParams struct {
 	// Project ID.
-	ProjectId uuid.UUID
+	ProjectId string
 }
 
 // DeleteSandboxParams is parameters of delete-sandbox operation.
 type DeleteSandboxParams struct {
 	// Project ID.
-	ProjectId uuid.UUID
+	ProjectId string
 	// Sandbox ID.
-	SandboxId uuid.UUID
+	SandboxId string
 }
 
 // DeleteSandboxProviderInstanceParams is parameters of delete-sandbox-provider-instance operation.
 type DeleteSandboxProviderInstanceParams struct {
 	// Project ID.
-	ProjectId uuid.UUID
+	ProjectId string
 	// Provider instance ID.
-	ProviderId uuid.UUID
+	ProviderId string
 }
 
 // GetProjectParams is parameters of get-project operation.
 type GetProjectParams struct {
 	// Project ID.
-	ProjectId uuid.UUID
+	ProjectId string
 }
 
 // GetSandboxParams is parameters of get-sandbox operation.
 type GetSandboxParams struct {
 	// Project ID.
-	ProjectId uuid.UUID
+	ProjectId string
 	// Sandbox ID.
-	SandboxId uuid.UUID
+	SandboxId string
 }
 
 // GetSandboxProviderInstanceParams is parameters of get-sandbox-provider-instance operation.
 type GetSandboxProviderInstanceParams struct {
 	// Project ID.
-	ProjectId uuid.UUID
+	ProjectId string
 	// Provider instance ID.
-	ProviderId uuid.UUID
+	ProviderId string
 }
 
 // ListSandboxProviderInstancesParams is parameters of list-sandbox-provider-instances operation.
 type ListSandboxProviderInstancesParams struct {
 	// Project ID.
-	ProjectId uuid.UUID
+	ProjectId string
 }
 
 // ListSandboxesParams is parameters of list-sandboxes operation.
 type ListSandboxesParams struct {
 	// Project ID.
-	ProjectId uuid.UUID
+	ProjectId string
 }
 
 // RestartSandboxParams is parameters of restart-sandbox operation.
 type RestartSandboxParams struct {
 	// Project ID.
-	ProjectId uuid.UUID
+	ProjectId string
 	// Sandbox ID.
-	SandboxId uuid.UUID
+	SandboxId string
 }
 
 // StartSandboxParams is parameters of start-sandbox operation.
 type StartSandboxParams struct {
 	// Project ID.
-	ProjectId uuid.UUID
+	ProjectId string
 	// Sandbox ID.
-	SandboxId uuid.UUID
+	SandboxId string
 }
 
 // StopSandboxParams is parameters of stop-sandbox operation.
 type StopSandboxParams struct {
 	// Project ID.
-	ProjectId uuid.UUID
+	ProjectId string
 	// Sandbox ID.
-	SandboxId uuid.UUID
+	SandboxId string
 }
 
 // UpdateSandboxParams is parameters of update-sandbox operation.
 type UpdateSandboxParams struct {
 	// Project ID.
-	ProjectId uuid.UUID
+	ProjectId string
 	// Sandbox ID.
-	SandboxId uuid.UUID
+	SandboxId string
 }
 
 // UpdateSandboxProviderInstanceParams is parameters of update-sandbox-provider-instance operation.
 type UpdateSandboxProviderInstanceParams struct {
 	// Project ID.
-	ProjectId uuid.UUID
+	ProjectId string
 	// Provider instance ID.
-	ProviderId uuid.UUID
+	ProviderId string
 }

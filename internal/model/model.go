@@ -108,7 +108,7 @@ var (
 
 // Tenant is the top-level boundary for users, projects, and their resources.
 type Tenant struct {
-	ID        string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable tenant ID" format:"uuid"`
+	ID        string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable tenant ID"`
 	Name      string    `gorm:"not null;type:text" json:"name" doc:"Tenant display name" maxLength:"200"`
 	Slug      string    `gorm:"uniqueIndex;not null;type:text" json:"slug" doc:"URL-safe tenant slug" pattern:"^[a-z0-9][a-z0-9-]*$"`
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
@@ -132,8 +132,8 @@ func (t *Tenant) BeforeCreate(_ *gorm.DB) error {
 
 // User represents an authenticated user.
 type User struct {
-	ID        string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable user ID" format:"uuid"`
-	TenantID  string    `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID" format:"uuid"`
+	ID        string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable user ID"`
+	TenantID  string    `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID"`
 	Email     string    `gorm:"uniqueIndex;not null;type:text" json:"email" doc:"User email address" format:"email"`
 	Name      *string   `gorm:"type:text" json:"name,omitempty" doc:"Display name"`
 	AvatarURL *string   `gorm:"column:avatar_url;type:text" json:"avatarUrl,omitempty" doc:"Avatar image URL" format:"uri"`
@@ -160,9 +160,9 @@ func (u *User) BeforeCreate(_ *gorm.DB) error {
 
 // Project groups sandboxes and provider configuration.
 type Project struct {
-	ID                       string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable project ID" format:"uuid"`
-	TenantID                 string    `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID" format:"uuid"`
-	OwnerUserID              string    `gorm:"column:owner_user_id;not null;type:text;index" json:"ownerUserId" doc:"Owning user ID" format:"uuid"`
+	ID                       string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable project ID"`
+	TenantID                 string    `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID"`
+	OwnerUserID              string    `gorm:"column:owner_user_id;not null;type:text;index" json:"ownerUserId" doc:"Owning user ID"`
 	Name                     string    `gorm:"not null;type:text" json:"name" doc:"Project display name" maxLength:"200"`
 	Slug                     string    `gorm:"uniqueIndex;not null;type:text" json:"slug" doc:"URL-safe project slug" pattern:"^[a-z0-9][a-z0-9-]*$"`
 	Default                  bool      `gorm:"column:default_project;not null;default:false;index" json:"default" doc:"Whether this is the user's/default tenant project"`
@@ -192,8 +192,8 @@ func (p *Project) BeforeCreate(_ *gorm.DB) error {
 
 // ProjectMember grants a user access to a project.
 type ProjectMember struct {
-	ProjectID string    `gorm:"column:project_id;primaryKey;type:text" json:"projectId" doc:"Project ID" format:"uuid"`
-	UserID    string    `gorm:"column:user_id;primaryKey;type:text" json:"userId" doc:"User ID" format:"uuid"`
+	ProjectID string    `gorm:"column:project_id;primaryKey;type:text" json:"projectId" doc:"Project ID"`
+	UserID    string    `gorm:"column:user_id;primaryKey;type:text" json:"userId" doc:"User ID"`
 	Role      string    `gorm:"not null;type:text;default:'member'" json:"role" doc:"Project role"`
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
@@ -207,7 +207,7 @@ func (ProjectMember) TableName() string { return "project_members" }
 // ServerState stores generic tenant-local server settings and one-time state
 // flags. Delete a row to allow its associated initialization to run again.
 type ServerState struct {
-	TenantID  string          `gorm:"column:tenant_id;primaryKey;type:text" json:"tenantId" doc:"Tenant ID" format:"uuid"`
+	TenantID  string          `gorm:"column:tenant_id;primaryKey;type:text" json:"tenantId" doc:"Tenant ID"`
 	Key       string          `gorm:"primaryKey;type:text" json:"key" doc:"State key"`
 	Value     json.RawMessage `gorm:"column:value;type:text" json:"value,omitempty" doc:"State value"`
 	CreatedAt time.Time       `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
@@ -241,9 +241,9 @@ type ProjectUserKey = SandboxAccessIssuerKey
 
 // Sandbox is the managed runtime/session unit.
 type Sandbox struct {
-	ID                  string  `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID" format:"uuid"`
-	ProjectID           string  `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID" format:"uuid"`
-	CreatedByUserID     string  `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID" format:"uuid"`
+	ID                  string  `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
+	ProjectID           string  `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	CreatedByUserID     string  `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
 	ProviderInstanceID  *string `gorm:"column:provider_instance_id;type:text;index" json:"providerInstanceId,omitempty" doc:"Sandbox provider instance ID"`
 	Name                string  `gorm:"not null;type:text" json:"name" doc:"Sandbox name" maxLength:"200"`
 	Description         *string `gorm:"type:text" json:"description,omitempty" doc:"Sandbox description"`
@@ -303,8 +303,8 @@ func (s *Sandbox) BeforeCreate(_ *gorm.DB) error {
 // Config is for non-secret settings only. Secret material should be encrypted
 // into EncryptedConfig or another secret store before this model is persisted.
 type SandboxProviderInstance struct {
-	ID              string          `gorm:"primaryKey;type:text" json:"id" doc:"Stable provider instance ID" format:"uuid"`
-	ProjectID       string          `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID" format:"uuid"`
+	ID              string          `gorm:"primaryKey;type:text" json:"id" doc:"Stable provider instance ID"`
+	ProjectID       string          `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
 	Type            string          `gorm:"column:type;not null;type:text;index" json:"type" doc:"Provider type"`
 	Name            string          `gorm:"column:name;not null;type:text" json:"name" doc:"Provider display name" maxLength:"200"`
 	Config          json.RawMessage `gorm:"column:config;type:text" json:"config,omitempty" doc:"Non-secret provider configuration"`
@@ -334,10 +334,10 @@ func (p *SandboxProviderInstance) BeforeCreate(_ *gorm.DB) error {
 
 // Worker is a provider-backed runtime worker that can launch sandboxes.
 type Worker struct {
-	ID                    string          `gorm:"primaryKey;type:text" json:"id" doc:"Stable worker ID" format:"uuid"`
-	TenantID              string          `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID" format:"uuid"`
-	ProjectID             string          `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID" format:"uuid"`
-	ProviderInstanceID    string          `gorm:"column:provider_instance_id;not null;type:text;index" json:"providerInstanceId" doc:"Sandbox provider instance ID" format:"uuid"`
+	ID                    string          `gorm:"primaryKey;type:text" json:"id" doc:"Stable worker ID"`
+	TenantID              string          `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID"`
+	ProjectID             string          `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	ProviderInstanceID    string          `gorm:"column:provider_instance_id;not null;type:text;index" json:"providerInstanceId" doc:"Sandbox provider instance ID"`
 	Identity              string          `gorm:"column:identity;not null;type:text;uniqueIndex" json:"identity" doc:"Worker identity"`
 	PublicKey             string          `gorm:"column:public_key;type:text" json:"publicKey,omitempty" doc:"Worker public key"`
 	KeyType               string          `gorm:"column:key_type;type:text;default:'ed25519'" json:"keyType,omitempty" doc:"Worker key type"`
@@ -408,9 +408,9 @@ func (w *Worker) SchedulingPreference() string {
 // WorkerBootstrapToken stores a short-lived, one-time worker registration token.
 // Only the token hash is persisted.
 type WorkerBootstrapToken struct {
-	ID        string     `gorm:"primaryKey;type:text" json:"id" doc:"Stable bootstrap token ID" format:"uuid"`
-	TenantID  string     `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID" format:"uuid"`
-	WorkerID  string     `gorm:"column:worker_id;not null;type:text;index" json:"workerId" doc:"Worker ID" format:"uuid"`
+	ID        string     `gorm:"primaryKey;type:text" json:"id" doc:"Stable bootstrap token ID"`
+	TenantID  string     `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID"`
+	WorkerID  string     `gorm:"column:worker_id;not null;type:text;index" json:"workerId" doc:"Worker ID"`
 	TokenHash []byte     `gorm:"column:token_hash;not null;uniqueIndex" json:"-"`
 	ExpiresAt time.Time  `gorm:"column:expires_at;not null;index" json:"expiresAt" doc:"Expiration timestamp" format:"date-time"`
 	UsedAt    *time.Time `gorm:"column:used_at;index" json:"usedAt,omitempty" doc:"Use timestamp" format:"date-time"`
@@ -439,9 +439,9 @@ func (t *WorkerBootstrapToken) BeforeCreate(_ *gorm.DB) error {
 // worker. Stateless token implementations can use ID as the token JTI and keep
 // this row for revocation/audit, or skip persistence for non-revocable tokens.
 type WorkerAuthToken struct {
-	ID         string     `gorm:"primaryKey;type:text" json:"id" doc:"Stable auth token ID" format:"uuid"`
-	TenantID   string     `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID" format:"uuid"`
-	WorkerID   string     `gorm:"column:worker_id;not null;type:text;index" json:"workerId" doc:"Worker ID" format:"uuid"`
+	ID         string     `gorm:"primaryKey;type:text" json:"id" doc:"Stable auth token ID"`
+	TenantID   string     `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID"`
+	WorkerID   string     `gorm:"column:worker_id;not null;type:text;index" json:"workerId" doc:"Worker ID"`
 	TokenHash  []byte     `gorm:"column:token_hash;uniqueIndex" json:"-"`
 	IssuedAt   time.Time  `gorm:"column:issued_at;not null;index" json:"issuedAt" doc:"Issue timestamp" format:"date-time"`
 	ExpiresAt  time.Time  `gorm:"column:expires_at;not null;index" json:"expiresAt" doc:"Expiration timestamp" format:"date-time"`
@@ -482,9 +482,9 @@ const (
 
 // ProjectEvent is a persisted project-scoped resource change event.
 type ProjectEvent struct {
-	ID           string          `gorm:"primaryKey;type:text" json:"id" doc:"Stable event ID" format:"uuid"`
+	ID           string          `gorm:"primaryKey;type:text" json:"id" doc:"Stable event ID"`
 	Seq          int64           `gorm:"column:seq;autoIncrement;uniqueIndex" json:"seq" doc:"Global event sequence" minimum:"0"`
-	ProjectID    string          `gorm:"column:project_id;not null;type:text;index:idx_project_event_seq,priority:1" json:"projectId" doc:"Project ID" format:"uuid"`
+	ProjectID    string          `gorm:"column:project_id;not null;type:text;index:idx_project_event_seq,priority:1" json:"projectId" doc:"Project ID"`
 	Type         string          `gorm:"not null;type:text;index" json:"type" doc:"Event type"`
 	ResourceType string          `gorm:"column:resource_type;not null;type:text;index" json:"resourceType" doc:"Changed resource type"`
 	ResourceID   string          `gorm:"column:resource_id;not null;type:text;index" json:"resourceId" doc:"Changed resource ID"`

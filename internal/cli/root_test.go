@@ -24,14 +24,14 @@ func TestRootCommandHelp(t *testing.T) {
 	}
 }
 
-func TestProjectUUIDDefaultsToLocal(t *testing.T) {
+func TestProjectIDDefaultsToDefaultAlias(t *testing.T) {
 	app := &App{projectID: defaultProjectAlias}
 
-	projectID, err := app.projectUUID()
+	projectID, err := app.projectIDValue()
 	if err != nil {
-		t.Fatalf("projectUUID: %v", err)
+		t.Fatalf("projectIDValue: %v", err)
 	}
-	if projectID.String() != "00000000-0000-0000-0000-000000000002" {
+	if projectID != "default" {
 		t.Fatalf("projectID = %s", projectID)
 	}
 }
@@ -45,10 +45,10 @@ func TestRootCommandRejectsInvalidOutputFormat(t *testing.T) {
 	}
 }
 
-func TestProjectUUIDRejectsEmptyExplicitProject(t *testing.T) {
+func TestProjectIDRejectsEmptyExplicitProject(t *testing.T) {
 	app := &App{projectID: " "}
-	if _, err := app.projectUUID(); !errors.Is(err, errMissingProject) {
-		t.Fatalf("projectUUID error = %v, want errMissingProject", err)
+	if _, err := app.projectIDValue(); !errors.Is(err, errMissingProject) {
+		t.Fatalf("projectIDValue error = %v, want errMissingProject", err)
 	}
 }
 

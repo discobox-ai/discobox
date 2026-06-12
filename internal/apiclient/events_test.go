@@ -55,7 +55,7 @@ func TestSubscribeProjectEventsReadsReplayStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	stream, err := client.SubscribeProjectEvents(context.Background(), projectID, ProjectEventsParams{
+	stream, err := client.SubscribeProjectEvents(context.Background(), projectID.String(), ProjectEventsParams{
 		Resources:  []string{"sandbox", "project"},
 		AfterSeq:   &afterSeq,
 		List:       &list,
@@ -77,7 +77,7 @@ func TestSubscribeProjectEventsReadsReplayStream(t *testing.T) {
 	if !ok {
 		t.Fatalf("first data type = %T", msg.Data)
 	}
-	if start.ProjectID != projectID || start.Seq != 7 || !start.StartedAt.Equal(time.Date(2026, 6, 7, 1, 2, 3, 0, time.UTC)) {
+	if start.ProjectID != projectID.String() || start.Seq != 7 || !start.StartedAt.Equal(time.Date(2026, 6, 7, 1, 2, 3, 0, time.UTC)) {
 		t.Fatalf("unexpected list start: %#v", start)
 	}
 
@@ -89,7 +89,7 @@ func TestSubscribeProjectEventsReadsReplayStream(t *testing.T) {
 	if !ok {
 		t.Fatalf("second data type = %T", msg.Data)
 	}
-	if changed.ID != eventID || changed.ResourceID != "sandbox-1" || changed.Action != "created" {
+	if changed.ID != eventID.String() || changed.ResourceID != "sandbox-1" || changed.Action != "created" {
 		t.Fatalf("unexpected changed event: %#v", changed)
 	}
 

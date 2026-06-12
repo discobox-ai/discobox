@@ -74,7 +74,7 @@ func (a *App) runProviderCreate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	projectID, err := a.projectUUID()
+	projectID, err := a.projectIDValue()
 	if err != nil {
 		return err
 	}

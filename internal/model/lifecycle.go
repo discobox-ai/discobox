@@ -22,7 +22,7 @@ type ResourceLifecycle struct {
 	Phase               string  `gorm:"not null;type:text;index" json:"phase" doc:"Observed lifecycle phase" enum:"pending,provisioning,starting,running,stopping,stopped,deleting,deleted,failed"`
 	ActiveOperation     *string `gorm:"column:active_operation;type:text;index" json:"activeOperation,omitempty" doc:"Current queued or running operation" enum:"create,start,stop,restart,delete"`
 	LastOperationStatus string  `gorm:"column:last_operation_status;not null;type:text;index" json:"lastOperationStatus" doc:"Status of the most recent operation" enum:"pending,running,success,failed"`
-	LastJobID           *string `gorm:"column:last_job_id;type:text;index" json:"lastJobId,omitempty" doc:"Most recent lifecycle job ID" format:"uuid"`
+	LastJobID           *string `gorm:"column:last_job_id;type:text;index" json:"lastJobId,omitempty" doc:"Most recent lifecycle job ID"`
 	Generation          int64   `gorm:"not null;default:0" json:"generation" doc:"Latest desired-state generation"`
 	ObservedGeneration  int64   `gorm:"column:observed_generation;not null;default:0" json:"observedGeneration" doc:"Latest generation fully observed by reconciliation"`
 	StatusMessage       *string `gorm:"column:status_message;type:text" json:"statusMessage,omitempty" doc:"Human-readable status detail"`

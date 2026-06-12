@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/go-faster/jx"
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/obot-platform/discobox/internal/apiclient/gen"
@@ -55,7 +54,7 @@ func (a *App) newSandboxListCommand() *cobra.Command {
 		Use:   "list",
 		Short: "List sandboxes",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			projectID, err := a.projectUUID()
+			projectID, err := a.projectIDValue()
 			if err != nil {
 				return err
 			}
@@ -97,7 +96,7 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 		Use:   "create --name NAME",
 		Short: "Create a sandbox",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			projectID, err := a.projectUUID()
+			projectID, err := a.projectIDValue()
 			if err != nil {
 				return err
 			}
@@ -250,15 +249,16 @@ func (a *App) newSandboxRestartCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *App) sandboxRequest(sandboxArg string) (projectID, sandboxID uuid.UUID, client *apiclientgen.Client, err error) {
-	projectID, err = a.projectUUID()
+func (a *App) sandboxRequest(sandboxArg string) (projectID string, sandboxID string, client *apiclientgen.Client, err error) {
+	projectID, err = a.projectIDValue()
 	if err != nil {
 		return projectID, sandboxID, nil, err
 	}
-	sandboxID, err = parseUUIDArg(sandboxArg, "sandbox ID")
+	id, err := parseUUIDArg(sandboxArg, "sandbox ID")
 	if err != nil {
 		return projectID, sandboxID, nil, err
 	}
+	sandboxID = id.String()
 	client, err = a.apiClient()
 	return projectID, sandboxID, client, err
 }
@@ -364,7 +364,7 @@ func updateSandboxBody(cmd *cobra.Command, opts sandboxUpdateOptions) (*apiclien
 	return body, nil
 }
 
-func (a *App) waitForSandbox(cmd *cobra.Command, client *apiclientgen.Client, projectID, sandboxID uuid.UUID, timeout time.Duration) (*apiclientgen.Sandbox, error) {
+func (a *App) waitForSandbox(cmd *cobra.Command, client *apiclientgen.Client, projectID string, sandboxID string, timeout time.Duration) (*apiclientgen.Sandbox, error) {
 	ctx := cmd.Context()
 	if timeout > 0 {
 		var cancel func()

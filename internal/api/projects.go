@@ -10,7 +10,7 @@ import (
 )
 
 type ProjectPathInput struct {
-	ProjectID string `path:"projectId" doc:"Project ID" format:"uuid"`
+	ProjectID string `path:"projectId" doc:"Project ID"`
 }
 
 type ListProjectsOutput struct {

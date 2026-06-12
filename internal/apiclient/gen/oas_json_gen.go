@@ -1965,41 +1965,6 @@ func (s *OptURI) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes uuid.UUID as json.
-func (o OptUUID) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	json.EncodeUUID(e, o.Value)
-}
-
-// Decode decodes uuid.UUID from json.
-func (o *OptUUID) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptUUID to nil")
-	}
-	o.Set = true
-	v, err := json.DecodeUUID(d)
-	if err != nil {
-		return err
-	}
-	o.Value = v
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptUUID) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptUUID) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
 // Encode encodes User as json.
 func (o OptUser) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -2097,7 +2062,7 @@ func (s *Project) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("id")
-		json.EncodeUUID(e, s.ID)
+		e.Str(s.ID)
 	}
 	{
 		if s.Members.Set {
@@ -2117,7 +2082,7 @@ func (s *Project) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("ownerUserId")
-		json.EncodeUUID(e, s.OwnerUserId)
+		e.Str(s.OwnerUserId)
 	}
 	{
 		if s.SandboxProviderInstances.Set {
@@ -2143,7 +2108,7 @@ func (s *Project) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("tenantId")
-		json.EncodeUUID(e, s.TenantId)
+		e.Str(s.TenantId)
 	}
 	{
 		e.FieldStart("updatedAt")
@@ -2225,8 +2190,8 @@ func (s *Project) Decode(d *jx.Decoder) error {
 		case "id":
 			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
-				v, err := json.DecodeUUID(d)
-				s.ID = v
+				v, err := d.Str()
+				s.ID = string(v)
 				if err != nil {
 					return err
 				}
@@ -2269,8 +2234,8 @@ func (s *Project) Decode(d *jx.Decoder) error {
 		case "ownerUserId":
 			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
-				v, err := json.DecodeUUID(d)
-				s.OwnerUserId = v
+				v, err := d.Str()
+				s.OwnerUserId = string(v)
 				if err != nil {
 					return err
 				}
@@ -2323,8 +2288,8 @@ func (s *Project) Decode(d *jx.Decoder) error {
 		case "tenantId":
 			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
-				v, err := json.DecodeUUID(d)
-				s.TenantId = v
+				v, err := d.Str()
+				s.TenantId = string(v)
 				if err != nil {
 					return err
 				}
@@ -2416,7 +2381,7 @@ func (s *ProjectMember) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("projectId")
-		json.EncodeUUID(e, s.ProjectId)
+		e.Str(s.ProjectId)
 	}
 	{
 		e.FieldStart("role")
@@ -2428,7 +2393,7 @@ func (s *ProjectMember) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("userId")
-		json.EncodeUUID(e, s.UserId)
+		e.Str(s.UserId)
 	}
 }
 
@@ -2464,8 +2429,8 @@ func (s *ProjectMember) Decode(d *jx.Decoder) error {
 		case "projectId":
 			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
-				v, err := json.DecodeUUID(d)
-				s.ProjectId = v
+				v, err := d.Str()
+				s.ProjectId = string(v)
 				if err != nil {
 					return err
 				}
@@ -2500,8 +2465,8 @@ func (s *ProjectMember) Decode(d *jx.Decoder) error {
 		case "userId":
 			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
-				v, err := json.DecodeUUID(d)
-				s.UserId = v
+				v, err := d.Str()
+				s.UserId = string(v)
 				if err != nil {
 					return err
 				}
@@ -3459,7 +3424,7 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("createdByUserId")
-		json.EncodeUUID(e, s.CreatedByUserId)
+		e.Str(s.CreatedByUserId)
 	}
 	{
 		if s.Description.Set {
@@ -3483,7 +3448,7 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("id")
-		json.EncodeUUID(e, s.ID)
+		e.Str(s.ID)
 	}
 	{
 		if s.LastActiveAt.Set {
@@ -3519,7 +3484,7 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("projectId")
-		json.EncodeUUID(e, s.ProjectId)
+		e.Str(s.ProjectId)
 	}
 	{
 		if s.ProviderInstance.Set {
@@ -3687,8 +3652,8 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 		case "createdByUserId":
 			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
-				v, err := json.DecodeUUID(d)
-				s.CreatedByUserId = v
+				v, err := d.Str()
+				s.CreatedByUserId = string(v)
 				if err != nil {
 					return err
 				}
@@ -3741,8 +3706,8 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 		case "id":
 			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
-				v, err := json.DecodeUUID(d)
-				s.ID = v
+				v, err := d.Str()
+				s.ID = string(v)
 				if err != nil {
 					return err
 				}
@@ -3829,8 +3794,8 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 		case "projectId":
 			requiredBitSet[2] |= 1 << 2
 			if err := func() error {
-				v, err := json.DecodeUUID(d)
-				s.ProjectId = v
+				v, err := d.Str()
+				s.ProjectId = string(v)
 				if err != nil {
 					return err
 				}
@@ -4460,7 +4425,7 @@ func (s *SandboxProviderInstance) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("id")
-		json.EncodeUUID(e, s.ID)
+		e.Str(s.ID)
 	}
 	{
 		e.FieldStart("name")
@@ -4468,7 +4433,7 @@ func (s *SandboxProviderInstance) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("projectId")
-		json.EncodeUUID(e, s.ProjectId)
+		e.Str(s.ProjectId)
 	}
 	{
 		if s.Sandboxes.Set {
@@ -4576,8 +4541,8 @@ func (s *SandboxProviderInstance) Decode(d *jx.Decoder) error {
 		case "id":
 			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
-				v, err := json.DecodeUUID(d)
-				s.ID = v
+				v, err := d.Str()
+				s.ID = string(v)
 				if err != nil {
 					return err
 				}
@@ -4600,8 +4565,8 @@ func (s *SandboxProviderInstance) Decode(d *jx.Decoder) error {
 		case "projectId":
 			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
-				v, err := json.DecodeUUID(d)
-				s.ProjectId = v
+				v, err := d.Str()
+				s.ProjectId = string(v)
 				if err != nil {
 					return err
 				}
@@ -4885,7 +4850,7 @@ func (s *Tenant) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("id")
-		json.EncodeUUID(e, s.ID)
+		e.Str(s.ID)
 	}
 	{
 		e.FieldStart("name")
@@ -4940,8 +4905,8 @@ func (s *Tenant) Decode(d *jx.Decoder) error {
 		case "id":
 			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
-				v, err := json.DecodeUUID(d)
-				s.ID = v
+				v, err := d.Str()
+				s.ID = string(v)
 				if err != nil {
 					return err
 				}
@@ -5676,7 +5641,7 @@ func (s *User) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("id")
-		json.EncodeUUID(e, s.ID)
+		e.Str(s.ID)
 	}
 	{
 		if s.Name.Set {
@@ -5700,7 +5665,7 @@ func (s *User) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("tenantId")
-		json.EncodeUUID(e, s.TenantId)
+		e.Str(s.TenantId)
 	}
 	{
 		e.FieldStart("updatedAt")
@@ -5767,8 +5732,8 @@ func (s *User) Decode(d *jx.Decoder) error {
 		case "id":
 			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
-				v, err := json.DecodeUUID(d)
-				s.ID = v
+				v, err := d.Str()
+				s.ID = string(v)
 				if err != nil {
 					return err
 				}
@@ -5823,8 +5788,8 @@ func (s *User) Decode(d *jx.Decoder) error {
 		case "tenantId":
 			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
-				v, err := json.DecodeUUID(d)
-				s.TenantId = v
+				v, err := d.Str()
+				s.TenantId = string(v)
 				if err != nil {
 					return err
 				}
@@ -5964,7 +5929,7 @@ func (s *Worker) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("id")
-		json.EncodeUUID(e, s.ID)
+		e.Str(s.ID)
 	}
 	{
 		e.FieldStart("identity")
@@ -6002,7 +5967,7 @@ func (s *Worker) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("projectId")
-		json.EncodeUUID(e, s.ProjectId)
+		e.Str(s.ProjectId)
 	}
 	{
 		if s.ProviderInstance.Set {
@@ -6012,7 +5977,7 @@ func (s *Worker) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("providerInstanceId")
-		json.EncodeUUID(e, s.ProviderInstanceId)
+		e.Str(s.ProviderInstanceId)
 	}
 	{
 		if s.PublicKey.Set {
@@ -6054,7 +6019,7 @@ func (s *Worker) encodeFields(e *jx.Encoder) {
 	}
 	{
 		e.FieldStart("tenantId")
-		json.EncodeUUID(e, s.TenantId)
+		e.Str(s.TenantId)
 	}
 	{
 		e.FieldStart("updatedAt")
@@ -6231,8 +6196,8 @@ func (s *Worker) Decode(d *jx.Decoder) error {
 		case "id":
 			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
-				v, err := json.DecodeUUID(d)
-				s.ID = v
+				v, err := d.Str()
+				s.ID = string(v)
 				if err != nil {
 					return err
 				}
@@ -6317,8 +6282,8 @@ func (s *Worker) Decode(d *jx.Decoder) error {
 		case "projectId":
 			requiredBitSet[2] |= 1 << 3
 			if err := func() error {
-				v, err := json.DecodeUUID(d)
-				s.ProjectId = v
+				v, err := d.Str()
+				s.ProjectId = string(v)
 				if err != nil {
 					return err
 				}
@@ -6339,8 +6304,8 @@ func (s *Worker) Decode(d *jx.Decoder) error {
 		case "providerInstanceId":
 			requiredBitSet[2] |= 1 << 5
 			if err := func() error {
-				v, err := json.DecodeUUID(d)
-				s.ProviderInstanceId = v
+				v, err := d.Str()
+				s.ProviderInstanceId = string(v)
 				if err != nil {
 					return err
 				}
@@ -6425,8 +6390,8 @@ func (s *Worker) Decode(d *jx.Decoder) error {
 		case "tenantId":
 			requiredBitSet[3] |= 1 << 5
 			if err := func() error {
-				v, err := json.DecodeUUID(d)
-				s.TenantId = v
+				v, err := d.Str()
+				s.TenantId = string(v)
 				if err != nil {
 					return err
 				}

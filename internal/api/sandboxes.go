@@ -11,12 +11,12 @@ import (
 )
 
 type SandboxCollectionPathInput struct {
-	ProjectID string `path:"projectId" doc:"Project ID" format:"uuid"`
+	ProjectID string `path:"projectId" doc:"Project ID"`
 }
 
 type SandboxPathInput struct {
-	ProjectID string `path:"projectId" doc:"Project ID" format:"uuid"`
-	SandboxID string `path:"sandboxId" doc:"Sandbox ID" format:"uuid"`
+	ProjectID string `path:"projectId" doc:"Project ID"`
+	SandboxID string `path:"sandboxId" doc:"Sandbox ID"`
 }
 
 type ListSandboxesOutput struct {
@@ -54,7 +54,7 @@ type CreateSandboxBody struct {
 }
 
 type CreateSandboxInput struct {
-	ProjectID string            `path:"projectId" doc:"Project ID" format:"uuid"`
+	ProjectID string            `path:"projectId" doc:"Project ID"`
 	Body      CreateSandboxBody `json:"body"`
 }
 
@@ -72,8 +72,8 @@ type UpdateSandboxBody struct {
 }
 
 type UpdateSandboxInput struct {
-	ProjectID string            `path:"projectId" doc:"Project ID" format:"uuid"`
-	SandboxID string            `path:"sandboxId" doc:"Sandbox ID" format:"uuid"`
+	ProjectID string            `path:"projectId" doc:"Project ID"`
+	SandboxID string            `path:"sandboxId" doc:"Sandbox ID"`
 	Body      UpdateSandboxBody `json:"body"`
 }
 
@@ -82,8 +82,8 @@ type StartSandboxBody struct {
 }
 
 type StartSandboxInput struct {
-	ProjectID string           `path:"projectId" doc:"Project ID" format:"uuid"`
-	SandboxID string           `path:"sandboxId" doc:"Sandbox ID" format:"uuid"`
+	ProjectID string           `path:"projectId" doc:"Project ID"`
+	SandboxID string           `path:"sandboxId" doc:"Sandbox ID"`
 	Body      StartSandboxBody `json:"body"`
 }
 
@@ -92,8 +92,8 @@ type StopSandboxBody struct {
 }
 
 type StopSandboxInput struct {
-	ProjectID string          `path:"projectId" doc:"Project ID" format:"uuid"`
-	SandboxID string          `path:"sandboxId" doc:"Sandbox ID" format:"uuid"`
+	ProjectID string          `path:"projectId" doc:"Project ID"`
+	SandboxID string          `path:"sandboxId" doc:"Sandbox ID"`
 	Body      StopSandboxBody `json:"body"`
 }
 
@@ -102,8 +102,8 @@ type RestartSandboxBody struct {
 }
 
 type RestartSandboxInput struct {
-	ProjectID string             `path:"projectId" doc:"Project ID" format:"uuid"`
-	SandboxID string             `path:"sandboxId" doc:"Sandbox ID" format:"uuid"`
+	ProjectID string             `path:"projectId" doc:"Project ID"`
+	SandboxID string             `path:"sandboxId" doc:"Sandbox ID"`
 	Body      RestartSandboxBody `json:"body"`
 }
 

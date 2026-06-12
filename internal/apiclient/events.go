@@ -12,8 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 const (
@@ -63,8 +61,8 @@ type ProjectEventsParams struct {
 	ReplayOnly *bool
 }
 
-func (c *EventClient) SubscribeProjectEvents(ctx context.Context, projectID uuid.UUID, params ProjectEventsParams) (*ProjectEventStream, error) {
-	u := c.serverURL.JoinPath("projects", projectID.String(), "events")
+func (c *EventClient) SubscribeProjectEvents(ctx context.Context, projectID string, params ProjectEventsParams) (*ProjectEventStream, error) {
+	u := c.serverURL.JoinPath("projects", projectID, "events")
 	q := u.Query()
 	for _, resource := range params.Resources {
 		q.Add("resources", resource)
@@ -139,9 +137,9 @@ type ProjectEventData interface {
 }
 
 type ResourceChangedEvent struct {
-	ID           uuid.UUID       `json:"id"`
+	ID           string          `json:"id"`
 	Seq          int64           `json:"seq"`
-	ProjectID    uuid.UUID       `json:"projectId"`
+	ProjectID    string          `json:"projectId"`
 	Type         string          `json:"type"`
 	ResourceType string          `json:"resourceType"`
 	ResourceID   string          `json:"resourceId"`
@@ -157,7 +155,7 @@ type ResourceListedEvent ResourceChangedEvent
 func (*ResourceListedEvent) projectEventData() {}
 
 type ResourceListStartEvent struct {
-	ProjectID uuid.UUID `json:"projectId"`
+	ProjectID string    `json:"projectId"`
 	Resources []string  `json:"resources"`
 	Seq       int64     `json:"seq"`
 	StartedAt time.Time `json:"startedAt"`
@@ -166,7 +164,7 @@ type ResourceListStartEvent struct {
 func (*ResourceListStartEvent) projectEventData() {}
 
 type ResourceListFinishEvent struct {
-	ProjectID  uuid.UUID `json:"projectId"`
+	ProjectID  string    `json:"projectId"`
 	Resources  []string  `json:"resources"`
 	Seq        int64     `json:"seq"`
 	FinishedAt time.Time `json:"finishedAt"`
