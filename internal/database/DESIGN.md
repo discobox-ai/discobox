@@ -33,6 +33,13 @@ The deprecated `Migrate` helper remains tenant-scoped for compatibility. New
 callers should choose `MigrateGlobal` or `MigrateTenant` explicitly. This
 prevents accidental writes of tenant data to the global/default schema.
 
+## ID Generation
+
+Generated database row IDs should be UUIDv7 strings. This keeps IDs globally
+unique while preserving creation-time locality for indexes and ordered scans.
+Composite keys and fixed singleton rows may use non-generated IDs when that is
+part of the table design.
+
 ## Tenant Lifecycle Direction
 
 Initially, a new user should receive a new tenant ID and that tenant ID should be
