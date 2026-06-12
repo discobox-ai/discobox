@@ -5,7 +5,7 @@ tmp_dir = "build"
 [build]
   args_bin = []
   entrypoint = "./build/discobot-server"
-  cmd = "go build -gcflags=\"all=-N -l\" -o ./build/discobot-server ./cmd/discobot-server"
+  cmd = "go build -o ./build/discobox ./cmd/discobox && go build -gcflags=\"all=-N -l\" -o ./build/discobot-server ./cmd/discobot-server"
   delay = 1000
   exclude_dir = ["build", "vendor", "testdata", "node_modules"]
   exclude_file = []
