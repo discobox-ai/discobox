@@ -10,6 +10,7 @@ both GORM persistence tags and JSON/Huma API-facing tags.
 | `Tenant` | Planned top-level boundary for users, projects, and their resources. |
 | `User` | Authenticated person. Belongs to a tenant, owns projects, and creates sandboxes. |
 | `Project` | Tenant-scoped group for sandboxes, provider configuration, and project events. |
+| `ServerState` | Tenant-scoped generic key/value state for server preferences and one-time initialization flags. |
 | `Sandbox` | Main managed runtime/session resource. Belongs to a project and is orchestrated. |
 | `SandboxProviderInstance` | Project-scoped provider configuration for creating and managing sandboxes. |
 | `Worker` | Provider-backed runtime worker for launching sandboxes. Has its own identity and public key; private key stays on the worker. Prewarmed workers belong to a provider instance/pool and can host many sandboxes. Scheduling uses `ready`, `schedulable`, and `degraded` columns; detailed condition data is opaque JSON for display. |
@@ -24,13 +25,21 @@ Models are split by database/schema scope:
 
 - Global scope: `Tenant`, `User`.
 - Tenant scope: `Project`, `Sandbox`, `SandboxProviderInstance`, `Worker`,
-  worker tokens, sandbox access issuer keys, project events, and tenant-local
-  orchestration tables.
+  `ServerState`, worker tokens, sandbox access issuer keys, project events, and
+  tenant-local orchestration tables.
 
 Tenant-scoped rows still carry `tenant_id` and user ID columns so tokens,
 events, and audit records are self-describing. Those columns are shard
 boundaries and references to global identities; they are not foreign keys from
 tenant databases back into the global schema.
+
+Tenant-local schemas must still define primary keys and unique indexes as if all
+tenants could share one physical database/table set. The Postgres driver may
+collapse global and all tenant-local data into the same physical database, so
+tenant-scoped uniqueness must include a tenant boundary whenever the value is
+only unique within one tenant. For project-scoped rows, `project_id` is a
+sufficient boundary because projects are tenant-scoped; for tenant-level rows,
+use `tenant_id`.
 
 ## Shared Lifecycle Shape
 
@@ -94,6 +103,12 @@ erDiagram
         string name
         string slug
         string default_sandbox_provider_id
+    }
+
+    SERVER_STATE {
+        string tenant_id
+        string key
+        json value
     }
 
     SANDBOX {

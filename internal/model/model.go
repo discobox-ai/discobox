@@ -188,6 +188,18 @@ func (p *Project) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
+// ServerState stores generic tenant-local server settings and one-time state
+// flags. Delete a row to allow its associated initialization to run again.
+type ServerState struct {
+	TenantID  string          `gorm:"column:tenant_id;primaryKey;type:text" json:"tenantId" doc:"Tenant ID" format:"uuid"`
+	Key       string          `gorm:"primaryKey;type:text" json:"key" doc:"State key"`
+	Value     json.RawMessage `gorm:"column:value;type:text" json:"value,omitempty" doc:"State value"`
+	CreatedAt time.Time       `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time       `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+}
+
+func (ServerState) TableName() string { return "server_state" }
+
 // SandboxAccessIssuerKey stores per-project, per-user key material used by the
 // control plane to sign sandbox access tokens.
 type SandboxAccessIssuerKey struct {
@@ -492,6 +504,7 @@ func GlobalModels() []any {
 func TenantModels() []any {
 	return []any{
 		&Project{},
+		&ServerState{},
 		&SandboxAccessIssuerKey{},
 		&Sandbox{},
 		&SandboxProviderInstance{},
