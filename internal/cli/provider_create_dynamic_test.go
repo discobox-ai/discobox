@@ -207,3 +207,61 @@ func TestProviderCreateCommandSendsDynamicConfig(t *testing.T) {
 		t.Fatalf("posted = %#v", posted)
 	}
 }
+
+func TestProviderCreateCommandConsumesDebugGlobalFlag(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/providers/catalog":
+			_ = json.NewEncoder(w).Encode(map[string]any{"providers": []map[string]any{{
+				"id":        "example",
+				"name":      "Example",
+				"available": true,
+				"builtIn":   true,
+				"capabilities": map[string]any{
+					"available":          true,
+					"details":            map[string]any{},
+					"state":              "ready",
+					"supportsClearCache": false,
+					"supportsImages":     true,
+					"supportsInspection": false,
+					"supportsResources":  false,
+				},
+			}}})
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/projects/") && strings.HasSuffix(r.URL.Path, "/providers"):
+			now := time.Now().UTC().Format(time.RFC3339Nano)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"id":        "00000000-0000-0000-0000-000000000010",
+				"projectId": "00000000-0000-0000-0000-000000000002",
+				"name":      "local",
+				"type":      "example",
+				"config":    map[string]any{},
+				"builtIn":   false,
+				"disabled":  false,
+				"createdAt": now,
+				"updatedAt": now,
+			})
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"--server", server.URL, "provider", "create", "--debug", "--type", "example", "--name", "local"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute create: %v", err)
+	}
+	debugOutput := errOut.String()
+	if !strings.Contains(debugOutput, "> GET "+server.URL+"/providers/catalog") {
+		t.Fatalf("debug output = %q, want catalog request", debugOutput)
+	}
+	if !strings.Contains(debugOutput, "> POST "+server.URL+"/projects/00000000-0000-0000-0000-000000000002/providers") {
+		t.Fatalf("debug output = %q, want provider create request", debugOutput)
+	}
+}

@@ -118,6 +118,13 @@ func (a *App) consumeProviderCreateGlobalFlags(args []string) []string {
 			}
 		case strings.HasPrefix(arg, "--output="):
 			a.output = strings.TrimPrefix(arg, "--output=")
+		case arg == "--debug":
+			a.debug = true
+		case strings.HasPrefix(arg, "--debug="):
+			value, err := strconv.ParseBool(strings.TrimPrefix(arg, "--debug="))
+			if err == nil {
+				a.debug = value
+			}
 		default:
 			out = append(out, arg)
 		}
