@@ -15,7 +15,7 @@ import (
 	"github.com/obot-platform/discobox/internal/service"
 )
 
-func TestNewRouterServesOpenAPIAndSwaggerDocs(t *testing.T) {
+func TestNewRouterServesOpenAPIAndScalarDocs(t *testing.T) {
 	router, _ := NewStubbedRouter()
 
 	openapiResp := httptest.NewRecorder()
@@ -35,8 +35,8 @@ func TestNewRouterServesOpenAPIAndSwaggerDocs(t *testing.T) {
 	if docsResp.Code != http.StatusOK {
 		t.Fatalf("GET /docs status = %d, want %d", docsResp.Code, http.StatusOK)
 	}
-	if body := docsResp.Body.String(); !strings.Contains(body, "SwaggerUIBundle") {
-		t.Fatalf("GET /docs body does not look like Swagger UI")
+	if body := docsResp.Body.String(); !strings.Contains(body, "@scalar/api-reference") {
+		t.Fatalf("GET /docs body does not look like Scalar")
 	}
 	if body := docsResp.Body.String(); !strings.Contains(body, "/openapi.json") {
 		t.Fatalf("GET /docs body does not reference /openapi.json")

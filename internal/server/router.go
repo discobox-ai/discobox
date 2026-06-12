@@ -65,7 +65,7 @@ func DefaultDatabaseRouterOptions() DatabaseRouterOptions {
 func NewRouter(services api.Services) (*chi.Mux, huma.API) {
 	router := chi.NewRouter()
 	config := huma.DefaultConfig(Name, Version)
-	config.DocsRenderer = huma.DocsRendererSwaggerUI
+	config.DocsRenderer = huma.DocsRendererScalar
 	humaAPI := humachi.New(router, config)
 	api.Register(humaAPI, services)
 	return router, humaAPI
@@ -116,7 +116,7 @@ func NewDatabaseRouter(ctx context.Context, resolver *database.Resolver, options
 	router := chi.NewRouter()
 	router.Use(tenantMiddleware(tenantJobs))
 	config := huma.DefaultConfig(Name, Version)
-	config.DocsRenderer = huma.DocsRendererSwaggerUI
+	config.DocsRenderer = huma.DocsRendererScalar
 	humaAPI := humachi.New(router, config)
 	api.Register(humaAPI, api.Services{
 		Projects:  services,
