@@ -88,6 +88,35 @@ func GenerateBase64Key() (string, error) {
 	return base64.StdEncoding.EncodeToString(key), nil
 }
 
+// IsSealed reports whether value uses this package's encrypted-at-rest format.
+func IsSealed(value []byte) bool {
+	return bytes.HasPrefix(value, []byte(prefix))
+}
+
+// Open decrypts ciphertext with sealer and returns a copy of plaintext. A nil
+// sealer treats value as plaintext for tests and unencrypted deployments.
+func Open(ctx context.Context, sealer Sealer, purpose string, resourceID string, value []byte) ([]byte, error) {
+	if sealer == nil || len(value) == 0 {
+		return append([]byte(nil), value...), nil
+	}
+	return sealer.Open(ctx, purpose, resourceID, value)
+}
+
+// SealIfUnsealed encrypts plaintext values and leaves already-sealed values
+// unchanged after authenticating them with the supplied purpose and resource ID.
+func SealIfUnsealed(ctx context.Context, sealer Sealer, purpose string, resourceID string, value []byte) ([]byte, error) {
+	if sealer == nil || len(value) == 0 {
+		return append([]byte(nil), value...), nil
+	}
+	if IsSealed(value) {
+		if _, err := sealer.Open(ctx, purpose, resourceID, value); err != nil {
+			return nil, fmt.Errorf("verify sealed value: %w", err)
+		}
+		return append([]byte(nil), value...), nil
+	}
+	return sealer.Seal(ctx, purpose, resourceID, value)
+}
+
 func (s *AESGCMSealer) Seal(_ context.Context, purpose string, resourceID string, plaintext []byte) ([]byte, error) {
 	if s == nil {
 		return append([]byte(nil), plaintext...), nil

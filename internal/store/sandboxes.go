@@ -8,6 +8,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/obot-platform/discobox/internal/model"
+	"github.com/obot-platform/discobox/internal/secrets"
 )
 
 type SandboxGetOption func(*sandboxGetOptions)
@@ -34,15 +35,7 @@ func (s *Store) ListSandboxes(ctx context.Context, projectID string) ([]model.Sa
 		Where("project_id = ?", projectID).
 		Order("created_at ASC").
 		Find(&sandboxes).Error
-	if err != nil {
-		return nil, err
-	}
-	for i := range sandboxes {
-		if err := s.openSandboxSecretState(ctx, &sandboxes[i]); err != nil {
-			return nil, err
-		}
-	}
-	return sandboxes, nil
+	return sandboxes, err
 }
 
 func (s *Store) CreateSandbox(ctx context.Context, sandbox *model.Sandbox) error {
@@ -85,9 +78,6 @@ func (s *Store) GetSandbox(ctx context.Context, projectID, sandboxID string, opt
 			return nil, ErrGenerationConflict
 		}
 		return nil, mapNotFound(err)
-	}
-	if err := s.openSandboxSecretState(ctx, &sandbox); err != nil {
-		return nil, err
 	}
 	return &sandbox, nil
 }
@@ -153,15 +143,7 @@ func (s *Store) ListSandboxSnapshots(ctx context.Context, projectID string) ([]m
 		Where("project_id = ?", projectID).
 		Order("created_at ASC").
 		Find(&sandboxes).Error
-	if err != nil {
-		return nil, err
-	}
-	for i := range sandboxes {
-		if err := s.openSandboxSecretState(ctx, &sandboxes[i]); err != nil {
-			return nil, err
-		}
-	}
-	return sandboxes, nil
+	return sandboxes, err
 }
 
 func (s *Store) sealSandboxForWrite(ctx context.Context, sandbox *model.Sandbox) (*model.Sandbox, error) {
@@ -171,11 +153,7 @@ func (s *Store) sealSandboxForWrite(ctx context.Context, sandbox *model.Sandbox)
 		}
 	}
 	persisted := *sandbox
-	if s.sealer == nil || len(sandbox.SecretState) == 0 {
-		persisted.SecretState = append([]byte(nil), sandbox.SecretState...)
-		return &persisted, nil
-	}
-	ciphertext, err := s.sealer.Seal(ctx, "sandboxes.secret_state", sandboxSecretResourceID(sandbox), sandbox.SecretState)
+	ciphertext, err := secrets.SealIfUnsealed(ctx, s.sealer, "sandboxes.secret_state", sandboxSecretResourceID(sandbox), sandbox.SecretState)
 	if err != nil {
 		return nil, fmt.Errorf("encrypt sandbox secret state: %w", err)
 	}
@@ -183,16 +161,20 @@ func (s *Store) sealSandboxForWrite(ctx context.Context, sandbox *model.Sandbox)
 	return &persisted, nil
 }
 
-func (s *Store) openSandboxSecretState(ctx context.Context, sandbox *model.Sandbox) error {
-	if s.sealer == nil || len(sandbox.SecretState) == 0 {
-		return nil
+// OpenSandboxSecretState decrypts a sandbox's secret state for consumers that
+// need to use it. It returns a copy and does not modify the model.
+func (s *Store) OpenSandboxSecretState(ctx context.Context, sandbox *model.Sandbox) ([]byte, error) {
+	if sandbox == nil || len(sandbox.SecretState) == 0 {
+		return nil, nil
 	}
-	plaintext, err := s.sealer.Open(ctx, "sandboxes.secret_state", sandboxSecretResourceID(sandbox), sandbox.SecretState)
+	if s.sealer == nil || !secrets.IsSealed(sandbox.SecretState) {
+		return append([]byte(nil), sandbox.SecretState...), nil
+	}
+	plaintext, err := secrets.Open(ctx, s.sealer, "sandboxes.secret_state", sandboxSecretResourceID(sandbox), sandbox.SecretState)
 	if err != nil {
-		return fmt.Errorf("decrypt sandbox secret state: %w", err)
+		return nil, fmt.Errorf("decrypt sandbox secret state: %w", err)
 	}
-	sandbox.SecretState = plaintext
-	return nil
+	return plaintext, nil
 }
 
 func sandboxSecretResourceID(sandbox *model.Sandbox) string {

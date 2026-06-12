@@ -227,23 +227,28 @@ func (r *SandboxReconciler) startSandbox(ctx context.Context, sb *model.Sandbox)
 		return err
 	}
 
-	runtimeSandbox, state, err := provider.Create(ctx, ref, sb.SecretState, createOpts)
+	secretState, err := r.store.OpenSandboxSecretState(ctx, sb)
+	if err != nil {
+		return err
+	}
+	runtimeSandbox, state, err := provider.Create(ctx, ref, secretState, createOpts)
 	if err != nil && !errors.Is(err, ErrAlreadyExists) {
 		return err
 	}
-	if len(state) > 0 || sb.SecretState != nil {
+	if len(state) > 0 || secretState != nil {
 		sb.SecretState = state
+		secretState = state
 	}
 	if runtimeSandbox != nil {
 		setRuntimeState(sb, runtimeSandbox)
 		setWorkerID(sb, runtimeSandbox)
 	}
 
-	runtimeSandbox, state, err = provider.Start(ctx, ref, sb.SecretState)
+	runtimeSandbox, state, err = provider.Start(ctx, ref, secretState)
 	if err != nil && !errors.Is(err, ErrAlreadyRunning) {
 		return err
 	}
-	if len(state) > 0 || sb.SecretState != nil {
+	if len(state) > 0 || secretState != nil {
 		sb.SecretState = state
 	}
 	if runtimeSandbox != nil {
@@ -263,11 +268,15 @@ func (r *SandboxReconciler) stopSandbox(ctx context.Context, sb *model.Sandbox) 
 	if provider == nil {
 		return nil
 	}
-	runtimeSandbox, state, err := provider.Stop(ctx, sandboxRefFromSandbox(sb), sb.SecretState, defaultSandboxStopTimeout)
+	secretState, err := r.store.OpenSandboxSecretState(ctx, sb)
+	if err != nil {
+		return err
+	}
+	runtimeSandbox, state, err := provider.Stop(ctx, sandboxRefFromSandbox(sb), secretState, defaultSandboxStopTimeout)
 	if err != nil && !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrNotRunning) {
 		return err
 	}
-	if len(state) > 0 || sb.SecretState != nil {
+	if len(state) > 0 || secretState != nil {
 		sb.SecretState = state
 	}
 	if runtimeSandbox != nil {
@@ -284,7 +293,11 @@ func (r *SandboxReconciler) deleteSandbox(ctx context.Context, sb *model.Sandbox
 	if provider == nil {
 		return nil
 	}
-	state, err := provider.Remove(ctx, sandboxRefFromSandbox(sb), sb.SecretState, RemoveVolumes())
+	secretState, err := r.store.OpenSandboxSecretState(ctx, sb)
+	if err != nil {
+		return err
+	}
+	state, err := provider.Remove(ctx, sandboxRefFromSandbox(sb), secretState, RemoveVolumes())
 	if err != nil && !errors.Is(err, ErrNotFound) {
 		return err
 	}

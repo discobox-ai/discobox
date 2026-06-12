@@ -90,8 +90,37 @@ func TestSandboxSecretStateEncryptedAtRest(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get sandbox: %v", err)
 	}
-	if !bytes.Equal(got.SecretState, plaintext) {
-		t.Fatalf("decrypted secret state = %q, want %q", string(got.SecretState), string(plaintext))
+	if bytes.Equal(got.SecretState, plaintext) {
+		t.Fatalf("loaded secret state equals plaintext")
+	}
+	if !secrets.IsSealed(got.SecretState) {
+		t.Fatalf("loaded secret state is not sealed")
+	}
+	opened, err := s.OpenSandboxSecretState(ctx, got)
+	if err != nil {
+		t.Fatalf("open sandbox secret state: %v", err)
+	}
+	if !bytes.Equal(opened, plaintext) {
+		t.Fatalf("opened secret state = %q, want %q", string(opened), string(plaintext))
+	}
+
+	sealed := append([]byte(nil), got.SecretState...)
+	got.Name = "renamed secret"
+	if err := s.UpdateSandbox(ctx, got); err != nil {
+		t.Fatalf("update sandbox with sealed secret state: %v", err)
+	}
+	var updatedRow struct {
+		SecretState []byte
+	}
+	if err := db.Write.WithContext(ctx).
+		Model(&model.Sandbox{}).
+		Select("secret_state").
+		Where("id = ?", sandbox.ID).
+		Scan(&updatedRow).Error; err != nil {
+		t.Fatalf("read updated raw secret state: %v", err)
+	}
+	if !bytes.Equal(updatedRow.SecretState, sealed) {
+		t.Fatalf("sealed secret state changed on metadata-only update")
 	}
 }
 
