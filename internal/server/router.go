@@ -93,9 +93,12 @@ func NewDatabaseRouter(ctx context.Context, resolver *database.Resolver, options
 	if opts.UserID == "" {
 		opts.UserID = service.DefaultUserID
 	}
+	if opts.TenantID == "" {
+		opts.TenantID = service.DefaultTenantID
+	}
 
 	broker := events.NewBroker()
-	appStore := store.New(resolver, store.WithPublisher(broker), store.WithSealer(opts.SecretSealer))
+	appStore := store.New(resolver, store.WithPublisher(broker), store.WithSealer(opts.SecretSealer), store.WithDefaultTenantID(opts.TenantID))
 	queueConfig := orchestration.QueueConfig{
 		DefaultMaxAttempts: opts.JobMaxAttempts,
 	}
@@ -106,11 +109,9 @@ func NewDatabaseRouter(ctx context.Context, resolver *database.Resolver, options
 	if opts.SecretSealer != nil {
 		services.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.SecretSealer))
 	}
-	if opts.TenantID != "" {
-		initCtx := tenantctx.WithTenantID(ctx, opts.TenantID)
-		if err := services.InitializeDefaults(initCtx, opts.TenantID, opts.UserID); err != nil {
-			return nil, nil, err
-		}
+	initCtx := tenantctx.WithTenantID(ctx, opts.TenantID)
+	if err := services.InitializeDefaults(initCtx, opts.TenantID, opts.UserID); err != nil {
+		return nil, nil, err
 	}
 	router := chi.NewRouter()
 	router.Use(tenantMiddleware(tenantJobs))
@@ -136,8 +137,7 @@ func tenantMiddleware(jobs *tenantJobManager) func(http.Handler) http.Handler {
 			}
 			tenantID := strings.TrimSpace(r.Header.Get("X-Discobox-Tenant-ID"))
 			if tenantID == "" {
-				http.Error(w, "tenant ID is required", http.StatusBadRequest)
-				return
+				tenantID = jobs.opts.TenantID
 			}
 			ctx := tenantctx.WithTenantID(r.Context(), tenantID)
 			if err := jobs.EnsureStarted(ctx); err != nil {

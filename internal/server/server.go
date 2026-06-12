@@ -24,6 +24,9 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	if cfg.TenantID == "" {
+		cfg.TenantID = service.DefaultTenantID
+	}
 
 	resolver := database.NewResolver(database.ResolverConfig{
 		Config: database.Config{
@@ -39,10 +42,8 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("open global database: %w", err)
 	}
-	if cfg.TenantID != "" {
-		if err := InitializeGlobalDefaults(ctx, globalDB, cfg.TenantID); err != nil {
-			return fmt.Errorf("initialize global defaults: %w", err)
-		}
+	if err := InitializeGlobalDefaults(ctx, globalDB, cfg.TenantID); err != nil {
+		return fmt.Errorf("initialize global defaults: %w", err)
 	}
 
 	var sealer secrets.Sealer

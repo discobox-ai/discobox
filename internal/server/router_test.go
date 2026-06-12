@@ -1,10 +1,18 @@
 package server
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/obot-platform/discobox/gormdb"
+	"github.com/obot-platform/discobox/internal/database"
+	"github.com/obot-platform/discobox/internal/model"
+	"github.com/obot-platform/discobox/internal/service"
 )
 
 func TestNewRouterServesOpenAPIAndSwaggerDocs(t *testing.T) {
@@ -32,5 +40,47 @@ func TestNewRouterServesOpenAPIAndSwaggerDocs(t *testing.T) {
 	}
 	if body := docsResp.Body.String(); !strings.Contains(body, "/openapi.json") {
 		t.Fatalf("GET /docs body does not reference /openapi.json")
+	}
+}
+
+func TestNewDatabaseRouterFallsBackToDefaultTenant(t *testing.T) {
+	ctx := context.Background()
+	resolver := database.NewResolver(database.ResolverConfig{
+		Config: database.Config{
+			Driver: gormdb.DriverSQLite,
+			DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+		},
+		MigrateOnOpen: true,
+	})
+	t.Cleanup(func() {
+		if err := resolver.Close(); err != nil {
+			t.Fatalf("close resolver: %v", err)
+		}
+	})
+
+	router, _, err := NewDatabaseRouter(ctx, resolver, DatabaseRouterOptions{
+		DispatcherEnabled: false,
+	})
+	if err != nil {
+		t.Fatalf("new database router: %v", err)
+	}
+
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/projects", nil))
+	if resp.Code != http.StatusOK {
+		t.Fatalf("GET /projects status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+
+	var body struct {
+		Projects []model.Project `json:"projects"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode projects: %v", err)
+	}
+	if len(body.Projects) != 1 {
+		t.Fatalf("projects len = %d, want 1", len(body.Projects))
+	}
+	if body.Projects[0].TenantID != service.DefaultTenantID {
+		t.Fatalf("tenant ID = %q, want %q", body.Projects[0].TenantID, service.DefaultTenantID)
 	}
 }
