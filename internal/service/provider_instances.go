@@ -40,9 +40,6 @@ func (s *Service) CreateSandboxProviderInstance(ctx context.Context, projectID s
 	if err != nil {
 		return nil, apiError(err, "project not found")
 	}
-	if strings.TrimSpace(input.Name) == "" {
-		return nil, apiError(fmt.Errorf("name is required"), "")
-	}
 	if strings.TrimSpace(input.Type) == "" {
 		return nil, apiError(fmt.Errorf("type is required"), "")
 	}

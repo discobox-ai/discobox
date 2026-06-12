@@ -210,6 +210,22 @@ func TestServiceSandboxProviderCatalog(t *testing.T) {
 	}
 }
 
+func TestCreateSandboxProviderInstanceAllowsMissingName(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSandboxTestService(t, nil)
+	svc.RegisterSandboxProvider("recording", &recordingSandboxProvider{})
+
+	provider, err := svc.CreateSandboxProviderInstance(ctx, service.DefaultProjectID, api.CreateSandboxProviderInstanceBody{
+		Type: "recording",
+	})
+	if err != nil {
+		t.Fatalf("create provider without name: %v", err)
+	}
+	if provider.Name != "" {
+		t.Fatalf("provider name = %q, want empty", provider.Name)
+	}
+}
+
 func TestServiceResolvesDigitalOceanProviderInstance(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newSandboxTestService(t, nil)

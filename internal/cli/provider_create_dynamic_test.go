@@ -124,6 +124,26 @@ func TestDynamicProviderCreateBodyUsesCatalogFields(t *testing.T) {
 	}
 }
 
+func TestDynamicProviderCreateAllowsMissingName(t *testing.T) {
+	provider := apiclientgen.SandboxProviderCatalogItem{ID: "example", Name: "Example"}
+	cmd := NewRootCommand()
+	createCmd, _, err := cmd.Find([]string{"provider", "create"})
+	if err != nil {
+		t.Fatalf("find create command: %v", err)
+	}
+	opts, err := parseDynamicProviderCreateArgs(createCmd, []string{"--type", "example"}, provider)
+	if err != nil {
+		t.Fatalf("parse dynamic args without name: %v", err)
+	}
+	body, err := dynamicProviderCreateBody(opts, provider)
+	if err != nil {
+		t.Fatalf("dynamic body: %v", err)
+	}
+	if body.Name != "" {
+		t.Fatalf("name = %q, want empty", body.Name)
+	}
+}
+
 func TestProviderCreateCommandSendsDynamicConfig(t *testing.T) {
 	var posted map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

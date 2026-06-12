@@ -184,9 +184,6 @@ func parseDynamicProviderCreateArgs(cmd *cobra.Command, args []string, provider 
 	if err := flags.Parse(args); err != nil {
 		return opts, err
 	}
-	if strings.TrimSpace(opts.Name) == "" {
-		return opts, fmt.Errorf("required flag --name not set")
-	}
 	if strings.TrimSpace(opts.ProviderType) == "" {
 		opts.ProviderType = provider.ID
 	}
@@ -295,7 +292,7 @@ func writeProviderCreateStaticHelp(cmd *cobra.Command) {
 	fmt.Fprintln(cmd.OutOrStdout(), "                                      Show provider-specific create flags")
 	fmt.Fprintln(cmd.OutOrStdout())
 	fmt.Fprintln(cmd.OutOrStdout(), "Common Flags:")
-	fmt.Fprintln(cmd.OutOrStdout(), "      --name string       Provider instance name (required)")
+	fmt.Fprintln(cmd.OutOrStdout(), "      --name string       Provider instance name")
 	fmt.Fprintln(cmd.OutOrStdout(), "      --type string       Provider type (default \"digitalocean\")")
 	fmt.Fprintln(cmd.OutOrStdout(), "      --config string     Provider config JSON or @path")
 	fmt.Fprintln(cmd.OutOrStdout(), "      --help              Show this help without contacting the API server")
@@ -307,9 +304,9 @@ func writeProviderCreateHelp(w io.Writer, provider apiclientgen.SandboxProviderC
 	if description, ok := provider.Description.Get(); ok && strings.TrimSpace(description) != "" {
 		fmt.Fprintf(w, "%s\n\n", description)
 	}
-	fmt.Fprintf(w, "Usage:\n  discobox provider create --type %s --name NAME [provider flags]\n\n", provider.ID)
+	fmt.Fprintf(w, "Usage:\n  discobox provider create --type %s [provider flags]\n\n", provider.ID)
 	fmt.Fprintln(w, "Common Flags:")
-	fmt.Fprintln(w, "      --name string     Provider instance name (required)")
+	fmt.Fprintln(w, "      --name string     Provider instance name")
 	fmt.Fprintf(w, "      --type string     Provider type (default %q)\n", provider.ID)
 	fmt.Fprintln(w, "      --config string   Provider config JSON or @path; cannot be combined with provider-specific flags")
 	fields := sortedProviderConfigFields(provider)

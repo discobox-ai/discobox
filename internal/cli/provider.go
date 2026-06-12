@@ -104,7 +104,7 @@ func (a *App) newProviderGetCommand() *cobra.Command {
 func (a *App) newProviderCreateCommand() *cobra.Command {
 	helpFlag := &providerCreateHelpFlag{}
 	cmd := &cobra.Command{
-		Use:   "create --type PROVIDER --name NAME",
+		Use:   "create --type PROVIDER",
 		Short: "Create a provider instance and bootstrap its warm worker pool",
 		Long: `Create a provider instance and bootstrap its warm worker pool.
 
@@ -114,7 +114,7 @@ subcommand runs. Use --help=<provider> to show provider-specific options.
 Examples:
   discobox provider create --help
   discobox provider create --help=digitalocean
-  discobox provider create --type digitalocean --name do --control-plane-url https://example.com --token-env DIGITALOCEAN_ACCESS_TOKEN`,
+  discobox provider create --type digitalocean --control-plane-url https://example.com --token-env DIGITALOCEAN_ACCESS_TOKEN`,
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		DisableFlagParsing: true,
 		RunE:               a.runProviderCreate,

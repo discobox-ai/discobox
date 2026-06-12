@@ -41,7 +41,7 @@ type ProviderInstancePathInput struct {
 
 type CreateSandboxProviderInstanceBody struct {
 	Type   string          `json:"type" doc:"Provider type" required:"true"`
-	Name   string          `json:"name" doc:"Provider display name" maxLength:"200" required:"true"`
+	Name   string          `json:"name" doc:"Provider display name" maxLength:"200"`
 	Config json.RawMessage `json:"config,omitempty" doc:"Non-secret provider configuration"`
 }
 
