@@ -25,7 +25,7 @@ tasks:
       - go build -o {{.CLI_BINARY}} {{.CLI_MAIN}}
 
   build:worker-agent-image:
-    desc: Build the systemd Docker VM worker image
+    desc: Build the systemd Docker worker image
     cmds:
       - docker build -f Dockerfile.worker-agent -t discobox-worker-agent:local .
 
@@ -67,7 +67,7 @@ tasks:
         '
 
   dev:worker-agent-image-watch:
-    desc: Rebuild the Docker VM worker-agent image when its Docker inputs change
+    desc: Rebuild the Docker worker-agent image when its Docker inputs change
     cmds:
       - go run ./cmd/discobox-worker-agent-watch
 
@@ -81,19 +81,19 @@ tasks:
     cmds:
       - DISCOBOX_DOCKER_INTEGRATION=1 go test ./internal/sandbox/docker -run Integration -count=1 -v
 
-  test:dockervm:bats:
-    desc: Run Docker VM provider CLI Bats integration test
+  test:docker:bats:
+    desc: Run Docker provider CLI Bats integration test
     cmds:
       - |
         if command -v bats >/dev/null 2>&1; then
-          bats test/bats/dockervm_cli.bats
+          bats test/bats/docker_cli.bats
         else
           if [ ! -x build/bats/bin/bats ]; then
             rm -rf build/bats-core build/bats
             git clone --depth 1 https://github.com/bats-core/bats-core.git build/bats-core
             ./build/bats-core/install.sh "$PWD/build/bats"
           fi
-          build/bats/bin/bats test/bats/dockervm_cli.bats
+          build/bats/bin/bats test/bats/docker_cli.bats
         fi
 
   test:all:

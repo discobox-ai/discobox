@@ -7,7 +7,7 @@ setup_file() {
   command -v docker >/dev/null 2>&1 || skip "docker is required"
   docker info >/dev/null 2>&1 || skip "docker daemon is required"
 
-  export DISCOBOX_BATS_TMP="$BATS_SUITE_TMPDIR/discobox-dockervm"
+  export DISCOBOX_BATS_TMP="$BATS_SUITE_TMPDIR/discobox-docker"
   export DISCOBOX_BATS_DATA_DIR="$DISCOBOX_BATS_TMP/data"
   export DISCOBOX_BATS_CONFIG_DIR="$DISCOBOX_BATS_TMP/config"
   export DISCOBOX_BATS_CACHE_DIR="$DISCOBOX_BATS_TMP/cache"
@@ -68,7 +68,7 @@ teardown_file() {
 
   docker rm -f $(docker ps -aq \
     --filter "ancestor=discobox-worker-agent:local" \
-    --filter "label=discobox.provider_type=dockervm" \
+    --filter "label=discobox.provider_type=docker" \
     --filter "label=discobox.project_id=00000000-0000-0000-0000-000000000002") >/dev/null 2>&1 || true
 }
 
@@ -116,7 +116,7 @@ PY
   fi
   echo "server log:" >&2
   tail -200 "$DISCOBOX_BATS_SERVER_LOG" >&2 || true
-  echo "dockervm containers:" >&2
+  echo "docker provider containers:" >&2
   docker ps -a \
     --filter "label=discobox.provider_instance_id=$provider_id" \
     --format 'table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Names}}' >&2 || true
@@ -135,15 +135,15 @@ host_gateway() {
   docker network inspect bridge --format '{{(index .IPAM.Config 0).Gateway}}'
 }
 
-@test "provider create help exposes dockervm dynamic flags" {
-  run cli provider create --help=dockervm
+@test "provider create help exposes docker dynamic flags" {
+  run cli provider create --help=docker
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Create a Docker VM provider instance"* ]]
+  [[ "$output" == *"Create a Docker provider instance"* ]]
   [[ "$output" == *"--control-plane-url"* ]]
   [[ "$output" == *"--pool-size"* ]]
 }
 
-@test "provider create and sandbox create work with dockervm" {
+@test "provider create and sandbox create work with docker" {
   local gateway control_plane config provider_json provider_id sandbox_json sandbox_id worker_id
   gateway="$(host_gateway)"
   control_plane="http://$gateway:$DISCOBOX_BATS_PORT"
@@ -161,17 +161,17 @@ print(json.dumps({
 PY
 )"
 
-  run cli provider create --type dockervm --name bats-dockervm --config "$config"
+  run cli provider create --type docker --name bats-docker --config "$config"
   [ "$status" -eq 0 ]
   provider_json="$output"
   provider_id="$(printf '%s' "$provider_json" | json_get id)"
   [ -n "$provider_id" ]
-  [ "$(printf '%s' "$provider_json" | json_get type)" = "dockervm" ]
+  [ "$(printf '%s' "$provider_json" | json_get type)" = "docker" ]
 
   worker_id="$(wait_for_worker_ready "$provider_id")"
   [ -n "$worker_id" ]
 
-  run cli sandbox create --name bats-dockervm-sandbox --provider-instance "$provider_id" --wait --wait-timeout 90s
+  run cli sandbox create --name bats-docker-sandbox --provider-instance "$provider_id" --wait --wait-timeout 90s
   [ "$status" -eq 0 ]
   sandbox_json="$output"
   sandbox_id="$(printf '%s' "$sandbox_json" | json_get id)"

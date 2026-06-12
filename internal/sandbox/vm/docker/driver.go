@@ -1,9 +1,9 @@
-// Package dockervm implements a VM driver backed by Docker containers.
+// Package docker implements a VM driver backed by Docker containers.
 //
 // It is intended for local development and end-to-end tests of VM-backed warm
 // worker pools. Containers are launched with VM-style boot metadata and can run
 // systemd as PID 1 when the selected image supports it.
-package dockervm
+package docker
 
 import (
 	"context"
@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	ProviderType      = "dockervm"
+	ProviderType      = "docker"
 	defaultImage      = "ghcr.io/obot-platform/discobox-systemd:latest"
 	defaultAgentPort  = 3002
 	labelManaged      = "discobox.vm.managed"
@@ -71,10 +71,10 @@ type ProviderInstanceConfig struct {
 	MinHealthy      int      `json:"minHealthyWorkers,omitempty"`
 }
 
-// Definition describes the Docker VM provider for provider catalogs.
+// Definition describes the Docker provider for provider catalogs.
 func Definition() sandbox.ProviderDefinition {
 	return sandbox.ProviderDefinition{
-		Name:        "Docker VM",
+		Name:        "Docker",
 		Icon:        "docker",
 		Description: "Runs VM-style warm workers as Docker containers, optionally with systemd as PID 1.",
 		ConfigFields: []sandbox.ProviderConfigField{
@@ -109,7 +109,7 @@ type Driver struct {
 	labels       map[string]string
 }
 
-// NewDriver creates a Docker VM driver and verifies Docker API connectivity.
+// NewDriver creates a Docker-backed VM driver and verifies Docker API connectivity.
 func NewDriver(ctx context.Context, cfg Config) (*Driver, error) {
 	opts := []client.Opt{client.FromEnv}
 	if cfg.Host != "" {
@@ -128,7 +128,7 @@ func NewDriver(ctx context.Context, cfg Config) (*Driver, error) {
 	return d, nil
 }
 
-// NewDriverWithClient creates a Docker VM driver from an existing Docker client.
+// NewDriverWithClient creates a Docker-backed VM driver from an existing Docker client.
 func NewDriverWithClient(cli *client.Client, cfg Config) *Driver {
 	agentPort := cfg.AgentPort
 	if agentPort == 0 {
@@ -174,7 +174,7 @@ func NewProvider(ctx context.Context, cfg Config, providerCfg vm.Config) (*vm.Pr
 	}
 	providerCfg.Driver = driver
 	if providerCfg.Name == "" {
-		providerCfg.Name = "Docker VM"
+		providerCfg.Name = "Docker"
 	}
 	if providerCfg.Description == "" {
 		providerCfg.Description = "Runs VM-style warm workers as Docker containers."

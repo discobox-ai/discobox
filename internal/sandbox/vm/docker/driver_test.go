@@ -1,4 +1,4 @@
-package dockervm
+package docker
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 
 func TestDefinitionIncludesSystemdConfig(t *testing.T) {
 	def := Definition()
-	if def.Name != "Docker VM" {
+	if def.Name != "Docker" {
 		t.Fatalf("name = %q", def.Name)
 	}
 	keys := map[string]bool{}

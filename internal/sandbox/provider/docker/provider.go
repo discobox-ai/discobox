@@ -1,4 +1,4 @@
-package dockervm
+package docker
 
 import (
 	"context"
@@ -10,7 +10,7 @@ import (
 	"github.com/obot-platform/discobox/internal/sandbox"
 	"github.com/obot-platform/discobox/internal/sandbox/provider/vmprovider"
 	"github.com/obot-platform/discobox/internal/sandbox/vm"
-	dockerdriver "github.com/obot-platform/discobox/internal/sandbox/vm/dockervm"
+	dockerdriver "github.com/obot-platform/discobox/internal/sandbox/vm/docker"
 )
 
 const ProviderType = dockerdriver.ProviderType
@@ -38,7 +38,7 @@ type Config struct {
 }
 
 func Decode(data json.RawMessage) (Config, error) {
-	return vmprovider.DecodeConfig[Config](data, "dockervm")
+	return vmprovider.DecodeConfig[Config](data, ProviderType)
 }
 
 func Validate(data json.RawMessage) error {
@@ -46,7 +46,7 @@ func Validate(data json.RawMessage) error {
 	if err != nil {
 		return err
 	}
-	return vmprovider.RequireControlPlaneURL("dockervm", cfg.ControlPlaneURL)
+	return vmprovider.RequireControlPlaneURL(ProviderType, cfg.ControlPlaneURL)
 }
 
 func NewFromInstance(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
@@ -72,7 +72,7 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 }
 
 func configuredWorkerImage(image string) string {
-	if value := strings.TrimSpace(os.Getenv("DISCOBOX_DOCKER_VM_WORKER_IMAGE")); value != "" {
+	if value := strings.TrimSpace(os.Getenv("DISCOBOX_DOCKER_WORKER_IMAGE")); value != "" {
 		return value
 	}
 	return image

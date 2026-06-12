@@ -196,17 +196,17 @@ func TestServiceSandboxProviderCatalog(t *testing.T) {
 	}
 	catalog := svc.ListSandboxProviderCatalog()
 	hasDigitalOcean := false
-	hasDockerVM := false
+	hasDocker := false
 	for _, item := range catalog {
 		switch item.ID {
 		case "digitalocean":
 			hasDigitalOcean = true
-		case "dockervm":
-			hasDockerVM = true
+		case "docker":
+			hasDocker = true
 		}
 	}
-	if !hasDigitalOcean || !hasDockerVM {
-		t.Fatalf("catalog = %#v, want digitalocean and dockervm", catalog)
+	if !hasDigitalOcean || !hasDocker {
+		t.Fatalf("catalog = %#v, want digitalocean and docker", catalog)
 	}
 }
 

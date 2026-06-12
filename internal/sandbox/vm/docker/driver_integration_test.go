@@ -1,4 +1,4 @@
-package dockervm
+package docker
 
 import (
 	"archive/tar"
@@ -18,17 +18,17 @@ import (
 	"github.com/obot-platform/discobox/internal/sandbox/vm"
 )
 
-const dockerVMIntegrationEnv = "DISCOBOX_DOCKER_VM_INTEGRATION"
+const dockerIntegrationEnv = "DISCOBOX_DOCKER_INTEGRATION"
 
-func TestDockerVMIntegrationLifecycle(t *testing.T) {
-	if os.Getenv(dockerVMIntegrationEnv) != "1" {
-		t.Skipf("set %s=1 to run Docker VM integration tests", dockerVMIntegrationEnv)
+func TestDockerIntegrationLifecycle(t *testing.T) {
+	if os.Getenv(dockerIntegrationEnv) != "1" {
+		t.Skipf("set %s=1 to run Docker integration tests", dockerIntegrationEnv)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	image := os.Getenv("DISCOBOX_DOCKER_VM_TEST_IMAGE")
+	image := os.Getenv("DISCOBOX_DOCKER_TEST_IMAGE")
 	if image == "" {
-		image = "discobox-dockervm-sleep:test-" + uuid.NewString()
+		image = "discobox-docker-sleep:test-" + uuid.NewString()
 		buildDockerImage(t, ctx, "testdata/sleep/Dockerfile", image)
 	}
 
@@ -45,7 +45,7 @@ func TestDockerVMIntegrationLifecycle(t *testing.T) {
 			"DISCOBOX_TENANT_ID": ref.TenantID,
 			"DISCOBOX_WORKER_ID": "worker-" + uuid.NewString(),
 		}},
-		Metadata: map[string]string{"test": "dockervm"},
+		Metadata: map[string]string{"test": "docker"},
 	})
 	if err != nil {
 		t.Fatalf("create vm: %v", err)
@@ -93,15 +93,15 @@ func TestDockerVMIntegrationLifecycle(t *testing.T) {
 	}
 }
 
-func TestDockerVMIntegrationSystemdContainer(t *testing.T) {
-	if os.Getenv(dockerVMIntegrationEnv) != "1" {
-		t.Skipf("set %s=1 to run Docker VM integration tests", dockerVMIntegrationEnv)
+func TestDockerIntegrationSystemdContainer(t *testing.T) {
+	if os.Getenv(dockerIntegrationEnv) != "1" {
+		t.Skipf("set %s=1 to run Docker integration tests", dockerIntegrationEnv)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	image := os.Getenv("DISCOBOX_DOCKER_VM_SYSTEMD_IMAGE")
+	image := os.Getenv("DISCOBOX_DOCKER_SYSTEMD_IMAGE")
 	if image == "" {
-		image = "discobox-dockervm-systemd:test-" + uuid.NewString()
+		image = "discobox-docker-systemd:test-" + uuid.NewString()
 		buildDockerImage(t, ctx, "testdata/systemd/Dockerfile", image)
 	}
 

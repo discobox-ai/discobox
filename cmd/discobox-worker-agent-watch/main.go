@@ -183,8 +183,8 @@ func buildAndWriteEnv(ctx context.Context) error {
 		return err
 	}
 	if err := updateEnv(envFile, map[string]string{
-		"DISCOBOX_DOCKER_VM_WORKER_IMAGE":        image,
-		"DISCOBOX_DOCKER_VM_WORKER_IMAGE_DIGEST": imageID,
+		"DISCOBOX_DOCKER_WORKER_IMAGE":        image,
+		"DISCOBOX_DOCKER_WORKER_IMAGE_DIGEST": imageID,
 	}); err != nil {
 		return err
 	}

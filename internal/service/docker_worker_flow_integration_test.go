@@ -26,11 +26,11 @@ import (
 	"github.com/obot-platform/discobox/orchestration"
 )
 
-const dockerVMIntegrationEnv = "DISCOBOX_DOCKER_VM_INTEGRATION"
+const dockerIntegrationEnv = "DISCOBOX_DOCKER_INTEGRATION"
 
-func TestDockerVMProviderWorkerCreateFlowE2E(t *testing.T) {
-	if os.Getenv(dockerVMIntegrationEnv) != "1" {
-		t.Skipf("set %s=1 to run Docker VM provider e2e tests", dockerVMIntegrationEnv)
+func TestDockerProviderWorkerCreateFlowE2E(t *testing.T) {
+	if os.Getenv(dockerIntegrationEnv) != "1" {
+		t.Skipf("set %s=1 to run Docker provider e2e tests", dockerIntegrationEnv)
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -45,10 +45,10 @@ func TestDockerVMProviderWorkerCreateFlowE2E(t *testing.T) {
 		t.Fatalf("ping docker: %v", err)
 	}
 
-	image := os.Getenv("DISCOBOX_DOCKER_VM_TEST_IMAGE")
+	image := os.Getenv("DISCOBOX_DOCKER_TEST_IMAGE")
 	if image == "" {
-		image = "discobox-dockervm-worker-flow:test-" + uuid.NewString()
-		buildDockerVMWorkerFlowImage(t, ctx, dockerClient, image)
+		image = "discobox-docker-worker-flow:test-" + uuid.NewString()
+		buildDockerWorkerFlowImage(t, ctx, dockerClient, image)
 	}
 
 	db, err := database.New(database.Config{DSN: ":memory:"})
@@ -106,14 +106,14 @@ func TestDockerVMProviderWorkerCreateFlowE2E(t *testing.T) {
 		t.Fatalf("marshal provider config: %v", err)
 	}
 	provider, err := svc.CreateSandboxProviderInstance(ctx, service.DefaultProjectID, api.CreateSandboxProviderInstanceBody{
-		Type:   "dockervm",
+		Type:   "docker",
 		Name:   "docker e2e",
 		Config: providerConfig,
 	})
 	if err != nil {
 		t.Fatalf("create provider instance: %v", err)
 	}
-	t.Cleanup(func() { cleanupDockerVMProviderContainers(t, dockerClient, provider.ID) })
+	t.Cleanup(func() { cleanupDockerProviderContainers(t, dockerClient, provider.ID) })
 
 	worker := waitForProviderWorker(t, ctx, appStore, provider.ID)
 	if worker.LastJobID == nil {
@@ -126,7 +126,7 @@ func TestDockerVMProviderWorkerCreateFlowE2E(t *testing.T) {
 		t.Fatalf("worker status/generation = %q %d/%d, want success observed", worker.LastOperationStatus, worker.ObservedGeneration, worker.Generation)
 	}
 
-	containers := listDockerVMProviderContainers(t, dockerClient, provider.ID)
+	containers := listDockerProviderContainers(t, dockerClient, provider.ID)
 	if len(containers) != 1 {
 		t.Fatalf("provider containers = %d, want 1", len(containers))
 	}
@@ -137,8 +137,8 @@ func TestDockerVMProviderWorkerCreateFlowE2E(t *testing.T) {
 	if labels["discobox.provider_instance_id"] != provider.ID {
 		t.Fatalf("container provider label = %q, want %q", labels["discobox.provider_instance_id"], provider.ID)
 	}
-	if labels["discobox.vm.managed"] != "true" || labels["discobox.provider_type"] != "dockervm" {
-		t.Fatalf("container labels = %#v, want managed dockervm", labels)
+	if labels["discobox.vm.managed"] != "true" || labels["discobox.provider_type"] != "docker" {
+		t.Fatalf("container labels = %#v, want managed docker", labels)
 	}
 }
 
@@ -163,7 +163,7 @@ func waitForProviderWorker(t *testing.T, ctx context.Context, appStore *store.St
 	return model.Worker{}
 }
 
-func buildDockerVMWorkerFlowImage(t *testing.T, ctx context.Context, dockerClient *client.Client, tag string) {
+func buildDockerWorkerFlowImage(t *testing.T, ctx context.Context, dockerClient *client.Client, tag string) {
 	t.Helper()
 	dockerfile := []byte("FROM debian:13-slim\nRUN apt-get update \\\n    && apt-get install -y --no-install-recommends ca-certificates \\\n    && apt-get clean \\\n    && rm -rf /var/lib/apt/lists/*\nCMD [\"sleep\", \"300\"]\n")
 	var buf bytes.Buffer
@@ -185,13 +185,13 @@ func buildDockerVMWorkerFlowImage(t *testing.T, ctx context.Context, dockerClien
 	_, _ = io.Copy(io.Discard, resp.Body)
 }
 
-func listDockerVMProviderContainers(t *testing.T, dockerClient *client.Client, providerID string) []container.Summary {
+func listDockerProviderContainers(t *testing.T, dockerClient *client.Client, providerID string) []container.Summary {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	filterArgs := client.Filters{}
 	filterArgs = filterArgs.Add("label", "discobox.provider_instance_id="+providerID)
-	filterArgs = filterArgs.Add("label", "discobox.provider_type=dockervm")
+	filterArgs = filterArgs.Add("label", "discobox.provider_type=docker")
 	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: filterArgs})
 	if err != nil {
 		t.Fatalf("list provider containers: %v", err)
@@ -199,9 +199,9 @@ func listDockerVMProviderContainers(t *testing.T, dockerClient *client.Client, p
 	return containers.Items
 }
 
-func cleanupDockerVMProviderContainers(t *testing.T, dockerClient *client.Client, providerID string) {
+func cleanupDockerProviderContainers(t *testing.T, dockerClient *client.Client, providerID string) {
 	t.Helper()
-	containers := listDockerVMProviderContainers(t, dockerClient, providerID)
+	containers := listDockerProviderContainers(t, dockerClient, providerID)
 	for _, c := range containers {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		_, err := dockerClient.ContainerRemove(ctx, c.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
