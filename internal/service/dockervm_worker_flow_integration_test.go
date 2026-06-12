@@ -165,7 +165,7 @@ func waitForProviderWorker(t *testing.T, ctx context.Context, appStore *store.St
 
 func buildDockerVMWorkerFlowImage(t *testing.T, ctx context.Context, dockerClient *client.Client, tag string) {
 	t.Helper()
-	dockerfile := []byte("FROM alpine:3.20\nRUN apk add --no-cache ca-certificates\nCMD [\"sleep\", \"300\"]\n")
+	dockerfile := []byte("FROM debian:13-slim\nRUN apt-get update \\\n    && apt-get install -y --no-install-recommends ca-certificates \\\n    && apt-get clean \\\n    && rm -rf /var/lib/apt/lists/*\nCMD [\"sleep\", \"300\"]\n")
 	var buf bytes.Buffer
 	writer := tar.NewWriter(&buf)
 	if err := writer.WriteHeader(&tar.Header{Name: "Dockerfile", Mode: 0o644, Size: int64(len(dockerfile))}); err != nil {

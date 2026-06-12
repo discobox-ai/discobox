@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 
-FROM golang:1.26-bookworm AS build
+FROM golang:1.26-trixie AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -10,7 +10,7 @@ RUN go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/discobox-worker-agent ./cmd/discobox-worker-agent
 
-FROM ubuntu:24.04
+FROM debian:13-slim
 
 ENV container=docker
 ENV DISCOBOX_AGENT_PORT=3002
