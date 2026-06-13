@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2/humatest"
@@ -96,13 +95,4 @@ func projectURL() string {
 
 func sandboxURL(sandboxID string) string {
 	return projectURL() + "/sandboxes/" + sandboxID
-}
-
-func containsAll(s string, needles ...string) bool {
-	for _, needle := range needles {
-		if !strings.Contains(s, needle) {
-			return false
-		}
-	}
-	return true
 }

@@ -98,6 +98,33 @@
         ],
         "type": "object"
       },
+      "CompleteEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "sandboxId": {
+            "type": "string"
+          },
+          "stream": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "stream"
+        ],
+        "type": "object"
+      },
+      "ConnectedEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "projectId": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "projectId"
+        ],
+        "type": "object"
+      },
       "CreateAgentConfigBody": {
         "additionalProperties": false,
         "properties": {
@@ -843,16 +870,13 @@
         "additionalProperties": false,
         "properties": {
           "finishedAt": {
-            "description": "List finish timestamp",
             "format": "date-time",
             "type": "string"
           },
           "projectId": {
-            "description": "Project ID",
             "type": "string"
           },
           "resources": {
-            "description": "Resource types included in the list",
             "items": {
               "type": "string"
             },
@@ -860,9 +884,7 @@
             "type": "array"
           },
           "seq": {
-            "description": "Sequence used as the list baseline",
             "format": "int64",
-            "minimum": 0,
             "type": "integer"
           }
         },
@@ -878,11 +900,9 @@
         "additionalProperties": false,
         "properties": {
           "projectId": {
-            "description": "Project ID",
             "type": "string"
           },
           "resources": {
-            "description": "Resource types included in the list",
             "items": {
               "type": "string"
             },
@@ -890,13 +910,10 @@
             "type": "array"
           },
           "seq": {
-            "description": "Sequence used as the list baseline",
             "format": "int64",
-            "minimum": 0,
             "type": "integer"
           },
           "startedAt": {
-            "description": "List start timestamp",
             "format": "date-time",
             "type": "string"
           }
@@ -1385,6 +1402,25 @@
             "type": "boolean"
           }
         },
+        "type": "object"
+      },
+      "StreamErrorEvent": {
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "sandboxId": {
+            "type": "string"
+          },
+          "stream": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "stream",
+          "error"
+        ],
         "type": "object"
       },
       "Tenant": {
@@ -2306,206 +2342,6 @@
         ]
       }
     },
-    "/projects/{projectId}/events": {
-      "get": {
-        "operationId": "subscribe-project-events",
-        "parameters": [
-          {
-            "description": "Project ID",
-            "in": "path",
-            "name": "projectId",
-            "required": true,
-            "schema": {
-              "description": "Project ID",
-              "type": "string"
-            }
-          },
-          {
-            "description": "Resource types to watch. Repeat the parameter or use comma-separated values. Defaults to sandbox.",
-            "explode": false,
-            "in": "query",
-            "name": "resources",
-            "schema": {
-              "description": "Resource types to watch. Repeat the parameter or use comma-separated values. Defaults to sandbox.",
-              "items": {
-                "type": "string"
-              },
-              "nullable": true,
-              "type": "array"
-            }
-          },
-          {
-            "description": "Replay changes after this sequence. Omit for list-watch baseline behavior. A value of 0 starts at the current max sequence.",
-            "explode": false,
-            "in": "query",
-            "name": "afterSeq",
-            "schema": {
-              "default": -1,
-              "description": "Replay changes after this sequence. Omit for list-watch baseline behavior. A value of 0 starts at the current max sequence.",
-              "format": "int64",
-              "minimum": -1,
-              "type": "integer"
-            }
-          },
-          {
-            "description": "When afterSeq is omitted, send a full list of requested resources before live changes",
-            "explode": false,
-            "in": "query",
-            "name": "list",
-            "schema": {
-              "description": "When afterSeq is omitted, send a full list of requested resources before live changes",
-              "type": "boolean"
-            }
-          },
-          {
-            "description": "Return after replay/list instead of waiting for live events",
-            "explode": false,
-            "in": "query",
-            "name": "replayOnly",
-            "schema": {
-              "description": "Return after replay/list instead of waiting for live events",
-              "type": "boolean"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "text/event-stream": {
-                "schema": {
-                  "description": "Each oneOf object in the array represents one possible Server Sent Events (SSE) message, serialized as UTF-8 text according to the SSE specification.",
-                  "items": {
-                    "oneOf": [
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/ResourceListFinishEvent"
-                          },
-                          "event": {
-                            "const": "listFinish",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event listFinish",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/ResourceListStartEvent"
-                          },
-                          "event": {
-                            "const": "listStart",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event listStart",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/ResourceChangedEvent"
-                          },
-                          "event": {
-                            "const": "resourceChanged",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event resourceChanged",
-                        "type": "object"
-                      },
-                      {
-                        "properties": {
-                          "data": {
-                            "$ref": "#/components/schemas/ResourceListedEvent"
-                          },
-                          "event": {
-                            "const": "resourceListed",
-                            "description": "The event name.",
-                            "type": "string"
-                          },
-                          "id": {
-                            "description": "The event ID.",
-                            "type": "integer"
-                          },
-                          "retry": {
-                            "description": "The retry time in milliseconds.",
-                            "type": "integer"
-                          }
-                        },
-                        "required": [
-                          "data",
-                          "event"
-                        ],
-                        "title": "Event resourceListed",
-                        "type": "object"
-                      }
-                    ]
-                  },
-                  "title": "Server Sent Events",
-                  "type": "array"
-                }
-              }
-            },
-            "description": "OK"
-          },
-          "default": {
-            "content": {
-              "application/problem+json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorModel"
-                }
-              }
-            },
-            "description": "Error"
-          }
-        },
-        "summary": "Subscribe to project events",
-        "tags": [
-          "Project Events"
-        ]
-      }
-    },
     "/projects/{projectId}/providers": {
       "get": {
         "operationId": "list-sandbox-provider-instances",
@@ -3196,6 +3032,257 @@
         "summary": "Stop a sandbox",
         "tags": [
           "Sandboxes"
+        ]
+      }
+    },
+    "/projects/{projectId}/stream/sse": {
+      "get": {
+        "description": "Subscribes to one project stream using query parameters. This endpoint does not emit SSE id fields and does not support Last-Event-ID resume semantics; reconnects should request full history or set history=false.",
+        "operationId": "subscribe-project-stream-sse",
+        "parameters": [
+          {
+            "description": "Project ID",
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "description": "Project ID",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Stream name",
+            "explode": false,
+            "in": "query",
+            "name": "stream",
+            "schema": {
+              "default": "sandbox",
+              "description": "Stream name",
+              "enum": [
+                "sandbox"
+              ],
+              "type": "string"
+            }
+          },
+          {
+            "description": "Sandbox ID to stream; defaults to all sandboxes",
+            "explode": false,
+            "in": "query",
+            "name": "sandboxId",
+            "schema": {
+              "description": "Sandbox ID to stream; defaults to all sandboxes",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Send full event history before live changes; defaults to true",
+            "explode": false,
+            "in": "query",
+            "name": "history",
+            "schema": {
+              "default": true,
+              "description": "Send full event history before live changes; defaults to true",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Return after history/list instead of waiting for live events",
+            "explode": false,
+            "in": "query",
+            "name": "replayOnly",
+            "schema": {
+              "description": "Return after history/list instead of waiting for live events",
+              "type": "boolean"
+            }
+          },
+          {
+            "description": "Send a current resource list before history/live changes",
+            "explode": false,
+            "in": "query",
+            "name": "list",
+            "schema": {
+              "description": "Send a current resource list before history/live changes",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "text/event-stream": {
+                "schema": {
+                  "description": "Each oneOf object in the array represents one possible SSE message. This stream intentionally omits SSE id fields and does not support Last-Event-ID resume semantics.",
+                  "items": {
+                    "oneOf": [
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/CompleteEvent"
+                          },
+                          "event": {
+                            "const": "complete",
+                            "description": "The event name.",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "event",
+                          "data"
+                        ],
+                        "title": "Event complete",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/ConnectedEvent"
+                          },
+                          "event": {
+                            "const": "connected",
+                            "description": "The event name.",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "event",
+                          "data"
+                        ],
+                        "title": "Event connected",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/StreamErrorEvent"
+                          },
+                          "event": {
+                            "const": "error",
+                            "description": "The event name.",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "event",
+                          "data"
+                        ],
+                        "title": "Event error",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/ResourceListFinishEvent"
+                          },
+                          "event": {
+                            "const": "list-end",
+                            "description": "The event name.",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "event",
+                          "data"
+                        ],
+                        "title": "Event list-end",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/ResourceListStartEvent"
+                          },
+                          "event": {
+                            "const": "list-start",
+                            "description": "The event name.",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "event",
+                          "data"
+                        ],
+                        "title": "Event list-start",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/ResourceChangedEvent"
+                          },
+                          "event": {
+                            "const": "resource.changed",
+                            "description": "The event name.",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "event",
+                          "data"
+                        ],
+                        "title": "Event resource.changed",
+                        "type": "object"
+                      },
+                      {
+                        "properties": {
+                          "data": {
+                            "$ref": "#/components/schemas/ResourceListedEvent"
+                          },
+                          "event": {
+                            "const": "resource.listed",
+                            "description": "The event name.",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "event",
+                          "data"
+                        ],
+                        "title": "Event resource.listed",
+                        "type": "object"
+                      }
+                    ]
+                  },
+                  "title": "Server Sent Events",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "422": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Unprocessable Entity"
+          },
+          "500": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          },
+          "503": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Service Unavailable"
+          }
+        },
+        "summary": "Subscribe to a static project event stream using SSE",
+        "tags": [
+          "Project Streams"
         ]
       }
     },

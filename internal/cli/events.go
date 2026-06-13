@@ -14,10 +14,10 @@ import (
 )
 
 type eventsOptions struct {
-	resources  []string
-	afterSeq   int64
 	list       bool
 	replayOnly bool
+	replay     bool
+	sandboxID  string
 }
 
 func (a *App) newEventsCommand() *cobra.Command {
@@ -37,10 +37,10 @@ func (a *App) newEventsCommand() *cobra.Command {
 			list := opts.list
 			replayOnly := opts.replayOnly
 			params := apiclient.ProjectEventsParams{
-				Resources:  normalizeResources(opts.resources),
-				AfterSeq:   &opts.afterSeq,
 				List:       &list,
+				Replay:     opts.replay,
 				ReplayOnly: &replayOnly,
+				SandboxID:  opts.sandboxID,
 			}
 			stream, err := client.SubscribeProjectEvents(cmd.Context(), projectID, params)
 			if err != nil {
@@ -61,10 +61,10 @@ func (a *App) newEventsCommand() *cobra.Command {
 			}
 		},
 	}
-	cmd.Flags().StringSliceVar(&opts.resources, "resource", nil, "Resource type to stream; may be repeated or comma-separated")
-	cmd.Flags().Int64Var(&opts.afterSeq, "after-seq", -1, "Replay events after this sequence; -1 uses list-watch behavior")
 	cmd.Flags().BoolVar(&opts.list, "list", true, "Send a current resource list before live changes")
+	cmd.Flags().BoolVar(&opts.replay, "replay", false, "Replay sandbox events from the beginning before live changes")
 	cmd.Flags().BoolVar(&opts.replayOnly, "replay-only", false, "Return after replay/list instead of waiting for live events")
+	cmd.Flags().StringVar(&opts.sandboxID, "sandbox", "", "Sandbox ID to stream; defaults to all sandboxes")
 	return cmd
 }
 
@@ -84,26 +84,10 @@ func (a *App) writeEvent(cmd *cobra.Command, msg *apiclient.ProjectEventMessage)
 		fmt.Fprintf(tw, "%s\tseq=%d\tresources=%s\t%s\n", msg.Event, data.Seq, strings.Join(data.Resources, ","), data.FinishedAt.Local().Format("2006-01-02T15:04:05Z07:00"))
 	case *apiclient.UnknownProjectEvent:
 		encoded, _ := json.Marshal(data.Data)
-		fmt.Fprintf(tw, "%s\tid=%s\t%s\n", msg.Event, msg.ID, string(encoded))
+		fmt.Fprintf(tw, "%s\t%s\n", msg.Event, string(encoded))
 	default:
 		encoded, _ := json.Marshal(data)
-		fmt.Fprintf(tw, "%s\tid=%s\t%s\n", msg.Event, msg.ID, string(encoded))
+		fmt.Fprintf(tw, "%s\t%s\n", msg.Event, string(encoded))
 	}
 	return tw.Flush()
-}
-
-func normalizeResources(values []string) []string {
-	seen := map[string]bool{}
-	var result []string
-	for _, value := range values {
-		for _, part := range strings.Split(value, ",") {
-			part = strings.TrimSpace(part)
-			if part == "" || seen[part] {
-				continue
-			}
-			seen[part] = true
-			result = append(result, part)
-		}
-	}
-	return result
 }

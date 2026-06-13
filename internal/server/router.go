@@ -12,6 +12,7 @@ import (
 	"github.com/obot-platform/discobox/internal/api"
 	"github.com/obot-platform/discobox/internal/database"
 	"github.com/obot-platform/discobox/internal/events"
+	"github.com/obot-platform/discobox/internal/realtime"
 	"github.com/obot-platform/discobox/internal/sandboxauth"
 	"github.com/obot-platform/discobox/internal/secrets"
 	"github.com/obot-platform/discobox/internal/server/defaults"
@@ -64,9 +65,11 @@ func DefaultDatabaseRouterOptions() DatabaseRouterOptions {
 // NewRouter creates a chi router with all Huma operations registered.
 func NewRouter(services api.Services) (*chi.Mux, huma.API) {
 	router := chi.NewRouter()
+	realtime.RegisterProjectStreamRoutes(router, services.Events)
 	config := huma.DefaultConfig(Name, Version)
 	config.DocsRenderer = huma.DocsRendererScalar
 	humaAPI := humachi.New(router, config)
+	realtime.RegisterProjectStreamSSEOperations(humaAPI, services.Events)
 	api.Register(humaAPI, services)
 	return router, humaAPI
 }
@@ -127,6 +130,8 @@ func NewDatabaseRouter(ctx context.Context, resolver *database.Resolver, options
 	config := huma.DefaultConfig(Name, Version)
 	config.DocsRenderer = huma.DocsRendererScalar
 	humaAPI := humachi.New(router, config)
+	realtime.RegisterProjectStreamRoutes(router, services)
+	realtime.RegisterProjectStreamSSEOperations(humaAPI, services)
 	api.Register(humaAPI, api.Services{
 		Projects:     services,
 		AgentConfigs: services,

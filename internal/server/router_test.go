@@ -9,7 +9,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
 	"github.com/obot-platform/discobox/gormdb"
 	"github.com/obot-platform/discobox/internal/database"
 	"github.com/obot-platform/discobox/internal/model"
@@ -156,5 +159,94 @@ func TestNewDatabaseRouterResolvesDefaultProjectAlias(t *testing.T) {
 	}
 	if !project.Default {
 		t.Fatal("expected default project flag")
+	}
+}
+
+func TestProjectStreamReceivesSandboxMutation(t *testing.T) {
+	ctx := context.Background()
+	resolver := database.NewResolver(database.ResolverConfig{
+		Config: database.Config{
+			Driver: gormdb.DriverSQLite,
+			DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+		},
+		MigrateOnOpen: true,
+	})
+	t.Cleanup(func() {
+		if err := resolver.Close(); err != nil {
+			t.Fatalf("close resolver: %v", err)
+		}
+	})
+
+	router, _, err := NewDatabaseRouter(ctx, resolver, DatabaseRouterOptions{
+		DispatcherEnabled: false,
+	})
+	if err != nil {
+		t.Fatalf("new database router: %v", err)
+	}
+	server := httptest.NewServer(router)
+	t.Cleanup(server.Close)
+
+	wsCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	conn, wsResp, err := websocket.Dial(wsCtx, "ws"+strings.TrimPrefix(server.URL, "http")+"/projects/default/stream", nil)
+	if wsResp != nil && wsResp.Body != nil {
+		defer wsResp.Body.Close()
+	}
+	if err != nil {
+		t.Fatalf("dial project stream: %v", err)
+	}
+	defer func() {
+		if err := conn.CloseNow(); err != nil {
+			t.Fatalf("close project stream: %v", err)
+		}
+	}()
+
+	list := false
+	if err := wsjson.Write(wsCtx, conn, map[string]any{
+		"type":   "subscribe",
+		"stream": "sandbox",
+		"list":   list,
+	}); err != nil {
+		t.Fatalf("subscribe project stream: %v", err)
+	}
+
+	readProjectStreamMessage(t, wsCtx, conn, "subscribed", "")
+	readProjectStreamMessage(t, wsCtx, conn, "event", "connected")
+
+	resp, err := http.Post(server.URL+"/projects/default/sandboxes", "application/json", strings.NewReader(`{"name":"live","description":"test sandbox"}`))
+	if err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("create sandbox status = %d", resp.StatusCode)
+	}
+
+	msg := readProjectStreamMessage(t, wsCtx, conn, "event", model.EventTypeResourceChanged)
+	var event model.ProjectEvent
+	if err := json.Unmarshal(msg.Data, &event); err != nil {
+		t.Fatalf("decode project event: %v", err)
+	}
+	if event.ResourceType != "sandbox" || event.Action != model.EventActionCreated {
+		t.Fatalf("event = %#v, want sandbox created event", event)
+	}
+}
+
+type projectStreamTestMessage struct {
+	Type  string          `json:"type"`
+	Event string          `json:"event,omitempty"`
+	Data  json.RawMessage `json:"data,omitempty"`
+}
+
+func readProjectStreamMessage(t *testing.T, ctx context.Context, conn *websocket.Conn, wantType, wantEvent string) projectStreamTestMessage {
+	t.Helper()
+	for {
+		var msg projectStreamTestMessage
+		if err := wsjson.Read(ctx, conn, &msg); err != nil {
+			t.Fatalf("read project stream: %v", err)
+		}
+		if msg.Type == wantType && (wantEvent == "" || msg.Event == wantEvent) {
+			return msg
+		}
 	}
 }

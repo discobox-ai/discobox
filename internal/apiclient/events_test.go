@@ -3,61 +3,60 @@ package apiclient
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
-	"net/http"
 	"net/http/httptest"
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/go-chi/chi/v5"
+
+	"github.com/obot-platform/discobox/internal/model"
+	"github.com/obot-platform/discobox/internal/realtime"
 )
 
-func TestSubscribeProjectEventsReadsReplayStream(t *testing.T) {
-	projectID := uuid.MustParse("11111111-1111-1111-1111-111111111111")
-	eventID := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+type fakeProjectEventService struct {
+	maxSeq    int64
+	history   []model.ProjectEvent
+	snapshots []model.ProjectEvent
+	live      chan model.ProjectEvent
+}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/projects/"+projectID.String()+"/events" {
-			t.Fatalf("path = %q", r.URL.Path)
-		}
-		if got := r.Header.Get("Accept"); got != "text/event-stream" {
-			t.Fatalf("Accept = %q", got)
-		}
-		q := r.URL.Query()
-		if got := q["resources"]; len(got) != 2 || got[0] != "sandbox" || got[1] != "project" {
-			t.Fatalf("resources query = %#v", got)
-		}
-		if got := q.Get("afterSeq"); got != "7" {
-			t.Fatalf("afterSeq = %q", got)
-		}
-		if got := q.Get("list"); got != "true" {
-			t.Fatalf("list = %q", got)
-		}
-		if got := q.Get("replayOnly"); got != "true" {
-			t.Fatalf("replayOnly = %q", got)
-		}
+func (f *fakeProjectEventService) MaxProjectEventSeq(context.Context, string) (int64, error) {
+	return f.maxSeq, nil
+}
 
-		w.Header().Set("Content-Type", "text/event-stream")
-		fmt.Fprintf(w, "id: 7\n")
-		fmt.Fprintf(w, "event: listStart\n")
-		fmt.Fprintf(w, "data: {\"projectId\":%q,\"resources\":[\"sandbox\"],\"seq\":7,\"startedAt\":\"2026-06-07T01:02:03Z\"}\n\n", projectID)
-		fmt.Fprintf(w, "id: 8\n")
-		fmt.Fprintf(w, "event: resourceChanged\n")
-		fmt.Fprintf(w, "data: {\"id\":%q,\"seq\":8,\"projectId\":%q,\"type\":\"resource.changed\",\"resourceType\":\"sandbox\",\"resourceId\":\"sandbox-1\",\"action\":\"created\",\"data\":{\"name\":\"alpha\"},\"createdAt\":\"2026-06-07T01:02:04Z\"}\n\n", eventID, projectID)
-	}))
-	t.Cleanup(server.Close)
+func (f *fakeProjectEventService) ListProjectEventsAfterSeq(_ context.Context, _ string, afterSeq int64, resourceTypes []string) ([]model.ProjectEvent, error) {
+	return filterProjectEvents(f.history, afterSeq, resourceTypes), nil
+}
 
-	afterSeq := int64(7)
+func (f *fakeProjectEventService) ListProjectResourceSnapshots(_ context.Context, _ string, resourceTypes []string, _ int64) ([]model.ProjectEvent, error) {
+	return filterProjectEvents(f.snapshots, -1, resourceTypes), nil
+}
+
+func (f *fakeProjectEventService) SubscribeProjectEvents(context.Context, string) (<-chan model.ProjectEvent, func(), error) {
+	if f.live == nil {
+		f.live = make(chan model.ProjectEvent)
+	}
+	return f.live, func() {}, nil
+}
+
+func TestSubscribeProjectEventsReadsProjectStream(t *testing.T) {
+	service := &fakeProjectEventService{
+		maxSeq: 7,
+		snapshots: []model.ProjectEvent{
+			testProjectEvent("snapshot", 7, "sandbox-1", model.EventActionListed),
+		},
+		live: make(chan model.ProjectEvent),
+	}
+	server := newProjectStreamTestServer(t, service)
+
 	list := true
 	replayOnly := true
 	client, err := NewEventClient(server.URL)
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
-	stream, err := client.SubscribeProjectEvents(context.Background(), projectID.String(), ProjectEventsParams{
-		Resources:  []string{"sandbox", "project"},
-		AfterSeq:   &afterSeq,
+	stream, err := client.SubscribeProjectEvents(context.Background(), "project-1", ProjectEventsParams{
 		List:       &list,
 		ReplayOnly: &replayOnly,
 	})
@@ -70,48 +69,120 @@ func TestSubscribeProjectEventsReadsReplayStream(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read list start: %v", err)
 	}
-	if msg.ID != "7" || msg.Event != ProjectEventNameListStart {
-		t.Fatalf("unexpected first message: %#v", msg)
+	if msg.Event != ProjectEventNameListStart {
+		t.Fatalf("first event = %q, want %q", msg.Event, ProjectEventNameListStart)
 	}
 	start, ok := msg.Data.(*ResourceListStartEvent)
-	if !ok {
-		t.Fatalf("first data type = %T", msg.Data)
-	}
-	if start.ProjectID != projectID.String() || start.Seq != 7 || !start.StartedAt.Equal(time.Date(2026, 6, 7, 1, 2, 3, 0, time.UTC)) {
-		t.Fatalf("unexpected list start: %#v", start)
+	if !ok || start.ProjectID != "project-1" || start.Seq != 7 {
+		t.Fatalf("list start = %#v", msg.Data)
 	}
 
 	msg, err = stream.Read()
 	if err != nil {
-		t.Fatalf("read resource changed: %v", err)
+		t.Fatalf("read resource listed: %v", err)
 	}
-	changed, ok := msg.Data.(*ResourceChangedEvent)
-	if !ok {
-		t.Fatalf("second data type = %T", msg.Data)
+	listed, ok := msg.Data.(*ResourceListedEvent)
+	if !ok || listed.ID != "snapshot" || listed.ResourceID != "sandbox-1" {
+		t.Fatalf("listed event = %#v", msg.Data)
 	}
-	if changed.ID != eventID.String() || changed.ResourceID != "sandbox-1" || changed.Action != "created" {
-		t.Fatalf("unexpected changed event: %#v", changed)
+
+	msg, err = stream.Read()
+	if err != nil {
+		t.Fatalf("read list finish: %v", err)
+	}
+	if msg.Event != ProjectEventNameListFinish {
+		t.Fatalf("third event = %q, want %q", msg.Event, ProjectEventNameListFinish)
 	}
 
 	_, err = stream.Read()
 	if !errors.Is(err, io.EOF) {
-		t.Fatalf("expected EOF, got %v", err)
+		t.Fatalf("expected EOF after replay-only stream, got %v", err)
 	}
 }
 
-func TestReadSSEFrameCombinesMultilineData(t *testing.T) {
-	msg, err := decodeProjectEventMessage(sseFrame{
-		event: "unknown",
-		data:  []byte("{\"a\":1}\n{\"b\":2}"),
+func TestSubscribeProjectEventsReplaysHistoryAndFiltersSandbox(t *testing.T) {
+	service := &fakeProjectEventService{
+		maxSeq: 4,
+		history: []model.ProjectEvent{
+			testProjectEvent("old", 2, "sandbox-1", model.EventActionUpdated),
+			testProjectEvent("match", 3, "sandbox-1", model.EventActionUpdated),
+			testProjectEvent("other", 4, "sandbox-2", model.EventActionUpdated),
+		},
+		live: make(chan model.ProjectEvent),
+	}
+	server := newProjectStreamTestServer(t, service)
+
+	replayOnly := true
+	client, err := NewEventClient(server.URL)
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	stream, err := client.SubscribeProjectEvents(context.Background(), "project-1", ProjectEventsParams{
+		Replay:     true,
+		ReplayOnly: &replayOnly,
+		SandboxID:  "sandbox-1",
 	})
 	if err != nil {
-		t.Fatalf("decode unknown: %v", err)
+		t.Fatalf("subscribe: %v", err)
 	}
-	unknown, ok := msg.Data.(*UnknownProjectEvent)
-	if !ok {
-		t.Fatalf("data type = %T", msg.Data)
+	defer stream.Close()
+
+	msg, err := stream.Read()
+	if err != nil {
+		t.Fatalf("read replay: %v", err)
 	}
-	if string(unknown.Data) != "{\"a\":1}\n{\"b\":2}" {
-		t.Fatalf("data = %q", unknown.Data)
+	changed, ok := msg.Data.(*ResourceChangedEvent)
+	if !ok || changed.ID != "old" || changed.ResourceID != "sandbox-1" {
+		t.Fatalf("changed event = %#v", msg.Data)
+	}
+	msg, err = stream.Read()
+	if err != nil {
+		t.Fatalf("read replay: %v", err)
+	}
+	changed, ok = msg.Data.(*ResourceChangedEvent)
+	if !ok || changed.ID != "match" || changed.ResourceID != "sandbox-1" {
+		t.Fatalf("changed event = %#v", msg.Data)
+	}
+	_, err = stream.Read()
+	if !errors.Is(err, io.EOF) {
+		t.Fatalf("expected EOF after replay-only stream, got %v", err)
+	}
+}
+
+func newProjectStreamTestServer(t *testing.T, service *fakeProjectEventService) *httptest.Server {
+	t.Helper()
+	router := chi.NewRouter()
+	realtime.RegisterProjectStreamRoutes(router, service)
+	server := httptest.NewServer(router)
+	t.Cleanup(server.Close)
+	return server
+}
+
+func filterProjectEvents(events []model.ProjectEvent, afterSeq int64, resourceTypes []string) []model.ProjectEvent {
+	var result []model.ProjectEvent
+	for _, event := range events {
+		if event.Seq <= afterSeq || event.ResourceType != "sandbox" {
+			continue
+		}
+		result = append(result, event)
+	}
+	return result
+}
+
+func testProjectEvent(id string, seq int64, sandboxID, action string) model.ProjectEvent {
+	eventType := model.EventTypeResourceChanged
+	if action == model.EventActionListed {
+		eventType = model.EventTypeResourceListed
+	}
+	return model.ProjectEvent{
+		ID:           id,
+		Seq:          seq,
+		ProjectID:    "project-1",
+		Type:         eventType,
+		ResourceType: "sandbox",
+		ResourceID:   sandboxID,
+		Action:       action,
+		Data:         []byte(`{"id":"` + sandboxID + `"}`),
+		CreatedAt:    time.Date(2026, 6, 7, 1, 2, 3, 0, time.UTC),
 	}
 }

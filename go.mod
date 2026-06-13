@@ -5,6 +5,7 @@ go 1.26
 require (
 	aidanwoods.dev/go-paseto v1.6.0
 	github.com/adrg/xdg v0.5.3
+	github.com/coder/websocket v1.8.14
 	github.com/containerd/errdefs v1.0.0
 	github.com/go-faster/errors v0.7.1
 	github.com/go-faster/jx v1.2.0

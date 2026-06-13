@@ -77,5 +77,4 @@ func Register(api huma.API, services Services) {
 	RegisterSandboxProviderInstanceOperations(api, services.Providers)
 	RegisterWorkerOperations(api, services.Workers)
 	RegisterSandboxOperations(api, services.Sandboxes)
-	RegisterProjectEventOperations(api, services.Events)
 }
