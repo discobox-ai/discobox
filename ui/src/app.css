@@ -1,0 +1,76 @@
+@import '@fontsource/geist-sans/400.css';
+@import '@fontsource/geist-sans/500.css';
+@import '@fontsource/geist-sans/600.css';
+@import '@fontsource/geist-sans/700.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/500.css';
+@import '@fontsource/jetbrains-mono/600.css';
+@import '@fontsource/jetbrains-mono/700.css';
+
+@import 'tailwindcss';
+@plugin 'daisyui' {
+	themes: all;
+}
+
+@theme inline {
+	--font-sans: 'Geist Sans', ui-sans-serif, system-ui, sans-serif;
+	--font-mono: 'JetBrains Mono', ui-monospace, 'Cascadia Code', Menlo, Consolas, monospace;
+}
+
+html,
+body {
+	margin: 0;
+	min-height: 100dvh;
+	overscroll-behavior: none;
+	background: var(--color-base-100);
+	color: var(--color-base-content);
+	font-family: var(--font-sans);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+textarea,
+select {
+	font: inherit;
+}
+
+* {
+	box-sizing: border-box;
+	scrollbar-width: thin;
+	scrollbar-color: oklch(50% 0 0 / 0.3) transparent;
+}
+
+*::-webkit-scrollbar {
+	width: 10px;
+	height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+	background: oklch(50% 0 0 / 0.3);
+	background-clip: padding-box;
+	border: 2px solid transparent;
+	border-radius: 5px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+	background: oklch(40% 0 0 / 0.5);
+	background-clip: padding-box;
+}
+
+.mono {
+	font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.desktop-drag-region {
+	-webkit-app-region: drag;
+}
+
+.desktop-no-drag {
+	-webkit-app-region: no-drag;
+}

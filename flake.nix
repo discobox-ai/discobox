@@ -33,6 +33,8 @@
               go-task
               gopls
               gotools
+              nodejs_24
+              pnpm
               postgresql
               sqlite
             ];
