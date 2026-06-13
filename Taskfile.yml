@@ -29,6 +29,11 @@ tasks:
     cmds:
       - docker build -f Dockerfile.worker-agent -t discobox-worker-agent:local .
 
+  build:sandbox-agent-image:
+    desc: Build the Debian sandbox agent image
+    cmds:
+      - docker build -f Dockerfile.sandbox-agent -t discobox-sandbox-agent:local .
+
   compile:
     desc: Alias for build
     cmds:
