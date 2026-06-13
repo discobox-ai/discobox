@@ -1,0 +1,63 @@
+{
+  "name": "discobox-electron",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "node scripts/build.mjs && node scripts/build-renderer.mjs",
+    "build:shell": "node scripts/build.mjs",
+    "build:renderer": "node scripts/build-renderer.mjs",
+    "check": "tsc --noEmit",
+    "dev": "node scripts/build.mjs && electron dist/main.js",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "pack": "pnpm run build && electron-builder --dir",
+    "dist": "pnpm run build && electron-builder"
+  },
+  "devDependencies": {
+    "@types/node": "^24.13.2",
+    "electron": "^41.2.1",
+    "electron-builder": "^26.0.12",
+    "esbuild": "^0.27.1",
+    "prettier": "^3.8.4",
+    "typescript": "^6.0.3"
+  },
+  "build": {
+    "appId": "com.obot.discobox",
+    "productName": "Discobox",
+    "asar": true,
+    "files": [
+      "dist/**/*"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dir",
+        "dmg",
+        "zip"
+      ]
+    },
+    "linux": {
+      "category": "Development",
+      "target": [
+        "dir",
+        "AppImage"
+      ]
+    },
+    "win": {
+      "target": [
+        "dir",
+        "nsis"
+      ]
+    }
+  },
+  "packageManager": "pnpm@11.4.0",
+  "engines": {
+    "node": "24.15.0",
+    "pnpm": "11.4.0"
+  }
+}
