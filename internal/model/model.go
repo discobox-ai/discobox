@@ -178,6 +178,7 @@ type Project struct {
 	Members                  []ProjectMember           `gorm:"foreignKey:ProjectID" json:"members,omitempty" doc:"Project members"`
 	Sandboxes                []Sandbox                 `gorm:"foreignKey:ProjectID" json:"sandboxes,omitempty" doc:"Project sandboxes"`
 	SandboxProviderInstances []SandboxProviderInstance `gorm:"foreignKey:ProjectID" json:"sandboxProviderInstances,omitempty" doc:"Sandbox provider instances"`
+	AgentConfigs             []AgentConfig             `gorm:"foreignKey:ProjectID" json:"agentConfigs,omitempty" doc:"Agent configurations"`
 }
 
 func (Project) TableName() string { return "projects" }
@@ -243,34 +244,105 @@ func (SandboxAccessIssuerKey) TableName() string { return "sandbox_access_issuer
 // design-level SandboxAccessIssuerKey name.
 type ProjectUserKey = SandboxAccessIssuerKey
 
+// AgentConfig stores a project-scoped agent runtime configuration.
+type AgentConfig struct {
+	ID             string          `gorm:"primaryKey;type:text" json:"id" doc:"Stable agent config ID"`
+	ProjectID      string          `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_agent_config_project_name,priority:1" json:"projectId" doc:"Project ID"`
+	Name           string          `gorm:"column:name;not null;type:text;uniqueIndex:idx_agent_config_project_name,priority:2" json:"name" doc:"Agent config name" maxLength:"200"`
+	InstallCommand string          `gorm:"column:install_command;type:text" json:"installCommand,omitempty" doc:"Command used to install the agent"`
+	RunCommand     string          `gorm:"column:run_command;not null;type:text" json:"runCommand" doc:"Command used to run the agent"`
+	Capabilities   json.RawMessage `gorm:"column:capabilities;type:text" json:"capabilities,omitempty" doc:"Agent capabilities or feature metadata"`
+	CreatedAt      time.Time       `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt      time.Time       `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	DeletedAt      gorm.DeletedAt  `gorm:"index" json:"-"`
+
+	Project   *Project  `gorm:"foreignKey:ProjectID" json:"-"`
+	Sandboxes []Sandbox `gorm:"foreignKey:AgentConfigID" json:"-"`
+}
+
+func (AgentConfig) TableName() string { return "agent_configs" }
+
+func (a *AgentConfig) EventProjectID() string { return a.ProjectID }
+
+func (a *AgentConfig) EventResourceType() string { return "agentConfig" }
+
+func (a *AgentConfig) EventResourceID() string { return a.ID }
+
+func (a *AgentConfig) BeforeCreate(_ *gorm.DB) error {
+	if a.ID == "" {
+		var err error
+		a.ID, err = id.New()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// AgentConfigDefinition is a well-known template for creating an AgentConfig.
+//
+// Definitions are not project-scoped AgentConfig instances and cannot be
+// selected by sandboxes directly. They provide UI-visible defaults for creating
+// real AgentConfig records.
+type AgentConfigDefinition struct {
+	ID             string          `json:"id" doc:"Stable definition ID"`
+	Name           string          `json:"name" doc:"Agent config definition name" maxLength:"200"`
+	Description    string          `json:"description,omitempty" doc:"Agent config definition description"`
+	InstallCommand string          `json:"installCommand,omitempty" doc:"Command used to install the agent"`
+	RunCommand     string          `json:"runCommand" doc:"Command used to run the agent"`
+	Capabilities   json.RawMessage `json:"capabilities,omitempty" doc:"Agent capabilities or feature metadata"`
+}
+
+// GitSourceReference describes a Git source to clone into a sandbox path.
+type GitSourceReference struct {
+	URL       string  `json:"url" doc:"Git source URL" format:"uri"`
+	Ref       *string `json:"ref,omitempty" doc:"Git source branch, tag, or commit"`
+	RefType   *string `json:"refType,omitempty" doc:"Git source ref type, such as branch, tag, or commit"`
+	Directory string  `json:"directory" doc:"Directory where this source should be placed inside the sandbox"`
+}
+
+// SourceCodeReferences maps sandbox destination directories to Git sources.
+type SourceCodeReferences map[string]GitSourceReference
+
 // Sandbox is the managed runtime/session unit.
 type Sandbox struct {
-	ID                  string  `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
-	ProjectID           string  `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	CreatedByUserID     string  `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
-	ProviderInstanceID  *string `gorm:"column:provider_instance_id;type:text;index" json:"providerInstanceId,omitempty" doc:"Sandbox provider instance ID"`
-	Name                string  `gorm:"not null;type:text" json:"name" doc:"Sandbox name" maxLength:"200"`
-	Description         *string `gorm:"type:text" json:"description,omitempty" doc:"Sandbox description"`
-	ResourceLifecycle   `gorm:"embedded"`
-	RestartGeneration   int64           `gorm:"column:restart_generation;not null;default:0" json:"restartGeneration" doc:"Requested restart generation"`
-	RestartedGeneration int64           `gorm:"column:restarted_generation;not null;default:0" json:"restartedGeneration" doc:"Last restart generation completed by reconciliation"`
-	SourceURL           *string         `gorm:"column:source_url;type:text" json:"sourceUrl,omitempty" doc:"Source repository or archive URL" format:"uri"`
-	SourceRef           *string         `gorm:"column:source_ref;type:text" json:"sourceRef,omitempty" doc:"Source branch, tag, or commit"`
-	WorkingDirectory    *string         `gorm:"column:working_directory;type:text" json:"workingDirectory,omitempty" doc:"Working directory inside the sandbox"`
-	CPUVCPUs            float64         `gorm:"column:cpu_vcpus;not null;default:1" json:"cpuVcpus" doc:"Requested CPU capacity in vCPUs"`
-	MemoryBytes         int64           `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"Requested memory capacity in bytes"`
-	StorageBytes        int64           `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Requested storage capacity in bytes"`
-	WorkerID            *string         `gorm:"column:worker_id;type:text;index" json:"workerId,omitempty" doc:"Assigned worker ID, when scheduled through a worker-backed provider"`
-	RuntimeState        json.RawMessage `gorm:"column:runtime_state;type:text" json:"runtimeState,omitempty" doc:"Non-secret provider runtime state"`
-	SecretState         []byte          `gorm:"column:secret_state" json:"-"`
-	LastActiveAt        *time.Time      `gorm:"column:last_active_at;index" json:"lastActiveAt,omitempty" doc:"Last observed activity timestamp" format:"date-time"`
-	CreatedAt           time.Time       `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt           time.Time       `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-	DeletedAt           gorm.DeletedAt  `gorm:"index" json:"-"`
+	ID                       string  `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
+	ProjectID                string  `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	CreatedByUserID          string  `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
+	ProviderInstanceID       *string `gorm:"column:provider_instance_id;type:text;index" json:"providerInstanceId,omitempty" doc:"Sandbox provider instance ID"`
+	AgentConfigID            *string `gorm:"column:agent_config_id;type:text;index" json:"agentConfigId,omitempty" doc:"Agent config ID"`
+	Name                     string  `gorm:"not null;type:text" json:"name" doc:"Sandbox name" maxLength:"200"`
+	Description              *string `gorm:"type:text" json:"description,omitempty" doc:"Sandbox description"`
+	ResourceLifecycle        `gorm:"embedded"`
+	RestartGeneration        int64                `gorm:"column:restart_generation;not null;default:0" json:"restartGeneration" doc:"Requested restart generation"`
+	RestartedGeneration      int64                `gorm:"column:restarted_generation;not null;default:0" json:"restartedGeneration" doc:"Last restart generation completed by reconciliation"`
+	AgentModel               *string              `gorm:"column:agent_model;type:text" json:"agentModel,omitempty" doc:"Model the agent should use"`
+	AgentModelServiceTier    *string              `gorm:"column:agent_model_service_tier;type:text" json:"agentModelServiceTier,omitempty" doc:"Model service tier the agent should use"`
+	AgentModelReasoningLevel *string              `gorm:"column:agent_model_reasoning_level;type:text" json:"agentModelReasoningLevel,omitempty" doc:"Model reasoning level the agent should use"`
+	Prompt                   *string              `gorm:"column:prompt;type:text" json:"prompt,omitempty" doc:"Prompt the agent should run"`
+	SourceURL                *string              `gorm:"column:source_url;type:text" json:"sourceUrl,omitempty" doc:"Git source URL" format:"uri"`
+	SourceRef                *string              `gorm:"column:source_ref;type:text" json:"sourceRef,omitempty" doc:"Git source branch, tag, or commit"`
+	SourceRefType            *string              `gorm:"column:source_ref_type;type:text" json:"sourceRefType,omitempty" doc:"Git source ref type, such as branch, tag, or commit"`
+	SourceDirectory          *string              `gorm:"column:source_directory;type:text" json:"sourceDirectory,omitempty" doc:"Directory where the main source should be placed inside the sandbox"`
+	WorkingDirectory         *string              `gorm:"column:working_directory;type:text" json:"workingDirectory,omitempty" doc:"Working directory inside the sandbox"`
+	SourceCodeReferences     SourceCodeReferences `gorm:"column:source_code_references;type:text;serializer:json" json:"sourceCodeReferences,omitempty" doc:"Map of sandbox directories to additional source code Git references"`
+	UserUID                  *int                 `gorm:"column:user_uid" json:"userUid,omitempty" doc:"UID to use inside the sandbox"`
+	UserGID                  *int                 `gorm:"column:user_gid" json:"userGid,omitempty" doc:"GID to use inside the sandbox"`
+	CPUVCPUs                 float64              `gorm:"column:cpu_vcpus;not null;default:1" json:"cpuVcpus" doc:"Requested CPU capacity in vCPUs"`
+	MemoryBytes              int64                `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"Requested memory capacity in bytes"`
+	StorageBytes             int64                `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Requested storage capacity in bytes"`
+	WorkerID                 *string              `gorm:"column:worker_id;type:text;index" json:"workerId,omitempty" doc:"Assigned worker ID, when scheduled through a worker-backed provider"`
+	RuntimeState             json.RawMessage      `gorm:"column:runtime_state;type:text" json:"runtimeState,omitempty" doc:"Non-secret provider runtime state"`
+	SecretState              []byte               `gorm:"column:secret_state" json:"-"`
+	LastActiveAt             *time.Time           `gorm:"column:last_active_at;index" json:"lastActiveAt,omitempty" doc:"Last observed activity timestamp" format:"date-time"`
+	CreatedAt                time.Time            `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt                time.Time            `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	DeletedAt                gorm.DeletedAt       `gorm:"index" json:"-"`
 
 	Project          *Project                 `gorm:"foreignKey:ProjectID" json:"-"`
 	CreatedBy        *User                    `gorm:"-" json:"createdBy,omitempty" doc:"Creating user"`
 	ProviderInstance *SandboxProviderInstance `gorm:"foreignKey:ProviderInstanceID" json:"providerInstance,omitempty" doc:"Sandbox provider instance"`
+	AgentConfig      *AgentConfig             `gorm:"foreignKey:AgentConfigID" json:"agentConfig,omitempty" doc:"Agent config"`
 }
 
 func (Sandbox) TableName() string { return "sandboxes" }
@@ -528,6 +600,7 @@ func TenantModels() []any {
 		&ProjectMember{},
 		&ServerState{},
 		&SandboxAccessIssuerKey{},
+		&AgentConfig{},
 		&Sandbox{},
 		&SandboxProviderInstance{},
 		&Worker{},

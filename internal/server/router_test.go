@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -40,6 +41,39 @@ func TestNewRouterServesOpenAPIAndScalarDocs(t *testing.T) {
 	}
 	if body := docsResp.Body.String(); !strings.Contains(body, "/openapi.json") {
 		t.Fatalf("GET /docs body does not reference /openapi.json")
+	}
+}
+
+func TestStubbedRouterCreateSandboxResolvesAgentName(t *testing.T) {
+	router, _ := NewStubbedRouter()
+
+	createAgentResp := httptest.NewRecorder()
+	router.ServeHTTP(createAgentResp, httptest.NewRequest(http.MethodPost, "/projects/"+service.DefaultProjectID+"/agent-configs", bytes.NewBufferString(`{
+		"name": "Codex",
+		"runCommand": "codex exec"
+	}`)))
+	if createAgentResp.Code != http.StatusOK {
+		t.Fatalf("POST /agent-configs status = %d, body = %s", createAgentResp.Code, createAgentResp.Body.String())
+	}
+	var agent model.AgentConfig
+	if err := json.Unmarshal(createAgentResp.Body.Bytes(), &agent); err != nil {
+		t.Fatalf("decode agent config: %v", err)
+	}
+
+	createSandboxResp := httptest.NewRecorder()
+	router.ServeHTTP(createSandboxResp, httptest.NewRequest(http.MethodPost, "/projects/"+service.DefaultProjectID+"/sandboxes", bytes.NewBufferString(`{
+		"name": "sandbox",
+		"agentName": "Codex"
+	}`)))
+	if createSandboxResp.Code != http.StatusAccepted {
+		t.Fatalf("POST /sandboxes status = %d, body = %s", createSandboxResp.Code, createSandboxResp.Body.String())
+	}
+	var sandbox model.Sandbox
+	if err := json.Unmarshal(createSandboxResp.Body.Bytes(), &sandbox); err != nil {
+		t.Fatalf("decode sandbox: %v", err)
+	}
+	if sandbox.AgentConfigID == nil || *sandbox.AgentConfigID != agent.ID {
+		t.Fatalf("agentConfigId = %v, want %q", sandbox.AgentConfigID, agent.ID)
 	}
 }
 

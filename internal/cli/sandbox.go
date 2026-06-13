@@ -16,21 +16,34 @@ import (
 )
 
 type sandboxCreateOptions struct {
-	name               string
-	description        string
-	providerInstanceID string
-	sourceURL          string
-	sourceRef          string
-	workingDirectory   string
-	cpuVCPUs           float64
-	memoryBytes        int64
-	storageBytes       int64
-	runtimeState       string
-	wait               bool
-	waitTimeout        time.Duration
+	name                     string
+	description              string
+	providerInstanceID       string
+	agentConfigID            string
+	agentName                string
+	agentModel               string
+	agentModelServiceTier    string
+	agentModelReasoningLevel string
+	prompt                   string
+	sourceURL                string
+	sourceRef                string
+	sourceRefType            string
+	sourceDirectory          string
+	workingDirectory         string
+	sourceCodeReferences     string
+	userUID                  int64
+	userGID                  int64
+	cpuVCPUs                 float64
+	memoryBytes              int64
+	storageBytes             int64
+	runtimeState             string
+	wait                     bool
+	waitTimeout              time.Duration
 }
 
-type sandboxUpdateOptions sandboxCreateOptions
+type sandboxUpdateOptions struct {
+	name string
+}
 
 func (a *App) newSandboxCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -267,9 +280,20 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Sandbox name")
 	cmd.Flags().StringVar(&opts.description, "description", "", "Sandbox description")
 	cmd.Flags().StringVar(&opts.providerInstanceID, "provider-instance", "", "Sandbox provider instance ID")
+	cmd.Flags().StringVar(&opts.agentConfigID, "agent-config", "", "Agent config ID")
+	cmd.Flags().StringVar(&opts.agentName, "agent", "", "Agent config name to resolve at create time")
+	cmd.Flags().StringVar(&opts.agentModel, "agent-model", "", "Model the agent should use")
+	cmd.Flags().StringVar(&opts.agentModelServiceTier, "agent-model-service-tier", "", "Model service tier the agent should use")
+	cmd.Flags().StringVar(&opts.agentModelReasoningLevel, "agent-model-reasoning-level", "", "Model reasoning level the agent should use")
+	cmd.Flags().StringVar(&opts.prompt, "prompt", "", "Prompt the agent should run")
 	cmd.Flags().StringVar(&opts.sourceURL, "source-url", "", "Source repository or archive URL")
 	cmd.Flags().StringVar(&opts.sourceRef, "source-ref", "", "Source branch, tag, or commit")
+	cmd.Flags().StringVar(&opts.sourceRefType, "source-ref-type", "", "Source ref type, such as branch, tag, or commit")
+	cmd.Flags().StringVar(&opts.sourceDirectory, "source-directory", "", "Directory where the main source should be placed inside the sandbox")
 	cmd.Flags().StringVar(&opts.workingDirectory, "working-directory", "", "Working directory inside the sandbox")
+	cmd.Flags().StringVar(&opts.sourceCodeReferences, "source-code-references", "", "Additional source code references JSON or @path")
+	cmd.Flags().Int64Var(&opts.userUID, "user-uid", 0, "UID to use inside the sandbox")
+	cmd.Flags().Int64Var(&opts.userGID, "user-gid", 0, "GID to use inside the sandbox")
 	cmd.Flags().Float64Var(&opts.cpuVCPUs, "cpu-vcpus", 0, "Requested CPU capacity in vCPUs")
 	cmd.Flags().Int64Var(&opts.memoryBytes, "memory-bytes", 0, "Requested memory capacity in bytes")
 	cmd.Flags().Int64Var(&opts.storageBytes, "storage-bytes", 0, "Requested storage capacity in bytes")
@@ -280,23 +304,28 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 
 func addUpdateFlags(cmd *cobra.Command, opts *sandboxUpdateOptions) {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Sandbox name")
-	cmd.Flags().StringVar(&opts.description, "description", "", "Sandbox description")
-	cmd.Flags().StringVar(&opts.providerInstanceID, "provider-instance", "", "Sandbox provider instance ID")
-	cmd.Flags().StringVar(&opts.sourceURL, "source-url", "", "Source repository or archive URL")
-	cmd.Flags().StringVar(&opts.sourceRef, "source-ref", "", "Source branch, tag, or commit")
-	cmd.Flags().StringVar(&opts.workingDirectory, "working-directory", "", "Working directory inside the sandbox")
-	cmd.Flags().Float64Var(&opts.cpuVCPUs, "cpu-vcpus", 0, "Requested CPU capacity in vCPUs")
-	cmd.Flags().Int64Var(&opts.memoryBytes, "memory-bytes", 0, "Requested memory capacity in bytes")
-	cmd.Flags().Int64Var(&opts.storageBytes, "storage-bytes", 0, "Requested storage capacity in bytes")
-	cmd.Flags().StringVar(&opts.runtimeState, "runtime-state", "", "Runtime state as JSON or @path")
 }
 
 func createSandboxBody(opts sandboxCreateOptions) (*apiclientgen.CreateSandboxBody, error) {
 	body := &apiclientgen.CreateSandboxBody{Name: opts.name}
 	body.SetDescription(optString(opts.description))
 	body.SetProviderInstanceId(optString(opts.providerInstanceID))
+	body.SetAgentConfigId(optString(opts.agentConfigID))
+	body.SetAgentName(optString(opts.agentName))
+	body.SetAgentModel(optString(opts.agentModel))
+	body.SetAgentModelServiceTier(optString(opts.agentModelServiceTier))
+	body.SetAgentModelReasoningLevel(optString(opts.agentModelReasoningLevel))
+	body.SetPrompt(optString(opts.prompt))
 	body.SetSourceRef(optString(opts.sourceRef))
+	body.SetSourceRefType(optString(opts.sourceRefType))
+	body.SetSourceDirectory(optString(opts.sourceDirectory))
 	body.SetWorkingDirectory(optString(opts.workingDirectory))
+	if opts.userUID > 0 {
+		body.SetUserUid(apiclientgen.NewOptInt64(opts.userUID))
+	}
+	if opts.userGID > 0 {
+		body.SetUserGid(apiclientgen.NewOptInt64(opts.userGID))
+	}
 	if opts.cpuVCPUs > 0 {
 		body.SetCpuVcpus(apiclientgen.NewOptFloat64(opts.cpuVCPUs))
 	}
@@ -318,6 +347,13 @@ func createSandboxBody(opts sandboxCreateOptions) (*apiclientgen.CreateSandboxBo
 		return nil, err
 	}
 	body.SetRuntimeState(state)
+	sourceCodeReferences, err := sourceCodeReferences(opts.sourceCodeReferences)
+	if err != nil {
+		return nil, err
+	}
+	if sourceCodeReferences != nil {
+		body.SetSourceCodeReferences(apiclientgen.NewOptCreateSandboxBodySourceCodeReferences(sourceCodeReferences))
+	}
 	return body, nil
 }
 
@@ -325,41 +361,6 @@ func updateSandboxBody(cmd *cobra.Command, opts sandboxUpdateOptions) (*apiclien
 	body := &apiclientgen.UpdateSandboxBody{}
 	if cmd.Flags().Changed("name") {
 		body.SetName(apiclientgen.NewOptString(opts.name))
-	}
-	if cmd.Flags().Changed("description") {
-		body.SetDescription(apiclientgen.NewOptString(opts.description))
-	}
-	if cmd.Flags().Changed("provider-instance") {
-		body.SetProviderInstanceId(apiclientgen.NewOptString(opts.providerInstanceID))
-	}
-	if cmd.Flags().Changed("source-ref") {
-		body.SetSourceRef(apiclientgen.NewOptString(opts.sourceRef))
-	}
-	if cmd.Flags().Changed("working-directory") {
-		body.SetWorkingDirectory(apiclientgen.NewOptString(opts.workingDirectory))
-	}
-	if cmd.Flags().Changed("cpu-vcpus") {
-		body.SetCpuVcpus(apiclientgen.NewOptFloat64(opts.cpuVCPUs))
-	}
-	if cmd.Flags().Changed("memory-bytes") {
-		body.SetMemoryBytes(apiclientgen.NewOptInt64(opts.memoryBytes))
-	}
-	if cmd.Flags().Changed("storage-bytes") {
-		body.SetStorageBytes(apiclientgen.NewOptInt64(opts.storageBytes))
-	}
-	if cmd.Flags().Changed("source-url") {
-		u, err := url.Parse(opts.sourceURL)
-		if err != nil {
-			return nil, err
-		}
-		body.SetSourceUrl(apiclientgen.NewOptURI(*u))
-	}
-	if cmd.Flags().Changed("runtime-state") {
-		state, err := runtimeState(opts.runtimeState)
-		if err != nil {
-			return nil, err
-		}
-		body.SetRuntimeState(state)
 	}
 	return body, nil
 }
@@ -409,4 +410,19 @@ func runtimeState(value string) (jx.Raw, error) {
 		return nil, fmt.Errorf("runtime state must be valid JSON: %w", err)
 	}
 	return jx.Raw(raw), nil
+}
+
+func sourceCodeReferences(value string) (apiclientgen.CreateSandboxBodySourceCodeReferences, error) {
+	raw, err := rawJSON(value)
+	if err != nil {
+		return nil, err
+	}
+	if raw == nil {
+		return nil, nil
+	}
+	var refs apiclientgen.CreateSandboxBodySourceCodeReferences
+	if err := json.Unmarshal(raw, &refs); err != nil {
+		return nil, fmt.Errorf("source code references must be valid JSON: %w", err)
+	}
+	return refs, nil
 }

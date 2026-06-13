@@ -4,6 +4,7 @@ package service
 import (
 	"context"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,12 +23,13 @@ const (
 // Stub is an in-memory implementation used while the real store/provider
 // layers are being designed.
 type Stub struct {
-	mu        sync.Mutex
-	tenant    model.Tenant
-	user      model.User
-	project   model.Project
-	providers map[string]model.SandboxProviderInstance
-	sandboxes map[string]model.Sandbox
+	mu           sync.Mutex
+	tenant       model.Tenant
+	user         model.User
+	project      model.Project
+	agentConfigs map[string]model.AgentConfig
+	providers    map[string]model.SandboxProviderInstance
+	sandboxes    map[string]model.Sandbox
 }
 
 func NewStub() *Stub {
@@ -61,11 +63,12 @@ func NewStub() *Stub {
 		UpdatedAt:   now,
 	}
 	return &Stub{
-		tenant:    tenant,
-		user:      user,
-		project:   project,
-		providers: make(map[string]model.SandboxProviderInstance),
-		sandboxes: make(map[string]model.Sandbox),
+		tenant:       tenant,
+		user:         user,
+		project:      project,
+		agentConfigs: make(map[string]model.AgentConfig),
+		providers:    make(map[string]model.SandboxProviderInstance),
+		sandboxes:    make(map[string]model.Sandbox),
 	}
 }
 
@@ -105,23 +108,37 @@ func (s *Stub) CreateSandbox(_ context.Context, projectID string, input api.Crea
 	if projectID != s.project.ID {
 		return nil, huma.Error404NotFound("project not found")
 	}
+	agentConfigID, err := s.resolveAgentConfigID(input.AgentConfigID, input.AgentName)
+	if err != nil {
+		return nil, err
+	}
 
 	now := time.Now().UTC()
 	sandbox := model.Sandbox{
-		ID:                 id.NewString(),
-		ProjectID:          s.project.ID,
-		CreatedByUserID:    s.user.ID,
-		ProviderInstanceID: input.ProviderInstanceID,
-		Name:               input.Name,
-		Description:        input.Description,
-		ResourceLifecycle:  model.NewResourceLifecycle(model.SandboxCreateOperation, nil),
-		SourceURL:          input.SourceURL,
-		SourceRef:          input.SourceRef,
-		WorkingDirectory:   input.WorkingDirectory,
-		RuntimeState:       input.RuntimeState,
-		CreatedAt:          now,
-		UpdatedAt:          now,
-		CreatedBy:          &s.user,
+		ID:                       id.NewString(),
+		ProjectID:                s.project.ID,
+		CreatedByUserID:          s.user.ID,
+		ProviderInstanceID:       input.ProviderInstanceID,
+		AgentConfigID:            agentConfigID,
+		Name:                     input.Name,
+		Description:              input.Description,
+		ResourceLifecycle:        model.NewResourceLifecycle(model.SandboxCreateOperation, nil),
+		AgentModel:               input.AgentModel,
+		AgentModelServiceTier:    input.AgentModelServiceTier,
+		AgentModelReasoningLevel: input.AgentModelReasoningLevel,
+		Prompt:                   input.Prompt,
+		SourceURL:                input.SourceURL,
+		SourceRef:                input.SourceRef,
+		SourceRefType:            input.SourceRefType,
+		SourceDirectory:          input.SourceDirectory,
+		WorkingDirectory:         input.WorkingDirectory,
+		SourceCodeReferences:     input.SourceCodeReferences,
+		UserUID:                  input.UserUID,
+		UserGID:                  input.UserGID,
+		RuntimeState:             input.RuntimeState,
+		CreatedAt:                now,
+		UpdatedAt:                now,
+		CreatedBy:                &s.user,
 	}
 	s.sandboxes[sandbox.ID] = sandbox
 	return &sandbox, nil
@@ -149,24 +166,6 @@ func (s *Stub) UpdateSandbox(_ context.Context, projectID, sandboxID string, inp
 
 	if input.Name != nil {
 		sandbox.Name = *input.Name
-	}
-	if input.Description != nil {
-		sandbox.Description = input.Description
-	}
-	if input.ProviderInstanceID != nil {
-		sandbox.ProviderInstanceID = input.ProviderInstanceID
-	}
-	if input.SourceURL != nil {
-		sandbox.SourceURL = input.SourceURL
-	}
-	if input.SourceRef != nil {
-		sandbox.SourceRef = input.SourceRef
-	}
-	if input.WorkingDirectory != nil {
-		sandbox.WorkingDirectory = input.WorkingDirectory
-	}
-	if input.RuntimeState != nil {
-		sandbox.RuntimeState = input.RuntimeState
 	}
 	sandbox.UpdatedAt = time.Now().UTC()
 	s.sandboxes[sandbox.ID] = sandbox
@@ -242,6 +241,129 @@ func (s *Stub) SubscribeProjectEvents(ctx context.Context, projectID string) (<-
 		}
 	}
 	return ch, unsubscribe, nil
+}
+
+func (s *Stub) ListAgentConfigDefinitions(context.Context) ([]model.AgentConfigDefinition, error) {
+	return cloneAgentConfigDefinitions(agentConfigDefinitions), nil
+}
+
+func (s *Stub) GetAgentConfigDefinition(_ context.Context, definitionID string) (*model.AgentConfigDefinition, error) {
+	definition, ok := agentConfigDefinitionByID(definitionID)
+	if !ok {
+		return nil, huma.Error404NotFound("agent config definition not found")
+	}
+	return definition, nil
+}
+
+func (s *Stub) ListAgentConfigs(_ context.Context, projectID string) ([]model.AgentConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, huma.Error404NotFound("project not found")
+	}
+	configs := make([]model.AgentConfig, 0, len(s.agentConfigs))
+	for _, config := range s.agentConfigs {
+		configs = append(configs, config)
+	}
+	slices.SortFunc(configs, func(a, b model.AgentConfig) int {
+		if a.CreatedAt.Before(b.CreatedAt) {
+			return -1
+		}
+		if a.CreatedAt.After(b.CreatedAt) {
+			return 1
+		}
+		return 0
+	})
+	return configs, nil
+}
+
+func (s *Stub) CreateAgentConfig(_ context.Context, projectID string, input api.CreateAgentConfigBody) (*model.AgentConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, huma.Error404NotFound("project not found")
+	}
+	var definition *model.AgentConfigDefinition
+	if input.DefinitionID != nil {
+		var ok bool
+		definition, ok = agentConfigDefinitionByID(*input.DefinitionID)
+		if !ok {
+			return nil, huma.Error404NotFound("agent config definition not found")
+		}
+	}
+	name := strings.TrimSpace(input.Name)
+	if name == "" && definition != nil {
+		name = definition.Name
+	}
+	installCommand := input.InstallCommand
+	if installCommand == "" && definition != nil {
+		installCommand = definition.InstallCommand
+	}
+	runCommand := input.RunCommand
+	if strings.TrimSpace(runCommand) == "" && definition != nil {
+		runCommand = definition.RunCommand
+	}
+	capabilities := input.Capabilities
+	if capabilities == nil && definition != nil {
+		capabilities = cloneRawMessage(definition.Capabilities)
+	}
+	now := time.Now().UTC()
+	config := model.AgentConfig{ID: id.NewString(), ProjectID: projectID, Name: name, InstallCommand: installCommand, RunCommand: runCommand, Capabilities: capabilities, CreatedAt: now, UpdatedAt: now}
+	s.agentConfigs[config.ID] = config
+	return &config, nil
+}
+
+func (s *Stub) GetAgentConfig(_ context.Context, projectID, configID string) (*model.AgentConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, huma.Error404NotFound("project not found")
+	}
+	config, ok := s.agentConfigs[configID]
+	if !ok {
+		return nil, huma.Error404NotFound("agent config not found")
+	}
+	return &config, nil
+}
+
+func (s *Stub) UpdateAgentConfig(_ context.Context, projectID, configID string, input api.UpdateAgentConfigBody) (*model.AgentConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, huma.Error404NotFound("project not found")
+	}
+	config, ok := s.agentConfigs[configID]
+	if !ok {
+		return nil, huma.Error404NotFound("agent config not found")
+	}
+	if input.Name != nil {
+		config.Name = *input.Name
+	}
+	if input.InstallCommand != nil {
+		config.InstallCommand = *input.InstallCommand
+	}
+	if input.RunCommand != nil {
+		config.RunCommand = *input.RunCommand
+	}
+	if input.Capabilities != nil {
+		config.Capabilities = input.Capabilities
+	}
+	config.UpdatedAt = time.Now().UTC()
+	s.agentConfigs[config.ID] = config
+	return &config, nil
+}
+
+func (s *Stub) DeleteAgentConfig(_ context.Context, projectID, configID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return huma.Error404NotFound("project not found")
+	}
+	if _, ok := s.agentConfigs[configID]; !ok {
+		return huma.Error404NotFound("agent config not found")
+	}
+	delete(s.agentConfigs, configID)
+	return nil
 }
 
 func (s *Stub) ListSandboxProviderCatalogItems(context.Context) ([]api.SandboxProviderCatalogItem, error) {
@@ -356,9 +478,32 @@ func (s *Stub) getSandbox(projectID, sandboxID string) (model.Sandbox, error) {
 	return sandbox, nil
 }
 
+func (s *Stub) resolveAgentConfigID(agentConfigID, agentName *string) (*string, error) {
+	if agentConfigID != nil {
+		if _, ok := s.agentConfigs[*agentConfigID]; !ok {
+			return nil, huma.Error404NotFound("agent config not found")
+		}
+		return agentConfigID, nil
+	}
+	if agentName == nil {
+		return nil, nil
+	}
+	for _, config := range s.agentConfigs {
+		if config.Name == *agentName {
+			id := config.ID
+			return &id, nil
+		}
+	}
+	return nil, huma.Error404NotFound("agent config not found")
+}
+
 func (s *Stub) projectWithSandboxes() model.Project {
 	project := s.project
 	project.Owner = &s.user
+	project.AgentConfigs = make([]model.AgentConfig, 0, len(s.agentConfigs))
+	for _, config := range s.agentConfigs {
+		project.AgentConfigs = append(project.AgentConfigs, config)
+	}
 	project.SandboxProviderInstances = s.sortedProviders()
 	project.Sandboxes = s.sortedSandboxes()
 	return project

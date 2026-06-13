@@ -10,6 +10,20 @@ import (
 	ht "github.com/ogen-go/ogen/http"
 )
 
+func encodeCreateAgentConfigRequest(
+	req *CreateAgentConfigBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeCreateSandboxRequest(
 	req *CreateSandboxBody,
 	r *http.Request,
@@ -82,6 +96,20 @@ func encodeStartSandboxRequest(
 
 func encodeStopSandboxRequest(
 	req *StopSandboxBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeUpdateAgentConfigRequest(
+	req *UpdateAgentConfigBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

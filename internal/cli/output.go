@@ -96,6 +96,56 @@ func (a *App) writeProviders(cmd *cobra.Command, providers []apiclientgen.Sandbo
 	return tw.Flush()
 }
 
+func (a *App) writeAgentDefinition(cmd *cobra.Command, definition *apiclientgen.AgentConfigDefinition) error {
+	if definition == nil {
+		return nil
+	}
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), definition)
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tDESCRIPTION")
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", definition.ID, definition.Name, definition.RunCommand, definition.Description.Or(""))
+	return tw.Flush()
+}
+
+func (a *App) writeAgentDefinitions(cmd *cobra.Command, definitions []apiclientgen.AgentConfigDefinition) error {
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"agentConfigDefinitions": definitions})
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tDESCRIPTION")
+	for _, definition := range definitions {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", definition.ID, definition.Name, definition.RunCommand, definition.Description.Or(""))
+	}
+	return tw.Flush()
+}
+
+func (a *App) writeAgent(cmd *cobra.Command, agent *apiclientgen.AgentConfig) error {
+	if agent == nil {
+		return nil
+	}
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), agent)
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tUPDATED")
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", agent.ID, agent.Name, agent.RunCommand, formatTime(agent.UpdatedAt))
+	return tw.Flush()
+}
+
+func (a *App) writeAgents(cmd *cobra.Command, agents []apiclientgen.AgentConfig) error {
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"agentConfigs": agents})
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tUPDATED")
+	for _, agent := range agents {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", agent.ID, agent.Name, agent.RunCommand, formatTime(agent.UpdatedAt))
+	}
+	return tw.Flush()
+}
+
 func parseUUIDArg(value, name string) (uuid.UUID, error) {
 	id, err := uuid.Parse(value)
 	if err != nil {

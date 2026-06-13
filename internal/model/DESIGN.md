@@ -12,6 +12,8 @@ both GORM persistence tags and JSON/Huma API-facing tags.
 | `Project` | Tenant-scoped group for sandboxes, provider configuration, and project events. |
 | `ServerState` | Tenant-scoped generic key/value state for server preferences and one-time initialization flags. |
 | `Sandbox` | Main managed runtime/session resource. Belongs to a project and is orchestrated. |
+| `AgentConfig` | Project-scoped agent runtime configuration selected by sandboxes. |
+| `AgentConfigDefinition` | Non-persisted, well-known template used by the UI/API to create an `AgentConfig`; definitions are not selectable by sandboxes. |
 | `SandboxProviderInstance` | Project-scoped provider configuration for creating and managing sandboxes. |
 | `Worker` | Provider-backed runtime worker for launching sandboxes. Has its own identity and public key; private key stays on the worker. Prewarmed workers belong to a provider instance/pool and can host many sandboxes. Scheduling uses `ready`, `schedulable`, and `degraded` columns; detailed condition data is opaque JSON for display. |
 | `WorkerBootstrapToken` | Planned short-lived, one-time token used by a new worker to register its public key. |
@@ -24,9 +26,12 @@ both GORM persistence tags and JSON/Huma API-facing tags.
 Models are split by database/schema scope:
 
 - Global scope: `Tenant`, `User`.
-- Tenant scope: `Project`, `Sandbox`, `SandboxProviderInstance`, `Worker`,
+- Tenant scope: `Project`, `Sandbox`, `AgentConfig`, `SandboxProviderInstance`, `Worker`,
   `ServerState`, worker tokens, sandbox access issuer keys, project events, and
   tenant-local orchestration tables.
+- Non-persisted catalog scope: `AgentConfigDefinition`. These definitions are
+  read-only application data and only supply defaults for creating persisted
+  `AgentConfig` instances.
 
 Tenant-scoped rows still carry `tenant_id` and user ID columns so tokens,
 events, and audit records are self-describing. Those columns are shard
@@ -87,10 +92,12 @@ erDiagram
 
     PROJECT ||--o{ SANDBOX : contains
     PROJECT ||--o{ SANDBOX_PROVIDER_INSTANCE : configures
+    PROJECT ||--o{ AGENT_CONFIG : configures
     PROJECT ||--o{ PROJECT_EVENT : emits
     PROJECT ||--o{ SANDBOX_ACCESS_ISSUER_KEY : has
     PROJECT ||--o| SANDBOX_PROVIDER_INSTANCE : default_provider
 
+    AGENT_CONFIG ||--o{ SANDBOX : runs
     SANDBOX_PROVIDER_INSTANCE ||--o{ SANDBOX : manages
     SANDBOX_PROVIDER_INSTANCE ||--o{ WORKER : runs
     WORKER ||--o{ WORKER_BOOTSTRAP_TOKEN : registers_with
@@ -130,6 +137,21 @@ erDiagram
         string project_id
         string created_by_user_id
         string provider_instance_id
+        string agent_config_id
+        string source_url
+        string source_ref
+        string source_ref_type
+        string source_directory
+        json source_code_references
+    }
+
+    AGENT_CONFIG {
+        string id
+        string project_id
+        string name
+        string install_command
+        string run_command
+        json capabilities
     }
 
     SANDBOX_PROVIDER_INSTANCE {

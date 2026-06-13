@@ -2,6 +2,12 @@
 
 package apiclientgen
 
+// CreateAgentConfigParams is parameters of create-agent-config operation.
+type CreateAgentConfigParams struct {
+	// Project ID.
+	ProjectId string
+}
+
 // CreateSandboxParams is parameters of create-sandbox operation.
 type CreateSandboxParams struct {
 	// Project ID.
@@ -12,6 +18,14 @@ type CreateSandboxParams struct {
 type CreateSandboxProviderInstanceParams struct {
 	// Project ID.
 	ProjectId string
+}
+
+// DeleteAgentConfigParams is parameters of delete-agent-config operation.
+type DeleteAgentConfigParams struct {
+	// Project ID.
+	ProjectId string
+	// Agent config ID.
+	AgentConfigId string
 }
 
 // DeleteSandboxParams is parameters of delete-sandbox operation.
@@ -28,6 +42,20 @@ type DeleteSandboxProviderInstanceParams struct {
 	ProjectId string
 	// Provider instance ID.
 	ProviderId string
+}
+
+// GetAgentConfigParams is parameters of get-agent-config operation.
+type GetAgentConfigParams struct {
+	// Project ID.
+	ProjectId string
+	// Agent config ID.
+	AgentConfigId string
+}
+
+// GetAgentConfigDefinitionParams is parameters of get-agent-config-definition operation.
+type GetAgentConfigDefinitionParams struct {
+	// Agent config definition ID.
+	DefinitionId string
 }
 
 // GetProjectParams is parameters of get-project operation.
@@ -50,6 +78,12 @@ type GetSandboxProviderInstanceParams struct {
 	ProjectId string
 	// Provider instance ID.
 	ProviderId string
+}
+
+// ListAgentConfigsParams is parameters of list-agent-configs operation.
+type ListAgentConfigsParams struct {
+	// Project ID.
+	ProjectId string
 }
 
 // ListSandboxProviderInstancesParams is parameters of list-sandbox-provider-instances operation.
@@ -86,6 +120,14 @@ type StopSandboxParams struct {
 	ProjectId string
 	// Sandbox ID.
 	SandboxId string
+}
+
+// UpdateAgentConfigParams is parameters of update-agent-config operation.
+type UpdateAgentConfigParams struct {
+	// Project ID.
+	ProjectId string
+	// Agent config ID.
+	AgentConfigId string
 }
 
 // UpdateSandboxParams is parameters of update-sandbox operation.

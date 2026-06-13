@@ -32,6 +32,7 @@ func (s *Store) ListSandboxes(ctx context.Context, projectID string) ([]model.Sa
 	err = read.
 		Preload("Project").
 		Preload("ProviderInstance").
+		Preload("AgentConfig").
 		Where("project_id = ?", projectID).
 		Order("created_at ASC").
 		Find(&sandboxes).Error
@@ -68,6 +69,7 @@ func (s *Store) GetSandbox(ctx context.Context, projectID, sandboxID string, opt
 	query := read.
 		Preload("Project").
 		Preload("ProviderInstance").
+		Preload("AgentConfig").
 		Where("project_id = ? AND id = ?", projectID, sandboxID)
 	if opts.generation != nil {
 		query = query.Where("generation = ?", *opts.generation)
@@ -140,6 +142,7 @@ func (s *Store) ListSandboxSnapshots(ctx context.Context, projectID string) ([]m
 	err = read.
 		Preload("Project").
 		Preload("ProviderInstance").
+		Preload("AgentConfig").
 		Where("project_id = ?", projectID).
 		Order("created_at ASC").
 		Find(&sandboxes).Error

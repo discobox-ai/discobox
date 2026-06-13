@@ -33,6 +33,45 @@ func TestProjectEventsListWatchSnapshot(t *testing.T) {
 	}
 }
 
+func TestProjectEventsListWatchSnapshotIncludesAgentConfigs(t *testing.T) {
+	h := newTestAPI(t).h
+	config := createAgentConfig(t, h, "Codex")
+
+	resp := h.Get(projectURL() + "/events?resources=agentConfig&list=true&replayOnly=true")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("events status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	body := resp.Body.String()
+	if !containsAll(body, "event: listStart", "event: resourceListed", "event: listFinish", `"resourceType":"agentConfig"`, `"resourceId":"`+config.ID+`"`, `"action":"listed"`, `"name":"Codex"`) {
+		t.Fatalf("unexpected events body: %s", body)
+	}
+}
+
+func TestProjectEventsReplayAgentConfigChanges(t *testing.T) {
+	h := newTestAPI(t).h
+	config := createAgentConfig(t, h, "Codex")
+
+	resp := h.Patch(projectURL()+"/agent-configs/"+config.ID, map[string]any{
+		"name": "Codex Updated",
+	})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("update agent config status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	resp = h.Delete(projectURL() + "/agent-configs/" + config.ID)
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("delete agent config status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+
+	resp = h.Get(projectURL() + "/events?resources=agentConfig&afterSeq=1&replayOnly=true")
+	if resp.Code != http.StatusOK {
+		t.Fatalf("events replay status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	body := resp.Body.String()
+	if !containsAll(body, "event: resourceChanged", `"resourceType":"agentConfig"`, `"resourceId":"`+config.ID+`"`, `"action":"updated"`, `"action":"deleted"`, `"name":"Codex Updated"`) {
+		t.Fatalf("unexpected replay body: %s", body)
+	}
+}
+
 func TestProjectEventsReplayAfterSeq(t *testing.T) {
 	h := newTestAPI(t).h
 	created := createSandbox(t, h, "alpha")

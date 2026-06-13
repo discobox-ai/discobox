@@ -92,6 +92,10 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input api
 			return nil, fmt.Errorf("provider instance disabled")
 		}
 	}
+	agentConfigID, err := s.resolveAgentConfigID(ctx, projectID, input.AgentConfigID, input.AgentName)
+	if err != nil {
+		return nil, err
+	}
 
 	if strings.TrimSpace(input.Name) == "" {
 		return nil, fmt.Errorf("sandbox name is required")
@@ -105,22 +109,50 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input api
 		return nil, err
 	}
 	sandbox := &model.Sandbox{
-		ID:                 sandboxID,
-		ProjectID:          projectID,
-		CreatedByUserID:    userID,
-		ProviderInstanceID: providerID,
-		Name:               input.Name,
-		Description:        input.Description,
-		ResourceLifecycle:  model.NewResourceLifecycle(model.SandboxCreateOperation, nil),
-		SourceURL:          input.SourceURL,
-		SourceRef:          input.SourceRef,
-		WorkingDirectory:   input.WorkingDirectory,
-		CPUVCPUs:           input.CPUVCPUs,
-		MemoryBytes:        input.MemoryBytes,
-		StorageBytes:       input.StorageBytes,
-		RuntimeState:       input.RuntimeState,
+		ID:                       sandboxID,
+		ProjectID:                projectID,
+		CreatedByUserID:          userID,
+		ProviderInstanceID:       providerID,
+		AgentConfigID:            agentConfigID,
+		Name:                     input.Name,
+		Description:              input.Description,
+		ResourceLifecycle:        model.NewResourceLifecycle(model.SandboxCreateOperation, nil),
+		AgentModel:               input.AgentModel,
+		AgentModelServiceTier:    input.AgentModelServiceTier,
+		AgentModelReasoningLevel: input.AgentModelReasoningLevel,
+		Prompt:                   input.Prompt,
+		SourceURL:                input.SourceURL,
+		SourceRef:                input.SourceRef,
+		SourceRefType:            input.SourceRefType,
+		SourceDirectory:          input.SourceDirectory,
+		WorkingDirectory:         input.WorkingDirectory,
+		SourceCodeReferences:     input.SourceCodeReferences,
+		UserUID:                  input.UserUID,
+		UserGID:                  input.UserGID,
+		CPUVCPUs:                 input.CPUVCPUs,
+		MemoryBytes:              input.MemoryBytes,
+		StorageBytes:             input.StorageBytes,
+		RuntimeState:             input.RuntimeState,
 	}
 	return s.sandboxes.Create(ctx, sandbox)
+}
+
+func (s *Service) resolveAgentConfigID(ctx context.Context, projectID string, agentConfigID, agentName *string) (*string, error) {
+	if agentConfigID != nil && *agentConfigID != "" {
+		config, err := s.store.GetAgentConfig(ctx, projectID, *agentConfigID)
+		if err != nil {
+			return nil, mapAPIError(err, "agent config not found")
+		}
+		return &config.ID, nil
+	}
+	if agentName == nil || strings.TrimSpace(*agentName) == "" {
+		return nil, nil
+	}
+	config, err := s.store.GetAgentConfigByName(ctx, projectID, strings.TrimSpace(*agentName))
+	if err != nil {
+		return nil, mapAPIError(err, "agent config not found")
+	}
+	return &config.ID, nil
 }
 
 func (s *Service) GetSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error) {
@@ -139,33 +171,6 @@ func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string
 
 	if input.Name != nil {
 		sandbox.Name = *input.Name
-	}
-	if input.Description != nil {
-		sandbox.Description = input.Description
-	}
-	if input.ProviderInstanceID != nil {
-		sandbox.ProviderInstanceID = input.ProviderInstanceID
-	}
-	if input.SourceURL != nil {
-		sandbox.SourceURL = input.SourceURL
-	}
-	if input.SourceRef != nil {
-		sandbox.SourceRef = input.SourceRef
-	}
-	if input.WorkingDirectory != nil {
-		sandbox.WorkingDirectory = input.WorkingDirectory
-	}
-	if input.CPUVCPUs != nil {
-		sandbox.CPUVCPUs = *input.CPUVCPUs
-	}
-	if input.MemoryBytes != nil {
-		sandbox.MemoryBytes = *input.MemoryBytes
-	}
-	if input.StorageBytes != nil {
-		sandbox.StorageBytes = *input.StorageBytes
-	}
-	if input.RuntimeState != nil {
-		sandbox.RuntimeState = input.RuntimeState
 	}
 
 	if err := s.store.UpdateSandbox(ctx, sandbox); err != nil {

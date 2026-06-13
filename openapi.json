@@ -1,6 +1,136 @@
 {
   "components": {
     "schemas": {
+      "AgentConfig": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/AgentConfig.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "capabilities": {
+            "description": "Agent capabilities or feature metadata"
+          },
+          "createdAt": {
+            "description": "Creation timestamp",
+            "format": "date-time",
+            "type": "string"
+          },
+          "id": {
+            "description": "Stable agent config ID",
+            "type": "string"
+          },
+          "installCommand": {
+            "description": "Command used to install the agent",
+            "type": "string"
+          },
+          "name": {
+            "description": "Agent config name",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "projectId": {
+            "description": "Project ID",
+            "type": "string"
+          },
+          "runCommand": {
+            "description": "Command used to run the agent",
+            "type": "string"
+          },
+          "updatedAt": {
+            "description": "Last update timestamp",
+            "format": "date-time",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "projectId",
+          "name",
+          "runCommand",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object"
+      },
+      "AgentConfigDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/AgentConfigDefinition.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "capabilities": {
+            "description": "Agent capabilities or feature metadata"
+          },
+          "description": {
+            "description": "Agent config definition description",
+            "type": "string"
+          },
+          "id": {
+            "description": "Stable definition ID",
+            "type": "string"
+          },
+          "installCommand": {
+            "description": "Command used to install the agent",
+            "type": "string"
+          },
+          "name": {
+            "description": "Agent config definition name",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "runCommand": {
+            "description": "Command used to run the agent",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "runCommand"
+        ],
+        "type": "object"
+      },
+      "CreateAgentConfigBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/CreateAgentConfigBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "capabilities": {
+            "description": "Agent capabilities or feature metadata"
+          },
+          "definitionId": {
+            "description": "Agent config definition ID to use as defaults",
+            "type": "string"
+          },
+          "installCommand": {
+            "description": "Command used to install the agent",
+            "type": "string"
+          },
+          "name": {
+            "description": "Agent config name. Defaults to the definition name when definitionId is provided.",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "runCommand": {
+            "description": "Command used to run the agent. Defaults to the definition run command when definitionId is provided.",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "CreateSandboxBody": {
         "additionalProperties": false,
         "properties": {
@@ -9,6 +139,26 @@
             "example": "https://example.com/schemas/CreateSandboxBody.json",
             "format": "uri",
             "readOnly": true,
+            "type": "string"
+          },
+          "agentConfigId": {
+            "description": "Agent config ID",
+            "type": "string"
+          },
+          "agentModel": {
+            "description": "Model the agent should use",
+            "type": "string"
+          },
+          "agentModelReasoningLevel": {
+            "description": "Model reasoning level the agent should use",
+            "type": "string"
+          },
+          "agentModelServiceTier": {
+            "description": "Model service tier the agent should use",
+            "type": "string"
+          },
+          "agentName": {
+            "description": "Agent config name to resolve at create time",
             "type": "string"
           },
           "cpuVcpus": {
@@ -30,6 +180,10 @@
             "maxLength": 200,
             "type": "string"
           },
+          "prompt": {
+            "description": "Prompt the agent should run",
+            "type": "string"
+          },
           "providerInstanceId": {
             "description": "Sandbox provider instance ID",
             "type": "string"
@@ -37,17 +191,42 @@
           "runtimeState": {
             "description": "Initial non-secret provider runtime state"
           },
+          "sourceCodeReferences": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/GitSourceReference"
+            },
+            "description": "Map of sandbox directories to additional source code Git references",
+            "type": "object"
+          },
+          "sourceDirectory": {
+            "description": "Directory where the main source should be placed inside the sandbox",
+            "type": "string"
+          },
           "sourceRef": {
-            "description": "Source branch, tag, or commit",
+            "description": "Git source branch, tag, or commit",
+            "type": "string"
+          },
+          "sourceRefType": {
+            "description": "Git source ref type, such as branch, tag, or commit",
             "type": "string"
           },
           "sourceUrl": {
-            "description": "Source repository or archive URL",
+            "description": "Git source URL",
             "format": "uri",
             "type": "string"
           },
           "storageBytes": {
             "description": "Requested storage capacity in bytes",
+            "format": "int64",
+            "type": "integer"
+          },
+          "userGid": {
+            "description": "GID to use inside the sandbox",
+            "format": "int64",
+            "type": "integer"
+          },
+          "userUid": {
+            "description": "UID to use inside the sandbox",
             "format": "int64",
             "type": "integer"
           },
@@ -157,6 +336,81 @@
         },
         "type": "object"
       },
+      "GitSourceReference": {
+        "additionalProperties": false,
+        "properties": {
+          "directory": {
+            "description": "Directory where this source should be placed inside the sandbox",
+            "type": "string"
+          },
+          "ref": {
+            "description": "Git source branch, tag, or commit",
+            "type": "string"
+          },
+          "refType": {
+            "description": "Git source ref type, such as branch, tag, or commit",
+            "type": "string"
+          },
+          "url": {
+            "description": "Git source URL",
+            "format": "uri",
+            "type": "string"
+          }
+        },
+        "required": [
+          "url",
+          "directory"
+        ],
+        "type": "object"
+      },
+      "ListAgentConfigDefinitionsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ListAgentConfigDefinitionsBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "agentConfigDefinitions": {
+            "description": "Agent config definitions",
+            "items": {
+              "$ref": "#/components/schemas/AgentConfigDefinition"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "required": [
+          "agentConfigDefinitions"
+        ],
+        "type": "object"
+      },
+      "ListAgentConfigsBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ListAgentConfigsBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "agentConfigs": {
+            "description": "Agent configs",
+            "items": {
+              "$ref": "#/components/schemas/AgentConfig"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "required": [
+          "agentConfigs"
+        ],
+        "type": "object"
+      },
       "ListProjectsBody": {
         "additionalProperties": false,
         "properties": {
@@ -262,6 +516,14 @@
             "format": "uri",
             "readOnly": true,
             "type": "string"
+          },
+          "agentConfigs": {
+            "description": "Agent configurations",
+            "items": {
+              "$ref": "#/components/schemas/AgentConfig"
+            },
+            "nullable": true,
+            "type": "array"
           },
           "createdAt": {
             "description": "Creation timestamp",
@@ -746,6 +1008,26 @@
             ],
             "type": "string"
           },
+          "agentConfig": {
+            "$ref": "#/components/schemas/AgentConfig",
+            "description": "Agent config"
+          },
+          "agentConfigId": {
+            "description": "Agent config ID",
+            "type": "string"
+          },
+          "agentModel": {
+            "description": "Model the agent should use",
+            "type": "string"
+          },
+          "agentModelReasoningLevel": {
+            "description": "Model reasoning level the agent should use",
+            "type": "string"
+          },
+          "agentModelServiceTier": {
+            "description": "Model service tier the agent should use",
+            "type": "string"
+          },
           "cpuVcpus": {
             "description": "Requested CPU capacity in vCPUs",
             "format": "double",
@@ -843,6 +1125,10 @@
             "description": "Project ID",
             "type": "string"
           },
+          "prompt": {
+            "description": "Prompt the agent should run",
+            "type": "string"
+          },
           "providerInstance": {
             "$ref": "#/components/schemas/SandboxProviderInstance",
             "description": "Sandbox provider instance"
@@ -864,12 +1150,27 @@
           "runtimeState": {
             "description": "Non-secret provider runtime state"
           },
+          "sourceCodeReferences": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/GitSourceReference"
+            },
+            "description": "Map of sandbox directories to additional source code Git references",
+            "type": "object"
+          },
+          "sourceDirectory": {
+            "description": "Directory where the main source should be placed inside the sandbox",
+            "type": "string"
+          },
           "sourceRef": {
-            "description": "Source branch, tag, or commit",
+            "description": "Git source branch, tag, or commit",
+            "type": "string"
+          },
+          "sourceRefType": {
+            "description": "Git source ref type, such as branch, tag, or commit",
             "type": "string"
           },
           "sourceUrl": {
-            "description": "Source repository or archive URL",
+            "description": "Git source URL",
             "format": "uri",
             "type": "string"
           },
@@ -886,6 +1187,16 @@
             "description": "Last update timestamp",
             "format": "date-time",
             "type": "string"
+          },
+          "userGid": {
+            "description": "GID to use inside the sandbox",
+            "format": "int64",
+            "type": "integer"
+          },
+          "userUid": {
+            "description": "UID to use inside the sandbox",
+            "format": "int64",
+            "type": "integer"
           },
           "workerId": {
             "description": "Assigned worker ID, when scheduled through a worker-backed provider",
@@ -1121,6 +1432,35 @@
         ],
         "type": "object"
       },
+      "UpdateAgentConfigBody": {
+        "additionalProperties": false,
+        "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/UpdateAgentConfigBody.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
+          "capabilities": {
+            "description": "Agent capabilities or feature metadata"
+          },
+          "installCommand": {
+            "description": "Command used to install the agent",
+            "type": "string"
+          },
+          "name": {
+            "description": "Agent config name",
+            "maxLength": 200,
+            "type": "string"
+          },
+          "runCommand": {
+            "description": "Command used to run the agent",
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
       "UpdateSandboxBody": {
         "additionalProperties": false,
         "properties": {
@@ -1131,48 +1471,9 @@
             "readOnly": true,
             "type": "string"
           },
-          "cpuVcpus": {
-            "description": "Requested CPU capacity in vCPUs",
-            "format": "double",
-            "type": "number"
-          },
-          "description": {
-            "description": "Sandbox description",
-            "type": "string"
-          },
-          "memoryBytes": {
-            "description": "Requested memory capacity in bytes",
-            "format": "int64",
-            "type": "integer"
-          },
           "name": {
             "description": "Sandbox name",
             "maxLength": 200,
-            "type": "string"
-          },
-          "providerInstanceId": {
-            "description": "Sandbox provider instance ID",
-            "type": "string"
-          },
-          "runtimeState": {
-            "description": "Non-secret provider runtime state"
-          },
-          "sourceRef": {
-            "description": "Source branch, tag, or commit",
-            "type": "string"
-          },
-          "sourceUrl": {
-            "description": "Source repository or archive URL",
-            "format": "uri",
-            "type": "string"
-          },
-          "storageBytes": {
-            "description": "Requested storage capacity in bytes",
-            "format": "int64",
-            "type": "integer"
-          },
-          "workingDirectory": {
-            "description": "Working directory inside the sandbox",
             "type": "string"
           }
         },
@@ -1512,6 +1813,80 @@
   },
   "openapi": "3.0.3",
   "paths": {
+    "/agent-config-definitions": {
+      "get": {
+        "operationId": "list-agent-config-definitions",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListAgentConfigDefinitionsBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List agent config definitions",
+        "tags": [
+          "Agent Configs"
+        ]
+      }
+    },
+    "/agent-config-definitions/{definitionId}": {
+      "get": {
+        "operationId": "get-agent-config-definition",
+        "parameters": [
+          {
+            "description": "Agent config definition ID",
+            "in": "path",
+            "name": "definitionId",
+            "required": true,
+            "schema": {
+              "description": "Agent config definition ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConfigDefinition"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get an agent config definition",
+        "tags": [
+          "Agent Configs"
+        ]
+      }
+    },
     "/api/workers/register": {
       "post": {
         "operationId": "register-worker",
@@ -1676,6 +2051,258 @@
         "summary": "Get a project",
         "tags": [
           "Projects"
+        ]
+      }
+    },
+    "/projects/{projectId}/agent-configs": {
+      "get": {
+        "operationId": "list-agent-configs",
+        "parameters": [
+          {
+            "description": "Project ID",
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "description": "Project ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ListAgentConfigsBody"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "List agent configs",
+        "tags": [
+          "Agent Configs"
+        ]
+      },
+      "post": {
+        "operationId": "create-agent-config",
+        "parameters": [
+          {
+            "description": "Project ID",
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "description": "Project ID",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateAgentConfigBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConfig"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Create an agent config",
+        "tags": [
+          "Agent Configs"
+        ]
+      }
+    },
+    "/projects/{projectId}/agent-configs/{agentConfigId}": {
+      "delete": {
+        "operationId": "delete-agent-config",
+        "parameters": [
+          {
+            "description": "Project ID",
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "description": "Project ID",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Agent config ID",
+            "in": "path",
+            "name": "agentConfigId",
+            "required": true,
+            "schema": {
+              "description": "Agent config ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Delete an agent config",
+        "tags": [
+          "Agent Configs"
+        ]
+      },
+      "get": {
+        "operationId": "get-agent-config",
+        "parameters": [
+          {
+            "description": "Project ID",
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "description": "Project ID",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Agent config ID",
+            "in": "path",
+            "name": "agentConfigId",
+            "required": true,
+            "schema": {
+              "description": "Agent config ID",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConfig"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Get an agent config",
+        "tags": [
+          "Agent Configs"
+        ]
+      },
+      "patch": {
+        "operationId": "update-agent-config",
+        "parameters": [
+          {
+            "description": "Project ID",
+            "in": "path",
+            "name": "projectId",
+            "required": true,
+            "schema": {
+              "description": "Project ID",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Agent config ID",
+            "in": "path",
+            "name": "agentConfigId",
+            "required": true,
+            "schema": {
+              "description": "Agent config ID",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateAgentConfigBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentConfig"
+                }
+              }
+            },
+            "description": "OK"
+          },
+          "default": {
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorModel"
+                }
+              }
+            },
+            "description": "Error"
+          }
+        },
+        "summary": "Update an agent config",
+        "tags": [
+          "Agent Configs"
         ]
       }
     },

@@ -15,6 +15,17 @@ type ProjectService interface {
 	GetProject(ctx context.Context, projectID string) (*model.Project, error)
 }
 
+// AgentConfigService manages project-scoped agent configurations.
+type AgentConfigService interface {
+	ListAgentConfigDefinitions(ctx context.Context) ([]model.AgentConfigDefinition, error)
+	GetAgentConfigDefinition(ctx context.Context, definitionID string) (*model.AgentConfigDefinition, error)
+	ListAgentConfigs(ctx context.Context, projectID string) ([]model.AgentConfig, error)
+	CreateAgentConfig(ctx context.Context, projectID string, input CreateAgentConfigBody) (*model.AgentConfig, error)
+	GetAgentConfig(ctx context.Context, projectID, configID string) (*model.AgentConfig, error)
+	UpdateAgentConfig(ctx context.Context, projectID, configID string, input UpdateAgentConfigBody) (*model.AgentConfig, error)
+	DeleteAgentConfig(ctx context.Context, projectID, configID string) error
+}
+
 // SandboxService manages sandboxes within a project.
 type SandboxService interface {
 	ListSandboxes(ctx context.Context, projectID string) ([]model.Sandbox, error)
@@ -51,16 +62,18 @@ type ProjectEventService interface {
 
 // Services groups the dependencies needed by the API operations.
 type Services struct {
-	Projects  ProjectService
-	Sandboxes SandboxService
-	Providers SandboxProviderInstanceService
-	Workers   WorkerService
-	Events    ProjectEventService
+	Projects     ProjectService
+	AgentConfigs AgentConfigService
+	Sandboxes    SandboxService
+	Providers    SandboxProviderInstanceService
+	Workers      WorkerService
+	Events       ProjectEventService
 }
 
 // Register registers all public API operations.
 func Register(api huma.API, services Services) {
 	RegisterProjectOperations(api, services.Projects)
+	RegisterAgentConfigOperations(api, services.AgentConfigs)
 	RegisterSandboxProviderInstanceOperations(api, services.Providers)
 	RegisterWorkerOperations(api, services.Workers)
 	RegisterSandboxOperations(api, services.Sandboxes)

@@ -27,6 +27,12 @@ func trimTrailingSlashes(u *url.URL) {
 
 // Invoker invokes operations described by OpenAPI v3 specification.
 type Invoker interface {
+	// CreateAgentConfig invokes create-agent-config operation.
+	//
+	// Create an agent config.
+	//
+	// POST /projects/{projectId}/agent-configs
+	CreateAgentConfig(ctx context.Context, request *CreateAgentConfigBody, params CreateAgentConfigParams) (*AgentConfig, error)
 	// CreateSandbox invokes create-sandbox operation.
 	//
 	// Create a sandbox.
@@ -39,6 +45,12 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/providers
 	CreateSandboxProviderInstance(ctx context.Context, request *CreateSandboxProviderInstanceBody, params CreateSandboxProviderInstanceParams) (*SandboxProviderInstance, error)
+	// DeleteAgentConfig invokes delete-agent-config operation.
+	//
+	// Delete an agent config.
+	//
+	// DELETE /projects/{projectId}/agent-configs/{agentConfigId}
+	DeleteAgentConfig(ctx context.Context, params DeleteAgentConfigParams) error
 	// DeleteSandbox invokes delete-sandbox operation.
 	//
 	// Delete a sandbox.
@@ -51,6 +63,18 @@ type Invoker interface {
 	//
 	// DELETE /projects/{projectId}/providers/{providerId}
 	DeleteSandboxProviderInstance(ctx context.Context, params DeleteSandboxProviderInstanceParams) error
+	// GetAgentConfig invokes get-agent-config operation.
+	//
+	// Get an agent config.
+	//
+	// GET /projects/{projectId}/agent-configs/{agentConfigId}
+	GetAgentConfig(ctx context.Context, params GetAgentConfigParams) (*AgentConfig, error)
+	// GetAgentConfigDefinition invokes get-agent-config-definition operation.
+	//
+	// Get an agent config definition.
+	//
+	// GET /agent-config-definitions/{definitionId}
+	GetAgentConfigDefinition(ctx context.Context, params GetAgentConfigDefinitionParams) (*AgentConfigDefinition, error)
 	// GetProject invokes get-project operation.
 	//
 	// Get a project.
@@ -69,6 +93,18 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/providers/{providerId}
 	GetSandboxProviderInstance(ctx context.Context, params GetSandboxProviderInstanceParams) (*SandboxProviderInstance, error)
+	// ListAgentConfigDefinitions invokes list-agent-config-definitions operation.
+	//
+	// List agent config definitions.
+	//
+	// GET /agent-config-definitions
+	ListAgentConfigDefinitions(ctx context.Context) (*ListAgentConfigDefinitionsBody, error)
+	// ListAgentConfigs invokes list-agent-configs operation.
+	//
+	// List agent configs.
+	//
+	// GET /projects/{projectId}/agent-configs
+	ListAgentConfigs(ctx context.Context, params ListAgentConfigsParams) (*ListAgentConfigsBody, error)
 	// ListProjects invokes list-projects operation.
 	//
 	// List projects.
@@ -117,6 +153,12 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/stop
 	StopSandbox(ctx context.Context, request *StopSandboxBody, params StopSandboxParams) (*Sandbox, error)
+	// UpdateAgentConfig invokes update-agent-config operation.
+	//
+	// Update an agent config.
+	//
+	// PATCH /projects/{projectId}/agent-configs/{agentConfigId}
+	UpdateAgentConfig(ctx context.Context, request *UpdateAgentConfigBody, params UpdateAgentConfigParams) (*AgentConfig, error)
 	// UpdateSandbox invokes update-sandbox operation.
 	//
 	// Update a sandbox.
@@ -174,6 +216,102 @@ func (c *Client) requestURL(ctx context.Context) *url.URL {
 		return c.serverURL
 	}
 	return u
+}
+
+// CreateAgentConfig invokes create-agent-config operation.
+//
+// Create an agent config.
+//
+// POST /projects/{projectId}/agent-configs
+func (c *Client) CreateAgentConfig(ctx context.Context, request *CreateAgentConfigBody, params CreateAgentConfigParams) (*AgentConfig, error) {
+	res, err := c.sendCreateAgentConfig(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendCreateAgentConfig(ctx context.Context, request *CreateAgentConfigBody, params CreateAgentConfigParams) (res *AgentConfig, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("create-agent-config"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/agent-configs"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CreateAgentConfigOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/agent-configs"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeCreateAgentConfigRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCreateAgentConfigResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
 }
 
 // CreateSandbox invokes create-sandbox operation.
@@ -361,6 +499,117 @@ func (c *Client) sendCreateSandboxProviderInstance(ctx context.Context, request 
 
 	stage = "DecodeResponse"
 	result, err := decodeCreateSandboxProviderInstanceResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// DeleteAgentConfig invokes delete-agent-config operation.
+//
+// Delete an agent config.
+//
+// DELETE /projects/{projectId}/agent-configs/{agentConfigId}
+func (c *Client) DeleteAgentConfig(ctx context.Context, params DeleteAgentConfigParams) error {
+	_, err := c.sendDeleteAgentConfig(ctx, params)
+	return err
+}
+
+func (c *Client) sendDeleteAgentConfig(ctx context.Context, params DeleteAgentConfigParams) (res *DeleteAgentConfigNoContent, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("delete-agent-config"),
+		semconv.HTTPRequestMethodKey.String("DELETE"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/agent-configs/{agentConfigId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DeleteAgentConfigOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/agent-configs/"
+	{
+		// Encode "agentConfigId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "agentConfigId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.AgentConfigId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "DELETE", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDeleteAgentConfigResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -583,6 +832,209 @@ func (c *Client) sendDeleteSandboxProviderInstance(ctx context.Context, params D
 
 	stage = "DecodeResponse"
 	result, err := decodeDeleteSandboxProviderInstanceResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetAgentConfig invokes get-agent-config operation.
+//
+// Get an agent config.
+//
+// GET /projects/{projectId}/agent-configs/{agentConfigId}
+func (c *Client) GetAgentConfig(ctx context.Context, params GetAgentConfigParams) (*AgentConfig, error) {
+	res, err := c.sendGetAgentConfig(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetAgentConfig(ctx context.Context, params GetAgentConfigParams) (res *AgentConfig, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-agent-config"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/agent-configs/{agentConfigId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetAgentConfigOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/agent-configs/"
+	{
+		// Encode "agentConfigId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "agentConfigId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.AgentConfigId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetAgentConfigResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetAgentConfigDefinition invokes get-agent-config-definition operation.
+//
+// Get an agent config definition.
+//
+// GET /agent-config-definitions/{definitionId}
+func (c *Client) GetAgentConfigDefinition(ctx context.Context, params GetAgentConfigDefinitionParams) (*AgentConfigDefinition, error) {
+	res, err := c.sendGetAgentConfigDefinition(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetAgentConfigDefinition(ctx context.Context, params GetAgentConfigDefinitionParams) (res *AgentConfigDefinition, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-agent-config-definition"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/agent-config-definitions/{definitionId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetAgentConfigDefinitionOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [2]string
+	pathParts[0] = "/agent-config-definitions/"
+	{
+		// Encode "definitionId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "definitionId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.DefinitionId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetAgentConfigDefinitionResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -897,6 +1349,173 @@ func (c *Client) sendGetSandboxProviderInstance(ctx context.Context, params GetS
 
 	stage = "DecodeResponse"
 	result, err := decodeGetSandboxProviderInstanceResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListAgentConfigDefinitions invokes list-agent-config-definitions operation.
+//
+// List agent config definitions.
+//
+// GET /agent-config-definitions
+func (c *Client) ListAgentConfigDefinitions(ctx context.Context) (*ListAgentConfigDefinitionsBody, error) {
+	res, err := c.sendListAgentConfigDefinitions(ctx)
+	return res, err
+}
+
+func (c *Client) sendListAgentConfigDefinitions(ctx context.Context) (res *ListAgentConfigDefinitionsBody, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-agent-config-definitions"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/agent-config-definitions"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListAgentConfigDefinitionsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [1]string
+	pathParts[0] = "/agent-config-definitions"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListAgentConfigDefinitionsResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListAgentConfigs invokes list-agent-configs operation.
+//
+// List agent configs.
+//
+// GET /projects/{projectId}/agent-configs
+func (c *Client) ListAgentConfigs(ctx context.Context, params ListAgentConfigsParams) (*ListAgentConfigsBody, error) {
+	res, err := c.sendListAgentConfigs(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListAgentConfigs(ctx context.Context, params ListAgentConfigsParams) (res *ListAgentConfigsBody, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-agent-configs"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/agent-configs"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListAgentConfigsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/agent-configs"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListAgentConfigsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -1653,6 +2272,120 @@ func (c *Client) sendStopSandbox(ctx context.Context, request *StopSandboxBody, 
 
 	stage = "DecodeResponse"
 	result, err := decodeStopSandboxResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// UpdateAgentConfig invokes update-agent-config operation.
+//
+// Update an agent config.
+//
+// PATCH /projects/{projectId}/agent-configs/{agentConfigId}
+func (c *Client) UpdateAgentConfig(ctx context.Context, request *UpdateAgentConfigBody, params UpdateAgentConfigParams) (*AgentConfig, error) {
+	res, err := c.sendUpdateAgentConfig(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendUpdateAgentConfig(ctx context.Context, request *UpdateAgentConfigBody, params UpdateAgentConfigParams) (res *AgentConfig, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("update-agent-config"),
+		semconv.HTTPRequestMethodKey.String("PATCH"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/agent-configs/{agentConfigId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, UpdateAgentConfigOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/agent-configs/"
+	{
+		// Encode "agentConfigId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "agentConfigId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.AgentConfigId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PATCH", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeUpdateAgentConfigRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeUpdateAgentConfigResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

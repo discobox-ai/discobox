@@ -6,13 +6,19 @@ package apiclientgen
 type OperationName = string
 
 const (
+	CreateAgentConfigOperation             OperationName = "CreateAgentConfig"
 	CreateSandboxOperation                 OperationName = "CreateSandbox"
 	CreateSandboxProviderInstanceOperation OperationName = "CreateSandboxProviderInstance"
+	DeleteAgentConfigOperation             OperationName = "DeleteAgentConfig"
 	DeleteSandboxOperation                 OperationName = "DeleteSandbox"
 	DeleteSandboxProviderInstanceOperation OperationName = "DeleteSandboxProviderInstance"
+	GetAgentConfigOperation                OperationName = "GetAgentConfig"
+	GetAgentConfigDefinitionOperation      OperationName = "GetAgentConfigDefinition"
 	GetProjectOperation                    OperationName = "GetProject"
 	GetSandboxOperation                    OperationName = "GetSandbox"
 	GetSandboxProviderInstanceOperation    OperationName = "GetSandboxProviderInstance"
+	ListAgentConfigDefinitionsOperation    OperationName = "ListAgentConfigDefinitions"
+	ListAgentConfigsOperation              OperationName = "ListAgentConfigs"
 	ListProjectsOperation                  OperationName = "ListProjects"
 	ListSandboxProviderCatalogOperation    OperationName = "ListSandboxProviderCatalog"
 	ListSandboxProviderInstancesOperation  OperationName = "ListSandboxProviderInstances"
@@ -21,6 +27,7 @@ const (
 	RestartSandboxOperation                OperationName = "RestartSandbox"
 	StartSandboxOperation                  OperationName = "StartSandbox"
 	StopSandboxOperation                   OperationName = "StopSandbox"
+	UpdateAgentConfigOperation             OperationName = "UpdateAgentConfig"
 	UpdateSandboxOperation                 OperationName = "UpdateSandbox"
 	UpdateSandboxProviderInstanceOperation OperationName = "UpdateSandboxProviderInstance"
 	UpdateWorkerStatusOperation            OperationName = "UpdateWorkerStatus"

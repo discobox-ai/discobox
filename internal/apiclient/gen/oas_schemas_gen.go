@@ -15,10 +15,297 @@ func (s *ErrorModelStatusCode) Error() string {
 	return fmt.Sprintf("code %d: %+v", s.StatusCode, s.Response)
 }
 
+// Ref: #/components/schemas/AgentConfig
+type AgentConfig struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Agent capabilities or feature metadata.
+	Capabilities jx.Raw `json:"capabilities"`
+	// Creation timestamp.
+	CreatedAt time.Time `json:"createdAt"`
+	// Stable agent config ID.
+	ID string `json:"id"`
+	// Command used to install the agent.
+	InstallCommand OptString `json:"installCommand"`
+	// Agent config name.
+	Name string `json:"name"`
+	// Project ID.
+	ProjectId string `json:"projectId"`
+	// Command used to run the agent.
+	RunCommand string `json:"runCommand"`
+	// Last update timestamp.
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *AgentConfig) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetCapabilities returns the value of Capabilities.
+func (s *AgentConfig) GetCapabilities() jx.Raw {
+	return s.Capabilities
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *AgentConfig) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetID returns the value of ID.
+func (s *AgentConfig) GetID() string {
+	return s.ID
+}
+
+// GetInstallCommand returns the value of InstallCommand.
+func (s *AgentConfig) GetInstallCommand() OptString {
+	return s.InstallCommand
+}
+
+// GetName returns the value of Name.
+func (s *AgentConfig) GetName() string {
+	return s.Name
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *AgentConfig) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetRunCommand returns the value of RunCommand.
+func (s *AgentConfig) GetRunCommand() string {
+	return s.RunCommand
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *AgentConfig) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// SetSchema sets the value of Schema.
+func (s *AgentConfig) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetCapabilities sets the value of Capabilities.
+func (s *AgentConfig) SetCapabilities(val jx.Raw) {
+	s.Capabilities = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *AgentConfig) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetID sets the value of ID.
+func (s *AgentConfig) SetID(val string) {
+	s.ID = val
+}
+
+// SetInstallCommand sets the value of InstallCommand.
+func (s *AgentConfig) SetInstallCommand(val OptString) {
+	s.InstallCommand = val
+}
+
+// SetName sets the value of Name.
+func (s *AgentConfig) SetName(val string) {
+	s.Name = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *AgentConfig) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetRunCommand sets the value of RunCommand.
+func (s *AgentConfig) SetRunCommand(val string) {
+	s.RunCommand = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *AgentConfig) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+// Ref: #/components/schemas/AgentConfigDefinition
+type AgentConfigDefinition struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Agent capabilities or feature metadata.
+	Capabilities jx.Raw `json:"capabilities"`
+	// Agent config definition description.
+	Description OptString `json:"description"`
+	// Stable definition ID.
+	ID string `json:"id"`
+	// Command used to install the agent.
+	InstallCommand OptString `json:"installCommand"`
+	// Agent config definition name.
+	Name string `json:"name"`
+	// Command used to run the agent.
+	RunCommand string `json:"runCommand"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *AgentConfigDefinition) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetCapabilities returns the value of Capabilities.
+func (s *AgentConfigDefinition) GetCapabilities() jx.Raw {
+	return s.Capabilities
+}
+
+// GetDescription returns the value of Description.
+func (s *AgentConfigDefinition) GetDescription() OptString {
+	return s.Description
+}
+
+// GetID returns the value of ID.
+func (s *AgentConfigDefinition) GetID() string {
+	return s.ID
+}
+
+// GetInstallCommand returns the value of InstallCommand.
+func (s *AgentConfigDefinition) GetInstallCommand() OptString {
+	return s.InstallCommand
+}
+
+// GetName returns the value of Name.
+func (s *AgentConfigDefinition) GetName() string {
+	return s.Name
+}
+
+// GetRunCommand returns the value of RunCommand.
+func (s *AgentConfigDefinition) GetRunCommand() string {
+	return s.RunCommand
+}
+
+// SetSchema sets the value of Schema.
+func (s *AgentConfigDefinition) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetCapabilities sets the value of Capabilities.
+func (s *AgentConfigDefinition) SetCapabilities(val jx.Raw) {
+	s.Capabilities = val
+}
+
+// SetDescription sets the value of Description.
+func (s *AgentConfigDefinition) SetDescription(val OptString) {
+	s.Description = val
+}
+
+// SetID sets the value of ID.
+func (s *AgentConfigDefinition) SetID(val string) {
+	s.ID = val
+}
+
+// SetInstallCommand sets the value of InstallCommand.
+func (s *AgentConfigDefinition) SetInstallCommand(val OptString) {
+	s.InstallCommand = val
+}
+
+// SetName sets the value of Name.
+func (s *AgentConfigDefinition) SetName(val string) {
+	s.Name = val
+}
+
+// SetRunCommand sets the value of RunCommand.
+func (s *AgentConfigDefinition) SetRunCommand(val string) {
+	s.RunCommand = val
+}
+
+// Ref: #/components/schemas/CreateAgentConfigBody
+type CreateAgentConfigBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Agent capabilities or feature metadata.
+	Capabilities jx.Raw `json:"capabilities"`
+	// Agent config definition ID to use as defaults.
+	DefinitionId OptString `json:"definitionId"`
+	// Command used to install the agent.
+	InstallCommand OptString `json:"installCommand"`
+	// Agent config name. Defaults to the definition name when definitionId is provided.
+	Name OptString `json:"name"`
+	// Command used to run the agent. Defaults to the definition run command when definitionId is
+	// provided.
+	RunCommand OptString `json:"runCommand"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *CreateAgentConfigBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetCapabilities returns the value of Capabilities.
+func (s *CreateAgentConfigBody) GetCapabilities() jx.Raw {
+	return s.Capabilities
+}
+
+// GetDefinitionId returns the value of DefinitionId.
+func (s *CreateAgentConfigBody) GetDefinitionId() OptString {
+	return s.DefinitionId
+}
+
+// GetInstallCommand returns the value of InstallCommand.
+func (s *CreateAgentConfigBody) GetInstallCommand() OptString {
+	return s.InstallCommand
+}
+
+// GetName returns the value of Name.
+func (s *CreateAgentConfigBody) GetName() OptString {
+	return s.Name
+}
+
+// GetRunCommand returns the value of RunCommand.
+func (s *CreateAgentConfigBody) GetRunCommand() OptString {
+	return s.RunCommand
+}
+
+// SetSchema sets the value of Schema.
+func (s *CreateAgentConfigBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetCapabilities sets the value of Capabilities.
+func (s *CreateAgentConfigBody) SetCapabilities(val jx.Raw) {
+	s.Capabilities = val
+}
+
+// SetDefinitionId sets the value of DefinitionId.
+func (s *CreateAgentConfigBody) SetDefinitionId(val OptString) {
+	s.DefinitionId = val
+}
+
+// SetInstallCommand sets the value of InstallCommand.
+func (s *CreateAgentConfigBody) SetInstallCommand(val OptString) {
+	s.InstallCommand = val
+}
+
+// SetName sets the value of Name.
+func (s *CreateAgentConfigBody) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetRunCommand sets the value of RunCommand.
+func (s *CreateAgentConfigBody) SetRunCommand(val OptString) {
+	s.RunCommand = val
+}
+
 // Ref: #/components/schemas/CreateSandboxBody
 type CreateSandboxBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// Agent config ID.
+	AgentConfigId OptString `json:"agentConfigId"`
+	// Model the agent should use.
+	AgentModel OptString `json:"agentModel"`
+	// Model reasoning level the agent should use.
+	AgentModelReasoningLevel OptString `json:"agentModelReasoningLevel"`
+	// Model service tier the agent should use.
+	AgentModelServiceTier OptString `json:"agentModelServiceTier"`
+	// Agent config name to resolve at create time.
+	AgentName OptString `json:"agentName"`
 	// Requested CPU capacity in vCPUs.
 	CpuVcpus OptFloat64 `json:"cpuVcpus"`
 	// Sandbox description.
@@ -27,16 +314,28 @@ type CreateSandboxBody struct {
 	MemoryBytes OptInt64 `json:"memoryBytes"`
 	// Sandbox name.
 	Name string `json:"name"`
+	// Prompt the agent should run.
+	Prompt OptString `json:"prompt"`
 	// Sandbox provider instance ID.
 	ProviderInstanceId OptString `json:"providerInstanceId"`
 	// Initial non-secret provider runtime state.
 	RuntimeState jx.Raw `json:"runtimeState"`
-	// Source branch, tag, or commit.
+	// Map of sandbox directories to additional source code Git references.
+	SourceCodeReferences OptCreateSandboxBodySourceCodeReferences `json:"sourceCodeReferences"`
+	// Directory where the main source should be placed inside the sandbox.
+	SourceDirectory OptString `json:"sourceDirectory"`
+	// Git source branch, tag, or commit.
 	SourceRef OptString `json:"sourceRef"`
-	// Source repository or archive URL.
+	// Git source ref type, such as branch, tag, or commit.
+	SourceRefType OptString `json:"sourceRefType"`
+	// Git source URL.
 	SourceUrl OptURI `json:"sourceUrl"`
 	// Requested storage capacity in bytes.
 	StorageBytes OptInt64 `json:"storageBytes"`
+	// GID to use inside the sandbox.
+	UserGid OptInt64 `json:"userGid"`
+	// UID to use inside the sandbox.
+	UserUid OptInt64 `json:"userUid"`
 	// Working directory inside the sandbox.
 	WorkingDirectory OptString `json:"workingDirectory"`
 }
@@ -44,6 +343,31 @@ type CreateSandboxBody struct {
 // GetSchema returns the value of Schema.
 func (s *CreateSandboxBody) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetAgentConfigId returns the value of AgentConfigId.
+func (s *CreateSandboxBody) GetAgentConfigId() OptString {
+	return s.AgentConfigId
+}
+
+// GetAgentModel returns the value of AgentModel.
+func (s *CreateSandboxBody) GetAgentModel() OptString {
+	return s.AgentModel
+}
+
+// GetAgentModelReasoningLevel returns the value of AgentModelReasoningLevel.
+func (s *CreateSandboxBody) GetAgentModelReasoningLevel() OptString {
+	return s.AgentModelReasoningLevel
+}
+
+// GetAgentModelServiceTier returns the value of AgentModelServiceTier.
+func (s *CreateSandboxBody) GetAgentModelServiceTier() OptString {
+	return s.AgentModelServiceTier
+}
+
+// GetAgentName returns the value of AgentName.
+func (s *CreateSandboxBody) GetAgentName() OptString {
+	return s.AgentName
 }
 
 // GetCpuVcpus returns the value of CpuVcpus.
@@ -66,6 +390,11 @@ func (s *CreateSandboxBody) GetName() string {
 	return s.Name
 }
 
+// GetPrompt returns the value of Prompt.
+func (s *CreateSandboxBody) GetPrompt() OptString {
+	return s.Prompt
+}
+
 // GetProviderInstanceId returns the value of ProviderInstanceId.
 func (s *CreateSandboxBody) GetProviderInstanceId() OptString {
 	return s.ProviderInstanceId
@@ -76,9 +405,24 @@ func (s *CreateSandboxBody) GetRuntimeState() jx.Raw {
 	return s.RuntimeState
 }
 
+// GetSourceCodeReferences returns the value of SourceCodeReferences.
+func (s *CreateSandboxBody) GetSourceCodeReferences() OptCreateSandboxBodySourceCodeReferences {
+	return s.SourceCodeReferences
+}
+
+// GetSourceDirectory returns the value of SourceDirectory.
+func (s *CreateSandboxBody) GetSourceDirectory() OptString {
+	return s.SourceDirectory
+}
+
 // GetSourceRef returns the value of SourceRef.
 func (s *CreateSandboxBody) GetSourceRef() OptString {
 	return s.SourceRef
+}
+
+// GetSourceRefType returns the value of SourceRefType.
+func (s *CreateSandboxBody) GetSourceRefType() OptString {
+	return s.SourceRefType
 }
 
 // GetSourceUrl returns the value of SourceUrl.
@@ -91,6 +435,16 @@ func (s *CreateSandboxBody) GetStorageBytes() OptInt64 {
 	return s.StorageBytes
 }
 
+// GetUserGid returns the value of UserGid.
+func (s *CreateSandboxBody) GetUserGid() OptInt64 {
+	return s.UserGid
+}
+
+// GetUserUid returns the value of UserUid.
+func (s *CreateSandboxBody) GetUserUid() OptInt64 {
+	return s.UserUid
+}
+
 // GetWorkingDirectory returns the value of WorkingDirectory.
 func (s *CreateSandboxBody) GetWorkingDirectory() OptString {
 	return s.WorkingDirectory
@@ -99,6 +453,31 @@ func (s *CreateSandboxBody) GetWorkingDirectory() OptString {
 // SetSchema sets the value of Schema.
 func (s *CreateSandboxBody) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetAgentConfigId sets the value of AgentConfigId.
+func (s *CreateSandboxBody) SetAgentConfigId(val OptString) {
+	s.AgentConfigId = val
+}
+
+// SetAgentModel sets the value of AgentModel.
+func (s *CreateSandboxBody) SetAgentModel(val OptString) {
+	s.AgentModel = val
+}
+
+// SetAgentModelReasoningLevel sets the value of AgentModelReasoningLevel.
+func (s *CreateSandboxBody) SetAgentModelReasoningLevel(val OptString) {
+	s.AgentModelReasoningLevel = val
+}
+
+// SetAgentModelServiceTier sets the value of AgentModelServiceTier.
+func (s *CreateSandboxBody) SetAgentModelServiceTier(val OptString) {
+	s.AgentModelServiceTier = val
+}
+
+// SetAgentName sets the value of AgentName.
+func (s *CreateSandboxBody) SetAgentName(val OptString) {
+	s.AgentName = val
 }
 
 // SetCpuVcpus sets the value of CpuVcpus.
@@ -121,6 +500,11 @@ func (s *CreateSandboxBody) SetName(val string) {
 	s.Name = val
 }
 
+// SetPrompt sets the value of Prompt.
+func (s *CreateSandboxBody) SetPrompt(val OptString) {
+	s.Prompt = val
+}
+
 // SetProviderInstanceId sets the value of ProviderInstanceId.
 func (s *CreateSandboxBody) SetProviderInstanceId(val OptString) {
 	s.ProviderInstanceId = val
@@ -131,9 +515,24 @@ func (s *CreateSandboxBody) SetRuntimeState(val jx.Raw) {
 	s.RuntimeState = val
 }
 
+// SetSourceCodeReferences sets the value of SourceCodeReferences.
+func (s *CreateSandboxBody) SetSourceCodeReferences(val OptCreateSandboxBodySourceCodeReferences) {
+	s.SourceCodeReferences = val
+}
+
+// SetSourceDirectory sets the value of SourceDirectory.
+func (s *CreateSandboxBody) SetSourceDirectory(val OptString) {
+	s.SourceDirectory = val
+}
+
 // SetSourceRef sets the value of SourceRef.
 func (s *CreateSandboxBody) SetSourceRef(val OptString) {
 	s.SourceRef = val
+}
+
+// SetSourceRefType sets the value of SourceRefType.
+func (s *CreateSandboxBody) SetSourceRefType(val OptString) {
+	s.SourceRefType = val
 }
 
 // SetSourceUrl sets the value of SourceUrl.
@@ -146,9 +545,31 @@ func (s *CreateSandboxBody) SetStorageBytes(val OptInt64) {
 	s.StorageBytes = val
 }
 
+// SetUserGid sets the value of UserGid.
+func (s *CreateSandboxBody) SetUserGid(val OptInt64) {
+	s.UserGid = val
+}
+
+// SetUserUid sets the value of UserUid.
+func (s *CreateSandboxBody) SetUserUid(val OptInt64) {
+	s.UserUid = val
+}
+
 // SetWorkingDirectory sets the value of WorkingDirectory.
 func (s *CreateSandboxBody) SetWorkingDirectory(val OptString) {
 	s.WorkingDirectory = val
+}
+
+// Map of sandbox directories to additional source code Git references.
+type CreateSandboxBodySourceCodeReferences map[string]GitSourceReference
+
+func (s *CreateSandboxBodySourceCodeReferences) init() CreateSandboxBodySourceCodeReferences {
+	m := *s
+	if m == nil {
+		m = map[string]GitSourceReference{}
+		*s = m
+	}
+	return m
 }
 
 // Ref: #/components/schemas/CreateSandboxProviderInstanceBody
@@ -202,6 +623,9 @@ func (s *CreateSandboxProviderInstanceBody) SetName(val string) {
 func (s *CreateSandboxProviderInstanceBody) SetType(val string) {
 	s.Type = val
 }
+
+// DeleteAgentConfigNoContent is response for DeleteAgentConfig operation.
+type DeleteAgentConfigNoContent struct{}
 
 // DeleteSandboxAccepted is response for DeleteSandbox operation.
 type DeleteSandboxAccepted struct{}
@@ -364,6 +788,114 @@ func (s *ErrorModelStatusCode) SetResponse(val ErrorModel) {
 	s.Response = val
 }
 
+// Ref: #/components/schemas/GitSourceReference
+type GitSourceReference struct {
+	// Directory where this source should be placed inside the sandbox.
+	Directory string `json:"directory"`
+	// Git source branch, tag, or commit.
+	Ref OptString `json:"ref"`
+	// Git source ref type, such as branch, tag, or commit.
+	RefType OptString `json:"refType"`
+	// Git source URL.
+	URL url.URL `json:"url"`
+}
+
+// GetDirectory returns the value of Directory.
+func (s *GitSourceReference) GetDirectory() string {
+	return s.Directory
+}
+
+// GetRef returns the value of Ref.
+func (s *GitSourceReference) GetRef() OptString {
+	return s.Ref
+}
+
+// GetRefType returns the value of RefType.
+func (s *GitSourceReference) GetRefType() OptString {
+	return s.RefType
+}
+
+// GetURL returns the value of URL.
+func (s *GitSourceReference) GetURL() url.URL {
+	return s.URL
+}
+
+// SetDirectory sets the value of Directory.
+func (s *GitSourceReference) SetDirectory(val string) {
+	s.Directory = val
+}
+
+// SetRef sets the value of Ref.
+func (s *GitSourceReference) SetRef(val OptString) {
+	s.Ref = val
+}
+
+// SetRefType sets the value of RefType.
+func (s *GitSourceReference) SetRefType(val OptString) {
+	s.RefType = val
+}
+
+// SetURL sets the value of URL.
+func (s *GitSourceReference) SetURL(val url.URL) {
+	s.URL = val
+}
+
+// Ref: #/components/schemas/ListAgentConfigDefinitionsBody
+type ListAgentConfigDefinitionsBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Agent config definitions.
+	AgentConfigDefinitions []AgentConfigDefinition `json:"agentConfigDefinitions"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListAgentConfigDefinitionsBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetAgentConfigDefinitions returns the value of AgentConfigDefinitions.
+func (s *ListAgentConfigDefinitionsBody) GetAgentConfigDefinitions() []AgentConfigDefinition {
+	return s.AgentConfigDefinitions
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListAgentConfigDefinitionsBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetAgentConfigDefinitions sets the value of AgentConfigDefinitions.
+func (s *ListAgentConfigDefinitionsBody) SetAgentConfigDefinitions(val []AgentConfigDefinition) {
+	s.AgentConfigDefinitions = val
+}
+
+// Ref: #/components/schemas/ListAgentConfigsBody
+type ListAgentConfigsBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Agent configs.
+	AgentConfigs []AgentConfig `json:"agentConfigs"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListAgentConfigsBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetAgentConfigs returns the value of AgentConfigs.
+func (s *ListAgentConfigsBody) GetAgentConfigs() []AgentConfig {
+	return s.AgentConfigs
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListAgentConfigsBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetAgentConfigs sets the value of AgentConfigs.
+func (s *ListAgentConfigsBody) SetAgentConfigs(val []AgentConfig) {
+	s.AgentConfigs = val
+}
+
 // Ref: #/components/schemas/ListProjectsBody
 type ListProjectsBody struct {
 	// A URL to the JSON Schema for this object.
@@ -476,6 +1008,52 @@ func (s *ListSandboxesBody) SetSandboxes(val []Sandbox) {
 	s.Sandboxes = val
 }
 
+// NewOptAgentConfig returns new OptAgentConfig with value set to v.
+func NewOptAgentConfig(v AgentConfig) OptAgentConfig {
+	return OptAgentConfig{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptAgentConfig is optional AgentConfig.
+type OptAgentConfig struct {
+	Value AgentConfig
+	Set   bool
+}
+
+// IsSet returns true if OptAgentConfig was set.
+func (o OptAgentConfig) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptAgentConfig) Reset() {
+	var v AgentConfig
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptAgentConfig) SetTo(v AgentConfig) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptAgentConfig) Get() (v AgentConfig, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptAgentConfig) Or(d AgentConfig) AgentConfig {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptBool returns new OptBool with value set to v.
 func NewOptBool(v bool) OptBool {
 	return OptBool{
@@ -516,6 +1094,52 @@ func (o OptBool) Get() (v bool, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptBool) Or(d bool) bool {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptCreateSandboxBodySourceCodeReferences returns new OptCreateSandboxBodySourceCodeReferences with value set to v.
+func NewOptCreateSandboxBodySourceCodeReferences(v CreateSandboxBodySourceCodeReferences) OptCreateSandboxBodySourceCodeReferences {
+	return OptCreateSandboxBodySourceCodeReferences{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptCreateSandboxBodySourceCodeReferences is optional CreateSandboxBodySourceCodeReferences.
+type OptCreateSandboxBodySourceCodeReferences struct {
+	Value CreateSandboxBodySourceCodeReferences
+	Set   bool
+}
+
+// IsSet returns true if OptCreateSandboxBodySourceCodeReferences was set.
+func (o OptCreateSandboxBodySourceCodeReferences) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptCreateSandboxBodySourceCodeReferences) Reset() {
+	var v CreateSandboxBodySourceCodeReferences
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptCreateSandboxBodySourceCodeReferences) SetTo(v CreateSandboxBodySourceCodeReferences) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptCreateSandboxBodySourceCodeReferences) Get() (v CreateSandboxBodySourceCodeReferences, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptCreateSandboxBodySourceCodeReferences) Or(d CreateSandboxBodySourceCodeReferences) CreateSandboxBodySourceCodeReferences {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -654,6 +1278,69 @@ func (o OptInt64) Get() (v int64, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptInt64) Or(d int64) int64 {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilAgentConfigArray returns new OptNilAgentConfigArray with value set to v.
+func NewOptNilAgentConfigArray(v []AgentConfig) OptNilAgentConfigArray {
+	return OptNilAgentConfigArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilAgentConfigArray is optional nullable []AgentConfig.
+type OptNilAgentConfigArray struct {
+	Value []AgentConfig
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilAgentConfigArray was set.
+func (o OptNilAgentConfigArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilAgentConfigArray) Reset() {
+	var v []AgentConfig
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilAgentConfigArray) SetTo(v []AgentConfig) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilAgentConfigArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilAgentConfigArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []AgentConfig
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilAgentConfigArray) Get() (v []AgentConfig, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilAgentConfigArray) Or(d []AgentConfig) []AgentConfig {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -1193,6 +1880,52 @@ func (o OptSandboxProviderInstance) Or(d SandboxProviderInstance) SandboxProvide
 	return d
 }
 
+// NewOptSandboxSourceCodeReferences returns new OptSandboxSourceCodeReferences with value set to v.
+func NewOptSandboxSourceCodeReferences(v SandboxSourceCodeReferences) OptSandboxSourceCodeReferences {
+	return OptSandboxSourceCodeReferences{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxSourceCodeReferences is optional SandboxSourceCodeReferences.
+type OptSandboxSourceCodeReferences struct {
+	Value SandboxSourceCodeReferences
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxSourceCodeReferences was set.
+func (o OptSandboxSourceCodeReferences) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxSourceCodeReferences) Reset() {
+	var v SandboxSourceCodeReferences
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxSourceCodeReferences) SetTo(v SandboxSourceCodeReferences) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxSourceCodeReferences) Get() (v SandboxSourceCodeReferences, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxSourceCodeReferences) Or(d SandboxSourceCodeReferences) SandboxSourceCodeReferences {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptString returns new OptString with value set to v.
 func NewOptString(v string) OptString {
 	return OptString{
@@ -1427,6 +2160,8 @@ func (o OptWorkerActiveOperation) Or(d WorkerActiveOperation) WorkerActiveOperat
 type Project struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// Agent configurations.
+	AgentConfigs OptNilAgentConfigArray `json:"agentConfigs"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
 	// Whether this is the user's/default tenant project.
@@ -1460,6 +2195,11 @@ type Project struct {
 // GetSchema returns the value of Schema.
 func (s *Project) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetAgentConfigs returns the value of AgentConfigs.
+func (s *Project) GetAgentConfigs() OptNilAgentConfigArray {
+	return s.AgentConfigs
 }
 
 // GetCreatedAt returns the value of CreatedAt.
@@ -1535,6 +2275,11 @@ func (s *Project) GetUpdatedAt() time.Time {
 // SetSchema sets the value of Schema.
 func (s *Project) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetAgentConfigs sets the value of AgentConfigs.
+func (s *Project) SetAgentConfigs(val OptNilAgentConfigArray) {
+	s.AgentConfigs = val
 }
 
 // SetCreatedAt sets the value of CreatedAt.
@@ -2020,6 +2765,16 @@ type Sandbox struct {
 	Schema OptURI `json:"$schema"`
 	// Current queued or running operation.
 	ActiveOperation OptSandboxActiveOperation `json:"activeOperation"`
+	// Agent config.
+	AgentConfig OptAgentConfig `json:"agentConfig"`
+	// Agent config ID.
+	AgentConfigId OptString `json:"agentConfigId"`
+	// Model the agent should use.
+	AgentModel OptString `json:"agentModel"`
+	// Model reasoning level the agent should use.
+	AgentModelReasoningLevel OptString `json:"agentModelReasoningLevel"`
+	// Model service tier the agent should use.
+	AgentModelServiceTier OptString `json:"agentModelServiceTier"`
 	// Requested CPU capacity in vCPUs.
 	CpuVcpus float64 `json:"cpuVcpus"`
 	// Creation timestamp.
@@ -2054,6 +2809,8 @@ type Sandbox struct {
 	Phase SandboxPhase `json:"phase"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
+	// Prompt the agent should run.
+	Prompt OptString `json:"prompt"`
 	// Sandbox provider instance.
 	ProviderInstance OptSandboxProviderInstance `json:"providerInstance"`
 	// Sandbox provider instance ID.
@@ -2064,9 +2821,15 @@ type Sandbox struct {
 	RestartedGeneration int64 `json:"restartedGeneration"`
 	// Non-secret provider runtime state.
 	RuntimeState jx.Raw `json:"runtimeState"`
-	// Source branch, tag, or commit.
+	// Map of sandbox directories to additional source code Git references.
+	SourceCodeReferences OptSandboxSourceCodeReferences `json:"sourceCodeReferences"`
+	// Directory where the main source should be placed inside the sandbox.
+	SourceDirectory OptString `json:"sourceDirectory"`
+	// Git source branch, tag, or commit.
 	SourceRef OptString `json:"sourceRef"`
-	// Source repository or archive URL.
+	// Git source ref type, such as branch, tag, or commit.
+	SourceRefType OptString `json:"sourceRefType"`
+	// Git source URL.
 	SourceUrl OptURI `json:"sourceUrl"`
 	// Human-readable status detail.
 	StatusMessage OptString `json:"statusMessage"`
@@ -2074,6 +2837,10 @@ type Sandbox struct {
 	StorageBytes int64 `json:"storageBytes"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
+	// GID to use inside the sandbox.
+	UserGid OptInt64 `json:"userGid"`
+	// UID to use inside the sandbox.
+	UserUid OptInt64 `json:"userUid"`
 	// Assigned worker ID, when scheduled through a worker-backed provider.
 	WorkerId OptString `json:"workerId"`
 	// Working directory inside the sandbox.
@@ -2088,6 +2855,31 @@ func (s *Sandbox) GetSchema() OptURI {
 // GetActiveOperation returns the value of ActiveOperation.
 func (s *Sandbox) GetActiveOperation() OptSandboxActiveOperation {
 	return s.ActiveOperation
+}
+
+// GetAgentConfig returns the value of AgentConfig.
+func (s *Sandbox) GetAgentConfig() OptAgentConfig {
+	return s.AgentConfig
+}
+
+// GetAgentConfigId returns the value of AgentConfigId.
+func (s *Sandbox) GetAgentConfigId() OptString {
+	return s.AgentConfigId
+}
+
+// GetAgentModel returns the value of AgentModel.
+func (s *Sandbox) GetAgentModel() OptString {
+	return s.AgentModel
+}
+
+// GetAgentModelReasoningLevel returns the value of AgentModelReasoningLevel.
+func (s *Sandbox) GetAgentModelReasoningLevel() OptString {
+	return s.AgentModelReasoningLevel
+}
+
+// GetAgentModelServiceTier returns the value of AgentModelServiceTier.
+func (s *Sandbox) GetAgentModelServiceTier() OptString {
+	return s.AgentModelServiceTier
 }
 
 // GetCpuVcpus returns the value of CpuVcpus.
@@ -2175,6 +2967,11 @@ func (s *Sandbox) GetProjectId() string {
 	return s.ProjectId
 }
 
+// GetPrompt returns the value of Prompt.
+func (s *Sandbox) GetPrompt() OptString {
+	return s.Prompt
+}
+
 // GetProviderInstance returns the value of ProviderInstance.
 func (s *Sandbox) GetProviderInstance() OptSandboxProviderInstance {
 	return s.ProviderInstance
@@ -2200,9 +2997,24 @@ func (s *Sandbox) GetRuntimeState() jx.Raw {
 	return s.RuntimeState
 }
 
+// GetSourceCodeReferences returns the value of SourceCodeReferences.
+func (s *Sandbox) GetSourceCodeReferences() OptSandboxSourceCodeReferences {
+	return s.SourceCodeReferences
+}
+
+// GetSourceDirectory returns the value of SourceDirectory.
+func (s *Sandbox) GetSourceDirectory() OptString {
+	return s.SourceDirectory
+}
+
 // GetSourceRef returns the value of SourceRef.
 func (s *Sandbox) GetSourceRef() OptString {
 	return s.SourceRef
+}
+
+// GetSourceRefType returns the value of SourceRefType.
+func (s *Sandbox) GetSourceRefType() OptString {
+	return s.SourceRefType
 }
 
 // GetSourceUrl returns the value of SourceUrl.
@@ -2225,6 +3037,16 @@ func (s *Sandbox) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
 }
 
+// GetUserGid returns the value of UserGid.
+func (s *Sandbox) GetUserGid() OptInt64 {
+	return s.UserGid
+}
+
+// GetUserUid returns the value of UserUid.
+func (s *Sandbox) GetUserUid() OptInt64 {
+	return s.UserUid
+}
+
 // GetWorkerId returns the value of WorkerId.
 func (s *Sandbox) GetWorkerId() OptString {
 	return s.WorkerId
@@ -2243,6 +3065,31 @@ func (s *Sandbox) SetSchema(val OptURI) {
 // SetActiveOperation sets the value of ActiveOperation.
 func (s *Sandbox) SetActiveOperation(val OptSandboxActiveOperation) {
 	s.ActiveOperation = val
+}
+
+// SetAgentConfig sets the value of AgentConfig.
+func (s *Sandbox) SetAgentConfig(val OptAgentConfig) {
+	s.AgentConfig = val
+}
+
+// SetAgentConfigId sets the value of AgentConfigId.
+func (s *Sandbox) SetAgentConfigId(val OptString) {
+	s.AgentConfigId = val
+}
+
+// SetAgentModel sets the value of AgentModel.
+func (s *Sandbox) SetAgentModel(val OptString) {
+	s.AgentModel = val
+}
+
+// SetAgentModelReasoningLevel sets the value of AgentModelReasoningLevel.
+func (s *Sandbox) SetAgentModelReasoningLevel(val OptString) {
+	s.AgentModelReasoningLevel = val
+}
+
+// SetAgentModelServiceTier sets the value of AgentModelServiceTier.
+func (s *Sandbox) SetAgentModelServiceTier(val OptString) {
+	s.AgentModelServiceTier = val
 }
 
 // SetCpuVcpus sets the value of CpuVcpus.
@@ -2330,6 +3177,11 @@ func (s *Sandbox) SetProjectId(val string) {
 	s.ProjectId = val
 }
 
+// SetPrompt sets the value of Prompt.
+func (s *Sandbox) SetPrompt(val OptString) {
+	s.Prompt = val
+}
+
 // SetProviderInstance sets the value of ProviderInstance.
 func (s *Sandbox) SetProviderInstance(val OptSandboxProviderInstance) {
 	s.ProviderInstance = val
@@ -2355,9 +3207,24 @@ func (s *Sandbox) SetRuntimeState(val jx.Raw) {
 	s.RuntimeState = val
 }
 
+// SetSourceCodeReferences sets the value of SourceCodeReferences.
+func (s *Sandbox) SetSourceCodeReferences(val OptSandboxSourceCodeReferences) {
+	s.SourceCodeReferences = val
+}
+
+// SetSourceDirectory sets the value of SourceDirectory.
+func (s *Sandbox) SetSourceDirectory(val OptString) {
+	s.SourceDirectory = val
+}
+
 // SetSourceRef sets the value of SourceRef.
 func (s *Sandbox) SetSourceRef(val OptString) {
 	s.SourceRef = val
+}
+
+// SetSourceRefType sets the value of SourceRefType.
+func (s *Sandbox) SetSourceRefType(val OptString) {
+	s.SourceRefType = val
 }
 
 // SetSourceUrl sets the value of SourceUrl.
@@ -2378,6 +3245,16 @@ func (s *Sandbox) SetStorageBytes(val int64) {
 // SetUpdatedAt sets the value of UpdatedAt.
 func (s *Sandbox) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
+}
+
+// SetUserGid sets the value of UserGid.
+func (s *Sandbox) SetUserGid(val OptInt64) {
+	s.UserGid = val
+}
+
+// SetUserUid sets the value of UserUid.
+func (s *Sandbox) SetUserUid(val OptInt64) {
+	s.UserUid = val
 }
 
 // SetWorkerId sets the value of WorkerId.
@@ -2897,6 +3774,18 @@ func (s *SandboxProviderInstance) SetWorkers(val OptNilWorkerArray) {
 	s.Workers = val
 }
 
+// Map of sandbox directories to additional source code Git references.
+type SandboxSourceCodeReferences map[string]GitSourceReference
+
+func (s *SandboxSourceCodeReferences) init() SandboxSourceCodeReferences {
+	m := *s
+	if m == nil {
+		m = map[string]GitSourceReference{}
+		*s = m
+	}
+	return m
+}
+
 // Ref: #/components/schemas/StartSandboxBody
 type StartSandboxBody struct {
 	// A URL to the JSON Schema for this object.
@@ -3029,30 +3918,76 @@ func (s *Tenant) SetUsers(val OptNilUserArray) {
 	s.Users = val
 }
 
+// Ref: #/components/schemas/UpdateAgentConfigBody
+type UpdateAgentConfigBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Agent capabilities or feature metadata.
+	Capabilities jx.Raw `json:"capabilities"`
+	// Command used to install the agent.
+	InstallCommand OptString `json:"installCommand"`
+	// Agent config name.
+	Name OptString `json:"name"`
+	// Command used to run the agent.
+	RunCommand OptString `json:"runCommand"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *UpdateAgentConfigBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetCapabilities returns the value of Capabilities.
+func (s *UpdateAgentConfigBody) GetCapabilities() jx.Raw {
+	return s.Capabilities
+}
+
+// GetInstallCommand returns the value of InstallCommand.
+func (s *UpdateAgentConfigBody) GetInstallCommand() OptString {
+	return s.InstallCommand
+}
+
+// GetName returns the value of Name.
+func (s *UpdateAgentConfigBody) GetName() OptString {
+	return s.Name
+}
+
+// GetRunCommand returns the value of RunCommand.
+func (s *UpdateAgentConfigBody) GetRunCommand() OptString {
+	return s.RunCommand
+}
+
+// SetSchema sets the value of Schema.
+func (s *UpdateAgentConfigBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetCapabilities sets the value of Capabilities.
+func (s *UpdateAgentConfigBody) SetCapabilities(val jx.Raw) {
+	s.Capabilities = val
+}
+
+// SetInstallCommand sets the value of InstallCommand.
+func (s *UpdateAgentConfigBody) SetInstallCommand(val OptString) {
+	s.InstallCommand = val
+}
+
+// SetName sets the value of Name.
+func (s *UpdateAgentConfigBody) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetRunCommand sets the value of RunCommand.
+func (s *UpdateAgentConfigBody) SetRunCommand(val OptString) {
+	s.RunCommand = val
+}
+
 // Ref: #/components/schemas/UpdateSandboxBody
 type UpdateSandboxBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Requested CPU capacity in vCPUs.
-	CpuVcpus OptFloat64 `json:"cpuVcpus"`
-	// Sandbox description.
-	Description OptString `json:"description"`
-	// Requested memory capacity in bytes.
-	MemoryBytes OptInt64 `json:"memoryBytes"`
 	// Sandbox name.
 	Name OptString `json:"name"`
-	// Sandbox provider instance ID.
-	ProviderInstanceId OptString `json:"providerInstanceId"`
-	// Non-secret provider runtime state.
-	RuntimeState jx.Raw `json:"runtimeState"`
-	// Source branch, tag, or commit.
-	SourceRef OptString `json:"sourceRef"`
-	// Source repository or archive URL.
-	SourceUrl OptURI `json:"sourceUrl"`
-	// Requested storage capacity in bytes.
-	StorageBytes OptInt64 `json:"storageBytes"`
-	// Working directory inside the sandbox.
-	WorkingDirectory OptString `json:"workingDirectory"`
 }
 
 // GetSchema returns the value of Schema.
@@ -3060,54 +3995,9 @@ func (s *UpdateSandboxBody) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetCpuVcpus returns the value of CpuVcpus.
-func (s *UpdateSandboxBody) GetCpuVcpus() OptFloat64 {
-	return s.CpuVcpus
-}
-
-// GetDescription returns the value of Description.
-func (s *UpdateSandboxBody) GetDescription() OptString {
-	return s.Description
-}
-
-// GetMemoryBytes returns the value of MemoryBytes.
-func (s *UpdateSandboxBody) GetMemoryBytes() OptInt64 {
-	return s.MemoryBytes
-}
-
 // GetName returns the value of Name.
 func (s *UpdateSandboxBody) GetName() OptString {
 	return s.Name
-}
-
-// GetProviderInstanceId returns the value of ProviderInstanceId.
-func (s *UpdateSandboxBody) GetProviderInstanceId() OptString {
-	return s.ProviderInstanceId
-}
-
-// GetRuntimeState returns the value of RuntimeState.
-func (s *UpdateSandboxBody) GetRuntimeState() jx.Raw {
-	return s.RuntimeState
-}
-
-// GetSourceRef returns the value of SourceRef.
-func (s *UpdateSandboxBody) GetSourceRef() OptString {
-	return s.SourceRef
-}
-
-// GetSourceUrl returns the value of SourceUrl.
-func (s *UpdateSandboxBody) GetSourceUrl() OptURI {
-	return s.SourceUrl
-}
-
-// GetStorageBytes returns the value of StorageBytes.
-func (s *UpdateSandboxBody) GetStorageBytes() OptInt64 {
-	return s.StorageBytes
-}
-
-// GetWorkingDirectory returns the value of WorkingDirectory.
-func (s *UpdateSandboxBody) GetWorkingDirectory() OptString {
-	return s.WorkingDirectory
 }
 
 // SetSchema sets the value of Schema.
@@ -3115,54 +4005,9 @@ func (s *UpdateSandboxBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetCpuVcpus sets the value of CpuVcpus.
-func (s *UpdateSandboxBody) SetCpuVcpus(val OptFloat64) {
-	s.CpuVcpus = val
-}
-
-// SetDescription sets the value of Description.
-func (s *UpdateSandboxBody) SetDescription(val OptString) {
-	s.Description = val
-}
-
-// SetMemoryBytes sets the value of MemoryBytes.
-func (s *UpdateSandboxBody) SetMemoryBytes(val OptInt64) {
-	s.MemoryBytes = val
-}
-
 // SetName sets the value of Name.
 func (s *UpdateSandboxBody) SetName(val OptString) {
 	s.Name = val
-}
-
-// SetProviderInstanceId sets the value of ProviderInstanceId.
-func (s *UpdateSandboxBody) SetProviderInstanceId(val OptString) {
-	s.ProviderInstanceId = val
-}
-
-// SetRuntimeState sets the value of RuntimeState.
-func (s *UpdateSandboxBody) SetRuntimeState(val jx.Raw) {
-	s.RuntimeState = val
-}
-
-// SetSourceRef sets the value of SourceRef.
-func (s *UpdateSandboxBody) SetSourceRef(val OptString) {
-	s.SourceRef = val
-}
-
-// SetSourceUrl sets the value of SourceUrl.
-func (s *UpdateSandboxBody) SetSourceUrl(val OptURI) {
-	s.SourceUrl = val
-}
-
-// SetStorageBytes sets the value of StorageBytes.
-func (s *UpdateSandboxBody) SetStorageBytes(val OptInt64) {
-	s.StorageBytes = val
-}
-
-// SetWorkingDirectory sets the value of WorkingDirectory.
-func (s *UpdateSandboxBody) SetWorkingDirectory(val OptString) {
-	s.WorkingDirectory = val
 }
 
 // Ref: #/components/schemas/UpdateSandboxProviderInstanceBody

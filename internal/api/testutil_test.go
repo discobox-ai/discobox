@@ -50,11 +50,12 @@ func newTestAPI(t *testing.T) testAPI {
 
 	handler, h := humatest.New(t)
 	api.Register(h, api.Services{
-		Projects:  services,
-		Sandboxes: services,
-		Providers: services,
-		Workers:   services,
-		Events:    services,
+		Projects:     services,
+		AgentConfigs: services,
+		Sandboxes:    services,
+		Providers:    services,
+		Workers:      services,
+		Events:       services,
 	})
 	return testAPI{handler: handler, h: h}
 }
@@ -67,6 +68,7 @@ func createSandbox(t *testing.T, h humatest.TestAPI, name string) model.Sandbox 
 		"description":      "test sandbox",
 		"sourceUrl":        "https://example.com/repo.git",
 		"sourceRef":        "main",
+		"sourceDirectory":  "/workspace",
 		"workingDirectory": "/workspace",
 		"runtimeState": map[string]any{
 			"image": "alpine",

@@ -43,6 +43,18 @@ func (s *Service) ListProjectResourceSnapshots(ctx context.Context, projectID st
 				}
 				result = append(result, event)
 			}
+		case "agentConfig":
+			configs, err := s.store.ListAgentConfigSnapshots(ctx, projectID)
+			if err != nil {
+				return nil, err
+			}
+			for _, config := range configs {
+				event, err := snapshotEvent(projectID, "agentConfig", config.ID, seq, config)
+				if err != nil {
+					return nil, err
+				}
+				result = append(result, event)
+			}
 		}
 	}
 	return result, nil

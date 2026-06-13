@@ -75,11 +75,12 @@ func NewRouter(services api.Services) (*chi.Mux, huma.API) {
 func NewStubbedRouter() (*chi.Mux, huma.API) {
 	stubs := service.NewStub()
 	return NewRouter(api.Services{
-		Projects:  stubs,
-		Sandboxes: stubs,
-		Providers: stubs,
-		Workers:   stubs,
-		Events:    stubs,
+		Projects:     stubs,
+		AgentConfigs: stubs,
+		Sandboxes:    stubs,
+		Providers:    stubs,
+		Workers:      stubs,
+		Events:       stubs,
 	})
 }
 
@@ -127,11 +128,12 @@ func NewDatabaseRouter(ctx context.Context, resolver *database.Resolver, options
 	config.DocsRenderer = huma.DocsRendererScalar
 	humaAPI := humachi.New(router, config)
 	api.Register(humaAPI, api.Services{
-		Projects:  services,
-		Sandboxes: services,
-		Providers: services,
-		Workers:   services,
-		Events:    services,
+		Projects:     services,
+		AgentConfigs: services,
+		Sandboxes:    services,
+		Providers:    services,
+		Workers:      services,
+		Events:       services,
 	})
 	return router, humaAPI, nil
 }

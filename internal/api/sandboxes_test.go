@@ -37,6 +37,9 @@ func TestCreateSandbox(t *testing.T) {
 	if created.SourceURL == nil || *created.SourceURL != "https://example.com/repo.git" {
 		t.Fatalf("sourceUrl = %v, want https://example.com/repo.git", created.SourceURL)
 	}
+	if created.SourceDirectory == nil || *created.SourceDirectory != "/workspace" {
+		t.Fatalf("sourceDirectory = %v, want /workspace", created.SourceDirectory)
+	}
 }
 
 func TestListSandboxes(t *testing.T) {

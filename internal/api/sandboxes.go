@@ -41,16 +41,27 @@ type DeleteSandboxOutput struct {
 }
 
 type CreateSandboxBody struct {
-	Name               string          `json:"name" doc:"Sandbox name" maxLength:"200" required:"true"`
-	Description        *string         `json:"description,omitempty" doc:"Sandbox description"`
-	ProviderInstanceID *string         `json:"providerInstanceId,omitempty" doc:"Sandbox provider instance ID"`
-	SourceURL          *string         `json:"sourceUrl,omitempty" doc:"Source repository or archive URL" format:"uri"`
-	SourceRef          *string         `json:"sourceRef,omitempty" doc:"Source branch, tag, or commit"`
-	WorkingDirectory   *string         `json:"workingDirectory,omitempty" doc:"Working directory inside the sandbox"`
-	CPUVCPUs           float64         `json:"cpuVcpus,omitempty" doc:"Requested CPU capacity in vCPUs"`
-	MemoryBytes        int64           `json:"memoryBytes,omitempty" doc:"Requested memory capacity in bytes"`
-	StorageBytes       int64           `json:"storageBytes,omitempty" doc:"Requested storage capacity in bytes"`
-	RuntimeState       json.RawMessage `json:"runtimeState,omitempty" doc:"Initial non-secret provider runtime state"`
+	Name                     string                     `json:"name" doc:"Sandbox name" maxLength:"200" required:"true"`
+	Description              *string                    `json:"description,omitempty" doc:"Sandbox description"`
+	ProviderInstanceID       *string                    `json:"providerInstanceId,omitempty" doc:"Sandbox provider instance ID"`
+	AgentConfigID            *string                    `json:"agentConfigId,omitempty" doc:"Agent config ID"`
+	AgentName                *string                    `json:"agentName,omitempty" doc:"Agent config name to resolve at create time"`
+	AgentModel               *string                    `json:"agentModel,omitempty" doc:"Model the agent should use"`
+	AgentModelServiceTier    *string                    `json:"agentModelServiceTier,omitempty" doc:"Model service tier the agent should use"`
+	AgentModelReasoningLevel *string                    `json:"agentModelReasoningLevel,omitempty" doc:"Model reasoning level the agent should use"`
+	Prompt                   *string                    `json:"prompt,omitempty" doc:"Prompt the agent should run"`
+	SourceURL                *string                    `json:"sourceUrl,omitempty" doc:"Git source URL" format:"uri"`
+	SourceRef                *string                    `json:"sourceRef,omitempty" doc:"Git source branch, tag, or commit"`
+	SourceRefType            *string                    `json:"sourceRefType,omitempty" doc:"Git source ref type, such as branch, tag, or commit"`
+	SourceDirectory          *string                    `json:"sourceDirectory,omitempty" doc:"Directory where the main source should be placed inside the sandbox"`
+	WorkingDirectory         *string                    `json:"workingDirectory,omitempty" doc:"Working directory inside the sandbox"`
+	SourceCodeReferences     model.SourceCodeReferences `json:"sourceCodeReferences,omitempty" doc:"Map of sandbox directories to additional source code Git references"`
+	UserUID                  *int                       `json:"userUid,omitempty" doc:"UID to use inside the sandbox"`
+	UserGID                  *int                       `json:"userGid,omitempty" doc:"GID to use inside the sandbox"`
+	CPUVCPUs                 float64                    `json:"cpuVcpus,omitempty" doc:"Requested CPU capacity in vCPUs"`
+	MemoryBytes              int64                      `json:"memoryBytes,omitempty" doc:"Requested memory capacity in bytes"`
+	StorageBytes             int64                      `json:"storageBytes,omitempty" doc:"Requested storage capacity in bytes"`
+	RuntimeState             json.RawMessage            `json:"runtimeState,omitempty" doc:"Initial non-secret provider runtime state"`
 }
 
 type CreateSandboxInput struct {
@@ -59,16 +70,7 @@ type CreateSandboxInput struct {
 }
 
 type UpdateSandboxBody struct {
-	Name               *string         `json:"name,omitempty" doc:"Sandbox name" maxLength:"200"`
-	Description        *string         `json:"description,omitempty" doc:"Sandbox description"`
-	ProviderInstanceID *string         `json:"providerInstanceId,omitempty" doc:"Sandbox provider instance ID"`
-	SourceURL          *string         `json:"sourceUrl,omitempty" doc:"Source repository or archive URL" format:"uri"`
-	SourceRef          *string         `json:"sourceRef,omitempty" doc:"Source branch, tag, or commit"`
-	WorkingDirectory   *string         `json:"workingDirectory,omitempty" doc:"Working directory inside the sandbox"`
-	CPUVCPUs           *float64        `json:"cpuVcpus,omitempty" doc:"Requested CPU capacity in vCPUs"`
-	MemoryBytes        *int64          `json:"memoryBytes,omitempty" doc:"Requested memory capacity in bytes"`
-	StorageBytes       *int64          `json:"storageBytes,omitempty" doc:"Requested storage capacity in bytes"`
-	RuntimeState       json.RawMessage `json:"runtimeState,omitempty" doc:"Non-secret provider runtime state"`
+	Name *string `json:"name,omitempty" doc:"Sandbox name" maxLength:"200"`
 }
 
 type UpdateSandboxInput struct {

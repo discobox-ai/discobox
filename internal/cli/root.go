@@ -47,6 +47,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&app.debug, "debug", false, "Print HTTP requests made by the API client")
 
 	cmd.AddCommand(app.newSandboxCommand())
+	cmd.AddCommand(app.newAgentCommand())
 	cmd.AddCommand(app.newProviderCommand())
 	cmd.AddCommand(app.newEventsCommand())
 	cmd.AddCommand(app.newCompletionCommand())
