@@ -35,10 +35,10 @@ prevents accidental writes of tenant data to the global/default schema.
 
 ## ID Generation
 
-Generated database row IDs should be UUIDv7 strings. This keeps IDs globally
-unique while preserving creation-time locality for indexes and ordered scans.
-Composite keys and fixed singleton rows may use non-generated IDs when that is
-part of the table design.
+Generated database row IDs should be lowercase ULID strings. This keeps IDs globally
+unique while preserving creation-time locality for indexes and ordered scans, and
+keeps public/resource IDs compact and URL-safe. Composite keys and fixed singleton
+rows may use non-generated IDs when that is part of the table design.
 
 ## Tenant Lifecycle Direction
 

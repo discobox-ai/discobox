@@ -1,13 +1,19 @@
 package orchestration
 
-import "github.com/google/uuid"
+import (
+	"crypto/rand"
+	"strings"
+	"time"
+
+	"github.com/oklog/ulid/v2"
+)
 
 func NewID() (string, error) {
-	id, err := uuid.NewV7()
+	id, err := ulid.New(ulid.Timestamp(time.Now()), rand.Reader)
 	if err != nil {
 		return "", err
 	}
-	return id.String(), nil
+	return strings.ToLower(id.String()), nil
 }
 
 func NewIDString() string {
