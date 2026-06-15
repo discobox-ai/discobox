@@ -1,4 +1,6 @@
-package workeragent
+//go:build linux
+
+package systemd
 
 import (
 	"context"
@@ -28,7 +30,14 @@ func ExecSystemdChildIfRequested() error {
 	return syscall.Exec(defaultSystemdPath, []string{defaultSystemdPath}, childEnv())
 }
 
-func startSystemdNamespace(ctx context.Context, logger *slog.Logger) (*exec.Cmd, error) {
+func Stop(cmd *exec.Cmd) {
+	if cmd == nil || cmd.Process == nil {
+		return
+	}
+	_ = cmd.Process.Signal(syscall.SIGTERM)
+}
+
+func StartNamespace(ctx context.Context, logger *slog.Logger) (*exec.Cmd, error) {
 	if os.Getpid() != 1 {
 		return nil, nil
 	}
@@ -58,7 +67,7 @@ func startSystemdNamespace(ctx context.Context, logger *slog.Logger) (*exec.Cmd,
 	return cmd, nil
 }
 
-func startChildReaper(ctx context.Context, logger *slog.Logger, managed map[int]string) func() {
+func StartChildReaper(ctx context.Context, logger *slog.Logger, managed map[int]string) func() {
 	if os.Getpid() != 1 {
 		return func() {}
 	}
@@ -111,7 +120,7 @@ func reapChildren(logger *slog.Logger, managed map[int]string) {
 	}
 }
 
-func managedChildProcesses(systemd *exec.Cmd) map[int]string {
+func ManagedChildProcesses(systemd *exec.Cmd) map[int]string {
 	if systemd == nil || systemd.Process == nil {
 		return nil
 	}

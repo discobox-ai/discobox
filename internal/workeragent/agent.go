@@ -1,180 +1,128 @@
-// Package workeragent implements the in-guest worker startup registration flow.
 package workeragent
 
 import (
 	"context"
-	"crypto/ed25519"
-	"crypto/rand"
-	"encoding/base64"
-	"errors"
-	"fmt"
+	"log/slog"
 	"os"
+	"runtime"
 	"strconv"
 	"strings"
+
+	"github.com/obot-platform/discobox/internal/workeragent/sandboxruntime"
+	workerserver "github.com/obot-platform/discobox/internal/workeragent/server"
+	agentsystemd "github.com/obot-platform/discobox/internal/workeragent/systemd"
 )
 
-const (
-	EnvControlPlaneURL = "DISCOBOX_CONTROL_PLANE_URL"
-	EnvTenantID        = "DISCOBOX_TENANT_ID"
-	EnvProjectID       = "DISCOBOX_PROJECT_ID"
-	EnvSandboxID       = "DISCOBOX_SANDBOX_ID"
-	EnvWorkerID        = "DISCOBOX_WORKER_ID"
-	EnvBootstrapToken  = "DISCOBOX_WORKER_BOOTSTRAP_TOKEN"
-	EnvAgentPort       = "DISCOBOX_AGENT_PORT"
-)
-
-// Bootstrap is the VM boot contract used by the control plane and worker agent.
-type Bootstrap struct {
-	ControlPlaneURL string `json:"controlPlaneUrl,omitempty"`
-	TenantID        string `json:"tenantId,omitempty"`
-	ProjectID       string `json:"projectId,omitempty"`
-	SandboxID       string `json:"sandboxId,omitempty"`
-	WorkerID        string `json:"workerId,omitempty"`
-	Token           string `json:"token,omitempty"`
-	AgentPort       int    `json:"agentPort,omitempty"`
-}
-
-// Config controls worker registration.
-type Config struct {
-	Bootstrap Bootstrap
-	Client    Client
-	KeySource KeySource
-}
-
-// Client registers a booted worker with the control plane.
-type Client interface {
-	RegisterWorker(ctx context.Context, req RegisterRequest) (*RegisterResponse, error)
-}
-
-type StatusClient interface {
-	UpdateWorkerStatus(ctx context.Context, req StatusRequest) error
-}
-
-// RegisterRequest is sent by the worker after generating its keypair.
-type RegisterRequest struct {
-	ControlPlaneURL string `json:"-"`
-	TenantID        string `json:"tenantId"`
-	ProjectID       string `json:"projectId"`
-	SandboxID       string `json:"sandboxId"`
-	WorkerID        string `json:"workerId"`
-	BootstrapToken  string `json:"bootstrapToken"`
-	PublicKey       string `json:"publicKey"`
-	KeyType         string `json:"keyType"`
-}
-
-// StatusRequest updates worker scheduling status using the auth token returned
-// by registration. AuthToken is sent as an Authorization: Bearer header.
-type StatusRequest struct {
-	ControlPlaneURL       string  `json:"-"`
-	TenantID              string  `json:"tenantId"`
-	WorkerID              string  `json:"workerId"`
-	AuthToken             string  `json:"-"`
-	Ready                 bool    `json:"ready"`
-	Schedulable           bool    `json:"schedulable"`
-	Degraded              bool    `json:"degraded"`
-	AvailableCPUVCPUs     float64 `json:"availableCpuVcpus"`
-	AvailableMemoryBytes  int64   `json:"availableMemoryBytes"`
-	AvailableStorageBytes int64   `json:"availableStorageBytes"`
-	Conditions            any     `json:"conditions,omitempty"`
-}
-
-// RegisterResponse is returned by the control plane after worker registration.
-type RegisterResponse struct {
-	AuthToken string `json:"authToken"`
-}
-
-// Registration is the completed worker startup identity state.
-type Registration struct {
-	Bootstrap  Bootstrap
-	PublicKey  string
-	PrivateKey ed25519.PrivateKey
-	AuthToken  string
-}
-
-// KeySource generates or loads the worker identity keypair.
-type KeySource interface {
-	KeyPair(ctx context.Context) (publicKey string, privateKey ed25519.PrivateKey, err error)
-}
-
-// Run performs the startup registration flow once.
-func Run(ctx context.Context, cfg Config) (*Registration, error) {
-	bootstrap := cfg.Bootstrap
-	if err := bootstrap.Validate(); err != nil {
-		return nil, err
+// RunAgent registers the worker, marks it ready, and serves the worker-agent HTTP endpoints.
+func RunAgent(ctx context.Context, logger *slog.Logger) error {
+	if logger == nil {
+		logger = slog.Default()
 	}
-	client := cfg.Client
-	if client == nil {
-		client = NewHTTPClient(bootstrap.ControlPlaneURL)
-	}
-	keySource := cfg.KeySource
-	if keySource == nil {
-		keySource = GenerateKeySource{}
-	}
-	publicKey, privateKey, err := keySource.KeyPair(ctx)
+	systemd, err := agentsystemd.StartNamespace(ctx, logger)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	resp, err := client.RegisterWorker(ctx, RegisterRequest{
-		ControlPlaneURL: bootstrap.ControlPlaneURL,
-		TenantID:        bootstrap.TenantID,
-		ProjectID:       bootstrap.ProjectID,
-		SandboxID:       bootstrap.SandboxID,
-		WorkerID:        bootstrap.WorkerID,
-		BootstrapToken:  bootstrap.Token,
-		PublicKey:       publicKey,
-		KeyType:         "ed25519",
+	stopReaper := agentsystemd.StartChildReaper(ctx, logger, agentsystemd.ManagedChildProcesses(systemd))
+	defer stopReaper()
+	defer agentsystemd.Stop(systemd)
+
+	bootstrap := FromEnv()
+	registration, err := Run(ctx, Config{Bootstrap: bootstrap})
+	if err != nil {
+		return err
+	}
+	logger.Info("worker registered", "workerID", bootstrap.WorkerID, "tenantID", bootstrap.TenantID)
+
+	client := NewHTTPClient(bootstrap.ControlPlaneURL)
+	conditions := map[string]any{
+		"agent": map[string]any{
+			"version": "dev",
+			"status":  "ready",
+		},
+	}
+	if err := client.UpdateWorkerStatus(ctx, StatusRequest{
+		ControlPlaneURL:       bootstrap.ControlPlaneURL,
+		TenantID:              bootstrap.TenantID,
+		WorkerID:              bootstrap.WorkerID,
+		AuthToken:             registration.AuthToken,
+		Ready:                 true,
+		Schedulable:           true,
+		Degraded:              false,
+		AvailableCPUVCPUs:     availableCPUVCPUs(),
+		AvailableMemoryBytes:  availableMemoryBytes(),
+		AvailableStorageBytes: availableStorageBytes("/"),
+		Conditions:            conditions,
+	}); err != nil {
+		return err
+	}
+	logger.Info("worker marked ready", "workerID", bootstrap.WorkerID)
+
+	return Serve(ctx, logger, bootstrap, registration)
+}
+
+// ExecSystemdChildIfRequested starts the child systemd process when requested by the systemd helper.
+func ExecSystemdChildIfRequested() error {
+	return agentsystemd.ExecSystemdChildIfRequested()
+}
+
+// Serve starts the worker-agent HTTP server.
+func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration) error {
+	runtime, err := sandboxruntime.NewDockerSandboxRuntime(bootstrap.ProjectID, bootstrap.WorkerID)
+	if err != nil {
+		return err
+	}
+	return ServeWithRuntime(ctx, logger, bootstrap, registration, runtime)
+}
+
+// ServeWithRuntime starts the worker-agent HTTP server with an explicit sandbox runtime.
+func ServeWithRuntime(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, runtime sandboxruntime.Runtime) error {
+	return workerserver.Serve(ctx, logger, workerserver.Config{
+		Identity: workerserver.Identity{
+			TenantID:  bootstrap.TenantID,
+			ProjectID: bootstrap.ProjectID,
+			SandboxID: bootstrap.SandboxID,
+			WorkerID:  bootstrap.WorkerID,
+		},
+		Registration: serverRegistration(registration),
+		Runtime:      runtime,
+		AuthTokens:   workerSandboxAuthTokens(bootstrap, registration),
+		Port:         bootstrap.AgentPort,
 	})
+}
+
+func serverRegistration(registration *Registration) *workerserver.Registration {
+	if registration == nil {
+		return nil
+	}
+	return &workerserver.Registration{PublicKey: registration.PublicKey, AuthToken: registration.AuthToken}
+}
+
+func workerSandboxAuthTokens(bootstrap Bootstrap, registration *Registration) []string {
+	tokens := []string{bootstrap.Token}
+	if registration != nil {
+		tokens = append(tokens, registration.AuthToken)
+	}
+	return tokens
+}
+
+func availableCPUVCPUs() float64 {
+	return float64(runtime.NumCPU())
+}
+
+func availableMemoryBytes() int64 {
+	data, err := os.ReadFile("/proc/meminfo")
 	if err != nil {
-		return nil, err
+		return 0
 	}
-	if resp == nil || strings.TrimSpace(resp.AuthToken) == "" {
-		return nil, errors.New("worker registration did not return an auth token")
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 && fields[0] == "MemAvailable:" {
+			kib, err := strconv.ParseInt(fields[1], 10, 64)
+			if err != nil {
+				return 0
+			}
+			return kib * 1024
+		}
 	}
-	return &Registration{
-		Bootstrap:  bootstrap,
-		PublicKey:  publicKey,
-		PrivateKey: privateKey,
-		AuthToken:  resp.AuthToken,
-	}, nil
-}
-
-// FromEnv builds Bootstrap from environment variables.
-func FromEnv() Bootstrap {
-	agentPort, _ := strconv.Atoi(strings.TrimSpace(os.Getenv(EnvAgentPort)))
-	return Bootstrap{
-		ControlPlaneURL: strings.TrimSpace(os.Getenv(EnvControlPlaneURL)),
-		TenantID:        strings.TrimSpace(os.Getenv(EnvTenantID)),
-		ProjectID:       strings.TrimSpace(os.Getenv(EnvProjectID)),
-		SandboxID:       strings.TrimSpace(os.Getenv(EnvSandboxID)),
-		WorkerID:        strings.TrimSpace(os.Getenv(EnvWorkerID)),
-		Token:           strings.TrimSpace(os.Getenv(EnvBootstrapToken)),
-		AgentPort:       agentPort,
-	}
-}
-
-func (b Bootstrap) Validate() error {
-	if strings.TrimSpace(b.ControlPlaneURL) == "" {
-		return errors.New("control plane URL is required")
-	}
-	if strings.TrimSpace(b.TenantID) == "" {
-		return errors.New("tenant ID is required")
-	}
-	if strings.TrimSpace(b.WorkerID) == "" {
-		return errors.New("worker ID is required")
-	}
-	if strings.TrimSpace(b.Token) == "" {
-		return errors.New("worker bootstrap token is required")
-	}
-	return nil
-}
-
-// GenerateKeySource creates a fresh Ed25519 keypair.
-type GenerateKeySource struct{}
-
-func (GenerateKeySource) KeyPair(context.Context) (string, ed25519.PrivateKey, error) {
-	pub, priv, err := ed25519.GenerateKey(rand.Reader)
-	if err != nil {
-		return "", nil, fmt.Errorf("generate worker keypair: %w", err)
-	}
-	return base64.StdEncoding.EncodeToString(pub), priv, nil
+	return 0
 }

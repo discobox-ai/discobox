@@ -21,7 +21,7 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := workeragent.RunCommand(ctx, logger); err != nil && !errors.Is(err, context.Canceled) {
+	if err := workeragent.RunAgent(ctx, logger); err != nil && !errors.Is(err, context.Canceled) {
 		logger.Error("worker agent failed", "error", err)
 		os.Exit(1)
 	}
