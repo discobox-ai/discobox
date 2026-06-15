@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -61,7 +60,6 @@ type CreateSandboxBody struct {
 	CPUVCPUs                 float64                    `json:"cpuVcpus,omitempty" doc:"Requested CPU capacity in vCPUs"`
 	MemoryBytes              int64                      `json:"memoryBytes,omitempty" doc:"Requested memory capacity in bytes"`
 	StorageBytes             int64                      `json:"storageBytes,omitempty" doc:"Requested storage capacity in bytes"`
-	RuntimeState             json.RawMessage            `json:"runtimeState,omitempty" doc:"Initial non-secret provider runtime state"`
 }
 
 type CreateSandboxInput struct {

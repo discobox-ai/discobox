@@ -318,8 +318,6 @@ type CreateSandboxBody struct {
 	Prompt OptString `json:"prompt"`
 	// Sandbox provider instance ID.
 	ProviderInstanceId OptString `json:"providerInstanceId"`
-	// Initial non-secret provider runtime state.
-	RuntimeState jx.Raw `json:"runtimeState"`
 	// Map of sandbox directories to additional source code Git references.
 	SourceCodeReferences OptCreateSandboxBodySourceCodeReferences `json:"sourceCodeReferences"`
 	// Directory where the main source should be placed inside the sandbox.
@@ -398,11 +396,6 @@ func (s *CreateSandboxBody) GetPrompt() OptString {
 // GetProviderInstanceId returns the value of ProviderInstanceId.
 func (s *CreateSandboxBody) GetProviderInstanceId() OptString {
 	return s.ProviderInstanceId
-}
-
-// GetRuntimeState returns the value of RuntimeState.
-func (s *CreateSandboxBody) GetRuntimeState() jx.Raw {
-	return s.RuntimeState
 }
 
 // GetSourceCodeReferences returns the value of SourceCodeReferences.
@@ -508,11 +501,6 @@ func (s *CreateSandboxBody) SetPrompt(val OptString) {
 // SetProviderInstanceId sets the value of ProviderInstanceId.
 func (s *CreateSandboxBody) SetProviderInstanceId(val OptString) {
 	s.ProviderInstanceId = val
-}
-
-// SetRuntimeState sets the value of RuntimeState.
-func (s *CreateSandboxBody) SetRuntimeState(val jx.Raw) {
-	s.RuntimeState = val
 }
 
 // SetSourceCodeReferences sets the value of SourceCodeReferences.
@@ -1536,6 +1524,69 @@ func (o OptNilProviderConfigFieldArray) Or(d []ProviderConfigField) []ProviderCo
 	return d
 }
 
+// NewOptNilProviderWorkerStatusArray returns new OptNilProviderWorkerStatusArray with value set to v.
+func NewOptNilProviderWorkerStatusArray(v []ProviderWorkerStatus) OptNilProviderWorkerStatusArray {
+	return OptNilProviderWorkerStatusArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilProviderWorkerStatusArray is optional nullable []ProviderWorkerStatus.
+type OptNilProviderWorkerStatusArray struct {
+	Value []ProviderWorkerStatus
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilProviderWorkerStatusArray was set.
+func (o OptNilProviderWorkerStatusArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilProviderWorkerStatusArray) Reset() {
+	var v []ProviderWorkerStatus
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilProviderWorkerStatusArray) SetTo(v []ProviderWorkerStatus) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilProviderWorkerStatusArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilProviderWorkerStatusArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []ProviderWorkerStatus
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilProviderWorkerStatusArray) Get() (v []ProviderWorkerStatus, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilProviderWorkerStatusArray) Or(d []ProviderWorkerStatus) []ProviderWorkerStatus {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptNilSandboxArray returns new OptNilSandboxArray with value set to v.
 func NewOptNilSandboxArray(v []Sandbox) OptNilSandboxArray {
 	return OptNilSandboxArray{
@@ -1874,6 +1925,52 @@ func (o OptSandboxProviderInstance) Get() (v SandboxProviderInstance, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxProviderInstance) Or(d SandboxProviderInstance) SandboxProviderInstance {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxProviderInstanceStatus returns new OptSandboxProviderInstanceStatus with value set to v.
+func NewOptSandboxProviderInstanceStatus(v SandboxProviderInstanceStatus) OptSandboxProviderInstanceStatus {
+	return OptSandboxProviderInstanceStatus{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxProviderInstanceStatus is optional SandboxProviderInstanceStatus.
+type OptSandboxProviderInstanceStatus struct {
+	Value SandboxProviderInstanceStatus
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxProviderInstanceStatus was set.
+func (o OptSandboxProviderInstanceStatus) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxProviderInstanceStatus) Reset() {
+	var v SandboxProviderInstanceStatus
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxProviderInstanceStatus) SetTo(v SandboxProviderInstanceStatus) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxProviderInstanceStatus) Get() (v SandboxProviderInstanceStatus, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxProviderInstanceStatus) Or(d SandboxProviderInstanceStatus) SandboxProviderInstanceStatus {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -2609,6 +2706,190 @@ func (s *ProviderStatus) SetSupportsInspection(val bool) {
 // SetSupportsResources sets the value of SupportsResources.
 func (s *ProviderStatus) SetSupportsResources(val bool) {
 	s.SupportsResources = val
+}
+
+// Ref: #/components/schemas/ProviderWorkerStatus
+type ProviderWorkerStatus struct {
+	// Worker-reported available CPU capacity in vCPUs.
+	AvailableCpuVcpus float64 `json:"availableCpuVcpus"`
+	// Worker-reported available memory capacity in bytes.
+	AvailableMemoryBytes int64 `json:"availableMemoryBytes"`
+	// Worker-reported available storage capacity in bytes.
+	AvailableStorageBytes int64 `json:"availableStorageBytes"`
+	// Whether the worker is degraded.
+	Degraded bool `json:"degraded"`
+	// Requested worker state.
+	DesiredState string `json:"desiredState"`
+	// Latest worker error message.
+	ErrorMessage OptString `json:"errorMessage"`
+	// Worker ID.
+	ID string `json:"id"`
+	// Worker identity.
+	Identity OptString `json:"identity"`
+	// Status of the latest worker operation.
+	LastOperationStatus string `json:"lastOperationStatus"`
+	// Last heartbeat timestamp.
+	LastSeenAt OptDateTime `json:"lastSeenAt"`
+	// Observed worker lifecycle phase.
+	Phase string `json:"phase"`
+	// Whether the worker is alive and healthy.
+	Ready bool `json:"ready"`
+	// Sanitized backend runtime ID, such as a VM or container ID.
+	RuntimeId OptString `json:"runtimeId"`
+	// Whether the worker accepts new sandboxes.
+	Schedulable bool `json:"schedulable"`
+	// Human-readable status detail.
+	StatusMessage OptString `json:"statusMessage"`
+}
+
+// GetAvailableCpuVcpus returns the value of AvailableCpuVcpus.
+func (s *ProviderWorkerStatus) GetAvailableCpuVcpus() float64 {
+	return s.AvailableCpuVcpus
+}
+
+// GetAvailableMemoryBytes returns the value of AvailableMemoryBytes.
+func (s *ProviderWorkerStatus) GetAvailableMemoryBytes() int64 {
+	return s.AvailableMemoryBytes
+}
+
+// GetAvailableStorageBytes returns the value of AvailableStorageBytes.
+func (s *ProviderWorkerStatus) GetAvailableStorageBytes() int64 {
+	return s.AvailableStorageBytes
+}
+
+// GetDegraded returns the value of Degraded.
+func (s *ProviderWorkerStatus) GetDegraded() bool {
+	return s.Degraded
+}
+
+// GetDesiredState returns the value of DesiredState.
+func (s *ProviderWorkerStatus) GetDesiredState() string {
+	return s.DesiredState
+}
+
+// GetErrorMessage returns the value of ErrorMessage.
+func (s *ProviderWorkerStatus) GetErrorMessage() OptString {
+	return s.ErrorMessage
+}
+
+// GetID returns the value of ID.
+func (s *ProviderWorkerStatus) GetID() string {
+	return s.ID
+}
+
+// GetIdentity returns the value of Identity.
+func (s *ProviderWorkerStatus) GetIdentity() OptString {
+	return s.Identity
+}
+
+// GetLastOperationStatus returns the value of LastOperationStatus.
+func (s *ProviderWorkerStatus) GetLastOperationStatus() string {
+	return s.LastOperationStatus
+}
+
+// GetLastSeenAt returns the value of LastSeenAt.
+func (s *ProviderWorkerStatus) GetLastSeenAt() OptDateTime {
+	return s.LastSeenAt
+}
+
+// GetPhase returns the value of Phase.
+func (s *ProviderWorkerStatus) GetPhase() string {
+	return s.Phase
+}
+
+// GetReady returns the value of Ready.
+func (s *ProviderWorkerStatus) GetReady() bool {
+	return s.Ready
+}
+
+// GetRuntimeId returns the value of RuntimeId.
+func (s *ProviderWorkerStatus) GetRuntimeId() OptString {
+	return s.RuntimeId
+}
+
+// GetSchedulable returns the value of Schedulable.
+func (s *ProviderWorkerStatus) GetSchedulable() bool {
+	return s.Schedulable
+}
+
+// GetStatusMessage returns the value of StatusMessage.
+func (s *ProviderWorkerStatus) GetStatusMessage() OptString {
+	return s.StatusMessage
+}
+
+// SetAvailableCpuVcpus sets the value of AvailableCpuVcpus.
+func (s *ProviderWorkerStatus) SetAvailableCpuVcpus(val float64) {
+	s.AvailableCpuVcpus = val
+}
+
+// SetAvailableMemoryBytes sets the value of AvailableMemoryBytes.
+func (s *ProviderWorkerStatus) SetAvailableMemoryBytes(val int64) {
+	s.AvailableMemoryBytes = val
+}
+
+// SetAvailableStorageBytes sets the value of AvailableStorageBytes.
+func (s *ProviderWorkerStatus) SetAvailableStorageBytes(val int64) {
+	s.AvailableStorageBytes = val
+}
+
+// SetDegraded sets the value of Degraded.
+func (s *ProviderWorkerStatus) SetDegraded(val bool) {
+	s.Degraded = val
+}
+
+// SetDesiredState sets the value of DesiredState.
+func (s *ProviderWorkerStatus) SetDesiredState(val string) {
+	s.DesiredState = val
+}
+
+// SetErrorMessage sets the value of ErrorMessage.
+func (s *ProviderWorkerStatus) SetErrorMessage(val OptString) {
+	s.ErrorMessage = val
+}
+
+// SetID sets the value of ID.
+func (s *ProviderWorkerStatus) SetID(val string) {
+	s.ID = val
+}
+
+// SetIdentity sets the value of Identity.
+func (s *ProviderWorkerStatus) SetIdentity(val OptString) {
+	s.Identity = val
+}
+
+// SetLastOperationStatus sets the value of LastOperationStatus.
+func (s *ProviderWorkerStatus) SetLastOperationStatus(val string) {
+	s.LastOperationStatus = val
+}
+
+// SetLastSeenAt sets the value of LastSeenAt.
+func (s *ProviderWorkerStatus) SetLastSeenAt(val OptDateTime) {
+	s.LastSeenAt = val
+}
+
+// SetPhase sets the value of Phase.
+func (s *ProviderWorkerStatus) SetPhase(val string) {
+	s.Phase = val
+}
+
+// SetReady sets the value of Ready.
+func (s *ProviderWorkerStatus) SetReady(val bool) {
+	s.Ready = val
+}
+
+// SetRuntimeId sets the value of RuntimeId.
+func (s *ProviderWorkerStatus) SetRuntimeId(val OptString) {
+	s.RuntimeId = val
+}
+
+// SetSchedulable sets the value of Schedulable.
+func (s *ProviderWorkerStatus) SetSchedulable(val bool) {
+	s.Schedulable = val
+}
+
+// SetStatusMessage sets the value of StatusMessage.
+func (s *ProviderWorkerStatus) SetStatusMessage(val OptString) {
+	s.StatusMessage = val
 }
 
 // Ref: #/components/schemas/RegisterWorkerBody
@@ -3646,6 +3927,8 @@ type SandboxProviderInstance struct {
 	ProjectId string `json:"projectId"`
 	// Sandboxes using this provider.
 	Sandboxes OptNilSandboxArray `json:"sandboxes"`
+	// Observed provider status derived from persisted worker state.
+	Status OptSandboxProviderInstanceStatus `json:"status"`
 	// Provider type.
 	Type string `json:"type"`
 	// Last update timestamp.
@@ -3697,6 +3980,11 @@ func (s *SandboxProviderInstance) GetProjectId() string {
 // GetSandboxes returns the value of Sandboxes.
 func (s *SandboxProviderInstance) GetSandboxes() OptNilSandboxArray {
 	return s.Sandboxes
+}
+
+// GetStatus returns the value of Status.
+func (s *SandboxProviderInstance) GetStatus() OptSandboxProviderInstanceStatus {
+	return s.Status
 }
 
 // GetType returns the value of Type.
@@ -3759,6 +4047,11 @@ func (s *SandboxProviderInstance) SetSandboxes(val OptNilSandboxArray) {
 	s.Sandboxes = val
 }
 
+// SetStatus sets the value of Status.
+func (s *SandboxProviderInstance) SetStatus(val OptSandboxProviderInstanceStatus) {
+	s.Status = val
+}
+
 // SetType sets the value of Type.
 func (s *SandboxProviderInstance) SetType(val string) {
 	s.Type = val
@@ -3771,6 +4064,94 @@ func (s *SandboxProviderInstance) SetUpdatedAt(val time.Time) {
 
 // SetWorkers sets the value of Workers.
 func (s *SandboxProviderInstance) SetWorkers(val OptNilWorkerArray) {
+	s.Workers = val
+}
+
+// Ref: #/components/schemas/SandboxProviderInstanceStatus
+type SandboxProviderInstanceStatus struct {
+	// Workers reporting degraded health.
+	DegradedWorkers int64 `json:"degradedWorkers"`
+	// Workers whose last lifecycle operation failed.
+	FailedWorkers int64 `json:"failedWorkers"`
+	// Most recent worker error message, if any.
+	LastError OptString `json:"lastError"`
+	// Workers currently reporting ready.
+	ReadyWorkers int64 `json:"readyWorkers"`
+	// Workers currently accepting new sandboxes.
+	SchedulableWorkers int64 `json:"schedulableWorkers"`
+	// Total persisted workers for this provider.
+	WorkerCount int64 `json:"workerCount"`
+	// Observed worker details.
+	Workers OptNilProviderWorkerStatusArray `json:"workers"`
+}
+
+// GetDegradedWorkers returns the value of DegradedWorkers.
+func (s *SandboxProviderInstanceStatus) GetDegradedWorkers() int64 {
+	return s.DegradedWorkers
+}
+
+// GetFailedWorkers returns the value of FailedWorkers.
+func (s *SandboxProviderInstanceStatus) GetFailedWorkers() int64 {
+	return s.FailedWorkers
+}
+
+// GetLastError returns the value of LastError.
+func (s *SandboxProviderInstanceStatus) GetLastError() OptString {
+	return s.LastError
+}
+
+// GetReadyWorkers returns the value of ReadyWorkers.
+func (s *SandboxProviderInstanceStatus) GetReadyWorkers() int64 {
+	return s.ReadyWorkers
+}
+
+// GetSchedulableWorkers returns the value of SchedulableWorkers.
+func (s *SandboxProviderInstanceStatus) GetSchedulableWorkers() int64 {
+	return s.SchedulableWorkers
+}
+
+// GetWorkerCount returns the value of WorkerCount.
+func (s *SandboxProviderInstanceStatus) GetWorkerCount() int64 {
+	return s.WorkerCount
+}
+
+// GetWorkers returns the value of Workers.
+func (s *SandboxProviderInstanceStatus) GetWorkers() OptNilProviderWorkerStatusArray {
+	return s.Workers
+}
+
+// SetDegradedWorkers sets the value of DegradedWorkers.
+func (s *SandboxProviderInstanceStatus) SetDegradedWorkers(val int64) {
+	s.DegradedWorkers = val
+}
+
+// SetFailedWorkers sets the value of FailedWorkers.
+func (s *SandboxProviderInstanceStatus) SetFailedWorkers(val int64) {
+	s.FailedWorkers = val
+}
+
+// SetLastError sets the value of LastError.
+func (s *SandboxProviderInstanceStatus) SetLastError(val OptString) {
+	s.LastError = val
+}
+
+// SetReadyWorkers sets the value of ReadyWorkers.
+func (s *SandboxProviderInstanceStatus) SetReadyWorkers(val int64) {
+	s.ReadyWorkers = val
+}
+
+// SetSchedulableWorkers sets the value of SchedulableWorkers.
+func (s *SandboxProviderInstanceStatus) SetSchedulableWorkers(val int64) {
+	s.SchedulableWorkers = val
+}
+
+// SetWorkerCount sets the value of WorkerCount.
+func (s *SandboxProviderInstanceStatus) SetWorkerCount(val int64) {
+	s.WorkerCount = val
+}
+
+// SetWorkers sets the value of Workers.
+func (s *SandboxProviderInstanceStatus) SetWorkers(val OptNilProviderWorkerStatusArray) {
 	s.Workers = val
 }
 

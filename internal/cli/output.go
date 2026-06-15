@@ -79,8 +79,16 @@ func (a *App) writeProvider(cmd *cobra.Command, provider *apiclientgen.SandboxPr
 		return writeJSON(cmd.OutOrStdout(), provider)
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tDISABLED\tUPDATED")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\n", provider.ID, provider.Name, provider.Type, provider.Disabled, formatTime(provider.UpdatedAt))
+	fmt.Fprintln(tw, "FIELD\tVALUE")
+	fmt.Fprintf(tw, "ID\t%s\n", provider.ID)
+	fmt.Fprintf(tw, "NAME\t%s\n", provider.Name)
+	fmt.Fprintf(tw, "TYPE\t%s\n", provider.Type)
+	fmt.Fprintf(tw, "DISABLED\t%t\n", provider.Disabled)
+	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(provider.UpdatedAt))
+	fmt.Fprintf(tw, "CONFIG\t%s\n", formatRedactedRawJSON(provider.GetConfig()))
+	if status, ok := provider.GetStatus().Get(); ok {
+		fmt.Fprintf(tw, "STATUS\t%s\n", formatProviderStatus(status))
+	}
 	return tw.Flush()
 }
 
@@ -159,6 +167,101 @@ func formatTime(value time.Time) string {
 		return ""
 	}
 	return value.Local().Format(time.RFC3339)
+}
+
+func formatRedactedRawJSON(raw []byte) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var value any
+	if err := json.Unmarshal(raw, &value); err != nil {
+		return "[invalid JSON config redacted]"
+	}
+	redactSensitiveJSON(value)
+	data, err := json.Marshal(value)
+	if err != nil {
+		return "[invalid JSON config redacted]"
+	}
+	return string(data)
+}
+
+func formatJSONValue(value any) string {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func formatProviderStatus(status apiclientgen.SandboxProviderInstanceStatus) string {
+	value := map[string]any{
+		"workerCount":        status.WorkerCount,
+		"readyWorkers":       status.ReadyWorkers,
+		"schedulableWorkers": status.SchedulableWorkers,
+		"degradedWorkers":    status.DegradedWorkers,
+		"failedWorkers":      status.FailedWorkers,
+	}
+	if lastError, ok := status.LastError.Get(); ok {
+		value["lastError"] = lastError
+	}
+	if workers, ok := status.Workers.Get(); ok {
+		out := make([]map[string]any, 0, len(workers))
+		for _, worker := range workers {
+			item := map[string]any{
+				"id":                  worker.ID,
+				"desiredState":        worker.DesiredState,
+				"phase":               worker.Phase,
+				"ready":               worker.Ready,
+				"schedulable":         worker.Schedulable,
+				"degraded":            worker.Degraded,
+				"lastOperationStatus": worker.LastOperationStatus,
+			}
+			if identity, ok := worker.Identity.Get(); ok {
+				item["identity"] = identity
+			}
+			if runtimeID, ok := worker.RuntimeId.Get(); ok {
+				item["runtimeId"] = runtimeID
+			}
+			out = append(out, item)
+		}
+		value["workers"] = out
+	}
+	return formatJSONValue(value)
+}
+
+func redactSensitiveJSON(value any) {
+	switch typed := value.(type) {
+	case map[string]any:
+		for key, child := range typed {
+			if isSensitiveConfigKey(key) {
+				typed[key] = "[REDACTED]"
+				continue
+			}
+			redactSensitiveJSON(child)
+		}
+	case []any:
+		for _, child := range typed {
+			redactSensitiveJSON(child)
+		}
+	}
+}
+
+func isSensitiveConfigKey(key string) bool {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(key, "-", ""), "_", ""), " ", ""))
+	for _, needle := range []string{
+		"token",
+		"password",
+		"secret",
+		"apikey",
+		"accesskey",
+		"privatekey",
+		"credential",
+	} {
+		if strings.Contains(normalized, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func optString(value string) apiclientgen.OptString {

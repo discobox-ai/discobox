@@ -135,7 +135,6 @@ func (s *Stub) CreateSandbox(_ context.Context, projectID string, input api.Crea
 		SourceCodeReferences:     input.SourceCodeReferences,
 		UserUID:                  input.UserUID,
 		UserGID:                  input.UserGID,
-		RuntimeState:             input.RuntimeState,
 		CreatedAt:                now,
 		UpdatedAt:                now,
 		CreatedBy:                &s.user,

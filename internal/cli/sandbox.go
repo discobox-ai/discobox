@@ -5,11 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"os"
-	"strings"
 	"time"
 
-	"github.com/go-faster/jx"
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/obot-platform/discobox/internal/apiclient/gen"
@@ -36,7 +33,6 @@ type sandboxCreateOptions struct {
 	cpuVCPUs                 float64
 	memoryBytes              int64
 	storageBytes             int64
-	runtimeState             string
 	wait                     bool
 	waitTimeout              time.Duration
 }
@@ -297,7 +293,6 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().Float64Var(&opts.cpuVCPUs, "cpu-vcpus", 0, "Requested CPU capacity in vCPUs")
 	cmd.Flags().Int64Var(&opts.memoryBytes, "memory-bytes", 0, "Requested memory capacity in bytes")
 	cmd.Flags().Int64Var(&opts.storageBytes, "storage-bytes", 0, "Requested storage capacity in bytes")
-	cmd.Flags().StringVar(&opts.runtimeState, "runtime-state", "", "Initial runtime state as JSON or @path")
 	cmd.Flags().BoolVar(&opts.wait, "wait", false, "Wait for sandbox to reach running or fail")
 	cmd.Flags().DurationVar(&opts.waitTimeout, "wait-timeout", 2*time.Minute, "Maximum time to wait")
 }
@@ -342,11 +337,6 @@ func createSandboxBody(opts sandboxCreateOptions) (*apiclientgen.CreateSandboxBo
 		}
 		body.SetSourceUrl(apiclientgen.NewOptURI(*u))
 	}
-	state, err := runtimeState(opts.runtimeState)
-	if err != nil {
-		return nil, err
-	}
-	body.SetRuntimeState(state)
 	sourceCodeReferences, err := sourceCodeReferences(opts.sourceCodeReferences)
 	if err != nil {
 		return nil, err
@@ -391,25 +381,6 @@ func (a *App) waitForSandbox(cmd *cobra.Command, client *apiclientgen.Client, pr
 		case <-ticker.C:
 		}
 	}
-}
-
-func runtimeState(value string) (jx.Raw, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return nil, nil
-	}
-	if strings.HasPrefix(value, "@") {
-		data, err := os.ReadFile(strings.TrimPrefix(value, "@"))
-		if err != nil {
-			return nil, err
-		}
-		value = string(data)
-	}
-	var raw json.RawMessage
-	if err := json.Unmarshal([]byte(value), &raw); err != nil {
-		return nil, fmt.Errorf("runtime state must be valid JSON: %w", err)
-	}
-	return jx.Raw(raw), nil
 }
 
 func sourceCodeReferences(value string) (apiclientgen.CreateSandboxBodySourceCodeReferences, error) {

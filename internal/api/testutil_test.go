@@ -69,9 +69,6 @@ func createSandbox(t *testing.T, h humatest.TestAPI, name string) model.Sandbox 
 		"sourceRef":        "main",
 		"sourceDirectory":  "/workspace",
 		"workingDirectory": "/workspace",
-		"runtimeState": map[string]any{
-			"image": "alpine",
-		},
 	})
 	if resp.Code != http.StatusAccepted {
 		t.Fatalf("create sandbox status = %d, body = %s", resp.Code, resp.Body.String())

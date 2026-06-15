@@ -215,9 +215,6 @@
             "description": "Sandbox provider instance ID",
             "type": "string"
           },
-          "runtimeState": {
-            "description": "Initial non-secret provider runtime state"
-          },
           "sourceCodeReferences": {
             "additionalProperties": {
               "$ref": "#/components/schemas/GitSourceReference"
@@ -743,6 +740,88 @@
           "supportsInspection",
           "supportsClearCache",
           "supportsImages"
+        ],
+        "type": "object"
+      },
+      "ProviderWorkerStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "availableCpuVcpus": {
+            "description": "Worker-reported available CPU capacity in vCPUs",
+            "format": "double",
+            "type": "number"
+          },
+          "availableMemoryBytes": {
+            "description": "Worker-reported available memory capacity in bytes",
+            "format": "int64",
+            "type": "integer"
+          },
+          "availableStorageBytes": {
+            "description": "Worker-reported available storage capacity in bytes",
+            "format": "int64",
+            "type": "integer"
+          },
+          "degraded": {
+            "description": "Whether the worker is degraded",
+            "type": "boolean"
+          },
+          "desiredState": {
+            "description": "Requested worker state",
+            "type": "string"
+          },
+          "errorMessage": {
+            "description": "Latest worker error message",
+            "type": "string"
+          },
+          "id": {
+            "description": "Worker ID",
+            "type": "string"
+          },
+          "identity": {
+            "description": "Worker identity",
+            "type": "string"
+          },
+          "lastOperationStatus": {
+            "description": "Status of the latest worker operation",
+            "type": "string"
+          },
+          "lastSeenAt": {
+            "description": "Last heartbeat timestamp",
+            "format": "date-time",
+            "type": "string"
+          },
+          "phase": {
+            "description": "Observed worker lifecycle phase",
+            "type": "string"
+          },
+          "ready": {
+            "description": "Whether the worker is alive and healthy",
+            "type": "boolean"
+          },
+          "runtimeId": {
+            "description": "Sanitized backend runtime ID, such as a VM or container ID",
+            "type": "string"
+          },
+          "schedulable": {
+            "description": "Whether the worker accepts new sandboxes",
+            "type": "boolean"
+          },
+          "statusMessage": {
+            "description": "Human-readable status detail",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "desiredState",
+          "phase",
+          "ready",
+          "schedulable",
+          "degraded",
+          "lastOperationStatus",
+          "availableCpuVcpus",
+          "availableMemoryBytes",
+          "availableStorageBytes"
         ],
         "type": "object"
       },
@@ -1340,6 +1419,10 @@
             "nullable": true,
             "type": "array"
           },
+          "status": {
+            "$ref": "#/components/schemas/SandboxProviderInstanceStatus",
+            "description": "Observed provider status derived from persisted worker state"
+          },
           "type": {
             "description": "Provider type",
             "type": "string"
@@ -1367,6 +1450,56 @@
           "disabled",
           "createdAt",
           "updatedAt"
+        ],
+        "type": "object"
+      },
+      "SandboxProviderInstanceStatus": {
+        "additionalProperties": false,
+        "properties": {
+          "degradedWorkers": {
+            "description": "Workers reporting degraded health",
+            "format": "int64",
+            "type": "integer"
+          },
+          "failedWorkers": {
+            "description": "Workers whose last lifecycle operation failed",
+            "format": "int64",
+            "type": "integer"
+          },
+          "lastError": {
+            "description": "Most recent worker error message, if any",
+            "type": "string"
+          },
+          "readyWorkers": {
+            "description": "Workers currently reporting ready",
+            "format": "int64",
+            "type": "integer"
+          },
+          "schedulableWorkers": {
+            "description": "Workers currently accepting new sandboxes",
+            "format": "int64",
+            "type": "integer"
+          },
+          "workerCount": {
+            "description": "Total persisted workers for this provider",
+            "format": "int64",
+            "type": "integer"
+          },
+          "workers": {
+            "description": "Observed worker details",
+            "items": {
+              "$ref": "#/components/schemas/ProviderWorkerStatus"
+            },
+            "nullable": true,
+            "type": "array"
+          }
+        },
+        "required": [
+          "workerCount",
+          "readyWorkers",
+          "schedulableWorkers",
+          "degradedWorkers",
+          "failedWorkers"
         ],
         "type": "object"
       },

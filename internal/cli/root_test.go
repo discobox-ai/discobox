@@ -8,7 +8,65 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/go-faster/jx"
+	"github.com/spf13/cobra"
+
+	apiclientgen "github.com/obot-platform/discobox/internal/apiclient/gen"
 )
+
+func TestWriteProviderTableIncludesConfig(t *testing.T) {
+	app := &App{output: "table"}
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	err := app.writeProvider(cmd, &apiclientgen.SandboxProviderInstance{
+		ID:       "provider-1",
+		Name:     "Docker",
+		Type:     "docker",
+		Config:   jx.Raw(`{"poolSize":1,"socketPath":"/var/run/docker.sock","token":"do-secret","nested":{"apiKey":"api-secret"},"items":[{"password":"password-secret"}]}`),
+		Disabled: true,
+		Status: apiclientgen.NewOptSandboxProviderInstanceStatus(apiclientgen.SandboxProviderInstanceStatus{
+			WorkerCount:        1,
+			ReadyWorkers:       1,
+			SchedulableWorkers: 1,
+			Workers: apiclientgen.NewOptNilProviderWorkerStatusArray([]apiclientgen.ProviderWorkerStatus{{
+				ID:                  "worker-1",
+				Phase:               "registering",
+				LastOperationStatus: "success",
+				RuntimeId:           apiclientgen.NewOptString("container-1"),
+			}}),
+		}),
+	})
+	if err != nil {
+		t.Fatalf("writeProvider: %v", err)
+	}
+
+	output := out.String()
+	for _, want := range []string{
+		"FIELD",
+		"CONFIG",
+		`"poolSize":1`,
+		`"socketPath":"/var/run/docker.sock"`,
+		`"token":"[REDACTED]"`,
+		`"apiKey":"[REDACTED]"`,
+		`"password":"[REDACTED]"`,
+		"STATUS",
+		`"workerCount":1`,
+		`"id":"worker-1"`,
+		`"runtimeId":"container-1"`,
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("provider output = %q, want %q", output, want)
+		}
+	}
+	for _, leaked := range []string{"do-secret", "api-secret", "password-secret", "bootstrap-secret"} {
+		if strings.Contains(output, leaked) {
+			t.Fatalf("provider output leaked secret %q: %q", leaked, output)
+		}
+	}
+}
 
 func TestRootCommandHelp(t *testing.T) {
 	cmd := NewRootCommand()

@@ -132,7 +132,6 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input api
 		CPUVCPUs:                 input.CPUVCPUs,
 		MemoryBytes:              input.MemoryBytes,
 		StorageBytes:             input.StorageBytes,
-		RuntimeState:             input.RuntimeState,
 	}
 	return s.sandboxes.Create(ctx, sandbox)
 }
