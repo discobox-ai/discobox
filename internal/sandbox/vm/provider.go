@@ -33,6 +33,11 @@ type HTTPClientDriver interface {
 	AcquireHTTPClient(ctx context.Context, instance *Instance) (*sandbox.HTTPClientLease, error)
 }
 
+// WorkerHTTPClientDriver can provide a transport to a warm worker by worker ID.
+type WorkerHTTPClientDriver interface {
+	AcquireWorkerHTTPClient(ctx context.Context, workerID string) (*sandbox.HTTPClientLease, error)
+}
+
 // BootstrapProvider creates the worker identity/bootstrap tuple passed into a
 // VM. The control plane implementation should persist Worker and
 // WorkerBootstrapToken rows before returning this data.
@@ -211,6 +216,14 @@ func (p *Provider) AcquireHTTPClient(ctx context.Context, _ sandbox.SandboxRef, 
 	return clientDriver.AcquireHTTPClient(ctx, inst)
 }
 
+func (p *Provider) AcquireWorkerHTTPClient(ctx context.Context, workerID string) (*sandbox.HTTPClientLease, error) {
+	workerDriver, ok := p.driver.(WorkerHTTPClientDriver)
+	if ok {
+		return workerDriver.AcquireWorkerHTTPClient(ctx, workerID)
+	}
+	return nil, errors.New("vm driver does not provide worker HTTP access")
+}
+
 func (p *Provider) DefaultImage(context.Context) (sandbox.ImageRef, error) {
 	return sandbox.ImageRef{Name: p.defaultImage}, nil
 }
@@ -333,6 +346,16 @@ func defaultString(value, fallback string) string {
 // sandbox agents through ordinary network addresses.
 func NewDirectHTTPClientLease() *sandbox.HTTPClientLease {
 	return sandbox.NewHTTPClientLease(http.DefaultClient, nil)
+}
+
+// NewDirectHTTPClientLeaseForBaseURL returns a direct HTTP client with a concrete base URL.
+func NewDirectHTTPClientLeaseForBaseURL(baseURL string) *sandbox.HTTPClientLease {
+	return sandbox.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, baseURL, nil)
+}
+
+// NewDirectHTTPClientLeaseForBaseURLAndAuth returns a direct HTTP client with a concrete base URL and bearer token.
+func NewDirectHTTPClientLeaseForBaseURLAndAuth(baseURL, authToken string) *sandbox.HTTPClientLease {
+	return sandbox.NewHTTPClientLeaseWithBaseURLAndAuth(http.DefaultClient, baseURL, authToken, nil)
 }
 
 // WorkerBootstrap aliases the worker agent package payload so VM drivers and

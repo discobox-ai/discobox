@@ -106,6 +106,10 @@ func (r *WorkerReconciler) reconcileActive(ctx context.Context, worker *model.Wo
 		return fmt.Errorf("sandbox provider %q does not reconcile workers", provider.ID)
 	}
 	if err := workerProvider.ReconcileWorker(ctx, r.store, project, provider, worker); err != nil {
+		worker.FailOperation(err.Error())
+		if updateErr := r.update(ctx, worker, generation); updateErr != nil {
+			return updateErr
+		}
 		return err
 	}
 

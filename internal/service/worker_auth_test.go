@@ -3,6 +3,8 @@ package service_test
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -42,6 +44,58 @@ func TestUpdateWorkerStatusRequiresValidBearerToken(t *testing.T) {
 	}
 	if _, err := svc.UpdateWorkerStatus(ctx, "Bearer "+token, api.UpdateWorkerStatusBody{TenantID: service.DefaultTenantID, WorkerID: workerID, Ready: true, Schedulable: true, AvailableCPUVCPUs: 1}); err == nil {
 		t.Fatal("expected revoked token to be rejected")
+	}
+}
+
+func TestGetSandboxProviderInstanceIncludesWorkerStatus(t *testing.T) {
+	ctx := context.Background()
+	svc, appStore, db := newWorkerAuthService(t)
+	workerID, token := registerTestWorker(t, ctx, svc, appStore)
+	if _, err := svc.UpdateWorkerStatus(ctx, "Bearer "+token, api.UpdateWorkerStatusBody{
+		TenantID:              service.DefaultTenantID,
+		WorkerID:              workerID,
+		Ready:                 true,
+		Schedulable:           true,
+		AvailableCPUVCPUs:     2,
+		AvailableMemoryBytes:  1024,
+		AvailableStorageBytes: 2048,
+	}); err != nil {
+		t.Fatalf("update worker status: %v", err)
+	}
+	runtimeState := json.RawMessage(`{"instanceId":"container-1","worker":{"token":"bootstrap-secret","workerId":"worker-1"}}`)
+	if err := db.Write.WithContext(ctx).Model(&model.Worker{}).Where("id = ?", workerID).Update("runtime_state", runtimeState).Error; err != nil {
+		t.Fatalf("update runtime state: %v", err)
+	}
+
+	provider, err := svc.GetSandboxProviderInstance(ctx, service.DefaultProjectID, "provider-auth")
+	if err != nil {
+		t.Fatalf("get provider: %v", err)
+	}
+	if provider.Status == nil {
+		t.Fatal("provider status is nil")
+	}
+	if provider.Status.WorkerCount != 1 || provider.Status.ReadyWorkers != 1 || provider.Status.SchedulableWorkers != 1 {
+		t.Fatalf("provider status counts = %#v, want one ready schedulable worker", provider.Status)
+	}
+	if len(provider.Status.Workers) != 1 {
+		t.Fatalf("provider status workers = %d, want 1", len(provider.Status.Workers))
+	}
+	workerStatus := provider.Status.Workers[0]
+	if workerStatus.ID != workerID || workerStatus.AvailableCPUVCPUs != 2 {
+		t.Fatalf("worker status = %#v, want worker %s with CPU 2", workerStatus, workerID)
+	}
+	if workerStatus.RuntimeID != "container-1" {
+		t.Fatalf("worker runtime ID = %q, want container-1", workerStatus.RuntimeID)
+	}
+	if len(provider.Workers) != 0 {
+		t.Fatalf("provider workers len = %d, want 0 to avoid exposing raw worker state", len(provider.Workers))
+	}
+	response, err := json.Marshal(provider)
+	if err != nil {
+		t.Fatalf("marshal provider: %v", err)
+	}
+	if strings.Contains(string(response), "bootstrap-secret") || strings.Contains(string(response), "runtimeState") {
+		t.Fatalf("provider response exposes bootstrap secret: %s", response)
 	}
 }
 

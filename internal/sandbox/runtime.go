@@ -86,17 +86,32 @@ type CreateOptions struct {
 	Labels map[string]string
 	Env    map[string]string
 
-	WorkspacePath      string
-	WorkspaceSource    string
-	WorkspaceRef       string
-	WorkingDirectory   string
-	AgentServerURL     string
-	OAuthRedirectBase  string
-	Resources          ResourceConfig
-	ProviderInstanceID string
-	CPUVCPUs           float64
-	MemoryBytes        int64
-	StorageBytes       int64
+	Name                     string
+	Description              *string
+	AgentConfigID            *string
+	AgentModel               *string
+	AgentModelServiceTier    *string
+	AgentModelReasoningLevel *string
+	Prompt                   *string
+	SourceURL                string
+	SourceRef                string
+	SourceRefType            string
+	SourceDirectory          string
+	SourceCodeReferences     model.SourceCodeReferences
+	UserUID                  *int
+	UserGID                  *int
+	WorkspacePath            string
+	WorkspaceSource          string
+	WorkspaceRef             string
+	WorkingDirectory         string
+	AgentServerURL           string
+	OAuthRedirectBase        string
+	Resources                ResourceConfig
+	ProviderInstanceID       string
+	WorkerID                 string
+	CPUVCPUs                 float64
+	MemoryBytes              int64
+	StorageBytes             int64
 }
 
 // PrepareStateProvider can precompute provider-owned state before creation.
@@ -199,16 +214,38 @@ type Stream interface {
 	Wait(ctx context.Context) (int, error)
 }
 
-// HTTPClientLease holds a provider HTTP client until Release is called.
+// HTTPClientLease holds a provider HTTP client until Release is called. Client
+// may use any RoundTripper, including transports that rewrite the logical
+// https://worker endpoint to a Unix socket, VS Code socket, tunnel, or provider
+// proxy. BaseURL is optional; when empty, callers use the logical worker URL.
 type HTTPClientLease struct {
-	Client  *http.Client
-	release func()
-	once    sync.Once
+	Client    *http.Client
+	BaseURL   string
+	AuthToken string
+	release   func()
+	once      sync.Once
 }
 
 // NewHTTPClientLease creates a lease around a client and release callback.
 func NewHTTPClientLease(client *http.Client, release func()) *HTTPClientLease {
 	return &HTTPClientLease{Client: client, release: release}
+}
+
+// NewHTTPClientLeaseWithBaseURL creates a lease with a preferred logical base URL.
+func NewHTTPClientLeaseWithBaseURL(client *http.Client, baseURL string, release func()) *HTTPClientLease {
+	return &HTTPClientLease{Client: client, BaseURL: baseURL, release: release}
+}
+
+// NewHTTPClientLeaseWithBaseURLAndAuth creates a lease with a base URL and bearer token.
+func NewHTTPClientLeaseWithBaseURLAndAuth(client *http.Client, baseURL, authToken string, release func()) *HTTPClientLease {
+	return &HTTPClientLease{Client: client, BaseURL: baseURL, AuthToken: authToken, release: release}
+}
+
+// NewHTTPClientLeaseWithAuth creates an authenticated lease for a client that
+// handles the logical worker URL itself, for example by dialing a VS Code socket
+// or Unix socket from a custom RoundTripper.
+func NewHTTPClientLeaseWithAuth(client *http.Client, authToken string, release func()) *HTTPClientLease {
+	return &HTTPClientLease{Client: client, AuthToken: authToken, release: release}
 }
 
 // Release returns the leased client.

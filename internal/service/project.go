@@ -11,6 +11,8 @@ import (
 
 	"github.com/obot-platform/discobox/internal/authctx"
 	"github.com/obot-platform/discobox/internal/model"
+	providerdocker "github.com/obot-platform/discobox/internal/sandbox/provider/docker"
+	dockerdriver "github.com/obot-platform/discobox/internal/sandbox/vm/docker"
 	"github.com/obot-platform/discobox/internal/store"
 )
 
@@ -70,16 +72,16 @@ func (s *Service) InitializeDefaults(ctx context.Context, tenantID, userID strin
 }
 
 func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context) error {
+	defaultProvider := defaultSandboxProviderForOS()
 	if _, err := s.store.GetServerState(ctx, defaultProviderInstalledStateKey); err == nil {
-		return nil
+		return s.ensureDefaultSandboxProviderConfig(ctx, defaultProvider)
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
 
-	defaultProvider := defaultSandboxProviderForOS()
 	return s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
 		if _, err := txStore.GetServerState(ctx, defaultProviderInstalledStateKey); err == nil {
-			return nil
+			return ensureDefaultSandboxProviderConfig(ctx, txStore, defaultProvider)
 		} else if !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
@@ -124,6 +126,35 @@ func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context) err
 	})
 }
 
+func (s *Service) ensureDefaultSandboxProviderConfig(ctx context.Context, defaultProvider *model.SandboxProviderInstance) error {
+	return ensureDefaultSandboxProviderConfig(ctx, s.store, defaultProvider)
+}
+
+func ensureDefaultSandboxProviderConfig(ctx context.Context, appStore *store.Store, defaultProvider *model.SandboxProviderInstance) error {
+	if defaultProvider == nil || len(defaultProvider.Config) == 0 {
+		return nil
+	}
+	provider, err := appStore.GetSandboxProviderInstance(ctx, defaultProvider.ProjectID, defaultProvider.ID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	if !provider.BuiltIn {
+		return nil
+	}
+	config := defaultProvider.Config
+	if len(provider.Config) > 0 {
+		if !shouldUpdateDefaultProviderConfig(provider.Config, defaultProvider.Config) {
+			return nil
+		}
+		config = mergeDefaultProviderConfig(provider.Config, defaultProvider.Config)
+	}
+	provider.Config = config
+	return appStore.UpdateSandboxProviderInstance(ctx, provider)
+}
+
 func defaultSandboxProviderForOS() *model.SandboxProviderInstance {
 	provider := &model.SandboxProviderInstance{
 		ID:        DefaultProviderInstanceID,
@@ -134,6 +165,7 @@ func defaultSandboxProviderForOS() *model.SandboxProviderInstance {
 	case "linux":
 		provider.Type = "docker"
 		provider.Name = "Docker"
+		provider.Config = defaultDockerProviderConfig()
 	case "darwin":
 		provider.Type = "macos"
 		provider.Name = "macOS"
@@ -148,6 +180,62 @@ func defaultSandboxProviderForOS() *model.SandboxProviderInstance {
 		provider.Disabled = true
 	}
 	return provider
+}
+
+func defaultDockerProviderConfig() json.RawMessage {
+	systemd := true
+	data, err := json.Marshal(map[string]any{
+		"image":             providerdocker.DefaultWorkerImage(),
+		"agentPort":         dockerdriver.DefaultAgentPort(),
+		"systemd":           systemd,
+		"minWorkers":        1,
+		"minHealthyWorkers": 1,
+	})
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+func shouldUpdateDefaultProviderConfig(current, defaults json.RawMessage) bool {
+	var currentValue, defaultValue map[string]any
+	if err := json.Unmarshal(current, &currentValue); err != nil {
+		return false
+	}
+	if err := json.Unmarshal(defaults, &defaultValue); err != nil {
+		return false
+	}
+	for key, defaultField := range defaultValue {
+		currentField, ok := currentValue[key]
+		if !ok {
+			return true
+		}
+		if key == "image" && currentField == dockerdriver.DefaultImage() && defaultField != dockerdriver.DefaultImage() {
+			return true
+		}
+	}
+	return false
+}
+
+func mergeDefaultProviderConfig(current, defaults json.RawMessage) json.RawMessage {
+	var currentValue, defaultValue map[string]any
+	if err := json.Unmarshal(current, &currentValue); err != nil {
+		return current
+	}
+	if err := json.Unmarshal(defaults, &defaultValue); err != nil {
+		return current
+	}
+	for key, defaultField := range defaultValue {
+		currentField, ok := currentValue[key]
+		if !ok || key == "image" && currentField == dockerdriver.DefaultImage() && defaultField != dockerdriver.DefaultImage() {
+			currentValue[key] = defaultField
+		}
+	}
+	data, err := json.Marshal(currentValue)
+	if err != nil {
+		return current
+	}
+	return data
 }
 
 func (s *Service) ListProjects(ctx context.Context) ([]model.Project, error) {

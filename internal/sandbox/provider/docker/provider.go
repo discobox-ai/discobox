@@ -14,6 +14,7 @@ import (
 )
 
 const ProviderType = dockerdriver.ProviderType
+const workerImageEnv = "DISCOBOX_DOCKER_WORKER_IMAGE"
 
 var Definition = dockerdriver.Definition()
 var Factory sandbox.ProviderFactory = NewFromInstance
@@ -68,8 +69,12 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 	})
 }
 
+func DefaultWorkerImage() string {
+	return configuredWorkerImage(dockerdriver.DefaultImage())
+}
+
 func configuredWorkerImage(image string) string {
-	if value := strings.TrimSpace(os.Getenv("DISCOBOX_DOCKER_WORKER_IMAGE")); value != "" {
+	if value := strings.TrimSpace(os.Getenv(workerImageEnv)); value != "" {
 		return value
 	}
 	return image

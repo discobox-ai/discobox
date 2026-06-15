@@ -45,6 +45,12 @@ const (
 	labelProviderType = "discobox.provider_type"
 )
 
+// DefaultImage returns the default Docker worker image.
+func DefaultImage() string { return defaultImage }
+
+// DefaultAgentPort returns the default worker-agent port exposed by Docker workers.
+func DefaultAgentPort() int { return defaultAgentPort }
+
 // Config configures a Docker-backed VM driver.
 type Config struct {
 	Host         string
@@ -359,8 +365,31 @@ func (d *Driver) InspectVM(ctx context.Context, id string) (*vm.Instance, error)
 	return d.instanceFromInspect(inspect.Container), nil
 }
 
-func (d *Driver) AcquireHTTPClient(context.Context, *vm.Instance) (*sandbox.HTTPClientLease, error) {
-	return vm.NewDirectHTTPClientLease(), nil
+func (d *Driver) AcquireHTTPClient(_ context.Context, inst *vm.Instance) (*sandbox.HTTPClientLease, error) {
+	baseURL := ""
+	if inst != nil {
+		baseURL = inst.AgentURL
+	}
+	return vm.NewDirectHTTPClientLeaseForBaseURL(baseURL), nil
+}
+
+func (d *Driver) AcquireWorkerHTTPClient(ctx context.Context, workerID string) (*sandbox.HTTPClientLease, error) {
+	if strings.TrimSpace(workerID) == "" {
+		return nil, fmt.Errorf("worker ID is required")
+	}
+	inspect, err := d.client.ContainerInspect(ctx, containerName(workerID, ""), client.ContainerInspectOptions{})
+	if err != nil {
+		return nil, mapDockerNotFound(err)
+	}
+	inst := d.instanceFromInspect(inspect.Container)
+	if strings.TrimSpace(inst.AgentURL) == "" {
+		return nil, fmt.Errorf("worker %q does not expose an agent URL", workerID)
+	}
+	authToken := envValue(inspect.Container.Config.Env, workeragent.EnvBootstrapToken)
+	if strings.TrimSpace(authToken) == "" {
+		return nil, fmt.Errorf("worker %q does not expose worker API auth metadata", workerID)
+	}
+	return vm.NewDirectHTTPClientLeaseForBaseURLAndAuth(inst.AgentURL, authToken), nil
 }
 
 func (d *Driver) containerLabels(spec vm.InstanceSpec) map[string]string {
@@ -476,6 +505,16 @@ func envList(values map[string]string) []string {
 	}
 	sort.Strings(env)
 	return env
+}
+
+func envValue(values []string, key string) string {
+	prefix := key + "="
+	for _, value := range values {
+		if strings.HasPrefix(value, prefix) {
+			return strings.TrimPrefix(value, prefix)
+		}
+	}
+	return ""
 }
 
 func copyStringMap(values map[string]string) map[string]string {

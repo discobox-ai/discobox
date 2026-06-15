@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -65,7 +66,68 @@ func (s *Service) GetSandboxProviderInstance(ctx context.Context, projectID, pro
 	if err != nil {
 		return nil, apiError(err, "provider instance not found")
 	}
+	workers, err := s.store.ListWorkers(ctx, projectID, providerID)
+	if err != nil {
+		return nil, err
+	}
+	provider.Status = providerStatusFromWorkers(workers)
 	return provider, nil
+}
+
+func providerStatusFromWorkers(workers []model.Worker) *model.SandboxProviderInstanceStatus {
+	status := &model.SandboxProviderInstanceStatus{
+		WorkerCount: len(workers),
+		Workers:     make([]model.ProviderWorkerStatus, 0, len(workers)),
+	}
+	for i := range workers {
+		worker := workers[i]
+		if worker.Ready {
+			status.ReadyWorkers++
+		}
+		if worker.Schedulable {
+			status.SchedulableWorkers++
+		}
+		if worker.Degraded {
+			status.DegradedWorkers++
+		}
+		if worker.LastOperationStatus == model.OperationStatusFailed {
+			status.FailedWorkers++
+		}
+		if worker.ErrorMessage != nil {
+			status.LastError = worker.ErrorMessage
+		}
+		status.Workers = append(status.Workers, model.ProviderWorkerStatus{
+			ID:                    worker.ID,
+			Identity:              worker.Identity,
+			DesiredState:          worker.DesiredState,
+			Phase:                 worker.Phase,
+			Ready:                 worker.Ready,
+			Schedulable:           worker.Schedulable,
+			Degraded:              worker.Degraded,
+			LastOperationStatus:   worker.LastOperationStatus,
+			StatusMessage:         worker.StatusMessage,
+			ErrorMessage:          worker.ErrorMessage,
+			AvailableCPUVCPUs:     worker.AvailableCPUVCPUs,
+			AvailableMemoryBytes:  worker.AvailableMemoryBytes,
+			AvailableStorageBytes: worker.AvailableStorageBytes,
+			RuntimeID:             providerWorkerRuntimeID(worker.RuntimeState),
+			LastSeenAt:            worker.LastSeenAt,
+		})
+	}
+	return status
+}
+
+func providerWorkerRuntimeID(state []byte) string {
+	if len(state) == 0 {
+		return ""
+	}
+	var data struct {
+		InstanceID string `json:"instanceId"`
+	}
+	if err := json.Unmarshal(state, &data); err != nil || data.InstanceID == "" {
+		return ""
+	}
+	return data.InstanceID
 }
 
 func (s *Service) UpdateSandboxProviderInstance(ctx context.Context, projectID, providerID string, input api.UpdateSandboxProviderInstanceBody) (*model.SandboxProviderInstance, error) {

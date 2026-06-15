@@ -5,14 +5,19 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/obot-platform/discobox/internal/id"
 	"github.com/obot-platform/discobox/internal/model"
+	"github.com/obot-platform/discobox/orchestration"
 )
 
 const defaultWorkerBootstrapTTL = 30 * time.Minute
+const defaultWorkerRegistrationTimeout = 2 * time.Minute
+
+var workerRegistrationTimeout = defaultWorkerRegistrationTimeout
 
 // WorkerStore is the persistence surface a VM worker pool needs from the
 // control plane. Providers own the scaling policy; the store owns persistence.
@@ -24,6 +29,12 @@ type WorkerStore interface {
 
 type WorkerBootstrapStore interface {
 	CreateWorkerBootstrapToken(ctx context.Context, token *model.WorkerBootstrapToken) error
+}
+
+type WorkerLifecycleRepairStore interface {
+	GetJob(ctx context.Context, id string) (*orchestration.Job, error)
+	MarkWorkerFailedForJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error)
+	MarkWorkerRegistrationExpired(ctx context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error)
 }
 
 // WorkerLauncher starts the provider-specific runtime node for a persisted worker.
@@ -127,6 +138,14 @@ func EnsureWorkerPool(ctx context.Context, store WorkerStore, project *model.Pro
 	if err != nil {
 		return err
 	}
+	workers, err = repairWorkersWithFailedJobs(ctx, store, workers)
+	if err != nil {
+		return err
+	}
+	workers, err = repairExpiredRegisteringWorkers(ctx, store, workers, time.Now().UTC())
+	if err != nil {
+		return err
+	}
 	additional := DesiredAdditionalWorkers(workers, cfg)
 	for i := 0; i < additional; i++ {
 		worker, err := createWorker(ctx, store, project, provider, len(workers)+1)
@@ -138,8 +157,73 @@ func EnsureWorkerPool(ctx context.Context, store WorkerStore, project *model.Pro
 	return nil
 }
 
+func repairWorkersWithFailedJobs(ctx context.Context, store WorkerStore, workers []model.Worker) ([]model.Worker, error) {
+	repairStore, ok := store.(WorkerLifecycleRepairStore)
+	if !ok {
+		return workers, nil
+	}
+	for i := range workers {
+		worker := &workers[i]
+		if worker.LastJobID == nil || worker.LastOperationStatus == model.OperationStatusFailed || worker.LastOperationStatus == model.OperationStatusSuccess {
+			continue
+		}
+		job, err := repairStore.GetJob(ctx, *worker.LastJobID)
+		if err != nil {
+			if errors.Is(err, orchestration.ErrJobNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		if job.Status != orchestration.StatusFailed {
+			continue
+		}
+		message := "worker reconcile job failed"
+		if job.Error != nil && *job.Error != "" {
+			message = *job.Error
+		}
+		updated, err := repairStore.MarkWorkerFailedForJob(ctx, worker.ID, worker.Generation, *worker.LastJobID, message)
+		if err != nil {
+			return nil, err
+		}
+		if updated {
+			worker.FailOperation(message)
+		}
+	}
+	return workers, nil
+}
+
+func repairExpiredRegisteringWorkers(ctx context.Context, store WorkerStore, workers []model.Worker, now time.Time) ([]model.Worker, error) {
+	repairStore, ok := store.(WorkerLifecycleRepairStore)
+	if !ok || workerRegistrationTimeout <= 0 {
+		return workers, nil
+	}
+	cutoff := now.Add(-workerRegistrationTimeout)
+	for i := range workers {
+		worker := &workers[i]
+		if worker.Phase != model.WorkerPhaseRegistering ||
+			worker.LastOperationStatus != model.OperationStatusSuccess ||
+			worker.RegisteredAt != nil ||
+			worker.LastSeenAt != nil ||
+			!worker.UpdatedAt.Before(cutoff) {
+			continue
+		}
+		message := "worker did not register before timeout"
+		updated, err := repairStore.MarkWorkerRegistrationExpired(ctx, worker.ID, worker.Generation, cutoff, message)
+		if err != nil {
+			return nil, err
+		}
+		if updated {
+			worker.FailOperation(message)
+		}
+	}
+	return workers, nil
+}
+
 func activeWorker(worker *model.Worker) bool {
 	if worker == nil || worker.RevokedAt != nil {
+		return false
+	}
+	if worker.Phase == model.WorkerPhaseFailed || worker.LastOperationStatus == model.OperationStatusFailed {
 		return false
 	}
 	switch worker.DesiredState {

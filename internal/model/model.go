@@ -391,9 +391,10 @@ type SandboxProviderInstance struct {
 	UpdatedAt       time.Time       `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 	DeletedAt       gorm.DeletedAt  `gorm:"index" json:"-"`
 
-	Project   *Project  `gorm:"foreignKey:ProjectID" json:"-"`
-	Sandboxes []Sandbox `gorm:"foreignKey:ProviderInstanceID" json:"sandboxes,omitempty" doc:"Sandboxes using this provider"`
-	Workers   []Worker  `gorm:"foreignKey:ProviderInstanceID" json:"workers,omitempty" doc:"Workers using this provider"`
+	Project   *Project                       `gorm:"foreignKey:ProjectID" json:"-"`
+	Sandboxes []Sandbox                      `gorm:"foreignKey:ProviderInstanceID" json:"sandboxes,omitempty" doc:"Sandboxes using this provider"`
+	Workers   []Worker                       `gorm:"foreignKey:ProviderInstanceID" json:"workers,omitempty" doc:"Workers using this provider"`
+	Status    *SandboxProviderInstanceStatus `gorm:"-" json:"status,omitempty" doc:"Observed provider status derived from persisted worker state"`
 }
 
 func (SandboxProviderInstance) TableName() string { return "sandbox_provider_instances" }
@@ -407,6 +408,37 @@ func (p *SandboxProviderInstance) BeforeCreate(_ *gorm.DB) error {
 		}
 	}
 	return nil
+}
+
+// SandboxProviderInstanceStatus is observed provider state for display. It is
+// derived from persisted worker rows and does not trigger provider-side reads or
+// mutations.
+type SandboxProviderInstanceStatus struct {
+	WorkerCount        int                    `json:"workerCount" doc:"Total persisted workers for this provider"`
+	ReadyWorkers       int                    `json:"readyWorkers" doc:"Workers currently reporting ready"`
+	SchedulableWorkers int                    `json:"schedulableWorkers" doc:"Workers currently accepting new sandboxes"`
+	DegradedWorkers    int                    `json:"degradedWorkers" doc:"Workers reporting degraded health"`
+	FailedWorkers      int                    `json:"failedWorkers" doc:"Workers whose last lifecycle operation failed"`
+	LastError          *string                `json:"lastError,omitempty" doc:"Most recent worker error message, if any"`
+	Workers            []ProviderWorkerStatus `json:"workers,omitempty" doc:"Observed worker details"`
+}
+
+type ProviderWorkerStatus struct {
+	ID                    string     `json:"id" doc:"Worker ID"`
+	Identity              string     `json:"identity,omitempty" doc:"Worker identity"`
+	DesiredState          string     `json:"desiredState" doc:"Requested worker state"`
+	Phase                 string     `json:"phase" doc:"Observed worker lifecycle phase"`
+	Ready                 bool       `json:"ready" doc:"Whether the worker is alive and healthy"`
+	Schedulable           bool       `json:"schedulable" doc:"Whether the worker accepts new sandboxes"`
+	Degraded              bool       `json:"degraded" doc:"Whether the worker is degraded"`
+	LastOperationStatus   string     `json:"lastOperationStatus" doc:"Status of the latest worker operation"`
+	StatusMessage         *string    `json:"statusMessage,omitempty" doc:"Human-readable status detail"`
+	ErrorMessage          *string    `json:"errorMessage,omitempty" doc:"Latest worker error message"`
+	AvailableCPUVCPUs     float64    `json:"availableCpuVcpus" doc:"Worker-reported available CPU capacity in vCPUs"`
+	AvailableMemoryBytes  int64      `json:"availableMemoryBytes" doc:"Worker-reported available memory capacity in bytes"`
+	AvailableStorageBytes int64      `json:"availableStorageBytes" doc:"Worker-reported available storage capacity in bytes"`
+	RuntimeID             string     `json:"runtimeId,omitempty" doc:"Sanitized backend runtime ID, such as a VM or container ID"`
+	LastSeenAt            *time.Time `json:"lastSeenAt,omitempty" doc:"Last heartbeat timestamp" format:"date-time"`
 }
 
 // Worker is a provider-backed runtime worker that can launch sandboxes.
@@ -425,6 +457,7 @@ type Worker struct {
 	AvailableMemoryBytes  int64           `gorm:"column:available_memory_bytes;not null;default:0;index" json:"availableMemoryBytes" doc:"Worker-reported available memory capacity in bytes"`
 	AvailableStorageBytes int64           `gorm:"column:available_storage_bytes;not null;default:0;index" json:"availableStorageBytes" doc:"Worker-reported available storage capacity in bytes"`
 	Conditions            json.RawMessage `gorm:"column:conditions;type:text" json:"conditions,omitempty" doc:"Opaque worker-reported condition details for display"`
+	RuntimeState          json.RawMessage `gorm:"column:runtime_state;type:text" json:"-" doc:"Internal provider runtime state; may contain boot material and must not be serialized"`
 	ResourceLifecycle     `gorm:"embedded"`
 	RegisteredAt          *time.Time     `gorm:"column:registered_at" json:"registeredAt,omitempty" doc:"Registration timestamp" format:"date-time"`
 	LastSeenAt            *time.Time     `gorm:"column:last_seen_at;index" json:"lastSeenAt,omitempty" doc:"Last heartbeat timestamp" format:"date-time"`

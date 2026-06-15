@@ -210,6 +210,70 @@ func (s *Store) UpdateWorker(ctx context.Context, worker *model.Worker, options 
 	return err
 }
 
+func (s *Store) MarkWorkerFailedForJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error) {
+	_, err := withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.Worker, error) {
+		result := tx.Model(&model.Worker{}).
+			Where("id = ? AND generation = ? AND last_job_id = ? AND last_operation_status NOT IN ?", workerID, generation, jobID, []string{model.OperationStatusFailed, model.OperationStatusSuccess}).
+			Updates(map[string]any{
+				"phase":                 model.WorkerPhaseFailed,
+				"active_operation":      nil,
+				"last_operation_status": model.OperationStatusFailed,
+				"status_message":        nil,
+				"error_message":         message,
+			})
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil, ErrGenerationConflict
+		}
+		var worker model.Worker
+		if err := tx.First(&worker, "id = ?", workerID).Error; err != nil {
+			return nil, mapNotFound(err)
+		}
+		return &worker, nil
+	})
+	if errors.Is(err, ErrGenerationConflict) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *Store) MarkWorkerRegistrationExpired(ctx context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error) {
+	_, err := withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.Worker, error) {
+		result := tx.Model(&model.Worker{}).
+			Where("id = ? AND generation = ? AND phase = ? AND last_operation_status = ? AND registered_at IS NULL AND last_seen_at IS NULL AND updated_at < ?", workerID, generation, model.WorkerPhaseRegistering, model.OperationStatusSuccess, cutoff).
+			Updates(map[string]any{
+				"phase":                 model.WorkerPhaseFailed,
+				"active_operation":      nil,
+				"last_operation_status": model.OperationStatusFailed,
+				"status_message":        nil,
+				"error_message":         message,
+			})
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil, ErrGenerationConflict
+		}
+		var worker model.Worker
+		if err := tx.First(&worker, "id = ?", workerID).Error; err != nil {
+			return nil, mapNotFound(err)
+		}
+		return &worker, nil
+	})
+	if errors.Is(err, ErrGenerationConflict) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *Store) RegisterWorker(ctx context.Context, tenantID, workerID string, tokenHash []byte, publicKey, keyType string, authTokenHash []byte, authExpiresAt time.Time) (*model.Worker, error) {
 	write, err := s.getWrite(ctx)
 	if err != nil {
