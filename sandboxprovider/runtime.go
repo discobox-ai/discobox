@@ -25,13 +25,11 @@ type Provider interface {
 	AcquireHTTPClient(ctx context.Context, ref SandboxRef, state []byte) (*HTTPClientLease, error)
 }
 
-// SandboxRef identifies the sandbox and its tenant/project ownership context.
+// SandboxRef identifies the sandbox and its project ownership context.
 //
-// TenantID is the database shard key and must be propagated into VM worker boot
-// metadata. ProjectID is required because many providers use project scope for
-// placement, shared caches, VM selection, resource settings, and cleanup.
+// ProjectID is required because many providers use project scope for placement,
+// shared caches, VM selection, resource settings, and cleanup.
 type SandboxRef struct {
-	TenantID  string
 	SandboxID string
 	ProjectID string
 }

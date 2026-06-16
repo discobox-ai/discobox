@@ -15,7 +15,7 @@
 - `server/internal/service`: API-facing business logic, orchestration wrappers, and reconcilers.
 - `server/internal/sandbox`: server-owned sandbox jobs, service glue, and reconcilers.
 - `server/internal/store`: database access, split by resource.
-- `server/internal/database`: database setup and tenant database resolution.
+- `server/internal/database`: database setup and resolution.
 - `server/internal/projectstream`: project event streaming websocket and SSE routes.
 - `server/internal/events`: project event broker.
 - `server/internal/sandboxauth`: sandbox and worker authentication helpers.

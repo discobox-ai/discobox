@@ -13,21 +13,19 @@ import (
 
 	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/server/internal/api"
-	"github.com/obot-platform/discobox/server/internal/tenantctx"
 )
 
 func (s *Service) RegisterWorker(ctx context.Context, input api.RegisterWorkerBody) (*api.RegisterWorkerResponseBody, error) {
-	if strings.TrimSpace(input.WorkerID) == "" || strings.TrimSpace(input.TenantID) == "" || strings.TrimSpace(input.BootstrapToken) == "" || strings.TrimSpace(input.PublicKey) == "" {
-		return nil, fmt.Errorf("tenantId, workerId, bootstrapToken, and publicKey are required")
+	if strings.TrimSpace(input.WorkerID) == "" || strings.TrimSpace(input.BootstrapToken) == "" || strings.TrimSpace(input.PublicKey) == "" {
+		return nil, fmt.Errorf("workerId, bootstrapToken, and publicKey are required")
 	}
-	ctx = tenantctx.WithTenantID(ctx, input.TenantID)
 	h := sha256.Sum256([]byte(input.BootstrapToken))
 	authToken, err := randomToken()
 	if err != nil {
 		return nil, err
 	}
 	authHash := sha256.Sum256([]byte(authToken))
-	_, err = s.store.RegisterWorker(ctx, input.TenantID, input.WorkerID, h[:], input.PublicKey, serviceDefaultString(input.KeyType, "ed25519"), authHash[:], time.Now().UTC().Add(time.Hour))
+	_, err = s.store.RegisterWorker(ctx, input.WorkerID, h[:], input.PublicKey, serviceDefaultString(input.KeyType, "ed25519"), authHash[:], time.Now().UTC().Add(time.Hour))
 	if err != nil {
 		return nil, apiError(err, "worker bootstrap token not found")
 	}
@@ -39,15 +37,14 @@ func (s *Service) UpdateWorkerStatus(ctx context.Context, authorization string, 
 	if token == "" {
 		return nil, huma.Error401Unauthorized("worker auth token required")
 	}
-	if strings.TrimSpace(input.TenantID) == "" || strings.TrimSpace(input.WorkerID) == "" {
-		return nil, huma.Error400BadRequest("tenantId and workerId are required")
+	if strings.TrimSpace(input.WorkerID) == "" {
+		return nil, huma.Error400BadRequest("workerId is required")
 	}
-	ctx = tenantctx.WithTenantID(ctx, input.TenantID)
 	h := sha256.Sum256([]byte(token))
-	if err := s.store.ValidateWorkerAuthToken(ctx, input.TenantID, input.WorkerID, h[:]); err != nil {
+	if err := s.store.ValidateWorkerAuthToken(ctx, input.WorkerID, h[:]); err != nil {
 		return nil, huma.Error401Unauthorized("invalid worker auth token")
 	}
-	worker, err := s.store.UpdateWorkerStatus(ctx, input.TenantID, input.WorkerID, input.Ready, input.Schedulable, input.Degraded, input.AvailableCPUVCPUs, input.AvailableMemoryBytes, input.AvailableStorageBytes, input.Conditions)
+	worker, err := s.store.UpdateWorkerStatus(ctx, input.WorkerID, input.Ready, input.Schedulable, input.Degraded, input.AvailableCPUVCPUs, input.AvailableMemoryBytes, input.AvailableStorageBytes, input.Conditions)
 	if err != nil {
 		return nil, apiError(err, "worker not found")
 	}

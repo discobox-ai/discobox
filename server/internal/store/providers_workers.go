@@ -274,7 +274,7 @@ func (s *Store) MarkWorkerRegistrationExpired(ctx context.Context, workerID stri
 	return true, nil
 }
 
-func (s *Store) RegisterWorker(ctx context.Context, tenantID, workerID string, tokenHash []byte, publicKey, keyType string, authTokenHash []byte, authExpiresAt time.Time) (*model.Worker, error) {
+func (s *Store) RegisterWorker(ctx context.Context, workerID string, tokenHash []byte, publicKey, keyType string, authTokenHash []byte, authExpiresAt time.Time) (*model.Worker, error) {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return nil, err
@@ -283,13 +283,13 @@ func (s *Store) RegisterWorker(ctx context.Context, tenantID, workerID string, t
 	var worker model.Worker
 	err = write.Transaction(func(tx *gorm.DB) error {
 		var token model.WorkerBootstrapToken
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("tenant_id = ? AND worker_id = ? AND token_hash = ?", tenantID, workerID, tokenHash).First(&token).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("worker_id = ? AND token_hash = ?", workerID, tokenHash).First(&token).Error; err != nil {
 			return mapNotFound(err)
 		}
 		if token.UsedAt != nil || token.RevokedAt != nil || !token.ExpiresAt.After(now) {
 			return ErrNotFound
 		}
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&worker, "id = ? AND tenant_id = ?", workerID, tenantID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&worker, "id = ?", workerID).Error; err != nil {
 			return mapNotFound(err)
 		}
 		token.UsedAt = &now
@@ -309,7 +309,7 @@ func (s *Store) RegisterWorker(ctx context.Context, tenantID, workerID string, t
 		if err := tx.Save(&worker).Error; err != nil {
 			return err
 		}
-		auth := &model.WorkerAuthToken{TenantID: tenantID, WorkerID: workerID, TokenHash: authTokenHash, IssuedAt: now, ExpiresAt: authExpiresAt}
+		auth := &model.WorkerAuthToken{WorkerID: workerID, TokenHash: authTokenHash, IssuedAt: now, ExpiresAt: authExpiresAt}
 		return tx.Create(auth).Error
 	})
 	if err != nil {
@@ -321,7 +321,7 @@ func (s *Store) RegisterWorker(ctx context.Context, tenantID, workerID string, t
 	return &worker, nil
 }
 
-func (s *Store) ValidateWorkerAuthToken(ctx context.Context, tenantID, workerID string, tokenHash []byte) error {
+func (s *Store) ValidateWorkerAuthToken(ctx context.Context, workerID string, tokenHash []byte) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err
@@ -329,7 +329,7 @@ func (s *Store) ValidateWorkerAuthToken(ctx context.Context, tenantID, workerID 
 	now := time.Now().UTC()
 	var token model.WorkerAuthToken
 	err = write.
-		Where("tenant_id = ? AND worker_id = ? AND token_hash = ? AND expires_at > ? AND revoked_at IS NULL", tenantID, workerID, tokenHash, now).
+		Where("worker_id = ? AND token_hash = ? AND expires_at > ? AND revoked_at IS NULL", workerID, tokenHash, now).
 		First(&token).Error
 	if err != nil {
 		return mapNotFound(err)
@@ -338,7 +338,7 @@ func (s *Store) ValidateWorkerAuthToken(ctx context.Context, tenantID, workerID 
 	return write.Save(&token).Error
 }
 
-func (s *Store) UpdateWorkerStatus(ctx context.Context, tenantID, workerID string, ready, schedulable, degraded bool, availableCPUVCPUs float64, availableMemoryBytes, availableStorageBytes int64, conditions []byte) (*model.Worker, error) {
+func (s *Store) UpdateWorkerStatus(ctx context.Context, workerID string, ready, schedulable, degraded bool, availableCPUVCPUs float64, availableMemoryBytes, availableStorageBytes int64, conditions []byte) (*model.Worker, error) {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return nil, err
@@ -355,7 +355,7 @@ func (s *Store) UpdateWorkerStatus(ctx context.Context, tenantID, workerID strin
 	now := time.Now().UTC()
 	var worker model.Worker
 	err = write.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&worker, "id = ? AND tenant_id = ?", workerID, tenantID).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&worker, "id = ?", workerID).Error; err != nil {
 			return mapNotFound(err)
 		}
 		worker.Ready = ready

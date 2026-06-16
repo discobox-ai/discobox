@@ -9,12 +9,10 @@ resource models and worker boot metadata.
 Providers own runtime mechanics only; services own persistence, authorization,
 orchestration, and API shape.
 
-## Tenant-Aware Runtime References
+## Runtime References
 
-`SandboxRef` carries `tenant_id`, `project_id`, and `sandbox_id`.
+`SandboxRef` carries `project_id` and `sandbox_id`.
 
-- `tenant_id` is the database shard key and must be propagated into VM worker
-  boot metadata.
 - `project_id` scopes provider placement, shared caches, VM selection, resource
   settings, and cleanup.
 - `sandbox_id` identifies the managed runtime resource.
@@ -150,7 +148,7 @@ VM drivers receive boot metadata in multiple common forms:
 
 Drivers should pass the form their backend supports. The boot metadata is built
 from the root `workerbootstrap` contract and includes the control plane URL,
-tenant/project/sandbox identity, worker ID, bootstrap token, and agent port. This
+project/sandbox identity, worker ID, bootstrap token, and agent port. This
 allows the in-guest worker agent to register itself with the control plane after
 the VM boots.
 

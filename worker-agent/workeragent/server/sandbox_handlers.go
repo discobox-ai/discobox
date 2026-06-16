@@ -17,7 +17,6 @@ import (
 )
 
 type Identity struct {
-	TenantID  string
 	ProjectID string
 	SandboxID string
 	WorkerID  string

@@ -34,6 +34,26 @@ func newStubRouterForTest() *chi.Mux {
 	return router
 }
 
+func newApplicationRouterTestDB(t *testing.T, ctx context.Context) *database.DB {
+	t.Helper()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate database: %v", err)
+	}
+	return db
+}
+
 func TestNewGeneratedRouterServesOpenAPIAndScalarDocs(t *testing.T) {
 	stubs := service.NewStub()
 	router, err := NewGeneratedRouter(api.Services{
@@ -116,22 +136,11 @@ func TestNewRouterCreateSandboxResolvesAgentName(t *testing.T) {
 	}
 }
 
-func TestNewApplicationRouterFallsBackToDefaultTenant(t *testing.T) {
+func TestNewApplicationRouterStartsWithDefaults(t *testing.T) {
 	ctx := context.Background()
-	resolver := database.NewResolver(database.ResolverConfig{
-		Config: database.Config{
-			Driver: gormdb.DriverSQLite,
-			DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
-		},
-		MigrateOnOpen: true,
-	})
-	t.Cleanup(func() {
-		if err := resolver.Close(); err != nil {
-			t.Fatalf("close resolver: %v", err)
-		}
-	})
+	db := newApplicationRouterTestDB(t, ctx)
 
-	router, _, err := NewApplicationRouter(ctx, resolver, ApplicationRouterOptions{
+	router, _, err := NewApplicationRouter(ctx, db.Write, db.Read, ApplicationRouterOptions{
 		DispatcherEnabled: false,
 	})
 	if err != nil {
@@ -153,27 +162,16 @@ func TestNewApplicationRouterFallsBackToDefaultTenant(t *testing.T) {
 	if len(body.Projects) != 1 {
 		t.Fatalf("projects len = %d, want 1", len(body.Projects))
 	}
-	if body.Projects[0].TenantID != service.DefaultTenantID {
-		t.Fatalf("tenant ID = %q, want %q", body.Projects[0].TenantID, service.DefaultTenantID)
+	if body.Projects[0].ID != service.DefaultProjectID {
+		t.Fatalf("project ID = %q, want %q", body.Projects[0].ID, service.DefaultProjectID)
 	}
 }
 
 func TestNewApplicationRouterResolvesDefaultProjectAlias(t *testing.T) {
 	ctx := context.Background()
-	resolver := database.NewResolver(database.ResolverConfig{
-		Config: database.Config{
-			Driver: gormdb.DriverSQLite,
-			DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
-		},
-		MigrateOnOpen: true,
-	})
-	t.Cleanup(func() {
-		if err := resolver.Close(); err != nil {
-			t.Fatalf("close resolver: %v", err)
-		}
-	})
+	db := newApplicationRouterTestDB(t, ctx)
 
-	router, _, err := NewApplicationRouter(ctx, resolver, ApplicationRouterOptions{
+	router, _, err := NewApplicationRouter(ctx, db.Write, db.Read, ApplicationRouterOptions{
 		DispatcherEnabled: false,
 	})
 	if err != nil {
@@ -200,20 +198,9 @@ func TestNewApplicationRouterResolvesDefaultProjectAlias(t *testing.T) {
 
 func TestProjectStreamReceivesSandboxMutation(t *testing.T) {
 	ctx := context.Background()
-	resolver := database.NewResolver(database.ResolverConfig{
-		Config: database.Config{
-			Driver: gormdb.DriverSQLite,
-			DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
-		},
-		MigrateOnOpen: true,
-	})
-	t.Cleanup(func() {
-		if err := resolver.Close(); err != nil {
-			t.Fatalf("close resolver: %v", err)
-		}
-	})
+	db := newApplicationRouterTestDB(t, ctx)
 
-	router, _, err := NewApplicationRouter(ctx, resolver, ApplicationRouterOptions{
+	router, _, err := NewApplicationRouter(ctx, db.Write, db.Read, ApplicationRouterOptions{
 		DispatcherEnabled: false,
 	})
 	if err != nil {

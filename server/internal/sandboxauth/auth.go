@@ -20,7 +20,6 @@ import (
 const TokenTTL = 12 * time.Hour
 
 type TokenClaims struct {
-	TenantID  string
 	ProjectID string
 	SandboxID string
 	UserID    string
@@ -87,7 +86,7 @@ func (m *Manager) EnsureTrustKey(ctx context.Context, projectID, userID string) 
 }
 
 func (m *Manager) CreateToken(ctx context.Context, claims TokenClaims) (string, error) {
-	if m == nil || m.store == nil || m.sealer == nil || claims.TenantID == "" || claims.ProjectID == "" || claims.UserID == "" {
+	if m == nil || m.store == nil || m.sealer == nil || claims.ProjectID == "" || claims.UserID == "" {
 		return "", nil
 	}
 	key, err := m.store.GetProjectUserKey(ctx, claims.ProjectID, claims.UserID)
@@ -145,7 +144,6 @@ func CreateToken(privateKey ed25519.PrivateKey, claims TokenClaims, ttl time.Dur
 	token.SetNotBefore(now.Add(-time.Second))
 	token.SetExpiration(now.Add(ttl))
 	token.SetJti(encode(nonce))
-	token.SetString("tenant_id", claims.TenantID)
 	token.SetString("project_id", claims.ProjectID)
 	token.SetString("user_id", claims.UserID)
 	if claims.SandboxID != "" {

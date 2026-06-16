@@ -37,7 +37,7 @@ If the project has no default provider, the first created provider instance beco
 
 ## Config
 
-Provider config is stored on the tenant-scoped `sandbox_provider_instances` table. Non-secret config is accepted as JSON with keys such as:
+Provider config is stored on the `sandbox_provider_instances` table. Non-secret config is accepted as JSON with keys such as:
 
 - `tokenEnv` (preferred) or `token`
 - `controlPlaneUrl`
@@ -47,7 +47,7 @@ Provider config is stored on the tenant-scoped `sandbox_provider_instances` tabl
 
 ## Worker model
 
-Workers are tenant/project/provider-instance scoped and do not have `sandbox_id`. One worker can host many sandboxes. Scheduling is controlled by columns:
+Workers are project/provider-instance scoped and do not have `sandbox_id`. One worker can host many sandboxes. Scheduling is controlled by columns:
 
 - `ready`
 - `schedulable`
@@ -63,8 +63,8 @@ Worker registration returns a short-lived auth token. Workers must send it on st
 Authorization: Bearer <auth-token>
 ```
 
-The control plane stores only token hashes in the tenant-scoped `worker_auth_tokens` table and rejects missing, invalid, expired, or revoked tokens before accepting `ready`/`schedulable`/`degraded` updates.
+The control plane stores only token hashes in the `worker_auth_tokens` table and rejects missing, invalid, expired, or revoked tokens before accepting `ready`/`schedulable`/`degraded` updates.
 
-## Tenant/global schema separation
+## Database schema
 
-Only global identity tables live in the global schema/database. Provider instances, workers, worker bootstrap/auth tokens, sandboxes, project events, and orchestration tables are tenant-scoped and are included only in tenant migrations.
+Provider instances, workers, worker bootstrap/auth tokens, sandboxes, project events, and orchestration tables live in the application database and are migrated together.

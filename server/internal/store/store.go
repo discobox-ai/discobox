@@ -10,7 +10,6 @@ import (
 	"github.com/obot-platform/discobox/apperrors"
 	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/server/internal/secrets"
-	"github.com/obot-platform/discobox/server/internal/tenantctx"
 )
 
 var (
@@ -18,21 +17,16 @@ var (
 	ErrGenerationConflict = apperrors.ErrGenerationConflict
 )
 
-// TenantDBResolver resolves tenant-scoped database handles.
-type TenantDBResolver interface {
-	ResolveTenantDB(ctx context.Context, tenantID string) (write, read *gorm.DB, err error)
-}
-
-// Store resolves tenant-scoped GORM handles from context for each operation.
+// Store owns GORM handles for application persistence.
 type Store struct {
-	resolver TenantDBResolver
-	txWrite  *gorm.DB
-	txRead   *gorm.DB
+	write   *gorm.DB
+	read    *gorm.DB
+	txWrite *gorm.DB
+	txRead  *gorm.DB
 
 	publisher         EventPublisher
 	afterCommitEvents *[]model.ProjectEvent
 	sealer            secrets.Sealer
-	defaultTenantID   string
 }
 
 type EventPublisher interface {
@@ -53,16 +47,11 @@ func WithSealer(sealer secrets.Sealer) Option {
 	}
 }
 
-// WithDefaultTenantID configures an explicit fallback tenant for single-tenant
-// test wiring where requests cannot carry middleware-provided context.
-func WithDefaultTenantID(tenantID string) Option {
-	return func(s *Store) {
-		s.defaultTenantID = tenantID
+func New(write, read *gorm.DB, options ...Option) *Store {
+	if read == nil {
+		read = write
 	}
-}
-
-func New(resolver TenantDBResolver, options ...Option) *Store {
-	s := &Store{resolver: resolver}
+	s := &Store{write: write, read: read}
 	for _, option := range options {
 		if option != nil {
 			option(s)
@@ -97,28 +86,14 @@ func (s *Store) getWrite(ctx context.Context) (*gorm.DB, error) {
 }
 
 func (s *Store) resolve(ctx context.Context) (*gorm.DB, *gorm.DB, error) {
-	if s == nil || s.resolver == nil {
-		return nil, nil, errors.New("tenant database resolver is required")
+	if s == nil || s.write == nil {
+		return nil, nil, errors.New("database write handle is required")
 	}
-	tenantID, err := tenantctx.TenantID(ctx)
-	if err != nil {
-		if s.defaultTenantID == "" {
-			return nil, nil, err
-		}
-		tenantID = s.defaultTenantID
+	read := s.read
+	if read == nil {
+		read = s.write
 	}
-	return s.resolver.ResolveTenantDB(ctx, tenantID)
-}
-
-func (s *Store) tenantID(ctx context.Context) (string, error) {
-	tenantID, err := tenantctx.TenantID(ctx)
-	if err != nil {
-		if s.defaultTenantID == "" {
-			return "", err
-		}
-		return s.defaultTenantID, nil
-	}
-	return tenantID, nil
+	return s.write, read, nil
 }
 
 func (s *Store) withTx(write, read *gorm.DB, events *[]model.ProjectEvent) *Store {
@@ -126,13 +101,13 @@ func (s *Store) withTx(write, read *gorm.DB, events *[]model.ProjectEvent) *Stor
 		read = write
 	}
 	return &Store{
-		resolver:          s.resolver,
+		write:             s.write,
+		read:              s.read,
 		txWrite:           write,
 		txRead:            read,
 		publisher:         s.publisher,
 		afterCommitEvents: events,
 		sealer:            s.sealer,
-		defaultTenantID:   s.defaultTenantID,
 	}
 }
 

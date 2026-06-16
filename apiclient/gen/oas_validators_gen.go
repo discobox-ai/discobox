@@ -677,21 +677,26 @@ func (s *Project) Validate() error {
 			Error: err,
 		})
 	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *ProviderWorkerStatus) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
 	if err := func() error {
-		if value, ok := s.Tenant.Get(); ok {
-			if err := func() error {
-				if err := value.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
+		if err := (validate.Float{}).Validate(float64(s.AvailableCpuVcpus)); err != nil {
+			return errors.Wrap(err, "float")
 		}
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "tenant",
+			Name:  "availableCpuVcpus",
 			Error: err,
 		})
 	}
@@ -1017,6 +1022,24 @@ func (s *SandboxProviderInstance) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.Status.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "status",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.Workers.Get(); ok {
 			if err := func() error {
 				if value == nil {
@@ -1057,60 +1080,14 @@ func (s *SandboxProviderInstance) Validate() error {
 	return nil
 }
 
-func (s *Tenant) Validate() error {
+func (s *SandboxProviderInstanceStatus) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
 	}
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if err := (validate.String{
-			MinLength:     0,
-			MinLengthSet:  false,
-			MaxLength:     200,
-			MaxLengthSet:  true,
-			Email:         false,
-			Hostname:      false,
-			Regex:         nil,
-			MinNumeric:    0,
-			MinNumericSet: false,
-			MaxNumeric:    0,
-			MaxNumericSet: false,
-		}).Validate(string(s.Name)); err != nil {
-			return errors.Wrap(err, "string")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "name",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if err := (validate.String{
-			MinLength:     0,
-			MinLengthSet:  false,
-			MaxLength:     0,
-			MaxLengthSet:  false,
-			Email:         false,
-			Hostname:      false,
-			Regex:         regexMap["^[a-z0-9][a-z0-9-]*$"],
-			MinNumeric:    0,
-			MinNumericSet: false,
-			MaxNumeric:    0,
-			MaxNumericSet: false,
-		}).Validate(string(s.Slug)); err != nil {
-			return errors.Wrap(err, "string")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "slug",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.Users.Get(); ok {
+		if value, ok := s.Workers.Get(); ok {
 			if err := func() error {
 				if value == nil {
 					return errors.New("nil is invalid value")
@@ -1140,7 +1117,7 @@ func (s *Tenant) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "users",
+			Name:  "workers",
 			Error: err,
 		})
 	}
@@ -1328,24 +1305,6 @@ func (s *User) Validate() error {
 			Error: err,
 		})
 	}
-	if err := func() error {
-		if value, ok := s.Tenant.Get(); ok {
-			if err := func() error {
-				if err := value.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "tenant",
-			Error: err,
-		})
-	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
@@ -1435,24 +1394,6 @@ func (s *Worker) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "providerInstance",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.Tenant.Get(); ok {
-			if err := func() error {
-				if err := value.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "tenant",
 			Error: err,
 		})
 	}

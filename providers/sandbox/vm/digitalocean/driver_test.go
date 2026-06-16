@@ -47,7 +47,7 @@ func TestCreateVMSendsDropletRequestWithCloudInitAndTags(t *testing.T) {
 	}
 
 	boot := vm.BuildBootConfig(vm.BootInput{
-		Ref: sandbox.SandboxRef{TenantID: "tenant-1", ProjectID: "project-1", SandboxID: "sandbox-1"},
+		Ref: sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"},
 		WorkerBootstrap: workerbootstrap.Bootstrap{
 			WorkerID: "worker-1",
 			Token:    "bootstrap-token",
@@ -56,7 +56,7 @@ func TestCreateVMSendsDropletRequestWithCloudInitAndTags(t *testing.T) {
 		AgentPort:       3002,
 	})
 	inst, err := driver.CreateVM(context.Background(), vm.InstanceSpec{
-		Ref:   sandbox.SandboxRef{TenantID: "tenant-1", ProjectID: "project-1", SandboxID: "sandbox-1"},
+		Ref:   sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"},
 		Name:  "discobox-project-1-sandbox-1",
 		Image: "custom-image",
 		Boot:  boot,
@@ -79,7 +79,7 @@ func TestCreateVMSendsDropletRequestWithCloudInitAndTags(t *testing.T) {
 	if got["user_data"] == "" {
 		t.Fatalf("expected cloud-init user_data")
 	}
-	wantTags := []any{"existing", "discobox", "discobox-tenant-tenant-1", "discobox-project-project-1", "discobox-sandbox-sandbox-1"}
+	wantTags := []any{"existing", "discobox", "discobox-project-project-1", "discobox-sandbox-sandbox-1"}
 	if !reflect.DeepEqual(got["tags"], wantTags) {
 		t.Fatalf("tags = %#v", got["tags"])
 	}

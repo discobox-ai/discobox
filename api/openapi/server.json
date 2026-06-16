@@ -215,6 +215,9 @@
             "description": "Sandbox provider instance ID",
             "type": "string"
           },
+          "runtimeState": {
+            "description": "Initial non-secret provider runtime state"
+          },
           "sourceCodeReferences": {
             "additionalProperties": {
               "$ref": "#/components/schemas/GitSourceReference"
@@ -555,7 +558,7 @@
             "type": "string"
           },
           "default": {
-            "description": "Whether this is the user's/default tenant project",
+            "description": "Whether this is the user's default project",
             "type": "boolean"
           },
           "defaultSandboxProviderId": {
@@ -608,14 +611,6 @@
             "pattern": "^[a-z0-9][a-z0-9-]*$",
             "type": "string"
           },
-          "tenant": {
-            "$ref": "#/components/schemas/Tenant",
-            "description": "Tenant"
-          },
-          "tenantId": {
-            "description": "Tenant ID",
-            "type": "string"
-          },
           "updatedAt": {
             "description": "Last update timestamp",
             "format": "date-time",
@@ -624,7 +619,6 @@
         },
         "required": [
           "id",
-          "tenantId",
           "ownerUserId",
           "name",
           "slug",
@@ -746,9 +740,15 @@
       "ProviderWorkerStatus": {
         "additionalProperties": false,
         "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/ProviderWorkerStatus.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
           "availableCpuVcpus": {
             "description": "Worker-reported available CPU capacity in vCPUs",
-            "format": "double",
             "type": "number"
           },
           "availableMemoryBytes": {
@@ -850,15 +850,11 @@
           "sandboxId": {
             "type": "string"
           },
-          "tenantId": {
-            "type": "string"
-          },
           "workerId": {
             "type": "string"
           }
         },
         "required": [
-          "tenantId",
           "workerId",
           "bootstrapToken",
           "publicKey"
@@ -1456,6 +1452,13 @@
       "SandboxProviderInstanceStatus": {
         "additionalProperties": false,
         "properties": {
+          "$schema": {
+            "description": "A URL to the JSON Schema for this object.",
+            "example": "https://example.com/schemas/SandboxProviderInstanceStatus.json",
+            "format": "uri",
+            "readOnly": true,
+            "type": "string"
+          },
           "degradedWorkers": {
             "description": "Workers reporting degraded health",
             "format": "int64",
@@ -1553,51 +1556,6 @@
         "required": [
           "stream",
           "error"
-        ],
-        "type": "object"
-      },
-      "Tenant": {
-        "additionalProperties": false,
-        "properties": {
-          "createdAt": {
-            "description": "Creation timestamp",
-            "format": "date-time",
-            "type": "string"
-          },
-          "id": {
-            "description": "Stable tenant ID",
-            "type": "string"
-          },
-          "name": {
-            "description": "Tenant display name",
-            "maxLength": 200,
-            "type": "string"
-          },
-          "slug": {
-            "description": "URL-safe tenant slug",
-            "pattern": "^[a-z0-9][a-z0-9-]*$",
-            "type": "string"
-          },
-          "updatedAt": {
-            "description": "Last update timestamp",
-            "format": "date-time",
-            "type": "string"
-          },
-          "users": {
-            "description": "Tenant users",
-            "items": {
-              "$ref": "#/components/schemas/User"
-            },
-            "nullable": true,
-            "type": "array"
-          }
-        },
-        "required": [
-          "id",
-          "name",
-          "slug",
-          "createdAt",
-          "updatedAt"
         ],
         "type": "object"
       },
@@ -1705,15 +1663,11 @@
           "schedulable": {
             "type": "boolean"
           },
-          "tenantId": {
-            "type": "string"
-          },
           "workerId": {
             "type": "string"
           }
         },
         "required": [
-          "tenantId",
           "workerId",
           "ready",
           "schedulable",
@@ -1758,14 +1712,6 @@
             "description": "Provider subject identifier",
             "type": "string"
           },
-          "tenant": {
-            "$ref": "#/components/schemas/Tenant",
-            "description": "Tenant"
-          },
-          "tenantId": {
-            "description": "Tenant ID",
-            "type": "string"
-          },
           "updatedAt": {
             "description": "Last update timestamp",
             "format": "date-time",
@@ -1774,7 +1720,6 @@
         },
         "required": [
           "id",
-          "tenantId",
           "email",
           "provider",
           "subject",
@@ -1938,14 +1883,6 @@
             "description": "Human-readable status detail",
             "type": "string"
           },
-          "tenant": {
-            "$ref": "#/components/schemas/Tenant",
-            "description": "Tenant"
-          },
-          "tenantId": {
-            "description": "Tenant ID",
-            "type": "string"
-          },
           "updatedAt": {
             "description": "Last update timestamp",
             "format": "date-time",
@@ -1954,7 +1891,6 @@
         },
         "required": [
           "id",
-          "tenantId",
           "projectId",
           "providerInstanceId",
           "identity",

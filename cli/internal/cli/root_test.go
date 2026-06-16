@@ -107,18 +107,15 @@ func TestProjectIDRejectsEmptyExplicitProject(t *testing.T) {
 	}
 }
 
-func TestHTTPClientAddsTenantAndAuthorizationHeaders(t *testing.T) {
+func TestHTTPClientAddsAuthorizationHeader(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("X-Discobox-Tenant-ID"); got != "tenant-1" {
-			t.Fatalf("tenant header = %q, want tenant-1", got)
-		}
 		if got := r.Header.Get("Authorization"); got != "Bearer token-1" {
 			t.Fatalf("authorization header = %q, want bearer token", got)
 		}
 	}))
 	t.Cleanup(server.Close)
 
-	app := &App{tenantID: "tenant-1", token: "token-1"}
+	app := &App{token: "token-1"}
 	resp, err := app.httpClient().Get(server.URL)
 	if err != nil {
 		t.Fatalf("get: %v", err)
@@ -178,9 +175,6 @@ func TestDebugTransportPrintsRequestAndRedactsAuthorization(t *testing.T) {
 
 func TestHTTPClientDebugLogsAddedHeaders(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("X-Discobox-Tenant-ID"); got != "tenant-1" {
-			t.Fatalf("tenant header = %q, want tenant-1", got)
-		}
 		if got := r.Header.Get("Authorization"); got != "Bearer token-1" {
 			t.Fatalf("authorization header = %q, want bearer token", got)
 		}
@@ -188,7 +182,7 @@ func TestHTTPClientDebugLogsAddedHeaders(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	var log bytes.Buffer
-	app := &App{tenantID: "tenant-1", token: "token-1", debug: true, errOut: &log}
+	app := &App{token: "token-1", debug: true, errOut: &log}
 	resp, err := app.httpClient().Get(server.URL)
 	if err != nil {
 		t.Fatalf("get: %v", err)
@@ -200,7 +194,6 @@ func TestHTTPClientDebugLogsAddedHeaders(t *testing.T) {
 	output := log.String()
 	for _, want := range []string{
 		"> GET " + server.URL,
-		"> X-Discobox-Tenant-Id: tenant-1",
 		"> Authorization: [REDACTED]",
 		"< 200 OK",
 	} {

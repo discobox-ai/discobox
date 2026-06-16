@@ -35,15 +35,15 @@ func newTestAPI(t *testing.T) testAPI {
 			t.Fatalf("close db: %v", err)
 		}
 	})
-	if err := db.MigrateTenant(ctx); err != nil {
+	if err := db.Migrate(ctx); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}
 
 	broker := events.NewBroker()
-	appStore := store.New(database.StaticResolver{DB: db}, store.WithPublisher(broker), store.WithDefaultTenantID(service.DefaultTenantID))
+	appStore := store.New(db.Write, db.Read, store.WithPublisher(broker))
 	queueConfig := orchestration.QueueConfig{DefaultMaxAttempts: 3}
 	services := service.New(appStore, queueConfig, nil, broker)
-	if err := services.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID); err != nil {
+	if err := services.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
 

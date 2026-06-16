@@ -59,7 +59,6 @@ type BootConfig struct {
 func BuildBootConfig(input BootInput) BootConfig {
 	env := map[string]string{
 		workerbootstrap.EnvControlPlaneURL: input.ControlPlaneURL,
-		workerbootstrap.EnvTenantID:        firstNonEmpty(input.WorkerBootstrap.TenantID, input.Ref.TenantID),
 		workerbootstrap.EnvProjectID:       firstNonEmpty(input.WorkerBootstrap.ProjectID, input.Ref.ProjectID),
 		workerbootstrap.EnvSandboxID:       firstNonEmpty(input.WorkerBootstrap.SandboxID, input.Ref.SandboxID),
 		workerbootstrap.EnvWorkerID:        input.WorkerBootstrap.WorkerID,

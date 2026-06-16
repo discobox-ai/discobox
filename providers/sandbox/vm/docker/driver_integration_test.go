@@ -36,13 +36,12 @@ func TestDockerIntegrationLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new driver: %v", err)
 	}
-	ref := sandbox.SandboxRef{TenantID: "tenant-" + uuid.NewString(), ProjectID: "project-" + uuid.NewString(), SandboxID: "sandbox-" + uuid.NewString()}
+	ref := sandbox.SandboxRef{ProjectID: "project-" + uuid.NewString(), SandboxID: "sandbox-" + uuid.NewString()}
 	inst, err := driver.CreateVM(ctx, vm.InstanceSpec{
 		Ref:   ref,
 		Name:  "integration-" + uuid.NewString(),
 		Image: image,
 		Boot: vm.BootConfig{Env: map[string]string{
-			"DISCOBOX_TENANT_ID": ref.TenantID,
 			"DISCOBOX_WORKER_ID": "worker-" + uuid.NewString(),
 		}},
 		Metadata: map[string]string{"test": "docker"},
@@ -57,9 +56,6 @@ func TestDockerIntegrationLifecycle(t *testing.T) {
 	})
 	if inst.Status != sandbox.StatusRunning {
 		t.Fatalf("created status = %q", inst.Status)
-	}
-	if inst.Metadata[labelTenantID] != ref.TenantID {
-		t.Fatalf("tenant label = %q", inst.Metadata[labelTenantID])
 	}
 	if inst.AgentURL == "" {
 		t.Fatalf("agent URL was not assigned")
@@ -110,7 +106,7 @@ func TestDockerIntegrationSystemdContainer(t *testing.T) {
 		t.Fatalf("new systemd driver: %v", err)
 	}
 	inst, err := driver.CreateVM(ctx, vm.InstanceSpec{
-		Ref:  sandbox.SandboxRef{TenantID: "tenant-" + uuid.NewString(), ProjectID: "project-" + uuid.NewString(), SandboxID: "sandbox-" + uuid.NewString()},
+		Ref:  sandbox.SandboxRef{ProjectID: "project-" + uuid.NewString(), SandboxID: "sandbox-" + uuid.NewString()},
 		Name: "systemd-" + uuid.NewString(),
 		Boot: vm.BootConfig{Env: map[string]string{"DISCOBOX_WORKER_ID": "worker-" + uuid.NewString()}},
 	})

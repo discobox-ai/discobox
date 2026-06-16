@@ -83,12 +83,12 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 			t.Fatalf("close db: %v", err)
 		}
 	})
-	if err := db.MigrateTenant(ctx); err != nil {
+	if err := db.Migrate(ctx); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}
 
 	broker := events.NewBroker()
-	appStore := store.New(database.StaticResolver{DB: db}, store.WithPublisher(broker), store.WithDefaultTenantID(service.DefaultTenantID))
+	appStore := store.New(db.Write, db.Read, store.WithPublisher(broker))
 	queueConfig := orchestration.QueueConfig{DefaultMaxAttempts: 3}
 	dispatcher := orchestration.NewDispatcher(appStore, orchestration.DispatcherConfig{
 		SingleNode:         true,
@@ -104,7 +104,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 		t.Fatalf("register executor: %v", err)
 	}
 
-	if err := svc.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
+	if err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
 	if err := dispatcher.Start(ctx); err != nil {
@@ -179,19 +179,19 @@ func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sand
 			t.Fatalf("close db: %v", err)
 		}
 	})
-	if err := db.MigrateTenant(ctx); err != nil {
+	if err := db.Migrate(ctx); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}
 
 	broker := events.NewBroker()
-	appStore := store.New(database.StaticResolver{DB: db}, store.WithPublisher(broker), store.WithDefaultTenantID(service.DefaultTenantID))
+	appStore := store.New(db.Write, db.Read, store.WithPublisher(broker))
 	queueConfig := orchestration.QueueConfig{DefaultMaxAttempts: 3}
 	var notifyContext func(context.Context)
 	if notify != nil {
 		notifyContext = func(context.Context) { notify() }
 	}
 	svc := service.New(appStore, queueConfig, notifyContext, broker)
-	if err := svc.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
+	if err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
 	return svc, svc.NewSandboxReconciler()

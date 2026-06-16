@@ -45,7 +45,7 @@ Check for:
   bodies containing credentials, OAuth data, API keys, or internal tokens
 - cryptography, token, OAuth, credential storage, or encryption changes that use
   weak randomness, weak validation, unsafe persistence, or overly broad scopes
-- database access that bypasses tenant/project scoping, permits SQL injection,
+- database access that bypasses project/resource scoping, permits SQL injection,
   or fails to keep intent changes, events, and durable reconcile jobs atomic
 
 When evaluating a finding, identify the exploit path and the security impact. If

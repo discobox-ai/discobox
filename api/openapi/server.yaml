@@ -423,7 +423,7 @@ components:
                     format: date-time
                     type: string
                 default:
-                    description: Whether this is the user's/default tenant project
+                    description: Whether this is the user's default project
                     type: boolean
                 defaultSandboxProviderId:
                     description: Default sandbox provider instance ID
@@ -463,19 +463,12 @@ components:
                     description: URL-safe project slug
                     pattern: ^[a-z0-9][a-z0-9-]*$
                     type: string
-                tenant:
-                    $ref: '#/components/schemas/Tenant'
-                    description: Tenant
-                tenantId:
-                    description: Tenant ID
-                    type: string
                 updatedAt:
                     description: Last update timestamp
                     format: date-time
                     type: string
             required:
                 - id
-                - tenantId
                 - ownerUserId
                 - name
                 - slug
@@ -581,12 +574,9 @@ components:
                     type: string
                 sandboxId:
                     type: string
-                tenantId:
-                    type: string
                 workerId:
                     type: string
             required:
-                - tenantId
                 - workerId
                 - bootstrapToken
                 - publicKey
@@ -1022,6 +1012,9 @@ components:
                         $ref: '#/components/schemas/Sandbox'
                     nullable: true
                     type: array
+                status:
+                    $ref: '#/components/schemas/SandboxProviderInstanceStatus'
+                    description: Observed provider status derived from persisted worker state
                 type:
                     description: Provider type
                     type: string
@@ -1044,6 +1037,120 @@ components:
                 - disabled
                 - createdAt
                 - updatedAt
+            type: object
+        SandboxProviderInstanceStatus:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/SandboxProviderInstanceStatus.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                degradedWorkers:
+                    description: Workers reporting degraded health
+                    format: int64
+                    type: integer
+                failedWorkers:
+                    description: Workers whose last lifecycle operation failed
+                    format: int64
+                    type: integer
+                lastError:
+                    description: Most recent worker error message, if any
+                    type: string
+                readyWorkers:
+                    description: Workers currently reporting ready
+                    format: int64
+                    type: integer
+                schedulableWorkers:
+                    description: Workers currently accepting new sandboxes
+                    format: int64
+                    type: integer
+                workerCount:
+                    description: Total persisted workers for this provider
+                    format: int64
+                    type: integer
+                workers:
+                    description: Observed worker details
+                    items:
+                        $ref: '#/components/schemas/ProviderWorkerStatus'
+                    nullable: true
+                    type: array
+            required:
+                - workerCount
+                - readyWorkers
+                - schedulableWorkers
+                - degradedWorkers
+                - failedWorkers
+            type: object
+        ProviderWorkerStatus:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ProviderWorkerStatus.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                availableCpuVcpus:
+                    description: Worker-reported available CPU capacity in vCPUs
+                    type: number
+                availableMemoryBytes:
+                    description: Worker-reported available memory capacity in bytes
+                    format: int64
+                    type: integer
+                availableStorageBytes:
+                    description: Worker-reported available storage capacity in bytes
+                    format: int64
+                    type: integer
+                degraded:
+                    description: Whether the worker is degraded
+                    type: boolean
+                desiredState:
+                    description: Requested worker state
+                    type: string
+                errorMessage:
+                    description: Latest worker error message
+                    type: string
+                id:
+                    description: Worker ID
+                    type: string
+                identity:
+                    description: Worker identity
+                    type: string
+                lastOperationStatus:
+                    description: Status of the latest worker operation
+                    type: string
+                lastSeenAt:
+                    description: Last heartbeat timestamp
+                    format: date-time
+                    type: string
+                phase:
+                    description: Observed worker lifecycle phase
+                    type: string
+                ready:
+                    description: Whether the worker is alive and healthy
+                    type: boolean
+                runtimeId:
+                    description: Sanitized backend runtime ID, such as a VM or container ID
+                    type: string
+                schedulable:
+                    description: Whether the worker accepts new sandboxes
+                    type: boolean
+                statusMessage:
+                    description: Human-readable status detail
+                    type: string
+            required:
+                - id
+                - desiredState
+                - phase
+                - ready
+                - schedulable
+                - degraded
+                - lastOperationStatus
+                - availableCpuVcpus
+                - availableMemoryBytes
+                - availableStorageBytes
             type: object
         StartSandboxBody:
             additionalProperties: false
@@ -1083,41 +1190,6 @@ components:
             required:
                 - stream
                 - error
-            type: object
-        Tenant:
-            additionalProperties: false
-            properties:
-                createdAt:
-                    description: Creation timestamp
-                    format: date-time
-                    type: string
-                id:
-                    description: Stable tenant ID
-                    type: string
-                name:
-                    description: Tenant display name
-                    maxLength: 200
-                    type: string
-                slug:
-                    description: URL-safe tenant slug
-                    pattern: ^[a-z0-9][a-z0-9-]*$
-                    type: string
-                updatedAt:
-                    description: Last update timestamp
-                    format: date-time
-                    type: string
-                users:
-                    description: Tenant users
-                    items:
-                        $ref: '#/components/schemas/User'
-                    nullable: true
-                    type: array
-            required:
-                - id
-                - name
-                - slug
-                - createdAt
-                - updatedAt
             type: object
         UpdateAgentConfigBody:
             additionalProperties: false
@@ -1199,12 +1271,9 @@ components:
                     type: boolean
                 schedulable:
                     type: boolean
-                tenantId:
-                    type: string
                 workerId:
                     type: string
             required:
-                - tenantId
                 - workerId
                 - ready
                 - schedulable
@@ -1240,19 +1309,12 @@ components:
                 subject:
                     description: Provider subject identifier
                     type: string
-                tenant:
-                    $ref: '#/components/schemas/Tenant'
-                    description: Tenant
-                tenantId:
-                    description: Tenant ID
-                    type: string
                 updatedAt:
                     description: Last update timestamp
                     format: date-time
                     type: string
             required:
                 - id
-                - tenantId
                 - email
                 - provider
                 - subject
@@ -1382,19 +1444,12 @@ components:
                 statusMessage:
                     description: Human-readable status detail
                     type: string
-                tenant:
-                    $ref: '#/components/schemas/Tenant'
-                    description: Tenant
-                tenantId:
-                    description: Tenant ID
-                    type: string
                 updatedAt:
                     description: Last update timestamp
                     format: date-time
                     type: string
             required:
                 - id
-                - tenantId
                 - projectId
                 - providerInstanceId
                 - identity

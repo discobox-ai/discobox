@@ -15,7 +15,6 @@ func TestSoftDeletedProjectMemberExcludesProjectForUser(t *testing.T) {
 
 	project := &model.Project{
 		ID:          "project-1",
-		TenantID:    "tenant-1",
 		OwnerUserID: "user-1",
 		Name:        "Project",
 		Slug:        "project",

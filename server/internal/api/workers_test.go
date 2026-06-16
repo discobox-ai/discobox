@@ -19,7 +19,6 @@ func TestWorkerStatusPassesAuthorizationHeader(t *testing.T) {
 	service := &recordingWorkerService{}
 	api.RegisterWorkerOperations(h, service)
 	body, err := json.Marshal(map[string]any{
-		"tenantId":              "tenant-1",
 		"workerId":              "worker-1",
 		"ready":                 true,
 		"schedulable":           true,
@@ -54,5 +53,5 @@ func (s *recordingWorkerService) RegisterWorker(context.Context, api.RegisterWor
 
 func (s *recordingWorkerService) UpdateWorkerStatus(_ context.Context, authorization string, input api.UpdateWorkerStatusBody) (*model.Worker, error) {
 	s.authorization = authorization
-	return &model.Worker{ID: input.WorkerID, TenantID: input.TenantID, Ready: input.Ready, Schedulable: input.Schedulable}, nil
+	return &model.Worker{ID: input.WorkerID, Ready: input.Ready, Schedulable: input.Schedulable}, nil
 }

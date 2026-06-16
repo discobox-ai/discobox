@@ -7,14 +7,6 @@ import (
 	"github.com/obot-platform/discobox/model"
 )
 
-func (s *Store) UpsertTenant(ctx context.Context, tenant *model.Tenant) error {
-	write, err := s.getWrite(ctx)
-	if err != nil {
-		return err
-	}
-	return write.Save(tenant).Error
-}
-
 func (s *Store) UpsertProject(ctx context.Context, project *model.Project) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {

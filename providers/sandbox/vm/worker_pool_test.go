@@ -93,7 +93,7 @@ func TestEnsureWorkerPoolRepairsWorkersWithFailedJobs(t *testing.T) {
 		},
 		repairUpdated: true,
 	}
-	project := &model.Project{ID: "project-1", TenantID: "tenant-1"}
+	project := &model.Project{ID: "project-1"}
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
 
 	if err := EnsureWorkerPool(context.Background(), store, project, provider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}); err != nil {
@@ -133,7 +133,7 @@ func TestEnsureWorkerPoolSkipsSupersededFailedJobRepair(t *testing.T) {
 			jobID: {ID: jobID, Status: orchestration.StatusFailed, Error: &message},
 		},
 	}
-	project := &model.Project{ID: "project-1", TenantID: "tenant-1"}
+	project := &model.Project{ID: "project-1"}
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
 
 	if err := EnsureWorkerPool(context.Background(), store, project, provider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}); err != nil {
@@ -170,7 +170,7 @@ func TestEnsureWorkerPoolRepairsExpiredRegisteringWorkers(t *testing.T) {
 		}},
 		repairUpdated: true,
 	}
-	project := &model.Project{ID: "project-1", TenantID: "tenant-1"}
+	project := &model.Project{ID: "project-1"}
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
 
 	if err := EnsureWorkerPool(context.Background(), store, project, provider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}); err != nil {
@@ -399,7 +399,7 @@ func TestLaunchWorkerTreatsExistingRuntimeStateAsSuccess(t *testing.T) {
 		RuntimeState: []byte(`{"instanceId":"instance-1"}`),
 	}
 
-	err := LaunchWorker(context.Background(), &model.Project{ID: "project-1", TenantID: "tenant-1"}, &model.SandboxProviderInstance{ID: "provider-1"}, worker, "bootstrap-token", LaunchWorkerConfig{Factory: factory})
+	err := LaunchWorker(context.Background(), &model.Project{ID: "project-1"}, &model.SandboxProviderInstance{ID: "provider-1"}, worker, "bootstrap-token", LaunchWorkerConfig{Factory: factory})
 	if err != nil {
 		t.Fatalf("launch existing worker: %v", err)
 	}
@@ -422,7 +422,7 @@ func TestWorkerProviderCreateEnsuresCapacityAndWaitsForWorker(t *testing.T) {
 	})
 
 	workerStore := &capacityWaitWorkerStore{
-		project:  &model.Project{ID: "project-1", TenantID: "tenant-1"},
+		project:  &model.Project{ID: "project-1"},
 		provider: &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "digitalocean", Name: "do"},
 		worker:   &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true},
 	}
@@ -451,7 +451,7 @@ func TestWorkerProviderCreateReturnsNoCapacityAfterWait(t *testing.T) {
 	})
 
 	workerStore := &capacityWaitWorkerStore{
-		project:  &model.Project{ID: "project-1", TenantID: "tenant-1"},
+		project:  &model.Project{ID: "project-1"},
 		provider: &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "digitalocean", Name: "do"},
 	}
 	provider := NewWorkerProvider(nil, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}, nil, workerStore)

@@ -142,13 +142,12 @@ func newTestStoreWithDB(t *testing.T, sealer secrets.Sealer) (*store.Store, *dat
 			t.Fatalf("close db: %v", err)
 		}
 	})
-	if err := db.MigrateTenant(ctx); err != nil {
+	if err := db.Migrate(ctx); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}
 
 	project := &model.Project{
 		ID:          "project-1",
-		TenantID:    "tenant-1",
 		OwnerUserID: "user-1",
 		Name:        "Project",
 		Slug:        "project",
@@ -157,5 +156,5 @@ func newTestStoreWithDB(t *testing.T, sealer secrets.Sealer) (*store.Store, *dat
 		t.Fatalf("create project: %v", err)
 	}
 
-	return store.New(database.StaticResolver{DB: db}, store.WithSealer(sealer), store.WithDefaultTenantID("tenant-1")), db
+	return store.New(db.Write, db.Read, store.WithSealer(sealer)), db
 }

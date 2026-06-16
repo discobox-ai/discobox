@@ -10,10 +10,8 @@ workers.
 2. The worker agent reads the settings into the root `workerbootstrap.Bootstrap`
    contract re-exported by this package.
 3. The agent generates or loads an Ed25519 worker keypair.
-4. The agent registers with the control plane using tenant ID, worker ID,
-   bootstrap token, and public key.
-5. The control plane validates the tenant-scoped bootstrap token, stores the
-   worker public key, and returns a short-lived runtime auth token.
+4. The agent registers with the control plane using worker ID, bootstrap token, and public key.
+5. The control plane validates the bootstrap token, stores the worker public key, and returns a short-lived runtime auth token.
 6. The worker uses the runtime token for work subscription and status updates.
 
 After registration, the worker periodically reports scheduling status and local
@@ -46,12 +44,6 @@ registration. Sandbox operation handlers under this route own only local runtime
 work; control-plane persistence, user authorization, project events, and
 desired-state orchestration remain outside this package.
 
-## Tenant Requirement
-
-Tenant ID is required during bootstrap. For SQLite sharding, the control plane
-needs the tenant ID before it can open the correct tenant database and validate
-the worker bootstrap token. For Postgres, the same tenant ID is used as the
-row-level authorization/query boundary.
 
 ## Package Layout
 

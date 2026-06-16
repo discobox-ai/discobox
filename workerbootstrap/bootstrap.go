@@ -10,7 +10,6 @@ import (
 
 const (
 	EnvControlPlaneURL = "DISCOBOX_CONTROL_PLANE_URL"
-	EnvTenantID        = "DISCOBOX_TENANT_ID"
 	EnvProjectID       = "DISCOBOX_PROJECT_ID"
 	EnvSandboxID       = "DISCOBOX_SANDBOX_ID"
 	EnvWorkerID        = "DISCOBOX_WORKER_ID"
@@ -21,7 +20,6 @@ const (
 // Bootstrap is the VM boot contract used by the control plane, providers, and worker agent.
 type Bootstrap struct {
 	ControlPlaneURL string `json:"controlPlaneUrl,omitempty"`
-	TenantID        string `json:"tenantId,omitempty"`
 	ProjectID       string `json:"projectId,omitempty"`
 	SandboxID       string `json:"sandboxId,omitempty"`
 	WorkerID        string `json:"workerId,omitempty"`
@@ -34,7 +32,6 @@ func FromEnv() Bootstrap {
 	agentPort, _ := strconv.Atoi(strings.TrimSpace(os.Getenv(EnvAgentPort)))
 	return Bootstrap{
 		ControlPlaneURL: strings.TrimSpace(os.Getenv(EnvControlPlaneURL)),
-		TenantID:        strings.TrimSpace(os.Getenv(EnvTenantID)),
 		ProjectID:       strings.TrimSpace(os.Getenv(EnvProjectID)),
 		SandboxID:       strings.TrimSpace(os.Getenv(EnvSandboxID)),
 		WorkerID:        strings.TrimSpace(os.Getenv(EnvWorkerID)),
@@ -47,9 +44,6 @@ func FromEnv() Bootstrap {
 func (b Bootstrap) Validate() error {
 	if strings.TrimSpace(b.ControlPlaneURL) == "" {
 		return errors.New("control plane URL is required")
-	}
-	if strings.TrimSpace(b.TenantID) == "" {
-		return errors.New("tenant ID is required")
 	}
 	if strings.TrimSpace(b.WorkerID) == "" {
 		return errors.New("worker ID is required")

@@ -35,7 +35,7 @@ func WithoutDefaultProviderInstallation() InitializeDefaultsOption {
 
 // InitializeDefaults creates the single default project used before
 // user/project management APIs exist.
-func (s *Service) InitializeDefaults(ctx context.Context, tenantID, userID string, options ...InitializeDefaultsOption) error {
+func (s *Service) InitializeDefaults(ctx context.Context, userID string, options ...InitializeDefaultsOption) error {
 	var opts initializeDefaultsOptions
 	for _, option := range options {
 		if option != nil {
@@ -45,7 +45,6 @@ func (s *Service) InitializeDefaults(ctx context.Context, tenantID, userID strin
 	now := time.Now().UTC()
 	project := &model.Project{
 		ID:          DefaultProjectID,
-		TenantID:    tenantID,
 		OwnerUserID: userID,
 		Name:        "Default Project",
 		Slug:        "default",

@@ -2,8 +2,8 @@
 
 `internal/sandboxauth` owns token and key helpers for sandbox access delegation
 and worker identity flows. It should not decide API authorization policy; it
-issues or validates credentials that other server layers scope to tenants,
-projects, sandboxes, and workers.
+issues or validates credentials that other server layers scope to projects,
+sandboxes, and workers.
 
 ## Auth Shape
 
@@ -13,16 +13,11 @@ Both sandbox access and worker identity follow the same pattern:
 long-lived key identity -> proof or issuer use -> short-lived scoped token
 ```
 
-Authentication must establish tenant before resource access:
+Authentication must establish the caller identity before resource access:
 
-- User auth maps a user/session to a tenant membership.
-- Sandbox auth maps a sandbox token to the tenant that owns the sandbox's
-  project.
-- Worker auth maps bootstrap/runtime credentials to the tenant that owns the
-  worker's provider scope.
-
-For Postgres, the tenant is the authorization and query boundary. For SQLite, the
-tenant is also required to choose the database file before loading resource rows.
+- User auth maps a user/session to a user ID.
+- Sandbox auth maps a sandbox token to project, sandbox, and user identity.
+- Worker auth maps bootstrap/runtime credentials to a worker ID.
 
 ## Sandbox Auth: Access Delegation
 
@@ -51,8 +46,7 @@ Current details:
 - Signing key type is Ed25519 / PASETO v4 public.
 - Key scope is `(projectID, userID)`, not individual sandbox.
 - Encryption associated data binds ciphertext to the `projectID/userID` identity.
-- Issued sandbox access tokens include `tenant_id`, `project_id`, `sandbox_id`,
-  and `user_id` claims.
+- Issued sandbox access tokens include `project_id`, `sandbox_id`, and `user_id` claims.
 
 ## Worker Auth: Workload Identity
 
@@ -60,7 +54,7 @@ Workers have their own identity. The worker private key stays on the worker.
 
 ```text
 1. Control plane creates Worker + one-time WorkerBootstrapToken.
-2. Worker boots with tenant ID, worker ID, bootstrap token, and control plane URL.
+2. Worker boots with worker ID, bootstrap token, project ID, and control plane URL.
 3. Worker generates a keypair locally.
 4. Worker registers its public key using the bootstrap token.
 5. Control plane stores the public key and marks the bootstrap token used.
@@ -72,9 +66,6 @@ Workers have their own identity. The worker private key stays on the worker.
 Rules:
 
 - Bootstrap tokens are short-lived, one-time use, and stored only as hashes.
-- Worker bootstrap and runtime auth must include tenant identity before database
-  lookup.
-- Issued worker runtime tokens must include a tenant claim.
 - Worker authorization should be scoped to assigned work and provider/sandbox
   scope.
 

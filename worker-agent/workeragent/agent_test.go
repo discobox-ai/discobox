@@ -20,7 +20,6 @@ func TestRunRegistersWorkerWithGeneratedPublicKey(t *testing.T) {
 	registration, err := workeragent.Run(ctx, workeragent.Config{
 		Bootstrap: workeragent.Bootstrap{
 			ControlPlaneURL: "https://control.example",
-			TenantID:        "tenant-1",
 			ProjectID:       "project-1",
 			SandboxID:       "sandbox-1",
 			WorkerID:        "worker-1",
@@ -41,9 +40,6 @@ func TestRunRegistersWorkerWithGeneratedPublicKey(t *testing.T) {
 	if len(publicKey) != ed25519.PublicKeySize {
 		t.Fatalf("public key length = %d", len(publicKey))
 	}
-	if client.req.TenantID != "tenant-1" {
-		t.Fatalf("tenant ID = %q", client.req.TenantID)
-	}
 }
 
 func TestHTTPClientRegistersWorker(t *testing.T) {
@@ -51,9 +47,6 @@ func TestHTTPClientRegistersWorker(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/workers/register" {
 			t.Fatalf("path = %q", r.URL.Path)
-		}
-		if r.Header.Get("X-Discobox-Tenant-ID") != "tenant-1" {
-			t.Fatalf("tenant header = %q", r.Header.Get("X-Discobox-Tenant-ID"))
 		}
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Fatalf("decode request: %v", err)
@@ -63,7 +56,6 @@ func TestHTTPClientRegistersWorker(t *testing.T) {
 	defer server.Close()
 
 	resp, err := workeragent.NewHTTPClient(server.URL, workeragent.WithHTTPClient(server.Client())).RegisterWorker(context.Background(), workeragent.RegisterRequest{
-		TenantID:       "tenant-1",
 		WorkerID:       "worker-1",
 		BootstrapToken: "bootstrap-token",
 		PublicKey:      "public-key",

@@ -452,7 +452,7 @@ func LaunchWorker(ctx context.Context, project *model.Project, provider *model.S
 		DefaultImage:    cfg.DefaultImage,
 		AgentPort:       cfg.AgentPort,
 		Bootstrap: BootstrapProviderFunc(func(context.Context, sandbox.SandboxRef, sandbox.CreateOptions) (WorkerBootstrap, error) {
-			return workeragent.Bootstrap{ControlPlaneURL: cfg.ControlPlaneURL, TenantID: project.TenantID, ProjectID: project.ID, WorkerID: worker.ID, Token: token, AgentPort: cfg.AgentPort}, nil
+			return workeragent.Bootstrap{ControlPlaneURL: cfg.ControlPlaneURL, ProjectID: project.ID, WorkerID: worker.ID, Token: token, AgentPort: cfg.AgentPort}, nil
 		}),
 		Metadata: cfg.Labels,
 	})
@@ -463,7 +463,7 @@ func LaunchWorker(ctx context.Context, project *model.Project, provider *model.S
 	for key, value := range cfg.Labels {
 		labels[key] = value
 	}
-	ref := sandbox.SandboxRef{TenantID: project.TenantID, ProjectID: project.ID, SandboxID: "worker-" + worker.ID}
+	ref := sandbox.SandboxRef{ProjectID: project.ID, SandboxID: "worker-" + worker.ID}
 	_, state, err := providerImpl.Create(ctx, ref, worker.RuntimeState, sandbox.CreateOptions{Labels: labels})
 	if errors.Is(err, sandbox.ErrAlreadyExists) {
 		return nil

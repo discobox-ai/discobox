@@ -322,7 +322,6 @@ func dropletTags(defaultTags []string, spec vm.InstanceSpec) []string {
 	tags := append([]string(nil), defaultTags...)
 	for _, tag := range []string{
 		"discobox",
-		"discobox-tenant-" + safeTag(spec.Ref.TenantID),
 		"discobox-project-" + safeTag(spec.Ref.ProjectID),
 		"discobox-sandbox-" + safeTag(spec.Ref.SandboxID),
 	} {

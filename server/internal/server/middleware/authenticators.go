@@ -27,15 +27,13 @@ func (WorkerAuthenticator) Authenticate(r *http.Request) (authctx.Principal, boo
 
 // DefaultUserAuthenticator authenticates every request as the configured user.
 type DefaultUserAuthenticator struct {
-	TenantID string
-	UserID   string
+	UserID string
 }
 
 func (a DefaultUserAuthenticator) Authenticate(*http.Request) (authctx.Principal, bool, error) {
 	return authctx.Principal{
-		Type:     authctx.PrincipalTypeUser,
-		TenantID: a.TenantID,
-		UserID:   a.UserID,
+		Type:   authctx.PrincipalTypeUser,
+		UserID: a.UserID,
 	}, true, nil
 }
 

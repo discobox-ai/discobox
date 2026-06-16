@@ -1,7 +1,7 @@
 # Store Design
 
-`internal/store` owns tenant-aware persistence. It is the only server package
-that should issue resource-level GORM queries or write resource/project-event/job
+`internal/store` owns application persistence. It is the only server package that
+should issue resource-level GORM queries or write resource/project-event/job
 records directly.
 
 ## Boundaries
@@ -12,14 +12,14 @@ flowchart LR
     reconcilers[internal/sandbox] --> store
     auth[internal/sandboxauth] --> store
     middleware[internal/server/middleware] --> store
-    store --> resolver[database.TenantDBResolver]
+    store --> db[(GORM write/read handles)]
     store --> model[root model]
     store --> events[internal/events publisher]
 ```
 
-- Accept tenant-scoped database handles through `TenantDBResolver`.
-- Use `tenantctx` or an explicit default tenant only to resolve the tenant DB.
+- Accept database handles directly during construction.
 - Keep GORM types and query details inside this package.
+- Scope resource queries by project/user/worker IDs as appropriate.
 - Return root/shared sentinel errors through package aliases for compatibility.
 
 ## Transaction Rules
@@ -45,15 +45,16 @@ sequenceDiagram
 Publish live events only after the database commit succeeds. During a transaction,
 queue after-commit events instead of publishing immediately.
 
-## Tenant Scope
+## Resource Scope
 
-Every resource query must resolve the tenant database before touching tenant
-resources. The tenant ID normally comes from request context middleware. Tests and
-single-tenant startup paths may use `WithDefaultTenantID` when there is no request
-context.
+Every resource query must use the store-owned GORM handles rather than opening or
+resolving databases itself. Project-owned resources should filter by `project_id`;
+worker credentials should filter by `worker_id`; user-owned resources should
+filter by `user_id`.
 
-Do not use the global database for tenant-owned runtime data. Global data belongs
-in `internal/database` global migrations and startup/default initialization.
+Do not add database-routing or request-context identity assumptions to store
+methods. Pass the resource boundary explicitly through method parameters or use
+IDs already carried by persisted rows.
 
 ## Error Contract
 
@@ -77,5 +78,5 @@ Keep files split by resource area:
 | `sandboxes.go` | Sandbox desired/observed lifecycle persistence. |
 | `providers_workers.go` | Provider instance, worker, token, and scheduling persistence. |
 | `events.go`, `resource_events.go` | Project event rows and event snapshots. |
-| `jobs.go` | Tenant-local durable orchestration job models. |
+| `jobs.go` | Durable orchestration job models. |
 | `transactions.go` | Transaction helpers and after-commit behavior. |

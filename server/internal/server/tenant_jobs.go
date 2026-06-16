@@ -9,38 +9,33 @@ import (
 	"github.com/obot-platform/discobox/server/internal/sandbox/jobs"
 	"github.com/obot-platform/discobox/server/internal/service"
 	"github.com/obot-platform/discobox/server/internal/store"
-	"github.com/obot-platform/discobox/server/internal/tenantctx"
 )
 
-type tenantJobManager struct {
+type jobManager struct {
 	rootCtx context.Context
 	store   *store.Store
 	svc     *service.Service
 	opts    ApplicationRouterOptions
 
-	mu          sync.Mutex
-	dispatchers map[string]*orchestration.Dispatcher
+	mu         sync.Mutex
+	dispatcher *orchestration.Dispatcher
 }
 
-func newTenantJobManager(ctx context.Context, store *store.Store, opts ApplicationRouterOptions) *tenantJobManager {
-	return &tenantJobManager{rootCtx: ctx, store: store, opts: opts, dispatchers: map[string]*orchestration.Dispatcher{}}
+func newJobManager(ctx context.Context, store *store.Store, opts ApplicationRouterOptions) *jobManager {
+	return &jobManager{rootCtx: ctx, store: store, opts: opts}
 }
 
-func (m *tenantJobManager) SetService(svc *service.Service) {
+func (m *jobManager) SetService(svc *service.Service) {
 	m.svc = svc
 }
 
-func (m *tenantJobManager) EnsureStarted(ctx context.Context) error {
+func (m *jobManager) EnsureStarted(ctx context.Context) error {
 	if m == nil || !m.opts.DispatcherEnabled {
 		return nil
 	}
-	tenantID, err := tenantctx.TenantID(ctx)
-	if err != nil {
-		return err
-	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if m.dispatchers[tenantID] != nil {
+	if m.dispatcher != nil {
 		return nil
 	}
 	dispatcher := orchestration.NewDispatcher(m.store, orchestration.DispatcherConfig{
@@ -50,12 +45,6 @@ func (m *tenantJobManager) EnsureStarted(ctx context.Context) error {
 		StaleJobTimeout:    m.opts.DispatcherStaleJobTimeout,
 		ImmediateExecution: m.opts.DispatcherImmediateExecution,
 		DefaultConcurrency: m.opts.DispatcherDefaultConcurrency,
-		JobContext: func(ctx context.Context, job *orchestration.Job) context.Context {
-			if job.TenantID == "" {
-				return ctx
-			}
-			return tenantctx.WithTenantID(ctx, job.TenantID)
-		},
 	})
 	sandboxReconciler := m.svc.NewSandboxReconciler()
 	if err := dispatcher.Register(jobs.NewSandboxReconcileExecutor(sandboxReconciler), orchestration.WithConcurrency(m.opts.SandboxReconcileJobConcurrency)); err != nil {
@@ -65,33 +54,29 @@ func (m *tenantJobManager) EnsureStarted(ctx context.Context) error {
 	if err := dispatcher.Register(jobs.NewWorkerReconcileExecutor(workerReconciler), orchestration.WithConcurrency(m.opts.SandboxReconcileJobConcurrency)); err != nil {
 		return err
 	}
-	dispatcherCtx := tenantctx.WithTenantID(m.rootCtx, tenantID)
-	if err := dispatcher.Start(dispatcherCtx); err != nil {
+	if err := dispatcher.Start(m.rootCtx); err != nil {
 		return err
 	}
-	if err := m.svc.EnsureExistingSandboxProviderInstances(dispatcherCtx); err != nil {
-		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(dispatcherCtx), 10*time.Second)
+	m.dispatcher = dispatcher
+	if err := m.svc.EnsureExistingSandboxProviderInstances(ctx); err != nil {
+		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
 		_ = dispatcher.DrainAndStop(stopCtx)
+		m.dispatcher = nil
 		return err
 	}
-	m.dispatchers[tenantID] = dispatcher
 	return nil
 }
 
-func (m *tenantJobManager) NotifyNewJob(ctx context.Context) {
+func (m *jobManager) NotifyNewJob(ctx context.Context) {
 	if m == nil || !m.opts.DispatcherEnabled {
 		return
 	}
 	if err := m.EnsureStarted(ctx); err != nil {
 		return
 	}
-	tenantID, err := tenantctx.TenantID(ctx)
-	if err != nil {
-		return
-	}
 	m.mu.Lock()
-	dispatcher := m.dispatchers[tenantID]
+	dispatcher := m.dispatcher
 	m.mu.Unlock()
 	if dispatcher != nil {
 		dispatcher.NotifyNewJob()

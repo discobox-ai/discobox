@@ -1,26 +1,19 @@
 package middleware
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"strings"
 
 	"github.com/obot-platform/discobox/server/internal/authctx"
 	"github.com/obot-platform/discobox/server/internal/store"
-	"github.com/obot-platform/discobox/server/internal/tenantctx"
 )
-
-// TenantStarter starts tenant-scoped background work after a request tenant is known.
-type TenantStarter interface {
-	EnsureStarted(context.Context) error
-}
 
 // Authentication authenticates requests by trying authenticators in order.
 func Authentication(authenticators ...Authenticator) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if IsTenantOptionalPath(r.URL.Path) {
+			if IsPublicPath(r.URL.Path) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -40,39 +33,11 @@ func Authentication(authenticators ...Authenticator) func(http.Handler) http.Han
 	}
 }
 
-// Tenant resolves the request tenant and ensures tenant background jobs are started.
-func Tenant(starter TenantStarter, defaultTenantID string) func(http.Handler) http.Handler {
-	return func(next http.Handler) http.Handler {
-		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if IsTenantOptionalPath(r.URL.Path) {
-				next.ServeHTTP(w, r)
-				return
-			}
-			principal, _ := authctx.PrincipalFromContext(r.Context())
-			tenantID := strings.TrimSpace(principal.TenantID)
-			if tenantID == "" {
-				tenantID = strings.TrimSpace(r.Header.Get("X-Discobox-Tenant-ID"))
-			}
-			if tenantID == "" {
-				tenantID = defaultTenantID
-			}
-			ctx := tenantctx.WithTenantID(r.Context(), tenantID)
-			if starter != nil {
-				if err := starter.EnsureStarted(ctx); err != nil {
-					http.Error(w, err.Error(), http.StatusInternalServerError)
-					return
-				}
-			}
-			next.ServeHTTP(w, r.WithContext(ctx))
-		})
-	}
-}
-
 // ProjectAuthorization authorizes user membership for project-scoped routes and resolves /projects/default.
 func ProjectAuthorization(appStore *store.Store) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if IsTenantOptionalPath(r.URL.Path) || !strings.HasPrefix(r.URL.Path, "/projects/") {
+			if IsPublicPath(r.URL.Path) || !strings.HasPrefix(r.URL.Path, "/projects/") {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -116,7 +81,7 @@ func ProjectAuthorization(appStore *store.Store) func(http.Handler) http.Handler
 // GenericAuthorization blocks non-user principals from user API routes.
 func GenericAuthorization(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if IsTenantOptionalPath(r.URL.Path) {
+		if IsPublicPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -137,8 +102,8 @@ func GenericAuthorization(next http.Handler) http.Handler {
 	})
 }
 
-// IsTenantOptionalPath reports whether a path can be served without request tenant context.
-func IsTenantOptionalPath(path string) bool {
+// IsPublicPath reports whether a path can be served without authentication.
+func IsPublicPath(path string) bool {
 	return path == "/openapi.json" || path == "/docs" || strings.HasPrefix(path, "/docs/")
 }
 

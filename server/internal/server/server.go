@@ -9,7 +9,6 @@ import (
 	"github.com/joho/godotenv"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
-	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/server/internal/config"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/secrets"
@@ -25,9 +24,6 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	if cfg.TenantID == "" {
-		cfg.TenantID = service.DefaultTenantID
-	}
 	shutdownTelemetry, err := initTelemetry(ctx, TelemetryOptions{
 		MetricsEnabled:       cfg.OTelMetricsEnabled,
 		MetricExportInterval: cfg.OTelMetricExportInterval,
@@ -41,22 +37,17 @@ func Run(ctx context.Context) error {
 		}
 	}()
 
-	resolver := database.NewResolver(database.ResolverConfig{
-		Config: database.Config{
-			Driver:  cfg.DatabaseDriver,
-			DSN:     cfg.DatabaseDSN,
-			ReadDSN: cfg.DatabaseReadDSN,
-		},
-		MigrateOnOpen: true,
+	db, err := database.New(database.Config{
+		Driver:  cfg.DatabaseDriver,
+		DSN:     cfg.DatabaseDSN,
+		ReadDSN: cfg.DatabaseReadDSN,
 	})
-	defer resolver.Close()
-
-	globalDB, err := resolver.ResolveGlobal(ctx)
 	if err != nil {
-		return fmt.Errorf("open global database: %w", err)
+		return fmt.Errorf("open database: %w", err)
 	}
-	if err := InitializeGlobalDefaults(ctx, globalDB, cfg.TenantID); err != nil {
-		return fmt.Errorf("initialize global defaults: %w", err)
+	defer db.Close()
+	if err := db.Migrate(ctx); err != nil {
+		return fmt.Errorf("migrate database: %w", err)
 	}
 
 	var sealer secrets.Sealer
@@ -67,8 +58,7 @@ func Run(ctx context.Context) error {
 		}
 	}
 
-	router, _, err := NewApplicationRouter(ctx, resolver, ApplicationRouterOptions{
-		TenantID:                       cfg.TenantID,
+	router, _, err := NewApplicationRouter(ctx, db.Write, db.Read, ApplicationRouterOptions{
 		UserID:                         service.DefaultUserID,
 		JobMaxAttempts:                 cfg.JobMaxAttempts,
 		SecretSealer:                   sealer,
@@ -93,24 +83,4 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("server failed: %w", err)
 	}
 	return nil
-}
-
-// InitializeGlobalDefaults creates global defaults shared by tenant databases.
-func InitializeGlobalDefaults(ctx context.Context, db *database.DB, tenantID string) error {
-	tenant := &model.Tenant{
-		ID:   tenantID,
-		Name: "Default Tenant",
-		Slug: "default",
-	}
-	if err := db.Write.WithContext(ctx).Save(tenant).Error; err != nil {
-		return err
-	}
-	user := &model.User{
-		ID:       service.DefaultUserID,
-		TenantID: tenant.ID,
-		Email:    "local@example.com",
-		Provider: "local",
-		Subject:  "local",
-	}
-	return db.Write.WithContext(ctx).Save(user).Error
 }

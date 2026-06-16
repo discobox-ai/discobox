@@ -121,7 +121,6 @@ func RegisterSandboxProviderInstanceOperations(api huma.API, service SandboxProv
 }
 
 type RegisterWorkerBody struct {
-	TenantID       string `json:"tenantId" required:"true"`
 	ProjectID      string `json:"projectId,omitempty"`
 	SandboxID      string `json:"sandboxId,omitempty"`
 	WorkerID       string `json:"workerId" required:"true"`
@@ -143,7 +142,6 @@ type RegisterWorkerOutput struct {
 }
 
 type UpdateWorkerStatusBody struct {
-	TenantID    string `json:"tenantId" required:"true"`
 	WorkerID    string `json:"workerId" required:"true"`
 	Ready       bool   `json:"ready"`
 	Schedulable bool   `json:"schedulable"`

@@ -10,7 +10,6 @@ import (
 
 func TestLoadDefaults(t *testing.T) {
 	clearConfigEnv(t)
-	t.Setenv("DISCOBOX_TENANT_ID", "tenant-1")
 
 	cfg, err := Load()
 	if err != nil {
@@ -19,9 +18,6 @@ func TestLoadDefaults(t *testing.T) {
 
 	if cfg.Port != 8080 {
 		t.Fatalf("Port = %d, want 8080", cfg.Port)
-	}
-	if cfg.TenantID != "tenant-1" {
-		t.Fatalf("TenantID = %q, want tenant-1", cfg.TenantID)
 	}
 	if cfg.DatabaseDSN == "" {
 		t.Fatalf("DatabaseDSN is empty")
@@ -62,7 +58,6 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	t.Setenv("DISCOBOX_CONFIG_DIR", "/tmp/discobox/config")
 	t.Setenv("DISCOBOX_CACHE_DIR", "/tmp/discobox/cache")
 	t.Setenv("DISCOBOX_STATE_DIR", "/tmp/discobox/state")
-	t.Setenv("DISCOBOX_TENANT_ID", "tenant-2")
 	t.Setenv("DATABASE_DSN", "postgres://user:pass@localhost/discobox")
 	t.Setenv("DATABASE_READ_DSN", "postgres://user:pass@localhost/discobox_read")
 	t.Setenv("DATABASE_DRIVER", "postgres")
@@ -97,9 +92,6 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.StateDir != "/tmp/discobox/state" {
 		t.Fatalf("StateDir = %q", cfg.StateDir)
-	}
-	if cfg.TenantID != "tenant-2" {
-		t.Fatalf("TenantID = %q, want tenant-2", cfg.TenantID)
 	}
 	if cfg.DatabaseDSN != "postgres://user:pass@localhost/discobox" {
 		t.Fatalf("DatabaseDSN = %q", cfg.DatabaseDSN)
@@ -148,7 +140,6 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 func TestLoadUsesDataDirForDefaultDatabaseDSN(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("DISCOBOX_DATA_DIR", "/tmp/discobox-data")
-	t.Setenv("DISCOBOX_TENANT_ID", "tenant-1")
 
 	cfg, err := Load()
 	if err != nil {
@@ -181,7 +172,6 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			clearConfigEnv(t)
-			t.Setenv("DISCOBOX_TENANT_ID", "tenant-1")
 			t.Setenv("OTEL_METRICS_EXPORTER", "otlp")
 			t.Setenv(tt.key, tt.val)
 
@@ -200,7 +190,6 @@ func clearConfigEnv(t *testing.T) {
 		"DISCOBOX_CONFIG_DIR",
 		"DISCOBOX_CACHE_DIR",
 		"DISCOBOX_STATE_DIR",
-		"DISCOBOX_TENANT_ID",
 		"DATABASE_DSN",
 		"DATABASE_READ_DSN",
 		"DATABASE_DRIVER",

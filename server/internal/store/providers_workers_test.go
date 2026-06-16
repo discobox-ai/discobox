@@ -19,24 +19,24 @@ func TestWorkerRegisterStatusAndClaim(t *testing.T) {
 	if err := s.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
-	worker := &model.Worker{ID: "worker-1", TenantID: "tenant-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Identity: "worker-1"}
+	worker := &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Identity: "worker-1"}
 	bootstrap := "bootstrap-token"
 	h := sha256.Sum256([]byte(bootstrap))
-	if err := s.CreateWorkerWithBootstrapToken(ctx, worker, &model.WorkerBootstrapToken{TenantID: "tenant-1", WorkerID: worker.ID, TokenHash: h[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+	if err := s.CreateWorkerWithBootstrapToken(ctx, worker, &model.WorkerBootstrapToken{WorkerID: worker.ID, TokenHash: h[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
 		t.Fatalf("create worker bootstrap: %v", err)
 	}
 	authHash := sha256.Sum256([]byte("auth"))
-	registered, err := s.RegisterWorker(ctx, "tenant-1", worker.ID, h[:], "public", "ed25519", authHash[:], time.Now().Add(time.Hour))
+	registered, err := s.RegisterWorker(ctx, worker.ID, h[:], "public", "ed25519", authHash[:], time.Now().Add(time.Hour))
 	if err != nil {
 		t.Fatalf("register worker: %v", err)
 	}
 	if !registered.Ready || !registered.Schedulable || registered.PublicKey != "public" {
 		t.Fatalf("registered worker = %#v", registered)
 	}
-	if err := s.ValidateWorkerAuthToken(ctx, "tenant-1", worker.ID, authHash[:]); err != nil {
+	if err := s.ValidateWorkerAuthToken(ctx, worker.ID, authHash[:]); err != nil {
 		t.Fatalf("validate auth token: %v", err)
 	}
-	updated, err := s.UpdateWorkerStatus(ctx, "tenant-1", worker.ID, true, true, true, 2, 4<<30, 10<<30, []byte(`{"pressure":"high"}`))
+	updated, err := s.UpdateWorkerStatus(ctx, worker.ID, true, true, true, 2, 4<<30, 10<<30, []byte(`{"pressure":"high"}`))
 	if err != nil {
 		t.Fatalf("update status: %v", err)
 	}
@@ -62,11 +62,11 @@ func TestFindSchedulableWorkerSamplesTwoAndPicksBestResourceFit(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	workers := []model.Worker{
-		{ID: "worker-low", TenantID: "tenant-1", ProjectID: "project-1", ProviderInstanceID: provider.ID, Identity: "worker-low", Ready: true, Schedulable: true, AvailableCPUVCPUs: 2, AvailableMemoryBytes: 2 << 30, AvailableStorageBytes: 20 << 30, RegisteredAt: &now, LastSeenAt: &now, ResourceLifecycle: model.NewResourceLifecycle(model.WorkerCreateOperation, nil)},
-		{ID: "worker-high", TenantID: "tenant-1", ProjectID: "project-1", ProviderInstanceID: provider.ID, Identity: "worker-high", Ready: true, Schedulable: true, AvailableCPUVCPUs: 4, AvailableMemoryBytes: 8 << 30, AvailableStorageBytes: 40 << 30, RegisteredAt: &now, LastSeenAt: &now, ResourceLifecycle: model.NewResourceLifecycle(model.WorkerCreateOperation, nil)},
+		{ID: "worker-low", ProjectID: "project-1", ProviderInstanceID: provider.ID, Identity: "worker-low", Ready: true, Schedulable: true, AvailableCPUVCPUs: 2, AvailableMemoryBytes: 2 << 30, AvailableStorageBytes: 20 << 30, RegisteredAt: &now, LastSeenAt: &now, ResourceLifecycle: model.NewResourceLifecycle(model.WorkerCreateOperation, nil)},
+		{ID: "worker-high", ProjectID: "project-1", ProviderInstanceID: provider.ID, Identity: "worker-high", Ready: true, Schedulable: true, AvailableCPUVCPUs: 4, AvailableMemoryBytes: 8 << 30, AvailableStorageBytes: 40 << 30, RegisteredAt: &now, LastSeenAt: &now, ResourceLifecycle: model.NewResourceLifecycle(model.WorkerCreateOperation, nil)},
 	}
 	for i := range workers {
-		if err := s.CreateWorkerWithBootstrapToken(ctx, &workers[i], &model.WorkerBootstrapToken{TenantID: "tenant-1", WorkerID: workers[i].ID, TokenHash: []byte(workers[i].ID), ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+		if err := s.CreateWorkerWithBootstrapToken(ctx, &workers[i], &model.WorkerBootstrapToken{WorkerID: workers[i].ID, TokenHash: []byte(workers[i].ID), ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
 			t.Fatalf("create worker %s: %v", workers[i].ID, err)
 		}
 	}
@@ -90,7 +90,6 @@ func TestFindSchedulableWorkerRequiresResourceFit(t *testing.T) {
 	}
 	worker := &model.Worker{
 		ID:                    "worker-empty",
-		TenantID:              "tenant-1",
 		ProjectID:             "project-1",
 		ProviderInstanceID:    provider.ID,
 		Identity:              "worker-empty",
@@ -101,7 +100,7 @@ func TestFindSchedulableWorkerRequiresResourceFit(t *testing.T) {
 		AvailableStorageBytes: 1 << 30,
 		ResourceLifecycle:     model.NewResourceLifecycle(model.WorkerCreateOperation, nil),
 	}
-	if err := s.CreateWorkerWithBootstrapToken(ctx, worker, &model.WorkerBootstrapToken{TenantID: "tenant-1", WorkerID: worker.ID, TokenHash: []byte("empty"), ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+	if err := s.CreateWorkerWithBootstrapToken(ctx, worker, &model.WorkerBootstrapToken{WorkerID: worker.ID, TokenHash: []byte("empty"), ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
 		t.Fatalf("create worker: %v", err)
 	}
 
@@ -121,7 +120,6 @@ func TestWorkerGenerationOptions(t *testing.T) {
 	}
 	worker := &model.Worker{
 		ID:                 "worker-generation",
-		TenantID:           "tenant-1",
 		ProjectID:          "project-1",
 		ProviderInstanceID: provider.ID,
 		Identity:           "worker-generation",
@@ -164,7 +162,6 @@ func TestMarkWorkerFailedForJobRequiresCurrentJobAndGeneration(t *testing.T) {
 	currentJobID := "job-current"
 	worker := &model.Worker{
 		ID:                 "worker-job",
-		TenantID:           "tenant-1",
 		ProjectID:          "project-1",
 		ProviderInstanceID: provider.ID,
 		Identity:           "worker-job",
@@ -232,7 +229,6 @@ func TestMarkWorkerRegistrationExpiredRequiresCurrentRegisteringWorker(t *testin
 	now := time.Now().UTC()
 	worker := &model.Worker{
 		ID:                 "worker-registration",
-		TenantID:           "tenant-1",
 		ProjectID:          "project-1",
 		ProviderInstanceID: provider.ID,
 		Identity:           "worker-registration",
@@ -299,7 +295,7 @@ func TestValidateWorkerAuthTokenRejectsInvalidExpiredAndRevoked(t *testing.T) {
 	if err := db.Write.WithContext(ctx).Create(provider).Error; err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
-	worker := &model.Worker{ID: "worker-auth", TenantID: "tenant-1", ProjectID: "project-1", ProviderInstanceID: provider.ID, Identity: "worker-auth"}
+	worker := &model.Worker{ID: "worker-auth", ProjectID: "project-1", ProviderInstanceID: provider.ID, Identity: "worker-auth"}
 	if err := db.Write.WithContext(ctx).Create(worker).Error; err != nil {
 		t.Fatalf("create worker: %v", err)
 	}
@@ -311,17 +307,17 @@ func TestValidateWorkerAuthTokenRejectsInvalidExpiredAndRevoked(t *testing.T) {
 	now := time.Now().UTC()
 	revokedAt := now
 	if err := db.Write.WithContext(ctx).Create(&[]model.WorkerAuthToken{
-		{TenantID: "tenant-1", WorkerID: worker.ID, TokenHash: validHash[:], IssuedAt: now, ExpiresAt: now.Add(time.Hour)},
-		{TenantID: "tenant-1", WorkerID: worker.ID, TokenHash: expiredHash[:], IssuedAt: now.Add(-2 * time.Hour), ExpiresAt: now.Add(-time.Hour)},
-		{TenantID: "tenant-1", WorkerID: worker.ID, TokenHash: revokedHash[:], IssuedAt: now, ExpiresAt: now.Add(time.Hour), RevokedAt: &revokedAt},
+		{WorkerID: worker.ID, TokenHash: validHash[:], IssuedAt: now, ExpiresAt: now.Add(time.Hour)},
+		{WorkerID: worker.ID, TokenHash: expiredHash[:], IssuedAt: now.Add(-2 * time.Hour), ExpiresAt: now.Add(-time.Hour)},
+		{WorkerID: worker.ID, TokenHash: revokedHash[:], IssuedAt: now, ExpiresAt: now.Add(time.Hour), RevokedAt: &revokedAt},
 	}).Error; err != nil {
 		t.Fatalf("create auth tokens: %v", err)
 	}
-	if err := s.ValidateWorkerAuthToken(ctx, "tenant-1", worker.ID, validHash[:]); err != nil {
+	if err := s.ValidateWorkerAuthToken(ctx, worker.ID, validHash[:]); err != nil {
 		t.Fatalf("validate valid token: %v", err)
 	}
 	for name, hash := range map[string][]byte{"invalid": invalidHash[:], "expired": expiredHash[:], "revoked": revokedHash[:]} {
-		if err := s.ValidateWorkerAuthToken(ctx, "tenant-1", worker.ID, hash); !errors.Is(err, store.ErrNotFound) {
+		if err := s.ValidateWorkerAuthToken(ctx, worker.ID, hash); !errors.Is(err, store.ErrNotFound) {
 			t.Fatalf("%s token error = %v, want ErrNotFound", name, err)
 		}
 	}

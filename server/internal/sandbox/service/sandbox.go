@@ -308,12 +308,7 @@ func (s *Service) CreateSandboxAuthToken(ctx context.Context, projectID, sandbox
 	if err != nil {
 		return "", mapAPIError(err, "sandbox not found")
 	}
-	project, err := s.store.GetProject(ctx, sb.ProjectID)
-	if err != nil {
-		return "", mapAPIError(err, "project not found")
-	}
 	return s.sandboxAuth.CreateToken(ctx, sandboxauth.TokenClaims{
-		TenantID:  project.TenantID,
 		ProjectID: sb.ProjectID,
 		SandboxID: sb.ID,
 		UserID:    sb.CreatedByUserID,

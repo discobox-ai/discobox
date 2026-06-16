@@ -70,14 +70,10 @@ components:
       type: object
       additionalProperties: false
       required:
-        - tenantId
         - projectId
         - sandboxId
         - workerId
       properties:
-        tenantId:
-          type: string
-          description: Tenant that owns the sandbox.
         projectId:
           type: string
           description: Project that owns the sandbox.

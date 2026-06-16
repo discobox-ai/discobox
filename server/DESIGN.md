@@ -1,7 +1,7 @@
 # Server Module Design
 
 The server module is the Discobox control plane implementation. It owns HTTP
-composition, tenant-aware persistence, project events, API-facing business logic,
+composition, single-database persistence, project events, API-facing business logic,
 and durable reconciliation submission. Stable contracts and generated API types
 come from the root module; provider implementations come from sibling modules and
 are wired only at composition boundaries.
@@ -12,9 +12,10 @@ are wired only at composition boundaries.
 flowchart LR
     clients[CLI / UI / API clients] -->|Server REST API| http[internal/server]
     http --> api[internal/api or internal/generatedapi]
+    http --> database[internal/database]
+    http -. passes GORM handles .-> store[internal/store]
     api --> service[internal/service]
-    service --> store[internal/store]
-    store --> database[internal/database]
+    service --> store
     service --> events[internal/events]
     service --> orchestration[orchestration module]
     orchestration --> sandbox[internal/sandbox]
@@ -96,20 +97,19 @@ submission. Reconcilers own generation checks and runtime operation progress.
 | --- | --- |
 | `cmd/discobox-server` | Server binary entrypoint. |
 | `internal/server` | HTTP startup, chi router composition, middleware wiring, generated/Huma route mounting. |
-| `internal/server/middleware` | Authentication, tenant binding, project authorization, and generic authorization middleware. |
+| `internal/server/middleware` | Authentication, project authorization, and generic authorization middleware. |
 | `internal/server/defaults` | Startup/default identity initialization. |
 | `internal/api` | Legacy Huma operation definitions and service interfaces during the generated-server migration. |
 | `internal/generatedapi` | Generated OpenAPI handler adapter layer for server business logic. |
 | `internal/service` | API-facing business logic, default data initialization, intent transactions, and provider catalog behavior. |
 | `internal/sandbox` | Server-owned sandbox/worker reconcilers, job submitters, root `sandboxprovider.ProviderManager` injection/usage, and sandbox-service glue. |
-| `internal/database` | Database config, tenant/global resolver, migrations, and shard selection. |
-| `internal/store` | Tenant-aware persistence methods, resource transactions, project events, and durable job records. |
+| `internal/database` | Database config, connection setup, and migrations. |
+| `internal/store` | Persistence methods, resource transactions, project events, and durable job records. |
 | `internal/events` | In-process project event broker for committed resource events. |
 | `internal/projectstream` | Websocket/SSE project event streaming transports. |
 | `internal/sandboxauth` | Sandbox access issuer keys and worker/sandbox auth token helpers. |
 | `internal/secrets` | Encryption/sealing interfaces and implementations used by server persistence. |
 | `internal/authctx` | Request authentication context helpers. |
-| `internal/tenantctx` | Request tenant context helpers. |
 | `internal/config` | Server configuration loading. |
 
 ## Dependency Rules
@@ -122,7 +122,7 @@ submission. Reconcilers own generation checks and runtime operation progress.
 - Cross-module types and errors must live in public root packages, not under
   `server/internal`.
 - Keep GORM access behind `internal/store`; services and reconcilers should not
-  reach into database resolver internals directly.
+  query database handles directly.
 
 ## Deeper Design Docs
 

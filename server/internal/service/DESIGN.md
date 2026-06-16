@@ -28,7 +28,7 @@ Service methods should:
 Keep these responsibilities out of `internal/service`:
 
 - HTTP decoding/encoding and route registration.
-- Raw GORM/database resolver access.
+- Raw GORM/database access.
 - Provider runtime operations such as start, stop, restart, and delete.
 - Long-running reconciliation loops.
 

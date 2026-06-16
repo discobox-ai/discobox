@@ -341,14 +341,10 @@ func (r *SandboxReconciler) applyTrustKey(ctx context.Context, sb *model.Sandbox
 }
 
 func sandboxRefFromSandbox(sb *model.Sandbox) SandboxRef {
-	ref := SandboxRef{
+	return SandboxRef{
 		SandboxID: sb.ID,
 		ProjectID: sb.ProjectID,
 	}
-	if sb.Project != nil {
-		ref.TenantID = sb.Project.TenantID
-	}
-	return ref
 }
 
 func ensureSandboxImage(ctx context.Context, provider Provider, opts *CreateOptions) error {
@@ -402,9 +398,6 @@ func (r *SandboxReconciler) createOptionsFromSandbox(sb *model.Sandbox) CreateOp
 			"discobox.project_id": sb.ProjectID,
 			"discobox.sandbox_id": sb.ID,
 		},
-	}
-	if sb.Project != nil && sb.Project.TenantID != "" {
-		opts.Labels["discobox.tenant_id"] = sb.Project.TenantID
 	}
 	if sb.ProviderInstanceID != nil {
 		opts.ProviderInstanceID = *sb.ProviderInstanceID

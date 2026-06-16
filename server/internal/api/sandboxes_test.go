@@ -32,7 +32,7 @@ func TestCreateSandbox(t *testing.T) {
 		t.Fatal("expected createdByUserId")
 	}
 	if created.CreatedBy != nil {
-		t.Fatal("expected createdBy to be omitted from tenant-scoped response")
+		t.Fatal("expected createdBy to be omitted from API response")
 	}
 	if created.SourceURL == nil || *created.SourceURL != "https://example.com/repo.git" {
 		t.Fatalf("sourceUrl = %v, want https://example.com/repo.git", created.SourceURL)

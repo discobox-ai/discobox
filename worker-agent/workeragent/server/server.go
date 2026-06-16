@@ -45,7 +45,6 @@ func NewRouter(cfg Config) (*chi.Mux, huma.API) {
 	router.HandleFunc("/metadata", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		metadata := map[string]any{
-			"tenantId":  cfg.Identity.TenantID,
 			"projectId": cfg.Identity.ProjectID,
 			"sandboxId": cfg.Identity.SandboxID,
 			"workerId":  cfg.Identity.WorkerID,

@@ -106,35 +106,9 @@ var (
 	}
 )
 
-// Tenant is the top-level boundary for users, projects, and their resources.
-type Tenant struct {
-	ID        string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable tenant ID"`
-	Name      string         `gorm:"not null;type:text" json:"name" doc:"Tenant display name" maxLength:"200"`
-	Slug      string         `gorm:"uniqueIndex;not null;type:text" json:"slug" doc:"URL-safe tenant slug" pattern:"^[a-z0-9][a-z0-9-]*$"`
-	CreatedAt time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
-
-	Users []User `gorm:"foreignKey:TenantID" json:"users,omitempty" doc:"Tenant users"`
-}
-
-func (Tenant) TableName() string { return "tenants" }
-
-func (t *Tenant) BeforeCreate(_ *gorm.DB) error {
-	if t.ID == "" {
-		var err error
-		t.ID, err = id.New()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 // User represents an authenticated user.
 type User struct {
 	ID        string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable user ID"`
-	TenantID  string         `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID"`
 	Email     string         `gorm:"uniqueIndex;not null;type:text" json:"email" doc:"User email address" format:"email"`
 	Name      *string        `gorm:"type:text" json:"name,omitempty" doc:"Display name"`
 	AvatarURL *string        `gorm:"column:avatar_url;type:text" json:"avatarUrl,omitempty" doc:"Avatar image URL" format:"uri"`
@@ -143,8 +117,6 @@ type User struct {
 	CreatedAt time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
-
-	Tenant *Tenant `gorm:"foreignKey:TenantID" json:"tenant,omitempty" doc:"Tenant"`
 }
 
 func (User) TableName() string { return "users" }
@@ -163,17 +135,15 @@ func (u *User) BeforeCreate(_ *gorm.DB) error {
 // Project groups sandboxes and provider configuration.
 type Project struct {
 	ID                       string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable project ID"`
-	TenantID                 string         `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID"`
 	OwnerUserID              string         `gorm:"column:owner_user_id;not null;type:text;index" json:"ownerUserId" doc:"Owning user ID"`
 	Name                     string         `gorm:"not null;type:text" json:"name" doc:"Project display name" maxLength:"200"`
 	Slug                     string         `gorm:"uniqueIndex;not null;type:text" json:"slug" doc:"URL-safe project slug" pattern:"^[a-z0-9][a-z0-9-]*$"`
-	Default                  bool           `gorm:"column:default_project;not null;default:false;index" json:"default" doc:"Whether this is the user's/default tenant project"`
+	Default                  bool           `gorm:"column:default_project;not null;default:false;index" json:"default" doc:"Whether this is the user's default project"`
 	DefaultSandboxProviderID string         `gorm:"column:default_sandbox_provider_id;type:text;default:''" json:"defaultSandboxProviderId,omitempty" doc:"Default sandbox provider instance ID"`
 	CreatedAt                time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt                time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 	DeletedAt                gorm.DeletedAt `gorm:"index" json:"-"`
 
-	Tenant                   *Tenant                   `gorm:"-" json:"tenant,omitempty" doc:"Tenant"`
 	Owner                    *User                     `gorm:"-" json:"owner,omitempty" doc:"Project owner"`
 	Members                  []ProjectMember           `gorm:"foreignKey:ProjectID" json:"members,omitempty" doc:"Project members"`
 	Sandboxes                []Sandbox                 `gorm:"foreignKey:ProjectID" json:"sandboxes,omitempty" doc:"Project sandboxes"`
@@ -209,10 +179,9 @@ type ProjectMember struct {
 
 func (ProjectMember) TableName() string { return "project_members" }
 
-// ServerState stores generic tenant-local server settings and one-time state
-// flags. Delete a row to allow its associated initialization to run again.
+// ServerState stores generic server settings and one-time state flags. Delete a
+// row to allow its associated initialization to run again.
 type ServerState struct {
-	TenantID  string          `gorm:"column:tenant_id;primaryKey;type:text" json:"tenantId" doc:"Tenant ID"`
 	Key       string          `gorm:"primaryKey;type:text" json:"key" doc:"State key"`
 	Value     json.RawMessage `gorm:"column:value;type:text" json:"value,omitempty" doc:"State value"`
 	CreatedAt time.Time       `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
@@ -444,7 +413,6 @@ type ProviderWorkerStatus struct {
 // Worker is a provider-backed runtime worker that can launch sandboxes.
 type Worker struct {
 	ID                    string          `gorm:"primaryKey;type:text" json:"id" doc:"Stable worker ID"`
-	TenantID              string          `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID"`
 	ProjectID             string          `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
 	ProviderInstanceID    string          `gorm:"column:provider_instance_id;not null;type:text;index" json:"providerInstanceId" doc:"Sandbox provider instance ID"`
 	Identity              string          `gorm:"column:identity;not null;type:text;uniqueIndex" json:"identity" doc:"Worker identity"`
@@ -466,7 +434,6 @@ type Worker struct {
 	UpdatedAt             time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 	DeletedAt             gorm.DeletedAt `gorm:"index" json:"-"`
 
-	Tenant           *Tenant                  `gorm:"-" json:"tenant,omitempty" doc:"Tenant"`
 	Project          *Project                 `gorm:"foreignKey:ProjectID" json:"-"`
 	ProviderInstance *SandboxProviderInstance `gorm:"foreignKey:ProviderInstanceID" json:"providerInstance,omitempty" doc:"Sandbox provider instance"`
 	BootstrapTokens  []WorkerBootstrapToken   `gorm:"foreignKey:WorkerID" json:"-" doc:"Worker bootstrap tokens"`
@@ -519,7 +486,6 @@ func (w *Worker) SchedulingPreference() string {
 // Only the token hash is persisted.
 type WorkerBootstrapToken struct {
 	ID        string     `gorm:"primaryKey;type:text" json:"id" doc:"Stable bootstrap token ID"`
-	TenantID  string     `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID"`
 	WorkerID  string     `gorm:"column:worker_id;not null;type:text;index" json:"workerId" doc:"Worker ID"`
 	TokenHash []byte     `gorm:"column:token_hash;not null;uniqueIndex" json:"-"`
 	ExpiresAt time.Time  `gorm:"column:expires_at;not null;index" json:"expiresAt" doc:"Expiration timestamp" format:"date-time"`
@@ -528,7 +494,6 @@ type WorkerBootstrapToken struct {
 	CreatedAt time.Time  `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt time.Time  `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
-	Tenant *Tenant `gorm:"-" json:"-"`
 	Worker *Worker `gorm:"foreignKey:WorkerID" json:"-"`
 }
 
@@ -550,7 +515,6 @@ func (t *WorkerBootstrapToken) BeforeCreate(_ *gorm.DB) error {
 // this row for revocation/audit, or skip persistence for non-revocable tokens.
 type WorkerAuthToken struct {
 	ID         string     `gorm:"primaryKey;type:text" json:"id" doc:"Stable auth token ID"`
-	TenantID   string     `gorm:"column:tenant_id;not null;type:text;index" json:"tenantId" doc:"Tenant ID"`
 	WorkerID   string     `gorm:"column:worker_id;not null;type:text;index" json:"workerId" doc:"Worker ID"`
 	TokenHash  []byte     `gorm:"column:token_hash;uniqueIndex" json:"-"`
 	IssuedAt   time.Time  `gorm:"column:issued_at;not null;index" json:"issuedAt" doc:"Issue timestamp" format:"date-time"`
@@ -560,7 +524,6 @@ type WorkerAuthToken struct {
 	CreatedAt  time.Time  `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt  time.Time  `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
-	Tenant *Tenant `gorm:"-" json:"-"`
 	Worker *Worker `gorm:"foreignKey:WorkerID" json:"-"`
 }
 
@@ -618,17 +581,10 @@ func (e *ProjectEvent) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
-// GlobalModels returns model types that live in the global schema/database.
-func GlobalModels() []any {
+// AllModels returns all persisted model types.
+func AllModels() []any {
 	return []any{
-		&Tenant{},
 		&User{},
-	}
-}
-
-// TenantModels returns model types that live in tenant-scoped schemas/databases.
-func TenantModels() []any {
-	return []any{
 		&Project{},
 		&ProjectMember{},
 		&ServerState{},
@@ -641,11 +597,4 @@ func TenantModels() []any {
 		&WorkerAuthToken{},
 		&ProjectEvent{},
 	}
-}
-
-// AllModels returns all model types for code paths that intentionally need both
-// schema groups. Prefer GlobalModels or TenantModels for migrations.
-func AllModels() []any {
-	models := append([]any{}, GlobalModels()...)
-	return append(models, TenantModels()...)
 }

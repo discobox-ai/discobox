@@ -5,28 +5,14 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/model"
-	"github.com/obot-platform/discobox/server/internal/database"
+	"gorm.io/gorm"
 )
 
-// InitializeIdentity ensures the built-in default tenant and user exist.
-func InitializeIdentity(ctx context.Context, resolver *database.Resolver, tenantID, userID string) error {
-	global, err := resolver.ResolveGlobal(ctx)
-	if err != nil {
-		return err
-	}
+// InitializeIdentity ensures the built-in default user exists.
+func InitializeIdentity(ctx context.Context, db *gorm.DB, userID string) error {
 	now := time.Now().UTC()
-	if err := global.Write.WithContext(ctx).Save(&model.Tenant{
-		ID:        tenantID,
-		Name:      "Default Tenant",
-		Slug:      "default",
-		CreatedAt: now,
-		UpdatedAt: now,
-	}).Error; err != nil {
-		return err
-	}
-	return global.Write.WithContext(ctx).Save(&model.User{
+	return db.WithContext(ctx).Save(&model.User{
 		ID:        userID,
-		TenantID:  tenantID,
 		Email:     "local@example.com",
 		Provider:  "default",
 		Subject:   "default",

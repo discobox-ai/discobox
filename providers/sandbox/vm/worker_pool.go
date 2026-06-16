@@ -245,7 +245,6 @@ func createWorker(ctx context.Context, store WorkerStore, project *model.Project
 	}
 	worker := &model.Worker{
 		ID:                 workerID,
-		TenantID:           project.TenantID,
 		ProjectID:          project.ID,
 		ProviderInstanceID: provider.ID,
 		Identity:           fmt.Sprintf("%s/%s/%d", provider.ID, workerID, ordinal),
@@ -269,7 +268,6 @@ func CreateWorkerBootstrap(ctx context.Context, store WorkerBootstrapStore, proj
 	}
 	hash := sha256.Sum256([]byte(token))
 	bootstrapToken := &model.WorkerBootstrapToken{
-		TenantID:  project.TenantID,
 		WorkerID:  worker.ID,
 		TokenHash: hash[:],
 		ExpiresAt: time.Now().UTC().Add(defaultWorkerBootstrapTTL),

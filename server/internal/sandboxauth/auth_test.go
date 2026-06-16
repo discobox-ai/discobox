@@ -57,7 +57,6 @@ func TestManagerEnsuresTrustKeyOnceAndCreatesVerifiableToken(t *testing.T) {
 	}
 
 	token, err := manager.CreateToken(ctx, sandboxauth.TokenClaims{
-		TenantID:  "tenant-1",
 		ProjectID: "project-1",
 		SandboxID: "sandbox-1",
 		UserID:    "user-1",
@@ -92,7 +91,6 @@ func TestManagerEnsuresTrustKeyOnceAndCreatesVerifiableToken(t *testing.T) {
 		t.Fatalf("expiration = %s, want future", exp)
 	}
 	for claim, want := range map[string]string{
-		"tenant_id":  "tenant-1",
 		"project_id": "project-1",
 		"sandbox_id": "sandbox-1",
 		"user_id":    "user-1",

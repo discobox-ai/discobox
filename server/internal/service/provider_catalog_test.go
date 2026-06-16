@@ -152,11 +152,11 @@ func newProviderCatalogTestStore(t *testing.T) *store.Store {
 			t.Fatalf("close db: %v", err)
 		}
 	})
-	if err := db.MigrateTenant(ctx); err != nil {
+	if err := db.Migrate(ctx); err != nil {
 		t.Fatalf("migrate db: %v", err)
 	}
-	appStore := store.New(database.StaticResolver{DB: db}, store.WithDefaultTenantID(service.DefaultTenantID))
-	project := &model.Project{ID: service.DefaultProjectID, TenantID: service.DefaultTenantID, OwnerUserID: service.DefaultUserID, Name: "Default Project", Slug: "default"}
+	appStore := store.New(db.Write, db.Read)
+	project := &model.Project{ID: service.DefaultProjectID, OwnerUserID: service.DefaultUserID, Name: "Default Project", Slug: "default"}
 	if err := db.Write.WithContext(ctx).Create(project).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
 	appStore := newProviderCatalogTestStore(t)
 	svc := service.New(appStore, orchestration.QueueConfig{DefaultMaxAttempts: 3}, nil)
 
-	if err := svc.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID); err != nil {
+	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
 	providers, err := svc.ListSandboxProviderInstances(ctx, service.DefaultProjectID)
@@ -262,7 +262,7 @@ func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
 	if err := svc.DeleteSandboxProviderInstance(ctx, service.DefaultProjectID, service.DefaultProviderInstanceID); err != nil {
 		t.Fatalf("delete provider: %v", err)
 	}
-	if err := svc.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID); err != nil {
+	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults after provider delete: %v", err)
 	}
 	providers, err = svc.ListSandboxProviderInstances(ctx, service.DefaultProjectID)
@@ -276,7 +276,7 @@ func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
 	if err := appStore.DeleteServerState(ctx, "defaults.default_sandbox_provider.installed"); err != nil {
 		t.Fatalf("delete install state: %v", err)
 	}
-	if err := svc.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID); err != nil {
+	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults after state clear: %v", err)
 	}
 	providers, err = svc.ListSandboxProviderInstances(ctx, service.DefaultProjectID)
@@ -297,7 +297,7 @@ func TestInitializeDefaultsRepairsEmptyBuiltInDockerProviderConfig(t *testing.T)
 	appStore := newProviderCatalogTestStore(t)
 	svc := service.New(appStore, orchestration.QueueConfig{DefaultMaxAttempts: 3}, nil)
 
-	if err := svc.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID); err != nil {
+	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
 	provider, err := appStore.GetSandboxProviderInstance(ctx, service.DefaultProjectID, service.DefaultProviderInstanceID)
@@ -309,7 +309,7 @@ func TestInitializeDefaultsRepairsEmptyBuiltInDockerProviderConfig(t *testing.T)
 		t.Fatalf("clear default provider config: %v", err)
 	}
 
-	if err := svc.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID); err != nil {
+	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults after config clear: %v", err)
 	}
 	provider, err = appStore.GetSandboxProviderInstance(ctx, service.DefaultProjectID, service.DefaultProviderInstanceID)
@@ -329,7 +329,7 @@ func TestInitializeDefaultsRepairsBuiltInDockerProviderConfigImageFromEnv(t *tes
 	appStore := newProviderCatalogTestStore(t)
 	svc := service.New(appStore, orchestration.QueueConfig{DefaultMaxAttempts: 3}, nil)
 
-	if err := svc.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID); err != nil {
+	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
 	provider, err := appStore.GetSandboxProviderInstance(ctx, service.DefaultProjectID, service.DefaultProviderInstanceID)
@@ -342,7 +342,7 @@ func TestInitializeDefaultsRepairsBuiltInDockerProviderConfigImageFromEnv(t *tes
 	if err := appStore.UpdateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatalf("reset default provider config: %v", err)
 	}
-	if err := svc.InitializeDefaults(ctx, service.DefaultTenantID, service.DefaultUserID); err != nil {
+	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults after static image reset: %v", err)
 	}
 	provider, err = appStore.GetSandboxProviderInstance(ctx, service.DefaultProjectID, service.DefaultProviderInstanceID)

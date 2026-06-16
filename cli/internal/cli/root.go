@@ -20,7 +20,6 @@ const defaultProjectAlias = "default"
 type App struct {
 	serverURL string
 	projectID string
-	tenantID  string
 	token     string
 	output    string
 	debug     bool
@@ -41,7 +40,6 @@ func NewRootCommand() *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCOBOX_SERVER", defaultServerURL), "Discobox API server URL")
 	cmd.PersistentFlags().StringVarP(&app.projectID, "project", "p", envOrDefault("DISCOBOX_PROJECT", defaultProjectAlias), "Project ID for this invocation; use default for the user's default project")
-	cmd.PersistentFlags().StringVar(&app.tenantID, "tenant", envOrDefault("DISCOBOX_TENANT_ID", ""), "Tenant ID for API requests")
 	cmd.PersistentFlags().StringVar(&app.token, "token", os.Getenv("DISCOBOX_TOKEN"), "Bearer token for API requests")
 	cmd.PersistentFlags().StringVarP(&app.output, "output", "o", "table", "Output format: table or json")
 	cmd.PersistentFlags().BoolVar(&app.debug, "debug", false, "Print HTTP requests made by the API client")
@@ -87,11 +85,10 @@ func (a *App) httpClient() *http.Client {
 			base: transport,
 		}
 	}
-	if strings.TrimSpace(a.token) != "" || strings.TrimSpace(a.tenantID) != "" {
+	if strings.TrimSpace(a.token) != "" {
 		transport = requestHeaderTransport{
-			token:    strings.TrimSpace(a.token),
-			tenantID: strings.TrimSpace(a.tenantID),
-			base:     transport,
+			token: strings.TrimSpace(a.token),
+			base:  transport,
 		}
 	}
 	if transport == http.DefaultTransport {
@@ -103,18 +100,14 @@ func (a *App) httpClient() *http.Client {
 }
 
 type requestHeaderTransport struct {
-	token    string
-	tenantID string
-	base     http.RoundTripper
+	token string
+	base  http.RoundTripper
 }
 
 func (t requestHeaderTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	cloned := req.Clone(req.Context())
 	if t.token != "" {
 		cloned.Header.Set("Authorization", "Bearer "+t.token)
-	}
-	if t.tenantID != "" {
-		cloned.Header.Set("X-Discobox-Tenant-ID", t.tenantID)
 	}
 	base := t.base
 	if base == nil {

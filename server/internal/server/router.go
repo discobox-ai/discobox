@@ -11,7 +11,6 @@ import (
 
 	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/api"
-	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/events"
 	"github.com/obot-platform/discobox/server/internal/projectstream"
 	"github.com/obot-platform/discobox/server/internal/sandboxauth"
@@ -20,7 +19,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/server/middleware"
 	"github.com/obot-platform/discobox/server/internal/service"
 	"github.com/obot-platform/discobox/server/internal/store"
-	"github.com/obot-platform/discobox/server/internal/tenantctx"
+	"gorm.io/gorm"
 )
 
 const (
@@ -30,8 +29,7 @@ const (
 
 // ApplicationRouterOptions controls application router wiring.
 type ApplicationRouterOptions struct {
-	TenantID string
-	UserID   string
+	UserID string
 
 	JobMaxAttempts int
 
@@ -76,7 +74,7 @@ func NewRouter(services api.Services) (*chi.Mux, huma.API) {
 }
 
 // NewApplicationRouter creates the application router backed by persistent services.
-func NewApplicationRouter(ctx context.Context, resolver *database.Resolver, options ...ApplicationRouterOptions) (*chi.Mux, huma.API, error) {
+func NewApplicationRouter(ctx context.Context, writeDB, readDB *gorm.DB, options ...ApplicationRouterOptions) (*chi.Mux, huma.API, error) {
 	opts := DefaultApplicationRouterOptions()
 	if len(options) > 0 {
 		opts = options[0]
@@ -85,34 +83,32 @@ func NewApplicationRouter(ctx context.Context, resolver *database.Resolver, opti
 	if opts.UserID == "" {
 		opts.UserID = service.DefaultUserID
 	}
-	if opts.TenantID == "" {
-		opts.TenantID = service.DefaultTenantID
-	}
 	broker := events.NewBroker()
-	appStore := store.New(resolver, store.WithPublisher(broker), store.WithSealer(opts.SecretSealer), store.WithDefaultTenantID(opts.TenantID))
+	appStore := store.New(writeDB, readDB, store.WithPublisher(broker), store.WithSealer(opts.SecretSealer))
 	queueConfig := orchestration.QueueConfig{
 		DefaultMaxAttempts: opts.JobMaxAttempts,
 	}
-	tenantJobs := newTenantJobManager(ctx, appStore, opts)
-	notifyNewJob := tenantJobs.NotifyNewJob
+	jobs := newJobManager(ctx, appStore, opts)
+	notifyNewJob := jobs.NotifyNewJob
 	services := service.New(appStore, queueConfig, notifyNewJob, broker)
-	tenantJobs.SetService(services)
+	jobs.SetService(services)
 	if opts.SecretSealer != nil {
 		services.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.SecretSealer))
 	}
-	if err := defaults.InitializeIdentity(ctx, resolver, opts.TenantID, opts.UserID); err != nil {
+	if err := defaults.InitializeIdentity(ctx, writeDB, opts.UserID); err != nil {
 		return nil, nil, err
 	}
-	initCtx := tenantctx.WithTenantID(ctx, opts.TenantID)
-	if err := services.InitializeDefaults(initCtx, opts.TenantID, opts.UserID); err != nil {
+	if err := services.InitializeDefaults(ctx, opts.UserID); err != nil {
+		return nil, nil, err
+	}
+	if err := jobs.EnsureStarted(ctx); err != nil {
 		return nil, nil, err
 	}
 	router := chi.NewRouter()
 	router.Use(middleware.Authentication(
 		middleware.WorkerAuthenticator{},
-		middleware.DefaultUserAuthenticator{TenantID: opts.TenantID, UserID: opts.UserID},
+		middleware.DefaultUserAuthenticator{UserID: opts.UserID},
 	))
-	router.Use(middleware.Tenant(tenantJobs, opts.TenantID))
 	router.Use(middleware.ProjectAuthorization(appStore))
 	router.Use(middleware.GenericAuthorization)
 	config := huma.DefaultConfig(Name, Version)

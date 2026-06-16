@@ -43,6 +43,6 @@ func TestProjectOperations(t *testing.T) {
 		t.Fatalf("ownerUserId = %q, want %q", project.OwnerUserID, service.DefaultUserID)
 	}
 	if project.Owner != nil {
-		t.Fatal("expected project owner to be omitted from tenant-scoped response")
+		t.Fatal("expected project owner to be omitted from API response")
 	}
 }

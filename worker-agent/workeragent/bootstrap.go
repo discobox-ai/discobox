@@ -15,7 +15,6 @@ import (
 
 const (
 	EnvControlPlaneURL = workerbootstrap.EnvControlPlaneURL
-	EnvTenantID        = workerbootstrap.EnvTenantID
 	EnvProjectID       = workerbootstrap.EnvProjectID
 	EnvSandboxID       = workerbootstrap.EnvSandboxID
 	EnvWorkerID        = workerbootstrap.EnvWorkerID
@@ -45,7 +44,6 @@ type StatusClient interface {
 // RegisterRequest is sent by the worker after generating its keypair.
 type RegisterRequest struct {
 	ControlPlaneURL string `json:"-"`
-	TenantID        string `json:"tenantId"`
 	ProjectID       string `json:"projectId"`
 	SandboxID       string `json:"sandboxId"`
 	WorkerID        string `json:"workerId"`
@@ -58,7 +56,6 @@ type RegisterRequest struct {
 // by registration. AuthToken is sent as an Authorization: Bearer header.
 type StatusRequest struct {
 	ControlPlaneURL       string  `json:"-"`
-	TenantID              string  `json:"tenantId"`
 	WorkerID              string  `json:"workerId"`
 	AuthToken             string  `json:"-"`
 	Ready                 bool    `json:"ready"`
@@ -108,7 +105,6 @@ func Run(ctx context.Context, cfg Config) (*Registration, error) {
 	}
 	resp, err := client.RegisterWorker(ctx, RegisterRequest{
 		ControlPlaneURL: bootstrap.ControlPlaneURL,
-		TenantID:        bootstrap.TenantID,
 		ProjectID:       bootstrap.ProjectID,
 		SandboxID:       bootstrap.SandboxID,
 		WorkerID:        bootstrap.WorkerID,

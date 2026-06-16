@@ -18,7 +18,6 @@ func TestReconcileWorkerMarksLaunchFailure(t *testing.T) {
 	}
 	worker := &model.Worker{
 		ID:                 "worker-1",
-		TenantID:           "tenant-1",
 		ProjectID:          "project-1",
 		ProviderInstanceID: "provider-1",
 		ResourceLifecycle:  model.NewResourceLifecycle(model.WorkerCreateOperation, nil),

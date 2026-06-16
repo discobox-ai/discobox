@@ -74,14 +74,9 @@ func TestNewDriverWithClientHonorsPrivilegedOverride(t *testing.T) {
 func TestContainerBootConfigDerivesControlPlaneURL(t *testing.T) {
 	t.Setenv("PORT", "9090")
 	d := NewDriverWithClient(nil, Config{})
-	boot := d.containerBootConfig(vm.BootConfig{Env: map[string]string{
-		workerbootstrap.EnvTenantID: "tenant-1",
-	}})
+	boot := d.containerBootConfig(vm.BootConfig{})
 	if got := boot.Env[workerbootstrap.EnvControlPlaneURL]; got != "http://host.docker.internal:9090" {
 		t.Fatalf("control plane url = %q", got)
-	}
-	if got := boot.Env[workerbootstrap.EnvTenantID]; got != "tenant-1" {
-		t.Fatalf("tenant ID = %q", got)
 	}
 }
 

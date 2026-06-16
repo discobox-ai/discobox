@@ -39,7 +39,6 @@ const (
 	labelManaged      = "discobox.vm.managed"
 	labelInstanceID   = "discobox.vm.instance_id"
 	labelProjectID    = "discobox.project_id"
-	labelTenantID     = "discobox.tenant_id"
 	labelSandboxID    = "discobox.sandbox_id"
 	labelWorkerID     = "discobox.worker_id"
 	labelProviderType = "discobox.provider_type"
@@ -393,7 +392,7 @@ func (d *Driver) AcquireWorkerHTTPClient(ctx context.Context, workerID string) (
 }
 
 func (d *Driver) containerLabels(spec vm.InstanceSpec) map[string]string {
-	labels := make(map[string]string, len(d.labels)+len(spec.Metadata)+4)
+	labels := make(map[string]string, len(d.labels)+len(spec.Metadata)+3)
 	for key, value := range d.labels {
 		labels[key] = value
 	}
@@ -401,7 +400,6 @@ func (d *Driver) containerLabels(spec vm.InstanceSpec) map[string]string {
 		labels[key] = value
 	}
 	labels[labelInstanceID] = spec.Name
-	labels[labelTenantID] = spec.Ref.TenantID
 	labels[labelProjectID] = spec.Ref.ProjectID
 	labels[labelSandboxID] = spec.Ref.SandboxID
 	labels[labelWorkerID] = strings.TrimSpace(spec.Boot.Env[workerbootstrap.EnvWorkerID])

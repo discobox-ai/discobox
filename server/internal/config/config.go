@@ -28,9 +28,6 @@ type Config struct {
 	CacheDir  string
 	StateDir  string
 
-	// Tenant settings.
-	TenantID string
-
 	// Database settings.
 	DatabaseDSN     string
 	DatabaseReadDSN string
@@ -66,8 +63,6 @@ func Load() (*Config, error) {
 	cfg.ConfigDir = getEnv("DISCOBOX_CONFIG_DIR", filepath.Join(xdg.ConfigHome, appName))
 	cfg.CacheDir = getEnv("DISCOBOX_CACHE_DIR", filepath.Join(xdg.CacheHome, appName))
 	cfg.StateDir = getEnv("DISCOBOX_STATE_DIR", filepath.Join(xdg.StateHome, appName))
-	cfg.TenantID = getEnv("DISCOBOX_TENANT_ID", "")
-
 	cfg.DatabaseDSN = getEnv("DATABASE_DSN", defaultDatabaseDSN(cfg.DataDir))
 	cfg.DatabaseReadDSN = getEnv("DATABASE_READ_DSN", "")
 	cfg.DatabaseDriver = getEnvDriver("DATABASE_DRIVER", gormdb.DetectDriver(cfg.DatabaseDSN))

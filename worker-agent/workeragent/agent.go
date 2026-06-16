@@ -31,7 +31,7 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	logger.Info("worker registered", "workerID", bootstrap.WorkerID, "tenantID", bootstrap.TenantID)
+	logger.Info("worker registered", "workerID", bootstrap.WorkerID)
 
 	client := NewHTTPClient(bootstrap.ControlPlaneURL)
 	conditions := map[string]any{
@@ -42,7 +42,6 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	}
 	if err := client.UpdateWorkerStatus(ctx, StatusRequest{
 		ControlPlaneURL:       bootstrap.ControlPlaneURL,
-		TenantID:              bootstrap.TenantID,
 		WorkerID:              bootstrap.WorkerID,
 		AuthToken:             registration.AuthToken,
 		Ready:                 true,
@@ -78,7 +77,6 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 func ServeWithRuntime(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, runtime sandboxruntime.Runtime) error {
 	return workerserver.Serve(ctx, logger, workerserver.Config{
 		Identity: workerserver.Identity{
-			TenantID:  bootstrap.TenantID,
 			ProjectID: bootstrap.ProjectID,
 			SandboxID: bootstrap.SandboxID,
 			WorkerID:  bootstrap.WorkerID,

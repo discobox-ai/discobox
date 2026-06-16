@@ -22,7 +22,6 @@ func NewMemorySandboxRuntime() *MemorySandboxRuntime {
 func NewSandboxHandler(bootstrap Bootstrap, runtime SandboxRuntime, authTokens ...string) http.Handler {
 	router, _ := workerserver.NewRouter(workerserver.Config{
 		Identity: workerserver.Identity{
-			TenantID:  bootstrap.TenantID,
 			ProjectID: bootstrap.ProjectID,
 			SandboxID: bootstrap.SandboxID,
 			WorkerID:  bootstrap.WorkerID,

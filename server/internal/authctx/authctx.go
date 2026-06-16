@@ -11,7 +11,6 @@ type principalKey struct{}
 // Principal identifies the authenticated caller.
 type Principal struct {
 	Type     string
-	TenantID string
 	UserID   string
 	WorkerID string
 }
@@ -24,7 +23,6 @@ const (
 // WithPrincipal returns a context carrying the authenticated principal.
 func WithPrincipal(ctx context.Context, principal Principal) context.Context {
 	principal.Type = strings.TrimSpace(principal.Type)
-	principal.TenantID = strings.TrimSpace(principal.TenantID)
 	principal.UserID = strings.TrimSpace(principal.UserID)
 	principal.WorkerID = strings.TrimSpace(principal.WorkerID)
 	return context.WithValue(ctx, principalKey{}, principal)

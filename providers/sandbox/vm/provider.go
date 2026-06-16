@@ -259,9 +259,6 @@ func (p *Provider) workerBootstrap(ctx context.Context, ref sandbox.SandboxRef, 
 	if err != nil {
 		return WorkerBootstrap{}, err
 	}
-	if bootstrap.TenantID == "" {
-		bootstrap.TenantID = ref.TenantID
-	}
 	if bootstrap.ProjectID == "" {
 		bootstrap.ProjectID = ref.ProjectID
 	}

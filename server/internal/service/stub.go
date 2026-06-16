@@ -15,7 +15,6 @@ import (
 )
 
 const (
-	defaultTenantID  = "00000000-0000-0000-0000-000000000000"
 	defaultUserID    = "00000000-0000-0000-0000-000000000001"
 	defaultProjectID = "00000000-0000-0000-0000-000000000002"
 )
@@ -24,7 +23,6 @@ const (
 // layers are being designed.
 type Stub struct {
 	mu           sync.Mutex
-	tenant       model.Tenant
 	user         model.User
 	project      model.Project
 	agentConfigs map[string]model.AgentConfig
@@ -34,36 +32,24 @@ type Stub struct {
 
 func NewStub() *Stub {
 	now := time.Now().UTC()
-	tenant := model.Tenant{
-		ID:        defaultTenantID,
-		Name:      "Default Tenant",
-		Slug:      "default",
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
 	user := model.User{
 		ID:        defaultUserID,
-		TenantID:  tenant.ID,
 		Email:     "local@example.com",
 		Provider:  "local",
 		Subject:   "local",
-		Tenant:    &tenant,
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
 	project := model.Project{
 		ID:          defaultProjectID,
-		TenantID:    tenant.ID,
 		OwnerUserID: user.ID,
 		Name:        "Default Project",
 		Slug:        "default",
-		Tenant:      &tenant,
 		Owner:       &user,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
 	return &Stub{
-		tenant:       tenant,
 		user:         user,
 		project:      project,
 		agentConfigs: make(map[string]model.AgentConfig),

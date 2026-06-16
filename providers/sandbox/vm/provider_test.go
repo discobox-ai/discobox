@@ -11,10 +11,9 @@ import (
 	workerbootstrap "github.com/obot-platform/discobox/workerbootstrap"
 )
 
-func TestBuildBootConfigIncludesTenantAndWorkerRegistration(t *testing.T) {
+func TestBuildBootConfigIncludesProjectAndWorkerRegistration(t *testing.T) {
 	boot := vm.BuildBootConfig(vm.BootInput{
 		Ref: sandbox.SandboxRef{
-			TenantID:  "tenant-1",
 			ProjectID: "project-1",
 			SandboxID: "sandbox-1",
 		},
@@ -26,8 +25,8 @@ func TestBuildBootConfigIncludesTenantAndWorkerRegistration(t *testing.T) {
 		AgentPort:       3002,
 	})
 
-	if boot.Env[workerbootstrap.EnvTenantID] != "tenant-1" {
-		t.Fatalf("tenant env = %q", boot.Env[workerbootstrap.EnvTenantID])
+	if boot.Env[workerbootstrap.EnvProjectID] != "project-1" {
+		t.Fatalf("project env = %q", boot.Env[workerbootstrap.EnvProjectID])
 	}
 	if boot.Env[workerbootstrap.EnvWorkerID] != "worker-1" {
 		t.Fatalf("worker env = %q", boot.Env[workerbootstrap.EnvWorkerID])
@@ -36,7 +35,7 @@ func TestBuildBootConfigIncludesTenantAndWorkerRegistration(t *testing.T) {
 		t.Fatalf("cloud-init userdata does not contain bootstrap token env")
 	}
 	joined := strings.Join(boot.KernelCommandLine, " ")
-	if !strings.Contains(joined, "discobox.discobox_tenant_id=tenant-1") {
+	if !strings.Contains(joined, "discobox.discobox_project_id=project-1") {
 		t.Fatalf("kernel args = %q", joined)
 	}
 }
@@ -56,7 +55,7 @@ func TestProviderCreatesVMWithBootConfigAndState(t *testing.T) {
 		t.Fatalf("new provider: %v", err)
 	}
 
-	ref := sandbox.SandboxRef{TenantID: "tenant-1", ProjectID: "project-1", SandboxID: "sandbox-1"}
+	ref := sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}
 	runtimeSandbox, state, err := provider.Create(ctx, ref, nil, sandbox.CreateOptions{})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -67,8 +66,8 @@ func TestProviderCreatesVMWithBootConfigAndState(t *testing.T) {
 	if len(state) == 0 {
 		t.Fatalf("expected provider state")
 	}
-	if driver.createdSpec.Boot.Env[workerbootstrap.EnvTenantID] != "tenant-1" {
-		t.Fatalf("created tenant env = %q", driver.createdSpec.Boot.Env[workerbootstrap.EnvTenantID])
+	if driver.createdSpec.Boot.Env[workerbootstrap.EnvProjectID] != "project-1" {
+		t.Fatalf("created project env = %q", driver.createdSpec.Boot.Env[workerbootstrap.EnvProjectID])
 	}
 	if driver.createdSpec.Image != "image-default" {
 		t.Fatalf("created image = %q", driver.createdSpec.Image)
