@@ -52,6 +52,16 @@ Current transition state:
 New endpoints should prefer the contract-first generated path. When touching old
 Huma operations, migrate narrowly and keep behavior-compatible tests.
 
+## Runtime Observability
+
+`internal/server` owns optional process-level OpenTelemetry metrics startup as
+part of HTTP server composition. When `OTEL_METRICS_EXPORTER=otlp` is configured,
+startup initializes the global meter provider, exports metrics through OTLP/HTTP
+using the standard OpenTelemetry exporter environment variables, and wraps all
+HTTP traffic with OpenTelemetry HTTP instrumentation. Local Discobot development
+services may provide an OTLP receiver/dashboard, but telemetry must remain
+optional so normal server startup does not require an observability backend.
+
 ## Intent and Reconcile Flow
 
 ```mermaid

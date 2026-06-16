@@ -47,6 +47,12 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.SandboxReconcileJobConcurrency != 4 {
 		t.Fatalf("SandboxReconcileJobConcurrency = %d, want 4", cfg.SandboxReconcileJobConcurrency)
 	}
+	if cfg.OTelMetricsEnabled {
+		t.Fatalf("OTelMetricsEnabled = true, want false")
+	}
+	if cfg.OTelMetricExportInterval != time.Second {
+		t.Fatalf("OTelMetricExportInterval = %s, want 1s", cfg.OTelMetricExportInterval)
+	}
 }
 
 func TestLoadEnvironmentOverrides(t *testing.T) {
@@ -69,6 +75,8 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	t.Setenv("DISPATCHER_DEFAULT_CONCURRENCY", "3")
 	t.Setenv("SANDBOX_RECONCILE_JOB_CONCURRENCY", "9")
 	t.Setenv("DISCOBOX_ENCRYPTION_KEY", "key")
+	t.Setenv("OTEL_METRICS_EXPORTER", "otlp")
+	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "5000")
 
 	cfg, err := Load()
 	if err != nil {
@@ -129,6 +137,12 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	if cfg.EncryptionKey != "key" {
 		t.Fatalf("EncryptionKey = %q, want key", cfg.EncryptionKey)
 	}
+	if !cfg.OTelMetricsEnabled {
+		t.Fatalf("OTelMetricsEnabled = false, want true")
+	}
+	if cfg.OTelMetricExportInterval != 5*time.Second {
+		t.Fatalf("OTelMetricExportInterval = %s, want 5s", cfg.OTelMetricExportInterval)
+	}
 }
 
 func TestLoadUsesDataDirForDefaultDatabaseDSN(t *testing.T) {
@@ -161,12 +175,14 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 		{name: "stale timeout", key: "DISPATCHER_STALE_JOB_TIMEOUT", val: "0s"},
 		{name: "dispatcher concurrency", key: "DISPATCHER_DEFAULT_CONCURRENCY", val: "0"},
 		{name: "sandbox concurrency", key: "SANDBOX_RECONCILE_JOB_CONCURRENCY", val: "0"},
+		{name: "otel metric export interval", key: "OTEL_METRIC_EXPORT_INTERVAL", val: "0s"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			clearConfigEnv(t)
 			t.Setenv("DISCOBOX_TENANT_ID", "tenant-1")
+			t.Setenv("OTEL_METRICS_EXPORTER", "otlp")
 			t.Setenv(tt.key, tt.val)
 
 			if _, err := Load(); err == nil {
@@ -197,6 +213,8 @@ func clearConfigEnv(t *testing.T) {
 		"DISPATCHER_DEFAULT_CONCURRENCY",
 		"SANDBOX_RECONCILE_JOB_CONCURRENCY",
 		"DISCOBOX_ENCRYPTION_KEY",
+		"OTEL_METRICS_EXPORTER",
+		"OTEL_METRIC_EXPORT_INTERVAL",
 	} {
 		t.Setenv(key, "")
 	}

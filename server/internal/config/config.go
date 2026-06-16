@@ -50,6 +50,10 @@ type Config struct {
 	DispatcherImmediateExecution   bool
 	DispatcherDefaultConcurrency   int
 	SandboxReconcileJobConcurrency int
+
+	// OpenTelemetry metrics settings.
+	OTelMetricsEnabled       bool
+	OTelMetricExportInterval time.Duration
 }
 
 // Load reads configuration from environment variables.
@@ -78,6 +82,8 @@ func Load() (*Config, error) {
 	cfg.DispatcherImmediateExecution = getEnvBool("DISPATCHER_IMMEDIATE_EXECUTION", true)
 	cfg.DispatcherDefaultConcurrency = getEnvInt("DISPATCHER_DEFAULT_CONCURRENCY", 1)
 	cfg.SandboxReconcileJobConcurrency = getEnvInt("SANDBOX_RECONCILE_JOB_CONCURRENCY", 4)
+	cfg.OTelMetricsEnabled = strings.EqualFold(getEnv("OTEL_METRICS_EXPORTER", "none"), "otlp")
+	cfg.OTelMetricExportInterval = getEnvMillisecondsDuration("OTEL_METRIC_EXPORT_INTERVAL", time.Second)
 
 	if cfg.Port <= 0 || cfg.Port > 65535 {
 		return nil, fmt.Errorf("PORT must be between 1 and 65535")
@@ -119,6 +125,9 @@ func Load() (*Config, error) {
 	}
 	if cfg.SandboxReconcileJobConcurrency < 1 {
 		return nil, fmt.Errorf("SANDBOX_RECONCILE_JOB_CONCURRENCY must be at least 1")
+	}
+	if cfg.OTelMetricsEnabled && cfg.OTelMetricExportInterval <= 0 {
+		return nil, fmt.Errorf("OTEL_METRIC_EXPORT_INTERVAL must be greater than 0")
 	}
 
 	return cfg, nil
@@ -164,6 +173,22 @@ func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {
 		return defaultValue
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return defaultValue
+	}
+	return parsed
+}
+
+func getEnvMillisecondsDuration(key string, defaultValue time.Duration) time.Duration {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return defaultValue
+	}
+	milliseconds, err := strconv.Atoi(value)
+	if err == nil {
+		return time.Duration(milliseconds) * time.Millisecond
 	}
 	parsed, err := time.ParseDuration(value)
 	if err != nil {

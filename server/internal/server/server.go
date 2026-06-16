@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"github.com/joho/godotenv"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
 	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/server/internal/config"
@@ -27,6 +28,18 @@ func Run(ctx context.Context) error {
 	if cfg.TenantID == "" {
 		cfg.TenantID = service.DefaultTenantID
 	}
+	shutdownTelemetry, err := initTelemetry(ctx, TelemetryOptions{
+		MetricsEnabled:       cfg.OTelMetricsEnabled,
+		MetricExportInterval: cfg.OTelMetricExportInterval,
+	})
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := shutdownTelemetry(context.Background()); err != nil {
+			log.Printf("shutdown telemetry: %v", err)
+		}
+	}()
 
 	resolver := database.NewResolver(database.ResolverConfig{
 		Config: database.Config{
@@ -75,7 +88,8 @@ func Run(ctx context.Context) error {
 	log.Printf("listening on http://localhost%s", addr)
 	log.Printf("openapi spec available at http://localhost%s/openapi.json", addr)
 	log.Printf("api docs available at http://localhost%s/docs", addr)
-	if err := http.ListenAndServe(addr, router); err != nil {
+	handler := otelhttp.NewHandler(router, "discobox-server")
+	if err := http.ListenAndServe(addr, handler); err != nil {
 		return fmt.Errorf("server failed: %w", err)
 	}
 	return nil
