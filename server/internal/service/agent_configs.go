@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 
-	"github.com/danielgtaylor/huma/v2"
+	"github.com/obot-platform/discobox/apperrors"
+
 	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/server/internal/api"
 )
@@ -22,32 +24,32 @@ func (s *Service) CreateAgentConfig(ctx context.Context, projectID string, input
 		return nil, apiError(err, "project not found")
 	}
 	var definition *model.AgentConfigDefinition
-	if input.DefinitionID != nil {
-		var ok bool
-		definition, ok = agentConfigDefinitionByID(*input.DefinitionID)
-		if !ok {
-			return nil, huma.Error404NotFound("agent config definition not found")
+	if definitionID, isSet := input.DefinitionId.Get(); isSet {
+		var found bool
+		definition, found = agentConfigDefinitionByID(definitionID)
+		if !found {
+			return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config definition not found")
 		}
 	}
-	name := strings.TrimSpace(input.Name)
+	name := strings.TrimSpace(input.Name.Or(""))
 	if name == "" && definition != nil {
 		name = definition.Name
 	}
 	if name == "" {
 		return nil, apiError(fmt.Errorf("agent config name is required"), "")
 	}
-	installCommand := input.InstallCommand
+	installCommand := input.InstallCommand.Or("")
 	if installCommand == "" && definition != nil {
 		installCommand = definition.InstallCommand
 	}
-	runCommand := input.RunCommand
+	runCommand := input.RunCommand.Or("")
 	if strings.TrimSpace(runCommand) == "" && definition != nil {
 		runCommand = definition.RunCommand
 	}
 	if strings.TrimSpace(runCommand) == "" {
 		return nil, apiError(fmt.Errorf("agent config run command is required"), "")
 	}
-	capabilities := input.Capabilities
+	capabilities := api.RawMessage(input.Capabilities)
 	if capabilities == nil && definition != nil {
 		capabilities = cloneRawMessage(definition.Capabilities)
 	}
@@ -77,24 +79,24 @@ func (s *Service) UpdateAgentConfig(ctx context.Context, projectID, configID str
 	if err != nil {
 		return nil, apiError(err, "agent config not found")
 	}
-	if input.Name != nil {
-		name := strings.TrimSpace(*input.Name)
+	if nameValue, ok := input.Name.Get(); ok {
+		name := strings.TrimSpace(nameValue)
 		if name == "" {
 			return nil, apiError(fmt.Errorf("agent config name is required"), "")
 		}
 		config.Name = name
 	}
-	if input.InstallCommand != nil {
-		config.InstallCommand = *input.InstallCommand
+	if installCommand, ok := input.InstallCommand.Get(); ok {
+		config.InstallCommand = installCommand
 	}
-	if input.RunCommand != nil {
-		if strings.TrimSpace(*input.RunCommand) == "" {
+	if runCommand, ok := input.RunCommand.Get(); ok {
+		if strings.TrimSpace(runCommand) == "" {
 			return nil, apiError(fmt.Errorf("agent config run command is required"), "")
 		}
-		config.RunCommand = *input.RunCommand
+		config.RunCommand = runCommand
 	}
-	if input.Capabilities != nil {
-		config.Capabilities = input.Capabilities
+	if len(input.Capabilities) > 0 {
+		config.Capabilities = api.RawMessage(input.Capabilities)
 	}
 	if err := s.store.UpdateAgentConfig(ctx, config); err != nil {
 		return nil, err

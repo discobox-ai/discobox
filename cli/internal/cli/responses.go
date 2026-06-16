@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"net/http"
 
-	apiclientgen "github.com/obot-platform/discobox/apiclient/gen"
+	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
 )
 
 func expectResponse[T any](res any) (*T, error) {

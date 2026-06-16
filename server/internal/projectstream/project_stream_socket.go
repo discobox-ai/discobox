@@ -10,15 +10,13 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"reflect"
-	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
-	"github.com/danielgtaylor/huma/v2"
 	"github.com/go-chi/chi/v5"
 
 	"github.com/obot-platform/discobox/model"
@@ -132,34 +130,47 @@ func RegisterProjectStreamRoutes(router chi.Router, service api.ProjectEventServ
 	})
 }
 
-// RegisterProjectStreamSSEOperations registers the OpenAPI-documented static
+// RegisterProjectStreamSSERoutes registers the OpenAPI-documented static
 // project stream subscription endpoint. Unlike SSE Last-Event-ID resume
 // patterns, this endpoint never writes event IDs and does not accept resume IDs.
 // Reconnects should request full history or opt out of history.
-func RegisterProjectStreamSSEOperations(humaAPI huma.API, service api.ProjectEventService) {
-	registerSSEOperation[ProjectStreamSSEInput](humaAPI, huma.Operation{
-		OperationID: "subscribe-project-stream-sse",
-		Method:      http.MethodGet,
-		Path:        "/projects/{projectId}/stream/sse",
-		Tags:        []string{"Project Streams"},
-		Summary:     "Subscribe to a static project event stream using SSE",
-		Description: "Subscribes to one project stream using query parameters. This endpoint does not emit SSE id fields and does not support Last-Event-ID resume semantics; reconnects should request full history or set history=false.",
-		Errors:      []int{http.StatusServiceUnavailable},
-	}, map[string]any{
-		eventConnected:                 ConnectedEvent{},
-		eventListStart:                 ResourceListStartEvent{},
-		eventListEnd:                   ResourceListFinishEvent{},
-		model.EventTypeResourceChanged: ResourceChangedEvent{},
-		model.EventTypeResourceListed:  ResourceListedEvent{},
-		messageTypeError:               StreamErrorEvent{},
-		messageTypeComplete:            CompleteEvent{},
-	}, func(ctx context.Context, input *ProjectStreamSSEInput, send sseSendFunc) {
+func RegisterProjectStreamSSERoutes(router chi.Router, service api.ProjectEventService) {
+	router.Get("/projects/{projectId}/stream/sse", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		flusher, _ := w.(http.Flusher)
+		send := func(event string, data any) error {
+			return writeSSE(w, flusher, event, data)
+		}
+		input := projectStreamSSEInputFromRequest(r)
 		if service == nil {
 			_ = send(messageTypeError, StreamErrorEvent{Stream: input.Stream, SandboxID: input.SandboxID, Error: "project event service is not configured"})
 			return
 		}
-		runProjectStreamSSE(ctx, service, input, send)
+		runProjectStreamSSE(r.Context(), service, input, send)
 	})
+}
+
+func projectStreamSSEInputFromRequest(r *http.Request) *ProjectStreamSSEInput {
+	query := r.URL.Query()
+	return &ProjectStreamSSEInput{
+		ProjectID:  chi.URLParam(r, "projectId"),
+		Stream:     query.Get("stream"),
+		SandboxID:  query.Get("sandboxId"),
+		History:    queryBool(query.Get("history"), true),
+		ReplayOnly: queryBool(query.Get("replayOnly"), false),
+		List:       queryBool(query.Get("list"), false),
+	}
+}
+
+func queryBool(value string, fallback bool) bool {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return fallback
+	}
+	return parsed
 }
 
 // ProjectStreamSocket multiplexes project-scoped subscriptions over one websocket.
@@ -618,66 +629,6 @@ func sendSSEProjectEvent(req ProjectStreamSubscriptionRequest, event model.Proje
 
 func matchesSandbox(req ProjectStreamSubscriptionRequest, event model.ProjectEvent) bool {
 	return event.ResourceType == "sandbox" && (req.SandboxID == "" || event.ResourceID == req.SandboxID)
-}
-
-type sseOperationHandler[I any] func(ctx context.Context, input *I, send sseSendFunc)
-
-func registerSSEOperation[I any](humaAPI huma.API, op huma.Operation, eventTypeMap map[string]any, handler sseOperationHandler[I]) {
-	if op.Responses == nil {
-		op.Responses = map[string]*huma.Response{}
-	}
-	if op.Responses["200"] == nil {
-		op.Responses["200"] = &huma.Response{}
-	}
-	if op.Responses["200"].Content == nil {
-		op.Responses["200"].Content = map[string]*huma.MediaType{}
-	}
-	eventSchemas := make([]*huma.Schema, 0, len(eventTypeMap))
-	events := make([]string, 0, len(eventTypeMap))
-	for event := range eventTypeMap {
-		events = append(events, event)
-	}
-	sort.Strings(events)
-	for _, event := range events {
-		sample := eventTypeMap[event]
-		eventSchemas = append(eventSchemas, &huma.Schema{
-			Title: "Event " + event,
-			Type:  huma.TypeObject,
-			Properties: map[string]*huma.Schema{
-				"event": {
-					Type:        huma.TypeString,
-					Description: "The event name.",
-					Extensions:  map[string]any{"const": event},
-				},
-				"data": humaAPI.OpenAPI().Components.Schemas.Schema(reflect.TypeOf(sample), true, event),
-			},
-			Required: []string{"event", "data"},
-		})
-	}
-	op.Responses["200"].Content["text/event-stream"] = &huma.MediaType{
-		Schema: &huma.Schema{
-			Title:       "Server Sent Events",
-			Description: "Each oneOf object in the array represents one possible SSE message. This stream intentionally omits SSE id fields and does not support Last-Event-ID resume semantics.",
-			Type:        huma.TypeArray,
-			Items: &huma.Schema{
-				Extensions: map[string]any{"oneOf": eventSchemas},
-			},
-		},
-	}
-
-	huma.Register(humaAPI, op, func(ctx context.Context, input *I) (*huma.StreamResponse, error) {
-		return &huma.StreamResponse{
-			Body: func(hctx huma.Context) {
-				hctx.SetHeader("Content-Type", "text/event-stream")
-				writer := hctx.BodyWriter()
-				flusher, _ := writer.(http.Flusher)
-				send := func(event string, data any) error {
-					return writeSSE(writer, flusher, event, data)
-				}
-				handler(hctx.Context(), input, send)
-			},
-		}, nil
-	})
 }
 
 func writeSSE(writer io.Writer, flusher http.Flusher, event string, data any) error {

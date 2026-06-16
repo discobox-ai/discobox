@@ -4,13 +4,14 @@ FROM golang:1.26-trixie AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./
+COPY apperrors ./apperrors
 COPY id ./id
 COPY model ./model
 COPY sandboxprovider ./sandboxprovider
 COPY workerbootstrap ./workerbootstrap
 COPY worker-agent/go.mod worker-agent/go.sum ./worker-agent/
 COPY worker-agent/cmd ./worker-agent/cmd
-COPY worker-agent/workeragent ./worker-agent/workeragent
+COPY worker-agent ./worker-agent
 WORKDIR /src/worker-agent
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/discobox-worker-agent ./cmd/discobox-worker-agent
 

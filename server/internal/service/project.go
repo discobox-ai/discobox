@@ -12,7 +12,7 @@ import (
 	"github.com/obot-platform/discobox/model"
 	providerdocker "github.com/obot-platform/discobox/providers/sandbox/provider/docker"
 	dockerdriver "github.com/obot-platform/discobox/providers/sandbox/vm/docker"
-	"github.com/obot-platform/discobox/server/internal/authctx"
+	"github.com/obot-platform/discobox/server/internal/auth"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
@@ -33,8 +33,8 @@ func WithoutDefaultProviderInstallation() InitializeDefaultsOption {
 	}
 }
 
-// InitializeDefaults creates the single default project used before
-// user/project management APIs exist.
+// InitializeDefaults creates the built-in local identity and the single default
+// project used before user/project management APIs exist.
 func (s *Service) InitializeDefaults(ctx context.Context, userID string, options ...InitializeDefaultsOption) error {
 	var opts initializeDefaultsOptions
 	for _, option := range options {
@@ -43,6 +43,16 @@ func (s *Service) InitializeDefaults(ctx context.Context, userID string, options
 		}
 	}
 	now := time.Now().UTC()
+	if err := s.store.UpsertUser(ctx, &model.User{
+		ID:        userID,
+		Email:     "local@example.com",
+		Provider:  "default",
+		Subject:   "default",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		return err
+	}
 	project := &model.Project{
 		ID:          DefaultProjectID,
 		OwnerUserID: userID,
@@ -238,7 +248,7 @@ func mergeDefaultProviderConfig(current, defaults json.RawMessage) json.RawMessa
 }
 
 func (s *Service) ListProjects(ctx context.Context) ([]model.Project, error) {
-	if userID, err := authctx.UserID(ctx); err == nil {
+	if userID, err := auth.UserID(ctx); err == nil {
 		return s.store.ListProjectsForUser(ctx, userID)
 	}
 	return s.store.ListProjects(ctx)

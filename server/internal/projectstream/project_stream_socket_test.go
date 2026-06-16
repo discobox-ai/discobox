@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 
 	"github.com/obot-platform/discobox/model"
@@ -334,8 +332,7 @@ func testProjectStreamServer(t *testing.T) *httptest.Server {
 func testProjectStreamSSEServer(t *testing.T, service api.ProjectEventService) *httptest.Server {
 	t.Helper()
 	router := chi.NewRouter()
-	humaAPI := humachi.New(router, huma.DefaultConfig("Test", "0.0.0"))
-	RegisterProjectStreamSSEOperations(humaAPI, service)
+	RegisterProjectStreamSSERoutes(router, service)
 	server := httptest.NewServer(router)
 	t.Cleanup(server.Close)
 	return server

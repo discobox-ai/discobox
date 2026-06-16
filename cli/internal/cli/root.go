@@ -10,8 +10,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
 	"github.com/obot-platform/discobox/apiclient"
-	apiclientgen "github.com/obot-platform/discobox/apiclient/gen"
 )
 
 const defaultServerURL = "http://localhost:8080"

@@ -13,8 +13,8 @@ import (
 	"github.com/obot-platform/discobox/apperrors"
 	"github.com/obot-platform/discobox/model"
 	sandbox "github.com/obot-platform/discobox/sandboxprovider"
-	"github.com/obot-platform/discobox/worker-agent/workeragent"
-	workerclient "github.com/obot-platform/discobox/worker-agent/workeragent/client/gen"
+	workeragent "github.com/obot-platform/discobox/worker-agent"
+	workerclient "github.com/obot-platform/discobox/worker-agent/api/clientgen"
 )
 
 const (

@@ -3,7 +3,7 @@ package apiclient
 import (
 	"iter"
 
-	apiclientgen "github.com/obot-platform/discobox/apiclient/gen"
+	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
 )
 
 func Projects(body *apiclientgen.ListProjectsBody) iter.Seq[apiclientgen.Project] {

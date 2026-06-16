@@ -13,8 +13,8 @@ import (
 	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
 	sandbox "github.com/obot-platform/discobox/sandboxprovider"
-	"github.com/obot-platform/discobox/worker-agent/workeragent/sandboxruntime"
-	"github.com/obot-platform/discobox/worker-agent/workeragent/server"
+	"github.com/obot-platform/discobox/worker-agent/sandboxruntime"
+	"github.com/obot-platform/discobox/worker-agent/server"
 )
 
 func TestDesiredAdditionalWorkersLaunchesReplacementForOnlyDegradedWorker(t *testing.T) {

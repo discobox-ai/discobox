@@ -316,9 +316,19 @@ func TestValidateWorkerAuthTokenRejectsInvalidExpiredAndRevoked(t *testing.T) {
 	if err := s.ValidateWorkerAuthToken(ctx, worker.ID, validHash[:]); err != nil {
 		t.Fatalf("validate valid token: %v", err)
 	}
+	authenticatedWorkerID, err := s.AuthenticateWorkerAuthToken(ctx, validHash[:])
+	if err != nil {
+		t.Fatalf("authenticate valid token: %v", err)
+	}
+	if authenticatedWorkerID != worker.ID {
+		t.Fatalf("authenticated worker ID = %q, want %q", authenticatedWorkerID, worker.ID)
+	}
 	for name, hash := range map[string][]byte{"invalid": invalidHash[:], "expired": expiredHash[:], "revoked": revokedHash[:]} {
 		if err := s.ValidateWorkerAuthToken(ctx, worker.ID, hash); !errors.Is(err, store.ErrNotFound) {
 			t.Fatalf("%s token error = %v, want ErrNotFound", name, err)
+		}
+		if _, err := s.AuthenticateWorkerAuthToken(ctx, hash); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("%s token authenticate error = %v, want ErrNotFound", name, err)
 		}
 	}
 }

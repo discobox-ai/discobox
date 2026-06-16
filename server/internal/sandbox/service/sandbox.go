@@ -4,14 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"strings"
 
-	"github.com/danielgtaylor/huma/v2"
+	"github.com/obot-platform/discobox/apperrors"
+
 	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/server/internal/api"
-	"github.com/obot-platform/discobox/server/internal/authctx"
+	"github.com/obot-platform/discobox/server/internal/auth"
 
 	sandboxprovider "github.com/obot-platform/discobox/sandboxprovider"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
@@ -50,7 +52,7 @@ func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 
 func mapAPIError(err error, notFoundMessage string) error {
 	if errors.Is(err, store.ErrNotFound) {
-		return huma.Error404NotFound(notFoundMessage)
+		return apperrors.NewStatusError(http.StatusNotFound, notFoundMessage)
 	}
 	return err
 }
@@ -79,7 +81,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input api
 	if err != nil {
 		return nil, mapAPIError(err, "project not found")
 	}
-	providerID := input.ProviderInstanceID
+	providerID := api.OptStringPtr(input.ProviderInstanceId)
 	if providerID == nil && project.DefaultSandboxProviderID != "" {
 		id := project.DefaultSandboxProviderID
 		providerID = &id
@@ -93,7 +95,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input api
 			return nil, fmt.Errorf("provider instance disabled")
 		}
 	}
-	agentConfigID, err := s.resolveAgentConfigID(ctx, projectID, input.AgentConfigID, input.AgentName)
+	agentConfigID, err := s.resolveAgentConfigID(ctx, projectID, input.AgentConfigId, input.AgentName)
 	if err != nil {
 		return nil, err
 	}
@@ -102,12 +104,20 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input api
 		return nil, fmt.Errorf("sandbox name is required")
 	}
 	userID := s.defaultUserID
-	if authenticatedUserID, err := authctx.UserID(ctx); err == nil {
+	if authenticatedUserID, err := auth.UserID(ctx); err == nil {
 		userID = authenticatedUserID
 	}
 	sandboxID, err := id.New()
 	if err != nil {
 		return nil, err
+	}
+	sourceCodeReferences := model.SourceCodeReferences(nil)
+	if refs, ok := input.SourceCodeReferences.Get(); ok {
+		var err error
+		sourceCodeReferences, err = api.Convert[model.SourceCodeReferences](refs)
+		if err != nil {
+			return nil, err
+		}
 	}
 	sandbox := &model.Sandbox{
 		ID:                       sandboxID,
@@ -116,39 +126,41 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input api
 		ProviderInstanceID:       providerID,
 		AgentConfigID:            agentConfigID,
 		Name:                     input.Name,
-		Description:              input.Description,
+		Description:              api.OptStringPtr(input.Description),
 		ResourceLifecycle:        model.NewResourceLifecycle(model.SandboxCreateOperation, nil),
-		AgentModel:               input.AgentModel,
-		AgentModelServiceTier:    input.AgentModelServiceTier,
-		AgentModelReasoningLevel: input.AgentModelReasoningLevel,
-		Prompt:                   input.Prompt,
-		SourceURL:                input.SourceURL,
-		SourceRef:                input.SourceRef,
-		SourceRefType:            input.SourceRefType,
-		SourceDirectory:          input.SourceDirectory,
-		WorkingDirectory:         input.WorkingDirectory,
-		SourceCodeReferences:     input.SourceCodeReferences,
-		UserUID:                  input.UserUID,
-		UserGID:                  input.UserGID,
-		CPUVCPUs:                 input.CPUVCPUs,
-		MemoryBytes:              input.MemoryBytes,
-		StorageBytes:             input.StorageBytes,
+		AgentModel:               api.OptStringPtr(input.AgentModel),
+		AgentModelServiceTier:    api.OptStringPtr(input.AgentModelServiceTier),
+		AgentModelReasoningLevel: api.OptStringPtr(input.AgentModelReasoningLevel),
+		Prompt:                   api.OptStringPtr(input.Prompt),
+		SourceURL:                api.OptURIStringPtr(input.SourceUrl),
+		SourceRef:                api.OptStringPtr(input.SourceRef),
+		SourceRefType:            api.OptStringPtr(input.SourceRefType),
+		SourceDirectory:          api.OptStringPtr(input.SourceDirectory),
+		WorkingDirectory:         api.OptStringPtr(input.WorkingDirectory),
+		SourceCodeReferences:     sourceCodeReferences,
+		UserUID:                  api.OptIntPtr(input.UserUid),
+		UserGID:                  api.OptIntPtr(input.UserGid),
+		CPUVCPUs:                 input.CpuVcpus.Or(0),
+		MemoryBytes:              input.MemoryBytes.Or(0),
+		StorageBytes:             input.StorageBytes.Or(0),
+		RuntimeState:             api.RawMessage(input.RuntimeState),
 	}
 	return s.sandboxes.Create(ctx, sandbox)
 }
 
-func (s *Service) resolveAgentConfigID(ctx context.Context, projectID string, agentConfigID, agentName *string) (*string, error) {
-	if agentConfigID != nil && *agentConfigID != "" {
-		config, err := s.store.GetAgentConfig(ctx, projectID, *agentConfigID)
+func (s *Service) resolveAgentConfigID(ctx context.Context, projectID string, agentConfigID, agentName api.OptString) (*string, error) {
+	if id, ok := agentConfigID.Get(); ok && id != "" {
+		config, err := s.store.GetAgentConfig(ctx, projectID, id)
 		if err != nil {
 			return nil, mapAPIError(err, "agent config not found")
 		}
 		return &config.ID, nil
 	}
-	if agentName == nil || strings.TrimSpace(*agentName) == "" {
+	name, ok := agentName.Get()
+	if !ok || strings.TrimSpace(name) == "" {
 		return nil, nil
 	}
-	config, err := s.store.GetAgentConfigByName(ctx, projectID, strings.TrimSpace(*agentName))
+	config, err := s.store.GetAgentConfigByName(ctx, projectID, strings.TrimSpace(name))
 	if err != nil {
 		return nil, mapAPIError(err, "agent config not found")
 	}
@@ -169,8 +181,8 @@ func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string
 		return nil, mapAPIError(err, "sandbox not found")
 	}
 
-	if input.Name != nil {
-		sandbox.Name = *input.Name
+	if name, ok := input.Name.Get(); ok {
+		sandbox.Name = name
 	}
 
 	if err := s.store.UpdateSandbox(ctx, sandbox); err != nil {

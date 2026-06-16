@@ -4,8 +4,9 @@ package service
 import (
 	"context"
 	"errors"
+	"net/http"
 
-	"github.com/danielgtaylor/huma/v2"
+	"github.com/obot-platform/discobox/apperrors"
 
 	"github.com/obot-platform/discobox/orchestration"
 	providersandbox "github.com/obot-platform/discobox/providers/sandbox/provider"
@@ -54,7 +55,7 @@ func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 
 func apiError(err error, notFoundMessage string) error {
 	if errors.Is(err, store.ErrNotFound) {
-		return huma.Error404NotFound(notFoundMessage)
+		return apperrors.NewStatusError(http.StatusNotFound, notFoundMessage)
 	}
 	return err
 }

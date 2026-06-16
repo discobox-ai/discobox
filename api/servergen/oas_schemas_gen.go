@@ -2836,10 +2836,9 @@ type RegisterWorkerBody struct {
 	Schema         OptURI    `json:"$schema"`
 	BootstrapToken string    `json:"bootstrapToken"`
 	KeyType        OptString `json:"keyType"`
-	ProjectId      OptString `json:"projectId"`
+	ProjectId      string    `json:"projectId"`
 	PublicKey      string    `json:"publicKey"`
-	SandboxId      OptString `json:"sandboxId"`
-	WorkerId       string    `json:"workerId"`
+	SandboxId      string    `json:"sandboxId"`
 }
 
 // GetSchema returns the value of Schema.
@@ -2858,7 +2857,7 @@ func (s *RegisterWorkerBody) GetKeyType() OptString {
 }
 
 // GetProjectId returns the value of ProjectId.
-func (s *RegisterWorkerBody) GetProjectId() OptString {
+func (s *RegisterWorkerBody) GetProjectId() string {
 	return s.ProjectId
 }
 
@@ -2868,13 +2867,8 @@ func (s *RegisterWorkerBody) GetPublicKey() string {
 }
 
 // GetSandboxId returns the value of SandboxId.
-func (s *RegisterWorkerBody) GetSandboxId() OptString {
+func (s *RegisterWorkerBody) GetSandboxId() string {
 	return s.SandboxId
-}
-
-// GetWorkerId returns the value of WorkerId.
-func (s *RegisterWorkerBody) GetWorkerId() string {
-	return s.WorkerId
 }
 
 // SetSchema sets the value of Schema.
@@ -2893,7 +2887,7 @@ func (s *RegisterWorkerBody) SetKeyType(val OptString) {
 }
 
 // SetProjectId sets the value of ProjectId.
-func (s *RegisterWorkerBody) SetProjectId(val OptString) {
+func (s *RegisterWorkerBody) SetProjectId(val string) {
 	s.ProjectId = val
 }
 
@@ -2903,13 +2897,8 @@ func (s *RegisterWorkerBody) SetPublicKey(val string) {
 }
 
 // SetSandboxId sets the value of SandboxId.
-func (s *RegisterWorkerBody) SetSandboxId(val OptString) {
+func (s *RegisterWorkerBody) SetSandboxId(val string) {
 	s.SandboxId = val
-}
-
-// SetWorkerId sets the value of WorkerId.
-func (s *RegisterWorkerBody) SetWorkerId(val string) {
-	s.WorkerId = val
 }
 
 // Ref: #/components/schemas/RegisterWorkerResponseBody
@@ -4330,7 +4319,6 @@ type UpdateWorkerStatusBody struct {
 	Degraded              bool    `json:"degraded"`
 	Ready                 bool    `json:"ready"`
 	Schedulable           bool    `json:"schedulable"`
-	WorkerId              string  `json:"workerId"`
 }
 
 // GetSchema returns the value of Schema.
@@ -4373,11 +4361,6 @@ func (s *UpdateWorkerStatusBody) GetSchedulable() bool {
 	return s.Schedulable
 }
 
-// GetWorkerId returns the value of WorkerId.
-func (s *UpdateWorkerStatusBody) GetWorkerId() string {
-	return s.WorkerId
-}
-
 // SetSchema sets the value of Schema.
 func (s *UpdateWorkerStatusBody) SetSchema(val OptURI) {
 	s.Schema = val
@@ -4416,11 +4399,6 @@ func (s *UpdateWorkerStatusBody) SetReady(val bool) {
 // SetSchedulable sets the value of Schedulable.
 func (s *UpdateWorkerStatusBody) SetSchedulable(val bool) {
 	s.Schedulable = val
-}
-
-// SetWorkerId sets the value of WorkerId.
-func (s *UpdateWorkerStatusBody) SetWorkerId(val string) {
-	s.WorkerId = val
 }
 
 // Ref: #/components/schemas/User

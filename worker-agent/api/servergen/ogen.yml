@@ -1,0 +1,9 @@
+generator:
+  ignore_not_implemented:
+    - unsupported content types
+  features:
+    disable:
+      - paths/client
+      - webhooks/client
+      - webhooks/server
+      - server/response/validation

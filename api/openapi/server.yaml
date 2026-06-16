@@ -574,10 +574,9 @@ components:
                     type: string
                 sandboxId:
                     type: string
-                workerId:
-                    type: string
             required:
-                - workerId
+                - projectId
+                - sandboxId
                 - bootstrapToken
                 - publicKey
             type: object
@@ -1271,10 +1270,7 @@ components:
                     type: boolean
                 schedulable:
                     type: boolean
-                workerId:
-                    type: string
             required:
-                - workerId
                 - ready
                 - schedulable
                 - degraded
@@ -1543,10 +1539,17 @@ paths:
             summary: Register a bootstrapped worker
             tags:
                 - Workers
-    /api/workers/status:
+    /api/workers/{workerId}/status:
         post:
             operationId: update-worker-status
             parameters:
+                - description: Worker ID
+                  in: path
+                  name: workerId
+                  required: true
+                  schema:
+                    description: Worker ID
+                    type: string
                 - description: Bearer worker auth token returned by registration
                   in: header
                   name: Authorization

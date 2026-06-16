@@ -4741,35 +4741,26 @@ func (s *RegisterWorkerBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.ProjectId.Set {
-			e.FieldStart("projectId")
-			s.ProjectId.Encode(e)
-		}
+		e.FieldStart("projectId")
+		e.Str(s.ProjectId)
 	}
 	{
 		e.FieldStart("publicKey")
 		e.Str(s.PublicKey)
 	}
 	{
-		if s.SandboxId.Set {
-			e.FieldStart("sandboxId")
-			s.SandboxId.Encode(e)
-		}
-	}
-	{
-		e.FieldStart("workerId")
-		e.Str(s.WorkerId)
+		e.FieldStart("sandboxId")
+		e.Str(s.SandboxId)
 	}
 }
 
-var jsonFieldsNameOfRegisterWorkerBody = [7]string{
+var jsonFieldsNameOfRegisterWorkerBody = [6]string{
 	0: "$schema",
 	1: "bootstrapToken",
 	2: "keyType",
 	3: "projectId",
 	4: "publicKey",
 	5: "sandboxId",
-	6: "workerId",
 }
 
 // Decode decodes RegisterWorkerBody from json.
@@ -4814,9 +4805,11 @@ func (s *RegisterWorkerBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"keyType\"")
 			}
 		case "projectId":
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
-				s.ProjectId.Reset()
-				if err := s.ProjectId.Decode(d); err != nil {
+				v, err := d.Str()
+				s.ProjectId = string(v)
+				if err != nil {
 					return err
 				}
 				return nil
@@ -4836,26 +4829,16 @@ func (s *RegisterWorkerBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"publicKey\"")
 			}
 		case "sandboxId":
-			if err := func() error {
-				s.SandboxId.Reset()
-				if err := s.SandboxId.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"sandboxId\"")
-			}
-		case "workerId":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
-				s.WorkerId = string(v)
+				s.SandboxId = string(v)
 				if err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"workerId\"")
+				return errors.Wrap(err, "decode field \"sandboxId\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -4867,7 +4850,7 @@ func (s *RegisterWorkerBody) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b01010010,
+		0b00111010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -7401,13 +7384,9 @@ func (s *UpdateWorkerStatusBody) encodeFields(e *jx.Encoder) {
 		e.FieldStart("schedulable")
 		e.Bool(s.Schedulable)
 	}
-	{
-		e.FieldStart("workerId")
-		e.Str(s.WorkerId)
-	}
 }
 
-var jsonFieldsNameOfUpdateWorkerStatusBody = [9]string{
+var jsonFieldsNameOfUpdateWorkerStatusBody = [8]string{
 	0: "$schema",
 	1: "availableCpuVcpus",
 	2: "availableMemoryBytes",
@@ -7416,7 +7395,6 @@ var jsonFieldsNameOfUpdateWorkerStatusBody = [9]string{
 	5: "degraded",
 	6: "ready",
 	7: "schedulable",
-	8: "workerId",
 }
 
 // Decode decodes UpdateWorkerStatusBody from json.
@@ -7424,7 +7402,7 @@ func (s *UpdateWorkerStatusBody) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode UpdateWorkerStatusBody to nil")
 	}
-	var requiredBitSet [2]uint8
+	var requiredBitSet [1]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -7521,18 +7499,6 @@ func (s *UpdateWorkerStatusBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"schedulable\"")
 			}
-		case "workerId":
-			requiredBitSet[1] |= 1 << 0
-			if err := func() error {
-				v, err := d.Str()
-				s.WorkerId = string(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"workerId\"")
-			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -7542,9 +7508,8 @@ func (s *UpdateWorkerStatusBody) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [2]uint8{
+	for i, mask := range [1]uint8{
 		0b11101110,
-		0b00000001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

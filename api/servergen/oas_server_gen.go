@@ -156,8 +156,8 @@ type Handler interface {
 	//
 	// Update worker status.
 	//
-	// POST /api/workers/status
-	UpdateWorkerStatus(ctx context.Context, req *UpdateWorkerStatusBody) (UpdateWorkerStatusRes, error)
+	// POST /api/workers/{workerId}/status
+	UpdateWorkerStatus(ctx context.Context, req *UpdateWorkerStatusBody, params UpdateWorkerStatusParams) (UpdateWorkerStatusRes, error)
 }
 
 // Server implements http server based on OpenAPI v3 specification and

@@ -3,8 +3,10 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 
-	"github.com/danielgtaylor/huma/v2"
+	"github.com/obot-platform/discobox/apperrors"
+
 	"github.com/obot-platform/discobox/model"
 )
 
@@ -34,7 +36,7 @@ func (s *Service) ListAgentConfigDefinitions(context.Context) ([]model.AgentConf
 func (s *Service) GetAgentConfigDefinition(_ context.Context, definitionID string) (*model.AgentConfigDefinition, error) {
 	definition, ok := agentConfigDefinitionByID(definitionID)
 	if !ok {
-		return nil, huma.Error404NotFound("agent config definition not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config definition not found")
 	}
 	return definition, nil
 }

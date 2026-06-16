@@ -3,7 +3,7 @@ package apiclient
 import (
 	"testing"
 
-	apiclientgen "github.com/obot-platform/discobox/apiclient/gen"
+	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
 )
 
 func TestProjectsSeq(t *testing.T) {

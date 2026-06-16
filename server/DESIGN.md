@@ -40,18 +40,32 @@ of deriving the contract from Go route registration.
 
 Current transition state:
 
-- `internal/server.NewRouter` and `NewApplicationRouter` compose the active Huma
-  route registration path.
-- `internal/server.NewGeneratedRouter` mounts the generated OpenAPI server
-  scaffold through chi.
-- `internal/generatedapi` is the adapter layer for endpoint-by-endpoint migration
-  from Huma handlers to generated handlers.
+- `internal/server.NewRouter`, `NewApplicationRouter`, and `NewGeneratedRouter`
+  compose chi routers around the generated OpenAPI server scaffold.
+- `internal/generatedapi` adapts generated operations to API-facing services.
+- `internal/api` owns service interfaces and aliases generated server DTOs for
+  server packages during the generated-server migration.
 - Project stream websocket and SSE routes stay hand-wired in
   `internal/projectstream`; generated OpenAPI scaffolding does not own streaming
-  transport mechanics.
+  transport mechanics, and ogen skips `text/event-stream` operations.
 
-New endpoints should prefer the contract-first generated path. When touching old
-Huma operations, migrate narrowly and keep behavior-compatible tests.
+New endpoints should prefer the contract-first generated path. Keep streaming
+transports hand-wired unless the generator can own them behavior-compatibly.
+
+Authorization must be decidable from request attributes available before body
+interpretation: authenticated principal, method, route/path parameters, query
+parameters, headers, and resource ownership loaded by those attributes. Do not
+require request-body fields to decide whether the caller may access the target
+resource; put authorization identity in the URL or other request metadata instead.
+
+Narrow exception: `POST /api/workers/register` is a bootstrap credential
+redemption flow, not normal resource access. Its body carries the project ID,
+sandbox ID, one-time bootstrap token, and public key because a worker does not
+yet have a runtime principal or token. The service may use those body fields
+only to redeem the short-lived, one-time bootstrap token against the sandbox's
+preassigned worker and issue the first runtime worker token. Subsequent worker
+authorization must use request metadata and the authenticated worker principal,
+such as `/api/workers/{workerId}/status`.
 
 ## Runtime Observability
 
@@ -87,7 +101,7 @@ sequenceDiagram
     Reconciler->>Store: observed state + event
 ```
 
-API handlers stay thin: decode generated/Huma DTOs, call services, and encode
+API handlers stay thin: decode generated OpenAPI DTOs, call services, and encode
 responses. Services own validation, intent changes, event creation, and job
 submission. Reconcilers own generation checks and runtime operation progress.
 
@@ -96,10 +110,10 @@ submission. Reconcilers own generation checks and runtime operation progress.
 | Package/path | Ownership |
 | --- | --- |
 | `cmd/discobox-server` | Server binary entrypoint. |
-| `internal/server` | HTTP startup, chi router composition, middleware wiring, generated/Huma route mounting. |
-| `internal/server/middleware` | Authentication, project authorization, and generic authorization middleware. |
+| `internal/server` | HTTP startup, chi router composition, auth middleware wiring, generated route mounting, and hand-wired stream transport registration. |
+| `internal/auth` | Request authentication, authorization, and principal context helpers. |
 | `internal/server/defaults` | Startup/default identity initialization. |
-| `internal/api` | Legacy Huma operation definitions and service interfaces during the generated-server migration. |
+| `internal/api` | Service interfaces and generated server DTO aliases used across server packages during the generated-server migration. |
 | `internal/generatedapi` | Generated OpenAPI handler adapter layer for server business logic. |
 | `internal/service` | API-facing business logic, default data initialization, intent transactions, and provider catalog behavior. |
 | `internal/sandbox` | Server-owned sandbox/worker reconcilers, job submitters, root `sandboxprovider.ProviderManager` injection/usage, and sandbox-service glue. |
@@ -109,7 +123,6 @@ submission. Reconcilers own generation checks and runtime operation progress.
 | `internal/projectstream` | Websocket/SSE project event streaming transports. |
 | `internal/sandboxauth` | Sandbox access issuer keys and worker/sandbox auth token helpers. |
 | `internal/secrets` | Encryption/sealing interfaces and implementations used by server persistence. |
-| `internal/authctx` | Request authentication context helpers. |
 | `internal/config` | Server configuration loading. |
 
 ## Dependency Rules
@@ -128,6 +141,7 @@ submission. Reconcilers own generation checks and runtime operation progress.
 
 | Package | Design notes |
 | --- | --- |
+| `internal/auth` | [`internal/auth/DESIGN.md`](internal/auth/DESIGN.md) |
 | `internal/database` | [`internal/database/DESIGN.md`](internal/database/DESIGN.md) |
 | `internal/projectstream` | [`internal/projectstream/DESIGN.md`](internal/projectstream/DESIGN.md) |
 | `internal/sandbox` | [`internal/sandbox/DESIGN.md`](internal/sandbox/DESIGN.md) |

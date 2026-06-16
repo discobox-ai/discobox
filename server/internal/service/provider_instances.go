@@ -15,16 +15,11 @@ func (s *Service) ListSandboxProviderCatalogItems(context.Context) ([]api.Sandbo
 	items := s.ListSandboxProviderCatalog()
 	out := make([]api.SandboxProviderCatalogItem, 0, len(items))
 	for _, item := range items {
-		out = append(out, api.SandboxProviderCatalogItem{
-			ID:           item.ID,
-			Name:         item.Name,
-			Icon:         item.Icon,
-			Description:  item.Description,
-			Available:    item.Available,
-			BuiltIn:      item.BuiltIn,
-			Capabilities: item.Capabilities,
-			ConfigFields: item.ConfigFields,
-		})
+		converted, err := api.Convert[api.SandboxProviderCatalogItem](item)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, converted)
 	}
 	return out, nil
 }
@@ -44,10 +39,10 @@ func (s *Service) CreateSandboxProviderInstance(ctx context.Context, projectID s
 	if strings.TrimSpace(input.Type) == "" {
 		return nil, apiError(fmt.Errorf("type is required"), "")
 	}
-	if err := s.SandboxProviderManager().ValidateProviderConfig(input.Type, input.Config); err != nil {
+	if err := s.SandboxProviderManager().ValidateProviderConfig(input.Type, api.RawMessage(input.Config)); err != nil {
 		return nil, err
 	}
-	provider := &model.SandboxProviderInstance{ProjectID: projectID, Type: input.Type, Name: input.Name, Config: input.Config}
+	provider := &model.SandboxProviderInstance{ProjectID: projectID, Type: input.Type, Name: input.Name, Config: api.RawMessage(input.Config)}
 	if err := s.store.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		return nil, err
 	}
@@ -135,17 +130,18 @@ func (s *Service) UpdateSandboxProviderInstance(ctx context.Context, projectID, 
 	if err != nil {
 		return nil, apiError(err, "provider instance not found")
 	}
-	if input.Name != nil {
-		provider.Name = *input.Name
+	if name, ok := input.Name.Get(); ok {
+		provider.Name = name
 	}
-	if input.Config != nil {
-		if err := s.SandboxProviderManager().ValidateProviderConfig(provider.Type, input.Config); err != nil {
+	if len(input.Config) > 0 {
+		config := api.RawMessage(input.Config)
+		if err := s.SandboxProviderManager().ValidateProviderConfig(provider.Type, config); err != nil {
 			return nil, err
 		}
-		provider.Config = input.Config
+		provider.Config = config
 	}
-	if input.Disabled != nil {
-		provider.Disabled = *input.Disabled
+	if disabled, ok := input.Disabled.Get(); ok {
+		provider.Disabled = disabled
 	}
 	if err := s.store.UpdateSandboxProviderInstance(ctx, provider); err != nil {
 		return nil, err

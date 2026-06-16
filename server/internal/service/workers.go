@@ -6,61 +6,58 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
-	"github.com/danielgtaylor/huma/v2"
+	"github.com/obot-platform/discobox/apperrors"
 
 	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/server/internal/api"
+	"github.com/obot-platform/discobox/server/internal/auth"
 )
 
 func (s *Service) RegisterWorker(ctx context.Context, input api.RegisterWorkerBody) (*api.RegisterWorkerResponseBody, error) {
-	if strings.TrimSpace(input.WorkerID) == "" || strings.TrimSpace(input.BootstrapToken) == "" || strings.TrimSpace(input.PublicKey) == "" {
-		return nil, fmt.Errorf("workerId, bootstrapToken, and publicKey are required")
+	projectID := strings.TrimSpace(input.ProjectId)
+	sandboxID := strings.TrimSpace(input.SandboxId)
+	if projectID == "" || sandboxID == "" || strings.TrimSpace(input.BootstrapToken) == "" || strings.TrimSpace(input.PublicKey) == "" {
+		return nil, fmt.Errorf("projectId, sandboxId, bootstrapToken, and publicKey are required")
 	}
+	sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
+	if err != nil {
+		return nil, apiError(err, "sandbox not found")
+	}
+	if sandbox.WorkerID == nil || strings.TrimSpace(*sandbox.WorkerID) == "" {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "sandbox does not have an assigned worker")
+	}
+	workerID := strings.TrimSpace(*sandbox.WorkerID)
 	h := sha256.Sum256([]byte(input.BootstrapToken))
 	authToken, err := randomToken()
 	if err != nil {
 		return nil, err
 	}
 	authHash := sha256.Sum256([]byte(authToken))
-	_, err = s.store.RegisterWorker(ctx, input.WorkerID, h[:], input.PublicKey, serviceDefaultString(input.KeyType, "ed25519"), authHash[:], time.Now().UTC().Add(time.Hour))
+	_, err = s.store.RegisterWorker(ctx, workerID, h[:], input.PublicKey, serviceDefaultString(input.KeyType.Or(""), "ed25519"), authHash[:], time.Now().UTC().Add(time.Hour))
 	if err != nil {
 		return nil, apiError(err, "worker bootstrap token not found")
 	}
 	return &api.RegisterWorkerResponseBody{AuthToken: authToken}, nil
 }
 
-func (s *Service) UpdateWorkerStatus(ctx context.Context, authorization string, input api.UpdateWorkerStatusBody) (*model.Worker, error) {
-	token := bearerToken(authorization)
-	if token == "" {
-		return nil, huma.Error401Unauthorized("worker auth token required")
+func (s *Service) UpdateWorkerStatus(ctx context.Context, workerID string, input api.UpdateWorkerStatusBody) (*model.Worker, error) {
+	workerID = strings.TrimSpace(workerID)
+	if workerID == "" {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "workerId is required")
 	}
-	if strings.TrimSpace(input.WorkerID) == "" {
-		return nil, huma.Error400BadRequest("workerId is required")
+	principal, ok := auth.PrincipalFromContext(ctx)
+	if !ok || principal.Type != auth.PrincipalTypeWorker || principal.WorkerID != workerID {
+		return nil, apperrors.NewStatusError(http.StatusForbidden, "worker is not authorized to update this status")
 	}
-	h := sha256.Sum256([]byte(token))
-	if err := s.store.ValidateWorkerAuthToken(ctx, input.WorkerID, h[:]); err != nil {
-		return nil, huma.Error401Unauthorized("invalid worker auth token")
-	}
-	worker, err := s.store.UpdateWorkerStatus(ctx, input.WorkerID, input.Ready, input.Schedulable, input.Degraded, input.AvailableCPUVCPUs, input.AvailableMemoryBytes, input.AvailableStorageBytes, input.Conditions)
+	worker, err := s.store.UpdateWorkerStatus(ctx, workerID, input.Ready, input.Schedulable, input.Degraded, input.AvailableCpuVcpus, input.AvailableMemoryBytes, input.AvailableStorageBytes, api.RawMessage(input.Conditions))
 	if err != nil {
 		return nil, apiError(err, "worker not found")
 	}
 	return worker, nil
-}
-
-func bearerToken(authorization string) string {
-	authorization = strings.TrimSpace(authorization)
-	if authorization == "" {
-		return ""
-	}
-	parts := strings.Fields(authorization)
-	if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
-		return strings.TrimSpace(parts[1])
-	}
-	return ""
 }
 
 func randomToken() (string, error) {

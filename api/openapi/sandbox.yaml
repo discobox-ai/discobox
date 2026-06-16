@@ -1,10 +1,11 @@
 openapi: 3.1.1
 info:
-  title: Discobox Sandbox REST API
+  title: Discobox Sandbox Agent REST API
   version: 0.1.0
   description: |
-    Canonical contract for the REST API exposed by a managed sandbox environment.
-    Providers delegate access to this API; callers should use generated clients.
+    Minimal seed contract for the future REST API exposed from inside a managed
+    sandbox environment. Worker-local sandbox operation routes are intentionally
+    defined by sandbox.json instead.
 servers:
   - url: http://sandbox.local
     description: Provider-delegated sandbox endpoint

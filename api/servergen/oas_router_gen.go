@@ -14,7 +14,7 @@ var (
 	rn21AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn28AllowedHeaders = map[string]string{
+	rn29AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn3AllowedHeaders = map[string]string{
@@ -184,7 +184,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					}
 					switch elem[0] {
 					case 'r': // Prefix: "register"
-
+						origElem := elem
 						if l := len("register"); len(elem) >= l && elem[0:l] == "register" {
 							elem = elem[l:]
 						} else {
@@ -208,9 +208,24 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							return
 						}
 
-					case 's': // Prefix: "status"
+						elem = origElem
+					}
+					// Param: "workerId"
+					// Match until "/"
+					idx := strings.IndexByte(elem, '/')
+					if idx < 0 {
+						idx = len(elem)
+					}
+					args[0] = elem[:idx]
+					elem = elem[idx:]
 
-						if l := len("status"); len(elem) >= l && elem[0:l] == "status" {
+					if len(elem) == 0 {
+						break
+					}
+					switch elem[0] {
+					case '/': // Prefix: "/status"
+
+						if l := len("/status"); len(elem) >= l && elem[0:l] == "/status" {
 							elem = elem[l:]
 						} else {
 							break
@@ -220,11 +235,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							// Leaf node.
 							switch r.Method {
 							case "POST":
-								s.handleUpdateWorkerStatusRequest([0]string{}, elemIsEscaped, w, r)
+								s.handleUpdateWorkerStatusRequest([1]string{
+									args[0],
+								}, elemIsEscaped, w, r)
 							default:
 								s.notAllowed(w, r, notAllowedParams{
 									allowedMethods: "POST",
-									allowedHeaders: rn28AllowedHeaders,
+									allowedHeaders: rn29AllowedHeaders,
 									acceptPost:     "application/json",
 									acceptPatch:    "",
 								})
@@ -888,7 +905,7 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 					}
 					switch elem[0] {
 					case 'r': // Prefix: "register"
-
+						origElem := elem
 						if l := len("register"); len(elem) >= l && elem[0:l] == "register" {
 							elem = elem[l:]
 						} else {
@@ -912,9 +929,24 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 							}
 						}
 
-					case 's': // Prefix: "status"
+						elem = origElem
+					}
+					// Param: "workerId"
+					// Match until "/"
+					idx := strings.IndexByte(elem, '/')
+					if idx < 0 {
+						idx = len(elem)
+					}
+					args[0] = elem[:idx]
+					elem = elem[idx:]
 
-						if l := len("status"); len(elem) >= l && elem[0:l] == "status" {
+					if len(elem) == 0 {
+						break
+					}
+					switch elem[0] {
+					case '/': // Prefix: "/status"
+
+						if l := len("/status"); len(elem) >= l && elem[0:l] == "/status" {
 							elem = elem[l:]
 						} else {
 							break
@@ -928,9 +960,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 								r.summary = "Update worker status"
 								r.operationID = "update-worker-status"
 								r.operationGroup = ""
-								r.pathPattern = "/api/workers/status"
+								r.pathPattern = "/api/workers/{workerId}/status"
 								r.args = args
-								r.count = 0
+								r.count = 1
 								return r, true
 							default:
 								return

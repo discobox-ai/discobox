@@ -1,7 +1,7 @@
 # Model Design
 
 This package contains the persisted/API model. The Go structs carry both GORM
-persistence tags and JSON/Huma API-facing tags.
+persistence tags and JSON/OpenAPI API-facing tags.
 
 ## Core Entities
 

@@ -233,7 +233,7 @@ func (UnimplementedHandler) UpdateSandboxProviderInstance(ctx context.Context, r
 //
 // Update worker status.
 //
-// POST /api/workers/status
-func (UnimplementedHandler) UpdateWorkerStatus(ctx context.Context, req *UpdateWorkerStatusBody) (r UpdateWorkerStatusRes, _ error) {
+// POST /api/workers/{workerId}/status
+func (UnimplementedHandler) UpdateWorkerStatus(ctx context.Context, req *UpdateWorkerStatusBody, params UpdateWorkerStatusParams) (r UpdateWorkerStatusRes, _ error) {
 	return r, ht.ErrNotImplemented
 }

@@ -3595,14 +3595,14 @@ func (s *Server) handleUpdateSandboxProviderInstanceRequest(args [2]string, args
 //
 // Update worker status.
 //
-// POST /api/workers/status
-func (s *Server) handleUpdateWorkerStatusRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+// POST /api/workers/{workerId}/status
+func (s *Server) handleUpdateWorkerStatusRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("update-worker-status"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/api/workers/status"),
+		semconv.HTTPRouteKey.String("/api/workers/{workerId}/status"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
@@ -3667,6 +3667,16 @@ func (s *Server) handleUpdateWorkerStatusRequest(args [0]string, argsEscaped boo
 			ID:   "update-worker-status",
 		}
 	)
+	params, err := decodeUpdateWorkerStatusParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
 
 	var rawBody []byte
 	request, rawBody, close, err := s.decodeUpdateWorkerStatusRequest(r)
@@ -3694,13 +3704,18 @@ func (s *Server) handleUpdateWorkerStatusRequest(args [0]string, argsEscaped boo
 			OperationID:      "update-worker-status",
 			Body:             request,
 			RawBody:          rawBody,
-			Params:           middleware.Parameters{},
-			Raw:              r,
+			Params: middleware.Parameters{
+				{
+					Name: "workerId",
+					In:   "path",
+				}: params.WorkerId,
+			},
+			Raw: r,
 		}
 
 		type (
 			Request  = *UpdateWorkerStatusBody
-			Params   = struct{}
+			Params   = UpdateWorkerStatusParams
 			Response = UpdateWorkerStatusRes
 		)
 		response, err = middleware.HookMiddleware[
@@ -3710,14 +3725,14 @@ func (s *Server) handleUpdateWorkerStatusRequest(args [0]string, argsEscaped boo
 		](
 			m,
 			mreq,
-			nil,
+			unpackUpdateWorkerStatusParams,
 			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.UpdateWorkerStatus(ctx, request)
+				response, err = s.h.UpdateWorkerStatus(ctx, request, params)
 				return response, err
 			},
 		)
 	} else {
-		response, err = s.h.UpdateWorkerStatus(ctx, request)
+		response, err = s.h.UpdateWorkerStatus(ctx, request, params)
 	}
 	if err != nil {
 		defer recordError("Internal", err)

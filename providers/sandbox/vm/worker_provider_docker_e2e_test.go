@@ -13,8 +13,8 @@ import (
 
 	"github.com/obot-platform/discobox/model"
 	sandbox "github.com/obot-platform/discobox/sandboxprovider"
-	"github.com/obot-platform/discobox/worker-agent/workeragent/sandboxruntime"
-	"github.com/obot-platform/discobox/worker-agent/workeragent/server"
+	"github.com/obot-platform/discobox/worker-agent/sandboxruntime"
+	"github.com/obot-platform/discobox/worker-agent/server"
 )
 
 const dockerIntegrationEnv = "DISCOBOX_DOCKER_INTEGRATION"

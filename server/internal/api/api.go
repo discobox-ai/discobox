@@ -1,13 +1,30 @@
-// Package api registers the public Huma operations for the sandbox manager.
+// Package api defines server service contracts using generated OpenAPI types.
 package api
 
 import (
 	"context"
 
-	"github.com/danielgtaylor/huma/v2"
-
+	serverapi "github.com/obot-platform/discobox/api/servergen"
 	"github.com/obot-platform/discobox/model"
 )
+
+type CreateAgentConfigBody = serverapi.CreateAgentConfigBody
+type UpdateAgentConfigBody = serverapi.UpdateAgentConfigBody
+type CreateSandboxBody = serverapi.CreateSandboxBody
+type UpdateSandboxBody = serverapi.UpdateSandboxBody
+type StartSandboxBody = serverapi.StartSandboxBody
+type StopSandboxBody = serverapi.StopSandboxBody
+type RestartSandboxBody = serverapi.RestartSandboxBody
+type SandboxProviderCatalogItem = serverapi.SandboxProviderCatalogItem
+type CreateSandboxProviderInstanceBody = serverapi.CreateSandboxProviderInstanceBody
+type UpdateSandboxProviderInstanceBody = serverapi.UpdateSandboxProviderInstanceBody
+type RegisterWorkerBody = serverapi.RegisterWorkerBody
+type RegisterWorkerResponseBody = serverapi.RegisterWorkerResponseBody
+type UpdateWorkerStatusBody = serverapi.UpdateWorkerStatusBody
+type OptString = serverapi.OptString
+type OptURI = serverapi.OptURI
+type OptInt64 = serverapi.OptInt64
+type OptCreateSandboxBodySourceCodeReferences = serverapi.OptCreateSandboxBodySourceCodeReferences
 
 // ProjectService provides read-only access to projects.
 type ProjectService interface {
@@ -49,7 +66,7 @@ type SandboxProviderInstanceService interface {
 
 type WorkerService interface {
 	RegisterWorker(ctx context.Context, input RegisterWorkerBody) (*RegisterWorkerResponseBody, error)
-	UpdateWorkerStatus(ctx context.Context, authorization string, input UpdateWorkerStatusBody) (*model.Worker, error)
+	UpdateWorkerStatus(ctx context.Context, workerID string, input UpdateWorkerStatusBody) (*model.Worker, error)
 }
 
 // ProjectEventService provides project-scoped event replay and live subscription.
@@ -68,13 +85,4 @@ type Services struct {
 	Providers    SandboxProviderInstanceService
 	Workers      WorkerService
 	Events       ProjectEventService
-}
-
-// Register registers all public API operations.
-func Register(api huma.API, services Services) {
-	RegisterProjectOperations(api, services.Projects)
-	RegisterAgentConfigOperations(api, services.AgentConfigs)
-	RegisterSandboxProviderInstanceOperations(api, services.Providers)
-	RegisterWorkerOperations(api, services.Workers)
-	RegisterSandboxOperations(api, services.Sandboxes)
 }

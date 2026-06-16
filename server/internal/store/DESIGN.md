@@ -11,7 +11,7 @@ flowchart LR
     service[internal/service] --> store[internal/store]
     reconcilers[internal/sandbox] --> store
     auth[internal/sandboxauth] --> store
-    middleware[internal/server/middleware] --> store
+    authn[internal/auth] --> store
     store --> db[(GORM write/read handles)]
     store --> model[root model]
     store --> events[internal/events publisher]

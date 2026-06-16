@@ -3,12 +3,14 @@ package service
 
 import (
 	"context"
+	"net/http"
 	"slices"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/danielgtaylor/huma/v2"
+	"github.com/obot-platform/discobox/apperrors"
+
 	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/server/internal/api"
@@ -71,7 +73,7 @@ func (s *Stub) GetProject(_ context.Context, projectID string) (*model.Project, 
 	defer s.mu.Unlock()
 
 	if projectID != s.project.ID {
-		return nil, huma.Error404NotFound("project not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	project := s.projectWithSandboxes()
 	return &project, nil
@@ -82,7 +84,7 @@ func (s *Stub) ListSandboxes(_ context.Context, projectID string) ([]model.Sandb
 	defer s.mu.Unlock()
 
 	if projectID != s.project.ID {
-		return nil, huma.Error404NotFound("project not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	return s.sortedSandboxes(), nil
 }
@@ -92,9 +94,9 @@ func (s *Stub) CreateSandbox(_ context.Context, projectID string, input api.Crea
 	defer s.mu.Unlock()
 
 	if projectID != s.project.ID {
-		return nil, huma.Error404NotFound("project not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
-	agentConfigID, err := s.resolveAgentConfigID(input.AgentConfigID, input.AgentName)
+	agentConfigID, err := s.resolveAgentConfigID(input.AgentConfigId, input.AgentName)
 	if err != nil {
 		return nil, err
 	}
@@ -104,23 +106,23 @@ func (s *Stub) CreateSandbox(_ context.Context, projectID string, input api.Crea
 		ID:                       id.NewString(),
 		ProjectID:                s.project.ID,
 		CreatedByUserID:          s.user.ID,
-		ProviderInstanceID:       input.ProviderInstanceID,
+		ProviderInstanceID:       api.OptStringPtr(input.ProviderInstanceId),
 		AgentConfigID:            agentConfigID,
 		Name:                     input.Name,
-		Description:              input.Description,
+		Description:              api.OptStringPtr(input.Description),
 		ResourceLifecycle:        model.NewResourceLifecycle(model.SandboxCreateOperation, nil),
-		AgentModel:               input.AgentModel,
-		AgentModelServiceTier:    input.AgentModelServiceTier,
-		AgentModelReasoningLevel: input.AgentModelReasoningLevel,
-		Prompt:                   input.Prompt,
-		SourceURL:                input.SourceURL,
-		SourceRef:                input.SourceRef,
-		SourceRefType:            input.SourceRefType,
-		SourceDirectory:          input.SourceDirectory,
-		WorkingDirectory:         input.WorkingDirectory,
-		SourceCodeReferences:     input.SourceCodeReferences,
-		UserUID:                  input.UserUID,
-		UserGID:                  input.UserGID,
+		AgentModel:               api.OptStringPtr(input.AgentModel),
+		AgentModelServiceTier:    api.OptStringPtr(input.AgentModelServiceTier),
+		AgentModelReasoningLevel: api.OptStringPtr(input.AgentModelReasoningLevel),
+		Prompt:                   api.OptStringPtr(input.Prompt),
+		SourceURL:                api.OptURIStringPtr(input.SourceUrl),
+		SourceRef:                api.OptStringPtr(input.SourceRef),
+		SourceRefType:            api.OptStringPtr(input.SourceRefType),
+		SourceDirectory:          api.OptStringPtr(input.SourceDirectory),
+		WorkingDirectory:         api.OptStringPtr(input.WorkingDirectory),
+		SourceCodeReferences:     stubSourceCodeReferences(input.SourceCodeReferences),
+		UserUID:                  api.OptIntPtr(input.UserUid),
+		UserGID:                  api.OptIntPtr(input.UserGid),
 		CreatedAt:                now,
 		UpdatedAt:                now,
 		CreatedBy:                &s.user,
@@ -149,8 +151,8 @@ func (s *Stub) UpdateSandbox(_ context.Context, projectID, sandboxID string, inp
 		return nil, err
 	}
 
-	if input.Name != nil {
-		sandbox.Name = *input.Name
+	if name, ok := input.Name.Get(); ok {
+		sandbox.Name = name
 	}
 	sandbox.UpdatedAt = time.Now().UTC()
 	s.sandboxes[sandbox.ID] = sandbox
@@ -185,7 +187,7 @@ func (s *Stub) MaxProjectEventSeq(_ context.Context, projectID string) (int64, e
 	defer s.mu.Unlock()
 
 	if projectID != s.project.ID {
-		return 0, huma.Error404NotFound("project not found")
+		return 0, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	return 0, nil
 }
@@ -195,7 +197,7 @@ func (s *Stub) ListProjectEventsAfterSeq(_ context.Context, projectID string, _ 
 	defer s.mu.Unlock()
 
 	if projectID != s.project.ID {
-		return nil, huma.Error404NotFound("project not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	return []model.ProjectEvent{}, nil
 }
@@ -205,7 +207,7 @@ func (s *Stub) ListProjectResourceSnapshots(_ context.Context, projectID string,
 	defer s.mu.Unlock()
 
 	if projectID != s.project.ID {
-		return nil, huma.Error404NotFound("project not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	return []model.ProjectEvent{}, nil
 }
@@ -215,7 +217,7 @@ func (s *Stub) SubscribeProjectEvents(ctx context.Context, projectID string) (<-
 	defer s.mu.Unlock()
 
 	if projectID != s.project.ID {
-		return nil, nil, huma.Error404NotFound("project not found")
+		return nil, nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	ch := make(chan model.ProjectEvent)
 	unsubscribe := func() {
@@ -235,7 +237,7 @@ func (s *Stub) ListAgentConfigDefinitions(context.Context) ([]model.AgentConfigD
 func (s *Stub) GetAgentConfigDefinition(_ context.Context, definitionID string) (*model.AgentConfigDefinition, error) {
 	definition, ok := agentConfigDefinitionByID(definitionID)
 	if !ok {
-		return nil, huma.Error404NotFound("agent config definition not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config definition not found")
 	}
 	return definition, nil
 }
@@ -244,7 +246,7 @@ func (s *Stub) ListAgentConfigs(_ context.Context, projectID string) ([]model.Ag
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
-		return nil, huma.Error404NotFound("project not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	configs := make([]model.AgentConfig, 0, len(s.agentConfigs))
 	for _, config := range s.agentConfigs {
@@ -266,29 +268,29 @@ func (s *Stub) CreateAgentConfig(_ context.Context, projectID string, input api.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
-		return nil, huma.Error404NotFound("project not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	var definition *model.AgentConfigDefinition
-	if input.DefinitionID != nil {
-		var ok bool
-		definition, ok = agentConfigDefinitionByID(*input.DefinitionID)
-		if !ok {
-			return nil, huma.Error404NotFound("agent config definition not found")
+	if definitionID, isSet := input.DefinitionId.Get(); isSet {
+		var found bool
+		definition, found = agentConfigDefinitionByID(definitionID)
+		if !found {
+			return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config definition not found")
 		}
 	}
-	name := strings.TrimSpace(input.Name)
+	name := strings.TrimSpace(input.Name.Or(""))
 	if name == "" && definition != nil {
 		name = definition.Name
 	}
-	installCommand := input.InstallCommand
+	installCommand := input.InstallCommand.Or("")
 	if installCommand == "" && definition != nil {
 		installCommand = definition.InstallCommand
 	}
-	runCommand := input.RunCommand
+	runCommand := input.RunCommand.Or("")
 	if strings.TrimSpace(runCommand) == "" && definition != nil {
 		runCommand = definition.RunCommand
 	}
-	capabilities := input.Capabilities
+	capabilities := api.RawMessage(input.Capabilities)
 	if capabilities == nil && definition != nil {
 		capabilities = cloneRawMessage(definition.Capabilities)
 	}
@@ -302,11 +304,11 @@ func (s *Stub) GetAgentConfig(_ context.Context, projectID, configID string) (*m
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
-		return nil, huma.Error404NotFound("project not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	config, ok := s.agentConfigs[configID]
 	if !ok {
-		return nil, huma.Error404NotFound("agent config not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
 	}
 	return &config, nil
 }
@@ -315,23 +317,23 @@ func (s *Stub) UpdateAgentConfig(_ context.Context, projectID, configID string, 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
-		return nil, huma.Error404NotFound("project not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	config, ok := s.agentConfigs[configID]
 	if !ok {
-		return nil, huma.Error404NotFound("agent config not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
 	}
-	if input.Name != nil {
-		config.Name = *input.Name
+	if name, ok := input.Name.Get(); ok {
+		config.Name = name
 	}
-	if input.InstallCommand != nil {
-		config.InstallCommand = *input.InstallCommand
+	if installCommand, ok := input.InstallCommand.Get(); ok {
+		config.InstallCommand = installCommand
 	}
-	if input.RunCommand != nil {
-		config.RunCommand = *input.RunCommand
+	if runCommand, ok := input.RunCommand.Get(); ok {
+		config.RunCommand = runCommand
 	}
-	if input.Capabilities != nil {
-		config.Capabilities = input.Capabilities
+	if len(input.Capabilities) > 0 {
+		config.Capabilities = api.RawMessage(input.Capabilities)
 	}
 	config.UpdatedAt = time.Now().UTC()
 	s.agentConfigs[config.ID] = config
@@ -342,10 +344,10 @@ func (s *Stub) DeleteAgentConfig(_ context.Context, projectID, configID string) 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
-		return huma.Error404NotFound("project not found")
+		return apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	if _, ok := s.agentConfigs[configID]; !ok {
-		return huma.Error404NotFound("agent config not found")
+		return apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
 	}
 	delete(s.agentConfigs, configID)
 	return nil
@@ -359,7 +361,7 @@ func (s *Stub) ListSandboxProviderInstances(_ context.Context, projectID string)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
-		return nil, huma.Error404NotFound("project not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	return s.sortedProviders(), nil
 }
@@ -368,10 +370,10 @@ func (s *Stub) CreateSandboxProviderInstance(_ context.Context, projectID string
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
-		return nil, huma.Error404NotFound("project not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	now := time.Now().UTC()
-	provider := model.SandboxProviderInstance{ID: id.NewString(), ProjectID: projectID, Type: input.Type, Name: input.Name, Config: input.Config, CreatedAt: now, UpdatedAt: now}
+	provider := model.SandboxProviderInstance{ID: id.NewString(), ProjectID: projectID, Type: input.Type, Name: input.Name, Config: api.RawMessage(input.Config), CreatedAt: now, UpdatedAt: now}
 	s.providers[provider.ID] = provider
 	if s.project.DefaultSandboxProviderID == "" {
 		s.project.DefaultSandboxProviderID = provider.ID
@@ -383,11 +385,11 @@ func (s *Stub) GetSandboxProviderInstance(_ context.Context, projectID, provider
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
-		return nil, huma.Error404NotFound("project not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	provider, ok := s.providers[providerID]
 	if !ok {
-		return nil, huma.Error404NotFound("provider instance not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "provider instance not found")
 	}
 	return &provider, nil
 }
@@ -396,20 +398,20 @@ func (s *Stub) UpdateSandboxProviderInstance(_ context.Context, projectID, provi
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
-		return nil, huma.Error404NotFound("project not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	provider, ok := s.providers[providerID]
 	if !ok {
-		return nil, huma.Error404NotFound("provider instance not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "provider instance not found")
 	}
-	if input.Name != nil {
-		provider.Name = *input.Name
+	if name, ok := input.Name.Get(); ok {
+		provider.Name = name
 	}
-	if input.Config != nil {
-		provider.Config = input.Config
+	if len(input.Config) > 0 {
+		provider.Config = api.RawMessage(input.Config)
 	}
-	if input.Disabled != nil {
-		provider.Disabled = *input.Disabled
+	if disabled, ok := input.Disabled.Get(); ok {
+		provider.Disabled = disabled
 	}
 	provider.UpdatedAt = time.Now().UTC()
 	s.providers[provider.ID] = provider
@@ -420,10 +422,10 @@ func (s *Stub) DeleteSandboxProviderInstance(_ context.Context, projectID, provi
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
-		return huma.Error404NotFound("project not found")
+		return apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	if _, ok := s.providers[providerID]; !ok {
-		return huma.Error404NotFound("provider instance not found")
+		return apperrors.NewStatusError(http.StatusNotFound, "provider instance not found")
 	}
 	delete(s.providers, providerID)
 	return nil
@@ -453,33 +455,46 @@ func (s *Stub) beginSandboxOperation(projectID, sandboxID string, spec model.Ope
 
 func (s *Stub) getSandbox(projectID, sandboxID string) (model.Sandbox, error) {
 	if projectID != s.project.ID {
-		return model.Sandbox{}, huma.Error404NotFound("project not found")
+		return model.Sandbox{}, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	sandbox, ok := s.sandboxes[sandboxID]
 	if !ok {
-		return model.Sandbox{}, huma.Error404NotFound("sandbox not found")
+		return model.Sandbox{}, apperrors.NewStatusError(http.StatusNotFound, "sandbox not found")
 	}
 	sandbox.CreatedBy = &s.user
 	return sandbox, nil
 }
 
-func (s *Stub) resolveAgentConfigID(agentConfigID, agentName *string) (*string, error) {
-	if agentConfigID != nil {
-		if _, ok := s.agentConfigs[*agentConfigID]; !ok {
-			return nil, huma.Error404NotFound("agent config not found")
+func (s *Stub) resolveAgentConfigID(agentConfigID, agentName api.OptString) (*string, error) {
+	if id, ok := agentConfigID.Get(); ok {
+		if _, ok := s.agentConfigs[id]; !ok {
+			return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
 		}
-		return agentConfigID, nil
+		return &id, nil
 	}
-	if agentName == nil {
+	name, ok := agentName.Get()
+	if !ok {
 		return nil, nil
 	}
 	for _, config := range s.agentConfigs {
-		if config.Name == *agentName {
+		if config.Name == name {
 			id := config.ID
 			return &id, nil
 		}
 	}
-	return nil, huma.Error404NotFound("agent config not found")
+	return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
+}
+
+func stubSourceCodeReferences(input api.OptCreateSandboxBodySourceCodeReferences) model.SourceCodeReferences {
+	refs, ok := input.Get()
+	if !ok {
+		return nil
+	}
+	out, err := api.Convert[model.SourceCodeReferences](refs)
+	if err != nil {
+		return nil
+	}
+	return out
 }
 
 func (s *Stub) projectWithSandboxes() model.Project {

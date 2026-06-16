@@ -175,8 +175,8 @@ type Invoker interface {
 	//
 	// Update worker status.
 	//
-	// POST /api/workers/status
-	UpdateWorkerStatus(ctx context.Context, request *UpdateWorkerStatusBody) (UpdateWorkerStatusRes, error)
+	// POST /api/workers/{workerId}/status
+	UpdateWorkerStatus(ctx context.Context, request *UpdateWorkerStatusBody, params UpdateWorkerStatusParams) (UpdateWorkerStatusRes, error)
 }
 
 // Client implements OAS client.
@@ -2625,17 +2625,17 @@ func (c *Client) sendUpdateSandboxProviderInstance(ctx context.Context, request 
 //
 // Update worker status.
 //
-// POST /api/workers/status
-func (c *Client) UpdateWorkerStatus(ctx context.Context, request *UpdateWorkerStatusBody) (UpdateWorkerStatusRes, error) {
-	res, err := c.sendUpdateWorkerStatus(ctx, request)
+// POST /api/workers/{workerId}/status
+func (c *Client) UpdateWorkerStatus(ctx context.Context, request *UpdateWorkerStatusBody, params UpdateWorkerStatusParams) (UpdateWorkerStatusRes, error) {
+	res, err := c.sendUpdateWorkerStatus(ctx, request, params)
 	return res, err
 }
 
-func (c *Client) sendUpdateWorkerStatus(ctx context.Context, request *UpdateWorkerStatusBody) (res UpdateWorkerStatusRes, err error) {
+func (c *Client) sendUpdateWorkerStatus(ctx context.Context, request *UpdateWorkerStatusBody, params UpdateWorkerStatusParams) (res UpdateWorkerStatusRes, err error) {
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("update-worker-status"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/workers/status"),
+		semconv.URLTemplateKey.String("/api/workers/{workerId}/status"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -2668,8 +2668,27 @@ func (c *Client) sendUpdateWorkerStatus(ctx context.Context, request *UpdateWork
 
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [1]string
-	pathParts[0] = "/api/workers/status"
+	var pathParts [3]string
+	pathParts[0] = "/api/workers/"
+	{
+		// Encode "workerId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "workerId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.WorkerId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/status"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"

@@ -131,11 +131,11 @@ oriented:
 | `POST` | `/projects/{projectId}/sandboxes/{sandboxId}/restart` | Accept restart intent; increment restart generation. |
 
 Provider operations bridge the two APIs: they use the VM driver's HTTP client
-lease to call the worker API, then persist the resulting runtime state through
-the normal reconciler flow. The worker API is registered with Huma so it can be
-exported as OpenAPI and used with a generated client. Any generated client must
-accept an injected `http.Client` so VM-driver transports such as VS Code sockets,
-Unix sockets, tunnels, or proxies remain behind the lease abstraction.
+lease to call the generated worker API, then persist the resulting runtime state
+through the normal reconciler flow. The worker API is defined by the OpenAPI
+contract and used with generated client/server code. Generated clients must accept
+an injected `http.Client` so VM-driver transports such as VS Code sockets, Unix
+sockets, tunnels, or proxies remain behind the lease abstraction.
 
 ## VM Boot Metadata
 

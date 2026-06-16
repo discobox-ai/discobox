@@ -19,6 +19,21 @@ Authentication must establish the caller identity before resource access:
 - Sandbox auth maps a sandbox token to project, sandbox, and user identity.
 - Worker auth maps bootstrap/runtime credentials to a worker ID.
 
+Authorization should be possible from request attributes without inspecting the
+request body. Use the authenticated principal plus method, route/path
+parameters, query parameters, headers, and resource ownership loaded from those
+attributes. If a body field is needed to identify the resource being authorized,
+move that identity into the URL or another request attribute.
+
+The only intentional exception is worker bootstrap registration. A booting
+worker has no runtime principal yet, so `POST /api/workers/register` redeems a
+body-provided project ID, sandbox ID, one-time bootstrap token, and public key
+for the first worker runtime token. This is safe only because the control plane
+created the bootstrap token for a preassigned sandbox worker, stores it as a
+short-lived one-time hash, and validates it before issuing runtime credentials.
+After registration, worker authorization must use the authenticated worker
+principal and request attributes, not body fields.
+
 ## Sandbox Auth: Access Delegation
 
 Sandbox auth is delegated access. The control plane owns a sandbox access issuer
@@ -54,10 +69,10 @@ Workers have their own identity. The worker private key stays on the worker.
 
 ```text
 1. Control plane creates Worker + one-time WorkerBootstrapToken.
-2. Worker boots with worker ID, bootstrap token, project ID, and control plane URL.
+2. Worker boots with project ID, sandbox ID, bootstrap token, control plane URL, and the assigned worker ID for subsequent worker-scoped routes.
 3. Worker generates a keypair locally.
-4. Worker registers its public key using the bootstrap token.
-5. Control plane stores the public key and marks the bootstrap token used.
+4. Worker registers its public key using project ID, sandbox ID, and the bootstrap token in the registration body; the control plane derives the worker ID from the sandbox assignment.
+5. Control plane validates the token for that assigned worker, stores the public key, and marks the bootstrap token used.
 6. Worker proves possession of its private key with a signed challenge.
 7. Control plane issues a short-lived WorkerAuthToken.
 8. Worker uses the token to subscribe for work and report status.

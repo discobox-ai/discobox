@@ -1,7 +1,6 @@
 package server
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
@@ -103,14 +102,20 @@ func assertOpenAPIAndScalarDocs(t *testing.T, router http.Handler) {
 	}
 }
 
+func jsonRequest(method, target, body string) *http.Request {
+	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	return req
+}
+
 func TestNewRouterCreateSandboxResolvesAgentName(t *testing.T) {
 	router := newStubRouterForTest()
 
 	createAgentResp := httptest.NewRecorder()
-	router.ServeHTTP(createAgentResp, httptest.NewRequest(http.MethodPost, "/projects/"+service.DefaultProjectID+"/agent-configs", bytes.NewBufferString(`{
+	router.ServeHTTP(createAgentResp, jsonRequest(http.MethodPost, "/projects/"+service.DefaultProjectID+"/agent-configs", `{
 		"name": "Codex",
 		"runCommand": "codex exec"
-	}`)))
+	}`))
 	if createAgentResp.Code != http.StatusOK {
 		t.Fatalf("POST /agent-configs status = %d, body = %s", createAgentResp.Code, createAgentResp.Body.String())
 	}
@@ -120,10 +125,10 @@ func TestNewRouterCreateSandboxResolvesAgentName(t *testing.T) {
 	}
 
 	createSandboxResp := httptest.NewRecorder()
-	router.ServeHTTP(createSandboxResp, httptest.NewRequest(http.MethodPost, "/projects/"+service.DefaultProjectID+"/sandboxes", bytes.NewBufferString(`{
+	router.ServeHTTP(createSandboxResp, jsonRequest(http.MethodPost, "/projects/"+service.DefaultProjectID+"/sandboxes", `{
 		"name": "sandbox",
 		"agentName": "Codex"
-	}`)))
+	}`))
 	if createSandboxResp.Code != http.StatusAccepted {
 		t.Fatalf("POST /sandboxes status = %d, body = %s", createSandboxResp.Code, createSandboxResp.Body.String())
 	}
@@ -140,7 +145,7 @@ func TestNewApplicationRouterStartsWithDefaults(t *testing.T) {
 	ctx := context.Background()
 	db := newApplicationRouterTestDB(t, ctx)
 
-	router, _, err := NewApplicationRouter(ctx, db.Write, db.Read, ApplicationRouterOptions{
+	router, err := NewApplicationRouter(ctx, db.Write, db.Read, ApplicationRouterOptions{
 		DispatcherEnabled: false,
 	})
 	if err != nil {
@@ -171,7 +176,7 @@ func TestNewApplicationRouterResolvesDefaultProjectAlias(t *testing.T) {
 	ctx := context.Background()
 	db := newApplicationRouterTestDB(t, ctx)
 
-	router, _, err := NewApplicationRouter(ctx, db.Write, db.Read, ApplicationRouterOptions{
+	router, err := NewApplicationRouter(ctx, db.Write, db.Read, ApplicationRouterOptions{
 		DispatcherEnabled: false,
 	})
 	if err != nil {
@@ -200,7 +205,7 @@ func TestProjectStreamReceivesSandboxMutation(t *testing.T) {
 	ctx := context.Background()
 	db := newApplicationRouterTestDB(t, ctx)
 
-	router, _, err := NewApplicationRouter(ctx, db.Write, db.Read, ApplicationRouterOptions{
+	router, err := NewApplicationRouter(ctx, db.Write, db.Read, ApplicationRouterOptions{
 		DispatcherEnabled: false,
 	})
 	if err != nil {

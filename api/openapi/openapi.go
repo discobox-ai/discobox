@@ -13,7 +13,7 @@ var ServerJSON []byte
 //go:embed server.yaml
 var ServerYAML []byte
 
-// SandboxYAML is the canonical Sandbox REST API OpenAPI document in YAML form.
+// SandboxYAML is the sandbox-agent REST API seed in YAML form.
 //
 //go:embed sandbox.yaml
 var SandboxYAML []byte

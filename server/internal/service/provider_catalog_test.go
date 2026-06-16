@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"runtime"
 	"testing"
 	"time"
 
+	serverapi "github.com/obot-platform/discobox/api/servergen"
 	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
 	providerdocker "github.com/obot-platform/discobox/providers/sandbox/provider/docker"
@@ -30,10 +32,11 @@ func TestSandboxReconcilerDelegatesToProvider(t *testing.T) {
 	}
 	reconciler := svc.NewSandboxReconciler()
 
+	sourceURL := mustParseURL(t, "https://example.com/repo.git")
 	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, api.CreateSandboxBody{
 		Name:      "sandbox-1",
-		SourceURL: stringPtr("https://example.com/repo.git"),
-		SourceRef: stringPtr("main"),
+		SourceUrl: serverapi.NewOptURI(sourceURL),
+		SourceRef: serverapi.NewOptString("main"),
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -474,6 +477,11 @@ func (p *recordingSandboxProvider) AcquireHTTPClient(context.Context, sandbox.Sa
 	return sandbox.NewHTTPClientLease(http.DefaultClient, nil), nil
 }
 
-func stringPtr(value string) *string {
-	return &value
+func mustParseURL(t *testing.T, value string) url.URL {
+	t.Helper()
+	parsed, err := url.Parse(value)
+	if err != nil {
+		t.Fatalf("parse url %q: %v", value, err)
+	}
+	return *parsed
 }

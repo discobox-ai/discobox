@@ -1,7 +1,7 @@
 // Package model defines the combined database and API resource models.
 //
 // These structs intentionally carry GORM persistence tags together with JSON
-// and Huma/OpenAPI-facing tags. If the API and database shapes diverge later,
+// and OpenAPI-facing tags. If the API and database shapes diverge later,
 // split only the affected resources into DTOs.
 package model
 

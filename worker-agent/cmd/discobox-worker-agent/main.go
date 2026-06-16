@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/obot-platform/discobox/worker-agent/workeragent"
+	workeragent "github.com/obot-platform/discobox/worker-agent"
 )
 
 func main() {

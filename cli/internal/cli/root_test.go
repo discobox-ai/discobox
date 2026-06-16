@@ -12,7 +12,7 @@ import (
 	"github.com/go-faster/jx"
 	"github.com/spf13/cobra"
 
-	apiclientgen "github.com/obot-platform/discobox/apiclient/gen"
+	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
 )
 
 func TestWriteProviderTableIncludesConfig(t *testing.T) {

@@ -5,18 +5,16 @@ import (
 	"context"
 	"time"
 
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
 
 	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/api"
+	"github.com/obot-platform/discobox/server/internal/auth"
 	"github.com/obot-platform/discobox/server/internal/events"
+	"github.com/obot-platform/discobox/server/internal/generatedapi"
 	"github.com/obot-platform/discobox/server/internal/projectstream"
 	"github.com/obot-platform/discobox/server/internal/sandboxauth"
 	"github.com/obot-platform/discobox/server/internal/secrets"
-	"github.com/obot-platform/discobox/server/internal/server/defaults"
-	"github.com/obot-platform/discobox/server/internal/server/middleware"
 	"github.com/obot-platform/discobox/server/internal/service"
 	"github.com/obot-platform/discobox/server/internal/store"
 	"gorm.io/gorm"
@@ -60,21 +58,27 @@ func DefaultApplicationRouterOptions() ApplicationRouterOptions {
 	}
 }
 
-// NewRouter creates a chi router with all Huma operations registered.
-func NewRouter(services api.Services) (*chi.Mux, huma.API) {
+// NewRouter creates a chi router backed by the generated OpenAPI server.
+func NewRouter(services api.Services) (*chi.Mux, error) {
 	router := chi.NewRouter()
 	RegisterDocsRoutes(router)
-	projectstream.RegisterProjectStreamRoutes(router, services.Events)
-	config := huma.DefaultConfig(Name, Version)
-	config.DocsRenderer = huma.DocsRendererScalar
-	humaAPI := humachi.New(router, config)
-	projectstream.RegisterProjectStreamSSEOperations(humaAPI, services.Events)
-	api.Register(humaAPI, services)
-	return router, humaAPI
+	registerProjectStreamTransports(router, services.Events)
+	generated, err := generatedapi.NewServer(services)
+	if err != nil {
+		return nil, err
+	}
+	router.Mount("/", generated)
+	return router, nil
 }
 
 // NewApplicationRouter creates the application router backed by persistent services.
-func NewApplicationRouter(ctx context.Context, writeDB, readDB *gorm.DB, options ...ApplicationRouterOptions) (*chi.Mux, huma.API, error) {
+
+func registerProjectStreamTransports(router chi.Router, service api.ProjectEventService) {
+	projectstream.RegisterProjectStreamRoutes(router, service)
+	projectstream.RegisterProjectStreamSSERoutes(router, service)
+}
+
+func NewApplicationRouter(ctx context.Context, writeDB, readDB *gorm.DB, options ...ApplicationRouterOptions) (*chi.Mux, error) {
 	opts := DefaultApplicationRouterOptions()
 	if len(options) > 0 {
 		opts = options[0]
@@ -95,29 +99,25 @@ func NewApplicationRouter(ctx context.Context, writeDB, readDB *gorm.DB, options
 	if opts.SecretSealer != nil {
 		services.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.SecretSealer))
 	}
-	if err := defaults.InitializeIdentity(ctx, writeDB, opts.UserID); err != nil {
-		return nil, nil, err
-	}
 	if err := services.InitializeDefaults(ctx, opts.UserID); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	if err := jobs.EnsureStarted(ctx); err != nil {
-		return nil, nil, err
+	if err := jobs.Start(ctx); err != nil {
+		return nil, err
 	}
 	router := chi.NewRouter()
-	router.Use(middleware.Authentication(
-		middleware.WorkerAuthenticator{},
-		middleware.DefaultUserAuthenticator{UserID: opts.UserID},
+	router.Use(auth.Authentication(
+		auth.WorkerAuthenticator{Store: appStore},
+		auth.DefaultUserAuthenticator{UserID: opts.UserID},
 	))
-	router.Use(middleware.ProjectAuthorization(appStore))
-	router.Use(middleware.GenericAuthorization)
-	config := huma.DefaultConfig(Name, Version)
-	config.DocsRenderer = huma.DocsRendererScalar
-	humaAPI := humachi.New(router, config)
+	router.Use(auth.Authorization(
+		auth.ProjectAuthorizer{Store: appStore},
+		auth.WorkerRouteAuthorizer{},
+		auth.AuthenticatedAuthorizer{},
+	))
 	RegisterDocsRoutes(router)
-	projectstream.RegisterProjectStreamRoutes(router, services)
-	projectstream.RegisterProjectStreamSSEOperations(humaAPI, services)
-	api.Register(humaAPI, api.Services{
+	registerProjectStreamTransports(router, services)
+	generated, err := generatedapi.NewServer(api.Services{
 		Projects:     services,
 		AgentConfigs: services,
 		Sandboxes:    services,
@@ -125,5 +125,9 @@ func NewApplicationRouter(ctx context.Context, writeDB, readDB *gorm.DB, options
 		Workers:      services,
 		Events:       services,
 	})
-	return router, humaAPI, nil
+	if err != nil {
+		return nil, err
+	}
+	router.Mount("/", generated)
+	return router, nil
 }

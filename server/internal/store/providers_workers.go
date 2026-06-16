@@ -321,21 +321,35 @@ func (s *Store) RegisterWorker(ctx context.Context, workerID string, tokenHash [
 	return &worker, nil
 }
 
-func (s *Store) ValidateWorkerAuthToken(ctx context.Context, workerID string, tokenHash []byte) error {
+func (s *Store) AuthenticateWorkerAuthToken(ctx context.Context, tokenHash []byte) (string, error) {
 	write, err := s.getWrite(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	now := time.Now().UTC()
 	var token model.WorkerAuthToken
 	err = write.
-		Where("worker_id = ? AND token_hash = ? AND expires_at > ? AND revoked_at IS NULL", workerID, tokenHash, now).
+		Where("token_hash = ? AND expires_at > ? AND revoked_at IS NULL", tokenHash, now).
 		First(&token).Error
 	if err != nil {
-		return mapNotFound(err)
+		return "", mapNotFound(err)
 	}
 	token.LastUsedAt = &now
-	return write.Save(&token).Error
+	if err := write.Save(&token).Error; err != nil {
+		return "", err
+	}
+	return token.WorkerID, nil
+}
+
+func (s *Store) ValidateWorkerAuthToken(ctx context.Context, workerID string, tokenHash []byte) error {
+	authenticatedWorkerID, err := s.AuthenticateWorkerAuthToken(ctx, tokenHash)
+	if err != nil {
+		return err
+	}
+	if authenticatedWorkerID != workerID {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) UpdateWorkerStatus(ctx context.Context, workerID string, ready, schedulable, degraded bool, availableCPUVCPUs float64, availableMemoryBytes, availableStorageBytes int64, conditions []byte) (*model.Worker, error) {
