@@ -10,8 +10,13 @@ set -euo pipefail
 
 container="discobox-otel-dashboard"
 volume="discobox-otel-dashboard"
+dashboard_uid="1654"
 
 docker volume create "$volume" >/dev/null
+docker run --rm \
+	-v "$volume:/keys" \
+	busybox:1.36 \
+	sh -c "chown -R $dashboard_uid:$dashboard_uid /keys"
 
 exec docker run --rm \
 	--name "$container" \
