@@ -106,3 +106,15 @@ Root module package docs:
 
 Submodule package docs belong in their owning module trees and are intentionally
 not listed here.
+
+## UI Design System
+
+The `ui` package uses SvelteKit, Tailwind CSS, and shadcn-svelte as its design
+system. UI work should use generated shadcn-svelte primitives from
+`ui/src/lib/components/ui` and shadcn token utilities such as `bg-background`,
+`text-foreground`, `border-border`, `bg-card`, `text-muted-foreground`, and
+`text-destructive`.
+
+The global UI CSS should follow the shadcn-svelte Tailwind/token layer used by
+Discobot, with theme state driven by the `.dark` class, `data-theme`, and CSS
+variables.
