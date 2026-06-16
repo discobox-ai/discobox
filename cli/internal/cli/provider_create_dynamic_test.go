@@ -174,8 +174,8 @@ func TestProviderCreateCommandSendsDynamicConfig(t *testing.T) {
 			}
 			now := time.Now().UTC().Format(time.RFC3339Nano)
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"id":        "00000000-0000-0000-0000-000000000010",
-				"projectId": "00000000-0000-0000-0000-000000000002",
+				"id":        "00000000000000000000000010",
+				"projectId": "00000000000000000000000002",
 				"name":      "local",
 				"type":      "example",
 				"config":    posted["config"],
@@ -231,8 +231,8 @@ func TestProviderCreateCommandConsumesDebugGlobalFlag(t *testing.T) {
 		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/projects/") && strings.HasSuffix(r.URL.Path, "/providers"):
 			now := time.Now().UTC().Format(time.RFC3339Nano)
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"id":        "00000000-0000-0000-0000-000000000010",
-				"projectId": "00000000-0000-0000-0000-000000000002",
+				"id":        "00000000000000000000000010",
+				"projectId": "00000000000000000000000002",
 				"name":      "local",
 				"type":      "example",
 				"config":    map[string]any{},

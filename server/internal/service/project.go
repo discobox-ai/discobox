@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	DefaultProviderInstanceID        = "00000000-0000-0000-0000-000000000003"
+	DefaultProviderInstanceID        = "00000000000000000000000003"
 	defaultProviderInstalledStateKey = "defaults.default_sandbox_provider.installed"
 )
 

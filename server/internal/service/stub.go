@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	defaultUserID    = "00000000-0000-0000-0000-000000000001"
-	defaultProjectID = "00000000-0000-0000-0000-000000000002"
+	defaultUserID    = "00000000000000000000000001"
+	defaultProjectID = "00000000000000000000000002"
 )
 
 // Stub is an in-memory implementation used while the real store/provider
