@@ -3,5 +3,9 @@
 .discobot/config
 .discobot/data
 .discobot/state
+.env
+.env.*
+*.pem
+*.key
 build
 **/.DS_Store

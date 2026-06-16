@@ -27,9 +27,9 @@ PY
 )"
   export DISCOBOX_BATS_SERVER="http://127.0.0.1:$DISCOBOX_BATS_PORT"
 
-  go build -o build/discobot-server ./cmd/discobot-server
-  go build -o build/discobox ./cmd/discobox
-  docker build -f Dockerfile.worker-agent -t discobox-worker-agent:local .
+  (cd server && go build -o ../build/discobot-server ./cmd/discobot-server)
+  (cd cli && go build -o ../build/discobox ./cmd/discobox)
+  (docker build -f worker-agent/Dockerfile -t discobox-worker-agent:local .)
 
   PORT="$DISCOBOX_BATS_PORT" \
   DATABASE_DSN="$DISCOBOX_BATS_DB" \

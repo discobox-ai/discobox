@@ -2,7 +2,7 @@ version: "3"
 
 vars:
   BINARY: build/discobot-server
-  MAIN: ./cmd/discobot-server
+  SERVER_MAIN: ./cmd/discobot-server
   CLI_BINARY: build/discobox
   CLI_MAIN: ./cmd/discobox
   PACKAGES: ./...
@@ -26,12 +26,14 @@ tasks:
   build:server:
     desc: Compile discobot-server
     cmds:
-      - go build -o {{.BINARY}} {{.MAIN}}
+      - mkdir -p build
+      - cd server && go build -o ../{{.BINARY}} {{.SERVER_MAIN}}
 
   build:cli:
     desc: Compile discobox CLI
     cmds:
-      - go build -o {{.CLI_BINARY}} {{.CLI_MAIN}}
+      - mkdir -p build
+      - cd cli && go build -o ../{{.CLI_BINARY}} {{.CLI_MAIN}}
 
   build:ui:
     desc: Build the SvelteKit UI
@@ -48,12 +50,12 @@ tasks:
   build:worker-agent-image:
     desc: Build the systemd Docker worker image
     cmds:
-      - docker build -f Dockerfile.worker-agent -t discobox-worker-agent:local .
+      - docker build -f worker-agent/Dockerfile -t discobox-worker-agent:local .
 
   build:sandbox-agent-image:
     desc: Build the Debian sandbox agent image
     cmds:
-      - docker build -f Dockerfile.sandbox-agent -t discobox-sandbox-agent:local .
+      - cd sandbox-agent && docker build -f Dockerfile -t discobox-sandbox-agent:local .
 
   compile:
     desc: Alias for build
@@ -63,7 +65,8 @@ tasks:
   debug-build:
     desc: Compile discobot-server with debugger-friendly flags
     cmds:
-      - go build -gcflags="all=-N -l" -o {{.BINARY}} {{.MAIN}}
+      - mkdir -p build
+      - cd server && go build -gcflags="all=-N -l" -o ../{{.BINARY}} {{.SERVER_MAIN}}
 
   debug:
     desc: Build and run discobot-server under Delve
@@ -92,7 +95,7 @@ tasks:
         bash -c '
         set -euo pipefail
         touch .env
-        go run ./cmd/discobox-worker-agent-watch &
+        (cd worker-agent && go run ./cmd/discobox-worker-agent-watch) &
         watch_pid=$!
         cleanup() { kill "$watch_pid" 2>/dev/null || true; }
         trap cleanup EXIT INT TERM
@@ -102,7 +105,7 @@ tasks:
   dev:worker-agent-image-watch:
     desc: Rebuild the Docker worker-agent image when its Docker inputs change
     cmds:
-      - go run ./cmd/discobox-worker-agent-watch
+      - cd worker-agent && go run ./cmd/discobox-worker-agent-watch
 
   dev:ui:
     desc: Run the SvelteKit UI dev server
@@ -140,7 +143,7 @@ tasks:
   test:docker:
     desc: Run Docker provider integration tests
     cmds:
-      - DISCOBOX_DOCKER_INTEGRATION=1 go test ./internal/sandbox/docker -run Integration -count=1 -v
+      - cd providers && DISCOBOX_DOCKER_INTEGRATION=1 go test ./sandbox/vm/docker -run Integration -count=1 -v
 
   test:docker:bats:
     desc: Run Docker provider CLI Bats integration test
@@ -161,6 +164,10 @@ tasks:
     desc: Run root and nested module tests
     cmds:
       - go test {{.PACKAGES}}
+      - cd cli && go test ./...
+      - cd server && go test ./...
+      - cd providers && go test ./...
+      - cd worker-agent && go test ./...
       - cd gormdb && go test ./...
       - cd orchestration && go test ./...
 
@@ -168,6 +175,12 @@ tasks:
     desc: Run static checks
     cmds:
       - go tool golangci-lint run
+      - cd cli && "$(go -C .. tool -n golangci-lint)" run
+      - cd server && "$(go -C .. tool -n golangci-lint)" run
+      - cd providers && "$(go -C .. tool -n golangci-lint)" run
+      - cd worker-agent && "$(go -C .. tool -n golangci-lint)" run
+      - cd gormdb && "$(go -C .. tool -n golangci-lint)" run
+      - cd orchestration && "$(go -C .. tool -n golangci-lint)" run
       - task: check:ui
       - task: check:electron
 
@@ -175,6 +188,12 @@ tasks:
     desc: Run static checks and apply safe fixes
     cmds:
       - go tool golangci-lint run --fix
+      - cd cli && "$(go -C .. tool -n golangci-lint)" run --fix
+      - cd server && "$(go -C .. tool -n golangci-lint)" run --fix
+      - cd providers && "$(go -C .. tool -n golangci-lint)" run --fix
+      - cd worker-agent && "$(go -C .. tool -n golangci-lint)" run --fix
+      - cd gormdb && "$(go -C .. tool -n golangci-lint)" run --fix
+      - cd orchestration && "$(go -C .. tool -n golangci-lint)" run --fix
       - task: check:ui:fix
       - task: check:electron:fix
 

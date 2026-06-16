@@ -2,39 +2,56 @@
 
 ## Project Structure
 
-- `cmd/discobot-server`: HTTP server entrypoint.
-- `cmd/openapi`: OpenAPI generation entrypoint used by `go generate`.
-- `internal/api`: Huma/chi API operation definitions and tests.
-- `internal/server`: server startup and HTTP router wiring.
-- `internal/model`: combined GORM/API resource models.
-- `internal/store`: database access, split by resource.
-- `internal/service`: API services, sandbox orchestration, reconciliation, and operations.
-- `internal/jobs`: orchestration payloads and executors.
-- `internal/events`: project event broker.
-- `gormdb`: nested module for DB setup.
-- `orchestration`: nested module for durable jobs and desired-state orchestration helpers.
+- Root module `github.com/obot-platform/discobox`: stable contracts/API module.
+- `api`: server API definitions and tests, pending schema-first conversion.
+- `apiclient`: generated/client-side API helpers.
+- `sandboxprovider`: sandbox provider Go contract, provider manager, and shared provider types.
+- `cli`: nested Go module for the `discobox` CLI.
+- `cli/cmd/discobox`: CLI entrypoint.
+- `cli/internal/cli`: CLI command implementation.
+- `server`: nested Go module for the control plane implementation.
+- `server/cmd/discobot-server`: HTTP server entrypoint.
+- `server/internal/server`: server startup and HTTP router wiring.
+- `server/internal/service`: API-facing business logic, orchestration wrappers, and reconcilers.
+- `server/internal/sandbox`: server-owned sandbox jobs, service glue, and reconcilers.
+- `server/internal/store`: database access, split by resource.
+- `server/internal/database`: database setup and tenant database resolution.
+- `server/internal/projectstream`: project event streaming websocket and SSE routes.
+- `server/internal/events`: project event broker.
+- `server/internal/sandboxauth`: sandbox and worker authentication helpers.
+- `providers`: nested Go module for Docker, VM, cloud, and worker-backed provider implementations.
+- `worker-agent`: nested Go module for the worker agent implementation and local image watcher.
+- `sandbox-agent`: nested Go module and image context for the sandbox agent runtime environment.
+- `worker-agent/cmd/discobox-worker-agent`: worker agent entrypoint.
+- `worker-agent/cmd/discobox-worker-agent-watch`: local worker-agent image rebuild watcher.
+- `ui`: SvelteKit frontend application.
+- `electron`: Electron shell for the UI.
+- `docs`: user/developer documentation.
+- `test`: integration and Bats tests.
+- `gormdb`: nested Go module for DB setup helpers.
+- `orchestration`: nested Go module for durable jobs and desired-state orchestration helpers.
 - `DESIGN.md` / `REVIEW.md`: package-local design and review notes. Read the closest files in the current package and its parents before making design-sensitive changes.
 
 ## Commands
 
-Run root tests:
+Use Taskfile targets through the Go tool-managed `task` binary:
 
 ```bash
-go test ./...
+go tool task --list
 ```
 
-Run nested module tests:
+Common targets:
 
 ```bash
-(cd gormdb && go test ./...)
-(cd orchestration && go test ./...)
+go tool task test       # root module tests
+go tool task test:all   # root and nested module tests
+go tool task check      # static checks
+go tool task generate   # regenerate generated files
+go tool task build      # build server, CLI, UI, and Electron shell
 ```
 
-Regenerate OpenAPI:
-
-```bash
-go generate ./...
-```
+Prefer adding or updating `Taskfile.yml` targets instead of documenting ad hoc
+commands here.
 
 ## Package Design Docs
 
@@ -47,11 +64,15 @@ When working in a package, read `DESIGN.md` and `REVIEW.md` from the repository
 root down to the package directory. Parent files provide broader context; closer
 files override or specialize that guidance.
 
-## Design Notes
+Lay out `DESIGN.md` files as a drill-down hierarchy:
 
-The API uses desired-state reconciliation. Resource intent changes are persisted
-with project events and durable reconcile jobs in one transaction. Reconcile
-jobs run for one resource generation and cancel when superseded by newer intent.
-
-See `orchestration/DESIGN.md` and `orchestration/REVIEW.md`
-before adding new orchestrated resources.
+- Root docs describe the system-level architecture and how major components
+  relate.
+- Child package docs describe that component's architecture at one deeper level.
+- Do not duplicate lower-level details in parent docs; link to the child package
+  or design doc instead.
+- Prefer proper Mermaid diagrams for high-level structure and flows.
+- Keep design and review docs optimized for LLM/agent context: short,
+  directive, and easy to scan.
+- Reference well-known patterns and project-specific decisions instead of
+  explaining general concepts or restating code-level details.

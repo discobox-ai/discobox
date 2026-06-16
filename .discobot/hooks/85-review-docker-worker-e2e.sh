@@ -8,4 +8,4 @@
 
 set -euo pipefail
 
-DISCOBOX_DOCKER_INTEGRATION=1 go test ./internal/service -run TestDockerProviderWorkerCreateFlowE2E -count=1 -v
+(cd server && DISCOBOX_DOCKER_INTEGRATION=1 go test ./internal/service -run TestDockerProviderWorkerCreateFlowE2E -count=1 -v)

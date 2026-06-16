@@ -1,7 +1,7 @@
 # Docker warm-pool provider
 
 The `docker` provider is a local/test VM provider that launches Docker
-containers through the generic `internal/sandbox/vm` provider abstraction. It is
+containers through the generic provider VM abstraction. It is
 intended to exercise the same warm worker pool control-plane path as real VM
 providers without requiring cloud infrastructure.
 
@@ -24,7 +24,7 @@ docker
 
 ## Worker agent image
 
-`Dockerfile.worker-agent` builds a systemd-capable Docker image with the real
+`worker-agent/Dockerfile` builds a systemd-capable Docker image with the real
 `discobox-worker-agent` binary installed as a systemd service. The agent reads the
 VM boot metadata from environment variables, registers with the control plane,
 marks the worker ready/schedulable, and serves health metadata on the configured
@@ -35,7 +35,7 @@ Build it locally with:
 ```bash
 task build:worker-agent-image
 # or
-docker build -f Dockerfile.worker-agent -t discobox-worker-agent:local .
+docker build -f worker-agent/Dockerfile -t discobox-worker-agent:local .
 ```
 
 ## Example provider config
@@ -68,13 +68,13 @@ For a simpler non-systemd local test image:
 ## Running Docker provider integration tests
 
 The integration tests are skipped by default. When enabled, they build local test
-images from Dockerfiles under `internal/sandbox/vm/docker/testdata` instead of
+images from Dockerfiles under `providers/sandbox/vm/docker/testdata` instead of
 pulling a project-published image.
 
 To run the Docker lifecycle tests:
 
 ```bash
-DISCOBOX_DOCKER_INTEGRATION=1 go test ./internal/sandbox/vm/docker -run Integration -count=1 -v
+cd providers && DISCOBOX_DOCKER_INTEGRATION=1 go test ./sandbox/vm/docker -run Integration -count=1 -v
 ```
 
 The systemd test builds `testdata/systemd/Dockerfile` automatically. It requires

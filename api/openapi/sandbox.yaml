@@ -1,0 +1,92 @@
+openapi: 3.1.1
+info:
+  title: Discobox Sandbox REST API
+  version: 0.1.0
+  description: |
+    Canonical contract for the REST API exposed by a managed sandbox environment.
+    Providers delegate access to this API; callers should use generated clients.
+servers:
+  - url: http://sandbox.local
+    description: Provider-delegated sandbox endpoint
+paths:
+  /healthz:
+    get:
+      operationId: getHealth
+      summary: Report sandbox process health.
+      responses:
+        '200':
+          description: Sandbox agent process is alive.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /readyz:
+    get:
+      operationId: getReadiness
+      summary: Report sandbox readiness and scheduling availability.
+      responses:
+        '200':
+          description: Sandbox agent is ready to serve sandbox requests.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReadinessResponse'
+  /metadata:
+    get:
+      operationId: getMetadata
+      summary: Return sandbox identity metadata.
+      responses:
+        '200':
+          description: Sandbox identity metadata.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MetadataResponse'
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - ok
+      properties:
+        ok:
+          type: boolean
+          description: True when the sandbox agent process is alive.
+    ReadinessResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - ready
+        - schedulable
+      properties:
+        ready:
+          type: boolean
+          description: True when the sandbox agent is ready.
+        schedulable:
+          type: boolean
+          description: True when the sandbox can accept work.
+    MetadataResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - tenantId
+        - projectId
+        - sandboxId
+        - workerId
+      properties:
+        tenantId:
+          type: string
+          description: Tenant that owns the sandbox.
+        projectId:
+          type: string
+          description: Project that owns the sandbox.
+        sandboxId:
+          type: string
+          description: Sandbox resource ID.
+        workerId:
+          type: string
+          description: Provider-specific worker ID when present.
+        publicKey:
+          type: string
+          description: Public key registered by the sandbox agent when available.
