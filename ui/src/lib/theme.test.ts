@@ -43,6 +43,7 @@ beforeEach(() => {
 	vi.stubGlobal('localStorage', createLocalStorageMock());
 	localStorage.clear();
 	document.documentElement.className = '';
+	document.documentElement.removeAttribute('style');
 	document.documentElement.removeAttribute('data-theme');
 	setSystemTheme(false);
 });
@@ -52,121 +53,86 @@ afterEach(() => {
 });
 
 describe('theme color schemes', () => {
-	it('includes all daisyUI built-in themes in the dropdown options', () => {
-		const themeIds = getAvailableThemes('light').map((theme) => theme.id);
-
-		expect(themeIds).toEqual([
-			'light',
-			'dark',
-			'cupcake',
-			'bumblebee',
-			'emerald',
-			'corporate',
-			'synthwave',
-			'retro',
-			'cyberpunk',
-			'valentine',
-			'halloween',
-			'garden',
-			'forest',
-			'aqua',
-			'lofi',
-			'pastel',
-			'fantasy',
-			'wireframe',
-			'black',
-			'luxury',
-			'dracula',
-			'cmyk',
-			'autumn',
-			'business',
-			'acid',
-			'lemonade',
-			'night',
-			'coffee',
-			'winter',
-			'dim',
-			'nord',
-			'sunset',
-			'caramellatte',
-			'abyss',
-			'silk'
+	it('matches the upstream Discobot light theme options', () => {
+		expect(getAvailableThemes('light').map((theme) => theme.id)).toEqual([
+			'default',
+			'solarized',
+			'flexoki',
+			'alucard',
+			'catppuccin-latte'
 		]);
-		expect(getAvailableThemes('dark').map((theme) => theme.id)).toEqual(themeIds);
 	});
 
-	it('keeps any daisyUI built-in scheme regardless of resolved mode', () => {
-		expect(normalizeColorScheme('light', 'dark')).toBe('dark');
-		expect(normalizeColorScheme('dark', 'light')).toBe('light');
-		expect(normalizeColorScheme('light', 'synthwave')).toBe('synthwave');
-		expect(normalizeColorScheme('dark', 'cupcake')).toBe('cupcake');
+	it('matches the upstream Discobot dark theme options', () => {
+		expect(getAvailableThemes('dark').map((theme) => theme.id)).toEqual([
+			'default',
+			'flexoki',
+			'nord',
+			'tokyo-night',
+			'dracula',
+			'catppuccin-mocha',
+			'catppuccin-macchiato',
+			'catppuccin-frappe'
+		]);
 	});
 
-	it('falls back to the light built-in theme when no stored scheme is available', () => {
-		expect(getColorScheme()).toBe('light');
+	it('normalizes schemes against the resolved mode', () => {
+		expect(normalizeColorScheme('light', 'solarized')).toBe('solarized');
+		expect(normalizeColorScheme('dark', 'tokyo-night')).toBe('tokyo-night');
+		expect(normalizeColorScheme('light', 'tokyo-night')).toBe('default');
+		expect(normalizeColorScheme('dark', 'catppuccin-latte')).toBe('default');
 	});
 
-	it('returns metadata for built-in schemes', () => {
-		const metadata = getThemeMetadata('dark', 'dracula');
+	it('falls back to the default scheme when no stored scheme is available', () => {
+		expect(getColorScheme()).toBe('default');
+	});
 
-		expect(metadata).toMatchObject({ id: 'dracula', name: 'Dracula', mode: 'dark' });
+	it('returns metadata for upstream schemes', () => {
+		const metadata = getThemeMetadata('dark', 'tokyo-night');
+
+		expect(metadata).toMatchObject({ id: 'tokyo-night', name: 'Tokyo Night', mode: 'dark' });
 	});
 });
 
 describe('theme preference application', () => {
-	it('applies and stores a valid light color scheme in system light mode', () => {
+	it('applies and stores a valid color scheme in system light mode', () => {
 		setSystemTheme(false);
 
-		const preferences = applyThemePreferences('system', 'winter');
+		const preferences = applyThemePreferences('system', 'solarized');
 
 		expect(preferences).toMatchObject({
 			theme: 'system',
 			resolvedTheme: 'light',
-			colorScheme: 'winter'
+			colorScheme: 'solarized'
 		});
 		expect(document.documentElement).not.toHaveClass('dark');
-		expect(document.documentElement).toHaveAttribute('data-theme', 'winter');
+		expect(document.documentElement).toHaveAttribute('data-theme', 'solarized');
 		expect(localStorage.getItem('theme')).toBe('system');
-		expect(localStorage.getItem('theme.colorScheme')).toBe('winter');
+		expect(localStorage.getItem('theme.colorScheme')).toBe('solarized');
 	});
 
-	it('allows dark daisyUI schemes in system light mode', () => {
-		setSystemTheme(false);
-
-		const preferences = applyThemePreferences('system', 'night');
-
-		expect(preferences).toMatchObject({
-			theme: 'system',
-			resolvedTheme: 'light',
-			colorScheme: 'night'
-		});
-		expect(document.documentElement).not.toHaveClass('dark');
-		expect(document.documentElement).toHaveAttribute('data-theme', 'night');
-		expect(localStorage.getItem('theme.colorScheme')).toBe('night');
-	});
-
-	it('allows light daisyUI schemes in system dark mode', () => {
+	it('applies the dark class and data-theme in system dark mode', () => {
 		setSystemTheme(true);
 
-		const preferences = applyThemePreferences('system', 'cupcake');
+		const preferences = applyThemePreferences('system', 'tokyo-night');
 
 		expect(preferences).toMatchObject({
 			theme: 'system',
 			resolvedTheme: 'dark',
-			colorScheme: 'cupcake'
+			colorScheme: 'tokyo-night'
 		});
 		expect(document.documentElement).toHaveClass('dark');
-		expect(document.documentElement).toHaveAttribute('data-theme', 'cupcake');
-		expect(localStorage.getItem('theme.colorScheme')).toBe('cupcake');
+		expect(document.documentElement).toHaveAttribute('data-theme', 'tokyo-night');
+		expect(localStorage.getItem('theme.colorScheme')).toBe('tokyo-night');
 	});
 
-	it('applies explicitly selected built-in schemes', () => {
-		const scheme: ThemeColorScheme = 'dracula';
+	it('falls back to default when a scheme does not exist for the resolved mode', () => {
+		const scheme: ThemeColorScheme = 'catppuccin-latte';
 
 		const preferences = applyThemePreferences('dark', scheme);
 
-		expect(preferences.colorScheme).toBe(scheme);
+		expect(preferences.colorScheme).toBe('default');
 		expect(document.documentElement).toHaveClass('dark');
-		expect(document.documentElement).toHaveAttribute('data-theme', scheme);
+		expect(document.documentElement).toHaveAttribute('data-theme', 'default');
 	});
 });

@@ -3,17 +3,10 @@
 	import AppHeader from '$lib/components/AppHeader.svelte';
 	import SandboxSidebar from '$lib/components/SandboxSidebar.svelte';
 	import SandboxWorkspace from '$lib/components/SandboxWorkspace.svelte';
+	import SettingsDialog from '$lib/components/SettingsDialog.svelte';
 	import type { Sandbox, WorkspaceFile } from '$lib/components/types';
-	import {
-		applyColorScheme,
-		applyThemePreferences,
-		getAvailableThemes,
-		getColorScheme,
-		getThemeMetadata,
-		getThemeMode,
-		type ThemeColorScheme,
-		type ThemeMode
-	} from '$lib/theme';
+	import { createContext, setContext } from '$lib/context';
+	import { getThemeMetadata, type ThemeColorScheme, type ThemeMode } from '$lib/theme';
 
 	const sandboxes: Sandbox[] = [
 		{
@@ -54,6 +47,7 @@
 		}
 	];
 
+	const settingsDialogId = 'settings-dialog';
 	const groupedSandboxes = Object.entries(
 		sandboxes.reduce<Record<string, Sandbox[]>>((groups, sandbox) => {
 			groups[sandbox.directory] ??= [];
@@ -69,11 +63,14 @@
 
 	const activeSandbox = sandboxes[1];
 	const themeModes: ThemeMode[] = ['light', 'dark', 'system'];
-	let themeMode = $state<ThemeMode>('system');
-	let colorScheme = $state<ThemeColorScheme>('light');
-	let resolvedTheme = $state<'dark' | 'light'>('dark');
-	const availableThemes = $derived(getAvailableThemes(resolvedTheme));
+	const context = setContext(createContext());
+	const themeMode = $derived(context.view.app.preferences.theme);
+	const colorScheme = $derived(context.view.app.preferences.colorScheme);
+	const resolvedTheme = $derived(context.view.app.preferences.resolvedTheme);
+	const availableThemes = $derived(context.view.app.preferences.availableThemes);
 	const activeTheme = $derived(getThemeMetadata(resolvedTheme, colorScheme));
+	const sidebarCollapsed = $derived(!context.view.navigation.desktopSidebarOpen);
+	const settingsOpen = $derived(context.view.app.dialogs.settings.open);
 
 	const files: WorkspaceFile[] = [
 		{ name: 'internal/service/sandbox.go', state: 'M' },
@@ -107,29 +104,32 @@
 		'➜  Network: http://172.18.0.2:5173/'
 	];
 
-	function setAppliedThemePreferences(mode: ThemeMode, scheme: ThemeColorScheme) {
-		const preferences = applyThemePreferences(mode, scheme);
-		themeMode = preferences.theme;
-		resolvedTheme = preferences.resolvedTheme;
-		colorScheme = preferences.colorScheme;
-	}
-
 	function setThemeMode(mode: ThemeMode) {
-		setAppliedThemePreferences(mode, colorScheme);
+		void context.commands.preferences.setTheme(mode);
 	}
 
 	function setColorScheme(scheme: ThemeColorScheme) {
-		colorScheme = applyColorScheme(scheme);
+		void context.commands.preferences.setColorScheme(scheme);
+	}
+
+	function toggleSidebar() {
+		void context.commands.navigation.toggleDesktopSidebarOpen();
+	}
+
+	function openSettings() {
+		void context.commands.dialogs.openSettingsDialog();
+	}
+
+	function closeSettings() {
+		void context.commands.dialogs.closeSettingsDialog();
 	}
 
 	onMount(() => {
-		setAppliedThemePreferences(getThemeMode(), getColorScheme());
+		void context.commands.preferences.setTheme(context.view.app.preferences.theme);
 
 		const media = window.matchMedia('(prefers-color-scheme: dark)');
 		const handleSystemThemeChange = () => {
-			if (themeMode === 'system') {
-				setAppliedThemePreferences(themeMode, colorScheme);
-			}
+			void context.commands.preferences.refreshSystemTheme();
 		};
 
 		media.addEventListener('change', handleSystemThemeChange);
@@ -141,8 +141,19 @@
 	<title>Discobot Sandbox Mock</title>
 </svelte:head>
 
-<div class="flex h-[100dvh] flex-col overflow-hidden bg-base-100 text-base-content">
-	<AppHeader
+<div class="flex h-[100dvh] flex-col overflow-hidden bg-background text-foreground">
+	<AppHeader {sidebarCollapsed} onSidebarToggle={toggleSidebar} onSettingsOpen={openSettings} />
+
+	<div class="flex min-h-0 flex-1 overflow-hidden">
+		{#if !sidebarCollapsed}
+			<SandboxSidebar {activeSandbox} groups={groupedSandboxes} />
+		{/if}
+		<SandboxWorkspace {activeSandbox} {files} {codeLines} {terminalLines} />
+	</div>
+
+	<SettingsDialog
+		modalId={settingsDialogId}
+		open={settingsOpen}
 		{themeModes}
 		{themeMode}
 		{colorScheme}
@@ -150,10 +161,6 @@
 		{activeTheme}
 		onThemeModeChange={setThemeMode}
 		onColorSchemeChange={setColorScheme}
+		onClose={closeSettings}
 	/>
-
-	<div class="flex min-h-0 flex-1 overflow-hidden">
-		<SandboxSidebar {activeSandbox} groups={groupedSandboxes} />
-		<SandboxWorkspace {activeSandbox} {files} {codeLines} {terminalLines} />
-	</div>
 </div>
