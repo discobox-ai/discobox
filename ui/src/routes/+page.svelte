@@ -99,7 +99,7 @@
 	const terminalLines = [
 		'$ go tool task dev:server',
 		'[discobox] watching Docker worker image inputs',
-		'[air] building ./cmd/discobot-server',
+		'[air] building ./cmd/discobox-server',
 		'[server] listening on :8080',
 		'$ pnpm --dir ui run dev --host 0.0.0.0 --port 5173 --strictPort',
 		'VITE v8.0.16  ready in 412 ms',

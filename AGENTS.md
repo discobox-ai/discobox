@@ -10,7 +10,7 @@
 - `cli/cmd/discobox`: CLI entrypoint.
 - `cli/internal/cli`: CLI command implementation.
 - `server`: nested Go module for the control plane implementation.
-- `server/cmd/discobot-server`: HTTP server entrypoint.
+- `server/cmd/discobox-server`: HTTP server entrypoint.
 - `server/internal/server`: server startup and HTTP router wiring.
 - `server/internal/service`: API-facing business logic, orchestration wrappers, and reconcilers.
 - `server/internal/sandbox`: server-owned sandbox jobs, service glue, and reconcilers.

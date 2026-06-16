@@ -84,7 +84,7 @@ submission. Reconcilers own generation checks and runtime operation progress.
 
 | Package/path | Ownership |
 | --- | --- |
-| `cmd/discobot-server` | Server binary entrypoint. |
+| `cmd/discobox-server` | Server binary entrypoint. |
 | `internal/server` | HTTP startup, chi router composition, middleware wiring, generated/Huma route mounting. |
 | `internal/server/middleware` | Authentication, tenant binding, project authorization, and generic authorization middleware. |
 | `internal/server/defaults` | Startup/default identity initialization. |

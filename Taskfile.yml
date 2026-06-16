@@ -1,8 +1,8 @@
 version: "3"
 
 vars:
-  BINARY: build/discobot-server
-  SERVER_MAIN: ./cmd/discobot-server
+  BINARY: build/discobox-server
+  SERVER_MAIN: ./cmd/discobox-server
   CLI_BINARY: build/discobox
   CLI_MAIN: ./cmd/discobox
   PACKAGES: ./...
@@ -16,7 +16,7 @@ tasks:
       - task --list
 
   build:
-    desc: Compile discobot-server, discobox CLI, UI, and Electron shell
+    desc: Compile discobox-server, discobox CLI, UI, and Electron shell
     cmds:
       - task: build:server
       - task: build:cli
@@ -24,7 +24,7 @@ tasks:
       - task: build:electron
 
   build:server:
-    desc: Compile discobot-server
+    desc: Compile discobox-server
     cmds:
       - mkdir -p build
       - cd server && go build -o ../{{.BINARY}} {{.SERVER_MAIN}}
@@ -63,20 +63,20 @@ tasks:
       - task: build
 
   debug-build:
-    desc: Compile discobot-server with debugger-friendly flags
+    desc: Compile discobox-server with debugger-friendly flags
     cmds:
       - mkdir -p build
       - cd server && go build -gcflags="all=-N -l" -o ../{{.BINARY}} {{.SERVER_MAIN}}
 
   debug:
-    desc: Build and run discobot-server under Delve
+    desc: Build and run discobox-server under Delve
     deps:
       - debug-build
     cmds:
       - dlv exec {{.BINARY}}
 
   run:
-    desc: Build and run discobot-server
+    desc: Build and run discobox-server
     deps:
       - build:server
     cmds:
@@ -89,7 +89,7 @@ tasks:
       - dev:ui
 
   dev:server:
-    desc: Run discobot-server with Air hot reload and worker-agent image rebuilds
+    desc: Run discobox-server with Air hot reload and worker-agent image rebuilds
     cmds:
       - |
         bash -c '

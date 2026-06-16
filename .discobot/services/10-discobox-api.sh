@@ -1,7 +1,7 @@
 #!/bin/bash
 #---
 # name: Discobox API
-# description: Runs discobot-server with Air hot reload on port 8080
+# description: Runs discobox-server with Air hot reload on port 8080
 # order: 10
 # http: 8080
 # path: /docs

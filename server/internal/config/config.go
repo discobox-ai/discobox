@@ -1,4 +1,4 @@
-// Package config loads discobot-server runtime configuration from the
+// Package config loads discobox-server runtime configuration from the
 // environment.
 package config
 
@@ -17,7 +17,7 @@ import (
 
 const appName = "discobox"
 
-// Config holds all configuration for discobot-server.
+// Config holds all configuration for discobox-server.
 type Config struct {
 	// Server settings.
 	Port int

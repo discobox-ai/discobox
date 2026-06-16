@@ -27,7 +27,7 @@ PY
 )"
   export DISCOBOX_BATS_SERVER="http://127.0.0.1:$DISCOBOX_BATS_PORT"
 
-  (cd server && go build -o ../build/discobot-server ./cmd/discobot-server)
+  (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
   (cd cli && go build -o ../build/discobox ./cmd/discobox)
   (docker build -f worker-agent/Dockerfile -t discobox-worker-agent:local .)
 
@@ -41,7 +41,7 @@ PY
   DISPATCHER_ENABLED=true \
   DISPATCHER_POLL_INTERVAL=200ms \
   DISPATCHER_IMMEDIATE_EXECUTION=true \
-    ./build/discobot-server >"$DISCOBOX_BATS_SERVER_LOG" 2>&1 &
+    ./build/discobox-server >"$DISCOBOX_BATS_SERVER_LOG" 2>&1 &
   export DISCOBOX_BATS_SERVER_PID="$!"
 
   for _ in {1..100}; do
