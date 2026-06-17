@@ -14,10 +14,9 @@ import (
 )
 
 type eventsOptions struct {
-	list       bool
-	replayOnly bool
-	replay     bool
-	sandboxID  string
+	history   bool
+	listOnly  bool
+	sandboxID string
 }
 
 func (a *App) newEventsCommand() *cobra.Command {
@@ -34,13 +33,12 @@ func (a *App) newEventsCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			list := opts.list
-			replayOnly := opts.replayOnly
+			history := opts.history
+			listOnly := opts.listOnly
 			params := apiclient.ProjectEventsParams{
-				List:       &list,
-				Replay:     opts.replay,
-				ReplayOnly: &replayOnly,
-				SandboxID:  opts.sandboxID,
+				History:   &history,
+				ListOnly:  &listOnly,
+				SandboxID: opts.sandboxID,
 			}
 			stream, err := client.SubscribeProjectEvents(cmd.Context(), projectID, params)
 			if err != nil {
@@ -61,9 +59,8 @@ func (a *App) newEventsCommand() *cobra.Command {
 			}
 		},
 	}
-	cmd.Flags().BoolVar(&opts.list, "list", true, "Send a current resource list before live changes")
-	cmd.Flags().BoolVar(&opts.replay, "replay", false, "Replay sandbox events from the beginning before live changes")
-	cmd.Flags().BoolVar(&opts.replayOnly, "replay-only", false, "Return after replay/list instead of waiting for live events")
+	cmd.Flags().BoolVar(&opts.history, "history", true, "Send current resource data before live changes")
+	cmd.Flags().BoolVar(&opts.listOnly, "list-only", false, "Return after list instead of waiting for live events")
 	cmd.Flags().StringVar(&opts.sandboxID, "sandbox", "", "Sandbox ID to stream; defaults to all sandboxes")
 	return cmd
 }

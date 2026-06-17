@@ -612,7 +612,7 @@ components:
                 data:
                     description: Event payload
                 id:
-                    description: Stable event ID
+                    description: Event record ID
                     type: string
                 projectId:
                     description: Project ID
@@ -704,7 +704,7 @@ components:
                 data:
                     description: Event payload
                 id:
-                    description: Stable event ID
+                    description: Event record ID
                     type: string
                 projectId:
                     description: Project ID
@@ -2248,7 +2248,7 @@ paths:
                 - Sandboxes
     /projects/{projectId}/stream/sse:
         get:
-            description: Subscribes to one project stream using query parameters. This endpoint does not emit SSE id fields and does not support Last-Event-ID resume semantics; reconnects should request full history or set history=false.
+            description: Subscribes to one project stream using query parameters. Reconnecting clients may receive current resource data before live detail events, or opt out with history=false.
             operationId: subscribe-project-stream-sse
             parameters:
                 - description: Project ID
@@ -2276,34 +2276,27 @@ paths:
                   schema:
                     description: Sandbox ID to stream; defaults to all sandboxes
                     type: string
-                - description: Send full event history before live changes; defaults to true
+                - description: Return after current resource data instead of waiting for live events
+                  explode: false
+                  in: query
+                  name: listOnly
+                  schema:
+                    description: Return after current resource data instead of waiting for live events
+                    type: boolean
+                - description: Send current resource data before live changes; defaults to true
                   explode: false
                   in: query
                   name: history
                   schema:
                     default: true
-                    description: Send full event history before live changes; defaults to true
-                    type: boolean
-                - description: Return after history/list instead of waiting for live events
-                  explode: false
-                  in: query
-                  name: replayOnly
-                  schema:
-                    description: Return after history/list instead of waiting for live events
-                    type: boolean
-                - description: Send a current resource list before history/live changes
-                  explode: false
-                  in: query
-                  name: list
-                  schema:
-                    description: Send a current resource list before history/live changes
+                    description: Send current resource data before live changes; defaults to true
                     type: boolean
             responses:
                 200:
                     content:
                         text/event-stream:
                             schema:
-                                description: Each oneOf object in the array represents one possible SSE message. This stream intentionally omits SSE id fields and does not support Last-Event-ID resume semantics.
+                                description: Each oneOf object in the array represents one possible SSE message. Current resource data may be followed by live detail events from connection time onward.
                                 items:
                                     oneOf:
                                         - properties:

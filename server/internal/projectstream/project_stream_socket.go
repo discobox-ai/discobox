@@ -42,12 +42,11 @@ const (
 // ProjectStreamSubscriptionRequest is the client-to-server message used to
 // manage streams multiplexed over one project websocket.
 type ProjectStreamSubscriptionRequest struct {
-	Type       string `json:"type"`
-	Stream     string `json:"stream"`
-	SandboxID  string `json:"sandboxId,omitempty"`
-	Replay     bool   `json:"replay,omitempty"`
-	ReplayOnly bool   `json:"replayOnly,omitempty"`
-	List       *bool  `json:"list,omitempty"`
+	Type      string `json:"type"`
+	Stream    string `json:"stream"`
+	SandboxID string `json:"sandboxId,omitempty"`
+	ListOnly  bool   `json:"listOnly,omitempty"`
+	History   *bool  `json:"history,omitempty"`
 }
 
 // ProjectStreamSocketMessage is the server-to-client message emitted by the
@@ -96,12 +95,11 @@ type ResourceChangedEvent model.ProjectEvent
 type ResourceListedEvent model.ProjectEvent
 
 type ProjectStreamSSEInput struct {
-	ProjectID  string `path:"projectId" doc:"Project ID"`
-	Stream     string `query:"stream" enum:"sandbox" default:"sandbox" doc:"Stream name"`
-	SandboxID  string `query:"sandboxId,omitempty" doc:"Sandbox ID to stream; defaults to all sandboxes"`
-	History    bool   `query:"history" default:"true" doc:"Send full event history before live changes; defaults to true"`
-	ReplayOnly bool   `query:"replayOnly,omitempty" doc:"Return after history/list instead of waiting for live events"`
-	List       bool   `query:"list,omitempty" doc:"Send a current resource list before history/live changes"`
+	ProjectID string `path:"projectId" doc:"Project ID"`
+	Stream    string `query:"stream" enum:"sandbox" default:"sandbox" doc:"Stream name"`
+	SandboxID string `query:"sandboxId,omitempty" doc:"Sandbox ID to stream; defaults to all sandboxes"`
+	ListOnly  bool   `query:"listOnly,omitempty" doc:"Return after the current resource list instead of waiting for live events"`
+	History   bool   `query:"history" default:"true" doc:"Send current resource data before live changes; defaults to true"`
 }
 
 type subscriptionKey struct {
@@ -131,9 +129,8 @@ func RegisterProjectStreamRoutes(router chi.Router, service api.ProjectEventServ
 }
 
 // RegisterProjectStreamSSERoutes registers the OpenAPI-documented static
-// project stream subscription endpoint. Unlike SSE Last-Event-ID resume
-// patterns, this endpoint never writes event IDs and does not accept resume IDs.
-// Reconnects should request full history or opt out of history.
+// project stream subscription endpoint. Reconnecting clients may request the
+// current resource list before receiving live detail events.
 func RegisterProjectStreamSSERoutes(router chi.Router, service api.ProjectEventService) {
 	router.Get("/projects/{projectId}/stream/sse", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -153,12 +150,11 @@ func RegisterProjectStreamSSERoutes(router chi.Router, service api.ProjectEventS
 func projectStreamSSEInputFromRequest(r *http.Request) *ProjectStreamSSEInput {
 	query := r.URL.Query()
 	return &ProjectStreamSSEInput{
-		ProjectID:  chi.URLParam(r, "projectId"),
-		Stream:     query.Get("stream"),
-		SandboxID:  query.Get("sandboxId"),
-		History:    queryBool(query.Get("history"), true),
-		ReplayOnly: queryBool(query.Get("replayOnly"), false),
-		List:       queryBool(query.Get("list"), false),
+		ProjectID: chi.URLParam(r, "projectId"),
+		Stream:    query.Get("stream"),
+		SandboxID: query.Get("sandboxId"),
+		ListOnly:  queryBool(query.Get("listOnly"), false),
+		History:   queryBool(query.Get("history"), true),
 	}
 }
 
@@ -276,7 +272,7 @@ func (s *ProjectStreamSocket) startSandboxSubscription(req ProjectStreamSubscrip
 	if unsubscribe == nil {
 		unsubscribe = func() {}
 	}
-	cursor, err := s.subscriptionCursor(streamCtx, req)
+	cursor, err := s.service.MaxProjectEventSeq(streamCtx, s.projectID)
 	if err != nil {
 		unsubscribe()
 		streamCancel()
@@ -304,30 +300,12 @@ func (s *ProjectStreamSocket) startSandboxSubscription(req ProjectStreamSubscrip
 		return
 	}
 
-	if req.listEnabled() && !s.writeSandboxList(streamCtx, key, sub, req, cursor) {
+	if req.historyEnabled() && !s.writeSandboxList(streamCtx, key, sub, req, cursor) {
 		cleanup()
 		return
 	}
-	if req.replayHistory() {
-		events, err := s.service.ListProjectEventsAfterSeq(streamCtx, s.projectID, cursor, []string{"sandbox"})
-		if err != nil {
-			_ = s.writeMessage(ProjectStreamSocketMessage{Type: messageTypeError, Stream: req.Stream, SandboxID: req.SandboxID, Error: err.Error()})
-			cleanup()
-			return
-		}
-		for _, event := range events {
-			if !s.matchesSandbox(req, event) {
-				continue
-			}
-			if !s.writeProjectEvent(req, event) {
-				cleanup()
-				return
-			}
-			cursor = event.Seq
-		}
-	}
 
-	if req.ReplayOnly {
+	if req.ListOnly {
 		cleanup()
 		_ = s.writeMessage(ProjectStreamSocketMessage{Type: messageTypeComplete, Stream: req.Stream, SandboxID: req.SandboxID})
 		return
@@ -356,13 +334,6 @@ func (s *ProjectStreamSocket) startSandboxSubscription(req ProjectStreamSubscrip
 			}
 		}
 	}()
-}
-
-func (s *ProjectStreamSocket) subscriptionCursor(ctx context.Context, req ProjectStreamSubscriptionRequest) (int64, error) {
-	if req.Replay {
-		return 0, nil
-	}
-	return s.service.MaxProjectEventSeq(ctx, s.projectID)
 }
 
 func (s *ProjectStreamSocket) writeSandboxList(ctx context.Context, key subscriptionKey, sub *subscription, req ProjectStreamSubscriptionRequest, seq int64) bool {
@@ -482,15 +453,11 @@ func requestKey(req ProjectStreamSubscriptionRequest) subscriptionKey {
 	return subscriptionKey{stream: strings.TrimSpace(req.Stream), sandboxID: req.SandboxID}
 }
 
-func (req ProjectStreamSubscriptionRequest) listEnabled() bool {
-	if req.List == nil {
-		return !req.Replay
+func (req ProjectStreamSubscriptionRequest) historyEnabled() bool {
+	if req.History == nil {
+		return true
 	}
-	return *req.List
-}
-
-func (req ProjectStreamSubscriptionRequest) replayHistory() bool {
-	return req.Replay
+	return *req.History
 }
 
 type sseSendFunc func(event string, data any) error
@@ -500,14 +467,13 @@ func runProjectStreamSSE(ctx context.Context, service api.ProjectEventService, i
 	if stream == "" {
 		stream = streamSandbox
 	}
-	list := input.List
+	history := input.History
 	req := ProjectStreamSubscriptionRequest{
-		Type:       messageTypeSubscribe,
-		Stream:     stream,
-		SandboxID:  input.SandboxID,
-		Replay:     input.History,
-		ReplayOnly: input.ReplayOnly,
-		List:       &list,
+		Type:      messageTypeSubscribe,
+		Stream:    stream,
+		SandboxID: input.SandboxID,
+		ListOnly:  input.ListOnly,
+		History:   &history,
 	}
 	if req.Stream != streamSandbox {
 		_ = send(messageTypeError, StreamErrorEvent{Stream: req.Stream, SandboxID: req.SandboxID, Error: fmt.Sprintf("unsupported stream %q", req.Stream)})
@@ -524,7 +490,7 @@ func runProjectStreamSSE(ctx context.Context, service api.ProjectEventService, i
 	}
 	defer unsubscribe()
 
-	cursor, err := sseSubscriptionCursor(ctx, service, input.ProjectID, req)
+	cursor, err := service.MaxProjectEventSeq(ctx, input.ProjectID)
 	if err != nil {
 		_ = send(messageTypeError, StreamErrorEvent{Stream: req.Stream, SandboxID: req.SandboxID, Error: err.Error()})
 		return
@@ -532,28 +498,12 @@ func runProjectStreamSSE(ctx context.Context, service api.ProjectEventService, i
 	if err := send(eventConnected, ConnectedEvent{ProjectID: input.ProjectID}); err != nil {
 		return
 	}
-	if req.listEnabled() {
+	if req.historyEnabled() {
 		if !writeSSESandboxList(ctx, service, input.ProjectID, req, cursor, send) {
 			return
 		}
 	}
-	if req.Replay {
-		events, err := service.ListProjectEventsAfterSeq(ctx, input.ProjectID, cursor, []string{"sandbox"})
-		if err != nil {
-			_ = send(messageTypeError, StreamErrorEvent{Stream: req.Stream, SandboxID: req.SandboxID, Error: err.Error()})
-			return
-		}
-		for _, event := range events {
-			if !matchesSandbox(req, event) {
-				continue
-			}
-			if !sendSSEProjectEvent(req, event, send) {
-				return
-			}
-			cursor = event.Seq
-		}
-	}
-	if req.ReplayOnly {
+	if req.ListOnly {
 		_ = send(messageTypeComplete, CompleteEvent{Stream: req.Stream, SandboxID: req.SandboxID})
 		return
 	}
@@ -575,13 +525,6 @@ func runProjectStreamSSE(ctx context.Context, service api.ProjectEventService, i
 			cursor = event.Seq
 		}
 	}
-}
-
-func sseSubscriptionCursor(ctx context.Context, service api.ProjectEventService, projectID string, req ProjectStreamSubscriptionRequest) (int64, error) {
-	if req.Replay {
-		return 0, nil
-	}
-	return service.MaxProjectEventSeq(ctx, projectID)
 }
 
 func writeSSESandboxList(ctx context.Context, service api.ProjectEventService, projectID string, req ProjectStreamSubscriptionRequest, seq int64, send sseSendFunc) bool {

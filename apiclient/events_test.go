@@ -20,7 +20,6 @@ import (
 
 type fakeProjectEventService struct {
 	maxSeq    int64
-	history   []model.ProjectEvent
 	snapshots []model.ProjectEvent
 	live      chan model.ProjectEvent
 }
@@ -29,8 +28,8 @@ func (f *fakeProjectEventService) MaxProjectEventSeq(context.Context, string) (i
 	return f.maxSeq, nil
 }
 
-func (f *fakeProjectEventService) ListProjectEventsAfterSeq(_ context.Context, _ string, afterSeq int64, resourceTypes []string) ([]model.ProjectEvent, error) {
-	return filterProjectEvents(f.history, afterSeq, resourceTypes), nil
+func (f *fakeProjectEventService) ListProjectEventsAfterSeq(context.Context, string, int64, []string) ([]model.ProjectEvent, error) {
+	return nil, nil
 }
 
 func (f *fakeProjectEventService) ListProjectResourceSnapshots(_ context.Context, _ string, resourceTypes []string, _ int64) ([]model.ProjectEvent, error) {
@@ -54,15 +53,15 @@ func TestSubscribeProjectEventsReadsProjectStream(t *testing.T) {
 	}
 	server := newProjectStreamTestServer(t, service)
 
-	list := true
-	replayOnly := true
+	history := true
+	listOnly := true
 	client, err := NewEventClient(server.URL)
 	if err != nil {
 		t.Fatalf("new client: %v", err)
 	}
 	stream, err := client.SubscribeProjectEvents(context.Background(), "project-1", ProjectEventsParams{
-		List:       &list,
-		ReplayOnly: &replayOnly,
+		History:  &history,
+		ListOnly: &listOnly,
 	})
 	if err != nil {
 		t.Fatalf("subscribe: %v", err)
@@ -100,56 +99,7 @@ func TestSubscribeProjectEventsReadsProjectStream(t *testing.T) {
 
 	_, err = stream.Read()
 	if !errors.Is(err, io.EOF) {
-		t.Fatalf("expected EOF after replay-only stream, got %v", err)
-	}
-}
-
-func TestSubscribeProjectEventsReplaysHistoryAndFiltersSandbox(t *testing.T) {
-	service := &fakeProjectEventService{
-		maxSeq: 4,
-		history: []model.ProjectEvent{
-			testProjectEvent("old", 2, "sandbox-1", model.EventActionUpdated),
-			testProjectEvent("match", 3, "sandbox-1", model.EventActionUpdated),
-			testProjectEvent("other", 4, "sandbox-2", model.EventActionUpdated),
-		},
-		live: make(chan model.ProjectEvent),
-	}
-	server := newProjectStreamTestServer(t, service)
-
-	replayOnly := true
-	client, err := NewEventClient(server.URL)
-	if err != nil {
-		t.Fatalf("new client: %v", err)
-	}
-	stream, err := client.SubscribeProjectEvents(context.Background(), "project-1", ProjectEventsParams{
-		Replay:     true,
-		ReplayOnly: &replayOnly,
-		SandboxID:  "sandbox-1",
-	})
-	if err != nil {
-		t.Fatalf("subscribe: %v", err)
-	}
-	defer stream.Close()
-
-	msg, err := stream.Read()
-	if err != nil {
-		t.Fatalf("read replay: %v", err)
-	}
-	changed, ok := msg.Data.(*ResourceChangedEvent)
-	if !ok || changed.ID != "old" || changed.ResourceID != "sandbox-1" {
-		t.Fatalf("changed event = %#v", msg.Data)
-	}
-	msg, err = stream.Read()
-	if err != nil {
-		t.Fatalf("read replay: %v", err)
-	}
-	changed, ok = msg.Data.(*ResourceChangedEvent)
-	if !ok || changed.ID != "match" || changed.ResourceID != "sandbox-1" {
-		t.Fatalf("changed event = %#v", msg.Data)
-	}
-	_, err = stream.Read()
-	if !errors.Is(err, io.EOF) {
-		t.Fatalf("expected EOF after replay-only stream, got %v", err)
+		t.Fatalf("expected EOF after list-only stream, got %v", err)
 	}
 }
 
@@ -174,7 +124,7 @@ func newProjectStreamTestServer(t *testing.T, service *fakeProjectEventService) 
 		if err := wsjson.Write(r.Context(), conn, projectStreamSocketMessage{Type: "subscribed", Stream: req.Stream, SandboxID: req.SandboxID}); err != nil {
 			return
 		}
-		if req.List != nil && *req.List {
+		if req.History != nil && *req.History {
 			snapshots, _ := service.ListProjectResourceSnapshots(r.Context(), projectID, nil, service.maxSeq)
 			if !writeProjectStreamMessage(r.Context(), conn, ProjectEventNameListStart, ResourceListStartEvent{ProjectID: projectID, Resources: []string{"sandbox"}, Seq: service.maxSeq, StartedAt: time.Now()}) {
 				return
@@ -188,18 +138,7 @@ func newProjectStreamTestServer(t *testing.T, service *fakeProjectEventService) 
 				return
 			}
 		}
-		if req.Replay {
-			history, _ := service.ListProjectEventsAfterSeq(r.Context(), projectID, 0, nil)
-			for _, event := range history {
-				if req.SandboxID != "" && event.ResourceID != req.SandboxID {
-					continue
-				}
-				if !writeProjectStreamEvent(r.Context(), conn, event) {
-					return
-				}
-			}
-		}
-		if req.ReplayOnly {
+		if req.ListOnly {
 			_ = wsjson.Write(r.Context(), conn, projectStreamSocketMessage{Type: "complete"})
 		}
 	})

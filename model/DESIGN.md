@@ -18,7 +18,7 @@ persistence tags and JSON/OpenAPI API-facing tags.
 | `WorkerBootstrapToken` | Short-lived, one-time token used by a new worker to register its public key. |
 | `WorkerAuthToken` | Short-lived runtime token issued after the worker proves possession of its bootstrap token. |
 | `SandboxAccessIssuerKey` | Design-level name for the current `ProjectUserKey`: per-project, per-user issuer key used by the control plane to sign sandbox access tokens. |
-| `ProjectEvent` | Append-only project-scoped resource event for list/watch sync and replay. |
+| `ProjectEvent` | Append-only project-scoped resource event for list/watch sync. |
 
 ## Persistence Scope
 

@@ -20,7 +20,6 @@ import (
 
 type fakeProjectEventService struct {
 	maxSeq    int64
-	history   []model.ProjectEvent
 	snapshots []model.ProjectEvent
 	live      chan model.ProjectEvent
 }
@@ -29,8 +28,8 @@ func (f *fakeProjectEventService) MaxProjectEventSeq(context.Context, string) (i
 	return f.maxSeq, nil
 }
 
-func (f *fakeProjectEventService) ListProjectEventsAfterSeq(_ context.Context, _ string, afterSeq int64, resourceTypes []string) ([]model.ProjectEvent, error) {
-	return filterEvents(f.history, afterSeq, resourceTypes), nil
+func (f *fakeProjectEventService) ListProjectEventsAfterSeq(context.Context, string, int64, []string) ([]model.ProjectEvent, error) {
+	return nil, nil
 }
 
 func (f *fakeProjectEventService) ListProjectResourceSnapshots(_ context.Context, _ string, resourceTypes []string, _ int64) ([]model.ProjectEvent, error) {
@@ -83,77 +82,49 @@ func TestSandboxSubscriptionSendsListAndLiveEvents(t *testing.T) {
 	assertMessage(t, socket.outgoing, messageTypeEvent, streamSandbox, model.EventTypeResourceChanged, "live-1")
 }
 
-func TestSandboxSubscriptionCanFilterOneSandboxAndReplayHistory(t *testing.T) {
+func TestSandboxSubscriptionFiltersLiveEventsAfterConnect(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	live := make(chan model.ProjectEvent, 3)
 	service := &fakeProjectEventService{
 		maxSeq: 99,
-		history: []model.ProjectEvent{
-			testProjectEvent("old", 2, "sandbox-1", model.EventActionUpdated),
-			testProjectEvent("match", 3, "sandbox-1", model.EventActionUpdated),
-			testProjectEvent("other", 4, "sandbox-2", model.EventActionUpdated),
-		},
-		live: make(chan model.ProjectEvent),
+		live:   live,
 	}
 	socket := testSocket(ctx, cancel, service)
+	history := false
 
-	socket.startSandboxSubscription(ProjectStreamSubscriptionRequest{Type: messageTypeSubscribe, Stream: streamSandbox, SandboxID: "sandbox-1", Replay: true})
+	socket.startSandboxSubscription(ProjectStreamSubscriptionRequest{Type: messageTypeSubscribe, Stream: streamSandbox, SandboxID: "sandbox-1", History: &history})
 
 	assertMessage(t, socket.outgoing, messageTypeSubscribed, streamSandbox, "", "")
 	assertMessage(t, socket.outgoing, messageTypeEvent, streamSandbox, eventConnected, "")
-	msg := assertMessage(t, socket.outgoing, messageTypeEvent, streamSandbox, model.EventTypeResourceChanged, "")
-	if msg.Seq != 2 {
-		t.Fatalf("message = %#v, want sandbox-1 replay at seq 2", msg)
-	}
-	msg = assertMessage(t, socket.outgoing, messageTypeEvent, streamSandbox, model.EventTypeResourceChanged, "match")
-	if msg.SandboxID != "sandbox-1" || msg.Seq != 3 {
-		t.Fatalf("message = %#v, want sandbox-1 replay at seq 3", msg)
-	}
+	live <- testProjectEvent("old", 99, "sandbox-1", model.EventActionUpdated)
+	live <- testProjectEvent("other", 100, "sandbox-2", model.EventActionUpdated)
+	live <- testProjectEvent("match", 101, "sandbox-1", model.EventActionUpdated)
+	assertMessage(t, socket.outgoing, messageTypeEvent, streamSandbox, model.EventTypeResourceChanged, "match")
 	assertNoMessage(t, socket.outgoing)
 }
 
-func TestSandboxSubscriptionReplayStartsAtBeginning(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	service := &fakeProjectEventService{
-		maxSeq: 99,
-		history: []model.ProjectEvent{
-			testProjectEvent("first", 1, "sandbox-1", model.EventActionUpdated),
-			testProjectEvent("second", 2, "sandbox-1", model.EventActionUpdated),
-		},
-		live: make(chan model.ProjectEvent),
-	}
-	socket := testSocket(ctx, cancel, service)
-
-	socket.startSandboxSubscription(ProjectStreamSubscriptionRequest{Type: messageTypeSubscribe, Stream: streamSandbox, Replay: true})
-
-	assertMessage(t, socket.outgoing, messageTypeSubscribed, streamSandbox, "", "")
-	assertMessage(t, socket.outgoing, messageTypeEvent, streamSandbox, eventConnected, "")
-	assertMessage(t, socket.outgoing, messageTypeEvent, streamSandbox, model.EventTypeResourceChanged, "first")
-	assertMessage(t, socket.outgoing, messageTypeEvent, streamSandbox, model.EventTypeResourceChanged, "second")
-	assertNoMessage(t, socket.outgoing)
-}
-
-func TestSandboxSubscriptionReplayOnlyCompletesWithoutLiveSubscription(t *testing.T) {
+func TestSandboxSubscriptionListOnlyCompletesWithoutLiveSubscription(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	service := &fakeProjectEventService{
 		maxSeq: 1,
-		history: []model.ProjectEvent{
-			testProjectEvent("first", 1, "sandbox-1", model.EventActionUpdated),
+		snapshots: []model.ProjectEvent{
+			testProjectEvent("snapshot", 1, "sandbox-1", model.EventActionListed),
 		},
 		live: make(chan model.ProjectEvent),
 	}
 	socket := testSocket(ctx, cancel, service)
 
-	socket.startSandboxSubscription(ProjectStreamSubscriptionRequest{Type: messageTypeSubscribe, Stream: streamSandbox, Replay: true, ReplayOnly: true})
+	socket.startSandboxSubscription(ProjectStreamSubscriptionRequest{Type: messageTypeSubscribe, Stream: streamSandbox, ListOnly: true})
 
 	assertMessage(t, socket.outgoing, messageTypeSubscribed, streamSandbox, "", "")
 	assertMessage(t, socket.outgoing, messageTypeEvent, streamSandbox, eventConnected, "")
-	assertMessage(t, socket.outgoing, messageTypeEvent, streamSandbox, model.EventTypeResourceChanged, "first")
+	assertMessage(t, socket.outgoing, messageTypeEvent, streamSandbox, eventListStart, "")
+	assertMessage(t, socket.outgoing, messageTypeEvent, streamSandbox, model.EventTypeResourceListed, "snapshot")
+	assertMessage(t, socket.outgoing, messageTypeEvent, streamSandbox, eventListEnd, "")
 	assertMessage(t, socket.outgoing, messageTypeComplete, streamSandbox, "", "")
 }
 
@@ -163,8 +134,8 @@ func TestResubscribeOldCleanupDoesNotRemoveNewSubscription(t *testing.T) {
 
 	service := newResubscribeProjectEventService()
 	socket := testSocket(ctx, cancel, service)
-	list := false
-	req := ProjectStreamSubscriptionRequest{Type: messageTypeSubscribe, Stream: streamSandbox, List: &list}
+	history := false
+	req := ProjectStreamSubscriptionRequest{Type: messageTypeSubscribe, Stream: streamSandbox, History: &history}
 
 	socket.startSandboxSubscription(req)
 	assertMessage(t, socket.outgoing, messageTypeSubscribed, streamSandbox, "", "")
@@ -246,21 +217,20 @@ func TestProjectStreamRouteAcceptsSameOriginWebSocket(t *testing.T) {
 	}
 }
 
-func TestProjectStreamSSEReplaysHistoryWithoutIDs(t *testing.T) {
+func TestProjectStreamSSESendsListWithoutSSEIDs(t *testing.T) {
 	server := testProjectStreamSSEServer(t, &fakeProjectEventService{
 		maxSeq: 2,
-		history: []model.ProjectEvent{
-			testProjectEvent("first", 1, "sandbox-1", model.EventActionUpdated),
-			testProjectEvent("second", 2, "sandbox-1", model.EventActionUpdated),
+		snapshots: []model.ProjectEvent{
+			testProjectEvent("first", 2, "sandbox-1", model.EventActionListed),
+			testProjectEvent("second", 2, "sandbox-2", model.EventActionListed),
 		},
 		live: make(chan model.ProjectEvent),
 	})
 
-	req, err := http.NewRequest(http.MethodGet, server.URL+"/projects/project-1/stream/sse?replayOnly=true", nil)
+	req, err := http.NewRequest(http.MethodGet, server.URL+"/projects/project-1/stream/sse?listOnly=true", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
-	req.Header.Set("Last-Event-ID", "999")
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("get sse stream: %v", err)
@@ -276,7 +246,9 @@ func TestProjectStreamSSEReplaysHistoryWithoutIDs(t *testing.T) {
 	}
 	for _, want := range []string{
 		"event: connected\n",
-		"event: " + model.EventTypeResourceChanged + "\n",
+		"event: list-start\n",
+		"event: " + model.EventTypeResourceListed + "\n",
+		"event: list-end\n",
 		`"id":"first"`,
 		`"id":"second"`,
 		"event: complete\n",
@@ -286,20 +258,20 @@ func TestProjectStreamSSEReplaysHistoryWithoutIDs(t *testing.T) {
 		}
 	}
 	if strings.HasPrefix(body, "id:") || strings.Contains(body, "\nid:") {
-		t.Fatalf("sse body unexpectedly included event id field:\n%s", body)
+		t.Fatalf("sse body unexpectedly included event transport id field:\n%s", body)
 	}
 }
 
 func TestProjectStreamSSECanOptOutOfHistory(t *testing.T) {
 	server := testProjectStreamSSEServer(t, &fakeProjectEventService{
 		maxSeq: 1,
-		history: []model.ProjectEvent{
+		snapshots: []model.ProjectEvent{
 			testProjectEvent("first", 1, "sandbox-1", model.EventActionUpdated),
 		},
 		live: make(chan model.ProjectEvent),
 	})
 
-	resp, err := http.Get(server.URL + "/projects/project-1/stream/sse?history=false&replayOnly=true")
+	resp, err := http.Get(server.URL + "/projects/project-1/stream/sse?history=false&listOnly=true")
 	if err != nil {
 		t.Fatalf("get sse stream: %v", err)
 	}
@@ -312,8 +284,8 @@ func TestProjectStreamSSECanOptOutOfHistory(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		t.Fatalf("sse status = %d, body = %s", resp.StatusCode, body)
 	}
-	if strings.Contains(body, "resourceChanged") || strings.Contains(body, `"id":"first"`) {
-		t.Fatalf("sse body included history despite history=false:\n%s", body)
+	if strings.Contains(body, "resourceListed") || strings.Contains(body, `"id":"first"`) {
+		t.Fatalf("sse body included resource data despite history=false:\n%s", body)
 	}
 	if !strings.Contains(body, "event: connected\n") || !strings.Contains(body, "event: complete\n") {
 		t.Fatalf("sse body missing lifecycle events:\n%s", body)

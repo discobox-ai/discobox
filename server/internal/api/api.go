@@ -69,7 +69,7 @@ type WorkerService interface {
 	UpdateWorkerStatus(ctx context.Context, workerID string, input UpdateWorkerStatusBody) (*model.Worker, error)
 }
 
-// ProjectEventService provides project-scoped event replay and live subscription.
+// ProjectEventService provides project-scoped resource snapshots and live subscription.
 type ProjectEventService interface {
 	MaxProjectEventSeq(ctx context.Context, projectID string) (int64, error)
 	ListProjectEventsAfterSeq(ctx context.Context, projectID string, afterSeq int64, resourceTypes []string) ([]model.ProjectEvent, error)

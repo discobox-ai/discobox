@@ -555,7 +555,7 @@ const (
 
 // ProjectEvent is a persisted project-scoped resource change event.
 type ProjectEvent struct {
-	ID           string          `gorm:"primaryKey;type:text" json:"id" doc:"Stable event ID"`
+	ID           string          `gorm:"primaryKey;type:text" json:"id" doc:"Event record ID"`
 	Seq          int64           `gorm:"column:seq;autoIncrement;uniqueIndex" json:"seq" doc:"Global event sequence" minimum:"0"`
 	ProjectID    string          `gorm:"column:project_id;not null;type:text;index:idx_project_event_seq,priority:1" json:"projectId" doc:"Project ID"`
 	Type         string          `gorm:"not null;type:text;index" json:"type" doc:"Event type"`

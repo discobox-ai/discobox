@@ -58,10 +58,9 @@ func NewEventClient(serverURL string, opts ...EventClientOption) (*EventClient, 
 }
 
 type ProjectEventsParams struct {
-	List       *bool
-	Replay     bool
-	ReplayOnly *bool
-	SandboxID  string
+	History   *bool
+	ListOnly  *bool
+	SandboxID string
 }
 
 func (c *EventClient) SubscribeProjectEvents(ctx context.Context, projectID string, params ProjectEventsParams) (*ProjectEventStream, error) {
@@ -78,12 +77,11 @@ func (c *EventClient) SubscribeProjectEvents(ctx context.Context, projectID stri
 
 	stream := &ProjectEventStream{ctx: ctx, conn: conn}
 	req := projectStreamSubscriptionRequest{
-		Type:       "subscribe",
-		Stream:     "sandbox",
-		SandboxID:  params.SandboxID,
-		Replay:     params.Replay,
-		ReplayOnly: boolValue(params.ReplayOnly),
-		List:       params.List,
+		Type:      "subscribe",
+		Stream:    "sandbox",
+		SandboxID: params.SandboxID,
+		ListOnly:  boolValue(params.ListOnly),
+		History:   params.History,
 	}
 	if err := wsjson.Write(ctx, conn, req); err != nil {
 		if closeErr := conn.CloseNow(); closeErr != nil {
@@ -173,12 +171,11 @@ type UnknownProjectEvent struct {
 func (*UnknownProjectEvent) projectEventData() {}
 
 type projectStreamSubscriptionRequest struct {
-	Type       string `json:"type"`
-	Stream     string `json:"stream"`
-	SandboxID  string `json:"sandboxId,omitempty"`
-	Replay     bool   `json:"replay,omitempty"`
-	ReplayOnly bool   `json:"replayOnly,omitempty"`
-	List       *bool  `json:"list,omitempty"`
+	Type      string `json:"type"`
+	Stream    string `json:"stream"`
+	SandboxID string `json:"sandboxId,omitempty"`
+	ListOnly  bool   `json:"listOnly,omitempty"`
+	History   *bool  `json:"history,omitempty"`
 }
 
 type projectStreamSocketMessage struct {

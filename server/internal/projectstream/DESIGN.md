@@ -15,11 +15,11 @@ flowchart LR
 ```
 
 - Register HTTP routes from `internal/server`.
-- Read history and snapshots through `api.ProjectEventService`.
+- Read resource snapshots through `api.ProjectEventService`.
 - Subscribe to live events through the same service/broker path used by the rest
   of the server.
 - Keep transport-specific concerns here: protocol framing, subscription state,
-  filtering, replay/list behavior, and connection lifecycle.
+  filtering, list behavior, and connection lifecycle.
 
 ## Routes
 
@@ -39,10 +39,9 @@ Static subscriptions are also exposed through the OpenAPI-documented SSE route:
 GET /projects/{projectId}/stream/sse
 ```
 
-SSE subscriptions are configured entirely by query string. They intentionally do
-not emit SSE `id:` fields and do not support `Last-Event-ID`/resume-by-id
-semantics. Reconnecting clients should request full history, which is the
-default, or explicitly opt out with `history=false`.
+SSE subscriptions are configured entirely by query string. Reconnecting clients
+may receive current resource data, which is the default, or opt out with
+`history=false`; live detail events are emitted only from connection time onward.
 
 ## Subscription Lifecycle
 
