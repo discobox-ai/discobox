@@ -13,6 +13,8 @@ func TestDetectDriver(t *testing.T) {
 	tests := map[string]gormdb.Driver{
 		"postgres://user:pass@localhost/db":   gormdb.DriverPostgres,
 		"postgresql://user:pass@localhost/db": gormdb.DriverPostgres,
+		"turso://app.db":                      gormdb.DriverTurso,
+		"turso:/tmp/app.db":                   gormdb.DriverTurso,
 		"sqlite://app.db":                     gormdb.DriverSQLite,
 		"sqlite3://app.db":                    gormdb.DriverSQLite,
 		"file:app.db":                         gormdb.DriverSQLite,

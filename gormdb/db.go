@@ -3,6 +3,7 @@
 package gormdb
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,6 +21,7 @@ type Driver string
 const (
 	DriverSQLite   Driver = "sqlite"
 	DriverPostgres Driver = "postgres"
+	DriverTurso    Driver = "turso"
 )
 
 // Config controls Open.
@@ -29,11 +31,26 @@ type Config struct {
 
 	// DSN is used by Open. SQLite accepts raw paths, file:, sqlite://,
 	// sqlite3://, and :memory:. Postgres accepts postgres:// and postgresql://.
+	// Turso support requires building with -tags turso and accepts turso: and
+	// turso:// DSNs. Turso DSNs use the path as the local database path and may
+	// include remote_url to sync that local database with Turso Cloud. Set
+	// TursoAuthToken separately for remote authentication.
 	DSN string
 
-	// ReadDSN optionally opens a separate read pool for Postgres. SQLite ignores
-	// ReadDSN because its read pool is derived from DSN.
+	// ReadDSN optionally opens a separate read pool for Postgres and Turso
+	// Cloud sync. SQLite and local Turso ignore ReadDSN because their read pools
+	// are derived from DSN.
 	ReadDSN string
+
+	// TursoDatabaseURL enables Turso Cloud sync when Driver is DriverTurso. It
+	// overrides any remote_url query parameter in DSN.
+	TursoDatabaseURL string
+
+	// TursoRemoteURL is an alias for TursoDatabaseURL.
+	TursoRemoteURL string
+
+	// TursoAuthToken is the bearer token used with TursoDatabaseURL.
+	TursoAuthToken string
 
 	// Logger is passed to both GORM pools. When nil, GORM's default logger is
 	// used.
@@ -45,6 +62,31 @@ type Pools struct {
 	Write  *gorm.DB
 	Read   *gorm.DB
 	Driver Driver
+
+	// TursoSync is set for synced Turso databases. It is nil for SQLite,
+	// Postgres, and local-only Turso.
+	TursoSync TursoSync
+}
+
+// TursoSync exposes explicit sync operations for a Turso Cloud synced local
+// database.
+type TursoSync interface {
+	Pull(context.Context) (bool, error)
+	Push(context.Context) error
+	Checkpoint(context.Context) error
+	Stats(context.Context) (TursoSyncStats, error)
+}
+
+// TursoSyncStats contains Turso Cloud sync statistics.
+type TursoSyncStats struct {
+	CdcOperations        int64
+	MainWalSize          int64
+	RevertWalSize        int64
+	LastPullUnixTime     int64
+	LastPushUnixTime     int64
+	NetworkSentBytes     int64
+	NetworkReceivedBytes int64
+	Revision             string
 }
 
 // Open detects the configured driver and opens GORM pools.
@@ -59,6 +101,8 @@ func Open(cfg Config) (*Pools, error) {
 		return openSQLite(cfg.DSN, cfg)
 	case DriverPostgres:
 		return openPostgres(cfg.DSN, cfg)
+	case DriverTurso:
+		return openTurso(cfg.DSN, cfg)
 	default:
 		return nil, fmt.Errorf("unsupported database driver: %s", driver)
 	}
@@ -69,6 +113,8 @@ func DetectDriver(dsn string) Driver {
 	switch {
 	case strings.HasPrefix(dsn, "postgres://"), strings.HasPrefix(dsn, "postgresql://"):
 		return DriverPostgres
+	case strings.HasPrefix(dsn, "turso://"), strings.HasPrefix(dsn, "turso:"):
+		return DriverTurso
 	case strings.HasPrefix(dsn, "sqlite://"), strings.HasPrefix(dsn, "sqlite3://"), strings.HasPrefix(dsn, "file:"):
 		return DriverSQLite
 	case strings.HasSuffix(dsn, ".db"), strings.HasSuffix(dsn, ".sqlite"), dsn == ":memory:", strings.HasPrefix(dsn, ":memory:"):
@@ -95,6 +141,10 @@ func CleanDSN(dsn string) string {
 // Read is read-only with multiple connections. In-memory databases reuse Write
 // for reads because separate in-memory SQLite connections do not share state.
 func openSQLite(dsn string, cfg Config) (*Pools, error) {
+	return openSQLiteWithDriver(dsn, cfg, sqlite.DriverName, DriverSQLite, true)
+}
+
+func openSQLiteWithDriver(dsn string, cfg Config, driverName string, driver Driver, useFileURI bool) (*Pools, error) {
 	rawPath := CleanDSN(dsn)
 	rawPath = strings.TrimPrefix(rawPath, "file:")
 	isMemory := rawPath == ":memory:" || strings.HasPrefix(rawPath, ":memory:")
@@ -107,7 +157,7 @@ func openSQLite(dsn string, cfg Config) (*Pools, error) {
 	}
 
 	baseDSN := rawPath
-	if !isMemory {
+	if !isMemory && useFileURI {
 		baseDSN = "file:" + rawPath
 	}
 
@@ -127,9 +177,12 @@ func openSQLite(dsn string, cfg Config) (*Pools, error) {
 	if !isMemory {
 		writeParams = append(writeParams, "mode=rwc")
 	}
-	writeDB, err := gorm.Open(sqlite.Open(appendParams(baseDSN, writeParams)), gormCfg)
+	writeDB, err := gorm.Open(sqlite.Dialector{
+		DriverName: driverName,
+		DSN:        appendParams(baseDSN, writeParams),
+	}, gormCfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open sqlite write pool: %w", err)
+		return nil, fmt.Errorf("failed to open %s write pool: %w", driver, err)
 	}
 	writeSQLDB, err := writeDB.DB()
 	if err != nil {
@@ -139,24 +192,37 @@ func openSQLite(dsn string, cfg Config) (*Pools, error) {
 	writeSQLDB.SetMaxIdleConns(1)
 
 	if isMemory {
-		return &Pools{Write: writeDB, Read: writeDB, Driver: DriverSQLite}, nil
+		return &Pools{Write: writeDB, Read: writeDB, Driver: driver}, nil
 	}
 
 	readParams := append(basePragmas, "mode=ro", "_pragma=query_only(1)")
-	readDB, err := gorm.Open(sqlite.Open(appendParams(baseDSN, readParams)), gormCfg)
+	readDB, err := gorm.Open(sqlite.Dialector{
+		DriverName: driverName,
+		DSN:        appendParams(baseDSN, readParams),
+	}, gormCfg)
 	if err != nil {
 		_ = closeDB(writeDB)
-		return nil, fmt.Errorf("failed to open sqlite read pool: %w", err)
+		return nil, fmt.Errorf("failed to open %s read pool: %w", driver, err)
 	}
 	readSQLDB, err := readDB.DB()
 	if err != nil {
 		_ = closeDB(writeDB)
 		return nil, fmt.Errorf("failed to get read pool sql.DB: %w", err)
 	}
-	readSQLDB.SetMaxOpenConns(25)
-	readSQLDB.SetMaxIdleConns(4)
+	if driver == DriverTurso {
+		readSQLDB.SetMaxOpenConns(1)
+		readSQLDB.SetMaxIdleConns(1)
+		if err := readDB.Exec("PRAGMA query_only = 1").Error; err != nil {
+			_ = closeDB(writeDB)
+			_ = closeDB(readDB)
+			return nil, fmt.Errorf("failed to configure turso read pool as query-only: %w", err)
+		}
+	} else {
+		readSQLDB.SetMaxOpenConns(25)
+		readSQLDB.SetMaxIdleConns(4)
+	}
 
-	return &Pools{Write: writeDB, Read: readDB, Driver: DriverSQLite}, nil
+	return &Pools{Write: writeDB, Read: readDB, Driver: driver}, nil
 }
 
 // openPostgres opens Postgres GORM pools.
@@ -177,7 +243,7 @@ func openPostgres(dsn string, cfg Config) (*Pools, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to open postgres write pool: %w", err)
 	}
-	if err := configurePostgresPool(writeDB, 25, 5); err != nil {
+	if err := configureSQLPool(writeDB, 25, 5); err != nil {
 		_ = closeDB(writeDB)
 		return nil, fmt.Errorf("failed to configure postgres write pool: %w", err)
 	}
@@ -189,7 +255,7 @@ func openPostgres(dsn string, cfg Config) (*Pools, error) {
 			_ = closeDB(writeDB)
 			return nil, fmt.Errorf("failed to open postgres read pool: %w", err)
 		}
-		if err := configurePostgresPool(readDB, 25, 5); err != nil {
+		if err := configureSQLPool(readDB, 25, 5); err != nil {
 			_ = closeDB(writeDB)
 			_ = closeDB(readDB)
 			return nil, fmt.Errorf("failed to configure postgres read pool: %w", err)
@@ -232,7 +298,7 @@ func closeDB(db *gorm.DB) error {
 	return sqlDB.Close()
 }
 
-func configurePostgresPool(db *gorm.DB, maxOpenConns, maxIdleConns int) error {
+func configureSQLPool(db *gorm.DB, maxOpenConns, maxIdleConns int) error {
 	sqlDB, err := db.DB()
 	if err != nil {
 		return err

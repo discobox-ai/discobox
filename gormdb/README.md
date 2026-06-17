@@ -46,3 +46,45 @@ Postgres uses one pool for reads and writes by default:
 - max idle connections: 5
 
 If `Config.ReadDSN` is set, reads use a separate pool opened from `ReadDSN`.
+
+## Turso
+
+Turso support is behind the `turso` build tag so the default SQLite build does
+not import Turso bindings:
+
+```bash
+go test -tags turso ./...
+go build -tags turso ./...
+```
+
+Local Turso uses `turso.tech/database/tursogo`, which is a no-CGO
+`database/sql` driver. Use a `turso:` or `turso://` DSN to select Turso from the
+same DSN setting used for SQLite and Postgres:
+
+```go
+pools, err := gormdb.Open(gormdb.Config{
+    DSN: "turso://app.db",
+})
+```
+
+Turso Cloud sync also uses `tursogo`: reads and writes go to a local Turso
+database file, and callers explicitly push/pull with `Pools.TursoSync`. Keep
+the remote URL and auth token in separate config so they can come from
+environment variables or another secret source:
+
+```go
+pools, err := gormdb.Open(gormdb.Config{
+    DSN:              "turso://app.db",
+    TursoDatabaseURL: os.Getenv("TURSO_DATABASE_URL"),
+    TursoAuthToken:   os.Getenv("TURSO_AUTH_TOKEN"),
+})
+
+err = pools.TursoSync.Push(ctx)
+changed, err := pools.TursoSync.Pull(ctx)
+```
+
+The GORM integration reuses the SQLite dialector over Turso's `database/sql`
+drivers. Local Turso is close to the SQLite split-pool pattern, but its driver
+does not accept `file:` URIs or enforce read-only mode through SQLite DSN
+parameters. `gormdb` therefore uses raw paths for local Turso and configures the
+local read pool with one connection plus `PRAGMA query_only = 1`.
