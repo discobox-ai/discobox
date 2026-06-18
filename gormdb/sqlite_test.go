@@ -2,11 +2,15 @@ package gormdb_test
 
 import (
 	"context"
+	"errors"
+	"io"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/obot-platform/discobox/gormdb"
+	"gorm.io/gorm"
 )
 
 func TestDetectDriver(t *testing.T) {
@@ -100,4 +104,56 @@ func TestOpenMemorySQLiteReusesWritePoolForReads(t *testing.T) {
 	if pools.Write != pools.Read {
 		t.Fatal("expected in-memory SQLite to reuse write pool for reads")
 	}
+}
+
+func TestDefaultLoggerIgnoresRecordNotFound(t *testing.T) {
+	type row struct {
+		ID string `gorm:"primaryKey"`
+	}
+
+	output := captureStdout(t, func() {
+		pools, err := gormdb.Open(gormdb.Config{DSN: ":memory:"})
+		if err != nil {
+			t.Fatalf("open pools: %v", err)
+		}
+		defer func() {
+			if err := pools.Close(); err != nil {
+				t.Fatalf("close pools: %v", err)
+			}
+		}()
+		if err := pools.Write.AutoMigrate(&row{}); err != nil {
+			t.Fatalf("auto migrate: %v", err)
+		}
+		err = pools.Write.First(&row{}, "id = ?", "missing").Error
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			t.Fatalf("query error = %v, want record not found", err)
+		}
+	})
+	if strings.Contains(output, "record not found") {
+		t.Fatalf("default logger output contains record not found: %q", output)
+	}
+}
+
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	oldStdout := os.Stdout
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create stdout pipe: %v", err)
+	}
+	os.Stdout = writer
+	defer func() {
+		os.Stdout = oldStdout
+	}()
+
+	fn()
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close stdout writer: %v", err)
+	}
+	output, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("read stdout: %v", err)
+	}
+	return string(output)
 }

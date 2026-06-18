@@ -5,9 +5,11 @@ package gormdb
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/driver/postgres"
@@ -168,10 +170,7 @@ func openSQLiteWithDriver(dsn string, cfg Config, driverName string, driver Driv
 		"_pragma=synchronous(NORMAL)",
 	}
 
-	gormCfg := &gorm.Config{}
-	if cfg.Logger != nil {
-		gormCfg.Logger = cfg.Logger
-	}
+	gormCfg := defaultGormConfig(cfg)
 
 	writeParams := append(basePragmas, "_txlock=immediate")
 	if !isMemory {
@@ -234,10 +233,7 @@ func openPostgres(dsn string, cfg Config) (*Pools, error) {
 		return nil, fmt.Errorf("postgres DSN is required")
 	}
 
-	gormCfg := &gorm.Config{}
-	if cfg.Logger != nil {
-		gormCfg.Logger = cfg.Logger
-	}
+	gormCfg := defaultGormConfig(cfg)
 
 	writeDB, err := gorm.Open(postgres.Open(dsn), gormCfg)
 	if err != nil {
@@ -263,6 +259,21 @@ func openPostgres(dsn string, cfg Config) (*Pools, error) {
 	}
 
 	return &Pools{Write: writeDB, Read: readDB, Driver: DriverPostgres}, nil
+}
+
+func defaultGormConfig(cfg Config) *gorm.Config {
+	gormCfg := &gorm.Config{}
+	if cfg.Logger != nil {
+		gormCfg.Logger = cfg.Logger
+	} else {
+		gormCfg.Logger = logger.New(log.New(os.Stdout, "\r\n", log.LstdFlags), logger.Config{
+			SlowThreshold:             200 * time.Millisecond,
+			LogLevel:                  logger.Warn,
+			IgnoreRecordNotFoundError: true,
+			Colorful:                  true,
+		})
+	}
+	return gormCfg
 }
 
 // Close closes both pools.
