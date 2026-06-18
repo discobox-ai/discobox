@@ -1,0 +1,10 @@
+parser:
+  allow_remote: true
+generator:
+  ignore_not_implemented:
+    - unsupported content types
+  features:
+    disable:
+      - webhooks/client
+      - webhooks/server
+      - server/response/validation

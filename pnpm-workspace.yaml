@@ -1,0 +1,8 @@
+packages:
+  - .
+
+allowBuilds:
+  puppeteer: false
+
+ignoredBuiltDependencies:
+  - puppeteer

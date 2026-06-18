@@ -25,12 +25,12 @@ At the system boundary, Discobot is three cooperating concepts:
 
 ```mermaid
 flowchart LR
-    cli[CLI] -->|generated client| server[Server / control plane]
-    clients[API clients / UI] --> server
-    server -->|Go interface| provider[Sandbox provider]
-    provider -->|delegates access| sandbox[Worker-local sandbox operations API]
-    server -->|REST/OpenAPI through provider| sandbox
-    provider -->|observed runtime state| server
+    cli["CLI"] -->|"generated client"| server["Server / control plane"]
+    clients["API clients / UI"] --> server
+    server -->|"Go interface"| provider["Sandbox provider"]
+    provider -->|"delegates access"| sandbox["Worker-local sandbox operations API"]
+    server -->|"REST/OpenAPI through provider"| sandbox
+    provider -->|"observed runtime state"| server
 ```
 
 The root design intentionally stops at this integration view. Interface details
@@ -68,16 +68,19 @@ live in sibling modules and depend inward on root contracts:
 
 ```mermaid
 flowchart TD
-    cli[github.com/obot-platform/discobox/cli] --> root[github.com/obot-platform/discobox]
-    server[github.com/obot-platform/discobox/server] --> root
-    server --> providers[github.com/obot-platform/discobox/providers]
-    server --> orchestration[github.com/obot-platform/discobox/orchestration]
-    server --> gormdb[github.com/obot-platform/discobox/gormdb]
+    cli["github.com/obot-platform/discobox/cli"] --> root["github.com/obot-platform/discobox"]
+    server["github.com/obot-platform/discobox/server"] --> root
+    server --> providers["github.com/obot-platform/discobox/providers"]
+    server --> orchestration["github.com/obot-platform/discobox/orchestration"]
+    server --> hooks["github.com/obot-platform/discobox/hooks"]
+    server --> gormdb["github.com/obot-platform/discobox/gormdb"]
+    hooks --> root
+    hooks --> gormdb
     providers --> root
-    providers --> workerAgent[github.com/obot-platform/discobox/worker-agent]
+    providers --> workerAgent["github.com/obot-platform/discobox/worker-agent"]
     workerAgent --> root
-    sandboxAgent[github.com/obot-platform/discobox/sandbox-agent] --> root
-    prompter[github.com/obot-platform/discobox/prompter]
+    sandboxAgent["github.com/obot-platform/discobox/sandbox-agent"] --> root
+    prompter["github.com/obot-platform/discobox/prompter"]
 ```
 
 - Root module: public API definitions, sandbox provider Go interface, shared
@@ -92,11 +95,15 @@ flowchart TD
   implementations; depends on root contracts and the worker-agent module for
   the worker-local API client and runtime helpers. Does not depend on server
   internals.
+- Hooks module: standalone hook discovery, watch, execution, daemon, and status
+  primitives. It depends inward on stable contracts and shared infrastructure
+  helpers such as `gormdb`, but must not depend on server internals. See
+  [`hooks/DESIGN.md`](hooks/DESIGN.md).
 - Worker-agent module: in-guest worker process, local worker image watcher, and
   generated worker-local sandbox operations API server adapter; depends on root
   worker boot contracts and OpenAPI contracts.
-- Sandbox-agent module: future in-sandbox agent REST API runtime environment and agent
-  implementation; depends on root contracts and generated API types.
+- Sandbox-agent module: future in-sandbox agent REST API runtime environment and
+  agent implementation; depends on root contracts and generated API types.
 - Prompter module: standalone command that detects the current coding-agent host
   and normalizes requests to start a new prompt session in the current working
   directory. It is intentionally independent until an adapter needs a shared

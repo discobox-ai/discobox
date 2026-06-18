@@ -190,6 +190,7 @@ tasks:
       - cd gormdb && go test ./...
       - cd orchestration && go test ./...
       - cd prompter && go test ./...
+      - cd hooks && go test ./...
 
   check:
     desc: Run static checks
@@ -202,8 +203,44 @@ tasks:
       - cd gormdb && "$(go -C .. tool -n golangci-lint)" run
       - cd orchestration && "$(go -C .. tool -n golangci-lint)" run
       - cd prompter && "$(go -C .. tool -n golangci-lint)" run
+      - cd hooks && "$(go -C .. tool -n golangci-lint)" run
       - task: check:ui
       - task: check:electron
+
+  check:mermaid:
+    desc: Validate Mermaid diagrams in Markdown files
+    cmds:
+      - |
+        bash -c '
+        set -euo pipefail
+        out_dir="$(mktemp -d)"
+        trap "rm -rf \"$out_dir\"" EXIT
+        python3 - "$out_dir" <<'"'"'PY'"'"'
+        from pathlib import Path
+        import re
+        import sys
+
+        out_dir = Path(sys.argv[1])
+        count = 0
+        for path in sorted(Path(".").rglob("*.md")):
+            if any(part in {".git", "node_modules", "build"} for part in path.parts):
+                continue
+            text = path.read_text()
+            for index, block in enumerate(re.findall(r"```mermaid\n(.*?)\n```", text, flags=re.S), 1):
+                count += 1
+                name = str(path).replace("/", "_").replace(".", "_") + f"_{index}.mmd"
+                (out_dir / name).write_text(block + "\n")
+                print(out_dir / name)
+        if count == 0:
+            print("no Mermaid diagrams found")
+        PY
+        PUPPETEER_SKIP_DOWNLOAD=true pnpm install --frozen-lockfile --ignore-scripts
+        shopt -s nullglob
+        for diagram in "$out_dir"/*.mmd; do
+            echo "validating ${diagram}"
+            PUPPETEER_EXECUTABLE_PATH=${PUPPETEER_EXECUTABLE_PATH:-/usr/bin/chromium} pnpm exec mmdc -i "$diagram" -o "${diagram}.svg" >/dev/null
+        done
+        '
 
   check:fix:
     desc: Run static checks and apply safe fixes
@@ -216,6 +253,7 @@ tasks:
       - cd gormdb && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd orchestration && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd prompter && "$(go -C .. tool -n golangci-lint)" run --fix
+      - cd hooks && "$(go -C .. tool -n golangci-lint)" run --fix
       - task: check:ui:fix
       - task: check:electron:fix
 
