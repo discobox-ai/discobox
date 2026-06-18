@@ -77,6 +77,7 @@ flowchart TD
     providers --> workerAgent[github.com/obot-platform/discobox/worker-agent]
     workerAgent --> root
     sandboxAgent[github.com/obot-platform/discobox/sandbox-agent] --> root
+    prompter[github.com/obot-platform/discobox/prompter]
 ```
 
 - Root module: public API definitions, sandbox provider Go interface, shared
@@ -96,6 +97,10 @@ flowchart TD
   worker boot contracts and OpenAPI contracts.
 - Sandbox-agent module: future in-sandbox agent REST API runtime environment and agent
   implementation; depends on root contracts and generated API types.
+- Prompter module: standalone command that detects the current coding-agent host
+  and normalizes requests to start a new prompt session in the current working
+  directory. It is intentionally independent until an adapter needs a shared
+  contract.
 
 Provider, worker-agent, and sandbox-agent implementations cannot depend on packages under Go
 `internal/` outside their module. Cross-module contracts must live in public root
