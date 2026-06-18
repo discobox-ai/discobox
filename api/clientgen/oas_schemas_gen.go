@@ -803,11 +803,13 @@ func (*ErrorModelStatusCode) deleteSandboxProviderInstanceRes() {}
 func (*ErrorModelStatusCode) deleteSandboxRes()                 {}
 func (*ErrorModelStatusCode) getAgentConfigDefinitionRes()      {}
 func (*ErrorModelStatusCode) getAgentConfigRes()                {}
+func (*ErrorModelStatusCode) getJobRes()                        {}
 func (*ErrorModelStatusCode) getProjectRes()                    {}
 func (*ErrorModelStatusCode) getSandboxProviderInstanceRes()    {}
 func (*ErrorModelStatusCode) getSandboxRes()                    {}
 func (*ErrorModelStatusCode) listAgentConfigDefinitionsRes()    {}
 func (*ErrorModelStatusCode) listAgentConfigsRes()              {}
+func (*ErrorModelStatusCode) listJobsRes()                      {}
 func (*ErrorModelStatusCode) listProjectsRes()                  {}
 func (*ErrorModelStatusCode) listSandboxProviderCatalogRes()    {}
 func (*ErrorModelStatusCode) listSandboxProviderInstancesRes()  {}
@@ -873,6 +875,243 @@ func (s *GitSourceReference) SetURL(val url.URL) {
 	s.URL = val
 }
 
+// Ref: #/components/schemas/Job
+type Job struct {
+	// Stable job ID.
+	ID string `json:"id"`
+	// Job executor type.
+	Type string `json:"type"`
+	// Persisted job lifecycle state.
+	Status JobStatus `json:"status"`
+	// Number of execution attempts.
+	Attempts int `json:"attempts"`
+	// Maximum execution attempts before failure.
+	MaxAttempts int `json:"maxAttempts"`
+	// Latest execution or dispatch error.
+	Error OptString `json:"error"`
+	// Dispatcher worker that claimed the current or last attempt.
+	WorkerId OptString `json:"workerId"`
+	// Resource type this job acts on.
+	ResourceType string `json:"resourceType"`
+	// Resource ID this job acts on.
+	ResourceId string `json:"resourceId"`
+	// Earliest time the job may run.
+	ScheduledAt time.Time `json:"scheduledAt"`
+	// Time the current or last attempt started.
+	StartedAt OptDateTime `json:"startedAt"`
+	// Time the job reached a terminal state.
+	CompletedAt OptDateTime `json:"completedAt"`
+	// Creation timestamp.
+	CreatedAt time.Time `json:"createdAt"`
+	// Last update timestamp.
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// GetID returns the value of ID.
+func (s *Job) GetID() string {
+	return s.ID
+}
+
+// GetType returns the value of Type.
+func (s *Job) GetType() string {
+	return s.Type
+}
+
+// GetStatus returns the value of Status.
+func (s *Job) GetStatus() JobStatus {
+	return s.Status
+}
+
+// GetAttempts returns the value of Attempts.
+func (s *Job) GetAttempts() int {
+	return s.Attempts
+}
+
+// GetMaxAttempts returns the value of MaxAttempts.
+func (s *Job) GetMaxAttempts() int {
+	return s.MaxAttempts
+}
+
+// GetError returns the value of Error.
+func (s *Job) GetError() OptString {
+	return s.Error
+}
+
+// GetWorkerId returns the value of WorkerId.
+func (s *Job) GetWorkerId() OptString {
+	return s.WorkerId
+}
+
+// GetResourceType returns the value of ResourceType.
+func (s *Job) GetResourceType() string {
+	return s.ResourceType
+}
+
+// GetResourceId returns the value of ResourceId.
+func (s *Job) GetResourceId() string {
+	return s.ResourceId
+}
+
+// GetScheduledAt returns the value of ScheduledAt.
+func (s *Job) GetScheduledAt() time.Time {
+	return s.ScheduledAt
+}
+
+// GetStartedAt returns the value of StartedAt.
+func (s *Job) GetStartedAt() OptDateTime {
+	return s.StartedAt
+}
+
+// GetCompletedAt returns the value of CompletedAt.
+func (s *Job) GetCompletedAt() OptDateTime {
+	return s.CompletedAt
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *Job) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *Job) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// SetID sets the value of ID.
+func (s *Job) SetID(val string) {
+	s.ID = val
+}
+
+// SetType sets the value of Type.
+func (s *Job) SetType(val string) {
+	s.Type = val
+}
+
+// SetStatus sets the value of Status.
+func (s *Job) SetStatus(val JobStatus) {
+	s.Status = val
+}
+
+// SetAttempts sets the value of Attempts.
+func (s *Job) SetAttempts(val int) {
+	s.Attempts = val
+}
+
+// SetMaxAttempts sets the value of MaxAttempts.
+func (s *Job) SetMaxAttempts(val int) {
+	s.MaxAttempts = val
+}
+
+// SetError sets the value of Error.
+func (s *Job) SetError(val OptString) {
+	s.Error = val
+}
+
+// SetWorkerId sets the value of WorkerId.
+func (s *Job) SetWorkerId(val OptString) {
+	s.WorkerId = val
+}
+
+// SetResourceType sets the value of ResourceType.
+func (s *Job) SetResourceType(val string) {
+	s.ResourceType = val
+}
+
+// SetResourceId sets the value of ResourceId.
+func (s *Job) SetResourceId(val string) {
+	s.ResourceId = val
+}
+
+// SetScheduledAt sets the value of ScheduledAt.
+func (s *Job) SetScheduledAt(val time.Time) {
+	s.ScheduledAt = val
+}
+
+// SetStartedAt sets the value of StartedAt.
+func (s *Job) SetStartedAt(val OptDateTime) {
+	s.StartedAt = val
+}
+
+// SetCompletedAt sets the value of CompletedAt.
+func (s *Job) SetCompletedAt(val OptDateTime) {
+	s.CompletedAt = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *Job) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *Job) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+func (*Job) getJobRes() {}
+
+// Persisted job lifecycle state.
+type JobStatus string
+
+const (
+	JobStatusPending   JobStatus = "pending"
+	JobStatusRunning   JobStatus = "running"
+	JobStatusCompleted JobStatus = "completed"
+	JobStatusFailed    JobStatus = "failed"
+	JobStatusCanceled  JobStatus = "canceled"
+)
+
+// AllValues returns all JobStatus values.
+func (JobStatus) AllValues() []JobStatus {
+	return []JobStatus{
+		JobStatusPending,
+		JobStatusRunning,
+		JobStatusCompleted,
+		JobStatusFailed,
+		JobStatusCanceled,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s JobStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case JobStatusPending:
+		return []byte(s), nil
+	case JobStatusRunning:
+		return []byte(s), nil
+	case JobStatusCompleted:
+		return []byte(s), nil
+	case JobStatusFailed:
+		return []byte(s), nil
+	case JobStatusCanceled:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *JobStatus) UnmarshalText(data []byte) error {
+	switch JobStatus(data) {
+	case JobStatusPending:
+		*s = JobStatusPending
+		return nil
+	case JobStatusRunning:
+		*s = JobStatusRunning
+		return nil
+	case JobStatusCompleted:
+		*s = JobStatusCompleted
+		return nil
+	case JobStatusFailed:
+		*s = JobStatusFailed
+		return nil
+	case JobStatusCanceled:
+		*s = JobStatusCanceled
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/ListAgentConfigDefinitionsBody
 type ListAgentConfigDefinitionsBody struct {
 	// A URL to the JSON Schema for this object.
@@ -932,6 +1171,23 @@ func (s *ListAgentConfigsBody) SetAgentConfigs(val []AgentConfig) {
 }
 
 func (*ListAgentConfigsBody) listAgentConfigsRes() {}
+
+// Ref: #/components/schemas/ListJobsBody
+type ListJobsBody struct {
+	Jobs []Job `json:"jobs"`
+}
+
+// GetJobs returns the value of Jobs.
+func (s *ListJobsBody) GetJobs() []Job {
+	return s.Jobs
+}
+
+// SetJobs sets the value of Jobs.
+func (s *ListJobsBody) SetJobs(val []Job) {
+	s.Jobs = val
+}
+
+func (*ListJobsBody) listJobsRes() {}
 
 // Ref: #/components/schemas/ListProjectsBody
 type ListProjectsBody struct {

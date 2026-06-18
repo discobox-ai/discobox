@@ -97,6 +97,56 @@ func (s *Store) GetLatestJobForResource(ctx context.Context, resource orchestrat
 	return &job, nil
 }
 
+// ListJobsForProject returns durable jobs associated with resources in a project.
+func (s *Store) ListJobsForProject(ctx context.Context, projectID string) ([]orchestration.Job, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var rows []jobRow
+	if err := read.
+		Where(
+			`(resource_type = ? AND resource_id IN (SELECT id FROM sandboxes WHERE project_id = ?))
+			OR (resource_type = ? AND resource_id IN (SELECT id FROM workers WHERE project_id = ?))`,
+			"sandbox", projectID,
+			"worker", projectID,
+		).
+		Order("created_at DESC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	jobs := make([]orchestration.Job, 0, len(rows))
+	for _, row := range rows {
+		jobs = append(jobs, row.toJob())
+	}
+	return jobs, nil
+}
+
+// GetJobForProject loads one durable job when its resource belongs to the project.
+func (s *Store) GetJobForProject(ctx context.Context, projectID, jobID string) (*orchestration.Job, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var row jobRow
+	if err := read.
+		Where("id = ?", jobID).
+		Where(
+			`(resource_type = ? AND resource_id IN (SELECT id FROM sandboxes WHERE project_id = ?))
+			OR (resource_type = ? AND resource_id IN (SELECT id FROM workers WHERE project_id = ?))`,
+			"sandbox", projectID,
+			"worker", projectID,
+		).
+		First(&row).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, orchestration.ErrJobNotFound
+		}
+		return nil, err
+	}
+	job := row.toJob()
+	return &job, nil
+}
+
 // HasActiveJobForResource reports whether any pending or running job exists for
 // the resource, regardless of job type.
 func (s *Store) HasActiveJobForResource(ctx context.Context, resource orchestration.Resource) (bool, error) {

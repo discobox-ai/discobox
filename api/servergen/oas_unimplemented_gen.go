@@ -85,6 +85,15 @@ func (UnimplementedHandler) GetAgentConfigDefinition(ctx context.Context, params
 	return r, ht.ErrNotImplemented
 }
 
+// GetJob implements get-job operation.
+//
+// Get a job.
+//
+// GET /projects/{projectId}/jobs/{jobId}
+func (UnimplementedHandler) GetJob(ctx context.Context, params GetJobParams) (r GetJobRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetProject implements get-project operation.
 //
 // Get a project.
@@ -127,6 +136,15 @@ func (UnimplementedHandler) ListAgentConfigDefinitions(ctx context.Context) (r L
 //
 // GET /projects/{projectId}/agent-configs
 func (UnimplementedHandler) ListAgentConfigs(ctx context.Context, params ListAgentConfigsParams) (r ListAgentConfigsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListJobs implements list-jobs operation.
+//
+// List jobs for a project.
+//
+// GET /projects/{projectId}/jobs
+func (UnimplementedHandler) ListJobs(ctx context.Context, params ListJobsParams) (r ListJobsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"text/tabwriter"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
 )
@@ -30,7 +31,7 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apiclientgen.Sandbox) er
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tPHASE\tDESIRED\tGENERATION\tUPDATED")
 	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\n",
-		sandbox.ID,
+		shortID(sandbox.ID),
 		sandbox.Name,
 		sandbox.Phase,
 		sandbox.DesiredState,
@@ -48,7 +49,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apiclientgen.Sandbo
 	fmt.Fprintln(tw, "ID\tNAME\tPHASE\tDESIRED\tGENERATION\tUPDATED")
 	for _, sandbox := range sandboxes {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\n",
-			sandbox.ID,
+			shortID(sandbox.ID),
 			sandbox.Name,
 			sandbox.Phase,
 			sandbox.DesiredState,
@@ -80,7 +81,7 @@ func (a *App) writeProvider(cmd *cobra.Command, provider *apiclientgen.SandboxPr
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "FIELD\tVALUE")
-	fmt.Fprintf(tw, "ID\t%s\n", provider.ID)
+	fmt.Fprintf(tw, "ID\t%s\n", shortID(provider.ID))
 	fmt.Fprintf(tw, "NAME\t%s\n", provider.Name)
 	fmt.Fprintf(tw, "TYPE\t%s\n", provider.Type)
 	fmt.Fprintf(tw, "DISABLED\t%t\n", provider.Disabled)
@@ -99,7 +100,7 @@ func (a *App) writeProviders(cmd *cobra.Command, providers []apiclientgen.Sandbo
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tDISABLED\tUPDATED")
 	for _, provider := range providers {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\n", provider.ID, provider.Name, provider.Type, provider.Disabled, formatTime(provider.UpdatedAt))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\n", shortID(provider.ID), provider.Name, provider.Type, provider.Disabled, formatTime(provider.UpdatedAt))
 	}
 	return tw.Flush()
 }
@@ -113,7 +114,7 @@ func (a *App) writeAgentDefinition(cmd *cobra.Command, definition *apiclientgen.
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tDESCRIPTION")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", definition.ID, definition.Name, definition.RunCommand, definition.Description.Or(""))
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(definition.ID), definition.Name, definition.RunCommand, definition.Description.Or(""))
 	return tw.Flush()
 }
 
@@ -124,7 +125,7 @@ func (a *App) writeAgentDefinitions(cmd *cobra.Command, definitions []apiclientg
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tDESCRIPTION")
 	for _, definition := range definitions {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", definition.ID, definition.Name, definition.RunCommand, definition.Description.Or(""))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(definition.ID), definition.Name, definition.RunCommand, definition.Description.Or(""))
 	}
 	return tw.Flush()
 }
@@ -138,7 +139,7 @@ func (a *App) writeAgent(cmd *cobra.Command, agent *apiclientgen.AgentConfig) er
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tUPDATED")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", agent.ID, agent.Name, agent.RunCommand, formatTime(agent.UpdatedAt))
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(agent.ID), agent.Name, agent.RunCommand, formatTime(agent.UpdatedAt))
 	return tw.Flush()
 }
 
@@ -149,15 +150,78 @@ func (a *App) writeAgents(cmd *cobra.Command, agents []apiclientgen.AgentConfig)
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tUPDATED")
 	for _, agent := range agents {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", agent.ID, agent.Name, agent.RunCommand, formatTime(agent.UpdatedAt))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(agent.ID), agent.Name, agent.RunCommand, formatTime(agent.UpdatedAt))
 	}
 	return tw.Flush()
 }
 
-func parseUUIDArg(value, name string) (uuid.UUID, error) {
-	id, err := uuid.Parse(value)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("invalid %s %q: %w", name, value, err)
+func (a *App) writeJobs(cmd *cobra.Command, jobs []apiclientgen.Job) error {
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"jobs": jobs})
+	}
+	rows := make([][]string, 0, len(jobs))
+	errors := make([]string, 0, len(jobs))
+	for _, job := range jobs {
+		rows = append(rows, []string{
+			shortID(job.ID),
+			job.Type,
+			string(job.Status),
+			fmt.Sprintf("%d/%d", job.Attempts, job.MaxAttempts),
+			job.ResourceType + "/" + shortID(job.ResourceId),
+			formatTime(job.CreatedAt),
+		})
+		errors = append(errors, compactTableValue(job.Error.Or("")))
+	}
+	errorWidth := jobsTableErrorWidth(terminalWidth(cmd.OutOrStdout()), rows)
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tTYPE\tSTATUS\tATTEMPTS\tRESOURCE\tCREATED\tERROR")
+	for i, row := range rows {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			row[0],
+			row[1],
+			row[2],
+			row[3],
+			row[4],
+			row[5],
+			truncateTableValue(errors[i], errorWidth),
+		)
+	}
+	return tw.Flush()
+}
+
+func (a *App) writeJob(cmd *cobra.Command, job *apiclientgen.Job) error {
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), job)
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "FIELD\tVALUE")
+	fmt.Fprintf(tw, "ID\t%s\n", shortID(job.ID))
+	fmt.Fprintf(tw, "TYPE\t%s\n", job.Type)
+	fmt.Fprintf(tw, "STATUS\t%s\n", job.Status)
+	fmt.Fprintf(tw, "ATTEMPTS\t%d/%d\n", job.Attempts, job.MaxAttempts)
+	if job.WorkerId.Set && job.WorkerId.Value != "" {
+		fmt.Fprintf(tw, "WORKER\t%s\n", shortID(job.WorkerId.Value))
+	}
+	fmt.Fprintf(tw, "RESOURCE\t%s\n", shortResourceID(job.ResourceType, job.ResourceId))
+	fmt.Fprintf(tw, "SCHEDULED\t%s\n", formatTime(job.ScheduledAt))
+	if job.StartedAt.Set && !job.StartedAt.Value.IsZero() {
+		fmt.Fprintf(tw, "STARTED\t%s\n", formatTime(job.StartedAt.Value))
+	}
+	if job.CompletedAt.Set && !job.CompletedAt.Value.IsZero() {
+		fmt.Fprintf(tw, "COMPLETED\t%s\n", formatTime(job.CompletedAt.Value))
+	}
+	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(job.CreatedAt))
+	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(job.UpdatedAt))
+	if job.Error.Set && job.Error.Value != "" {
+		fmt.Fprintf(tw, "ERROR\t%s\n", job.Error.Value)
+	}
+	return tw.Flush()
+}
+
+func parseIDArg(value, name string) (string, error) {
+	id := strings.TrimSpace(value)
+	if id == "" {
+		return "", fmt.Errorf("%s is required", name)
 	}
 	return id, nil
 }
@@ -166,7 +230,120 @@ func formatTime(value time.Time) string {
 	if value.IsZero() {
 		return ""
 	}
-	return value.Local().Format(time.RFC3339)
+	return formatRelativeTime(time.Now(), value)
+}
+
+func formatRelativeTime(now, value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	d := now.Sub(value)
+	suffix := "ago"
+	if d < 0 {
+		d = -d
+		suffix = "from now"
+	}
+	unit := "second"
+	amount := int64(d.Round(time.Second) / time.Second)
+	switch {
+	case amount < 60:
+		if amount < 1 {
+			amount = 1
+		}
+	case amount < 60*60:
+		unit = "minute"
+		amount = int64(d.Round(time.Minute) / time.Minute)
+	case amount < 24*60*60:
+		unit = "hour"
+		amount = int64(d.Round(time.Hour) / time.Hour)
+	case amount < 30*24*60*60:
+		unit = "day"
+		amount = int64(d.Round(24*time.Hour) / (24 * time.Hour))
+	case amount < 365*24*60*60:
+		unit = "month"
+		amount = int64(d.Round(30*24*time.Hour) / (30 * 24 * time.Hour))
+	default:
+		unit = "year"
+		amount = int64(d.Round(365*24*time.Hour) / (365 * 24 * time.Hour))
+	}
+	if amount < 1 {
+		amount = 1
+	}
+	plural := ""
+	if amount != 1 {
+		plural = "s"
+	}
+	return fmt.Sprintf("%d %s%s %s", amount, unit, plural, suffix)
+}
+
+func compactTableValue(value string) string {
+	value = strings.ReplaceAll(strings.TrimSpace(value), "\n", " ")
+	return strings.Join(strings.Fields(value), " ")
+}
+
+func truncateTableValue(value string, maxTableValueLength int) string {
+	value = compactTableValue(value)
+	runes := []rune(value)
+	if len(runes) <= maxTableValueLength {
+		return value
+	}
+	if maxTableValueLength <= 1 {
+		return string(runes[:maxTableValueLength])
+	}
+	return string(runes[:maxTableValueLength-1]) + "…"
+}
+
+func jobsTableErrorWidth(terminalColumns int, rows [][]string) int {
+	const (
+		defaultErrorWidth = 80
+		minErrorWidth     = 20
+		separatorWidth    = 2
+	)
+	if terminalColumns <= 0 {
+		return defaultErrorWidth
+	}
+	widths := []int{
+		len("ID"),
+		len("TYPE"),
+		len("STATUS"),
+		len("ATTEMPTS"),
+		len("RESOURCE"),
+		len("CREATED"),
+	}
+	for _, row := range rows {
+		for i, value := range row {
+			if width := runeLen(value); width > widths[i] {
+				widths[i] = width
+			}
+		}
+	}
+	used := 0
+	for _, width := range widths {
+		used += width
+	}
+	// Seven table columns produce six gaps in tabwriter's padded output.
+	used += separatorWidth * 6
+	available := terminalColumns - used
+	if available < minErrorWidth {
+		return minErrorWidth
+	}
+	return available
+}
+
+func terminalWidth(w io.Writer) int {
+	file, ok := w.(*os.File)
+	if !ok {
+		return 0
+	}
+	width, _, err := term.GetSize(int(file.Fd()))
+	if err != nil || width <= 0 {
+		return 0
+	}
+	return width
+}
+
+func runeLen(value string) int {
+	return len([]rune(value))
 }
 
 func formatRedactedRawJSON(raw []byte) string {
@@ -213,7 +390,7 @@ func formatProviderStatus(workers []apiclientgen.Worker) string {
 			failedWorkers++
 		}
 		item := map[string]any{
-			"id":                  worker.ID,
+			"id":                  shortID(worker.ID),
 			"desiredState":        worker.DesiredState,
 			"phase":               worker.Phase,
 			"ready":               worker.Ready,

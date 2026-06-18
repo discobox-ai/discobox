@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -41,7 +42,11 @@ func (a *App) newAgentDefinitionsCommand() *cobra.Command {
 			return err
 		}
 		if len(args) > 0 {
-			definitionRes, err := client.GetAgentConfigDefinition(cmd.Context(), apiclientgen.GetAgentConfigDefinitionParams{DefinitionId: args[0]})
+			definitionID, err := a.resolveAgentDefinitionID(cmd.Context(), client, args[0])
+			if err != nil {
+				return err
+			}
+			definitionRes, err := client.GetAgentConfigDefinition(cmd.Context(), apiclientgen.GetAgentConfigDefinitionParams{DefinitionId: definitionID})
 			if err != nil {
 				return err
 			}
@@ -89,7 +94,7 @@ func (a *App) newAgentListCommand() *cobra.Command {
 
 func (a *App) newAgentGetCommand() *cobra.Command {
 	return &cobra.Command{Use: "get AGENT_CONFIG_ID", Short: "Get an agent config", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		projectID, agentID, client, err := a.agentRequest(args[0])
+		projectID, agentID, client, err := a.agentRequest(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -112,11 +117,17 @@ func (a *App) newAgentCreateCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		body, err := createAgentBody(opts)
+		client, err := a.apiClient()
 		if err != nil {
 			return err
 		}
-		client, err := a.apiClient()
+		if opts.definitionID != "" {
+			opts.definitionID, err = a.resolveAgentDefinitionID(cmd.Context(), client, opts.definitionID)
+			if err != nil {
+				return err
+			}
+		}
+		body, err := createAgentBody(opts)
 		if err != nil {
 			return err
 		}
@@ -141,7 +152,7 @@ func (a *App) newAgentCreateCommand() *cobra.Command {
 func (a *App) newAgentUpdateCommand() *cobra.Command {
 	var opts agentUpdateOptions
 	cmd := &cobra.Command{Use: "update AGENT_CONFIG_ID", Short: "Update an agent config", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		projectID, agentID, client, err := a.agentRequest(args[0])
+		projectID, agentID, client, err := a.agentRequest(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -168,7 +179,7 @@ func (a *App) newAgentUpdateCommand() *cobra.Command {
 
 func (a *App) newAgentDeleteCommand() *cobra.Command {
 	return &cobra.Command{Use: "delete AGENT_CONFIG_ID", Short: "Delete an agent config", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		projectID, agentID, client, err := a.agentRequest(args[0])
+		projectID, agentID, client, err := a.agentRequest(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -184,17 +195,16 @@ func (a *App) newAgentDeleteCommand() *cobra.Command {
 	}}
 }
 
-func (a *App) agentRequest(agentArg string) (projectID string, agentID string, client *apiclientgen.Client, err error) {
+func (a *App) agentRequest(ctx context.Context, agentArg string) (projectID string, agentID string, client *apiclientgen.Client, err error) {
 	projectID, err = a.projectIDValue()
 	if err != nil {
 		return projectID, agentID, nil, err
 	}
-	id, err := parseUUIDArg(agentArg, "agent config ID")
+	client, err = a.apiClient()
 	if err != nil {
 		return projectID, agentID, nil, err
 	}
-	agentID = id.String()
-	client, err = a.apiClient()
+	agentID, err = a.resolveAgentConfigID(ctx, client, projectID, agentArg)
 	return projectID, agentID, client, err
 }
 

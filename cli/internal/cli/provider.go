@@ -93,15 +93,15 @@ func (a *App) newProviderGetCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		providerID, err := parseUUIDArg(args[0], "provider ID")
-		if err != nil {
-			return err
-		}
 		client, err := a.apiClient()
 		if err != nil {
 			return err
 		}
-		providerRes, err := client.GetSandboxProviderInstance(cmd.Context(), apiclientgen.GetSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID.String()})
+		providerID, err := a.resolveProviderID(cmd.Context(), client, projectID, args[0])
+		if err != nil {
+			return err
+		}
+		providerRes, err := client.GetSandboxProviderInstance(cmd.Context(), apiclientgen.GetSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID})
 		if err != nil {
 			return err
 		}
@@ -155,15 +155,15 @@ func (a *App) newProviderUpdateCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		providerID, err := parseUUIDArg(args[0], "provider ID")
-		if err != nil {
-			return err
-		}
 		client, err := a.apiClient()
 		if err != nil {
 			return err
 		}
-		currentRes, err := client.GetSandboxProviderInstance(cmd.Context(), apiclientgen.GetSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID.String()})
+		providerID, err := a.resolveProviderID(cmd.Context(), client, projectID, args[0])
+		if err != nil {
+			return err
+		}
+		currentRes, err := client.GetSandboxProviderInstance(cmd.Context(), apiclientgen.GetSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID})
 		if err != nil {
 			return err
 		}
@@ -175,7 +175,7 @@ func (a *App) newProviderUpdateCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		providerRes, err := client.UpdateSandboxProviderInstance(cmd.Context(), body, apiclientgen.UpdateSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID.String()})
+		providerRes, err := client.UpdateSandboxProviderInstance(cmd.Context(), body, apiclientgen.UpdateSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID})
 		if err != nil {
 			return err
 		}
@@ -196,15 +196,15 @@ func (a *App) newProviderDeleteCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		providerID, err := parseUUIDArg(args[0], "provider ID")
-		if err != nil {
-			return err
-		}
 		client, err := a.apiClient()
 		if err != nil {
 			return err
 		}
-		res, err := client.DeleteSandboxProviderInstance(cmd.Context(), apiclientgen.DeleteSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID.String()})
+		providerID, err := a.resolveProviderID(cmd.Context(), client, projectID, args[0])
+		if err != nil {
+			return err
+		}
+		res, err := client.DeleteSandboxProviderInstance(cmd.Context(), apiclientgen.DeleteSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID})
 		if err != nil {
 			return err
 		}

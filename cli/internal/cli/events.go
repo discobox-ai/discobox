@@ -72,9 +72,9 @@ func (a *App) writeEvent(cmd *cobra.Command, msg *apiclient.ProjectEventMessage)
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	switch data := msg.Data.(type) {
 	case *apiclient.ResourceChangedEvent:
-		fmt.Fprintf(tw, "%s\tseq=%d\t%s\t%s/%s\t%s\n", msg.Event, data.Seq, data.Action, data.ResourceType, data.ResourceID, data.CreatedAt.Local().Format("2006-01-02T15:04:05Z07:00"))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s/%s\t%s\n", msg.Event, eventIDOrSeq(data.ID, data.Seq), data.Action, data.ResourceType, data.ResourceID, data.CreatedAt.Local().Format("2006-01-02T15:04:05Z07:00"))
 	case *apiclient.ResourceListedEvent:
-		fmt.Fprintf(tw, "%s\tseq=%d\t%s\t%s/%s\t%s\n", msg.Event, data.Seq, data.Action, data.ResourceType, data.ResourceID, data.CreatedAt.Local().Format("2006-01-02T15:04:05Z07:00"))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s/%s\t%s\n", msg.Event, eventIDOrSeq(data.ID, data.Seq), data.Action, data.ResourceType, data.ResourceID, data.CreatedAt.Local().Format("2006-01-02T15:04:05Z07:00"))
 	case *apiclient.ResourceListStartEvent:
 		fmt.Fprintf(tw, "%s\tseq=%d\tresources=%s\t%s\n", msg.Event, data.Seq, strings.Join(data.Resources, ","), data.StartedAt.Local().Format("2006-01-02T15:04:05Z07:00"))
 	case *apiclient.ResourceListFinishEvent:
@@ -87,4 +87,11 @@ func (a *App) writeEvent(cmd *cobra.Command, msg *apiclient.ProjectEventMessage)
 		fmt.Fprintf(tw, "%s\t%s\n", msg.Event, string(encoded))
 	}
 	return tw.Flush()
+}
+
+func eventIDOrSeq(id string, seq int64) string {
+	if strings.TrimSpace(id) != "" {
+		return shortID(id)
+	}
+	return fmt.Sprintf("seq=%d", seq)
 }

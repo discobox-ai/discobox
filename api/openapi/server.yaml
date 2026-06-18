@@ -403,6 +403,84 @@ components:
             required:
                 - sandboxes
             type: object
+        Job:
+            additionalProperties: false
+            properties:
+                id:
+                    description: Stable job ID
+                    type: string
+                type:
+                    description: Job executor type
+                    type: string
+                status:
+                    description: Persisted job lifecycle state
+                    enum:
+                        - pending
+                        - running
+                        - completed
+                        - failed
+                        - canceled
+                    type: string
+                attempts:
+                    description: Number of execution attempts
+                    type: integer
+                maxAttempts:
+                    description: Maximum execution attempts before failure
+                    type: integer
+                error:
+                    description: Latest execution or dispatch error
+                    type: string
+                workerId:
+                    description: Dispatcher worker that claimed the current or last attempt
+                    type: string
+                resourceType:
+                    description: Resource type this job acts on
+                    type: string
+                resourceId:
+                    description: Resource ID this job acts on
+                    type: string
+                scheduledAt:
+                    description: Earliest time the job may run
+                    format: date-time
+                    type: string
+                startedAt:
+                    description: Time the current or last attempt started
+                    format: date-time
+                    type: string
+                completedAt:
+                    description: Time the job reached a terminal state
+                    format: date-time
+                    type: string
+                createdAt:
+                    description: Creation timestamp
+                    format: date-time
+                    type: string
+                updatedAt:
+                    description: Last update timestamp
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - type
+                - status
+                - attempts
+                - maxAttempts
+                - resourceType
+                - resourceId
+                - scheduledAt
+                - createdAt
+                - updatedAt
+            type: object
+        ListJobsBody:
+            additionalProperties: false
+            properties:
+                jobs:
+                    items:
+                        $ref: '#/components/schemas/Job'
+                    type: array
+            required:
+                - jobs
+            type: object
         Project:
             additionalProperties: false
             properties:
@@ -1468,6 +1546,64 @@ info:
     version: 0.1.0
 openapi: 3.1.1
 paths:
+    /projects/{projectId}/jobs:
+        get:
+            operationId: list-jobs
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListJobsBody'
+                    description: Jobs
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List jobs for a project
+            tags:
+                - jobs
+    /projects/{projectId}/jobs/{jobId}:
+        get:
+            operationId: get-job
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Job ID
+                  in: path
+                  name: jobId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Job'
+                    description: Job
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Get a job
+            tags:
+                - jobs
     /agent-config-definitions:
         get:
             operationId: list-agent-config-definitions

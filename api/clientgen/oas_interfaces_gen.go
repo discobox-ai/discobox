@@ -33,6 +33,10 @@ type GetAgentConfigRes interface {
 	getAgentConfigRes()
 }
 
+type GetJobRes interface {
+	getJobRes()
+}
+
 type GetProjectRes interface {
 	getProjectRes()
 }
@@ -51,6 +55,10 @@ type ListAgentConfigDefinitionsRes interface {
 
 type ListAgentConfigsRes interface {
 	listAgentConfigsRes()
+}
+
+type ListJobsRes interface {
+	listJobsRes()
 }
 
 type ListProjectsRes interface {

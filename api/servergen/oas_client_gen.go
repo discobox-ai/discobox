@@ -75,6 +75,12 @@ type Invoker interface {
 	//
 	// GET /agent-config-definitions/{definitionId}
 	GetAgentConfigDefinition(ctx context.Context, params GetAgentConfigDefinitionParams) (GetAgentConfigDefinitionRes, error)
+	// GetJob invokes get-job operation.
+	//
+	// Get a job.
+	//
+	// GET /projects/{projectId}/jobs/{jobId}
+	GetJob(ctx context.Context, params GetJobParams) (GetJobRes, error)
 	// GetProject invokes get-project operation.
 	//
 	// Get a project.
@@ -105,6 +111,12 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/agent-configs
 	ListAgentConfigs(ctx context.Context, params ListAgentConfigsParams) (ListAgentConfigsRes, error)
+	// ListJobs invokes list-jobs operation.
+	//
+	// List jobs for a project.
+	//
+	// GET /projects/{projectId}/jobs
+	ListJobs(ctx context.Context, params ListJobsParams) (ListJobsRes, error)
 	// ListProjects invokes list-projects operation.
 	//
 	// List projects.
@@ -1042,6 +1054,117 @@ func (c *Client) sendGetAgentConfigDefinition(ctx context.Context, params GetAge
 	return result, nil
 }
 
+// GetJob invokes get-job operation.
+//
+// Get a job.
+//
+// GET /projects/{projectId}/jobs/{jobId}
+func (c *Client) GetJob(ctx context.Context, params GetJobParams) (GetJobRes, error) {
+	res, err := c.sendGetJob(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetJob(ctx context.Context, params GetJobParams) (res GetJobRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-job"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/jobs/{jobId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetJobOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/jobs/"
+	{
+		// Encode "jobId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "jobId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.JobId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetJobResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // GetProject invokes get-project operation.
 //
 // Get a project.
@@ -1516,6 +1639,99 @@ func (c *Client) sendListAgentConfigs(ctx context.Context, params ListAgentConfi
 
 	stage = "DecodeResponse"
 	result, err := decodeListAgentConfigsResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListJobs invokes list-jobs operation.
+//
+// List jobs for a project.
+//
+// GET /projects/{projectId}/jobs
+func (c *Client) ListJobs(ctx context.Context, params ListJobsParams) (ListJobsRes, error) {
+	res, err := c.sendListJobs(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListJobs(ctx context.Context, params ListJobsParams) (res ListJobsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-jobs"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/jobs"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListJobsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/jobs"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListJobsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

@@ -58,6 +58,14 @@ type GetAgentConfigDefinitionParams struct {
 	DefinitionId string
 }
 
+// GetJobParams is parameters of get-job operation.
+type GetJobParams struct {
+	// Project ID.
+	ProjectId string
+	// Job ID.
+	JobId string
+}
+
 // GetProjectParams is parameters of get-project operation.
 type GetProjectParams struct {
 	// Project ID.
@@ -82,6 +90,12 @@ type GetSandboxProviderInstanceParams struct {
 
 // ListAgentConfigsParams is parameters of list-agent-configs operation.
 type ListAgentConfigsParams struct {
+	// Project ID.
+	ProjectId string
+}
+
+// ListJobsParams is parameters of list-jobs operation.
+type ListJobsParams struct {
 	// Project ID.
 	ProjectId string
 }

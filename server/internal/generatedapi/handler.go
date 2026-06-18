@@ -111,6 +111,32 @@ func (h *Handler) ListAgentConfigs(ctx context.Context, params serverapi.ListAge
 	return &body, nil
 }
 
+func (h *Handler) ListJobs(ctx context.Context, params serverapi.ListJobsParams) (serverapi.ListJobsRes, error) {
+	jobs, err := h.services.Jobs.ListJobs(ctx, params.ProjectId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := api.Convert[serverapi.ListJobsBody](struct {
+		Jobs any `json:"jobs"`
+	}{Jobs: jobs})
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+func (h *Handler) GetJob(ctx context.Context, params serverapi.GetJobParams) (serverapi.GetJobRes, error) {
+	job, err := h.services.Jobs.GetJob(ctx, params.ProjectId, params.JobId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := api.Convert[serverapi.Job](job)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
 func (h *Handler) CreateAgentConfig(ctx context.Context, req *serverapi.CreateAgentConfigBody, params serverapi.CreateAgentConfigParams) (serverapi.CreateAgentConfigRes, error) {
 	config, err := h.services.AgentConfigs.CreateAgentConfig(ctx, params.ProjectId, *req)
 	if err != nil {

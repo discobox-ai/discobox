@@ -79,6 +79,26 @@ func (s *Stub) GetProject(_ context.Context, projectID string) (*model.Project, 
 	return &project, nil
 }
 
+func (s *Stub) ListJobs(_ context.Context, projectID string) ([]model.Job, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if projectID != s.project.ID {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	return nil, nil
+}
+
+func (s *Stub) GetJob(_ context.Context, projectID, _ string) (*model.Job, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if projectID != s.project.ID {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	return nil, apperrors.NewStatusError(http.StatusNotFound, "job not found")
+}
+
 func (s *Stub) ListSandboxes(_ context.Context, projectID string) ([]model.Sandbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

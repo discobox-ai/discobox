@@ -69,6 +69,12 @@ type WorkerService interface {
 	UpdateWorkerStatus(ctx context.Context, workerID string, input UpdateWorkerStatusBody) (*model.Worker, error)
 }
 
+// JobService provides project-scoped durable job visibility.
+type JobService interface {
+	GetJob(ctx context.Context, projectID, jobID string) (*model.Job, error)
+	ListJobs(ctx context.Context, projectID string) ([]model.Job, error)
+}
+
 // ProjectEventService provides project-scoped resource snapshots and live subscription.
 type ProjectEventService interface {
 	MaxProjectEventSeq(ctx context.Context, projectID string) (int64, error)
@@ -84,5 +90,6 @@ type Services struct {
 	Sandboxes    SandboxService
 	Providers    SandboxProviderInstanceService
 	Workers      WorkerService
+	Jobs         JobService
 	Events       ProjectEventService
 }

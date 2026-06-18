@@ -56,6 +56,12 @@ type Handler interface {
 	//
 	// GET /agent-config-definitions/{definitionId}
 	GetAgentConfigDefinition(ctx context.Context, params GetAgentConfigDefinitionParams) (GetAgentConfigDefinitionRes, error)
+	// GetJob implements get-job operation.
+	//
+	// Get a job.
+	//
+	// GET /projects/{projectId}/jobs/{jobId}
+	GetJob(ctx context.Context, params GetJobParams) (GetJobRes, error)
 	// GetProject implements get-project operation.
 	//
 	// Get a project.
@@ -86,6 +92,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/agent-configs
 	ListAgentConfigs(ctx context.Context, params ListAgentConfigsParams) (ListAgentConfigsRes, error)
+	// ListJobs implements list-jobs operation.
+	//
+	// List jobs for a project.
+	//
+	// GET /projects/{projectId}/jobs
+	ListJobs(ctx context.Context, params ListJobsParams) (ListJobsRes, error)
 	// ListProjects implements list-projects operation.
 	//
 	// List projects.

@@ -90,7 +90,7 @@ func (a *App) newSandboxGetCommand() *cobra.Command {
 		Short: "Get a sandbox",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, sandboxID, client, err := a.sandboxRequest(args[0])
+			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
@@ -120,6 +120,18 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 			client, err := a.apiClient()
 			if err != nil {
 				return err
+			}
+			if opts.providerInstanceID != "" {
+				opts.providerInstanceID, err = a.resolveProviderID(cmd.Context(), client, projectID, opts.providerInstanceID)
+				if err != nil {
+					return err
+				}
+			}
+			if opts.agentConfigID != "" {
+				opts.agentConfigID, err = a.resolveAgentConfigID(cmd.Context(), client, projectID, opts.agentConfigID)
+				if err != nil {
+					return err
+				}
 			}
 			body, err := createSandboxBody(opts)
 			if err != nil {
@@ -154,7 +166,7 @@ func (a *App) newSandboxUpdateCommand() *cobra.Command {
 		Short: "Update a sandbox",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, sandboxID, client, err := a.sandboxRequest(args[0])
+			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
@@ -183,7 +195,7 @@ func (a *App) newSandboxDeleteCommand() *cobra.Command {
 		Short: "Delete a sandbox",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, sandboxID, client, err := a.sandboxRequest(args[0])
+			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
@@ -207,7 +219,7 @@ func (a *App) newSandboxStartCommand() *cobra.Command {
 		Short: "Start a sandbox",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, sandboxID, client, err := a.sandboxRequest(args[0])
+			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
@@ -237,7 +249,7 @@ func (a *App) newSandboxStopCommand() *cobra.Command {
 		Short: "Stop a sandbox",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, sandboxID, client, err := a.sandboxRequest(args[0])
+			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
@@ -267,7 +279,7 @@ func (a *App) newSandboxRestartCommand() *cobra.Command {
 		Short: "Restart a sandbox",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, sandboxID, client, err := a.sandboxRequest(args[0])
+			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
 			if err != nil {
 				return err
 			}
@@ -290,17 +302,16 @@ func (a *App) newSandboxRestartCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *App) sandboxRequest(sandboxArg string) (projectID string, sandboxID string, client *apiclientgen.Client, err error) {
+func (a *App) sandboxRequest(ctx context.Context, sandboxArg string) (projectID string, sandboxID string, client *apiclientgen.Client, err error) {
 	projectID, err = a.projectIDValue()
 	if err != nil {
 		return projectID, sandboxID, nil, err
 	}
-	id, err := parseUUIDArg(sandboxArg, "sandbox ID")
+	client, err = a.apiClient()
 	if err != nil {
 		return projectID, sandboxID, nil, err
 	}
-	sandboxID = id.String()
-	client, err = a.apiClient()
+	sandboxID, err = a.resolveSandboxID(ctx, client, projectID, sandboxArg)
 	return projectID, sandboxID, client, err
 }
 

@@ -123,6 +123,7 @@ func NewApplicationRouter(ctx context.Context, writeDB, readDB *gorm.DB, options
 		Sandboxes:    services,
 		Providers:    services,
 		Workers:      services,
+		Jobs:         services,
 		Events:       services,
 	})
 	if err != nil {

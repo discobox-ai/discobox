@@ -8,11 +8,15 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
+	"unicode/utf8"
 
 	"github.com/go-faster/jx"
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
+	"github.com/obot-platform/discobox/apiclient"
+	"github.com/obot-platform/discobox/model"
 )
 
 func TestWriteProviderTableIncludesConfig(t *testing.T) {
@@ -65,6 +69,60 @@ func TestWriteProviderTableIncludesConfig(t *testing.T) {
 	}
 }
 
+func TestWriteEventPrintsEventIDInsteadOfSeqWhenPresent(t *testing.T) {
+	app := &App{output: "table"}
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	eventID := "01kv9w440bpa9qk5n25t2hh2rv"
+	msg := &apiclient.ProjectEventMessage{
+		Event: apiclient.ProjectEventNameResourceChanged,
+		Data: &apiclient.ResourceChangedEvent{
+			ID:           eventID,
+			Seq:          42,
+			Action:       model.EventActionUpdated,
+			ResourceType: "sandbox",
+			ResourceID:   "sandbox-1",
+			CreatedAt:    time.Date(2026, 6, 17, 4, 0, 0, 0, time.UTC),
+		},
+	}
+
+	if err := app.writeEvent(cmd, msg); err != nil {
+		t.Fatalf("writeEvent: %v", err)
+	}
+	output := out.String()
+	if !strings.Contains(output, shortID(eventID)) {
+		t.Fatalf("event output = %q, want short event ID", output)
+	}
+	if strings.Contains(output, "seq=42") {
+		t.Fatalf("event output = %q, did not expect sequence when event ID is present", output)
+	}
+}
+
+func TestWriteEventFallsBackToSeqWhenIDMissing(t *testing.T) {
+	app := &App{output: "table"}
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	msg := &apiclient.ProjectEventMessage{
+		Event: apiclient.ProjectEventNameResourceChanged,
+		Data: &apiclient.ResourceChangedEvent{
+			Seq:          42,
+			Action:       model.EventActionUpdated,
+			ResourceType: "sandbox",
+			ResourceID:   "sandbox-1",
+			CreatedAt:    time.Date(2026, 6, 17, 4, 0, 0, 0, time.UTC),
+		},
+	}
+
+	if err := app.writeEvent(cmd, msg); err != nil {
+		t.Fatalf("writeEvent: %v", err)
+	}
+	if output := out.String(); !strings.Contains(output, "seq=42") {
+		t.Fatalf("event output = %q, want sequence fallback", output)
+	}
+}
+
 func TestRootCommandHelp(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
@@ -97,6 +155,164 @@ func TestRootCommandRejectsInvalidOutputFormat(t *testing.T) {
 
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("execute error = nil, want invalid output error")
+	}
+}
+
+func TestJobsCommandListsProjectJobs(t *testing.T) {
+	const jobID = "01kv9w440bpa9qk5n25t2hh2rv"
+	const resourceID = "01kv9w440a7bhqnk550g3821ck"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/projects/project-1/jobs" {
+			t.Fatalf("path = %q, want project jobs path", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jobs":[{"id":"` + jobID + `","type":"sandbox.reconcile","status":"failed","attempts":1,"maxAttempts":1,"error":"failed to launch sandbox because the worker container exited before it could register with the control plane","resourceType":"sandbox","resourceId":"` + resourceID + `","scheduledAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "jobs"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute jobs: %v", err)
+	}
+	output := out.String()
+	for _, want := range []string{"ID", "CREATED", "ERROR", shortID(jobID), "sandbox.reconcile", "failed", "sandbox/" + shortID(resourceID), "failed to launch sandbox"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("jobs output = %q, want %q", output, want)
+		}
+	}
+	if strings.Contains(output, "UPDATED") || strings.Contains(output, "updatedAt") {
+		t.Fatalf("jobs output = %q, did not expect updated column", output)
+	}
+	for _, unexpected := range []string{jobID, resourceID} {
+		if strings.Contains(output, unexpected) {
+			t.Fatalf("jobs output = %q, did not expect full ID %q", output, unexpected)
+		}
+	}
+}
+
+func TestTruncateTableValueCompactsLongValues(t *testing.T) {
+	got := truncateTableValue("first line\nsecond line with a lot of additional detail that should not wrap the table output in normal terminals", 80)
+	if strings.Contains(got, "\n") {
+		t.Fatalf("truncated value contains newline: %q", got)
+	}
+	if utf8.RuneCountInString(got) > 80 {
+		t.Fatalf("truncated value length = %d, want <= 80: %q", utf8.RuneCountInString(got), got)
+	}
+	if !strings.HasSuffix(got, "…") {
+		t.Fatalf("truncated value = %q, want ellipsis suffix", got)
+	}
+}
+
+func TestJobsTableErrorWidthUsesTerminalWidth(t *testing.T) {
+	rows := [][]string{{
+		"n25t2hh2",
+		"sandbox.reconcile",
+		"failed",
+		"1/1",
+		"sandbox/50g3821ck",
+		"1 minute ago",
+	}}
+	got := jobsTableErrorWidth(120, rows)
+	if got <= 20 || got >= 80 {
+		t.Fatalf("jobsTableErrorWidth() = %d, want terminal-derived width", got)
+	}
+	if min := jobsTableErrorWidth(40, rows); min != 20 {
+		t.Fatalf("jobsTableErrorWidth(small terminal) = %d, want min width 20", min)
+	}
+	if fallback := jobsTableErrorWidth(0, rows); fallback != 80 {
+		t.Fatalf("jobsTableErrorWidth(no terminal) = %d, want fallback width 80", fallback)
+	}
+}
+
+func TestFormatRelativeTime(t *testing.T) {
+	now := time.Date(2026, 6, 17, 4, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name  string
+		value time.Time
+		want  string
+	}{
+		{name: "second", value: now.Add(-1 * time.Second), want: "1 second ago"},
+		{name: "seconds", value: now.Add(-12 * time.Second), want: "12 seconds ago"},
+		{name: "minute", value: now.Add(-1 * time.Minute), want: "1 minute ago"},
+		{name: "minutes", value: now.Add(-12 * time.Minute), want: "12 minutes ago"},
+		{name: "hour", value: now.Add(-1 * time.Hour), want: "1 hour ago"},
+		{name: "hours", value: now.Add(-12 * time.Hour), want: "12 hours ago"},
+		{name: "day", value: now.Add(-24 * time.Hour), want: "1 day ago"},
+		{name: "future", value: now.Add(2 * time.Minute), want: "2 minutes from now"},
+		{name: "zero", value: time.Time{}, want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatRelativeTime(now, tt.value); got != tt.want {
+				t.Fatalf("formatRelativeTime() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestSandboxGetResolvesShortID(t *testing.T) {
+	const fullID = "01kv9w440bpa9qk5n25t2hh2rv"
+	const sandboxJSON = `{"id":"01kv9w440bpa9qk5n25t2hh2rv","projectId":"project-1","createdByUserId":"user-1","name":"alpha","phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`
+	var sawList bool
+	var sawGet bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/projects/project-1/sandboxes":
+			sawList = true
+			_, _ = w.Write([]byte(`{"sandboxes":[` + sandboxJSON + `]}`))
+		case "/projects/project-1/sandboxes/" + fullID:
+			sawGet = true
+			_, _ = w.Write([]byte(sandboxJSON))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "sandbox", "get", shortID(fullID)})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute sandbox get: %v", err)
+	}
+	if !sawList || !sawGet {
+		t.Fatalf("sawList=%t sawGet=%t, want both", sawList, sawGet)
+	}
+	if output := out.String(); !strings.Contains(output, shortID(fullID)) || strings.Contains(output, fullID) {
+		t.Fatalf("sandbox output = %q, want short ID only", output)
+	}
+}
+
+func TestJobGetCommandShowsError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/projects/project-1/jobs/job-1" {
+			t.Fatalf("path = %q, want project job path", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"job-1","type":"worker.reconcile","status":"failed","attempts":1,"maxAttempts":1,"error":"container exited","resourceType":"worker","resourceId":"worker-1","scheduledAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "job", "get", "job-1"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute job get: %v", err)
+	}
+	output := out.String()
+	for _, want := range []string{"FIELD", "job-1", "failed", "worker/worker-1", "ERROR", "container exited"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("job output = %q, want %q", output, want)
+		}
 	}
 }
 
