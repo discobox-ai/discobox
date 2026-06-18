@@ -43,7 +43,7 @@ PY
   export DISCOBOX_BATS_SERVER_PID="$!"
 
   for _ in {1..100}; do
-    if curl -fsS "$DISCOBOX_BATS_SERVER/openapi.json" >/dev/null 2>&1; then
+    if curl -fsS "$DISCOBOX_BATS_SERVER/openapi.yaml" >/dev/null 2>&1; then
       return 0
     fi
     if ! kill -0 "$DISCOBOX_BATS_SERVER_PID" 2>/dev/null; then

@@ -28,6 +28,7 @@ func newStubRouterForTest() *chi.Mux {
 		Sandboxes:    stubs,
 		Providers:    stubs,
 		Workers:      stubs,
+		Jobs:         stubs,
 		Events:       stubs,
 	})
 	return router
@@ -61,6 +62,7 @@ func TestNewGeneratedRouterServesOpenAPIAndScalarDocs(t *testing.T) {
 		Sandboxes:    stubs,
 		Providers:    stubs,
 		Workers:      stubs,
+		Jobs:         stubs,
 		Events:       stubs,
 	})
 	if err != nil {
@@ -78,15 +80,15 @@ func assertOpenAPIAndScalarDocs(t *testing.T, router http.Handler) {
 	t.Helper()
 
 	openapiResp := httptest.NewRecorder()
-	router.ServeHTTP(openapiResp, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
+	router.ServeHTTP(openapiResp, httptest.NewRequest(http.MethodGet, "/openapi.yaml", nil))
 	if openapiResp.Code != http.StatusOK {
-		t.Fatalf("GET /openapi.json status = %d, want %d", openapiResp.Code, http.StatusOK)
+		t.Fatalf("GET /openapi.yaml status = %d, want %d", openapiResp.Code, http.StatusOK)
 	}
-	if contentType := openapiResp.Header().Get("Content-Type"); !strings.Contains(contentType, "application/openapi+json") {
-		t.Fatalf("GET /openapi.json content type = %q, want OpenAPI JSON", contentType)
+	if contentType := openapiResp.Header().Get("Content-Type"); !strings.Contains(contentType, "application/openapi+yaml") {
+		t.Fatalf("GET /openapi.yaml content type = %q, want OpenAPI YAML", contentType)
 	}
-	if body := openapiResp.Body.String(); !strings.Contains(body, `"openapi"`) {
-		t.Fatalf("GET /openapi.json body does not look like an OpenAPI document")
+	if body := openapiResp.Body.String(); !strings.Contains(body, "openapi:") {
+		t.Fatalf("GET /openapi.yaml body does not look like an OpenAPI document")
 	}
 
 	docsResp := httptest.NewRecorder()
@@ -97,8 +99,8 @@ func assertOpenAPIAndScalarDocs(t *testing.T, router http.Handler) {
 	if body := docsResp.Body.String(); !strings.Contains(body, "@scalar/api-reference") {
 		t.Fatalf("GET /docs body does not look like Scalar")
 	}
-	if body := docsResp.Body.String(); !strings.Contains(body, "/openapi.json") {
-		t.Fatalf("GET /docs body does not reference /openapi.json")
+	if body := docsResp.Body.String(); !strings.Contains(body, "/openapi.yaml") {
+		t.Fatalf("GET /docs body does not reference /openapi.yaml")
 	}
 }
 

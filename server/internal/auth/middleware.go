@@ -70,7 +70,7 @@ func Authorization(authorizers ...Authorizer) func(http.Handler) http.Handler {
 
 // IsPublicPath reports whether a path can be served without authentication.
 func IsPublicPath(path string) bool {
-	return path == "/openapi.json" || path == "/docs" || strings.HasPrefix(path, "/docs/")
+	return path == "/openapi.yaml" || path == "/docs" || strings.HasPrefix(path, "/docs/")
 }
 
 type defaultProjectIDContextKey struct{}

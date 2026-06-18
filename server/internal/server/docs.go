@@ -19,7 +19,7 @@ const scalarDocsHTML = `<!doctype html>
   </style>
 </head>
 <body>
-  <script id="api-reference" data-url="/openapi.json"></script>
+  <script id="api-reference" data-url="/openapi.yaml"></script>
   <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference"></script>
 </body>
 </html>
@@ -27,10 +27,6 @@ const scalarDocsHTML = `<!doctype html>
 
 // RegisterDocsRoutes serves the canonical OpenAPI contract and Scalar API docs.
 func RegisterDocsRoutes(router chi.Router) {
-	router.Get("/openapi.json", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/openapi+json; charset=utf-8")
-		_, _ = w.Write(rootopenapi.ServerJSON)
-	})
 	router.Get("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/openapi+yaml; charset=utf-8")
 		_, _ = w.Write(rootopenapi.ServerYAML)

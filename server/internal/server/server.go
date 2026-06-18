@@ -76,7 +76,7 @@ func Run(ctx context.Context) error {
 
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	log.Printf("listening on http://localhost%s", addr)
-	log.Printf("openapi spec available at http://localhost%s/openapi.json", addr)
+	log.Printf("openapi spec available at http://localhost%s/openapi.yaml", addr)
 	log.Printf("api docs available at http://localhost%s/docs", addr)
 	handler := otelhttp.NewHandler(router, "discobox-server")
 	if err := http.ListenAndServe(addr, handler); err != nil {
