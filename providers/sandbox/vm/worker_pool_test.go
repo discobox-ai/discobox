@@ -103,11 +103,11 @@ func TestEnsureWorkerPoolRepairsWorkersWithFailedJobs(t *testing.T) {
 	if store.updated == nil {
 		t.Fatal("expected stale worker to be updated")
 	}
-	if store.updated.Phase != model.WorkerPhaseFailed || store.updated.LastOperationStatus != model.OperationStatusFailed {
-		t.Fatalf("updated worker phase/status = %q/%q, want failed/failed", store.updated.Phase, store.updated.LastOperationStatus)
+	if store.updated.DesiredState != model.WorkerDesiredStateDeleted || store.updated.LastOperationStatus != model.OperationStatusPending {
+		t.Fatalf("updated worker desired/status = %q/%q, want deleted/pending", store.updated.DesiredState, store.updated.LastOperationStatus)
 	}
-	if store.updated.ErrorMessage == nil || *store.updated.ErrorMessage != message {
-		t.Fatalf("updated worker error = %v, want %q", store.updated.ErrorMessage, message)
+	if store.updated.StatusMessage == nil || *store.updated.StatusMessage != message {
+		t.Fatalf("updated worker status message = %v, want %q", store.updated.StatusMessage, message)
 	}
 	if store.createdWorkers != 1 {
 		t.Fatalf("created workers = %d, want replacement", store.createdWorkers)
@@ -180,8 +180,8 @@ func TestEnsureWorkerPoolRepairsExpiredRegisteringWorkers(t *testing.T) {
 	if store.updated == nil {
 		t.Fatal("expected expired registering worker to be updated")
 	}
-	if store.updated.Phase != model.WorkerPhaseFailed || store.updated.LastOperationStatus != model.OperationStatusFailed {
-		t.Fatalf("updated worker phase/status = %q/%q, want failed/failed", store.updated.Phase, store.updated.LastOperationStatus)
+	if store.updated.DesiredState != model.WorkerDesiredStateDeleted || store.updated.LastOperationStatus != model.OperationStatusPending {
+		t.Fatalf("updated worker desired/status = %q/%q, want deleted/pending", store.updated.DesiredState, store.updated.LastOperationStatus)
 	}
 	if store.createdWorkers != 1 {
 		t.Fatalf("created workers = %d, want replacement", store.createdWorkers)
@@ -406,8 +406,49 @@ func TestLaunchWorkerTreatsExistingRuntimeStateAsSuccess(t *testing.T) {
 	if driver.createCalls != 0 {
 		t.Fatalf("CreateVM calls = %d, want 0 for existing state", driver.createCalls)
 	}
-	if driver.inspectCalls != 1 {
-		t.Fatalf("InspectVM calls = %d, want 1", driver.inspectCalls)
+	if driver.inspectCalls != 2 {
+		t.Fatalf("InspectVM calls = %d, want 2", driver.inspectCalls)
+	}
+}
+
+func TestShouldRecreateWorkerRuntime(t *testing.T) {
+	for _, tt := range []struct {
+		name         string
+		runtime      *sandbox.Sandbox
+		desiredImage string
+		want         bool
+	}{
+		{name: "missing runtime", want: true},
+		{name: "stopped runtime", runtime: &sandbox.Sandbox{Status: sandbox.StatusStopped, Image: "image-1"}, desiredImage: "image-1", want: true},
+		{name: "failed runtime", runtime: &sandbox.Sandbox{Status: sandbox.StatusFailed, Image: "image-1"}, desiredImage: "image-1", want: true},
+		{name: "changed image", runtime: &sandbox.Sandbox{Status: sandbox.StatusRunning, Image: "image-1"}, desiredImage: "image-2", want: true},
+		{name: "running desired image", runtime: &sandbox.Sandbox{Status: sandbox.StatusRunning, Image: "image-1"}, desiredImage: "image-1", want: false},
+		{name: "running without desired image", runtime: &sandbox.Sandbox{Status: sandbox.StatusRunning, Image: "image-1"}, want: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := shouldRecreateWorkerRuntime(tt.runtime, tt.desiredImage); got != tt.want {
+				t.Fatalf("shouldRecreateWorkerRuntime() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestStartupReconcileWorkerIncludesRegisteringSuccess(t *testing.T) {
+	worker := &model.Worker{
+		ResourceLifecycle: model.ResourceLifecycle{
+			DesiredState:        model.WorkerDesiredStateActive,
+			Phase:               model.WorkerPhaseRegistering,
+			LastOperationStatus: model.OperationStatusSuccess,
+			Generation:          2,
+			ObservedGeneration:  2,
+		},
+	}
+	if !startupReconcileWorker(worker) {
+		t.Fatal("startupReconcileWorker() = false, want true for previously launched registering worker")
+	}
+	worker.ObservedGeneration = 1
+	if startupReconcileWorker(worker) {
+		t.Fatal("startupReconcileWorker() = true, want false for stale observed generation")
 	}
 }
 
@@ -708,7 +749,7 @@ func (s *repairingWorkerStore) GetJob(_ context.Context, id string) (*orchestrat
 	return job, nil
 }
 
-func (s *repairingWorkerStore) MarkWorkerFailedForJob(_ context.Context, workerID string, generation int64, jobID string, message string) (bool, error) {
+func (s *repairingWorkerStore) DeleteWorkerForFailedJob(_ context.Context, workerID string, generation int64, jobID string, message string) (bool, error) {
 	if !s.repairUpdated {
 		return false, nil
 	}
@@ -722,12 +763,14 @@ func (s *repairingWorkerStore) MarkWorkerFailedForJob(_ context.Context, workerI
 	if copied.ID == "" {
 		return false, nil
 	}
-	copied.FailOperation(message)
+	copied.IncrementGeneration()
+	copied.BeginOperation(model.WorkerDeleteOperation, nil)
+	copied.StatusMessage = &message
 	s.updated = &copied
 	return true, nil
 }
 
-func (s *repairingWorkerStore) MarkWorkerRegistrationExpired(_ context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error) {
+func (s *repairingWorkerStore) DeleteWorkerForExpiredRegistration(_ context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error) {
 	if !s.repairUpdated {
 		return false, nil
 	}
@@ -747,7 +790,9 @@ func (s *repairingWorkerStore) MarkWorkerRegistrationExpired(_ context.Context, 
 	if copied.ID == "" {
 		return false, nil
 	}
-	copied.FailOperation(message)
+	copied.IncrementGeneration()
+	copied.BeginOperation(model.WorkerDeleteOperation, nil)
+	copied.StatusMessage = &message
 	s.updated = &copied
 	return true, nil
 }

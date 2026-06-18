@@ -51,10 +51,10 @@ func (s *workerStore) GetJob(ctx context.Context, id string) (*orchestration.Job
 	return s.store.GetJob(ctx, id)
 }
 
-func (s *workerStore) MarkWorkerFailedForJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error) {
-	return s.store.MarkWorkerFailedForJob(ctx, workerID, generation, jobID, message)
+func (s *workerStore) DeleteWorkerForFailedJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error) {
+	return s.workers.DeleteForFailedJob(ctx, workerID, generation, jobID, message)
 }
 
-func (s *workerStore) MarkWorkerRegistrationExpired(ctx context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error) {
-	return s.store.MarkWorkerRegistrationExpired(ctx, workerID, generation, cutoff, message)
+func (s *workerStore) DeleteWorkerForExpiredRegistration(ctx context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error) {
+	return s.workers.DeleteForExpiredRegistration(ctx, workerID, generation, cutoff, message)
 }

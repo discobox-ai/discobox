@@ -90,18 +90,23 @@ func NewWorkerProvider(ctx context.Context, cfg WorkerProviderConfig, newProvide
 	if err != nil {
 		return nil, err
 	}
+	factory := func(ctx context.Context, vmCfg vm.Config) (sandbox.Provider, error) {
+		return newProvider(ctx, vmCfg)
+	}
 	workerProvider := vm.NewWorkerProvider(provider, cfg.WorkerPool, func(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string) error {
 		return vm.LaunchWorker(ctx, project, provider, worker, token, vm.LaunchWorkerConfig{
 			ControlPlaneURL: cfg.ControlPlaneURL,
 			DefaultImage:    cfg.DefaultImage,
 			AgentPort:       cfg.AgentPort,
-			Factory: func(ctx context.Context, vmCfg vm.Config) (sandbox.Provider, error) {
-				return newProvider(ctx, vmCfg)
-			},
+			Factory:         factory,
 		})
-	}, cfg.WorkerStore)
-	if cfg.EnsureWorkers {
-		workerProvider.EnsureRunningWorkers()
-	}
+	}, cfg.WorkerStore, func(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error {
+		return vm.RemoveWorker(ctx, project, provider, worker, vm.LaunchWorkerConfig{
+			ControlPlaneURL: cfg.ControlPlaneURL,
+			DefaultImage:    cfg.DefaultImage,
+			AgentPort:       cfg.AgentPort,
+			Factory:         factory,
+		})
+	})
 	return workerProvider, nil
 }

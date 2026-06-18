@@ -36,10 +36,12 @@ const (
 	defaultAgentPort  = 3002
 	defaultServerPort = "8080"
 	dockerHostGateway = "host.docker.internal"
+	dockerSocketPath  = "/var/run/docker.sock"
 	labelManaged      = "discobox.vm.managed"
 	labelInstanceID   = "discobox.vm.instance_id"
 	labelProjectID    = "discobox.project_id"
 	labelSandboxID    = "discobox.sandbox_id"
+	labelWorkerAgent  = "discobox.worker_agent"
 	labelWorkerID     = "discobox.worker_id"
 	labelProviderType = "discobox.provider_type"
 )
@@ -202,14 +204,22 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 	if d == nil || d.client == nil {
 		return nil, errors.New("docker client is required")
 	}
+	derivedControlPlaneURL := controlPlaneURLDefaulted(spec.Boot)
 	boot := d.containerBootConfig(spec.Boot)
+	spec.Boot = boot
 	workerID := strings.TrimSpace(boot.Env[workerbootstrap.EnvWorkerID])
 	name := containerName(workerID, spec.Name)
-	if existing, err := d.client.ContainerInspect(ctx, name, client.ContainerInspectOptions{}); err == nil {
-		image := strings.TrimSpace(spec.Image)
-		if image == "" {
-			image = d.image
+	image := strings.TrimSpace(spec.Image)
+	if image == "" {
+		image = d.image
+	}
+	labels := d.containerLabels(spec)
+	workerAgent := labels[labelWorkerAgent] == "true"
+	if workerAgent {
+		if err := d.removeWorkerAgentContainers(ctx, labels); err != nil {
+			return nil, err
 		}
+	} else if existing, err := d.client.ContainerInspect(ctx, name, client.ContainerInspectOptions{}); err == nil {
 		if existing.Container.Config != nil && existing.Container.Config.Image != image {
 			if _, err := d.client.ContainerRemove(ctx, existing.Container.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
 				return nil, err
@@ -227,16 +237,10 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 		return nil, err
 	}
 
-	image := strings.TrimSpace(spec.Image)
-	if image == "" {
-		image = d.image
-	}
 	exposedPort, ok := network.PortFrom(uint16(d.agentPort), network.TCP)
 	if !ok {
 		return nil, fmt.Errorf("invalid agent port %d", d.agentPort)
 	}
-	labels := d.containerLabels(spec)
-	derivedControlPlaneURL := strings.TrimSpace(spec.Boot.Env[workerbootstrap.EnvControlPlaneURL]) == ""
 	config := &container.Config{
 		Image:        image,
 		Labels:       labels,
@@ -245,24 +249,19 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 		ExposedPorts: network.PortSet{exposedPort: struct{}{}},
 	}
 	hostConfig := &container.HostConfig{
+		AutoRemove: workerAgent,
 		Privileged: d.privileged,
 		PortBindings: network.PortMap{
 			exposedPort: []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1")}},
 		},
 	}
-	if derivedControlPlaneURL && controlPlaneURLUsesHostGateway(boot.Env[workerbootstrap.EnvControlPlaneURL]) {
-		hostConfig.ExtraHosts = append(hostConfig.ExtraHosts, dockerHostGateway+":host-gateway")
-	}
+	hostConfig.ExtraHosts = append(hostConfig.ExtraHosts, controlPlaneExtraHosts(derivedControlPlaneURL, boot.Env[workerbootstrap.EnvControlPlaneURL])...)
 	if d.cgroupNSMode != "" {
 		hostConfig.CgroupnsMode = container.CgroupnsMode(d.cgroupNSMode)
 	}
+	hostConfig.Mounts = d.containerMounts(workerAgent, workerID)
 	if d.systemd {
 		hostConfig.Tmpfs = map[string]string{"/run": "rw,noexec,nosuid,size=64m", "/run/lock": "rw,noexec,nosuid,size=64m", "/tmp": "rw,size=64m"}
-		hostConfig.Mounts = append(hostConfig.Mounts,
-			mount.Mount{Type: mount.TypeBind, Source: "/sys/fs/cgroup", Target: "/sys/fs/cgroup", ReadOnly: false},
-			mount.Mount{Type: mount.TypeVolume, Source: scopedVolumeName(workerID, "docker"), Target: "/var/lib/docker"},
-			mount.Mount{Type: mount.TypeVolume, Source: scopedVolumeName(workerID, "discobox"), Target: "/var/lib/discobox"},
-		)
 	}
 	if spec.Resources.MemoryMB > 0 {
 		hostConfig.Memory = int64(spec.Resources.MemoryMB) * 1024 * 1024
@@ -311,6 +310,62 @@ func defaultDockerControlPlaneURL() string {
 
 func controlPlaneURLUsesHostGateway(value string) bool {
 	return strings.Contains(value, "://"+dockerHostGateway) || strings.HasPrefix(value, dockerHostGateway+":")
+}
+
+func controlPlaneURLDefaulted(boot vm.BootConfig) bool {
+	return strings.TrimSpace(boot.Env[workerbootstrap.EnvControlPlaneURL]) == ""
+}
+
+func controlPlaneExtraHosts(defaulted bool, controlPlaneURL string) []string {
+	if defaulted && controlPlaneURLUsesHostGateway(controlPlaneURL) {
+		return []string{dockerHostGateway + ":host-gateway"}
+	}
+	return nil
+}
+
+func (d *Driver) removeWorkerAgentContainers(ctx context.Context, labels map[string]string) error {
+	projectID := strings.TrimSpace(labels[labelProjectID])
+	workerID := strings.TrimSpace(labels[labelWorkerID])
+	if projectID == "" || workerID == "" {
+		return fmt.Errorf("worker-agent container cleanup requires project and worker labels")
+	}
+	filters := client.Filters{}
+	for _, label := range workerAgentCleanupLabels(projectID, workerID) {
+		filters = filters.Add("label", label)
+	}
+	containers, err := d.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: filters})
+	if err != nil {
+		return err
+	}
+	for _, ctr := range containers.Items {
+		if _, err := d.client.ContainerRemove(ctx, ctr.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
+			return err
+		}
+	}
+	return nil
+}
+
+func workerAgentCleanupLabels(projectID, workerID string) []string {
+	return []string{
+		labelWorkerAgent + "=true",
+		labelProjectID + "=" + projectID,
+		labelWorkerID + "=" + workerID,
+	}
+}
+
+func (d *Driver) containerMounts(workerAgent bool, workerID string) []mount.Mount {
+	var mounts []mount.Mount
+	if workerAgent {
+		mounts = append(mounts, mount.Mount{Type: mount.TypeBind, Source: dockerSocketPath, Target: dockerSocketPath})
+	}
+	if d.systemd {
+		mounts = append(mounts,
+			mount.Mount{Type: mount.TypeBind, Source: "/sys/fs/cgroup", Target: "/sys/fs/cgroup", ReadOnly: false},
+			mount.Mount{Type: mount.TypeVolume, Source: scopedVolumeName(workerID, "docker"), Target: "/var/lib/docker"},
+			mount.Mount{Type: mount.TypeVolume, Source: scopedVolumeName(workerID, "discobox"), Target: "/var/lib/discobox"},
+		)
+	}
+	return mounts
 }
 
 func (d *Driver) StartVM(ctx context.Context, id string) (*vm.Instance, error) {
@@ -403,6 +458,9 @@ func (d *Driver) containerLabels(spec vm.InstanceSpec) map[string]string {
 	labels[labelProjectID] = spec.Ref.ProjectID
 	labels[labelSandboxID] = spec.Ref.SandboxID
 	labels[labelWorkerID] = strings.TrimSpace(spec.Boot.Env[workerbootstrap.EnvWorkerID])
+	if labels[labelWorkerAgent] == "true" {
+		delete(labels, labelSandboxID)
+	}
 	return labels
 }
 

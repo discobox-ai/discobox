@@ -25,10 +25,6 @@ func (p WorkerReconcilePayload) Resource() orchestration.Resource {
 	return orchestration.Resource{Type: "worker", ID: p.WorkerID}
 }
 
-func (p WorkerReconcilePayload) MaxAttempts() int {
-	return 1
-}
-
 type WorkerReconciler interface {
 	AssertWorkerGeneration(ctx context.Context, projectID, providerID, workerID string, generation int64) error
 	ReconcileWorkerJob(ctx context.Context, projectID, providerID, workerID, jobID string, generation int64) error

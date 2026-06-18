@@ -35,6 +35,7 @@ type WorkerProvider struct {
 	*Provider
 	poolConfig           WorkerPoolConfig
 	launch               WorkerLauncher
+	remove               WorkerRemover
 	store                WorkerStore
 	ensureRunningWorkers bool
 }
@@ -48,8 +49,12 @@ type WorkerLookupStore interface {
 	GetWorker(ctx context.Context, workerID string) (*model.Worker, error)
 }
 
-func NewWorkerProvider(provider *Provider, poolConfig WorkerPoolConfig, launch WorkerLauncher, store WorkerStore) *WorkerProvider {
-	return &WorkerProvider{Provider: provider, poolConfig: poolConfig, launch: launch, store: store}
+func NewWorkerProvider(provider *Provider, poolConfig WorkerPoolConfig, launch WorkerLauncher, store WorkerStore, remove ...WorkerRemover) *WorkerProvider {
+	workerProvider := &WorkerProvider{Provider: provider, poolConfig: poolConfig, launch: launch, store: store}
+	if len(remove) > 0 {
+		workerProvider.remove = remove[0]
+	}
+	return workerProvider
 }
 
 func (p *WorkerProvider) EnsureWorkerPool(ctx context.Context, store WorkerStore, project *model.Project, provider *model.SandboxProviderInstance) error {
@@ -89,6 +94,16 @@ func (p *WorkerProvider) ReconcileWorker(ctx context.Context, store any, project
 	return p.launch(ctx, project, provider, worker, token)
 }
 
+func (p *WorkerProvider) RemoveWorker(ctx context.Context, _ any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error {
+	if p.remove == nil {
+		worker.RuntimeState = nil
+		worker.Ready = false
+		worker.Schedulable = false
+		return nil
+	}
+	return p.remove(ctx, project, provider, worker)
+}
+
 func (p *WorkerProvider) EnsureRunningWorkers() {
 	p.ensureRunningWorkers = true
 }
@@ -100,7 +115,7 @@ func (p *WorkerProvider) ensureActiveWorkers(ctx context.Context, store WorkerSt
 	}
 	for i := range workers {
 		worker := &workers[i]
-		if !reconciledActiveWorker(worker) {
+		if !startupReconcileWorker(worker) {
 			continue
 		}
 		if err := p.ReconcileWorker(ctx, store, project, provider, worker); err != nil {
@@ -110,9 +125,8 @@ func (p *WorkerProvider) ensureActiveWorkers(ctx context.Context, store WorkerSt
 	return nil
 }
 
-func reconciledActiveWorker(worker *model.Worker) bool {
+func startupReconcileWorker(worker *model.Worker) bool {
 	return activeWorker(worker) &&
-		worker.Phase == model.WorkerPhaseActive &&
 		worker.ObservedGeneration == worker.Generation &&
 		worker.LastOperationStatus == model.OperationStatusSuccess
 }
@@ -459,12 +473,25 @@ func LaunchWorker(ctx context.Context, project *model.Project, provider *model.S
 	if err != nil {
 		return err
 	}
-	labels := map[string]string{"discobox.worker_id": worker.ID, "discobox.provider_instance_id": provider.ID}
+	labels := map[string]string{"discobox.worker_id": worker.ID, "discobox.worker_agent": "true", "discobox.provider_instance_id": provider.ID}
 	for key, value := range cfg.Labels {
 		labels[key] = value
 	}
 	ref := sandbox.SandboxRef{ProjectID: project.ID, SandboxID: "worker-" + worker.ID}
-	_, state, err := providerImpl.Create(ctx, ref, worker.RuntimeState, sandbox.CreateOptions{Labels: labels})
+	state := worker.RuntimeState
+	if len(state) > 0 {
+		runtimeWorker, err := providerImpl.Get(ctx, ref, state)
+		if errors.Is(err, sandbox.ErrNotFound) || shouldRecreateWorkerRuntime(runtimeWorker, cfg.DefaultImage) {
+			state = nil
+			worker.RuntimeState = nil
+			worker.Ready = false
+			worker.Schedulable = false
+			worker.Phase = model.WorkerPhaseRegistering
+		} else if err != nil {
+			return err
+		}
+	}
+	_, state, err = providerImpl.Create(ctx, ref, state, sandbox.CreateOptions{Labels: labels})
 	if errors.Is(err, sandbox.ErrAlreadyExists) {
 		return nil
 	}
@@ -472,6 +499,39 @@ func LaunchWorker(ctx context.Context, project *model.Project, provider *model.S
 		worker.RuntimeState, err = safeWorkerRuntimeState(state)
 	}
 	return err
+}
+
+func RemoveWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, cfg LaunchWorkerConfig) error {
+	providerImpl, err := cfg.Factory(ctx, Config{
+		ControlPlaneURL: cfg.ControlPlaneURL,
+		DefaultImage:    cfg.DefaultImage,
+		AgentPort:       cfg.AgentPort,
+		Metadata:        cfg.Labels,
+	})
+	if err != nil {
+		return err
+	}
+	ref := sandbox.SandboxRef{ProjectID: project.ID, SandboxID: "worker-" + worker.ID}
+	if len(worker.RuntimeState) > 0 {
+		if _, err := providerImpl.Remove(ctx, ref, worker.RuntimeState, sandbox.RemoveVolumes()); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+			return err
+		}
+	}
+	worker.RuntimeState = nil
+	worker.Ready = false
+	worker.Schedulable = false
+	worker.Degraded = false
+	return nil
+}
+
+func shouldRecreateWorkerRuntime(runtimeWorker *sandbox.Sandbox, desiredImage string) bool {
+	if runtimeWorker == nil {
+		return true
+	}
+	if runtimeWorker.Status != sandbox.StatusRunning {
+		return true
+	}
+	return strings.TrimSpace(desiredImage) != "" && runtimeWorker.Image != desiredImage
 }
 
 func safeWorkerRuntimeState(state []byte) ([]byte, error) {

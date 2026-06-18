@@ -153,9 +153,10 @@ func (s *Service) DeleteSandboxProviderInstance(ctx context.Context, projectID, 
 	return apiError(s.store.DeleteSandboxProviderInstance(ctx, projectID, providerID), "provider instance not found")
 }
 
-// EnsureExistingSandboxProviderInstances runs provider instance startup reconciliation
-// for persisted provider instances. Runtime-driven worker scaling after this point
-// belongs inside the provider implementation.
+// EnsureExistingSandboxProviderInstances runs provider instance startup
+// reconciliation for persisted provider instances, then schedules every
+// persisted worker for durable reconciliation so startup runtime checks use the
+// same retry path as normal worker lifecycle jobs.
 func (s *Service) EnsureExistingSandboxProviderInstances(ctx context.Context) error {
 	projects, err := s.store.ListProjects(ctx)
 	if err != nil {
@@ -175,6 +176,25 @@ func (s *Service) EnsureExistingSandboxProviderInstances(ctx context.Context) er
 			if err := s.ensureSandboxProviderInstance(ctx, project, provider); err != nil {
 				return err
 			}
+			if err := s.enqueueProviderWorkers(ctx, project.ID, provider.ID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (s *Service) enqueueProviderWorkers(ctx context.Context, projectID, providerID string) error {
+	if s.workerSubmitter == nil {
+		return nil
+	}
+	workers, err := s.store.ListWorkers(ctx, projectID, providerID)
+	if err != nil {
+		return err
+	}
+	for i := range workers {
+		if _, err := s.workerSubmitter.EnqueueCurrent(ctx, &workers[i]); err != nil {
+			return err
 		}
 	}
 	return nil

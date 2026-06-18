@@ -33,12 +33,15 @@ type WorkerBootstrapStore interface {
 
 type WorkerLifecycleRepairStore interface {
 	GetJob(ctx context.Context, id string) (*orchestration.Job, error)
-	MarkWorkerFailedForJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error)
-	MarkWorkerRegistrationExpired(ctx context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error)
+	DeleteWorkerForFailedJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error)
+	DeleteWorkerForExpiredRegistration(ctx context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error)
 }
 
 // WorkerLauncher starts the provider-specific runtime node for a persisted worker.
 type WorkerLauncher func(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string) error
+
+// WorkerRemover removes the provider-specific runtime node for a persisted worker.
+type WorkerRemover func(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error
 
 // WorkerPoolConfig describes VM worker pool bounds.
 type WorkerPoolConfig struct {
@@ -181,12 +184,14 @@ func repairWorkersWithFailedJobs(ctx context.Context, store WorkerStore, workers
 		if job.Error != nil && *job.Error != "" {
 			message = *job.Error
 		}
-		updated, err := repairStore.MarkWorkerFailedForJob(ctx, worker.ID, worker.Generation, *worker.LastJobID, message)
+		updated, err := repairStore.DeleteWorkerForFailedJob(ctx, worker.ID, worker.Generation, *worker.LastJobID, message)
 		if err != nil {
 			return nil, err
 		}
 		if updated {
-			worker.FailOperation(message)
+			worker.IncrementGeneration()
+			worker.BeginOperation(model.WorkerDeleteOperation, nil)
+			worker.StatusMessage = &message
 		}
 	}
 	return workers, nil
@@ -208,12 +213,14 @@ func repairExpiredRegisteringWorkers(ctx context.Context, store WorkerStore, wor
 			continue
 		}
 		message := "worker did not register before timeout"
-		updated, err := repairStore.MarkWorkerRegistrationExpired(ctx, worker.ID, worker.Generation, cutoff, message)
+		updated, err := repairStore.DeleteWorkerForExpiredRegistration(ctx, worker.ID, worker.Generation, cutoff, message)
 		if err != nil {
 			return nil, err
 		}
 		if updated {
-			worker.FailOperation(message)
+			worker.IncrementGeneration()
+			worker.BeginOperation(model.WorkerDeleteOperation, nil)
+			worker.StatusMessage = &message
 		}
 	}
 	return workers, nil

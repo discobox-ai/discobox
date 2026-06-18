@@ -137,6 +137,12 @@ func TestDockerProviderWorkerCreateFlowE2E(t *testing.T) {
 	if labels["discobox.provider_instance_id"] != provider.ID {
 		t.Fatalf("container provider label = %q, want %q", labels["discobox.provider_instance_id"], provider.ID)
 	}
+	if labels["discobox.worker_agent"] != "true" {
+		t.Fatalf("container worker agent label = %q, want true", labels["discobox.worker_agent"])
+	}
+	if _, ok := labels["discobox.sandbox_id"]; ok {
+		t.Fatalf("container sandbox label present for worker agent: %#v", labels)
+	}
 	if labels["discobox.vm.managed"] != "true" || labels["discobox.provider_type"] != "docker" {
 		t.Fatalf("container labels = %#v, want managed docker", labels)
 	}
