@@ -23,6 +23,8 @@ type ResourceStore[Resource any, ID any, Store any] struct {
 	Get    func(context.Context, Store, ID) (Resource, error)
 	Create func(context.Context, Store, Resource) error
 	Update func(context.Context, Store, Resource) error
+	ID     func(Resource) ID
+	Reload func(context.Context, ID) (Resource, error)
 }
 
 // PayloadFunc builds the durable job payload for a resource after its accepted
@@ -64,6 +66,9 @@ func NewSubmitter[Resource LifecycleResource[Operation], Operation any, ID any, 
 	if cfg.Resource.Update == nil {
 		panic("orchestration resource update function is required")
 	}
+	if cfg.Resource.Reload != nil && cfg.Resource.ID == nil {
+		panic("orchestration resource id function is required when reload is configured")
+	}
 	return &Submitter[Resource, Operation, ID, Store]{
 		transaction: cfg.Transaction,
 		resource:    cfg.Resource,
@@ -76,27 +81,31 @@ func NewSubmitter[Resource LifecycleResource[Operation], Operation any, ID any, 
 // Create accepts intent for a new resource and persists the resource and its
 // durable reconcile job in one transaction.
 func (s *Submitter[Resource, Operation, ID, Store]) Create(ctx context.Context, resource Resource, operation Operation, mutate ...func(Resource)) (Resource, error) {
-	return s.accept(ctx, operation, func(context.Context, Store) (Resource, error) {
-		return resource, nil
+	var zeroID ID
+	return s.accept(ctx, operation, func(context.Context, Store) (Resource, ID, error) {
+		return resource, zeroID, nil
 	}, s.resource.Create, mutate...)
 }
 
 // Submit accepts intent for an existing resource and persists the resource
 // update and durable reconcile job in one transaction.
 func (s *Submitter[Resource, Operation, ID, Store]) Submit(ctx context.Context, id ID, operation Operation, mutate ...func(Resource)) (Resource, error) {
-	return s.accept(ctx, operation, func(ctx context.Context, tx Store) (Resource, error) {
-		return s.resource.Get(ctx, tx, id)
+	return s.accept(ctx, operation, func(ctx context.Context, tx Store) (Resource, ID, error) {
+		resource, err := s.resource.Get(ctx, tx, id)
+		return resource, id, err
 	}, s.resource.Update, mutate...)
 }
 
-func (s *Submitter[Resource, Operation, ID, Store]) accept(ctx context.Context, operation Operation, prepare func(context.Context, Store) (Resource, error), persist func(context.Context, Store, Resource) error, mutate ...func(Resource)) (Resource, error) {
+func (s *Submitter[Resource, Operation, ID, Store]) accept(ctx context.Context, operation Operation, prepare func(context.Context, Store) (Resource, ID, error), persist func(context.Context, Store, Resource) error, mutate ...func(Resource)) (Resource, error) {
 	var zero Resource
 	var resource Resource
+	var id ID
+	var hasID bool
 	jobCreated := false
 
 	if err := s.transaction(ctx, func(ctx context.Context, tx Store) error {
 		var err error
-		resource, err = prepare(ctx, tx)
+		resource, id, err = prepare(ctx, tx)
 		if err != nil {
 			return err
 		}
@@ -118,13 +127,26 @@ func (s *Submitter[Resource, Operation, ID, Store]) accept(ctx context.Context, 
 		if created {
 			jobCreated = true
 		}
-		return persist(ctx, tx, resource)
+		if err := persist(ctx, tx, resource); err != nil {
+			return err
+		}
+		if s.resource.ID != nil {
+			id = s.resource.ID(resource)
+			hasID = true
+		}
+		return nil
 	}); err != nil {
 		return zero, err
 	}
 
 	if jobCreated && s.notify != nil {
 		s.notify(ctx)
+	}
+	if s.resource.Reload != nil {
+		if !hasID {
+			return resource, nil
+		}
+		return s.resource.Reload(ctx, id)
 	}
 	return resource, nil
 }

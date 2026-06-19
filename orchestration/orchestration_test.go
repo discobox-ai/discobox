@@ -81,6 +81,35 @@ func (p unmarshalablePayload) Resource() orchestration.Resource {
 	return orchestration.Resource{}
 }
 
+type submitterResource struct {
+	ID         string
+	Operation  string
+	Generation int64
+	LastJobID  *string
+	Value      string
+	Reloaded   bool
+}
+
+func (r *submitterResource) BeginOperation(operation string, _ *string) {
+	r.Operation = operation
+}
+
+func (r *submitterResource) IncrementGeneration() {
+	r.Generation++
+}
+
+func (r *submitterResource) SetLastJobID(jobID *string) {
+	r.LastJobID = jobID
+}
+
+func (r *submitterResource) copy() *submitterResource {
+	if r == nil {
+		return nil
+	}
+	copied := *r
+	return &copied
+}
+
 func TestQueueEnqueueAppliesDefaultsAndPayloadOptions(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -138,6 +167,74 @@ func TestQueueEnqueueReturnsMarshalError(t *testing.T) {
 	queue := orchestration.NewQueue(newTestStore(t), orchestration.QueueConfig{})
 	if _, err := queue.Enqueue(context.Background(), unmarshalablePayload{C: make(chan struct{})}); err == nil {
 		t.Fatal("expected marshal error")
+	}
+}
+
+func TestSubmitterAcceptsLifecycleOperationAndReloads(t *testing.T) {
+	ctx := context.Background()
+	jobStore := newTestStore(t)
+	resources := map[string]*submitterResource{
+		"resource-1": {ID: "resource-1"},
+	}
+	reloaded := false
+	notified := false
+	submitter := orchestration.NewSubmitter(orchestration.SubmitterConfig[*submitterResource, string, string, *memoryStore]{
+		Transaction: func(ctx context.Context, fn func(context.Context, *memoryStore) error) error {
+			return fn(ctx, jobStore)
+		},
+		Resource: orchestration.ResourceStore[*submitterResource, string, *memoryStore]{
+			Get: func(_ context.Context, _ *memoryStore, id string) (*submitterResource, error) {
+				return resources[id].copy(), nil
+			},
+			Create: func(_ context.Context, _ *memoryStore, resource *submitterResource) error {
+				resources[resource.ID] = resource.copy()
+				return nil
+			},
+			Update: func(_ context.Context, _ *memoryStore, resource *submitterResource) error {
+				resources[resource.ID] = resource.copy()
+				return nil
+			},
+			ID: func(resource *submitterResource) string {
+				return resource.ID
+			},
+			Reload: func(_ context.Context, id string) (*submitterResource, error) {
+				reloaded = true
+				resource := resources[id].copy()
+				resource.Reloaded = true
+				return resource, nil
+			},
+		},
+		Payload: func(resource *submitterResource) orchestration.Payload {
+			return simplePayload{TypeName: testTypeA, ResourceT: "resource", ResourceI: resource.ID}
+		},
+		QueueConfig: orchestration.QueueConfig{DefaultMaxAttempts: 1},
+		Notify: func(context.Context) {
+			notified = true
+		},
+	})
+
+	accepted, err := submitter.Submit(ctx, "resource-1", "start", func(resource *submitterResource) {
+		resource.Value = "mutated"
+	})
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	if !accepted.Reloaded || !reloaded {
+		t.Fatalf("accepted resource was not reloaded: %#v", accepted)
+	}
+	if !notified {
+		t.Fatal("expected submitter notify after job creation")
+	}
+	stored := resources["resource-1"]
+	if stored.Generation != 1 || stored.Operation != "start" || stored.Value != "mutated" || stored.LastJobID == nil {
+		t.Fatalf("stored resource did not receive lifecycle update: %#v", stored)
+	}
+	job, err := jobStore.GetJob(ctx, *stored.LastJobID)
+	if err != nil {
+		t.Fatalf("get lifecycle job: %v", err)
+	}
+	if job.Resource != (orchestration.Resource{Type: "resource", ID: "resource-1"}) {
+		t.Fatalf("job resource = %#v", job.Resource)
 	}
 }
 
