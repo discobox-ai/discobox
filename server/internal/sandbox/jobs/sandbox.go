@@ -42,10 +42,6 @@ func NewSandboxReconcileExecutor(reconciler SandboxReconciler) *SandboxReconcile
 	return &SandboxReconcileExecutor{reconciler: reconciler}
 }
 
-func (e *SandboxReconcileExecutor) Type() orchestration.Type {
-	return SandboxReconcileType
-}
-
 func (e *SandboxReconcileExecutor) AssertGeneration(ctx context.Context, job *orchestration.Job) error {
 	payload, err := decodeSandboxReconcilePayload(job)
 	if err != nil {
@@ -54,12 +50,12 @@ func (e *SandboxReconcileExecutor) AssertGeneration(ctx context.Context, job *or
 	return e.reconciler.AssertSandboxGeneration(ctx, payload.ProjectID, payload.SandboxID, payload.Generation)
 }
 
-func (e *SandboxReconcileExecutor) Execute(ctx context.Context, job *orchestration.Job) error {
+func (e *SandboxReconcileExecutor) Execute(ctx context.Context, job *orchestration.Job) (orchestration.JobResult, error) {
 	payload, err := decodeSandboxReconcilePayload(job)
 	if err != nil {
-		return err
+		return orchestration.JobResult{}, err
 	}
-	return e.reconciler.ReconcileSandboxJob(ctx, payload.ProjectID, payload.SandboxID, job.ID, payload.Generation)
+	return orchestration.JobResult{}, e.reconciler.ReconcileSandboxJob(ctx, payload.ProjectID, payload.SandboxID, job.ID, payload.Generation)
 }
 
 func decodeSandboxReconcilePayload(job *orchestration.Job) (SandboxReconcilePayload, error) {

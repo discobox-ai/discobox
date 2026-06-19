@@ -549,7 +549,7 @@ func TestJobGetCommandShowsError(t *testing.T) {
 			t.Fatalf("path = %q, want project job path", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"job-1","type":"worker.reconcile","status":"failed","attempts":1,"maxAttempts":1,"error":"container exited","resourceType":"worker","resourceId":"worker-1","scheduledAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		_, _ = w.Write([]byte(`{"id":"job-1","type":"worker.reconcile","status":"failed","attempts":1,"maxAttempts":1,"error":"container exited","message":"worker container exited","metadata":{"containerId":"abc123"},"resourceType":"worker","resourceId":"worker-1","scheduledAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 	}))
 	t.Cleanup(server.Close)
 
@@ -562,7 +562,7 @@ func TestJobGetCommandShowsError(t *testing.T) {
 		t.Fatalf("execute job get: %v", err)
 	}
 	output := out.String()
-	for _, want := range []string{"FIELD", "job-1", "failed", "worker/worker-1", "ERROR", "container exited"} {
+	for _, want := range []string{"FIELD", "job-1", "failed", "worker/worker-1", "MESSAGE", "worker container exited", "METADATA", `"containerId":"abc123"`, "ERROR", "container exited"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("job output = %q, want %q", output, want)
 		}

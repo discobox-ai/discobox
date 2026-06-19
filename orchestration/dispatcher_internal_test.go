@@ -124,15 +124,15 @@ func (s *missingExecutorStore) ClaimJob(context.Context, []Type, string) (*Job, 
 	return nil, errors.New("not implemented")
 }
 
-func (s *missingExecutorStore) CompleteJob(context.Context, string) error {
+func (s *missingExecutorStore) CompleteJob(context.Context, string, JobResult) error {
 	return errors.New("not implemented")
 }
 
-func (s *missingExecutorStore) CancelJob(context.Context, string, string) error {
+func (s *missingExecutorStore) CancelJob(context.Context, string, JobResult) error {
 	return errors.New("not implemented")
 }
 
-func (s *missingExecutorStore) FailJob(_ context.Context, id string, message string, _ time.Duration) error {
+func (s *missingExecutorStore) FailJob(_ context.Context, id string, message string, _ JobResult, _ time.Duration) error {
 	s.failedID = id
 	s.message = message
 	return nil

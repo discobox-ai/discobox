@@ -61,6 +61,11 @@ Observed-generation updates are resource-specific and remain the reconciler's
 responsibility. Some reconcilers may complete a job without treating the payload
 generation as fully observed.
 
+Executors return `JobResult` plus `error`. The dispatcher persists result
+message and metadata on completed, failed, and canceled jobs. The `error` field
+remains the failure/debug channel and is not overloaded with successful result
+data.
+
 Dispatch remains resource-serialized: multiple pending jobs may exist for the
 same resource, but the dispatcher must not run two jobs for that resource at the
 same time.

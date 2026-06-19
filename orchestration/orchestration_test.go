@@ -554,7 +554,7 @@ func TestStoreFailJobRetriesThenFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("claim: %v", err)
 	}
-	if err := store.FailJob(ctx, claimed.ID, "try again", 0); err != nil {
+	if err := store.FailJob(ctx, claimed.ID, "try again", orchestration.JobResult{}, 0); err != nil {
 		t.Fatalf("fail first: %v", err)
 	}
 	retry, err := store.GetJob(ctx, job.ID)
@@ -572,7 +572,7 @@ func TestStoreFailJobRetriesThenFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("claim retry: %v", err)
 	}
-	if err := store.FailJob(ctx, claimed.ID, "done", 0); err != nil {
+	if err := store.FailJob(ctx, claimed.ID, "done", orchestration.JobResult{}, 0); err != nil {
 		t.Fatalf("fail second: %v", err)
 	}
 	failed, err := store.GetJob(ctx, job.ID)
@@ -695,14 +695,14 @@ func TestStoreLeadershipAcquireRenewTimeoutRelease(t *testing.T) {
 func TestDispatcherRegisterValidation(t *testing.T) {
 	dispatcher := newTestDispatcher(newTestStore(t))
 
-	if err := dispatcher.Register(nil); err == nil {
+	if err := dispatcher.Register(testTypeA, nil); err == nil {
 		t.Fatal("expected nil executor to be rejected")
 	}
-	exec := &recordingExecutor{jobType: testTypeA, started: make(chan string, 1)}
-	if err := dispatcher.Register(exec); err != nil {
+	exec := &recordingExecutor{started: make(chan string, 1)}
+	if err := dispatcher.Register(testTypeA, exec); err != nil {
 		t.Fatalf("register first executor: %v", err)
 	}
-	if err := dispatcher.Register(&recordingExecutor{jobType: testTypeA, started: make(chan string, 1)}); !errors.Is(err, orchestration.ErrExecutorAlreadyRegistered) {
+	if err := dispatcher.Register(testTypeA, &recordingExecutor{started: make(chan string, 1)}); !errors.Is(err, orchestration.ErrExecutorAlreadyRegistered) {
 		t.Fatalf("duplicate register error = %v, want ErrExecutorAlreadyRegistered", err)
 	}
 }
@@ -713,11 +713,10 @@ func TestDispatcherExecutesAndCompletesJob(t *testing.T) {
 	queue := orchestration.NewQueue(store, orchestration.QueueConfig{DefaultMaxAttempts: 1})
 
 	exec := &recordingExecutor{
-		jobType: testTypeA,
 		started: make(chan string, 1),
 	}
 	dispatcher := newTestDispatcher(store)
-	if err := dispatcher.Register(exec); err != nil {
+	if err := dispatcher.Register(testTypeA, exec); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	queue.SetNotifyFunc(dispatcher.NotifyNewJob)
@@ -734,6 +733,17 @@ func TestDispatcherExecutesAndCompletesJob(t *testing.T) {
 	}
 	waitForStarted(t, exec.started)
 	waitForStatus(t, store, job.ID, orchestration.StatusCompleted)
+
+	stored, err := store.GetJob(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("get completed job: %v", err)
+	}
+	if stored.Message == nil || *stored.Message != "completed" {
+		t.Fatalf("message = %v, want completed", stored.Message)
+	}
+	if string(stored.Metadata) != `{"ok":true}` {
+		t.Fatalf("metadata = %s, want ok metadata", stored.Metadata)
+	}
 }
 
 func TestDispatcherLifecycleIsIdempotent(t *testing.T) {
@@ -770,7 +780,6 @@ func TestDispatcherJobTimeoutFailsJob(t *testing.T) {
 	queue := orchestration.NewQueue(store, orchestration.QueueConfig{DefaultMaxAttempts: 1})
 
 	exec := &blockingExecutor{
-		jobType: testTypeA,
 		started: make(chan string, 1),
 		release: make(chan struct{}),
 	}
@@ -783,7 +792,7 @@ func TestDispatcherJobTimeoutFailsJob(t *testing.T) {
 		ImmediateExecution: true,
 		DefaultConcurrency: 1,
 	})
-	if err := dispatcher.Register(exec); err != nil {
+	if err := dispatcher.Register(testTypeA, exec); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	queue.SetNotifyFunc(dispatcher.NotifyNewJob)
@@ -816,12 +825,11 @@ func TestDispatcherCanceledErrorCancelsJob(t *testing.T) {
 	queue := orchestration.NewQueue(store, orchestration.QueueConfig{DefaultMaxAttempts: 1})
 
 	exec := &recordingExecutor{
-		jobType: testTypeA,
 		started: make(chan string, 1),
 		cancel:  true,
 	}
 	dispatcher := newTestDispatcher(store)
-	if err := dispatcher.Register(exec); err != nil {
+	if err := dispatcher.Register(testTypeA, exec); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	queue.SetNotifyFunc(dispatcher.NotifyNewJob)
@@ -853,12 +861,11 @@ func TestDispatcherGenerationAssertionCancelsBeforeExecute(t *testing.T) {
 	queue := orchestration.NewQueue(store, orchestration.QueueConfig{DefaultMaxAttempts: 1})
 
 	exec := &generationAssertingExecutor{
-		jobType:   testTypeA,
 		assertErr: orchestration.Superseded("generation changed"),
 		executed:  make(chan string, 1),
 	}
 	dispatcher := newTestDispatcher(store)
-	if err := dispatcher.Register(exec); err != nil {
+	if err := dispatcher.Register(testTypeA, exec); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	queue.SetNotifyFunc(dispatcher.NotifyNewJob)
@@ -896,12 +903,11 @@ func TestDispatcherRetriesFailedJob(t *testing.T) {
 	queue := orchestration.NewQueue(store, orchestration.QueueConfig{DefaultMaxAttempts: 2})
 
 	exec := &recordingExecutor{
-		jobType:   testTypeA,
 		started:   make(chan string, 2),
 		failFirst: true,
 	}
 	dispatcher := newTestDispatcher(store)
-	if err := dispatcher.Register(exec); err != nil {
+	if err := dispatcher.Register(testTypeA, exec); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	queue.SetNotifyFunc(dispatcher.NotifyNewJob)
@@ -936,14 +942,13 @@ func TestDispatcherNotifiesTerminalObserverAfterRetryCompletes(t *testing.T) {
 
 	exec := &terminalRecordingExecutor{
 		recordingExecutor: recordingExecutor{
-			jobType:   testTypeA,
 			started:   make(chan string, 2),
 			failFirst: true,
 		},
 		terminal: make(chan orchestration.Status, 1),
 	}
 	dispatcher := newTestDispatcher(store)
-	if err := dispatcher.Register(exec); err != nil {
+	if err := dispatcher.Register(testTypeA, exec); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	queue.SetNotifyFunc(dispatcher.NotifyNewJob)
@@ -978,14 +983,13 @@ func TestDispatcherNotifiesTerminalObserverAfterExhaustedFailure(t *testing.T) {
 
 	exec := &terminalRecordingExecutor{
 		recordingExecutor: recordingExecutor{
-			jobType:   testTypeA,
 			started:   make(chan string, 1),
 			failFirst: true,
 		},
 		terminal: make(chan orchestration.Status, 1),
 	}
 	dispatcher := newTestDispatcher(store)
-	if err := dispatcher.Register(exec); err != nil {
+	if err := dispatcher.Register(testTypeA, exec); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	queue.SetNotifyFunc(dispatcher.NotifyNewJob)
@@ -1013,12 +1017,11 @@ func TestDispatcherRunsMultipleJobsWithoutResource(t *testing.T) {
 	queue := orchestration.NewQueue(store, orchestration.QueueConfig{DefaultMaxAttempts: 1})
 
 	exec := &blockingExecutor{
-		jobType: testTypeA,
 		started: make(chan string, 2),
 		release: make(chan struct{}),
 	}
 	dispatcher := newTestDispatcher(store)
-	if err := dispatcher.Register(exec, orchestration.WithConcurrency(2)); err != nil {
+	if err := dispatcher.Register(testTypeA, exec, orchestration.WithConcurrency(2)); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	queue.SetNotifyFunc(dispatcher.NotifyNewJob)
@@ -1046,12 +1049,11 @@ func TestDispatcherConcurrencyLimit(t *testing.T) {
 	queue := orchestration.NewQueue(store, orchestration.QueueConfig{DefaultMaxAttempts: 1})
 
 	exec := &blockingExecutor{
-		jobType: testTypeA,
 		started: make(chan string, 2),
 		release: make(chan struct{}),
 	}
 	dispatcher := newTestDispatcher(store)
-	if err := dispatcher.Register(exec, orchestration.WithConcurrency(1)); err != nil {
+	if err := dispatcher.Register(testTypeA, exec, orchestration.WithConcurrency(1)); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	queue.SetNotifyFunc(dispatcher.NotifyNewJob)
@@ -1133,12 +1135,11 @@ func TestDispatcherDrainAndStopDoesNotStartNewJobsAndWaits(t *testing.T) {
 	queue := orchestration.NewQueue(store, orchestration.QueueConfig{DefaultMaxAttempts: 1})
 
 	exec := &blockingExecutor{
-		jobType: testTypeA,
 		started: make(chan string, 2),
 		release: make(chan struct{}),
 	}
 	dispatcher := newTestDispatcher(store)
-	if err := dispatcher.Register(exec); err != nil {
+	if err := dispatcher.Register(testTypeA, exec); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	queue.SetNotifyFunc(dispatcher.NotifyNewJob)
@@ -1184,15 +1185,15 @@ func TestDispatcherMultiNodeOnlyLeaderExecutesJobs(t *testing.T) {
 	store := newTestStore(t)
 	queue := orchestration.NewQueue(store, orchestration.QueueConfig{DefaultMaxAttempts: 1})
 
-	leaderExec := &recordingExecutor{jobType: testTypeA, started: make(chan string, 1)}
-	standbyExec := &recordingExecutor{jobType: testTypeA, started: make(chan string, 1)}
+	leaderExec := &recordingExecutor{started: make(chan string, 1)}
+	standbyExec := &recordingExecutor{started: make(chan string, 1)}
 
 	leader := newMultiNodeDispatcher(store, "worker-1", time.Minute)
 	standby := newMultiNodeDispatcher(store, "worker-2", time.Minute)
-	if err := leader.Register(leaderExec); err != nil {
+	if err := leader.Register(testTypeA, leaderExec); err != nil {
 		t.Fatalf("register leader: %v", err)
 	}
-	if err := standby.Register(standbyExec); err != nil {
+	if err := standby.Register(testTypeA, standbyExec); err != nil {
 		t.Fatalf("register standby: %v", err)
 	}
 	if err := leader.Start(ctx); err != nil {
@@ -1226,7 +1227,7 @@ func TestDispatcherMultiNodeDrainReleasesLeadership(t *testing.T) {
 	store := newTestStore(t)
 
 	first := newMultiNodeDispatcher(store, "worker-1", time.Minute)
-	if err := first.Register(&recordingExecutor{jobType: testTypeA, started: make(chan string, 1)}); err != nil {
+	if err := first.Register(testTypeA, &recordingExecutor{started: make(chan string, 1)}); err != nil {
 		t.Fatalf("register first: %v", err)
 	}
 	if err := first.Start(ctx); err != nil {
@@ -1237,7 +1238,7 @@ func TestDispatcherMultiNodeDrainReleasesLeadership(t *testing.T) {
 	stopDispatcher(t, first)
 
 	second := newMultiNodeDispatcher(store, "worker-2", time.Minute)
-	if err := second.Register(&recordingExecutor{jobType: testTypeA, started: make(chan string, 1)}); err != nil {
+	if err := second.Register(testTypeA, &recordingExecutor{started: make(chan string, 1)}); err != nil {
 		t.Fatalf("register second: %v", err)
 	}
 	if err := second.Start(ctx); err != nil {
@@ -1253,18 +1254,17 @@ func TestDispatcherMultiNodeFailoverAfterHeartbeatTimeout(t *testing.T) {
 	queue := orchestration.NewQueue(store, orchestration.QueueConfig{DefaultMaxAttempts: 1})
 
 	leaderExec := &blockingExecutor{
-		jobType: testTypeA,
 		started: make(chan string, 1),
 		release: make(chan struct{}),
 	}
-	standbyExec := &recordingExecutor{jobType: testTypeA, started: make(chan string, 1)}
+	standbyExec := &recordingExecutor{started: make(chan string, 1)}
 
 	leader := newMultiNodeDispatcherCustom(store, "worker-1", 120*time.Millisecond, time.Hour, time.Hour)
 	standby := newMultiNodeDispatcherCustom(store, "worker-2", 120*time.Millisecond, 20*time.Millisecond, 10*time.Millisecond)
-	if err := leader.Register(leaderExec); err != nil {
+	if err := leader.Register(testTypeA, leaderExec); err != nil {
 		t.Fatalf("register leader: %v", err)
 	}
-	if err := standby.Register(standbyExec); err != nil {
+	if err := standby.Register(testTypeA, standbyExec); err != nil {
 		t.Fatalf("register standby: %v", err)
 	}
 	if err := leader.Start(ctx); err != nil {
@@ -1304,23 +1304,19 @@ func TestDispatcherMultiNodeFailoverAfterHeartbeatTimeout(t *testing.T) {
 }
 
 type recordingExecutor struct {
-	jobType   orchestration.Type
 	started   chan string
 	failFirst bool
 	cancel    bool
+	result    orchestration.JobResult
 	mu        sync.Mutex
 	calls     int
 }
 
-func (e *recordingExecutor) Type() orchestration.Type {
-	return e.jobType
-}
-
-func (e *recordingExecutor) Execute(ctx context.Context, job *orchestration.Job) error {
+func (e *recordingExecutor) Execute(ctx context.Context, job *orchestration.Job) (orchestration.JobResult, error) {
 	select {
 	case e.started <- job.ID:
 	case <-ctx.Done():
-		return ctx.Err()
+		return orchestration.JobResult{}, ctx.Err()
 	}
 
 	e.mu.Lock()
@@ -1329,12 +1325,15 @@ func (e *recordingExecutor) Execute(ctx context.Context, job *orchestration.Job)
 	e.mu.Unlock()
 
 	if e.failFirst && call == 1 {
-		return fmt.Errorf("fail first")
+		return orchestration.JobResult{}, fmt.Errorf("fail first")
 	}
 	if e.cancel {
-		return orchestration.Canceled("superseded")
+		return orchestration.JobResult{}, orchestration.Canceled("superseded")
 	}
-	return nil
+	if e.result.Message != nil || e.result.Metadata != nil {
+		return e.result, nil
+	}
+	return orchestration.JobResult{Message: ptr("completed"), Metadata: []byte(`{"ok":true}`)}, nil
 }
 
 type terminalRecordingExecutor struct {
@@ -1351,50 +1350,40 @@ func (e *terminalRecordingExecutor) OnTerminal(_ context.Context, job *orchestra
 }
 
 type generationAssertingExecutor struct {
-	jobType   orchestration.Type
 	assertErr error
 	executed  chan string
-}
-
-func (e *generationAssertingExecutor) Type() orchestration.Type {
-	return e.jobType
 }
 
 func (e *generationAssertingExecutor) AssertGeneration(context.Context, *orchestration.Job) error {
 	return e.assertErr
 }
 
-func (e *generationAssertingExecutor) Execute(ctx context.Context, job *orchestration.Job) error {
+func (e *generationAssertingExecutor) Execute(ctx context.Context, job *orchestration.Job) (orchestration.JobResult, error) {
 	select {
 	case e.executed <- job.ID:
 	case <-ctx.Done():
-		return ctx.Err()
+		return orchestration.JobResult{}, ctx.Err()
 	}
-	return nil
+	return orchestration.JobResult{}, nil
 }
 
 type blockingExecutor struct {
-	jobType orchestration.Type
 	started chan string
 	release chan struct{}
 }
 
-func (e *blockingExecutor) Type() orchestration.Type {
-	return e.jobType
-}
-
-func (e *blockingExecutor) Execute(ctx context.Context, job *orchestration.Job) error {
+func (e *blockingExecutor) Execute(ctx context.Context, job *orchestration.Job) (orchestration.JobResult, error) {
 	select {
 	case e.started <- job.ID:
 	case <-ctx.Done():
-		return ctx.Err()
+		return orchestration.JobResult{}, ctx.Err()
 	}
 
 	select {
 	case <-e.release:
-		return nil
+		return orchestration.JobResult{}, nil
 	case <-ctx.Done():
-		return ctx.Err()
+		return orchestration.JobResult{}, ctx.Err()
 	}
 }
 
@@ -1713,15 +1702,19 @@ func (s *memoryStore) ClaimJob(_ context.Context, types []orchestration.Type, wo
 	return cloneJob(best), nil
 }
 
-func (s *memoryStore) CompleteJob(_ context.Context, id string) error {
-	return s.finish(id, orchestration.StatusCompleted, "")
+func (s *memoryStore) CompleteJob(_ context.Context, id string, result orchestration.JobResult) error {
+	return s.finish(id, orchestration.StatusCompleted, "", result)
 }
 
-func (s *memoryStore) CancelJob(_ context.Context, id string, message string) error {
-	return s.finish(id, orchestration.StatusCanceled, message)
+func (s *memoryStore) CancelJob(_ context.Context, id string, result orchestration.JobResult) error {
+	message := ""
+	if result.Message != nil {
+		message = *result.Message
+	}
+	return s.finish(id, orchestration.StatusCanceled, message, result)
 }
 
-func (s *memoryStore) FailJob(_ context.Context, id string, message string, retryBackoff time.Duration) error {
+func (s *memoryStore) FailJob(_ context.Context, id string, message string, result orchestration.JobResult, retryBackoff time.Duration) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	job := s.jobs[id]
@@ -1730,6 +1723,8 @@ func (s *memoryStore) FailJob(_ context.Context, id string, message string, retr
 	}
 	now := time.Now()
 	job.Error = &message
+	job.Message = result.Message
+	job.Metadata = result.Metadata
 	if job.Attempts < job.MaxAttempts {
 		job.Status = orchestration.StatusPending
 		job.WorkerID = nil
@@ -1792,7 +1787,7 @@ func (s *memoryStore) ReleaseLeadership(_ context.Context, workerID string) erro
 	return nil
 }
 
-func (s *memoryStore) finish(id string, status orchestration.Status, message string) error {
+func (s *memoryStore) finish(id string, status orchestration.Status, message string, result orchestration.JobResult) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	job := s.jobs[id]
@@ -1804,6 +1799,8 @@ func (s *memoryStore) finish(id string, status orchestration.Status, message str
 	if message != "" {
 		job.Error = &message
 	}
+	job.Message = result.Message
+	job.Metadata = result.Metadata
 	job.CompletedAt = &now
 	job.UpdatedAt = now
 	delete(s.active, memoryResourceKey(job.Resource))
@@ -1812,6 +1809,10 @@ func (s *memoryStore) finish(id string, status orchestration.Status, message str
 
 func memoryResourceKey(resource orchestration.Resource) string {
 	return resource.Type + "\x00" + resource.ID
+}
+
+func ptr[T any](value T) *T {
+	return &value
 }
 
 func cloneJob(job *orchestration.Job) *orchestration.Job {
@@ -1825,6 +1826,13 @@ func cloneJob(job *orchestration.Job) *orchestration.Job {
 	if job.Error != nil {
 		v := *job.Error
 		cp.Error = &v
+	}
+	if job.Message != nil {
+		v := *job.Message
+		cp.Message = &v
+	}
+	if job.Metadata != nil {
+		cp.Metadata = append([]byte(nil), job.Metadata...)
 	}
 	if job.WorkerID != nil {
 		v := *job.WorkerID

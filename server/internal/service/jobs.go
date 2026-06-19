@@ -66,6 +66,8 @@ func jobFromOrchestration(job orchestration.Job) model.Job {
 		Attempts:     job.Attempts,
 		MaxAttempts:  job.MaxAttempts,
 		Error:        job.Error,
+		Message:      job.Message,
+		Metadata:     job.Metadata,
 		WorkerID:     job.WorkerID,
 		ResourceType: job.Resource.Type,
 		ResourceID:   job.Resource.ID,

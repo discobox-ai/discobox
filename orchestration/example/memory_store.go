@@ -169,15 +169,19 @@ func (s *memoryStore) ClaimJob(_ context.Context, types []orchestration.Type, wo
 	return cloneJob(best), nil
 }
 
-func (s *memoryStore) CompleteJob(_ context.Context, id string) error {
-	return s.finish(id, orchestration.StatusCompleted, "")
+func (s *memoryStore) CompleteJob(_ context.Context, id string, result orchestration.JobResult) error {
+	return s.finish(id, orchestration.StatusCompleted, "", result)
 }
 
-func (s *memoryStore) CancelJob(_ context.Context, id string, message string) error {
-	return s.finish(id, orchestration.StatusCanceled, message)
+func (s *memoryStore) CancelJob(_ context.Context, id string, result orchestration.JobResult) error {
+	message := ""
+	if result.Message != nil {
+		message = *result.Message
+	}
+	return s.finish(id, orchestration.StatusCanceled, message, result)
 }
 
-func (s *memoryStore) FailJob(_ context.Context, id string, message string, retryBackoff time.Duration) error {
+func (s *memoryStore) FailJob(_ context.Context, id string, message string, result orchestration.JobResult, retryBackoff time.Duration) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	job := s.jobs[id]
@@ -187,6 +191,8 @@ func (s *memoryStore) FailJob(_ context.Context, id string, message string, retr
 
 	now := time.Now()
 	job.Error = &message
+	job.Message = result.Message
+	job.Metadata = result.Metadata
 	if job.Attempts < job.MaxAttempts {
 		job.Status = orchestration.StatusPending
 		job.WorkerID = nil
@@ -216,7 +222,7 @@ func (s *memoryStore) ReleaseLeadership(_ context.Context, workerID string) erro
 	return nil
 }
 
-func (s *memoryStore) finish(id string, status orchestration.Status, message string) error {
+func (s *memoryStore) finish(id string, status orchestration.Status, message string, result orchestration.JobResult) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	job := s.jobs[id]
@@ -228,6 +234,8 @@ func (s *memoryStore) finish(id string, status orchestration.Status, message str
 	if message != "" {
 		job.Error = &message
 	}
+	job.Message = result.Message
+	job.Metadata = result.Metadata
 	job.CompletedAt = &now
 	job.UpdatedAt = now
 	delete(s.active, memoryResourceKey(job.Resource))

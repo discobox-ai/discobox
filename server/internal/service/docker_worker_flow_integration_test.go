@@ -76,7 +76,7 @@ func TestDockerProviderWorkerCreateFlowE2E(t *testing.T) {
 		DefaultConcurrency: 2,
 	})
 	svc := service.New(appStore, queueConfig, func(context.Context) { dispatcher.NotifyNewJob() }, broker)
-	if err := dispatcher.Register(jobs.NewWorkerReconcileExecutor(svc.NewWorkerReconciler())); err != nil {
+	if err := dispatcher.Register(jobs.WorkerReconcileType, jobs.NewWorkerReconcileExecutor(svc.NewWorkerReconciler())); err != nil {
 		t.Fatalf("register worker executor: %v", err)
 	}
 	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {

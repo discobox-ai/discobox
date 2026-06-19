@@ -27,6 +27,7 @@ func NewApp() (*App, error) {
 	})
 
 	if err := dispatcher.Register(
+		SandboxReconcileType,
 		NewSandboxReconcileExecutor(store),
 		orchestration.WithConcurrency(2),
 	); err != nil {

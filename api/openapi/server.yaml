@@ -449,6 +449,11 @@ components:
                 error:
                     description: Latest execution or dispatch error
                     type: string
+                message:
+                    description: Human-readable execution result or operator note
+                    type: string
+                metadata:
+                    description: Structured execution result metadata
                 workerId:
                     description: Dispatcher worker that claimed the current or last attempt
                     type: string

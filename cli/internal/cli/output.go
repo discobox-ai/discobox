@@ -215,6 +215,7 @@ func (a *App) writeJobs(cmd *cobra.Command, jobs []apiclientgen.Job) error {
 	rows := make([][]string, 0, len(jobs))
 	errors := make([]string, 0, len(jobs))
 	for _, job := range jobs {
+		message := truncateTableValue(job.Message.Or(""), 40)
 		rows = append(rows, []string{
 			shortID(job.ID),
 			job.Type,
@@ -223,14 +224,15 @@ func (a *App) writeJobs(cmd *cobra.Command, jobs []apiclientgen.Job) error {
 			job.ResourceType + "/" + shortID(job.ResourceId),
 			formatTime(job.CreatedAt),
 			formatFutureTime(now, job.ScheduledAt),
+			message,
 		})
 		errors = append(errors, compactTableValue(job.Error.Or("")))
 	}
 	errorWidth := jobsTableErrorWidth(terminalWidth(cmd.OutOrStdout()), rows)
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tTYPE\tSTATUS\tATTEMPTS\tRESOURCE\tCREATED\tNEXT\tERROR")
+	fmt.Fprintln(tw, "ID\tTYPE\tSTATUS\tATTEMPTS\tRESOURCE\tCREATED\tNEXT\tMESSAGE\tERROR")
 	for i, row := range rows {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			row[0],
 			row[1],
 			row[2],
@@ -238,6 +240,7 @@ func (a *App) writeJobs(cmd *cobra.Command, jobs []apiclientgen.Job) error {
 			row[4],
 			row[5],
 			row[6],
+			row[7],
 			truncateTableValue(errors[i], errorWidth),
 		)
 	}
@@ -275,6 +278,12 @@ func (a *App) writeJob(cmd *cobra.Command, job *apiclientgen.Job) error {
 	}
 	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(job.CreatedAt))
 	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(job.UpdatedAt))
+	if job.Message.Set && job.Message.Value != "" {
+		fmt.Fprintf(tw, "MESSAGE\t%s\n", job.Message.Value)
+	}
+	if metadata := rawTableValue(job.Metadata); metadata != "" {
+		fmt.Fprintf(tw, "METADATA\t%s\n", metadata)
+	}
 	if job.Error.Set && job.Error.Value != "" {
 		fmt.Fprintf(tw, "ERROR\t%s\n", job.Error.Value)
 	}
@@ -377,6 +386,14 @@ func truncateTableValue(value string, maxTableValueLength int) string {
 	return string(runes[:maxTableValueLength-1]) + "…"
 }
 
+func rawTableValue(value []byte) string {
+	value = []byte(strings.TrimSpace(string(value)))
+	if len(value) == 0 || string(value) == "null" {
+		return ""
+	}
+	return string(value)
+}
+
 func jobsTableErrorWidth(terminalColumns int, rows [][]string) int {
 	const (
 		defaultErrorWidth = 80
@@ -394,6 +411,7 @@ func jobsTableErrorWidth(terminalColumns int, rows [][]string) int {
 		len("RESOURCE"),
 		len("CREATED"),
 		len("NEXT"),
+		len("MESSAGE"),
 	}
 	for _, row := range rows {
 		for i, value := range row {
@@ -406,8 +424,8 @@ func jobsTableErrorWidth(terminalColumns int, rows [][]string) int {
 	for _, width := range widths {
 		used += width
 	}
-	// Eight table columns produce seven gaps in tabwriter's padded output.
-	used += separatorWidth * 7
+	// Nine table columns produce eight gaps in tabwriter's padded output.
+	used += separatorWidth * 8
 	available := terminalColumns - used
 	if available < minErrorWidth {
 		return minErrorWidth

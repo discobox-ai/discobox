@@ -294,7 +294,7 @@ func (s *Store) ClaimJob(ctx context.Context, types []orchestration.Type, worker
 }
 
 // CompleteJob marks a job completed.
-func (s *Store) CompleteJob(ctx context.Context, id string) error {
+func (s *Store) CompleteJob(ctx context.Context, id string, result orchestration.JobResult) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err
@@ -305,13 +305,15 @@ func (s *Store) CompleteJob(ctx context.Context, id string) error {
 		Updates(map[string]any{
 			"status":              orchestration.StatusCompleted,
 			"active_resource_key": nil,
+			"message":             result.Message,
+			"metadata":            result.Metadata,
 			"completed_at":        now,
 			"updated_at":          now,
 		}).Error
 }
 
 // CancelJob marks a job canceled.
-func (s *Store) CancelJob(ctx context.Context, id string, message string) error {
+func (s *Store) CancelJob(ctx context.Context, id string, result orchestration.JobResult) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err
@@ -322,14 +324,16 @@ func (s *Store) CancelJob(ctx context.Context, id string, message string) error 
 		Updates(map[string]any{
 			"status":              orchestration.StatusCanceled,
 			"active_resource_key": nil,
-			"error":               message,
+			"error":               result.Message,
+			"message":             result.Message,
+			"metadata":            result.Metadata,
 			"completed_at":        now,
 			"updated_at":          now,
 		}).Error
 }
 
 // FailJob records a failed attempt and requeues when attempts remain.
-func (s *Store) FailJob(ctx context.Context, id string, message string, retryBackoff time.Duration) error {
+func (s *Store) FailJob(ctx context.Context, id string, message string, result orchestration.JobResult, retryBackoff time.Duration) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return err
@@ -356,6 +360,8 @@ func (s *Store) FailJob(ctx context.Context, id string, message string, retryBac
 					"status":              orchestration.StatusPending,
 					"active_resource_key": activeResourceKey,
 					"error":               message,
+					"message":             result.Message,
+					"metadata":            result.Metadata,
 					"worker_id":           nil,
 					"started_at":          nil,
 					"scheduled_at":        now.Add(retryBackoff),
@@ -369,6 +375,8 @@ func (s *Store) FailJob(ctx context.Context, id string, message string, retryBac
 				"status":              orchestration.StatusFailed,
 				"active_resource_key": nil,
 				"error":               message,
+				"message":             result.Message,
+				"metadata":            result.Metadata,
 				"completed_at":        now,
 				"updated_at":          now,
 			}).Error
@@ -462,6 +470,8 @@ type jobRow struct {
 	Attempts          int                  `gorm:"not null;default:0"`
 	MaxAttempts       int                  `gorm:"column:max_attempts;not null;default:1"`
 	Error             *string              `gorm:"type:text"`
+	Message           *string              `gorm:"type:text"`
+	Metadata          json.RawMessage      `gorm:"type:text"`
 	WorkerID          *string              `gorm:"column:worker_id;type:text"`
 	ScheduledAt       time.Time            `gorm:"column:scheduled_at;not null;index:idx_jobqueue_ready,priority:3"`
 	StartedAt         *time.Time           `gorm:"column:started_at"`
@@ -488,6 +498,8 @@ func rowFromJob(job *orchestration.Job, projectID string, activeResourceKey *str
 		Attempts:          job.Attempts,
 		MaxAttempts:       job.MaxAttempts,
 		Error:             job.Error,
+		Message:           job.Message,
+		Metadata:          job.Metadata,
 		WorkerID:          job.WorkerID,
 		ScheduledAt:       job.ScheduledAt,
 		StartedAt:         job.StartedAt,
@@ -555,6 +567,8 @@ func (r jobRow) toJob() orchestration.Job {
 		Attempts:    r.Attempts,
 		MaxAttempts: r.MaxAttempts,
 		Error:       r.Error,
+		Message:     r.Message,
+		Metadata:    r.Metadata,
 		WorkerID:    r.WorkerID,
 		ScheduledAt: r.ScheduledAt,
 		StartedAt:   r.StartedAt,

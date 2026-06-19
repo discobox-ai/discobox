@@ -100,7 +100,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	})
 	svc := service.New(appStore, queueConfig, func(context.Context) { dispatcher.NotifyNewJob() }, broker)
 	reconciler := sandbox.NewSandboxReconciler(appStore)
-	if err := dispatcher.Register(jobs.NewSandboxReconcileExecutor(reconciler)); err != nil {
+	if err := dispatcher.Register(jobs.SandboxReconcileType, jobs.NewSandboxReconcileExecutor(reconciler)); err != nil {
 		t.Fatalf("register executor: %v", err)
 	}
 

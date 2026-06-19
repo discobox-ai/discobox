@@ -891,6 +891,10 @@ type Job struct {
 	MaxAttempts int `json:"maxAttempts"`
 	// Latest execution or dispatch error.
 	Error OptString `json:"error"`
+	// Human-readable execution result or operator note.
+	Message OptString `json:"message"`
+	// Structured execution result metadata.
+	Metadata jx.Raw `json:"metadata"`
 	// Dispatcher worker that claimed the current or last attempt.
 	WorkerId OptString `json:"workerId"`
 	// Resource type this job acts on.
@@ -937,6 +941,16 @@ func (s *Job) GetMaxAttempts() int {
 // GetError returns the value of Error.
 func (s *Job) GetError() OptString {
 	return s.Error
+}
+
+// GetMessage returns the value of Message.
+func (s *Job) GetMessage() OptString {
+	return s.Message
+}
+
+// GetMetadata returns the value of Metadata.
+func (s *Job) GetMetadata() jx.Raw {
+	return s.Metadata
 }
 
 // GetWorkerId returns the value of WorkerId.
@@ -1007,6 +1021,16 @@ func (s *Job) SetMaxAttempts(val int) {
 // SetError sets the value of Error.
 func (s *Job) SetError(val OptString) {
 	s.Error = val
+}
+
+// SetMessage sets the value of Message.
+func (s *Job) SetMessage(val OptString) {
+	s.Message = val
+}
+
+// SetMetadata sets the value of Metadata.
+func (s *Job) SetMetadata(val jx.Raw) {
+	s.Metadata = val
 }
 
 // SetWorkerId sets the value of WorkerId.

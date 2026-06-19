@@ -76,6 +76,22 @@ Payloads may implement optional interfaces:
 - `MaxAttempter`: overrides maximum execution attempts.
 - `Schedulable`: delays execution until a specific time.
 
+## Executors
+
+Executors handle one application-owned job type:
+
+```go
+type Executor interface {
+    Execute(context.Context, *orchestration.Job) (orchestration.JobResult, error)
+}
+```
+
+`JobResult.Message` is a human-readable result note for operators.
+`JobResult.Metadata` is structured JSON result data. The dispatcher persists the
+result when a job completes, fails, or is canceled. Returning an error still
+controls retry/failure behavior; the job's `error` field remains separate from
+result message and metadata.
+
 ## Queue
 
 `Queue.Enqueue` accepts any `Payload`, applies defaults, serializes the payload
@@ -112,16 +128,12 @@ type SandboxProvisionExecutor struct {
     sandboxes SandboxService
 }
 
-func (e *SandboxProvisionExecutor) Type() orchestration.Type {
-    return TypeSandboxProvision
-}
-
-func (e *SandboxProvisionExecutor) Execute(ctx context.Context, job *orchestration.Job) error {
+func (e *SandboxProvisionExecutor) Execute(ctx context.Context, job *orchestration.Job) (orchestration.JobResult, error) {
     var payload SandboxProvisionPayload
     if err := json.Unmarshal(job.Payload, &payload); err != nil {
-        return err
+        return orchestration.JobResult{}, err
     }
-    return e.sandboxes.Provision(ctx, payload.ProjectID, payload.SandboxID)
+    return orchestration.JobResult{}, e.sandboxes.Provision(ctx, payload.ProjectID, payload.SandboxID)
 }
 ```
 
@@ -145,12 +157,13 @@ dispatcher := orchestration.NewDispatcher(store, orchestration.DispatcherConfig{
 })
 
 err := dispatcher.Register(
+    TypeSandboxProvision,
     NewSandboxProvisionExecutor(sandboxService),
     orchestration.WithConcurrency(2),
 )
 ```
 
-`WithConcurrency` limits how many jobs of that executor's type may run at the
+`WithConcurrency` limits how many jobs of that registered type may run at the
 same time on one dispatcher. Resource serialization still applies, so two jobs
 for the same resource should not run concurrently even if concurrency is greater
 than one.

@@ -43,10 +43,6 @@ func NewWorkerReconcileExecutor(reconciler WorkerReconciler, terminalHandlers ..
 	return &WorkerReconcileExecutor{reconciler: reconciler, terminalHandlers: terminalHandlers}
 }
 
-func (e *WorkerReconcileExecutor) Type() orchestration.Type {
-	return WorkerReconcileType
-}
-
 func (e *WorkerReconcileExecutor) AssertGeneration(ctx context.Context, job *orchestration.Job) error {
 	payload, err := decodeWorkerReconcilePayload(job)
 	if err != nil {
@@ -55,12 +51,12 @@ func (e *WorkerReconcileExecutor) AssertGeneration(ctx context.Context, job *orc
 	return e.reconciler.AssertWorkerGeneration(ctx, payload.ProjectID, payload.ProviderID, payload.WorkerID, payload.Generation)
 }
 
-func (e *WorkerReconcileExecutor) Execute(ctx context.Context, job *orchestration.Job) error {
+func (e *WorkerReconcileExecutor) Execute(ctx context.Context, job *orchestration.Job) (orchestration.JobResult, error) {
 	payload, err := decodeWorkerReconcilePayload(job)
 	if err != nil {
-		return err
+		return orchestration.JobResult{}, err
 	}
-	return e.reconciler.ReconcileWorkerJob(ctx, payload.ProjectID, payload.ProviderID, payload.WorkerID, job.ID, payload.Generation)
+	return orchestration.JobResult{}, e.reconciler.ReconcileWorkerJob(ctx, payload.ProjectID, payload.ProviderID, payload.WorkerID, job.ID, payload.Generation)
 }
 
 func (e *WorkerReconcileExecutor) OnTerminal(ctx context.Context, job *orchestration.Job) error {

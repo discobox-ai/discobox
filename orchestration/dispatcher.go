@@ -120,11 +120,13 @@ func NewDispatcher(store Store, cfg DispatcherConfig) *Dispatcher {
 // Exactly one executor may be registered per Type. Register should return
 // ErrExecutorAlreadyRegistered when another executor already handles the same
 // type. Registration is expected to happen before Start.
-func (d *Dispatcher) Register(executor Executor, opts ...ExecutorOption) error {
+func (d *Dispatcher) Register(jobType Type, executor Executor, opts ...ExecutorOption) error {
+	if jobType == "" {
+		return errors.New("job type is empty")
+	}
 	if executor == nil {
 		return errors.New("executor is nil")
 	}
-	jobType := executor.Type()
 	if _, ok := d.executors[jobType]; ok {
 		return ErrExecutorAlreadyRegistered
 	}
@@ -329,7 +331,8 @@ func (d *Dispatcher) executeJob(job *Job) {
 	}
 	executor, ok := d.executors[job.Type]
 	if !ok {
-		_ = d.store.FailJob(jobCtx, job.ID, ErrExecutorNotRegistered.Error(), d.cfg.RetryBackoff)
+		errMessage := ErrExecutorNotRegistered.Error()
+		_ = d.store.FailJob(jobCtx, job.ID, errMessage, JobMessage(errMessage), d.cfg.RetryBackoff)
 		return
 	}
 
@@ -338,28 +341,30 @@ func (d *Dispatcher) executeJob(job *Job) {
 
 	if assertor, ok := executor.(GenerationAssertor); ok {
 		if err := assertor.AssertGeneration(ctx, job); err != nil {
-			d.finishErroredJob(ctx, executor, job, err)
+			d.finishErroredJob(ctx, executor, job, JobResult{}, err)
 			return
 		}
 	}
 
-	if err := executor.Execute(ctx, job); err != nil {
-		d.finishErroredJob(ctx, executor, job, err)
+	result, err := executor.Execute(ctx, job)
+	if err != nil {
+		d.finishErroredJob(ctx, executor, job, result, err)
 		return
 	}
-	if err := d.store.CompleteJob(ctx, job.ID); err == nil {
+	if err := d.store.CompleteJob(ctx, job.ID, result); err == nil {
 		d.notifyTerminal(ctx, executor, job.ID)
 	}
 }
 
-func (d *Dispatcher) finishErroredJob(ctx context.Context, executor Executor, job *Job, err error) {
+func (d *Dispatcher) finishErroredJob(ctx context.Context, executor Executor, job *Job, result JobResult, err error) {
+	result = result.withDefaultMessage(err.Error())
 	if errors.Is(err, ErrJobCanceled) {
-		if err := d.store.CancelJob(ctx, job.ID, err.Error()); err == nil {
+		if err := d.store.CancelJob(ctx, job.ID, result); err == nil {
 			d.notifyTerminal(ctx, executor, job.ID)
 		}
 		return
 	}
-	if err := d.store.FailJob(ctx, job.ID, err.Error(), d.cfg.RetryBackoff); err == nil {
+	if err := d.store.FailJob(ctx, job.ID, err.Error(), result, d.cfg.RetryBackoff); err == nil {
 		d.notifyTerminal(ctx, executor, job.ID)
 	}
 }

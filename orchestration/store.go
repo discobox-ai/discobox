@@ -38,16 +38,16 @@ type Store interface {
 	// type.
 	ClaimJob(ctx context.Context, types []Type, workerID string) (*Job, error)
 
-	// CompleteJob marks a running job completed.
-	CompleteJob(ctx context.Context, id string) error
+	// CompleteJob marks a running job completed and stores its result.
+	CompleteJob(ctx context.Context, id string, result JobResult) error
 
 	// CancelJob marks a running job canceled without retrying it.
-	CancelJob(ctx context.Context, id string, message string) error
+	CancelJob(ctx context.Context, id string, result JobResult) error
 
 	// FailJob records an execution error. If attempts remain, it should requeue
 	// the job as pending with a retry delay of retryBackoff. Otherwise it should
 	// mark the job failed.
-	FailJob(ctx context.Context, id string, message string, retryBackoff time.Duration) error
+	FailJob(ctx context.Context, id string, errMessage string, result JobResult, retryBackoff time.Duration) error
 
 	// CleanupStaleJobs resets abandoned running jobs whose StartedAt is older
 	// than staleAfter. It returns the number of jobs recovered.

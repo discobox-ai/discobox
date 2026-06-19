@@ -35,16 +35,12 @@ func NewProviderReconcileExecutor(reconciler ProviderReconciler) *ProviderReconc
 	return &ProviderReconcileExecutor{reconciler: reconciler}
 }
 
-func (e *ProviderReconcileExecutor) Type() orchestration.Type {
-	return ProviderReconcileType
-}
-
-func (e *ProviderReconcileExecutor) Execute(ctx context.Context, job *orchestration.Job) error {
+func (e *ProviderReconcileExecutor) Execute(ctx context.Context, job *orchestration.Job) (orchestration.JobResult, error) {
 	payload, err := decodeProviderReconcilePayload(job)
 	if err != nil {
-		return err
+		return orchestration.JobResult{}, err
 	}
-	return e.reconciler.ReconcileProviderJob(ctx, payload.ProjectID, payload.ProviderID, job.ID)
+	return orchestration.JobResult{}, e.reconciler.ReconcileProviderJob(ctx, payload.ProjectID, payload.ProviderID, job.ID)
 }
 
 func decodeProviderReconcilePayload(job *orchestration.Job) (ProviderReconcilePayload, error) {

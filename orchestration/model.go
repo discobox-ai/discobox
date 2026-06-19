@@ -55,6 +55,12 @@ type Job struct {
 	// Error stores the latest execution or dispatch error message.
 	Error *string `json:"error,omitempty"`
 
+	// Message stores a human-readable execution result or operator note.
+	Message *string `json:"message,omitempty"`
+
+	// Metadata stores structured execution result data.
+	Metadata json.RawMessage `json:"metadata,omitempty"`
+
 	// WorkerID identifies the dispatcher that claimed the current or last
 	// attempt.
 	WorkerID *string `json:"workerId,omitempty"`
@@ -92,6 +98,28 @@ type Job struct {
 
 	// UpdatedAt is the storage update time.
 	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// JobResult is structured output produced by one job attempt.
+type JobResult struct {
+	// Message is a human-readable result note for operators.
+	Message *string `json:"message,omitempty"`
+
+	// Metadata is structured machine-readable result data.
+	Metadata json.RawMessage `json:"metadata,omitempty"`
+}
+
+// JobMessage returns a JobResult with a human-readable message.
+func JobMessage(message string) JobResult {
+	return JobResult{Message: &message}
+}
+
+func (r JobResult) withDefaultMessage(message string) JobResult {
+	if r.Message != nil || message == "" {
+		return r
+	}
+	r.Message = &message
+	return r
 }
 
 // Leader is the durable ownership record used by multi-process dispatchers.

@@ -114,7 +114,7 @@ func TestProviderReconcileExecutorExecutesProviderReconciler(t *testing.T) {
 	}
 	job.ID = "job-1"
 
-	if err := executor.Execute(context.Background(), job); err != nil {
+	if _, err := executor.Execute(context.Background(), job); err != nil {
 		t.Fatalf("execute: %v", err)
 	}
 	if reconciler.reconcileCalls != 1 {

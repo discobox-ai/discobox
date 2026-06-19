@@ -37,19 +37,15 @@ func NewSandboxReconcileExecutor(store *memoryStore) *SandboxReconcileExecutor {
 	return &SandboxReconcileExecutor{store: store}
 }
 
-func (e *SandboxReconcileExecutor) Type() orchestration.Type {
-	return SandboxReconcileType
-}
-
-func (e *SandboxReconcileExecutor) Execute(ctx context.Context, job *orchestration.Job) error {
+func (e *SandboxReconcileExecutor) Execute(ctx context.Context, job *orchestration.Job) (orchestration.JobResult, error) {
 	var payload SandboxReconcilePayload
 	if err := json.Unmarshal(job.Payload, &payload); err != nil {
-		return fmt.Errorf("invalid sandbox reconcile payload: %w", err)
+		return orchestration.JobResult{}, fmt.Errorf("invalid sandbox reconcile payload: %w", err)
 	}
 	if payload.ProjectID == "" || payload.SandboxID == "" {
-		return fmt.Errorf("projectId and sandboxId are required")
+		return orchestration.JobResult{}, fmt.Errorf("projectId and sandboxId are required")
 	}
-	return e.reconcile(ctx, payload)
+	return orchestration.JobResult{}, e.reconcile(ctx, payload)
 }
 
 func (e *SandboxReconcileExecutor) reconcile(ctx context.Context, payload SandboxReconcilePayload) error {
