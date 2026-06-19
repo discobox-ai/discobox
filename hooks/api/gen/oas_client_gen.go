@@ -27,6 +27,12 @@ func trimTrailingSlashes(u *url.URL) {
 
 // Invoker invokes operations described by OpenAPI v3 specification.
 type Invoker interface {
+	// HooksGetSnapshot invokes hooks-get-snapshot operation.
+	//
+	// Return one workspace snapshot including patch payload.
+	//
+	// GET /snapshots/{snapshotId}
+	HooksGetSnapshot(ctx context.Context, params HooksGetSnapshotParams) (HooksGetSnapshotRes, error)
 	// HooksList invokes hooks-list operation.
 	//
 	// List discovered hooks with current status metadata.
@@ -156,6 +162,98 @@ func (c *Client) requestURL(ctx context.Context) *url.URL {
 		return c.serverURL
 	}
 	return u
+}
+
+// HooksGetSnapshot invokes hooks-get-snapshot operation.
+//
+// Return one workspace snapshot including patch payload.
+//
+// GET /snapshots/{snapshotId}
+func (c *Client) HooksGetSnapshot(ctx context.Context, params HooksGetSnapshotParams) (HooksGetSnapshotRes, error) {
+	res, err := c.sendHooksGetSnapshot(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendHooksGetSnapshot(ctx context.Context, params HooksGetSnapshotParams) (res HooksGetSnapshotRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("hooks-get-snapshot"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/snapshots/{snapshotId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, HooksGetSnapshotOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [2]string
+	pathParts[0] = "/snapshots/"
+	{
+		// Encode "snapshotId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "snapshotId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SnapshotId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeHooksGetSnapshotResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
 }
 
 // HooksList invokes hooks-list operation.

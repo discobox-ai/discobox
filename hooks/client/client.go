@@ -289,6 +289,22 @@ func (c *Client) ListWorkspaceSnapshots(ctx context.Context, opts ListOptions) (
 	return wrapped.Snapshots, nil
 }
 
+// GetWorkspaceSnapshot returns one captured workspace snapshot, including patch data.
+func (c *Client) GetWorkspaceSnapshot(ctx context.Context, snapshotID string) (*WorkspaceSnapshot, error) {
+	generated, err := c.generatedClient()
+	if err != nil {
+		return nil, err
+	}
+	snapshot, err := generated.HooksGetSnapshot(ctx, hookapigen.HooksGetSnapshotParams{SnapshotId: snapshotID})
+	if err != nil {
+		return nil, classifyError(c.socketPath, err)
+	}
+	if err := generatedResultError(snapshot); err != nil {
+		return nil, err
+	}
+	return convertGeneratedPtr[WorkspaceSnapshot](snapshot)
+}
+
 // ListQueue returns queued hook work.
 func (c *Client) ListQueue(ctx context.Context, opts ListOptions) ([]QueuedHook, error) {
 	generated, err := c.generatedClient()

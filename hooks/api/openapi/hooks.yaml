@@ -130,6 +130,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SnapshotsResponse'
+  /snapshots/{snapshotId}:
+    get:
+      operationId: hooks-get-snapshot
+      summary: Return one workspace snapshot including patch payload.
+      parameters:
+        - $ref: '#/components/parameters/SnapshotIDPath'
+      responses:
+        '200':
+          description: Workspace snapshot.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkspaceSnapshot'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /queue:
     get:
       operationId: hooks-list-queue
@@ -232,6 +247,12 @@ components:
   parameters:
     HookIDPath:
       name: hookId
+      in: path
+      required: true
+      schema:
+        type: string
+    SnapshotIDPath:
+      name: snapshotId
       in: path
       required: true
       schema:

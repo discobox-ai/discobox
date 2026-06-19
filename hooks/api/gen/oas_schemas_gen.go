@@ -77,6 +77,7 @@ func (s *ErrorResponse) SetMessage(val OptString) {
 	s.Message = val
 }
 
+func (*ErrorResponse) hooksGetSnapshotRes()      {}
 func (*ErrorResponse) hooksOutputRes()           {}
 func (*ErrorResponse) hooksRunHookRes()          {}
 func (*ErrorResponse) hooksSetHookExecutionRes() {}
@@ -1875,6 +1876,7 @@ type WorkspaceSnapshot struct {
 	ParentID          OptString          `json:"parent_id"`
 	BaseCommit        OptString          `json:"base_commit"`
 	TreeHash          OptString          `json:"tree_hash"`
+	Patch             OptString          `json:"patch"`
 	PatchBytes        int64              `json:"patch_bytes"`
 	ChangedFiles      []ChangedFile      `json:"changed_files"`
 	OmittedFiles      []SnapshotOmission `json:"omitted_files"`
@@ -1901,6 +1903,11 @@ func (s *WorkspaceSnapshot) GetBaseCommit() OptString {
 // GetTreeHash returns the value of TreeHash.
 func (s *WorkspaceSnapshot) GetTreeHash() OptString {
 	return s.TreeHash
+}
+
+// GetPatch returns the value of Patch.
+func (s *WorkspaceSnapshot) GetPatch() OptString {
+	return s.Patch
 }
 
 // GetPatchBytes returns the value of PatchBytes.
@@ -1953,6 +1960,11 @@ func (s *WorkspaceSnapshot) SetTreeHash(val OptString) {
 	s.TreeHash = val
 }
 
+// SetPatch sets the value of Patch.
+func (s *WorkspaceSnapshot) SetPatch(val OptString) {
+	s.Patch = val
+}
+
 // SetPatchBytes sets the value of PatchBytes.
 func (s *WorkspaceSnapshot) SetPatchBytes(val int64) {
 	s.PatchBytes = val
@@ -1982,3 +1994,5 @@ func (s *WorkspaceSnapshot) SetObservedChangeIds(val []string) {
 func (s *WorkspaceSnapshot) SetCreatedAt(val time.Time) {
 	s.CreatedAt = val
 }
+
+func (*WorkspaceSnapshot) hooksGetSnapshotRes() {}

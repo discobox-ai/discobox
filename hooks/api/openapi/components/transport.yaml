@@ -150,6 +150,8 @@ WorkspaceSnapshot:
       type: string
     tree_hash:
       type: string
+    patch:
+      type: string
     patch_bytes:
       type: integer
       format: int64

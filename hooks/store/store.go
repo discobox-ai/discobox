@@ -841,6 +841,23 @@ func (s *Store) LatestWorkspaceSnapshot(ctx context.Context) (*WorkspaceSnapshot
 	return &out, nil
 }
 
+// GetWorkspaceSnapshot returns one workspace snapshot by ID.
+func (s *Store) GetWorkspaceSnapshot(ctx context.Context, snapshotID string) (*WorkspaceSnapshot, error) {
+	var row models.WorkspaceSnapshot
+	err := s.read.WithContext(ctx).Where("id = ?", strings.TrimSpace(snapshotID)).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	out, err := workspaceSnapshotToRow(row)
+	if err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // ListWorkspaceSnapshots returns workspace snapshots newest first.
 func (s *Store) ListWorkspaceSnapshots(ctx context.Context, limit int) ([]WorkspaceSnapshot, error) {
 	q := s.read.WithContext(ctx).Order("created_at desc, id desc")

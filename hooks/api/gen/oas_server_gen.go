@@ -8,6 +8,12 @@ import (
 
 // Handler handles operations described by OpenAPI v3 specification.
 type Handler interface {
+	// HooksGetSnapshot implements hooks-get-snapshot operation.
+	//
+	// Return one workspace snapshot including patch payload.
+	//
+	// GET /snapshots/{snapshotId}
+	HooksGetSnapshot(ctx context.Context, params HooksGetSnapshotParams) (HooksGetSnapshotRes, error)
 	// HooksList implements hooks-list operation.
 	//
 	// List discovered hooks with current status metadata.

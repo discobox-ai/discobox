@@ -141,6 +141,11 @@ func (m *Manager) ListWorkspaceSnapshots(ctx context.Context, req model.ListRequ
 	return m.service.ListWorkspaceSnapshots(ctx, req)
 }
 
+// GetWorkspaceSnapshot returns one captured workspace snapshot.
+func (m *Manager) GetWorkspaceSnapshot(ctx context.Context, snapshotID string) (model.WorkspaceSnapshot, error) {
+	return m.service.GetWorkspaceSnapshot(ctx, snapshotID)
+}
+
 // ListQueue returns queued hook work.
 func (m *Manager) ListQueue(ctx context.Context, req model.ListRequest) ([]model.QueuedHook, error) {
 	return m.service.ListQueue(ctx, req)

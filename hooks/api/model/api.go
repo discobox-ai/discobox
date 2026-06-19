@@ -136,6 +136,7 @@ type WorkspaceSnapshot struct {
 	ParentID          string             `json:"parent_id,omitempty"`
 	BaseCommit        string             `json:"base_commit,omitempty"`
 	TreeHash          string             `json:"tree_hash,omitempty"`
+	Patch             string             `json:"patch,omitempty"`
 	PatchBytes        int64              `json:"patch_bytes"`
 	ChangedFiles      []ChangedFile      `json:"changed_files,omitempty"`
 	OmittedFiles      []SnapshotOmission `json:"omitted_files,omitempty"`

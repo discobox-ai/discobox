@@ -13,6 +13,15 @@ type UnimplementedHandler struct{}
 
 var _ Handler = UnimplementedHandler{}
 
+// HooksGetSnapshot implements hooks-get-snapshot operation.
+//
+// Return one workspace snapshot including patch payload.
+//
+// GET /snapshots/{snapshotId}
+func (UnimplementedHandler) HooksGetSnapshot(ctx context.Context, params HooksGetSnapshotParams) (r HooksGetSnapshotRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // HooksList implements hooks-list operation.
 //
 // List discovered hooks with current status metadata.

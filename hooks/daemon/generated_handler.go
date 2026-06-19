@@ -92,6 +92,17 @@ func (h *generatedHandler) HooksListSnapshots(ctx context.Context, params hookap
 	return convertToGenerated[hookapigen.SnapshotsResponse](model.SnapshotsResponse{Snapshots: snapshots})
 }
 
+func (h *generatedHandler) HooksGetSnapshot(ctx context.Context, params hookapigen.HooksGetSnapshotParams) (hookapigen.HooksGetSnapshotRes, error) {
+	snapshot, err := h.manager.GetWorkspaceSnapshot(ctx, params.SnapshotId)
+	if err != nil {
+		if errors.Is(err, service.ErrNotFound) {
+			return &hookapigen.ErrorResponse{Error: hookapigen.NewOptString("not_found"), Message: hookapigen.NewOptString("snapshot not found")}, nil
+		}
+		return nil, err
+	}
+	return convertToGenerated[hookapigen.WorkspaceSnapshot](snapshot)
+}
+
 func (h *generatedHandler) HooksListQueue(ctx context.Context, params hookapigen.HooksListQueueParams) (*hookapigen.QueueResponse, error) {
 	queue, err := h.manager.ListQueue(ctx, model.ListRequest{Limit: optIntDefault(params.Limit, 50)})
 	if err != nil {

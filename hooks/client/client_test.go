@@ -50,6 +50,8 @@ func TestUnixTransportAndRequestShapes(t *testing.T) {
 				t.Fatalf("unexpected snapshots query: %s", r.URL.RawQuery)
 			}
 			_ = json.NewEncoder(w).Encode(SnapshotsResponse{Snapshots: []WorkspaceSnapshot{{ID: "snapshot-1", PatchBytes: 42}}})
+		case "/snapshots/snapshot-1":
+			_ = json.NewEncoder(w).Encode(WorkspaceSnapshot{ID: "snapshot-1", Patch: "diff", PatchBytes: 4})
 		case "/queue":
 			if !isExpectedLimit(r, "5", "0") {
 				t.Fatalf("unexpected queue query: %s", r.URL.RawQuery)
@@ -135,6 +137,16 @@ func TestUnixTransportAndRequestShapes(t *testing.T) {
 	}
 	if got := <-seen; got != "GET /snapshots" {
 		t.Fatalf("snapshots request = %q", got)
+	}
+	snapshot, err := c.GetWorkspaceSnapshot(context.Background(), "snapshot-1")
+	if err != nil {
+		t.Fatalf("snapshot: %v", err)
+	}
+	if snapshot.ID != "snapshot-1" || snapshot.Patch != "diff" {
+		t.Fatalf("unexpected snapshot: %#v", snapshot)
+	}
+	if got := <-seen; got != "GET /snapshots/snapshot-1" {
+		t.Fatalf("snapshot request = %q", got)
 	}
 	queue, err := c.ListQueue(context.Background(), ListOptions{Limit: 5})
 	if err != nil {

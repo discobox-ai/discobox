@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -22,7 +23,9 @@ import (
 	"github.com/obot-platform/discobox/hooks/client"
 	"github.com/obot-platform/discobox/hooks/daemon"
 	"github.com/obot-platform/discobox/hooks/models"
+	idpkg "github.com/obot-platform/discobox/id"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
 
 const defaultSessionID = "default"
@@ -534,7 +537,7 @@ func (a *app) newSnapshotsCommand() *cobra.Command {
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "snapshots",
-		Short: "List workspace snapshots",
+		Short: "List and apply workspace snapshots",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			c, _, err := a.client(cmd.Context())
 			if err != nil {
@@ -548,7 +551,117 @@ func (a *app) newSnapshotsCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVar(&limit, "limit", 20, "maximum rows to return; 0 means no limit")
+	cmd.AddCommand(a.newSnapshotStatCommand())
+	cmd.AddCommand(a.newSnapshotDiffCommand())
+	cmd.AddCommand(a.newSnapshotApplyCommand())
+	cmd.AddCommand(a.newSnapshotResetCommand())
 	return cmd
+}
+
+func (a *app) newSnapshotStatCommand() *cobra.Command {
+	var parent bool
+	cmd := &cobra.Command{
+		Use:   "stat [FROM_SNAPSHOT_ID] [TO_SNAPSHOT_ID]",
+		Short: "Show a short diffstat between the current workspace and a snapshot, or between two snapshots",
+		Args:  cobra.MaximumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, paths, err := a.client(cmd.Context())
+			if err != nil {
+				return err
+			}
+			diffRange, err := selectedSnapshotDiffRange(cmd.Context(), c, args, parent)
+			if err != nil {
+				return err
+			}
+			diff, err := snapshotRangeDiff(cmd.Context(), paths.RepoRoot, diffRange, gitDiffColorArg(cmd.OutOrStdout(), a.opts.output == "table"), "--stat")
+			if err != nil {
+				return err
+			}
+			if a.opts.output == "json" {
+				return writeJSON(cmd.OutOrStdout(), map[string]any{"from_snapshot_id": diffRange.fromSnapshotID(), "to_snapshot_id": diffRange.To.ID, "from_current": diffRange.FromCurrent, "from_base": diffRange.FromBase, "stat": diff})
+			}
+			_, err = io.WriteString(cmd.OutOrStdout(), diff)
+			return err
+		},
+	}
+	cmd.Flags().BoolVarP(&parent, "parent", "p", false, "compare the selected snapshot against its parent")
+	return cmd
+}
+
+func (a *app) newSnapshotDiffCommand() *cobra.Command {
+	var parent bool
+	cmd := &cobra.Command{
+		Use:   "diff [FROM_SNAPSHOT_ID] [TO_SNAPSHOT_ID]",
+		Short: "Show the full diff between the current workspace and a snapshot, or between two snapshots",
+		Args:  cobra.MaximumNArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, paths, err := a.client(cmd.Context())
+			if err != nil {
+				return err
+			}
+			diffRange, err := selectedSnapshotDiffRange(cmd.Context(), c, args, parent)
+			if err != nil {
+				return err
+			}
+			diff, err := snapshotRangeDiff(cmd.Context(), paths.RepoRoot, diffRange, gitDiffColorArg(cmd.OutOrStdout(), a.opts.output == "table"), "--binary")
+			if err != nil {
+				return err
+			}
+			if a.opts.output == "json" {
+				return writeJSON(cmd.OutOrStdout(), map[string]any{"from_snapshot_id": diffRange.fromSnapshotID(), "to_snapshot_id": diffRange.To.ID, "from_current": diffRange.FromCurrent, "from_base": diffRange.FromBase, "diff": diff})
+			}
+			_, err = io.WriteString(cmd.OutOrStdout(), diff)
+			return err
+		},
+	}
+	cmd.Flags().BoolVarP(&parent, "parent", "p", false, "compare the selected snapshot against its parent")
+	return cmd
+}
+
+func (a *app) newSnapshotApplyCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "apply [SNAPSHOT_ID]",
+		Short: "Apply a snapshot to the workspace as unstaged changes",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, paths, err := a.client(cmd.Context())
+			if err != nil {
+				return err
+			}
+			snapshot, err := selectedSnapshot(cmd.Context(), c, args)
+			if err != nil {
+				return err
+			}
+			changed, err := applySnapshotDiff(cmd.Context(), paths.RepoRoot, snapshot)
+			if err != nil {
+				return err
+			}
+			return a.writeAction(cmd, map[string]any{"snapshot_id": snapshot.ID, "applied": changed}, snapshotActionMessage("applied", snapshot.ID, changed))
+		},
+	}
+}
+
+func (a *app) newSnapshotResetCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "reset [SNAPSHOT_ID]",
+		Short: "Reset a snapshot's changes from the workspace",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, paths, err := a.client(cmd.Context())
+			if err != nil {
+				return err
+			}
+			snapshot, err := selectedSnapshot(cmd.Context(), c, args)
+			if err != nil {
+				return err
+			}
+			changed, err := resetSnapshotDiff(cmd.Context(), paths.RepoRoot, snapshot)
+			if err != nil {
+				return err
+			}
+			return a.writeAction(cmd, map[string]any{"snapshot_id": snapshot.ID, "reset": changed}, snapshotActionMessage("reset", snapshot.ID, changed))
+		},
+	}
 }
 
 func (a *app) newQueueCommand() *cobra.Command {
@@ -692,9 +805,9 @@ func (a *app) writeSnapshots(cmd *cobra.Command, snapshots []client.WorkspaceSna
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"snapshots": snapshots})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tTIME\tPARENT\tBASE\tTREE\tPATCH_BYTES\tCHANGED\tOMITTED\tOBSERVED")
+	fmt.Fprintln(tw, "ID\tTIME\tBASE\tPATCH_BYTES\tCHANGED\tOMITTED\tOBSERVED")
 	for _, snapshot := range snapshots {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%d\t%d\t%d\t%d\n", snapshot.ID, formatEventTime(snapshot.CreatedAt), snapshot.ParentID, snapshot.BaseCommit, snapshot.TreeHash, snapshot.PatchBytes, len(snapshot.ChangedFiles), len(snapshot.OmittedFiles), len(snapshot.ObservedChangeIDs))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%d\t%d\n", idpkg.Short(snapshot.ID), formatEventTime(snapshot.CreatedAt), formatShortCommit(snapshot.BaseCommit), snapshot.PatchBytes, len(snapshot.ChangedFiles), len(snapshot.OmittedFiles), len(snapshot.ObservedChangeIDs))
 	}
 	return tw.Flush()
 }
@@ -810,6 +923,254 @@ func (a *app) writeAction(cmd *cobra.Command, value any, message string) error {
 	}
 	fmt.Fprintln(cmd.OutOrStdout(), message)
 	return nil
+}
+
+func selectedSnapshot(ctx context.Context, c *client.Client, args []string) (client.WorkspaceSnapshot, error) {
+	id := "latest"
+	if len(args) > 0 && strings.TrimSpace(args[0]) != "" {
+		id = strings.TrimSpace(args[0])
+	}
+	snapshots, err := c.ListWorkspaceSnapshots(ctx, client.ListOptions{Limit: 0, LimitSet: true})
+	if err != nil {
+		return client.WorkspaceSnapshot{}, err
+	}
+	if len(snapshots) == 0 {
+		return client.WorkspaceSnapshot{}, fmt.Errorf("no workspace snapshots found")
+	}
+	if strings.EqualFold(id, "latest") {
+		id = latestSnapshot(snapshots).ID
+	}
+	matches := make([]client.WorkspaceSnapshot, 0, 1)
+	for _, snapshot := range snapshots {
+		if snapshot.ID == id || (idpkg.IsShort(id) && strings.HasSuffix(snapshot.ID, id)) {
+			matches = append(matches, snapshot)
+		}
+	}
+	if len(matches) == 0 {
+		return client.WorkspaceSnapshot{}, fmt.Errorf("workspace snapshot %q not found", id)
+	}
+	if len(matches) > 1 {
+		return client.WorkspaceSnapshot{}, fmt.Errorf("workspace snapshot short ID %q is ambiguous", id)
+	}
+	fullSnapshot, err := c.GetWorkspaceSnapshot(ctx, matches[0].ID)
+	if err != nil {
+		return client.WorkspaceSnapshot{}, err
+	}
+	if strings.TrimSpace(fullSnapshot.TreeHash) == "" {
+		return client.WorkspaceSnapshot{}, fmt.Errorf("snapshot %s has no tree hash", matches[0].ID)
+	}
+	return *fullSnapshot, nil
+}
+
+func latestSnapshot(snapshots []client.WorkspaceSnapshot) client.WorkspaceSnapshot {
+	latest := snapshots[0]
+	for _, snapshot := range snapshots[1:] {
+		if snapshot.CreatedAt.After(latest.CreatedAt) || (snapshot.CreatedAt.Equal(latest.CreatedAt) && snapshot.ID > latest.ID) {
+			latest = snapshot
+		}
+	}
+	return latest
+}
+
+type snapshotDiffRange struct {
+	From        *client.WorkspaceSnapshot `json:"from_snapshot,omitempty"`
+	To          client.WorkspaceSnapshot  `json:"to_snapshot"`
+	FromCurrent bool                      `json:"from_current"`
+	FromBase    bool                      `json:"from_base"`
+}
+
+func (r snapshotDiffRange) fromSnapshotID() string {
+	if r.From == nil {
+		return ""
+	}
+	return r.From.ID
+}
+
+func selectedSnapshotDiffRange(ctx context.Context, c *client.Client, args []string, parent bool) (snapshotDiffRange, error) {
+	if parent {
+		if len(args) > 1 {
+			return snapshotDiffRange{}, fmt.Errorf("snapshots --parent accepts at most one snapshot id")
+		}
+		target, err := selectedSnapshot(ctx, c, args)
+		if err != nil {
+			return snapshotDiffRange{}, err
+		}
+		parentID := strings.TrimSpace(target.ParentID)
+		if parentID == "" {
+			return snapshotDiffRange{}, fmt.Errorf("snapshot %s has no parent", target.ID)
+		}
+		parentSnapshot, err := selectedSnapshot(ctx, c, []string{parentID})
+		if err != nil {
+			return snapshotDiffRange{}, fmt.Errorf("load parent snapshot %s: %w", parentID, err)
+		}
+		return snapshotDiffRange{From: &parentSnapshot, To: target}, nil
+	}
+	if len(args) == 2 {
+		from, err := selectedSnapshot(ctx, c, []string{args[0]})
+		if err != nil {
+			return snapshotDiffRange{}, err
+		}
+		to, err := selectedSnapshot(ctx, c, []string{args[1]})
+		if err != nil {
+			return snapshotDiffRange{}, err
+		}
+		return snapshotDiffRange{From: &from, To: to}, nil
+	}
+	to, err := selectedSnapshot(ctx, c, args)
+	if err != nil {
+		return snapshotDiffRange{}, err
+	}
+	return snapshotDiffRange{To: to, FromBase: true}, nil
+}
+
+func snapshotDiff(ctx context.Context, repoRoot string, snapshot client.WorkspaceSnapshot, diffArgs ...string) (string, error) {
+	return snapshotRangeDiff(ctx, repoRoot, snapshotDiffRange{To: snapshot, FromBase: true}, diffArgs...)
+}
+
+func snapshotRangeDiff(ctx context.Context, repoRoot string, diffRange snapshotDiffRange, diffArgs ...string) (string, error) {
+	fromTree, cleanup, err := snapshotRangeFromTree(ctx, repoRoot, diffRange)
+	if err != nil {
+		return "", err
+	}
+	defer cleanup()
+	toTree, err := ensureSnapshotTree(ctx, repoRoot, diffRange.To)
+	if err != nil {
+		return "", err
+	}
+	args := []string{"diff"}
+	for _, arg := range diffArgs {
+		if arg != "" {
+			args = append(args, arg)
+		}
+	}
+	args = append(args, fromTree, toTree)
+	return gitCommandOutput(ctx, repoRoot, nil, nil, args...)
+}
+
+func snapshotRangeFromTree(ctx context.Context, repoRoot string, diffRange snapshotDiffRange) (string, func(), error) {
+	if diffRange.FromCurrent {
+		return currentWorkspaceTree(ctx, repoRoot)
+	}
+	if diffRange.FromBase {
+		base := strings.TrimSpace(diffRange.To.BaseCommit)
+		if base == "" {
+			return "", func() {}, fmt.Errorf("snapshot %s has no base commit", diffRange.To.ID)
+		}
+		baseTree, err := gitCommandOutput(ctx, repoRoot, nil, nil, "rev-parse", base+"^{tree}")
+		return strings.TrimSpace(baseTree), func() {}, err
+	}
+	if diffRange.From == nil {
+		return "", func() {}, fmt.Errorf("from snapshot is required")
+	}
+	tree, err := ensureSnapshotTree(ctx, repoRoot, *diffRange.From)
+	return tree, func() {}, err
+}
+
+func applySnapshotDiff(ctx context.Context, repoRoot string, snapshot client.WorkspaceSnapshot) (bool, error) {
+	currentTree, cleanup, err := currentWorkspaceTree(ctx, repoRoot)
+	if err != nil {
+		return false, err
+	}
+	defer cleanup()
+	snapshotTree, err := ensureSnapshotTree(ctx, repoRoot, snapshot)
+	if err != nil {
+		return false, err
+	}
+	patch, err := gitCommandOutput(ctx, repoRoot, nil, nil, "diff", "--binary", currentTree, snapshotTree)
+	if err != nil {
+		return false, err
+	}
+	return applyPatch(ctx, repoRoot, patch)
+}
+
+func resetSnapshotDiff(ctx context.Context, repoRoot string, snapshot client.WorkspaceSnapshot) (bool, error) {
+	base := strings.TrimSpace(snapshot.BaseCommit)
+	if base == "" {
+		return false, fmt.Errorf("snapshot %s has no base commit", snapshot.ID)
+	}
+	snapshotTree, err := ensureSnapshotTree(ctx, repoRoot, snapshot)
+	if err != nil {
+		return false, err
+	}
+	baseTree, err := gitCommandOutput(ctx, repoRoot, nil, nil, "rev-parse", base+"^{tree}")
+	if err != nil {
+		return false, fmt.Errorf("resolve snapshot base tree: %w", err)
+	}
+	patch, err := gitCommandOutput(ctx, repoRoot, nil, nil, "diff", "--binary", snapshotTree, strings.TrimSpace(baseTree))
+	if err != nil {
+		return false, err
+	}
+	return applyPatch(ctx, repoRoot, patch)
+}
+
+func ensureSnapshotTree(ctx context.Context, repoRoot string, snapshot client.WorkspaceSnapshot) (string, error) {
+	tree := strings.TrimSpace(snapshot.TreeHash)
+	if tree == "" {
+		return "", fmt.Errorf("snapshot %s has no tree hash", snapshot.ID)
+	}
+	if _, err := gitCommandOutput(ctx, repoRoot, nil, nil, "cat-file", "-e", tree+"^{tree}"); err == nil {
+		return tree, nil
+	}
+	if strings.TrimSpace(snapshot.Patch) == "" {
+		return "", fmt.Errorf("snapshot %s tree %s is unavailable and no patch payload was returned", snapshot.ID, tree)
+	}
+	reconstructed, cleanup, err := reconstructSnapshotTree(ctx, repoRoot, snapshot)
+	if err != nil {
+		return "", err
+	}
+	cleanup()
+	return reconstructed, nil
+}
+
+func reconstructSnapshotTree(ctx context.Context, repoRoot string, snapshot client.WorkspaceSnapshot) (string, func(), error) {
+	base := strings.TrimSpace(snapshot.BaseCommit)
+	if base == "" {
+		return "", func() {}, fmt.Errorf("snapshot %s has no base commit", snapshot.ID)
+	}
+	tempDir, err := os.MkdirTemp("", "discobox-hooks-snapshot-*")
+	if err != nil {
+		return "", func() {}, fmt.Errorf("create temporary snapshot index directory: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(tempDir) }
+	indexFile, err := os.CreateTemp(tempDir, "index-*")
+	if err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("create temporary snapshot index: %w", err)
+	}
+	indexPath := indexFile.Name()
+	_ = indexFile.Close()
+	env := map[string]string{"GIT_INDEX_FILE": indexPath}
+	if _, err := gitCommandOutput(ctx, repoRoot, nil, env, "read-tree", base); err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("read snapshot base into temporary index: %w", err)
+	}
+	if _, err := gitCommandOutput(ctx, repoRoot, []byte(snapshot.Patch), env, "apply", "--cached", "--binary"); err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("reconstruct snapshot tree from patch: %w", err)
+	}
+	tree, err := gitCommandOutput(ctx, repoRoot, nil, env, "write-tree")
+	if err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("write reconstructed snapshot tree: %w", err)
+	}
+	return strings.TrimSpace(tree), cleanup, nil
+}
+
+func applyPatch(ctx context.Context, repoRoot, patch string) (bool, error) {
+	if strings.TrimSpace(patch) == "" {
+		return false, nil
+	}
+	if _, err := gitCommandOutput(ctx, repoRoot, []byte(patch), nil, "apply", "--binary"); err != nil {
+		return false, fmt.Errorf("apply snapshot patch: %w", err)
+	}
+	return true, nil
+}
+
+func snapshotActionMessage(action, id string, changed bool) string {
+	if !changed {
+		return fmt.Sprintf("snapshot %s already matches workspace", id)
+	}
+	return fmt.Sprintf("snapshot %s %s", id, action)
 }
 
 func (a *app) writeTargetAction(cmd *cobra.Command, paused, all bool, ids []string) error {
@@ -1033,6 +1394,52 @@ func formatOptionalTime(value *time.Time) string {
 
 func formatRunID(id string) string { return id }
 
+func formatShortCommit(commit string) string {
+	commit = strings.TrimSpace(commit)
+	if len(commit) <= 12 {
+		return commit
+	}
+	return commit[:12]
+}
+
+func gitDiffColorArg(w io.Writer, enabled bool) string {
+	if enabled && colorEnabled(w) {
+		return "--color=always"
+	}
+	return "--color=never"
+}
+
+func colorEnabled(w io.Writer) bool {
+	if noColorEnv() {
+		return false
+	}
+	if forceColorEnv() {
+		return true
+	}
+	if strings.EqualFold(os.Getenv("TERM"), "dumb") {
+		return false
+	}
+	file, ok := w.(interface{ Fd() uintptr })
+	return ok && term.IsTerminal(int(file.Fd()))
+}
+
+func noColorEnv() bool {
+	if _, ok := os.LookupEnv("NO_COLOR"); ok {
+		return true
+	}
+	return os.Getenv("CLICOLOR") == "0"
+}
+
+func forceColorEnv() bool {
+	if value, ok := os.LookupEnv("CLICOLOR_FORCE"); ok && value != "" && value != "0" {
+		return true
+	}
+	if value, ok := os.LookupEnv("FORCE_COLOR"); ok && value != "" && value != "0" {
+		return true
+	}
+	return false
+}
+
 func resolveSessionID(explicit, repoRoot string) string {
 	if explicit != "" {
 		return explicit
@@ -1053,6 +1460,118 @@ func gitRoot(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return filepath.Clean(strings.TrimSpace(string(out))), nil
+}
+
+func currentWorkspaceTree(ctx context.Context, repoRoot string) (string, func(), error) {
+	tempDir, err := os.MkdirTemp("", "discobox-hooks-current-*")
+	if err != nil {
+		return "", func() {}, fmt.Errorf("create temporary git index directory: %w", err)
+	}
+	cleanup := func() { _ = os.RemoveAll(tempDir) }
+	indexFile, err := os.CreateTemp(tempDir, "index-*")
+	if err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("create temporary git index: %w", err)
+	}
+	indexPath := indexFile.Name()
+	_ = indexFile.Close()
+	env := map[string]string{"GIT_INDEX_FILE": indexPath}
+	if _, err := gitCommandOutput(ctx, repoRoot, nil, env, "read-tree", "HEAD"); err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("read HEAD into temporary index: %w", err)
+	}
+	changes, err := gitStatusChanges(ctx, repoRoot)
+	if err != nil {
+		cleanup()
+		return "", func() {}, err
+	}
+	for _, change := range changes {
+		if change.deleted {
+			if _, err := gitCommandOutput(ctx, repoRoot, nil, env, "rm", "--cached", "--ignore-unmatch", "--", change.path); err != nil {
+				cleanup()
+				return "", func() {}, fmt.Errorf("remove deleted path %s from temporary index: %w", change.path, err)
+			}
+			continue
+		}
+		if _, err := gitCommandOutput(ctx, repoRoot, nil, env, "add", "--", change.path); err != nil {
+			cleanup()
+			return "", func() {}, fmt.Errorf("add path %s to temporary index: %w", change.path, err)
+		}
+	}
+	tree, err := gitCommandOutput(ctx, repoRoot, nil, env, "write-tree")
+	if err != nil {
+		cleanup()
+		return "", func() {}, fmt.Errorf("write current workspace tree: %w", err)
+	}
+	return strings.TrimSpace(tree), cleanup, nil
+}
+
+type gitStatusChange struct {
+	path    string
+	deleted bool
+}
+
+func gitStatusChanges(ctx context.Context, repoRoot string) ([]gitStatusChange, error) {
+	out, err := gitCommandOutput(ctx, repoRoot, nil, nil, "status", "--porcelain=v1", "-z", "--untracked-files=all")
+	if err != nil {
+		return nil, fmt.Errorf("read git status: %w", err)
+	}
+	entries := bytes.Split([]byte(out), []byte{0})
+	changes := make([]gitStatusChange, 0, len(entries))
+	for i := 0; i < len(entries); i++ {
+		entry := string(entries[i])
+		if entry == "" || len(entry) < 4 {
+			continue
+		}
+		status := entry[:2]
+		path := filepath.ToSlash(strings.TrimSpace(entry[3:]))
+		if status[0] == 'R' || status[0] == 'C' {
+			oldPath := ""
+			if i+1 < len(entries) {
+				oldPath = filepath.ToSlash(strings.TrimSpace(string(entries[i+1])))
+				i++
+			}
+			if status[0] == 'R' && oldPath != "" {
+				changes = append(changes, gitStatusChange{path: oldPath, deleted: true})
+			}
+			if path != "" {
+				changes = append(changes, gitStatusChange{path: path})
+			}
+			continue
+		}
+		if path == "" {
+			continue
+		}
+		changes = append(changes, gitStatusChange{path: path, deleted: status[0] == 'D' || status[1] == 'D'})
+	}
+	sort.Slice(changes, func(i, j int) bool {
+		if changes[i].path == changes[j].path {
+			return !changes[i].deleted && changes[j].deleted
+		}
+		return changes[i].path < changes[j].path
+	})
+	return changes, nil
+}
+
+func gitCommandOutput(ctx context.Context, repoRoot string, stdin []byte, extraEnv map[string]string, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = repoRoot
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
+	cmd.Env = os.Environ()
+	for key, value := range extraEnv {
+		cmd.Env = append(cmd.Env, key+"="+value)
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		trimmed := strings.TrimSpace(string(out))
+		if trimmed == "" {
+			return "", err
+		}
+		return "", fmt.Errorf("%w: %s", err, trimmed)
+	}
+	return string(out), nil
 }
 
 func computeSessionPaths(repoRoot, sessionID string) sessionPaths {

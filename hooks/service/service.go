@@ -146,30 +146,51 @@ func (s *Service) ListWorkspaceSnapshots(ctx context.Context, req model.ListRequ
 	}
 	out := make([]model.WorkspaceSnapshot, 0, len(rows))
 	for _, row := range rows {
-		omitted := make([]model.SnapshotOmission, 0, len(row.OmittedFiles))
-		for _, omittedFile := range row.OmittedFiles {
-			omitted = append(omitted, model.SnapshotOmission{
-				Path:       omittedFile.Path,
-				Kind:       string(omittedFile.Kind),
-				Reason:     omittedFile.Reason,
-				SizeBytes:  omittedFile.SizeBytes,
-				LimitBytes: omittedFile.LimitBytes,
-			})
-		}
-		out = append(out, model.WorkspaceSnapshot{
-			ID:                row.ID,
-			ParentID:          row.ParentID,
-			BaseCommit:        row.BaseCommit,
-			TreeHash:          row.TreeHash,
-			PatchBytes:        row.PatchBytes,
-			ChangedFiles:      changedFilesToAPI(row.ChangedFiles),
-			OmittedFiles:      omitted,
-			MaxFileBytes:      row.MaxFileBytes,
-			ObservedChangeIDs: row.ObservedChangeIDs,
-			CreatedAt:         row.CreatedAt,
-		})
+		out = append(out, workspaceSnapshotToAPI(row, false))
 	}
 	return out, nil
+}
+
+// GetWorkspaceSnapshot returns one captured workspace snapshot with patch data.
+func (s *Service) GetWorkspaceSnapshot(ctx context.Context, snapshotID string) (model.WorkspaceSnapshot, error) {
+	row, err := s.store.GetWorkspaceSnapshot(ctx, snapshotID)
+	if err != nil {
+		return model.WorkspaceSnapshot{}, err
+	}
+	if row == nil {
+		return model.WorkspaceSnapshot{}, ErrNotFound
+	}
+	return workspaceSnapshotToAPI(*row, true), nil
+}
+
+func workspaceSnapshotToAPI(row store.WorkspaceSnapshot, includePatch bool) model.WorkspaceSnapshot {
+	omitted := make([]model.SnapshotOmission, 0, len(row.OmittedFiles))
+	for _, omittedFile := range row.OmittedFiles {
+		omitted = append(omitted, model.SnapshotOmission{
+			Path:       omittedFile.Path,
+			Kind:       string(omittedFile.Kind),
+			Reason:     omittedFile.Reason,
+			SizeBytes:  omittedFile.SizeBytes,
+			LimitBytes: omittedFile.LimitBytes,
+		})
+	}
+	patch := ""
+	if includePatch {
+		patch = string(row.Patch)
+	}
+	return model.WorkspaceSnapshot{
+		ID:                row.ID,
+		ParentID:          row.ParentID,
+		BaseCommit:        row.BaseCommit,
+		TreeHash:          row.TreeHash,
+		Patch:             patch,
+		PatchBytes:        row.PatchBytes,
+		ChangedFiles:      changedFilesToAPI(row.ChangedFiles),
+		OmittedFiles:      omitted,
+		MaxFileBytes:      row.MaxFileBytes,
+		ObservedChangeIDs: row.ObservedChangeIDs,
+		CreatedAt:         row.CreatedAt,
+	}
 }
 
 // ListQueue returns queued hook work.

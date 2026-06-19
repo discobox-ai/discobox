@@ -6,6 +6,7 @@ package hookapigen
 type OperationName = string
 
 const (
+	HooksGetSnapshotOperation      OperationName = "HooksGetSnapshot"
 	HooksListOperation             OperationName = "HooksList"
 	HooksListChangesOperation      OperationName = "HooksListChanges"
 	HooksListEventsOperation       OperationName = "HooksListEvents"

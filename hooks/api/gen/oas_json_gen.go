@@ -4270,6 +4270,12 @@ func (s *WorkspaceSnapshot) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Patch.Set {
+			e.FieldStart("patch")
+			s.Patch.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("patch_bytes")
 		e.Int64(s.PatchBytes)
 	}
@@ -4313,17 +4319,18 @@ func (s *WorkspaceSnapshot) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfWorkspaceSnapshot = [10]string{
-	0: "id",
-	1: "parent_id",
-	2: "base_commit",
-	3: "tree_hash",
-	4: "patch_bytes",
-	5: "changed_files",
-	6: "omitted_files",
-	7: "max_file_bytes",
-	8: "observed_change_ids",
-	9: "created_at",
+var jsonFieldsNameOfWorkspaceSnapshot = [11]string{
+	0:  "id",
+	1:  "parent_id",
+	2:  "base_commit",
+	3:  "tree_hash",
+	4:  "patch",
+	5:  "patch_bytes",
+	6:  "changed_files",
+	7:  "omitted_files",
+	8:  "max_file_bytes",
+	9:  "observed_change_ids",
+	10: "created_at",
 }
 
 // Decode decodes WorkspaceSnapshot from json.
@@ -4377,8 +4384,18 @@ func (s *WorkspaceSnapshot) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"tree_hash\"")
 			}
+		case "patch":
+			if err := func() error {
+				s.Patch.Reset()
+				if err := s.Patch.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"patch\"")
+			}
 		case "patch_bytes":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Int64()
 				s.PatchBytes = int64(v)
@@ -4424,7 +4441,7 @@ func (s *WorkspaceSnapshot) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"omitted_files\"")
 			}
 		case "max_file_bytes":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Int64()
 				s.MaxFileBytes = int64(v)
@@ -4455,7 +4472,7 @@ func (s *WorkspaceSnapshot) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"observed_change_ids\"")
 			}
 		case "created_at":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -4476,8 +4493,8 @@ func (s *WorkspaceSnapshot) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b10010001,
-		0b00000010,
+		0b00100001,
+		0b00000101,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -43,6 +44,10 @@ func TestCommandLayout(t *testing.T) {
 		{"runs"},
 		{"changes"},
 		{"snapshots"},
+		{"snapshots", "stat"},
+		{"snapshots", "diff"},
+		{"snapshots", "apply"},
+		{"snapshots", "reset"},
 		{"queue"},
 	} {
 		if found, _, err := cmd.Find(args); err != nil || found == nil {
@@ -213,7 +218,7 @@ func TestWriteDatabaseInspectionTables(t *testing.T) {
 		},
 		},
 		"snapshots": {want: "PATCH_BYTES", fn: func(cmd *cobra.Command) error {
-			return a.writeSnapshots(cmd, []client.WorkspaceSnapshot{{ID: "snapshot-1", PatchBytes: 42, ChangedFiles: []client.ChangedFile{{Path: "main.go"}}}})
+			return a.writeSnapshots(cmd, []client.WorkspaceSnapshot{{ID: "snapshot-1", ParentID: "parent-1", BaseCommit: "0123456789abcdef", TreeHash: "tree-1", PatchBytes: 42, ChangedFiles: []client.ChangedFile{{Path: "main.go"}}}})
 		},
 		},
 		"queue": {want: "POSITION", fn: func(cmd *cobra.Command) error {
@@ -227,7 +232,174 @@ func TestWriteDatabaseInspectionTables(t *testing.T) {
 		}
 		if got := out.String(); !strings.Contains(got, tt.want) {
 			t.Fatalf("%s table did not include header %q: %s", name, tt.want, got)
+		} else if name == "snapshots" {
+			for _, notWant := range []string{"PARENT", "TREE", "parent-1", "tree-1", "0123456789abcdef"} {
+				if strings.Contains(got, notWant) {
+					t.Fatalf("snapshot table included %q unexpectedly: %s", notWant, got)
+				}
+			}
+			if !strings.Contains(got, "0123456789ab") {
+				t.Fatalf("snapshot table missing short base commit: %s", got)
+			}
 		}
+	}
+}
+
+func TestGitDiffColorArgHonorsEnvironment(t *testing.T) {
+	var out bytes.Buffer
+	t.Setenv("CLICOLOR_FORCE", "1")
+	t.Setenv("NO_COLOR", "")
+	if got := gitDiffColorArg(&out, true); got != "--color=never" {
+		t.Fatalf("NO_COLOR should disable color, got %q", got)
+	}
+
+	t.Setenv("NO_COLOR", "")
+	_ = os.Unsetenv("NO_COLOR")
+	t.Setenv("CLICOLOR", "0")
+	if got := gitDiffColorArg(&out, true); got != "--color=never" {
+		t.Fatalf("CLICOLOR=0 should disable color, got %q", got)
+	}
+
+	t.Setenv("CLICOLOR", "")
+	_ = os.Unsetenv("CLICOLOR")
+	t.Setenv("CLICOLOR_FORCE", "1")
+	if got := gitDiffColorArg(&out, true); got != "--color=always" {
+		t.Fatalf("CLICOLOR_FORCE should force color, got %q", got)
+	}
+	if got := gitDiffColorArg(&out, false); got != "--color=never" {
+		t.Fatalf("disabled color flag should win for JSON output, got %q", got)
+	}
+}
+
+func TestSnapshotApplyAndResetUseUnstagedWorkspaceChanges(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	runTestGit(t, repo, "init")
+	runTestGit(t, repo, "config", "user.email", "test@example.com")
+	runTestGit(t, repo, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runTestGit(t, repo, "add", "tracked.txt")
+	runTestGit(t, repo, "commit", "-m", "base")
+	baseCommit := strings.TrimSpace(runTestGit(t, repo, "rev-parse", "HEAD"))
+
+	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("snapshot\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "new.txt"), []byte("new\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	snapshotTree, cleanup, err := currentWorkspaceTree(ctx, repo)
+	if err != nil {
+		t.Fatalf("snapshot tree: %v", err)
+	}
+	cleanup()
+	snapshotPatch := runTestGit(t, repo, "diff", "--binary", baseCommit, snapshotTree)
+	runTestGit(t, repo, "restore", "--worktree", "tracked.txt")
+	if err := os.Remove(filepath.Join(repo, "new.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("current\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	snapshot := client.WorkspaceSnapshot{ID: "snapshot-1", BaseCommit: baseCommit, TreeHash: snapshotTree, Patch: snapshotPatch}
+	diff, err := snapshotDiff(ctx, repo, snapshot, "--color=never")
+	if err != nil {
+		t.Fatalf("snapshot diff: %v", err)
+	}
+	if !strings.Contains(diff, "-base") || !strings.Contains(diff, "+snapshot") || strings.Contains(diff, "current") {
+		t.Fatalf("snapshot diff should compare base commit to snapshot, got:\n%s", diff)
+	}
+	changed, err := applySnapshotDiff(ctx, repo, snapshot)
+	if err != nil {
+		t.Fatalf("apply snapshot: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected snapshot apply to change workspace")
+	}
+	if got := string(mustReadFile(t, filepath.Join(repo, "tracked.txt"))); got != "snapshot\n" {
+		t.Fatalf("tracked content after apply = %q", got)
+	}
+	if got := string(mustReadFile(t, filepath.Join(repo, "new.txt"))); got != "new\n" {
+		t.Fatalf("new file after apply = %q", got)
+	}
+	if status := runTestGit(t, repo, "status", "--porcelain"); !strings.Contains(status, " M tracked.txt") || !strings.Contains(status, "?? new.txt") {
+		t.Fatalf("snapshot apply should leave unstaged changes, status:\n%s", status)
+	}
+
+	changed, err = resetSnapshotDiff(ctx, repo, snapshot)
+	if err != nil {
+		t.Fatalf("reset snapshot: %v", err)
+	}
+	if !changed {
+		t.Fatal("expected snapshot reset to change workspace")
+	}
+	if got := string(mustReadFile(t, filepath.Join(repo, "tracked.txt"))); got != "base\n" {
+		t.Fatalf("tracked content after reset = %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(repo, "new.txt")); !os.IsNotExist(err) {
+		t.Fatalf("new file should be removed after reset, err=%v", err)
+	}
+	if status := strings.TrimSpace(runTestGit(t, repo, "status", "--porcelain")); status != "" {
+		t.Fatalf("snapshot reset should restore clean worktree, status:\n%s", status)
+	}
+}
+
+func TestSnapshotRangeDiffSupportsSnapshotPairs(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	runTestGit(t, repo, "init")
+	runTestGit(t, repo, "config", "user.email", "test@example.com")
+	runTestGit(t, repo, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runTestGit(t, repo, "add", "tracked.txt")
+	runTestGit(t, repo, "commit", "-m", "base")
+	baseCommit := strings.TrimSpace(runTestGit(t, repo, "rev-parse", "HEAD"))
+
+	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("first\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	firstTree, firstCleanup, err := currentWorkspaceTree(ctx, repo)
+	if err != nil {
+		t.Fatalf("first tree: %v", err)
+	}
+	firstCleanup()
+	firstPatch := runTestGit(t, repo, "diff", "--binary", baseCommit, firstTree)
+
+	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("second\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	secondTree, secondCleanup, err := currentWorkspaceTree(ctx, repo)
+	if err != nil {
+		t.Fatalf("second tree: %v", err)
+	}
+	secondCleanup()
+	secondPatch := runTestGit(t, repo, "diff", "--binary", baseCommit, secondTree)
+
+	first := client.WorkspaceSnapshot{ID: "snapshot-first", BaseCommit: baseCommit, TreeHash: firstTree, Patch: firstPatch}
+	second := client.WorkspaceSnapshot{ID: "snapshot-second", ParentID: first.ID, BaseCommit: baseCommit, TreeHash: secondTree, Patch: secondPatch}
+	diff, err := snapshotRangeDiff(ctx, repo, snapshotDiffRange{From: &first, To: second}, "--color=never")
+	if err != nil {
+		t.Fatalf("snapshot pair diff: %v", err)
+	}
+	if !strings.Contains(diff, "-first") || !strings.Contains(diff, "+second") {
+		t.Fatalf("pair diff did not compare first to second:\n%s", diff)
+	}
+}
+
+func TestLatestSnapshotSelectsNewestCreatedAt(t *testing.T) {
+	base := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	snapshots := []client.WorkspaceSnapshot{
+		{ID: "newer-b", CreatedAt: base.Add(time.Minute)},
+		{ID: "older", CreatedAt: base},
+		{ID: "newer-a", CreatedAt: base.Add(time.Minute)},
+	}
+	if got := latestSnapshot(snapshots); got.ID != "newer-b" {
+		t.Fatalf("latest snapshot = %s, want newer-b", got.ID)
 	}
 }
 
@@ -504,6 +676,26 @@ func testOutputCommand() (*cobra.Command, *bytes.Buffer) {
 	cmd := &cobra.Command{Use: "test"}
 	cmd.SetOut(out)
 	return cmd, out
+}
+
+func runTestGit(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, string(out))
+	}
+	return string(out)
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
 }
 
 func TestWriteHookOutputsSingle(t *testing.T) {
