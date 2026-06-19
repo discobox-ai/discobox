@@ -39,17 +39,18 @@ func TestCommandLayout(t *testing.T) {
 		{"ls"},
 		{"list"},
 		{"run"},
-		{"db"},
-		{"db", "runs"},
-		{"db", "changes"},
-		{"db", "snapshots"},
-		{"db", "queue"},
+		{"check"},
+		{"runs"},
+		{"changes"},
+		{"snapshots"},
+		{"queue"},
 	} {
 		if found, _, err := cmd.Find(args); err != nil || found == nil {
 			t.Fatalf("Find(%v) = cmd %#v err %v", args, found, err)
 		}
 	}
 	for _, args := range [][]string{
+		{"db"},
 		{"rerun"},
 		{"status"},
 		{"shutdown"},
@@ -60,7 +61,7 @@ func TestCommandLayout(t *testing.T) {
 	}
 }
 
-func TestDBChangesLimitZeroSendsExplicitLimit(t *testing.T) {
+func TestChangesLimitZeroSendsExplicitLimit(t *testing.T) {
 	temp, err := os.MkdirTemp("", "h")
 	if err != nil {
 		t.Fatal(err)
@@ -103,9 +104,9 @@ func TestDBChangesLimitZeroSendsExplicitLimit(t *testing.T) {
 		stdout:    &stdout,
 		stderr:    &stderr,
 	})
-	cmd.SetArgs([]string{"db", "changes", "--limit", "0"})
+	cmd.SetArgs([]string{"changes", "--limit", "0"})
 	if err := cmd.Execute(); err != nil {
-		t.Fatalf("db changes --limit 0: %v\nstderr: %s", err, stderr.String())
+		t.Fatalf("changes --limit 0: %v\nstderr: %s", err, stderr.String())
 	}
 	select {
 	case got := <-seen:
@@ -113,7 +114,7 @@ func TestDBChangesLimitZeroSendsExplicitLimit(t *testing.T) {
 			t.Fatalf("expected explicit limit=0 query, got %q", got)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for db changes request")
+		t.Fatal("timed out waiting for changes request")
 	}
 }
 
@@ -227,6 +228,43 @@ func TestWriteDatabaseInspectionTables(t *testing.T) {
 		if got := out.String(); !strings.Contains(got, tt.want) {
 			t.Fatalf("%s table did not include header %q: %s", name, tt.want, got)
 		}
+	}
+}
+
+func TestWriteCheckResultReportsNonSuccessfulOutputs(t *testing.T) {
+	var out bytes.Buffer
+	resp := &client.WaitResponse{Settled: true}
+	outputs := []checkHookOutput{{
+		HookID:      "lint",
+		Name:        "Lint",
+		Description: "Checks Go formatting and lint issues.",
+		Type:        "file",
+		Pattern:     "**/*.go",
+		Path:        ".discobox/hooks/lint.sh",
+		Status:      models.StatusFailure,
+		Output:      "lint failed\n",
+	}}
+	if err := writeCheckResult(&out, resp, outputs); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	for _, want := range []string{"=== FAILED HOOK lint ===", "--- metadata ---", "name: Lint", "description: Checks Go formatting", "type: file", "pattern: **/*.go", "hook_file: .discobox/hooks/lint.sh", "--- output ---", "lint failed", "--- end output ---", "=== END FAILED HOOK lint ==="} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("check result missing %q: %s", want, got)
+		}
+	}
+}
+
+func TestFailedHooksIgnoresIdleSuccessAndQueued(t *testing.T) {
+	hooksList := []client.HookStatus{
+		{Hook: hooks.Hook{ID: "idle"}, Status: models.StatusIdle},
+		{Hook: hooks.Hook{ID: "success"}, Status: models.StatusSuccess},
+		{Hook: hooks.Hook{ID: "failure"}, Status: models.StatusFailure},
+		{Hook: hooks.Hook{ID: "queued"}, Status: models.StatusQueued},
+	}
+	got := failedHooks(hooksList)
+	if len(got) != 1 || got[0].Hook.ID != "failure" {
+		t.Fatalf("unexpected failed hooks: %#v", got)
 	}
 }
 

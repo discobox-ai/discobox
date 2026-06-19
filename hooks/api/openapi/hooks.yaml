@@ -28,6 +28,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/StatusResponse'
+  /wait:
+    get:
+      operationId: hooks-wait
+      summary: Wait for daemon hook work and watcher processing to settle.
+      parameters:
+        - name: timeout_seconds
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: Final settled or timed-out daemon status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WaitResponse'
   /hooks:
     get:
       operationId: hooks-list
@@ -243,6 +261,8 @@ components:
       $ref: ./components/transport.yaml#/PingResponse
     StatusResponse:
       $ref: ./components/transport.yaml#/StatusResponse
+    WaitResponse:
+      $ref: ./components/transport.yaml#/WaitResponse
     HooksResponse:
       $ref: ./components/transport.yaml#/HooksResponse
     EventsResponse:

@@ -499,6 +499,31 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 				}
 
+			case 'w': // Prefix: "wait"
+
+				if l := len("wait"); len(elem) >= l && elem[0:l] == "wait" {
+					elem = elem[l:]
+				} else {
+					break
+				}
+
+				if len(elem) == 0 {
+					// Leaf node.
+					switch r.Method {
+					case "GET":
+						s.handleHooksWaitRequest([0]string{}, elemIsEscaped, w, r)
+					default:
+						s.notAllowed(w, r, notAllowedParams{
+							allowedMethods: "GET",
+							allowedHeaders: nil,
+							acceptPost:     "",
+							acceptPatch:    "",
+						})
+					}
+
+					return
+				}
+
 			}
 
 		}
@@ -1014,6 +1039,31 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 						}
 					}
 
+				}
+
+			case 'w': // Prefix: "wait"
+
+				if l := len("wait"); len(elem) >= l && elem[0:l] == "wait" {
+					elem = elem[l:]
+				} else {
+					break
+				}
+
+				if len(elem) == 0 {
+					// Leaf node.
+					switch method {
+					case "GET":
+						r.name = HooksWaitOperation
+						r.summary = "Wait for daemon hook work and watcher processing to settle."
+						r.operationID = "hooks-wait"
+						r.operationGroup = ""
+						r.pathPattern = "/wait"
+						r.args = args
+						r.count = 0
+						return r, true
+					default:
+						return
+					}
 				}
 
 			}

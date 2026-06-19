@@ -1788,6 +1788,87 @@ func (s *StatusResponse) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
 }
 
+// Ref: #/WaitResponse
+type WaitResponse struct {
+	Settled         bool         `json:"settled"`
+	Running         bool         `json:"running"`
+	Queued          int          `json:"queued"`
+	PendingChanges  bool         `json:"pending_changes"`
+	PendingSnapshot bool         `json:"pending_snapshot"`
+	Hooks           []HookStatus `json:"hooks"`
+	UpdatedAt       time.Time    `json:"updated_at"`
+}
+
+// GetSettled returns the value of Settled.
+func (s *WaitResponse) GetSettled() bool {
+	return s.Settled
+}
+
+// GetRunning returns the value of Running.
+func (s *WaitResponse) GetRunning() bool {
+	return s.Running
+}
+
+// GetQueued returns the value of Queued.
+func (s *WaitResponse) GetQueued() int {
+	return s.Queued
+}
+
+// GetPendingChanges returns the value of PendingChanges.
+func (s *WaitResponse) GetPendingChanges() bool {
+	return s.PendingChanges
+}
+
+// GetPendingSnapshot returns the value of PendingSnapshot.
+func (s *WaitResponse) GetPendingSnapshot() bool {
+	return s.PendingSnapshot
+}
+
+// GetHooks returns the value of Hooks.
+func (s *WaitResponse) GetHooks() []HookStatus {
+	return s.Hooks
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *WaitResponse) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// SetSettled sets the value of Settled.
+func (s *WaitResponse) SetSettled(val bool) {
+	s.Settled = val
+}
+
+// SetRunning sets the value of Running.
+func (s *WaitResponse) SetRunning(val bool) {
+	s.Running = val
+}
+
+// SetQueued sets the value of Queued.
+func (s *WaitResponse) SetQueued(val int) {
+	s.Queued = val
+}
+
+// SetPendingChanges sets the value of PendingChanges.
+func (s *WaitResponse) SetPendingChanges(val bool) {
+	s.PendingChanges = val
+}
+
+// SetPendingSnapshot sets the value of PendingSnapshot.
+func (s *WaitResponse) SetPendingSnapshot(val bool) {
+	s.PendingSnapshot = val
+}
+
+// SetHooks sets the value of Hooks.
+func (s *WaitResponse) SetHooks(val []HookStatus) {
+	s.Hooks = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *WaitResponse) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
 // Ref: #/WorkspaceSnapshot
 type WorkspaceSnapshot struct {
 	ID                string             `json:"id"`

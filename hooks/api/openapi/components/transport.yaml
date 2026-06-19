@@ -30,6 +30,27 @@ StatusResponse:
     updated_at:
       type: string
       format: date-time
+WaitResponse:
+  type: object
+  required: [settled, running, queued, pending_changes, pending_snapshot, hooks, updated_at]
+  properties:
+    settled:
+      type: boolean
+    running:
+      type: boolean
+    queued:
+      type: integer
+    pending_changes:
+      type: boolean
+    pending_snapshot:
+      type: boolean
+    hooks:
+      type: array
+      items:
+        $ref: './model/core.yaml#/HookStatus'
+    updated_at:
+      type: string
+      format: date-time
 HooksResponse:
   type: object
   required: [hooks]

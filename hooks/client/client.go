@@ -132,6 +132,56 @@ func (c *Client) Status(ctx context.Context) (*StatusResponse, error) {
 	return convertGeneratedPtr[StatusResponse](status)
 }
 
+// Wait waits for daemon hook work and pending watcher batches to reach a
+// terminal state. The returned response has Settled=false when the timeout
+// expires before terminal state is reached.
+func (c *Client) Wait(ctx context.Context, timeout time.Duration) (*WaitResponse, error) {
+	params := url.Values{}
+	if timeout >= 0 {
+		params.Set("timeout_seconds", fmt.Sprintf("%d", timeoutSeconds(timeout)))
+	}
+	reqURL := c.baseURL + "/wait"
+	if encoded := params.Encode(); encoded != "" {
+		reqURL += "?" + encoded
+	}
+	httpClient := unixHTTPClient(c.socketPath, 0)
+	if timeout > 0 {
+		httpClient = unixHTTPClient(c.socketPath, timeout+5*time.Second)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, classifyError(c.socketPath, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, responseError(resp.StatusCode, body)
+	}
+	var out WaitResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return nil, fmt.Errorf("decode wait response: %w", err)
+	}
+	return &out, nil
+}
+
+func timeoutSeconds(timeout time.Duration) int {
+	if timeout <= 0 {
+		return 0
+	}
+	seconds := int(timeout / time.Second)
+	if timeout%time.Second != 0 {
+		seconds++
+	}
+	return seconds
+}
+
 // ListHooks returns discovered hooks and current status metadata.
 func (c *Client) ListHooks(ctx context.Context) ([]HookStatus, error) {
 	generated, err := c.generatedClient()
@@ -534,6 +584,7 @@ func convertGenerated(value, out any) error {
 
 type PingResponse = model.PingResponse
 type StatusResponse = model.StatusResponse
+type WaitResponse = model.WaitResponse
 type HooksResponse = model.HooksResponse
 type EventsResponse = model.EventsResponse
 type RunsResponse = model.RunsResponse

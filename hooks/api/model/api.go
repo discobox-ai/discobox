@@ -26,6 +26,17 @@ type StatusResponse struct {
 	UpdatedAt time.Time    `json:"updated_at"`
 }
 
+// WaitResponse is returned by GET /wait after waiting for terminal daemon work.
+type WaitResponse struct {
+	Settled         bool         `json:"settled"`
+	Running         bool         `json:"running"`
+	Queued          int          `json:"queued"`
+	PendingChanges  bool         `json:"pending_changes"`
+	PendingSnapshot bool         `json:"pending_snapshot"`
+	Hooks           []HookStatus `json:"hooks"`
+	UpdatedAt       time.Time    `json:"updated_at"`
+}
+
 // HooksResponse is returned by GET /hooks.
 type HooksResponse struct {
 	Hooks []HookStatus `json:"hooks"`

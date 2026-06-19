@@ -62,6 +62,7 @@ type ExecutionResponse = model.ExecutionResponse
 type RunRequest = model.RunRequest
 type RunResponse = model.RunResponse
 type OutputResponse = model.OutputResponse
+type WaitResponse = model.WaitResponse
 type ShutdownResponse = model.ShutdownResponse
 
 // Run starts a session daemon and blocks until ctx is canceled, /shutdown is
@@ -292,7 +293,7 @@ func (r *runtimeState) serve() {
 
 func (r *runtimeState) generatedRoutes() (http.Handler, error) {
 	generated, err := hookapigen.NewServer(
-		&generatedHandler{manager: r.manager},
+		&generatedHandler{manager: r.manager, wait: r.wait},
 		hookapigen.WithNotFound(func(w http.ResponseWriter, req *http.Request) { http.NotFound(w, req) }),
 		hookapigen.WithMethodNotAllowed(func(w http.ResponseWriter, req *http.Request, _ string) { methodNotAllowed(w) }),
 	)
@@ -302,6 +303,10 @@ func (r *runtimeState) generatedRoutes() (http.Handler, error) {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodGet && req.URL.Path == "/events/stream" {
 			r.handleEventsStream(w, req)
+			return
+		}
+		if req.Method == http.MethodGet && req.URL.Path == "/wait" {
+			r.handleWait(w, req)
 			return
 		}
 		generated.ServeHTTP(w, req)
@@ -1020,6 +1025,98 @@ func (r *runtimeState) handleEventsStream(w http.ResponseWriter, req *http.Reque
 		case <-ticker.C:
 		}
 	}
+}
+
+func (r *runtimeState) handleWait(w http.ResponseWriter, req *http.Request) {
+	timeout, err := waitTimeout(req, 10*time.Minute)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	resp, err := r.wait(req.Context(), timeout)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+func waitTimeout(req *http.Request, fallback time.Duration) (time.Duration, error) {
+	raw := strings.TrimSpace(req.URL.Query().Get("timeout_seconds"))
+	if raw == "" {
+		return fallback, nil
+	}
+	var seconds int
+	if _, err := fmt.Sscanf(raw, "%d", &seconds); err != nil || seconds < 0 {
+		return 0, fmt.Errorf("invalid timeout_seconds %q", raw)
+	}
+	return time.Duration(seconds) * time.Second, nil
+}
+
+func (r *runtimeState) wait(ctx context.Context, timeout time.Duration) (model.WaitResponse, error) {
+	if timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeout)
+		defer cancel()
+	}
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		resp, err := r.waitSnapshot(ctx)
+		if err != nil {
+			return model.WaitResponse{}, err
+		}
+		if resp.Settled {
+			return resp, nil
+		}
+		select {
+		case <-ctx.Done():
+			resp.Settled = false
+			return resp, nil
+		case <-r.ctx.Done():
+			resp.Settled = false
+			return resp, nil
+		case <-ticker.C:
+		}
+	}
+}
+
+func (r *runtimeState) waitSnapshot(ctx context.Context) (model.WaitResponse, error) {
+	r.mu.Lock()
+	running := r.manager.Running()
+	pendingChanges := len(r.pendingBatch) > 0
+	pendingSnapshot := r.snapshotPending || r.snapshotRunning || r.snapshotDirty
+	r.mu.Unlock()
+
+	queued, err := r.store.PendingCount(ctx)
+	if err != nil {
+		return model.WaitResponse{}, err
+	}
+	paused, err := r.manager.GlobalPaused(ctx)
+	if err != nil {
+		return model.WaitResponse{}, err
+	}
+	eligiblePending := false
+	if !paused {
+		pending, err := r.store.NextPendingForPhases(ctx, r.manager.ActivePhases())
+		if err != nil {
+			return model.WaitResponse{}, err
+		}
+		eligiblePending = pending != nil
+	}
+	hooksList, err := r.manager.ListHooks(ctx)
+	if err != nil {
+		return model.WaitResponse{}, err
+	}
+	return model.WaitResponse{
+		Settled:         !running && !pendingChanges && !eligiblePending,
+		Running:         running,
+		Queued:          int(queued),
+		PendingChanges:  pendingChanges,
+		PendingSnapshot: pendingSnapshot,
+		Hooks:           hooksList,
+		UpdatedAt:       time.Now().UTC(),
+	}, nil
 }
 
 func (r *runtimeState) eventStreamCursor(ctx context.Context, lastEventID string) (time.Time, string, error) {

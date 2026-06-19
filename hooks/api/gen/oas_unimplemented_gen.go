@@ -138,3 +138,12 @@ func (UnimplementedHandler) HooksStatus(ctx context.Context) (r *StatusResponse,
 func (UnimplementedHandler) HooksStreamEvents(ctx context.Context, params HooksStreamEventsParams) (r HooksStreamEventsOK, _ error) {
 	return r, ht.ErrNotImplemented
 }
+
+// HooksWait implements hooks-wait operation.
+//
+// Wait for daemon hook work and watcher processing to settle.
+//
+// GET /wait
+func (UnimplementedHandler) HooksWait(ctx context.Context, params HooksWaitParams) (r *WaitResponse, _ error) {
+	return r, ht.ErrNotImplemented
+}

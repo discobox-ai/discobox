@@ -92,6 +92,12 @@ type Handler interface {
 	//
 	// GET /events/stream
 	HooksStreamEvents(ctx context.Context, params HooksStreamEventsParams) (HooksStreamEventsOK, error)
+	// HooksWait implements hooks-wait operation.
+	//
+	// Wait for daemon hook work and watcher processing to settle.
+	//
+	// GET /wait
+	HooksWait(ctx context.Context, params HooksWaitParams) (*WaitResponse, error)
 }
 
 // Server implements http server based on OpenAPI v3 specification and

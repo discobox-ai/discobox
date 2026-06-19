@@ -20,4 +20,5 @@ const (
 	HooksShutdownOperation         OperationName = "HooksShutdown"
 	HooksStatusOperation           OperationName = "HooksStatus"
 	HooksStreamEventsOperation     OperationName = "HooksStreamEvents"
+	HooksWaitOperation             OperationName = "HooksWait"
 )

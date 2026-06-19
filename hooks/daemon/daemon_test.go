@@ -112,6 +112,12 @@ echo "changed=$DISCOBOX_CHANGED_FILES"
 		t.Fatalf("hook did not run successfully: %+v", status)
 	}
 
+	var waitResp WaitResponse
+	doJSON(t, client, http.MethodGet, "http://unix/wait?timeout_seconds=1", nil, &waitResp)
+	if !waitResp.Settled || waitResp.Running || waitResp.Queued != 0 || len(waitResp.Hooks) != 1 || waitResp.Hooks[0].Status != "success" {
+		t.Fatalf("unexpected wait response after successful run: %+v", waitResp)
+	}
+
 	var skipped RunResponse
 	doJSON(t, client, http.MethodPost, "http://unix/hooks/echo/run", RunRequest{}, &skipped)
 	if !skipped.Skipped || skipped.Reason != "already_succeeded" {

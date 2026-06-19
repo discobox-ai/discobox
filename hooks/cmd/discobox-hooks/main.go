@@ -105,7 +105,11 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 	cmd.AddCommand(a.newPauseCommand())
 	cmd.AddCommand(a.newResumeCommand())
 	cmd.AddCommand(a.newOutputCommand())
-	cmd.AddCommand(a.newDBCommand())
+	cmd.AddCommand(a.newCheckCommand())
+	cmd.AddCommand(a.newRunsCommand())
+	cmd.AddCommand(a.newChangesCommand())
+	cmd.AddCommand(a.newSnapshotsCommand())
+	cmd.AddCommand(a.newQueueCommand())
 	return cmd
 }
 
@@ -401,20 +405,85 @@ func (a *app) newOutputCommand() *cobra.Command {
 	}
 }
 
-func (a *app) newDBCommand() *cobra.Command {
+type checkHookOutput struct {
+	HookID      string        `json:"hook_id"`
+	Name        string        `json:"name,omitempty"`
+	Description string        `json:"description,omitempty"`
+	Type        string        `json:"type,omitempty"`
+	Pattern     string        `json:"pattern,omitempty"`
+	Phase       string        `json:"phase,omitempty"`
+	Path        string        `json:"path,omitempty"`
+	Status      models.Status `json:"status"`
+	Output      string        `json:"output"`
+}
+
+var errCheckFailed = errors.New("hooks check failed")
+
+func (a *app) newCheckCommand() *cobra.Command {
+	var timeout time.Duration
 	cmd := &cobra.Command{
-		Use:     "db",
-		Aliases: []string{"inspect"},
-		Short:   "Inspect extended hook daemon resources",
+		Use:   "check",
+		Short: "Wait for hook work to finish and report non-successful hooks",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, _, err := a.client(cmd.Context())
+			if err != nil {
+				return err
+			}
+			resp, err := c.Wait(cmd.Context(), timeout)
+			if err != nil {
+				return err
+			}
+			failed := failedHooks(resp.Hooks)
+			outputs, err := a.checkOutputs(cmd.Context(), c, failed)
+			if err != nil {
+				return err
+			}
+			if a.opts.output == "json" {
+				if err := writeJSON(cmd.OutOrStdout(), map[string]any{"settled": resp.Settled, "running": resp.Running, "queued": resp.Queued, "pending_changes": resp.PendingChanges, "pending_snapshot": resp.PendingSnapshot, "failed": outputs}); err != nil {
+					return err
+				}
+			} else {
+				if err := writeCheckResult(cmd.OutOrStdout(), resp, outputs); err != nil {
+					return err
+				}
+			}
+			if !resp.Settled || len(outputs) > 0 {
+				return errCheckFailed
+			}
+			return nil
+		},
 	}
-	cmd.AddCommand(a.newDBRunsCommand())
-	cmd.AddCommand(a.newDBChangesCommand())
-	cmd.AddCommand(a.newDBSnapshotsCommand())
-	cmd.AddCommand(a.newDBQueueCommand())
+	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Minute, "maximum time to wait for terminal hook state")
 	return cmd
 }
 
-func (a *app) newDBRunsCommand() *cobra.Command {
+func (a *app) checkOutputs(ctx context.Context, c *client.Client, hooksList []client.HookStatus) ([]checkHookOutput, error) {
+	outputs := make([]checkHookOutput, 0, len(hooksList))
+	for _, h := range hooksList {
+		output := ""
+		if h.LastRunID != "" {
+			b, err := c.Output(ctx, h.Hook.ID)
+			if err != nil {
+				return nil, err
+			}
+			output = string(b)
+		}
+		outputs = append(outputs, checkHookOutput{
+			HookID:      h.Hook.ID,
+			Name:        h.Hook.Name,
+			Description: h.Hook.Description,
+			Type:        string(h.Hook.Type),
+			Pattern:     h.Hook.Pattern,
+			Phase:       h.Hook.Phase,
+			Path:        h.Hook.RelPath,
+			Status:      h.Status,
+			Output:      output,
+		})
+	}
+	return outputs, nil
+}
+
+func (a *app) newRunsCommand() *cobra.Command {
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "runs [HOOK_ID]",
@@ -440,7 +509,7 @@ func (a *app) newDBRunsCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *app) newDBChangesCommand() *cobra.Command {
+func (a *app) newChangesCommand() *cobra.Command {
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "changes",
@@ -461,7 +530,7 @@ func (a *app) newDBChangesCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *app) newDBSnapshotsCommand() *cobra.Command {
+func (a *app) newSnapshotsCommand() *cobra.Command {
 	var limit int
 	cmd := &cobra.Command{
 		Use:   "snapshots",
@@ -482,7 +551,7 @@ func (a *app) newDBSnapshotsCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *app) newDBQueueCommand() *cobra.Command {
+func (a *app) newQueueCommand() *cobra.Command {
 	var limit int
 	cmd := &cobra.Command{
 		Use:     "queue",
@@ -642,6 +711,60 @@ func (a *app) writeQueue(cmd *cobra.Command, rows []client.QueuedHook) error {
 	return tw.Flush()
 }
 
+func writeCheckResult(w io.Writer, resp *client.WaitResponse, outputs []checkHookOutput) error {
+	if len(outputs) == 0 && resp.Settled {
+		_, err := fmt.Fprintln(w, "all hooks successful")
+		return err
+	}
+	if !resp.Settled {
+		fmt.Fprintf(w, "hook daemon unsettled: running=%t queued=%d pending_changes=%t pending_snapshot=%t\n", resp.Running, resp.Queued, resp.PendingChanges, resp.PendingSnapshot)
+	}
+	if len(outputs) == 0 {
+		return nil
+	}
+	for i, out := range outputs {
+		if i > 0 || !resp.Settled {
+			fmt.Fprintln(w)
+		}
+		writeCheckFailure(w, out)
+	}
+	return nil
+}
+
+func writeCheckFailure(w io.Writer, out checkHookOutput) {
+	fmt.Fprintf(w, "=== FAILED HOOK %s ===\n", out.HookID)
+	fmt.Fprintln(w, "--- metadata ---")
+	if out.Name != "" {
+		fmt.Fprintf(w, "name: %s\n", out.Name)
+	}
+	if out.Description != "" {
+		fmt.Fprintf(w, "description: %s\n", out.Description)
+	}
+	if out.Type != "" {
+		fmt.Fprintf(w, "type: %s\n", out.Type)
+	}
+	if out.Pattern != "" {
+		fmt.Fprintf(w, "pattern: %s\n", out.Pattern)
+	}
+	if out.Phase != "" {
+		fmt.Fprintf(w, "phase: %s\n", out.Phase)
+	}
+	if out.Path != "" {
+		fmt.Fprintf(w, "hook_file: %s\n", out.Path)
+	}
+	fmt.Fprintln(w, "--- output ---")
+	if out.Output == "" {
+		fmt.Fprintln(w, "(empty)")
+	} else {
+		_, _ = io.WriteString(w, out.Output)
+		if !strings.HasSuffix(out.Output, "\n") {
+			fmt.Fprintln(w)
+		}
+	}
+	fmt.Fprintln(w, "--- end output ---")
+	fmt.Fprintf(w, "=== END FAILED HOOK %s ===\n", out.HookID)
+}
+
 func eventDetailNames(details []hookapi.EventDetailInfo) string {
 	if len(details) == 0 {
 		return ""
@@ -776,6 +899,19 @@ func runAllStatusEligible(h client.HookStatus) bool {
 	default:
 		return false
 	}
+}
+
+func failedHooks(hooks []client.HookStatus) []client.HookStatus {
+	out := make([]client.HookStatus, 0)
+	for _, h := range hooks {
+		if h.Hook.ID == "" {
+			continue
+		}
+		if h.Status == models.StatusFailure {
+			out = append(out, h)
+		}
+	}
+	return out
 }
 
 func listTargetEvents(ctx context.Context, c *client.Client, args []string, limit int) ([]client.Event, error) {

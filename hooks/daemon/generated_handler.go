@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	hookapigen "github.com/obot-platform/discobox/hooks/api/gen"
 	"github.com/obot-platform/discobox/hooks/api/model"
@@ -15,6 +16,7 @@ import (
 
 type generatedHandler struct {
 	manager *manager.Manager
+	wait    func(context.Context, time.Duration) (model.WaitResponse, error)
 }
 
 func (h *generatedHandler) HooksPing(ctx context.Context) (*hookapigen.PingResponse, error) {
@@ -27,6 +29,21 @@ func (h *generatedHandler) HooksStatus(ctx context.Context) (*hookapigen.StatusR
 		return nil, err
 	}
 	return convertToGenerated[hookapigen.StatusResponse](status)
+}
+
+func (h *generatedHandler) HooksWait(ctx context.Context, params hookapigen.HooksWaitParams) (*hookapigen.WaitResponse, error) {
+	if h.wait == nil {
+		return nil, fmt.Errorf("wait handler is unavailable")
+	}
+	timeout := 10 * time.Minute
+	if seconds, ok := params.TimeoutSeconds.Get(); ok {
+		timeout = time.Duration(seconds) * time.Second
+	}
+	resp, err := h.wait(ctx, timeout)
+	if err != nil {
+		return nil, err
+	}
+	return convertToGenerated[hookapigen.WaitResponse](resp)
 }
 
 func (h *generatedHandler) HooksList(ctx context.Context) (*hookapigen.HooksResponse, error) {

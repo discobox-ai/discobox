@@ -62,11 +62,11 @@ Initial command surface:
 - `output [all|hook-id ...]`: print captured output for each selected hook's
   latest run. With no arguments or `all`, expand to every discovered hook;
   multiple hooks are formatted with per-hook headers.
-- `db runs [hook-id]`: list hook run history through the daemon API.
-- `db changes`: list observed file changes and captured diff metadata through
-  the daemon API.
-- `db snapshots`: list workspace snapshots through the daemon API.
-- `db queue`: list queued hook work through the daemon API.
+- `runs [hook-id]`: list hook run history through the daemon API.
+- `changes`: list observed file changes and captured diff metadata through the
+  daemon API.
+- `snapshots`: list workspace snapshots through the daemon API.
+- `queue`: list queued hook work through the daemon API.
 - `events [-f|--follow] [all|hook-id]`: list audit events or follow the daemon's
   SSE event stream; follow mode supports all events or one hook filter.
 - `events --list-types`: print every known audit event type and its description
