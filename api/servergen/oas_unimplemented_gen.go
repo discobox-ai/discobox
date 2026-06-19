@@ -184,6 +184,15 @@ func (UnimplementedHandler) ListSandboxes(ctx context.Context, params ListSandbo
 	return r, ht.ErrNotImplemented
 }
 
+// ListWorkers implements list-workers operation.
+//
+// List workers.
+//
+// GET /projects/{projectId}/workers
+func (UnimplementedHandler) ListWorkers(ctx context.Context, params ListWorkersParams) (r ListWorkersRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // RegisterWorker implements register-worker operation.
 //
 // Register a bootstrapped worker.

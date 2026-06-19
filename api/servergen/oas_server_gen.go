@@ -122,6 +122,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/sandboxes
 	ListSandboxes(ctx context.Context, params ListSandboxesParams) (ListSandboxesRes, error)
+	// ListWorkers implements list-workers operation.
+	//
+	// List workers.
+	//
+	// GET /projects/{projectId}/workers
+	ListWorkers(ctx context.Context, params ListWorkersParams) (ListWorkersRes, error)
 	// RegisterWorker implements register-worker operation.
 	//
 	// Register a bootstrapped worker.

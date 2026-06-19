@@ -44,6 +44,23 @@ func (s *Service) RegisterWorker(ctx context.Context, input api.RegisterWorkerBo
 	return &api.RegisterWorkerResponseBody{AuthToken: authToken}, nil
 }
 
+func (s *Service) ListWorkers(ctx context.Context, projectID, providerID string) ([]model.Worker, error) {
+	projectID = strings.TrimSpace(projectID)
+	providerID = strings.TrimSpace(providerID)
+	if projectID == "" {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "projectId is required")
+	}
+	if _, err := s.store.GetProject(ctx, projectID); err != nil {
+		return nil, apiError(err, "project not found")
+	}
+	if providerID != "" {
+		if _, err := s.store.GetSandboxProviderInstance(ctx, projectID, providerID); err != nil {
+			return nil, apiError(err, "provider instance not found")
+		}
+	}
+	return s.store.ListWorkers(ctx, projectID, providerID)
+}
+
 func (s *Service) UpdateWorkerStatus(ctx context.Context, workerID string, input api.UpdateWorkerStatusBody) (*model.Worker, error) {
 	workerID = strings.TrimSpace(workerID)
 	if workerID == "" {

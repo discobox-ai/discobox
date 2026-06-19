@@ -52,6 +52,56 @@ func TestWorkerRegisterStatusAndClaim(t *testing.T) {
 	}
 }
 
+func TestListSandboxProviderInstancesWithWorkersPreloadsWorkers(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "docker", Name: "Docker"}
+	if err := s.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	otherProvider := &model.SandboxProviderInstance{ID: "provider-2", ProjectID: "project-1", Type: "docker", Name: "Other Docker"}
+	if err := s.CreateSandboxProviderInstance(ctx, otherProvider); err != nil {
+		t.Fatalf("create other provider: %v", err)
+	}
+	if err := s.UpsertProject(ctx, &model.Project{ID: "project-2", OwnerUserID: "user-1", Name: "Other Project", Slug: "other-project"}); err != nil {
+		t.Fatalf("create outside project: %v", err)
+	}
+	outsideProjectProvider := &model.SandboxProviderInstance{ID: "provider-3", ProjectID: "project-2", Type: "docker", Name: "Outside Docker"}
+	if err := s.CreateSandboxProviderInstance(ctx, outsideProjectProvider); err != nil {
+		t.Fatalf("create outside provider: %v", err)
+	}
+	for _, worker := range []model.Worker{
+		{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: provider.ID, Identity: "worker-1"},
+		{ID: "worker-2", ProjectID: "project-1", ProviderInstanceID: otherProvider.ID, Identity: "worker-2"},
+		{ID: "worker-3", ProjectID: "project-2", ProviderInstanceID: outsideProjectProvider.ID, Identity: "worker-3"},
+	} {
+		worker := worker
+		if err := s.CreateWorker(ctx, &worker); err != nil {
+			t.Fatalf("create worker %s: %v", worker.ID, err)
+		}
+	}
+
+	providers, err := s.ListSandboxProviderInstancesWithWorkers(ctx, "project-1")
+	if err != nil {
+		t.Fatalf("list providers with workers: %v", err)
+	}
+	if len(providers) != 2 {
+		t.Fatalf("providers len = %d, want 2", len(providers))
+	}
+	for _, provider := range providers {
+		if len(provider.Workers) != 1 {
+			t.Fatalf("provider %s workers = %#v, want one worker", provider.ID, provider.Workers)
+		}
+		if provider.Workers[0].ProviderInstanceID != provider.ID {
+			t.Fatalf("provider %s loaded worker for provider %s", provider.ID, provider.Workers[0].ProviderInstanceID)
+		}
+		if provider.Workers[0].ProjectID != "project-1" {
+			t.Fatalf("provider %s loaded worker from project %s", provider.ID, provider.Workers[0].ProjectID)
+		}
+	}
+}
+
 func TestFindSchedulableWorkerSamplesTwoAndPicksBestResourceFit(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)

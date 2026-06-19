@@ -87,8 +87,11 @@ func (a *App) writeProvider(cmd *cobra.Command, provider *apiclientgen.SandboxPr
 	fmt.Fprintf(tw, "DISABLED\t%t\n", provider.Disabled)
 	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(provider.UpdatedAt))
 	fmt.Fprintf(tw, "CONFIG\t%s\n", formatRedactedRawJSON(provider.GetConfig()))
-	if workers, ok := provider.GetWorkers().Get(); ok {
-		fmt.Fprintf(tw, "STATUS\t%s\n", formatProviderStatus(workers))
+	if status, ok := compactProviderStatusFromProvider(*provider); ok {
+		fmt.Fprintf(tw, "STATUS\t%s\n", formatCompactProviderStatus(status))
+		if status.LastError != "" {
+			fmt.Fprintf(tw, "ERROR\t%s\n", truncateTableValue(status.LastError, 120))
+		}
 	}
 	return tw.Flush()
 }
@@ -98,11 +101,54 @@ func (a *App) writeProviders(cmd *cobra.Command, providers []apiclientgen.Sandbo
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"providers": providers})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tDISABLED\tUPDATED")
+	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tDISABLED\tSTATUS\tERROR\tUPDATED")
 	for _, provider := range providers {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\n", shortID(provider.ID), provider.Name, provider.Type, provider.Disabled, formatTime(provider.UpdatedAt))
+		status, _ := compactProviderStatusFromProvider(provider)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\t%s\t%s\n",
+			shortID(provider.ID),
+			provider.Name,
+			provider.Type,
+			provider.Disabled,
+			formatCompactProviderStatus(status),
+			truncateTableValue(status.LastError, 80),
+			formatTime(provider.UpdatedAt),
+		)
 	}
 	return tw.Flush()
+}
+
+func (a *App) writeWorkers(cmd *cobra.Command, workers []apiclientgen.Worker) error {
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"workers": workers})
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tPROVIDER\tPHASE\tREADY\tSCHEDULABLE\tDEGRADED\tCPU\tMEMORY\tSTORAGE\tUPDATED\tMESSAGE")
+	for _, worker := range workers {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%t\t%t\t%.2f\t%s\t%s\t%s\t%s\n",
+			shortID(worker.ID),
+			shortID(worker.ProviderInstanceId),
+			worker.Phase,
+			worker.Ready,
+			worker.Schedulable,
+			worker.Degraded,
+			worker.AvailableCpuVcpus,
+			formatBytes(worker.AvailableMemoryBytes),
+			formatBytes(worker.AvailableStorageBytes),
+			formatTime(worker.UpdatedAt),
+			truncateTableValue(workerMessage(worker), 80),
+		)
+	}
+	return tw.Flush()
+}
+
+func workerMessage(worker apiclientgen.Worker) string {
+	if message, ok := worker.ErrorMessage.Get(); ok && strings.TrimSpace(message) != "" {
+		return message
+	}
+	if message, ok := worker.StatusMessage.Get(); ok && strings.TrimSpace(message) != "" {
+		return message
+	}
+	return ""
 }
 
 func (a *App) writeAgentDefinition(cmd *cobra.Command, definition *apiclientgen.AgentConfigDefinition) error {
@@ -231,6 +277,20 @@ func formatTime(value time.Time) string {
 		return ""
 	}
 	return formatRelativeTime(time.Now(), value)
+}
+
+func formatBytes(value int64) string {
+	const unit = 1024
+	if value < unit {
+		return fmt.Sprintf("%dB", value)
+	}
+	div := int64(unit)
+	exp := 0
+	for n := value / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f%ciB", float64(value)/float64(div), "KMGTPE"[exp])
 }
 
 func formatRelativeTime(now, value time.Time) string {
@@ -362,65 +422,107 @@ func formatRedactedRawJSON(raw []byte) string {
 	return string(data)
 }
 
-func formatJSONValue(value any) string {
-	data, err := json.Marshal(value)
-	if err != nil {
-		return ""
-	}
-	return string(data)
+type compactProviderStatus struct {
+	WorkerCount        int
+	ReadyWorkers       int
+	SchedulableWorkers int
+	DegradedWorkers    int
+	FailedWorkers      int
+	LastError          string
 }
 
-func formatProviderStatus(workers []apiclientgen.Worker) string {
-	readyWorkers := 0
-	schedulableWorkers := 0
-	degradedWorkers := 0
-	failedWorkers := 0
-	out := make([]map[string]any, 0, len(workers))
+func compactProviderStatusFromProvider(provider apiclientgen.SandboxProviderInstance) (compactProviderStatus, bool) {
+	if status, ok := provider.GetStatus().Get(); ok {
+		return compactProviderStatusFromInstanceStatus(status), true
+	}
+	if workers, ok := provider.GetWorkers().Get(); ok {
+		return compactProviderStatusFromWorkers(workers), true
+	}
+	return compactProviderStatus{}, false
+}
+
+func compactProviderStatusFromInstanceStatus(status apiclientgen.SandboxProviderInstanceStatus) compactProviderStatus {
+	out := compactProviderStatus{
+		WorkerCount:        int(status.WorkerCount),
+		ReadyWorkers:       int(status.ReadyWorkers),
+		SchedulableWorkers: int(status.SchedulableWorkers),
+		DegradedWorkers:    int(status.DegradedWorkers),
+		FailedWorkers:      int(status.FailedWorkers),
+	}
+	if lastError, ok := status.LastError.Get(); ok {
+		out.LastError = strings.TrimSpace(lastError)
+	}
+	if out.LastError == "" {
+		if workers, ok := status.Workers.Get(); ok {
+			for _, worker := range workers {
+				if message := providerWorkerStatusMessage(worker); message != "" {
+					out.LastError = message
+					break
+				}
+			}
+		}
+	}
+	return out
+}
+
+func compactProviderStatusFromWorkers(workers []apiclientgen.Worker) compactProviderStatus {
+	var out compactProviderStatus
 	for _, worker := range workers {
+		if providerWorkerDeleted(worker) {
+			if out.LastError == "" {
+				out.LastError = workerMessage(worker)
+			}
+			continue
+		}
+		out.WorkerCount++
 		if worker.Ready {
-			readyWorkers++
+			out.ReadyWorkers++
 		}
 		if worker.Schedulable {
-			schedulableWorkers++
+			out.SchedulableWorkers++
 		}
 		if worker.Degraded {
-			degradedWorkers++
+			out.DegradedWorkers++
 		}
-		if string(worker.Phase) == "failed" || string(worker.LastOperationStatus) == "failed" {
-			failedWorkers++
+		if string(worker.Phase) == "failed" || string(worker.LastOperationStatus) == "failed" || worker.ErrorMessage.Set {
+			out.FailedWorkers++
 		}
-		item := map[string]any{
-			"id":                  shortID(worker.ID),
-			"desiredState":        worker.DesiredState,
-			"phase":               worker.Phase,
-			"ready":               worker.Ready,
-			"schedulable":         worker.Schedulable,
-			"degraded":            worker.Degraded,
-			"lastOperationStatus": worker.LastOperationStatus,
-		}
-		if worker.Identity != "" {
-			item["identity"] = worker.Identity
-		}
-		if errMessage, ok := worker.ErrorMessage.Get(); ok {
-			item["errorMessage"] = errMessage
-		}
-		out = append(out, item)
-	}
-	value := map[string]any{
-		"workerCount":        len(workers),
-		"readyWorkers":       readyWorkers,
-		"schedulableWorkers": schedulableWorkers,
-		"degradedWorkers":    degradedWorkers,
-		"failedWorkers":      failedWorkers,
-		"workers":            out,
-	}
-	for _, worker := range workers {
-		if errMessage, ok := worker.ErrorMessage.Get(); ok {
-			value["lastError"] = errMessage
-			break
+		if out.LastError == "" {
+			out.LastError = workerMessage(worker)
 		}
 	}
-	return formatJSONValue(value)
+	return out
+}
+
+func providerWorkerDeleted(worker apiclientgen.Worker) bool {
+	return string(worker.DesiredState) == "deleted" || string(worker.Phase) == "deleted"
+}
+
+func providerWorkerStatusMessage(worker apiclientgen.ProviderWorkerStatus) string {
+	if message, ok := worker.ErrorMessage.Get(); ok && strings.TrimSpace(message) != "" {
+		return strings.TrimSpace(message)
+	}
+	if message, ok := worker.StatusMessage.Get(); ok && strings.TrimSpace(message) != "" {
+		return strings.TrimSpace(message)
+	}
+	return ""
+}
+
+func formatCompactProviderStatus(status compactProviderStatus) string {
+	if status.WorkerCount == 0 {
+		return "0 workers"
+	}
+	parts := []string{fmt.Sprintf("%d/%d ready", status.ReadyWorkers, status.WorkerCount)}
+	if status.SchedulableWorkers != status.ReadyWorkers {
+		parts = append(parts, fmt.Sprintf("%d sched", status.SchedulableWorkers))
+	}
+	if status.DegradedWorkers > 0 {
+		parts = append(parts, fmt.Sprintf("%d degraded", status.DegradedWorkers))
+	}
+	if status.FailedWorkers > 0 {
+		parts = append(parts, fmt.Sprintf("%d failed", status.FailedWorkers))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func redactSensitiveJSON(value any) {

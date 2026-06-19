@@ -403,6 +403,24 @@ components:
             required:
                 - sandboxes
             type: object
+        ListWorkersBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListWorkersBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                workers:
+                    description: Workers
+                    items:
+                        $ref: '#/components/schemas/Worker'
+                    nullable: true
+                    type: array
+            required:
+                - workers
+            type: object
         Job:
             additionalProperties: false
             properties:
@@ -1435,10 +1453,10 @@ components:
                     description: Whether the worker should be used only as fallback capacity
                     type: boolean
                 desiredState:
-                    description: Requested steady state for reconciliation
+                    description: Requested worker state
                     enum:
-                        - running
-                        - stopped
+                        - active
+                        - drained
                         - deleted
                     type: string
                 errorMessage:
@@ -1480,12 +1498,11 @@ components:
                     description: Observed lifecycle phase
                     enum:
                         - pending
-                        - provisioning
-                        - starting
-                        - running
-                        - stopping
-                        - stopped
-                        - deleting
+                        - launching
+                        - registering
+                        - active
+                        - draining
+                        - offline
                         - deleted
                         - failed
                     type: string
@@ -2093,6 +2110,40 @@ paths:
             summary: Update a sandbox provider instance
             tags:
                 - Providers
+    /projects/{projectId}/workers:
+        get:
+            operationId: list-workers
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Provider instance ID
+                  in: query
+                  name: provider
+                  schema:
+                    description: Provider instance ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListWorkersBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List workers
+            tags:
+                - Workers
     /projects/{projectId}/sandboxes:
         get:
             operationId: list-sandboxes

@@ -54,9 +54,7 @@ func TestWriteProviderTableIncludesConfig(t *testing.T) {
 		`"apiKey":"[REDACTED]"`,
 		`"password":"[REDACTED]"`,
 		"STATUS",
-		`"workerCount":1`,
-		`"id":"worker-1"`,
-		`"identity":"container-1"`,
+		"1/1 ready",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("provider output = %q, want %q", output, want)
@@ -65,6 +63,121 @@ func TestWriteProviderTableIncludesConfig(t *testing.T) {
 	for _, leaked := range []string{"do-secret", "api-secret", "password-secret", "bootstrap-secret"} {
 		if strings.Contains(output, leaked) {
 			t.Fatalf("provider output leaked secret %q: %q", leaked, output)
+		}
+	}
+}
+
+func TestWriteProviderTableExcludesDeletedWorkersFromCompactStatus(t *testing.T) {
+	app := &App{output: "table"}
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	err := app.writeProvider(cmd, &apiclientgen.SandboxProviderInstance{
+		ID:   "provider-1",
+		Name: "Docker",
+		Type: "docker",
+		Workers: apiclientgen.NewOptNilWorkerArray([]apiclientgen.Worker{
+			{
+				ID:                  "worker-deleted",
+				DesiredState:        "deleted",
+				Phase:               "deleted",
+				LastOperationStatus: "success",
+			},
+			{
+				ID:                  "worker-failed",
+				DesiredState:        "active",
+				Phase:               "failed",
+				LastOperationStatus: "failed",
+				ErrorMessage:        apiclientgen.NewOptString("worker image missing"),
+			},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("writeProvider: %v", err)
+	}
+
+	output := out.String()
+	for _, want := range []string{"0/1 ready", "1 failed", "worker image missing"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("provider output = %q, want %q", output, want)
+		}
+	}
+	if strings.Contains(output, "0/2 ready") {
+		t.Fatalf("provider output = %q, did not expect deleted worker in readiness count", output)
+	}
+}
+
+func TestWriteProviderTableIncludesDerivedStatus(t *testing.T) {
+	app := &App{output: "table"}
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	err := app.writeProvider(cmd, &apiclientgen.SandboxProviderInstance{
+		ID:   "provider-1",
+		Name: "Docker",
+		Type: "docker",
+		Status: apiclientgen.NewOptSandboxProviderInstanceStatus(apiclientgen.SandboxProviderInstanceStatus{
+			WorkerCount:        1,
+			FailedWorkers:      1,
+			ReadyWorkers:       0,
+			SchedulableWorkers: 0,
+			DegradedWorkers:    0,
+			LastError:          apiclientgen.NewOptString("docker create failed"),
+			Workers: apiclientgen.NewOptNilProviderWorkerStatusArray([]apiclientgen.ProviderWorkerStatus{{
+				ID:                  "worker-1",
+				DesiredState:        "active",
+				Phase:               "failed",
+				LastOperationStatus: "failed",
+				ErrorMessage:        apiclientgen.NewOptString("docker create failed"),
+			}}),
+		}),
+	})
+	if err != nil {
+		t.Fatalf("writeProvider: %v", err)
+	}
+
+	output := out.String()
+	for _, want := range []string{
+		"STATUS",
+		"0/1 ready",
+		"1 failed",
+		"ERROR",
+		"docker create failed",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("provider output = %q, want %q", output, want)
+		}
+	}
+}
+
+func TestWriteProvidersTableIncludesCompactStatus(t *testing.T) {
+	app := &App{output: "table"}
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	err := app.writeProviders(cmd, []apiclientgen.SandboxProviderInstance{{
+		ID:   "provider-1",
+		Name: "Docker",
+		Type: "docker",
+		Status: apiclientgen.NewOptSandboxProviderInstanceStatus(apiclientgen.SandboxProviderInstanceStatus{
+			WorkerCount:        2,
+			ReadyWorkers:       1,
+			SchedulableWorkers: 1,
+			FailedWorkers:      1,
+			LastError:          apiclientgen.NewOptString("worker did not register before timeout"),
+		}),
+	}})
+	if err != nil {
+		t.Fatalf("writeProviders: %v", err)
+	}
+
+	output := out.String()
+	for _, want := range []string{"STATUS", "ERROR", "1/2 ready", "1 failed", "worker did not register before timeout"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("providers output = %q, want %q", output, want)
 		}
 	}
 }
@@ -191,6 +304,45 @@ func TestJobsCommandListsProjectJobs(t *testing.T) {
 		if strings.Contains(output, unexpected) {
 			t.Fatalf("jobs output = %q, did not expect full ID %q", output, unexpected)
 		}
+	}
+}
+
+func TestWorkerListCommandFiltersByProvider(t *testing.T) {
+	const workerID = "01kv9w440bpa9qk5n25t2hh2rv"
+	const providerID = "provider-1"
+	var sawWorkerList bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/projects/project-1/workers" {
+			t.Fatalf("path = %q, want project workers path", got)
+		}
+		if got := r.URL.Query().Get("provider"); got != providerID {
+			t.Fatalf("provider query = %q, want %q", got, providerID)
+		}
+		sawWorkerList = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"workers":[{"id":"` + workerID + `","projectId":"project-1","providerInstanceId":"` + providerID + `","identity":"worker-1","ready":true,"schedulable":true,"degraded":false,"availableCpuVcpus":2,"availableMemoryBytes":1073741824,"availableStorageBytes":2147483648,"desiredState":"active","phase":"active","lastOperationStatus":"failed","statusMessage":"waiting for registration","errorMessage":"worker registration expired","generation":1,"observedGeneration":1,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "worker", "list", "--provider", providerID})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute worker list: %v", err)
+	}
+	if !sawWorkerList {
+		t.Fatal("worker list endpoint was not called")
+	}
+	output := out.String()
+	for _, want := range []string{"ID", "PROVIDER", "MESSAGE", shortID(workerID), shortID(providerID), "active", "true", "2.00", "1.0GiB", "worker registration expired"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("worker output = %q, want %q", output, want)
+		}
+	}
+	if strings.Contains(output, workerID) {
+		t.Fatalf("worker output = %q, did not expect full worker ID", output)
 	}
 }
 

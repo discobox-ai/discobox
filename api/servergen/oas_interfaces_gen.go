@@ -77,6 +77,10 @@ type ListSandboxesRes interface {
 	listSandboxesRes()
 }
 
+type ListWorkersRes interface {
+	listWorkersRes()
+}
+
 type RegisterWorkerRes interface {
 	registerWorkerRes()
 }

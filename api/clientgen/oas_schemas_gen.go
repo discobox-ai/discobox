@@ -814,6 +814,7 @@ func (*ErrorModelStatusCode) listProjectsRes()                  {}
 func (*ErrorModelStatusCode) listSandboxProviderCatalogRes()    {}
 func (*ErrorModelStatusCode) listSandboxProviderInstancesRes()  {}
 func (*ErrorModelStatusCode) listSandboxesRes()                 {}
+func (*ErrorModelStatusCode) listWorkersRes()                   {}
 func (*ErrorModelStatusCode) registerWorkerRes()                {}
 func (*ErrorModelStatusCode) restartSandboxRes()                {}
 func (*ErrorModelStatusCode) startSandboxRes()                  {}
@@ -1308,6 +1309,36 @@ func (s *ListSandboxesBody) SetSandboxes(val []Sandbox) {
 }
 
 func (*ListSandboxesBody) listSandboxesRes() {}
+
+// Ref: #/components/schemas/ListWorkersBody
+type ListWorkersBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Workers.
+	Workers []Worker `json:"workers"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListWorkersBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetWorkers returns the value of Workers.
+func (s *ListWorkersBody) GetWorkers() []Worker {
+	return s.Workers
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListWorkersBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetWorkers sets the value of Workers.
+func (s *ListWorkersBody) SetWorkers(val []Worker) {
+	s.Workers = val
+}
+
+func (*ListWorkersBody) listWorkersRes() {}
 
 // NewOptAgentConfig returns new OptAgentConfig with value set to v.
 func NewOptAgentConfig(v AgentConfig) OptAgentConfig {
@@ -4775,7 +4806,7 @@ type Worker struct {
 	CreatedAt time.Time `json:"createdAt"`
 	// Whether the worker should be used only as fallback capacity.
 	Degraded bool `json:"degraded"`
-	// Requested steady state for reconciliation.
+	// Requested worker state.
 	DesiredState WorkerDesiredState `json:"desiredState"`
 	// Latest error message.
 	ErrorMessage OptString `json:"errorMessage"`
@@ -5174,20 +5205,20 @@ func (s *WorkerActiveOperation) UnmarshalText(data []byte) error {
 	}
 }
 
-// Requested steady state for reconciliation.
+// Requested worker state.
 type WorkerDesiredState string
 
 const (
-	WorkerDesiredStateRunning WorkerDesiredState = "running"
-	WorkerDesiredStateStopped WorkerDesiredState = "stopped"
+	WorkerDesiredStateActive  WorkerDesiredState = "active"
+	WorkerDesiredStateDrained WorkerDesiredState = "drained"
 	WorkerDesiredStateDeleted WorkerDesiredState = "deleted"
 )
 
 // AllValues returns all WorkerDesiredState values.
 func (WorkerDesiredState) AllValues() []WorkerDesiredState {
 	return []WorkerDesiredState{
-		WorkerDesiredStateRunning,
-		WorkerDesiredStateStopped,
+		WorkerDesiredStateActive,
+		WorkerDesiredStateDrained,
 		WorkerDesiredStateDeleted,
 	}
 }
@@ -5195,9 +5226,9 @@ func (WorkerDesiredState) AllValues() []WorkerDesiredState {
 // MarshalText implements encoding.TextMarshaler.
 func (s WorkerDesiredState) MarshalText() ([]byte, error) {
 	switch s {
-	case WorkerDesiredStateRunning:
+	case WorkerDesiredStateActive:
 		return []byte(s), nil
-	case WorkerDesiredStateStopped:
+	case WorkerDesiredStateDrained:
 		return []byte(s), nil
 	case WorkerDesiredStateDeleted:
 		return []byte(s), nil
@@ -5209,11 +5240,11 @@ func (s WorkerDesiredState) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *WorkerDesiredState) UnmarshalText(data []byte) error {
 	switch WorkerDesiredState(data) {
-	case WorkerDesiredStateRunning:
-		*s = WorkerDesiredStateRunning
+	case WorkerDesiredStateActive:
+		*s = WorkerDesiredStateActive
 		return nil
-	case WorkerDesiredStateStopped:
-		*s = WorkerDesiredStateStopped
+	case WorkerDesiredStateDrained:
+		*s = WorkerDesiredStateDrained
 		return nil
 	case WorkerDesiredStateDeleted:
 		*s = WorkerDesiredStateDeleted
@@ -5283,27 +5314,25 @@ func (s *WorkerLastOperationStatus) UnmarshalText(data []byte) error {
 type WorkerPhase string
 
 const (
-	WorkerPhasePending      WorkerPhase = "pending"
-	WorkerPhaseProvisioning WorkerPhase = "provisioning"
-	WorkerPhaseStarting     WorkerPhase = "starting"
-	WorkerPhaseRunning      WorkerPhase = "running"
-	WorkerPhaseStopping     WorkerPhase = "stopping"
-	WorkerPhaseStopped      WorkerPhase = "stopped"
-	WorkerPhaseDeleting     WorkerPhase = "deleting"
-	WorkerPhaseDeleted      WorkerPhase = "deleted"
-	WorkerPhaseFailed       WorkerPhase = "failed"
+	WorkerPhasePending     WorkerPhase = "pending"
+	WorkerPhaseLaunching   WorkerPhase = "launching"
+	WorkerPhaseRegistering WorkerPhase = "registering"
+	WorkerPhaseActive      WorkerPhase = "active"
+	WorkerPhaseDraining    WorkerPhase = "draining"
+	WorkerPhaseOffline     WorkerPhase = "offline"
+	WorkerPhaseDeleted     WorkerPhase = "deleted"
+	WorkerPhaseFailed      WorkerPhase = "failed"
 )
 
 // AllValues returns all WorkerPhase values.
 func (WorkerPhase) AllValues() []WorkerPhase {
 	return []WorkerPhase{
 		WorkerPhasePending,
-		WorkerPhaseProvisioning,
-		WorkerPhaseStarting,
-		WorkerPhaseRunning,
-		WorkerPhaseStopping,
-		WorkerPhaseStopped,
-		WorkerPhaseDeleting,
+		WorkerPhaseLaunching,
+		WorkerPhaseRegistering,
+		WorkerPhaseActive,
+		WorkerPhaseDraining,
+		WorkerPhaseOffline,
 		WorkerPhaseDeleted,
 		WorkerPhaseFailed,
 	}
@@ -5314,17 +5343,15 @@ func (s WorkerPhase) MarshalText() ([]byte, error) {
 	switch s {
 	case WorkerPhasePending:
 		return []byte(s), nil
-	case WorkerPhaseProvisioning:
+	case WorkerPhaseLaunching:
 		return []byte(s), nil
-	case WorkerPhaseStarting:
+	case WorkerPhaseRegistering:
 		return []byte(s), nil
-	case WorkerPhaseRunning:
+	case WorkerPhaseActive:
 		return []byte(s), nil
-	case WorkerPhaseStopping:
+	case WorkerPhaseDraining:
 		return []byte(s), nil
-	case WorkerPhaseStopped:
-		return []byte(s), nil
-	case WorkerPhaseDeleting:
+	case WorkerPhaseOffline:
 		return []byte(s), nil
 	case WorkerPhaseDeleted:
 		return []byte(s), nil
@@ -5341,23 +5368,20 @@ func (s *WorkerPhase) UnmarshalText(data []byte) error {
 	case WorkerPhasePending:
 		*s = WorkerPhasePending
 		return nil
-	case WorkerPhaseProvisioning:
-		*s = WorkerPhaseProvisioning
+	case WorkerPhaseLaunching:
+		*s = WorkerPhaseLaunching
 		return nil
-	case WorkerPhaseStarting:
-		*s = WorkerPhaseStarting
+	case WorkerPhaseRegistering:
+		*s = WorkerPhaseRegistering
 		return nil
-	case WorkerPhaseRunning:
-		*s = WorkerPhaseRunning
+	case WorkerPhaseActive:
+		*s = WorkerPhaseActive
 		return nil
-	case WorkerPhaseStopping:
-		*s = WorkerPhaseStopping
+	case WorkerPhaseDraining:
+		*s = WorkerPhaseDraining
 		return nil
-	case WorkerPhaseStopped:
-		*s = WorkerPhaseStopped
-		return nil
-	case WorkerPhaseDeleting:
-		*s = WorkerPhaseDeleting
+	case WorkerPhaseOffline:
+		*s = WorkerPhaseOffline
 		return nil
 	case WorkerPhaseDeleted:
 		*s = WorkerPhaseDeleted

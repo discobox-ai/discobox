@@ -28,7 +28,14 @@ func (s *Service) ListSandboxProviderInstances(ctx context.Context, projectID st
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apiError(err, "project not found")
 	}
-	return s.store.ListSandboxProviderInstances(ctx, projectID)
+	providers, err := s.store.ListSandboxProviderInstancesWithWorkers(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range providers {
+		providers[i].Status = providerStatusFromWorkers(providers[i].Workers)
+	}
+	return providers, nil
 }
 
 func (s *Service) CreateSandboxProviderInstance(ctx context.Context, projectID string, input api.CreateSandboxProviderInstanceBody) (*model.SandboxProviderInstance, error) {
@@ -61,35 +68,49 @@ func (s *Service) GetSandboxProviderInstance(ctx context.Context, projectID, pro
 	if err != nil {
 		return nil, apiError(err, "provider instance not found")
 	}
-	workers, err := s.store.ListWorkers(ctx, projectID, providerID)
-	if err != nil {
+	if err := s.attachProviderStatus(ctx, projectID, provider); err != nil {
 		return nil, err
 	}
-	provider.Status = providerStatusFromWorkers(workers)
 	return provider, nil
+}
+
+func (s *Service) attachProviderStatus(ctx context.Context, projectID string, provider *model.SandboxProviderInstance) error {
+	if provider == nil {
+		return nil
+	}
+	workers, err := s.store.ListWorkers(ctx, projectID, provider.ID)
+	if err != nil {
+		return err
+	}
+	provider.Status = providerStatusFromWorkers(workers)
+	return nil
 }
 
 func providerStatusFromWorkers(workers []model.Worker) *model.SandboxProviderInstanceStatus {
 	status := &model.SandboxProviderInstanceStatus{
-		WorkerCount: len(workers),
-		Workers:     make([]model.ProviderWorkerStatus, 0, len(workers)),
+		Workers: make([]model.ProviderWorkerStatus, 0, len(workers)),
 	}
 	for i := range workers {
 		worker := workers[i]
-		if worker.Ready {
-			status.ReadyWorkers++
-		}
-		if worker.Schedulable {
-			status.SchedulableWorkers++
-		}
-		if worker.Degraded {
-			status.DegradedWorkers++
-		}
-		if worker.LastOperationStatus == model.OperationStatusFailed {
-			status.FailedWorkers++
+		if !providerWorkerTerminalDeleted(worker) {
+			status.WorkerCount++
+			if worker.Ready {
+				status.ReadyWorkers++
+			}
+			if worker.Schedulable {
+				status.SchedulableWorkers++
+			}
+			if worker.Degraded {
+				status.DegradedWorkers++
+			}
+			if providerWorkerHasError(worker) {
+				status.FailedWorkers++
+			}
 		}
 		if worker.ErrorMessage != nil {
 			status.LastError = worker.ErrorMessage
+		} else if providerWorkerCleanupError(worker) {
+			status.LastError = worker.StatusMessage
 		}
 		status.Workers = append(status.Workers, model.ProviderWorkerStatus{
 			ID:                    worker.ID,
@@ -110,6 +131,23 @@ func providerStatusFromWorkers(workers []model.Worker) *model.SandboxProviderIns
 		})
 	}
 	return status
+}
+
+func providerWorkerTerminalDeleted(worker model.Worker) bool {
+	return worker.DesiredState == model.WorkerDesiredStateDeleted ||
+		worker.Phase == model.WorkerPhaseDeleted
+}
+
+func providerWorkerHasError(worker model.Worker) bool {
+	return worker.LastOperationStatus == model.OperationStatusFailed ||
+		worker.ErrorMessage != nil ||
+		providerWorkerCleanupError(worker)
+}
+
+func providerWorkerCleanupError(worker model.Worker) bool {
+	return worker.DesiredState == model.WorkerDesiredStateDeleted &&
+		worker.LastOperationStatus == model.OperationStatusPending &&
+		worker.StatusMessage != nil
 }
 
 func providerWorkerRuntimeID(state []byte) string {
@@ -153,10 +191,8 @@ func (s *Service) DeleteSandboxProviderInstance(ctx context.Context, projectID, 
 	return apiError(s.store.DeleteSandboxProviderInstance(ctx, projectID, providerID), "provider instance not found")
 }
 
-// EnsureExistingSandboxProviderInstances runs provider instance startup
-// reconciliation for persisted provider instances, then schedules every
-// persisted worker for durable reconciliation so startup runtime checks use the
-// same retry path as normal worker lifecycle jobs.
+// EnsureExistingSandboxProviderInstances schedules provider startup
+// reconciliation for persisted provider instances.
 func (s *Service) EnsureExistingSandboxProviderInstances(ctx context.Context) error {
 	projects, err := s.store.ListProjects(ctx)
 	if err != nil {
@@ -173,10 +209,13 @@ func (s *Service) EnsureExistingSandboxProviderInstances(ctx context.Context) er
 			if provider.Disabled {
 				continue
 			}
-			if err := s.ensureSandboxProviderInstance(ctx, project, provider); err != nil {
-				return err
+			if s.providerSubmitter == nil {
+				if err := s.ensureSandboxProviderInstance(ctx, project, provider); err != nil {
+					return err
+				}
+				continue
 			}
-			if err := s.enqueueProviderWorkers(ctx, project.ID, provider.ID); err != nil {
+			if _, err := s.providerSubmitter.EnqueueCurrent(ctx, project.ID, provider.ID); err != nil {
 				return err
 			}
 		}
@@ -217,4 +256,16 @@ func (s *Service) ensureSandboxProviderInstance(ctx context.Context, project *mo
 		providerStore = s.workerStore
 	}
 	return ensurer.EnsureProviderInstance(ctx, providerStore, project, provider)
+}
+
+func (s *Service) ReconcileProviderJob(ctx context.Context, projectID, providerID, _ string) error {
+	project, err := s.store.GetProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, providerID)
+	if err != nil {
+		return err
+	}
+	return s.ensureSandboxProviderInstance(ctx, project, provider)
 }

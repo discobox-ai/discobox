@@ -47,6 +47,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(app.newSandboxCommand())
 	cmd.AddCommand(app.newAgentCommand())
 	cmd.AddCommand(app.newProviderCommand())
+	cmd.AddCommand(app.newWorkerCommand())
 	cmd.AddCommand(app.newEventsCommand())
 	cmd.AddCommand(app.newJobCommand())
 	cmd.AddCommand(app.newCompletionCommand())

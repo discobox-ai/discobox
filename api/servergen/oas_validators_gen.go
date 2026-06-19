@@ -564,6 +564,43 @@ func (s *ListSandboxesBody) Validate() error {
 	return nil
 }
 
+func (s *ListWorkersBody) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		var failures []validate.FieldError
+		for i, elem := range s.Workers {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "workers",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *Project) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -1502,9 +1539,9 @@ func (s WorkerActiveOperation) Validate() error {
 
 func (s WorkerDesiredState) Validate() error {
 	switch s {
-	case "running":
+	case "active":
 		return nil
-	case "stopped":
+	case "drained":
 		return nil
 	case "deleted":
 		return nil
@@ -1532,17 +1569,15 @@ func (s WorkerPhase) Validate() error {
 	switch s {
 	case "pending":
 		return nil
-	case "provisioning":
+	case "launching":
 		return nil
-	case "starting":
+	case "registering":
 		return nil
-	case "running":
+	case "active":
 		return nil
-	case "stopping":
+	case "draining":
 		return nil
-	case "stopped":
-		return nil
-	case "deleting":
+	case "offline":
 		return nil
 	case "deleted":
 		return nil

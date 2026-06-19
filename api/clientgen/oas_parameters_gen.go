@@ -112,6 +112,14 @@ type ListSandboxesParams struct {
 	ProjectId string
 }
 
+// ListWorkersParams is parameters of list-workers operation.
+type ListWorkersParams struct {
+	// Project ID.
+	ProjectId string
+	// Provider instance ID.
+	Provider OptString `json:",omitempty,omitzero"`
+}
+
 // RestartSandboxParams is parameters of restart-sandbox operation.
 type RestartSandboxParams struct {
 	// Project ID.

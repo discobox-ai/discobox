@@ -2936,6 +2936,140 @@ func (s *ListSandboxesBody) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode implements json.Marshaler.
+func (s *ListWorkersBody) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *ListWorkersBody) encodeFields(e *jx.Encoder) {
+	{
+		if s.Schema.Set {
+			e.FieldStart("$schema")
+			s.Schema.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("workers")
+		if s.Workers == nil {
+			e.Null()
+		} else {
+			e.ArrStart()
+			for _, elem := range s.Workers {
+				elem.Encode(e)
+			}
+			e.ArrEnd()
+		}
+	}
+}
+
+var jsonFieldsNameOfListWorkersBody = [2]string{
+	0: "$schema",
+	1: "workers",
+}
+
+// Decode decodes ListWorkersBody from json.
+func (s *ListWorkersBody) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ListWorkersBody to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "$schema":
+			if err := func() error {
+				s.Schema.Reset()
+				if err := s.Schema.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"$schema\"")
+			}
+		case "workers":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				switch tt := d.Next(); tt {
+				case jx.Null:
+					if err := d.Skip(); err != nil {
+						return err
+					}
+				default:
+					s.Workers = make([]Worker, 0)
+					if err := d.Arr(func(d *jx.Decoder) error {
+						var elem Worker
+						if err := elem.Decode(d); err != nil {
+							return err
+						}
+						s.Workers = append(s.Workers, elem)
+						return nil
+					}); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workers\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ListWorkersBody")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000010,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfListWorkersBody) {
+					name = jsonFieldsNameOfListWorkersBody[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ListWorkersBody) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ListWorkersBody) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes AgentConfig as json.
 func (o OptAgentConfig) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -8870,10 +9004,10 @@ func (s *WorkerDesiredState) Decode(d *jx.Decoder) error {
 	}
 	// Try to use constant string.
 	switch WorkerDesiredState(v) {
-	case WorkerDesiredStateRunning:
-		*s = WorkerDesiredStateRunning
-	case WorkerDesiredStateStopped:
-		*s = WorkerDesiredStateStopped
+	case WorkerDesiredStateActive:
+		*s = WorkerDesiredStateActive
+	case WorkerDesiredStateDrained:
+		*s = WorkerDesiredStateDrained
 	case WorkerDesiredStateDeleted:
 		*s = WorkerDesiredStateDeleted
 	default:
@@ -8958,18 +9092,16 @@ func (s *WorkerPhase) Decode(d *jx.Decoder) error {
 	switch WorkerPhase(v) {
 	case WorkerPhasePending:
 		*s = WorkerPhasePending
-	case WorkerPhaseProvisioning:
-		*s = WorkerPhaseProvisioning
-	case WorkerPhaseStarting:
-		*s = WorkerPhaseStarting
-	case WorkerPhaseRunning:
-		*s = WorkerPhaseRunning
-	case WorkerPhaseStopping:
-		*s = WorkerPhaseStopping
-	case WorkerPhaseStopped:
-		*s = WorkerPhaseStopped
-	case WorkerPhaseDeleting:
-		*s = WorkerPhaseDeleting
+	case WorkerPhaseLaunching:
+		*s = WorkerPhaseLaunching
+	case WorkerPhaseRegistering:
+		*s = WorkerPhaseRegistering
+	case WorkerPhaseActive:
+		*s = WorkerPhaseActive
+	case WorkerPhaseDraining:
+		*s = WorkerPhaseDraining
+	case WorkerPhaseOffline:
+		*s = WorkerPhaseOffline
 	case WorkerPhaseDeleted:
 		*s = WorkerPhaseDeleted
 	case WorkerPhaseFailed:

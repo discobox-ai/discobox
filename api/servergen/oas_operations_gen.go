@@ -25,6 +25,7 @@ const (
 	ListSandboxProviderCatalogOperation    OperationName = "ListSandboxProviderCatalog"
 	ListSandboxProviderInstancesOperation  OperationName = "ListSandboxProviderInstances"
 	ListSandboxesOperation                 OperationName = "ListSandboxes"
+	ListWorkersOperation                   OperationName = "ListWorkers"
 	RegisterWorkerOperation                OperationName = "RegisterWorker"
 	RestartSandboxOperation                OperationName = "RestartSandbox"
 	StartSandboxOperation                  OperationName = "StartSandbox"

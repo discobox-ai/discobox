@@ -36,6 +36,22 @@ func (s *Store) ListSandboxProviderInstances(ctx context.Context, projectID stri
 	return providers, err
 }
 
+func (s *Store) ListSandboxProviderInstancesWithWorkers(ctx context.Context, projectID string) ([]model.SandboxProviderInstance, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var providers []model.SandboxProviderInstance
+	err = read.
+		Preload("Workers", func(db *gorm.DB) *gorm.DB {
+			return db.Order("created_at ASC")
+		}).
+		Where("project_id = ?", projectID).
+		Order("created_at ASC").
+		Find(&providers).Error
+	return providers, err
+}
+
 func (s *Store) CreateSandboxProviderInstance(ctx context.Context, provider *model.SandboxProviderInstance) error {
 	write, err := s.getWrite(ctx)
 	if err != nil {

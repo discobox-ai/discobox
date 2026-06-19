@@ -194,6 +194,20 @@ func (h *Handler) ListSandboxes(ctx context.Context, params serverapi.ListSandbo
 	return &body, nil
 }
 
+func (h *Handler) ListWorkers(ctx context.Context, params serverapi.ListWorkersParams) (serverapi.ListWorkersRes, error) {
+	workers, err := h.services.Workers.ListWorkers(ctx, params.ProjectId, params.Provider.Or(""))
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := api.Convert[serverapi.ListWorkersBody](struct {
+		Workers any `json:"workers"`
+	}{Workers: workers})
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
 func (h *Handler) CreateSandbox(ctx context.Context, req *serverapi.CreateSandboxBody, params serverapi.CreateSandboxParams) (serverapi.CreateSandboxRes, error) {
 	sandbox, err := h.services.Sandboxes.CreateSandbox(ctx, params.ProjectId, *req)
 	if err != nil {
