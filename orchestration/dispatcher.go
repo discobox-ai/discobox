@@ -339,24 +339,47 @@ func (d *Dispatcher) executeJob(job *Job) {
 
 	if assertor, ok := executor.(GenerationAssertor); ok {
 		if err := assertor.AssertGeneration(ctx, job); err != nil {
-			d.finishErroredJob(ctx, job, err)
+			d.finishErroredJob(ctx, executor, job, err)
 			return
 		}
 	}
 
 	if err := executor.Execute(ctx, job); err != nil {
-		d.finishErroredJob(ctx, job, err)
+		d.finishErroredJob(ctx, executor, job, err)
 		return
 	}
-	_ = d.store.CompleteJob(ctx, job.ID)
+	if err := d.store.CompleteJob(ctx, job.ID); err == nil {
+		d.notifyTerminal(ctx, executor, job.ID)
+	}
 }
 
-func (d *Dispatcher) finishErroredJob(ctx context.Context, job *Job, err error) {
+func (d *Dispatcher) finishErroredJob(ctx context.Context, executor Executor, job *Job, err error) {
 	if errors.Is(err, ErrJobCanceled) {
-		_ = d.store.CancelJob(ctx, job.ID, err.Error())
+		if err := d.store.CancelJob(ctx, job.ID, err.Error()); err == nil {
+			d.notifyTerminal(ctx, executor, job.ID)
+		}
 		return
 	}
-	_ = d.store.FailJob(ctx, job.ID, err.Error(), d.cfg.RetryBackoff)
+	if err := d.store.FailJob(ctx, job.ID, err.Error(), d.cfg.RetryBackoff); err == nil {
+		d.notifyTerminal(ctx, executor, job.ID)
+	}
+}
+
+func (d *Dispatcher) notifyTerminal(ctx context.Context, executor Executor, jobID string) {
+	observer, ok := executor.(TerminalObserver)
+	if !ok {
+		return
+	}
+	job, err := d.store.GetJob(ctx, jobID)
+	if err != nil {
+		return
+	}
+	switch job.Status {
+	case StatusCompleted, StatusFailed, StatusCanceled:
+	default:
+		return
+	}
+	_ = observer.OnTerminal(ctx, job)
 }
 
 func (d *Dispatcher) staleCleanupLoop() {

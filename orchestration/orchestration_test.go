@@ -766,6 +766,84 @@ func TestDispatcherRetriesFailedJob(t *testing.T) {
 	}
 }
 
+func TestDispatcherNotifiesTerminalObserverAfterRetryCompletes(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	queue := orchestration.NewQueue(store, orchestration.QueueConfig{DefaultMaxAttempts: 2})
+
+	exec := &terminalRecordingExecutor{
+		recordingExecutor: recordingExecutor{
+			jobType:   testTypeA,
+			started:   make(chan string, 2),
+			failFirst: true,
+		},
+		terminal: make(chan orchestration.Status, 1),
+	}
+	dispatcher := newTestDispatcher(store)
+	if err := dispatcher.Register(exec); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	queue.SetNotifyFunc(dispatcher.NotifyNewJob)
+	if err := dispatcher.Start(ctx); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() {
+		stopDispatcher(t, dispatcher)
+	})
+
+	job, err := queue.Enqueue(ctx, simplePayload{TypeName: testTypeA, ResourceT: "sandbox", ResourceI: "s1"})
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	waitForStarted(t, exec.started)
+	select {
+	case status := <-exec.terminal:
+		t.Fatalf("terminal observer fired during retry with status %s", status)
+	default:
+	}
+	waitForStarted(t, exec.started)
+	waitForStatus(t, store, job.ID, orchestration.StatusCompleted)
+	if status := waitForTerminalStatus(t, exec.terminal); status != orchestration.StatusCompleted {
+		t.Fatalf("terminal status = %s, want completed", status)
+	}
+}
+
+func TestDispatcherNotifiesTerminalObserverAfterExhaustedFailure(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	queue := orchestration.NewQueue(store, orchestration.QueueConfig{DefaultMaxAttempts: 1})
+
+	exec := &terminalRecordingExecutor{
+		recordingExecutor: recordingExecutor{
+			jobType:   testTypeA,
+			started:   make(chan string, 1),
+			failFirst: true,
+		},
+		terminal: make(chan orchestration.Status, 1),
+	}
+	dispatcher := newTestDispatcher(store)
+	if err := dispatcher.Register(exec); err != nil {
+		t.Fatalf("register: %v", err)
+	}
+	queue.SetNotifyFunc(dispatcher.NotifyNewJob)
+	if err := dispatcher.Start(ctx); err != nil {
+		t.Fatalf("start: %v", err)
+	}
+	t.Cleanup(func() {
+		stopDispatcher(t, dispatcher)
+	})
+
+	job, err := queue.Enqueue(ctx, simplePayload{TypeName: testTypeA, ResourceT: "sandbox", ResourceI: "s1"})
+	if err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	waitForStarted(t, exec.started)
+	waitForStatus(t, store, job.ID, orchestration.StatusFailed)
+	if status := waitForTerminalStatus(t, exec.terminal); status != orchestration.StatusFailed {
+		t.Fatalf("terminal status = %s, want failed", status)
+	}
+}
+
 func TestDispatcherRunsMultipleJobsWithoutResource(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -1096,6 +1174,19 @@ func (e *recordingExecutor) Execute(ctx context.Context, job *orchestration.Job)
 	return nil
 }
 
+type terminalRecordingExecutor struct {
+	recordingExecutor
+	terminal chan orchestration.Status
+}
+
+func (e *terminalRecordingExecutor) OnTerminal(_ context.Context, job *orchestration.Job) error {
+	select {
+	case e.terminal <- job.Status:
+	default:
+	}
+	return nil
+}
+
 type generationAssertingExecutor struct {
 	jobType   orchestration.Type
 	assertErr error
@@ -1293,6 +1384,17 @@ func waitForStatus(t *testing.T, store orchestration.Store, id string, status or
 		t.Fatalf("get final job: %v", err)
 	}
 	t.Fatalf("job status = %s, want %s", job.Status, status)
+}
+
+func waitForTerminalStatus(t *testing.T, ch <-chan orchestration.Status) orchestration.Status {
+	t.Helper()
+	select {
+	case status := <-ch:
+		return status
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for terminal observer")
+		return ""
+	}
 }
 
 func closeOnce(ch chan struct{}) {

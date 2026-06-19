@@ -12,113 +12,120 @@ import (
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
-type SandboxID struct {
-	ProjectID string
-	SandboxID string
-}
-
-type WorkerID struct {
-	WorkerID string
-}
-
 type SandboxSubmitter struct {
-	store     *store.Store
-	submitter *orchestration.Submitter[*model.Sandbox, model.OperationSpec, SandboxID, *store.Store]
+	store       *store.Store
+	queueConfig orchestration.QueueConfig
+	notify      func(context.Context)
 }
 
 type WorkerSubmitter struct {
 	store       *store.Store
-	submitter   *orchestration.Submitter[*model.Worker, model.OperationSpec, WorkerID, *store.Store]
+	queueConfig orchestration.QueueConfig
+	notify      func(context.Context)
+}
+
+type ProviderSubmitter struct {
+	store       *store.Store
 	queueConfig orchestration.QueueConfig
 	notify      func(context.Context)
 }
 
 func NewSandboxSubmitter(appStore *store.Store, queueConfig orchestration.QueueConfig, notify func(context.Context)) *SandboxSubmitter {
-	return &SandboxSubmitter{
-		store: appStore,
-		submitter: orchestration.NewSubmitter(orchestration.SubmitterConfig[*model.Sandbox, model.OperationSpec, SandboxID, *store.Store]{
-			Transaction: func(ctx context.Context, fn func(context.Context, *store.Store) error) error {
-				return appStore.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
-					return fn(ctx, txStore)
-				})
-			},
-			Resource: orchestration.ResourceStore[*model.Sandbox, SandboxID, *store.Store]{
-				Get: func(ctx context.Context, txStore *store.Store, id SandboxID) (*model.Sandbox, error) {
-					return txStore.GetSandbox(ctx, id.ProjectID, id.SandboxID)
-				},
-				Create: func(ctx context.Context, txStore *store.Store, sandbox *model.Sandbox) error {
-					return txStore.CreateSandbox(ctx, sandbox)
-				},
-				Update: func(ctx context.Context, txStore *store.Store, sandbox *model.Sandbox) error {
-					return txStore.UpdateSandbox(ctx, sandbox)
-				},
-			},
-			Payload:     sandboxReconcilePayload,
-			QueueConfig: queueConfig,
-			Notify:      notify,
-		}),
-	}
+	return &SandboxSubmitter{store: appStore, queueConfig: queueConfig, notify: notify}
 }
 
 func NewWorkerSubmitter(appStore *store.Store, queueConfig orchestration.QueueConfig, notify func(context.Context)) *WorkerSubmitter {
-	return &WorkerSubmitter{
-		store:       appStore,
-		queueConfig: queueConfig,
-		notify:      notify,
-		submitter: orchestration.NewSubmitter(orchestration.SubmitterConfig[*model.Worker, model.OperationSpec, WorkerID, *store.Store]{
-			Transaction: func(ctx context.Context, fn func(context.Context, *store.Store) error) error {
-				return appStore.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
-					return fn(ctx, txStore)
-				})
-			},
-			Resource: orchestration.ResourceStore[*model.Worker, WorkerID, *store.Store]{
-				Get: func(ctx context.Context, txStore *store.Store, id WorkerID) (*model.Worker, error) {
-					return txStore.GetWorker(ctx, id.WorkerID)
-				},
-				Create: func(ctx context.Context, txStore *store.Store, worker *model.Worker) error {
-					return txStore.CreateWorker(ctx, worker)
-				},
-				Update: func(ctx context.Context, txStore *store.Store, worker *model.Worker) error {
-					return txStore.UpdateWorker(ctx, worker)
-				},
-			},
-			Payload:     workerReconcilePayload,
-			QueueConfig: queueConfig,
-			Notify:      notify,
-		}),
-	}
+	return &WorkerSubmitter{store: appStore, queueConfig: queueConfig, notify: notify}
+}
+
+func NewProviderSubmitter(appStore *store.Store, queueConfig orchestration.QueueConfig, notify func(context.Context)) *ProviderSubmitter {
+	return &ProviderSubmitter{store: appStore, queueConfig: queueConfig, notify: notify}
 }
 
 func (s *SandboxSubmitter) Create(ctx context.Context, sandbox *model.Sandbox) (*model.Sandbox, error) {
-	accepted, err := s.submitter.Create(ctx, sandbox, model.SandboxCreateOperation)
-	if err != nil {
+	jobCreated := false
+	if err := s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
+		sandbox.IncrementGeneration()
+		sandbox.BeginOperation(model.SandboxCreateOperation, nil)
+		created, err := appendSandboxJob(ctx, txStore, sandbox, s.queueConfig)
+		if err != nil {
+			return err
+		}
+		jobCreated = created
+		return txStore.CreateSandbox(ctx, sandbox)
+	}); err != nil {
 		return nil, err
 	}
-	return s.store.GetSandbox(ctx, sandbox.ProjectID, accepted.ID)
+	notifyIfCreated(ctx, s.notify, jobCreated)
+	return s.store.GetSandbox(ctx, sandbox.ProjectID, sandbox.ID)
 }
 
 func (s *SandboxSubmitter) Submit(ctx context.Context, projectID, sandboxID string, spec model.OperationSpec, mutate ...func(*model.Sandbox)) (*model.Sandbox, error) {
-	accepted, err := s.submitter.Submit(ctx, SandboxID{ProjectID: projectID, SandboxID: sandboxID}, spec, mutate...)
-	if err != nil {
+	jobCreated := false
+	if err := s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
+		sandbox, err := txStore.GetSandbox(ctx, projectID, sandboxID)
+		if err != nil {
+			return err
+		}
+		sandbox.IncrementGeneration()
+		sandbox.BeginOperation(spec, nil)
+		for _, fn := range mutate {
+			fn(sandbox)
+		}
+		created, err := appendSandboxJob(ctx, txStore, sandbox, s.queueConfig)
+		if err != nil {
+			return err
+		}
+		jobCreated = created
+		return txStore.UpdateSandbox(ctx, sandbox)
+	}); err != nil {
 		return nil, err
 	}
-	return s.store.GetSandbox(ctx, projectID, accepted.ID)
+	notifyIfCreated(ctx, s.notify, jobCreated)
+	return s.store.GetSandbox(ctx, projectID, sandboxID)
 }
 
 func (s *WorkerSubmitter) Create(ctx context.Context, worker *model.Worker) (*model.Worker, error) {
-	accepted, err := s.submitter.Create(ctx, worker, model.WorkerCreateOperation)
-	if err != nil {
+	jobCreated := false
+	if err := s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
+		worker.IncrementGeneration()
+		worker.BeginOperation(model.WorkerCreateOperation, nil)
+		created, err := appendWorkerJob(ctx, txStore, worker, s.queueConfig)
+		if err != nil {
+			return err
+		}
+		jobCreated = created
+		return txStore.CreateWorker(ctx, worker)
+	}); err != nil {
 		return nil, err
 	}
-	return s.store.GetWorker(ctx, accepted.ID)
+	notifyIfCreated(ctx, s.notify, jobCreated)
+	return s.store.GetWorker(ctx, worker.ID)
 }
 
 func (s *WorkerSubmitter) Submit(ctx context.Context, workerID string, spec model.OperationSpec, mutate ...func(*model.Worker)) (*model.Worker, error) {
-	accepted, err := s.submitter.Submit(ctx, WorkerID{WorkerID: workerID}, spec, mutate...)
-	if err != nil {
+	jobCreated := false
+	if err := s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
+		worker, err := txStore.GetWorker(ctx, workerID)
+		if err != nil {
+			return err
+		}
+		worker.IncrementGeneration()
+		worker.BeginOperation(spec, nil)
+		for _, fn := range mutate {
+			fn(worker)
+		}
+		created, err := appendWorkerJob(ctx, txStore, worker, s.queueConfig)
+		if err != nil {
+			return err
+		}
+		jobCreated = created
+		return txStore.UpdateWorker(ctx, worker)
+	}); err != nil {
 		return nil, err
 	}
-	return s.store.GetWorker(ctx, accepted.ID)
+	notifyIfCreated(ctx, s.notify, jobCreated)
+	return s.store.GetWorker(ctx, workerID)
 }
 
 func (s *WorkerSubmitter) DeleteForFailedJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error) {
@@ -158,13 +165,9 @@ func (s *WorkerSubmitter) deleteIfCurrent(ctx context.Context, workerID string, 
 		worker.IncrementGeneration()
 		worker.BeginOperation(model.WorkerDeleteOperation, nil)
 		worker.StatusMessage = &message
-		job, created, err := orchestration.AppendJob(ctx, txStore, workerReconcilePayload(worker), s.queueConfig)
+		created, err := appendWorkerJob(ctx, txStore, worker, s.queueConfig)
 		if err != nil {
 			return err
-		}
-		if job != nil {
-			jobID := job.ID
-			worker.SetLastJobID(&jobID)
 		}
 		if created {
 			jobCreated = true
@@ -183,9 +186,7 @@ func (s *WorkerSubmitter) deleteIfCurrent(ctx context.Context, workerID string, 
 		}
 		return false, err
 	}
-	if jobCreated && s.notify != nil {
-		s.notify(ctx)
-	}
+	notifyIfCreated(ctx, s.notify, jobCreated)
 	return updated, nil
 }
 
@@ -193,27 +194,73 @@ func (s *WorkerSubmitter) EnqueueCurrent(ctx context.Context, worker *model.Work
 	var job *orchestration.Job
 	jobCreated := false
 	if err := s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
-		current, getErr := txStore.GetWorker(ctx, worker.ID)
-		if getErr != nil {
-			return getErr
+		current, err := txStore.GetWorker(ctx, worker.ID)
+		if err != nil {
+			return err
 		}
-		var appendErr error
-		job, jobCreated, appendErr = orchestration.AppendJob(ctx, txStore, workerReconcilePayload(current), s.queueConfig)
-		if appendErr != nil {
-			return appendErr
-		}
-		if job != nil {
-			jobID := job.ID
-			current.LastJobID = &jobID
+		job, jobCreated, err = appendWorkerJobWithJob(ctx, txStore, current, s.queueConfig)
+		if err != nil {
+			return err
 		}
 		return txStore.UpdateWorker(ctx, current, store.WithWorkerGeneration(current.Generation))
 	}); err != nil {
 		return nil, err
 	}
-	if jobCreated && s.notify != nil {
-		s.notify(ctx)
-	}
+	notifyIfCreated(ctx, s.notify, jobCreated)
 	return job, nil
+}
+
+func (s *ProviderSubmitter) EnqueueCurrent(ctx context.Context, projectID, providerID string) (*orchestration.Job, error) {
+	if s == nil {
+		return nil, nil
+	}
+	var job *orchestration.Job
+	jobCreated := false
+	if err := s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
+		provider, err := txStore.GetSandboxProviderInstance(ctx, projectID, providerID)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if provider.Disabled {
+			return nil
+		}
+		resource := orchestration.Resource{Type: "provider", ID: provider.ID}
+		active, err := txStore.HasActiveJobForResource(ctx, resource)
+		if err != nil {
+			return err
+		}
+		if active {
+			return nil
+		}
+		job, err = orchestration.JobFromPayload(providerReconcilePayload(provider), s.queueConfig)
+		if err != nil {
+			return err
+		}
+		if err := txStore.CreateJob(ctx, job, orchestration.WithUniqueResource()); err != nil {
+			if errors.Is(err, orchestration.ErrJobAlreadyExists) {
+				job = nil
+				return nil
+			}
+			return err
+		}
+		jobCreated = true
+		return nil
+	}); err != nil {
+		return nil, err
+	}
+	notifyIfCreated(ctx, s.notify, jobCreated)
+	return job, nil
+}
+
+func (s *ProviderSubmitter) OnWorkerReconcileTerminal(ctx context.Context, job *orchestration.Job, payload WorkerReconcilePayload) error {
+	if job.Status != orchestration.StatusCompleted && job.Status != orchestration.StatusFailed {
+		return nil
+	}
+	_, err := s.EnqueueCurrent(ctx, payload.ProjectID, payload.ProviderID)
+	return err
 }
 
 func sandboxReconcilePayload(sandbox *model.Sandbox) orchestration.Payload {
@@ -230,5 +277,49 @@ func workerReconcilePayload(worker *model.Worker) orchestration.Payload {
 		ProviderID: worker.ProviderInstanceID,
 		WorkerID:   worker.ID,
 		Generation: worker.Generation,
+	}
+}
+
+func providerReconcilePayload(provider *model.SandboxProviderInstance) orchestration.Payload {
+	return ProviderReconcilePayload{
+		ProjectID:  provider.ProjectID,
+		ProviderID: provider.ID,
+	}
+}
+
+func appendSandboxJob(ctx context.Context, txStore *store.Store, sandbox *model.Sandbox, cfg orchestration.QueueConfig) (bool, error) {
+	job, created, err := appendJob(ctx, txStore, sandboxReconcilePayload(sandbox), cfg)
+	if err != nil {
+		return false, err
+	}
+	if job != nil {
+		sandbox.SetLastJobID(&job.ID)
+	}
+	return created, nil
+}
+
+func appendWorkerJob(ctx context.Context, txStore *store.Store, worker *model.Worker, cfg orchestration.QueueConfig) (bool, error) {
+	_, created, err := appendWorkerJobWithJob(ctx, txStore, worker, cfg)
+	return created, err
+}
+
+func appendWorkerJobWithJob(ctx context.Context, txStore *store.Store, worker *model.Worker, cfg orchestration.QueueConfig) (*orchestration.Job, bool, error) {
+	job, created, err := appendJob(ctx, txStore, workerReconcilePayload(worker), cfg)
+	if err != nil {
+		return nil, false, err
+	}
+	if job != nil {
+		worker.SetLastJobID(&job.ID)
+	}
+	return job, created, nil
+}
+
+func appendJob(ctx context.Context, txStore *store.Store, payload orchestration.Payload, cfg orchestration.QueueConfig) (*orchestration.Job, bool, error) {
+	return orchestration.AppendJob(ctx, txStore, payload, cfg)
+}
+
+func notifyIfCreated(ctx context.Context, notify func(context.Context), created bool) {
+	if created && notify != nil {
+		notify(ctx)
 	}
 }

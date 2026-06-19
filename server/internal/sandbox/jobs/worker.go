@@ -30,12 +30,17 @@ type WorkerReconciler interface {
 	ReconcileWorkerJob(ctx context.Context, projectID, providerID, workerID, jobID string, generation int64) error
 }
 
-type WorkerReconcileExecutor struct {
-	reconciler WorkerReconciler
+type WorkerReconcileTerminalHandler interface {
+	OnWorkerReconcileTerminal(ctx context.Context, job *orchestration.Job, payload WorkerReconcilePayload) error
 }
 
-func NewWorkerReconcileExecutor(reconciler WorkerReconciler) *WorkerReconcileExecutor {
-	return &WorkerReconcileExecutor{reconciler: reconciler}
+type WorkerReconcileExecutor struct {
+	reconciler       WorkerReconciler
+	terminalHandlers []WorkerReconcileTerminalHandler
+}
+
+func NewWorkerReconcileExecutor(reconciler WorkerReconciler, terminalHandlers ...WorkerReconcileTerminalHandler) *WorkerReconcileExecutor {
+	return &WorkerReconcileExecutor{reconciler: reconciler, terminalHandlers: terminalHandlers}
 }
 
 func (e *WorkerReconcileExecutor) Type() orchestration.Type {
@@ -56,6 +61,25 @@ func (e *WorkerReconcileExecutor) Execute(ctx context.Context, job *orchestratio
 		return err
 	}
 	return e.reconciler.ReconcileWorkerJob(ctx, payload.ProjectID, payload.ProviderID, payload.WorkerID, job.ID, payload.Generation)
+}
+
+func (e *WorkerReconcileExecutor) OnTerminal(ctx context.Context, job *orchestration.Job) error {
+	if len(e.terminalHandlers) == 0 {
+		return nil
+	}
+	payload, err := decodeWorkerReconcilePayload(job)
+	if err != nil {
+		return err
+	}
+	for _, handler := range e.terminalHandlers {
+		if handler == nil {
+			continue
+		}
+		if err := handler.OnWorkerReconcileTerminal(ctx, job, payload); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func decodeWorkerReconcilePayload(job *orchestration.Job) (WorkerReconcilePayload, error) {

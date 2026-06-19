@@ -7,9 +7,10 @@ import (
 
 	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
+	"github.com/obot-platform/discobox/server/internal/store"
 )
 
-func TestListJobsForProjectScopesSandboxAndWorkerJobs(t *testing.T) {
+func TestListJobsForProjectScopesSandboxWorkerAndProviderJobs(t *testing.T) {
 	ctx := context.Background()
 	s, db := newTestStoreWithDB(t, nil)
 
@@ -47,8 +48,10 @@ func TestListJobsForProjectScopesSandboxAndWorkerJobs(t *testing.T) {
 	for _, job := range []orchestration.Job{
 		{ID: "job-sandbox-1", Type: "sandbox.reconcile", Payload: json.RawMessage(`{}`), Resource: orchestration.Resource{Type: "sandbox", ID: "sandbox-1"}},
 		{ID: "job-worker-1", Type: "worker.reconcile", Payload: json.RawMessage(`{}`), Resource: orchestration.Resource{Type: "worker", ID: "worker-1"}},
+		{ID: "job-provider-1", Type: "provider.reconcile", Payload: json.RawMessage(`{}`), Resource: orchestration.Resource{Type: "provider", ID: "provider-1"}},
 		{ID: "job-sandbox-2", Type: "sandbox.reconcile", Payload: json.RawMessage(`{}`), Resource: orchestration.Resource{Type: "sandbox", ID: "sandbox-2"}},
 		{ID: "job-worker-2", Type: "worker.reconcile", Payload: json.RawMessage(`{}`), Resource: orchestration.Resource{Type: "worker", ID: "worker-2"}},
+		{ID: "job-provider-2", Type: "provider.reconcile", Payload: json.RawMessage(`{}`), Resource: orchestration.Resource{Type: "provider", ID: "provider-2"}},
 	} {
 		job := job
 		if err := s.CreateJob(ctx, &job); err != nil {
@@ -64,14 +67,57 @@ func TestListJobsForProjectScopesSandboxAndWorkerJobs(t *testing.T) {
 	for _, job := range jobs {
 		got[job.ID] = true
 	}
-	for _, id := range []string{"job-sandbox-1", "job-worker-1"} {
+	for _, id := range []string{"job-sandbox-1", "job-worker-1", "job-provider-1"} {
 		if !got[id] {
 			t.Fatalf("missing project job %s in %#v", id, got)
 		}
 	}
-	for _, id := range []string{"job-sandbox-2", "job-worker-2"} {
+	for _, id := range []string{"job-sandbox-2", "job-worker-2", "job-provider-2"} {
 		if got[id] {
 			t.Fatalf("unexpected other project job %s in %#v", id, got)
 		}
 	}
+	for _, id := range []string{"job-sandbox-1", "job-worker-1", "job-provider-1"} {
+		var projectID string
+		if err := db.Write.WithContext(ctx).Raw("SELECT project_id FROM jobqueue_jobs WHERE id = ?", id).Scan(&projectID).Error; err != nil {
+			t.Fatalf("get job project_id for %s: %v", id, err)
+		}
+		if projectID != "project-1" {
+			t.Fatalf("job %s project_id = %q, want project-1", id, projectID)
+		}
+	}
+}
+
+func TestBackfillJobProjectIDs(t *testing.T) {
+	ctx := context.Background()
+	s, db := newTestStoreWithDB(t, nil)
+
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "docker", Name: "one"}
+	if err := s.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	worker := &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: provider.ID}
+	if err := s.CreateWorker(ctx, worker); err != nil {
+		t.Fatalf("create worker: %v", err)
+	}
+	if err := db.Write.WithContext(ctx).Exec(`
+INSERT INTO jobqueue_jobs (id, type, payload, status, priority, attempts, max_attempts, scheduled_at, resource_type, resource_id, created_at, updated_at)
+VALUES (?, ?, ?, ?, 0, 0, 1, CURRENT_TIMESTAMP, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+`, "job-worker-legacy", "worker.reconcile", json.RawMessage(`{}`), orchestration.StatusPending, "worker", worker.ID).Error; err != nil {
+		t.Fatalf("insert legacy job: %v", err)
+	}
+
+	if err := store.BackfillJobProjectIDs(ctx, db.Write); err != nil {
+		t.Fatalf("backfill job project ids: %v", err)
+	}
+	jobs, err := s.ListJobsForProject(ctx, "project-1")
+	if err != nil {
+		t.Fatalf("list jobs: %v", err)
+	}
+	for _, job := range jobs {
+		if job.ID == "job-worker-legacy" {
+			return
+		}
+	}
+	t.Fatalf("legacy job missing from project jobs: %#v", jobs)
 }

@@ -60,7 +60,10 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := write.AutoMigrate(model.AllModels()...); err != nil {
 		return err
 	}
-	return write.AutoMigrate(store.JobModels()...)
+	if err := write.AutoMigrate(store.JobModels()...); err != nil {
+		return err
+	}
+	return store.BackfillJobProjectIDs(ctx, write)
 }
 
 func rejectLegacyTenantSchema(db *gorm.DB) error {

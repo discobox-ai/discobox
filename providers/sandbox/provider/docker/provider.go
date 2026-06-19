@@ -17,7 +17,6 @@ const ProviderType = dockerdriver.ProviderType
 const workerImageEnv = "DISCOBOX_DOCKER_WORKER_IMAGE"
 
 var Definition = dockerdriver.Definition()
-var Factory sandbox.ProviderFactory = NewFromInstance
 
 func FactoryWithWorkerStore(workerStore vm.WorkerStore) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
@@ -45,10 +44,6 @@ func Decode(data json.RawMessage) (Config, error) {
 func Validate(data json.RawMessage) error {
 	_, err := Decode(data)
 	return err
-}
-
-func NewFromInstance(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
-	return newFromInstance(ctx, instance, nil)
 }
 
 func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, workerStore vm.WorkerStore) (sandbox.Provider, error) {

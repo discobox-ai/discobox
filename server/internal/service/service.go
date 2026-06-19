@@ -26,10 +26,11 @@ const (
 // Service implements the API service interfaces using the database store.
 type Service struct {
 	*sandboxservice.Service
-	store           *store.Store
-	broker          *events.Broker
-	workerStore     any
-	workerSubmitter *jobs.WorkerSubmitter
+	store             *store.Store
+	broker            *events.Broker
+	workerStore       any
+	workerSubmitter   *jobs.WorkerSubmitter
+	providerSubmitter *jobs.ProviderSubmitter
 }
 
 func New(store *store.Store, queueConfig orchestration.QueueConfig, notifyNewJob func(context.Context), broker ...*events.Broker) *Service {
@@ -40,19 +41,28 @@ func New(store *store.Store, queueConfig orchestration.QueueConfig, notifyNewJob
 	manager := sandbox.NewProviderManager()
 	sandboxSubmitter := jobs.NewSandboxSubmitter(store, queueConfig, notifyNewJob)
 	workerSubmitter := jobs.NewWorkerSubmitter(store, queueConfig, notifyNewJob)
+	providerSubmitter := jobs.NewProviderSubmitter(store, queueConfig, notifyNewJob)
 	workerStore := newWorkerStore(store, workerSubmitter)
 	providersandbox.RegisterBuiltInSandboxProviderFactories(manager, workerStore)
 	return &Service{
-		Service:         sandboxservice.NewService(store, sandboxSubmitter, manager, DefaultUserID, workerStore),
-		store:           store,
-		broker:          b,
-		workerStore:     workerStore,
-		workerSubmitter: workerSubmitter,
+		Service:           sandboxservice.NewService(store, sandboxSubmitter, manager, DefaultUserID, workerStore),
+		store:             store,
+		broker:            b,
+		workerStore:       workerStore,
+		workerSubmitter:   workerSubmitter,
+		providerSubmitter: providerSubmitter,
 	}
 }
 
 func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 	s.Service.SetSandboxAuthManager(manager)
+}
+
+func (s *Service) ProviderSubmitter() *jobs.ProviderSubmitter {
+	if s == nil {
+		return nil
+	}
+	return s.providerSubmitter
 }
 
 func apiError(err error, notFoundMessage string) error {

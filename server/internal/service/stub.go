@@ -451,6 +451,20 @@ func (s *Stub) DeleteSandboxProviderInstance(_ context.Context, projectID, provi
 	return nil
 }
 
+func (s *Stub) ListWorkers(_ context.Context, projectID, providerID string) ([]model.Worker, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	if providerID != "" {
+		if _, ok := s.providers[providerID]; !ok {
+			return nil, apperrors.NewStatusError(http.StatusNotFound, "provider instance not found")
+		}
+	}
+	return nil, nil
+}
+
 func (s *Stub) RegisterWorker(context.Context, api.RegisterWorkerBody) (*api.RegisterWorkerResponseBody, error) {
 	return &api.RegisterWorkerResponseBody{AuthToken: "stub"}, nil
 }

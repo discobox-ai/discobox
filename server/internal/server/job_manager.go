@@ -72,8 +72,11 @@ func (m *jobManager) startDispatcher() (*orchestration.Dispatcher, bool, error) 
 	if err := dispatcher.Register(jobs.NewSandboxReconcileExecutor(sandboxReconciler), orchestration.WithConcurrency(m.opts.SandboxReconcileJobConcurrency)); err != nil {
 		return nil, false, err
 	}
+	if err := dispatcher.Register(jobs.NewProviderReconcileExecutor(m.svc), orchestration.WithConcurrency(m.opts.SandboxReconcileJobConcurrency)); err != nil {
+		return nil, false, err
+	}
 	workerReconciler := m.svc.NewWorkerReconciler()
-	if err := dispatcher.Register(jobs.NewWorkerReconcileExecutor(workerReconciler), orchestration.WithConcurrency(m.opts.SandboxReconcileJobConcurrency)); err != nil {
+	if err := dispatcher.Register(jobs.NewWorkerReconcileExecutor(workerReconciler, m.svc.ProviderSubmitter()), orchestration.WithConcurrency(m.opts.SandboxReconcileJobConcurrency)); err != nil {
 		return nil, false, err
 	}
 	if err := dispatcher.Start(m.rootCtx); err != nil {

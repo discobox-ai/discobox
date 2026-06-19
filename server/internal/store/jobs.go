@@ -9,6 +9,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
 )
 
@@ -49,7 +50,11 @@ func (s *Store) CreateJob(ctx context.Context, job *orchestration.Job, options .
 		activeResourceKey = &key
 	}
 
-	row := rowFromJob(job, activeResourceKey)
+	projectID, err := projectIDForJob(ctx, write, job)
+	if err != nil {
+		return err
+	}
+	row := rowFromJob(job, projectID, activeResourceKey)
 	if err := write.Create(row).Error; err != nil {
 		if isUniqueConstraintError(err) {
 			return orchestration.ErrJobAlreadyExists
@@ -105,12 +110,7 @@ func (s *Store) ListJobsForProject(ctx context.Context, projectID string) ([]orc
 	}
 	var rows []jobRow
 	if err := read.
-		Where(
-			`(resource_type = ? AND resource_id IN (SELECT id FROM sandboxes WHERE project_id = ?))
-			OR (resource_type = ? AND resource_id IN (SELECT id FROM workers WHERE project_id = ?))`,
-			"sandbox", projectID,
-			"worker", projectID,
-		).
+		Where("project_id = ?", projectID).
 		Order("created_at DESC").
 		Find(&rows).Error; err != nil {
 		return nil, err
@@ -131,12 +131,7 @@ func (s *Store) GetJobForProject(ctx context.Context, projectID, jobID string) (
 	var row jobRow
 	if err := read.
 		Where("id = ?", jobID).
-		Where(
-			`(resource_type = ? AND resource_id IN (SELECT id FROM sandboxes WHERE project_id = ?))
-			OR (resource_type = ? AND resource_id IN (SELECT id FROM workers WHERE project_id = ?))`,
-			"sandbox", projectID,
-			"worker", projectID,
-		).
+		Where("project_id = ?", projectID).
 		First(&row).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, orchestration.ErrJobNotFound
@@ -398,6 +393,7 @@ func (s *Store) ReleaseLeadership(ctx context.Context, workerID string) error {
 
 type jobRow struct {
 	ID                string               `gorm:"primaryKey;type:text"`
+	ProjectID         string               `gorm:"column:project_id;type:text;index"`
 	Type              orchestration.Type   `gorm:"not null;type:text;index:idx_jobqueue_ready,priority:2"`
 	Payload           json.RawMessage      `gorm:"type:text;not null"`
 	Status            orchestration.Status `gorm:"not null;type:text;index:idx_jobqueue_ready,priority:1"`
@@ -420,9 +416,10 @@ func (jobRow) TableName() string {
 	return "jobqueue_jobs"
 }
 
-func rowFromJob(job *orchestration.Job, activeResourceKey *string) *jobRow {
+func rowFromJob(job *orchestration.Job, projectID string, activeResourceKey *string) *jobRow {
 	return &jobRow{
 		ID:                job.ID,
+		ProjectID:         projectID,
 		Type:              job.Type,
 		Payload:           job.Payload,
 		Status:            job.Status,
@@ -440,6 +437,51 @@ func rowFromJob(job *orchestration.Job, activeResourceKey *string) *jobRow {
 		CreatedAt:         job.CreatedAt,
 		UpdatedAt:         job.UpdatedAt,
 	}
+}
+
+func projectIDForJob(ctx context.Context, db *gorm.DB, job *orchestration.Job) (string, error) {
+	projectID, err := projectIDForJobResource(ctx, db, job.Resource)
+	if err != nil || projectID != "" {
+		return projectID, err
+	}
+	var payload struct {
+		ProjectID string `json:"projectId"`
+	}
+	if err := json.Unmarshal(job.Payload, &payload); err != nil {
+		return "", err
+	}
+	return payload.ProjectID, nil
+}
+
+func projectIDForJobResource(ctx context.Context, db *gorm.DB, resource orchestration.Resource) (string, error) {
+	if resource.Type == "" || resource.ID == "" {
+		return "", nil
+	}
+	var projectID string
+	var err error
+	switch resource.Type {
+	case "sandbox":
+		err = db.WithContext(ctx).Model(&model.Sandbox{}).
+			Select("project_id").
+			Where("id = ?", resource.ID).
+			Scan(&projectID).Error
+	case "worker":
+		err = db.WithContext(ctx).Model(&model.Worker{}).
+			Select("project_id").
+			Where("id = ?", resource.ID).
+			Scan(&projectID).Error
+	case "provider":
+		err = db.WithContext(ctx).Model(&model.SandboxProviderInstance{}).
+			Select("project_id").
+			Where("id = ?", resource.ID).
+			Scan(&projectID).Error
+	default:
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return projectID, nil
 }
 
 func (r jobRow) toJob() orchestration.Job {
@@ -477,6 +519,18 @@ func isUniqueConstraintError(err error) bool {
 	return strings.Contains(msg, "unique constraint failed") ||
 		strings.Contains(msg, "duplicate key value") ||
 		strings.Contains(msg, "violates unique constraint")
+}
+
+func BackfillJobProjectIDs(ctx context.Context, db *gorm.DB) error {
+	return db.WithContext(ctx).Exec(`
+UPDATE jobqueue_jobs
+SET project_id = COALESCE(
+	(SELECT project_id FROM sandboxes WHERE jobqueue_jobs.resource_type = 'sandbox' AND sandboxes.id = jobqueue_jobs.resource_id),
+	(SELECT project_id FROM workers WHERE jobqueue_jobs.resource_type = 'worker' AND workers.id = jobqueue_jobs.resource_id),
+	(SELECT project_id FROM sandbox_provider_instances WHERE jobqueue_jobs.resource_type = 'provider' AND sandbox_provider_instances.id = jobqueue_jobs.resource_id)
+)
+WHERE project_id IS NULL OR project_id = ''
+`).Error
 }
 
 type leaderRow struct {

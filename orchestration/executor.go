@@ -24,6 +24,12 @@ type GenerationAssertor interface {
 	AssertGeneration(ctx context.Context, job *Job) error
 }
 
+// TerminalObserver may be implemented by executors that need to react after a
+// job reaches a durable terminal state.
+type TerminalObserver interface {
+	OnTerminal(ctx context.Context, job *Job) error
+}
+
 // ExecutorOption configures dispatcher behavior for one registered executor.
 type ExecutorOption func(*executorConfig)
 
