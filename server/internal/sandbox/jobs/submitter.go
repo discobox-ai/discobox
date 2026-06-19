@@ -232,18 +232,14 @@ func (s *ProviderSubmitter) EnqueueCurrent(ctx context.Context, projectID, provi
 		if active {
 			return nil
 		}
-		job, err = orchestration.JobFromPayload(providerReconcilePayload(provider), s.queueConfig)
+		job, jobCreated, err = orchestration.AppendJobWithOptions(ctx, txStore, providerReconcilePayload(provider), s.queueConfig, orchestration.WithUniqueResource())
 		if err != nil {
-			return err
-		}
-		if err := txStore.CreateJob(ctx, job, orchestration.WithUniqueResource()); err != nil {
 			if errors.Is(err, orchestration.ErrJobAlreadyExists) {
 				job = nil
 				return nil
 			}
 			return err
 		}
-		jobCreated = true
 		return nil
 	}); err != nil {
 		return nil, err

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -45,6 +46,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apiclientgen.Sandbo
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"sandboxes": sandboxes})
 	}
+	sandboxes = sortedByCreatedAt(sandboxes, func(sandbox apiclientgen.Sandbox) time.Time { return sandbox.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tPHASE\tDESIRED\tGENERATION\tUPDATED")
 	for _, sandbox := range sandboxes {
@@ -100,6 +102,7 @@ func (a *App) writeProviders(cmd *cobra.Command, providers []apiclientgen.Sandbo
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"providers": providers})
 	}
+	providers = sortedByCreatedAt(providers, func(provider apiclientgen.SandboxProviderInstance) time.Time { return provider.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tDISABLED\tSTATUS\tERROR\tUPDATED")
 	for _, provider := range providers {
@@ -121,6 +124,7 @@ func (a *App) writeWorkers(cmd *cobra.Command, workers []apiclientgen.Worker) er
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"workers": workers})
 	}
+	workers = sortedByCreatedAt(workers, func(worker apiclientgen.Worker) time.Time { return worker.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tPROVIDER\tPHASE\tREADY\tSCHEDULABLE\tDEGRADED\tCPU\tMEMORY\tSTORAGE\tUPDATED\tMESSAGE")
 	for _, worker := range workers {
@@ -193,6 +197,7 @@ func (a *App) writeAgents(cmd *cobra.Command, agents []apiclientgen.AgentConfig)
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"agentConfigs": agents})
 	}
+	agents = sortedByCreatedAt(agents, func(agent apiclientgen.AgentConfig) time.Time { return agent.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tUPDATED")
 	for _, agent := range agents {
@@ -205,6 +210,8 @@ func (a *App) writeJobs(cmd *cobra.Command, jobs []apiclientgen.Job) error {
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"jobs": jobs})
 	}
+	jobs = sortedByCreatedAt(jobs, func(job apiclientgen.Job) time.Time { return job.CreatedAt })
+	now := time.Now()
 	rows := make([][]string, 0, len(jobs))
 	errors := make([]string, 0, len(jobs))
 	for _, job := range jobs {
@@ -215,24 +222,34 @@ func (a *App) writeJobs(cmd *cobra.Command, jobs []apiclientgen.Job) error {
 			fmt.Sprintf("%d/%d", job.Attempts, job.MaxAttempts),
 			job.ResourceType + "/" + shortID(job.ResourceId),
 			formatTime(job.CreatedAt),
+			formatFutureTime(now, job.ScheduledAt),
 		})
 		errors = append(errors, compactTableValue(job.Error.Or("")))
 	}
 	errorWidth := jobsTableErrorWidth(terminalWidth(cmd.OutOrStdout()), rows)
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tTYPE\tSTATUS\tATTEMPTS\tRESOURCE\tCREATED\tERROR")
+	fmt.Fprintln(tw, "ID\tTYPE\tSTATUS\tATTEMPTS\tRESOURCE\tCREATED\tNEXT\tERROR")
 	for i, row := range rows {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			row[0],
 			row[1],
 			row[2],
 			row[3],
 			row[4],
 			row[5],
+			row[6],
 			truncateTableValue(errors[i], errorWidth),
 		)
 	}
 	return tw.Flush()
+}
+
+func sortedByCreatedAt[T any](values []T, createdAt func(T) time.Time) []T {
+	out := append([]T(nil), values...)
+	sort.SliceStable(out, func(i, j int) bool {
+		return createdAt(out[i]).Before(createdAt(out[j]))
+	})
+	return out
 }
 
 func (a *App) writeJob(cmd *cobra.Command, job *apiclientgen.Job) error {
@@ -277,6 +294,13 @@ func formatTime(value time.Time) string {
 		return ""
 	}
 	return formatRelativeTime(time.Now(), value)
+}
+
+func formatFutureTime(now, value time.Time) string {
+	if value.IsZero() || !value.After(now) {
+		return ""
+	}
+	return formatRelativeTime(now, value)
 }
 
 func formatBytes(value int64) string {
@@ -369,6 +393,7 @@ func jobsTableErrorWidth(terminalColumns int, rows [][]string) int {
 		len("ATTEMPTS"),
 		len("RESOURCE"),
 		len("CREATED"),
+		len("NEXT"),
 	}
 	for _, row := range rows {
 		for i, value := range row {
@@ -381,8 +406,8 @@ func jobsTableErrorWidth(terminalColumns int, rows [][]string) int {
 	for _, width := range widths {
 		used += width
 	}
-	// Seven table columns produce six gaps in tabwriter's padded output.
-	used += separatorWidth * 6
+	// Eight table columns produce seven gaps in tabwriter's padded output.
+	used += separatorWidth * 7
 	available := terminalColumns - used
 	if available < minErrorWidth {
 		return minErrorWidth

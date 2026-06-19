@@ -12,6 +12,10 @@ const (
 	// StatusPending means the job is waiting to be claimed.
 	StatusPending Status = "pending"
 
+	// StatusBackoff means the job is intentionally delayed before its next
+	// claim. It becomes claimable once ScheduledAt is reached.
+	StatusBackoff Status = "backoff"
+
 	// StatusRunning means the job has been claimed by a dispatcher worker.
 	StatusRunning Status = "running"
 
@@ -67,6 +71,21 @@ type Job struct {
 	// Resource is used for execution serialization across job types and optional
 	// store-level active-job uniqueness.
 	Resource Resource `json:"resource"`
+
+	// ResourceBackoffThreshold is the number of recent jobs for the same
+	// type/resource allowed before stores should delay this job. Values less than
+	// one disable submission backoff.
+	ResourceBackoffThreshold int `json:"-"`
+
+	// ResourceBackoffWindow is the recent-job window used with
+	// ResourceBackoffThreshold.
+	ResourceBackoffWindow time.Duration `json:"-"`
+
+	// ResourceBackoffBaseDelay is the first delay applied after threshold.
+	ResourceBackoffBaseDelay time.Duration `json:"-"`
+
+	// ResourceBackoffMaxDelay caps resource submission backoff.
+	ResourceBackoffMaxDelay time.Duration `json:"-"`
 
 	// CreatedAt is the storage creation time.
 	CreatedAt time.Time `json:"createdAt"`

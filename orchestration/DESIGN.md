@@ -65,6 +65,31 @@ Dispatch remains resource-serialized: multiple pending jobs may exist for the
 same resource, but the dispatcher must not run two jobs for that resource at the
 same time.
 
+## Resource Backoff
+
+Queue append applies core submission backoff before creating a job row. Backoff
+is keyed by the complete resource work identity:
+
+```text
+job type + resource type + resource id
+```
+
+When recent jobs for that key exceed the configured threshold, the newly
+appended job is stored with status `backoff` and a future `scheduled_at`.
+Stores still treat `backoff` as active resource ownership and dispatchers may
+claim it only after `scheduled_at` is reached. Retry delay for a failed attempt
+is different: the same job row remains `pending` with a fixed short future
+`scheduled_at`.
+
+Default submission backoff starts after ten recent jobs for the same key within
+fifteen minutes. The first delayed job waits thirty seconds, then doubles up to
+a fifteen minute cap.
+
+Applications provide the recent-job count through `Store`; orchestration owns
+the threshold, window, delay calculation, and status transition. Domain-specific
+decisions about whether to enqueue more work after terminal job events remain in
+application services or reconcilers.
+
 ## Dependency Direction
 
 ```text

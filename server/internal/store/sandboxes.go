@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"gorm.io/gorm"
@@ -65,23 +64,22 @@ func (s *Store) GetSandbox(ctx context.Context, projectID, sandboxID string, opt
 	if err != nil {
 		return nil, err
 	}
-	var sandbox model.Sandbox
 	query := read.
 		Preload("Project").
 		Preload("ProviderInstance").
 		Preload("AgentConfig").
-		Where("project_id = ? AND id = ?", projectID, sandboxID)
+		Where("project_id = ?", projectID)
 	if opts.generation != nil {
-		query = query.Where("generation = ?", *opts.generation)
-	}
-	err = query.First(&sandbox).Error
-	if err != nil {
-		if opts.generation != nil && errors.Is(mapNotFound(err), ErrNotFound) {
+		sandbox, err := firstByID[model.Sandbox](query, "id", sandboxID)
+		if err != nil {
+			return nil, err
+		}
+		if sandbox.Generation != *opts.generation {
 			return nil, ErrGenerationConflict
 		}
-		return nil, mapNotFound(err)
+		return sandbox, nil
 	}
-	return &sandbox, nil
+	return firstByID[model.Sandbox](query, "id", sandboxID)
 }
 
 func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, options ...SandboxGetOption) error {
@@ -121,14 +119,14 @@ func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, optio
 
 func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string) error {
 	_, err := withResourceEvent(ctx, s, model.EventActionDeleted, func(tx *gorm.DB) (*model.Sandbox, error) {
-		var sandbox model.Sandbox
-		if err := tx.First(&sandbox, "project_id = ? AND id = ?", projectID, sandboxID).Error; err != nil {
-			return nil, mapNotFound(err)
-		}
-		if err := tx.Delete(&sandbox).Error; err != nil {
+		sandbox, err := firstByID[model.Sandbox](tx.Where("project_id = ?", projectID), "id", sandboxID)
+		if err != nil {
 			return nil, err
 		}
-		return &sandbox, nil
+		if err := tx.Delete(sandbox).Error; err != nil {
+			return nil, err
+		}
+		return sandbox, nil
 	})
 	return err
 }

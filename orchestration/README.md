@@ -13,7 +13,8 @@ implementations, and service dependencies.
 - Append-only job creation with resource-based execution serialization.
 - Delayed scheduling.
 - Priority-based claiming.
-- Retry attempts with backoff.
+- Retry attempts with fixed delayed rescheduling.
+- Submission backoff for repeated jobs on the same job type/resource type/resource ID.
 - Per-job-type concurrency limits.
 - Graceful dispatcher drain and shutdown.
 - Optional multi-process leader election.
@@ -161,6 +162,8 @@ Jobs move through these states:
 ```text
 pending -> running -> completed
 pending -> running -> pending    (retry)
+pending -> backoff               (submission backoff)
+backoff -> running               (scheduled time reached and claimed)
 pending -> running -> failed     (attempts exhausted)
 pending -> canceled              (superseded or explicitly canceled)
 running -> canceled              (executor reports cooperative cancellation)
@@ -169,7 +172,7 @@ running -> pending               (stale job recovery)
 
 Claim order should be:
 
-1. pending status
+1. pending or backoff status
 2. scheduled time has arrived
 3. registered type has dispatcher capacity
 4. resource has no other running job
@@ -192,7 +195,7 @@ Important expectations:
   rewrite existing job payloads.
 - Custom store implementations should call `orchestration.ResolveCreateJobOptions`
   to interpret create options.
-- `HasActiveJobForResource` checks pending and running jobs for a resource
+- `HasActiveJobForResource` checks pending, backoff, and running jobs for a resource
   across all job types.
 - `ClaimJob` marks exactly one eligible job running for the caller's worker ID.
 - `ClaimJob` does not claim jobs whose resource already has a running job,

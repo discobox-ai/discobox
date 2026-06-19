@@ -46,9 +46,8 @@ type DispatcherConfig struct {
 	// or very short-lived jobs.
 	StaleCheckInterval time.Duration
 
-	// RetryBackoff is the base delay used when a failed job has attempts
-	// remaining. Store implementations decide the exact retry schedule, but
-	// should use this value as the unit for retry delay.
+	// RetryBackoff is the fixed delay used when a failed job has attempts
+	// remaining.
 	RetryBackoff time.Duration
 
 	// ImmediateExecution enables NotifyNewJob wakeups. When false, the dispatcher
@@ -472,7 +471,7 @@ func (cfg DispatcherConfig) withDefaults() DispatcherConfig {
 		cfg.StaleCheckInterval = time.Minute
 	}
 	if cfg.RetryBackoff <= 0 {
-		cfg.RetryBackoff = 5 * time.Second
+		cfg.RetryBackoff = 2 * time.Second
 	}
 	if cfg.DefaultConcurrency < 1 {
 		cfg.DefaultConcurrency = 1

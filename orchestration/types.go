@@ -12,9 +12,8 @@ type Type string
 // Resource identifies the logical thing a job operates on.
 //
 // The dispatcher uses Resource to avoid running conflicting jobs concurrently.
-// By default, the queue also uses Resource as the active-job uniqueness key:
-// only one pending or running job may exist for a resource, regardless of job
-// type.
+// Stores may also use Resource as an active-job uniqueness key: only one
+// pending, backoff, or running job may own a resource, regardless of job type.
 type Resource struct {
 	// Type is the application-defined resource kind, such as "sandbox",
 	// "project", or "repository".

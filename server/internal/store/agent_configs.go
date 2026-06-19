@@ -36,11 +36,7 @@ func (s *Store) GetAgentConfig(ctx context.Context, projectID, configID string) 
 	if err != nil {
 		return nil, err
 	}
-	var config model.AgentConfig
-	if err := read.Where("project_id = ? AND id = ?", projectID, configID).First(&config).Error; err != nil {
-		return nil, mapNotFound(err)
-	}
-	return &config, nil
+	return firstByID[model.AgentConfig](read.Where("project_id = ?", projectID), "id", configID)
 }
 
 func (s *Store) GetAgentConfigByName(ctx context.Context, projectID, name string) (*model.AgentConfig, error) {
@@ -67,14 +63,14 @@ func (s *Store) UpdateAgentConfig(ctx context.Context, config *model.AgentConfig
 
 func (s *Store) DeleteAgentConfig(ctx context.Context, projectID, configID string) error {
 	_, err := withResourceEvent(ctx, s, model.EventActionDeleted, func(tx *gorm.DB) (*model.AgentConfig, error) {
-		var config model.AgentConfig
-		if err := tx.First(&config, "project_id = ? AND id = ?", projectID, configID).Error; err != nil {
-			return nil, mapNotFound(err)
-		}
-		if err := tx.Delete(&config).Error; err != nil {
+		config, err := firstByID[model.AgentConfig](tx.Where("project_id = ?", projectID), "id", configID)
+		if err != nil {
 			return nil, err
 		}
-		return &config, nil
+		if err := tx.Delete(config).Error; err != nil {
+			return nil, err
+		}
+		return config, nil
 	})
 	return err
 }

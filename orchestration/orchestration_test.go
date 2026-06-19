@@ -163,6 +163,72 @@ func TestQueueEnqueueAppliesDefaultsAndPayloadOptions(t *testing.T) {
 	}
 }
 
+func TestQueueEnqueueAppliesResourceBackoff(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	queue := orchestration.NewQueue(store, orchestration.QueueConfig{
+		DefaultMaxAttempts:       1,
+		ResourceBackoffThreshold: 2,
+		ResourceBackoffWindow:    time.Minute,
+		ResourceBackoffBaseDelay: time.Minute,
+		ResourceBackoffMaxDelay:  10 * time.Minute,
+	})
+	payload := simplePayload{TypeName: testTypeA, ResourceT: "worker", ResourceI: "worker-1"}
+
+	first, err := queue.Enqueue(ctx, payload)
+	if err != nil {
+		t.Fatalf("enqueue first: %v", err)
+	}
+	second, err := queue.Enqueue(ctx, payload)
+	if err != nil {
+		t.Fatalf("enqueue second: %v", err)
+	}
+	third, err := queue.Enqueue(ctx, payload)
+	if err != nil {
+		t.Fatalf("enqueue third: %v", err)
+	}
+
+	if first.Status != orchestration.StatusPending || second.Status != orchestration.StatusPending {
+		t.Fatalf("first/second status = %s/%s, want pending/pending", first.Status, second.Status)
+	}
+	if third.Status != orchestration.StatusBackoff {
+		t.Fatalf("third status = %s, want backoff", third.Status)
+	}
+	if !third.ScheduledAt.After(time.Now().Add(30 * time.Second)) {
+		t.Fatalf("third scheduledAt = %s, want delayed", third.ScheduledAt)
+	}
+}
+
+func TestQueueEnqueueDefaultResourceBackoffUsesLongWindowAndCap(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	queue := orchestration.NewQueue(store, orchestration.QueueConfig{DefaultMaxAttempts: 1})
+	payload := simplePayload{TypeName: "provider.reconcile", ResourceT: "provider", ResourceI: "provider-1"}
+
+	for i := range 10 {
+		job, err := queue.Enqueue(ctx, payload)
+		if err != nil {
+			t.Fatalf("enqueue %d: %v", i, err)
+		}
+		if job.Status != orchestration.StatusPending {
+			t.Fatalf("job %d status = %s, want pending", i, job.Status)
+		}
+	}
+	backoff, err := queue.Enqueue(ctx, payload)
+	if err != nil {
+		t.Fatalf("enqueue backoff: %v", err)
+	}
+	if backoff.Status != orchestration.StatusBackoff {
+		t.Fatalf("backoff status = %s, want backoff", backoff.Status)
+	}
+	if backoff.ScheduledAt.Before(time.Now().Add(25 * time.Second)) {
+		t.Fatalf("backoff scheduledAt = %s, want default delay", backoff.ScheduledAt)
+	}
+	if got := orchestration.ResourceBackoffDelay(10, 30*time.Second, 15*time.Minute); got != 15*time.Minute {
+		t.Fatalf("default capped delay = %s, want 15m", got)
+	}
+}
+
 func TestQueueEnqueueReturnsMarshalError(t *testing.T) {
 	queue := orchestration.NewQueue(newTestStore(t), orchestration.QueueConfig{})
 	if _, err := queue.Enqueue(context.Background(), unmarshalablePayload{C: make(chan struct{})}); err == nil {
@@ -1579,11 +1645,23 @@ func (s *memoryStore) GetLatestJobForResource(_ context.Context, resource orches
 	return cloneJob(latest), nil
 }
 
+func (s *memoryStore) CountRecentJobsForResource(_ context.Context, jobType orchestration.Type, resource orchestration.Resource, since time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var count int
+	for _, job := range s.jobs {
+		if job.Type == jobType && job.Resource == resource && !job.CreatedAt.Before(since) {
+			count++
+		}
+	}
+	return count, nil
+}
+
 func (s *memoryStore) HasActiveJobForResource(_ context.Context, resource orchestration.Resource) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, job := range s.jobs {
-		if job.Resource == resource && (job.Status == orchestration.StatusPending || job.Status == orchestration.StatusRunning) {
+		if job.Resource == resource && (job.Status == orchestration.StatusPending || job.Status == orchestration.StatusBackoff || job.Status == orchestration.StatusRunning) {
 			return true, nil
 		}
 	}
@@ -1603,7 +1681,7 @@ func (s *memoryStore) ClaimJob(_ context.Context, types []orchestration.Type, wo
 	now := time.Now()
 	var best *orchestration.Job
 	for _, job := range s.jobs {
-		if !typeOK[job.Type] || job.Status != orchestration.StatusPending || job.ScheduledAt.After(now) {
+		if !typeOK[job.Type] || !claimableStatus(job.Status) || job.ScheduledAt.After(now) {
 			continue
 		}
 		if job.Resource.Type != "" || job.Resource.ID != "" {
@@ -1656,7 +1734,7 @@ func (s *memoryStore) FailJob(_ context.Context, id string, message string, retr
 		job.Status = orchestration.StatusPending
 		job.WorkerID = nil
 		job.StartedAt = nil
-		job.ScheduledAt = now.Add(time.Duration(job.Attempts) * retryBackoff)
+		job.ScheduledAt = now.Add(retryBackoff)
 		if job.Resource.Type != "" && job.Resource.ID != "" {
 			s.active[memoryResourceKey(job.Resource)] = job.ID
 		}
@@ -1668,6 +1746,10 @@ func (s *memoryStore) FailJob(_ context.Context, id string, message string, retr
 	}
 	job.UpdatedAt = now
 	return nil
+}
+
+func claimableStatus(status orchestration.Status) bool {
+	return status == orchestration.StatusPending || status == orchestration.StatusBackoff
 }
 
 func (s *memoryStore) CleanupStaleJobs(_ context.Context, staleAfter time.Duration) (int64, error) {

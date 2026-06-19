@@ -307,6 +307,107 @@ func TestJobsCommandListsProjectJobs(t *testing.T) {
 	}
 }
 
+func TestJobsTableSortsByCreatedAtAscending(t *testing.T) {
+	app := &App{output: "table"}
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	newerID := "01kv9w440bpa9qk5n25t2hh2rv"
+	olderID := "01kv9w440a7bhqnk550g3821ck"
+	jobs := []apiclientgen.Job{
+		{
+			ID:           newerID,
+			Type:         "worker.reconcile",
+			Status:       apiclientgen.JobStatusCompleted,
+			Attempts:     1,
+			MaxAttempts:  3,
+			ResourceType: "worker",
+			ResourceId:   "worker-newer",
+			CreatedAt:    time.Date(2026, 6, 17, 1, 0, 0, 0, time.UTC),
+		},
+		{
+			ID:           olderID,
+			Type:         "worker.reconcile",
+			Status:       apiclientgen.JobStatusCompleted,
+			Attempts:     1,
+			MaxAttempts:  3,
+			ResourceType: "worker",
+			ResourceId:   "worker-older",
+			CreatedAt:    time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC),
+		},
+	}
+
+	if err := app.writeJobs(cmd, jobs); err != nil {
+		t.Fatalf("writeJobs: %v", err)
+	}
+	output := out.String()
+	olderIndex := strings.Index(output, shortID(olderID))
+	newerIndex := strings.Index(output, shortID(newerID))
+	if olderIndex < 0 || newerIndex < 0 || olderIndex > newerIndex {
+		t.Fatalf("jobs output = %q, want older job before newer job", output)
+	}
+	if jobs[0].ID != newerID {
+		t.Fatalf("writeJobs mutated input order: %#v", jobs)
+	}
+}
+
+func TestJobsTableShowsFutureSchedule(t *testing.T) {
+	app := &App{output: "table"}
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	jobID := "01kv9w440bpa9qk5n25t2hh2rv"
+	jobs := []apiclientgen.Job{
+		{
+			ID:           jobID,
+			Type:         "provider.reconcile",
+			Status:       apiclientgen.JobStatusBackoff,
+			Attempts:     1,
+			MaxAttempts:  3,
+			ResourceType: "provider",
+			ResourceId:   "provider-1",
+			ScheduledAt:  time.Now().Add(5 * time.Minute),
+			CreatedAt:    time.Now().Add(-1 * time.Minute),
+		},
+	}
+
+	if err := app.writeJobs(cmd, jobs); err != nil {
+		t.Fatalf("writeJobs: %v", err)
+	}
+	output := out.String()
+	for _, want := range []string{"NEXT", shortID(jobID), "backoff", "5 minutes from now"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("jobs output = %q, want %q", output, want)
+		}
+	}
+}
+
+func TestJobsJSONPreservesResponseOrder(t *testing.T) {
+	app := &App{output: "json"}
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	newerID := "01kv9w440bpa9qk5n25t2hh2rv"
+	olderID := "01kv9w440a7bhqnk550g3821ck"
+	jobs := []apiclientgen.Job{
+		{ID: newerID, CreatedAt: time.Date(2026, 6, 17, 1, 0, 0, 0, time.UTC)},
+		{ID: olderID, CreatedAt: time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC)},
+	}
+
+	if err := app.writeJobs(cmd, jobs); err != nil {
+		t.Fatalf("writeJobs: %v", err)
+	}
+	output := out.String()
+	newerIndex := strings.Index(output, newerID)
+	olderIndex := strings.Index(output, olderID)
+	if newerIndex < 0 || olderIndex < 0 || newerIndex > olderIndex {
+		t.Fatalf("jobs json output = %q, want response order preserved", output)
+	}
+}
+
 func TestWorkerListCommandFiltersByProvider(t *testing.T) {
 	const workerID = "01kv9w440bpa9qk5n25t2hh2rv"
 	const providerID = "provider-1"
@@ -462,6 +563,40 @@ func TestJobGetCommandShowsError(t *testing.T) {
 	}
 	output := out.String()
 	for _, want := range []string{"FIELD", "job-1", "failed", "worker/worker-1", "ERROR", "container exited"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("job output = %q, want %q", output, want)
+		}
+	}
+}
+
+func TestJobRunNowCommandForcesJob(t *testing.T) {
+	var sawForce bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Method; got != http.MethodPost {
+			t.Fatalf("method = %q, want POST", got)
+		}
+		if got := r.URL.Path; got != "/projects/project-1/jobs/job-1/force" {
+			t.Fatalf("path = %q, want project job force path", got)
+		}
+		sawForce = true
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"job-1","type":"worker.reconcile","status":"pending","attempts":1,"maxAttempts":3,"resourceType":"worker","resourceId":"worker-1","scheduledAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "job", "run-now", "job-1"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute job run-now: %v", err)
+	}
+	if !sawForce {
+		t.Fatal("job force route was not called")
+	}
+	output := out.String()
+	for _, want := range []string{"FIELD", "job-1", "pending", "worker/worker-1"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("job output = %q, want %q", output, want)
 		}

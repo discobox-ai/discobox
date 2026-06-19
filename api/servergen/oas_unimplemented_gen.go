@@ -67,6 +67,15 @@ func (UnimplementedHandler) DeleteSandboxProviderInstance(ctx context.Context, p
 	return r, ht.ErrNotImplemented
 }
 
+// ForceJob implements force-job operation.
+//
+// Force a pending or backoff job to run immediately.
+//
+// POST /projects/{projectId}/jobs/{jobId}/force
+func (UnimplementedHandler) ForceJob(ctx context.Context, params ForceJobParams) (r ForceJobRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetAgentConfig implements get-agent-config operation.
 //
 // Get an agent config.

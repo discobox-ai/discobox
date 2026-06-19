@@ -11,6 +11,9 @@
   the source of truth.
 - Keep jobs append-only. Queue and submitter paths must create new job rows
   instead of rewriting existing payloads to represent newer intent.
+- Keep submission backoff application-neutral and keyed by job type, resource
+  type, and resource ID. Do not collapse different job types or resource types
+  into the same backoff bucket.
 - Keep job execution resource-serialized. Multiple pending jobs may exist for a
   resource, but the dispatcher must not run two jobs for the same resource
   concurrently.

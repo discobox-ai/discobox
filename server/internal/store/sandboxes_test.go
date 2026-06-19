@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/obot-platform/discobox/model"
+	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/secrets"
 	"github.com/obot-platform/discobox/server/internal/store"
@@ -46,6 +47,64 @@ func TestGetSandboxWithGeneration(t *testing.T) {
 	sandbox.Name = "stale"
 	if err := s.UpdateSandbox(ctx, sandbox, store.WithGeneration(sandbox.Generation+1)); !errors.Is(err, store.ErrGenerationConflict) {
 		t.Fatalf("update stale generation error = %v, want ErrGenerationConflict", err)
+	}
+}
+
+func TestGetResourcesByShortIDSuffix(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	project := &model.Project{ID: "000000000000000000abc12345", OwnerUserID: "user-1", Name: "Project", Slug: "project-short-id"}
+	if err := s.UpsertProject(ctx, project); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	if _, err := s.CreateProjectMemberIfNotExists(ctx, &model.ProjectMember{ProjectID: project.ID, UserID: "user-1", Role: "owner"}); err != nil {
+		t.Fatalf("create project member: %v", err)
+	}
+	provider := &model.SandboxProviderInstance{ID: "000000000000000001abc12345", ProjectID: project.ID, Type: "docker", Name: "provider"}
+	if err := s.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	sandbox := &model.Sandbox{ID: "000000000000000002abc12345", ProjectID: project.ID, CreatedByUserID: "user-1", Name: "sandbox"}
+	if err := s.CreateSandbox(ctx, sandbox); err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	worker := &model.Worker{ID: "000000000000000003abc12345", ProjectID: project.ID, ProviderInstanceID: provider.ID}
+	if err := s.CreateWorker(ctx, worker); err != nil {
+		t.Fatalf("create worker: %v", err)
+	}
+	job := &orchestration.Job{ID: "000000000000000004abc12345", Type: "test", Payload: []byte(`{}`), Resource: orchestration.Resource{Type: "sandbox", ID: sandbox.ID}}
+	if err := s.CreateJob(ctx, job); err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	short := "abc12345"
+	gotProject, err := s.GetProject(ctx, short)
+	if err != nil || gotProject.ID != project.ID {
+		t.Fatalf("short project = %#v err=%v", gotProject, err)
+	}
+	gotProvider, err := s.GetSandboxProviderInstance(ctx, project.ID, short)
+	if err != nil || gotProvider.ID != provider.ID {
+		t.Fatalf("short provider = %#v err=%v", gotProvider, err)
+	}
+	gotSandbox, err := s.GetSandbox(ctx, project.ID, short)
+	if err != nil || gotSandbox.ID != sandbox.ID {
+		t.Fatalf("short sandbox = %#v err=%v", gotSandbox, err)
+	}
+	gotWorker, err := s.GetWorker(ctx, short)
+	if err != nil || gotWorker.ID != worker.ID {
+		t.Fatalf("short worker = %#v err=%v", gotWorker, err)
+	}
+	gotJob, err := s.GetJobForProject(ctx, project.ID, short)
+	if err != nil || gotJob.ID != job.ID {
+		t.Fatalf("short job = %#v err=%v", gotJob, err)
+	}
+
+	ambiguous := &model.Sandbox{ID: "000000000000000005abc12345", ProjectID: project.ID, CreatedByUserID: "user-1", Name: "ambiguous"}
+	if err := s.CreateSandbox(ctx, ambiguous); err != nil {
+		t.Fatalf("create ambiguous sandbox: %v", err)
+	}
+	if _, err := s.GetSandbox(ctx, project.ID, short); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("ambiguous short sandbox error = %v, want not found", err)
 	}
 }
 

@@ -112,6 +112,10 @@ func (s *missingExecutorStore) GetLatestJobForResource(context.Context, Resource
 	return nil, errors.New("not implemented")
 }
 
+func (s *missingExecutorStore) CountRecentJobsForResource(context.Context, Type, Resource, time.Time) (int, error) {
+	return 0, nil
+}
+
 func (s *missingExecutorStore) HasActiveJobForResource(context.Context, Resource) (bool, error) {
 	return false, errors.New("not implemented")
 }

@@ -44,6 +44,12 @@ type Handler interface {
 	//
 	// DELETE /projects/{projectId}/providers/{providerId}
 	DeleteSandboxProviderInstance(ctx context.Context, params DeleteSandboxProviderInstanceParams) (DeleteSandboxProviderInstanceRes, error)
+	// ForceJob implements force-job operation.
+	//
+	// Force a pending or backoff job to run immediately.
+	//
+	// POST /projects/{projectId}/jobs/{jobId}/force
+	ForceJob(ctx context.Context, params ForceJobParams) (ForceJobRes, error)
 	// GetAgentConfig implements get-agent-config operation.
 	//
 	// Get an agent config.

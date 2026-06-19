@@ -25,6 +25,10 @@ type DeleteSandboxRes interface {
 	deleteSandboxRes()
 }
 
+type ForceJobRes interface {
+	forceJobRes()
+}
+
 type GetAgentConfigDefinitionRes interface {
 	getAgentConfigDefinitionRes()
 }

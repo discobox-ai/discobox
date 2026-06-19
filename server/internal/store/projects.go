@@ -83,14 +83,7 @@ func (s *Store) GetProject(ctx context.Context, projectID string) (*model.Projec
 	if err != nil {
 		return nil, err
 	}
-	var project model.Project
-	err = read.
-		Preload("SandboxProviderInstances").
-		First(&project, "id = ?", projectID).Error
-	if err != nil {
-		return nil, mapNotFound(err)
-	}
-	return &project, nil
+	return firstByID[model.Project](read.Preload("SandboxProviderInstances"), "id", projectID)
 }
 
 func (s *Store) GetDefaultProjectForUser(ctx context.Context, userID string) (*model.Project, error) {

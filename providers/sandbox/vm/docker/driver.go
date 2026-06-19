@@ -31,19 +31,21 @@ import (
 )
 
 const (
-	ProviderType      = "docker"
-	defaultImage      = "ghcr.io/obot-platform/discobox-systemd:latest"
-	defaultAgentPort  = 3002
-	defaultServerPort = "8080"
-	dockerHostGateway = "host.docker.internal"
-	dockerSocketPath  = "/var/run/docker.sock"
-	labelManaged      = "discobox.vm.managed"
-	labelInstanceID   = "discobox.vm.instance_id"
-	labelProjectID    = "discobox.project_id"
-	labelSandboxID    = "discobox.sandbox_id"
-	labelWorkerAgent  = "discobox.worker_agent"
-	labelWorkerID     = "discobox.worker_id"
-	labelProviderType = "discobox.provider_type"
+	ProviderType        = "docker"
+	defaultImage        = "ghcr.io/obot-platform/discobox-systemd:latest"
+	defaultAgentPort    = 3002
+	defaultServerPort   = "8080"
+	noHealthWaitTimeout = 30 * time.Second
+	healthPollDelay     = 500 * time.Millisecond
+	dockerHostGateway   = "host.docker.internal"
+	dockerSocketPath    = "/var/run/docker.sock"
+	labelManaged        = "discobox.vm.managed"
+	labelInstanceID     = "discobox.vm.instance_id"
+	labelProjectID      = "discobox.project_id"
+	labelSandboxID      = "discobox.sandbox_id"
+	labelWorkerAgent    = "discobox.worker_agent"
+	labelWorkerID       = "discobox.worker_id"
+	labelProviderType   = "discobox.provider_type"
 )
 
 // DefaultImage returns the default Docker worker image.
@@ -215,17 +217,13 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 	}
 	labels := d.containerLabels(spec)
 	workerAgent := labels[labelWorkerAgent] == "true"
-	if workerAgent {
-		if err := d.removeWorkerAgentContainers(ctx, labels); err != nil {
-			return nil, err
-		}
-	} else if existing, err := d.client.ContainerInspect(ctx, name, client.ContainerInspectOptions{}); err == nil {
-		if existing.Container.Config != nil && existing.Container.Config.Image != image {
+	if existing, err := d.client.ContainerInspect(ctx, name, client.ContainerInspectOptions{}); err == nil {
+		if !workerAgent && existing.Container.Config != nil && existing.Container.Config.Image != image {
 			if _, err := d.client.ContainerRemove(ctx, existing.Container.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
 				return nil, err
 			}
 		} else {
-			return d.instanceFromInspect(existing.Container), nil
+			return d.instanceFromHealthyInspect(ctx, existing.Container.ID, false)
 		}
 	} else if !cerrdefs.IsNotFound(err) {
 		return nil, err
@@ -249,7 +247,6 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 		ExposedPorts: network.PortSet{exposedPort: struct{}{}},
 	}
 	hostConfig := &container.HostConfig{
-		AutoRemove: workerAgent,
 		Privileged: d.privileged,
 		PortBindings: network.PortMap{
 			exposedPort: []network.PortBinding{{HostIP: netip.MustParseAddr("127.0.0.1")}},
@@ -280,11 +277,41 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 	if _, err := d.client.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		return nil, err
 	}
-	inspect, err := d.client.ContainerInspect(ctx, created.ID, client.ContainerInspectOptions{})
+	return d.instanceFromHealthyInspect(ctx, created.ID, true)
+}
+
+func (d *Driver) instanceFromHealthyInspect(ctx context.Context, id string, wait bool) (*vm.Instance, error) {
+	inspect, err := d.inspectHealthy(ctx, id, wait)
 	if err != nil {
 		return nil, err
 	}
-	return d.instanceFromInspect(inspect.Container), nil
+	return d.instanceFromInspect(*inspect), nil
+}
+
+func (d *Driver) inspectHealthy(ctx context.Context, id string, wait bool) (*container.InspectResponse, error) {
+	noHealthDeadline := time.Now().Add(noHealthWaitTimeout)
+	for {
+		inspect, err := d.client.ContainerInspect(ctx, id, client.ContainerInspectOptions{})
+		if err != nil {
+			return nil, mapDockerNotFound(err)
+		}
+		err = containerReadyError(inspect.Container)
+		if err == nil {
+			if !wait || containerHasHealth(inspect.Container) || time.Now().After(noHealthDeadline) {
+				return &inspect.Container, nil
+			}
+		} else if !wait || !containerHealthStarting(inspect.Container) {
+			return &inspect.Container, err
+		}
+
+		timer := time.NewTimer(healthPollDelay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
 }
 
 func (d *Driver) containerBootConfig(boot vm.BootConfig) vm.BootConfig {
@@ -321,36 +348,6 @@ func controlPlaneExtraHosts(defaulted bool, controlPlaneURL string) []string {
 		return []string{dockerHostGateway + ":host-gateway"}
 	}
 	return nil
-}
-
-func (d *Driver) removeWorkerAgentContainers(ctx context.Context, labels map[string]string) error {
-	projectID := strings.TrimSpace(labels[labelProjectID])
-	workerID := strings.TrimSpace(labels[labelWorkerID])
-	if projectID == "" || workerID == "" {
-		return fmt.Errorf("worker-agent container cleanup requires project and worker labels")
-	}
-	filters := client.Filters{}
-	for _, label := range workerAgentCleanupLabels(projectID, workerID) {
-		filters = filters.Add("label", label)
-	}
-	containers, err := d.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: filters})
-	if err != nil {
-		return err
-	}
-	for _, ctr := range containers.Items {
-		if _, err := d.client.ContainerRemove(ctx, ctr.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
-			return err
-		}
-	}
-	return nil
-}
-
-func workerAgentCleanupLabels(projectID, workerID string) []string {
-	return []string{
-		labelWorkerAgent + "=true",
-		labelProjectID + "=" + projectID,
-		labelWorkerID + "=" + workerID,
-	}
 }
 
 func (d *Driver) containerMounts(workerAgent bool, workerID string) []mount.Mount {
@@ -498,6 +495,61 @@ func (d *Driver) instanceFromInspect(inspect container.InspectResponse) *vm.Inst
 		inst.AgentURL = "http://" + net.JoinHostPort(host, strconv.Itoa(port))
 	}
 	return inst
+}
+
+func containerReadyError(inspect container.InspectResponse) error {
+	if inspect.State == nil {
+		return fmt.Errorf("container %s has no runtime state", shortContainerID(inspect.ID))
+	}
+	if !inspect.State.Running {
+		message := strings.TrimSpace(inspect.State.Error)
+		if message == "" {
+			message = fmt.Sprintf("container %s is %s", shortContainerID(inspect.ID), inspect.State.Status)
+		}
+		return errors.New(message)
+	}
+	if inspect.State.Health == nil {
+		return nil
+	}
+	switch inspect.State.Health.Status {
+	case "healthy":
+		return nil
+	case "starting":
+		return fmt.Errorf("container %s health check is starting", shortContainerID(inspect.ID))
+	case "unhealthy":
+		return fmt.Errorf("container %s is unhealthy%s", shortContainerID(inspect.ID), healthLogSuffix(inspect.State.Health))
+	default:
+		return fmt.Errorf("container %s health check status is %q", shortContainerID(inspect.ID), inspect.State.Health.Status)
+	}
+}
+
+func containerHealthStarting(inspect container.InspectResponse) bool {
+	return inspect.State != nil && inspect.State.Running && inspect.State.Health != nil && inspect.State.Health.Status == "starting"
+}
+
+func containerHasHealth(inspect container.InspectResponse) bool {
+	return inspect.State != nil && inspect.State.Health != nil
+}
+
+func healthLogSuffix(health *container.Health) string {
+	if health == nil || len(health.Log) == 0 {
+		return ""
+	}
+	output := strings.TrimSpace(health.Log[len(health.Log)-1].Output)
+	if output == "" {
+		return ""
+	}
+	if len(output) > 512 {
+		output = output[:512] + "..."
+	}
+	return ": " + output
+}
+
+func shortContainerID(id string) string {
+	if len(id) > 12 {
+		return id[:12]
+	}
+	return id
 }
 
 func assignedAgentEndpoint(ports network.PortMap, agentPort int) (string, int) {

@@ -137,6 +137,18 @@ func (h *Handler) GetJob(ctx context.Context, params serverapi.GetJobParams) (se
 	return &body, nil
 }
 
+func (h *Handler) ForceJob(ctx context.Context, params serverapi.ForceJobParams) (serverapi.ForceJobRes, error) {
+	job, err := h.services.Jobs.ForceJob(ctx, params.ProjectId, params.JobId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := api.Convert[serverapi.Job](job)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
 func (h *Handler) CreateAgentConfig(ctx context.Context, req *serverapi.CreateAgentConfigBody, params serverapi.CreateAgentConfigParams) (serverapi.CreateAgentConfigRes, error) {
 	config, err := h.services.AgentConfigs.CreateAgentConfig(ctx, params.ProjectId, *req)
 	if err != nil {

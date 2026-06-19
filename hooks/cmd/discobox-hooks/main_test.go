@@ -245,6 +245,87 @@ func TestWriteDatabaseInspectionTables(t *testing.T) {
 	}
 }
 
+func TestTableWritersSortByCreatedAtAscending(t *testing.T) {
+	a := &app{opts: cliOptions{output: "table"}}
+	base := time.Date(2026, 6, 17, 4, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name  string
+		first string
+		last  string
+		fn    func(*cobra.Command) error
+	}{
+		{
+			name:  "events",
+			first: "event-old",
+			last:  "event-new",
+			fn: func(cmd *cobra.Command) error {
+				return a.writeEvents(cmd, []client.Event{
+					{ID: "event-new", CreatedAt: base.Add(time.Minute), Type: "hook.run.finished"},
+					{ID: "event-old", CreatedAt: base, Type: "hook.run.started"},
+				})
+			},
+		},
+		{
+			name:  "runs",
+			first: "run-old",
+			last:  "run-new",
+			fn: func(cmd *cobra.Command) error {
+				return a.writeRuns(cmd, []client.Run{
+					{ID: "run-new", StartedAt: base.Add(time.Minute)},
+					{ID: "run-old", StartedAt: base},
+				})
+			},
+		},
+		{
+			name:  "changes",
+			first: "change-old",
+			last:  "change-new",
+			fn: func(cmd *cobra.Command) error {
+				return a.writeObservedChanges(cmd, []client.ObservedFileChange{
+					{ID: "change-new", CreatedAt: base.Add(time.Minute), Path: "new.go"},
+					{ID: "change-old", CreatedAt: base, Path: "old.go"},
+				})
+			},
+		},
+		{
+			name:  "snapshots",
+			first: "shot-old",
+			last:  "shot-new",
+			fn: func(cmd *cobra.Command) error {
+				return a.writeSnapshots(cmd, []client.WorkspaceSnapshot{
+					{ID: "snapshot-new", CreatedAt: base.Add(time.Minute)},
+					{ID: "snapshot-old", CreatedAt: base},
+				})
+			},
+		},
+		{
+			name:  "queue",
+			first: "hook-old",
+			last:  "hook-new",
+			fn: func(cmd *cobra.Command) error {
+				return a.writeQueue(cmd, []client.QueuedHook{
+					{HookID: "hook-new", CreatedAt: base.Add(time.Minute), Position: 2},
+					{HookID: "hook-old", CreatedAt: base, Position: 1},
+				})
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd, out := testOutputCommand()
+			if err := tt.fn(cmd); err != nil {
+				t.Fatal(err)
+			}
+			got := out.String()
+			firstIndex := strings.Index(got, tt.first)
+			lastIndex := strings.Index(got, tt.last)
+			if firstIndex < 0 || lastIndex < 0 || firstIndex > lastIndex {
+				t.Fatalf("expected %q before %q in table:\n%s", tt.first, tt.last, got)
+			}
+		})
+	}
+}
+
 func TestGitDiffColorArgHonorsEnvironment(t *testing.T) {
 	var out bytes.Buffer
 	t.Setenv("CLICOLOR_FORCE", "1")
@@ -519,6 +600,32 @@ func TestWriteJSONLineIsCompact(t *testing.T) {
 	}
 	if decoded.ID != event.ID || decoded.Type != event.Type || decoded.HookID != event.HookID {
 		t.Fatalf("unexpected decoded event: %#v", decoded)
+	}
+}
+
+func TestFormatRelativeTime(t *testing.T) {
+	now := time.Date(2026, 6, 17, 4, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name  string
+		value time.Time
+		want  string
+	}{
+		{name: "second", value: now.Add(-1 * time.Second), want: "1 second ago"},
+		{name: "seconds", value: now.Add(-12 * time.Second), want: "12 seconds ago"},
+		{name: "minute", value: now.Add(-1 * time.Minute), want: "1 minute ago"},
+		{name: "minutes", value: now.Add(-12 * time.Minute), want: "12 minutes ago"},
+		{name: "hour", value: now.Add(-1 * time.Hour), want: "1 hour ago"},
+		{name: "hours", value: now.Add(-12 * time.Hour), want: "12 hours ago"},
+		{name: "day", value: now.Add(-24 * time.Hour), want: "1 day ago"},
+		{name: "future", value: now.Add(2 * time.Minute), want: "2 minutes from now"},
+		{name: "zero", value: time.Time{}, want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := formatRelativeTime(now, tt.value); got != tt.want {
+				t.Fatalf("formatRelativeTime() = %q, want %q", got, tt.want)
+			}
+		})
 	}
 }
 

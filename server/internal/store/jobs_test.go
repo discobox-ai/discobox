@@ -3,7 +3,9 @@ package store_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
@@ -85,6 +87,45 @@ func TestListJobsForProjectScopesSandboxWorkerAndProviderJobs(t *testing.T) {
 		if projectID != "project-1" {
 			t.Fatalf("job %s project_id = %q, want project-1", id, projectID)
 		}
+	}
+}
+
+func TestForceJobForProjectMakesBackoffJobRunnable(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newTestStoreWithDB(t, nil)
+
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "docker", Name: "one"}
+	if err := s.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	worker := &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: provider.ID}
+	if err := s.CreateWorker(ctx, worker); err != nil {
+		t.Fatalf("create worker: %v", err)
+	}
+	job := &orchestration.Job{
+		ID:          "job-worker-1",
+		Type:        "worker.reconcile",
+		Payload:     json.RawMessage(`{}`),
+		Status:      orchestration.StatusBackoff,
+		Resource:    orchestration.Resource{Type: "worker", ID: worker.ID},
+		ScheduledAt: time.Now().Add(time.Hour),
+	}
+	if err := s.CreateJob(ctx, job); err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+
+	forced, err := s.ForceJobForProject(ctx, "project-1", job.ID)
+	if err != nil {
+		t.Fatalf("force job: %v", err)
+	}
+	if forced.Status != orchestration.StatusPending {
+		t.Fatalf("forced status = %s, want pending", forced.Status)
+	}
+	if time.Until(forced.ScheduledAt) > time.Second {
+		t.Fatalf("forced scheduledAt = %s, want runnable now", forced.ScheduledAt)
+	}
+	if _, err := s.ForceJobForProject(ctx, "project-2", job.ID); !errors.Is(err, orchestration.ErrJobNotFound) {
+		t.Fatalf("force other project error = %v, want ErrJobNotFound", err)
 	}
 }
 

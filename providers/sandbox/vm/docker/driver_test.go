@@ -1,8 +1,10 @@
 package docker
 
 import (
+	"strings"
 	"testing"
 
+	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 
 	"github.com/obot-platform/discobox/providers/sandbox/vm"
@@ -160,23 +162,6 @@ func TestContainerLabelsOmitSandboxIDForWorkerAgent(t *testing.T) {
 	}
 }
 
-func TestWorkerAgentCleanupLabelsAreScopedToProjectAndWorker(t *testing.T) {
-	got := workerAgentCleanupLabels("project-1", "worker-1")
-	want := []string{
-		"discobox.worker_agent=true",
-		"discobox.project_id=project-1",
-		"discobox.worker_id=worker-1",
-	}
-	if len(got) != len(want) {
-		t.Fatalf("cleanup labels = %#v, want %#v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("cleanup labels = %#v, want %#v", got, want)
-		}
-	}
-}
-
 func TestContainerMountsBindHostDockerSocketForWorkerAgent(t *testing.T) {
 	d := NewDriverWithClient(nil, Config{})
 	mounts := d.containerMounts(true, "worker-1")
@@ -210,6 +195,60 @@ func TestScopedVolumeNameUsesWorkerID(t *testing.T) {
 	}
 	if got := scopedVolumeName("", "discobox"); got != "discobox-worker-unknown-discobox" {
 		t.Fatalf("fallback volume name = %q", got)
+	}
+}
+
+func TestContainerReadyErrorTreatsRunningWithoutHealthcheckAsReady(t *testing.T) {
+	inspect := container.InspectResponse{
+		ID:    "1234567890abcdef",
+		State: &container.State{Running: true},
+	}
+	if err := containerReadyError(inspect); err != nil {
+		t.Fatalf("ready error = %v", err)
+	}
+	if containerHasHealth(inspect) {
+		t.Fatalf("containerHasHealth = true")
+	}
+}
+
+func TestContainerReadyErrorReportsHealthStates(t *testing.T) {
+	starting := container.InspectResponse{
+		ID:    "1234567890abcdef",
+		State: &container.State{Running: true, Health: &container.Health{Status: "starting"}},
+	}
+	if err := containerReadyError(starting); err == nil || !strings.Contains(err.Error(), "starting") {
+		t.Fatalf("starting error = %v", err)
+	}
+	if !containerHealthStarting(starting) {
+		t.Fatalf("containerHealthStarting = false")
+	}
+	if !containerHasHealth(starting) {
+		t.Fatalf("containerHasHealth = false")
+	}
+
+	unhealthy := container.InspectResponse{
+		ID: "1234567890abcdef",
+		State: &container.State{
+			Running: true,
+			Health: &container.Health{
+				Status: "unhealthy",
+				Log:    []*container.HealthcheckResult{{Output: "agent did not answer\n"}},
+			},
+		},
+	}
+	err := containerReadyError(unhealthy)
+	if err == nil || !strings.Contains(err.Error(), "agent did not answer") {
+		t.Fatalf("unhealthy error = %v", err)
+	}
+}
+
+func TestContainerReadyErrorReportsStoppedContainer(t *testing.T) {
+	err := containerReadyError(container.InspectResponse{
+		ID:    "1234567890abcdef",
+		State: &container.State{Status: "exited", Error: "process failed"},
+	})
+	if err == nil || err.Error() != "process failed" {
+		t.Fatalf("stopped error = %v", err)
 	}
 }
 

@@ -289,6 +289,8 @@ func (s JobStatus) Validate() error {
 	switch s {
 	case "pending":
 		return nil
+	case "backoff":
+		return nil
 	case "running":
 		return nil
 	case "completed":

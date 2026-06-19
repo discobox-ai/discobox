@@ -44,6 +44,14 @@ type DeleteSandboxProviderInstanceParams struct {
 	ProviderId string
 }
 
+// ForceJobParams is parameters of force-job operation.
+type ForceJobParams struct {
+	// Project ID.
+	ProjectId string
+	// Job ID.
+	JobId string
+}
+
 // GetAgentConfigParams is parameters of get-agent-config operation.
 type GetAgentConfigParams struct {
 	// Project ID.

@@ -434,6 +434,7 @@ components:
                     description: Persisted job lifecycle state
                     enum:
                         - pending
+                        - backoff
                         - running
                         - completed
                         - failed
@@ -1619,6 +1620,38 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Get a job
+            tags:
+                - jobs
+    /projects/{projectId}/jobs/{jobId}/force:
+        post:
+            operationId: force-job
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Job ID
+                  in: path
+                  name: jobId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Job'
+                    description: Job
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Force a pending or backoff job to run immediately
             tags:
                 - jobs
     /agent-config-definitions:

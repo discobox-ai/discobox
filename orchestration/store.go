@@ -22,14 +22,20 @@ type Store interface {
 	// of status.
 	GetLatestJobForResource(ctx context.Context, resource Resource) (*Job, error)
 
-	// HasActiveJobForResource reports whether any pending or running job exists
-	// for the resource, regardless of job type.
+	// CountRecentJobsForResource counts jobs with the same type and resource
+	// created on or after since. Queue uses this to apply core submission
+	// backoff before appending a new job.
+	CountRecentJobsForResource(ctx context.Context, jobType Type, resource Resource, since time.Time) (int, error)
+
+	// HasActiveJobForResource reports whether any pending, backoff, or running
+	// job exists for the resource, regardless of job type.
 	HasActiveJobForResource(ctx context.Context, resource Resource) (bool, error)
 
-	// ClaimJob atomically selects one pending, scheduled job of any provided type
-	// and marks it running for workerID. It should return nil, nil when no job is
-	// available. It must not claim a job whose resource already has a running
-	// job, regardless of the running job's type.
+	// ClaimJob atomically selects one pending or backoff job of any provided type
+	// whose scheduled time has arrived and marks it running for workerID. It
+	// should return nil, nil when no job is available. It must not claim a job
+	// whose resource already has a running job, regardless of the running job's
+	// type.
 	ClaimJob(ctx context.Context, types []Type, workerID string) (*Job, error)
 
 	// CompleteJob marks a running job completed.
@@ -39,8 +45,8 @@ type Store interface {
 	CancelJob(ctx context.Context, id string, message string) error
 
 	// FailJob records an execution error. If attempts remain, it should requeue
-	// the job as pending with a retry delay derived from retryBackoff. Otherwise
-	// it should mark the job failed.
+	// the job as pending with a retry delay of retryBackoff. Otherwise it should
+	// mark the job failed.
 	FailJob(ctx context.Context, id string, message string, retryBackoff time.Duration) error
 
 	// CleanupStaleJobs resets abandoned running jobs whose StartedAt is older

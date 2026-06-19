@@ -44,5 +44,6 @@ RUN mkdir -p /var/lib/docker /var/lib/discobox \
 
 EXPOSE 3002
 VOLUME ["/var/lib/docker", "/var/lib/discobox"]
+HEALTHCHECK --interval=5s --timeout=2s --start-period=5s --retries=6 CMD curl -fsS "http://127.0.0.1:${DISCOBOX_AGENT_PORT:-3002}/healthz" >/dev/null || exit 1
 STOPSIGNAL SIGRTMIN+3
 ENTRYPOINT ["/usr/local/bin/discobox-worker-agent"]

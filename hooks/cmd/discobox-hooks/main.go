@@ -756,6 +756,7 @@ func (a *app) writeEvents(cmd *cobra.Command, events []client.Event) error {
 	if a.opts.output == "json" {
 		return writeJSONLines(cmd.OutOrStdout(), events)
 	}
+	events = sortByCreatedAtAsc(events, func(event client.Event) time.Time { return event.CreatedAt }, func(event client.Event) string { return event.ID })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tTIME\tTYPE\tHOOK\tRUN\tMESSAGE")
 	for _, event := range events {
@@ -780,6 +781,7 @@ func (a *app) writeRuns(cmd *cobra.Command, runs []client.Run) error {
 	if a.opts.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"runs": runs})
 	}
+	runs = sortByCreatedAtAsc(runs, func(run client.Run) time.Time { return run.StartedAt }, func(run client.Run) string { return run.ID })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tHOOK\tSTATUS\tEXIT\tSTARTED\tFINISHED\tFILES\tCHANGES\tERROR")
 	for _, run := range runs {
@@ -792,6 +794,7 @@ func (a *app) writeObservedChanges(cmd *cobra.Command, changes []client.Observed
 	if a.opts.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"changes": changes})
 	}
+	changes = sortByCreatedAtAsc(changes, func(change client.ObservedFileChange) time.Time { return change.CreatedAt }, func(change client.ObservedFileChange) string { return change.ID })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tTIME\tPATH\tKIND\tBASE\tDIFF_BYTES")
 	for _, change := range changes {
@@ -804,6 +807,7 @@ func (a *app) writeSnapshots(cmd *cobra.Command, snapshots []client.WorkspaceSna
 	if a.opts.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"snapshots": snapshots})
 	}
+	snapshots = sortByCreatedAtAsc(snapshots, func(snapshot client.WorkspaceSnapshot) time.Time { return snapshot.CreatedAt }, func(snapshot client.WorkspaceSnapshot) string { return snapshot.ID })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tTIME\tBASE\tPATCH_BYTES\tCHANGED\tOMITTED\tOBSERVED")
 	for _, snapshot := range snapshots {
@@ -816,6 +820,7 @@ func (a *app) writeQueue(cmd *cobra.Command, rows []client.QueuedHook) error {
 	if a.opts.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"queue": rows})
 	}
+	rows = sortByCreatedAtAsc(rows, func(row client.QueuedHook) time.Time { return row.CreatedAt }, func(row client.QueuedHook) string { return row.HookID })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "POSITION\tHOOK\tBLOCKED\tBLOCKED_BY\tFILES\tCHANGES\tCREATED\tUPDATED")
 	for _, row := range rows {
@@ -1379,10 +1384,50 @@ func writeJSONLine(w io.Writer, value any) error {
 }
 
 func formatEventTime(value time.Time) string {
+	return formatRelativeTime(time.Now(), value)
+}
+
+func formatRelativeTime(now, value time.Time) string {
 	if value.IsZero() {
 		return ""
 	}
-	return value.Local().Format(time.RFC3339)
+	d := now.Sub(value)
+	suffix := "ago"
+	if d < 0 {
+		d = -d
+		suffix = "from now"
+	}
+	unit := "second"
+	amount := int64(d.Round(time.Second) / time.Second)
+	switch {
+	case amount < 60:
+		if amount < 1 {
+			amount = 1
+		}
+	case amount < 60*60:
+		unit = "minute"
+		amount = int64(d.Round(time.Minute) / time.Minute)
+	case amount < 24*60*60:
+		unit = "hour"
+		amount = int64(d.Round(time.Hour) / time.Hour)
+	case amount < 30*24*60*60:
+		unit = "day"
+		amount = int64(d.Round(24*time.Hour) / (24 * time.Hour))
+	case amount < 365*24*60*60:
+		unit = "month"
+		amount = int64(d.Round(30*24*time.Hour) / (30 * 24 * time.Hour))
+	default:
+		unit = "year"
+		amount = int64(d.Round(365*24*time.Hour) / (365 * 24 * time.Hour))
+	}
+	if amount < 1 {
+		amount = 1
+	}
+	plural := ""
+	if amount != 1 {
+		plural = "s"
+	}
+	return fmt.Sprintf("%d %s%s %s", amount, unit, plural, suffix)
 }
 
 func formatOptionalTime(value *time.Time) string {
@@ -1390,6 +1435,25 @@ func formatOptionalTime(value *time.Time) string {
 		return ""
 	}
 	return formatEventTime(*value)
+}
+
+func sortByCreatedAtAsc[T any](values []T, createdAt func(T) time.Time, tieBreak func(T) string) []T {
+	out := append([]T(nil), values...)
+	sort.SliceStable(out, func(i, j int) bool {
+		left := createdAt(out[i])
+		right := createdAt(out[j])
+		if left.Equal(right) {
+			return tieBreak(out[i]) < tieBreak(out[j])
+		}
+		if left.IsZero() {
+			return false
+		}
+		if right.IsZero() {
+			return true
+		}
+		return left.Before(right)
+	})
+	return out
 }
 
 func formatRunID(id string) string { return id }

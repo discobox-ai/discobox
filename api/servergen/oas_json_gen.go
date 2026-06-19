@@ -1998,6 +1998,8 @@ func (s *JobStatus) Decode(d *jx.Decoder) error {
 	switch JobStatus(v) {
 	case JobStatusPending:
 		*s = JobStatusPending
+	case JobStatusBackoff:
+		*s = JobStatusBackoff
 	case JobStatusRunning:
 		*s = JobStatusRunning
 	case JobStatusCompleted:

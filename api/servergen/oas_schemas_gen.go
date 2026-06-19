@@ -801,6 +801,7 @@ func (*ErrorModelStatusCode) createSandboxRes()                 {}
 func (*ErrorModelStatusCode) deleteAgentConfigRes()             {}
 func (*ErrorModelStatusCode) deleteSandboxProviderInstanceRes() {}
 func (*ErrorModelStatusCode) deleteSandboxRes()                 {}
+func (*ErrorModelStatusCode) forceJobRes()                      {}
 func (*ErrorModelStatusCode) getAgentConfigDefinitionRes()      {}
 func (*ErrorModelStatusCode) getAgentConfigRes()                {}
 func (*ErrorModelStatusCode) getJobRes()                        {}
@@ -1048,13 +1049,15 @@ func (s *Job) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
 }
 
-func (*Job) getJobRes() {}
+func (*Job) forceJobRes() {}
+func (*Job) getJobRes()   {}
 
 // Persisted job lifecycle state.
 type JobStatus string
 
 const (
 	JobStatusPending   JobStatus = "pending"
+	JobStatusBackoff   JobStatus = "backoff"
 	JobStatusRunning   JobStatus = "running"
 	JobStatusCompleted JobStatus = "completed"
 	JobStatusFailed    JobStatus = "failed"
@@ -1065,6 +1068,7 @@ const (
 func (JobStatus) AllValues() []JobStatus {
 	return []JobStatus{
 		JobStatusPending,
+		JobStatusBackoff,
 		JobStatusRunning,
 		JobStatusCompleted,
 		JobStatusFailed,
@@ -1076,6 +1080,8 @@ func (JobStatus) AllValues() []JobStatus {
 func (s JobStatus) MarshalText() ([]byte, error) {
 	switch s {
 	case JobStatusPending:
+		return []byte(s), nil
+	case JobStatusBackoff:
 		return []byte(s), nil
 	case JobStatusRunning:
 		return []byte(s), nil
@@ -1095,6 +1101,9 @@ func (s *JobStatus) UnmarshalText(data []byte) error {
 	switch JobStatus(data) {
 	case JobStatusPending:
 		*s = JobStatusPending
+		return nil
+	case JobStatusBackoff:
+		*s = JobStatusBackoff
 		return nil
 	case JobStatusRunning:
 		*s = JobStatusRunning

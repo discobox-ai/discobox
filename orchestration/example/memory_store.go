@@ -115,6 +115,18 @@ func (s *memoryStore) GetLatestJobForResource(_ context.Context, resource orches
 	return nil, orchestration.ErrJobNotFound
 }
 
+func (s *memoryStore) CountRecentJobsForResource(_ context.Context, jobType orchestration.Type, resource orchestration.Resource, since time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var count int
+	for _, job := range s.jobs {
+		if job.Type == jobType && job.Resource == resource && !job.CreatedAt.Before(since) {
+			count++
+		}
+	}
+	return count, nil
+}
+
 func (s *memoryStore) HasActiveJobForResource(_ context.Context, resource orchestration.Resource) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -133,7 +145,7 @@ func (s *memoryStore) ClaimJob(_ context.Context, types []orchestration.Type, wo
 	now := time.Now()
 	var best *orchestration.Job
 	for _, job := range s.jobs {
-		if !typeOK[job.Type] || job.Status != orchestration.StatusPending || job.ScheduledAt.After(now) {
+		if !typeOK[job.Type] || !claimableStatus(job.Status) || job.ScheduledAt.After(now) {
 			continue
 		}
 		if s.hasRunningJobForResourceLocked(job.Resource) {
@@ -179,13 +191,17 @@ func (s *memoryStore) FailJob(_ context.Context, id string, message string, retr
 		job.Status = orchestration.StatusPending
 		job.WorkerID = nil
 		job.StartedAt = nil
-		job.ScheduledAt = now.Add(time.Duration(job.Attempts) * retryBackoff)
+		job.ScheduledAt = now.Add(retryBackoff)
 	} else {
 		job.Status = orchestration.StatusFailed
 		job.CompletedAt = &now
 	}
 	job.UpdatedAt = now
 	return nil
+}
+
+func claimableStatus(status orchestration.Status) bool {
+	return status == orchestration.StatusPending || status == orchestration.StatusBackoff
 }
 
 func (s *memoryStore) CleanupStaleJobs(_ context.Context, staleAfter time.Duration) (int64, error) {
@@ -232,7 +248,7 @@ func (s *memoryStore) latestForResource(resource orchestration.Resource) *orches
 
 func (s *memoryStore) hasActiveJobForResourceLocked(resource orchestration.Resource) bool {
 	for _, job := range s.jobs {
-		if job.Resource == resource && (job.Status == orchestration.StatusPending || job.Status == orchestration.StatusRunning) {
+		if job.Resource == resource && (job.Status == orchestration.StatusPending || job.Status == orchestration.StatusBackoff || job.Status == orchestration.StatusRunning) {
 			return true
 		}
 	}

@@ -31,6 +31,7 @@ type Service struct {
 	workerStore       any
 	workerSubmitter   *jobs.WorkerSubmitter
 	providerSubmitter *jobs.ProviderSubmitter
+	notifyNewJob      func(context.Context)
 }
 
 func New(store *store.Store, queueConfig orchestration.QueueConfig, notifyNewJob func(context.Context), broker ...*events.Broker) *Service {
@@ -51,6 +52,7 @@ func New(store *store.Store, queueConfig orchestration.QueueConfig, notifyNewJob
 		workerStore:       workerStore,
 		workerSubmitter:   workerSubmitter,
 		providerSubmitter: providerSubmitter,
+		notifyNewJob:      notifyNewJob,
 	}
 }
 

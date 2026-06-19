@@ -6,15 +6,13 @@ import (
 	"strings"
 
 	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
+	idpkg "github.com/obot-platform/discobox/id"
 )
 
-const shortIDLength = 8
+const shortIDLength = idpkg.DefaultShortLength
 
 func shortID(id string) string {
-	if len(id) <= shortIDLength {
-		return id
-	}
-	return id[len(id)-shortIDLength:]
+	return idpkg.Short(id)
 }
 
 func shortResourceID(resourceType, resourceID string) string {

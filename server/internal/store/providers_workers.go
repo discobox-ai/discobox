@@ -91,14 +91,7 @@ func (s *Store) GetSandboxProviderInstance(ctx context.Context, projectID, provi
 	if err != nil {
 		return nil, err
 	}
-	var provider model.SandboxProviderInstance
-	err = read.
-		Where("project_id = ? AND id = ?", projectID, providerID).
-		First(&provider).Error
-	if err != nil {
-		return nil, mapNotFound(err)
-	}
-	return &provider, nil
+	return firstByID[model.SandboxProviderInstance](read.Where("project_id = ?", projectID), "id", providerID)
 }
 
 func (s *Store) UpdateSandboxProviderInstance(ctx context.Context, provider *model.SandboxProviderInstance) error {
@@ -114,14 +107,11 @@ func (s *Store) DeleteSandboxProviderInstance(ctx context.Context, projectID, pr
 	if err != nil {
 		return err
 	}
-	result := write.Where("project_id = ? AND id = ?", projectID, providerID).Delete(&model.SandboxProviderInstance{})
-	if result.Error != nil {
-		return result.Error
+	provider, err := firstByID[model.SandboxProviderInstance](write.Where("project_id = ?", projectID), "id", providerID)
+	if err != nil {
+		return err
 	}
-	if result.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
+	return write.Delete(provider).Error
 }
 
 func (s *Store) CreateWorker(ctx context.Context, worker *model.Worker) error {
@@ -181,18 +171,18 @@ func (s *Store) GetWorker(ctx context.Context, workerID string, options ...Worke
 	if err != nil {
 		return nil, err
 	}
-	var worker model.Worker
-	query := read.Where("id = ?", workerID)
+	query := read
 	if opts.generation != nil {
-		query = query.Where("generation = ?", *opts.generation)
-	}
-	if err := query.First(&worker).Error; err != nil {
-		if opts.generation != nil && errors.Is(mapNotFound(err), ErrNotFound) {
+		worker, err := firstByID[model.Worker](query, "id", workerID)
+		if err != nil {
+			return nil, err
+		}
+		if worker.Generation != *opts.generation {
 			return nil, ErrGenerationConflict
 		}
-		return nil, mapNotFound(err)
+		return worker, nil
 	}
-	return &worker, nil
+	return firstByID[model.Worker](query, "id", workerID)
 }
 
 func (s *Store) UpdateWorker(ctx context.Context, worker *model.Worker, options ...WorkerGetOption) error {

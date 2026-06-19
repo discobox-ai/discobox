@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"context"
+	"time"
 )
 
 // QueueConfig controls enqueue-time defaults.
@@ -13,6 +14,24 @@ type QueueConfig struct {
 	// DefaultMaxAttempts is used when a payload does not implement MaxAttempter.
 	// Values less than one should be treated as one.
 	DefaultMaxAttempts int
+
+	// ResourceBackoffThreshold is the number of recently appended jobs for the
+	// same type/resource allowed before stores should delay newly appended jobs.
+	// A zero value uses the default. A negative value disables submission
+	// backoff.
+	ResourceBackoffThreshold int
+
+	// ResourceBackoffWindow is the recent-job window used for resource
+	// submission backoff. A zero value uses the default.
+	ResourceBackoffWindow time.Duration
+
+	// ResourceBackoffBaseDelay is the first delay after threshold. A zero value
+	// uses the default.
+	ResourceBackoffBaseDelay time.Duration
+
+	// ResourceBackoffMaxDelay caps resource submission backoff. A zero value
+	// uses the default.
+	ResourceBackoffMaxDelay time.Duration
 }
 
 // Queue persists application-owned payloads as durable jobs.
@@ -28,6 +47,7 @@ type Queue struct {
 // JobStore is the minimal persistence capability needed to append a job.
 type JobStore interface {
 	CreateJob(context.Context, *Job, ...CreateJobOption) error
+	CountRecentJobsForResource(context.Context, Type, Resource, time.Time) (int, error)
 }
 
 // NewQueue creates a queue over the given Store.
@@ -60,11 +80,20 @@ func (q *Queue) Enqueue(ctx context.Context, payload Payload) (*Job, error) {
 // AppendJob converts payload into a Job and persists it as a new pending row.
 // Existing job rows are never rewritten or reused.
 func AppendJob(ctx context.Context, store JobStore, payload Payload, cfg QueueConfig) (*Job, bool, error) {
+	return AppendJobWithOptions(ctx, store, payload, cfg)
+}
+
+// AppendJobWithOptions converts payload into a Job and persists it with the
+// supplied store create options.
+func AppendJobWithOptions(ctx context.Context, store JobStore, payload Payload, cfg QueueConfig, opts ...CreateJobOption) (*Job, bool, error) {
 	job, err := JobFromPayload(payload, cfg)
 	if err != nil {
 		return nil, false, err
 	}
-	if err := store.CreateJob(ctx, job); err != nil {
+	if err := ApplyResourceBackoff(ctx, store, job, time.Now()); err != nil {
+		return nil, false, err
+	}
+	if err := store.CreateJob(ctx, job, opts...); err != nil {
 		return nil, false, err
 	}
 	return job, true, nil

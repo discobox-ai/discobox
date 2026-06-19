@@ -73,6 +73,7 @@ type WorkerService interface {
 // JobService provides project-scoped durable job visibility.
 type JobService interface {
 	GetJob(ctx context.Context, projectID, jobID string) (*model.Job, error)
+	ForceJob(ctx context.Context, projectID, jobID string) (*model.Job, error)
 	ListJobs(ctx context.Context, projectID string) ([]model.Job, error)
 }
 

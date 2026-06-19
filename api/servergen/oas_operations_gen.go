@@ -12,6 +12,7 @@ const (
 	DeleteAgentConfigOperation             OperationName = "DeleteAgentConfig"
 	DeleteSandboxOperation                 OperationName = "DeleteSandbox"
 	DeleteSandboxProviderInstanceOperation OperationName = "DeleteSandboxProviderInstance"
+	ForceJobOperation                      OperationName = "ForceJob"
 	GetAgentConfigOperation                OperationName = "GetAgentConfig"
 	GetAgentConfigDefinitionOperation      OperationName = "GetAgentConfigDefinition"
 	GetJobOperation                        OperationName = "GetJob"

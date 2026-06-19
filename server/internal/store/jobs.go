@@ -71,9 +71,9 @@ func (s *Store) GetJob(ctx context.Context, id string) (*orchestration.Job, erro
 	if err != nil {
 		return nil, err
 	}
-	var row jobRow
-	if err := read.First(&row, "id = ?", id).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	row, err := firstByID[jobRow](read, "id", id)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
 			return nil, orchestration.ErrJobNotFound
 		}
 		return nil, err
@@ -102,6 +102,26 @@ func (s *Store) GetLatestJobForResource(ctx context.Context, resource orchestrat
 	return &job, nil
 }
 
+// CountRecentJobsForResource counts jobs recently appended for a resource.
+func (s *Store) CountRecentJobsForResource(ctx context.Context, jobType orchestration.Type, resource orchestration.Resource, since time.Time) (int, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var count int64
+	if err := read.Model(&jobRow{}).
+		Where("type = ? AND resource_type = ? AND resource_id = ? AND created_at >= ?",
+			jobType,
+			resource.Type,
+			resource.ID,
+			since,
+		).
+		Count(&count).Error; err != nil {
+		return 0, err
+	}
+	return int(count), nil
+}
+
 // ListJobsForProject returns durable jobs associated with resources in a project.
 func (s *Store) ListJobsForProject(ctx context.Context, projectID string) ([]orchestration.Job, error) {
 	read, err := s.getRead(ctx)
@@ -128,12 +148,9 @@ func (s *Store) GetJobForProject(ctx context.Context, projectID, jobID string) (
 	if err != nil {
 		return nil, err
 	}
-	var row jobRow
-	if err := read.
-		Where("id = ?", jobID).
-		Where("project_id = ?", projectID).
-		First(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
+	row, err := firstByID[jobRow](read.Where("project_id = ?", projectID), "id", jobID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
 			return nil, orchestration.ErrJobNotFound
 		}
 		return nil, err
@@ -142,8 +159,48 @@ func (s *Store) GetJobForProject(ctx context.Context, projectID, jobID string) (
 	return &job, nil
 }
 
-// HasActiveJobForResource reports whether any pending or running job exists for
-// the resource, regardless of job type.
+// ForceJobForProject makes a delayed pending/backoff job runnable immediately.
+func (s *Store) ForceJobForProject(ctx context.Context, projectID, jobID string) (*orchestration.Job, error) {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out *orchestration.Job
+	err = write.Transaction(func(tx *gorm.DB) error {
+		var row jobRow
+		if err := tx.Where("project_id = ?", projectID).First(&row, "id = ?", jobID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return orchestration.ErrJobNotFound
+			}
+			return err
+		}
+		now := time.Now()
+		if row.Status == orchestration.StatusPending || row.Status == orchestration.StatusBackoff {
+			if err := tx.Model(&jobRow{}).
+				Where("id = ? AND project_id = ?", jobID, projectID).
+				Updates(map[string]any{
+					"status":       orchestration.StatusPending,
+					"scheduled_at": now,
+					"updated_at":   now,
+				}).Error; err != nil {
+				return err
+			}
+			if err := tx.First(&row, "id = ?", jobID).Error; err != nil {
+				return err
+			}
+		}
+		job := row.toJob()
+		out = &job
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// HasActiveJobForResource reports whether any pending, backoff, or running job
+// exists for the resource, regardless of job type.
 func (s *Store) HasActiveJobForResource(ctx context.Context, resource orchestration.Resource) (bool, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
@@ -154,7 +211,7 @@ func (s *Store) HasActiveJobForResource(ctx context.Context, resource orchestrat
 		Where("resource_type = ? AND resource_id = ? AND status IN ?",
 			resource.Type,
 			resource.ID,
-			[]orchestration.Status{orchestration.StatusPending, orchestration.StatusRunning},
+			[]orchestration.Status{orchestration.StatusPending, orchestration.StatusBackoff, orchestration.StatusRunning},
 		).
 		Count(&count).Error
 	return count > 0, err
@@ -176,7 +233,7 @@ func (s *Store) ClaimJob(ctx context.Context, types []orchestration.Type, worker
 	err = write.Transaction(func(tx *gorm.DB) error {
 		var candidates []jobRow
 		if err := tx.
-			Where("type IN ? AND status = ? AND scheduled_at <= ?", types, orchestration.StatusPending, now).
+			Where("type IN ? AND status IN ? AND scheduled_at <= ?", types, []orchestration.Status{orchestration.StatusPending, orchestration.StatusBackoff}, now).
 			Order("priority DESC, scheduled_at ASC, created_at ASC").
 			Limit(50).
 			Find(&candidates).Error; err != nil {
@@ -203,7 +260,7 @@ func (s *Store) ClaimJob(ctx context.Context, types []orchestration.Type, worker
 
 			startedAt := now
 			result := tx.Model(&jobRow{}).
-				Where("id = ? AND status = ?", candidate.ID, orchestration.StatusPending).
+				Where("id = ? AND status IN ?", candidate.ID, []orchestration.Status{orchestration.StatusPending, orchestration.StatusBackoff}).
 				Updates(map[string]any{
 					"status":              orchestration.StatusRunning,
 					"worker_id":           workerID,
@@ -288,16 +345,20 @@ func (s *Store) FailJob(ctx context.Context, id string, message string, retryBac
 
 		now := time.Now()
 		if row.Attempts < row.MaxAttempts {
-			delay := time.Duration(row.Attempts) * retryBackoff
+			var activeResourceKey *string
+			if row.ResourceType != "" && row.ResourceID != "" {
+				key := resourceKey(orchestration.Resource{Type: row.ResourceType, ID: row.ResourceID})
+				activeResourceKey = &key
+			}
 			return tx.Model(&jobRow{}).
 				Where("id = ?", id).
 				Updates(map[string]any{
 					"status":              orchestration.StatusPending,
-					"active_resource_key": nil,
+					"active_resource_key": activeResourceKey,
 					"error":               message,
 					"worker_id":           nil,
 					"started_at":          nil,
-					"scheduled_at":        now.Add(delay),
+					"scheduled_at":        now.Add(retryBackoff),
 					"updated_at":          now,
 				}).Error
 		}
