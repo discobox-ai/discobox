@@ -22,10 +22,12 @@
         system:
         let
           pkgs = import nixpkgs { inherit system; };
+          nodejs = pkgs.nodejs_24;
         in
         {
           default = pkgs.mkShell {
             packages = with pkgs; [
+              corepack
               delve
               git
               gnumake
@@ -33,8 +35,7 @@
               go-task
               gopls
               gotools
-              nodejs_24
-              pnpm
+              nodejs
               postgresql
               sqlite
             ];
@@ -45,6 +46,12 @@
 
             shellHook = ''
               export DISCOBOX_ROOT="$PWD"
+              unset GOROOT
+              export COREPACK_HOME="''${XDG_CACHE_HOME:-$HOME/.cache}/discobox-corepack"
+              export PATH="$COREPACK_HOME/bin:$PATH"
+              mkdir -p "$COREPACK_HOME/bin"
+              corepack enable --install-directory "$COREPACK_HOME/bin"
+              corepack prepare pnpm@11.4.0 --activate
             '';
           };
         }

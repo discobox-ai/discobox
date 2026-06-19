@@ -92,24 +92,22 @@ tasks:
       - ./{{.BINARY}}
 
   dev:
-    desc: Run the server and UI dev tasks
+    desc: Run the server, UI, and worker-agent image watcher dev tasks
     deps:
       - dev:server
       - dev:ui
+      - dev:worker-agent-image-watch
 
   dev:server:
-    desc: Run discobox-server with Air hot reload and worker-agent image rebuilds
+    desc: Run discobox-server with Air hot reload
     cmds:
-      - |
-        bash -c '
-        set -euo pipefail
-        touch .env
-        (cd worker-agent && go run ./cmd/discobox-worker-agent-watch) &
-        watch_pid=$!
-        cleanup() { kill "$watch_pid" 2>/dev/null || true; }
-        trap cleanup EXIT INT TERM
-        go tool air
-        '
+      - touch .env
+      - go tool air
+
+  dev:cli:
+    desc: Recompile the discobox CLI with Air hot reload
+    cmds:
+      - go tool air -c .air.cli.toml
 
   dev:worker-agent-image-watch:
     desc: Rebuild the Docker worker-agent image when its Docker inputs change
