@@ -16,6 +16,46 @@ type sandboxGetOptions struct {
 	generation *int64
 }
 
+type SandboxID struct {
+	ProjectID string
+	SandboxID string
+}
+
+type SandboxStore struct {
+	*Store
+	reload *Store
+}
+
+func (s *Store) Sandboxes() *SandboxStore {
+	return &SandboxStore{Store: s, reload: s}
+}
+
+func (s *SandboxStore) Transaction(ctx context.Context, fn func(context.Context, *SandboxStore) error) error {
+	return s.Store.Transaction(ctx, func(txStore *Store, _ *gorm.DB) error {
+		return fn(ctx, &SandboxStore{Store: txStore, reload: s.reload})
+	})
+}
+
+func (s *SandboxStore) Get(ctx context.Context, id SandboxID) (*model.Sandbox, error) {
+	return s.GetSandbox(ctx, id.ProjectID, id.SandboxID)
+}
+
+func (s *SandboxStore) Create(ctx context.Context, sandbox *model.Sandbox) error {
+	return s.CreateSandbox(ctx, sandbox)
+}
+
+func (s *SandboxStore) Update(ctx context.Context, sandbox *model.Sandbox) error {
+	return s.UpdateSandbox(ctx, sandbox)
+}
+
+func (s *SandboxStore) ID(sandbox *model.Sandbox) SandboxID {
+	return SandboxID{ProjectID: sandbox.ProjectID, SandboxID: sandbox.ID}
+}
+
+func (s *SandboxStore) Reload(ctx context.Context, id SandboxID) (*model.Sandbox, error) {
+	return s.reload.GetSandbox(ctx, id.ProjectID, id.SandboxID)
+}
+
 func WithGeneration(generation int64) SandboxGetOption {
 	return func(opts *sandboxGetOptions) {
 		opts.generation = &generation

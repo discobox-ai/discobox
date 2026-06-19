@@ -17,6 +17,85 @@ type workerGetOptions struct {
 	generation *int64
 }
 
+type SandboxProviderInstanceID struct {
+	ProjectID  string
+	ProviderID string
+}
+
+type SandboxProviderInstanceStore struct {
+	*Store
+	reload *Store
+}
+
+func (s *Store) SandboxProviderInstances() *SandboxProviderInstanceStore {
+	return &SandboxProviderInstanceStore{Store: s, reload: s}
+}
+
+func (s *SandboxProviderInstanceStore) Transaction(ctx context.Context, fn func(context.Context, *SandboxProviderInstanceStore) error) error {
+	return s.Store.Transaction(ctx, func(txStore *Store, _ *gorm.DB) error {
+		return fn(ctx, &SandboxProviderInstanceStore{Store: txStore, reload: s.reload})
+	})
+}
+
+func (s *SandboxProviderInstanceStore) Get(ctx context.Context, id SandboxProviderInstanceID) (*model.SandboxProviderInstance, error) {
+	return s.GetSandboxProviderInstance(ctx, id.ProjectID, id.ProviderID)
+}
+
+func (s *SandboxProviderInstanceStore) Create(ctx context.Context, provider *model.SandboxProviderInstance) error {
+	return s.CreateSandboxProviderInstance(ctx, provider)
+}
+
+func (s *SandboxProviderInstanceStore) Update(ctx context.Context, provider *model.SandboxProviderInstance) error {
+	return s.UpdateSandboxProviderInstance(ctx, provider)
+}
+
+func (s *SandboxProviderInstanceStore) ID(provider *model.SandboxProviderInstance) SandboxProviderInstanceID {
+	return SandboxProviderInstanceID{ProjectID: provider.ProjectID, ProviderID: provider.ID}
+}
+
+func (s *SandboxProviderInstanceStore) Reload(ctx context.Context, id SandboxProviderInstanceID) (*model.SandboxProviderInstance, error) {
+	return s.reload.GetSandboxProviderInstance(ctx, id.ProjectID, id.ProviderID)
+}
+
+type WorkerID struct {
+	WorkerID string
+}
+
+type WorkerStore struct {
+	*Store
+	reload *Store
+}
+
+func (s *Store) Workers() *WorkerStore {
+	return &WorkerStore{Store: s, reload: s}
+}
+
+func (s *WorkerStore) Transaction(ctx context.Context, fn func(context.Context, *WorkerStore) error) error {
+	return s.Store.Transaction(ctx, func(txStore *Store, _ *gorm.DB) error {
+		return fn(ctx, &WorkerStore{Store: txStore, reload: s.reload})
+	})
+}
+
+func (s *WorkerStore) Get(ctx context.Context, id WorkerID) (*model.Worker, error) {
+	return s.GetWorker(ctx, id.WorkerID)
+}
+
+func (s *WorkerStore) Create(ctx context.Context, worker *model.Worker) error {
+	return s.CreateWorker(ctx, worker)
+}
+
+func (s *WorkerStore) Update(ctx context.Context, worker *model.Worker) error {
+	return s.UpdateWorker(ctx, worker)
+}
+
+func (s *WorkerStore) ID(worker *model.Worker) WorkerID {
+	return WorkerID{WorkerID: worker.ID}
+}
+
+func (s *WorkerStore) Reload(ctx context.Context, id WorkerID) (*model.Worker, error) {
+	return s.reload.GetWorker(ctx, id.WorkerID)
+}
+
 func WithWorkerGeneration(generation int64) WorkerGetOption {
 	return func(opts *workerGetOptions) {
 		opts.generation = &generation

@@ -110,6 +110,41 @@ func (r *submitterResource) copy() *submitterResource {
 	return &copied
 }
 
+type submitterStore struct {
+	*memoryStore
+	resources map[string]*submitterResource
+	reloaded  *bool
+}
+
+func (s *submitterStore) Transaction(ctx context.Context, fn func(context.Context, *submitterStore) error) error {
+	return fn(ctx, s)
+}
+
+func (s *submitterStore) Get(_ context.Context, id string) (*submitterResource, error) {
+	return s.resources[id].copy(), nil
+}
+
+func (s *submitterStore) Create(_ context.Context, resource *submitterResource) error {
+	s.resources[resource.ID] = resource.copy()
+	return nil
+}
+
+func (s *submitterStore) Update(_ context.Context, resource *submitterResource) error {
+	s.resources[resource.ID] = resource.copy()
+	return nil
+}
+
+func (s *submitterStore) ID(resource *submitterResource) string {
+	return resource.ID
+}
+
+func (s *submitterStore) Reload(_ context.Context, id string) (*submitterResource, error) {
+	*s.reloaded = true
+	resource := s.resources[id].copy()
+	resource.Reloaded = true
+	return resource, nil
+}
+
 func TestQueueEnqueueAppliesDefaultsAndPayloadOptions(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -244,32 +279,10 @@ func TestSubmitterAcceptsLifecycleOperationAndReloads(t *testing.T) {
 	}
 	reloaded := false
 	notified := false
-	submitter := orchestration.NewSubmitter(orchestration.SubmitterConfig[*submitterResource, string, string, *memoryStore]{
-		Transaction: func(ctx context.Context, fn func(context.Context, *memoryStore) error) error {
-			return fn(ctx, jobStore)
-		},
-		Resource: orchestration.ResourceStore[*submitterResource, string, *memoryStore]{
-			Get: func(_ context.Context, _ *memoryStore, id string) (*submitterResource, error) {
-				return resources[id].copy(), nil
-			},
-			Create: func(_ context.Context, _ *memoryStore, resource *submitterResource) error {
-				resources[resource.ID] = resource.copy()
-				return nil
-			},
-			Update: func(_ context.Context, _ *memoryStore, resource *submitterResource) error {
-				resources[resource.ID] = resource.copy()
-				return nil
-			},
-			ID: func(resource *submitterResource) string {
-				return resource.ID
-			},
-			Reload: func(_ context.Context, id string) (*submitterResource, error) {
-				reloaded = true
-				resource := resources[id].copy()
-				resource.Reloaded = true
-				return resource, nil
-			},
-		},
+	store := &submitterStore{memoryStore: jobStore, resources: resources, reloaded: &reloaded}
+	submitter := orchestration.NewSubmitter(orchestration.SubmitterConfig[*submitterResource, string, string, *submitterStore]{
+		Transaction: store.Transaction,
+		Resource:    store,
 		Payload: func(resource *submitterResource) orchestration.Payload {
 			return simplePayload{TypeName: testTypeA, ResourceT: "resource", ResourceI: resource.ID}
 		},

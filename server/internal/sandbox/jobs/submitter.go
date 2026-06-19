@@ -5,60 +5,34 @@ import (
 	"errors"
 	"time"
 
-	"gorm.io/gorm"
-
 	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
 type SandboxSubmitter struct {
-	submitter *orchestration.Submitter[*model.Sandbox, model.OperationSpec, SandboxID, *store.Store]
+	submitter *orchestration.Submitter[*model.Sandbox, model.OperationSpec, store.SandboxID, *store.SandboxStore]
 }
 
 type WorkerSubmitter struct {
-	store       *store.Store
-	submitter   *orchestration.Submitter[*model.Worker, model.OperationSpec, WorkerID, *store.Store]
+	store       *store.WorkerStore
+	submitter   *orchestration.Submitter[*model.Worker, model.OperationSpec, store.WorkerID, *store.WorkerStore]
 	queueConfig orchestration.QueueConfig
 	notify      func(context.Context)
 }
 
 type ProviderSubmitter struct {
-	store       *store.Store
+	store       *store.SandboxProviderInstanceStore
 	queueConfig orchestration.QueueConfig
 	notify      func(context.Context)
 }
 
-type SandboxID struct {
-	ProjectID string
-	SandboxID string
-}
-
-type WorkerID struct {
-	WorkerID string
-}
-
 func NewSandboxSubmitter(appStore *store.Store, queueConfig orchestration.QueueConfig, notify func(context.Context)) *SandboxSubmitter {
+	sandboxStore := appStore.Sandboxes()
 	return &SandboxSubmitter{
-		submitter: orchestration.NewSubmitter(orchestration.SubmitterConfig[*model.Sandbox, model.OperationSpec, SandboxID, *store.Store]{
-			Transaction: storeTransaction(appStore),
-			Resource: orchestration.ResourceStore[*model.Sandbox, SandboxID, *store.Store]{
-				Get: func(ctx context.Context, txStore *store.Store, id SandboxID) (*model.Sandbox, error) {
-					return txStore.GetSandbox(ctx, id.ProjectID, id.SandboxID)
-				},
-				Create: func(ctx context.Context, txStore *store.Store, sandbox *model.Sandbox) error {
-					return txStore.CreateSandbox(ctx, sandbox)
-				},
-				Update: func(ctx context.Context, txStore *store.Store, sandbox *model.Sandbox) error {
-					return txStore.UpdateSandbox(ctx, sandbox)
-				},
-				ID: func(sandbox *model.Sandbox) SandboxID {
-					return SandboxID{ProjectID: sandbox.ProjectID, SandboxID: sandbox.ID}
-				},
-				Reload: func(ctx context.Context, id SandboxID) (*model.Sandbox, error) {
-					return appStore.GetSandbox(ctx, id.ProjectID, id.SandboxID)
-				},
-			},
+		submitter: orchestration.NewSubmitter(orchestration.SubmitterConfig[*model.Sandbox, model.OperationSpec, store.SandboxID, *store.SandboxStore]{
+			Transaction: sandboxStore.Transaction,
+			Resource:    sandboxStore,
 			Payload:     sandboxReconcilePayload,
 			QueueConfig: queueConfig,
 			Notify:      notify,
@@ -67,29 +41,14 @@ func NewSandboxSubmitter(appStore *store.Store, queueConfig orchestration.QueueC
 }
 
 func NewWorkerSubmitter(appStore *store.Store, queueConfig orchestration.QueueConfig, notify func(context.Context)) *WorkerSubmitter {
+	workerStore := appStore.Workers()
 	return &WorkerSubmitter{
-		store:       appStore,
+		store:       workerStore,
 		queueConfig: queueConfig,
 		notify:      notify,
-		submitter: orchestration.NewSubmitter(orchestration.SubmitterConfig[*model.Worker, model.OperationSpec, WorkerID, *store.Store]{
-			Transaction: storeTransaction(appStore),
-			Resource: orchestration.ResourceStore[*model.Worker, WorkerID, *store.Store]{
-				Get: func(ctx context.Context, txStore *store.Store, id WorkerID) (*model.Worker, error) {
-					return txStore.GetWorker(ctx, id.WorkerID)
-				},
-				Create: func(ctx context.Context, txStore *store.Store, worker *model.Worker) error {
-					return txStore.CreateWorker(ctx, worker)
-				},
-				Update: func(ctx context.Context, txStore *store.Store, worker *model.Worker) error {
-					return txStore.UpdateWorker(ctx, worker)
-				},
-				ID: func(worker *model.Worker) WorkerID {
-					return WorkerID{WorkerID: worker.ID}
-				},
-				Reload: func(ctx context.Context, id WorkerID) (*model.Worker, error) {
-					return appStore.GetWorker(ctx, id.WorkerID)
-				},
-			},
+		submitter: orchestration.NewSubmitter(orchestration.SubmitterConfig[*model.Worker, model.OperationSpec, store.WorkerID, *store.WorkerStore]{
+			Transaction: workerStore.Transaction,
+			Resource:    workerStore,
 			Payload:     workerReconcilePayload,
 			QueueConfig: queueConfig,
 			Notify:      notify,
@@ -98,15 +57,7 @@ func NewWorkerSubmitter(appStore *store.Store, queueConfig orchestration.QueueCo
 }
 
 func NewProviderSubmitter(appStore *store.Store, queueConfig orchestration.QueueConfig, notify func(context.Context)) *ProviderSubmitter {
-	return &ProviderSubmitter{store: appStore, queueConfig: queueConfig, notify: notify}
-}
-
-func storeTransaction(appStore *store.Store) orchestration.TransactionFunc[*store.Store] {
-	return func(ctx context.Context, fn func(context.Context, *store.Store) error) error {
-		return appStore.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
-			return fn(ctx, txStore)
-		})
-	}
+	return &ProviderSubmitter{store: appStore.SandboxProviderInstances(), queueConfig: queueConfig, notify: notify}
 }
 
 func (s *SandboxSubmitter) Create(ctx context.Context, sandbox *model.Sandbox) (*model.Sandbox, error) {
@@ -114,7 +65,7 @@ func (s *SandboxSubmitter) Create(ctx context.Context, sandbox *model.Sandbox) (
 }
 
 func (s *SandboxSubmitter) Submit(ctx context.Context, projectID, sandboxID string, spec model.OperationSpec, mutate ...func(*model.Sandbox)) (*model.Sandbox, error) {
-	return s.submitter.Submit(ctx, SandboxID{ProjectID: projectID, SandboxID: sandboxID}, spec, mutate...)
+	return s.submitter.Submit(ctx, store.SandboxID{ProjectID: projectID, SandboxID: sandboxID}, spec, mutate...)
 }
 
 func (s *WorkerSubmitter) Create(ctx context.Context, worker *model.Worker) (*model.Worker, error) {
@@ -122,7 +73,7 @@ func (s *WorkerSubmitter) Create(ctx context.Context, worker *model.Worker) (*mo
 }
 
 func (s *WorkerSubmitter) Submit(ctx context.Context, workerID string, spec model.OperationSpec, mutate ...func(*model.Worker)) (*model.Worker, error) {
-	return s.submitter.Submit(ctx, WorkerID{WorkerID: workerID}, spec, mutate...)
+	return s.submitter.Submit(ctx, store.WorkerID{WorkerID: workerID}, spec, mutate...)
 }
 
 func (s *WorkerSubmitter) DeleteForFailedJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error) {
@@ -147,7 +98,7 @@ func (s *WorkerSubmitter) DeleteForExpiredRegistration(ctx context.Context, work
 func (s *WorkerSubmitter) deleteIfCurrent(ctx context.Context, workerID string, generation int64, message string, shouldDelete func(*model.Worker) bool) (bool, error) {
 	jobCreated := false
 	updated := false
-	if err := s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
+	if err := s.store.Transaction(ctx, func(ctx context.Context, txStore *store.WorkerStore) error {
 		worker, err := txStore.GetWorker(ctx, workerID, store.WithWorkerGeneration(generation))
 		if errors.Is(err, store.ErrGenerationConflict) || errors.Is(err, store.ErrNotFound) {
 			return nil
@@ -190,7 +141,7 @@ func (s *WorkerSubmitter) deleteIfCurrent(ctx context.Context, workerID string, 
 func (s *WorkerSubmitter) EnqueueCurrent(ctx context.Context, worker *model.Worker) (*orchestration.Job, error) {
 	var job *orchestration.Job
 	jobCreated := false
-	if err := s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
+	if err := s.store.Transaction(ctx, func(ctx context.Context, txStore *store.WorkerStore) error {
 		current, err := txStore.GetWorker(ctx, worker.ID)
 		if err != nil {
 			return err
@@ -213,8 +164,8 @@ func (s *ProviderSubmitter) EnqueueCurrent(ctx context.Context, projectID, provi
 	}
 	var job *orchestration.Job
 	jobCreated := false
-	if err := s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
-		provider, err := txStore.GetSandboxProviderInstance(ctx, projectID, providerID)
+	if err := s.store.Transaction(ctx, func(ctx context.Context, txStore *store.SandboxProviderInstanceStore) error {
+		provider, err := txStore.Get(ctx, store.SandboxProviderInstanceID{ProjectID: projectID, ProviderID: providerID})
 		if errors.Is(err, store.ErrNotFound) {
 			return nil
 		}
@@ -280,12 +231,12 @@ func providerReconcilePayload(provider *model.SandboxProviderInstance) orchestra
 	}
 }
 
-func appendWorkerJob(ctx context.Context, txStore *store.Store, worker *model.Worker, cfg orchestration.QueueConfig) (bool, error) {
+func appendWorkerJob(ctx context.Context, txStore *store.WorkerStore, worker *model.Worker, cfg orchestration.QueueConfig) (bool, error) {
 	_, created, err := appendWorkerJobWithJob(ctx, txStore, worker, cfg)
 	return created, err
 }
 
-func appendWorkerJobWithJob(ctx context.Context, txStore *store.Store, worker *model.Worker, cfg orchestration.QueueConfig) (*orchestration.Job, bool, error) {
+func appendWorkerJobWithJob(ctx context.Context, txStore *store.WorkerStore, worker *model.Worker, cfg orchestration.QueueConfig) (*orchestration.Job, bool, error) {
 	job, created, err := appendJob(ctx, txStore, workerReconcilePayload(worker), cfg)
 	if err != nil {
 		return nil, false, err
@@ -296,7 +247,7 @@ func appendWorkerJobWithJob(ctx context.Context, txStore *store.Store, worker *m
 	return job, created, nil
 }
 
-func appendJob(ctx context.Context, txStore *store.Store, payload orchestration.Payload, cfg orchestration.QueueConfig) (*orchestration.Job, bool, error) {
+func appendJob(ctx context.Context, txStore orchestration.JobStore, payload orchestration.Payload, cfg orchestration.QueueConfig) (*orchestration.Job, bool, error) {
 	return orchestration.AppendJob(ctx, txStore, payload, cfg)
 }
 

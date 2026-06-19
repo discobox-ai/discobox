@@ -46,17 +46,7 @@ func NewApp() (*App, error) {
 func NewSandboxSubmitter(store *memoryStore, notify func()) *SandboxSubmitter {
 	submitter := orchestration.NewSubmitter(orchestration.SubmitterConfig[*Sandbox, SandboxOperation, SandboxID, *memoryStore]{
 		Transaction: store.Transaction,
-		Resource: orchestration.ResourceStore[*Sandbox, SandboxID, *memoryStore]{
-			Get: func(ctx context.Context, store *memoryStore, id SandboxID) (*Sandbox, error) {
-				return store.GetSandbox(ctx, id.SandboxID)
-			},
-			Create: func(ctx context.Context, store *memoryStore, sandbox *Sandbox) error {
-				return store.CreateSandbox(ctx, sandbox)
-			},
-			Update: func(ctx context.Context, store *memoryStore, sandbox *Sandbox) error {
-				return store.UpdateSandbox(ctx, sandbox)
-			},
-		},
+		Resource:    store,
 		Payload: func(sandbox *Sandbox) orchestration.Payload {
 			return SandboxReconcilePayload{
 				ProjectID:  sandbox.ProjectID,

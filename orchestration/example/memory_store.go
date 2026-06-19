@@ -29,6 +29,26 @@ func (s *memoryStore) Transaction(ctx context.Context, fn func(context.Context, 
 	return fn(ctx, s)
 }
 
+func (s *memoryStore) Get(ctx context.Context, id SandboxID) (*Sandbox, error) {
+	return s.GetSandbox(ctx, id.SandboxID)
+}
+
+func (s *memoryStore) Create(ctx context.Context, sandbox *Sandbox) error {
+	return s.CreateSandbox(ctx, sandbox)
+}
+
+func (s *memoryStore) Update(ctx context.Context, sandbox *Sandbox) error {
+	return s.UpdateSandbox(ctx, sandbox)
+}
+
+func (s *memoryStore) ID(sandbox *Sandbox) SandboxID {
+	return SandboxID{ProjectID: sandbox.ProjectID, SandboxID: sandbox.ID}
+}
+
+func (s *memoryStore) Reload(ctx context.Context, id SandboxID) (*Sandbox, error) {
+	return s.Get(ctx, id)
+}
+
 func (s *memoryStore) CreateSandbox(_ context.Context, sandbox *Sandbox) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

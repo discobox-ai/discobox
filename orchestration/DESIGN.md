@@ -43,7 +43,10 @@ can back the interfaces with GORM, memory stores, or other persistence layers.
    was created.
 
 The transaction, resource store, operation type, payload shape, and notification
-mechanism are all supplied by the application.
+mechanism are all supplied by the application. A transaction-scoped resource
+store should directly implement `ResourceStore` with consistent `Get`, `Create`,
+`Update`, `ID`, and `Reload` methods, and also implement `JobStore` so job
+append and resource persistence share the same transaction.
 
 ## Append-Only Jobs
 
