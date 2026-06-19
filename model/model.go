@@ -539,6 +539,11 @@ func (t *WorkerAuthToken) BeforeCreate(_ *gorm.DB) error {
 	}
 	if t.IssuedAt.IsZero() {
 		t.IssuedAt = time.Now().UTC()
+	} else {
+		t.IssuedAt = t.IssuedAt.UTC()
+	}
+	if !t.ExpiresAt.IsZero() {
+		t.ExpiresAt = t.ExpiresAt.UTC()
 	}
 	return nil
 }
