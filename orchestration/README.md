@@ -29,8 +29,8 @@ The package has five main concepts:
 - `Queue`: serializes payloads and persists durable `Job` rows.
 - `Executor`: implemented by application code to process one job type.
 - `Dispatcher`: claims runnable jobs and calls registered executors.
-- `Submitter`: atomically records resource intent and appends the durable job
-  that will reconcile it.
+- `Dispatcher.Submit`: appends durable jobs directly or through an
+  application-owned transaction wrapper.
 
 The dependency direction is:
 
@@ -204,8 +204,8 @@ Important expectations:
 - `CreateJob(ctx, job, orchestration.WithUniqueResource())` must atomically reject
   another active job for the same non-empty resource by returning
   `ErrJobAlreadyExists`.
-- Normal queue and submitter paths append jobs through `CreateJob` and must not
-  rewrite existing job payloads.
+- Normal queue and dispatcher submit paths append jobs through `CreateJob` and
+  must not rewrite existing job payloads.
 - Custom store implementations should call `orchestration.ResolveCreateJobOptions`
   to interpret create options.
 - `HasActiveJobForResource` checks pending, backoff, and running jobs for a resource
@@ -255,26 +255,22 @@ For multi-process deployments, stores use `TryAcquireLeadership` and
 leader periodically renews ownership using `HeartbeatInterval`; another process
 may take over after `HeartbeatTimeout`.
 
-## Resource Submitter
+## Dispatcher Submit
 
-`Submitter` is a small helper for desired-state resources. Application code
-provides the transaction function, resource get/create/update functions, payload
-builder, queue config, and dispatcher notification callback. The submitter then
-performs the common accept-intent flow in one transaction:
-
-1. load or create the resource,
-2. increment generation,
-3. apply the operation,
-4. append the durable reconcile job,
-5. store the last job ID on the resource,
-6. persist the resource,
-7. notify the dispatcher after commit.
+`Dispatcher.Submit` appends a durable job and wakes the dispatcher after the job
+is created. Application code that needs resource intent and job append to commit
+together should pass `WithSubmitTransaction`. The transaction wrapper receives an
+append callback, can build the payload after mutating resource intent, and gets
+the created `Job` back so it can store the last job ID before committing.
 
 Generation-scoped executors can implement `GenerationAssertor`. The dispatcher
 invokes it after claiming a job and before calling `Execute`, allowing stale
 generation jobs to return `Superseded(...)` and be stored as canceled without
 running domain logic. This pre-execute assertion intentionally does not update
 observed generation; that remains a reconciler-owned resource state transition.
+
+Resource versioning, last-job bookkeeping, and persistence are application-owned;
+orchestration only knows the transaction-scoped value satisfies `JobStore`.
 
 ## Graceful Shutdown
 
@@ -288,8 +284,8 @@ stale-job cleanup is responsible for later recovery.
 ## Example
 
 See `example/` for a compiling sandbox-style example that wires a
-`Submitter`, in-memory resource/job persistence, a `sandbox.reconcile` payload,
-a dispatcher executor, and a runnable main:
+small app-owned sandbox manager, in-memory resource/job persistence, a
+`sandbox.reconcile` payload, a dispatcher executor, and a runnable main:
 
 ```sh
 go run ./example

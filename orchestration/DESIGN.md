@@ -9,8 +9,8 @@ The module has two layers:
 
 - Durable job queue primitives: `Payload`, `Job`, `Queue`, `Store`, `Executor`,
   and `Dispatcher`.
-- Reconciled-resource submission: `Submitter`, which atomically records accepted
-  resource intent and appends the durable job that will reconcile it.
+- Submission helpers: `Dispatcher.Submit` appends durable jobs directly or
+  through an application-supplied transaction wrapper.
 
 Application packages own concrete payloads, executors, resources, operations,
 and store implementations. This module depends only on interfaces and generic
@@ -26,33 +26,21 @@ required by each method contract.
 The module intentionally does not provide a database implementation. Applications
 can back the interfaces with GORM, memory stores, or other persistence layers.
 
-## Reconciled Resource Submission
+## Submission
 
-`Submitter` captures the desired-state orchestration pattern:
-
-1. Run inside an application-provided transaction.
-2. Prepare the resource by either using a new resource (`Create`) or loading an
-   existing one (`Submit`).
-3. Increment resource generation.
-4. Apply the accepted operation.
-5. Build the application payload for the updated resource.
-6. Append the durable job in the same transaction.
-7. Set the resource's last job ID.
-8. Persist the resource with the application-provided create or update function.
-9. After commit, notify the dispatcher as a wakeup optimization when a job row
-   was created.
-
-The transaction, resource store, operation type, payload shape, and notification
-mechanism are all supplied by the application. A transaction-scoped resource
-store should directly implement `ResourceStore` with consistent `Get`, `Create`,
-`Update`, `ID`, and `Reload` methods, and also implement `JobStore` so job
-append and resource persistence share the same transaction.
+`Dispatcher.Submit` owns the common non-generic durable append sequence: append
+a payload with `QueueConfig` and notify the dispatcher after a job is created.
+Callers that need resource mutation and job append to share a commit can pass an
+optional transaction wrapper. That wrapper receives an append callback, can pass
+the transaction-built payload to it, and gets the created `Job` back, so
+application code can increment versions, set a last job ID, persist resources,
+or do nothing at all without orchestration knowing those resource semantics.
 
 ## Append-Only Jobs
 
-Every accepted unit of work appends a new durable job row. Queue and submitter
-logic must not rewrite an existing job's payload, type, schedule, or resource to
-represent newer intent.
+Every accepted unit of work appends a new durable job row. Queue and dispatcher
+submission logic must not rewrite an existing job's payload, type, schedule, or
+resource to represent newer intent.
 
 Reconciled resources should put their accepted generation in the payload. An
 executor can implement `GenerationAssertor` to let the dispatcher assert that

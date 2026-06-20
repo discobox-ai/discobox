@@ -81,7 +81,7 @@ func (p unmarshalablePayload) Resource() orchestration.Resource {
 	return orchestration.Resource{}
 }
 
-type submitterResource struct {
+type lifecycleResource struct {
 	ID         string
 	Operation  string
 	Generation int64
@@ -90,59 +90,24 @@ type submitterResource struct {
 	Reloaded   bool
 }
 
-func (r *submitterResource) BeginOperation(operation string, _ *string) {
+func (r *lifecycleResource) BeginOperation(operation string, _ *string) {
 	r.Operation = operation
 }
 
-func (r *submitterResource) IncrementGeneration() {
+func (r *lifecycleResource) IncrementGeneration() {
 	r.Generation++
 }
 
-func (r *submitterResource) SetLastJobID(jobID *string) {
+func (r *lifecycleResource) SetLastJobID(jobID *string) {
 	r.LastJobID = jobID
 }
 
-func (r *submitterResource) copy() *submitterResource {
+func (r *lifecycleResource) copy() *lifecycleResource {
 	if r == nil {
 		return nil
 	}
 	copied := *r
 	return &copied
-}
-
-type submitterStore struct {
-	*memoryStore
-	resources map[string]*submitterResource
-	reloaded  *bool
-}
-
-func (s *submitterStore) Transaction(ctx context.Context, fn func(context.Context, *submitterStore) error) error {
-	return fn(ctx, s)
-}
-
-func (s *submitterStore) Get(_ context.Context, id string) (*submitterResource, error) {
-	return s.resources[id].copy(), nil
-}
-
-func (s *submitterStore) Create(_ context.Context, resource *submitterResource) error {
-	s.resources[resource.ID] = resource.copy()
-	return nil
-}
-
-func (s *submitterStore) Update(_ context.Context, resource *submitterResource) error {
-	s.resources[resource.ID] = resource.copy()
-	return nil
-}
-
-func (s *submitterStore) ID(resource *submitterResource) string {
-	return resource.ID
-}
-
-func (s *submitterStore) Reload(_ context.Context, id string) (*submitterResource, error) {
-	*s.reloaded = true
-	resource := s.resources[id].copy()
-	resource.Reloaded = true
-	return resource, nil
 }
 
 func TestQueueEnqueueAppliesDefaultsAndPayloadOptions(t *testing.T) {
@@ -271,49 +236,78 @@ func TestQueueEnqueueReturnsMarshalError(t *testing.T) {
 	}
 }
 
-func TestSubmitterAcceptsLifecycleOperationAndReloads(t *testing.T) {
+func TestDispatcherSubmitCanRunInCallerTransaction(t *testing.T) {
 	ctx := context.Background()
-	jobStore := newTestStore(t)
-	resources := map[string]*submitterResource{
-		"resource-1": {ID: "resource-1"},
-	}
-	reloaded := false
-	notified := false
-	store := &submitterStore{memoryStore: jobStore, resources: resources, reloaded: &reloaded}
-	submitter := orchestration.NewSubmitter(orchestration.SubmitterConfig[*submitterResource, string, string, *submitterStore]{
-		Transaction: store.Transaction,
-		Resource:    store,
-		Payload: func(resource *submitterResource) orchestration.Payload {
-			return simplePayload{TypeName: testTypeA, ResourceT: "resource", ResourceI: resource.ID}
-		},
-		QueueConfig: orchestration.QueueConfig{DefaultMaxAttempts: 1},
-		Notify: func(context.Context) {
-			notified = true
-		},
-	})
+	baseStore := newTestStore(t)
+	txStore := newTestStore(t)
+	dispatcher := orchestration.NewDispatcher(baseStore, orchestration.DispatcherConfig{})
+	resource := &lifecycleResource{ID: "resource-1"}
 
-	accepted, err := submitter.Submit(ctx, "resource-1", "start", func(resource *submitterResource) {
-		resource.Value = "mutated"
-	})
+	txCalled := false
+	persisted := false
+	job, err := dispatcher.Submit(ctx,
+		simplePayload{TypeName: testTypeA, ResourceT: "resource", ResourceI: resource.ID},
+		orchestration.WithQueueConfig(orchestration.QueueConfig{DefaultMaxAttempts: 3}),
+		orchestration.WithSubmitTransaction(func(ctx context.Context, fn orchestration.SubmitAppendFunc) (*orchestration.Job, error) {
+			txCalled = true
+			resource.IncrementGeneration()
+			job, err := fn(ctx, txStore, simplePayload{TypeName: testTypeA, ResourceT: "resource", ResourceI: resource.ID})
+			if err != nil {
+				return nil, err
+			}
+			if job == nil {
+				return nil, errors.New("submit callback returned nil job")
+			}
+			resource.SetLastJobID(&job.ID)
+			persisted = true
+			return job, nil
+		}),
+	)
 	if err != nil {
 		t.Fatalf("submit: %v", err)
 	}
-	if !accepted.Reloaded || !reloaded {
-		t.Fatalf("accepted resource was not reloaded: %#v", accepted)
+	if !txCalled {
+		t.Fatal("expected transaction to run")
 	}
-	if !notified {
-		t.Fatal("expected submitter notify after job creation")
+	if !persisted {
+		t.Fatal("expected resource persist callback")
 	}
-	stored := resources["resource-1"]
-	if stored.Generation != 1 || stored.Operation != "start" || stored.Value != "mutated" || stored.LastJobID == nil {
-		t.Fatalf("stored resource did not receive lifecycle update: %#v", stored)
+	if resource.Generation != 1 {
+		t.Fatalf("generation = %d, want 1", resource.Generation)
 	}
-	job, err := jobStore.GetJob(ctx, *stored.LastJobID)
+	if resource.LastJobID == nil || *resource.LastJobID != job.ID {
+		t.Fatalf("last job ID = %v, job ID = %s", resource.LastJobID, job.ID)
+	}
+	stored, err := txStore.GetJob(ctx, job.ID)
 	if err != nil {
-		t.Fatalf("get lifecycle job: %v", err)
+		t.Fatalf("get transaction job: %v", err)
 	}
-	if job.Resource != (orchestration.Resource{Type: "resource", ID: "resource-1"}) {
-		t.Fatalf("job resource = %#v", job.Resource)
+	if stored.MaxAttempts != 3 {
+		t.Fatalf("max attempts = %d, want 3", stored.MaxAttempts)
+	}
+	if _, err := baseStore.GetJob(ctx, job.ID); !errors.Is(err, orchestration.ErrJobNotFound) {
+		t.Fatalf("base store get err = %v, want ErrJobNotFound", err)
+	}
+}
+
+func TestDispatcherSubmitAppendsWithoutTransaction(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	dispatcher := orchestration.NewDispatcher(store, orchestration.DispatcherConfig{})
+
+	job, err := dispatcher.Submit(ctx,
+		simplePayload{TypeName: testTypeA, ResourceT: "resource", ResourceI: "resource-1"},
+		orchestration.WithQueueConfig(orchestration.QueueConfig{DefaultMaxAttempts: 2}),
+	)
+	if err != nil {
+		t.Fatalf("submit: %v", err)
+	}
+	stored, err := store.GetJob(ctx, job.ID)
+	if err != nil {
+		t.Fatalf("get job: %v", err)
+	}
+	if stored.MaxAttempts != 2 {
+		t.Fatalf("max attempts = %d, want 2", stored.MaxAttempts)
 	}
 }
 
