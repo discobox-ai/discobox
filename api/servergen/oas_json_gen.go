@@ -5388,18 +5388,27 @@ func (s *RegisterWorkerBody) encodeFields(e *jx.Encoder) {
 		e.Str(s.PublicKey)
 	}
 	{
-		e.FieldStart("sandboxId")
-		e.Str(s.SandboxId)
+		if s.SandboxId.Set {
+			e.FieldStart("sandboxId")
+			s.SandboxId.Encode(e)
+		}
+	}
+	{
+		if s.WorkerId.Set {
+			e.FieldStart("workerId")
+			s.WorkerId.Encode(e)
+		}
 	}
 }
 
-var jsonFieldsNameOfRegisterWorkerBody = [6]string{
+var jsonFieldsNameOfRegisterWorkerBody = [7]string{
 	0: "$schema",
 	1: "bootstrapToken",
 	2: "keyType",
 	3: "projectId",
 	4: "publicKey",
 	5: "sandboxId",
+	6: "workerId",
 }
 
 // Decode decodes RegisterWorkerBody from json.
@@ -5468,16 +5477,24 @@ func (s *RegisterWorkerBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"publicKey\"")
 			}
 		case "sandboxId":
-			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
-				v, err := d.Str()
-				s.SandboxId = string(v)
-				if err != nil {
+				s.SandboxId.Reset()
+				if err := s.SandboxId.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"sandboxId\"")
+			}
+		case "workerId":
+			if err := func() error {
+				s.WorkerId.Reset()
+				if err := s.WorkerId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workerId\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -5489,7 +5506,7 @@ func (s *RegisterWorkerBody) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00111010,
+		0b00011010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

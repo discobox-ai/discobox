@@ -166,6 +166,22 @@ func authenticateTestWorker(ctx context.Context, appStore *store.Store, authoriz
 func registerTestWorker(t *testing.T, ctx context.Context, svc *service.Service, appStore *store.Store) (string, string) {
 	t.Helper()
 	worker := &model.Worker{ID: id.NewString(), ProjectID: service.DefaultProjectID, ProviderInstanceID: "provider-auth"}
+	bootstrap := "bootstrap-" + time.Now().String()
+	h := sha256.Sum256([]byte(bootstrap))
+	if err := appStore.CreateWorkerWithBootstrapToken(ctx, worker, &model.WorkerBootstrapToken{WorkerID: worker.ID, TokenHash: h[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+		t.Fatalf("create worker bootstrap: %v", err)
+	}
+	resp, err := svc.RegisterWorker(ctx, services.RegisterWorkerBody{ProjectId: service.DefaultProjectID, WorkerId: services.OptString{Value: worker.ID, Set: true}, BootstrapToken: bootstrap, PublicKey: "public"})
+	if err != nil {
+		t.Fatalf("register worker: %v", err)
+	}
+	return worker.ID, resp.AuthToken
+}
+
+func TestRegisterWorkerSupportsSandboxAssignedWorkerCompatibility(t *testing.T) {
+	ctx := context.Background()
+	svc, appStore, _ := newWorkerAuthService(t)
+	worker := &model.Worker{ID: id.NewString(), ProjectID: service.DefaultProjectID, ProviderInstanceID: "provider-auth"}
 	sandboxID := id.NewString()
 	bootstrap := "bootstrap-" + time.Now().String()
 	h := sha256.Sum256([]byte(bootstrap))
@@ -175,9 +191,29 @@ func registerTestWorker(t *testing.T, ctx context.Context, svc *service.Service,
 	if err := appStore.CreateSandbox(ctx, &model.Sandbox{ID: sandboxID, ProjectID: service.DefaultProjectID, CreatedByUserID: service.DefaultUserID, ProviderInstanceID: &worker.ProviderInstanceID, WorkerID: &worker.ID, Name: "worker sandbox"}); err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	resp, err := svc.RegisterWorker(ctx, services.RegisterWorkerBody{ProjectId: service.DefaultProjectID, SandboxId: sandboxID, BootstrapToken: bootstrap, PublicKey: "public"})
+	resp, err := svc.RegisterWorker(ctx, services.RegisterWorkerBody{ProjectId: service.DefaultProjectID, SandboxId: services.OptString{Value: sandboxID, Set: true}, BootstrapToken: bootstrap, PublicKey: "public"})
 	if err != nil {
 		t.Fatalf("register worker: %v", err)
 	}
-	return worker.ID, resp.AuthToken
+	if resp.AuthToken == "" {
+		t.Fatalf("auth token is empty")
+	}
+}
+
+func TestRegisterWorkerSupportsSyntheticWorkerSandboxIDCompatibility(t *testing.T) {
+	ctx := context.Background()
+	svc, appStore, _ := newWorkerAuthService(t)
+	worker := &model.Worker{ID: id.NewString(), ProjectID: service.DefaultProjectID, ProviderInstanceID: "provider-auth"}
+	bootstrap := "bootstrap-" + time.Now().String()
+	h := sha256.Sum256([]byte(bootstrap))
+	if err := appStore.CreateWorkerWithBootstrapToken(ctx, worker, &model.WorkerBootstrapToken{WorkerID: worker.ID, TokenHash: h[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+		t.Fatalf("create worker bootstrap: %v", err)
+	}
+	resp, err := svc.RegisterWorker(ctx, services.RegisterWorkerBody{ProjectId: service.DefaultProjectID, SandboxId: services.OptString{Value: "worker-" + worker.ID, Set: true}, BootstrapToken: bootstrap, PublicKey: "public"})
+	if err != nil {
+		t.Fatalf("register worker: %v", err)
+	}
+	if resp.AuthToken == "" {
+		t.Fatalf("auth token is empty")
+	}
 }

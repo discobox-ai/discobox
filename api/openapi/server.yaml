@@ -676,9 +676,10 @@ components:
                     type: string
                 sandboxId:
                     type: string
+                workerId:
+                    type: string
             required:
                 - projectId
-                - sandboxId
                 - bootstrapToken
                 - publicKey
             type: object

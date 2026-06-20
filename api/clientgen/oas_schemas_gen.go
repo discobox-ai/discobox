@@ -3158,7 +3158,8 @@ type RegisterWorkerBody struct {
 	KeyType        OptString `json:"keyType"`
 	ProjectId      string    `json:"projectId"`
 	PublicKey      string    `json:"publicKey"`
-	SandboxId      string    `json:"sandboxId"`
+	SandboxId      OptString `json:"sandboxId"`
+	WorkerId       OptString `json:"workerId"`
 }
 
 // GetSchema returns the value of Schema.
@@ -3187,8 +3188,13 @@ func (s *RegisterWorkerBody) GetPublicKey() string {
 }
 
 // GetSandboxId returns the value of SandboxId.
-func (s *RegisterWorkerBody) GetSandboxId() string {
+func (s *RegisterWorkerBody) GetSandboxId() OptString {
 	return s.SandboxId
+}
+
+// GetWorkerId returns the value of WorkerId.
+func (s *RegisterWorkerBody) GetWorkerId() OptString {
+	return s.WorkerId
 }
 
 // SetSchema sets the value of Schema.
@@ -3217,8 +3223,13 @@ func (s *RegisterWorkerBody) SetPublicKey(val string) {
 }
 
 // SetSandboxId sets the value of SandboxId.
-func (s *RegisterWorkerBody) SetSandboxId(val string) {
+func (s *RegisterWorkerBody) SetSandboxId(val OptString) {
 	s.SandboxId = val
+}
+
+// SetWorkerId sets the value of WorkerId.
+func (s *RegisterWorkerBody) SetWorkerId(val OptString) {
+	s.WorkerId = val
 }
 
 // Ref: #/components/schemas/RegisterWorkerResponseBody

@@ -16,7 +16,7 @@ flowchart LR
     http --> database[internal/database]
     http -. passes GORM handles .-> store[internal/store]
     api --> service[internal/service]
-    service --> resources[internal/resources/{resource}]
+    service --> resources["internal/resources/{resource}"]
     service --> store
     service --> events[internal/events]
     service --> jobs[internal/resources/jobs]
@@ -64,12 +64,12 @@ resource; put authorization identity in the URL or other request metadata instea
 
 Narrow exception: `POST /api/workers/register` is a bootstrap credential
 redemption flow, not normal resource access. Its body carries the project ID,
-sandbox ID, one-time bootstrap token, and public key because a worker does not
-yet have a runtime principal or token. The service may use those body fields
-only to redeem the short-lived, one-time bootstrap token against the sandbox's
-preassigned worker and issue the first runtime worker token. Subsequent worker
-authorization must use request metadata and the authenticated worker principal,
-such as `/api/workers/{workerId}/status`.
+worker ID, optional sandbox compatibility ID, one-time bootstrap token, and
+public key because a worker does not yet have a runtime principal or token. The
+service may use those body fields only to redeem the short-lived, one-time
+bootstrap token against the bootstrapped worker and issue the first runtime
+worker token. Subsequent worker authorization must use request metadata and the
+authenticated worker principal, such as `/api/workers/{workerId}/status`.
 
 ## Runtime Observability
 

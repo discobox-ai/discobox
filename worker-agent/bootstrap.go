@@ -46,6 +46,7 @@ type RegisterRequest struct {
 	ControlPlaneURL string `json:"-"`
 	ProjectID       string `json:"projectId"`
 	SandboxID       string `json:"sandboxId"`
+	WorkerID        string `json:"workerId,omitempty"`
 	BootstrapToken  string `json:"bootstrapToken"`
 	PublicKey       string `json:"publicKey"`
 	KeyType         string `json:"keyType"`
@@ -106,6 +107,7 @@ func Run(ctx context.Context, cfg Config) (*Registration, error) {
 		ControlPlaneURL: bootstrap.ControlPlaneURL,
 		ProjectID:       bootstrap.ProjectID,
 		SandboxID:       bootstrap.SandboxID,
+		WorkerID:        bootstrap.WorkerID,
 		BootstrapToken:  bootstrap.Token,
 		PublicKey:       publicKey,
 		KeyType:         "ed25519",

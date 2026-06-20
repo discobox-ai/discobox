@@ -74,6 +74,9 @@ func TestHTTPClientRegistersWorker(t *testing.T) {
 	if got.SandboxID != "sandbox-1" {
 		t.Fatalf("sandbox ID = %q", got.SandboxID)
 	}
+	if got.WorkerID != "" {
+		t.Fatalf("worker ID = %q, want empty", got.WorkerID)
+	}
 }
 
 func TestHTTPClientUpdatesWorkerStatusByPath(t *testing.T) {

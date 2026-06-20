@@ -28,18 +28,36 @@ func NewService(store *store.Store) *Service {
 
 func (s *Service) RegisterWorker(ctx context.Context, input services.RegisterWorkerBody) (*services.RegisterWorkerResponseBody, error) {
 	projectID := strings.TrimSpace(input.ProjectId)
-	sandboxID := strings.TrimSpace(input.SandboxId)
-	if projectID == "" || sandboxID == "" || strings.TrimSpace(input.BootstrapToken) == "" || strings.TrimSpace(input.PublicKey) == "" {
-		return nil, fmt.Errorf("projectId, sandboxId, bootstrapToken, and publicKey are required")
+	workerID := strings.TrimSpace(input.WorkerId.Or(""))
+	if projectID == "" || strings.TrimSpace(input.BootstrapToken) == "" || strings.TrimSpace(input.PublicKey) == "" {
+		return nil, fmt.Errorf("projectId, bootstrapToken, and publicKey are required")
 	}
-	sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
-	if err != nil {
-		return nil, apiError(err, "sandbox not found")
+	if workerID == "" {
+		sandboxID := strings.TrimSpace(input.SandboxId.Or(""))
+		if sandboxID == "" {
+			return nil, fmt.Errorf("workerId or sandboxId is required")
+		}
+		sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
+		if err != nil {
+			if !errors.Is(err, store.ErrNotFound) || !strings.HasPrefix(sandboxID, "worker-") {
+				return nil, apiError(err, "sandbox not found")
+			}
+			workerID = strings.TrimPrefix(sandboxID, "worker-")
+		} else {
+			if sandbox.WorkerID == nil || strings.TrimSpace(*sandbox.WorkerID) == "" {
+				return nil, apperrors.NewStatusError(http.StatusBadRequest, "sandbox does not have an assigned worker")
+			}
+			workerID = strings.TrimSpace(*sandbox.WorkerID)
+		}
 	}
-	if sandbox.WorkerID == nil || strings.TrimSpace(*sandbox.WorkerID) == "" {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "sandbox does not have an assigned worker")
+	if workerID == "" {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "workerId is required")
 	}
-	workerID := strings.TrimSpace(*sandbox.WorkerID)
+	if worker, err := s.store.GetWorker(ctx, workerID); err != nil {
+		return nil, apiError(err, "worker not found")
+	} else if worker.ProjectID != projectID {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "worker not found")
+	}
 	h := sha256.Sum256([]byte(input.BootstrapToken))
 	authToken, err := randomToken()
 	if err != nil {
