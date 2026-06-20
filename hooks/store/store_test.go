@@ -148,6 +148,51 @@ func TestRefreshDefinitionsAndListStatus(t *testing.T) {
 	}
 }
 
+func TestLSPHookReadyUsesCurrentDiagnostics(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t, ctx)
+	hook := hooks.Hook{ID: "go-lsp", Name: "Go LSP", Type: hooks.HookTypeFile, Engine: hooks.HookEngineLSP, Pattern: "**/*.go"}
+	if err := s.RefreshDefinitions(ctx, []hooks.Hook{hook}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := s.SetLSPHookRunning(ctx, hook.ID); err != nil {
+		t.Fatalf("mark lsp running: %v", err)
+	}
+	if err := s.SetLSPHookReady(ctx, hook.ID); err != nil {
+		t.Fatalf("mark lsp ready: %v", err)
+	}
+	statuses, err := s.ListStatus(ctx)
+	if err != nil {
+		t.Fatalf("list status: %v", err)
+	}
+	if len(statuses) != 1 || statuses[0].Status != models.StatusSuccess || statuses[0].LastError != "" {
+		t.Fatalf("expected ready LSP with no diagnostics to be successful, got %#v", statuses)
+	}
+
+	if err := s.ReplaceDiagnosticsForURI(ctx, hook.ID, "file:///repo/main.go", "main.go", []Diagnostic{{
+		HookID:  hook.ID,
+		URI:     "file:///repo/main.go",
+		Path:    "main.go",
+		Message: "undefined: thing",
+	}}); err != nil {
+		t.Fatalf("replace diagnostics: %v", err)
+	}
+	if err := s.SetLSPHookRunning(ctx, hook.ID); err != nil {
+		t.Fatalf("mark lsp running again: %v", err)
+	}
+	if err := s.SetLSPHookReady(ctx, hook.ID); err != nil {
+		t.Fatalf("mark lsp ready with diagnostics: %v", err)
+	}
+	statuses, err = s.ListStatus(ctx)
+	if err != nil {
+		t.Fatalf("list status after diagnostics: %v", err)
+	}
+	if len(statuses) != 1 || statuses[0].Status != models.StatusFailure || statuses[0].LastError != "1 diagnostics" {
+		t.Fatalf("expected ready LSP with diagnostics to fail, got %#v", statuses)
+	}
+}
+
 func TestEnqueueMergesAndRunningFinishTransitions(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t, ctx)

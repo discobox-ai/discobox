@@ -33,6 +33,7 @@ import (
 const defaultDebounce = 5 * time.Second
 const defaultSnapshotDebounce = 15 * time.Second
 const defaultSnapshotMinInterval = time.Minute
+const defaultLSPDiagnosticsGrace = 5 * time.Second
 
 // daemonMatcherOptions disables matcher-level Git-ignore checks because the
 // daemon already applies and audits Git-ignore filtering in filterIgnoredChanges.
@@ -1121,6 +1122,8 @@ func (r *runtimeState) wait(ctx context.Context, timeout time.Duration) (model.W
 }
 
 func (r *runtimeState) waitSnapshot(ctx context.Context) (model.WaitResponse, error) {
+	r.expireStalePendingLSP(ctx)
+
 	r.mu.Lock()
 	running := r.manager.Running()
 	pendingChanges := len(r.pendingBatch) > 0
@@ -1281,6 +1284,8 @@ func (r *runtimeState) isIdle() bool {
 	if atomic.LoadInt64(&r.activeRequests) != 0 {
 		return false
 	}
+	r.expireStalePendingLSP(r.ctx)
+
 	r.mu.Lock()
 	running := r.manager.Running()
 	batch := len(r.pendingBatch) > 0

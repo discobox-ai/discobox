@@ -196,6 +196,41 @@ func TestWaitSnapshotIncludesPendingLSP(t *testing.T) {
 	}
 }
 
+func TestWaitSnapshotExpiresStalePendingLSP(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	st, err := hookstore.Open(ctx, hookstore.Options{Path: filepath.Join(t.TempDir(), "hooks.db")})
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	hook := hooks.Hook{ID: "go-lsp", Name: "Go LSP", Type: hooks.HookTypeFile, Engine: hooks.HookEngineLSP, Pattern: "**/*.go", LanguageID: "go"}
+	if err := st.RefreshDefinitions(ctx, []hooks.Hook{hook}); err != nil {
+		t.Fatalf("refresh definitions: %v", err)
+	}
+	if err := st.SetLSPHookRunning(ctx, hook.ID); err != nil {
+		t.Fatalf("set lsp running: %v", err)
+	}
+	mgr, err := manager.New(manager.Config{Store: st, Hooks: []hooks.Hook{hook}, SessionID: "test-session", RepoRoot: repo})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	r := &runtimeState{cfg: Config{RepoRoot: repo}, store: st, manager: mgr, ctx: ctx, pendingLSP: map[string]time.Time{}}
+	uri := "file://" + filepath.ToSlash(filepath.Join(repo, "main.go"))
+	r.pendingLSP[lspPendingKey(hook.ID, uri)] = time.Now().UTC().Add(-defaultLSPDiagnosticsGrace - time.Second)
+
+	resp, err := r.waitSnapshot(ctx)
+	if err != nil {
+		t.Fatalf("wait snapshot with stale pending lsp: %v", err)
+	}
+	if !resp.Settled || resp.PendingLSP {
+		t.Fatalf("expected stale pending LSP to expire, got %+v", resp)
+	}
+	if len(resp.Hooks) != 1 || resp.Hooks[0].Status != models.StatusSuccess {
+		t.Fatalf("expected expired LSP hook to be successful, got %+v", resp.Hooks)
+	}
+}
+
 func TestSessionHooksRunOnlyWhenRequested(t *testing.T) {
 	repo := t.TempDir()
 	hooksDir := filepath.Join(repo, ".discobox", "hooks")

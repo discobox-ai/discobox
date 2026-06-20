@@ -108,6 +108,7 @@ func (r *runtimeState) startLSPHook(hook hooks.Hook) {
 	rt.mu.Unlock()
 	r.mu.Unlock()
 	r.clearPendingLSP(hook.ID, lspStartupKey(hook.ID))
+	_ = r.store.SetLSPHookReady(r.ctx, hook.ID)
 	_ = r.recordEvent("lsp.started", hook.ID, "", "language server started", map[string]any{"language_id": hook.LanguageID, "path": hook.RelPath})
 	if len(pending) > 0 {
 		go r.handleLSPChanges(hook, pending)
@@ -265,8 +266,48 @@ func (r *runtimeState) clearPendingLSPHook(hookID string) {
 	r.mu.Unlock()
 }
 
+func (r *runtimeState) expireStalePendingLSP(ctx context.Context) {
+	hookIDs := r.expirePendingLSP(time.Now().UTC())
+	for _, hookID := range hookIDs {
+		_ = r.store.SetLSPHookReady(ctx, hookID)
+	}
+}
+
+func (r *runtimeState) expirePendingLSP(now time.Time) []string {
+	stale := map[string]struct{}{}
+	r.mu.Lock()
+	for key, started := range r.pendingLSP {
+		hookID, uri, ok := splitLSPPendingKey(key)
+		if !ok || strings.HasPrefix(uri, "startup:") {
+			continue
+		}
+		if now.Sub(started) < defaultLSPDiagnosticsGrace {
+			continue
+		}
+		delete(r.pendingLSP, key)
+		stale[hookID] = struct{}{}
+	}
+	if len(stale) > 0 {
+		r.lastActivity = now
+	}
+	r.mu.Unlock()
+	if len(stale) == 0 {
+		return nil
+	}
+	hookIDs := make([]string, 0, len(stale))
+	for hookID := range stale {
+		hookIDs = append(hookIDs, hookID)
+	}
+	return hookIDs
+}
+
 func lspPendingKey(hookID, uri string) string {
 	return hookID + "\x00" + uri
+}
+
+func splitLSPPendingKey(key string) (string, string, bool) {
+	hookID, uri, ok := strings.Cut(key, "\x00")
+	return hookID, uri, ok && hookID != "" && uri != ""
 }
 
 func lspStartupKey(hookID string) string {

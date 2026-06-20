@@ -1102,6 +1102,29 @@ func (s *Store) SetLSPHookRunning(ctx context.Context, hookID string) error {
 	return s.write.WithContext(ctx).Model(&models.HookStatus{}).Where("hook_id = ?", hookID).Updates(map[string]any{"status": string(models.StatusRunning), "last_error": "", "updated_at": time.Now().UTC()}).Error
 }
 
+// SetLSPHookReady records that an LSP hook has no pending lifecycle work. The
+// terminal status is derived from its current diagnostics.
+func (s *Store) SetLSPHookReady(ctx context.Context, hookID string) error {
+	hookID = strings.TrimSpace(hookID)
+	if hookID == "" {
+		return fmt.Errorf("hook id is required")
+	}
+	now := time.Now().UTC()
+	return s.write.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		status := string(models.StatusSuccess)
+		lastError := ""
+		count, err := countDiagnosticsTx(tx, hookID)
+		if err != nil {
+			return err
+		}
+		if count > 0 {
+			status = string(models.StatusFailure)
+			lastError = fmt.Sprintf("%d diagnostics", count)
+		}
+		return tx.Model(&models.HookStatus{}).Where("hook_id = ?", hookID).Updates(map[string]any{"status": status, "last_error": lastError, "updated_at": now}).Error
+	})
+}
+
 // SetLSPHookError records an LSP hook lifecycle failure.
 func (s *Store) SetLSPHookError(ctx context.Context, hookID, message string) error {
 	hookID = strings.TrimSpace(hookID)
