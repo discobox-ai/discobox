@@ -7,14 +7,14 @@ import (
 	sandbox "github.com/obot-platform/discobox/sandboxprovider"
 )
 
-func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, workerStore vm.WorkerStore) {
+func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, workerManager vm.WorkerManager) {
 	if manager == nil {
 		return
 	}
 	manager.RegisterProviderDefinition(digitalocean.ProviderType, digitalocean.Definition)
-	manager.RegisterFactory(digitalocean.ProviderType, digitalocean.FactoryWithWorkerStore(workerStore))
+	manager.RegisterFactory(digitalocean.ProviderType, digitalocean.FactoryWithWorkerManager(workerManager))
 	manager.RegisterProviderConfigValidator(digitalocean.ProviderType, digitalocean.Validate)
 	manager.RegisterProviderDefinition(docker.ProviderType, docker.Definition)
-	manager.RegisterFactory(docker.ProviderType, docker.FactoryWithWorkerStore(workerStore))
+	manager.RegisterFactory(docker.ProviderType, docker.FactoryWithWorkerManager(workerManager))
 	manager.RegisterProviderConfigValidator(docker.ProviderType, docker.Validate)
 }

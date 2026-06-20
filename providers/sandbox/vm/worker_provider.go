@@ -36,58 +36,58 @@ type WorkerProvider struct {
 	poolConfig           WorkerPoolConfig
 	launch               WorkerLauncher
 	remove               WorkerRemover
-	store                WorkerStore
+	manager              WorkerManager
 	ensureRunningWorkers bool
 }
 
-type ProviderInstanceStore interface {
+type ProviderInstanceManager interface {
 	GetProject(ctx context.Context, projectID string) (*model.Project, error)
 	GetSandboxProviderInstance(ctx context.Context, projectID, providerID string) (*model.SandboxProviderInstance, error)
 }
 
-type WorkerLookupStore interface {
+type WorkerLookupManager interface {
 	GetWorker(ctx context.Context, workerID string) (*model.Worker, error)
 }
 
-func NewWorkerProvider(provider *Provider, poolConfig WorkerPoolConfig, launch WorkerLauncher, store WorkerStore, remove ...WorkerRemover) *WorkerProvider {
-	workerProvider := &WorkerProvider{Provider: provider, poolConfig: poolConfig, launch: launch, store: store}
+func NewWorkerProvider(provider *Provider, poolConfig WorkerPoolConfig, launch WorkerLauncher, manager WorkerManager, remove ...WorkerRemover) *WorkerProvider {
+	workerProvider := &WorkerProvider{Provider: provider, poolConfig: poolConfig, launch: launch, manager: manager}
 	if len(remove) > 0 {
 		workerProvider.remove = remove[0]
 	}
 	return workerProvider
 }
 
-func (p *WorkerProvider) EnsureWorkerPool(ctx context.Context, store WorkerStore, project *model.Project, provider *model.SandboxProviderInstance) error {
-	if err := EnsureWorkerPool(ctx, store, project, provider, p.poolConfig); err != nil {
+func (p *WorkerProvider) EnsureWorkerPool(ctx context.Context, manager WorkerManager, project *model.Project, provider *model.SandboxProviderInstance) error {
+	if err := EnsureWorkerPool(ctx, manager, project, provider, p.poolConfig); err != nil {
 		return err
 	}
 	if !p.ensureRunningWorkers {
 		return nil
 	}
-	return p.ensureActiveWorkers(ctx, store, project, provider)
+	return p.ensureActiveWorkers(ctx, manager, project, provider)
 }
 
-func (p *WorkerProvider) EnsureProviderInstance(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance) error {
-	workerStore, ok := store.(WorkerStore)
+func (p *WorkerProvider) EnsureProviderInstance(ctx context.Context, manager any, project *model.Project, provider *model.SandboxProviderInstance) error {
+	workerManager, ok := manager.(WorkerManager)
 	if !ok {
-		return fmt.Errorf("worker store is required")
+		return fmt.Errorf("worker manager is required")
 	}
-	return p.EnsureWorkerPool(ctx, workerStore, project, provider)
+	return p.EnsureWorkerPool(ctx, workerManager, project, provider)
 }
 
-type WorkerBootstrapTokenStore interface {
+type WorkerBootstrapTokenManager interface {
 	CreateWorkerBootstrapToken(ctx context.Context, token *model.WorkerBootstrapToken) error
 }
 
-func (p *WorkerProvider) ReconcileWorker(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error {
-	bootstrapStore, ok := store.(WorkerBootstrapTokenStore)
+func (p *WorkerProvider) ReconcileWorker(ctx context.Context, manager any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error {
+	bootstrapManager, ok := manager.(WorkerBootstrapTokenManager)
 	if !ok {
-		return fmt.Errorf("worker bootstrap token store is required")
+		return fmt.Errorf("worker bootstrap token manager is required")
 	}
 	if p.launch == nil {
 		return fmt.Errorf("worker launcher is required")
 	}
-	token, err := CreateWorkerBootstrap(ctx, bootstrapStore, project, worker)
+	token, err := CreateWorkerBootstrap(ctx, bootstrapManager, project, worker)
 	if err != nil {
 		return err
 	}
@@ -108,8 +108,8 @@ func (p *WorkerProvider) EnsureRunningWorkers() {
 	p.ensureRunningWorkers = true
 }
 
-func (p *WorkerProvider) ensureActiveWorkers(ctx context.Context, store WorkerStore, project *model.Project, provider *model.SandboxProviderInstance) error {
-	workers, err := store.ListWorkers(ctx, provider.ProjectID, provider.ID)
+func (p *WorkerProvider) ensureActiveWorkers(ctx context.Context, manager WorkerManager, project *model.Project, provider *model.SandboxProviderInstance) error {
+	workers, err := manager.ListWorkers(ctx, provider.ProjectID, provider.ID)
 	if err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ func (p *WorkerProvider) ensureActiveWorkers(ctx context.Context, store WorkerSt
 		if !startupReconcileWorker(worker) {
 			continue
 		}
-		if err := p.ReconcileWorker(ctx, store, project, provider, worker); err != nil {
+		if err := p.ReconcileWorker(ctx, manager, project, provider, worker); err != nil {
 			return err
 		}
 	}
@@ -132,8 +132,8 @@ func startupReconcileWorker(worker *model.Worker) bool {
 }
 
 func (p *WorkerProvider) Create(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {
-	if p.store == nil {
-		return nil, nil, fmt.Errorf("worker store is required")
+	if p.manager == nil {
+		return nil, nil, fmt.Errorf("worker manager is required")
 	}
 	if workerID, err := workerIDFromRuntimeState(state); err == nil {
 		if opts.WorkerID == workerID {
@@ -170,9 +170,9 @@ func (p *WorkerProvider) validateStateWorker(ctx context.Context, ref sandbox.Sa
 	if opts.WorkerID != workerID {
 		return sandbox.ErrNoSandboxCapacity
 	}
-	lookup, ok := p.store.(WorkerLookupStore)
+	lookup, ok := p.manager.(WorkerLookupManager)
 	if !ok {
-		return fmt.Errorf("worker lookup store is required")
+		return fmt.Errorf("worker lookup manager is required")
 	}
 	worker, err := lookup.GetWorker(ctx, workerID)
 	if err != nil {
@@ -238,7 +238,7 @@ func (p *WorkerProvider) createOnWorker(ctx context.Context, ref sandbox.Sandbox
 }
 
 func (p *WorkerProvider) findSchedulableWorker(ctx context.Context, sb *model.Sandbox) (*model.Worker, error) {
-	worker, err := p.store.FindSchedulableWorker(ctx, sb)
+	worker, err := p.manager.FindSchedulableWorker(ctx, sb)
 	if err == nil {
 		return worker, nil
 	}
@@ -255,25 +255,25 @@ func (p *WorkerProvider) ensureWorkerCapacity(ctx context.Context, sb *model.San
 	if sb == nil || sb.ProviderInstanceID == nil || *sb.ProviderInstanceID == "" {
 		return sandbox.ErrNoSandboxCapacity
 	}
-	providerStore, ok := p.store.(ProviderInstanceStore)
+	providerManager, ok := p.manager.(ProviderInstanceManager)
 	if !ok {
 		return sandbox.ErrNoSandboxCapacity
 	}
-	project, err := providerStore.GetProject(ctx, sb.ProjectID)
+	project, err := providerManager.GetProject(ctx, sb.ProjectID)
 	if err != nil {
 		return err
 	}
-	provider, err := providerStore.GetSandboxProviderInstance(ctx, sb.ProjectID, *sb.ProviderInstanceID)
+	provider, err := providerManager.GetSandboxProviderInstance(ctx, sb.ProjectID, *sb.ProviderInstanceID)
 	if err != nil {
 		return err
 	}
-	return p.EnsureWorkerPool(ctx, p.store, project, provider)
+	return p.EnsureWorkerPool(ctx, p.manager, project, provider)
 }
 
 func (p *WorkerProvider) waitForSchedulableWorker(ctx context.Context, sb *model.Sandbox) (*model.Worker, error) {
 	deadline := time.Now().Add(workerCapacityWaitTimeout)
 	for {
-		worker, err := p.store.FindSchedulableWorker(ctx, sb)
+		worker, err := p.manager.FindSchedulableWorker(ctx, sb)
 		if err == nil {
 			return worker, nil
 		}

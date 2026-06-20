@@ -77,7 +77,7 @@ type WorkerProviderConfig struct {
 	DefaultImage    string
 	AgentPort       int
 	WorkerPool      vm.WorkerPoolConfig
-	WorkerStore     vm.WorkerStore
+	WorkerManager   vm.WorkerManager
 	EnsureWorkers   bool
 }
 
@@ -100,7 +100,7 @@ func NewWorkerProvider(ctx context.Context, cfg WorkerProviderConfig, newProvide
 			AgentPort:       cfg.AgentPort,
 			Factory:         factory,
 		})
-	}, cfg.WorkerStore, func(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error {
+	}, cfg.WorkerManager, func(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error {
 		return vm.RemoveWorker(ctx, project, provider, worker, vm.LaunchWorkerConfig{
 			ControlPlaneURL: cfg.ControlPlaneURL,
 			DefaultImage:    cfg.DefaultImage,

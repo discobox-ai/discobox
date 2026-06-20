@@ -64,8 +64,8 @@ func TestWorkerProviderCreateCreatesDockerContainerE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new provider: %v", err)
 	}
-	workerStore := &recordingWorkerStore{worker: &model.Worker{ID: workerID, ProjectID: projectID, ProviderInstanceID: providerID, Ready: true, Schedulable: true}}
-	provider := NewWorkerProvider(baseProvider, WorkerPoolConfig{}, nil, workerStore)
+	workerManager := &recordingWorkerManager{worker: &model.Worker{ID: workerID, ProjectID: projectID, ProviderInstanceID: providerID, Ready: true, Schedulable: true}}
+	provider := NewWorkerProvider(baseProvider, WorkerPoolConfig{}, nil, workerManager)
 
 	runtimeSandbox, state, err := provider.Create(ctx, sandbox.SandboxRef{ProjectID: projectID, SandboxID: sandboxID}, nil, sandbox.CreateOptions{
 		ProviderInstanceID: providerID,

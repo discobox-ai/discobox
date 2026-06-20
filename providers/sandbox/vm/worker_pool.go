@@ -19,19 +19,19 @@ const defaultWorkerRegistrationTimeout = 2 * time.Minute
 
 var workerRegistrationTimeout = defaultWorkerRegistrationTimeout
 
-// WorkerStore is the persistence surface a VM worker pool needs from the
-// control plane. Providers own the scaling policy; the store owns persistence.
-type WorkerStore interface {
+// WorkerManager is the control-plane surface a VM worker pool needs. Providers
+// own the scaling policy; the manager owns persistence and lifecycle intent.
+type WorkerManager interface {
 	ListWorkers(ctx context.Context, projectID, providerID string) ([]model.Worker, error)
 	CreateWorker(ctx context.Context, worker *model.Worker) (*model.Worker, error)
 	FindSchedulableWorker(ctx context.Context, sandbox *model.Sandbox) (*model.Worker, error)
 }
 
-type WorkerBootstrapStore interface {
+type WorkerBootstrapManager interface {
 	CreateWorkerBootstrapToken(ctx context.Context, token *model.WorkerBootstrapToken) error
 }
 
-type WorkerLifecycleRepairStore interface {
+type WorkerLifecycleRepairManager interface {
 	GetJob(ctx context.Context, id string) (*orchestration.Job, error)
 	DeleteWorkerForFailedJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error)
 	DeleteWorkerForExpiredRegistration(ctx context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error)
@@ -127,9 +127,9 @@ func DesiredAdditionalWorkers(workers []model.Worker, cfg WorkerPoolConfig) int 
 }
 
 // EnsureWorkerPool reconciles a VM provider's warm worker pool.
-func EnsureWorkerPool(ctx context.Context, store WorkerStore, project *model.Project, provider *model.SandboxProviderInstance, cfg WorkerPoolConfig) error {
-	if store == nil {
-		return fmt.Errorf("worker store is required")
+func EnsureWorkerPool(ctx context.Context, manager WorkerManager, project *model.Project, provider *model.SandboxProviderInstance, cfg WorkerPoolConfig) error {
+	if manager == nil {
+		return fmt.Errorf("worker manager is required")
 	}
 	if project == nil {
 		return fmt.Errorf("project is required")
@@ -137,21 +137,21 @@ func EnsureWorkerPool(ctx context.Context, store WorkerStore, project *model.Pro
 	if provider == nil || provider.Disabled {
 		return nil
 	}
-	workers, err := store.ListWorkers(ctx, provider.ProjectID, provider.ID)
+	workers, err := manager.ListWorkers(ctx, provider.ProjectID, provider.ID)
 	if err != nil {
 		return err
 	}
-	workers, err = repairWorkersWithFailedJobs(ctx, store, workers)
+	workers, err = repairWorkersWithFailedJobs(ctx, manager, workers)
 	if err != nil {
 		return err
 	}
-	workers, err = repairExpiredRegisteringWorkers(ctx, store, workers, time.Now().UTC())
+	workers, err = repairExpiredRegisteringWorkers(ctx, manager, workers, time.Now().UTC())
 	if err != nil {
 		return err
 	}
 	additional := DesiredAdditionalWorkers(workers, cfg)
 	for i := 0; i < additional; i++ {
-		worker, err := createWorker(ctx, store, project, provider, len(workers)+1)
+		worker, err := createWorker(ctx, manager, project, provider, len(workers)+1)
 		if err != nil {
 			return err
 		}
@@ -160,8 +160,8 @@ func EnsureWorkerPool(ctx context.Context, store WorkerStore, project *model.Pro
 	return nil
 }
 
-func repairWorkersWithFailedJobs(ctx context.Context, store WorkerStore, workers []model.Worker) ([]model.Worker, error) {
-	repairStore, ok := store.(WorkerLifecycleRepairStore)
+func repairWorkersWithFailedJobs(ctx context.Context, manager WorkerManager, workers []model.Worker) ([]model.Worker, error) {
+	repairManager, ok := manager.(WorkerLifecycleRepairManager)
 	if !ok {
 		return workers, nil
 	}
@@ -170,7 +170,7 @@ func repairWorkersWithFailedJobs(ctx context.Context, store WorkerStore, workers
 		if worker.LastJobID == nil || worker.LastOperationStatus == model.OperationStatusFailed || worker.LastOperationStatus == model.OperationStatusSuccess {
 			continue
 		}
-		job, err := repairStore.GetJob(ctx, *worker.LastJobID)
+		job, err := repairManager.GetJob(ctx, *worker.LastJobID)
 		if err != nil {
 			if errors.Is(err, orchestration.ErrJobNotFound) {
 				continue
@@ -184,7 +184,7 @@ func repairWorkersWithFailedJobs(ctx context.Context, store WorkerStore, workers
 		if job.Error != nil && *job.Error != "" {
 			message = *job.Error
 		}
-		updated, err := repairStore.DeleteWorkerForFailedJob(ctx, worker.ID, worker.Generation, *worker.LastJobID, message)
+		updated, err := repairManager.DeleteWorkerForFailedJob(ctx, worker.ID, worker.Generation, *worker.LastJobID, message)
 		if err != nil {
 			return nil, err
 		}
@@ -197,8 +197,8 @@ func repairWorkersWithFailedJobs(ctx context.Context, store WorkerStore, workers
 	return workers, nil
 }
 
-func repairExpiredRegisteringWorkers(ctx context.Context, store WorkerStore, workers []model.Worker, now time.Time) ([]model.Worker, error) {
-	repairStore, ok := store.(WorkerLifecycleRepairStore)
+func repairExpiredRegisteringWorkers(ctx context.Context, manager WorkerManager, workers []model.Worker, now time.Time) ([]model.Worker, error) {
+	repairManager, ok := manager.(WorkerLifecycleRepairManager)
 	if !ok || workerRegistrationTimeout <= 0 {
 		return workers, nil
 	}
@@ -213,7 +213,7 @@ func repairExpiredRegisteringWorkers(ctx context.Context, store WorkerStore, wor
 			continue
 		}
 		message := "worker did not register before timeout"
-		updated, err := repairStore.DeleteWorkerForExpiredRegistration(ctx, worker.ID, worker.Generation, cutoff, message)
+		updated, err := repairManager.DeleteWorkerForExpiredRegistration(ctx, worker.ID, worker.Generation, cutoff, message)
 		if err != nil {
 			return nil, err
 		}
@@ -245,7 +245,7 @@ func healthyWorker(worker *model.Worker) bool {
 	return activeWorker(worker) && worker.Ready && worker.Schedulable && !worker.Degraded
 }
 
-func createWorker(ctx context.Context, store WorkerStore, project *model.Project, provider *model.SandboxProviderInstance, ordinal int) (*model.Worker, error) {
+func createWorker(ctx context.Context, manager WorkerManager, project *model.Project, provider *model.SandboxProviderInstance, ordinal int) (*model.Worker, error) {
 	workerID, err := id.New()
 	if err != nil {
 		return nil, err
@@ -256,12 +256,12 @@ func createWorker(ctx context.Context, store WorkerStore, project *model.Project
 		ProviderInstanceID: provider.ID,
 		Identity:           fmt.Sprintf("%s/%s/%d", provider.ID, workerID, ordinal),
 	}
-	return store.CreateWorker(ctx, worker)
+	return manager.CreateWorker(ctx, worker)
 }
 
-func CreateWorkerBootstrap(ctx context.Context, store WorkerBootstrapStore, project *model.Project, worker *model.Worker) (string, error) {
-	if store == nil {
-		return "", fmt.Errorf("worker store is required")
+func CreateWorkerBootstrap(ctx context.Context, manager WorkerBootstrapManager, project *model.Project, worker *model.Worker) (string, error) {
+	if manager == nil {
+		return "", fmt.Errorf("worker manager is required")
 	}
 	if project == nil {
 		return "", fmt.Errorf("project is required")
@@ -279,7 +279,7 @@ func CreateWorkerBootstrap(ctx context.Context, store WorkerBootstrapStore, proj
 		TokenHash: hash[:],
 		ExpiresAt: time.Now().UTC().Add(defaultWorkerBootstrapTTL),
 	}
-	if err := store.CreateWorkerBootstrapToken(ctx, bootstrapToken); err != nil {
+	if err := manager.CreateWorkerBootstrapToken(ctx, bootstrapToken); err != nil {
 		return "", err
 	}
 	return token, nil

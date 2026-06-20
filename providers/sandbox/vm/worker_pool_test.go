@@ -76,7 +76,7 @@ func TestDesiredAdditionalWorkersIgnoresFailedWorkers(t *testing.T) {
 func TestEnsureWorkerPoolRepairsWorkersWithFailedJobs(t *testing.T) {
 	jobID := "job-1"
 	message := "image not found"
-	store := &repairingWorkerStore{
+	store := &repairingWorkerManager{
 		workers: []model.Worker{{
 			ID:                 "worker-1",
 			ProjectID:          "project-1",
@@ -117,7 +117,7 @@ func TestEnsureWorkerPoolRepairsWorkersWithFailedJobs(t *testing.T) {
 func TestEnsureWorkerPoolSkipsSupersededFailedJobRepair(t *testing.T) {
 	jobID := "job-1"
 	message := "image not found"
-	store := &repairingWorkerStore{
+	store := &repairingWorkerManager{
 		workers: []model.Worker{{
 			ID:                 "worker-1",
 			ProjectID:          "project-1",
@@ -154,7 +154,7 @@ func TestEnsureWorkerPoolRepairsExpiredRegisteringWorkers(t *testing.T) {
 	t.Cleanup(func() { workerRegistrationTimeout = oldTimeout })
 
 	now := time.Now().UTC()
-	store := &repairingWorkerStore{
+	store := &repairingWorkerManager{
 		workers: []model.Worker{{
 			ID:                 "worker-1",
 			ProjectID:          "project-1",
@@ -198,7 +198,7 @@ func TestNormalizeWorkerPoolConfigKeepsPoolSizeAsMinimumWithReplacementHeadroom(
 func TestWorkerProviderCreateClaimsWorkerAndReturnsWorkerID(t *testing.T) {
 	createdAt := time.Now().UTC()
 	registeredAt := createdAt.Add(time.Second)
-	workerStore := &recordingWorkerStore{
+	workerManager := &recordingWorkerManager{
 		worker: &model.Worker{
 			ID:                 "worker-1",
 			ProviderInstanceID: "provider-1",
@@ -206,7 +206,7 @@ func TestWorkerProviderCreateClaimsWorkerAndReturnsWorkerID(t *testing.T) {
 			RegisteredAt:       &registeredAt,
 		},
 	}
-	provider := NewWorkerProvider(nil, WorkerPoolConfig{}, nil, workerStore)
+	provider := NewWorkerProvider(nil, WorkerPoolConfig{}, nil, workerManager)
 
 	runtimeSandbox, state, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{
 		ProviderInstanceID: "provider-1",
@@ -217,14 +217,14 @@ func TestWorkerProviderCreateClaimsWorkerAndReturnsWorkerID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if workerStore.sandbox == nil {
+	if workerManager.sandbox == nil {
 		t.Fatal("expected schedulable worker lookup")
 	}
-	if workerStore.sandbox.ID != "sandbox-1" || workerStore.sandbox.ProjectID != "project-1" || workerStore.sandbox.CPUVCPUs != 2 || workerStore.sandbox.MemoryBytes != 1024 || workerStore.sandbox.StorageBytes != 2048 {
-		t.Fatalf("schedulable worker sandbox = %#v", workerStore.sandbox)
+	if workerManager.sandbox.ID != "sandbox-1" || workerManager.sandbox.ProjectID != "project-1" || workerManager.sandbox.CPUVCPUs != 2 || workerManager.sandbox.MemoryBytes != 1024 || workerManager.sandbox.StorageBytes != 2048 {
+		t.Fatalf("schedulable worker sandbox = %#v", workerManager.sandbox)
 	}
-	if workerStore.sandbox.ProviderInstanceID == nil || *workerStore.sandbox.ProviderInstanceID != "provider-1" {
-		t.Fatalf("schedulable worker provider instance = %v, want provider-1", workerStore.sandbox.ProviderInstanceID)
+	if workerManager.sandbox.ProviderInstanceID == nil || *workerManager.sandbox.ProviderInstanceID != "provider-1" {
+		t.Fatalf("schedulable worker provider instance = %v, want provider-1", workerManager.sandbox.ProviderInstanceID)
 	}
 	if runtimeSandbox == nil || runtimeSandbox.Metadata["worker_id"] != "worker-1" {
 		t.Fatalf("runtime sandbox = %#v, want worker_id metadata", runtimeSandbox)
@@ -251,13 +251,13 @@ func TestWorkerProviderCreateCallsWorkerAgentRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new provider: %v", err)
 	}
-	workerStore := &recordingWorkerStore{
+	workerManager := &recordingWorkerManager{
 		worker: &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true},
 		workersByID: map[string]*model.Worker{
 			"worker-1": {ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: false, Degraded: true, ResourceLifecycle: model.ResourceLifecycle{Phase: model.WorkerPhaseActive, LastOperationStatus: model.OperationStatusSuccess}},
 		},
 	}
-	provider := NewWorkerProvider(baseProvider, WorkerPoolConfig{}, nil, workerStore)
+	provider := NewWorkerProvider(baseProvider, WorkerPoolConfig{}, nil, workerManager)
 
 	runtimeSandbox, state, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{
 		ProviderInstanceID: "provider-1",
@@ -289,24 +289,24 @@ func TestWorkerProviderCreateCallsWorkerAgentRuntime(t *testing.T) {
 }
 
 func TestWorkerProviderCreateWithExistingStateReusesWorker(t *testing.T) {
-	workerStore := &recordingWorkerStore{
+	workerManager := &recordingWorkerManager{
 		worker: &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true},
 		workersByID: map[string]*model.Worker{
 			"worker-1": {ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: false, Degraded: true, ResourceLifecycle: model.ResourceLifecycle{Phase: model.WorkerPhaseActive, LastOperationStatus: model.OperationStatusSuccess}},
 		},
 	}
-	provider := NewWorkerProvider(nil, WorkerPoolConfig{}, nil, workerStore)
+	provider := NewWorkerProvider(nil, WorkerPoolConfig{}, nil, workerManager)
 
 	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Image: "warm-worker", Metadata: map[string]string{"worker_id": "worker-1"}})
-	workerStore.worker = &model.Worker{ID: "worker-2", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true}
-	workerStore.findCalls = 0
+	workerManager.worker = &model.Worker{ID: "worker-2", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true}
+	workerManager.findCalls = 0
 
 	runtimeSandbox, nextState, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, sandbox.CreateOptions{ProviderInstanceID: "provider-1", WorkerID: "worker-1"})
 	if err != nil {
 		t.Fatalf("idempotent create: %v", err)
 	}
-	if workerStore.findCalls != 0 {
-		t.Fatalf("FindSchedulableWorker calls = %d, want 0", workerStore.findCalls)
+	if workerManager.findCalls != 0 {
+		t.Fatalf("FindSchedulableWorker calls = %d, want 0", workerManager.findCalls)
 	}
 	if runtimeSandbox == nil || runtimeSandbox.Metadata["worker_id"] != "worker-1" {
 		t.Fatalf("runtime sandbox = %#v, want worker-1 metadata", runtimeSandbox)
@@ -318,20 +318,20 @@ func TestWorkerProviderCreateWithExistingStateReusesWorker(t *testing.T) {
 
 func TestWorkerProviderCreateWithExistingStateSkipsSchedulingWithoutBaseProvider(t *testing.T) {
 	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Image: "warm-worker", Metadata: map[string]string{"worker_id": "worker-1"}})
-	workerStore := &recordingWorkerStore{
+	workerManager := &recordingWorkerManager{
 		worker: &model.Worker{ID: "worker-2", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true},
 		workersByID: map[string]*model.Worker{
 			"worker-1": {ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true, ResourceLifecycle: model.ResourceLifecycle{Phase: model.WorkerPhaseActive, LastOperationStatus: model.OperationStatusSuccess}},
 		},
 	}
-	provider := NewWorkerProvider(nil, WorkerPoolConfig{}, nil, workerStore)
+	provider := NewWorkerProvider(nil, WorkerPoolConfig{}, nil, workerManager)
 
 	runtimeSandbox, nextState, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, sandbox.CreateOptions{ProviderInstanceID: "provider-1", WorkerID: "worker-1"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if workerStore.findCalls != 0 {
-		t.Fatalf("FindSchedulableWorker calls = %d, want 0", workerStore.findCalls)
+	if workerManager.findCalls != 0 {
+		t.Fatalf("FindSchedulableWorker calls = %d, want 0", workerManager.findCalls)
 	}
 	if runtimeSandbox == nil || runtimeSandbox.Metadata["worker_id"] != "worker-1" {
 		t.Fatalf("runtime sandbox = %#v, want worker-1 metadata", runtimeSandbox)
@@ -343,39 +343,39 @@ func TestWorkerProviderCreateWithExistingStateSkipsSchedulingWithoutBaseProvider
 
 func TestWorkerProviderCreateWithExistingStateRejectsWrongProviderWorker(t *testing.T) {
 	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Image: "warm-worker", Metadata: map[string]string{"worker_id": "worker-2"}})
-	workerStore := &recordingWorkerStore{
+	workerManager := &recordingWorkerManager{
 		worker: &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true},
 		workersByID: map[string]*model.Worker{
 			"worker-2": {ID: "worker-2", ProjectID: "project-1", ProviderInstanceID: "provider-2", Ready: true, Schedulable: true, ResourceLifecycle: model.ResourceLifecycle{Phase: model.WorkerPhaseActive, LastOperationStatus: model.OperationStatusSuccess}},
 		},
 	}
-	provider := NewWorkerProvider(nil, WorkerPoolConfig{}, nil, workerStore)
+	provider := NewWorkerProvider(nil, WorkerPoolConfig{}, nil, workerManager)
 
 	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, sandbox.CreateOptions{ProviderInstanceID: "provider-1", WorkerID: "worker-2"})
 	if !errors.Is(err, sandbox.ErrNoSandboxCapacity) {
 		t.Fatalf("create error = %v, want ErrNoSandboxCapacity", err)
 	}
-	if workerStore.findCalls != 0 {
-		t.Fatalf("FindSchedulableWorker calls = %d, want 0", workerStore.findCalls)
+	if workerManager.findCalls != 0 {
+		t.Fatalf("FindSchedulableWorker calls = %d, want 0", workerManager.findCalls)
 	}
 }
 
 func TestWorkerProviderCreateWithUnassignedStateSchedulesWorker(t *testing.T) {
 	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Image: "warm-worker", Metadata: map[string]string{"worker_id": "worker-2"}})
-	workerStore := &recordingWorkerStore{
+	workerManager := &recordingWorkerManager{
 		worker: &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true},
 		workersByID: map[string]*model.Worker{
 			"worker-2": {ID: "worker-2", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true, ResourceLifecycle: model.ResourceLifecycle{Phase: model.WorkerPhaseActive, LastOperationStatus: model.OperationStatusSuccess}},
 		},
 	}
-	provider := NewWorkerProvider(nil, WorkerPoolConfig{}, nil, workerStore)
+	provider := NewWorkerProvider(nil, WorkerPoolConfig{}, nil, workerManager)
 
 	runtimeSandbox, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, sandbox.CreateOptions{ProviderInstanceID: "provider-1"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if workerStore.findCalls != 1 {
-		t.Fatalf("FindSchedulableWorker calls = %d, want 1", workerStore.findCalls)
+	if workerManager.findCalls != 1 {
+		t.Fatalf("FindSchedulableWorker calls = %d, want 1", workerManager.findCalls)
 	}
 	if runtimeSandbox == nil || runtimeSandbox.Metadata["worker_id"] != "worker-1" {
 		t.Fatalf("runtime sandbox = %#v, want scheduled worker-1", runtimeSandbox)
@@ -462,19 +462,19 @@ func TestWorkerProviderCreateEnsuresCapacityAndWaitsForWorker(t *testing.T) {
 		workerCapacityPollInterval = oldInterval
 	})
 
-	workerStore := &capacityWaitWorkerStore{
+	workerManager := &capacityWaitWorkerManager{
 		project:  &model.Project{ID: "project-1"},
 		provider: &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "digitalocean", Name: "do"},
 		worker:   &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true},
 	}
-	provider := NewWorkerProvider(nil, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}, nil, workerStore)
+	provider := NewWorkerProvider(nil, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}, nil, workerManager)
 
 	runtimeSandbox, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{ProviderInstanceID: "provider-1"})
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if workerStore.createdWorkers != 1 {
-		t.Fatalf("created workers = %d, want 1", workerStore.createdWorkers)
+	if workerManager.createdWorkers != 1 {
+		t.Fatalf("created workers = %d, want 1", workerManager.createdWorkers)
 	}
 	if runtimeSandbox == nil || runtimeSandbox.Metadata["worker_id"] != "worker-1" {
 		t.Fatalf("runtime sandbox = %#v, want worker-1", runtimeSandbox)
@@ -491,11 +491,11 @@ func TestWorkerProviderCreateReturnsNoCapacityAfterWait(t *testing.T) {
 		workerCapacityPollInterval = oldInterval
 	})
 
-	workerStore := &capacityWaitWorkerStore{
+	workerManager := &capacityWaitWorkerManager{
 		project:  &model.Project{ID: "project-1"},
 		provider: &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "digitalocean", Name: "do"},
 	}
-	provider := NewWorkerProvider(nil, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}, nil, workerStore)
+	provider := NewWorkerProvider(nil, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}, nil, workerManager)
 
 	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{ProviderInstanceID: "provider-1"})
 	if !errors.Is(err, sandbox.ErrNoSandboxCapacity) {
@@ -649,7 +649,7 @@ func (d *workerHTTPOnlyDriver) AcquireWorkerHTTPClient(_ context.Context, worker
 	return sandbox.NewHTTPClientLeaseWithBaseURLAndAuth(d.client, d.baseURL, d.authToken, nil), nil
 }
 
-type recordingWorkerStore struct {
+type recordingWorkerManager struct {
 	worker      *model.Worker
 	workersByID map[string]*model.Worker
 	err         error
@@ -657,11 +657,11 @@ type recordingWorkerStore struct {
 	findCalls   int
 }
 
-func (s *recordingWorkerStore) ListWorkers(context.Context, string, string) ([]model.Worker, error) {
+func (s *recordingWorkerManager) ListWorkers(context.Context, string, string) ([]model.Worker, error) {
 	return nil, nil
 }
 
-func (s *recordingWorkerStore) GetWorker(_ context.Context, workerID string) (*model.Worker, error) {
+func (s *recordingWorkerManager) GetWorker(_ context.Context, workerID string) (*model.Worker, error) {
 	if s.workersByID != nil {
 		if worker := s.workersByID[workerID]; worker != nil {
 			return worker, nil
@@ -673,11 +673,11 @@ func (s *recordingWorkerStore) GetWorker(_ context.Context, workerID string) (*m
 	return nil, apperrors.ErrNotFound
 }
 
-func (s *recordingWorkerStore) CreateWorker(_ context.Context, worker *model.Worker) (*model.Worker, error) {
+func (s *recordingWorkerManager) CreateWorker(_ context.Context, worker *model.Worker) (*model.Worker, error) {
 	return worker, nil
 }
 
-func (s *recordingWorkerStore) FindSchedulableWorker(_ context.Context, sandbox *model.Sandbox) (*model.Worker, error) {
+func (s *recordingWorkerManager) FindSchedulableWorker(_ context.Context, sandbox *model.Sandbox) (*model.Worker, error) {
 	s.findCalls++
 	s.sandbox = sandbox
 	if s.err != nil {
@@ -689,38 +689,38 @@ func (s *recordingWorkerStore) FindSchedulableWorker(_ context.Context, sandbox 
 	return s.worker, nil
 }
 
-type capacityWaitWorkerStore struct {
+type capacityWaitWorkerManager struct {
 	project        *model.Project
 	provider       *model.SandboxProviderInstance
 	worker         *model.Worker
 	createdWorkers int
 }
 
-func (s *capacityWaitWorkerStore) ListWorkers(context.Context, string, string) ([]model.Worker, error) {
+func (s *capacityWaitWorkerManager) ListWorkers(context.Context, string, string) ([]model.Worker, error) {
 	return nil, nil
 }
 
-func (s *capacityWaitWorkerStore) GetProject(context.Context, string) (*model.Project, error) {
+func (s *capacityWaitWorkerManager) GetProject(context.Context, string) (*model.Project, error) {
 	return s.project, nil
 }
 
-func (s *capacityWaitWorkerStore) GetSandboxProviderInstance(context.Context, string, string) (*model.SandboxProviderInstance, error) {
+func (s *capacityWaitWorkerManager) GetSandboxProviderInstance(context.Context, string, string) (*model.SandboxProviderInstance, error) {
 	return s.provider, nil
 }
 
-func (s *capacityWaitWorkerStore) CreateWorker(_ context.Context, worker *model.Worker) (*model.Worker, error) {
+func (s *capacityWaitWorkerManager) CreateWorker(_ context.Context, worker *model.Worker) (*model.Worker, error) {
 	s.createdWorkers++
 	return worker, nil
 }
 
-func (s *capacityWaitWorkerStore) FindSchedulableWorker(context.Context, *model.Sandbox) (*model.Worker, error) {
+func (s *capacityWaitWorkerManager) FindSchedulableWorker(context.Context, *model.Sandbox) (*model.Worker, error) {
 	if s.createdWorkers == 0 || s.worker == nil {
 		return nil, apperrors.ErrNotFound
 	}
 	return s.worker, nil
 }
 
-type repairingWorkerStore struct {
+type repairingWorkerManager struct {
 	workers        []model.Worker
 	jobs           map[string]*orchestration.Job
 	updated        *model.Worker
@@ -728,20 +728,20 @@ type repairingWorkerStore struct {
 	createdWorkers int
 }
 
-func (s *repairingWorkerStore) ListWorkers(context.Context, string, string) ([]model.Worker, error) {
+func (s *repairingWorkerManager) ListWorkers(context.Context, string, string) ([]model.Worker, error) {
 	return s.workers, nil
 }
 
-func (s *repairingWorkerStore) CreateWorker(_ context.Context, worker *model.Worker) (*model.Worker, error) {
+func (s *repairingWorkerManager) CreateWorker(_ context.Context, worker *model.Worker) (*model.Worker, error) {
 	s.createdWorkers++
 	return worker, nil
 }
 
-func (s *repairingWorkerStore) FindSchedulableWorker(context.Context, *model.Sandbox) (*model.Worker, error) {
+func (s *repairingWorkerManager) FindSchedulableWorker(context.Context, *model.Sandbox) (*model.Worker, error) {
 	return nil, apperrors.ErrNotFound
 }
 
-func (s *repairingWorkerStore) GetJob(_ context.Context, id string) (*orchestration.Job, error) {
+func (s *repairingWorkerManager) GetJob(_ context.Context, id string) (*orchestration.Job, error) {
 	job := s.jobs[id]
 	if job == nil {
 		return nil, orchestration.ErrJobNotFound
@@ -749,7 +749,7 @@ func (s *repairingWorkerStore) GetJob(_ context.Context, id string) (*orchestrat
 	return job, nil
 }
 
-func (s *repairingWorkerStore) DeleteWorkerForFailedJob(_ context.Context, workerID string, generation int64, jobID string, message string) (bool, error) {
+func (s *repairingWorkerManager) DeleteWorkerForFailedJob(_ context.Context, workerID string, generation int64, jobID string, message string) (bool, error) {
 	if !s.repairUpdated {
 		return false, nil
 	}
@@ -770,7 +770,7 @@ func (s *repairingWorkerStore) DeleteWorkerForFailedJob(_ context.Context, worke
 	return true, nil
 }
 
-func (s *repairingWorkerStore) DeleteWorkerForExpiredRegistration(_ context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error) {
+func (s *repairingWorkerManager) DeleteWorkerForExpiredRegistration(_ context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error) {
 	if !s.repairUpdated {
 		return false, nil
 	}

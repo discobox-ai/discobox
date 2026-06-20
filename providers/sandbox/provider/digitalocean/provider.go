@@ -19,9 +19,9 @@ const ProviderType = dodriver.ProviderType
 var Definition = dodriver.Definition()
 var Factory sandbox.ProviderFactory = NewFromInstance
 
-func FactoryWithWorkerStore(workerStore vm.WorkerStore) sandbox.ProviderFactory {
+func FactoryWithWorkerManager(workerManager vm.WorkerManager) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
-		return newFromInstance(ctx, instance, workerStore)
+		return newFromInstance(ctx, instance, workerManager)
 	}
 }
 
@@ -62,7 +62,7 @@ func NewFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 	return newFromInstance(ctx, instance, nil)
 }
 
-func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, workerStore vm.WorkerStore) (sandbox.Provider, error) {
+func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, workerManager vm.WorkerManager) (sandbox.Provider, error) {
 	cfg, err := Decode(instance.Config)
 	if err != nil {
 		return nil, err
@@ -72,7 +72,7 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 		DefaultImage:    cfg.Image,
 		AgentPort:       cfg.AgentPort,
 		WorkerPool:      cfg.WorkerPoolConfig(),
-		WorkerStore:     workerStore,
+		WorkerManager:   workerManager,
 	}, func(ctx context.Context, vmConfig vm.Config) (*vm.Provider, error) {
 		return newProvider(ctx, cfg, vmConfig)
 	})
