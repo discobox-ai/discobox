@@ -48,6 +48,14 @@ func (s *SandboxStore) Update(ctx context.Context, sandbox *model.Sandbox) error
 	return s.UpdateSandbox(ctx, sandbox)
 }
 
+func (s *SandboxStore) UpdateWithGeneration(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
+	return s.UpdateSandbox(ctx, sandbox, WithGeneration(generation))
+}
+
+func (s *SandboxStore) Generation(sandbox *model.Sandbox) int64 {
+	return sandbox.Generation
+}
+
 func (s *SandboxStore) ID(sandbox *model.Sandbox) SandboxID {
 	return SandboxID{ProjectID: sandbox.ProjectID, SandboxID: sandbox.ID}
 }

@@ -1,29 +1,33 @@
 # Service Design
 
-`internal/service` implements API-facing business logic. It translates decoded API
-commands into validated resource intent changes, default data initialization, and
-provider catalog behavior. It should not contain transport details, raw GORM
-queries, or provider runtime mechanics.
+`internal/service` aggregates API-facing resource services and owns process-level
+service startup. Resource-specific API behavior lives in resource packages under
+`internal/resources`.
 
 ## Boundaries
 
 ```mermaid
 flowchart LR
-    api[internal/api or internal/generatedapi] --> service[internal/service]
+    api[internal/services or internal/handlers] --> service[internal/service]
+    service --> projects[internal/resources/projects.Service]
+    service --> agentconfigs[internal/resources/agentconfigs.Service]
+    service --> sandboxes[internal/resources/sandboxes.Service]
+    service --> workers[internal/resources/workers.Service]
+    service --> providers[internal/resources/providers.Service]
+    service --> events[internal/resources/events.Service]
+    service --> jobsvc[internal/resources/jobs.Service]
     service --> store[internal/store]
-    service --> jobs[internal/sandbox/jobs]
-    service --> sandboxsvc[internal/sandbox/service]
+    service --> jobs[internal/resources/jobs.Manager]
     service --> events[internal/events]
-    sandboxsvc --> sandbox[internal/sandbox]
 ```
 
-Service methods should:
+The root service should:
 
-1. Validate parent resources and request shape.
-2. Load or build root `model` resources.
-3. Persist intent through `internal/store` transactions.
-4. Emit project events and submit reconcile jobs with the same accepted intent.
-5. Return API-shaped results or API-level errors.
+1. Compose resource services and managers.
+2. Initialize default project/user/config data.
+3. Register resource executors with `internal/resources/jobs.Manager`.
+4. Start the job manager, then run startup reconciliation.
+5. Provide compatibility wrappers required by `internal/services.Services`.
 
 Keep these responsibilities out of `internal/service`:
 
@@ -31,6 +35,41 @@ Keep these responsibilities out of `internal/service`:
 - Raw GORM/database access.
 - Provider runtime operations such as start, stop, restart, and delete.
 - Long-running reconciliation loops.
+
+## Resource Services
+
+Resource packages expose their own service/manager/executor types:
+
+```text
+internal/resources/sandboxes.Service
+internal/resources/sandboxes.SandboxReconcileExecutor
+internal/resources/workers.Service
+internal/resources/workers.Manager
+internal/resources/workers.WorkerReconcileExecutor
+internal/resources/providers.Service
+internal/resources/providers.ProviderReconcileExecutor
+internal/resources/agentconfigs.Service
+internal/resources/events.Service
+internal/resources/jobs.Service
+internal/resources/projects.Service
+```
+
+The root `internal/service.Service` should stay a thin aggregator. It may call
+stores directly for default data initialization, but API resource behavior should
+belong to the resource package that owns that resource.
+
+## Startup Lifecycle
+
+`Service.Start(ctx)` owns service-level startup work. It should register
+application job executors with the injected job manager, start that manager, and
+then evaluate startup reconciliation such as existing sandbox provider
+instances. `internal/server` may construct `internal/resources/jobs.Manager` and
+pass it in, but the job manager should not depend on `*service.Service` or know
+which executors the service needs.
+
+The job manager remains dispatcher infrastructure: start/stop, registration
+storage, and wakeup notification. Startup reconciliation decisions belong in the
+resource service because they are application policy, not dispatcher behavior.
 
 ## Intent Transactions
 
@@ -41,15 +80,16 @@ durable reconcile job that observes it.
 sequenceDiagram
     participant Handler
     participant Service
-    participant Store as internal/store
-    participant Queue as orchestration queue
+    participant Manager as resource manager
+    participant Jobs as internal/resources/jobs.Manager
+    participant Dispatcher as orchestration.Dispatcher
 
     Handler->>Service: create/start/stop/delete request
-    Service->>Store: transaction
-    Store->>Store: resource desired state + generation
-    Store->>Store: project event
-    Store->>Queue: durable job row
-    Store-->>Service: committed result
+    Service->>Manager: typed lifecycle method
+    Manager->>Jobs: Submit(payload, transaction)
+    Jobs->>Dispatcher: Submit(payload, transaction)
+    Dispatcher-->>Manager: durable job ID
+    Manager-->>Service: committed resource
     Service-->>Handler: API response
 ```
 
@@ -88,13 +128,13 @@ keeping `desiredState=running`.
 
 ## Provider Catalog and Worker Wiring
 
-`internal/service` may compose provider catalogs and worker-store adapters because
-it sits at the application boundary. Provider implementations must receive narrow
+`internal/service` may compose provider catalogs and worker managers because it
+sits at the application boundary. Provider implementations must receive narrow
 interfaces or root contracts; they must not depend on `server/internal` packages.
 
-Worker-backed provider support should go through `workerStore`, which adapts
-`internal/store` and worker job submitters to the interfaces expected by provider
-code.
+Worker-backed provider support should go through
+`internal/resources/workers.Manager`, which adapts `internal/store` and typed
+worker job-manager methods to the narrow interfaces expected by provider code.
 
 ## Error Mapping
 

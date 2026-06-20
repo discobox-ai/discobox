@@ -11,16 +11,19 @@ are wired only at composition boundaries.
 ```mermaid
 flowchart LR
     clients[CLI / UI / API clients] -->|Server REST API| http[internal/server]
-    http --> api[internal/api or internal/generatedapi]
+    http --> api[internal/services]
+    api --> handlers[internal/handlers]
     http --> database[internal/database]
     http -. passes GORM handles .-> store[internal/store]
     api --> service[internal/service]
+    service --> resources[internal/resources/{resource}]
     service --> store
     service --> events[internal/events]
-    service --> orchestration[orchestration module]
-    orchestration --> sandbox[internal/sandbox]
-    sandbox --> providers[providers module]
-    sandbox --> sandboxauth[internal/sandboxauth]
+    service --> jobs[internal/resources/jobs]
+    jobs --> orchestration[orchestration module]
+    orchestration --> resources
+    resources --> providers[providers module]
+    resources --> sandboxauth[internal/auth/sandbox]
 ```
 
 Keep the server as the control plane:
@@ -40,10 +43,11 @@ of deriving the contract from Go route registration.
 
 Current transition state:
 
-- `internal/server.NewRouter`, `NewApplicationRouter`, and `NewGeneratedRouter`
+- `internal/server.NewRouter`, `NewApp`, and `NewGeneratedRouter`
   compose chi routers around the generated OpenAPI server scaffold.
-- `internal/generatedapi` adapts generated operations to API-facing services.
-- `internal/api` owns service interfaces and aliases generated server DTOs for
+- `internal/handlers` adapts generated operations to API-facing services and
+  constructs the generated OpenAPI server.
+- `internal/services` owns service interfaces and aliases generated server DTOs for
   server packages during the generated-server migration.
 - Project stream websocket and SSE routes stay hand-wired in
   `internal/projectstream`; generated OpenAPI scaffolding does not own streaming
@@ -86,42 +90,50 @@ sequenceDiagram
     participant API as API handler
     participant Service as internal/service
     participant Store as internal/store
-    participant Jobs as orchestration
-    participant Reconciler as internal/sandbox
+    participant Jobs as internal/resources/jobs + orchestration
+    participant Manager as resource manager
     participant Provider as providers module
 
     Client->>Router: REST request
     Router->>API: decoded operation
     API->>Service: business command
-    Service->>Store: transaction: resource + event + job
-    Store-->>Service: committed intent
-    Jobs->>Reconciler: generation-scoped job
-    Reconciler->>Store: load latest resource generation
-    Reconciler->>Provider: runtime action when current
-    Reconciler->>Store: observed state + event
+    Service->>Manager: lifecycle command
+    Manager->>Store: transaction: resource + event + job
+    Store-->>Manager: committed intent
+    Jobs->>Manager: generation-scoped reconcile job
+    Manager->>Store: load latest resource generation
+    Manager->>Provider: runtime action when current
+    Manager->>Store: observed state + event
 ```
 
 API handlers stay thin: decode generated OpenAPI DTOs, call services, and encode
-responses. Services own validation, intent changes, event creation, and job
-submission. Reconcilers own generation checks and runtime operation progress.
+responses. Services own API validation and delegate lifecycle work to resource
+managers. Resource managers own intent changes, job submission, generation checks,
+and runtime operation progress. `internal/resources/jobs` owns dispatcher infrastructure.
 
 ## Package Map
 
 | Package/path | Ownership |
 | --- | --- |
 | `cmd/discobox-server` | Server binary entrypoint. |
-| `internal/server` | HTTP startup, chi router composition, auth middleware wiring, generated route mounting, and hand-wired stream transport registration. |
+| `internal/server` | HTTP startup, chi router composition, auth middleware wiring, generated route mounting, hand-wired stream transport registration, and application component wiring. |
 | `internal/auth` | Request authentication, authorization, and principal context helpers. |
 | `internal/server/defaults` | Startup/default identity initialization. |
-| `internal/api` | Service interfaces and generated server DTO aliases used across server packages during the generated-server migration. |
-| `internal/generatedapi` | Generated OpenAPI handler adapter layer for server business logic. |
-| `internal/service` | API-facing business logic, default data initialization, intent transactions, and provider catalog behavior. |
-| `internal/sandbox` | Server-owned sandbox/worker reconcilers, job submitters, root `sandboxprovider.ProviderManager` injection/usage, and sandbox-service glue. |
+| `internal/services` | Service interfaces and generated server DTO aliases used across server packages during the generated-server migration. |
+| `internal/handlers` | Generated OpenAPI handler adapter methods split by resource; transport DTO conversion only. |
+| `internal/resources/jobs` | Server-wide durable job manager and dispatcher lifecycle. |
+| `internal/service` | Root API service aggregation, default data initialization, service startup, and job executor registration. |
+| `internal/resources/agentconfigs` | Agent config definition and project-scoped agent config API behavior. |
+| `internal/resources/events` | Project event query and subscription service behavior. |
+| `internal/resources/projects` | Project read service behavior. |
+| `internal/resources/sandboxes` | Sandbox API service behavior, sandbox reconcile executor/payload, sandbox runtime reconciliation, and sandbox provider catalog helpers. |
+| `internal/resources/workers` | Worker API service behavior, provider-facing worker manager, worker reconcile executor/payload, and worker runtime reconciliation. |
+| `internal/resources/providers` | Provider-instance API service behavior, startup reconciliation, provider reconcile executor/payload, and provider-runtime ensure coordination. |
 | `internal/database` | Database config, connection setup, and migrations. |
 | `internal/store` | Persistence methods, resource transactions, project events, and durable job records. |
 | `internal/events` | In-process project event broker for committed resource events. |
 | `internal/projectstream` | Websocket/SSE project event streaming transports. |
-| `internal/sandboxauth` | Sandbox access issuer keys and worker/sandbox auth token helpers. |
+| `internal/auth/sandbox` | Sandbox access issuer keys and worker/sandbox auth token helpers. |
 | `internal/secrets` | Encryption/sealing interfaces and implementations used by server persistence. |
 | `internal/config` | Server configuration loading. |
 
@@ -144,8 +156,15 @@ submission. Reconcilers own generation checks and runtime operation progress.
 | `internal/auth` | [`internal/auth/DESIGN.md`](internal/auth/DESIGN.md) |
 | `internal/database` | [`internal/database/DESIGN.md`](internal/database/DESIGN.md) |
 | `internal/projectstream` | [`internal/projectstream/DESIGN.md`](internal/projectstream/DESIGN.md) |
-| `internal/sandbox` | [`internal/sandbox/DESIGN.md`](internal/sandbox/DESIGN.md) |
-| `internal/sandboxauth` | [`internal/sandboxauth/DESIGN.md`](internal/sandboxauth/DESIGN.md) |
+| `internal/resources` | [`internal/resources/DESIGN.md`](internal/resources/DESIGN.md) |
+| `internal/resources/agentconfigs` | [`internal/resources/agentconfigs/DESIGN.md`](internal/resources/agentconfigs/DESIGN.md) |
+| `internal/resources/events` | [`internal/resources/events/DESIGN.md`](internal/resources/events/DESIGN.md) |
+| `internal/resources/jobs` | [`internal/resources/jobs/DESIGN.md`](internal/resources/jobs/DESIGN.md) |
+| `internal/resources/providers` | [`internal/resources/providers/DESIGN.md`](internal/resources/providers/DESIGN.md) |
+| `internal/resources/projects` | [`internal/resources/projects/DESIGN.md`](internal/resources/projects/DESIGN.md) |
+| `internal/resources/sandboxes` | [`internal/resources/sandboxes/DESIGN.md`](internal/resources/sandboxes/DESIGN.md) |
+| `internal/resources/workers` | [`internal/resources/workers/DESIGN.md`](internal/resources/workers/DESIGN.md) |
+| `internal/auth/sandbox` | [`internal/auth/sandbox/DESIGN.md`](internal/auth/sandbox/DESIGN.md) |
 | `internal/service` | [`internal/service/DESIGN.md`](internal/service/DESIGN.md) |
 | `internal/store` | [`internal/store/DESIGN.md`](internal/store/DESIGN.md) |
 

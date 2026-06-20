@@ -8,12 +8,12 @@ import (
 
 	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
-	"github.com/obot-platform/discobox/server/internal/api"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/events"
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/internal/sandbox/jobs"
+	sandboxjobs "github.com/obot-platform/discobox/server/internal/resources/jobs"
+	"github.com/obot-platform/discobox/server/internal/resources/sandboxes"
 	"github.com/obot-platform/discobox/server/internal/service"
+	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
@@ -21,7 +21,7 @@ func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {
 	ctx := context.Background()
 	svc, reconciler := newSandboxTestService(t, nil)
 
-	sandbox, err := svc.CreateSandbox(ctx, service.DefaultProjectID, api.CreateSandboxBody{Name: "alpha"})
+	sandbox, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Name: "alpha"})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
@@ -29,7 +29,7 @@ func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {
 		t.Fatalf("create generation = %d, want 1", sandbox.Generation)
 	}
 
-	stopped, err := svc.StopSandbox(ctx, service.DefaultProjectID, sandbox.ID, api.StopSandboxBody{})
+	stopped, err := svc.StopSandbox(ctx, service.DefaultProjectID, sandbox.ID, services.StopSandboxBody{})
 	if err != nil {
 		t.Fatalf("stop sandbox: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestSandboxIntentCreatesGenerationScopedJobs(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newSandboxTestService(t, nil)
 
-	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, api.CreateSandboxBody{Name: "alpha"})
+	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Name: "alpha"})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
@@ -55,7 +55,7 @@ func TestSandboxIntentCreatesGenerationScopedJobs(t *testing.T) {
 		t.Fatal("create last job ID is nil")
 	}
 
-	started, err := svc.StartSandbox(ctx, service.DefaultProjectID, created.ID, api.StartSandboxBody{})
+	started, err := svc.StartSandbox(ctx, service.DefaultProjectID, created.ID, services.StartSandboxBody{})
 	if err != nil {
 		t.Fatalf("start sandbox: %v", err)
 	}
@@ -90,35 +90,37 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	broker := events.NewBroker()
 	appStore := store.New(db.Write, db.Read, store.WithPublisher(broker))
 	queueConfig := orchestration.QueueConfig{DefaultMaxAttempts: 3}
-	dispatcher := orchestration.NewDispatcher(appStore, orchestration.DispatcherConfig{
-		SingleNode:         true,
+	jobManager := sandboxjobs.NewManager(ctx, appStore, sandboxjobs.ManagerConfig{
+		Enabled:            true,
+		QueueConfig:        queueConfig,
 		PollInterval:       10 * time.Millisecond,
 		JobTimeout:         time.Second,
 		StaleJobTimeout:    time.Minute,
 		ImmediateExecution: true,
 		DefaultConcurrency: 1,
 	})
-	svc := service.New(appStore, queueConfig, func(context.Context) { dispatcher.NotifyNewJob() }, broker)
-	reconciler := sandbox.NewSandboxReconciler(appStore)
-	if err := dispatcher.Register(jobs.SandboxReconcileType, jobs.NewSandboxReconcileExecutor(reconciler)); err != nil {
+	svc := service.New(appStore, queueConfig, jobManager.NotifyNewJob, broker)
+	svc.SetJobManager(jobManager, service.JobManagerOptions{})
+	reconciler := sandboxes.NewSandboxReconciler(appStore)
+	if err := jobManager.Register(sandboxes.SandboxReconcileType, sandboxes.NewSandboxReconcileExecutor(reconciler)); err != nil {
 		t.Fatalf("register executor: %v", err)
 	}
 
 	if err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
-	if err := dispatcher.Start(ctx); err != nil {
-		t.Fatalf("start dispatcher: %v", err)
+	if err := jobManager.Start(ctx); err != nil {
+		t.Fatalf("start job manager: %v", err)
 	}
 	t.Cleanup(func() {
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
 		defer stopCancel()
-		if err := dispatcher.DrainAndStop(stopCtx); err != nil {
-			t.Fatalf("stop dispatcher: %v", err)
+		if err := jobManager.Stop(stopCtx); err != nil {
+			t.Fatalf("stop job manager: %v", err)
 		}
 	})
 
-	sandbox, err := svc.CreateSandbox(ctx, service.DefaultProjectID, api.CreateSandboxBody{Name: "alpha"})
+	sandbox, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Name: "alpha"})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
@@ -130,7 +132,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 		t.Fatalf("created active operation = %v, want nil", *sandbox.ActiveOperation)
 	}
 
-	if _, err := svc.StopSandbox(ctx, service.DefaultProjectID, sandbox.ID, api.StopSandboxBody{}); err != nil {
+	if _, err := svc.StopSandbox(ctx, service.DefaultProjectID, sandbox.ID, services.StopSandboxBody{}); err != nil {
 		t.Fatalf("stop sandbox: %v", err)
 	}
 	sandbox = waitForSandboxPhase(t, ctx, svc, sandbox.ID, model.SandboxPhaseStopped)
@@ -138,7 +140,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 		t.Fatalf("stopped desired state = %q, want %q", sandbox.DesiredState, model.SandboxDesiredStateStopped)
 	}
 
-	if _, err := svc.StartSandbox(ctx, service.DefaultProjectID, sandbox.ID, api.StartSandboxBody{}); err != nil {
+	if _, err := svc.StartSandbox(ctx, service.DefaultProjectID, sandbox.ID, services.StartSandboxBody{}); err != nil {
 		t.Fatalf("start sandbox: %v", err)
 	}
 	sandbox = waitForSandboxPhase(t, ctx, svc, sandbox.ID, model.SandboxPhaseRunning)
@@ -146,7 +148,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 		t.Fatalf("started desired state = %q, want %q", sandbox.DesiredState, model.SandboxDesiredStateRunning)
 	}
 
-	if _, err := svc.RestartSandbox(ctx, service.DefaultProjectID, sandbox.ID, api.RestartSandboxBody{}); err != nil {
+	if _, err := svc.RestartSandbox(ctx, service.DefaultProjectID, sandbox.ID, services.RestartSandboxBody{}); err != nil {
 		t.Fatalf("restart sandbox: %v", err)
 	}
 	sandbox = waitForSandboxPhase(t, ctx, svc, sandbox.ID, model.SandboxPhaseRunning)
@@ -166,7 +168,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	}
 }
 
-func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sandbox.SandboxReconciler) {
+func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sandboxes.SandboxReconciler) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -191,9 +193,24 @@ func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sand
 		notifyContext = func(context.Context) { notify() }
 	}
 	svc := service.New(appStore, queueConfig, notifyContext, broker)
+	jobManager := sandboxjobs.NewManager(ctx, appStore, sandboxjobs.ManagerConfig{
+		Enabled:     true,
+		QueueConfig: queueConfig,
+	})
+	svc.SetJobManager(jobManager, service.JobManagerOptions{})
 	if err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
+	if err := jobManager.Start(ctx); err != nil {
+		t.Fatalf("start job manager: %v", err)
+	}
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := jobManager.Stop(stopCtx); err != nil {
+			t.Fatalf("stop job manager: %v", err)
+		}
+	})
 	return svc, svc.NewSandboxReconciler()
 }
 

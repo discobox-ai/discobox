@@ -18,11 +18,11 @@ import (
 
 	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
-	"github.com/obot-platform/discobox/server/internal/api"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/events"
-	"github.com/obot-platform/discobox/server/internal/sandbox/jobs"
+	"github.com/obot-platform/discobox/server/internal/resources/workers"
 	"github.com/obot-platform/discobox/server/internal/service"
+	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
@@ -76,7 +76,7 @@ func TestDockerProviderWorkerCreateFlowE2E(t *testing.T) {
 		DefaultConcurrency: 2,
 	})
 	svc := service.New(appStore, queueConfig, func(context.Context) { dispatcher.NotifyNewJob() }, broker)
-	if err := dispatcher.Register(jobs.WorkerReconcileType, jobs.NewWorkerReconcileExecutor(svc.NewWorkerReconciler())); err != nil {
+	if err := dispatcher.Register(workers.WorkerReconcileType, workers.NewWorkerReconcileExecutor(svc.NewWorkerReconciler())); err != nil {
 		t.Fatalf("register worker executor: %v", err)
 	}
 	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
@@ -105,7 +105,7 @@ func TestDockerProviderWorkerCreateFlowE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal provider config: %v", err)
 	}
-	provider, err := svc.CreateSandboxProviderInstance(ctx, service.DefaultProjectID, api.CreateSandboxProviderInstanceBody{
+	provider, err := svc.CreateSandboxProviderInstance(ctx, service.DefaultProjectID, services.CreateSandboxProviderInstanceBody{
 		Type:   "docker",
 		Name:   "docker e2e",
 		Config: providerConfig,

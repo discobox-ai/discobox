@@ -20,7 +20,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/obot-platform/discobox/model"
-	"github.com/obot-platform/discobox/server/internal/api"
+	services "github.com/obot-platform/discobox/server/internal/services"
 )
 
 const (
@@ -112,7 +112,7 @@ type subscription struct {
 }
 
 // RegisterProjectStreamRoutes registers websocket stream routes on the router.
-func RegisterProjectStreamRoutes(router chi.Router, service api.ProjectEventService) {
+func RegisterProjectStreamRoutes(router chi.Router, service services.ProjectEventService) {
 	router.Get("/projects/{projectId}/stream", func(w http.ResponseWriter, r *http.Request) {
 		if service == nil {
 			http.Error(w, "project event service is not configured", http.StatusServiceUnavailable)
@@ -131,7 +131,7 @@ func RegisterProjectStreamRoutes(router chi.Router, service api.ProjectEventServ
 // RegisterProjectStreamSSERoutes registers the OpenAPI-documented static
 // project stream subscription endpoint. Reconnecting clients may request the
 // current resource list before receiving live detail events.
-func RegisterProjectStreamSSERoutes(router chi.Router, service api.ProjectEventService) {
+func RegisterProjectStreamSSERoutes(router chi.Router, service services.ProjectEventService) {
 	router.Get("/projects/{projectId}/stream/sse", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		flusher, _ := w.(http.Flusher)
@@ -171,7 +171,7 @@ func queryBool(value string, fallback bool) bool {
 
 // ProjectStreamSocket multiplexes project-scoped subscriptions over one websocket.
 type ProjectStreamSocket struct {
-	service   api.ProjectEventService
+	service   services.ProjectEventService
 	projectID string
 	conn      *websocket.Conn
 	ctx       context.Context
@@ -182,7 +182,7 @@ type ProjectStreamSocket struct {
 	subscriptions   map[subscriptionKey]*subscription
 }
 
-func NewProjectStreamSocket(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, projectID string, service api.ProjectEventService) *ProjectStreamSocket {
+func NewProjectStreamSocket(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, projectID string, service services.ProjectEventService) *ProjectStreamSocket {
 	conn.SetReadLimit(1 << 20)
 	return &ProjectStreamSocket{
 		service:       service,
@@ -462,7 +462,7 @@ func (req ProjectStreamSubscriptionRequest) historyEnabled() bool {
 
 type sseSendFunc func(event string, data any) error
 
-func runProjectStreamSSE(ctx context.Context, service api.ProjectEventService, input *ProjectStreamSSEInput, send sseSendFunc) {
+func runProjectStreamSSE(ctx context.Context, service services.ProjectEventService, input *ProjectStreamSSEInput, send sseSendFunc) {
 	stream := strings.TrimSpace(input.Stream)
 	if stream == "" {
 		stream = streamSandbox
@@ -527,7 +527,7 @@ func runProjectStreamSSE(ctx context.Context, service api.ProjectEventService, i
 	}
 }
 
-func writeSSESandboxList(ctx context.Context, service api.ProjectEventService, projectID string, req ProjectStreamSubscriptionRequest, seq int64, send sseSendFunc) bool {
+func writeSSESandboxList(ctx context.Context, service services.ProjectEventService, projectID string, req ProjectStreamSubscriptionRequest, seq int64, send sseSendFunc) bool {
 	start := ResourceListStartEvent{
 		ProjectID: projectID,
 		Resources: []string{"sandbox"},

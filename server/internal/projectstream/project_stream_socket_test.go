@@ -15,7 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/obot-platform/discobox/model"
-	"github.com/obot-platform/discobox/server/internal/api"
+	services "github.com/obot-platform/discobox/server/internal/services"
 )
 
 type fakeProjectEventService struct {
@@ -301,7 +301,7 @@ func testProjectStreamServer(t *testing.T) *httptest.Server {
 	return server
 }
 
-func testProjectStreamSSEServer(t *testing.T, service api.ProjectEventService) *httptest.Server {
+func testProjectStreamSSEServer(t *testing.T, service services.ProjectEventService) *httptest.Server {
 	t.Helper()
 	router := chi.NewRouter()
 	RegisterProjectStreamSSERoutes(router, service)
@@ -314,7 +314,7 @@ func websocketURL(serverURL string) string {
 	return "ws" + strings.TrimPrefix(serverURL, "http") + "/projects/project-1/stream"
 }
 
-func testSocket(ctx context.Context, cancel context.CancelFunc, service api.ProjectEventService) *ProjectStreamSocket {
+func testSocket(ctx context.Context, cancel context.CancelFunc, service services.ProjectEventService) *ProjectStreamSocket {
 	return &ProjectStreamSocket{
 		service:       service,
 		projectID:     "project-1",

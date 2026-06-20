@@ -1,0 +1,101 @@
+package handlers
+
+import (
+	"context"
+
+	serverapi "github.com/obot-platform/discobox/api/servergen"
+	services "github.com/obot-platform/discobox/server/internal/services"
+)
+
+func (h *Handler) ListSandboxes(ctx context.Context, params serverapi.ListSandboxesParams) (serverapi.ListSandboxesRes, error) {
+	sandboxes, err := h.services.Sandboxes.ListSandboxes(ctx, params.ProjectId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[serverapi.ListSandboxesBody](struct {
+		Sandboxes any `json:"sandboxes"`
+	}{Sandboxes: sandboxes})
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+func (h *Handler) CreateSandbox(ctx context.Context, req *serverapi.CreateSandboxBody, params serverapi.CreateSandboxParams) (serverapi.CreateSandboxRes, error) {
+	sandbox, err := h.services.Sandboxes.CreateSandbox(ctx, params.ProjectId, *req)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[serverapi.Sandbox](sandbox)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+func (h *Handler) GetSandbox(ctx context.Context, params serverapi.GetSandboxParams) (serverapi.GetSandboxRes, error) {
+	sandbox, err := h.services.Sandboxes.GetSandbox(ctx, params.ProjectId, params.SandboxId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[serverapi.Sandbox](sandbox)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+func (h *Handler) UpdateSandbox(ctx context.Context, req *serverapi.UpdateSandboxBody, params serverapi.UpdateSandboxParams) (serverapi.UpdateSandboxRes, error) {
+	sandbox, err := h.services.Sandboxes.UpdateSandbox(ctx, params.ProjectId, params.SandboxId, *req)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[serverapi.Sandbox](sandbox)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+func (h *Handler) DeleteSandbox(ctx context.Context, params serverapi.DeleteSandboxParams) (serverapi.DeleteSandboxRes, error) {
+	if err := h.services.Sandboxes.DeleteSandbox(ctx, params.ProjectId, params.SandboxId); err != nil {
+		return apiError(err), nil
+	}
+	return &serverapi.DeleteSandboxAccepted{}, nil
+}
+
+func (h *Handler) StartSandbox(ctx context.Context, req *serverapi.StartSandboxBody, params serverapi.StartSandboxParams) (serverapi.StartSandboxRes, error) {
+	sandbox, err := h.services.Sandboxes.StartSandbox(ctx, params.ProjectId, params.SandboxId, *req)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[serverapi.Sandbox](sandbox)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+func (h *Handler) StopSandbox(ctx context.Context, req *serverapi.StopSandboxBody, params serverapi.StopSandboxParams) (serverapi.StopSandboxRes, error) {
+	sandbox, err := h.services.Sandboxes.StopSandbox(ctx, params.ProjectId, params.SandboxId, *req)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[serverapi.Sandbox](sandbox)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+func (h *Handler) RestartSandbox(ctx context.Context, req *serverapi.RestartSandboxBody, params serverapi.RestartSandboxParams) (serverapi.RestartSandboxRes, error) {
+	sandbox, err := h.services.Sandboxes.RestartSandbox(ctx, params.ProjectId, params.SandboxId, *req)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[serverapi.Sandbox](sandbox)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}

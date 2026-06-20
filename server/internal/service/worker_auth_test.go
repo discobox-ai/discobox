@@ -15,11 +15,11 @@ import (
 	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
-	"github.com/obot-platform/discobox/server/internal/api"
 	"github.com/obot-platform/discobox/server/internal/auth"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/events"
 	"github.com/obot-platform/discobox/server/internal/service"
+	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
@@ -28,17 +28,17 @@ func TestUpdateWorkerStatusRequiresValidBearerToken(t *testing.T) {
 	svc, appStore, db := newWorkerAuthService(t)
 	workerID, token := registerTestWorker(t, ctx, svc, appStore)
 
-	if _, err := updateTestWorkerStatus(ctx, svc, appStore, "Bearer "+token, workerID, api.UpdateWorkerStatusBody{Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err != nil {
+	if _, err := updateTestWorkerStatus(ctx, svc, appStore, "Bearer "+token, workerID, services.UpdateWorkerStatusBody{Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err != nil {
 		t.Fatalf("update with valid token: %v", err)
 	}
-	if _, err := updateTestWorkerStatus(ctx, svc, appStore, "Bearer wrong", workerID, api.UpdateWorkerStatusBody{Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err == nil {
+	if _, err := updateTestWorkerStatus(ctx, svc, appStore, "Bearer wrong", workerID, services.UpdateWorkerStatusBody{Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err == nil {
 		t.Fatal("expected invalid token to be rejected")
 	}
 
 	if err := db.Write.WithContext(ctx).Model(&model.WorkerAuthToken{}).Where("worker_id = ?", workerID).Update("expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
 		t.Fatalf("expire auth token: %v", err)
 	}
-	if _, err := updateTestWorkerStatus(ctx, svc, appStore, "Bearer "+token, workerID, api.UpdateWorkerStatusBody{Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err == nil {
+	if _, err := updateTestWorkerStatus(ctx, svc, appStore, "Bearer "+token, workerID, services.UpdateWorkerStatusBody{Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err == nil {
 		t.Fatal("expected expired token to be rejected")
 	}
 
@@ -59,7 +59,7 @@ func TestUpdateWorkerStatusRequiresValidBearerToken(t *testing.T) {
 	if !ok || principal.WorkerID != otherWorkerID {
 		t.Fatalf("authenticated principal = %#v, ok %v, want worker %s", principal, ok, otherWorkerID)
 	}
-	if _, err := svc.UpdateWorkerStatus(workerCtx, workerID, api.UpdateWorkerStatusBody{Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err == nil {
+	if _, err := svc.UpdateWorkerStatus(workerCtx, workerID, services.UpdateWorkerStatusBody{Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err == nil {
 		t.Fatalf("expected worker %s principal to be forbidden for worker %s URL", otherWorkerID, workerID)
 	}
 }
@@ -68,7 +68,7 @@ func TestGetSandboxProviderInstanceIncludesWorkerStatus(t *testing.T) {
 	ctx := context.Background()
 	svc, appStore, db := newWorkerAuthService(t)
 	workerID, token := registerTestWorker(t, ctx, svc, appStore)
-	if _, err := updateTestWorkerStatus(ctx, svc, appStore, "Bearer "+token, workerID, api.UpdateWorkerStatusBody{
+	if _, err := updateTestWorkerStatus(ctx, svc, appStore, "Bearer "+token, workerID, services.UpdateWorkerStatusBody{
 		Ready:                 true,
 		Schedulable:           true,
 		AvailableCpuVcpus:     2,
@@ -139,7 +139,7 @@ func newWorkerAuthService(t *testing.T) (*service.Service, *store.Store, *databa
 	return svc, appStore, db
 }
 
-func updateTestWorkerStatus(ctx context.Context, svc *service.Service, appStore *store.Store, authorization, workerID string, input api.UpdateWorkerStatusBody) (*model.Worker, error) {
+func updateTestWorkerStatus(ctx context.Context, svc *service.Service, appStore *store.Store, authorization, workerID string, input services.UpdateWorkerStatusBody) (*model.Worker, error) {
 	workerCtx, err := authenticateTestWorker(ctx, appStore, authorization)
 	if err != nil {
 		return nil, err
@@ -175,7 +175,7 @@ func registerTestWorker(t *testing.T, ctx context.Context, svc *service.Service,
 	if err := appStore.CreateSandbox(ctx, &model.Sandbox{ID: sandboxID, ProjectID: service.DefaultProjectID, CreatedByUserID: service.DefaultUserID, ProviderInstanceID: &worker.ProviderInstanceID, WorkerID: &worker.ID, Name: "worker sandbox"}); err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	resp, err := svc.RegisterWorker(ctx, api.RegisterWorkerBody{ProjectId: service.DefaultProjectID, SandboxId: sandboxID, BootstrapToken: bootstrap, PublicKey: "public"})
+	resp, err := svc.RegisterWorker(ctx, services.RegisterWorkerBody{ProjectId: service.DefaultProjectID, SandboxId: sandboxID, BootstrapToken: bootstrap, PublicKey: "public"})
 	if err != nil {
 		t.Fatalf("register worker: %v", err)
 	}

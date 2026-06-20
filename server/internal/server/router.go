@@ -8,14 +8,15 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/obot-platform/discobox/orchestration"
-	"github.com/obot-platform/discobox/server/internal/api"
 	"github.com/obot-platform/discobox/server/internal/auth"
+	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
 	"github.com/obot-platform/discobox/server/internal/events"
-	"github.com/obot-platform/discobox/server/internal/generatedapi"
+	"github.com/obot-platform/discobox/server/internal/handlers"
 	"github.com/obot-platform/discobox/server/internal/projectstream"
-	"github.com/obot-platform/discobox/server/internal/sandboxauth"
+	sandboxjobs "github.com/obot-platform/discobox/server/internal/resources/jobs"
 	"github.com/obot-platform/discobox/server/internal/secrets"
 	"github.com/obot-platform/discobox/server/internal/service"
+	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 	"gorm.io/gorm"
 )
@@ -25,8 +26,8 @@ const (
 	Version = "0.1.0"
 )
 
-// ApplicationRouterOptions controls application router wiring.
-type ApplicationRouterOptions struct {
+// AppOptions controls application wiring.
+type AppOptions struct {
 	UserID string
 
 	JobMaxAttempts int
@@ -43,10 +44,9 @@ type ApplicationRouterOptions struct {
 	SandboxReconcileJobConcurrency int
 }
 
-// DefaultApplicationRouterOptions returns the production defaults for the
-// application router.
-func DefaultApplicationRouterOptions() ApplicationRouterOptions {
-	return ApplicationRouterOptions{
+// DefaultAppOptions returns the production defaults for the app.
+func DefaultAppOptions() AppOptions {
+	return AppOptions{
 		JobMaxAttempts:                 3,
 		DispatcherEnabled:              true,
 		DispatcherPollInterval:         time.Second,
@@ -59,11 +59,11 @@ func DefaultApplicationRouterOptions() ApplicationRouterOptions {
 }
 
 // NewRouter creates a chi router backed by the generated OpenAPI server.
-func NewRouter(services api.Services) (*chi.Mux, error) {
+func NewRouter(svc services.Services) (*chi.Mux, error) {
 	router := chi.NewRouter()
 	RegisterDocsRoutes(router)
-	registerProjectStreamTransports(router, services.Events)
-	generated, err := generatedapi.NewServer(services)
+	registerProjectStreamTransports(router, svc.Events)
+	generated, err := handlers.NewServer(svc)
 	if err != nil {
 		return nil, err
 	}
@@ -71,15 +71,14 @@ func NewRouter(services api.Services) (*chi.Mux, error) {
 	return router, nil
 }
 
-// NewApplicationRouter creates the application router backed by persistent services.
-
-func registerProjectStreamTransports(router chi.Router, service api.ProjectEventService) {
+func registerProjectStreamTransports(router chi.Router, service services.ProjectEventService) {
 	projectstream.RegisterProjectStreamRoutes(router, service)
 	projectstream.RegisterProjectStreamSSERoutes(router, service)
 }
 
-func NewApplicationRouter(ctx context.Context, writeDB, readDB *gorm.DB, options ...ApplicationRouterOptions) (*chi.Mux, error) {
-	opts := DefaultApplicationRouterOptions()
+// NewApp creates the app backed by persistent services.
+func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions) (*chi.Mux, error) {
+	opts := DefaultAppOptions()
 	if len(options) > 0 {
 		opts = options[0]
 	}
@@ -92,17 +91,26 @@ func NewApplicationRouter(ctx context.Context, writeDB, readDB *gorm.DB, options
 	queueConfig := orchestration.QueueConfig{
 		DefaultMaxAttempts: opts.JobMaxAttempts,
 	}
-	jobs := newJobManager(ctx, appStore, opts)
-	notifyNewJob := jobs.NotifyNewJob
-	services := service.New(appStore, queueConfig, notifyNewJob, broker)
-	jobs.SetService(services)
+	jobManager := sandboxjobs.NewManager(ctx, appStore, sandboxjobs.ManagerConfig{
+		Enabled:            opts.DispatcherEnabled,
+		QueueConfig:        queueConfig,
+		PollInterval:       opts.DispatcherPollInterval,
+		JobTimeout:         opts.DispatcherJobTimeout,
+		StaleJobTimeout:    opts.DispatcherStaleJobTimeout,
+		ImmediateExecution: opts.DispatcherImmediateExecution,
+		DefaultConcurrency: opts.DispatcherDefaultConcurrency,
+	})
+	appServices := service.New(appStore, queueConfig, jobManager.NotifyNewJob, broker)
+	appServices.SetJobManager(jobManager, service.JobManagerOptions{
+		SandboxReconcileJobConcurrency: opts.SandboxReconcileJobConcurrency,
+	})
 	if opts.SecretSealer != nil {
-		services.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.SecretSealer))
+		appServices.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.SecretSealer))
 	}
-	if err := services.InitializeDefaults(ctx, opts.UserID); err != nil {
+	if err := appServices.InitializeDefaults(ctx, opts.UserID); err != nil {
 		return nil, err
 	}
-	if err := jobs.Start(ctx); err != nil {
+	if err := appServices.Start(ctx); err != nil {
 		return nil, err
 	}
 	router := chi.NewRouter()
@@ -116,15 +124,15 @@ func NewApplicationRouter(ctx context.Context, writeDB, readDB *gorm.DB, options
 		auth.AuthenticatedAuthorizer{},
 	))
 	RegisterDocsRoutes(router)
-	registerProjectStreamTransports(router, services)
-	generated, err := generatedapi.NewServer(api.Services{
-		Projects:     services,
-		AgentConfigs: services,
-		Sandboxes:    services,
-		Providers:    services,
-		Workers:      services,
-		Jobs:         services,
-		Events:       services,
+	registerProjectStreamTransports(router, appServices)
+	generated, err := handlers.NewServer(services.Services{
+		Projects:     appServices,
+		AgentConfigs: appServices,
+		Sandboxes:    appServices,
+		Providers:    appServices,
+		Workers:      appServices,
+		Jobs:         appServices,
+		Events:       appServices,
 	})
 	if err != nil {
 		return nil, err

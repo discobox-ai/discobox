@@ -14,11 +14,11 @@ import (
 	"github.com/obot-platform/discobox/orchestration"
 	providerdocker "github.com/obot-platform/discobox/providers/sandbox/provider/docker"
 	dockerdriver "github.com/obot-platform/discobox/providers/sandbox/vm/docker"
-	"github.com/obot-platform/discobox/server/internal/api"
+	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
 	"github.com/obot-platform/discobox/server/internal/database"
-	"github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/internal/sandboxauth"
+	"github.com/obot-platform/discobox/server/internal/resources/sandboxes"
 	"github.com/obot-platform/discobox/server/internal/service"
+	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
@@ -33,7 +33,7 @@ func TestSandboxReconcilerDelegatesToProvider(t *testing.T) {
 	reconciler := svc.NewSandboxReconciler()
 
 	sourceURL := mustParseURL(t, "https://example.com/repo.git")
-	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, api.CreateSandboxBody{
+	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
 		Name:      "sandbox-1",
 		SourceUrl: serverapi.NewOptURI(sourceURL),
 		SourceRef: serverapi.NewOptString("main"),
@@ -69,7 +69,7 @@ func TestSandboxReconcilerDelegatesToProvider(t *testing.T) {
 		t.Fatalf("worker id = %v, want worker-1", sb.WorkerID)
 	}
 
-	sb, err = svc.StopSandbox(ctx, service.DefaultProjectID, sb.ID, api.StopSandboxBody{})
+	sb, err = svc.StopSandbox(ctx, service.DefaultProjectID, sb.ID, services.StopSandboxBody{})
 	if err != nil {
 		t.Fatalf("stop sandbox: %v", err)
 	}
@@ -117,7 +117,7 @@ func TestSandboxReconcilerInjectsTrustKey(t *testing.T) {
 	appStore := newProviderCatalogTestStore(t)
 	provider := &recordingSandboxProvider{}
 	auth := &recordingSandboxAuth{trustKey: "public-key"}
-	reconciler := sandbox.NewSandboxReconciler(appStore, sandbox.WithSandboxProvider(provider), sandbox.WithSandboxAuthenticator(auth))
+	reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider), sandboxes.WithSandboxAuthenticator(auth))
 	sb := &model.Sandbox{
 		ID:                "sandbox-1",
 		ProjectID:         service.DefaultProjectID,
@@ -169,7 +169,7 @@ func newProviderCatalogTestStore(t *testing.T) *store.Store {
 func TestSandboxReconcilerNoProviderKeepsStubBehavior(t *testing.T) {
 	ctx := context.Background()
 	svc, reconciler := newSandboxTestService(t, nil)
-	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, api.CreateSandboxBody{Name: "sandbox-1"})
+	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Name: "sandbox-1"})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestServiceSandboxProviderCatalog(t *testing.T) {
 	svc, _ := newSandboxTestService(t, nil)
 	provider := &recordingSandboxProvider{}
 	svc.RegisterSandboxProvider("recording", provider)
-	svc.RegisterSandboxProviderDefinition("planned", sandbox.ProviderDefinition{Name: "Planned"})
+	svc.RegisterSandboxProviderDefinition("planned", sandboxes.ProviderDefinition{Name: "Planned"})
 
 	names := svc.ListSandboxProviderNames()
 	if len(names) != 1 || names[0] != "recording" {
@@ -223,7 +223,7 @@ func TestCreateSandboxProviderInstanceAllowsMissingName(t *testing.T) {
 	svc, _ := newSandboxTestService(t, nil)
 	svc.RegisterSandboxProvider("recording", &recordingSandboxProvider{})
 
-	provider, err := svc.CreateSandboxProviderInstance(ctx, service.DefaultProjectID, api.CreateSandboxProviderInstanceBody{
+	provider, err := svc.CreateSandboxProviderInstance(ctx, service.DefaultProjectID, services.CreateSandboxProviderInstanceBody{
 		Type: "recording",
 	})
 	if err != nil {
@@ -398,7 +398,7 @@ func TestServiceResolvesDigitalOceanProviderInstance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve digitalocean provider: %v", err)
 	}
-	definitionProvider, ok := provider.(sandbox.DefinitionProvider)
+	definitionProvider, ok := provider.(sandboxes.DefinitionProvider)
 	if !ok {
 		t.Fatalf("provider does not expose definition")
 	}
@@ -428,53 +428,53 @@ type recordingSandboxProvider struct {
 	startCalls    int
 	stopCalls     int
 	removeCalls   int
-	createRef     sandbox.SandboxRef
-	createOptions sandbox.CreateOptions
+	createRef     sandboxes.SandboxRef
+	createOptions sandboxes.CreateOptions
 }
 
-func (p *recordingSandboxProvider) List(context.Context) ([]*sandbox.Sandbox, error) {
+func (p *recordingSandboxProvider) List(context.Context) ([]*sandboxes.Sandbox, error) {
 	return nil, nil
 }
-func (p *recordingSandboxProvider) Watch(context.Context) (<-chan sandbox.StateEvent, error) {
-	ch := make(chan sandbox.StateEvent)
+func (p *recordingSandboxProvider) Watch(context.Context) (<-chan sandboxes.StateEvent, error) {
+	ch := make(chan sandboxes.StateEvent)
 	close(ch)
 	return ch, nil
 }
 func (p *recordingSandboxProvider) Reconcile(context.Context) error             { return nil }
 func (p *recordingSandboxProvider) RemoveProject(context.Context, string) error { return nil }
-func (p *recordingSandboxProvider) PrepareState(context.Context, sandbox.SandboxRef, sandbox.CreateOptions) ([]byte, error) {
+func (p *recordingSandboxProvider) PrepareState(context.Context, sandboxes.SandboxRef, sandboxes.CreateOptions) ([]byte, error) {
 	return nil, nil
 }
-func (p *recordingSandboxProvider) Create(_ context.Context, ref sandbox.SandboxRef, _ []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {
+func (p *recordingSandboxProvider) Create(_ context.Context, ref sandboxes.SandboxRef, _ []byte, opts sandboxes.CreateOptions) (*sandboxes.Sandbox, []byte, error) {
 	p.createCalls++
 	p.createRef = ref
 	p.createOptions = opts
-	return &sandbox.Sandbox{
+	return &sandboxes.Sandbox{
 		ID:        "runtime-" + ref.SandboxID,
 		SandboxID: ref.SandboxID,
-		Status:    sandbox.StatusCreated,
+		Status:    sandboxes.StatusCreated,
 		Image:     "recording:latest",
 		CreatedAt: time.Now().UTC(),
 		Metadata:  map[string]string{"worker_id": "worker-1"},
 	}, []byte("created"), nil
 }
-func (p *recordingSandboxProvider) Start(context.Context, sandbox.SandboxRef, []byte) (*sandbox.Sandbox, []byte, error) {
+func (p *recordingSandboxProvider) Start(context.Context, sandboxes.SandboxRef, []byte) (*sandboxes.Sandbox, []byte, error) {
 	p.startCalls++
 	return nil, []byte("started"), nil
 }
-func (p *recordingSandboxProvider) Stop(context.Context, sandbox.SandboxRef, []byte, time.Duration) (*sandbox.Sandbox, []byte, error) {
+func (p *recordingSandboxProvider) Stop(context.Context, sandboxes.SandboxRef, []byte, time.Duration) (*sandboxes.Sandbox, []byte, error) {
 	p.stopCalls++
 	return nil, []byte("stopped"), nil
 }
-func (p *recordingSandboxProvider) Remove(context.Context, sandbox.SandboxRef, []byte, ...sandbox.RemoveOption) ([]byte, error) {
+func (p *recordingSandboxProvider) Remove(context.Context, sandboxes.SandboxRef, []byte, ...sandboxes.RemoveOption) ([]byte, error) {
 	p.removeCalls++
 	return nil, nil
 }
-func (p *recordingSandboxProvider) Get(context.Context, sandbox.SandboxRef, []byte) (*sandbox.Sandbox, error) {
+func (p *recordingSandboxProvider) Get(context.Context, sandboxes.SandboxRef, []byte) (*sandboxes.Sandbox, error) {
 	return nil, nil
 }
-func (p *recordingSandboxProvider) AcquireHTTPClient(context.Context, sandbox.SandboxRef, []byte) (*sandbox.HTTPClientLease, error) {
-	return sandbox.NewHTTPClientLease(http.DefaultClient, nil), nil
+func (p *recordingSandboxProvider) AcquireHTTPClient(context.Context, sandboxes.SandboxRef, []byte) (*sandboxes.HTTPClientLease, error) {
+	return sandboxes.NewHTTPClientLease(http.DefaultClient, nil), nil
 }
 
 func mustParseURL(t *testing.T, value string) url.URL {

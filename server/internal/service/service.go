@@ -3,18 +3,22 @@ package service
 
 import (
 	"context"
-	"errors"
-	"net/http"
+	"time"
 
-	"github.com/obot-platform/discobox/apperrors"
-
+	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
 	providersandbox "github.com/obot-platform/discobox/providers/sandbox/provider"
 	sandbox "github.com/obot-platform/discobox/sandboxprovider"
-	"github.com/obot-platform/discobox/server/internal/events"
-	"github.com/obot-platform/discobox/server/internal/sandbox/jobs"
-	sandboxservice "github.com/obot-platform/discobox/server/internal/sandbox/service"
-	"github.com/obot-platform/discobox/server/internal/sandboxauth"
+	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
+	eventbroker "github.com/obot-platform/discobox/server/internal/events"
+	"github.com/obot-platform/discobox/server/internal/resources/agentconfigs"
+	resourceevents "github.com/obot-platform/discobox/server/internal/resources/events"
+	resourcejobs "github.com/obot-platform/discobox/server/internal/resources/jobs"
+	"github.com/obot-platform/discobox/server/internal/resources/projects"
+	"github.com/obot-platform/discobox/server/internal/resources/providers"
+	sandboxes "github.com/obot-platform/discobox/server/internal/resources/sandboxes"
+	workers "github.com/obot-platform/discobox/server/internal/resources/workers"
+	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
@@ -25,34 +29,69 @@ const (
 
 // Service implements the API service interfaces using the database store.
 type Service struct {
-	*sandboxservice.Service
+	services.ProjectService
+	services.AgentConfigService
+	*sandboxes.Service
+	services.SandboxProviderInstanceService
+	services.WorkerService
+	services.JobService
+	services.ProjectEventService
+
 	store             *store.Store
-	broker            *events.Broker
-	workerStore       any
-	workerSubmitter   *jobs.WorkerSubmitter
-	providerSubmitter *jobs.ProviderSubmitter
-	notifyNewJob      func(context.Context)
+	jobManager        JobManager
+	jobManagerOptions JobManagerOptions
+	jobs              *resourcejobs.Service
+	providerService   *providers.Service
+	workerManager     *workers.Manager
 }
 
-func New(store *store.Store, queueConfig orchestration.QueueConfig, notifyNewJob func(context.Context), broker ...*events.Broker) *Service {
-	var b *events.Broker
+type JobManager interface {
+	Register(orchestration.Type, orchestration.Executor, ...orchestration.ExecutorOption) error
+	Start(context.Context) error
+	Stop(context.Context) error
+	NotifyNewJob(context.Context)
+	CreateSandbox(context.Context, *model.Sandbox) (*model.Sandbox, error)
+	StartSandbox(context.Context, string, string) (*model.Sandbox, error)
+	StopSandbox(context.Context, string, string) (*model.Sandbox, error)
+	RestartSandbox(context.Context, string, string) (*model.Sandbox, error)
+	DeleteSandbox(context.Context, string, string) (*model.Sandbox, error)
+	CreateWorker(context.Context, *model.Worker) (*model.Worker, error)
+	DeleteWorkerForFailedJob(context.Context, string, int64, string, string) (bool, error)
+	DeleteWorkerForExpiredRegistration(context.Context, string, int64, time.Time, string) (bool, error)
+	EnqueueWorkerCurrent(context.Context, *model.Worker) (*orchestration.Job, error)
+	EnqueueProviderCurrent(context.Context, string, string) (*orchestration.Job, error)
+	OnWorkerReconcileTerminal(context.Context, *orchestration.Job, workers.WorkerReconcilePayload) error
+}
+
+type JobManagerOptions struct {
+	SandboxReconcileJobConcurrency int
+}
+
+func New(store *store.Store, _ orchestration.QueueConfig, _ func(context.Context), broker ...*eventbroker.Broker) *Service {
+	var b *eventbroker.Broker
 	if len(broker) > 0 {
 		b = broker[0]
 	}
 	manager := sandbox.NewProviderManager()
-	sandboxSubmitter := jobs.NewSandboxSubmitter(store, queueConfig, notifyNewJob)
-	workerSubmitter := jobs.NewWorkerSubmitter(store, queueConfig, notifyNewJob)
-	providerSubmitter := jobs.NewProviderSubmitter(store, queueConfig, notifyNewJob)
-	workerStore := newWorkerStore(store, workerSubmitter)
-	providersandbox.RegisterBuiltInSandboxProviderFactories(manager, workerStore)
+	workerManager := workers.NewManager(store)
+	providersandbox.RegisterBuiltInSandboxProviderFactories(manager, workerManager)
+	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, workerManager)
+	providerService := providers.NewService(store, sandboxService, workerManager)
+	jobsService := resourcejobs.NewService(store)
 	return &Service{
-		Service:           sandboxservice.NewService(store, sandboxSubmitter, manager, DefaultUserID, workerStore),
-		store:             store,
-		broker:            b,
-		workerStore:       workerStore,
-		workerSubmitter:   workerSubmitter,
-		providerSubmitter: providerSubmitter,
-		notifyNewJob:      notifyNewJob,
+		ProjectService:                 projects.NewService(store),
+		AgentConfigService:             agentconfigs.NewService(store),
+		Service:                        sandboxService,
+		SandboxProviderInstanceService: providerService,
+		WorkerService:                  workers.NewService(store),
+		JobService:                     jobsService,
+		ProjectEventService:            resourceevents.NewService(store, b),
+
+		jobs:            jobsService,
+		providerService: providerService,
+
+		store:         store,
+		workerManager: workerManager,
 	}
 }
 
@@ -60,16 +99,66 @@ func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 	s.Service.SetSandboxAuthManager(manager)
 }
 
-func (s *Service) ProviderSubmitter() *jobs.ProviderSubmitter {
-	if s == nil {
-		return nil
-	}
-	return s.providerSubmitter
+func (s *Service) SetJobManager(manager JobManager, opts JobManagerOptions) {
+	s.jobManager = manager
+	s.jobManagerOptions = opts
+	s.Service.SetJobManager(manager)
+	s.jobs.SetManager(manager)
+	s.providerService.SetJobManager(manager)
+	s.workerManager.SetJobManager(manager)
 }
 
-func apiError(err error, notFoundMessage string) error {
-	if errors.Is(err, store.ErrNotFound) {
-		return apperrors.NewStatusError(http.StatusNotFound, notFoundMessage)
+func (s *Service) Start(ctx context.Context) error {
+	if s.jobManager != nil {
+		if err := s.registerJobExecutors(); err != nil {
+			return err
+		}
+		if err := s.jobManager.Start(ctx); err != nil {
+			return err
+		}
 	}
-	return err
+	startedJobs := s.jobManager != nil
+	if err := s.EnsureExistingSandboxProviderInstances(ctx); err != nil {
+		if startedJobs {
+			stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			defer cancel()
+			_ = s.jobManager.Stop(stopCtx)
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *Service) registerJobExecutors() error {
+	concurrency := s.jobManagerOptions.SandboxReconcileJobConcurrency
+	executorOptions := []orchestration.ExecutorOption(nil)
+	if concurrency > 0 {
+		executorOptions = append(executorOptions, orchestration.WithConcurrency(concurrency))
+	}
+	if err := s.jobManager.Register(sandboxes.SandboxReconcileType, sandboxes.NewSandboxReconcileExecutor(s.NewSandboxReconciler()), executorOptions...); err != nil {
+		return err
+	}
+	if err := s.jobManager.Register(providers.ProviderReconcileType, providers.NewProviderReconcileExecutor(s), executorOptions...); err != nil {
+		return err
+	}
+	if err := s.jobManager.Register(workers.WorkerReconcileType, workers.NewWorkerReconcileExecutor(s.NewWorkerReconciler(), s.jobManager), executorOptions...); err != nil {
+		return err
+	}
+	return nil
+}
+
+// NewWorkerReconciler returns a provider-manager-backed worker reconciler.
+func (s *Service) NewWorkerReconciler() *workers.WorkerReconciler {
+	return workers.NewWorkerReconciler(
+		s.store,
+		workers.WithWorkerProviderManager(s.SandboxProviderManager()),
+	)
+}
+
+func (s *Service) SandboxProviderManager() *sandbox.ProviderManager {
+	return s.Service.SandboxProviderManager()
+}
+
+func (s *Service) NewSandboxReconciler() *sandboxes.SandboxReconciler {
+	return s.Service.NewSandboxReconciler()
 }

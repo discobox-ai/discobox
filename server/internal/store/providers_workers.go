@@ -88,6 +88,14 @@ func (s *WorkerStore) Update(ctx context.Context, worker *model.Worker) error {
 	return s.UpdateWorker(ctx, worker)
 }
 
+func (s *WorkerStore) UpdateWithGeneration(ctx context.Context, worker *model.Worker, generation int64) error {
+	return s.UpdateWorker(ctx, worker, WithWorkerGeneration(generation))
+}
+
+func (s *WorkerStore) Generation(worker *model.Worker) int64 {
+	return worker.Generation
+}
+
 func (s *WorkerStore) ID(worker *model.Worker) WorkerID {
 	return WorkerID{WorkerID: worker.ID}
 }

@@ -9,13 +9,13 @@ resource persistence, event creation, or authorization policy.
 ```mermaid
 flowchart LR
     router[internal/server router] --> projectstream[internal/projectstream]
-    projectstream --> eventsvc[api.ProjectEventService]
+    projectstream --> eventsvc[services.ProjectEventService]
     eventsvc --> store[internal/store]
     eventsvc --> broker[internal/events]
 ```
 
 - Register HTTP routes from `internal/server`.
-- Read resource snapshots through `api.ProjectEventService`.
+- Read resource snapshots through `services.ProjectEventService`.
 - Subscribe to live events through the same service/broker path used by the rest
   of the server.
 - Keep transport-specific concerns here: protocol framing, subscription state,

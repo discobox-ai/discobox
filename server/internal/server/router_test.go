@@ -15,14 +15,14 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/obot-platform/discobox/gormdb"
 	"github.com/obot-platform/discobox/model"
-	"github.com/obot-platform/discobox/server/internal/api"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/service"
+	services "github.com/obot-platform/discobox/server/internal/services"
 )
 
 func newStubRouterForTest() *chi.Mux {
-	stubs := service.NewStub()
-	router, _ := NewRouter(api.Services{
+	stubs := newRouterTestServices()
+	router, _ := NewRouter(services.Services{
 		Projects:     stubs,
 		AgentConfigs: stubs,
 		Sandboxes:    stubs,
@@ -34,7 +34,7 @@ func newStubRouterForTest() *chi.Mux {
 	return router
 }
 
-func newApplicationRouterTestDB(t *testing.T, ctx context.Context) *database.DB {
+func newAppTestDB(t *testing.T, ctx context.Context) *database.DB {
 	t.Helper()
 	db, err := database.New(database.Config{
 		Driver: gormdb.DriverSQLite,
@@ -55,8 +55,8 @@ func newApplicationRouterTestDB(t *testing.T, ctx context.Context) *database.DB 
 }
 
 func TestNewGeneratedRouterServesOpenAPIAndScalarDocs(t *testing.T) {
-	stubs := service.NewStub()
-	router, err := NewGeneratedRouter(api.Services{
+	stubs := newRouterTestServices()
+	router, err := NewGeneratedRouter(services.Services{
 		Projects:     stubs,
 		AgentConfigs: stubs,
 		Sandboxes:    stubs,
@@ -143,11 +143,11 @@ func TestNewRouterCreateSandboxResolvesAgentName(t *testing.T) {
 	}
 }
 
-func TestNewApplicationRouterStartsWithDefaults(t *testing.T) {
+func TestNewAppStartsWithDefaults(t *testing.T) {
 	ctx := context.Background()
-	db := newApplicationRouterTestDB(t, ctx)
+	db := newAppTestDB(t, ctx)
 
-	router, err := NewApplicationRouter(ctx, db.Write, db.Read, ApplicationRouterOptions{
+	router, err := NewApp(ctx, db.Write, db.Read, AppOptions{
 		DispatcherEnabled: false,
 	})
 	if err != nil {
@@ -174,11 +174,11 @@ func TestNewApplicationRouterStartsWithDefaults(t *testing.T) {
 	}
 }
 
-func TestNewApplicationRouterResolvesDefaultProjectAlias(t *testing.T) {
+func TestNewAppResolvesDefaultProjectAlias(t *testing.T) {
 	ctx := context.Background()
-	db := newApplicationRouterTestDB(t, ctx)
+	db := newAppTestDB(t, ctx)
 
-	router, err := NewApplicationRouter(ctx, db.Write, db.Read, ApplicationRouterOptions{
+	router, err := NewApp(ctx, db.Write, db.Read, AppOptions{
 		DispatcherEnabled: false,
 	})
 	if err != nil {
@@ -205,9 +205,9 @@ func TestNewApplicationRouterResolvesDefaultProjectAlias(t *testing.T) {
 
 func TestProjectStreamReceivesSandboxMutation(t *testing.T) {
 	ctx := context.Background()
-	db := newApplicationRouterTestDB(t, ctx)
+	db := newAppTestDB(t, ctx)
 
-	router, err := NewApplicationRouter(ctx, db.Write, db.Read, ApplicationRouterOptions{
+	router, err := NewApp(ctx, db.Write, db.Read, AppOptions{
 		DispatcherEnabled: false,
 	})
 	if err != nil {

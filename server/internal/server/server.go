@@ -58,7 +58,7 @@ func Run(ctx context.Context) error {
 		}
 	}
 
-	router, err := NewApplicationRouter(ctx, db.Write, db.Read, ApplicationRouterOptions{
+	router, err := NewApp(ctx, db.Write, db.Read, AppOptions{
 		UserID:                         service.DefaultUserID,
 		JobMaxAttempts:                 cfg.JobMaxAttempts,
 		SecretSealer:                   sealer,

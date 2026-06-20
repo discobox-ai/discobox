@@ -3,11 +3,14 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/database"
-	"github.com/obot-platform/discobox/server/internal/sandbox/jobs"
+	"github.com/obot-platform/discobox/server/internal/resources/jobs"
+	"github.com/obot-platform/discobox/server/internal/resources/providers"
+	"github.com/obot-platform/discobox/server/internal/resources/workers"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
@@ -50,9 +53,8 @@ func TestEnqueueProviderWorkersSchedulesEveryWorkerWithDefaultAttempts(t *testin
 		}
 	}
 
-	notifyCount := 0
-	workerSubmitter := jobs.NewWorkerSubmitter(appStore, orchestration.QueueConfig{DefaultMaxAttempts: 5}, func(context.Context) { notifyCount++ })
-	svc := &Service{store: appStore, workerSubmitter: workerSubmitter}
+	jobManager := newStartedProviderStartupTestJobManager(t, ctx, appStore, orchestration.QueueConfig{DefaultMaxAttempts: 5})
+	svc := &Service{store: appStore, jobManager: jobManager}
 	if err := svc.enqueueProviderWorkers(ctx, project.ID, provider.ID); err != nil {
 		t.Fatalf("enqueue provider workers: %v", err)
 	}
@@ -63,7 +65,7 @@ func TestEnqueueProviderWorkersSchedulesEveryWorkerWithDefaultAttempts(t *testin
 	}
 	gotWorkers := map[string]bool{}
 	for _, job := range queued {
-		if job.Type != jobs.WorkerReconcileType {
+		if job.Type != workers.WorkerReconcileType {
 			continue
 		}
 		if job.MaxAttempts != 5 {
@@ -78,9 +80,6 @@ func TestEnqueueProviderWorkersSchedulesEveryWorkerWithDefaultAttempts(t *testin
 	}
 	if gotWorkers["worker-3"] {
 		t.Fatalf("queued worker from a different provider: %#v", gotWorkers)
-	}
-	if notifyCount != 2 {
-		t.Fatalf("notify count = %d, want 2", notifyCount)
 	}
 	for _, id := range []string{"worker-1", "worker-2"} {
 		worker, err := appStore.GetWorker(ctx, id)
@@ -127,9 +126,8 @@ func TestEnsureExistingSandboxProviderInstancesSchedulesProviderReconcile(t *tes
 		}
 	}
 
-	notifyCount := 0
-	providerSubmitter := jobs.NewProviderSubmitter(appStore, orchestration.QueueConfig{DefaultMaxAttempts: 5}, func(context.Context) { notifyCount++ })
-	svc := &Service{store: appStore, providerSubmitter: providerSubmitter}
+	jobManager := newStartedProviderStartupTestJobManager(t, ctx, appStore, orchestration.QueueConfig{DefaultMaxAttempts: 5})
+	svc := &Service{store: appStore, jobManager: jobManager}
 	if err := svc.EnsureExistingSandboxProviderInstances(ctx); err != nil {
 		t.Fatalf("ensure existing providers: %v", err)
 	}
@@ -141,7 +139,7 @@ func TestEnsureExistingSandboxProviderInstancesSchedulesProviderReconcile(t *tes
 	var providerJobs int
 	for _, job := range queued {
 		switch job.Type {
-		case jobs.ProviderReconcileType:
+		case providers.ProviderReconcileType:
 			providerJobs++
 			if job.Resource.Type != "provider" || job.Resource.ID != provider.ID {
 				t.Fatalf("provider job resource = %#v, want provider %s", job.Resource, provider.ID)
@@ -149,16 +147,33 @@ func TestEnsureExistingSandboxProviderInstancesSchedulesProviderReconcile(t *tes
 			if job.MaxAttempts != 5 {
 				t.Fatalf("provider job max attempts = %d, want 5", job.MaxAttempts)
 			}
-		case jobs.WorkerReconcileType:
+		case workers.WorkerReconcileType:
 			t.Fatalf("unexpected worker reconcile job %s from startup", job.ID)
 		}
 	}
 	if providerJobs != 1 {
 		t.Fatalf("provider jobs = %d, want 1", providerJobs)
 	}
-	if notifyCount != 1 {
-		t.Fatalf("notify count = %d, want 1", notifyCount)
+}
+
+func newStartedProviderStartupTestJobManager(t *testing.T, ctx context.Context, appStore *store.Store, queueConfig orchestration.QueueConfig) *jobs.Manager {
+	t.Helper()
+
+	manager := jobs.NewManager(ctx, appStore, jobs.ManagerConfig{
+		Enabled:     true,
+		QueueConfig: queueConfig,
+	})
+	if err := manager.Start(ctx); err != nil {
+		t.Fatalf("start job manager: %v", err)
 	}
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := manager.Stop(stopCtx); err != nil {
+			t.Fatalf("stop job manager: %v", err)
+		}
+	})
+	return manager
 }
 
 func TestListSandboxProviderInstancesIncludesWorkerFailureStatus(t *testing.T) {
@@ -222,7 +237,7 @@ func TestListSandboxProviderInstancesIncludesWorkerFailureStatus(t *testing.T) {
 		t.Fatalf("create other worker: %v", err)
 	}
 
-	svc := &Service{store: appStore}
+	svc := newProviderInstanceTestService(appStore)
 	providers, err := svc.ListSandboxProviderInstances(ctx, project.ID)
 	if err != nil {
 		t.Fatalf("list providers: %v", err)
@@ -294,7 +309,7 @@ func TestListSandboxProviderInstancesTreatsFailedJobCleanupAsFailureStatus(t *te
 		t.Fatalf("create worker: %v", err)
 	}
 
-	svc := &Service{store: appStore}
+	svc := newProviderInstanceTestService(appStore)
 	providers, err := svc.ListSandboxProviderInstances(ctx, project.ID)
 	if err != nil {
 		t.Fatalf("list providers: %v", err)
@@ -308,6 +323,13 @@ func TestListSandboxProviderInstancesTreatsFailedJobCleanupAsFailureStatus(t *te
 	}
 	if status.LastError == nil || *status.LastError != message {
 		t.Fatalf("provider last error = %v, want %q", status.LastError, message)
+	}
+}
+
+func newProviderInstanceTestService(appStore *store.Store) *Service {
+	return &Service{
+		store:                          appStore,
+		SandboxProviderInstanceService: providers.NewService(appStore, nil, nil),
 	}
 }
 

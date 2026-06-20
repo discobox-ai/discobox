@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/obot-platform/discobox/model"
+	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
@@ -48,7 +49,7 @@ func TestListWorkersFiltersByProvider(t *testing.T) {
 		}
 	}
 
-	svc := &Service{store: appStore}
+	svc := New(appStore, orchestration.QueueConfig{}, nil)
 	filtered, err := svc.ListWorkers(ctx, project.ID, providers[0].ID)
 	if err != nil {
 		t.Fatalf("list workers: %v", err)

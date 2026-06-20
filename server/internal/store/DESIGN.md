@@ -9,8 +9,8 @@ records directly.
 ```mermaid
 flowchart LR
     service[internal/service] --> store[internal/store]
-    reconcilers[internal/sandbox] --> store
-    auth[internal/sandboxauth] --> store
+    resources[internal/resources/{resource}] --> store
+    auth[internal/auth/sandbox] --> store
     authn[internal/auth] --> store
     store --> db[(GORM write/read handles)]
     store --> model[root model]
@@ -56,11 +56,11 @@ Do not add database-routing or request-context identity assumptions to store
 methods. Pass the resource boundary explicitly through method parameters or use
 IDs already carried by persisted rows.
 
-Resource-specific store wrappers expose a consistent `Get`, `Create`, `Update`,
-`ID`, and `Reload` shape for orchestration submitters while delegating raw GORM
-queries to this package's existing resource methods. Transaction-scoped wrappers
-must embed the transaction store so resource writes and durable job appends stay
-atomic.
+Resource-specific store wrappers expose a consistent typed lifecycle shape for
+the job manager: `Get`, `Create`, `UpdateWithGeneration`, `ID`, `Reload`, and
+`Generation`, while delegating raw GORM queries to this package's existing
+resource methods. Transaction-scoped wrappers must embed the transaction store
+so resource writes and durable job appends stay atomic.
 
 ## Error Contract
 
