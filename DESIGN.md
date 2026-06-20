@@ -76,6 +76,7 @@ flowchart TD
     server --> gormdb["github.com/obot-platform/discobox/gormdb"]
     hooks --> root
     hooks --> gormdb
+    acp["github.com/obot-platform/discobox/acp"]
     sessions["github.com/obot-platform/discobox/sessions"] --> root
     providers --> root
     providers --> workerAgent["github.com/obot-platform/discobox/worker-agent"]
@@ -100,6 +101,10 @@ flowchart TD
   primitives. It depends inward on stable contracts and shared infrastructure
   helpers such as `gormdb`, but must not depend on server internals. See
   [`hooks/DESIGN.md`](hooks/DESIGN.md).
+- ACP module: standalone ACP implementation registry, install, launch, and
+  protocol-inspection CLI. It uses the official MCP Go SDK transport/json-rpc
+  primitives for newline-delimited stdio where those abstractions are protocol
+  neutral, but keeps ACP method semantics local. See [`acp/DESIGN.md`](acp/DESIGN.md).
 - Sessions module: standalone coding-agent session manager. It starts supported
   agent CLIs in daemon-owned PTYs, exposes attach streams over a local Unix
   socket, and must not depend on server internals. See
