@@ -1,6 +1,6 @@
 module github.com/obot-platform/discobox/cli
 
-go 1.26
+go 1.26.0
 
 require (
 	github.com/go-faster/jx v1.2.0

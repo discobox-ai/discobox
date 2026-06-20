@@ -1,6 +1,6 @@
 module github.com/obot-platform/discobox/worker-agent
 
-go 1.26
+go 1.26.0
 
 replace github.com/obot-platform/discobox => ..
 
@@ -53,7 +53,7 @@ require (
 	golang.org/x/sync v0.20.0 // indirect
 	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
-	golang.org/x/tools v0.44.0 // indirect
+	golang.org/x/tools v0.44.1-0.20260513175300-635ae9663724 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gorm.io/gorm v1.31.1 // indirect
 )
