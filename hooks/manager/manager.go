@@ -131,6 +131,11 @@ func (m *Manager) ListRuns(ctx context.Context, req model.RunListRequest) ([]mod
 	return m.service.ListRuns(ctx, req)
 }
 
+// ListDiagnostics returns current LSP diagnostics.
+func (m *Manager) ListDiagnostics(ctx context.Context, req model.DiagnosticListRequest) ([]model.Diagnostic, error) {
+	return m.service.ListDiagnostics(ctx, req)
+}
+
 // ListObservedChanges returns observed filesystem changes.
 func (m *Manager) ListObservedChanges(ctx context.Context, req model.ListRequest) ([]model.ObservedFileChange, error) {
 	return m.service.ListObservedChanges(ctx, req)

@@ -45,6 +45,12 @@ type Invoker interface {
 	//
 	// GET /changes
 	HooksListChanges(ctx context.Context, params HooksListChangesParams) (*ChangesResponse, error)
+	// HooksListDiagnostics invokes hooks-list-diagnostics operation.
+	//
+	// List current LSP diagnostics.
+	//
+	// GET /diagnostics
+	HooksListDiagnostics(ctx context.Context, params HooksListDiagnosticsParams) (*DiagnosticsResponse, error)
 	// HooksListEvents invokes hooks-list-events operation.
 	//
 	// List recent hook daemon audit events.
@@ -418,6 +424,118 @@ func (c *Client) sendHooksListChanges(ctx context.Context, params HooksListChang
 
 	stage = "DecodeResponse"
 	result, err := decodeHooksListChangesResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// HooksListDiagnostics invokes hooks-list-diagnostics operation.
+//
+// List current LSP diagnostics.
+//
+// GET /diagnostics
+func (c *Client) HooksListDiagnostics(ctx context.Context, params HooksListDiagnosticsParams) (*DiagnosticsResponse, error) {
+	res, err := c.sendHooksListDiagnostics(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendHooksListDiagnostics(ctx context.Context, params HooksListDiagnosticsParams) (res *DiagnosticsResponse, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("hooks-list-diagnostics"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/diagnostics"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, HooksListDiagnosticsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [1]string
+	pathParts[0] = "/diagnostics"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "hook_id" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "hook_id",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.HookID.Get(); ok {
+				return e.EncodeValue(conv.StringToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	{
+		// Encode "limit" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "limit",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Limit.Get(); ok {
+				return e.EncodeValue(conv.IntToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeHooksListDiagnosticsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

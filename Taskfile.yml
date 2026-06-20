@@ -229,6 +229,12 @@ tasks:
       - task: check:ui
       - task: check:electron
 
+  check-hooks:
+    desc: Run hooks checks
+    cmds:
+      - echo 'cd ./hooks; go run ./cmd/discobox-hooks check'
+      - cd ./hooks; go run ./cmd/discobox-hooks check
+
   check:mermaid:
     desc: Validate Mermaid diagrams in Markdown files
     cmds:

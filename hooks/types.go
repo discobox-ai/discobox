@@ -27,6 +27,7 @@ type HookEngine string
 const (
 	HookEngineScript  HookEngine = "script"
 	HookEngineAI      HookEngine = "ai"
+	HookEngineLSP     HookEngine = "lsp"
 	HookEngineBuiltin HookEngine = "builtin"
 )
 
@@ -34,7 +35,7 @@ const (
 // script hooks only; ai is parsed for compatibility and builtin is reserved.
 func (e HookEngine) Valid() bool {
 	switch e {
-	case HookEngineScript, HookEngineAI, HookEngineBuiltin:
+	case HookEngineScript, HookEngineAI, HookEngineLSP, HookEngineBuiltin:
 		return true
 	default:
 		return false
@@ -73,6 +74,8 @@ type Hook struct {
 	Ignore      []string       `json:"ignore,omitempty"`
 	Phase       string         `json:"phase,omitempty"`
 	Subagent    string         `json:"subagent,omitempty"`
+	LanguageID  string         `json:"language_id,omitempty"`
+	MinSeverity string         `json:"min_severity,omitempty"`
 	Prompt      string         `json:"prompt,omitempty"`
 	AbsPath     string         `json:"abs_path"`
 	RelPath     string         `json:"rel_path"`
@@ -86,6 +89,9 @@ func (h Hook) IsScript() bool { return h.Engine == HookEngineScript }
 
 // IsAI reports whether h is an AI compatibility prompt hook.
 func (h Hook) IsAI() bool { return h.Engine == HookEngineAI }
+
+// IsLSP reports whether h starts a language server for diagnostics.
+func (h Hook) IsLSP() bool { return h.Engine == HookEngineLSP }
 
 // AppliesToFiles reports whether h is triggered by changed files.
 func (h Hook) AppliesToFiles() bool { return h.Type == HookTypeFile }

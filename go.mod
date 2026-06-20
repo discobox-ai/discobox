@@ -1,6 +1,6 @@
 module github.com/obot-platform/discobox
 
-go 1.26
+go 1.26.0
 
 require (
 	github.com/coder/websocket v1.8.14
@@ -304,7 +304,7 @@ require (
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/crypto v0.51.0 // indirect
 	golang.org/x/exp v0.0.0-20250819193227-8b4c13bb791b // indirect
-	golang.org/x/exp/typeparams v0.0.0-20260209203927-2842357ff358 // indirect
+	golang.org/x/exp/typeparams v0.0.0-20260312153236-7ab1446f8b90 // indirect
 	golang.org/x/mod v0.35.0 // indirect
 	golang.org/x/net v0.54.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
@@ -312,7 +312,7 @@ require (
 	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/term v0.43.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	golang.org/x/tools v0.44.0 // indirect
+	golang.org/x/tools v0.44.1-0.20260513175300-635ae9663724 // indirect
 	google.golang.org/api v0.271.0 // indirect
 	google.golang.org/genproto v0.0.0-20260128011058-8636f8732409 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260203192932-546029d2fa20 // indirect
@@ -330,9 +330,19 @@ require (
 )
 
 require (
+	github.com/fatih/camelcase v1.0.0 // indirect
+	github.com/fatih/gomodifytags v1.17.1-0.20250423142747-f3939df9aa3c // indirect
+	github.com/google/jsonschema-go v0.4.2 // indirect
 	github.com/jinzhu/inflection v1.0.0 // indirect
 	github.com/jinzhu/now v1.1.5 // indirect
+	github.com/modelcontextprotocol/go-sdk v1.4.0 // indirect
+	github.com/segmentio/encoding v0.5.3 // indirect
+	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
+	golang.org/x/telemetry v0.0.0-20260409153401-be6f6cb8b1fa // indirect
 	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/tools/gopls v0.22.0 // indirect
+	golang.org/x/vuln v1.1.4 // indirect
+	mvdan.cc/xurls/v2 v2.6.0 // indirect
 )
 
 replace github.com/obot-platform/discobox/gormdb => ./gormdb
@@ -344,4 +354,5 @@ tool (
 	github.com/go-task/task/v3/cmd/task
 	github.com/golangci/golangci-lint/v2/cmd/golangci-lint
 	github.com/ogen-go/ogen/cmd/ogen
+	golang.org/x/tools/gopls
 )

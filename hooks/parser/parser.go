@@ -280,6 +280,8 @@ type metadata struct {
 	Ignore      []string
 	Phase       string
 	Subagent    string
+	LanguageID  string
+	MinSeverity string
 	Extensions  map[string]any
 }
 
@@ -315,6 +317,10 @@ func decodeMetadata(data []byte) (metadata, error) {
 			m.Phase = strings.ToLower(asString(v))
 		case "subagent":
 			m.Subagent = asString(v)
+		case "language_id", "language":
+			m.LanguageID = asString(v)
+		case "min_severity", "minimum_severity":
+			m.MinSeverity = strings.ToLower(asString(v))
 		default:
 			m.Extensions[key] = v
 		}
@@ -414,7 +420,8 @@ func buildHook(rel, abs, filename string, data []byte, mode fs.FileMode, pf pars
 		ID: id, Name: name, Description: m.Description,
 		Type: hooks.HookType(m.Type), Engine: engine, RunAs: runAs, Blocking: m.Blocking,
 		Pattern: m.Pattern, Ignore: m.Ignore, Phase: m.Phase,
-		Subagent: m.Subagent, AbsPath: abs, RelPath: rel, HasShebang: pf.hasShebang,
+		Subagent: m.Subagent, LanguageID: m.LanguageID, MinSeverity: m.MinSeverity,
+		AbsPath: abs, RelPath: rel, HasShebang: pf.hasShebang,
 		Executable: mode&0111 != 0, Extensions: m.Extensions,
 	}
 	if len(h.Extensions) == 0 {
@@ -457,6 +464,25 @@ func validateHook(h hooks.Hook, data []byte) error {
 		}
 		if runtime.GOOS != "windows" && !h.Executable {
 			return fieldError(h.RelPath, "mode", "script hooks must be executable")
+		}
+	}
+	if h.Engine == hooks.HookEngineLSP {
+		if !hasFirstLineShebang(data) {
+			return fieldError(h.RelPath, "shebang", "lsp hooks require shebang as first line")
+		}
+		if runtime.GOOS != "windows" && !h.Executable {
+			return fieldError(h.RelPath, "mode", "lsp hooks must be executable")
+		}
+		if strings.TrimSpace(h.LanguageID) == "" {
+			return fieldError(h.RelPath, "language_id", "lsp hooks require language_id")
+		}
+		if h.Type != hooks.HookTypeFile {
+			return fieldError(h.RelPath, "type", "lsp hooks require type file")
+		}
+		switch h.MinSeverity {
+		case "", "error", "warning", "information", "info", "hint":
+		default:
+			return fieldError(h.RelPath, "min_severity", "unsupported severity %q", h.MinSeverity)
 		}
 	}
 	return nil

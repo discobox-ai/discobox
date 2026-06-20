@@ -33,6 +33,7 @@ type WaitResponse struct {
 	Queued          int          `json:"queued"`
 	PendingChanges  bool         `json:"pending_changes"`
 	PendingSnapshot bool         `json:"pending_snapshot"`
+	PendingLSP      bool         `json:"pending_lsp"`
 	Hooks           []HookStatus `json:"hooks"`
 	UpdatedAt       time.Time    `json:"updated_at"`
 }
@@ -65,6 +66,11 @@ type SnapshotsResponse struct {
 // QueueResponse is returned by GET /queue.
 type QueueResponse struct {
 	Queue []QueuedHook `json:"queue"`
+}
+
+// DiagnosticsResponse is returned by GET /diagnostics.
+type DiagnosticsResponse struct {
+	Diagnostics []Diagnostic `json:"diagnostics"`
 }
 
 // HookStatus is the API view returned for hook status lists.
@@ -155,6 +161,29 @@ type QueuedHook struct {
 	BlockedByHookID string        `json:"blocked_by_hook_id,omitempty"`
 	CreatedAt       time.Time     `json:"created_at"`
 	UpdatedAt       time.Time     `json:"updated_at"`
+}
+
+// Diagnostic is the API view of one current LSP diagnostic.
+type Diagnostic struct {
+	ID        string    `json:"id"`
+	HookID    string    `json:"hook_id"`
+	URI       string    `json:"uri,omitempty"`
+	Path      string    `json:"path"`
+	Severity  string    `json:"severity"`
+	Source    string    `json:"source,omitempty"`
+	Code      string    `json:"code,omitempty"`
+	Message   string    `json:"message"`
+	StartLine int       `json:"start_line"`
+	StartCol  int       `json:"start_col"`
+	EndLine   int       `json:"end_line"`
+	EndCol    int       `json:"end_col"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// DiagnosticListRequest contains query parameters for GET /diagnostics.
+type DiagnosticListRequest struct {
+	HookID string
+	Limit  int
 }
 
 // EventListRequest contains query parameters for GET /events.

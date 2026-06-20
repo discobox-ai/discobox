@@ -57,6 +57,8 @@ type HookDefinition struct {
 	Ignore      []byte    `gorm:"type:json" json:"-"`
 	Phase       string    `json:"phase,omitempty"`
 	Subagent    string    `json:"subagent,omitempty"`
+	LanguageID  string    `json:"language_id,omitempty"`
+	MinSeverity string    `json:"min_severity,omitempty"`
 	Prompt      string    `json:"prompt,omitempty"`
 	AbsPath     string    `json:"abs_path,omitempty"`
 	RelPath     string    `json:"rel_path,omitempty"`
@@ -167,6 +169,26 @@ type HookLog struct {
 func (HookLog) TableName() string              { return "hook_logs" }
 func (l *HookLog) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&l.ID) }
 
+// HookDiagnostic stores one current diagnostic reported by an LSP hook.
+type HookDiagnostic struct {
+	ID        string    `gorm:"primaryKey" json:"id"`
+	HookID    string    `gorm:"index" json:"hook_id"`
+	URI       string    `gorm:"index" json:"uri"`
+	Path      string    `gorm:"index" json:"path"`
+	Severity  string    `gorm:"index" json:"severity"`
+	Source    string    `json:"source,omitempty"`
+	Code      string    `json:"code,omitempty"`
+	Message   string    `json:"message"`
+	StartLine int       `json:"start_line"`
+	StartCol  int       `json:"start_col"`
+	EndLine   int       `json:"end_line"`
+	EndCol    int       `json:"end_col"`
+	UpdatedAt time.Time `gorm:"index" json:"updated_at"`
+}
+
+func (HookDiagnostic) TableName() string              { return "hook_diagnostics" }
+func (d *HookDiagnostic) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&d.ID) }
+
 // ObservedFileChange stores one daemon-observed file change.
 type ObservedFileChange struct {
 	ID         string    `gorm:"primaryKey" json:"id"`
@@ -233,7 +255,7 @@ func (WatchedFile) TableName() string { return "watched_files" }
 
 // AllModels returns all database models owned by the hooks store.
 func AllModels() []any {
-	return []any{&HookDefinition{}, &HookStatus{}, &HookRun{}, &PendingHook{}, &DaemonState{}, &DaemonSession{}, &HookEvent{}, &HookLog{}, &ObservedFileChange{}, &WorkspaceSnapshot{}, &HookInvocation{}, &HookInvocationChange{}, &WatchedFile{}}
+	return []any{&HookDefinition{}, &HookStatus{}, &HookRun{}, &PendingHook{}, &DaemonState{}, &DaemonSession{}, &HookEvent{}, &HookLog{}, &HookDiagnostic{}, &ObservedFileChange{}, &WorkspaceSnapshot{}, &HookInvocation{}, &HookInvocationChange{}, &WatchedFile{}}
 }
 
 func ensureGeneratedID(target *string) error {

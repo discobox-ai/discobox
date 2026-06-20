@@ -326,6 +326,42 @@ func (c *Client) ListQueue(ctx context.Context, opts ListOptions) ([]QueuedHook,
 	return wrapped.Queue, nil
 }
 
+// ListDiagnostics returns current LSP diagnostics.
+func (c *Client) ListDiagnostics(ctx context.Context, opts DiagnosticOptions) ([]Diagnostic, error) {
+	params := url.Values{}
+	if opts.HookID != "" {
+		params.Set("hook_id", opts.HookID)
+	}
+	if opts.hasLimit() {
+		params.Set("limit", fmt.Sprintf("%d", opts.Limit))
+	}
+	reqURL := c.baseURL + "/diagnostics"
+	if encoded := params.Encode(); encoded != "" {
+		reqURL += "?" + encoded
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, classifyError(c.socketPath, err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, responseError(resp.StatusCode, body)
+	}
+	var wrapped DiagnosticsResponse
+	if err := json.Unmarshal(body, &wrapped); err != nil {
+		return nil, fmt.Errorf("decode diagnostics response: %w", err)
+	}
+	return wrapped.Diagnostics, nil
+}
+
 // FollowEvents streams daemon audit events until ctx is canceled or the stream
 // fails. Existing events are not replayed unless LastEventID is set.
 func (c *Client) FollowEvents(ctx context.Context, opts EventOptions, fn func(Event) error) error {
@@ -607,6 +643,7 @@ type RunsResponse = model.RunsResponse
 type ChangesResponse = model.ChangesResponse
 type SnapshotsResponse = model.SnapshotsResponse
 type QueueResponse = model.QueueResponse
+type DiagnosticsResponse = model.DiagnosticsResponse
 
 type EventOptions struct {
 	HookID      string
@@ -625,11 +662,21 @@ type RunListOptions struct {
 	LimitSet bool
 }
 
+type DiagnosticOptions struct {
+	HookID   string
+	Limit    int
+	LimitSet bool
+}
+
 func (o ListOptions) hasLimit() bool {
 	return o.LimitSet || o.Limit > 0
 }
 
 func (o RunListOptions) hasLimit() bool {
+	return o.LimitSet || o.Limit > 0
+}
+
+func (o DiagnosticOptions) hasLimit() bool {
 	return o.LimitSet || o.Limit > 0
 }
 
@@ -640,6 +687,7 @@ type ChangedFile = model.ChangedFile
 type ObservedFileChange = model.ObservedFileChange
 type WorkspaceSnapshot = model.WorkspaceSnapshot
 type QueuedHook = model.QueuedHook
+type Diagnostic = model.Diagnostic
 
 type RunOptions struct {
 	Force bool

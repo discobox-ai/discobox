@@ -117,6 +117,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ChangesResponse'
+  /diagnostics:
+    get:
+      operationId: hooks-list-diagnostics
+      summary: List current LSP diagnostics.
+      parameters:
+        - $ref: '#/components/parameters/HookIDQuery'
+        - $ref: '#/components/parameters/LimitQuery'
+      responses:
+        '200':
+          description: Current LSP diagnostics.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiagnosticsResponse'
   /snapshots:
     get:
       operationId: hooks-list-snapshots
@@ -296,6 +310,8 @@ components:
       $ref: ./components/transport.yaml#/SnapshotsResponse
     QueueResponse:
       $ref: ./components/transport.yaml#/QueueResponse
+    DiagnosticsResponse:
+      $ref: ./components/transport.yaml#/DiagnosticsResponse
     ExecutionPatchRequest:
       $ref: ./components/transport.yaml#/ExecutionPatchRequest
     ExecutionResponse:
@@ -336,3 +352,5 @@ components:
       $ref: ./components/transport.yaml#/WorkspaceSnapshot
     QueuedHook:
       $ref: ./components/transport.yaml#/QueuedHook
+    Diagnostic:
+      $ref: ./components/transport.yaml#/Diagnostic

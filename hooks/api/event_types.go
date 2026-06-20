@@ -130,6 +130,36 @@ func KnownEventTypes() []EventTypeInfo {
 			{Name: "change_ids", Description: "observed_file_changes IDs supplied to the run", Required: true},
 			{Name: "invocation_id", Description: "hook_invocations row ID", Required: true},
 		}},
+		{Type: "lsp.diagnostics.persist.failed", Description: "The daemon failed to persist diagnostics published by a language server.", Details: []EventDetailInfo{
+			{Name: "uri", Description: "document URI reported by the language server", Required: true},
+			{Name: "path", Description: "repository-relative path resolved from the URI", Required: true},
+			{Name: "error", Description: "diagnostics persistence error", Required: true},
+		}},
+		{Type: "lsp.diagnostics.updated", Description: "A language server published diagnostics for one document.", Details: []EventDetailInfo{
+			{Name: "uri", Description: "document URI reported by the language server", Required: true},
+			{Name: "path", Description: "repository-relative path resolved from the URI", Required: true},
+			{Name: "diagnostics", Description: "number of diagnostics retained after severity filtering", Required: true},
+		}},
+		{Type: "lsp.failed", Description: "A language server failed to start or initialize.", Details: []EventDetailInfo{
+			{Name: "error", Description: "language server startup or initialization error", Required: true},
+		}},
+		{Type: "lsp.file.updated", Description: "A changed file was sent to a language server hook.", Details: []EventDetailInfo{
+			{Name: "path", Description: "repository-relative changed path", Required: true},
+			{Name: "kind", Description: "created, modified, or deleted", Required: true},
+		}},
+		{Type: "lsp.started", Description: "A language server hook started and initialized.", Details: []EventDetailInfo{
+			{Name: "language_id", Description: "LSP language ID configured for the hook", Required: true},
+			{Name: "path", Description: "hook definition file path", Required: true},
+		}},
+		{Type: "lsp.starting", Description: "A language server hook process is starting.", Details: []EventDetailInfo{
+			{Name: "language_id", Description: "LSP language ID configured for the hook", Required: true},
+			{Name: "path", Description: "hook definition file path", Required: true},
+		}},
+		{Type: "lsp.update.failed", Description: "The daemon failed to send a changed file notification to a language server.", Details: []EventDetailInfo{
+			{Name: "path", Description: "repository-relative changed path", Required: true},
+			{Name: "kind", Description: "created, modified, or deleted", Required: true},
+			{Name: "error", Description: "language server update error", Required: true},
+		}},
 		{Type: "watch.snapshot.persist.failed", Description: "The daemon failed to persist the watcher snapshot checkpoint.", Details: []EventDetailInfo{
 			{Name: "files", Description: "number of watcher snapshot entries", Required: true},
 			{Name: "error", Description: "checkpoint persistence error", Required: true},

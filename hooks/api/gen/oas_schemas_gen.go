@@ -51,6 +51,168 @@ func (s *ChangesResponse) SetChanges(val []ObservedFileChange) {
 	s.Changes = val
 }
 
+// Ref: #/Diagnostic
+type Diagnostic struct {
+	ID        string    `json:"id"`
+	HookID    string    `json:"hook_id"`
+	URI       OptString `json:"uri"`
+	Path      string    `json:"path"`
+	Severity  string    `json:"severity"`
+	Source    OptString `json:"source"`
+	Code      OptString `json:"code"`
+	Message   string    `json:"message"`
+	StartLine int       `json:"start_line"`
+	StartCol  int       `json:"start_col"`
+	EndLine   int       `json:"end_line"`
+	EndCol    int       `json:"end_col"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// GetID returns the value of ID.
+func (s *Diagnostic) GetID() string {
+	return s.ID
+}
+
+// GetHookID returns the value of HookID.
+func (s *Diagnostic) GetHookID() string {
+	return s.HookID
+}
+
+// GetURI returns the value of URI.
+func (s *Diagnostic) GetURI() OptString {
+	return s.URI
+}
+
+// GetPath returns the value of Path.
+func (s *Diagnostic) GetPath() string {
+	return s.Path
+}
+
+// GetSeverity returns the value of Severity.
+func (s *Diagnostic) GetSeverity() string {
+	return s.Severity
+}
+
+// GetSource returns the value of Source.
+func (s *Diagnostic) GetSource() OptString {
+	return s.Source
+}
+
+// GetCode returns the value of Code.
+func (s *Diagnostic) GetCode() OptString {
+	return s.Code
+}
+
+// GetMessage returns the value of Message.
+func (s *Diagnostic) GetMessage() string {
+	return s.Message
+}
+
+// GetStartLine returns the value of StartLine.
+func (s *Diagnostic) GetStartLine() int {
+	return s.StartLine
+}
+
+// GetStartCol returns the value of StartCol.
+func (s *Diagnostic) GetStartCol() int {
+	return s.StartCol
+}
+
+// GetEndLine returns the value of EndLine.
+func (s *Diagnostic) GetEndLine() int {
+	return s.EndLine
+}
+
+// GetEndCol returns the value of EndCol.
+func (s *Diagnostic) GetEndCol() int {
+	return s.EndCol
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *Diagnostic) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// SetID sets the value of ID.
+func (s *Diagnostic) SetID(val string) {
+	s.ID = val
+}
+
+// SetHookID sets the value of HookID.
+func (s *Diagnostic) SetHookID(val string) {
+	s.HookID = val
+}
+
+// SetURI sets the value of URI.
+func (s *Diagnostic) SetURI(val OptString) {
+	s.URI = val
+}
+
+// SetPath sets the value of Path.
+func (s *Diagnostic) SetPath(val string) {
+	s.Path = val
+}
+
+// SetSeverity sets the value of Severity.
+func (s *Diagnostic) SetSeverity(val string) {
+	s.Severity = val
+}
+
+// SetSource sets the value of Source.
+func (s *Diagnostic) SetSource(val OptString) {
+	s.Source = val
+}
+
+// SetCode sets the value of Code.
+func (s *Diagnostic) SetCode(val OptString) {
+	s.Code = val
+}
+
+// SetMessage sets the value of Message.
+func (s *Diagnostic) SetMessage(val string) {
+	s.Message = val
+}
+
+// SetStartLine sets the value of StartLine.
+func (s *Diagnostic) SetStartLine(val int) {
+	s.StartLine = val
+}
+
+// SetStartCol sets the value of StartCol.
+func (s *Diagnostic) SetStartCol(val int) {
+	s.StartCol = val
+}
+
+// SetEndLine sets the value of EndLine.
+func (s *Diagnostic) SetEndLine(val int) {
+	s.EndLine = val
+}
+
+// SetEndCol sets the value of EndCol.
+func (s *Diagnostic) SetEndCol(val int) {
+	s.EndCol = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *Diagnostic) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+// Ref: #/DiagnosticsResponse
+type DiagnosticsResponse struct {
+	Diagnostics []Diagnostic `json:"diagnostics"`
+}
+
+// GetDiagnostics returns the value of Diagnostics.
+func (s *DiagnosticsResponse) GetDiagnostics() []Diagnostic {
+	return s.Diagnostics
+}
+
+// SetDiagnostics sets the value of Diagnostics.
+func (s *DiagnosticsResponse) SetDiagnostics(val []Diagnostic) {
+	s.Diagnostics = val
+}
+
 // Ref: #/ErrorResponse
 type ErrorResponse struct {
 	Error   OptString `json:"error"`
@@ -234,6 +396,8 @@ type Hook struct {
 	Ignore      []string          `json:"ignore"`
 	Phase       OptString         `json:"phase"`
 	Subagent    OptString         `json:"subagent"`
+	LanguageID  OptString         `json:"language_id"`
+	MinSeverity OptString         `json:"min_severity"`
 	Prompt      OptString         `json:"prompt"`
 	AbsPath     string            `json:"abs_path"`
 	RelPath     string            `json:"rel_path"`
@@ -295,6 +459,16 @@ func (s *Hook) GetPhase() OptString {
 // GetSubagent returns the value of Subagent.
 func (s *Hook) GetSubagent() OptString {
 	return s.Subagent
+}
+
+// GetLanguageID returns the value of LanguageID.
+func (s *Hook) GetLanguageID() OptString {
+	return s.LanguageID
+}
+
+// GetMinSeverity returns the value of MinSeverity.
+func (s *Hook) GetMinSeverity() OptString {
+	return s.MinSeverity
 }
 
 // GetPrompt returns the value of Prompt.
@@ -382,6 +556,16 @@ func (s *Hook) SetSubagent(val OptString) {
 	s.Subagent = val
 }
 
+// SetLanguageID sets the value of LanguageID.
+func (s *Hook) SetLanguageID(val OptString) {
+	s.LanguageID = val
+}
+
+// SetMinSeverity sets the value of MinSeverity.
+func (s *Hook) SetMinSeverity(val OptString) {
+	s.MinSeverity = val
+}
+
 // SetPrompt sets the value of Prompt.
 func (s *Hook) SetPrompt(val OptString) {
 	s.Prompt = val
@@ -418,6 +602,7 @@ type HookEngine string
 const (
 	HookEngineScript  HookEngine = "script"
 	HookEngineAi      HookEngine = "ai"
+	HookEngineLsp     HookEngine = "lsp"
 	HookEngineBuiltin HookEngine = "builtin"
 )
 
@@ -426,6 +611,7 @@ func (HookEngine) AllValues() []HookEngine {
 	return []HookEngine{
 		HookEngineScript,
 		HookEngineAi,
+		HookEngineLsp,
 		HookEngineBuiltin,
 	}
 }
@@ -436,6 +622,8 @@ func (s HookEngine) MarshalText() ([]byte, error) {
 	case HookEngineScript:
 		return []byte(s), nil
 	case HookEngineAi:
+		return []byte(s), nil
+	case HookEngineLsp:
 		return []byte(s), nil
 	case HookEngineBuiltin:
 		return []byte(s), nil
@@ -452,6 +640,9 @@ func (s *HookEngine) UnmarshalText(data []byte) error {
 		return nil
 	case HookEngineAi:
 		*s = HookEngineAi
+		return nil
+	case HookEngineLsp:
+		*s = HookEngineLsp
 		return nil
 	case HookEngineBuiltin:
 		*s = HookEngineBuiltin
@@ -1796,6 +1987,7 @@ type WaitResponse struct {
 	Queued          int          `json:"queued"`
 	PendingChanges  bool         `json:"pending_changes"`
 	PendingSnapshot bool         `json:"pending_snapshot"`
+	PendingLsp      bool         `json:"pending_lsp"`
 	Hooks           []HookStatus `json:"hooks"`
 	UpdatedAt       time.Time    `json:"updated_at"`
 }
@@ -1823,6 +2015,11 @@ func (s *WaitResponse) GetPendingChanges() bool {
 // GetPendingSnapshot returns the value of PendingSnapshot.
 func (s *WaitResponse) GetPendingSnapshot() bool {
 	return s.PendingSnapshot
+}
+
+// GetPendingLsp returns the value of PendingLsp.
+func (s *WaitResponse) GetPendingLsp() bool {
+	return s.PendingLsp
 }
 
 // GetHooks returns the value of Hooks.
@@ -1858,6 +2055,11 @@ func (s *WaitResponse) SetPendingChanges(val bool) {
 // SetPendingSnapshot sets the value of PendingSnapshot.
 func (s *WaitResponse) SetPendingSnapshot(val bool) {
 	s.PendingSnapshot = val
+}
+
+// SetPendingLsp sets the value of PendingLsp.
+func (s *WaitResponse) SetPendingLsp(val bool) {
+	s.PendingLsp = val
 }
 
 // SetHooks sets the value of Hooks.

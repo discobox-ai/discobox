@@ -62,6 +62,9 @@ Start small and split only when code pressure justifies it:
 - Output tailing/streaming over the socket API.
 - Stronger Git ignore implementation if initial watcher filtering is not
   authoritative enough.
+- Broaden LSP hook support beyond the initial stdio diagnostic path, including
+  restart/backoff policy, richer settle semantics for `check`, and additional
+  workspace notifications where language servers require them.
 
 ## Open Design Questions
 

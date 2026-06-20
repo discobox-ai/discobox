@@ -31,7 +31,8 @@ import (
 )
 
 const defaultDebounce = 5 * time.Second
-const defaultSnapshotDebounce = 60 * time.Second
+const defaultSnapshotDebounce = 15 * time.Second
+const defaultSnapshotMinInterval = time.Minute
 
 // daemonMatcherOptions disables matcher-level Git-ignore checks because the
 // daemon already applies and audits Git-ignore filtering in filterIgnoredChanges.
@@ -42,15 +43,16 @@ var daemonMatcherOptions = matcher.Options{DisableGitIgnore: true}
 
 // Config configures one session-scoped daemon runtime.
 type Config struct {
-	SessionID        string
-	RepoRoot         string
-	DBPath           string
-	SocketPath       string
-	TempDir          string
-	Version          int64
-	Debounce         time.Duration
-	SnapshotDebounce time.Duration
-	IdleTimeout      time.Duration
+	SessionID           string
+	RepoRoot            string
+	DBPath              string
+	SocketPath          string
+	TempDir             string
+	Version             int64
+	Debounce            time.Duration
+	SnapshotDebounce    time.Duration
+	SnapshotMinInterval time.Duration
+	IdleTimeout         time.Duration
 }
 
 type PingResponse = model.PingResponse
@@ -96,10 +98,13 @@ type runtimeState struct {
 	snapshotPending bool
 	snapshotRunning bool
 	snapshotDirty   bool
+	lastSnapshotAt  time.Time
 	snapshotCapture func(context.Context) (*store.WorkspaceSnapshot, error)
 	activeRequests  int64
 	drainSignal     chan struct{}
 	snapshotSignal  chan struct{}
+	lspClients      map[string]*lspRuntime
+	pendingLSP      map[string]time.Time
 }
 
 func newRuntime(ctx context.Context, cfg Config) (*runtimeState, error) {
@@ -137,6 +142,9 @@ func newRuntime(ctx context.Context, cfg Config) (*runtimeState, error) {
 	if cfg.SnapshotDebounce <= 0 {
 		cfg.SnapshotDebounce = defaultSnapshotDebounce
 	}
+	if cfg.SnapshotMinInterval <= 0 {
+		cfg.SnapshotMinInterval = defaultSnapshotMinInterval
+	}
 
 	st, err := store.Open(ctx, store.Options{Path: cfg.DBPath, Logger: logger.Default.LogMode(logger.Silent)})
 	if err != nil {
@@ -153,7 +161,7 @@ func newRuntime(ctx context.Context, cfg Config) (*runtimeState, error) {
 	}
 
 	rctx, cancel := context.WithCancel(context.Background())
-	r := &runtimeState{cfg: cfg, store: st, discovery: disc, ctx: rctx, cancel: cancel, done: make(chan struct{}), lastActivity: time.Now().UTC(), drainSignal: make(chan struct{}, 1), snapshotSignal: make(chan struct{}, 1)}
+	r := &runtimeState{cfg: cfg, store: st, discovery: disc, ctx: rctx, cancel: cancel, done: make(chan struct{}), lastActivity: time.Now().UTC(), drainSignal: make(chan struct{}, 1), snapshotSignal: make(chan struct{}, 1), lspClients: map[string]*lspRuntime{}, pendingLSP: map[string]time.Time{}}
 	session, err := st.StartDaemonSession(ctx, cfg.SessionID, cfg.RepoRoot, cfg.Version, os.Getpid())
 	if err != nil {
 		_ = st.Close()
@@ -175,6 +183,7 @@ func (r *runtimeState) run(parent context.Context) (err error) {
 		if r.watcher != nil {
 			_ = r.watcher.Close()
 		}
+		r.closeLSPClients()
 		if r.server != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			_ = r.server.Shutdown(ctx)
@@ -195,6 +204,7 @@ func (r *runtimeState) run(parent context.Context) (err error) {
 	if err := r.startServer(); err != nil {
 		return err
 	}
+	r.syncLSPHooks()
 	if _, err := r.store.ReconcileRunningRuns(r.ctx, "hook run interrupted before daemon startup"); err != nil {
 		return err
 	}
@@ -395,13 +405,36 @@ func (r *runtimeState) snapshotLoop() {
 		}
 		timerC = nil
 	}
-	resetTimer := func() {
+	resetTimer := func(delay time.Duration) {
+		if delay < 0 {
+			delay = 0
+		}
 		if timer == nil {
-			timer = time.NewTimer(r.cfg.SnapshotDebounce)
+			timer = time.NewTimer(delay)
 		} else {
-			timer.Reset(r.cfg.SnapshotDebounce)
+			timer.Reset(delay)
 		}
 		timerC = timer.C
+	}
+	nextDelay := func() time.Duration {
+		delay := r.cfg.SnapshotDebounce
+		if delay < 0 {
+			delay = 0
+		}
+		if r.cfg.SnapshotMinInterval <= 0 {
+			return delay
+		}
+		r.mu.Lock()
+		lastSnapshotAt := r.lastSnapshotAt
+		r.mu.Unlock()
+		if lastSnapshotAt.IsZero() {
+			return delay
+		}
+		minDelay := time.Until(lastSnapshotAt.Add(r.cfg.SnapshotMinInterval))
+		if minDelay > delay {
+			return minDelay
+		}
+		return delay
 	}
 	defer stopTimer()
 	for {
@@ -416,7 +449,7 @@ func (r *runtimeState) snapshotLoop() {
 			r.mu.Unlock()
 			if !running {
 				stopTimer()
-				resetTimer()
+				resetTimer(nextDelay())
 			}
 		case <-timerC:
 			timerC = nil
@@ -429,7 +462,7 @@ func (r *runtimeState) snapshotLoop() {
 			}
 			r.mu.Unlock()
 			if rerun {
-				resetTimer()
+				resetTimer(nextDelay())
 			}
 		}
 	}
@@ -521,6 +554,7 @@ func (r *runtimeState) runSnapshot() {
 	r.snapshotPending = false
 	r.snapshotRunning = true
 	r.snapshotDirty = false
+	r.lastSnapshotAt = time.Now().UTC()
 	r.lastActivity = time.Now().UTC()
 	r.mu.Unlock()
 	defer func() {
@@ -594,6 +628,10 @@ func (r *runtimeState) flushBatch() {
 		return
 	}
 	for _, m := range res.Matches {
+		if m.Hook.IsLSP() {
+			r.handleLSPChanges(m.Hook, m.Changes)
+			continue
+		}
 		ids := []string{m.HookID}
 		changedFiles := store.ChangedFilesFromWatcher(m.Changes)
 		changeIDs := changeIDsForWatcherChanges(m.Changes, changeIDsByKey)
@@ -749,6 +787,7 @@ func (r *runtimeState) reloadDiscovery(ctx context.Context) error {
 	r.discovery = disc
 	r.lastActivity = time.Now().UTC()
 	r.mu.Unlock()
+	r.syncLSPHooks()
 	_ = r.recordEvent("discovery.reloaded", "", "", "hook discovery reloaded", map[string]any{"repo_root": r.cfg.RepoRoot, "hooks": len(disc.Hooks)})
 	return nil
 }
@@ -1086,6 +1125,7 @@ func (r *runtimeState) waitSnapshot(ctx context.Context) (model.WaitResponse, er
 	running := r.manager.Running()
 	pendingChanges := len(r.pendingBatch) > 0
 	pendingSnapshot := r.snapshotPending || r.snapshotRunning || r.snapshotDirty
+	pendingLSP := len(r.pendingLSP) > 0
 	r.mu.Unlock()
 
 	queued, err := r.store.PendingCount(ctx)
@@ -1109,11 +1149,12 @@ func (r *runtimeState) waitSnapshot(ctx context.Context) (model.WaitResponse, er
 		return model.WaitResponse{}, err
 	}
 	return model.WaitResponse{
-		Settled:         !running && !pendingChanges && !eligiblePending,
+		Settled:         !running && !pendingChanges && !eligiblePending && !pendingLSP,
 		Running:         running,
 		Queued:          int(queued),
 		PendingChanges:  pendingChanges,
 		PendingSnapshot: pendingSnapshot,
+		PendingLSP:      pendingLSP,
 		Hooks:           hooksList,
 		UpdatedAt:       time.Now().UTC(),
 	}, nil
@@ -1244,9 +1285,10 @@ func (r *runtimeState) isIdle() bool {
 	running := r.manager.Running()
 	batch := len(r.pendingBatch) > 0
 	snapshotActive := r.snapshotPending || r.snapshotRunning
+	pendingLSP := len(r.pendingLSP) > 0
 	since := time.Since(r.lastActivity)
 	r.mu.Unlock()
-	if running || batch || snapshotActive || since < r.cfg.IdleTimeout {
+	if running || batch || snapshotActive || pendingLSP || since < r.cfg.IdleTimeout {
 		return false
 	}
 	pending, err := r.store.NextPending(r.ctx)

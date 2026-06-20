@@ -26,6 +26,12 @@ type Handler interface {
 	//
 	// GET /changes
 	HooksListChanges(ctx context.Context, params HooksListChangesParams) (*ChangesResponse, error)
+	// HooksListDiagnostics implements hooks-list-diagnostics operation.
+	//
+	// List current LSP diagnostics.
+	//
+	// GET /diagnostics
+	HooksListDiagnostics(ctx context.Context, params HooksListDiagnosticsParams) (*DiagnosticsResponse, error)
 	// HooksListEvents implements hooks-list-events operation.
 	//
 	// List recent hook daemon audit events.

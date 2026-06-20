@@ -105,6 +105,8 @@ Canonical fields:
 | `exclude` | no | file | Alias for `ignore`. |
 | `phase` | no | file | Optional phase gate. Initially only `review` is valid if non-empty. |
 | `subagent` | no | ai compatibility | Parsed for compatibility; not used by native runner initially. |
+| `language_id` | lsp | lsp | LSP text document language ID sent in `didOpen` notifications. |
+| `min_severity` | no | lsp | Lowest diagnostic severity that makes the hook fail: `error`, `warning`, `information`/`info`, or `hint`; default `hint`. |
 
 Field aliases should be normalized where useful:
 
@@ -170,6 +172,15 @@ Default engine. Script hooks must have:
 - valid front matter
 
 The runner executes the file by path from the Git root.
+
+### `lsp`
+
+LSP hooks are executable scripts that start a language server over stdio. They
+must use `type: file`, declare a `pattern`, and set `language_id`. The daemon
+starts the script as a long-lived language server client session and sends
+matching file changes through LSP notifications. Diagnostics are persisted as
+current hook diagnostics and update hook status directly; LSP hooks do not enter
+the serial script hook queue.
 
 ### `ai`
 

@@ -76,6 +76,17 @@ func (h *generatedHandler) HooksListRuns(ctx context.Context, params hookapigen.
 	return convertToGenerated[hookapigen.RunsResponse](model.RunsResponse{Runs: runs})
 }
 
+func (h *generatedHandler) HooksListDiagnostics(ctx context.Context, params hookapigen.HooksListDiagnosticsParams) (*hookapigen.DiagnosticsResponse, error) {
+	diagnostics, err := h.manager.ListDiagnostics(ctx, model.DiagnosticListRequest{
+		HookID: optString(params.HookID),
+		Limit:  optIntDefault(params.Limit, 100),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return convertToGenerated[hookapigen.DiagnosticsResponse](model.DiagnosticsResponse{Diagnostics: diagnostics})
+}
+
 func (h *generatedHandler) HooksListChanges(ctx context.Context, params hookapigen.HooksListChangesParams) (*hookapigen.ChangesResponse, error) {
 	changes, err := h.manager.ListObservedChanges(ctx, model.ListRequest{Limit: optIntDefault(params.Limit, 50)})
 	if err != nil {

@@ -9,6 +9,7 @@ const (
 	HooksGetSnapshotOperation      OperationName = "HooksGetSnapshot"
 	HooksListOperation             OperationName = "HooksList"
 	HooksListChangesOperation      OperationName = "HooksListChanges"
+	HooksListDiagnosticsOperation  OperationName = "HooksListDiagnostics"
 	HooksListEventsOperation       OperationName = "HooksListEvents"
 	HooksListQueueOperation        OperationName = "HooksListQueue"
 	HooksListRunsOperation         OperationName = "HooksListRuns"

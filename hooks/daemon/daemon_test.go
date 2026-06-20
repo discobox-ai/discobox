@@ -158,6 +158,44 @@ echo "changed=$DISCOBOX_CHANGED_FILES"
 	}
 }
 
+func TestWaitSnapshotIncludesPendingLSP(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	st, err := hookstore.Open(ctx, hookstore.Options{Path: filepath.Join(t.TempDir(), "hooks.db")})
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	hook := hooks.Hook{ID: "go-lsp", Name: "Go LSP", Type: hooks.HookTypeFile, Engine: hooks.HookEngineLSP, Pattern: "**/*.go", LanguageID: "go"}
+	if err := st.RefreshDefinitions(ctx, []hooks.Hook{hook}); err != nil {
+		t.Fatalf("refresh definitions: %v", err)
+	}
+	mgr, err := manager.New(manager.Config{Store: st, Hooks: []hooks.Hook{hook}, SessionID: "test-session", RepoRoot: repo})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	r := &runtimeState{cfg: Config{RepoRoot: repo}, store: st, manager: mgr, ctx: ctx}
+	uri := "file://" + filepath.ToSlash(filepath.Join(repo, "main.go"))
+
+	r.markPendingLSP(hook.ID, uri)
+	resp, err := r.waitSnapshot(ctx)
+	if err != nil {
+		t.Fatalf("wait snapshot with pending lsp: %v", err)
+	}
+	if resp.Settled || !resp.PendingLSP {
+		t.Fatalf("expected pending LSP to keep wait unsettled, got %+v", resp)
+	}
+
+	r.clearPendingLSP(hook.ID, uri)
+	resp, err = r.waitSnapshot(ctx)
+	if err != nil {
+		t.Fatalf("wait snapshot after clearing pending lsp: %v", err)
+	}
+	if !resp.Settled || resp.PendingLSP {
+		t.Fatalf("expected wait to settle after LSP diagnostics, got %+v", resp)
+	}
+}
+
 func TestSessionHooksRunOnlyWhenRequested(t *testing.T) {
 	repo := t.TempDir()
 	hooksDir := filepath.Join(repo, ".discobox", "hooks")
@@ -842,6 +880,48 @@ func TestSnapshotLoopSchedulesAgainWhenChangeArrivesDuringSnapshot(t *testing.T)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for rescheduled snapshot")
+	}
+}
+
+func TestSnapshotLoopRateLimitsCaptures(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	started := make(chan time.Time, 2)
+	r := &runtimeState{
+		cfg: Config{
+			SnapshotDebounce:    10 * time.Millisecond,
+			SnapshotMinInterval: 100 * time.Millisecond,
+		},
+		ctx:            ctx,
+		cancel:         cancel,
+		snapshotSignal: make(chan struct{}, 1),
+		snapshotCapture: func(context.Context) (*hookstore.WorkspaceSnapshot, error) {
+			started <- time.Now()
+			return &hookstore.WorkspaceSnapshot{ID: "snap"}, nil
+		},
+	}
+	go r.snapshotLoop()
+
+	r.requestSnapshot()
+	var first time.Time
+	select {
+	case first = <-started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for first snapshot")
+	}
+	r.requestSnapshot()
+	select {
+	case got := <-started:
+		t.Fatalf("second snapshot started too soon after %s", got.Sub(first))
+	case <-time.After(50 * time.Millisecond):
+	}
+	select {
+	case second := <-started:
+		if delta := second.Sub(first); delta < 90*time.Millisecond {
+			t.Fatalf("second snapshot started after %s, want at least 90ms", delta)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for rate-limited second snapshot")
 	}
 }
 

@@ -51,6 +51,10 @@ Hook:
       type: string
     subagent:
       type: string
+    language_id:
+      type: string
+    min_severity:
+      type: string
     prompt:
       type: string
     abs_path:
@@ -69,7 +73,7 @@ HookType:
   enum: [session, file, pre-commit]
 HookEngine:
   type: string
-  enum: [script, ai, builtin]
+  enum: [script, ai, lsp, builtin]
 RunAs:
   type: string
   enum: [user, root]

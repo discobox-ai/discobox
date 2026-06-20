@@ -32,7 +32,7 @@ StatusResponse:
       format: date-time
 WaitResponse:
   type: object
-  required: [settled, running, queued, pending_changes, pending_snapshot, hooks, updated_at]
+  required: [settled, running, queued, pending_changes, pending_snapshot, pending_lsp, hooks, updated_at]
   properties:
     settled:
       type: boolean
@@ -43,6 +43,8 @@ WaitResponse:
     pending_changes:
       type: boolean
     pending_snapshot:
+      type: boolean
+    pending_lsp:
       type: boolean
     hooks:
       type: array
@@ -200,6 +202,37 @@ QueuedHook:
     updated_at:
       type: string
       format: date-time
+Diagnostic:
+  type: object
+  required: [id, hook_id, path, severity, message, start_line, start_col, end_line, end_col, updated_at]
+  properties:
+    id:
+      type: string
+    hook_id:
+      type: string
+    uri:
+      type: string
+    path:
+      type: string
+    severity:
+      type: string
+    source:
+      type: string
+    code:
+      type: string
+    message:
+      type: string
+    start_line:
+      type: integer
+    start_col:
+      type: integer
+    end_line:
+      type: integer
+    end_col:
+      type: integer
+    updated_at:
+      type: string
+      format: date-time
 RunsResponse:
   type: object
   required: [runs]
@@ -232,6 +265,14 @@ QueueResponse:
       type: array
       items:
         $ref: '#/QueuedHook'
+DiagnosticsResponse:
+  type: object
+  required: [diagnostics]
+  properties:
+    diagnostics:
+      type: array
+      items:
+        $ref: '#/Diagnostic'
 ExecutionPatchRequest:
   type: object
   required: [paused]

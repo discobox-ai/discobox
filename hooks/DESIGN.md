@@ -90,12 +90,18 @@ important contracts are:
 - hook IDs are stable and filename-derived.
 - file hooks must declare a changed-file `pattern`.
 - supported hook types are `session`, `file`, and `pre-commit`.
-- supported engines are `script`, compatibility `ai`, and reserved `builtin`.
+- supported engines are `script`, `lsp`, compatibility `ai`, and reserved
+  `builtin`.
 
 The first implementation should execute command/script hooks only. Native AI hook
 execution is intentionally out of scope; AI behavior should be prototyped with
 script hooks that call tools such as Claude Code or Codex and exit non-zero when
 feedback should block progress.
+
+LSP hooks are file hooks whose script starts a language server over stdio. The
+daemon owns the LSP client lifecycle, sends matching file changes to the server,
+stores published diagnostics as first-class current state, and updates the hook
+status from diagnostics. LSP hooks do not run through the serial script queue.
 
 ## File Watching and Batching
 
@@ -152,14 +158,15 @@ the daemon audit/event feed. Persist every observed file change as a database ro
 with its base commit and per-file Git diff; hook invocations link to those change
 record IDs instead of writing payload files under the state directory.
 
-Workspace snapshots are persisted separately from hook inputs. They use a slower
-snapshot debounce than the hook scheduler, run asynchronously, and must not block
-file batching or hook execution. Snapshot capture builds a temporary Git index
-from `HEAD`, selectively adds tracked and untracked non-ignored files up to the
-configured size cap, records omitted paths, writes a full tree, and stores the
-resulting patch/tree metadata in the database instead of creating Git refs. If a
-file change arrives while capture is running, the daemon marks snapshot state
-dirty and schedules another capture after the current one completes.
+Workspace snapshots are persisted separately from hook inputs. They use a
+snapshot quiet period plus a minimum capture interval, run asynchronously, and
+must not block file batching or hook execution. Snapshot capture builds a
+temporary Git index from `HEAD`, selectively adds tracked and untracked
+non-ignored files up to the configured size cap, records omitted paths, writes a
+full tree, and stores tree metadata plus base-commit and parent-snapshot patch
+bytes in the database instead of creating Git refs. If a file change arrives
+while capture is running, the daemon marks snapshot state dirty and schedules
+another capture after the current one completes.
 
 ## Persistence
 
@@ -181,6 +188,7 @@ Persist these concepts:
 - discovered hook definitions and config hash
 - current per-hook status (`idle`, `queued`, `running`, `success`, `failure`)
 - hook run history
+- current LSP diagnostics by hook and document
 - hook queue with accumulated changed files
 - workspace snapshot history with captured patch metadata and explicit omissions
 - daemon/session metadata needed for status and idle shutdown

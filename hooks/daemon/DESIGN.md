@@ -15,6 +15,9 @@ session-scoped runtime.
 - Call matcher to enqueue affected hooks.
 - Drain the hook queue serially through runner.
 - Stop execution on first failed hook.
+- Start and update LSP hook language servers, persist their diagnostics, and map
+  diagnostics to hook status without passing them through the serial script
+  queue.
 - Schedule workspace snapshots on a separate, slower debounce without blocking
   watcher batching, hook queueing, or hook execution.
 - Serve the Unix socket API for CLI/client commands through the generated
@@ -67,6 +70,12 @@ files plus any newer changed files. Once a hook succeeds, later file-triggered
 runs start from only newly observed changes. Forced manual runs intentionally
 copy the latest run inputs even after success.
 
+LSP hooks are exempt from the serial queue. Matching file changes are sent to the
+hook's long-lived language server process, and published diagnostics are stored
+as current diagnostic rows. Current diagnostics at or above the hook's configured
+minimum severity set the hook status to `failure`; no retained diagnostics set
+the hook status to `success`.
+
 ## Daemon Session Lifecycle
 
 Each daemon process inserts one `daemon_sessions` row at startup and emits a
@@ -117,22 +126,26 @@ changes may update the checkpoint immediately.
 
 Workspace snapshots are separate from hook changed-file inputs. The daemon
 requests a snapshot whenever it observes a relevant file-change batch, but
-capture uses its own slower `SnapshotDebounce` so hooks remain responsive and the
-database does not get a snapshot row for every editor write.
+capture uses its own `SnapshotDebounce` quiet period and
+`SnapshotMinInterval` rate limit so hooks remain responsive and the database
+does not get a snapshot row for every editor write.
 
 Snapshot capture must not run on the hook batching goroutine. The daemon owns a
 single snapshot scheduler with three pieces of state:
 
 - `snapshotPending`: a snapshot has been requested and is waiting for the
-  snapshot debounce.
+  snapshot debounce and rate-limit gate.
 - `snapshotRunning`: a capture is currently building and storing a snapshot.
 - `snapshotDirty`: file changes arrived while `snapshotRunning` was true.
 
 When a request arrives and no snapshot is running, the scheduler starts or
-resets the snapshot debounce. When a request arrives during capture, it marks
-the scheduler dirty instead of starting an overlapping capture. After capture
-finishes, the scheduler checks the dirty flag; if it was set, it schedules
-another debounced capture so long-running snapshots cannot miss later changes.
+resets the snapshot debounce, but never schedules a capture before the minimum
+interval since the previous capture start has elapsed. The default quiet period
+is 15 seconds and the default minimum capture interval is one minute. When a
+request arrives during capture, it marks the scheduler dirty instead of starting
+an overlapping capture. After capture finishes, the scheduler checks the dirty
+flag; if it was set, it schedules another debounced and rate-limited capture so
+long-running snapshots cannot miss later changes.
 
 Capture builds a temporary Git index from `HEAD`, selectively adds tracked and
 untracked non-ignored paths that are within the configured file-size cap, writes

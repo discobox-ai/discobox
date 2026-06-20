@@ -99,6 +99,29 @@ type Event struct {
 	CreatedAt time.Time      `json:"created_at"`
 }
 
+// Diagnostic is one current language-server diagnostic for an LSP hook.
+type Diagnostic struct {
+	ID        string    `json:"id"`
+	HookID    string    `json:"hook_id"`
+	URI       string    `json:"uri"`
+	Path      string    `json:"path"`
+	Severity  string    `json:"severity"`
+	Source    string    `json:"source,omitempty"`
+	Code      string    `json:"code,omitempty"`
+	Message   string    `json:"message"`
+	StartLine int       `json:"start_line"`
+	StartCol  int       `json:"start_col"`
+	EndLine   int       `json:"end_line"`
+	EndCol    int       `json:"end_col"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// DiagnosticQuery filters ListDiagnostics.
+type DiagnosticQuery struct {
+	HookID string
+	Limit  int
+}
+
 // DaemonSessionRow is returned by daemon session lifecycle APIs.
 type DaemonSessionRow struct {
 	ID            string     `json:"id"`
@@ -1006,6 +1029,152 @@ func (s *Store) AppendHookLogEvent(ctx context.Context, log models.HookLog) (*mo
 	return &out, nil
 }
 
+// ReplaceDiagnosticsForURI replaces the current diagnostics for one LSP hook URI.
+func (s *Store) ReplaceDiagnosticsForURI(ctx context.Context, hookID, uri, path string, diagnostics []Diagnostic) error {
+	hookID = strings.TrimSpace(hookID)
+	uri = strings.TrimSpace(uri)
+	path = filepath.ToSlash(strings.TrimSpace(path))
+	if hookID == "" {
+		return fmt.Errorf("hook id is required")
+	}
+	if uri == "" {
+		return fmt.Errorf("diagnostic uri is required")
+	}
+	now := time.Now().UTC()
+	return s.write.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("hook_id = ? AND uri = ?", hookID, uri).Delete(&models.HookDiagnostic{}).Error; err != nil {
+			return err
+		}
+		rows := make([]models.HookDiagnostic, 0, len(diagnostics))
+		for _, diagnostic := range diagnostics {
+			message := strings.TrimSpace(diagnostic.Message)
+			if message == "" {
+				continue
+			}
+			diagPath := filepath.ToSlash(strings.TrimSpace(diagnostic.Path))
+			if diagPath == "" {
+				diagPath = path
+			}
+			diagURI := strings.TrimSpace(diagnostic.URI)
+			if diagURI == "" {
+				diagURI = uri
+			}
+			rows = append(rows, models.HookDiagnostic{
+				HookID:    hookID,
+				URI:       diagURI,
+				Path:      diagPath,
+				Severity:  normalizeSeverity(diagnostic.Severity),
+				Source:    strings.TrimSpace(diagnostic.Source),
+				Code:      strings.TrimSpace(diagnostic.Code),
+				Message:   message,
+				StartLine: diagnostic.StartLine,
+				StartCol:  diagnostic.StartCol,
+				EndLine:   diagnostic.EndLine,
+				EndCol:    diagnostic.EndCol,
+				UpdatedAt: now,
+			})
+		}
+		if len(rows) > 0 {
+			if err := tx.Create(&rows).Error; err != nil {
+				return err
+			}
+		}
+		status := string(models.StatusSuccess)
+		lastError := ""
+		count, err := countDiagnosticsTx(tx, hookID)
+		if err != nil {
+			return err
+		}
+		if count > 0 {
+			status = string(models.StatusFailure)
+			lastError = fmt.Sprintf("%d diagnostics", count)
+		}
+		return tx.Model(&models.HookStatus{}).Where("hook_id = ?", hookID).Updates(map[string]any{"status": status, "last_error": lastError, "updated_at": now}).Error
+	})
+}
+
+// SetLSPHookRunning marks an LSP hook as running while its server initializes.
+func (s *Store) SetLSPHookRunning(ctx context.Context, hookID string) error {
+	hookID = strings.TrimSpace(hookID)
+	if hookID == "" {
+		return fmt.Errorf("hook id is required")
+	}
+	return s.write.WithContext(ctx).Model(&models.HookStatus{}).Where("hook_id = ?", hookID).Updates(map[string]any{"status": string(models.StatusRunning), "last_error": "", "updated_at": time.Now().UTC()}).Error
+}
+
+// SetLSPHookError records an LSP hook lifecycle failure.
+func (s *Store) SetLSPHookError(ctx context.Context, hookID, message string) error {
+	hookID = strings.TrimSpace(hookID)
+	message = strings.TrimSpace(message)
+	if hookID == "" {
+		return fmt.Errorf("hook id is required")
+	}
+	if message == "" {
+		message = "language server error"
+	}
+	return s.write.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("hook_id = ?", hookID).Delete(&models.HookDiagnostic{}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.HookStatus{}).Where("hook_id = ?", hookID).Updates(map[string]any{"status": string(models.StatusFailure), "last_error": message, "updated_at": time.Now().UTC()}).Error
+	})
+}
+
+// ListDiagnostics returns current LSP diagnostics ordered for display.
+func (s *Store) ListDiagnostics(ctx context.Context, query DiagnosticQuery) ([]Diagnostic, error) {
+	q := s.read.WithContext(ctx).Order("path asc, start_line asc, start_col asc, severity asc, id asc")
+	if query.HookID != "" {
+		q = q.Where("hook_id = ?", query.HookID)
+	}
+	if query.Limit > 0 {
+		q = q.Limit(query.Limit)
+	}
+	var rows []models.HookDiagnostic
+	if err := q.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]Diagnostic, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, diagnosticToRow(row))
+	}
+	return out, nil
+}
+
+func countDiagnosticsTx(tx *gorm.DB, hookID string) (int64, error) {
+	var count int64
+	err := tx.Model(&models.HookDiagnostic{}).Where("hook_id = ?", hookID).Count(&count).Error
+	return count, err
+}
+
+func normalizeSeverity(severity string) string {
+	switch strings.ToLower(strings.TrimSpace(severity)) {
+	case "error", "warning", "information", "hint":
+		return strings.ToLower(strings.TrimSpace(severity))
+	case "info":
+		return "information"
+	default:
+		return "error"
+	}
+}
+
+func diagnosticToRow(row models.HookDiagnostic) Diagnostic {
+	return Diagnostic{
+		ID:        row.ID,
+		HookID:    row.HookID,
+		URI:       row.URI,
+		Path:      row.Path,
+		Severity:  row.Severity,
+		Source:    row.Source,
+		Code:      row.Code,
+		Message:   row.Message,
+		StartLine: row.StartLine,
+		StartCol:  row.StartCol,
+		EndLine:   row.EndLine,
+		EndCol:    row.EndCol,
+		UpdatedAt: row.UpdatedAt,
+	}
+}
+
 // ListHookLogs returns hook output lines oldest first.
 func (s *Store) ListHookLogs(ctx context.Context, query HookLogQuery) ([]models.HookLog, error) {
 	q := s.read.WithContext(ctx).Order("created_at asc, id asc")
@@ -1093,7 +1262,7 @@ func definitionFromHook(h hooks.Hook, now time.Time) (models.HookDefinition, err
 	if err != nil {
 		return models.HookDefinition{}, err
 	}
-	return models.HookDefinition{ID: h.ID, Name: h.Name, Description: h.Description, Type: string(h.Type), Engine: string(h.Engine), RunAs: string(h.RunAs), Blocking: h.Blocking, Pattern: h.Pattern, Ignore: ignore, Phase: h.Phase, Subagent: h.Subagent, Prompt: h.Prompt, AbsPath: h.AbsPath, RelPath: h.RelPath, HasShebang: h.HasShebang, Executable: h.Executable, Extensions: ext, ConfigHash: hash, CreatedAt: now, UpdatedAt: now}, nil
+	return models.HookDefinition{ID: h.ID, Name: h.Name, Description: h.Description, Type: string(h.Type), Engine: string(h.Engine), RunAs: string(h.RunAs), Blocking: h.Blocking, Pattern: h.Pattern, Ignore: ignore, Phase: h.Phase, Subagent: h.Subagent, LanguageID: h.LanguageID, MinSeverity: h.MinSeverity, Prompt: h.Prompt, AbsPath: h.AbsPath, RelPath: h.RelPath, HasShebang: h.HasShebang, Executable: h.Executable, Extensions: ext, ConfigHash: hash, CreatedAt: now, UpdatedAt: now}, nil
 }
 
 func definitionToHook(d models.HookDefinition) (hooks.Hook, error) {
@@ -1109,7 +1278,7 @@ func definitionToHook(d models.HookDefinition) (hooks.Hook, error) {
 			return hooks.Hook{}, err
 		}
 	}
-	return hooks.Hook{ID: d.ID, Name: d.Name, Description: d.Description, Type: hooks.HookType(d.Type), Engine: hooks.HookEngine(d.Engine), RunAs: hooks.RunAs(d.RunAs), Blocking: d.Blocking, Pattern: d.Pattern, Ignore: ignore, Phase: d.Phase, Subagent: d.Subagent, Prompt: d.Prompt, AbsPath: d.AbsPath, RelPath: d.RelPath, HasShebang: d.HasShebang, Executable: d.Executable, Extensions: ext}, nil
+	return hooks.Hook{ID: d.ID, Name: d.Name, Description: d.Description, Type: hooks.HookType(d.Type), Engine: hooks.HookEngine(d.Engine), RunAs: hooks.RunAs(d.RunAs), Blocking: d.Blocking, Pattern: d.Pattern, Ignore: ignore, Phase: d.Phase, Subagent: d.Subagent, LanguageID: d.LanguageID, MinSeverity: d.MinSeverity, Prompt: d.Prompt, AbsPath: d.AbsPath, RelPath: d.RelPath, HasShebang: d.HasShebang, Executable: d.Executable, Extensions: ext}, nil
 }
 
 func pendingChangedFiles(p models.PendingHook) ([]models.ChangedFile, error) {

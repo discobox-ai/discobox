@@ -118,6 +118,33 @@ func (s *Service) ListRuns(ctx context.Context, req model.RunListRequest) ([]mod
 	return out, nil
 }
 
+// ListDiagnostics returns current LSP diagnostics.
+func (s *Service) ListDiagnostics(ctx context.Context, req model.DiagnosticListRequest) ([]model.Diagnostic, error) {
+	rows, err := s.store.ListDiagnostics(ctx, store.DiagnosticQuery{HookID: req.HookID, Limit: req.Limit})
+	if err != nil {
+		return nil, err
+	}
+	out := make([]model.Diagnostic, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, model.Diagnostic{
+			ID:        row.ID,
+			HookID:    row.HookID,
+			URI:       row.URI,
+			Path:      row.Path,
+			Severity:  row.Severity,
+			Source:    row.Source,
+			Code:      row.Code,
+			Message:   row.Message,
+			StartLine: row.StartLine,
+			StartCol:  row.StartCol,
+			EndLine:   row.EndLine,
+			EndCol:    row.EndCol,
+			UpdatedAt: row.UpdatedAt,
+		})
+	}
+	return out, nil
+}
+
 // ListObservedChanges returns observed filesystem changes.
 func (s *Service) ListObservedChanges(ctx context.Context, req model.ListRequest) ([]model.ObservedFileChange, error) {
 	rows, err := s.store.ListObservedChanges(ctx, req.Limit)
@@ -247,6 +274,9 @@ func (s *Service) RunHook(ctx context.Context, hookID string, req model.RunReque
 			reason = "phase_mismatch"
 		}
 		return model.RunResponse{HookID: hookID, Skipped: true, Reason: reason}, nil
+	}
+	if h.IsLSP() {
+		return model.RunResponse{HookID: hookID, Skipped: true, Reason: "lsp_hooks_run_continuously"}, nil
 	}
 	shouldRun, reason, err := s.shouldRunHook(ctx, hookID, req.Force)
 	if err != nil {

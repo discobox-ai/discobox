@@ -40,6 +40,15 @@ func (UnimplementedHandler) HooksListChanges(ctx context.Context, params HooksLi
 	return r, ht.ErrNotImplemented
 }
 
+// HooksListDiagnostics implements hooks-list-diagnostics operation.
+//
+// List current LSP diagnostics.
+//
+// GET /diagnostics
+func (UnimplementedHandler) HooksListDiagnostics(ctx context.Context, params HooksListDiagnosticsParams) (r *DiagnosticsResponse, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // HooksListEvents implements hooks-list-events operation.
 //
 // List recent hook daemon audit events.

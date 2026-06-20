@@ -111,6 +111,8 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 	cmd.AddCommand(a.newCheckCommand())
 	cmd.AddCommand(a.newRunsCommand())
 	cmd.AddCommand(a.newChangesCommand())
+	cmd.AddCommand(a.newDiagnosticsCommand())
+	cmd.AddCommand(a.newLSPCommand())
 	cmd.AddCommand(a.newSnapshotsCommand())
 	cmd.AddCommand(a.newQueueCommand())
 	return cmd
@@ -133,7 +135,7 @@ func (a *app) validate() error {
 }
 
 func (a *app) newDaemonCommand() *cobra.Command {
-	var idle, debounce time.Duration
+	var idle, debounce, snapshotDebounce, snapshotMinInterval time.Duration
 	cmd := &cobra.Command{
 		Use:   "daemon",
 		Short: "Run the hook daemon in the foreground",
@@ -143,20 +145,24 @@ func (a *app) newDaemonCommand() *cobra.Command {
 				return err
 			}
 			cfg := daemon.Config{
-				SessionID:   paths.SessionID,
-				RepoRoot:    paths.RepoRoot,
-				DBPath:      paths.DB,
-				SocketPath:  paths.Socket,
-				TempDir:     filepath.Join(paths.RuntimeDir, "tmp"),
-				Version:     currentBuildVersion(),
-				Debounce:    debounce,
-				IdleTimeout: idle,
+				SessionID:           paths.SessionID,
+				RepoRoot:            paths.RepoRoot,
+				DBPath:              paths.DB,
+				SocketPath:          paths.Socket,
+				TempDir:             filepath.Join(paths.RuntimeDir, "tmp"),
+				Version:             currentBuildVersion(),
+				Debounce:            debounce,
+				SnapshotDebounce:    snapshotDebounce,
+				SnapshotMinInterval: snapshotMinInterval,
+				IdleTimeout:         idle,
 			}
 			return daemon.Run(cmd.Context(), cfg)
 		},
 	}
 	cmd.Flags().DurationVar(&idle, "idle-timeout", 0, "daemon idle timeout")
 	cmd.Flags().DurationVar(&debounce, "debounce", 0, "file-change debounce duration")
+	cmd.Flags().DurationVar(&snapshotDebounce, "snapshot-debounce", 0, "workspace snapshot quiet duration")
+	cmd.Flags().DurationVar(&snapshotMinInterval, "snapshot-min-interval", 0, "minimum time between workspace snapshot captures")
 	cmd.Flags().Bool("foreground", true, "run daemon in foreground")
 	cmd.AddCommand(a.newDaemonStatusCommand())
 	cmd.AddCommand(a.newShutdownCommand())
@@ -442,7 +448,7 @@ func (a *app) newCheckCommand() *cobra.Command {
 				return err
 			}
 			if a.opts.output == "json" {
-				if err := writeJSON(cmd.OutOrStdout(), map[string]any{"settled": resp.Settled, "running": resp.Running, "queued": resp.Queued, "pending_changes": resp.PendingChanges, "pending_snapshot": resp.PendingSnapshot, "failed": outputs}); err != nil {
+				if err := writeJSON(cmd.OutOrStdout(), map[string]any{"settled": resp.Settled, "running": resp.Running, "queued": resp.Queued, "pending_changes": resp.PendingChanges, "pending_snapshot": resp.PendingSnapshot, "pending_lsp": resp.PendingLSP, "failed": outputs}); err != nil {
 					return err
 				}
 			} else {
@@ -464,7 +470,13 @@ func (a *app) checkOutputs(ctx context.Context, c *client.Client, hooksList []cl
 	outputs := make([]checkHookOutput, 0, len(hooksList))
 	for _, h := range hooksList {
 		output := ""
-		if h.LastRunID != "" {
+		if h.Hook.Engine == hooksapi.HookEngineLSP {
+			diagnostics, err := c.ListDiagnostics(ctx, client.DiagnosticOptions{HookID: h.Hook.ID})
+			if err != nil {
+				return nil, err
+			}
+			output = diagnosticsOutput(diagnostics)
+		} else if h.LastRunID != "" {
 			b, err := c.Output(ctx, h.Hook.ID)
 			if err != nil {
 				return nil, err
@@ -530,6 +542,130 @@ func (a *app) newChangesCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().IntVar(&limit, "limit", 50, "maximum rows to return; 0 means no limit")
+	return cmd
+}
+
+func (a *app) newDiagnosticsCommand() *cobra.Command {
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "diagnostics [HOOK_ID]",
+		Short: "List current LSP diagnostics",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, _, err := a.client(cmd.Context())
+			if err != nil {
+				return err
+			}
+			opts := client.DiagnosticOptions{Limit: limit, LimitSet: true}
+			if len(args) > 0 {
+				opts.HookID = args[0]
+			}
+			diagnostics, err := c.ListDiagnostics(cmd.Context(), opts)
+			if err != nil {
+				return err
+			}
+			return a.writeDiagnostics(cmd, diagnostics)
+		},
+	}
+	cmd.Flags().IntVar(&limit, "limit", 100, "maximum rows to return; 0 means no limit")
+	return cmd
+}
+
+func (a *app) newLSPCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "lsp",
+		Short: "Inspect LSP hooks",
+	}
+	cmd.AddCommand(a.newLSPStatusCommand())
+	cmd.AddCommand(a.newLSPDiagnosticsCommand())
+	cmd.AddCommand(a.newLSPEventsCommand())
+	return cmd
+}
+
+func (a *app) newLSPStatusCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "status",
+		Short: "Show LSP hook status",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			c, _, err := a.client(cmd.Context())
+			if err != nil {
+				return err
+			}
+			hooksList, err := c.ListHooks(cmd.Context())
+			if err != nil {
+				return err
+			}
+			diagnostics, err := c.ListDiagnostics(cmd.Context(), client.DiagnosticOptions{Limit: 0, LimitSet: true})
+			if err != nil {
+				return err
+			}
+			return a.writeLSPStatus(cmd, lspStatusRows(hooksList, diagnostics))
+		},
+	}
+}
+
+func (a *app) newLSPDiagnosticsCommand() *cobra.Command {
+	var limit int
+	cmd := &cobra.Command{
+		Use:   "diagnostics [HOOK_ID]",
+		Short: "List current LSP diagnostics",
+		Args:  cobra.MaximumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, _, err := a.client(cmd.Context())
+			if err != nil {
+				return err
+			}
+			opts := client.DiagnosticOptions{Limit: limit, LimitSet: true}
+			if len(args) > 0 {
+				opts.HookID = args[0]
+			}
+			diagnostics, err := c.ListDiagnostics(cmd.Context(), opts)
+			if err != nil {
+				return err
+			}
+			return a.writeDiagnostics(cmd, diagnostics)
+		},
+	}
+	cmd.Flags().IntVar(&limit, "limit", 100, "maximum rows to return; 0 means no limit")
+	return cmd
+}
+
+func (a *app) newLSPEventsCommand() *cobra.Command {
+	var limit int
+	var follow bool
+	var listTypes bool
+	cmd := &cobra.Command{
+		Use:     "events [HOOK_ID ...]",
+		Aliases: []string{"event"},
+		Short:   "List or follow LSP hook events",
+		Args:    cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if listTypes {
+				if follow {
+					return fmt.Errorf("lsp events --list-types cannot be combined with --follow")
+				}
+				if len(args) > 0 {
+					return fmt.Errorf("lsp events --list-types does not accept hook ids")
+				}
+				return a.writeEventTypes(cmd, filterEventTypes(hookapi.KnownEventTypes(), isLSPEventType))
+			}
+			c, _, err := a.client(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if follow {
+				return a.followLSPEvents(cmd, c, args, limit)
+			}
+			events, err := listTargetEvents(cmd.Context(), c, args, limit)
+			if err != nil {
+				return err
+			}
+			return a.writeEvents(cmd, filterEvents(events, isLSPEvent))
+		},
+	}
+	cmd.Flags().IntVar(&limit, "limit", 100, "maximum events to return")
+	cmd.Flags().BoolVarP(&follow, "follow", "f", false, "follow new events")
+	cmd.Flags().BoolVar(&listTypes, "list-types", false, "list known LSP event types")
 	return cmd
 }
 
@@ -803,6 +939,44 @@ func (a *app) writeObservedChanges(cmd *cobra.Command, changes []client.Observed
 	return tw.Flush()
 }
 
+func (a *app) writeDiagnostics(cmd *cobra.Command, diagnostics []client.Diagnostic) error {
+	if a.opts.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"diagnostics": diagnostics})
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "HOOK\tSEVERITY\tLOCATION\tSOURCE\tCODE\tMESSAGE")
+	for _, diagnostic := range diagnostics {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", diagnostic.HookID, diagnostic.Severity, diagnosticLocation(diagnostic), diagnostic.Source, diagnostic.Code, oneLine(diagnostic.Message))
+	}
+	return tw.Flush()
+}
+
+type lspStatusRow struct {
+	HookID          string              `json:"hook_id"`
+	Name            string              `json:"name"`
+	LanguageID      string              `json:"language_id,omitempty"`
+	Pattern         string              `json:"pattern,omitempty"`
+	Status          models.Status       `json:"status"`
+	Paused          bool                `json:"paused"`
+	DiagnosticCount int                 `json:"diagnostic_count"`
+	LastError       string              `json:"last_error,omitempty"`
+	UpdatedAt       time.Time           `json:"updated_at"`
+	Hook            hooksapi.Hook       `json:"hook"`
+	Diagnostics     []client.Diagnostic `json:"diagnostics,omitempty"`
+}
+
+func (a *app) writeLSPStatus(cmd *cobra.Command, rows []lspStatusRow) error {
+	if a.opts.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"lsp_hooks": rows})
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tNAME\tLANGUAGE\tSTATUS\tPAUSED\tDIAGNOSTICS\tERROR\tUPDATED\tPATTERN")
+	for _, row := range rows {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%t\t%d\t%s\t%s\t%s\n", row.HookID, row.Name, row.LanguageID, row.Status, row.Paused, row.DiagnosticCount, oneLine(row.LastError), formatEventTime(row.UpdatedAt), row.Pattern)
+	}
+	return tw.Flush()
+}
+
 func (a *app) writeSnapshots(cmd *cobra.Command, snapshots []client.WorkspaceSnapshot) error {
 	if a.opts.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"snapshots": snapshots})
@@ -835,7 +1009,7 @@ func writeCheckResult(w io.Writer, resp *client.WaitResponse, outputs []checkHoo
 		return err
 	}
 	if !resp.Settled {
-		fmt.Fprintf(w, "hook daemon unsettled: running=%t queued=%d pending_changes=%t pending_snapshot=%t\n", resp.Running, resp.Queued, resp.PendingChanges, resp.PendingSnapshot)
+		fmt.Fprintf(w, "hook daemon unsettled: running=%t queued=%d pending_changes=%t pending_snapshot=%t pending_lsp=%t\n", resp.Running, resp.Queued, resp.PendingChanges, resp.PendingSnapshot, resp.PendingLSP)
 	}
 	if len(outputs) == 0 {
 		return nil
@@ -883,6 +1057,37 @@ func writeCheckFailure(w io.Writer, out checkHookOutput) {
 	fmt.Fprintf(w, "=== END FAILED HOOK %s ===\n", out.HookID)
 }
 
+func diagnosticsOutput(diagnostics []client.Diagnostic) string {
+	if len(diagnostics) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	for _, diagnostic := range diagnostics {
+		fmt.Fprintf(&b, "%s: %s: %s", diagnosticLocation(diagnostic), diagnostic.Severity, diagnostic.Message)
+		if diagnostic.Source != "" || diagnostic.Code != "" {
+			fmt.Fprintf(&b, " [%s%s]", diagnostic.Source, diagnostic.Code)
+		}
+		b.WriteByte('\n')
+	}
+	return b.String()
+}
+
+func diagnosticLocation(diagnostic client.Diagnostic) string {
+	line := diagnostic.StartLine
+	if line <= 0 {
+		line = 1
+	}
+	col := diagnostic.StartCol
+	if col <= 0 {
+		col = 1
+	}
+	return fmt.Sprintf("%s:%d:%d", diagnostic.Path, line, col)
+}
+
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
 func eventDetailNames(details []hookapi.EventDetailInfo) string {
 	if len(details) == 0 {
 		return ""
@@ -913,6 +1118,33 @@ func (a *app) followEvents(cmd *cobra.Command, c *client.Client, args []string, 
 		}
 	}
 	return c.FollowEvents(cmd.Context(), client.EventOptions{HookID: hookID, Limit: limit}, func(event client.Event) error {
+		if a.opts.output == "json" {
+			return writeJSONLine(w, event)
+		}
+		tw = tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", event.ID, formatEventTime(event.CreatedAt), event.Type, event.HookID, formatRunID(event.RunID), event.Message)
+		return tw.Flush()
+	})
+}
+
+func (a *app) followLSPEvents(cmd *cobra.Command, c *client.Client, args []string, limit int) error {
+	hookID, err := followEventHookID(args)
+	if err != nil {
+		return err
+	}
+	w := cmd.OutOrStdout()
+	var tw *tabwriter.Writer
+	if a.opts.output == "table" {
+		tw = tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+		fmt.Fprintln(tw, "ID\tTIME\tTYPE\tHOOK\tRUN\tMESSAGE")
+		if err := tw.Flush(); err != nil {
+			return err
+		}
+	}
+	return c.FollowEvents(cmd.Context(), client.EventOptions{HookID: hookID, Limit: limit}, func(event client.Event) error {
+		if !isLSPEvent(event) {
+			return nil
+		}
 		if a.opts.output == "json" {
 			return writeJSONLine(w, event)
 		}
@@ -1278,6 +1510,71 @@ func failedHooks(hooks []client.HookStatus) []client.HookStatus {
 		}
 	}
 	return out
+}
+
+func lspStatusRows(hooksList []client.HookStatus, diagnostics []client.Diagnostic) []lspStatusRow {
+	byHook := make(map[string][]client.Diagnostic)
+	for _, diagnostic := range diagnostics {
+		if diagnostic.HookID == "" {
+			continue
+		}
+		byHook[diagnostic.HookID] = append(byHook[diagnostic.HookID], diagnostic)
+	}
+	rows := make([]lspStatusRow, 0)
+	for _, h := range hooksList {
+		if h.Hook.Engine != hooksapi.HookEngineLSP {
+			continue
+		}
+		hookDiagnostics := byHook[h.Hook.ID]
+		rows = append(rows, lspStatusRow{
+			HookID:          h.Hook.ID,
+			Name:            h.Hook.Name,
+			LanguageID:      h.Hook.LanguageID,
+			Pattern:         h.Hook.Pattern,
+			Status:          h.Status,
+			Paused:          h.Paused,
+			DiagnosticCount: len(hookDiagnostics),
+			LastError:       h.LastError,
+			UpdatedAt:       h.UpdatedAt,
+			Hook:            h.Hook,
+			Diagnostics:     hookDiagnostics,
+		})
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if rows[i].HookID == rows[j].HookID {
+			return rows[i].Name < rows[j].Name
+		}
+		return rows[i].HookID < rows[j].HookID
+	})
+	return rows
+}
+
+func filterEvents(events []client.Event, keep func(client.Event) bool) []client.Event {
+	out := events[:0]
+	for _, event := range events {
+		if keep(event) {
+			out = append(out, event)
+		}
+	}
+	return out
+}
+
+func filterEventTypes(types []hookapi.EventTypeInfo, keep func(hookapi.EventTypeInfo) bool) []hookapi.EventTypeInfo {
+	out := types[:0]
+	for _, eventType := range types {
+		if keep(eventType) {
+			out = append(out, eventType)
+		}
+	}
+	return out
+}
+
+func isLSPEvent(event client.Event) bool {
+	return strings.HasPrefix(event.Type, "lsp.")
+}
+
+func isLSPEventType(eventType hookapi.EventTypeInfo) bool {
+	return strings.HasPrefix(eventType.Type, "lsp.")
 }
 
 func listTargetEvents(ctx context.Context, c *client.Client, args []string, limit int) ([]client.Event, error) {
