@@ -3,7 +3,6 @@ package database_test
 import (
 	"context"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/obot-platform/discobox/gormdb"
@@ -59,36 +58,6 @@ func TestMigrateMigratesSingleSchema(t *testing.T) {
 	}
 	if db.Write.Migrator().HasTable("organizations") {
 		t.Fatalf("schema unexpectedly has organizations table")
-	}
-}
-
-func TestMigrateRejectsLegacyTenantSchema(t *testing.T) {
-	ctx := context.Background()
-	db, err := database.New(database.Config{
-		Driver: gormdb.DriverSQLite,
-		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
-	})
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := db.Close(); err != nil {
-			t.Fatalf("close database: %v", err)
-		}
-	})
-
-	if err := db.Write.Exec(`CREATE TABLE sandboxes (id text PRIMARY KEY, tenant_id text NOT NULL)`).Error; err != nil {
-		t.Fatalf("create legacy table: %v", err)
-	}
-
-	err = db.Migrate(ctx)
-	if err == nil {
-		t.Fatalf("migrate legacy tenant schema: expected error")
-	}
-	for _, want := range []string{"legacy tenant schema detected", "sandboxes", "fresh database"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("migrate legacy tenant schema error = %q, want substring %q", err.Error(), want)
-		}
 	}
 }
 

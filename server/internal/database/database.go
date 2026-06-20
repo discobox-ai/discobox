@@ -3,7 +3,6 @@ package database
 
 import (
 	"context"
-	"fmt"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -54,9 +53,6 @@ func New(cfg Config) (*DB, error) {
 // recreated into the current single-database schema before running this server.
 func (db *DB) Migrate(ctx context.Context) error {
 	write := db.Write.WithContext(ctx)
-	if err := rejectLegacyTenantSchema(write); err != nil {
-		return err
-	}
 	if err := write.AutoMigrate(model.AllModels()...); err != nil {
 		return err
 	}
@@ -64,16 +60,6 @@ func (db *DB) Migrate(ctx context.Context) error {
 		return err
 	}
 	return store.BackfillJobProjectIDs(ctx, write)
-}
-
-func rejectLegacyTenantSchema(db *gorm.DB) error {
-	for _, m := range append(model.AllModels(), store.JobModels()...) {
-		if !db.Migrator().HasTable(m) || !db.Migrator().HasColumn(m, "tenant_id") {
-			continue
-		}
-		return fmt.Errorf("legacy tenant schema detected on table %q: tenant-era databases are not migrated in place; export with a build that understands the tenant-era schema, start this server with a fresh database, then recreate or import needed resources into the current schema", tableName(db, m))
-	}
-	return nil
 }
 
 func tableName(db *gorm.DB, m any) string {
