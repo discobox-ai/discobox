@@ -10,7 +10,7 @@ one resource area.
 flowchart LR
     handlers[internal/handlers] --> contracts[internal/services]
     contracts --> service[internal/service]
-    service --> resources[internal/resources/{resource}]
+    service --> resources["internal/resources/{resource}"]
     dispatcher[orchestration.Dispatcher] --> executor[resource Executor]
     executor --> manager[resource Manager/Reconciler]
     resources --> store[internal/store]

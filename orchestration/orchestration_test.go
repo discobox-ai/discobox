@@ -102,14 +102,6 @@ func (r *lifecycleResource) SetLastJobID(jobID *string) {
 	r.LastJobID = jobID
 }
 
-func (r *lifecycleResource) copy() *lifecycleResource {
-	if r == nil {
-		return nil
-	}
-	copied := *r
-	return &copied
-}
-
 func TestQueueEnqueueAppliesDefaultsAndPayloadOptions(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)

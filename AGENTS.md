@@ -46,9 +46,13 @@ Common targets:
 go tool task test       # root module tests
 go tool task test:all   # root and nested module tests
 go tool task check      # static checks
+go tool task check-hooks # validate hook definitions and hook-related code
 go tool task generate   # regenerate generated files
 go tool task build      # build server, CLI, UI, and Electron shell
 ```
+
+At the end of a code-changing task, run `go tool task check-hooks` to validate
+the code and hook definitions before handing work back.
 
 Prefer adding or updating `Taskfile.yml` targets instead of documenting ad hoc
 commands here.

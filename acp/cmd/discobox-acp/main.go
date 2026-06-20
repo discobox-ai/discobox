@@ -355,7 +355,7 @@ func (a *app) runSupervisor(ctx context.Context, agent registry.Agent) error {
 		return err
 	}
 	defer client.Close()
-	defer launcher.ClearRuntime(agent.ID)
+	defer func() { _ = launcher.ClearRuntime(agent.ID) }()
 
 	init, err := client.Initialize(ctx)
 	if err != nil {

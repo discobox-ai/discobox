@@ -62,14 +62,6 @@ func (db *DB) Migrate(ctx context.Context) error {
 	return store.BackfillJobProjectIDs(ctx, write)
 }
 
-func tableName(db *gorm.DB, m any) string {
-	stmt := &gorm.Statement{DB: db}
-	if err := stmt.Parse(m); err != nil || stmt.Schema == nil {
-		return ""
-	}
-	return stmt.Schema.Table
-}
-
 // Close closes the underlying database pools.
 func (db *DB) Close() error {
 	if db == nil || db.pools == nil {

@@ -9,7 +9,7 @@ records directly.
 ```mermaid
 flowchart LR
     service[internal/service] --> store[internal/store]
-    resources[internal/resources/{resource}] --> store
+    resources["internal/resources/{resource}"] --> store
     auth[internal/auth/sandbox] --> store
     authn[internal/auth] --> store
     store --> db[(GORM write/read handles)]
