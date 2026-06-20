@@ -76,6 +76,7 @@ flowchart TD
     server --> gormdb["github.com/obot-platform/discobox/gormdb"]
     hooks --> root
     hooks --> gormdb
+    sessions["github.com/obot-platform/discobox/sessions"] --> root
     providers --> root
     providers --> workerAgent["github.com/obot-platform/discobox/worker-agent"]
     workerAgent --> root
@@ -99,6 +100,10 @@ flowchart TD
   primitives. It depends inward on stable contracts and shared infrastructure
   helpers such as `gormdb`, but must not depend on server internals. See
   [`hooks/DESIGN.md`](hooks/DESIGN.md).
+- Sessions module: standalone coding-agent session manager. It starts supported
+  agent CLIs in daemon-owned PTYs, exposes attach streams over a local Unix
+  socket, and must not depend on server internals. See
+  [`sessions/DESIGN.md`](sessions/DESIGN.md).
 - Worker-agent module: in-guest worker process, local worker image watcher, and
   generated worker-local sandbox operations API server adapter; depends on root
   worker boot contracts and OpenAPI contracts.
