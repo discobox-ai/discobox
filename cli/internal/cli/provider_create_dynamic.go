@@ -22,6 +22,14 @@ type dynamicProviderCreateOptions struct {
 	Flags        *pflag.FlagSet
 }
 
+type dynamicProviderUpdateOptions struct {
+	ProviderID string
+	Name       string
+	Config     string
+	Disabled   bool
+	Flags      *pflag.FlagSet
+}
+
 type providerCreateHelpFlag struct {
 	provider string
 	set      bool
@@ -97,6 +105,70 @@ func (a *App) runProviderCreate(cmd *cobra.Command, args []string) error {
 	return a.writeProvider(cmd, created)
 }
 
+func (a *App) runProviderUpdate(cmd *cobra.Command, args []string) error {
+	args = a.consumeProviderCreateGlobalFlags(args)
+	if helpProvider, ok := providerCreateHelpRequest(nil, args); ok {
+		if helpProvider == "" {
+			writeProviderUpdateStaticHelp(cmd)
+			return nil
+		}
+		return a.writeProviderUpdateHelpForProvider(cmd, helpProvider)
+	}
+	providerIDArg, ok := firstProviderUpdateIDArg(args)
+	if !ok {
+		return fmt.Errorf("provider ID is required")
+	}
+	projectID, err := a.projectIDValue()
+	if err != nil {
+		return err
+	}
+	client, err := a.apiClient()
+	if err != nil {
+		return err
+	}
+	providerID, err := a.resolveProviderID(cmd.Context(), client, projectID, providerIDArg)
+	if err != nil {
+		return err
+	}
+	currentRes, err := client.GetSandboxProviderInstance(cmd.Context(), apiclientgen.GetSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID})
+	if err != nil {
+		return err
+	}
+	current, err := expectResponse[apiclientgen.SandboxProviderInstance](currentRes)
+	if err != nil {
+		return err
+	}
+	catalogRes, err := client.ListSandboxProviderCatalog(cmd.Context())
+	if err != nil {
+		return err
+	}
+	catalog, err := expectResponse[apiclientgen.ListSandboxProviderCatalogBody](catalogRes)
+	if err != nil {
+		return err
+	}
+	provider, ok := findProviderCatalogItem(catalog.GetProviders(), current.Type)
+	if !ok {
+		return fmt.Errorf("provider type %q not found", current.Type)
+	}
+	opts, err := parseDynamicProviderUpdateArgs(cmd, args, provider)
+	if err != nil {
+		return err
+	}
+	body, err := dynamicProviderUpdateBody(opts, provider, current)
+	if err != nil {
+		return err
+	}
+	providerRes, err := client.UpdateSandboxProviderInstance(cmd.Context(), body, apiclientgen.UpdateSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID})
+	if err != nil {
+		return err
+	}
+	updated, err := expectResponse[apiclientgen.SandboxProviderInstance](providerRes)
+	if err != nil {
+		return err
+	}
+	return a.writeProvider(cmd, updated)
+}
+
 func (a *App) consumeProviderCreateGlobalFlags(args []string) []string {
 	out := make([]string, 0, len(args))
 	for i := 0; i < len(args); i++ {
@@ -138,6 +210,23 @@ func (a *App) consumeProviderCreateGlobalFlags(args []string) []string {
 		}
 	}
 	return out
+}
+
+func firstProviderUpdateIDArg(args []string) (string, bool) {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
+		if arg == "--help" || arg == "-h" || strings.HasPrefix(arg, "--help=") || strings.HasPrefix(arg, "--help-provider=") {
+			return "", false
+		}
+		if strings.HasPrefix(arg, "-") {
+			if !strings.Contains(arg, "=") && i+1 < len(args) && !strings.HasPrefix(args[i+1], "-") {
+				i++
+			}
+			continue
+		}
+		return strings.TrimSpace(arg), strings.TrimSpace(arg) != ""
+	}
+	return "", false
 }
 
 func providerCreateArgs(cmd *cobra.Command, args []string) []string {
@@ -208,12 +297,46 @@ func parseDynamicProviderCreateArgs(cmd *cobra.Command, args []string, provider 
 	return opts, nil
 }
 
+func parseDynamicProviderUpdateArgs(cmd *cobra.Command, args []string, provider apiclientgen.SandboxProviderCatalogItem) (dynamicProviderUpdateOptions, error) {
+	opts := dynamicProviderUpdateOptions{}
+	flags := providerUpdateFlagSet(cmd, provider, &opts)
+	opts.Flags = flags
+	if err := flags.Parse(args); err != nil {
+		return opts, err
+	}
+	if flags.NArg() != 1 {
+		return opts, fmt.Errorf("expected exactly one provider ID")
+	}
+	opts.ProviderID = strings.TrimSpace(flags.Arg(0))
+	if opts.ProviderID == "" {
+		return opts, fmt.Errorf("provider ID is required")
+	}
+	return opts, nil
+}
+
 func providerCreateFlagSet(cmd *cobra.Command, provider apiclientgen.SandboxProviderCatalogItem, opts *dynamicProviderCreateOptions) *pflag.FlagSet {
 	flags := pflag.NewFlagSet(cmd.Name(), pflag.ContinueOnError)
 	flags.SetOutput(cmd.ErrOrStderr())
 	flags.StringVar(&opts.ProviderType, "type", provider.ID, "Provider type")
 	flags.StringVar(&opts.Name, "name", "", "Provider instance name")
 	flags.StringVar(&opts.Config, "config", "", "Provider config JSON or @path; cannot be combined with provider-specific flags")
+	for _, field := range sortedProviderConfigFields(provider) {
+		flagName := providerFieldFlagName(field.Key)
+		description := providerFieldDescription(field)
+		flags.String(flagName, "", description)
+		if strings.EqualFold(field.Type, "boolean") || strings.EqualFold(field.Type, "bool") {
+			flags.Lookup(flagName).NoOptDefVal = "true"
+		}
+	}
+	return flags
+}
+
+func providerUpdateFlagSet(cmd *cobra.Command, provider apiclientgen.SandboxProviderCatalogItem, opts *dynamicProviderUpdateOptions) *pflag.FlagSet {
+	flags := pflag.NewFlagSet(cmd.Name(), pflag.ContinueOnError)
+	flags.SetOutput(cmd.ErrOrStderr())
+	flags.StringVar(&opts.Name, "name", "", "Provider instance name")
+	flags.StringVar(&opts.Config, "config", "", "Provider config JSON or @path; cannot be combined with provider-specific flags")
+	flags.BoolVar(&opts.Disabled, "disabled", false, "Disable or enable the provider instance")
 	for _, field := range sortedProviderConfigFields(provider) {
 		flagName := providerFieldFlagName(field.Key)
 		description := providerFieldDescription(field)
@@ -282,6 +405,74 @@ func dynamicProviderCreateConfig(flags *pflag.FlagSet, provider apiclientgen.San
 	return jx.Raw(data), nil
 }
 
+func dynamicProviderUpdateBody(opts dynamicProviderUpdateOptions, provider apiclientgen.SandboxProviderCatalogItem, current *apiclientgen.SandboxProviderInstance) (*apiclientgen.UpdateSandboxProviderInstanceBody, error) {
+	body := &apiclientgen.UpdateSandboxProviderInstanceBody{}
+	if opts.Flags == nil {
+		return body, nil
+	}
+	if opts.Flags.Changed("name") {
+		body.SetName(apiclientgen.NewOptString(opts.Name))
+	}
+	if opts.Flags.Changed("disabled") {
+		body.SetDisabled(apiclientgen.NewOptBool(opts.Disabled))
+	}
+	if dynamicProviderUpdateConfigChanged(opts.Flags, provider) {
+		raw, err := dynamicProviderUpdateConfig(opts, provider, current)
+		if err != nil {
+			return nil, err
+		}
+		body.SetConfig(raw)
+	}
+	return body, nil
+}
+
+func dynamicProviderUpdateConfig(opts dynamicProviderUpdateOptions, provider apiclientgen.SandboxProviderCatalogItem, current *apiclientgen.SandboxProviderInstance) (jx.Raw, error) {
+	if opts.Flags.Changed("config") {
+		for _, field := range sortedProviderConfigFields(provider) {
+			if opts.Flags.Changed(providerFieldFlagName(field.Key)) {
+				return nil, fmt.Errorf("--config cannot be combined with provider-specific flags")
+			}
+		}
+		return rawJSON(opts.Config)
+	}
+	m := map[string]any{}
+	if current != nil && len(current.GetConfig()) > 0 {
+		_ = json.Unmarshal(current.GetConfig(), &m)
+	}
+	for _, field := range sortedProviderConfigFields(provider) {
+		flagName := providerFieldFlagName(field.Key)
+		if !opts.Flags.Changed(flagName) {
+			continue
+		}
+		value, err := opts.Flags.GetString(flagName)
+		if err != nil {
+			return nil, err
+		}
+		converted, err := providerFieldValue(field, value)
+		if err != nil {
+			return nil, fmt.Errorf("--%s: %w", flagName, err)
+		}
+		m[field.Key] = converted
+	}
+	data, err := json.Marshal(m)
+	if err != nil {
+		return nil, err
+	}
+	return jx.Raw(data), nil
+}
+
+func dynamicProviderUpdateConfigChanged(flags *pflag.FlagSet, provider apiclientgen.SandboxProviderCatalogItem) bool {
+	if flags.Changed("config") {
+		return true
+	}
+	for _, field := range sortedProviderConfigFields(provider) {
+		if flags.Changed(providerFieldFlagName(field.Key)) {
+			return true
+		}
+	}
+	return false
+}
+
 func (a *App) writeProviderCreateHelpForProvider(cmd *cobra.Command, providerType string) error {
 	client, err := a.apiClient()
 	if err != nil {
@@ -302,6 +493,26 @@ func (a *App) writeProviderCreateHelpForProvider(cmd *cobra.Command, providerTyp
 	return writeProviderCreateHelp(cmd.OutOrStdout(), provider)
 }
 
+func (a *App) writeProviderUpdateHelpForProvider(cmd *cobra.Command, providerType string) error {
+	client, err := a.apiClient()
+	if err != nil {
+		return err
+	}
+	catalogRes, err := client.ListSandboxProviderCatalog(cmd.Context())
+	if err != nil {
+		return err
+	}
+	catalog, err := expectResponse[apiclientgen.ListSandboxProviderCatalogBody](catalogRes)
+	if err != nil {
+		return err
+	}
+	provider, ok := findProviderCatalogItem(catalog.GetProviders(), providerType)
+	if !ok {
+		return fmt.Errorf("provider type %q not found", providerType)
+	}
+	return writeProviderUpdateHelp(cmd.OutOrStdout(), provider)
+}
+
 func writeProviderCreateStaticHelp(cmd *cobra.Command) {
 	fmt.Fprintln(cmd.OutOrStdout(), cmd.Long)
 	fmt.Fprintln(cmd.OutOrStdout())
@@ -313,6 +524,22 @@ func writeProviderCreateStaticHelp(cmd *cobra.Command) {
 	fmt.Fprintln(cmd.OutOrStdout(), "Common Flags:")
 	fmt.Fprintln(cmd.OutOrStdout(), "      --name string       Provider instance name")
 	fmt.Fprintln(cmd.OutOrStdout(), "      --type string       Provider type (default \"digitalocean\")")
+	fmt.Fprintln(cmd.OutOrStdout(), "      --config string     Provider config JSON or @path")
+	fmt.Fprintln(cmd.OutOrStdout(), "      --help              Show this help without contacting the API server")
+	fmt.Fprintln(cmd.OutOrStdout(), "      --help=PROVIDER     Load catalog and show provider-specific flags")
+}
+
+func writeProviderUpdateStaticHelp(cmd *cobra.Command) {
+	fmt.Fprintln(cmd.OutOrStdout(), cmd.Long)
+	fmt.Fprintln(cmd.OutOrStdout())
+	fmt.Fprintln(cmd.OutOrStdout(), "Provider discovery:")
+	fmt.Fprintln(cmd.OutOrStdout(), "      discobox provider catalog          List available provider types")
+	fmt.Fprintln(cmd.OutOrStdout(), "      discobox provider update --help=PROVIDER")
+	fmt.Fprintln(cmd.OutOrStdout(), "                                      Show provider-specific update flags")
+	fmt.Fprintln(cmd.OutOrStdout())
+	fmt.Fprintln(cmd.OutOrStdout(), "Common Flags:")
+	fmt.Fprintln(cmd.OutOrStdout(), "      --name string       Provider instance name")
+	fmt.Fprintln(cmd.OutOrStdout(), "      --disabled          Disable or enable the provider instance")
 	fmt.Fprintln(cmd.OutOrStdout(), "      --config string     Provider config JSON or @path")
 	fmt.Fprintln(cmd.OutOrStdout(), "      --help              Show this help without contacting the API server")
 	fmt.Fprintln(cmd.OutOrStdout(), "      --help=PROVIDER     Load catalog and show provider-specific flags")
@@ -346,6 +573,35 @@ func writeProviderCreateHelp(w io.Writer, provider apiclientgen.SandboxProviderC
 				advanced = " [advanced]"
 			}
 			fmt.Fprintf(w, "      --%-22s %s%s%s%s\n", providerFieldFlagName(field.Key)+" string", description, required, placeholder, advanced)
+		}
+	}
+	return nil
+}
+
+func writeProviderUpdateHelp(w io.Writer, provider apiclientgen.SandboxProviderCatalogItem) error {
+	fmt.Fprintf(w, "Update a %s provider instance\n\n", provider.Name)
+	if description, ok := provider.Description.Get(); ok && strings.TrimSpace(description) != "" {
+		fmt.Fprintf(w, "%s\n\n", description)
+	}
+	fmt.Fprintf(w, "Usage:\n  discobox provider update PROVIDER_ID [provider flags]\n\n")
+	fmt.Fprintln(w, "Common Flags:")
+	fmt.Fprintln(w, "      --name string       Provider instance name")
+	fmt.Fprintln(w, "      --disabled          Disable or enable the provider instance")
+	fmt.Fprintln(w, "      --config string     Provider config JSON or @path; cannot be combined with provider-specific flags")
+	fields := sortedProviderConfigFields(provider)
+	if len(fields) > 0 {
+		fmt.Fprintln(w, "\nProvider Flags:")
+		for _, field := range fields {
+			placeholder := ""
+			if value, ok := field.Placeholder.Get(); ok && strings.TrimSpace(value) != "" {
+				placeholder = fmt.Sprintf(" default/example: %s", value)
+			}
+			description := field.Description.Or(field.Label)
+			advanced := ""
+			if field.Advanced.Or(false) {
+				advanced = " [advanced]"
+			}
+			fmt.Fprintf(w, "      --%-22s %s%s%s\n", providerFieldFlagName(field.Key)+" string", description, placeholder, advanced)
 		}
 	}
 	return nil
