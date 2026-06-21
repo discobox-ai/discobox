@@ -197,6 +197,7 @@ func defaultDockerProviderConfig() json.RawMessage {
 		"agentPort":         dockerdriver.DefaultAgentPort(),
 		"systemd":           systemd,
 		"minWorkers":        1,
+		"maxWorkers":        1,
 		"minHealthyWorkers": 1,
 	})
 	if err != nil {

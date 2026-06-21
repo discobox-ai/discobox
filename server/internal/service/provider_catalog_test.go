@@ -362,6 +362,7 @@ func assertDefaultDockerProviderConfig(t *testing.T, data []byte, expectedImage 
 		AgentPort         int    `json:"agentPort"`
 		Systemd           bool   `json:"systemd"`
 		MinWorkers        int    `json:"minWorkers"`
+		MaxWorkers        int    `json:"maxWorkers"`
 		MinHealthyWorkers int    `json:"minHealthyWorkers"`
 	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
@@ -373,7 +374,7 @@ func assertDefaultDockerProviderConfig(t *testing.T, data []byte, expectedImage 
 	if cfg.AgentPort != dockerdriver.DefaultAgentPort() {
 		t.Fatalf("config agentPort = %d, want %d", cfg.AgentPort, dockerdriver.DefaultAgentPort())
 	}
-	if !cfg.Systemd || cfg.MinWorkers != 1 || cfg.MinHealthyWorkers != 1 {
+	if !cfg.Systemd || cfg.MinWorkers != 1 || cfg.MaxWorkers != 1 || cfg.MinHealthyWorkers != 1 {
 		t.Fatalf("provider config = %+v, want systemd and worker pool defaults", cfg)
 	}
 }
