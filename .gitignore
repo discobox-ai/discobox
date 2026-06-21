@@ -13,5 +13,4 @@ build-errors.log
 /electron/dist/
 /electron/release/
 
-/prompter/prompter
 /node_modules/

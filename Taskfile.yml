@@ -5,10 +5,6 @@ vars:
   SERVER_MAIN: ./cmd/discobox-server
   CLI_BINARY: build/discobox
   CLI_MAIN: ./cmd/discobox
-  PROMPTER_BINARY: build/prompter
-  PROMPTER_MAIN: ./cmd/prompter
-  ACP_BINARY: build/discobox-acp
-  ACP_MAIN: ./cmd/discobox-acp
   SESSION_BINARY: build/discobox-session
   SESSIONS_BINARY: build/discobox-sessions
   SESSION_MAIN: ./cmd/discobox-session
@@ -23,12 +19,10 @@ tasks:
       - task --list
 
   build:
-    desc: Compile discobox-server, discobox CLI, prompter, ACP CLI, session CLI, UI, and Electron shell
+    desc: Compile discobox-server, discobox CLI, session CLI, UI, and Electron shell
     cmds:
       - task: build:server
       - task: build:cli
-      - task: build:prompter
-      - task: build:acp
       - task: build:session
       - task: build:ui
       - task: build:electron
@@ -44,18 +38,6 @@ tasks:
     cmds:
       - mkdir -p build
       - cd cli && go build -o ../{{.CLI_BINARY}} {{.CLI_MAIN}}
-
-  build:prompter:
-    desc: Compile prompter CLI
-    cmds:
-      - mkdir -p build
-      - cd prompter && go build -o ../{{.PROMPTER_BINARY}} {{.PROMPTER_MAIN}}
-
-  build:acp:
-    desc: Compile discobox-acp CLI
-    cmds:
-      - mkdir -p build
-      - cd acp && go build -o ../{{.ACP_BINARY}} {{.ACP_MAIN}}
 
   build:session:
     desc: Compile discobox-session CLI
@@ -187,16 +169,6 @@ tasks:
           build/bats/bin/bats test/bats/docker_cli.bats
         fi
 
-  test:prompter:e2e:
-    desc: Run opt-in prompter real-agent detector e2e tests
-    cmds:
-      - cd prompter && go test ./internal/e2e -count=1 -v
-
-  test:prompter:e2e:list:
-    desc: List prompter e2e agent credential requirements
-    cmds:
-      - cd prompter && DISCOBOX_PROMPTER_E2E_LIST=1 go test ./internal/e2e -run TestAgentDetectorE2E -count=1 -v
-
   test:all:
     desc: Run root and nested module tests
     cmds:
@@ -206,9 +178,7 @@ tasks:
       - cd worker-agent && go test ./...
       - cd gormdb && go test ./...
       - cd orchestration && go test ./...
-      - cd prompter && go test ./...
       - cd hooks && go test ./...
-      - cd acp && go test ./...
       - cd sessions && go test ./...
 
   check:
@@ -220,9 +190,7 @@ tasks:
       - cd worker-agent && "$(go -C .. tool -n golangci-lint)" run
       - cd gormdb && "$(go -C .. tool -n golangci-lint)" run
       - cd orchestration && "$(go -C .. tool -n golangci-lint)" run
-      - cd prompter && "$(go -C .. tool -n golangci-lint)" run
       - cd hooks && "$(go -C .. tool -n golangci-lint)" run
-      - cd acp && "$(go -C .. tool -n golangci-lint)" run
       - cd sessions && "$(go -C .. tool -n golangci-lint)" run
       - task: check:ui
       - task: check:electron
@@ -277,7 +245,6 @@ tasks:
       - cd worker-agent && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd gormdb && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd orchestration && "$(go -C .. tool -n golangci-lint)" run --fix
-      - cd prompter && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd hooks && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd sessions && "$(go -C .. tool -n golangci-lint)" run --fix
       - task: check:ui:fix
