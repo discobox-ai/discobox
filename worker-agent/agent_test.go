@@ -11,7 +11,8 @@ import (
 
 	sandbox "github.com/obot-platform/discobox/sandboxprovider"
 	workeragent "github.com/obot-platform/discobox/worker-agent"
-	workerclient "github.com/obot-platform/discobox/worker-agent/api/clientgen"
+	workerclient "github.com/obot-platform/discobox/worker-agent/api/gen"
+	workerapimodel "github.com/obot-platform/discobox/worker-agent/api/model"
 )
 
 func TestRunRegistersWorkerWithGeneratedPublicKey(t *testing.T) {
@@ -134,7 +135,7 @@ func TestWorkerSandboxHandlersValidateIdentityAndOperateOnRuntime(t *testing.T) 
 		t.Fatalf("new worker client: %v", err)
 	}
 
-	created, err := client.WorkerCreateSandbox(context.Background(), &workerclient.WorkerSandboxCreateRequest{SandboxId: "sandbox-1", Image: workerclient.NewOptString("alpine")}, workerclient.WorkerCreateSandboxParams{ProjectId: "project-1", WorkerId: "worker-1"})
+	created, err := client.WorkerCreateSandbox(context.Background(), &workerapimodel.WorkerSandboxCreateRequest{SandboxId: "sandbox-1", Image: workerclient.NewOptString("alpine")}, workerclient.WorkerCreateSandboxParams{ProjectId: "project-1", WorkerId: "worker-1"})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
@@ -142,7 +143,7 @@ func TestWorkerSandboxHandlersValidateIdentityAndOperateOnRuntime(t *testing.T) 
 		t.Fatalf("created sandbox = %#v", created)
 	}
 
-	started, err := client.WorkerStartSandbox(context.Background(), &workerclient.WorkerSandboxOperationRequest{}, workerclient.WorkerStartSandboxParams{ProjectId: "project-1", WorkerId: "worker-1", SandboxId: "sandbox-1"})
+	started, err := client.WorkerStartSandbox(context.Background(), &workerapimodel.WorkerSandboxOperationRequest{}, workerclient.WorkerStartSandboxParams{ProjectId: "project-1", WorkerId: "worker-1", SandboxId: "sandbox-1"})
 	if err != nil {
 		t.Fatalf("start already-running sandbox: %v", err)
 	}
@@ -150,7 +151,7 @@ func TestWorkerSandboxHandlersValidateIdentityAndOperateOnRuntime(t *testing.T) 
 		t.Fatalf("started status = %q", started.Status)
 	}
 
-	stopped, err := client.WorkerStopSandbox(context.Background(), &workerclient.WorkerSandboxOperationRequest{}, workerclient.WorkerStopSandboxParams{ProjectId: "project-1", WorkerId: "worker-1", SandboxId: "sandbox-1"})
+	stopped, err := client.WorkerStopSandbox(context.Background(), &workerapimodel.WorkerSandboxOperationRequest{}, workerclient.WorkerStopSandboxParams{ProjectId: "project-1", WorkerId: "worker-1", SandboxId: "sandbox-1"})
 	if err != nil {
 		t.Fatalf("stop sandbox: %v", err)
 	}

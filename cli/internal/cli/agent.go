@@ -6,7 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
+	apiclientgen "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 )
 
 type agentCreateOptions struct {
@@ -50,7 +51,7 @@ func (a *App) newAgentDefinitionsCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			definition, err := expectResponse[apiclientgen.AgentConfigDefinition](definitionRes)
+			definition, err := expectResponse[apimodel.AgentConfigDefinition](definitionRes)
 			if err != nil {
 				return err
 			}
@@ -60,7 +61,7 @@ func (a *App) newAgentDefinitionsCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		body, err := expectResponse[apiclientgen.ListAgentConfigDefinitionsBody](bodyRes)
+		body, err := expectResponse[apimodel.ListAgentConfigDefinitionsBody](bodyRes)
 		if err != nil {
 			return err
 		}
@@ -84,7 +85,7 @@ func (a *App) newAgentListCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		body, err := expectResponse[apiclientgen.ListAgentConfigsBody](bodyRes)
+		body, err := expectResponse[apimodel.ListAgentConfigsBody](bodyRes)
 		if err != nil {
 			return err
 		}
@@ -102,7 +103,7 @@ func (a *App) newAgentGetCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		agent, err := expectResponse[apiclientgen.AgentConfig](agentRes)
+		agent, err := expectResponse[apimodel.AgentConfig](agentRes)
 		if err != nil {
 			return err
 		}
@@ -135,7 +136,7 @@ func (a *App) newAgentCreateCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		agent, err := expectResponse[apiclientgen.AgentConfig](agentRes)
+		agent, err := expectResponse[apimodel.AgentConfig](agentRes)
 		if err != nil {
 			return err
 		}
@@ -164,7 +165,7 @@ func (a *App) newAgentUpdateCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		agent, err := expectResponse[apiclientgen.AgentConfig](agentRes)
+		agent, err := expectResponse[apimodel.AgentConfig](agentRes)
 		if err != nil {
 			return err
 		}
@@ -208,8 +209,8 @@ func (a *App) agentRequest(ctx context.Context, agentArg string) (projectID stri
 	return projectID, agentID, client, err
 }
 
-func createAgentBody(opts agentCreateOptions) (*apiclientgen.CreateAgentConfigBody, error) {
-	body := &apiclientgen.CreateAgentConfigBody{}
+func createAgentBody(opts agentCreateOptions) (*apimodel.CreateAgentConfigBody, error) {
+	body := &apimodel.CreateAgentConfigBody{}
 	body.SetName(optString(opts.name))
 	body.SetDefinitionId(optString(opts.definitionID))
 	body.SetInstallCommand(optString(opts.installCommand))
@@ -222,8 +223,8 @@ func createAgentBody(opts agentCreateOptions) (*apiclientgen.CreateAgentConfigBo
 	return body, nil
 }
 
-func updateAgentBody(cmd *cobra.Command, opts agentUpdateOptions) (*apiclientgen.UpdateAgentConfigBody, error) {
-	body := &apiclientgen.UpdateAgentConfigBody{}
+func updateAgentBody(cmd *cobra.Command, opts agentUpdateOptions) (*apimodel.UpdateAgentConfigBody, error) {
+	body := &apimodel.UpdateAgentConfigBody{}
 	if cmd.Flags().Changed("name") {
 		body.SetName(apiclientgen.NewOptString(opts.name))
 	}

@@ -3,7 +3,8 @@ package handlers
 import (
 	"context"
 
-	serverapi "github.com/obot-platform/discobox/api/servergen"
+	serverapi "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 	services "github.com/obot-platform/discobox/server/internal/services"
 )
 
@@ -12,7 +13,7 @@ func (h *Handler) ListAgentConfigDefinitions(ctx context.Context) (serverapi.Lis
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[serverapi.ListAgentConfigDefinitionsBody](struct {
+	body, err := services.Convert[apimodel.ListAgentConfigDefinitionsBody](struct {
 		AgentConfigDefinitions any `json:"agentConfigDefinitions"`
 	}{AgentConfigDefinitions: definitions})
 	if err != nil {
@@ -26,7 +27,7 @@ func (h *Handler) GetAgentConfigDefinition(ctx context.Context, params serverapi
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[serverapi.AgentConfigDefinition](definition)
+	body, err := services.Convert[apimodel.AgentConfigDefinition](definition)
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +39,7 @@ func (h *Handler) ListAgentConfigs(ctx context.Context, params serverapi.ListAge
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[serverapi.ListAgentConfigsBody](struct {
+	body, err := services.Convert[apimodel.ListAgentConfigsBody](struct {
 		AgentConfigs any `json:"agentConfigs"`
 	}{AgentConfigs: configs})
 	if err != nil {
@@ -47,12 +48,12 @@ func (h *Handler) ListAgentConfigs(ctx context.Context, params serverapi.ListAge
 	return &body, nil
 }
 
-func (h *Handler) CreateAgentConfig(ctx context.Context, req *serverapi.CreateAgentConfigBody, params serverapi.CreateAgentConfigParams) (serverapi.CreateAgentConfigRes, error) {
+func (h *Handler) CreateAgentConfig(ctx context.Context, req *apimodel.CreateAgentConfigBody, params serverapi.CreateAgentConfigParams) (serverapi.CreateAgentConfigRes, error) {
 	config, err := h.services.AgentConfigs.CreateAgentConfig(ctx, params.ProjectId, *req)
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[serverapi.AgentConfig](config)
+	body, err := services.Convert[apimodel.AgentConfig](config)
 	if err != nil {
 		return nil, err
 	}
@@ -64,19 +65,19 @@ func (h *Handler) GetAgentConfig(ctx context.Context, params serverapi.GetAgentC
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[serverapi.AgentConfig](config)
+	body, err := services.Convert[apimodel.AgentConfig](config)
 	if err != nil {
 		return nil, err
 	}
 	return &body, nil
 }
 
-func (h *Handler) UpdateAgentConfig(ctx context.Context, req *serverapi.UpdateAgentConfigBody, params serverapi.UpdateAgentConfigParams) (serverapi.UpdateAgentConfigRes, error) {
+func (h *Handler) UpdateAgentConfig(ctx context.Context, req *apimodel.UpdateAgentConfigBody, params serverapi.UpdateAgentConfigParams) (serverapi.UpdateAgentConfigRes, error) {
 	config, err := h.services.AgentConfigs.UpdateAgentConfig(ctx, params.ProjectId, params.AgentConfigId, *req)
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[serverapi.AgentConfig](config)
+	body, err := services.Convert[apimodel.AgentConfig](config)
 	if err != nil {
 		return nil, err
 	}

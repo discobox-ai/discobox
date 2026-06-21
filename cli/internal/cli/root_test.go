@@ -14,7 +14,8 @@ import (
 	"github.com/go-faster/jx"
 	"github.com/spf13/cobra"
 
-	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
+	apiclientgen "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 	"github.com/obot-platform/discobox/apiclient"
 	"github.com/obot-platform/discobox/model"
 )
@@ -25,13 +26,13 @@ func TestWriteProviderTableIncludesConfig(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 
-	err := app.writeProvider(cmd, &apiclientgen.SandboxProviderInstance{
+	err := app.writeProvider(cmd, &apimodel.SandboxProviderInstance{
 		ID:       "provider-1",
 		Name:     "Docker",
 		Type:     "docker",
 		Config:   jx.Raw(`{"poolSize":1,"socketPath":"/var/run/docker.sock","token":"do-secret","nested":{"apiKey":"api-secret"},"items":[{"password":"password-secret"}]}`),
 		Disabled: true,
-		Workers: apiclientgen.NewOptNilWorkerArray([]apiclientgen.Worker{{
+		Workers: apiclientgen.NewOptNilWorkerArray([]apimodel.Worker{{
 			ID:                  "worker-1",
 			Phase:               "registering",
 			LastOperationStatus: "success",
@@ -73,11 +74,11 @@ func TestWriteProviderTableExcludesDeletedWorkersFromCompactStatus(t *testing.T)
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 
-	err := app.writeProvider(cmd, &apiclientgen.SandboxProviderInstance{
+	err := app.writeProvider(cmd, &apimodel.SandboxProviderInstance{
 		ID:   "provider-1",
 		Name: "Docker",
 		Type: "docker",
-		Workers: apiclientgen.NewOptNilWorkerArray([]apiclientgen.Worker{
+		Workers: apiclientgen.NewOptNilWorkerArray([]apimodel.Worker{
 			{
 				ID:                  "worker-deleted",
 				DesiredState:        "deleted",
@@ -114,18 +115,18 @@ func TestWriteProviderTableIncludesDerivedStatus(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 
-	err := app.writeProvider(cmd, &apiclientgen.SandboxProviderInstance{
+	err := app.writeProvider(cmd, &apimodel.SandboxProviderInstance{
 		ID:   "provider-1",
 		Name: "Docker",
 		Type: "docker",
-		Status: apiclientgen.NewOptSandboxProviderInstanceStatus(apiclientgen.SandboxProviderInstanceStatus{
+		Status: apiclientgen.NewOptSandboxProviderInstanceStatus(apimodel.SandboxProviderInstanceStatus{
 			WorkerCount:        1,
 			FailedWorkers:      1,
 			ReadyWorkers:       0,
 			SchedulableWorkers: 0,
 			DegradedWorkers:    0,
 			LastError:          apiclientgen.NewOptString("docker create failed"),
-			Workers: apiclientgen.NewOptNilProviderWorkerStatusArray([]apiclientgen.ProviderWorkerStatus{{
+			Workers: apiclientgen.NewOptNilProviderWorkerStatusArray([]apimodel.ProviderWorkerStatus{{
 				ID:                  "worker-1",
 				DesiredState:        "active",
 				Phase:               "failed",
@@ -158,11 +159,11 @@ func TestWriteProvidersTableIncludesCompactStatus(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 
-	err := app.writeProviders(cmd, []apiclientgen.SandboxProviderInstance{{
+	err := app.writeProviders(cmd, []apimodel.SandboxProviderInstance{{
 		ID:   "provider-1",
 		Name: "Docker",
 		Type: "docker",
-		Status: apiclientgen.NewOptSandboxProviderInstanceStatus(apiclientgen.SandboxProviderInstanceStatus{
+		Status: apiclientgen.NewOptSandboxProviderInstanceStatus(apimodel.SandboxProviderInstanceStatus{
 			WorkerCount:        2,
 			ReadyWorkers:       1,
 			SchedulableWorkers: 1,
@@ -315,7 +316,7 @@ func TestJobsTableSortsByCreatedAtAscending(t *testing.T) {
 
 	newerID := "01kv9w440bpa9qk5n25t2hh2rv"
 	olderID := "01kv9w440a7bhqnk550g3821ck"
-	jobs := []apiclientgen.Job{
+	jobs := []apimodel.Job{
 		{
 			ID:           newerID,
 			Type:         "worker.reconcile",
@@ -359,7 +360,7 @@ func TestJobsTableShowsFutureSchedule(t *testing.T) {
 	cmd.SetOut(&out)
 
 	jobID := "01kv9w440bpa9qk5n25t2hh2rv"
-	jobs := []apiclientgen.Job{
+	jobs := []apimodel.Job{
 		{
 			ID:           jobID,
 			Type:         "provider.reconcile",
@@ -392,7 +393,7 @@ func TestJobsJSONPreservesResponseOrder(t *testing.T) {
 
 	newerID := "01kv9w440bpa9qk5n25t2hh2rv"
 	olderID := "01kv9w440a7bhqnk550g3821ck"
-	jobs := []apiclientgen.Job{
+	jobs := []apimodel.Job{
 		{ID: newerID, CreatedAt: time.Date(2026, 6, 17, 1, 0, 0, 0, time.UTC)},
 		{ID: olderID, CreatedAt: time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC)},
 	}

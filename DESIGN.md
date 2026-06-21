@@ -53,10 +53,10 @@ surface:
 
 - `api/openapi/server.yaml` is the canonical control-plane REST API contract.
 - `worker-agent/api/openapi/sandbox.json` is the canonical worker-local sandbox
-  operations API contract. `worker-agent/generate.go` generates both
-  `worker-agent/api/clientgen` and `worker-agent/api/servergen` from this JSON
-  file; `worker-agent/server` adapts the generated server scaffold to
-  local runtime operations.
+  operations API contract. `worker-agent/generate.go` generates combined
+  client/server transport code into `worker-agent/api/gen` and stable schema
+  aliases into `worker-agent/api/model`; `worker-agent/server` adapts the
+  generated server scaffold to local runtime operations.
 - `api/openapi/sandbox.yaml` is only a minimal future in-sandbox agent API seed.
   It intentionally contains only `/healthz`, `/readyz`, and `/metadata` today and
   must not be used to judge or generate worker-local sandbox operation routes.
@@ -76,13 +76,11 @@ flowchart TD
     server --> gormdb["github.com/obot-platform/discobox/gormdb"]
     hooks --> root
     hooks --> gormdb
-    acp["github.com/obot-platform/discobox/acp"]
     sessions["github.com/obot-platform/discobox/sessions"] --> root
     providers --> root
     providers --> workerAgent["github.com/obot-platform/discobox/worker-agent"]
     workerAgent --> root
     sandboxAgent["github.com/obot-platform/discobox/sandbox-agent"] --> root
-    prompter["github.com/obot-platform/discobox/prompter"]
 ```
 
 - Root module: public API definitions, sandbox provider Go interface, shared
@@ -101,10 +99,6 @@ flowchart TD
   primitives. It depends inward on stable contracts and shared infrastructure
   helpers such as `gormdb`, but must not depend on server internals. See
   [`hooks/DESIGN.md`](hooks/DESIGN.md).
-- ACP module: standalone ACP implementation registry, install, launch, and
-  protocol-inspection CLI. It uses the official MCP Go SDK transport/json-rpc
-  primitives for newline-delimited stdio where those abstractions are protocol
-  neutral, but keeps ACP method semantics local. See [`acp/DESIGN.md`](acp/DESIGN.md).
 - Sessions module: standalone coding-agent session manager. It starts supported
   agent CLIs in daemon-owned PTYs, exposes attach streams over a local Unix
   socket, and must not depend on server internals. See
@@ -114,10 +108,6 @@ flowchart TD
   worker boot contracts and OpenAPI contracts.
 - Sandbox-agent module: future in-sandbox agent REST API runtime environment and
   agent implementation; depends on root contracts and generated API types.
-- Prompter module: standalone command that detects the current coding-agent host
-  and normalizes requests to start a new prompt session in the current working
-  directory. It is intentionally independent until an adapter needs a shared
-  contract.
 
 Provider, worker-agent, and sandbox-agent implementations cannot depend on packages under Go
 `internal/` outside their module. Cross-module contracts must live in public root
@@ -128,8 +118,8 @@ Root module package map:
 | Package/path | Ownership |
 | --- | --- |
 | [`api/openapi`](api/openapi) | Canonical OpenAPI source contracts owned by the root module: the server REST API and sandbox-agent API seed. Worker-agent-owned contracts live under `worker-agent/api/openapi`. |
-| [`api/servergen`](api/servergen) | Generated server-side API scaffold from `api/openapi/server.yaml`. |
-| [`api/clientgen`](api/clientgen) | Generated client-side API scaffold from `api/openapi/server.yaml`. |
+| [`api/gen`](api/gen) | Generated client/server API scaffold from `api/openapi/server.yaml`. |
+| [`api/model`](api/model) | Generated stable aliases for server REST API schema types. |
 | [`apiclient`](apiclient) | Hand-written Server REST API client helpers, including non-ogen realtime helpers. |
 | [`apperrors`](apperrors) | Shared sentinel errors used across module boundaries. |
 | [`id`](id) | Shared identifier helpers. |

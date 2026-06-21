@@ -11,7 +11,8 @@ import (
 
 	"github.com/go-faster/jx"
 
-	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
+	apiclientgen "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 )
 
 func TestProviderCreateHelpDoesNotHitAPI(t *testing.T) {
@@ -162,8 +163,8 @@ func TestProviderUpdateHelpProviderLoadsDynamicFields(t *testing.T) {
 }
 
 func TestDynamicProviderCreateBodyUsesCatalogFields(t *testing.T) {
-	provider := apiclientgen.SandboxProviderCatalogItem{ID: "example", Name: "Example"}
-	provider.ConfigFields.SetTo([]apiclientgen.ProviderConfigField{{
+	provider := apimodel.SandboxProviderCatalogItem{ID: "example", Name: "Example"}
+	provider.ConfigFields.SetTo([]apimodel.ProviderConfigField{{
 		Key:      "controlPlaneUrl",
 		Label:    "Control Plane URL",
 		Type:     "string",
@@ -200,8 +201,8 @@ func TestDynamicProviderCreateBodyUsesCatalogFields(t *testing.T) {
 }
 
 func TestDynamicProviderUpdateBodyMergesCatalogFields(t *testing.T) {
-	provider := apiclientgen.SandboxProviderCatalogItem{ID: "example", Name: "Example"}
-	provider.ConfigFields.SetTo([]apiclientgen.ProviderConfigField{{
+	provider := apimodel.SandboxProviderCatalogItem{ID: "example", Name: "Example"}
+	provider.ConfigFields.SetTo([]apimodel.ProviderConfigField{{
 		Key:   "controlPlaneUrl",
 		Label: "Control Plane URL",
 		Type:  "string",
@@ -214,7 +215,7 @@ func TestDynamicProviderUpdateBodyMergesCatalogFields(t *testing.T) {
 		Label: "Systemd",
 		Type:  "boolean",
 	}})
-	current := &apiclientgen.SandboxProviderInstance{Config: jx.Raw(`{"controlPlaneUrl":"http://old","poolSize":1,"other":"kept"}`)}
+	current := &apimodel.SandboxProviderInstance{Config: jx.Raw(`{"controlPlaneUrl":"http://old","poolSize":1,"other":"kept"}`)}
 	cmd := NewRootCommand()
 	updateCmd, _, err := cmd.Find([]string{"provider", "update"})
 	if err != nil {
@@ -241,7 +242,7 @@ func TestDynamicProviderUpdateBodyMergesCatalogFields(t *testing.T) {
 }
 
 func TestDynamicProviderCreateAllowsMissingName(t *testing.T) {
-	provider := apiclientgen.SandboxProviderCatalogItem{ID: "example", Name: "Example"}
+	provider := apimodel.SandboxProviderCatalogItem{ID: "example", Name: "Example"}
 	cmd := NewRootCommand()
 	createCmd, _, err := cmd.Find([]string{"provider", "create"})
 	if err != nil {

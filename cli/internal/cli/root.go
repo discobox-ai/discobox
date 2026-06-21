@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
+	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	"github.com/obot-platform/discobox/apiclient"
 )
 

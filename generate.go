@@ -1,4 +1,4 @@
 package discobox
 
-//go:generate go tool ogen --config api/servergen/ogen.yml --target api/servergen --package serverapi --clean api/openapi/server.yaml
-//go:generate go tool ogen --config api/clientgen/ogen.yml --target api/clientgen --package apiclientgen --clean api/openapi/server.yaml
+//go:generate go tool ogen --config api/gen/ogen.yml --target api/gen --package apigen --clean api/openapi/server.yaml
+//go:generate go run ./api/internal/genmodelaliases -openapi ./api/openapi/server.yaml -schemas ./api/gen/oas_schemas_gen.go -out ./api/model/aliases_gen.go -gen-import github.com/obot-platform/discobox/api/gen -gen-package apigen -package-doc "Package model exposes stable aliases for generated Server REST API schema types."

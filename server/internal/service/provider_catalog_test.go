@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	serverapi "github.com/obot-platform/discobox/api/servergen"
+	serverapi "github.com/obot-platform/discobox/api/gen"
 	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
 	providerdocker "github.com/obot-platform/discobox/providers/sandbox/provider/docker"

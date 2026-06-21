@@ -3,14 +3,14 @@ package apiclient
 import (
 	"testing"
 
-	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
+	"github.com/obot-platform/discobox/api/model"
 )
 
 func TestProjectsSeq(t *testing.T) {
 	first := "11111111-1111-1111-1111-111111111111"
 	second := "22222222-2222-2222-2222-222222222222"
-	body := &apiclientgen.ListProjectsBody{
-		Projects: []apiclientgen.Project{
+	body := &model.ListProjectsBody{
+		Projects: []model.Project{
 			{ID: first},
 			{ID: second},
 		},

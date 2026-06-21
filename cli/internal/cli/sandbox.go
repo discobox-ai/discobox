@@ -9,7 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
+	apiclientgen "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 )
 
 type sandboxCreateOptions struct {
@@ -75,7 +76,7 @@ func (a *App) newSandboxListCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			body, err := expectResponse[apiclientgen.ListSandboxesBody](bodyRes)
+			body, err := expectResponse[apimodel.ListSandboxesBody](bodyRes)
 			if err != nil {
 				return err
 			}
@@ -98,7 +99,7 @@ func (a *App) newSandboxGetCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sandbox, err := expectResponse[apiclientgen.Sandbox](sandboxRes)
+			sandbox, err := expectResponse[apimodel.Sandbox](sandboxRes)
 			if err != nil {
 				return err
 			}
@@ -141,7 +142,7 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sandbox, err := expectResponse[apiclientgen.Sandbox](sandboxRes)
+			sandbox, err := expectResponse[apimodel.Sandbox](sandboxRes)
 			if err != nil {
 				return err
 			}
@@ -178,7 +179,7 @@ func (a *App) newSandboxUpdateCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sandbox, err := expectResponse[apiclientgen.Sandbox](sandboxRes)
+			sandbox, err := expectResponse[apimodel.Sandbox](sandboxRes)
 			if err != nil {
 				return err
 			}
@@ -223,7 +224,7 @@ func (a *App) newSandboxStartCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			body := &apiclientgen.StartSandboxBody{}
+			body := &apimodel.StartSandboxBody{}
 			if force {
 				body.SetForce(apiclientgen.NewOptBool(true))
 			}
@@ -231,7 +232,7 @@ func (a *App) newSandboxStartCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sandbox, err := expectResponse[apiclientgen.Sandbox](sandboxRes)
+			sandbox, err := expectResponse[apimodel.Sandbox](sandboxRes)
 			if err != nil {
 				return err
 			}
@@ -253,7 +254,7 @@ func (a *App) newSandboxStopCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			body := &apiclientgen.StopSandboxBody{}
+			body := &apimodel.StopSandboxBody{}
 			if force {
 				body.SetForce(apiclientgen.NewOptBool(true))
 			}
@@ -261,7 +262,7 @@ func (a *App) newSandboxStopCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sandbox, err := expectResponse[apiclientgen.Sandbox](sandboxRes)
+			sandbox, err := expectResponse[apimodel.Sandbox](sandboxRes)
 			if err != nil {
 				return err
 			}
@@ -283,7 +284,7 @@ func (a *App) newSandboxRestartCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			body := &apiclientgen.RestartSandboxBody{}
+			body := &apimodel.RestartSandboxBody{}
 			if force {
 				body.SetForce(apiclientgen.NewOptBool(true))
 			}
@@ -291,7 +292,7 @@ func (a *App) newSandboxRestartCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			sandbox, err := expectResponse[apiclientgen.Sandbox](sandboxRes)
+			sandbox, err := expectResponse[apimodel.Sandbox](sandboxRes)
 			if err != nil {
 				return err
 			}
@@ -344,8 +345,8 @@ func addUpdateFlags(cmd *cobra.Command, opts *sandboxUpdateOptions) {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Sandbox name")
 }
 
-func createSandboxBody(opts sandboxCreateOptions) (*apiclientgen.CreateSandboxBody, error) {
-	body := &apiclientgen.CreateSandboxBody{Name: opts.name}
+func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, error) {
+	body := &apimodel.CreateSandboxBody{Name: opts.name}
 	body.SetDescription(optString(opts.description))
 	body.SetProviderInstanceId(optString(opts.providerInstanceID))
 	body.SetAgentConfigId(optString(opts.agentConfigID))
@@ -390,15 +391,15 @@ func createSandboxBody(opts sandboxCreateOptions) (*apiclientgen.CreateSandboxBo
 	return body, nil
 }
 
-func updateSandboxBody(cmd *cobra.Command, opts sandboxUpdateOptions) (*apiclientgen.UpdateSandboxBody, error) {
-	body := &apiclientgen.UpdateSandboxBody{}
+func updateSandboxBody(cmd *cobra.Command, opts sandboxUpdateOptions) (*apimodel.UpdateSandboxBody, error) {
+	body := &apimodel.UpdateSandboxBody{}
 	if cmd.Flags().Changed("name") {
 		body.SetName(apiclientgen.NewOptString(opts.name))
 	}
 	return body, nil
 }
 
-func (a *App) waitForSandbox(cmd *cobra.Command, client *apiclientgen.Client, projectID string, sandboxID string, timeout time.Duration) (*apiclientgen.Sandbox, error) {
+func (a *App) waitForSandbox(cmd *cobra.Command, client *apiclientgen.Client, projectID string, sandboxID string, timeout time.Duration) (*apimodel.Sandbox, error) {
 	ctx := cmd.Context()
 	if timeout > 0 {
 		var cancel func()
@@ -412,7 +413,7 @@ func (a *App) waitForSandbox(cmd *cobra.Command, client *apiclientgen.Client, pr
 		if err != nil {
 			return nil, err
 		}
-		sandbox, err := expectResponse[apiclientgen.Sandbox](sandboxRes)
+		sandbox, err := expectResponse[apimodel.Sandbox](sandboxRes)
 		if err != nil {
 			return nil, err
 		}

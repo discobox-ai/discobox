@@ -3,7 +3,8 @@ package handlers
 import (
 	"context"
 
-	serverapi "github.com/obot-platform/discobox/api/servergen"
+	serverapi "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 	services "github.com/obot-platform/discobox/server/internal/services"
 )
 
@@ -12,7 +13,7 @@ func (h *Handler) ListProjects(ctx context.Context) (serverapi.ListProjectsRes, 
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[serverapi.ListProjectsBody](struct {
+	body, err := services.Convert[apimodel.ListProjectsBody](struct {
 		Projects any `json:"projects"`
 	}{Projects: projects})
 	if err != nil {
@@ -26,7 +27,7 @@ func (h *Handler) GetProject(ctx context.Context, params serverapi.GetProjectPar
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[serverapi.Project](project)
+	body, err := services.Convert[apimodel.Project](project)
 	if err != nil {
 		return nil, err
 	}

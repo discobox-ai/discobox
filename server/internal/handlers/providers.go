@@ -3,7 +3,8 @@ package handlers
 import (
 	"context"
 
-	serverapi "github.com/obot-platform/discobox/api/servergen"
+	serverapi "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 	services "github.com/obot-platform/discobox/server/internal/services"
 )
 
@@ -12,7 +13,7 @@ func (h *Handler) ListSandboxProviderCatalog(ctx context.Context) (serverapi.Lis
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[serverapi.ListSandboxProviderCatalogBody](struct {
+	body, err := services.Convert[apimodel.ListSandboxProviderCatalogBody](struct {
 		Providers any `json:"providers"`
 	}{Providers: providers})
 	if err != nil {
@@ -26,7 +27,7 @@ func (h *Handler) ListSandboxProviderInstances(ctx context.Context, params serve
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[serverapi.ListSandboxProviderInstancesBody](struct {
+	body, err := services.Convert[apimodel.ListSandboxProviderInstancesBody](struct {
 		Providers any `json:"providers"`
 	}{Providers: providers})
 	if err != nil {
@@ -35,12 +36,12 @@ func (h *Handler) ListSandboxProviderInstances(ctx context.Context, params serve
 	return &body, nil
 }
 
-func (h *Handler) CreateSandboxProviderInstance(ctx context.Context, req *serverapi.CreateSandboxProviderInstanceBody, params serverapi.CreateSandboxProviderInstanceParams) (serverapi.CreateSandboxProviderInstanceRes, error) {
+func (h *Handler) CreateSandboxProviderInstance(ctx context.Context, req *apimodel.CreateSandboxProviderInstanceBody, params serverapi.CreateSandboxProviderInstanceParams) (serverapi.CreateSandboxProviderInstanceRes, error) {
 	provider, err := h.services.Providers.CreateSandboxProviderInstance(ctx, params.ProjectId, *req)
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[serverapi.SandboxProviderInstance](provider)
+	body, err := services.Convert[apimodel.SandboxProviderInstance](provider)
 	if err != nil {
 		return nil, err
 	}
@@ -52,19 +53,19 @@ func (h *Handler) GetSandboxProviderInstance(ctx context.Context, params servera
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[serverapi.SandboxProviderInstance](provider)
+	body, err := services.Convert[apimodel.SandboxProviderInstance](provider)
 	if err != nil {
 		return nil, err
 	}
 	return &body, nil
 }
 
-func (h *Handler) UpdateSandboxProviderInstance(ctx context.Context, req *serverapi.UpdateSandboxProviderInstanceBody, params serverapi.UpdateSandboxProviderInstanceParams) (serverapi.UpdateSandboxProviderInstanceRes, error) {
+func (h *Handler) UpdateSandboxProviderInstance(ctx context.Context, req *apimodel.UpdateSandboxProviderInstanceBody, params serverapi.UpdateSandboxProviderInstanceParams) (serverapi.UpdateSandboxProviderInstanceRes, error) {
 	provider, err := h.services.Providers.UpdateSandboxProviderInstance(ctx, params.ProjectId, params.ProviderId, *req)
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[serverapi.SandboxProviderInstance](provider)
+	body, err := services.Convert[apimodel.SandboxProviderInstance](provider)
 	if err != nil {
 		return nil, err
 	}

@@ -3,7 +3,8 @@ package handlers
 import (
 	"context"
 
-	serverapi "github.com/obot-platform/discobox/api/servergen"
+	serverapi "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 	services "github.com/obot-platform/discobox/server/internal/services"
 )
 
@@ -12,7 +13,7 @@ func (h *Handler) ListJobs(ctx context.Context, params serverapi.ListJobsParams)
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[serverapi.ListJobsBody](struct {
+	body, err := services.Convert[apimodel.ListJobsBody](struct {
 		Jobs any `json:"jobs"`
 	}{Jobs: jobs})
 	if err != nil {
@@ -26,7 +27,7 @@ func (h *Handler) GetJob(ctx context.Context, params serverapi.GetJobParams) (se
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[serverapi.Job](job)
+	body, err := services.Convert[apimodel.Job](job)
 	if err != nil {
 		return nil, err
 	}
@@ -38,7 +39,7 @@ func (h *Handler) ForceJob(ctx context.Context, params serverapi.ForceJobParams)
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[serverapi.Job](job)
+	body, err := services.Convert[apimodel.Job](job)
 	if err != nil {
 		return nil, err
 	}

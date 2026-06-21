@@ -4,7 +4,8 @@ import (
 	"errors"
 	"net/http"
 
-	serverapi "github.com/obot-platform/discobox/api/servergen"
+	serverapi "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 	services "github.com/obot-platform/discobox/server/internal/services"
 )
 
@@ -36,7 +37,7 @@ func apiError(err error) *serverapi.ErrorModelStatusCode {
 	}
 	return &serverapi.ErrorModelStatusCode{
 		StatusCode: status,
-		Response: serverapi.ErrorModel{
+		Response: apimodel.ErrorModel{
 			Status: serverapi.NewOptInt64(int64(status)),
 			Title:  serverapi.NewOptString(http.StatusText(status)),
 			Detail: serverapi.NewOptString(err.Error()),

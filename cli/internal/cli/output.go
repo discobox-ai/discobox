@@ -13,7 +13,8 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
-	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
+	apiclientgen "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 )
 
 func writeJSON(w io.Writer, value any) error {
@@ -22,7 +23,7 @@ func writeJSON(w io.Writer, value any) error {
 	return encoder.Encode(value)
 }
 
-func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apiclientgen.Sandbox) error {
+func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error {
 	if sandbox == nil {
 		return nil
 	}
@@ -42,11 +43,11 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apiclientgen.Sandbox) er
 	return tw.Flush()
 }
 
-func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apiclientgen.Sandbox) error {
+func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox) error {
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"sandboxes": sandboxes})
 	}
-	sandboxes = sortedByCreatedAt(sandboxes, func(sandbox apiclientgen.Sandbox) time.Time { return sandbox.CreatedAt })
+	sandboxes = sortedByCreatedAt(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return sandbox.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tPHASE\tDESIRED\tGENERATION\tUPDATED")
 	for _, sandbox := range sandboxes {
@@ -62,7 +63,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apiclientgen.Sandbo
 	return tw.Flush()
 }
 
-func (a *App) writeProviderCatalog(cmd *cobra.Command, providers []apiclientgen.SandboxProviderCatalogItem) error {
+func (a *App) writeProviderCatalog(cmd *cobra.Command, providers []apimodel.SandboxProviderCatalogItem) error {
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"providers": providers})
 	}
@@ -74,7 +75,7 @@ func (a *App) writeProviderCatalog(cmd *cobra.Command, providers []apiclientgen.
 	return tw.Flush()
 }
 
-func (a *App) writeProvider(cmd *cobra.Command, provider *apiclientgen.SandboxProviderInstance) error {
+func (a *App) writeProvider(cmd *cobra.Command, provider *apimodel.SandboxProviderInstance) error {
 	if provider == nil {
 		return nil
 	}
@@ -98,11 +99,11 @@ func (a *App) writeProvider(cmd *cobra.Command, provider *apiclientgen.SandboxPr
 	return tw.Flush()
 }
 
-func (a *App) writeProviders(cmd *cobra.Command, providers []apiclientgen.SandboxProviderInstance) error {
+func (a *App) writeProviders(cmd *cobra.Command, providers []apimodel.SandboxProviderInstance) error {
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"providers": providers})
 	}
-	providers = sortedByCreatedAt(providers, func(provider apiclientgen.SandboxProviderInstance) time.Time { return provider.CreatedAt })
+	providers = sortedByCreatedAt(providers, func(provider apimodel.SandboxProviderInstance) time.Time { return provider.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tDISABLED\tSTATUS\tERROR\tUPDATED")
 	for _, provider := range providers {
@@ -120,11 +121,11 @@ func (a *App) writeProviders(cmd *cobra.Command, providers []apiclientgen.Sandbo
 	return tw.Flush()
 }
 
-func (a *App) writeWorkers(cmd *cobra.Command, workers []apiclientgen.Worker) error {
+func (a *App) writeWorkers(cmd *cobra.Command, workers []apimodel.Worker) error {
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"workers": workers})
 	}
-	workers = sortedByCreatedAt(workers, func(worker apiclientgen.Worker) time.Time { return worker.CreatedAt })
+	workers = sortedByCreatedAt(workers, func(worker apimodel.Worker) time.Time { return worker.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tPROVIDER\tPHASE\tREADY\tSCHEDULABLE\tDEGRADED\tCPU\tMEMORY\tSTORAGE\tUPDATED\tMESSAGE")
 	for _, worker := range workers {
@@ -145,7 +146,7 @@ func (a *App) writeWorkers(cmd *cobra.Command, workers []apiclientgen.Worker) er
 	return tw.Flush()
 }
 
-func workerMessage(worker apiclientgen.Worker) string {
+func workerMessage(worker apimodel.Worker) string {
 	if message, ok := worker.ErrorMessage.Get(); ok && strings.TrimSpace(message) != "" {
 		return message
 	}
@@ -155,7 +156,7 @@ func workerMessage(worker apiclientgen.Worker) string {
 	return ""
 }
 
-func (a *App) writeAgentDefinition(cmd *cobra.Command, definition *apiclientgen.AgentConfigDefinition) error {
+func (a *App) writeAgentDefinition(cmd *cobra.Command, definition *apimodel.AgentConfigDefinition) error {
 	if definition == nil {
 		return nil
 	}
@@ -168,7 +169,7 @@ func (a *App) writeAgentDefinition(cmd *cobra.Command, definition *apiclientgen.
 	return tw.Flush()
 }
 
-func (a *App) writeAgentDefinitions(cmd *cobra.Command, definitions []apiclientgen.AgentConfigDefinition) error {
+func (a *App) writeAgentDefinitions(cmd *cobra.Command, definitions []apimodel.AgentConfigDefinition) error {
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"agentConfigDefinitions": definitions})
 	}
@@ -180,7 +181,7 @@ func (a *App) writeAgentDefinitions(cmd *cobra.Command, definitions []apiclientg
 	return tw.Flush()
 }
 
-func (a *App) writeAgent(cmd *cobra.Command, agent *apiclientgen.AgentConfig) error {
+func (a *App) writeAgent(cmd *cobra.Command, agent *apimodel.AgentConfig) error {
 	if agent == nil {
 		return nil
 	}
@@ -193,11 +194,11 @@ func (a *App) writeAgent(cmd *cobra.Command, agent *apiclientgen.AgentConfig) er
 	return tw.Flush()
 }
 
-func (a *App) writeAgents(cmd *cobra.Command, agents []apiclientgen.AgentConfig) error {
+func (a *App) writeAgents(cmd *cobra.Command, agents []apimodel.AgentConfig) error {
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"agentConfigs": agents})
 	}
-	agents = sortedByCreatedAt(agents, func(agent apiclientgen.AgentConfig) time.Time { return agent.CreatedAt })
+	agents = sortedByCreatedAt(agents, func(agent apimodel.AgentConfig) time.Time { return agent.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tUPDATED")
 	for _, agent := range agents {
@@ -206,11 +207,11 @@ func (a *App) writeAgents(cmd *cobra.Command, agents []apiclientgen.AgentConfig)
 	return tw.Flush()
 }
 
-func (a *App) writeJobs(cmd *cobra.Command, jobs []apiclientgen.Job) error {
+func (a *App) writeJobs(cmd *cobra.Command, jobs []apimodel.Job) error {
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"jobs": jobs})
 	}
-	jobs = sortedByCreatedAt(jobs, func(job apiclientgen.Job) time.Time { return job.CreatedAt })
+	jobs = sortedByCreatedAt(jobs, func(job apimodel.Job) time.Time { return job.CreatedAt })
 	now := time.Now()
 	rows := make([][]string, 0, len(jobs))
 	errors := make([]string, 0, len(jobs))
@@ -255,7 +256,7 @@ func sortedByCreatedAt[T any](values []T, createdAt func(T) time.Time) []T {
 	return out
 }
 
-func (a *App) writeJob(cmd *cobra.Command, job *apiclientgen.Job) error {
+func (a *App) writeJob(cmd *cobra.Command, job *apimodel.Job) error {
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), job)
 	}
@@ -474,7 +475,7 @@ type compactProviderStatus struct {
 	LastError          string
 }
 
-func compactProviderStatusFromProvider(provider apiclientgen.SandboxProviderInstance) (compactProviderStatus, bool) {
+func compactProviderStatusFromProvider(provider apimodel.SandboxProviderInstance) (compactProviderStatus, bool) {
 	if status, ok := provider.GetStatus().Get(); ok {
 		return compactProviderStatusFromInstanceStatus(status), true
 	}
@@ -484,7 +485,7 @@ func compactProviderStatusFromProvider(provider apiclientgen.SandboxProviderInst
 	return compactProviderStatus{}, false
 }
 
-func compactProviderStatusFromInstanceStatus(status apiclientgen.SandboxProviderInstanceStatus) compactProviderStatus {
+func compactProviderStatusFromInstanceStatus(status apimodel.SandboxProviderInstanceStatus) compactProviderStatus {
 	out := compactProviderStatus{
 		WorkerCount:        int(status.WorkerCount),
 		ReadyWorkers:       int(status.ReadyWorkers),
@@ -508,7 +509,7 @@ func compactProviderStatusFromInstanceStatus(status apiclientgen.SandboxProvider
 	return out
 }
 
-func compactProviderStatusFromWorkers(workers []apiclientgen.Worker) compactProviderStatus {
+func compactProviderStatusFromWorkers(workers []apimodel.Worker) compactProviderStatus {
 	var out compactProviderStatus
 	for _, worker := range workers {
 		if providerWorkerDeleted(worker) {
@@ -537,11 +538,11 @@ func compactProviderStatusFromWorkers(workers []apiclientgen.Worker) compactProv
 	return out
 }
 
-func providerWorkerDeleted(worker apiclientgen.Worker) bool {
+func providerWorkerDeleted(worker apimodel.Worker) bool {
 	return string(worker.DesiredState) == "deleted" || string(worker.Phase) == "deleted"
 }
 
-func providerWorkerStatusMessage(worker apiclientgen.ProviderWorkerStatus) string {
+func providerWorkerStatusMessage(worker apimodel.ProviderWorkerStatus) string {
 	if message, ok := worker.ErrorMessage.Get(); ok && strings.TrimSpace(message) != "" {
 		return strings.TrimSpace(message)
 	}

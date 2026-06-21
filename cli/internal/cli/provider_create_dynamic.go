@@ -12,7 +12,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
+	apiclientgen "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 )
 
 type dynamicProviderCreateOptions struct {
@@ -74,7 +75,7 @@ func (a *App) runProviderCreate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	catalog, err := expectResponse[apiclientgen.ListSandboxProviderCatalogBody](catalogRes)
+	catalog, err := expectResponse[apimodel.ListSandboxProviderCatalogBody](catalogRes)
 	if err != nil {
 		return err
 	}
@@ -98,7 +99,7 @@ func (a *App) runProviderCreate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	created, err := expectResponse[apiclientgen.SandboxProviderInstance](createdRes)
+	created, err := expectResponse[apimodel.SandboxProviderInstance](createdRes)
 	if err != nil {
 		return err
 	}
@@ -134,7 +135,7 @@ func (a *App) runProviderUpdate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	current, err := expectResponse[apiclientgen.SandboxProviderInstance](currentRes)
+	current, err := expectResponse[apimodel.SandboxProviderInstance](currentRes)
 	if err != nil {
 		return err
 	}
@@ -142,7 +143,7 @@ func (a *App) runProviderUpdate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	catalog, err := expectResponse[apiclientgen.ListSandboxProviderCatalogBody](catalogRes)
+	catalog, err := expectResponse[apimodel.ListSandboxProviderCatalogBody](catalogRes)
 	if err != nil {
 		return err
 	}
@@ -162,7 +163,7 @@ func (a *App) runProviderUpdate(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	updated, err := expectResponse[apiclientgen.SandboxProviderInstance](providerRes)
+	updated, err := expectResponse[apimodel.SandboxProviderInstance](providerRes)
 	if err != nil {
 		return err
 	}
@@ -281,7 +282,7 @@ func providerTypeFromArgs(args []string) string {
 	return "digitalocean"
 }
 
-func parseDynamicProviderCreateArgs(cmd *cobra.Command, args []string, provider apiclientgen.SandboxProviderCatalogItem) (dynamicProviderCreateOptions, error) {
+func parseDynamicProviderCreateArgs(cmd *cobra.Command, args []string, provider apimodel.SandboxProviderCatalogItem) (dynamicProviderCreateOptions, error) {
 	opts := dynamicProviderCreateOptions{ProviderType: provider.ID}
 	flags := providerCreateFlagSet(cmd, provider, &opts)
 	opts.Flags = flags
@@ -297,7 +298,7 @@ func parseDynamicProviderCreateArgs(cmd *cobra.Command, args []string, provider 
 	return opts, nil
 }
 
-func parseDynamicProviderUpdateArgs(cmd *cobra.Command, args []string, provider apiclientgen.SandboxProviderCatalogItem) (dynamicProviderUpdateOptions, error) {
+func parseDynamicProviderUpdateArgs(cmd *cobra.Command, args []string, provider apimodel.SandboxProviderCatalogItem) (dynamicProviderUpdateOptions, error) {
 	opts := dynamicProviderUpdateOptions{}
 	flags := providerUpdateFlagSet(cmd, provider, &opts)
 	opts.Flags = flags
@@ -314,7 +315,7 @@ func parseDynamicProviderUpdateArgs(cmd *cobra.Command, args []string, provider 
 	return opts, nil
 }
 
-func providerCreateFlagSet(cmd *cobra.Command, provider apiclientgen.SandboxProviderCatalogItem, opts *dynamicProviderCreateOptions) *pflag.FlagSet {
+func providerCreateFlagSet(cmd *cobra.Command, provider apimodel.SandboxProviderCatalogItem, opts *dynamicProviderCreateOptions) *pflag.FlagSet {
 	flags := pflag.NewFlagSet(cmd.Name(), pflag.ContinueOnError)
 	flags.SetOutput(cmd.ErrOrStderr())
 	flags.StringVar(&opts.ProviderType, "type", provider.ID, "Provider type")
@@ -331,7 +332,7 @@ func providerCreateFlagSet(cmd *cobra.Command, provider apiclientgen.SandboxProv
 	return flags
 }
 
-func providerUpdateFlagSet(cmd *cobra.Command, provider apiclientgen.SandboxProviderCatalogItem, opts *dynamicProviderUpdateOptions) *pflag.FlagSet {
+func providerUpdateFlagSet(cmd *cobra.Command, provider apimodel.SandboxProviderCatalogItem, opts *dynamicProviderUpdateOptions) *pflag.FlagSet {
 	flags := pflag.NewFlagSet(cmd.Name(), pflag.ContinueOnError)
 	flags.SetOutput(cmd.ErrOrStderr())
 	flags.StringVar(&opts.Name, "name", "", "Provider instance name")
@@ -348,8 +349,8 @@ func providerUpdateFlagSet(cmd *cobra.Command, provider apiclientgen.SandboxProv
 	return flags
 }
 
-func dynamicProviderCreateBody(opts dynamicProviderCreateOptions, provider apiclientgen.SandboxProviderCatalogItem) (*apiclientgen.CreateSandboxProviderInstanceBody, error) {
-	body := &apiclientgen.CreateSandboxProviderInstanceBody{Name: opts.Name, Type: opts.ProviderType}
+func dynamicProviderCreateBody(opts dynamicProviderCreateOptions, provider apimodel.SandboxProviderCatalogItem) (*apimodel.CreateSandboxProviderInstanceBody, error) {
+	body := &apimodel.CreateSandboxProviderInstanceBody{Name: opts.Name, Type: opts.ProviderType}
 	if opts.Flags == nil {
 		return body, nil
 	}
@@ -375,7 +376,7 @@ func dynamicProviderCreateBody(opts dynamicProviderCreateOptions, provider apicl
 	return body, nil
 }
 
-func dynamicProviderCreateConfig(flags *pflag.FlagSet, provider apiclientgen.SandboxProviderCatalogItem) (jx.Raw, error) {
+func dynamicProviderCreateConfig(flags *pflag.FlagSet, provider apimodel.SandboxProviderCatalogItem) (jx.Raw, error) {
 	m := map[string]any{}
 	for _, field := range sortedProviderConfigFields(provider) {
 		flagName := providerFieldFlagName(field.Key)
@@ -405,8 +406,8 @@ func dynamicProviderCreateConfig(flags *pflag.FlagSet, provider apiclientgen.San
 	return jx.Raw(data), nil
 }
 
-func dynamicProviderUpdateBody(opts dynamicProviderUpdateOptions, provider apiclientgen.SandboxProviderCatalogItem, current *apiclientgen.SandboxProviderInstance) (*apiclientgen.UpdateSandboxProviderInstanceBody, error) {
-	body := &apiclientgen.UpdateSandboxProviderInstanceBody{}
+func dynamicProviderUpdateBody(opts dynamicProviderUpdateOptions, provider apimodel.SandboxProviderCatalogItem, current *apimodel.SandboxProviderInstance) (*apimodel.UpdateSandboxProviderInstanceBody, error) {
+	body := &apimodel.UpdateSandboxProviderInstanceBody{}
 	if opts.Flags == nil {
 		return body, nil
 	}
@@ -426,7 +427,7 @@ func dynamicProviderUpdateBody(opts dynamicProviderUpdateOptions, provider apicl
 	return body, nil
 }
 
-func dynamicProviderUpdateConfig(opts dynamicProviderUpdateOptions, provider apiclientgen.SandboxProviderCatalogItem, current *apiclientgen.SandboxProviderInstance) (jx.Raw, error) {
+func dynamicProviderUpdateConfig(opts dynamicProviderUpdateOptions, provider apimodel.SandboxProviderCatalogItem, current *apimodel.SandboxProviderInstance) (jx.Raw, error) {
 	if opts.Flags.Changed("config") {
 		for _, field := range sortedProviderConfigFields(provider) {
 			if opts.Flags.Changed(providerFieldFlagName(field.Key)) {
@@ -461,7 +462,7 @@ func dynamicProviderUpdateConfig(opts dynamicProviderUpdateOptions, provider api
 	return jx.Raw(data), nil
 }
 
-func dynamicProviderUpdateConfigChanged(flags *pflag.FlagSet, provider apiclientgen.SandboxProviderCatalogItem) bool {
+func dynamicProviderUpdateConfigChanged(flags *pflag.FlagSet, provider apimodel.SandboxProviderCatalogItem) bool {
 	if flags.Changed("config") {
 		return true
 	}
@@ -482,7 +483,7 @@ func (a *App) writeProviderCreateHelpForProvider(cmd *cobra.Command, providerTyp
 	if err != nil {
 		return err
 	}
-	catalog, err := expectResponse[apiclientgen.ListSandboxProviderCatalogBody](catalogRes)
+	catalog, err := expectResponse[apimodel.ListSandboxProviderCatalogBody](catalogRes)
 	if err != nil {
 		return err
 	}
@@ -502,7 +503,7 @@ func (a *App) writeProviderUpdateHelpForProvider(cmd *cobra.Command, providerTyp
 	if err != nil {
 		return err
 	}
-	catalog, err := expectResponse[apiclientgen.ListSandboxProviderCatalogBody](catalogRes)
+	catalog, err := expectResponse[apimodel.ListSandboxProviderCatalogBody](catalogRes)
 	if err != nil {
 		return err
 	}
@@ -545,7 +546,7 @@ func writeProviderUpdateStaticHelp(cmd *cobra.Command) {
 	fmt.Fprintln(cmd.OutOrStdout(), "      --help=PROVIDER     Load catalog and show provider-specific flags")
 }
 
-func writeProviderCreateHelp(w io.Writer, provider apiclientgen.SandboxProviderCatalogItem) error {
+func writeProviderCreateHelp(w io.Writer, provider apimodel.SandboxProviderCatalogItem) error {
 	fmt.Fprintf(w, "Create a %s provider instance\n\n", provider.Name)
 	if description, ok := provider.Description.Get(); ok && strings.TrimSpace(description) != "" {
 		fmt.Fprintf(w, "%s\n\n", description)
@@ -578,7 +579,7 @@ func writeProviderCreateHelp(w io.Writer, provider apiclientgen.SandboxProviderC
 	return nil
 }
 
-func writeProviderUpdateHelp(w io.Writer, provider apiclientgen.SandboxProviderCatalogItem) error {
+func writeProviderUpdateHelp(w io.Writer, provider apimodel.SandboxProviderCatalogItem) error {
 	fmt.Fprintf(w, "Update a %s provider instance\n\n", provider.Name)
 	if description, ok := provider.Description.Get(); ok && strings.TrimSpace(description) != "" {
 		fmt.Fprintf(w, "%s\n\n", description)
@@ -607,17 +608,17 @@ func writeProviderUpdateHelp(w io.Writer, provider apiclientgen.SandboxProviderC
 	return nil
 }
 
-func findProviderCatalogItem(providers []apiclientgen.SandboxProviderCatalogItem, providerType string) (apiclientgen.SandboxProviderCatalogItem, bool) {
+func findProviderCatalogItem(providers []apimodel.SandboxProviderCatalogItem, providerType string) (apimodel.SandboxProviderCatalogItem, bool) {
 	for _, provider := range providers {
 		if provider.ID == providerType {
 			return provider, true
 		}
 	}
-	return apiclientgen.SandboxProviderCatalogItem{}, false
+	return apimodel.SandboxProviderCatalogItem{}, false
 }
 
-func sortedProviderConfigFields(provider apiclientgen.SandboxProviderCatalogItem) []apiclientgen.ProviderConfigField {
-	fields := append([]apiclientgen.ProviderConfigField(nil), provider.ConfigFields.Or(nil)...)
+func sortedProviderConfigFields(provider apimodel.SandboxProviderCatalogItem) []apimodel.ProviderConfigField {
+	fields := append([]apimodel.ProviderConfigField(nil), provider.ConfigFields.Or(nil)...)
 	sort.SliceStable(fields, func(i, j int) bool {
 		if fields[i].Required.Or(false) != fields[j].Required.Or(false) {
 			return fields[i].Required.Or(false)
@@ -649,7 +650,7 @@ func providerFieldFlagName(key string) string {
 	return out.String()
 }
 
-func providerFieldDescription(field apiclientgen.ProviderConfigField) string {
+func providerFieldDescription(field apimodel.ProviderConfigField) string {
 	description := field.Description.Or(field.Label)
 	parts := []string{description}
 	if field.Required.Or(false) {
@@ -664,7 +665,7 @@ func providerFieldDescription(field apiclientgen.ProviderConfigField) string {
 	return strings.Join(parts, "; ")
 }
 
-func providerFieldValue(field apiclientgen.ProviderConfigField, value string) (any, error) {
+func providerFieldValue(field apimodel.ProviderConfigField, value string) (any, error) {
 	switch strings.ToLower(field.Type) {
 	case "boolean", "bool":
 		return strconv.ParseBool(value)

@@ -3,7 +3,8 @@ package cli
 import (
 	"github.com/spf13/cobra"
 
-	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
+	apiclientgen "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 )
 
 func (a *App) newJobCommand() *cobra.Command {
@@ -49,7 +50,7 @@ func (a *App) newJobGetCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			job, err := expectResponse[apiclientgen.Job](res)
+			job, err := expectResponse[apimodel.Job](res)
 			if err != nil {
 				return err
 			}
@@ -81,7 +82,7 @@ func (a *App) newJobRunNowCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			job, err := expectResponse[apiclientgen.Job](res)
+			job, err := expectResponse[apimodel.Job](res)
 			if err != nil {
 				return err
 			}
@@ -103,7 +104,7 @@ func (a *App) runJobList(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	body, err := expectResponse[apiclientgen.ListJobsBody](res)
+	body, err := expectResponse[apimodel.ListJobsBody](res)
 	if err != nil {
 		return err
 	}

@@ -9,7 +9,8 @@ import (
 	"github.com/go-faster/jx"
 	"github.com/spf13/cobra"
 
-	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
+	apiclientgen "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 )
 
 func (a *App) newProviderCommand() *cobra.Command {
@@ -33,7 +34,7 @@ func (a *App) newProviderCatalogCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		body, err := expectResponse[apiclientgen.ListSandboxProviderCatalogBody](bodyRes)
+		body, err := expectResponse[apimodel.ListSandboxProviderCatalogBody](bodyRes)
 		if err != nil {
 			return err
 		}
@@ -55,7 +56,7 @@ func (a *App) newProviderListCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		body, err := expectResponse[apiclientgen.ListSandboxProviderInstancesBody](bodyRes)
+		body, err := expectResponse[apimodel.ListSandboxProviderInstancesBody](bodyRes)
 		if err != nil {
 			return err
 		}
@@ -81,7 +82,7 @@ func (a *App) newProviderGetCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		provider, err := expectResponse[apiclientgen.SandboxProviderInstance](providerRes)
+		provider, err := expectResponse[apimodel.SandboxProviderInstance](providerRes)
 		if err != nil {
 			return err
 		}

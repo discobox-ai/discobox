@@ -3,11 +3,11 @@ package apiclient
 import (
 	"iter"
 
-	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
+	"github.com/obot-platform/discobox/api/model"
 )
 
-func Projects(body *apiclientgen.ListProjectsBody) iter.Seq[apiclientgen.Project] {
-	return func(yield func(apiclientgen.Project) bool) {
+func Projects(body *model.ListProjectsBody) iter.Seq[model.Project] {
+	return func(yield func(model.Project) bool) {
 		if body == nil {
 			return
 		}
@@ -19,8 +19,8 @@ func Projects(body *apiclientgen.ListProjectsBody) iter.Seq[apiclientgen.Project
 	}
 }
 
-func Sandboxes(body *apiclientgen.ListSandboxesBody) iter.Seq[apiclientgen.Sandbox] {
-	return func(yield func(apiclientgen.Sandbox) bool) {
+func Sandboxes(body *model.ListSandboxesBody) iter.Seq[model.Sandbox] {
+	return func(yield func(model.Sandbox) bool) {
 		if body == nil {
 			return
 		}

@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
+	apiclientgen "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 	idpkg "github.com/obot-platform/discobox/id"
 )
 
@@ -55,7 +56,7 @@ func (a *App) resolveSandboxID(ctx context.Context, client *apiclientgen.Client,
 	if err != nil {
 		return "", err
 	}
-	body, err := expectResponse[apiclientgen.ListSandboxesBody](res)
+	body, err := expectResponse[apimodel.ListSandboxesBody](res)
 	if err != nil {
 		return "", err
 	}
@@ -75,7 +76,7 @@ func (a *App) resolveAgentConfigID(ctx context.Context, client *apiclientgen.Cli
 	if err != nil {
 		return "", err
 	}
-	body, err := expectResponse[apiclientgen.ListAgentConfigsBody](res)
+	body, err := expectResponse[apimodel.ListAgentConfigsBody](res)
 	if err != nil {
 		return "", err
 	}
@@ -95,7 +96,7 @@ func (a *App) resolveAgentDefinitionID(ctx context.Context, client *apiclientgen
 	if err != nil {
 		return "", err
 	}
-	body, err := expectResponse[apiclientgen.ListAgentConfigDefinitionsBody](res)
+	body, err := expectResponse[apimodel.ListAgentConfigDefinitionsBody](res)
 	if err != nil {
 		return "", err
 	}
@@ -115,7 +116,7 @@ func (a *App) resolveProviderID(ctx context.Context, client *apiclientgen.Client
 	if err != nil {
 		return "", err
 	}
-	body, err := expectResponse[apiclientgen.ListSandboxProviderInstancesBody](res)
+	body, err := expectResponse[apimodel.ListSandboxProviderInstancesBody](res)
 	if err != nil {
 		return "", err
 	}
@@ -135,7 +136,7 @@ func (a *App) resolveJobID(ctx context.Context, client *apiclientgen.Client, pro
 	if err != nil {
 		return "", err
 	}
-	body, err := expectResponse[apiclientgen.ListJobsBody](res)
+	body, err := expectResponse[apimodel.ListJobsBody](res)
 	if err != nil {
 		return "", err
 	}

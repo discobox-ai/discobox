@@ -14,7 +14,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	workerapi "github.com/obot-platform/discobox/worker-agent/api/servergen"
+	workerapi "github.com/obot-platform/discobox/worker-agent/api/gen"
 	"github.com/obot-platform/discobox/worker-agent/sandboxruntime"
 )
 

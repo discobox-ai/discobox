@@ -5,7 +5,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	apiclientgen "github.com/obot-platform/discobox/api/clientgen"
+	apiclientgen "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 )
 
 type workerListOptions struct {
@@ -61,7 +62,7 @@ func (a *App) runWorkerListWithOptions(cmd *cobra.Command, opts workerListOption
 	if err != nil {
 		return err
 	}
-	body, err := expectResponse[apiclientgen.ListWorkersBody](res)
+	body, err := expectResponse[apimodel.ListWorkersBody](res)
 	if err != nil {
 		return err
 	}

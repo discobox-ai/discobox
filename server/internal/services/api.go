@@ -4,25 +4,26 @@ package services
 import (
 	"context"
 
-	serverapi "github.com/obot-platform/discobox/api/servergen"
+	serverapi "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 	"github.com/obot-platform/discobox/model"
 )
 
-type CreateAgentConfigBody = serverapi.CreateAgentConfigBody
-type UpdateAgentConfigBody = serverapi.UpdateAgentConfigBody
-type CreateSandboxBody = serverapi.CreateSandboxBody
-type UpdateSandboxBody = serverapi.UpdateSandboxBody
-type StartSandboxBody = serverapi.StartSandboxBody
-type StopSandboxBody = serverapi.StopSandboxBody
-type RestartSandboxBody = serverapi.RestartSandboxBody
-type SandboxProviderCatalogItem = serverapi.SandboxProviderCatalogItem
-type ProviderConfigField = serverapi.ProviderConfigField
-type ProviderStatus = serverapi.ProviderStatus
-type CreateSandboxProviderInstanceBody = serverapi.CreateSandboxProviderInstanceBody
-type UpdateSandboxProviderInstanceBody = serverapi.UpdateSandboxProviderInstanceBody
-type RegisterWorkerBody = serverapi.RegisterWorkerBody
-type RegisterWorkerResponseBody = serverapi.RegisterWorkerResponseBody
-type UpdateWorkerStatusBody = serverapi.UpdateWorkerStatusBody
+type CreateAgentConfigBody = apimodel.CreateAgentConfigBody
+type UpdateAgentConfigBody = apimodel.UpdateAgentConfigBody
+type CreateSandboxBody = apimodel.CreateSandboxBody
+type UpdateSandboxBody = apimodel.UpdateSandboxBody
+type StartSandboxBody = apimodel.StartSandboxBody
+type StopSandboxBody = apimodel.StopSandboxBody
+type RestartSandboxBody = apimodel.RestartSandboxBody
+type SandboxProviderCatalogItem = apimodel.SandboxProviderCatalogItem
+type ProviderConfigField = apimodel.ProviderConfigField
+type ProviderStatus = apimodel.ProviderStatus
+type CreateSandboxProviderInstanceBody = apimodel.CreateSandboxProviderInstanceBody
+type UpdateSandboxProviderInstanceBody = apimodel.UpdateSandboxProviderInstanceBody
+type RegisterWorkerBody = apimodel.RegisterWorkerBody
+type RegisterWorkerResponseBody = apimodel.RegisterWorkerResponseBody
+type UpdateWorkerStatusBody = apimodel.UpdateWorkerStatusBody
 type OptBool = serverapi.OptBool
 type OptString = serverapi.OptString
 type OptURI = serverapi.OptURI

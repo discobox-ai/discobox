@@ -14,7 +14,8 @@ import (
 	"github.com/obot-platform/discobox/model"
 	sandbox "github.com/obot-platform/discobox/sandboxprovider"
 	workeragent "github.com/obot-platform/discobox/worker-agent"
-	workerclient "github.com/obot-platform/discobox/worker-agent/api/clientgen"
+	workerclient "github.com/obot-platform/discobox/worker-agent/api/gen"
+	workerapimodel "github.com/obot-platform/discobox/worker-agent/api/model"
 )
 
 const (
@@ -313,7 +314,7 @@ func (p *WorkerProvider) Start(ctx context.Context, ref sandbox.SandboxRef, stat
 	if err != nil {
 		return nil, state, err
 	}
-	workerSandbox, err := client.WorkerStartSandbox(ctx, &workerclient.WorkerSandboxOperationRequest{}, workerclient.WorkerStartSandboxParams{ProjectId: ref.ProjectID, WorkerId: workerID, SandboxId: ref.SandboxID})
+	workerSandbox, err := client.WorkerStartSandbox(ctx, &workerapimodel.WorkerSandboxOperationRequest{}, workerclient.WorkerStartSandboxParams{ProjectId: ref.ProjectID, WorkerId: workerID, SandboxId: ref.SandboxID})
 	if err != nil {
 		return nil, state, mapWorkerClientError(err)
 	}
@@ -346,7 +347,7 @@ func (p *WorkerProvider) Stop(ctx context.Context, ref sandbox.SandboxRef, state
 	if err != nil {
 		return nil, state, err
 	}
-	workerSandbox, err := client.WorkerStopSandbox(ctx, &workerclient.WorkerSandboxOperationRequest{}, workerclient.WorkerStopSandboxParams{ProjectId: ref.ProjectID, WorkerId: workerID, SandboxId: ref.SandboxID})
+	workerSandbox, err := client.WorkerStopSandbox(ctx, &workerapimodel.WorkerSandboxOperationRequest{}, workerclient.WorkerStopSandboxParams{ProjectId: ref.ProjectID, WorkerId: workerID, SandboxId: ref.SandboxID})
 	if err != nil {
 		return nil, state, mapWorkerClientError(err)
 	}
@@ -576,8 +577,8 @@ func newWorkerAgentClient(lease *sandbox.HTTPClientLease) (*workerclient.Client,
 	return workerclient.NewClient(strings.TrimRight(baseURL, "/"), workerSecuritySource{token: authToken}, workerclient.WithClient(httpClient))
 }
 
-func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) *workerclient.WorkerSandboxCreateRequest {
-	out := &workerclient.WorkerSandboxCreateRequest{SandboxId: sandboxID}
+func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) *workerapimodel.WorkerSandboxCreateRequest {
+	out := &workerapimodel.WorkerSandboxCreateRequest{SandboxId: sandboxID}
 	if opts.Image.Name != "" {
 		out.Image = workerclient.NewOptString(opts.Image.Name)
 	}
@@ -656,8 +657,8 @@ func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions
 	return out
 }
 
-func workerResourceConfig(cfg sandbox.ResourceConfig) workerclient.ResourceConfig {
-	return workerclient.ResourceConfig{
+func workerResourceConfig(cfg sandbox.ResourceConfig) workerapimodel.ResourceConfig {
+	return workerapimodel.ResourceConfig{
 		MemoryMB: int64(cfg.MemoryMB),
 		CPUCores: cfg.CPUCores,
 		DiskMB:   int64(cfg.DiskMB),
@@ -668,7 +669,7 @@ func workerResourceConfig(cfg sandbox.ResourceConfig) workerclient.ResourceConfi
 func workerSourceCodeReferences(in model.SourceCodeReferences) workerclient.WorkerSandboxCreateRequestSourceCodeReferences {
 	out := make(workerclient.WorkerSandboxCreateRequestSourceCodeReferences, len(in))
 	for key, ref := range in {
-		workerRef := workerclient.GitSourceReference{
+		workerRef := workerapimodel.GitSourceReference{
 			Directory: ref.Directory,
 		}
 		if ref.URL != "" {
@@ -687,7 +688,7 @@ func workerSourceCodeReferences(in model.SourceCodeReferences) workerclient.Work
 	return out
 }
 
-func sandboxFromWorker(in *workerclient.Sandbox, workerID string) *sandbox.Sandbox {
+func sandboxFromWorker(in *workerapimodel.Sandbox, workerID string) *sandbox.Sandbox {
 	if in == nil {
 		return nil
 	}
@@ -718,7 +719,7 @@ func timePtrFromWorker(in workerclient.NilDateTime) *time.Time {
 	return &in.Value
 }
 
-func portsFromWorker(in []workerclient.AssignedPort) []sandbox.AssignedPort {
+func portsFromWorker(in []workerapimodel.AssignedPort) []sandbox.AssignedPort {
 	if in == nil {
 		return nil
 	}

@@ -14,8 +14,8 @@ from the future in-sandbox `sandbox-agent` API.
 | Package/path | Ownership |
 | --- | --- |
 | `api/openapi` | Worker-agent-owned OpenAPI contracts, including the canonical worker-local sandbox operations API. |
-| `api/clientgen` | Generated worker-local sandbox operations client. |
-| `api/servergen` | Generated worker-local sandbox operations server scaffold. |
+| `api/gen` | Generated worker-local sandbox operations client/server scaffold. |
+| `api/model` | Generated stable aliases for worker-local sandbox operation schema types. |
 | `cmd/discobox-worker-agent` | Worker agent binary entrypoint. |
 | `cmd/discobox-worker-agent-watch` | Local development watcher that rebuilds the worker-agent image and updates the repo `.env`. |
 | `.` | Root `workeragent` Go package: boot contract, registration flow, status reporting, and high-level command orchestration. |
@@ -71,9 +71,9 @@ desired-state orchestration remain outside this module.
   boot metadata locally.
 - Generate worker-local sandbox operation client/server code from the canonical
   `worker-agent/api/openapi/sandbox.json` contract into
-  `worker-agent/api/clientgen` and `worker-agent/api/servergen`. Do not generate
-  these worker-local routes from the root `api/openapi/sandbox.yaml`; that YAML
-  is reserved for the future in-sandbox agent API seed.
+  `worker-agent/api/gen`, with schema aliases in `worker-agent/api/model`. Do
+  not generate these worker-local routes from the root `api/openapi/sandbox.yaml`;
+  that YAML is reserved for the future in-sandbox agent API seed.
 - Build the worker-agent image from the repository root with
   `docker build -f worker-agent/Dockerfile ... .` so the Dockerfile can copy root
   contracts without vendoring them.
