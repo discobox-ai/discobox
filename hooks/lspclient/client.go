@@ -47,6 +47,8 @@ type Client struct {
 	rootURI   string
 	language  string
 	onDiag    DiagnosticHandler
+	docMu     sync.Mutex
+	versions  map[string]int
 	writeMu   sync.Mutex
 	pendingMu sync.Mutex
 	pending   map[int]chan response
@@ -112,6 +114,7 @@ func Start(ctx context.Context, opts Options) (*Client, error) {
 		rootURI:  FileURI(repoRoot),
 		language: opts.LanguageID,
 		onDiag:   opts.OnDiagnostic,
+		versions: map[string]int{},
 		pending:  map[int]chan response{},
 		done:     make(chan struct{}),
 	}
@@ -131,10 +134,11 @@ func (c *Client) DidOpen(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
+	uri := FileURI(abs)
 	params := map[string]any{"textDocument": map[string]any{
-		"uri":        FileURI(abs),
+		"uri":        uri,
 		"languageId": c.language,
-		"version":    int(time.Now().UnixNano()),
+		"version":    c.nextDocumentVersion(uri),
 		"text":       string(text),
 	}}
 	return c.notify(ctx, "textDocument/didOpen", params)
@@ -147,16 +151,35 @@ func (c *Client) DidChange(ctx context.Context, path string) error {
 	if err != nil {
 		return err
 	}
+	uri := FileURI(abs)
 	params := map[string]any{
-		"textDocument":   map[string]any{"uri": FileURI(abs), "version": int(time.Now().UnixNano())},
+		"textDocument":   map[string]any{"uri": uri, "version": c.nextDocumentVersion(uri)},
 		"contentChanges": []map[string]any{{"text": string(text)}},
 	}
 	return c.notify(ctx, "textDocument/didChange", params)
 }
 
+// DidSave sends textDocument/didSave for a file.
+func (c *Client) DidSave(ctx context.Context, path string) error {
+	abs := c.abs(path)
+	text, err := os.ReadFile(abs)
+	if err != nil {
+		return err
+	}
+	params := map[string]any{
+		"textDocument": map[string]any{"uri": FileURI(abs)},
+		"text":         string(text),
+	}
+	return c.notify(ctx, "textDocument/didSave", params)
+}
+
 // DidClose sends textDocument/didClose for a file.
 func (c *Client) DidClose(ctx context.Context, path string) error {
-	params := map[string]any{"textDocument": map[string]any{"uri": FileURI(c.abs(path))}}
+	uri := FileURI(c.abs(path))
+	c.docMu.Lock()
+	delete(c.versions, uri)
+	c.docMu.Unlock()
+	params := map[string]any{"textDocument": map[string]any{"uri": uri}}
 	return c.notify(ctx, "textDocument/didClose", params)
 }
 
@@ -179,6 +202,16 @@ func (c *Client) Close() error {
 
 // Stderr returns captured language-server stderr.
 func (c *Client) Stderr() string { return c.stderrBuf.String() }
+
+func (c *Client) nextDocumentVersion(uri string) int {
+	c.docMu.Lock()
+	defer c.docMu.Unlock()
+	if c.versions == nil {
+		c.versions = map[string]int{}
+	}
+	c.versions[uri]++
+	return c.versions[uri]
+}
 
 func (c *Client) initialize(ctx context.Context) error {
 	params := map[string]any{

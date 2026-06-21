@@ -160,6 +160,9 @@ func (r *runtimeState) handleLSPChanges(hook hooks.Hook, changes []watcher.Chang
 			} else {
 				err = client.DidOpen(ctx, path)
 			}
+			if err == nil {
+				err = client.DidSave(ctx, path)
+			}
 		}
 		cancel()
 		if change.Kind == watcher.Deleted {
