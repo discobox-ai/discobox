@@ -8,22 +8,43 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"os"
+	"strconv"
 	"strings"
-
-	"github.com/obot-platform/discobox/workerbootstrap"
 )
 
 const (
-	EnvControlPlaneURL = workerbootstrap.EnvControlPlaneURL
-	EnvProjectID       = workerbootstrap.EnvProjectID
-	EnvSandboxID       = workerbootstrap.EnvSandboxID
-	EnvWorkerID        = workerbootstrap.EnvWorkerID
-	EnvBootstrapToken  = workerbootstrap.EnvBootstrapToken
-	EnvAgentPort       = workerbootstrap.EnvAgentPort
+	EnvControlPlaneURL = "DISCOBOX_CONTROL_PLANE_URL"
+	EnvProjectID       = "DISCOBOX_PROJECT_ID"
+	EnvSandboxID       = "DISCOBOX_SANDBOX_ID"
+	EnvWorkerID        = "DISCOBOX_WORKER_ID"
+	EnvBootstrapToken  = "DISCOBOX_WORKER_BOOTSTRAP_TOKEN"
+	EnvAgentPort       = "DISCOBOX_AGENT_PORT"
 )
 
 // Bootstrap is the VM boot contract used by the control plane and worker agent.
-type Bootstrap = workerbootstrap.Bootstrap
+type Bootstrap struct {
+	ControlPlaneURL string `json:"controlPlaneUrl,omitempty"`
+	ProjectID       string `json:"projectId,omitempty"`
+	SandboxID       string `json:"sandboxId,omitempty"`
+	WorkerID        string `json:"workerId,omitempty"`
+	Token           string `json:"token,omitempty"`
+	AgentPort       int    `json:"agentPort,omitempty"`
+}
+
+// Validate checks the required worker bootstrap fields.
+func (b Bootstrap) Validate() error {
+	if strings.TrimSpace(b.ControlPlaneURL) == "" {
+		return errors.New("control plane URL is required")
+	}
+	if strings.TrimSpace(b.WorkerID) == "" {
+		return errors.New("worker ID is required")
+	}
+	if strings.TrimSpace(b.Token) == "" {
+		return errors.New("worker bootstrap token is required")
+	}
+	return nil
+}
 
 // Config controls worker registration.
 type Config struct {
@@ -128,7 +149,15 @@ func Run(ctx context.Context, cfg Config) (*Registration, error) {
 
 // FromEnv builds Bootstrap from environment variables.
 func FromEnv() Bootstrap {
-	return workerbootstrap.FromEnv()
+	agentPort, _ := strconv.Atoi(strings.TrimSpace(os.Getenv(EnvAgentPort)))
+	return Bootstrap{
+		ControlPlaneURL: strings.TrimSpace(os.Getenv(EnvControlPlaneURL)),
+		ProjectID:       strings.TrimSpace(os.Getenv(EnvProjectID)),
+		SandboxID:       strings.TrimSpace(os.Getenv(EnvSandboxID)),
+		WorkerID:        strings.TrimSpace(os.Getenv(EnvWorkerID)),
+		Token:           strings.TrimSpace(os.Getenv(EnvBootstrapToken)),
+		AgentPort:       agentPort,
+	}
 }
 
 // GenerateKeySource creates a fresh Ed25519 keypair.

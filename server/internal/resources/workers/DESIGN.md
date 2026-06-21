@@ -13,7 +13,7 @@ flowchart LR
     executor --> reconciler[WorkerReconciler]
     manager --> store[internal/store]
     reconciler --> store
-    reconciler --> runtime[sandboxprovider worker runtime]
+    reconciler --> runtime[sandbox worker runtime]
 ```
 
 - `Service` handles worker registration, listing, and authenticated status

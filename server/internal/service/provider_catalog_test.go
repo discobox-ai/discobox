@@ -10,16 +10,16 @@ import (
 	"time"
 
 	serverapi "github.com/obot-platform/discobox/api/gen"
-	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
-	providerdocker "github.com/obot-platform/discobox/providers/sandbox/provider/docker"
-	dockerdriver "github.com/obot-platform/discobox/providers/sandbox/vm/docker"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
 	"github.com/obot-platform/discobox/server/internal/database"
+	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/resources/sandboxes"
 	"github.com/obot-platform/discobox/server/internal/service"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
+	providerdocker "github.com/obot-platform/discobox/server/providers/sandbox/provider/docker"
+	dockerdriver "github.com/obot-platform/discobox/server/providers/sandbox/vm/docker"
 )
 
 func TestSandboxReconcilerDelegatesToProvider(t *testing.T) {

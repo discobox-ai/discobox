@@ -8,7 +8,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"github.com/obot-platform/discobox/gormdb"
-	"github.com/obot-platform/discobox/model"
+	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 

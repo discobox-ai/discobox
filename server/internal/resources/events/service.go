@@ -7,10 +7,10 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/obot-platform/discobox/apperrors"
 	"github.com/obot-platform/discobox/id"
-	"github.com/obot-platform/discobox/model"
+	"github.com/obot-platform/discobox/server/internal/apperrors"
 	eventbroker "github.com/obot-platform/discobox/server/internal/events"
+	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 

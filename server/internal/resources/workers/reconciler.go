@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
-	sandboxprovider "github.com/obot-platform/discobox/sandboxprovider"
+	"github.com/obot-platform/discobox/server/internal/model"
+	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
 type WorkerReconciler struct {
 	store   *store.Store
-	manager *sandboxprovider.ProviderManager
+	manager *sandbox.ProviderManager
 }
 
 type WorkerReconcilerOption func(*WorkerReconciler)
@@ -29,7 +29,7 @@ func NewWorkerReconciler(store *store.Store, options ...WorkerReconcilerOption) 
 	return reconciler
 }
 
-func WithWorkerProviderManager(manager *sandboxprovider.ProviderManager) WorkerReconcilerOption {
+func WithWorkerProviderManager(manager *sandbox.ProviderManager) WorkerReconcilerOption {
 	return func(reconciler *WorkerReconciler) {
 		reconciler.manager = manager
 	}
@@ -99,7 +99,7 @@ func (r *WorkerReconciler) reconcileDeleted(ctx context.Context, worker *model.W
 	if err != nil {
 		return err
 	}
-	workerProvider, ok := runtimeProvider.(sandboxprovider.WorkerRuntimeReconciler)
+	workerProvider, ok := runtimeProvider.(sandbox.WorkerRuntimeReconciler)
 	if !ok {
 		return fmt.Errorf("sandbox provider %q does not reconcile workers", provider.ID)
 	}
@@ -147,7 +147,7 @@ func (r *WorkerReconciler) reconcileActive(ctx context.Context, worker *model.Wo
 	if err != nil {
 		return err
 	}
-	workerProvider, ok := runtimeProvider.(sandboxprovider.WorkerRuntimeReconciler)
+	workerProvider, ok := runtimeProvider.(sandbox.WorkerRuntimeReconciler)
 	if !ok {
 		return fmt.Errorf("sandbox provider %q does not reconcile workers", provider.ID)
 	}
@@ -187,7 +187,7 @@ func (r *WorkerReconciler) update(ctx context.Context, worker *model.Worker, gen
 	return nil
 }
 
-func (r *WorkerReconciler) resolveProvider(ctx context.Context, provider *model.SandboxProviderInstance) (sandboxprovider.Provider, error) {
+func (r *WorkerReconciler) resolveProvider(ctx context.Context, provider *model.SandboxProviderInstance) (sandbox.Provider, error) {
 	if r == nil || r.manager == nil {
 		return nil, fmt.Errorf("sandbox provider manager is required")
 	}

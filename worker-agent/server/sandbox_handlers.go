@@ -8,8 +8,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/obot-platform/discobox/apperrors"
-	sandbox "github.com/obot-platform/discobox/sandboxprovider"
 	workerapi "github.com/obot-platform/discobox/worker-agent/api/gen"
 	workerapimodel "github.com/obot-platform/discobox/worker-agent/api/model"
 	"github.com/obot-platform/discobox/worker-agent/sandboxruntime"
@@ -37,7 +35,7 @@ func newSandboxService(identity Identity, runtime sandboxruntime.Runtime, authTo
 
 func (s *sandboxService) HandleWorkerBearerAuth(ctx context.Context, _ workerapi.OperationName, token workerapi.WorkerBearerAuth) (context.Context, error) {
 	if !authorizedWorkerToken(token.Token, s.authTokens) {
-		return ctx, apperrors.NewStatusError(http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
+		return ctx, newStatusError(http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
 	}
 	return ctx, nil
 }
@@ -153,20 +151,20 @@ func (s *sandboxService) NewError(_ context.Context, err error) *workerapi.Error
 
 func (s *sandboxService) authorize(projectID, workerID string) error {
 	if s.runtime == nil {
-		return apperrors.NewStatusError(http.StatusServiceUnavailable, "sandbox runtime is not configured")
+		return newStatusError(http.StatusServiceUnavailable, "sandbox runtime is not configured")
 	}
 	if projectID != s.identity.ProjectID || workerID != s.identity.WorkerID {
-		return apperrors.NewStatusError(http.StatusNotFound, "worker sandbox route not found")
+		return newStatusError(http.StatusNotFound, "worker sandbox route not found")
 	}
 	return nil
 }
 
-func sandboxOutput(sb *sandbox.Sandbox, err error) (*workerapimodel.Sandbox, error) {
+func sandboxOutput(sb *sandboxruntime.Sandbox, err error) (*workerapimodel.Sandbox, error) {
 	if err != nil {
 		return nil, mapRuntimeError(err)
 	}
 	if sb == nil {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, http.StatusText(http.StatusNotFound))
+		return nil, newStatusError(http.StatusNotFound, http.StatusText(http.StatusNotFound))
 	}
 	normalizeSandboxResponse(sb)
 	out, err := convert[workerapimodel.Sandbox](sb)
@@ -176,7 +174,7 @@ func sandboxOutput(sb *sandbox.Sandbox, err error) (*workerapimodel.Sandbox, err
 	return &out, nil
 }
 
-func normalizeSandboxResponse(sb *sandbox.Sandbox) {
+func normalizeSandboxResponse(sb *sandboxruntime.Sandbox) {
 	if sb == nil {
 		return
 	}
@@ -187,18 +185,35 @@ func normalizeSandboxResponse(sb *sandbox.Sandbox) {
 		sb.Env = map[string]string{}
 	}
 	if sb.Ports == nil {
-		sb.Ports = []sandbox.AssignedPort{}
+		sb.Ports = []sandboxruntime.AssignedPort{}
 	}
 }
 
 func mapRuntimeError(err error) error {
-	if errors.Is(err, sandbox.ErrNotFound) {
-		return apperrors.NewStatusError(http.StatusNotFound, http.StatusText(http.StatusNotFound))
+	if errors.Is(err, sandboxruntime.ErrNotFound) {
+		return newStatusError(http.StatusNotFound, http.StatusText(http.StatusNotFound))
 	}
-	if errors.Is(err, sandbox.ErrAlreadyExists) {
-		return apperrors.NewStatusError(http.StatusConflict, http.StatusText(http.StatusConflict))
+	if errors.Is(err, sandboxruntime.ErrAlreadyExists) {
+		return newStatusError(http.StatusConflict, http.StatusText(http.StatusConflict))
 	}
-	return apperrors.NewStatusError(http.StatusInternalServerError, err.Error())
+	return newStatusError(http.StatusInternalServerError, err.Error())
+}
+
+type statusError struct {
+	status  int
+	message string
+}
+
+func (e statusError) Error() string {
+	return e.message
+}
+
+func (e statusError) StatusCode() int {
+	return e.status
+}
+
+func newStatusError(status int, message string) error {
+	return statusError{status: status, message: message}
 }
 
 func normalizeAuthTokens(tokens ...string) []string {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/obot-platform/discobox/model"
+	"github.com/obot-platform/discobox/server/internal/model"
 )
 
 func TestCreateProjectUserKeyIfMissing(t *testing.T) {

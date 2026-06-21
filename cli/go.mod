@@ -22,8 +22,6 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
-	github.com/jinzhu/inflection v1.0.0 // indirect
-	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.21 // indirect
 	github.com/ogen-go/ogen v1.20.3 // indirect
@@ -42,7 +40,6 @@ require (
 	golang.org/x/sys v0.44.0 // indirect
 	golang.org/x/text v0.37.0 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gorm.io/gorm v1.31.1 // indirect
 )
 
 replace github.com/obot-platform/discobox => ..

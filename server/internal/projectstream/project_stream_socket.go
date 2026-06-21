@@ -19,7 +19,7 @@ import (
 	"github.com/coder/websocket/wsjson"
 	"github.com/go-chi/chi/v5"
 
-	"github.com/obot-platform/discobox/model"
+	"github.com/obot-platform/discobox/server/internal/model"
 	services "github.com/obot-platform/discobox/server/internal/services"
 )
 

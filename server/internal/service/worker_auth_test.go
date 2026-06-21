@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/id"
-	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/auth"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/events"
+	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/service"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"

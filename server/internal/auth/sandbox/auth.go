@@ -12,7 +12,7 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 
-	"github.com/obot-platform/discobox/model"
+	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/secrets"
 	"github.com/obot-platform/discobox/server/internal/store"
 )

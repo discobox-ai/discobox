@@ -16,8 +16,6 @@ import (
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
-	"github.com/obot-platform/discobox/apiclient"
-	"github.com/obot-platform/discobox/model"
 )
 
 func TestWriteProviderTableIncludesConfig(t *testing.T) {
@@ -189,12 +187,12 @@ func TestWriteEventPrintsEventIDInsteadOfSeqWhenPresent(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	eventID := "01kv9w440bpa9qk5n25t2hh2rv"
-	msg := &apiclient.ProjectEventMessage{
-		Event: apiclient.ProjectEventNameResourceChanged,
-		Data: &apiclient.ResourceChangedEvent{
+	msg := &apiclientgen.ProjectEventMessage{
+		Event: apiclientgen.ProjectEventNameResourceChanged,
+		Data: &apiclientgen.ResourceChangedEvent{
 			ID:           eventID,
 			Seq:          42,
-			Action:       model.EventActionUpdated,
+			Action:       apimodel.EventActionUpdated,
 			ResourceType: "sandbox",
 			ResourceID:   "sandbox-1",
 			CreatedAt:    time.Date(2026, 6, 17, 4, 0, 0, 0, time.UTC),
@@ -218,11 +216,11 @@ func TestWriteEventFallsBackToSeqWhenIDMissing(t *testing.T) {
 	cmd := &cobra.Command{}
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	msg := &apiclient.ProjectEventMessage{
-		Event: apiclient.ProjectEventNameResourceChanged,
-		Data: &apiclient.ResourceChangedEvent{
+	msg := &apiclientgen.ProjectEventMessage{
+		Event: apiclientgen.ProjectEventNameResourceChanged,
+		Data: &apiclientgen.ResourceChangedEvent{
 			Seq:          42,
-			Action:       model.EventActionUpdated,
+			Action:       apimodel.EventActionUpdated,
 			ResourceType: "sandbox",
 			ResourceID:   "sandbox-1",
 			CreatedAt:    time.Date(2026, 6, 17, 4, 0, 0, 0, time.UTC),

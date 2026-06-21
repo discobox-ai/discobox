@@ -9,10 +9,10 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	sandbox "github.com/obot-platform/discobox/sandboxprovider"
 	workeragent "github.com/obot-platform/discobox/worker-agent"
 	workerclient "github.com/obot-platform/discobox/worker-agent/api/gen"
 	workerapimodel "github.com/obot-platform/discobox/worker-agent/api/model"
+	"github.com/obot-platform/discobox/worker-agent/sandboxruntime"
 )
 
 func TestRunRegistersWorkerWithGeneratedPublicKey(t *testing.T) {
@@ -139,7 +139,7 @@ func TestWorkerSandboxHandlersValidateIdentityAndOperateOnRuntime(t *testing.T) 
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	if created.SandboxID != "sandbox-1" || sandbox.Status(created.Status) != sandbox.StatusRunning {
+	if created.SandboxID != "sandbox-1" || sandboxruntime.Status(created.Status) != sandboxruntime.StatusRunning {
 		t.Fatalf("created sandbox = %#v", created)
 	}
 
@@ -147,7 +147,7 @@ func TestWorkerSandboxHandlersValidateIdentityAndOperateOnRuntime(t *testing.T) 
 	if err != nil {
 		t.Fatalf("start already-running sandbox: %v", err)
 	}
-	if sandbox.Status(started.Status) != sandbox.StatusRunning {
+	if sandboxruntime.Status(started.Status) != sandboxruntime.StatusRunning {
 		t.Fatalf("started status = %q", started.Status)
 	}
 
@@ -155,7 +155,7 @@ func TestWorkerSandboxHandlersValidateIdentityAndOperateOnRuntime(t *testing.T) 
 	if err != nil {
 		t.Fatalf("stop sandbox: %v", err)
 	}
-	if sandbox.Status(stopped.Status) != sandbox.StatusStopped {
+	if sandboxruntime.Status(stopped.Status) != sandboxruntime.StatusStopped {
 		t.Fatalf("stopped status = %q", stopped.Status)
 	}
 

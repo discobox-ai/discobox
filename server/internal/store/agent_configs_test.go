@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/obot-platform/discobox/model"
+	"github.com/obot-platform/discobox/server/internal/model"
 )
 
 func TestAgentConfigResourceEvents(t *testing.T) {

@@ -5,7 +5,7 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/obot-platform/discobox/model"
+	"github.com/obot-platform/discobox/server/internal/model"
 )
 
 func (s *Store) ListAgentConfigs(ctx context.Context, projectID string) ([]model.AgentConfig, error) {

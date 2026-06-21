@@ -14,7 +14,7 @@ flowchart LR
     dispatcher[orchestration.Dispatcher] --> executor[SandboxReconcileExecutor]
     executor --> reconciler[SandboxReconciler]
     reconciler --> store
-    reconciler --> providers[sandboxprovider.ProviderManager]
+    reconciler --> providers[sandbox.ProviderManager]
     reconciler --> auth[internal/auth/sandbox]
 ```
 

@@ -5,12 +5,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
-	providersandbox "github.com/obot-platform/discobox/providers/sandbox/provider"
-	sandbox "github.com/obot-platform/discobox/sandboxprovider"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
 	eventbroker "github.com/obot-platform/discobox/server/internal/events"
+	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/resources/agentconfigs"
 	resourceevents "github.com/obot-platform/discobox/server/internal/resources/events"
 	resourcejobs "github.com/obot-platform/discobox/server/internal/resources/jobs"
@@ -18,8 +16,10 @@ import (
 	"github.com/obot-platform/discobox/server/internal/resources/providers"
 	sandboxes "github.com/obot-platform/discobox/server/internal/resources/sandboxes"
 	workers "github.com/obot-platform/discobox/server/internal/resources/workers"
+	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
+	providersandbox "github.com/obot-platform/discobox/server/providers/sandbox/provider"
 )
 
 const (

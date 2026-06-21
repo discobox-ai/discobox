@@ -11,8 +11,8 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 
-	"github.com/obot-platform/discobox/model"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
+	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/secrets"
 	"github.com/obot-platform/discobox/server/internal/store"
 )

@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
+	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 

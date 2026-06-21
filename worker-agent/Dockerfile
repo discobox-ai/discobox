@@ -4,11 +4,7 @@ FROM golang:1.26-trixie AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./
-COPY apperrors ./apperrors
 COPY id ./id
-COPY model ./model
-COPY sandboxprovider ./sandboxprovider
-COPY workerbootstrap ./workerbootstrap
 COPY worker-agent/go.mod worker-agent/go.sum ./worker-agent/
 COPY worker-agent/cmd ./worker-agent/cmd
 COPY worker-agent ./worker-agent

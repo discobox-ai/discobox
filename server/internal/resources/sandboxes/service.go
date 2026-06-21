@@ -8,15 +8,15 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/obot-platform/discobox/apperrors"
+	"github.com/obot-platform/discobox/server/internal/apperrors"
 
 	"github.com/obot-platform/discobox/id"
-	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/server/internal/auth"
+	"github.com/obot-platform/discobox/server/internal/model"
 	services "github.com/obot-platform/discobox/server/internal/services"
 
-	sandboxprovider "github.com/obot-platform/discobox/sandboxprovider"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
+	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
@@ -25,7 +25,7 @@ import (
 type Service struct {
 	store            *store.Store
 	jobs             SandboxJobManager
-	sandboxProviders *sandboxprovider.ProviderManager
+	sandboxProviders *sandbox.ProviderManager
 	providerStore    any
 	sandboxAuth      *sandboxauth.Manager
 	defaultUserID    string
@@ -39,7 +39,7 @@ type SandboxJobManager interface {
 	DeleteSandbox(context.Context, string, string) (*model.Sandbox, error)
 }
 
-func NewService(store *store.Store, manager *sandboxprovider.ProviderManager, defaultUserID string, providerStore ...any) *Service {
+func NewService(store *store.Store, manager *sandbox.ProviderManager, defaultUserID string, providerStore ...any) *Service {
 	svc := &Service{
 		store:            store,
 		sandboxProviders: manager,
@@ -248,14 +248,14 @@ func (s *Service) RestartSandbox(ctx context.Context, projectID, sandboxID strin
 }
 
 // RegisterSandboxProvider registers a runtime sandbox provider.
-func (s *Service) RegisterSandboxProvider(id string, provider sandboxprovider.Provider) {
+func (s *Service) RegisterSandboxProvider(id string, provider sandbox.Provider) {
 	if s.sandboxProviders != nil {
 		s.sandboxProviders.RegisterProvider(id, provider)
 	}
 }
 
 // SandboxProviderManager returns the service-owned provider manager.
-func (s *Service) SandboxProviderManager() *sandboxprovider.ProviderManager {
+func (s *Service) SandboxProviderManager() *sandbox.ProviderManager {
 	return s.sandboxProviders
 }
 

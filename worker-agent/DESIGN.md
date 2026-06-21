@@ -3,7 +3,7 @@
 This module owns the in-guest worker agent process and local worker-agent image
 watcher.
 
-The worker agent reads root `workerbootstrap` metadata, authenticates to the
+The worker agent owns and reads worker bootstrap metadata, authenticates to the
 control plane, reports worker health/capacity, and runs the local worker runtime
 plumbing needed by provider backends. It also owns the worker-local sandbox
 operations HTTP server for sandboxes hosted on that worker. That API is distinct
@@ -27,8 +27,8 @@ from the future in-sandbox `sandbox-agent` API.
 
 1. The VM receives bootstrap settings from cloud-init, kernel command-line args,
    or environment variables.
-2. The worker agent reads the settings into the root `workerbootstrap.Bootstrap`
-   contract re-exported by this module.
+2. The worker agent reads the settings into its `workeragent.Bootstrap`
+   contract.
 3. The agent generates or loads an Ed25519 worker keypair.
 4. The agent registers with the control plane using project ID, sandbox ID,
    bootstrap token, and public key; the control plane derives the worker ID from
@@ -67,16 +67,16 @@ desired-state orchestration remain outside this module.
 
 ## Boundary Rules
 
-- Depend on root contracts such as `workerbootstrap`; do not define cross-module
-  boot metadata locally.
+- Keep worker boot metadata in the root `workeragent` package; providers should
+  consume that contract instead of defining provider-local boot metadata.
 - Generate worker-local sandbox operation client/server code from the canonical
   `worker-agent/api/openapi/sandbox.json` contract into
   `worker-agent/api/gen`, with schema aliases in `worker-agent/api/model`. Do
   not generate these worker-local routes from the root `api/openapi/sandbox.yaml`;
   that YAML is reserved for the future in-sandbox agent API seed.
 - Build the worker-agent image from the repository root with
-  `docker build -f worker-agent/Dockerfile ... .` so the Dockerfile can copy root
-  contracts without vendoring them.
+  `docker build -f worker-agent/Dockerfile ... .` so the Dockerfile can copy
+  root support packages without vendoring them.
 - Do not import server internals or provider implementation packages.
 - Keep future in-sandbox agent API implementation code in the `sandbox-agent`
   module; worker-local provider operation routes and their generated server

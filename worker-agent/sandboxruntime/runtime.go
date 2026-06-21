@@ -11,7 +11,6 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
-	sandbox "github.com/obot-platform/discobox/sandboxprovider"
 	workerclient "github.com/obot-platform/discobox/worker-agent/api/gen"
 	workerapimodel "github.com/obot-platform/discobox/worker-agent/api/model"
 )
@@ -24,15 +23,54 @@ const (
 	sandboxLabelSandbox = "discobox.sandbox_id"
 )
 
+var (
+	ErrNotFound      = errors.New("sandbox not found")
+	ErrAlreadyExists = errors.New("sandbox already exists")
+)
+
+// Sandbox is the worker-local runtime view of a sandbox instance.
+type Sandbox struct {
+	ID        string
+	SandboxID string
+	Status    Status
+	Image     string
+	CreatedAt time.Time
+	StartedAt *time.Time
+	StoppedAt *time.Time
+	Error     string
+	Metadata  map[string]string
+	Ports     []AssignedPort
+	Env       map[string]string
+}
+
+// AssignedPort describes a runtime-assigned port mapping.
+type AssignedPort struct {
+	ContainerPort int
+	HostPort      int
+	HostIP        string
+	Protocol      string
+}
+
+// Status is the worker-local runtime status.
+type Status string
+
+const (
+	StatusCreated Status = "created"
+	StatusRunning Status = "running"
+	StatusStopped Status = "stopped"
+	StatusFailed  Status = "failed"
+	StatusRemoved Status = "removed"
+)
+
 // Runtime performs local sandbox operations for one worker agent.
 type Runtime interface {
-	ListSandboxes(ctx context.Context) ([]*sandbox.Sandbox, error)
-	GetSandbox(ctx context.Context, sandboxID string) (*sandbox.Sandbox, error)
-	CreateSandbox(ctx context.Context, req *workerapimodel.WorkerSandboxCreateRequest) (*sandbox.Sandbox, error)
-	UpdateSandbox(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxUpdateRequest) (*sandbox.Sandbox, error)
+	ListSandboxes(ctx context.Context) ([]*Sandbox, error)
+	GetSandbox(ctx context.Context, sandboxID string) (*Sandbox, error)
+	CreateSandbox(ctx context.Context, req *workerapimodel.WorkerSandboxCreateRequest) (*Sandbox, error)
+	UpdateSandbox(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxUpdateRequest) (*Sandbox, error)
 	DeleteSandbox(ctx context.Context, sandboxID string) error
-	StartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxOperationRequest) (*sandbox.Sandbox, error)
-	StopSandbox(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxOperationRequest) (*sandbox.Sandbox, error)
+	StartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxOperationRequest) (*Sandbox, error)
+	StopSandbox(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxOperationRequest) (*Sandbox, error)
 }
 
 // DockerSandboxRuntime launches sandboxes as Docker containers inside a worker.
@@ -50,12 +88,12 @@ func NewDockerSandboxRuntime(projectID, workerID string) (*DockerSandboxRuntime,
 	return &DockerSandboxRuntime{client: cli, projectID: projectID, workerID: workerID}, nil
 }
 
-func (r *DockerSandboxRuntime) ListSandboxes(ctx context.Context) ([]*sandbox.Sandbox, error) {
+func (r *DockerSandboxRuntime) ListSandboxes(ctx context.Context) ([]*Sandbox, error) {
 	containers, err := r.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: r.filters("")})
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*sandbox.Sandbox, 0, len(containers.Items))
+	out := make([]*Sandbox, 0, len(containers.Items))
 	for _, ctr := range containers.Items {
 		inspect, err := r.client.ContainerInspect(ctx, ctr.ID, client.ContainerInspectOptions{})
 		if err != nil {
@@ -66,7 +104,7 @@ func (r *DockerSandboxRuntime) ListSandboxes(ctx context.Context) ([]*sandbox.Sa
 	return out, nil
 }
 
-func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapimodel.WorkerSandboxCreateRequest) (*sandbox.Sandbox, error) {
+func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapimodel.WorkerSandboxCreateRequest) (*Sandbox, error) {
 	sandboxID := ""
 	if req != nil {
 		sandboxID = strings.TrimSpace(req.SandboxId)
@@ -76,7 +114,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	}
 	if existing, err := r.GetSandbox(ctx, sandboxID); err == nil {
 		return existing, nil
-	} else if !errors.Is(err, sandbox.ErrNotFound) {
+	} else if !errors.Is(err, ErrNotFound) {
 		return nil, err
 	}
 	imageName := strings.TrimSpace(optString(req.Image))
@@ -121,13 +159,13 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	return r.GetSandbox(ctx, sandboxID)
 }
 
-func (r *DockerSandboxRuntime) GetSandbox(ctx context.Context, sandboxID string) (*sandbox.Sandbox, error) {
+func (r *DockerSandboxRuntime) GetSandbox(ctx context.Context, sandboxID string) (*Sandbox, error) {
 	containers, err := r.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: r.filters(sandboxID)})
 	if err != nil {
 		return nil, err
 	}
 	if len(containers.Items) == 0 {
-		return nil, sandbox.ErrNotFound
+		return nil, ErrNotFound
 	}
 	inspect, err := r.client.ContainerInspect(ctx, containers.Items[0].ID, client.ContainerInspectOptions{})
 	if err != nil {
@@ -136,13 +174,13 @@ func (r *DockerSandboxRuntime) GetSandbox(ctx context.Context, sandboxID string)
 	return r.sandboxFromInspect(inspect.Container), nil
 }
 
-func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.WorkerSandboxUpdateRequest) (*sandbox.Sandbox, error) {
+func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.WorkerSandboxUpdateRequest) (*Sandbox, error) {
 	return r.GetSandbox(ctx, sandboxID)
 }
 
 func (r *DockerSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID string) error {
 	sb, err := r.GetSandbox(ctx, sandboxID)
-	if errors.Is(err, sandbox.ErrNotFound) {
+	if errors.Is(err, ErrNotFound) {
 		return nil
 	}
 	if err != nil {
@@ -152,12 +190,12 @@ func (r *DockerSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID stri
 	return err
 }
 
-func (r *DockerSandboxRuntime) StartSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.WorkerSandboxOperationRequest) (*sandbox.Sandbox, error) {
+func (r *DockerSandboxRuntime) StartSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.WorkerSandboxOperationRequest) (*Sandbox, error) {
 	sb, err := r.GetSandbox(ctx, sandboxID)
 	if err != nil {
 		return nil, err
 	}
-	if sb.Status == sandbox.StatusRunning {
+	if sb.Status == StatusRunning {
 		return sb, nil
 	}
 	if _, err := r.client.ContainerStart(ctx, sb.ID, client.ContainerStartOptions{}); err != nil {
@@ -166,7 +204,7 @@ func (r *DockerSandboxRuntime) StartSandbox(ctx context.Context, sandboxID strin
 	return r.GetSandbox(ctx, sandboxID)
 }
 
-func (r *DockerSandboxRuntime) StopSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.WorkerSandboxOperationRequest) (*sandbox.Sandbox, error) {
+func (r *DockerSandboxRuntime) StopSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.WorkerSandboxOperationRequest) (*Sandbox, error) {
 	sb, err := r.GetSandbox(ctx, sandboxID)
 	if err != nil {
 		return nil, err
@@ -198,13 +236,13 @@ func (r *DockerSandboxRuntime) labels(sandboxID string) map[string]string {
 	}
 }
 
-func (r *DockerSandboxRuntime) sandboxFromInspect(inspect container.InspectResponse) *sandbox.Sandbox {
+func (r *DockerSandboxRuntime) sandboxFromInspect(inspect container.InspectResponse) *Sandbox {
 	createdAt, _ := time.Parse(time.RFC3339Nano, inspect.Created)
 	sandboxID := inspect.Config.Labels[sandboxLabelSandbox]
-	sb := &sandbox.Sandbox{
+	sb := &Sandbox{
 		ID:        inspect.ID,
 		SandboxID: sandboxID,
-		Status:    sandbox.StatusCreated,
+		Status:    StatusCreated,
 		Image:     inspect.Config.Image,
 		CreatedAt: createdAt,
 		Metadata: map[string]string{
@@ -222,13 +260,13 @@ func (r *DockerSandboxRuntime) sandboxFromInspect(inspect container.InspectRespo
 		sb.Error = inspect.State.Error
 		switch {
 		case inspect.State.Running:
-			sb.Status = sandbox.StatusRunning
+			sb.Status = StatusRunning
 		case inspect.State.Dead || inspect.State.OOMKilled || inspect.State.Error != "":
-			sb.Status = sandbox.StatusFailed
+			sb.Status = StatusFailed
 		case inspect.State.Status == "created":
-			sb.Status = sandbox.StatusCreated
+			sb.Status = StatusCreated
 		default:
-			sb.Status = sandbox.StatusStopped
+			sb.Status = StatusStopped
 		}
 	}
 	return sb
@@ -237,51 +275,51 @@ func (r *DockerSandboxRuntime) sandboxFromInspect(inspect container.InspectRespo
 // MemorySandboxRuntime is a lightweight runtime for tests and non-Docker embeds.
 type MemorySandboxRuntime struct {
 	mu        sync.Mutex
-	sandboxes map[string]*sandbox.Sandbox
+	sandboxes map[string]*Sandbox
 }
 
 func NewMemorySandboxRuntime() *MemorySandboxRuntime {
-	return &MemorySandboxRuntime{sandboxes: map[string]*sandbox.Sandbox{}}
+	return &MemorySandboxRuntime{sandboxes: map[string]*Sandbox{}}
 }
 
-func (r *MemorySandboxRuntime) ListSandboxes(context.Context) ([]*sandbox.Sandbox, error) {
+func (r *MemorySandboxRuntime) ListSandboxes(context.Context) ([]*Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := make([]*sandbox.Sandbox, 0, len(r.sandboxes))
+	out := make([]*Sandbox, 0, len(r.sandboxes))
 	for _, sb := range r.sandboxes {
 		out = append(out, cloneSandbox(sb))
 	}
 	return out, nil
 }
 
-func (r *MemorySandboxRuntime) CreateSandbox(_ context.Context, req *workerapimodel.WorkerSandboxCreateRequest) (*sandbox.Sandbox, error) {
+func (r *MemorySandboxRuntime) CreateSandbox(_ context.Context, req *workerapimodel.WorkerSandboxCreateRequest) (*Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if req == nil {
 		return nil, fmt.Errorf("sandbox create request is required")
 	}
 	now := time.Now().UTC()
-	sb := &sandbox.Sandbox{ID: req.SandboxId, SandboxID: req.SandboxId, Status: sandbox.StatusRunning, Image: optString(req.Image), CreatedAt: now, StartedAt: &now, Env: copyMap(map[string]string(optCreateEnv(req.Env)))}
+	sb := &Sandbox{ID: req.SandboxId, SandboxID: req.SandboxId, Status: StatusRunning, Image: optString(req.Image), CreatedAt: now, StartedAt: &now, Env: copyMap(map[string]string(optCreateEnv(req.Env)))}
 	r.sandboxes[req.SandboxId] = sb
 	return cloneSandbox(sb), nil
 }
 
-func (r *MemorySandboxRuntime) GetSandbox(_ context.Context, sandboxID string) (*sandbox.Sandbox, error) {
+func (r *MemorySandboxRuntime) GetSandbox(_ context.Context, sandboxID string) (*Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sb := r.sandboxes[sandboxID]
 	if sb == nil {
-		return nil, sandbox.ErrNotFound
+		return nil, ErrNotFound
 	}
 	return cloneSandbox(sb), nil
 }
 
-func (r *MemorySandboxRuntime) UpdateSandbox(_ context.Context, sandboxID string, req *workerapimodel.WorkerSandboxUpdateRequest) (*sandbox.Sandbox, error) {
+func (r *MemorySandboxRuntime) UpdateSandbox(_ context.Context, sandboxID string, req *workerapimodel.WorkerSandboxUpdateRequest) (*Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sb := r.sandboxes[sandboxID]
 	if sb == nil {
-		return nil, sandbox.ErrNotFound
+		return nil, ErrNotFound
 	}
 	if req != nil {
 		if image := optString(req.Image); image != "" {
@@ -298,31 +336,31 @@ func (r *MemorySandboxRuntime) DeleteSandbox(_ context.Context, sandboxID string
 	return nil
 }
 
-func (r *MemorySandboxRuntime) StartSandbox(_ context.Context, sandboxID string, _ *workerapimodel.WorkerSandboxOperationRequest) (*sandbox.Sandbox, error) {
+func (r *MemorySandboxRuntime) StartSandbox(_ context.Context, sandboxID string, _ *workerapimodel.WorkerSandboxOperationRequest) (*Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sb := r.sandboxes[sandboxID]
 	if sb == nil {
-		return nil, sandbox.ErrNotFound
+		return nil, ErrNotFound
 	}
-	if sb.Status == sandbox.StatusRunning {
+	if sb.Status == StatusRunning {
 		return cloneSandbox(sb), nil
 	}
 	now := time.Now().UTC()
-	sb.Status = sandbox.StatusRunning
+	sb.Status = StatusRunning
 	sb.StartedAt = &now
 	return cloneSandbox(sb), nil
 }
 
-func (r *MemorySandboxRuntime) StopSandbox(_ context.Context, sandboxID string, _ *workerapimodel.WorkerSandboxOperationRequest) (*sandbox.Sandbox, error) {
+func (r *MemorySandboxRuntime) StopSandbox(_ context.Context, sandboxID string, _ *workerapimodel.WorkerSandboxOperationRequest) (*Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	sb := r.sandboxes[sandboxID]
 	if sb == nil {
-		return nil, sandbox.ErrNotFound
+		return nil, ErrNotFound
 	}
 	now := time.Now().UTC()
-	sb.Status = sandbox.StatusStopped
+	sb.Status = StatusStopped
 	sb.StoppedAt = &now
 	return cloneSandbox(sb), nil
 }
@@ -385,13 +423,13 @@ func copyMap(values map[string]string) map[string]string {
 	return out
 }
 
-func cloneSandbox(sb *sandbox.Sandbox) *sandbox.Sandbox {
+func cloneSandbox(sb *Sandbox) *Sandbox {
 	if sb == nil {
 		return nil
 	}
 	clone := *sb
 	clone.Metadata = copyMap(sb.Metadata)
 	clone.Env = copyMap(sb.Env)
-	clone.Ports = append([]sandbox.AssignedPort(nil), sb.Ports...)
+	clone.Ports = append([]AssignedPort(nil), sb.Ports...)
 	return &clone
 }

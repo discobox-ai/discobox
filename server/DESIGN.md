@@ -3,8 +3,8 @@
 The server module is the Discobox control plane implementation. It owns HTTP
 composition, single-database persistence, project events, API-facing business logic,
 and durable reconciliation submission. Stable contracts and generated API types
-come from the root module; provider implementations come from sibling modules and
-are wired only at composition boundaries.
+come from the root module. Provider contracts and implementations live in this
+module so providers can depend on server-owned persistence and manager contracts.
 
 ## Module Role
 
@@ -22,7 +22,7 @@ flowchart LR
     service --> jobs[internal/resources/jobs]
     jobs --> orchestration[orchestration module]
     orchestration --> resources
-    resources --> providers[providers module]
+    resources --> providers[providers]
     resources --> sandboxauth[internal/auth/sandbox]
 ```
 
@@ -92,7 +92,7 @@ sequenceDiagram
     participant Store as internal/store
     participant Jobs as internal/resources/jobs + orchestration
     participant Manager as resource manager
-    participant Provider as providers module
+    participant Provider as providers
 
     Client->>Router: REST request
     Router->>API: decoded operation
@@ -136,16 +136,23 @@ and runtime operation progress. `internal/resources/jobs` owns dispatcher infras
 | `internal/auth/sandbox` | Sandbox access issuer keys and worker/sandbox auth token helpers. |
 | `internal/secrets` | Encryption/sealing interfaces and implementations used by server persistence. |
 | `internal/config` | Server configuration loading. |
+| `internal/apperrors` | Server-owned sentinel and HTTP status errors used by handlers, services, store, and provider adapters. |
+| `internal/model` | Server-owned persistence models and migration model list. |
+| `internal/sandbox` | Go-level sandbox provider interfaces, provider manager, and shared provider contract types. |
+| `providers/sandbox` | Docker, VM, cloud, and worker-backed sandbox provider implementations. |
 
 ## Dependency Rules
 
-- Server code may depend on the root module for contracts, models, generated API
+- Server code may depend on the root module for public contracts, generated API
   code, and cross-module sentinel errors.
-- Server composition may import provider implementations to register concrete
-  providers; deeper packages should depend on provider interfaces.
-- Providers, sandbox-agent code, and CLI code must not import server internals.
-- Cross-module types and errors must live in public root packages, not under
-  `server/internal`.
+- Server/provider composition may import provider implementations to register
+  concrete providers; deeper packages should depend on provider interfaces.
+- Provider implementations under `providers` may import `server/internal`
+  packages because they are part of this module.
+- Worker-agent, sandbox-agent code, CLI code, and root clients must not import
+  server internals.
+- Cross-module types and errors must live in public root packages or the owning
+  public module package, not under `server/internal`.
 - Keep GORM access behind `internal/store`; services and reconcilers should not
   query database handles directly.
 
@@ -155,6 +162,7 @@ and runtime operation progress. `internal/resources/jobs` owns dispatcher infras
 | --- | --- |
 | `internal/auth` | [`internal/auth/DESIGN.md`](internal/auth/DESIGN.md) |
 | `internal/database` | [`internal/database/DESIGN.md`](internal/database/DESIGN.md) |
+| `internal/model` | [`internal/model/DESIGN.md`](internal/model/DESIGN.md) |
 | `internal/projectstream` | [`internal/projectstream/DESIGN.md`](internal/projectstream/DESIGN.md) |
 | `internal/resources` | [`internal/resources/DESIGN.md`](internal/resources/DESIGN.md) |
 | `internal/resources/agentconfigs` | [`internal/resources/agentconfigs/DESIGN.md`](internal/resources/agentconfigs/DESIGN.md) |
@@ -167,6 +175,7 @@ and runtime operation progress. `internal/resources/jobs` owns dispatcher infras
 | `internal/auth/sandbox` | [`internal/auth/sandbox/DESIGN.md`](internal/auth/sandbox/DESIGN.md) |
 | `internal/service` | [`internal/service/DESIGN.md`](internal/service/DESIGN.md) |
 | `internal/store` | [`internal/store/DESIGN.md`](internal/store/DESIGN.md) |
+| `providers/sandbox` | [`providers/sandbox/DESIGN.md`](providers/sandbox/DESIGN.md) |
 
 Add lower-level `DESIGN.md` files next to packages when a package gains its own
 architecture rules. Keep this module-level doc focused on server boundaries and

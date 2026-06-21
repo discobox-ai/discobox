@@ -10,7 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/obot-platform/discobox/apiclient"
+	apiclientgen "github.com/obot-platform/discobox/api/gen"
 )
 
 type eventsOptions struct {
@@ -29,13 +29,13 @@ func (a *App) newEventsCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			client, err := a.eventClient()
+			client, err := a.apiClient()
 			if err != nil {
 				return err
 			}
 			history := opts.history
 			listOnly := opts.listOnly
-			params := apiclient.ProjectEventsParams{
+			params := apiclientgen.ProjectEventsParams{
 				History:   &history,
 				ListOnly:  &listOnly,
 				SandboxID: opts.sandboxID,
@@ -65,21 +65,21 @@ func (a *App) newEventsCommand() *cobra.Command {
 	return cmd
 }
 
-func (a *App) writeEvent(cmd *cobra.Command, msg *apiclient.ProjectEventMessage) error {
+func (a *App) writeEvent(cmd *cobra.Command, msg *apiclientgen.ProjectEventMessage) error {
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), msg)
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	switch data := msg.Data.(type) {
-	case *apiclient.ResourceChangedEvent:
+	case *apiclientgen.ResourceChangedEvent:
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s/%s\t%s\n", msg.Event, eventIDOrSeq(data.ID, data.Seq), data.Action, data.ResourceType, data.ResourceID, data.CreatedAt.Local().Format("2006-01-02T15:04:05Z07:00"))
-	case *apiclient.ResourceListedEvent:
+	case *apiclientgen.ResourceListedEvent:
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s/%s\t%s\n", msg.Event, eventIDOrSeq(data.ID, data.Seq), data.Action, data.ResourceType, data.ResourceID, data.CreatedAt.Local().Format("2006-01-02T15:04:05Z07:00"))
-	case *apiclient.ResourceListStartEvent:
+	case *apiclientgen.ResourceListStartEvent:
 		fmt.Fprintf(tw, "%s\tseq=%d\tresources=%s\t%s\n", msg.Event, data.Seq, strings.Join(data.Resources, ","), data.StartedAt.Local().Format("2006-01-02T15:04:05Z07:00"))
-	case *apiclient.ResourceListFinishEvent:
+	case *apiclientgen.ResourceListFinishEvent:
 		fmt.Fprintf(tw, "%s\tseq=%d\tresources=%s\t%s\n", msg.Event, data.Seq, strings.Join(data.Resources, ","), data.FinishedAt.Local().Format("2006-01-02T15:04:05Z07:00"))
-	case *apiclient.UnknownProjectEvent:
+	case *apiclientgen.UnknownProjectEvent:
 		encoded, _ := json.Marshal(data.Data)
 		fmt.Fprintf(tw, "%s\t%s\n", msg.Event, string(encoded))
 	default:

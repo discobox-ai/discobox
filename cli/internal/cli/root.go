@@ -11,7 +11,6 @@ import (
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
-	"github.com/obot-platform/discobox/apiclient"
 )
 
 const defaultServerURL = "http://localhost:8080"
@@ -73,10 +72,6 @@ func (a *App) projectIDValue() (string, error) {
 
 func (a *App) apiClient() (*apiclientgen.Client, error) {
 	return apiclientgen.NewClient(a.serverURL, apiclientgen.WithClient(a.httpClient()))
-}
-
-func (a *App) eventClient() (*apiclient.EventClient, error) {
-	return apiclient.NewEventClient(a.serverURL, apiclient.WithHTTPClient(a.httpClient()))
 }
 
 func (a *App) httpClient() *http.Client {

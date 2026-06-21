@@ -9,10 +9,10 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/obot-platform/discobox/model"
-	providerdocker "github.com/obot-platform/discobox/providers/sandbox/provider/docker"
-	dockerdriver "github.com/obot-platform/discobox/providers/sandbox/vm/docker"
+	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/store"
+	providerdocker "github.com/obot-platform/discobox/server/providers/sandbox/provider/docker"
+	dockerdriver "github.com/obot-platform/discobox/server/providers/sandbox/vm/docker"
 )
 
 const (

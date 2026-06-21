@@ -64,10 +64,9 @@ so resource writes and durable job appends stay atomic.
 
 ## Error Contract
 
-`ErrNotFound` and `ErrGenerationConflict` alias root `apperrors` sentinels so
-other modules can compare errors without importing server internals. New shared
-error conditions should be added to the root module, then aliased here if store
-callers need package-local compatibility.
+`ErrNotFound` and `ErrGenerationConflict` alias server-owned `apperrors`
+sentinels so store callers can compare errors through this package without
+depending on implementation details.
 
 Map database-specific not-found errors to `ErrNotFound` at the store boundary.
 Use `ErrGenerationConflict` when a generation-guarded read or write proves the

@@ -4,8 +4,6 @@
 
 - Root module `github.com/obot-platform/discobox`: stable contracts/API module.
 - `api`: server API definitions and tests, pending schema-first conversion.
-- `apiclient`: generated/client-side API helpers.
-- `sandboxprovider`: sandbox provider Go contract, provider manager, and shared provider types.
 - `cli`: nested Go module for the `discobox` CLI.
 - `cli/cmd/discobox`: CLI entrypoint.
 - `cli/internal/cli`: CLI command implementation.
@@ -13,13 +11,13 @@
 - `server/cmd/discobox-server`: HTTP server entrypoint.
 - `server/internal/server`: server startup and HTTP router wiring.
 - `server/internal/service`: API-facing business logic, orchestration wrappers, and reconcilers.
-- `server/internal/sandbox`: server-owned sandbox jobs, service glue, and reconcilers.
+- `server/internal/sandbox`: sandbox provider Go contract, provider manager, and shared provider types.
 - `server/internal/store`: database access, split by resource.
 - `server/internal/database`: database setup and resolution.
 - `server/internal/projectstream`: project event streaming websocket and SSE routes.
 - `server/internal/events`: project event broker.
-- `server/internal/sandboxauth`: sandbox and worker authentication helpers.
-- `providers`: nested Go module for Docker, VM, cloud, and worker-backed provider implementations.
+- `server/internal/auth/sandbox`: sandbox and worker authentication helpers.
+- `server/providers`: Docker, VM, cloud, and worker-backed provider implementations.
 - `worker-agent`: nested Go module for the worker agent implementation and local image watcher.
 - `sandbox-agent`: nested Go module and image context for the sandbox agent runtime environment.
 - `worker-agent/cmd/discobox-worker-agent`: worker agent entrypoint.

@@ -6,7 +6,7 @@ import (
 
 	serverapi "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
-	"github.com/obot-platform/discobox/model"
+	"github.com/obot-platform/discobox/server/internal/model"
 )
 
 type CreateAgentConfigBody = apimodel.CreateAgentConfigBody

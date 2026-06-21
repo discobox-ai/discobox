@@ -63,38 +63,35 @@ surface:
 
 ## Target Module Boundaries
 
-Make the repository root the stable contracts/API module. Runtime implementations
-live in sibling modules and depend inward on root contracts:
+Make the repository root the stable contracts/API module. Server-owned
+persistence, provider contracts, and provider implementations live in the server
+module so provider adapters can use server-internal control-plane contracts.
 
 ```mermaid
 flowchart TD
     cli["github.com/obot-platform/discobox/cli"] --> root["github.com/obot-platform/discobox"]
     server["github.com/obot-platform/discobox/server"] --> root
-    server --> providers["github.com/obot-platform/discobox/providers"]
+    server --> providers["github.com/obot-platform/discobox/server/providers"]
     server --> orchestration["github.com/obot-platform/discobox/orchestration"]
     server --> hooks["github.com/obot-platform/discobox/hooks"]
     server --> gormdb["github.com/obot-platform/discobox/gormdb"]
     hooks --> root
     hooks --> gormdb
     sessions["github.com/obot-platform/discobox/sessions"] --> root
-    providers --> root
+    providers --> serverInternal["github.com/obot-platform/discobox/server/internal"]
     providers --> workerAgent["github.com/obot-platform/discobox/worker-agent"]
     workerAgent --> root
     sandboxAgent["github.com/obot-platform/discobox/sandbox-agent"] --> root
 ```
 
-- Root module: public API definitions, sandbox provider Go interface, shared
-  provider types, worker boot metadata contracts, control-plane OpenAPI
-  documents, and generated API clients/scaffolds.
+- Root module: public API definitions, control-plane OpenAPI documents,
+  generated API clients/scaffolds, cross-module sentinel errors, IDs, worker
+  boot metadata contracts, and client-facing stream DTOs.
 - CLI module: `discobox` command implementation; depends on root generated
   clients/contracts and talks to the server only through the Server REST API.
-- Server module: control plane implementation and composition; depends on root
-  contracts and imports provider implementations only at registration/wiring
-  boundaries.
-- Providers module: Docker, VM, cloud, and worker-backed provider
-  implementations; depends on root contracts and the worker-agent module for
-  the worker-local API client and runtime helpers. Does not depend on server
-  internals.
+- Server module: control plane implementation, persistence models, sandbox
+  provider Go interfaces, provider manager, and Docker/VM/cloud/worker-backed
+  provider implementations.
 - Hooks module: standalone hook discovery, watch, execution, daemon, and status
   primitives. It depends inward on stable contracts and shared infrastructure
   helpers such as `gormdb`, but must not depend on server internals. See
@@ -103,35 +100,24 @@ flowchart TD
   agent CLIs in daemon-owned PTYs, exposes attach streams over a local Unix
   socket, and must not depend on server internals. See
   [`sessions/DESIGN.md`](sessions/DESIGN.md).
-- Worker-agent module: in-guest worker process, local worker image watcher, and
-  generated worker-local sandbox operations API server adapter; depends on root
-  worker boot contracts and OpenAPI contracts.
+- Worker-agent module: in-guest worker process, local worker image watcher,
+  worker-local runtime DTOs, and generated worker-local sandbox operations API
+  server adapter; depends on root worker boot contracts and OpenAPI contracts.
 - Sandbox-agent module: future in-sandbox agent REST API runtime environment and
   agent implementation; depends on root contracts and generated API types.
 
-Provider, worker-agent, and sandbox-agent implementations cannot depend on packages under Go
-`internal/` outside their module. Cross-module contracts must live in public root
-packages.
+Worker-agent and sandbox-agent implementations cannot depend on packages under
+Go `internal/` outside their module. Provider implementations are part of the
+server module and may depend on `server/internal`.
 
 Root module package map:
 
 | Package/path | Ownership |
 | --- | --- |
 | [`api/openapi`](api/openapi) | Canonical OpenAPI source contracts owned by the root module: the server REST API and sandbox-agent API seed. Worker-agent-owned contracts live under `worker-agent/api/openapi`. |
-| [`api/gen`](api/gen) | Generated client/server API scaffold from `api/openapi/server.yaml`. |
+| [`api/gen`](api/gen) | Generated client/server API scaffold from `api/openapi/server.yaml`, plus handwritten client helpers for transports OpenAPI generation cannot own. |
 | [`api/model`](api/model) | Generated stable aliases for server REST API schema types. |
-| [`apiclient`](apiclient) | Hand-written Server REST API client helpers, including non-ogen realtime helpers. |
-| [`apperrors`](apperrors) | Shared sentinel errors used across module boundaries. |
 | [`id`](id) | Shared identifier helpers. |
-| [`model`](model) | Shared resource models used across contracts and persistence boundaries. |
-| [`sandboxprovider`](sandboxprovider) | Go-level sandbox provider interfaces, provider manager, and shared provider contract types. |
-| [`workerbootstrap`](workerbootstrap) | Shared worker boot metadata contract used by providers and sandbox worker agents. |
-
-Root module package docs:
-
-| Package | Design notes |
-| --- | --- |
-| [`model`](model) | [`model/DESIGN.md`](model/DESIGN.md) |
 
 Submodule package docs belong in their owning module trees and are intentionally
 not listed here.

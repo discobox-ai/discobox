@@ -6,10 +6,12 @@ require (
 	aidanwoods.dev/go-paseto v1.6.0
 	github.com/adrg/xdg v0.5.3
 	github.com/coder/websocket v1.8.14
+	github.com/containerd/errdefs v1.0.0
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
 	github.com/moby/moby/api v1.54.2
 	github.com/moby/moby/client v0.4.1
+	github.com/obot-platform/discobox/worker-agent v0.0.0-00010101000000-000000000000
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.62.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.43.0
@@ -115,7 +117,6 @@ require (
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20251210132809-ee656c7534f5 // indirect
-	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/curioswitch/go-reassign v0.3.0 // indirect
 	github.com/daixiang0/gci v0.13.7 // indirect
@@ -128,6 +129,7 @@ require (
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dominikbraun/graph v0.23.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/ebitengine/purego v0.10.0 // indirect
 	github.com/elliotchance/orderedmap/v3 v3.1.0 // indirect
 	github.com/envoyproxy/go-control-plane/envoy v1.36.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.0 // indirect
@@ -243,7 +245,6 @@ require (
 	github.com/nishanths/exhaustive v0.12.0 // indirect
 	github.com/nishanths/predeclared v0.2.2 // indirect
 	github.com/nunnatsa/ginkgolinter v0.23.0 // indirect
-	github.com/obot-platform/discobox/worker-agent v0.0.0-00010101000000-000000000000 // indirect
 	github.com/ogen-go/ogen v1.20.3 // indirect
 	github.com/oklog/ulid/v2 v2.1.1 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
@@ -300,6 +301,7 @@ require (
 	github.com/timonwong/loggercheck v0.11.0 // indirect
 	github.com/tomarrell/wrapcheck/v2 v2.12.0 // indirect
 	github.com/tommy-muehle/go-mnd/v2 v2.5.1 // indirect
+	github.com/tursodatabase/turso-go-platform-libs v0.6.1 // indirect
 	github.com/u-root/u-root v0.15.1-0.20251208185023-2f8c7e763cf8 // indirect
 	github.com/u-root/uio v0.0.0-20240224005618-d2acac8f3701 // indirect
 	github.com/ulikunitz/xz v0.5.15 // indirect
@@ -357,6 +359,7 @@ require (
 	mvdan.cc/sh/moreinterp v0.0.0-20260120230322-19def062a997 // indirect
 	mvdan.cc/sh/v3 v3.13.2-0.20260510185049-f5c6e2779117 // indirect
 	mvdan.cc/unparam v0.0.0-20251027182757-5beb8c8f8f15 // indirect
+	turso.tech/database/tursogo v0.6.1 // indirect
 )
 
 require (
@@ -366,7 +369,6 @@ require (
 	github.com/obot-platform/discobox v0.0.0
 	github.com/obot-platform/discobox/gormdb v0.0.0
 	github.com/obot-platform/discobox/orchestration v0.0.0
-	github.com/obot-platform/discobox/providers v0.0.0
 	golang.org/x/text v0.37.0 // indirect
 )
 
@@ -382,7 +384,5 @@ tool (
 )
 
 replace github.com/obot-platform/discobox => ..
-
-replace github.com/obot-platform/discobox/providers => ../providers
 
 replace github.com/obot-platform/discobox/worker-agent => ../worker-agent

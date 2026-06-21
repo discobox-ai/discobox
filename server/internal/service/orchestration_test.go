@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/events"
+	"github.com/obot-platform/discobox/server/internal/model"
 	sandboxjobs "github.com/obot-platform/discobox/server/internal/resources/jobs"
 	"github.com/obot-platform/discobox/server/internal/resources/sandboxes"
 	"github.com/obot-platform/discobox/server/internal/service"

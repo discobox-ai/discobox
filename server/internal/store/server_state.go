@@ -3,7 +3,7 @@ package store
 import (
 	"context"
 
-	"github.com/obot-platform/discobox/model"
+	"github.com/obot-platform/discobox/server/internal/model"
 )
 
 func (s *Store) GetServerState(ctx context.Context, key string) (*model.ServerState, error) {

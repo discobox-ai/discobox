@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
+	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 

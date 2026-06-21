@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/obot-platform/discobox/model"
+	"github.com/obot-platform/discobox/server/internal/model"
 )
 
 func (s *Store) UpsertProject(ctx context.Context, project *model.Project) error {

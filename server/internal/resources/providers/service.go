@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/obot-platform/discobox/apperrors"
-	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/orchestration"
-	sandbox "github.com/obot-platform/discobox/sandboxprovider"
+	"github.com/obot-platform/discobox/server/internal/apperrors"
+	"github.com/obot-platform/discobox/server/internal/model"
 	sandboxesvc "github.com/obot-platform/discobox/server/internal/resources/sandboxes"
 	"github.com/obot-platform/discobox/server/internal/resources/workers"
+	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 )

@@ -29,13 +29,6 @@ var fixedWatchFiles = []string{
 	"../go.mod",
 	"../go.sum",
 	"../id/id.go",
-	"../model/lifecycle.go",
-	"../model/model.go",
-	"../sandboxprovider/capabilities.go",
-	"../sandboxprovider/errors.go",
-	"../sandboxprovider/manager.go",
-	"../sandboxprovider/runtime.go",
-	"../workerbootstrap/bootstrap.go",
 }
 
 func main() {

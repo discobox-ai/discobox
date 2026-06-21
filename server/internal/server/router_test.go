@@ -14,8 +14,8 @@ import (
 	"github.com/coder/websocket/wsjson"
 	"github.com/go-chi/chi/v5"
 	"github.com/obot-platform/discobox/gormdb"
-	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/server/internal/database"
+	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/service"
 	services "github.com/obot-platform/discobox/server/internal/services"
 )

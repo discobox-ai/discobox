@@ -5,8 +5,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/obot-platform/discobox/model"
 	"github.com/obot-platform/discobox/server/internal/database"
+	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/resources/sandboxes"
 	"github.com/obot-platform/discobox/server/internal/resources/workers"
 	"github.com/obot-platform/discobox/server/internal/store"

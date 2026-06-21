@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/obot-platform/discobox/apperrors"
+	"github.com/obot-platform/discobox/server/internal/apperrors"
 
-	"github.com/obot-platform/discobox/model"
+	"github.com/obot-platform/discobox/server/internal/model"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 )

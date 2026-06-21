@@ -5,9 +5,9 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/obot-platform/discobox/apperrors"
+	"github.com/obot-platform/discobox/server/internal/apperrors"
 
-	"github.com/obot-platform/discobox/model"
+	"github.com/obot-platform/discobox/server/internal/model"
 )
 
 var agentConfigDefinitions = []model.AgentConfigDefinition{

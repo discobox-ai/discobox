@@ -170,7 +170,7 @@ tasks:
   test:docker:
     desc: Run Docker provider integration tests
     cmds:
-      - cd providers && DISCOBOX_DOCKER_INTEGRATION=1 go test ./sandbox/vm/docker -run Integration -count=1 -v
+      - cd server && DISCOBOX_DOCKER_INTEGRATION=1 go test ./providers/sandbox/vm/docker -run Integration -count=1 -v
 
   test:docker:bats:
     desc: Run Docker provider CLI Bats integration test
@@ -203,7 +203,6 @@ tasks:
       - go test {{.PACKAGES}}
       - cd cli && go test ./...
       - cd server && go test ./...
-      - cd providers && go test ./...
       - cd worker-agent && go test ./...
       - cd gormdb && go test ./...
       - cd orchestration && go test ./...
@@ -218,7 +217,6 @@ tasks:
       - go tool golangci-lint run
       - cd cli && "$(go -C .. tool -n golangci-lint)" run
       - cd server && "$(go -C .. tool -n golangci-lint)" run
-      - cd providers && "$(go -C .. tool -n golangci-lint)" run
       - cd worker-agent && "$(go -C .. tool -n golangci-lint)" run
       - cd gormdb && "$(go -C .. tool -n golangci-lint)" run
       - cd orchestration && "$(go -C .. tool -n golangci-lint)" run
@@ -276,7 +274,6 @@ tasks:
       - go tool golangci-lint run --fix
       - cd cli && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd server && "$(go -C .. tool -n golangci-lint)" run --fix
-      - cd providers && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd worker-agent && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd gormdb && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd orchestration && "$(go -C .. tool -n golangci-lint)" run --fix
