@@ -16,6 +16,7 @@ import (
 )
 
 const (
+	DefaultProjectID                 = "00000000000000000000000002"
 	DefaultProviderInstanceID        = "00000000000000000000000003"
 	defaultProviderInstalledStateKey = "defaults.default_sandbox_provider.installed"
 )

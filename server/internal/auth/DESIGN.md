@@ -89,6 +89,10 @@ authorization must use the authenticated worker principal and request metadata.
 Rules:
 
 - Authentication writes the principal once at the HTTP boundary.
+- Project alias resolution happens only in `ProjectAuthorizer`; downstream
+  handlers, services, stores, and resource managers must receive concrete
+  project IDs and must not branch on the literal `default` alias or the fixed
+  default project ID.
 - Services may read the principal to enforce operation-specific authorization,
   but should not parse credentials.
 - User context means a `Principal{Type: PrincipalTypeUser, UserID: ...}`. Use
