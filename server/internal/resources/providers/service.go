@@ -195,11 +195,12 @@ func (s *Service) attachProviderStatus(ctx context.Context, projectID string, pr
 }
 
 func providerStatusFromWorkers(workers []model.Worker) *model.SandboxProviderInstanceStatus {
+	statusWorkers := providerStatusWorkers(workers)
 	status := &model.SandboxProviderInstanceStatus{
-		Workers: make([]model.ProviderWorkerStatus, 0, len(workers)),
+		Workers: make([]model.ProviderWorkerStatus, 0, len(statusWorkers)),
 	}
-	for i := range workers {
-		worker := workers[i]
+	for i := range statusWorkers {
+		worker := statusWorkers[i]
 		if !providerWorkerTerminalDeleted(worker) {
 			status.WorkerCount++
 			if worker.Ready {
@@ -239,6 +240,35 @@ func providerStatusFromWorkers(workers []model.Worker) *model.SandboxProviderIns
 		})
 	}
 	return status
+}
+
+func providerStatusWorkers(workers []model.Worker) []model.Worker {
+	active := make([]model.Worker, 0, len(workers))
+	for i := range workers {
+		worker := workers[i]
+		if providerWorkerActiveForStatus(worker) {
+			active = append(active, worker)
+		}
+	}
+	if len(active) > 0 {
+		return active
+	}
+	return workers
+}
+
+func providerWorkerActiveForStatus(worker model.Worker) bool {
+	if worker.RevokedAt != nil {
+		return false
+	}
+	if worker.Phase == model.WorkerPhaseFailed || worker.LastOperationStatus == model.OperationStatusFailed {
+		return false
+	}
+	switch worker.DesiredState {
+	case model.WorkerDesiredStateDeleted, model.WorkerDesiredStateDrained:
+		return false
+	default:
+		return true
+	}
 }
 
 func providerWorkerTerminalDeleted(worker model.Worker) bool {

@@ -267,6 +267,85 @@ func TestListSandboxProviderInstancesIncludesWorkerFailureStatus(t *testing.T) {
 	}
 }
 
+func TestListSandboxProviderInstancesIgnoresStaleFailedWorkersWhenCurrentWorkerExists(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{DSN: ":memory:"})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close db: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+
+	appStore := store.New(db.Write, db.Read)
+	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project", Slug: "project"}
+	if err := appStore.UpsertProject(ctx, project); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: project.ID, Type: "docker", Name: "Docker"}
+	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	errMessage := "old worker container exited"
+	workers := []model.Worker{
+		{
+			ID:                 "worker-failed",
+			ProjectID:          project.ID,
+			ProviderInstanceID: provider.ID,
+			Identity:           "worker-failed",
+			ResourceLifecycle: model.ResourceLifecycle{
+				DesiredState:        model.WorkerDesiredStateActive,
+				Phase:               model.WorkerPhaseFailed,
+				LastOperationStatus: model.OperationStatusFailed,
+				ErrorMessage:        &errMessage,
+			},
+		},
+		{
+			ID:                 "worker-ready",
+			ProjectID:          project.ID,
+			ProviderInstanceID: provider.ID,
+			Identity:           "worker-ready",
+			Ready:              true,
+			Schedulable:        true,
+			ResourceLifecycle: model.ResourceLifecycle{
+				DesiredState:        model.WorkerDesiredStateActive,
+				Phase:               model.WorkerPhaseActive,
+				LastOperationStatus: model.OperationStatusSuccess,
+			},
+		},
+	}
+	for i := range workers {
+		worker := workers[i]
+		if err := appStore.CreateWorker(ctx, &worker); err != nil {
+			t.Fatalf("create worker %s: %v", worker.ID, err)
+		}
+	}
+
+	svc := newProviderInstanceTestService(appStore)
+	providers, err := svc.ListSandboxProviderInstances(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	status := providers[0].Status
+	if status == nil {
+		t.Fatal("provider status is nil")
+	}
+	if status.WorkerCount != 1 || status.ReadyWorkers != 1 || status.FailedWorkers != 0 {
+		t.Fatalf("provider ready/failed/total workers = %d/%d/%d, want 1/0/1", status.ReadyWorkers, status.FailedWorkers, status.WorkerCount)
+	}
+	if status.LastError != nil {
+		t.Fatalf("provider last error = %q, want nil", *status.LastError)
+	}
+	if len(status.Workers) != 1 || status.Workers[0].ID != "worker-ready" {
+		t.Fatalf("provider workers = %#v, want only current ready worker", status.Workers)
+	}
+}
+
 func TestListSandboxProviderInstancesTreatsFailedJobCleanupAsFailureStatus(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.New(database.Config{DSN: ":memory:"})

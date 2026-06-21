@@ -383,7 +383,7 @@ func (p *SandboxProviderInstance) BeforeCreate(_ *gorm.DB) error {
 // derived from persisted worker rows and does not trigger provider-side reads or
 // mutations.
 type SandboxProviderInstanceStatus struct {
-	WorkerCount        int                    `json:"workerCount" doc:"Total persisted workers for this provider"`
+	WorkerCount        int                    `json:"workerCount" doc:"Workers included in the current provider status summary"`
 	ReadyWorkers       int                    `json:"readyWorkers" doc:"Workers currently reporting ready"`
 	SchedulableWorkers int                    `json:"schedulableWorkers" doc:"Workers currently accepting new sandboxes"`
 	DegradedWorkers    int                    `json:"degradedWorkers" doc:"Workers reporting degraded health"`
