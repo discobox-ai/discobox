@@ -5,7 +5,7 @@ info:
   description: |
     Minimal seed contract for the future REST API exposed from inside a managed
     sandbox environment. Worker-local sandbox operation routes are intentionally
-    defined by sandbox.json instead.
+    defined by worker-agent/api/openapi/worker.yaml instead.
 servers:
   - url: http://sandbox.local
     description: Provider-delegated sandbox endpoint

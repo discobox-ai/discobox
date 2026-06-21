@@ -3,7 +3,7 @@ package openapi
 
 import _ "embed"
 
-// SandboxJSON is the canonical worker-local sandbox operations API contract.
+// WorkerYAML is the canonical worker-local sandbox operations API contract.
 //
-//go:embed sandbox.json
-var SandboxJSON []byte
+//go:embed worker.yaml
+var WorkerYAML []byte

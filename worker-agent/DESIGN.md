@@ -70,7 +70,7 @@ desired-state orchestration remain outside this module.
 - Keep worker boot metadata in the root `workeragent` package; providers should
   consume that contract instead of defining provider-local boot metadata.
 - Generate worker-local sandbox operation client/server code from the canonical
-  `worker-agent/api/openapi/sandbox.json` contract into
+  `worker-agent/api/openapi/worker.yaml` contract into
   `worker-agent/api/gen`, with schema aliases in `worker-agent/api/model`. Do
   not generate these worker-local routes from the root `api/openapi/sandbox.yaml`;
   that YAML is reserved for the future in-sandbox agent API seed.

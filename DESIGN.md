@@ -52,7 +52,7 @@ the contract from Go handler code. Current contracts are intentionally split by
 surface:
 
 - `api/openapi/server.yaml` is the canonical control-plane REST API contract.
-- `worker-agent/api/openapi/sandbox.json` is the canonical worker-local sandbox
+- `worker-agent/api/openapi/worker.yaml` is the canonical worker-local sandbox
   operations API contract. `worker-agent/generate.go` generates combined
   client/server transport code into `worker-agent/api/gen` and stable schema
   aliases into `worker-agent/api/model`; `worker-agent/server` adapts the

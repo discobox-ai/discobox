@@ -12,7 +12,7 @@ schema types.
 
 ## Generation
 
-Do not edit `aliases_gen.go` by hand. Update `../openapi/sandbox.json` and run:
+Do not edit `aliases_gen.go` by hand. Update `../openapi/worker.yaml` and run:
 
 ```bash
 go generate ./...
