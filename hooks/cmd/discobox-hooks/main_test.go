@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"text/tabwriter"
 	"time"
 
 	hooks "github.com/obot-platform/discobox/hooks"
@@ -550,6 +551,30 @@ func TestWriteEventsTable(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("events table missing %q: %s", want, got)
 		}
+	}
+}
+
+func TestLiveEventTableRowUsesAbsoluteTimestamp(t *testing.T) {
+	var out bytes.Buffer
+	tw := tabwriter.NewWriter(&out, 0, 0, 2, ' ', 0)
+	event := client.Event{
+		ID:        "event-1",
+		CreatedAt: time.Date(2026, 6, 20, 12, 34, 56, 0, time.FixedZone("MST", -7*60*60)),
+		Type:      "hook.run.finished",
+		HookID:    "lint",
+		RunID:     "run-7",
+		Message:   "hook run finished",
+	}
+	writeEventTableRow(tw, event, formatLiveEventTime)
+	if err := tw.Flush(); err != nil {
+		t.Fatal(err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "2026-06-20T19:34:56Z") {
+		t.Fatalf("live event row missing absolute timestamp: %s", got)
+	}
+	if strings.Contains(got, "ago") {
+		t.Fatalf("live event row used relative timestamp: %s", got)
 	}
 }
 

@@ -896,7 +896,7 @@ func (a *app) writeEvents(cmd *cobra.Command, events []client.Event) error {
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tTIME\tTYPE\tHOOK\tRUN\tMESSAGE")
 	for _, event := range events {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", event.ID, formatEventTime(event.CreatedAt), event.Type, event.HookID, formatRunID(event.RunID), event.Message)
+		writeEventTableRow(tw, event, formatEventTime)
 	}
 	return tw.Flush()
 }
@@ -1122,7 +1122,7 @@ func (a *app) followEvents(cmd *cobra.Command, c *client.Client, args []string, 
 			return writeJSONLine(w, event)
 		}
 		tw = tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", event.ID, formatEventTime(event.CreatedAt), event.Type, event.HookID, formatRunID(event.RunID), event.Message)
+		writeEventTableRow(tw, event, formatLiveEventTime)
 		return tw.Flush()
 	})
 }
@@ -1149,7 +1149,7 @@ func (a *app) followLSPEvents(cmd *cobra.Command, c *client.Client, args []strin
 			return writeJSONLine(w, event)
 		}
 		tw = tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", event.ID, formatEventTime(event.CreatedAt), event.Type, event.HookID, formatRunID(event.RunID), event.Message)
+		writeEventTableRow(tw, event, formatLiveEventTime)
 		return tw.Flush()
 	})
 }
@@ -1680,8 +1680,19 @@ func writeJSONLine(w io.Writer, value any) error {
 	return json.NewEncoder(w).Encode(value)
 }
 
+func writeEventTableRow(w io.Writer, event client.Event, formatTime func(time.Time) string) {
+	fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", event.ID, formatTime(event.CreatedAt), event.Type, event.HookID, formatRunID(event.RunID), event.Message)
+}
+
 func formatEventTime(value time.Time) string {
 	return formatRelativeTime(time.Now(), value)
+}
+
+func formatLiveEventTime(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339)
 }
 
 func formatRelativeTime(now, value time.Time) string {
