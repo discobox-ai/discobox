@@ -16,14 +16,18 @@ type StartSandboxBody = serverapi.StartSandboxBody
 type StopSandboxBody = serverapi.StopSandboxBody
 type RestartSandboxBody = serverapi.RestartSandboxBody
 type SandboxProviderCatalogItem = serverapi.SandboxProviderCatalogItem
+type ProviderConfigField = serverapi.ProviderConfigField
+type ProviderStatus = serverapi.ProviderStatus
 type CreateSandboxProviderInstanceBody = serverapi.CreateSandboxProviderInstanceBody
 type UpdateSandboxProviderInstanceBody = serverapi.UpdateSandboxProviderInstanceBody
 type RegisterWorkerBody = serverapi.RegisterWorkerBody
 type RegisterWorkerResponseBody = serverapi.RegisterWorkerResponseBody
 type UpdateWorkerStatusBody = serverapi.UpdateWorkerStatusBody
+type OptBool = serverapi.OptBool
 type OptString = serverapi.OptString
 type OptURI = serverapi.OptURI
 type OptInt64 = serverapi.OptInt64
+type OptNilProviderConfigFieldArray = serverapi.OptNilProviderConfigFieldArray
 type OptCreateSandboxBodySourceCodeReferences = serverapi.OptCreateSandboxBodySourceCodeReferences
 
 // ProjectService provides read-only access to projects.

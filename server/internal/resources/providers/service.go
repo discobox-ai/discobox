@@ -56,13 +56,80 @@ func (s *Service) ListSandboxProviderCatalogItems(context.Context) ([]services.S
 	items := s.sandboxes.ListSandboxProviderCatalog()
 	out := make([]services.SandboxProviderCatalogItem, 0, len(items))
 	for _, item := range items {
-		converted, err := services.Convert[services.SandboxProviderCatalogItem](item)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, converted)
+		out = append(out, providerCatalogItemToService(item))
 	}
 	return out, nil
+}
+
+func providerCatalogItemToService(item SandboxProviderCatalogItem) services.SandboxProviderCatalogItem {
+	out := services.SandboxProviderCatalogItem{
+		ID:           item.ID,
+		Name:         item.Name,
+		Available:    item.Available,
+		BuiltIn:      item.BuiltIn,
+		Capabilities: providerStatusToService(item.Capabilities),
+	}
+	if item.Icon != "" {
+		out.Icon = services.OptString{Value: item.Icon, Set: true}
+	}
+	if item.Description != "" {
+		out.Description = services.OptString{Value: item.Description, Set: true}
+	}
+	if item.ConfigFields != nil {
+		fields := make([]services.ProviderConfigField, 0, len(item.ConfigFields))
+		for _, field := range item.ConfigFields {
+			fields = append(fields, providerConfigFieldToService(field))
+		}
+		out.ConfigFields = services.OptNilProviderConfigFieldArray{Value: fields, Set: true}
+	}
+	return out
+}
+
+func providerConfigFieldToService(field sandboxesvc.ProviderConfigField) services.ProviderConfigField {
+	out := services.ProviderConfigField{
+		Key:   field.Key,
+		Label: field.Label,
+		Type:  field.Type,
+	}
+	if field.Description != "" {
+		out.Description = services.OptString{Value: field.Description, Set: true}
+	}
+	if field.Placeholder != "" {
+		out.Placeholder = services.OptString{Value: field.Placeholder, Set: true}
+	}
+	if field.Required {
+		out.Required = services.OptBool{Value: field.Required, Set: true}
+	}
+	if field.Advanced {
+		out.Advanced = services.OptBool{Value: field.Advanced, Set: true}
+	}
+	if field.CredentialProvider != "" {
+		out.CredentialProvider = services.OptString{Value: field.CredentialProvider, Set: true}
+	}
+	if field.CredentialAuthType != "" {
+		out.CredentialAuthType = services.OptString{Value: field.CredentialAuthType, Set: true}
+	}
+	return out
+}
+
+func providerStatusToService(status sandboxesvc.ProviderStatus) services.ProviderStatus {
+	out := services.ProviderStatus{
+		Available:          status.Available,
+		State:              status.State,
+		SupportsResources:  status.SupportsResources,
+		SupportsInspection: status.SupportsInspection,
+		SupportsClearCache: status.SupportsClearCache,
+		SupportsImages:     status.SupportsImages,
+	}
+	if status.Message != "" {
+		out.Message = services.OptString{Value: status.Message, Set: true}
+	}
+	if status.Details != nil {
+		if data, err := json.Marshal(status.Details); err == nil {
+			out.Details = data
+		}
+	}
+	return out
 }
 
 func (s *Service) ListSandboxProviderInstances(ctx context.Context, projectID string) ([]model.SandboxProviderInstance, error) {
