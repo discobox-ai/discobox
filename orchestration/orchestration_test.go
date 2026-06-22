@@ -195,7 +195,7 @@ func TestQueueEnqueueDefaultResourceBackoffUsesLongWindowAndCap(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	queue := orchestration.NewQueue(store, orchestration.QueueConfig{DefaultMaxAttempts: 1})
-	payload := simplePayload{TypeName: "provider.reconcile", ResourceT: "provider", ResourceI: "provider-1"}
+	payload := simplePayload{TypeName: "workerprovider.reconcile", ResourceT: "workerprovider", ResourceI: "provider-1"}
 
 	for i := range 10 {
 		job, err := queue.Enqueue(ctx, payload)

@@ -128,7 +128,7 @@ and runtime operation progress. `internal/resources/jobs` owns dispatcher infras
 | `internal/resources/projects` | Project read service behavior. |
 | `internal/resources/sandboxes` | Sandbox API service behavior, sandbox reconcile executor/payload, sandbox runtime reconciliation, and sandbox provider catalog helpers. |
 | `internal/resources/workers` | Worker API service behavior, provider-facing worker manager, worker reconcile executor/payload, and worker runtime reconciliation. |
-| `internal/resources/providers` | Provider-instance API service behavior, startup reconciliation, provider reconcile executor/payload, and provider-runtime ensure coordination. |
+| `internal/resources/providers` | Provider-instance API service behavior, startup reconciliation, worker provider reconcile executor/payload, and provider-runtime ensure coordination. |
 | `internal/database` | Database config, connection setup, and migrations. |
 | `internal/store` | Persistence methods, resource transactions, project events, and durable job records. |
 | `internal/events` | In-process project event broker for committed resource events. |

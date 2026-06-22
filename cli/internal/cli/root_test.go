@@ -361,7 +361,7 @@ func TestJobsTableShowsFutureSchedule(t *testing.T) {
 	jobs := []apimodel.Job{
 		{
 			ID:           jobID,
-			Type:         "provider.reconcile",
+			Type:         "workerprovider.reconcile",
 			Status:       apiclientgen.JobStatusBackoff,
 			Attempts:     1,
 			MaxAttempts:  3,

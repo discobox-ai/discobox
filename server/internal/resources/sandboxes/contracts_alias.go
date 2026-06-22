@@ -1,6 +1,9 @@
 package sandboxes
 
-import contract "github.com/obot-platform/discobox/server/internal/sandbox"
+import (
+	contract "github.com/obot-platform/discobox/server/internal/sandbox"
+	"github.com/obot-platform/discobox/server/internal/transport"
+)
 
 type Provider = contract.Provider
 type ProviderManager = contract.ProviderManager
@@ -15,7 +18,7 @@ type ProviderConfigField = contract.ProviderConfigField
 type ProviderDefinition = contract.ProviderDefinition
 type DefinitionProvider = contract.DefinitionProvider
 type StateEvent = contract.StateEvent
-type HTTPClientLease = contract.HTTPClientLease
+type HTTPClientLease = transport.HTTPClientLease
 type WorkerRuntimeReconciler = contract.WorkerRuntimeReconciler
 type ImageEvent = contract.ImageEvent
 type ImageStatus = contract.ImageStatus
@@ -30,5 +33,5 @@ var ErrAlreadyRunning = contract.ErrAlreadyRunning
 var RemoveVolumes = contract.RemoveVolumes
 var ImageStatusFailed = contract.ImageStatusFailed
 var StatusCreated = contract.StatusCreated
-var NewHTTPClientLease = contract.NewHTTPClientLease
+var NewHTTPClientLease = transport.NewHTTPClientLease
 var NewProviderManager = contract.NewProviderManager

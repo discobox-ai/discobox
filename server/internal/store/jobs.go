@@ -543,7 +543,7 @@ func projectIDForJobResource(ctx context.Context, db *gorm.DB, resource orchestr
 			Select("project_id").
 			Where("id = ?", resource.ID).
 			Scan(&projectID).Error
-	case "provider":
+	case "provider", "workerprovider":
 		err = db.WithContext(ctx).Model(&model.SandboxProviderInstance{}).
 			Select("project_id").
 			Where("id = ?", resource.ID).

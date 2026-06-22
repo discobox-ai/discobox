@@ -4,10 +4,10 @@ import (
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/providers/sandbox/provider/digitalocean"
 	"github.com/obot-platform/discobox/server/providers/sandbox/provider/docker"
-	"github.com/obot-platform/discobox/server/providers/sandbox/vm"
+	"github.com/obot-platform/discobox/server/providers/sandbox/workerpool"
 )
 
-func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, workerManager vm.WorkerManager) {
+func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, workerManager workerpool.WorkerManager) {
 	if manager == nil {
 		return
 	}

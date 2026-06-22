@@ -1,4 +1,4 @@
-package vm
+package workerpool
 
 import (
 	"context"
@@ -23,25 +23,18 @@ var workerRegistrationTimeout = defaultWorkerRegistrationTimeout
 // own the scaling policy; the manager owns persistence and lifecycle intent.
 type WorkerManager interface {
 	ListWorkers(ctx context.Context, projectID, providerID string) ([]model.Worker, error)
+	GetWorker(ctx context.Context, workerID string) (*model.Worker, error)
 	CreateWorker(ctx context.Context, worker *model.Worker) (*model.Worker, error)
-	FindSchedulableWorker(ctx context.Context, sandbox *model.Sandbox) (*model.Worker, error)
-}
-
-type WorkerBootstrapManager interface {
 	CreateWorkerBootstrapToken(ctx context.Context, token *model.WorkerBootstrapToken) error
+	FindSchedulableWorker(ctx context.Context, sandbox *model.Sandbox) (*model.Worker, error)
+	ScheduleWorkerProviderReconciliation(ctx context.Context, projectID, providerID string) error
 }
 
-type WorkerLifecycleRepairManager interface {
+type workerLifecycleRepairManager interface {
 	GetJob(ctx context.Context, id string) (*orchestration.Job, error)
 	DeleteWorkerForFailedJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error)
 	DeleteWorkerForExpiredRegistration(ctx context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error)
 }
-
-// WorkerLauncher starts the provider-specific runtime node for a persisted worker.
-type WorkerLauncher func(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string) error
-
-// WorkerRemover removes the provider-specific runtime node for a persisted worker.
-type WorkerRemover func(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error
 
 // WorkerPoolConfig describes VM worker pool bounds.
 type WorkerPoolConfig struct {
@@ -90,11 +83,11 @@ func NormalizeWorkerPoolConfig(legacyPoolSize, minWorkers, maxWorkers, minHealth
 	return WorkerPoolConfig{Min: minWorkers, Max: maxWorkers, MinHealthy: minHealthyWorkers}
 }
 
-// DesiredAdditionalWorkers returns how many workers should be launched to bring
+// desiredAdditionalWorkers returns how many workers should be launched to bring
 // the pool back inside its configured bounds. Degraded workers still count as
 // active/schedulable capacity, but not as healthy capacity, so a degraded only
 // worker causes a replacement launch when Max allows it.
-func DesiredAdditionalWorkers(workers []model.Worker, cfg WorkerPoolConfig) int {
+func desiredAdditionalWorkers(workers []model.Worker, cfg WorkerPoolConfig) int {
 	active := 0
 	healthy := 0
 	for i := range workers {
@@ -126,8 +119,8 @@ func DesiredAdditionalWorkers(workers []model.Worker, cfg WorkerPoolConfig) int 
 	return target - active
 }
 
-// EnsureWorkerPool reconciles a VM provider's warm worker pool.
-func EnsureWorkerPool(ctx context.Context, manager WorkerManager, project *model.Project, provider *model.SandboxProviderInstance, cfg WorkerPoolConfig) error {
+// ensureWorkerPool reconciles a VM provider's warm worker pool.
+func ensureWorkerPool(ctx context.Context, manager WorkerManager, project *model.Project, provider *model.SandboxProviderInstance, cfg WorkerPoolConfig) error {
 	if manager == nil {
 		return fmt.Errorf("worker manager is required")
 	}
@@ -149,7 +142,7 @@ func EnsureWorkerPool(ctx context.Context, manager WorkerManager, project *model
 	if err != nil {
 		return err
 	}
-	additional := DesiredAdditionalWorkers(workers, cfg)
+	additional := desiredAdditionalWorkers(workers, cfg)
 	for i := 0; i < additional; i++ {
 		worker, err := createWorker(ctx, manager, project, provider, len(workers)+1)
 		if err != nil {
@@ -161,7 +154,7 @@ func EnsureWorkerPool(ctx context.Context, manager WorkerManager, project *model
 }
 
 func repairWorkersWithFailedJobs(ctx context.Context, manager WorkerManager, workers []model.Worker) ([]model.Worker, error) {
-	repairManager, ok := manager.(WorkerLifecycleRepairManager)
+	repairManager, ok := manager.(workerLifecycleRepairManager)
 	if !ok {
 		return workers, nil
 	}
@@ -198,7 +191,7 @@ func repairWorkersWithFailedJobs(ctx context.Context, manager WorkerManager, wor
 }
 
 func repairExpiredRegisteringWorkers(ctx context.Context, manager WorkerManager, workers []model.Worker, now time.Time) ([]model.Worker, error) {
-	repairManager, ok := manager.(WorkerLifecycleRepairManager)
+	repairManager, ok := manager.(workerLifecycleRepairManager)
 	if !ok || workerRegistrationTimeout <= 0 {
 		return workers, nil
 	}
@@ -259,7 +252,7 @@ func createWorker(ctx context.Context, manager WorkerManager, project *model.Pro
 	return manager.CreateWorker(ctx, worker)
 }
 
-func CreateWorkerBootstrap(ctx context.Context, manager WorkerBootstrapManager, project *model.Project, worker *model.Worker) (string, error) {
+func createWorkerBootstrap(ctx context.Context, manager WorkerManager, project *model.Project, worker *model.Worker) (string, error) {
 	if manager == nil {
 		return "", fmt.Errorf("worker manager is required")
 	}

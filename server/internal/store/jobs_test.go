@@ -50,10 +50,10 @@ func TestListJobsForProjectScopesSandboxWorkerAndProviderJobs(t *testing.T) {
 	for _, job := range []orchestration.Job{
 		{ID: "job-sandbox-1", Type: "sandbox.reconcile", Payload: json.RawMessage(`{}`), Resource: orchestration.Resource{Type: "sandbox", ID: "sandbox-1"}},
 		{ID: "job-worker-1", Type: "worker.reconcile", Payload: json.RawMessage(`{}`), Resource: orchestration.Resource{Type: "worker", ID: "worker-1"}},
-		{ID: "job-provider-1", Type: "provider.reconcile", Payload: json.RawMessage(`{}`), Resource: orchestration.Resource{Type: "provider", ID: "provider-1"}},
+		{ID: "job-provider-1", Type: "workerprovider.reconcile", Payload: json.RawMessage(`{}`), Resource: orchestration.Resource{Type: "workerprovider", ID: "provider-1"}},
 		{ID: "job-sandbox-2", Type: "sandbox.reconcile", Payload: json.RawMessage(`{}`), Resource: orchestration.Resource{Type: "sandbox", ID: "sandbox-2"}},
 		{ID: "job-worker-2", Type: "worker.reconcile", Payload: json.RawMessage(`{}`), Resource: orchestration.Resource{Type: "worker", ID: "worker-2"}},
-		{ID: "job-provider-2", Type: "provider.reconcile", Payload: json.RawMessage(`{}`), Resource: orchestration.Resource{Type: "provider", ID: "provider-2"}},
+		{ID: "job-provider-2", Type: "workerprovider.reconcile", Payload: json.RawMessage(`{}`), Resource: orchestration.Resource{Type: "workerprovider", ID: "provider-2"}},
 	} {
 		job := job
 		if err := s.CreateJob(ctx, &job); err != nil {

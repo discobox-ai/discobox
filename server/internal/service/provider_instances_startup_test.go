@@ -54,7 +54,7 @@ func TestEnqueueProviderWorkersSchedulesEveryWorkerWithDefaultAttempts(t *testin
 	}
 
 	jobManager := newStartedProviderStartupTestJobManager(t, ctx, appStore, orchestration.QueueConfig{DefaultMaxAttempts: 5})
-	svc := &Service{store: appStore, jobManager: jobManager}
+	svc := New(appStore, jobManager, JobManagerOptions{})
 	if err := svc.enqueueProviderWorkers(ctx, project.ID, provider.ID); err != nil {
 		t.Fatalf("enqueue provider workers: %v", err)
 	}
@@ -92,7 +92,7 @@ func TestEnqueueProviderWorkersSchedulesEveryWorkerWithDefaultAttempts(t *testin
 	}
 }
 
-func TestEnsureExistingSandboxProviderInstancesSchedulesProviderReconcile(t *testing.T) {
+func TestEnsureExistingSandboxProviderInstancesSchedulesWorkerProviderReconcile(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.New(database.Config{DSN: ":memory:"})
 	if err != nil {
@@ -127,7 +127,7 @@ func TestEnsureExistingSandboxProviderInstancesSchedulesProviderReconcile(t *tes
 	}
 
 	jobManager := newStartedProviderStartupTestJobManager(t, ctx, appStore, orchestration.QueueConfig{DefaultMaxAttempts: 5})
-	svc := &Service{store: appStore, jobManager: jobManager}
+	svc := New(appStore, jobManager, JobManagerOptions{})
 	if err := svc.EnsureExistingSandboxProviderInstances(ctx); err != nil {
 		t.Fatalf("ensure existing providers: %v", err)
 	}
@@ -139,9 +139,9 @@ func TestEnsureExistingSandboxProviderInstancesSchedulesProviderReconcile(t *tes
 	var providerJobs int
 	for _, job := range queued {
 		switch job.Type {
-		case providers.ProviderReconcileType:
+		case providers.WorkerProviderReconcileType:
 			providerJobs++
-			if job.Resource.Type != "provider" || job.Resource.ID != provider.ID {
+			if job.Resource.Type != "workerprovider" || job.Resource.ID != provider.ID {
 				t.Fatalf("provider job resource = %#v, want provider %s", job.Resource, provider.ID)
 			}
 			if job.MaxAttempts != 5 {
@@ -408,7 +408,7 @@ func TestListSandboxProviderInstancesTreatsFailedJobCleanupAsFailureStatus(t *te
 func newProviderInstanceTestService(appStore *store.Store) *Service {
 	return &Service{
 		store:                          appStore,
-		SandboxProviderInstanceService: providers.NewService(appStore, nil, nil),
+		SandboxProviderInstanceService: providers.NewService(appStore, nil, nil, nil),
 	}
 }
 

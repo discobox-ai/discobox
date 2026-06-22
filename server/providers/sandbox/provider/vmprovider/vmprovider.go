@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/providers/sandbox/vm"
+	"github.com/obot-platform/discobox/server/providers/sandbox/workerpool"
 )
 
 // StringList accepts either a JSON array of strings or a comma-separated string.
@@ -49,8 +49,8 @@ type WorkerPoolConfigFields struct {
 	MinHealthy int `json:"minHealthyWorkers,omitempty"`
 }
 
-func (c WorkerPoolConfigFields) WorkerPoolConfig() vm.WorkerPoolConfig {
-	return vm.NormalizeWorkerPoolConfig(c.PoolSize, c.MinWorkers, c.MaxWorkers, c.MinHealthy)
+func (c WorkerPoolConfigFields) WorkerPoolConfig() workerpool.WorkerPoolConfig {
+	return workerpool.NormalizeWorkerPoolConfig(c.PoolSize, c.MinWorkers, c.MaxWorkers, c.MinHealthy)
 }
 
 func DecodeConfig[T any](data json.RawMessage, providerType string) (T, error) {
@@ -72,16 +72,16 @@ func RequireControlPlaneURL(providerType, value string) error {
 
 type NewProviderFunc func(context.Context, vm.Config) (*vm.Provider, error)
 
-type WorkerProviderConfig struct {
+type WorkerPoolProviderConfig struct {
 	ControlPlaneURL string
 	DefaultImage    string
 	AgentPort       int
-	WorkerPool      vm.WorkerPoolConfig
-	WorkerManager   vm.WorkerManager
+	WorkerPool      workerpool.WorkerPoolConfig
+	WorkerManager   workerpool.WorkerManager
 	EnsureWorkers   bool
 }
 
-func NewWorkerProvider(ctx context.Context, cfg WorkerProviderConfig, newProvider NewProviderFunc) (sandbox.Provider, error) {
+func NewWorkerPoolProvider(ctx context.Context, cfg WorkerPoolProviderConfig, newProvider NewProviderFunc) (sandbox.Provider, error) {
 	provider, err := newProvider(ctx, vm.Config{
 		ControlPlaneURL: cfg.ControlPlaneURL,
 		DefaultImage:    cfg.DefaultImage,
@@ -90,23 +90,5 @@ func NewWorkerProvider(ctx context.Context, cfg WorkerProviderConfig, newProvide
 	if err != nil {
 		return nil, err
 	}
-	factory := func(ctx context.Context, vmCfg vm.Config) (sandbox.Provider, error) {
-		return newProvider(ctx, vmCfg)
-	}
-	workerProvider := vm.NewWorkerProvider(provider, cfg.WorkerPool, func(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string) error {
-		return vm.LaunchWorker(ctx, project, provider, worker, token, vm.LaunchWorkerConfig{
-			ControlPlaneURL: cfg.ControlPlaneURL,
-			DefaultImage:    cfg.DefaultImage,
-			AgentPort:       cfg.AgentPort,
-			Factory:         factory,
-		})
-	}, cfg.WorkerManager, func(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error {
-		return vm.RemoveWorker(ctx, project, provider, worker, vm.LaunchWorkerConfig{
-			ControlPlaneURL: cfg.ControlPlaneURL,
-			DefaultImage:    cfg.DefaultImage,
-			AgentPort:       cfg.AgentPort,
-			Factory:         factory,
-		})
-	})
-	return workerProvider, nil
+	return workerpool.NewWorkerPoolProvider(provider, cfg.WorkerPool, cfg.WorkerManager, cfg.EnsureWorkers), nil
 }

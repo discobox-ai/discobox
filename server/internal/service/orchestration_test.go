@@ -19,7 +19,7 @@ import (
 
 func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {
 	ctx := context.Background()
-	svc, reconciler := newSandboxTestService(t, nil)
+	svc, executor := newSandboxTestService(t, nil)
 
 	sandbox, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Name: "alpha"})
 	if err != nil {
@@ -37,7 +37,7 @@ func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {
 		t.Fatalf("stop generation = %d, want 2", stopped.Generation)
 	}
 
-	err = reconciler.ReconcileSandboxJob(ctx, service.DefaultProjectID, sandbox.ID, "stale-job", sandbox.Generation)
+	err = executor.ReconcileSandboxJob(ctx, service.DefaultProjectID, sandbox.ID, "stale-job", sandbox.Generation)
 	if !errors.Is(err, orchestration.ErrJobCanceled) {
 		t.Fatalf("stale reconcile error = %v, want ErrJobCanceled", err)
 	}
@@ -99,18 +99,13 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 		ImmediateExecution: true,
 		DefaultConcurrency: 1,
 	})
-	svc := service.New(appStore, queueConfig, jobManager.NotifyNewJob, broker)
-	svc.SetJobManager(jobManager, service.JobManagerOptions{})
-	reconciler := sandboxes.NewSandboxReconciler(appStore)
-	if err := jobManager.Register(sandboxes.SandboxReconcileType, sandboxes.NewSandboxReconcileExecutor(reconciler)); err != nil {
-		t.Fatalf("register executor: %v", err)
-	}
+	svc := service.New(appStore, jobManager, service.JobManagerOptions{}, broker)
 
 	if err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
-	if err := jobManager.Start(ctx); err != nil {
-		t.Fatalf("start job manager: %v", err)
+	if err := svc.Start(ctx); err != nil {
+		t.Fatalf("start service: %v", err)
 	}
 	t.Cleanup(func() {
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
@@ -168,7 +163,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	}
 }
 
-func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sandboxes.SandboxReconciler) {
+func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sandboxes.SandboxReconcileExecutor) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -192,12 +187,12 @@ func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sand
 	if notify != nil {
 		notifyContext = func(context.Context) { notify() }
 	}
-	svc := service.New(appStore, queueConfig, notifyContext, broker)
+	_ = notifyContext
 	jobManager := sandboxjobs.NewManager(ctx, appStore, sandboxjobs.ManagerConfig{
 		Enabled:     true,
 		QueueConfig: queueConfig,
 	})
-	svc.SetJobManager(jobManager, service.JobManagerOptions{})
+	svc := service.New(appStore, jobManager, service.JobManagerOptions{}, broker)
 	if err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
@@ -211,7 +206,7 @@ func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sand
 			t.Fatalf("stop job manager: %v", err)
 		}
 	})
-	return svc, svc.NewSandboxReconciler()
+	return svc, svc.NewSandboxReconcileExecutor()
 }
 
 func waitForSandboxPhase(t *testing.T, ctx context.Context, svc *service.Service, sandboxID, phase string) *model.Sandbox {

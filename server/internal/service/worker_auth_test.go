@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/id"
-	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/auth"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/events"
@@ -127,8 +126,7 @@ func newWorkerAuthService(t *testing.T) (*service.Service, *store.Store, *databa
 	}
 	broker := events.NewBroker()
 	appStore := store.New(db.Write, db.Read, store.WithPublisher(broker))
-	queueConfig := orchestration.QueueConfig{DefaultMaxAttempts: 3}
-	svc := service.New(appStore, queueConfig, nil, broker)
+	svc := service.New(appStore, nil, service.JobManagerOptions{}, broker)
 	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("init defaults: %v", err)
 	}

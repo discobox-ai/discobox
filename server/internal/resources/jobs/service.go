@@ -18,12 +18,8 @@ type Service struct {
 	}
 }
 
-func NewService(store *store.Store) *Service {
-	return &Service{store: store}
-}
-
-func (s *Service) SetManager(manager interface{ NotifyNewJob(context.Context) }) {
-	s.manager = manager
+func NewService(store *store.Store, manager interface{ NotifyNewJob(context.Context) }) *Service {
+	return &Service{store: store, manager: manager}
 }
 
 func (s *Service) ListJobs(ctx context.Context, projectID string) ([]model.Job, error) {

@@ -345,6 +345,9 @@ func (m *ProviderManager) cachedProvider(ctx context.Context, instance *model.Sa
 	if err != nil {
 		return nil, err
 	}
+	if err := provider.Initialize(ctx, instance); err != nil {
+		return nil, err
+	}
 	m.mu.Lock()
 	m.cache[instance.ID] = cachedProvider{provider: provider, updatedAt: instance.UpdatedAt}
 	m.mu.Unlock()

@@ -11,6 +11,7 @@ import (
 	"github.com/obot-platform/discobox/server/providers/sandbox/provider/vmprovider"
 	"github.com/obot-platform/discobox/server/providers/sandbox/vm"
 	dockerdriver "github.com/obot-platform/discobox/server/providers/sandbox/vm/docker"
+	"github.com/obot-platform/discobox/server/providers/sandbox/workerpool"
 )
 
 const ProviderType = dockerdriver.ProviderType
@@ -18,7 +19,7 @@ const workerImageEnv = "DISCOBOX_DOCKER_WORKER_IMAGE"
 
 var Definition = dockerdriver.Definition()
 
-func FactoryWithWorkerManager(workerManager vm.WorkerManager) sandbox.ProviderFactory {
+func FactoryWithWorkerManager(workerManager workerpool.WorkerManager) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
 		return newFromInstance(ctx, instance, workerManager)
 	}
@@ -46,13 +47,13 @@ func Validate(data json.RawMessage) error {
 	return err
 }
 
-func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, workerManager vm.WorkerManager) (sandbox.Provider, error) {
+func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, workerManager workerpool.WorkerManager) (sandbox.Provider, error) {
 	cfg, err := Decode(instance.Config)
 	if err != nil {
 		return nil, err
 	}
 	cfg.Image = configuredWorkerImage(cfg.Image)
-	return vmprovider.NewWorkerProvider(ctx, vmprovider.WorkerProviderConfig{
+	return vmprovider.NewWorkerPoolProvider(ctx, vmprovider.WorkerPoolProviderConfig{
 		ControlPlaneURL: cfg.ControlPlaneURL,
 		DefaultImage:    cfg.Image,
 		AgentPort:       cfg.AgentPort,

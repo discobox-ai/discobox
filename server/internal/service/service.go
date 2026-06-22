@@ -58,7 +58,7 @@ type JobManager interface {
 	DeleteWorkerForFailedJob(context.Context, string, int64, string, string) (bool, error)
 	DeleteWorkerForExpiredRegistration(context.Context, string, int64, time.Time, string) (bool, error)
 	EnqueueWorkerCurrent(context.Context, *model.Worker) (*orchestration.Job, error)
-	EnqueueProviderCurrent(context.Context, string, string) (*orchestration.Job, error)
+	EnqueueWorkerProviderCurrent(context.Context, string, string) (*orchestration.Job, error)
 	OnWorkerReconcileTerminal(context.Context, *orchestration.Job, workers.WorkerReconcilePayload) error
 }
 
@@ -66,17 +66,17 @@ type JobManagerOptions struct {
 	SandboxReconcileJobConcurrency int
 }
 
-func New(store *store.Store, _ orchestration.QueueConfig, _ func(context.Context), broker ...*eventbroker.Broker) *Service {
+func New(store *store.Store, jobManager JobManager, jobManagerOptions JobManagerOptions, broker ...*eventbroker.Broker) *Service {
 	var b *eventbroker.Broker
 	if len(broker) > 0 {
 		b = broker[0]
 	}
 	manager := sandbox.NewProviderManager()
-	workerManager := workers.NewManager(store)
+	workerManager := workers.NewManager(store, jobManager)
 	providersandbox.RegisterBuiltInSandboxProviderFactories(manager, workerManager)
-	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, workerManager)
-	providerService := providers.NewService(store, sandboxService, workerManager)
-	jobsService := resourcejobs.NewService(store)
+	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, jobManager, workerManager)
+	providerService := providers.NewService(store, sandboxService, workerManager, jobManager)
+	jobsService := resourcejobs.NewService(store, jobManager)
 	return &Service{
 		ProjectService:                 projects.NewService(store),
 		AgentConfigService:             agentconfigs.NewService(store),
@@ -89,22 +89,15 @@ func New(store *store.Store, _ orchestration.QueueConfig, _ func(context.Context
 		jobs:            jobsService,
 		providerService: providerService,
 
-		store:         store,
-		workerManager: workerManager,
+		store:             store,
+		jobManager:        jobManager,
+		jobManagerOptions: jobManagerOptions,
+		workerManager:     workerManager,
 	}
 }
 
 func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 	s.Service.SetSandboxAuthManager(manager)
-}
-
-func (s *Service) SetJobManager(manager JobManager, opts JobManagerOptions) {
-	s.jobManager = manager
-	s.jobManagerOptions = opts
-	s.Service.SetJobManager(manager)
-	s.jobs.SetManager(manager)
-	s.providerService.SetJobManager(manager)
-	s.workerManager.SetJobManager(manager)
 }
 
 func (s *Service) Start(ctx context.Context) error {
@@ -134,30 +127,18 @@ func (s *Service) registerJobExecutors() error {
 	if concurrency > 0 {
 		executorOptions = append(executorOptions, orchestration.WithConcurrency(concurrency))
 	}
-	if err := s.jobManager.Register(sandboxes.SandboxReconcileType, sandboxes.NewSandboxReconcileExecutor(s.NewSandboxReconciler()), executorOptions...); err != nil {
+	if err := s.RegisterJobs(s.jobManager, executorOptions...); err != nil {
 		return err
 	}
-	if err := s.jobManager.Register(providers.ProviderReconcileType, providers.NewProviderReconcileExecutor(s), executorOptions...); err != nil {
+	if err := s.providerService.RegisterJobs(s.jobManager, executorOptions...); err != nil {
 		return err
 	}
-	if err := s.jobManager.Register(workers.WorkerReconcileType, workers.NewWorkerReconcileExecutor(s.NewWorkerReconciler(), s.jobManager), executorOptions...); err != nil {
+	if err := s.workerManager.RegisterJobs(s.jobManager, s.SandboxProviderManager(), executorOptions...); err != nil {
 		return err
 	}
 	return nil
 }
 
-// NewWorkerReconciler returns a provider-manager-backed worker reconciler.
-func (s *Service) NewWorkerReconciler() *workers.WorkerReconciler {
-	return workers.NewWorkerReconciler(
-		s.store,
-		workers.WithWorkerProviderManager(s.SandboxProviderManager()),
-	)
-}
-
 func (s *Service) SandboxProviderManager() *sandbox.ProviderManager {
 	return s.Service.SandboxProviderManager()
-}
-
-func (s *Service) NewSandboxReconciler() *sandboxes.SandboxReconciler {
-	return s.Service.NewSandboxReconciler()
 }

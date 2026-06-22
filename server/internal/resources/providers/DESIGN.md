@@ -13,8 +13,10 @@ flowchart LR
     service --> sandboxCatalog[internal/resources/sandboxes.Service]
     service --> workers[internal/resources/workers.Manager]
     service --> jobs[internal/resources/jobs.Manager]
-    dispatcher[orchestration.Dispatcher] --> executor[ProviderReconcileExecutor]
-    executor --> service
+    dispatcher[orchestration.Dispatcher] --> executor[WorkerProviderReconcileExecutor]
+    executor --> store
+    executor --> sandboxCatalog
+    executor --> workers
 ```
 
 - `Service` validates provider instance API requests and coordinates provider
@@ -22,5 +24,6 @@ flowchart LR
 - Simple provider CRUD may call store directly.
 - Startup reconciliation and worker enqueue behavior must go through the job
   manager when durable jobs are enabled.
-- `ProviderReconcileExecutor` should only decode the payload and call the
-  provider reconciler interface.
+- `WorkerProviderReconcileExecutor` owns payload decode and provider-instance
+  reconciliation. Keep provider job execution logic in the executor unless a
+  dependency has clear ownership elsewhere.

@@ -12,13 +12,14 @@ flowchart LR
     contracts --> service[internal/service]
     service --> resources["internal/resources/{resource}"]
     dispatcher[orchestration.Dispatcher] --> executor[resource Executor]
-    executor --> manager[resource Manager/Reconciler]
+    executor --> store[internal/store]
+    executor --> runtime[resource runtime]
     resources --> store[internal/store]
 ```
 
 - Resource packages may call stores for simple CRUD and use managers for
   lifecycle side effects.
-- Executors must stay thin and delegate resource policy to managers or
-  reconcilers.
+- Reconcile executors own payload decode, generation checks, and resource
+  reconciliation for their resource area.
 - Keep HTTP transport adaptation in `internal/handlers`, service contracts in
   `internal/services`, and persistence in `internal/store`.

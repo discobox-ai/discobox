@@ -13,52 +13,52 @@ import (
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
-type SandboxReconciler struct {
+type SandboxReconcileExecutor struct {
 	store    *store.Store
 	provider Provider
 	manager  *ProviderManager
 	auth     SandboxAuthenticator
 }
 
-// SandboxReconcilerOption configures a sandbox reconciler.
-type SandboxReconcilerOption func(*SandboxReconciler)
+// SandboxReconcileExecutorOption configures a sandbox executor.
+type SandboxReconcileExecutorOption func(*SandboxReconcileExecutor)
 
-func NewSandboxReconciler(store *store.Store, options ...SandboxReconcilerOption) *SandboxReconciler {
-	reconciler := &SandboxReconciler{
+func NewSandboxReconcileExecutor(store *store.Store, options ...SandboxReconcileExecutorOption) *SandboxReconcileExecutor {
+	executor := &SandboxReconcileExecutor{
 		store: store,
 	}
 	for _, option := range options {
 		if option != nil {
-			option(reconciler)
+			option(executor)
 		}
 	}
-	return reconciler
+	return executor
 }
 
 // WithSandboxProvider uses a single provider for all sandbox reconciliation.
-func WithSandboxProvider(provider Provider) SandboxReconcilerOption {
-	return func(reconciler *SandboxReconciler) {
-		reconciler.provider = provider
+func WithSandboxProvider(provider Provider) SandboxReconcileExecutorOption {
+	return func(executor *SandboxReconcileExecutor) {
+		executor.provider = provider
 	}
 }
 
 // WithSandboxProviderManager resolves providers through a manager.
-func WithSandboxProviderManager(manager *ProviderManager) SandboxReconcilerOption {
-	return func(reconciler *SandboxReconciler) {
-		reconciler.manager = manager
+func WithSandboxProviderManager(manager *ProviderManager) SandboxReconcileExecutorOption {
+	return func(executor *SandboxReconcileExecutor) {
+		executor.manager = manager
 	}
 }
 
 // WithSandboxAuthenticator injects trust-key authentication into sandbox
 // creation. When configured, sandbox starts ensure the creating user has a
 // public trust key and pass it to the runtime as DISCOBOX_TRUST_KEY.
-func WithSandboxAuthenticator(auth SandboxAuthenticator) SandboxReconcilerOption {
-	return func(reconciler *SandboxReconciler) {
-		reconciler.auth = auth
+func WithSandboxAuthenticator(auth SandboxAuthenticator) SandboxReconcileExecutorOption {
+	return func(executor *SandboxReconcileExecutor) {
+		executor.auth = auth
 	}
 }
 
-func (r *SandboxReconciler) AssertSandboxGeneration(ctx context.Context, projectID, sandboxID string, generation int64) error {
+func (r *SandboxReconcileExecutor) AssertSandboxGeneration(ctx context.Context, projectID, sandboxID string, generation int64) error {
 	if _, err := r.store.GetSandbox(ctx, projectID, sandboxID, store.WithGeneration(generation)); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return nil
@@ -71,7 +71,7 @@ func (r *SandboxReconciler) AssertSandboxGeneration(ctx context.Context, project
 	return nil
 }
 
-func (r *SandboxReconciler) ReconcileSandboxJob(ctx context.Context, projectID, sandboxID, jobID string, generation int64) error {
+func (r *SandboxReconcileExecutor) ReconcileSandboxJob(ctx context.Context, projectID, sandboxID, jobID string, generation int64) error {
 	sandbox, err := r.store.GetSandbox(ctx, projectID, sandboxID, store.WithGeneration(generation))
 	if errors.Is(err, store.ErrNotFound) {
 		return nil
@@ -100,7 +100,7 @@ func (r *SandboxReconciler) ReconcileSandboxJob(ctx context.Context, projectID, 
 	}
 }
 
-func (r *SandboxReconciler) start(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
+func (r *SandboxReconcileExecutor) start(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
 	if sandbox.Phase == model.SandboxPhaseRunning && sandbox.ObservedGeneration == generation && sandbox.LastOperationStatus == model.SandboxOperationStatusSuccess {
 		return nil
 	}
@@ -125,7 +125,7 @@ func (r *SandboxReconciler) start(ctx context.Context, sandbox *model.Sandbox, g
 	return r.update(ctx, sandbox, generation)
 }
 
-func (r *SandboxReconciler) restart(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
+func (r *SandboxReconcileExecutor) restart(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
 	status := "restarting sandbox"
 	sandbox.MarkOperationRunning(&status)
 	if err := r.update(ctx, sandbox, generation); err != nil {
@@ -150,7 +150,7 @@ func (r *SandboxReconciler) restart(ctx context.Context, sandbox *model.Sandbox,
 	return r.update(ctx, sandbox, generation)
 }
 
-func (r *SandboxReconciler) stop(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
+func (r *SandboxReconcileExecutor) stop(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
 	if sandbox.Phase == model.SandboxPhaseStopped && sandbox.ObservedGeneration == generation && sandbox.LastOperationStatus == model.SandboxOperationStatusSuccess {
 		return nil
 	}
@@ -168,7 +168,7 @@ func (r *SandboxReconciler) stop(ctx context.Context, sandbox *model.Sandbox, ge
 	return r.update(ctx, sandbox, generation)
 }
 
-func (r *SandboxReconciler) delete(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
+func (r *SandboxReconcileExecutor) delete(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
 	if sandbox.Phase == model.SandboxPhaseDeleted && sandbox.ObservedGeneration == generation && sandbox.LastOperationStatus == model.SandboxOperationStatusSuccess {
 		return nil
 	}
@@ -186,7 +186,7 @@ func (r *SandboxReconciler) delete(ctx context.Context, sandbox *model.Sandbox, 
 	return r.update(ctx, sandbox, generation)
 }
 
-func (r *SandboxReconciler) update(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
+func (r *SandboxReconcileExecutor) update(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
 	if err := r.store.UpdateSandbox(ctx, sandbox, store.WithGeneration(generation)); err != nil {
 		if errors.Is(err, store.ErrGenerationConflict) {
 			return orchestration.Superseded("sandbox generation changed")
@@ -208,7 +208,7 @@ type SandboxAuthenticator interface {
 	CreateToken(ctx context.Context, claims sandboxauth.TokenClaims) (string, error)
 }
 
-func (r *SandboxReconciler) startSandbox(ctx context.Context, sb *model.Sandbox) error {
+func (r *SandboxReconcileExecutor) startSandbox(ctx context.Context, sb *model.Sandbox) error {
 	provider, err := r.resolveProvider(ctx, sb)
 	if err != nil {
 		return err
@@ -260,7 +260,7 @@ func (r *SandboxReconciler) startSandbox(ctx context.Context, sb *model.Sandbox)
 	return nil
 }
 
-func (r *SandboxReconciler) stopSandbox(ctx context.Context, sb *model.Sandbox) error {
+func (r *SandboxReconcileExecutor) stopSandbox(ctx context.Context, sb *model.Sandbox) error {
 	provider, err := r.resolveProvider(ctx, sb)
 	if err != nil {
 		return err
@@ -285,7 +285,7 @@ func (r *SandboxReconciler) stopSandbox(ctx context.Context, sb *model.Sandbox) 
 	return nil
 }
 
-func (r *SandboxReconciler) deleteSandbox(ctx context.Context, sb *model.Sandbox) error {
+func (r *SandboxReconcileExecutor) deleteSandbox(ctx context.Context, sb *model.Sandbox) error {
 	provider, err := r.resolveProvider(ctx, sb)
 	if err != nil {
 		return err
@@ -309,7 +309,7 @@ func (r *SandboxReconciler) deleteSandbox(ctx context.Context, sb *model.Sandbox
 	return nil
 }
 
-func (r *SandboxReconciler) resolveProvider(ctx context.Context, sb *model.Sandbox) (Provider, error) {
+func (r *SandboxReconcileExecutor) resolveProvider(ctx context.Context, sb *model.Sandbox) (Provider, error) {
 	if r == nil {
 		return nil, nil
 	}
@@ -322,7 +322,7 @@ func (r *SandboxReconciler) resolveProvider(ctx context.Context, sb *model.Sandb
 	return r.provider, nil
 }
 
-func (r *SandboxReconciler) applyTrustKey(ctx context.Context, sb *model.Sandbox, opts *CreateOptions) error {
+func (r *SandboxReconcileExecutor) applyTrustKey(ctx context.Context, sb *model.Sandbox, opts *CreateOptions) error {
 	if r == nil || r.auth == nil {
 		return nil
 	}
@@ -392,7 +392,7 @@ func ensureSandboxImage(ctx context.Context, provider Provider, opts *CreateOpti
 	return nil
 }
 
-func (r *SandboxReconciler) createOptionsFromSandbox(sb *model.Sandbox) CreateOptions {
+func (r *SandboxReconcileExecutor) createOptionsFromSandbox(sb *model.Sandbox) CreateOptions {
 	opts := CreateOptions{
 		Labels: map[string]string{
 			"discobox.project_id": sb.ProjectID,

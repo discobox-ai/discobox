@@ -10,6 +10,7 @@ import (
 
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
+	"github.com/obot-platform/discobox/server/internal/transport"
 )
 
 func TestProviderManagerRegisterStatusAndDefinitions(t *testing.T) {
@@ -168,6 +169,9 @@ func (p *fakeProvider) List(context.Context) ([]*sandbox.Sandbox, error) {
 	}
 	return p.sandboxes, nil
 }
+func (p *fakeProvider) Initialize(context.Context, *model.SandboxProviderInstance) error {
+	return nil
+}
 func (p *fakeProvider) Watch(context.Context) (<-chan sandbox.StateEvent, error) {
 	ch := make(chan sandbox.StateEvent)
 	close(ch)
@@ -199,8 +203,8 @@ func (p *fakeProvider) Remove(context.Context, sandbox.SandboxRef, []byte, ...sa
 func (p *fakeProvider) Get(context.Context, sandbox.SandboxRef, []byte) (*sandbox.Sandbox, error) {
 	return nil, nil
 }
-func (p *fakeProvider) AcquireHTTPClient(context.Context, sandbox.SandboxRef, []byte) (*sandbox.HTTPClientLease, error) {
-	return sandbox.NewHTTPClientLease(http.DefaultClient, nil), nil
+func (p *fakeProvider) AcquireHTTPClient(context.Context, sandbox.SandboxRef, []byte) (*transport.HTTPClientLease, error) {
+	return transport.NewHTTPClientLease(http.DefaultClient, nil), nil
 }
 func (p *fakeProvider) Status() sandbox.ProviderStatus {
 	return p.status

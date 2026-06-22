@@ -13,7 +13,7 @@ import (
 
 func TestReconcileSandboxNoCapacityFailsFast(t *testing.T) {
 	ctx := context.Background()
-	appStore := newReconcilerTestStore(t)
+	appStore := newExecutorTestStore(t)
 
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "digitalocean", Name: "do"}
 	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
@@ -33,8 +33,8 @@ func TestReconcileSandboxNoCapacityFailsFast(t *testing.T) {
 		t.Fatalf("create sandbox: %v", err)
 	}
 
-	reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(noCapacityProvider{}))
-	err := reconciler.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-1", sb.Generation)
+	executor := sandboxes.NewSandboxReconcileExecutor(appStore, sandboxes.WithSandboxProvider(noCapacityProvider{}))
+	err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-1", sb.Generation)
 	if !errors.Is(err, sandboxes.ErrNoSandboxCapacity) {
 		t.Fatalf("reconcile error = %v, want ErrNoSandboxCapacity", err)
 	}
@@ -59,7 +59,7 @@ func (noCapacityProvider) Create(context.Context, sandboxes.SandboxRef, []byte, 
 	return nil, nil, sandboxes.ErrNoSandboxCapacity
 }
 
-func newReconcilerTestStore(t *testing.T) *store.Store {
+func newExecutorTestStore(t *testing.T) *store.Store {
 	t.Helper()
 	ctx := context.Background()
 	db, err := database.New(database.Config{DSN: ":memory:"})

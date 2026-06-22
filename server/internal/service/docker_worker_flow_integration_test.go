@@ -20,7 +20,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/events"
 	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/resources/workers"
+	sandboxjobs "github.com/obot-platform/discobox/server/internal/resources/jobs"
 	"github.com/obot-platform/discobox/server/internal/service"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
@@ -67,29 +67,27 @@ func TestDockerProviderWorkerCreateFlowE2E(t *testing.T) {
 	broker := events.NewBroker()
 	appStore := store.New(db.Write, db.Read, store.WithPublisher(broker))
 	queueConfig := orchestration.QueueConfig{DefaultMaxAttempts: 1}
-	dispatcher := orchestration.NewDispatcher(appStore, orchestration.DispatcherConfig{
-		SingleNode:         true,
+	jobManager := sandboxjobs.NewManager(ctx, appStore, sandboxjobs.ManagerConfig{
+		Enabled:            true,
+		QueueConfig:        queueConfig,
 		PollInterval:       10 * time.Millisecond,
 		JobTimeout:         30 * time.Second,
 		StaleJobTimeout:    time.Minute,
 		ImmediateExecution: true,
 		DefaultConcurrency: 2,
 	})
-	svc := service.New(appStore, queueConfig, func(context.Context) { dispatcher.NotifyNewJob() }, broker)
-	if err := dispatcher.Register(workers.WorkerReconcileType, workers.NewWorkerReconcileExecutor(svc.NewWorkerReconciler())); err != nil {
-		t.Fatalf("register worker executor: %v", err)
-	}
+	svc := service.New(appStore, jobManager, service.JobManagerOptions{}, broker)
 	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
-	if err := dispatcher.Start(ctx); err != nil {
-		t.Fatalf("start dispatcher: %v", err)
+	if err := svc.Start(ctx); err != nil {
+		t.Fatalf("start service: %v", err)
 	}
 	t.Cleanup(func() {
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
 		defer stopCancel()
-		if err := dispatcher.DrainAndStop(stopCtx); err != nil {
-			t.Fatalf("stop dispatcher: %v", err)
+		if err := jobManager.Stop(stopCtx); err != nil {
+			t.Fatalf("stop job manager: %v", err)
 		}
 	})
 

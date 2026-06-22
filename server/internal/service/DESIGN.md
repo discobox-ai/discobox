@@ -47,7 +47,7 @@ internal/resources/workers.Service
 internal/resources/workers.Manager
 internal/resources/workers.WorkerReconcileExecutor
 internal/resources/providers.Service
-internal/resources/providers.ProviderReconcileExecutor
+internal/resources/providers.WorkerProviderReconcileExecutor
 internal/resources/agentconfigs.Service
 internal/resources/events.Service
 internal/resources/jobs.Service

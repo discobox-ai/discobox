@@ -14,7 +14,7 @@ import (
 
 func TestReconcileWorkerMarksLaunchFailure(t *testing.T) {
 	ctx := context.Background()
-	appStore := newReconcilerTestStore(t)
+	appStore := newExecutorTestStore(t)
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "failing", Name: "failing"}
 	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatalf("create provider: %v", err)
@@ -33,9 +33,9 @@ func TestReconcileWorkerMarksLaunchFailure(t *testing.T) {
 	launchErr := errors.New("launch failed")
 	manager := sandboxes.NewProviderManager()
 	manager.RegisterProvider("failing", failingWorkerProvider{err: launchErr})
-	reconciler := workers.NewWorkerReconciler(appStore, workers.WithWorkerProviderManager(manager))
+	executor := workers.NewWorkerReconcileExecutor(appStore, workers.WithWorkerProviderManager(manager))
 
-	err := reconciler.ReconcileWorkerJob(ctx, worker.ProjectID, worker.ProviderInstanceID, worker.ID, "job-1", worker.Generation)
+	err := executor.ReconcileWorkerJob(ctx, worker.ProjectID, worker.ProviderInstanceID, worker.ID, "job-1", worker.Generation)
 	if !errors.Is(err, launchErr) {
 		t.Fatalf("reconcile error = %v, want launch failed", err)
 	}
@@ -54,7 +54,7 @@ func TestReconcileWorkerMarksLaunchFailure(t *testing.T) {
 
 func TestReconcileWorkerChecksRuntimeForSuccessfulGeneration(t *testing.T) {
 	ctx := context.Background()
-	appStore := newReconcilerTestStore(t)
+	appStore := newExecutorTestStore(t)
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "counting", Name: "counting"}
 	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatalf("create provider: %v", err)
@@ -80,9 +80,9 @@ func TestReconcileWorkerChecksRuntimeForSuccessfulGeneration(t *testing.T) {
 	providerImpl := &countingWorkerProvider{}
 	manager := sandboxes.NewProviderManager()
 	manager.RegisterProvider("counting", providerImpl)
-	reconciler := workers.NewWorkerReconciler(appStore, workers.WithWorkerProviderManager(manager))
+	executor := workers.NewWorkerReconcileExecutor(appStore, workers.WithWorkerProviderManager(manager))
 
-	if err := reconciler.ReconcileWorkerJob(ctx, worker.ProjectID, worker.ProviderInstanceID, worker.ID, "job-1", worker.Generation); err != nil {
+	if err := executor.ReconcileWorkerJob(ctx, worker.ProjectID, worker.ProviderInstanceID, worker.ID, "job-1", worker.Generation); err != nil {
 		t.Fatalf("reconcile worker: %v", err)
 	}
 	if providerImpl.calls != 1 {
@@ -99,7 +99,7 @@ func TestReconcileWorkerChecksRuntimeForSuccessfulGeneration(t *testing.T) {
 
 func TestReconcileWorkerDeletedRemovesRuntimeBeforeMarkingDeleted(t *testing.T) {
 	ctx := context.Background()
-	appStore := newReconcilerTestStore(t)
+	appStore := newExecutorTestStore(t)
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "removing", Name: "removing"}
 	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatalf("create provider: %v", err)
@@ -126,9 +126,9 @@ func TestReconcileWorkerDeletedRemovesRuntimeBeforeMarkingDeleted(t *testing.T) 
 	providerImpl := &countingWorkerProvider{}
 	manager := sandboxes.NewProviderManager()
 	manager.RegisterProvider("removing", providerImpl)
-	reconciler := workers.NewWorkerReconciler(appStore, workers.WithWorkerProviderManager(manager))
+	executor := workers.NewWorkerReconcileExecutor(appStore, workers.WithWorkerProviderManager(manager))
 
-	if err := reconciler.ReconcileWorkerJob(ctx, worker.ProjectID, worker.ProviderInstanceID, worker.ID, "job-1", worker.Generation); err != nil {
+	if err := executor.ReconcileWorkerJob(ctx, worker.ProjectID, worker.ProviderInstanceID, worker.ID, "job-1", worker.Generation); err != nil {
 		t.Fatalf("reconcile worker delete: %v", err)
 	}
 	if providerImpl.removeCalls != 1 {
@@ -182,7 +182,7 @@ func (p *countingWorkerProvider) RemoveWorker(_ context.Context, _ any, _ *model
 	return nil
 }
 
-func newReconcilerTestStore(t *testing.T) *store.Store {
+func newExecutorTestStore(t *testing.T) *store.Store {
 	t.Helper()
 	ctx := context.Background()
 	db, err := database.New(database.Config{DSN: ":memory:"})

@@ -12,6 +12,7 @@ import (
 	"github.com/obot-platform/discobox/server/providers/sandbox/provider/vmprovider"
 	"github.com/obot-platform/discobox/server/providers/sandbox/vm"
 	dodriver "github.com/obot-platform/discobox/server/providers/sandbox/vm/digitalocean"
+	"github.com/obot-platform/discobox/server/providers/sandbox/workerpool"
 )
 
 const ProviderType = dodriver.ProviderType
@@ -19,7 +20,7 @@ const ProviderType = dodriver.ProviderType
 var Definition = dodriver.Definition()
 var Factory sandbox.ProviderFactory = NewFromInstance
 
-func FactoryWithWorkerManager(workerManager vm.WorkerManager) sandbox.ProviderFactory {
+func FactoryWithWorkerManager(workerManager workerpool.WorkerManager) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
 		return newFromInstance(ctx, instance, workerManager)
 	}
@@ -62,12 +63,12 @@ func NewFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 	return newFromInstance(ctx, instance, nil)
 }
 
-func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, workerManager vm.WorkerManager) (sandbox.Provider, error) {
+func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, workerManager workerpool.WorkerManager) (sandbox.Provider, error) {
 	cfg, err := Decode(instance.Config)
 	if err != nil {
 		return nil, err
 	}
-	return vmprovider.NewWorkerProvider(ctx, vmprovider.WorkerProviderConfig{
+	return vmprovider.NewWorkerPoolProvider(ctx, vmprovider.WorkerPoolProviderConfig{
 		ControlPlaneURL: cfg.ControlPlaneURL,
 		DefaultImage:    cfg.Image,
 		AgentPort:       cfg.AgentPort,

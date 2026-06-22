@@ -25,22 +25,8 @@ func (p WorkerReconcilePayload) Resource() orchestration.Resource {
 	return orchestration.Resource{Type: "worker", ID: p.WorkerID}
 }
 
-type WorkerReconcileTarget interface {
-	AssertWorkerGeneration(ctx context.Context, projectID, providerID, workerID string, generation int64) error
-	ReconcileWorkerJob(ctx context.Context, projectID, providerID, workerID, jobID string, generation int64) error
-}
-
 type WorkerReconcileTerminalHandler interface {
 	OnWorkerReconcileTerminal(ctx context.Context, job *orchestration.Job, payload WorkerReconcilePayload) error
-}
-
-type WorkerReconcileExecutor struct {
-	reconciler       WorkerReconcileTarget
-	terminalHandlers []WorkerReconcileTerminalHandler
-}
-
-func NewWorkerReconcileExecutor(reconciler WorkerReconcileTarget, terminalHandlers ...WorkerReconcileTerminalHandler) *WorkerReconcileExecutor {
-	return &WorkerReconcileExecutor{reconciler: reconciler, terminalHandlers: terminalHandlers}
 }
 
 func (e *WorkerReconcileExecutor) AssertGeneration(ctx context.Context, job *orchestration.Job) error {
@@ -48,7 +34,7 @@ func (e *WorkerReconcileExecutor) AssertGeneration(ctx context.Context, job *orc
 	if err != nil {
 		return err
 	}
-	return e.reconciler.AssertWorkerGeneration(ctx, payload.ProjectID, payload.ProviderID, payload.WorkerID, payload.Generation)
+	return e.AssertWorkerGeneration(ctx, payload.ProjectID, payload.ProviderID, payload.WorkerID, payload.Generation)
 }
 
 func (e *WorkerReconcileExecutor) Execute(ctx context.Context, job *orchestration.Job) (orchestration.JobResult, error) {
@@ -56,7 +42,7 @@ func (e *WorkerReconcileExecutor) Execute(ctx context.Context, job *orchestratio
 	if err != nil {
 		return orchestration.JobResult{}, err
 	}
-	return orchestration.JobResult{}, e.reconciler.ReconcileWorkerJob(ctx, payload.ProjectID, payload.ProviderID, payload.WorkerID, job.ID, payload.Generation)
+	return orchestration.JobResult{}, e.ReconcileWorkerJob(ctx, payload.ProjectID, payload.ProviderID, payload.WorkerID, job.ID, payload.Generation)
 }
 
 func (e *WorkerReconcileExecutor) OnTerminal(ctx context.Context, job *orchestration.Job) error {

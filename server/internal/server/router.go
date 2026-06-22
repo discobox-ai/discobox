@@ -100,10 +100,9 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		ImmediateExecution: opts.DispatcherImmediateExecution,
 		DefaultConcurrency: opts.DispatcherDefaultConcurrency,
 	})
-	appServices := service.New(appStore, queueConfig, jobManager.NotifyNewJob, broker)
-	appServices.SetJobManager(jobManager, service.JobManagerOptions{
+	appServices := service.New(appStore, jobManager, service.JobManagerOptions{
 		SandboxReconcileJobConcurrency: opts.SandboxReconcileJobConcurrency,
-	})
+	}, broker)
 	if opts.SecretSealer != nil {
 		appServices.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.SecretSealer))
 	}

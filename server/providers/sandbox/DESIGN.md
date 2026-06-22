@@ -17,29 +17,57 @@ orchestration, and API shape.
   settings, and cleanup.
 - `sandbox_id` identifies the managed runtime resource.
 
-## VM Provider Abstraction
+## Provider Layers
 
-`server/providers/sandbox/vm` is the generic VM-backed provider implementation
-layer. It adapts the `server/internal/sandbox.Provider` interface to a
-smaller VM-driver interface:
+Built-in worker-backed providers are layered deliberately:
+
+```mermaid
+flowchart TD
+    pool["workerpool.WorkerPoolProvider\nimplements sandbox.Provider"]
+    worker["workerpool.WorkerProvider interface\nworker lifecycle + per-worker access"]
+    vmProvider["vm.Provider\nimplements WorkerProvider"]
+    driver["vm.Driver\nDocker, DigitalOcean, ..."]
+
+    pool --> worker
+    worker --> vmProvider
+    vmProvider --> driver
+```
+
+`server/providers/sandbox/workerpool.WorkerPoolProvider` is the registered
+`server/internal/sandbox.Provider` for worker-backed provider instances. It owns
+warm worker pool sizing, provider initialization, worker selection, capacity
+waits, and user-sandbox operations through the worker-agent API.
+
+`server/providers/sandbox/workerpool.WorkerProvider` is a narrow interface for
+worker runtime lifecycle and access. It can create/remove worker runtimes and
+return a `transport.HTTPClientLease` for a specific worker. The pool layer owns
+the worker-agent client and sandbox CRUD adapter, and depends on this interface
+instead of VM implementation details.
+
+`server/providers/sandbox/vm.Provider` implements `WorkerProvider`. It owns the
+VM/container mechanics for worker runtimes and obtains worker-agent HTTP leases
+through driver-provided routing.
+
+`server/providers/sandbox/vm.Driver` is the low-level platform adapter. It
+creates, starts, stops, deletes, and inspects VM-like instances:
 
 - create a VM from an `InstanceSpec`,
 - start/stop/delete/inspect a VM by instance ID,
 - optionally provide an HTTP client lease to reach the sandbox agent.
 
-Drivers should be thin platform integrations for KVM, HCS, Apple
-Virtualization, AWS, Azure, GCP, or similar VM backends. The generic VM provider
-owns Disco-specific boot metadata, worker bootstrap parameters, provider state
-serialization, and conversion to `sandbox.Sandbox` runtime state.
+Drivers should be thin platform integrations for Docker, DigitalOcean, KVM,
+HCS, Apple Virtualization, AWS, Azure, GCP, or similar VM/container backends.
+They should not own worker-pool scheduling or control-plane persistence.
 
 ## Worker Agent HTTP Routing
 
-VM-backed providers must be able to send provider/runtime requests to the
-worker agent running inside a worker VM. The generic VM provider obtains that
-connectivity through the optional driver method represented by
-`HTTPClientDriver.AcquireHTTPClient`. The returned `sandbox.HTTPClientLease`
-contains an `http.Client` and any lease cleanup needed for the driver's routing
-mechanism.
+VM-backed providers must be able to send provider/runtime requests to worker
+agents and, in the future, sandbox agents. Transport leasing is represented by
+`server/internal/transport.HTTPClientLease`; it is intentionally not
+sandbox-specific. The generic VM provider obtains worker-agent connectivity
+through the optional driver method represented by
+`WorkerHTTPClientDriver.AcquireWorkerHTTPClient`. The returned lease contains an
+`http.Client` and any lease cleanup needed for the driver's routing mechanism.
 
 The provider-facing logical URL space for a worker agent is:
 

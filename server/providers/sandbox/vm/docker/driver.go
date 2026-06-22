@@ -26,6 +26,7 @@ import (
 	"github.com/moby/moby/client"
 
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
+	"github.com/obot-platform/discobox/server/internal/transport"
 	"github.com/obot-platform/discobox/server/providers/sandbox/vm"
 	workeragent "github.com/obot-platform/discobox/worker-agent"
 )
@@ -416,7 +417,7 @@ func (d *Driver) InspectVM(ctx context.Context, id string) (*vm.Instance, error)
 	return d.instanceFromInspect(inspect.Container), nil
 }
 
-func (d *Driver) AcquireHTTPClient(_ context.Context, inst *vm.Instance) (*sandbox.HTTPClientLease, error) {
+func (d *Driver) AcquireHTTPClient(_ context.Context, inst *vm.Instance) (*transport.HTTPClientLease, error) {
 	baseURL := ""
 	if inst != nil {
 		baseURL = inst.AgentURL
@@ -424,7 +425,7 @@ func (d *Driver) AcquireHTTPClient(_ context.Context, inst *vm.Instance) (*sandb
 	return vm.NewDirectHTTPClientLeaseForBaseURL(baseURL), nil
 }
 
-func (d *Driver) AcquireWorkerHTTPClient(ctx context.Context, workerID string) (*sandbox.HTTPClientLease, error) {
+func (d *Driver) AcquireWorkerHTTPClient(ctx context.Context, workerID string) (*transport.HTTPClientLease, error) {
 	if strings.TrimSpace(workerID) == "" {
 		return nil, fmt.Errorf("worker ID is required")
 	}

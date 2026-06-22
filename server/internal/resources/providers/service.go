@@ -34,15 +34,18 @@ type SandboxProviderCatalogItem = sandboxesvc.SandboxProviderCatalogItem
 
 type JobManager interface {
 	EnqueueWorkerCurrent(context.Context, *model.Worker) (*orchestration.Job, error)
-	EnqueueProviderCurrent(context.Context, string, string) (*orchestration.Job, error)
 }
 
-func NewService(store *store.Store, sandboxes SandboxCatalogService, workerManager *workers.Manager) *Service {
-	return &Service{store: store, sandboxes: sandboxes, workers: workerManager}
+type JobRegistrar interface {
+	Register(orchestration.Type, orchestration.Executor, ...orchestration.ExecutorOption) error
 }
 
-func (s *Service) SetJobManager(manager JobManager) {
-	s.jobs = manager
+func NewService(store *store.Store, sandboxes SandboxCatalogService, workerManager *workers.Manager, jobs JobManager) *Service {
+	return &Service{store: store, sandboxes: sandboxes, workers: workerManager, jobs: jobs}
+}
+
+func (s *Service) RegisterJobs(registrar JobRegistrar, opts ...orchestration.ExecutorOption) error {
+	return registrar.Register(WorkerProviderReconcileType, s.newWorkerProviderReconcileExecutor(), opts...)
 }
 
 func mapAPIError(err error, notFoundMessage string) error {
@@ -165,7 +168,7 @@ func (s *Service) CreateSandboxProviderInstance(ctx context.Context, projectID s
 		project.DefaultSandboxProviderID = provider.ID
 		_ = s.store.UpsertProject(ctx, project)
 	}
-	if err := s.ensureSandboxProviderInstance(ctx, project, provider); err != nil {
+	if _, err := s.sandboxes.SandboxProviderManager().ResolveInstance(ctx, provider); err != nil {
 		return nil, err
 	}
 	return s.store.GetSandboxProviderInstance(ctx, projectID, provider.ID)
@@ -347,13 +350,7 @@ func (s *Service) EnsureExistingSandboxProviderInstances(ctx context.Context) er
 			if provider.Disabled {
 				continue
 			}
-			if s.jobs == nil {
-				if err := s.ensureSandboxProviderInstance(ctx, project, provider); err != nil {
-					return err
-				}
-				continue
-			}
-			if _, err := s.jobs.EnqueueProviderCurrent(ctx, project.ID, provider.ID); err != nil {
+			if _, err := s.sandboxes.SandboxProviderManager().ResolveInstance(ctx, provider); err != nil {
 				return err
 			}
 		}
@@ -362,9 +359,6 @@ func (s *Service) EnsureExistingSandboxProviderInstances(ctx context.Context) er
 }
 
 func (s *Service) EnqueueProviderWorkers(ctx context.Context, projectID, providerID string) error {
-	if s.jobs == nil {
-		return nil
-	}
 	workers, err := s.store.ListWorkers(ctx, projectID, providerID)
 	if err != nil {
 		return err
@@ -377,33 +371,6 @@ func (s *Service) EnqueueProviderWorkers(ctx context.Context, projectID, provide
 	return nil
 }
 
-func (s *Service) ensureSandboxProviderInstance(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance) error {
-	if provider == nil || provider.Disabled {
-		return nil
-	}
-	runtimeProvider, err := s.sandboxes.SandboxProviderManager().ResolveInstance(ctx, provider)
-	if err != nil {
-		return err
-	}
-	ensurer, ok := runtimeProvider.(sandbox.ProviderInstanceEnsurer)
-	if !ok {
-		return nil
-	}
-	providerManager := any(s.store)
-	if s.workers != nil {
-		providerManager = s.workers
-	}
-	return ensurer.EnsureProviderInstance(ctx, providerManager, project, provider)
-}
-
-func (s *Service) ReconcileProviderJob(ctx context.Context, projectID, providerID, _ string) error {
-	project, err := s.store.GetProject(ctx, projectID)
-	if err != nil {
-		return err
-	}
-	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, providerID)
-	if err != nil {
-		return err
-	}
-	return s.ensureSandboxProviderInstance(ctx, project, provider)
+func (s *Service) newWorkerProviderReconcileExecutor() *WorkerProviderReconcileExecutor {
+	return NewWorkerProviderReconcileExecutor(s.store, s.sandboxes.SandboxProviderManager(), s.workers)
 }

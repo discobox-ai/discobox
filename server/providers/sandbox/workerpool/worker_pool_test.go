@@ -1,4 +1,4 @@
-package vm
+package workerpool
 
 import (
 	"context"
@@ -13,6 +13,8 @@ import (
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
+	"github.com/obot-platform/discobox/server/internal/transport"
+	"github.com/obot-platform/discobox/server/providers/sandbox/vm"
 	"github.com/obot-platform/discobox/worker-agent/sandboxruntime"
 	"github.com/obot-platform/discobox/worker-agent/server"
 )
@@ -26,7 +28,7 @@ func TestDesiredAdditionalWorkersLaunchesReplacementForOnlyDegradedWorker(t *tes
 	}}
 	cfg := WorkerPoolConfig{Min: 1, Max: 2, MinHealthy: 1}
 
-	if got := DesiredAdditionalWorkers(workers, cfg); got != 1 {
+	if got := desiredAdditionalWorkers(workers, cfg); got != 1 {
 		t.Fatalf("additional workers = %d, want 1", got)
 	}
 }
@@ -39,7 +41,7 @@ func TestDesiredAdditionalWorkersDoesNotLaunchWhenHealthyMinimumSatisfied(t *tes
 	}}
 	cfg := WorkerPoolConfig{Min: 1, Max: 2, MinHealthy: 1}
 
-	if got := DesiredAdditionalWorkers(workers, cfg); got != 0 {
+	if got := desiredAdditionalWorkers(workers, cfg); got != 0 {
 		t.Fatalf("additional workers = %d, want 0", got)
 	}
 }
@@ -53,7 +55,7 @@ func TestDesiredAdditionalWorkersHonorsMax(t *testing.T) {
 	}}
 	cfg := WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}
 
-	if got := DesiredAdditionalWorkers(workers, cfg); got != 0 {
+	if got := desiredAdditionalWorkers(workers, cfg); got != 0 {
 		t.Fatalf("additional workers = %d, want 0", got)
 	}
 }
@@ -68,7 +70,7 @@ func TestDesiredAdditionalWorkersIgnoresFailedWorkers(t *testing.T) {
 	}}
 	cfg := WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}
 
-	if got := DesiredAdditionalWorkers(workers, cfg); got != 1 {
+	if got := desiredAdditionalWorkers(workers, cfg); got != 1 {
 		t.Fatalf("additional workers = %d, want 1", got)
 	}
 }
@@ -96,7 +98,7 @@ func TestEnsureWorkerPoolRepairsWorkersWithFailedJobs(t *testing.T) {
 	project := &model.Project{ID: "project-1"}
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
 
-	if err := EnsureWorkerPool(context.Background(), store, project, provider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}); err != nil {
+	if err := ensureWorkerPool(context.Background(), store, project, provider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}); err != nil {
 		t.Fatalf("ensure worker pool: %v", err)
 	}
 
@@ -136,7 +138,7 @@ func TestEnsureWorkerPoolSkipsSupersededFailedJobRepair(t *testing.T) {
 	project := &model.Project{ID: "project-1"}
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
 
-	if err := EnsureWorkerPool(context.Background(), store, project, provider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}); err != nil {
+	if err := ensureWorkerPool(context.Background(), store, project, provider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}); err != nil {
 		t.Fatalf("ensure worker pool: %v", err)
 	}
 
@@ -173,7 +175,7 @@ func TestEnsureWorkerPoolRepairsExpiredRegisteringWorkers(t *testing.T) {
 	project := &model.Project{ID: "project-1"}
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
 
-	if err := EnsureWorkerPool(context.Background(), store, project, provider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}); err != nil {
+	if err := ensureWorkerPool(context.Background(), store, project, provider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}); err != nil {
 		t.Fatalf("ensure worker pool: %v", err)
 	}
 
@@ -206,7 +208,8 @@ func TestWorkerProviderCreateClaimsWorkerAndReturnsWorkerID(t *testing.T) {
 			RegisteredAt:       &registeredAt,
 		},
 	}
-	provider := NewWorkerProvider(nil, WorkerPoolConfig{}, nil, workerManager)
+	workerProvider := newTestWorkerProvider(t, "project-1", "worker-1")
+	provider := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{}, workerManager, false)
 
 	runtimeSandbox, state, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{
 		ProviderInstanceID: "provider-1",
@@ -247,7 +250,7 @@ func TestWorkerProviderCreateCallsWorkerAgentRuntime(t *testing.T) {
 	defer workerAgent.Close()
 
 	driver := &workerHTTPOnlyDriver{baseURL: workerAgent.URL, client: workerAgent.Client(), authToken: "worker-token"}
-	baseProvider, err := New(Config{Driver: driver})
+	baseProvider, err := vm.New(vm.Config{Driver: driver})
 	if err != nil {
 		t.Fatalf("new provider: %v", err)
 	}
@@ -257,7 +260,7 @@ func TestWorkerProviderCreateCallsWorkerAgentRuntime(t *testing.T) {
 			"worker-1": {ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: false, Degraded: true, ResourceLifecycle: model.ResourceLifecycle{Phase: model.WorkerPhaseActive, LastOperationStatus: model.OperationStatusSuccess}},
 		},
 	}
-	provider := NewWorkerProvider(baseProvider, WorkerPoolConfig{}, nil, workerManager)
+	provider := NewWorkerPoolProvider(baseProvider, WorkerPoolConfig{}, workerManager, false)
 
 	runtimeSandbox, state, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{
 		ProviderInstanceID: "provider-1",
@@ -295,7 +298,8 @@ func TestWorkerProviderCreateWithExistingStateReusesWorker(t *testing.T) {
 			"worker-1": {ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: false, Degraded: true, ResourceLifecycle: model.ResourceLifecycle{Phase: model.WorkerPhaseActive, LastOperationStatus: model.OperationStatusSuccess}},
 		},
 	}
-	provider := NewWorkerProvider(nil, WorkerPoolConfig{}, nil, workerManager)
+	workerProvider := newTestWorkerProvider(t, "project-1", "worker-1")
+	provider := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{}, workerManager, false)
 
 	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Image: "warm-worker", Metadata: map[string]string{"worker_id": "worker-1"}})
 	workerManager.worker = &model.Worker{ID: "worker-2", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true}
@@ -316,7 +320,7 @@ func TestWorkerProviderCreateWithExistingStateReusesWorker(t *testing.T) {
 	}
 }
 
-func TestWorkerProviderCreateWithExistingStateSkipsSchedulingWithoutBaseProvider(t *testing.T) {
+func TestWorkerProviderCreateWithExistingStateSkipsScheduling(t *testing.T) {
 	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Image: "warm-worker", Metadata: map[string]string{"worker_id": "worker-1"}})
 	workerManager := &recordingWorkerManager{
 		worker: &model.Worker{ID: "worker-2", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true},
@@ -324,7 +328,8 @@ func TestWorkerProviderCreateWithExistingStateSkipsSchedulingWithoutBaseProvider
 			"worker-1": {ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true, ResourceLifecycle: model.ResourceLifecycle{Phase: model.WorkerPhaseActive, LastOperationStatus: model.OperationStatusSuccess}},
 		},
 	}
-	provider := NewWorkerProvider(nil, WorkerPoolConfig{}, nil, workerManager)
+	workerProvider := newTestWorkerProvider(t, "project-1", "worker-1")
+	provider := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{}, workerManager, false)
 
 	runtimeSandbox, nextState, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, sandbox.CreateOptions{ProviderInstanceID: "provider-1", WorkerID: "worker-1"})
 	if err != nil {
@@ -336,8 +341,8 @@ func TestWorkerProviderCreateWithExistingStateSkipsSchedulingWithoutBaseProvider
 	if runtimeSandbox == nil || runtimeSandbox.Metadata["worker_id"] != "worker-1" {
 		t.Fatalf("runtime sandbox = %#v, want worker-1 metadata", runtimeSandbox)
 	}
-	if string(nextState) != string(state) {
-		t.Fatalf("state changed: %s != %s", nextState, state)
+	if gotWorkerID, err := workerIDFromRuntimeState(nextState); err != nil || gotWorkerID != "worker-1" {
+		t.Fatalf("next state worker ID = %q, %v; want worker-1", gotWorkerID, err)
 	}
 }
 
@@ -349,7 +354,8 @@ func TestWorkerProviderCreateWithExistingStateRejectsWrongProviderWorker(t *test
 			"worker-2": {ID: "worker-2", ProjectID: "project-1", ProviderInstanceID: "provider-2", Ready: true, Schedulable: true, ResourceLifecycle: model.ResourceLifecycle{Phase: model.WorkerPhaseActive, LastOperationStatus: model.OperationStatusSuccess}},
 		},
 	}
-	provider := NewWorkerProvider(nil, WorkerPoolConfig{}, nil, workerManager)
+	workerProvider := newTestWorkerProvider(t, "project-1", "worker-2")
+	provider := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{}, workerManager, false)
 
 	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, sandbox.CreateOptions{ProviderInstanceID: "provider-1", WorkerID: "worker-2"})
 	if !errors.Is(err, sandbox.ErrNoSandboxCapacity) {
@@ -368,7 +374,8 @@ func TestWorkerProviderCreateWithUnassignedStateSchedulesWorker(t *testing.T) {
 			"worker-2": {ID: "worker-2", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true, ResourceLifecycle: model.ResourceLifecycle{Phase: model.WorkerPhaseActive, LastOperationStatus: model.OperationStatusSuccess}},
 		},
 	}
-	provider := NewWorkerProvider(nil, WorkerPoolConfig{}, nil, workerManager)
+	workerProvider := newTestWorkerProvider(t, "project-1", "worker-1")
+	provider := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{}, workerManager, false)
 
 	runtimeSandbox, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, sandbox.CreateOptions{ProviderInstanceID: "provider-1"})
 	if err != nil {
@@ -382,24 +389,18 @@ func TestWorkerProviderCreateWithUnassignedStateSchedulesWorker(t *testing.T) {
 	}
 }
 
-func TestLaunchWorkerTreatsExistingRuntimeStateAsSuccess(t *testing.T) {
+func TestVMProviderCreateWorkerTreatsExistingRuntimeStateAsSuccess(t *testing.T) {
 	driver := &existingInstanceDriver{instanceID: "instance-1"}
-	factory := func(_ context.Context, cfg Config) (sandbox.Provider, error) {
-		return New(Config{
-			Driver:          driver,
-			ControlPlaneURL: cfg.ControlPlaneURL,
-			DefaultImage:    cfg.DefaultImage,
-			AgentPort:       cfg.AgentPort,
-			Bootstrap:       cfg.Bootstrap,
-			Metadata:        cfg.Metadata,
-		})
+	provider, err := vm.New(vm.Config{Driver: driver})
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
 	}
 	worker := &model.Worker{
 		ID:           "worker-1",
 		RuntimeState: []byte(`{"instanceId":"instance-1"}`),
 	}
 
-	err := LaunchWorker(context.Background(), &model.Project{ID: "project-1"}, &model.SandboxProviderInstance{ID: "provider-1"}, worker, "bootstrap-token", LaunchWorkerConfig{Factory: factory})
+	err = provider.CreateWorker(context.Background(), &model.Project{ID: "project-1"}, &model.SandboxProviderInstance{ID: "provider-1"}, worker, "bootstrap-token")
 	if err != nil {
 		t.Fatalf("launch existing worker: %v", err)
 	}
@@ -408,28 +409,6 @@ func TestLaunchWorkerTreatsExistingRuntimeStateAsSuccess(t *testing.T) {
 	}
 	if driver.inspectCalls != 2 {
 		t.Fatalf("InspectVM calls = %d, want 2", driver.inspectCalls)
-	}
-}
-
-func TestShouldRecreateWorkerRuntime(t *testing.T) {
-	for _, tt := range []struct {
-		name         string
-		runtime      *sandbox.Sandbox
-		desiredImage string
-		want         bool
-	}{
-		{name: "missing runtime", want: true},
-		{name: "stopped runtime", runtime: &sandbox.Sandbox{Status: sandbox.StatusStopped, Image: "image-1"}, desiredImage: "image-1", want: true},
-		{name: "failed runtime", runtime: &sandbox.Sandbox{Status: sandbox.StatusFailed, Image: "image-1"}, desiredImage: "image-1", want: true},
-		{name: "changed image", runtime: &sandbox.Sandbox{Status: sandbox.StatusRunning, Image: "image-1"}, desiredImage: "image-2", want: true},
-		{name: "running desired image", runtime: &sandbox.Sandbox{Status: sandbox.StatusRunning, Image: "image-1"}, desiredImage: "image-1", want: false},
-		{name: "running without desired image", runtime: &sandbox.Sandbox{Status: sandbox.StatusRunning, Image: "image-1"}, want: false},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := shouldRecreateWorkerRuntime(tt.runtime, tt.desiredImage); got != tt.want {
-				t.Fatalf("shouldRecreateWorkerRuntime() = %t, want %t", got, tt.want)
-			}
-		})
 	}
 }
 
@@ -467,7 +446,8 @@ func TestWorkerProviderCreateEnsuresCapacityAndWaitsForWorker(t *testing.T) {
 		provider: &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "digitalocean", Name: "do"},
 		worker:   &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true},
 	}
-	provider := NewWorkerProvider(nil, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}, nil, workerManager)
+	workerProvider := newTestWorkerProvider(t, "project-1", "worker-1")
+	provider := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}, workerManager, false)
 
 	runtimeSandbox, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{ProviderInstanceID: "provider-1"})
 	if err != nil {
@@ -495,7 +475,8 @@ func TestWorkerProviderCreateReturnsNoCapacityAfterWait(t *testing.T) {
 		project:  &model.Project{ID: "project-1"},
 		provider: &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "digitalocean", Name: "do"},
 	}
-	provider := NewWorkerProvider(nil, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}, nil, workerManager)
+	workerProvider := newTestWorkerProvider(t, "project-1", "worker-1")
+	provider := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}, workerManager, false)
 
 	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{ProviderInstanceID: "provider-1"})
 	if !errors.Is(err, sandbox.ErrNoSandboxCapacity) {
@@ -528,11 +509,12 @@ func TestWorkerProviderGetUsesWorkerAPIState(t *testing.T) {
 	defer server.Close()
 
 	driver := &workerHTTPOnlyDriver{baseURL: server.URL, client: server.Client(), authToken: "worker-token"}
-	baseProvider, err := New(Config{Driver: driver})
+	baseProvider, err := vm.New(vm.Config{Driver: driver})
 	if err != nil {
 		t.Fatalf("new provider: %v", err)
 	}
-	provider := NewWorkerProvider(baseProvider, WorkerPoolConfig{}, nil, nil)
+	workerManager := &recordingWorkerManager{worker: &model.Worker{ID: "worker-1"}}
+	provider := NewWorkerPoolProvider(baseProvider, WorkerPoolConfig{}, workerManager, false)
 	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"worker_id": "worker-1"}})
 
 	runtimeSandbox, err := provider.Get(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state)
@@ -552,11 +534,12 @@ func TestWorkerProviderGetUsesWorkerAPIState(t *testing.T) {
 
 func TestWorkerProviderAcquireHTTPClientUsesWorkerIDFromState(t *testing.T) {
 	driver := &workerHTTPOnlyDriver{client: http.DefaultClient, baseURL: "https://worker.example", authToken: "worker-token"}
-	baseProvider, err := New(Config{Driver: driver})
+	baseProvider, err := vm.New(vm.Config{Driver: driver})
 	if err != nil {
 		t.Fatalf("new provider: %v", err)
 	}
-	provider := NewWorkerProvider(baseProvider, WorkerPoolConfig{}, nil, nil)
+	workerManager := &recordingWorkerManager{worker: &model.Worker{ID: "worker-1"}}
+	provider := NewWorkerPoolProvider(baseProvider, WorkerPoolConfig{}, workerManager, false)
 	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"worker_id": "worker-1"}})
 
 	lease, err := provider.AcquireHTTPClient(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state)
@@ -598,16 +581,16 @@ type existingInstanceDriver struct {
 	inspectCalls int
 }
 
-func (d *existingInstanceDriver) CreateVM(context.Context, InstanceSpec) (*Instance, error) {
+func (d *existingInstanceDriver) CreateVM(context.Context, vm.InstanceSpec) (*vm.Instance, error) {
 	d.createCalls++
 	return nil, errors.New("CreateVM should not be called for existing state")
 }
 
-func (d *existingInstanceDriver) StartVM(context.Context, string) (*Instance, error) {
+func (d *existingInstanceDriver) StartVM(context.Context, string) (*vm.Instance, error) {
 	return nil, errors.New("StartVM should not be called")
 }
 
-func (d *existingInstanceDriver) StopVM(context.Context, string, time.Duration) (*Instance, error) {
+func (d *existingInstanceDriver) StopVM(context.Context, string, time.Duration) (*vm.Instance, error) {
 	return nil, errors.New("StopVM should not be called")
 }
 
@@ -615,23 +598,23 @@ func (d *existingInstanceDriver) DeleteVM(context.Context, string, bool) error {
 	return errors.New("DeleteVM should not be called")
 }
 
-func (d *existingInstanceDriver) InspectVM(_ context.Context, id string) (*Instance, error) {
+func (d *existingInstanceDriver) InspectVM(_ context.Context, id string) (*vm.Instance, error) {
 	d.inspectCalls++
 	if id != d.instanceID {
 		return nil, sandbox.ErrNotFound
 	}
-	return &Instance{ID: id, Status: sandbox.StatusRunning}, nil
+	return &vm.Instance{ID: id, Status: sandbox.StatusRunning}, nil
 }
 
-func (d *workerHTTPOnlyDriver) CreateVM(context.Context, InstanceSpec) (*Instance, error) {
+func (d *workerHTTPOnlyDriver) CreateVM(context.Context, vm.InstanceSpec) (*vm.Instance, error) {
 	return nil, errors.New("CreateVM should not be called")
 }
 
-func (d *workerHTTPOnlyDriver) StartVM(context.Context, string) (*Instance, error) {
+func (d *workerHTTPOnlyDriver) StartVM(context.Context, string) (*vm.Instance, error) {
 	return nil, errors.New("StartVM should not be called")
 }
 
-func (d *workerHTTPOnlyDriver) StopVM(context.Context, string, time.Duration) (*Instance, error) {
+func (d *workerHTTPOnlyDriver) StopVM(context.Context, string, time.Duration) (*vm.Instance, error) {
 	return nil, errors.New("StopVM should not be called")
 }
 
@@ -639,14 +622,49 @@ func (d *workerHTTPOnlyDriver) DeleteVM(context.Context, string, bool) error {
 	return errors.New("DeleteVM should not be called")
 }
 
-func (d *workerHTTPOnlyDriver) InspectVM(context.Context, string) (*Instance, error) {
+func (d *workerHTTPOnlyDriver) InspectVM(context.Context, string) (*vm.Instance, error) {
 	d.inspectCalls++
 	return nil, errors.New("InspectVM should not be called")
 }
 
-func (d *workerHTTPOnlyDriver) AcquireWorkerHTTPClient(_ context.Context, workerID string) (*sandbox.HTTPClientLease, error) {
+func (d *workerHTTPOnlyDriver) AcquireWorkerHTTPClient(_ context.Context, workerID string) (*transport.HTTPClientLease, error) {
 	d.workerID = workerID
-	return sandbox.NewHTTPClientLeaseWithBaseURLAndAuth(d.client, d.baseURL, d.authToken, nil), nil
+	return transport.NewHTTPClientLeaseWithBaseURLAndAuth(d.client, d.baseURL, d.authToken, nil), nil
+}
+
+func newTestWorkerProvider(t *testing.T, projectID, workerID string) *testWorkerProvider {
+	t.Helper()
+	runtime := sandboxruntime.NewMemorySandboxRuntime()
+	router, _ := server.NewRouter(server.Config{
+		Identity:   server.Identity{ProjectID: projectID, WorkerID: workerID},
+		Runtime:    runtime,
+		AuthTokens: []string{"worker-token"},
+	})
+	workerAgent := httptest.NewServer(router)
+	t.Cleanup(workerAgent.Close)
+	return &testWorkerProvider{
+		baseURL: workerAgent.URL,
+		client:  workerAgent.Client(),
+		token:   "worker-token",
+	}
+}
+
+type testWorkerProvider struct {
+	baseURL string
+	client  *http.Client
+	token   string
+}
+
+func (p *testWorkerProvider) CreateWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker, string) error {
+	return nil
+}
+
+func (p *testWorkerProvider) RemoveWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
+	return nil
+}
+
+func (p *testWorkerProvider) AcquireWorkerHTTPClient(context.Context, *model.Worker) (*transport.HTTPClientLease, error) {
+	return transport.NewHTTPClientLeaseWithBaseURLAndAuth(p.client, p.baseURL, p.token, nil), nil
 }
 
 type recordingWorkerManager struct {
@@ -677,6 +695,10 @@ func (s *recordingWorkerManager) CreateWorker(_ context.Context, worker *model.W
 	return worker, nil
 }
 
+func (s *recordingWorkerManager) CreateWorkerBootstrapToken(context.Context, *model.WorkerBootstrapToken) error {
+	return nil
+}
+
 func (s *recordingWorkerManager) FindSchedulableWorker(_ context.Context, sandbox *model.Sandbox) (*model.Worker, error) {
 	s.findCalls++
 	s.sandbox = sandbox
@@ -689,6 +711,10 @@ func (s *recordingWorkerManager) FindSchedulableWorker(_ context.Context, sandbo
 	return s.worker, nil
 }
 
+func (s *recordingWorkerManager) ScheduleWorkerProviderReconciliation(context.Context, string, string) error {
+	return nil
+}
+
 type capacityWaitWorkerManager struct {
 	project        *model.Project
 	provider       *model.SandboxProviderInstance
@@ -698,6 +724,13 @@ type capacityWaitWorkerManager struct {
 
 func (s *capacityWaitWorkerManager) ListWorkers(context.Context, string, string) ([]model.Worker, error) {
 	return nil, nil
+}
+
+func (s *capacityWaitWorkerManager) GetWorker(context.Context, string) (*model.Worker, error) {
+	if s.worker == nil {
+		return nil, apperrors.ErrNotFound
+	}
+	return s.worker, nil
 }
 
 func (s *capacityWaitWorkerManager) GetProject(context.Context, string) (*model.Project, error) {
@@ -713,11 +746,19 @@ func (s *capacityWaitWorkerManager) CreateWorker(_ context.Context, worker *mode
 	return worker, nil
 }
 
+func (s *capacityWaitWorkerManager) CreateWorkerBootstrapToken(context.Context, *model.WorkerBootstrapToken) error {
+	return nil
+}
+
 func (s *capacityWaitWorkerManager) FindSchedulableWorker(context.Context, *model.Sandbox) (*model.Worker, error) {
 	if s.createdWorkers == 0 || s.worker == nil {
 		return nil, apperrors.ErrNotFound
 	}
 	return s.worker, nil
+}
+
+func (s *capacityWaitWorkerManager) ScheduleWorkerProviderReconciliation(context.Context, string, string) error {
+	return nil
 }
 
 type repairingWorkerManager struct {
@@ -732,13 +773,30 @@ func (s *repairingWorkerManager) ListWorkers(context.Context, string, string) ([
 	return s.workers, nil
 }
 
+func (s *repairingWorkerManager) GetWorker(_ context.Context, workerID string) (*model.Worker, error) {
+	for i := range s.workers {
+		if s.workers[i].ID == workerID {
+			return &s.workers[i], nil
+		}
+	}
+	return nil, apperrors.ErrNotFound
+}
+
 func (s *repairingWorkerManager) CreateWorker(_ context.Context, worker *model.Worker) (*model.Worker, error) {
 	s.createdWorkers++
 	return worker, nil
 }
 
+func (s *repairingWorkerManager) CreateWorkerBootstrapToken(context.Context, *model.WorkerBootstrapToken) error {
+	return nil
+}
+
 func (s *repairingWorkerManager) FindSchedulableWorker(context.Context, *model.Sandbox) (*model.Worker, error) {
 	return nil, apperrors.ErrNotFound
+}
+
+func (s *repairingWorkerManager) ScheduleWorkerProviderReconciliation(context.Context, string, string) error {
+	return nil
 }
 
 func (s *repairingWorkerManager) GetJob(_ context.Context, id string) (*orchestration.Job, error) {

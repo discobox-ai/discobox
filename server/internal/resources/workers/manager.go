@@ -6,6 +6,7 @@ import (
 
 	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/model"
+	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
@@ -18,14 +19,29 @@ type WorkerJobManager interface {
 	CreateWorker(context.Context, *model.Worker) (*model.Worker, error)
 	DeleteWorkerForFailedJob(context.Context, string, int64, string, string) (bool, error)
 	DeleteWorkerForExpiredRegistration(context.Context, string, int64, time.Time, string) (bool, error)
+	EnqueueWorkerProviderCurrent(context.Context, string, string) (*orchestration.Job, error)
 }
 
-func NewManager(appStore *store.Store) *Manager {
-	return &Manager{store: appStore}
+type JobRegistrar interface {
+	Register(orchestration.Type, orchestration.Executor, ...orchestration.ExecutorOption) error
+	OnWorkerReconcileTerminal(context.Context, *orchestration.Job, WorkerReconcilePayload) error
 }
 
-func (s *Manager) SetJobManager(manager WorkerJobManager) {
-	s.jobs = manager
+func NewManager(appStore *store.Store, jobs WorkerJobManager) *Manager {
+	return &Manager{store: appStore, jobs: jobs}
+}
+
+func (s *Manager) RegisterJobs(registrar JobRegistrar, providerManager *sandbox.ProviderManager, opts ...orchestration.ExecutorOption) error {
+	return registrar.Register(
+		WorkerReconcileType,
+		NewWorkerReconcileExecutor(
+			s.store,
+			WithWorkerProviderManager(providerManager),
+			WithWorkerManager(s),
+			WithWorkerReconcileTerminalHandler(registrar),
+		),
+		opts...,
+	)
 }
 
 func (s *Manager) ListWorkers(ctx context.Context, projectID, providerID string) ([]model.Worker, error) {
@@ -66,4 +82,9 @@ func (s *Manager) DeleteWorkerForFailedJob(ctx context.Context, workerID string,
 
 func (s *Manager) DeleteWorkerForExpiredRegistration(ctx context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error) {
 	return s.jobs.DeleteWorkerForExpiredRegistration(ctx, workerID, generation, cutoff, message)
+}
+
+func (s *Manager) ScheduleWorkerProviderReconciliation(ctx context.Context, projectID, providerID string) error {
+	_, err := s.jobs.EnqueueWorkerProviderCurrent(ctx, projectID, providerID)
+	return err
 }

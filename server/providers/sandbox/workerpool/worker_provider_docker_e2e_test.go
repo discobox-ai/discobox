@@ -1,4 +1,4 @@
-package vm
+package workerpool
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
+	"github.com/obot-platform/discobox/server/providers/sandbox/vm"
 	"github.com/obot-platform/discobox/worker-agent/sandboxruntime"
 	"github.com/obot-platform/discobox/worker-agent/server"
 )
@@ -60,12 +61,12 @@ func TestWorkerProviderCreateCreatesDockerContainerE2E(t *testing.T) {
 	defer workerAgent.Close()
 
 	driver := &workerHTTPOnlyDriver{baseURL: workerAgent.URL, client: workerAgent.Client(), authToken: "worker-token"}
-	baseProvider, err := New(Config{Driver: driver})
+	baseProvider, err := vm.New(vm.Config{Driver: driver})
 	if err != nil {
 		t.Fatalf("new provider: %v", err)
 	}
 	workerManager := &recordingWorkerManager{worker: &model.Worker{ID: workerID, ProjectID: projectID, ProviderInstanceID: providerID, Ready: true, Schedulable: true}}
-	provider := NewWorkerProvider(baseProvider, WorkerPoolConfig{}, nil, workerManager)
+	provider := NewWorkerPoolProvider(baseProvider, WorkerPoolConfig{}, workerManager, false)
 
 	runtimeSandbox, state, err := provider.Create(ctx, sandbox.SandboxRef{ProjectID: projectID, SandboxID: sandboxID}, nil, sandbox.CreateOptions{
 		ProviderInstanceID: providerID,

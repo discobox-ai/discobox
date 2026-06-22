@@ -10,7 +10,6 @@ import (
 	"time"
 
 	serverapi "github.com/obot-platform/discobox/api/gen"
-	"github.com/obot-platform/discobox/orchestration"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/model"
@@ -18,11 +17,12 @@ import (
 	"github.com/obot-platform/discobox/server/internal/service"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/obot-platform/discobox/server/internal/transport"
 	providerdocker "github.com/obot-platform/discobox/server/providers/sandbox/provider/docker"
 	dockerdriver "github.com/obot-platform/discobox/server/providers/sandbox/vm/docker"
 )
 
-func TestSandboxReconcilerDelegatesToProvider(t *testing.T) {
+func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newSandboxTestService(t, nil)
 	provider := &recordingSandboxProvider{}
@@ -30,7 +30,7 @@ func TestSandboxReconcilerDelegatesToProvider(t *testing.T) {
 	if got := svc.DefaultSandboxProviderName(); got != "recording" {
 		t.Fatalf("default provider = %q, want recording", got)
 	}
-	reconciler := svc.NewSandboxReconciler()
+	executor := svc.NewSandboxReconcileExecutor()
 
 	sourceURL := mustParseURL(t, "https://example.com/repo.git")
 	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
@@ -43,7 +43,7 @@ func TestSandboxReconcilerDelegatesToProvider(t *testing.T) {
 	}
 	sb.SecretState = []byte("initial")
 	sb.RuntimeState = []byte(`{"existing":true}`)
-	if err := reconciler.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-start", sb.Generation); err != nil {
+	if err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-start", sb.Generation); err != nil {
 		t.Fatalf("reconcile start: %v", err)
 	}
 	if provider.createCalls != 1 || provider.startCalls != 1 {
@@ -73,7 +73,7 @@ func TestSandboxReconcilerDelegatesToProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stop sandbox: %v", err)
 	}
-	if err := reconciler.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-stop", sb.Generation); err != nil {
+	if err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-stop", sb.Generation); err != nil {
 		t.Fatalf("reconcile stop: %v", err)
 	}
 	if provider.stopCalls != 1 {
@@ -94,7 +94,7 @@ func TestSandboxReconcilerDelegatesToProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get sandbox after delete intent: %v", err)
 	}
-	if err := reconciler.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-delete", sb.Generation); err != nil {
+	if err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-delete", sb.Generation); err != nil {
 		t.Fatalf("reconcile delete: %v", err)
 	}
 	if provider.removeCalls != 1 {
@@ -112,12 +112,12 @@ func TestSandboxReconcilerDelegatesToProvider(t *testing.T) {
 	}
 }
 
-func TestSandboxReconcilerInjectsTrustKey(t *testing.T) {
+func TestSandboxReconcileExecutorInjectsTrustKey(t *testing.T) {
 	ctx := context.Background()
 	appStore := newProviderCatalogTestStore(t)
 	provider := &recordingSandboxProvider{}
 	auth := &recordingSandboxAuth{trustKey: "public-key"}
-	reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider), sandboxes.WithSandboxAuthenticator(auth))
+	executor := sandboxes.NewSandboxReconcileExecutor(appStore, sandboxes.WithSandboxProvider(provider), sandboxes.WithSandboxAuthenticator(auth))
 	sb := &model.Sandbox{
 		ID:                "sandbox-1",
 		ProjectID:         service.DefaultProjectID,
@@ -129,7 +129,7 @@ func TestSandboxReconcilerInjectsTrustKey(t *testing.T) {
 	if err := appStore.CreateSandbox(ctx, sb); err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	if err := reconciler.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-1", sb.Generation); err != nil {
+	if err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-1", sb.Generation); err != nil {
 		t.Fatalf("reconcile start: %v", err)
 	}
 	if auth.userID != service.DefaultUserID {
@@ -166,14 +166,14 @@ func newProviderCatalogTestStore(t *testing.T) *store.Store {
 	return appStore
 }
 
-func TestSandboxReconcilerNoProviderKeepsStubBehavior(t *testing.T) {
+func TestSandboxReconcileExecutorNoProviderKeepsStubBehavior(t *testing.T) {
 	ctx := context.Background()
-	svc, reconciler := newSandboxTestService(t, nil)
+	svc, executor := newSandboxTestService(t, nil)
 	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Name: "sandbox-1"})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	if err := reconciler.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-start", sb.Generation); err != nil {
+	if err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-start", sb.Generation); err != nil {
 		t.Fatalf("reconcile start: %v", err)
 	}
 	sb, err = svc.GetSandbox(ctx, service.DefaultProjectID, sb.ID)
@@ -237,7 +237,7 @@ func TestCreateSandboxProviderInstanceAllowsMissingName(t *testing.T) {
 func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
 	ctx := context.Background()
 	appStore := newProviderCatalogTestStore(t)
-	svc := service.New(appStore, orchestration.QueueConfig{DefaultMaxAttempts: 3}, nil)
+	svc := service.New(appStore, nil, service.JobManagerOptions{})
 
 	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
@@ -298,7 +298,7 @@ func TestInitializeDefaultsRepairsEmptyBuiltInDockerProviderConfig(t *testing.T)
 
 	ctx := context.Background()
 	appStore := newProviderCatalogTestStore(t)
-	svc := service.New(appStore, orchestration.QueueConfig{DefaultMaxAttempts: 3}, nil)
+	svc := service.New(appStore, nil, service.JobManagerOptions{})
 
 	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
@@ -330,7 +330,7 @@ func TestInitializeDefaultsRepairsBuiltInDockerProviderConfigImageFromEnv(t *tes
 
 	ctx := context.Background()
 	appStore := newProviderCatalogTestStore(t)
-	svc := service.New(appStore, orchestration.QueueConfig{DefaultMaxAttempts: 3}, nil)
+	svc := service.New(appStore, nil, service.JobManagerOptions{})
 
 	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
@@ -433,6 +433,10 @@ type recordingSandboxProvider struct {
 	createOptions sandboxes.CreateOptions
 }
 
+func (p *recordingSandboxProvider) Initialize(context.Context, *model.SandboxProviderInstance) error {
+	return nil
+}
+
 func (p *recordingSandboxProvider) List(context.Context) ([]*sandboxes.Sandbox, error) {
 	return nil, nil
 }
@@ -474,8 +478,8 @@ func (p *recordingSandboxProvider) Remove(context.Context, sandboxes.SandboxRef,
 func (p *recordingSandboxProvider) Get(context.Context, sandboxes.SandboxRef, []byte) (*sandboxes.Sandbox, error) {
 	return nil, nil
 }
-func (p *recordingSandboxProvider) AcquireHTTPClient(context.Context, sandboxes.SandboxRef, []byte) (*sandboxes.HTTPClientLease, error) {
-	return sandboxes.NewHTTPClientLease(http.DefaultClient, nil), nil
+func (p *recordingSandboxProvider) AcquireHTTPClient(context.Context, sandboxes.SandboxRef, []byte) (*transport.HTTPClientLease, error) {
+	return transport.NewHTTPClientLease(http.DefaultClient, nil), nil
 }
 
 func mustParseURL(t *testing.T, value string) url.URL {

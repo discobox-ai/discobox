@@ -12,30 +12,46 @@ import (
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
-type WorkerReconciler struct {
-	store   *store.Store
-	manager *sandbox.ProviderManager
+type WorkerReconcileExecutor struct {
+	store            *store.Store
+	manager          *sandbox.ProviderManager
+	workerManager    any
+	terminalHandlers []WorkerReconcileTerminalHandler
 }
 
-type WorkerReconcilerOption func(*WorkerReconciler)
+type WorkerReconcileExecutorOption func(*WorkerReconcileExecutor)
 
-func NewWorkerReconciler(store *store.Store, options ...WorkerReconcilerOption) *WorkerReconciler {
-	reconciler := &WorkerReconciler{store: store}
+func NewWorkerReconcileExecutor(store *store.Store, options ...WorkerReconcileExecutorOption) *WorkerReconcileExecutor {
+	executor := &WorkerReconcileExecutor{store: store}
 	for _, option := range options {
 		if option != nil {
-			option(reconciler)
+			option(executor)
 		}
 	}
-	return reconciler
+	return executor
 }
 
-func WithWorkerProviderManager(manager *sandbox.ProviderManager) WorkerReconcilerOption {
-	return func(reconciler *WorkerReconciler) {
-		reconciler.manager = manager
+func WithWorkerProviderManager(manager *sandbox.ProviderManager) WorkerReconcileExecutorOption {
+	return func(executor *WorkerReconcileExecutor) {
+		executor.manager = manager
 	}
 }
 
-func (r *WorkerReconciler) AssertWorkerGeneration(ctx context.Context, projectID, providerID, workerID string, generation int64) error {
+func WithWorkerManager(manager any) WorkerReconcileExecutorOption {
+	return func(executor *WorkerReconcileExecutor) {
+		executor.workerManager = manager
+	}
+}
+
+func WithWorkerReconcileTerminalHandler(handler WorkerReconcileTerminalHandler) WorkerReconcileExecutorOption {
+	return func(executor *WorkerReconcileExecutor) {
+		if handler != nil {
+			executor.terminalHandlers = append(executor.terminalHandlers, handler)
+		}
+	}
+}
+
+func (r *WorkerReconcileExecutor) AssertWorkerGeneration(ctx context.Context, projectID, providerID, workerID string, generation int64) error {
 	worker, err := r.store.GetWorker(ctx, workerID, store.WithWorkerGeneration(generation))
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -52,7 +68,7 @@ func (r *WorkerReconciler) AssertWorkerGeneration(ctx context.Context, projectID
 	return nil
 }
 
-func (r *WorkerReconciler) ReconcileWorkerJob(ctx context.Context, projectID, providerID, workerID, jobID string, generation int64) error {
+func (r *WorkerReconcileExecutor) ReconcileWorkerJob(ctx context.Context, projectID, providerID, workerID, jobID string, generation int64) error {
 	worker, err := r.store.GetWorker(ctx, workerID, store.WithWorkerGeneration(generation))
 	if errors.Is(err, store.ErrNotFound) {
 		return nil
@@ -80,7 +96,7 @@ func (r *WorkerReconciler) ReconcileWorkerJob(ctx context.Context, projectID, pr
 	}
 }
 
-func (r *WorkerReconciler) reconcileDeleted(ctx context.Context, worker *model.Worker, generation int64) error {
+func (r *WorkerReconcileExecutor) reconcileDeleted(ctx context.Context, worker *model.Worker, generation int64) error {
 	status := "deleting worker"
 	worker.MarkOperationRunning(&status)
 	if err := r.update(ctx, worker, generation); err != nil {
@@ -103,7 +119,7 @@ func (r *WorkerReconciler) reconcileDeleted(ctx context.Context, worker *model.W
 	if !ok {
 		return fmt.Errorf("sandbox provider %q does not reconcile workers", provider.ID)
 	}
-	if err := workerProvider.RemoveWorker(ctx, r.store, project, provider, worker); err != nil {
+	if err := workerProvider.RemoveWorker(ctx, r.reconcileManager(), project, provider, worker); err != nil {
 		worker.FailOperation(err.Error())
 		if updateErr := r.update(ctx, worker, generation); updateErr != nil {
 			return updateErr
@@ -122,7 +138,7 @@ func (r *WorkerReconciler) reconcileDeleted(ctx context.Context, worker *model.W
 	return r.update(ctx, worker, generation)
 }
 
-func (r *WorkerReconciler) reconcileActive(ctx context.Context, worker *model.Worker, generation int64) error {
+func (r *WorkerReconcileExecutor) reconcileActive(ctx context.Context, worker *model.Worker, generation int64) error {
 	alreadySuccessful := worker.ObservedGeneration == generation && worker.LastOperationStatus == model.OperationStatusSuccess
 	status := "launching worker"
 	if alreadySuccessful {
@@ -151,7 +167,7 @@ func (r *WorkerReconciler) reconcileActive(ctx context.Context, worker *model.Wo
 	if !ok {
 		return fmt.Errorf("sandbox provider %q does not reconcile workers", provider.ID)
 	}
-	if err := workerProvider.ReconcileWorker(ctx, r.store, project, provider, worker); err != nil {
+	if err := workerProvider.ReconcileWorker(ctx, r.reconcileManager(), project, provider, worker); err != nil {
 		worker.FailOperation(err.Error())
 		if updateErr := r.update(ctx, worker, generation); updateErr != nil {
 			return updateErr
@@ -167,7 +183,7 @@ func (r *WorkerReconciler) reconcileActive(ctx context.Context, worker *model.Wo
 	return r.update(ctx, worker, generation)
 }
 
-func (r *WorkerReconciler) completeNoop(ctx context.Context, worker *model.Worker, generation int64, phase string, status string) error {
+func (r *WorkerReconcileExecutor) completeNoop(ctx context.Context, worker *model.Worker, generation int64, phase string, status string) error {
 	worker.MarkOperationRunning(&status)
 	if err := r.update(ctx, worker, generation); err != nil {
 		return err
@@ -177,7 +193,7 @@ func (r *WorkerReconciler) completeNoop(ctx context.Context, worker *model.Worke
 	return r.update(ctx, worker, generation)
 }
 
-func (r *WorkerReconciler) update(ctx context.Context, worker *model.Worker, generation int64) error {
+func (r *WorkerReconcileExecutor) update(ctx context.Context, worker *model.Worker, generation int64) error {
 	if err := r.store.UpdateWorker(ctx, worker, store.WithWorkerGeneration(generation)); err != nil {
 		if errors.Is(err, store.ErrGenerationConflict) {
 			return orchestration.Superseded("worker generation changed")
@@ -187,7 +203,14 @@ func (r *WorkerReconciler) update(ctx context.Context, worker *model.Worker, gen
 	return nil
 }
 
-func (r *WorkerReconciler) resolveProvider(ctx context.Context, provider *model.SandboxProviderInstance) (sandbox.Provider, error) {
+func (r *WorkerReconcileExecutor) reconcileManager() any {
+	if r != nil && r.workerManager != nil {
+		return r.workerManager
+	}
+	return r.store
+}
+
+func (r *WorkerReconcileExecutor) resolveProvider(ctx context.Context, provider *model.SandboxProviderInstance) (sandbox.Provider, error) {
 	if r == nil || r.manager == nil {
 		return nil, fmt.Errorf("sandbox provider manager is required")
 	}

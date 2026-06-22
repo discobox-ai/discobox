@@ -12,16 +12,15 @@ flowchart LR
     service --> store[internal/store]
     service --> jobs[internal/resources/jobs.Manager]
     dispatcher[orchestration.Dispatcher] --> executor[SandboxReconcileExecutor]
-    executor --> reconciler[SandboxReconciler]
-    reconciler --> store
-    reconciler --> providers[sandbox.ProviderManager]
-    reconciler --> auth[internal/auth/sandbox]
+    executor --> store
+    executor --> providers[sandbox.ProviderManager]
+    executor --> auth[internal/auth/sandbox]
 ```
 
 - `Service` exposes sandbox API use cases and may call store directly for simple
   reads or non-orchestrated updates.
 - Lifecycle intent must go through durable job submission and generation guards.
-- `SandboxReconcileExecutor` should stay thin: decode payload, assert
-  generation, and call the reconciler.
+- `SandboxReconcileExecutor` owns payload decode, generation assertions, and
+  sandbox lifecycle reconciliation.
 - Provider runtime operations belong in reconciliation, not in handlers or raw
   stores.

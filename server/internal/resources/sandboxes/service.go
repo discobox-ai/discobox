@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 
 	"github.com/obot-platform/discobox/id"
@@ -39,9 +40,14 @@ type SandboxJobManager interface {
 	DeleteSandbox(context.Context, string, string) (*model.Sandbox, error)
 }
 
-func NewService(store *store.Store, manager *sandbox.ProviderManager, defaultUserID string, providerStore ...any) *Service {
+type JobRegistrar interface {
+	Register(orchestration.Type, orchestration.Executor, ...orchestration.ExecutorOption) error
+}
+
+func NewService(store *store.Store, manager *sandbox.ProviderManager, defaultUserID string, jobs SandboxJobManager, providerStore ...any) *Service {
 	svc := &Service{
 		store:            store,
+		jobs:             jobs,
 		sandboxProviders: manager,
 		defaultUserID:    defaultUserID,
 	}
@@ -51,8 +57,16 @@ func NewService(store *store.Store, manager *sandbox.ProviderManager, defaultUse
 	return svc
 }
 
-func (s *Service) SetJobManager(manager SandboxJobManager) {
-	s.jobs = manager
+func (s *Service) RegisterJobs(registrar JobRegistrar, opts ...orchestration.ExecutorOption) error {
+	return registrar.Register(
+		SandboxReconcileType,
+		NewSandboxReconcileExecutor(
+			s.store,
+			WithSandboxProviderManager(s.sandboxProviders),
+			WithSandboxAuthenticator(s.sandboxAuth),
+		),
+		opts...,
+	)
 }
 
 func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
@@ -259,9 +273,9 @@ func (s *Service) SandboxProviderManager() *sandbox.ProviderManager {
 	return s.sandboxProviders
 }
 
-// NewSandboxReconciler returns a provider-manager-backed sandbox reconciler.
-func (s *Service) NewSandboxReconciler() *SandboxReconciler {
-	return NewSandboxReconciler(
+// NewSandboxReconcileExecutor returns a provider-manager-backed sandbox reconcile executor.
+func (s *Service) NewSandboxReconcileExecutor() *SandboxReconcileExecutor {
+	return NewSandboxReconcileExecutor(
 		s.store,
 		WithSandboxProviderManager(s.sandboxProviders),
 		WithSandboxAuthenticator(s.sandboxAuth),

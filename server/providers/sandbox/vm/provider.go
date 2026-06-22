@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
+	"github.com/obot-platform/discobox/server/internal/transport"
 	workeragent "github.com/obot-platform/discobox/worker-agent"
 )
 
@@ -30,12 +32,12 @@ type Driver interface {
 
 // HTTPClientDriver can provide a transport to a VM's sandbox agent.
 type HTTPClientDriver interface {
-	AcquireHTTPClient(ctx context.Context, instance *Instance) (*sandbox.HTTPClientLease, error)
+	AcquireHTTPClient(ctx context.Context, instance *Instance) (*transport.HTTPClientLease, error)
 }
 
 // WorkerHTTPClientDriver can provide a transport to a warm worker by worker ID.
 type WorkerHTTPClientDriver interface {
-	AcquireWorkerHTTPClient(ctx context.Context, workerID string) (*sandbox.HTTPClientLease, error)
+	AcquireWorkerHTTPClient(ctx context.Context, workerID string) (*transport.HTTPClientLease, error)
 }
 
 // BootstrapProvider creates the worker identity/bootstrap tuple passed into a
@@ -101,6 +103,10 @@ func New(cfg Config) (*Provider, error) {
 		bootstrap:       cfg.Bootstrap,
 		metadata:        metadata,
 	}, nil
+}
+
+func (p *Provider) Initialize(context.Context, *model.SandboxProviderInstance) error {
+	return nil
 }
 
 func (p *Provider) Create(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {
@@ -200,7 +206,7 @@ func (p *Provider) List(context.Context) ([]*sandbox.Sandbox, error) {
 	return nil, nil
 }
 
-func (p *Provider) AcquireHTTPClient(ctx context.Context, _ sandbox.SandboxRef, state []byte) (*sandbox.HTTPClientLease, error) {
+func (p *Provider) AcquireHTTPClient(ctx context.Context, _ sandbox.SandboxRef, state []byte) (*transport.HTTPClientLease, error) {
 	clientDriver, ok := p.driver.(HTTPClientDriver)
 	if !ok {
 		return nil, errors.New("vm driver does not provide sandbox agent HTTP access")
@@ -216,7 +222,7 @@ func (p *Provider) AcquireHTTPClient(ctx context.Context, _ sandbox.SandboxRef, 
 	return clientDriver.AcquireHTTPClient(ctx, inst)
 }
 
-func (p *Provider) AcquireWorkerHTTPClient(ctx context.Context, workerID string) (*sandbox.HTTPClientLease, error) {
+func (p *Provider) AcquireWorkerHTTPClientForID(ctx context.Context, workerID string) (*transport.HTTPClientLease, error) {
 	workerDriver, ok := p.driver.(WorkerHTTPClientDriver)
 	if ok {
 		return workerDriver.AcquireWorkerHTTPClient(ctx, workerID)
@@ -341,18 +347,18 @@ func defaultString(value, fallback string) string {
 
 // NewDirectHTTPClientLease returns a direct HTTP client for drivers that expose
 // sandbox agents through ordinary network addresses.
-func NewDirectHTTPClientLease() *sandbox.HTTPClientLease {
-	return sandbox.NewHTTPClientLease(http.DefaultClient, nil)
+func NewDirectHTTPClientLease() *transport.HTTPClientLease {
+	return transport.NewHTTPClientLease(http.DefaultClient, nil)
 }
 
 // NewDirectHTTPClientLeaseForBaseURL returns a direct HTTP client with a concrete base URL.
-func NewDirectHTTPClientLeaseForBaseURL(baseURL string) *sandbox.HTTPClientLease {
-	return sandbox.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, baseURL, nil)
+func NewDirectHTTPClientLeaseForBaseURL(baseURL string) *transport.HTTPClientLease {
+	return transport.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, baseURL, nil)
 }
 
 // NewDirectHTTPClientLeaseForBaseURLAndAuth returns a direct HTTP client with a concrete base URL and bearer token.
-func NewDirectHTTPClientLeaseForBaseURLAndAuth(baseURL, authToken string) *sandbox.HTTPClientLease {
-	return sandbox.NewHTTPClientLeaseWithBaseURLAndAuth(http.DefaultClient, baseURL, authToken, nil)
+func NewDirectHTTPClientLeaseForBaseURLAndAuth(baseURL, authToken string) *transport.HTTPClientLease {
+	return transport.NewHTTPClientLeaseWithBaseURLAndAuth(http.DefaultClient, baseURL, authToken, nil)
 }
 
 // WorkerBootstrap aliases the worker agent package payload so VM drivers and

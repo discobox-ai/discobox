@@ -3,11 +3,10 @@ package sandbox
 import (
 	"context"
 	"io"
-	"net/http"
-	"sync"
 	"time"
 
 	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/obot-platform/discobox/server/internal/transport"
 )
 
 // Provider abstracts sandbox runtime environments.
@@ -15,6 +14,8 @@ import (
 // Providers own runtime mechanics only. Application services own persistence,
 // orchestration, authorization, and API shape.
 type Provider interface {
+	Initialize(ctx context.Context, instance *model.SandboxProviderInstance) error
+
 	List(ctx context.Context) ([]*Sandbox, error)
 
 	Create(ctx context.Context, ref SandboxRef, state []byte, opts CreateOptions) (*Sandbox, []byte, error)
@@ -22,7 +23,7 @@ type Provider interface {
 	Stop(ctx context.Context, ref SandboxRef, state []byte, timeout time.Duration) (*Sandbox, []byte, error)
 	Remove(ctx context.Context, ref SandboxRef, state []byte, opts ...RemoveOption) ([]byte, error)
 	Get(ctx context.Context, ref SandboxRef, state []byte) (*Sandbox, error)
-	AcquireHTTPClient(ctx context.Context, ref SandboxRef, state []byte) (*HTTPClientLease, error)
+	AcquireHTTPClient(ctx context.Context, ref SandboxRef, state []byte) (*transport.HTTPClientLease, error)
 }
 
 // SandboxRef identifies the sandbox and its project ownership context.
@@ -127,10 +128,10 @@ type ReconcileProvider interface {
 	Reconcile(ctx context.Context) error
 }
 
-// ProviderInstanceEnsurer can react to provider-instance create/update or
-// provider-specific events. Implementations decide what "ensuring" means.
-type ProviderInstanceEnsurer interface {
-	EnsureProviderInstance(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance) error
+// WorkerProviderReconciler reconciles worker-provider state for a provider
+// instance, such as maintaining a warm worker pool.
+type WorkerProviderReconciler interface {
+	ReconcileWorkerProvider(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance) error
 }
 
 // WorkerRuntimeReconciler reconciles provider-owned runtime state for a worker
@@ -213,48 +214,18 @@ type Stream interface {
 	Wait(ctx context.Context) (int, error)
 }
 
-// HTTPClientLease holds a provider HTTP client until Release is called. Client
-// may use any RoundTripper, including transports that rewrite the logical
-// https://worker endpoint to a Unix socket, VS Code socket, tunnel, or provider
-// proxy. BaseURL is optional; when empty, callers use the logical worker URL.
-type HTTPClientLease struct {
-	Client    *http.Client
-	BaseURL   string
-	AuthToken string
-	release   func()
-	once      sync.Once
-}
+type HTTPClientLease = transport.HTTPClientLease
 
 // NewHTTPClientLease creates a lease around a client and release callback.
-func NewHTTPClientLease(client *http.Client, release func()) *HTTPClientLease {
-	return &HTTPClientLease{Client: client, release: release}
-}
+var NewHTTPClientLease = transport.NewHTTPClientLease
 
 // NewHTTPClientLeaseWithBaseURL creates a lease with a preferred logical base URL.
-func NewHTTPClientLeaseWithBaseURL(client *http.Client, baseURL string, release func()) *HTTPClientLease {
-	return &HTTPClientLease{Client: client, BaseURL: baseURL, release: release}
-}
+var NewHTTPClientLeaseWithBaseURL = transport.NewHTTPClientLeaseWithBaseURL
 
 // NewHTTPClientLeaseWithBaseURLAndAuth creates a lease with a base URL and bearer token.
-func NewHTTPClientLeaseWithBaseURLAndAuth(client *http.Client, baseURL, authToken string, release func()) *HTTPClientLease {
-	return &HTTPClientLease{Client: client, BaseURL: baseURL, AuthToken: authToken, release: release}
-}
+var NewHTTPClientLeaseWithBaseURLAndAuth = transport.NewHTTPClientLeaseWithBaseURLAndAuth
 
 // NewHTTPClientLeaseWithAuth creates an authenticated lease for a client that
 // handles the logical worker URL itself, for example by dialing a VS Code socket
 // or Unix socket from a custom RoundTripper.
-func NewHTTPClientLeaseWithAuth(client *http.Client, authToken string, release func()) *HTTPClientLease {
-	return &HTTPClientLease{Client: client, AuthToken: authToken, release: release}
-}
-
-// Release returns the leased client.
-func (l *HTTPClientLease) Release() {
-	if l == nil {
-		return
-	}
-	l.once.Do(func() {
-		if l.release != nil {
-			l.release()
-		}
-	})
-}
+var NewHTTPClientLeaseWithAuth = transport.NewHTTPClientLeaseWithAuth

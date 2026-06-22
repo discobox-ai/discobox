@@ -136,8 +136,8 @@ func workerReconcilePayload(worker *model.Worker) orchestration.Payload {
 	}
 }
 
-func providerReconcilePayload(provider *model.SandboxProviderInstance) orchestration.Payload {
-	return providers.ProviderReconcilePayload{
+func workerProviderReconcilePayload(provider *model.SandboxProviderInstance) orchestration.Payload {
+	return providers.WorkerProviderReconcilePayload{
 		ProjectID:  provider.ProjectID,
 		ProviderID: provider.ID,
 	}
@@ -307,7 +307,7 @@ func (m *Manager) EnqueueWorkerCurrent(ctx context.Context, worker *model.Worker
 	)
 }
 
-func (m *Manager) EnqueueProviderCurrent(ctx context.Context, projectID, providerID string) (*orchestration.Job, error) {
+func (m *Manager) EnqueueWorkerProviderCurrent(ctx context.Context, projectID, providerID string) (*orchestration.Job, error) {
 	dispatcher, err := m.dispatcherForSubmit()
 	if err != nil {
 		return nil, err
@@ -329,7 +329,7 @@ func (m *Manager) EnqueueProviderCurrent(ctx context.Context, projectID, provide
 				if provider.Disabled {
 					return nil
 				}
-				resource := orchestration.Resource{Type: "provider", ID: provider.ID}
+				resource := orchestration.Resource{Type: "workerprovider", ID: provider.ID}
 				active, err := txStore.HasActiveJobForResource(ctx, resource)
 				if err != nil {
 					return err
@@ -337,7 +337,7 @@ func (m *Manager) EnqueueProviderCurrent(ctx context.Context, projectID, provide
 				if active {
 					return nil
 				}
-				job, err = appendJob(ctx, txStore, providerReconcilePayload(provider))
+				job, err = appendJob(ctx, txStore, workerProviderReconcilePayload(provider))
 				if errors.Is(err, orchestration.ErrJobAlreadyExists) {
 					job = nil
 					return nil
@@ -353,6 +353,6 @@ func (m *Manager) OnWorkerReconcileTerminal(ctx context.Context, job *orchestrat
 	if job.Status != orchestration.StatusCompleted && job.Status != orchestration.StatusFailed {
 		return nil
 	}
-	_, err := m.EnqueueProviderCurrent(ctx, payload.ProjectID, payload.ProviderID)
+	_, err := m.EnqueueWorkerProviderCurrent(ctx, payload.ProjectID, payload.ProviderID)
 	return err
 }

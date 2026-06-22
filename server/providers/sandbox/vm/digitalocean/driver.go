@@ -15,6 +15,7 @@ import (
 	"time"
 
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
+	"github.com/obot-platform/discobox/server/internal/transport"
 	"github.com/obot-platform/discobox/server/providers/sandbox/vm"
 )
 
@@ -221,7 +222,7 @@ func (d *Driver) InspectVM(ctx context.Context, id string) (*vm.Instance, error)
 	return instanceFromDroplet(out.Droplet, d.agentPort), nil
 }
 
-func (d *Driver) AcquireHTTPClient(context.Context, *vm.Instance) (*sandbox.HTTPClientLease, error) {
+func (d *Driver) AcquireHTTPClient(context.Context, *vm.Instance) (*transport.HTTPClientLease, error) {
 	return vm.NewDirectHTTPClientLease(), nil
 }
 
