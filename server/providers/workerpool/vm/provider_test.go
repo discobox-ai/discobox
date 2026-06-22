@@ -7,7 +7,7 @@ import (
 	"time"
 
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/providers/sandbox/vm"
+	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
 	workeragent "github.com/obot-platform/discobox/worker-agent"
 )
 

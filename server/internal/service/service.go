@@ -19,7 +19,7 @@ import (
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
-	providersandbox "github.com/obot-platform/discobox/server/providers/sandbox/provider"
+	providerregistry "github.com/obot-platform/discobox/server/providers"
 )
 
 const (
@@ -73,7 +73,7 @@ func New(store *store.Store, jobManager JobManager, jobManagerOptions JobManager
 	}
 	manager := sandbox.NewProviderManager()
 	workerManager := workers.NewManager(store, jobManager)
-	providersandbox.RegisterBuiltInSandboxProviderFactories(manager, workerManager)
+	providerregistry.RegisterBuiltInSandboxProviderFactories(manager, workerManager)
 	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, jobManager, workerManager)
 	providerService := providers.NewService(store, sandboxService, workerManager, jobManager)
 	jobsService := resourcejobs.NewService(store, jobManager)

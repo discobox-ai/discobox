@@ -27,7 +27,7 @@ import (
 
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/transport"
-	"github.com/obot-platform/discobox/server/providers/sandbox/vm"
+	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
 	workeragent "github.com/obot-platform/discobox/worker-agent"
 )
 
@@ -55,8 +55,8 @@ func DefaultImage() string { return defaultImage }
 // DefaultAgentPort returns the default worker-agent port exposed by Docker workers.
 func DefaultAgentPort() int { return defaultAgentPort }
 
-// Config configures a Docker-backed VM driver.
-type Config struct {
+// DriverConfig configures a Docker-backed VM driver.
+type DriverConfig struct {
 	Host         string
 	Image        string
 	Network      string
@@ -125,7 +125,7 @@ type Driver struct {
 }
 
 // NewDriver creates a Docker-backed VM driver and verifies Docker API connectivity.
-func NewDriver(ctx context.Context, cfg Config) (*Driver, error) {
+func NewDriver(ctx context.Context, cfg DriverConfig) (*Driver, error) {
 	opts := []client.Opt{client.FromEnv}
 	if cfg.Host != "" {
 		opts = append(opts, client.WithHost(cfg.Host))
@@ -144,7 +144,7 @@ func NewDriver(ctx context.Context, cfg Config) (*Driver, error) {
 }
 
 // NewDriverWithClient creates a Docker-backed VM driver from an existing Docker client.
-func NewDriverWithClient(cli *client.Client, cfg Config) *Driver {
+func NewDriverWithClient(cli *client.Client, cfg DriverConfig) *Driver {
 	agentPort := cfg.AgentPort
 	if agentPort == 0 {
 		agentPort = defaultAgentPort
@@ -182,7 +182,7 @@ func NewDriverWithClient(cli *client.Client, cfg Config) *Driver {
 }
 
 // NewProvider creates a generic VM provider backed by Docker containers.
-func NewProvider(ctx context.Context, cfg Config, providerCfg vm.Config) (*vm.Provider, error) {
+func NewProvider(ctx context.Context, cfg DriverConfig, providerCfg vm.Config) (*vm.Provider, error) {
 	driver, err := NewDriver(ctx, cfg)
 	if err != nil {
 		return nil, err

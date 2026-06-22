@@ -139,7 +139,7 @@ and runtime operation progress. `internal/resources/jobs` owns dispatcher infras
 | `internal/apperrors` | Server-owned sentinel and HTTP status errors used by handlers, services, store, and provider adapters. |
 | `internal/model` | Server-owned persistence models and migration model list. |
 | `internal/sandbox` | Go-level sandbox provider interfaces, provider manager, and shared provider contract types. |
-| `providers/sandbox` | Docker, VM, cloud, and worker-backed sandbox provider implementations. |
+| `providers` | Docker, VM, cloud, and worker-backed sandbox provider implementations. |
 
 ## Dependency Rules
 
@@ -175,7 +175,7 @@ and runtime operation progress. `internal/resources/jobs` owns dispatcher infras
 | `internal/auth/sandbox` | [`internal/auth/sandbox/DESIGN.md`](internal/auth/sandbox/DESIGN.md) |
 | `internal/service` | [`internal/service/DESIGN.md`](internal/service/DESIGN.md) |
 | `internal/store` | [`internal/store/DESIGN.md`](internal/store/DESIGN.md) |
-| `providers/sandbox` | [`providers/sandbox/DESIGN.md`](providers/sandbox/DESIGN.md) |
+| `providers` | [`providers/DESIGN.md`](providers/DESIGN.md) |
 
 Add lower-level `DESIGN.md` files next to packages when a package gains its own
 architecture rules. Keep this module-level doc focused on server boundaries and

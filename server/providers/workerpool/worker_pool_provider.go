@@ -1,4 +1,4 @@
-package vmprovider
+package workerpool
 
 import (
 	"context"
@@ -7,8 +7,7 @@ import (
 	"strings"
 
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/providers/sandbox/vm"
-	"github.com/obot-platform/discobox/server/providers/sandbox/workerpool"
+	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
 )
 
 // StringList accepts either a JSON array of strings or a comma-separated string.
@@ -49,8 +48,8 @@ type WorkerPoolConfigFields struct {
 	MinHealthy int `json:"minHealthyWorkers,omitempty"`
 }
 
-func (c WorkerPoolConfigFields) WorkerPoolConfig() workerpool.WorkerPoolConfig {
-	return workerpool.NormalizeWorkerPoolConfig(c.PoolSize, c.MinWorkers, c.MaxWorkers, c.MinHealthy)
+func (c WorkerPoolConfigFields) WorkerPoolConfig() WorkerPoolConfig {
+	return NormalizeWorkerPoolConfig(c.PoolSize, c.MinWorkers, c.MaxWorkers, c.MinHealthy)
 }
 
 func DecodeConfig[T any](data json.RawMessage, providerType string) (T, error) {
@@ -72,16 +71,16 @@ func RequireControlPlaneURL(providerType, value string) error {
 
 type NewProviderFunc func(context.Context, vm.Config) (*vm.Provider, error)
 
-type WorkerPoolProviderConfig struct {
+type VMWorkerPoolProviderConfig struct {
 	ControlPlaneURL string
 	DefaultImage    string
 	AgentPort       int
-	WorkerPool      workerpool.WorkerPoolConfig
-	WorkerManager   workerpool.WorkerManager
+	WorkerPool      WorkerPoolConfig
+	WorkerManager   WorkerManager
 	EnsureWorkers   bool
 }
 
-func NewWorkerPoolProvider(ctx context.Context, cfg WorkerPoolProviderConfig, newProvider NewProviderFunc) (sandbox.Provider, error) {
+func NewVMWorkerPoolProvider(ctx context.Context, cfg VMWorkerPoolProviderConfig, newProvider NewProviderFunc) (sandbox.Provider, error) {
 	provider, err := newProvider(ctx, vm.Config{
 		ControlPlaneURL: cfg.ControlPlaneURL,
 		DefaultImage:    cfg.DefaultImage,
@@ -90,5 +89,5 @@ func NewWorkerPoolProvider(ctx context.Context, cfg WorkerPoolProviderConfig, ne
 	if err != nil {
 		return nil, err
 	}
-	return workerpool.NewWorkerPoolProvider(provider, cfg.WorkerPool, cfg.WorkerManager, cfg.EnsureWorkers), nil
+	return NewWorkerPoolProvider(provider, cfg.WorkerPool, cfg.WorkerManager, cfg.EnsureWorkers), nil
 }

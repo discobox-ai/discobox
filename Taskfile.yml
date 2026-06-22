@@ -152,7 +152,7 @@ tasks:
   test:docker:
     desc: Run Docker provider integration tests
     cmds:
-      - cd server && DISCOBOX_DOCKER_INTEGRATION=1 go test ./providers/sandbox/vm/docker -run Integration -count=1 -v
+      - cd server && DISCOBOX_DOCKER_INTEGRATION=1 go test ./providers/docker -run Integration -count=1 -v
 
   test:docker:bats:
     desc: Run Docker provider CLI Bats integration test

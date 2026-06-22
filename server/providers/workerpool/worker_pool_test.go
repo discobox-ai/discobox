@@ -14,7 +14,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/transport"
-	"github.com/obot-platform/discobox/server/providers/sandbox/vm"
+	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
 	"github.com/obot-platform/discobox/worker-agent/sandboxruntime"
 	"github.com/obot-platform/discobox/worker-agent/server"
 )

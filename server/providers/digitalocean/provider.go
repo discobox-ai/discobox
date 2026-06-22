@@ -9,15 +9,10 @@ import (
 
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/providers/sandbox/provider/vmprovider"
-	"github.com/obot-platform/discobox/server/providers/sandbox/vm"
-	dodriver "github.com/obot-platform/discobox/server/providers/sandbox/vm/digitalocean"
-	"github.com/obot-platform/discobox/server/providers/sandbox/workerpool"
+	"github.com/obot-platform/discobox/server/providers/workerpool"
+	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
 )
 
-const ProviderType = dodriver.ProviderType
-
-var Definition = dodriver.Definition()
 var Factory sandbox.ProviderFactory = NewFromInstance
 
 func FactoryWithWorkerManager(workerManager workerpool.WorkerManager) sandbox.ProviderFactory {
@@ -34,18 +29,18 @@ type Config struct {
 	Region          string                `json:"region,omitempty"`
 	Size            string                `json:"size,omitempty"`
 	Image           string                `json:"image,omitempty"`
-	SSHKeys         vmprovider.StringList `json:"sshKeys,omitempty"`
+	SSHKeys         workerpool.StringList `json:"sshKeys,omitempty"`
 	VPCUUID         string                `json:"vpcUuid,omitempty"`
-	Tags            vmprovider.StringList `json:"tags,omitempty"`
+	Tags            workerpool.StringList `json:"tags,omitempty"`
 	Backups         bool                  `json:"backups,omitempty"`
 	IPv6            bool                  `json:"ipv6,omitempty"`
 	Monitoring      bool                  `json:"monitoring,omitempty"`
 	AgentPort       int                   `json:"agentPort,omitempty"`
-	vmprovider.WorkerPoolConfigFields
+	workerpool.WorkerPoolConfigFields
 }
 
 func Decode(data json.RawMessage) (Config, error) {
-	return vmprovider.DecodeConfig[Config](data, "digitalocean")
+	return workerpool.DecodeConfig[Config](data, "digitalocean")
 }
 
 func Validate(data json.RawMessage) error {
@@ -56,7 +51,7 @@ func Validate(data json.RawMessage) error {
 	if strings.TrimSpace(cfg.Token) == "" && strings.TrimSpace(cfg.TokenEnv) == "" {
 		return fmt.Errorf("digitalocean token or tokenEnv is required")
 	}
-	return vmprovider.RequireControlPlaneURL("digitalocean", cfg.ControlPlaneURL)
+	return workerpool.RequireControlPlaneURL("digitalocean", cfg.ControlPlaneURL)
 }
 
 func NewFromInstance(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
@@ -68,7 +63,7 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 	if err != nil {
 		return nil, err
 	}
-	return vmprovider.NewWorkerPoolProvider(ctx, vmprovider.WorkerPoolProviderConfig{
+	return workerpool.NewVMWorkerPoolProvider(ctx, workerpool.VMWorkerPoolProviderConfig{
 		ControlPlaneURL: cfg.ControlPlaneURL,
 		DefaultImage:    cfg.Image,
 		AgentPort:       cfg.AgentPort,
@@ -80,7 +75,7 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 }
 
 func newProvider(_ context.Context, cfg Config, vmConfig vm.Config) (*vm.Provider, error) {
-	return dodriver.NewProvider(dodriver.Config{
+	return NewProvider(DriverConfig{
 		Token:      accessToken(cfg),
 		APIBaseURL: cfg.APIBaseURL,
 		Region:     cfg.Region,

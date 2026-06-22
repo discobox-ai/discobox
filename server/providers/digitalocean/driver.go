@@ -16,7 +16,7 @@ import (
 
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/transport"
-	"github.com/obot-platform/discobox/server/providers/sandbox/vm"
+	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
 )
 
 const (
@@ -50,8 +50,8 @@ type ProviderInstanceConfig struct {
 	MinHealthy      int      `json:"minHealthyWorkers,omitempty"`
 }
 
-// Config configures a DigitalOcean Droplet driver.
-type Config struct {
+// DriverConfig configures a DigitalOcean Droplet driver.
+type DriverConfig struct {
 	Token string
 
 	APIBaseURL string
@@ -116,7 +116,7 @@ type Driver struct {
 }
 
 // NewDriver creates a DigitalOcean VM driver.
-func NewDriver(cfg Config) (*Driver, error) {
+func NewDriver(cfg DriverConfig) (*Driver, error) {
 	if strings.TrimSpace(cfg.Token) == "" {
 		return nil, errors.New("digitalocean token is required")
 	}
@@ -146,7 +146,7 @@ func NewDriver(cfg Config) (*Driver, error) {
 }
 
 // NewProvider creates a generic VM provider backed by DigitalOcean Droplets.
-func NewProvider(cfg Config, providerCfg vm.Config) (*vm.Provider, error) {
+func NewProvider(cfg DriverConfig, providerCfg vm.Config) (*vm.Provider, error) {
 	driver, err := NewDriver(cfg)
 	if err != nil {
 		return nil, err

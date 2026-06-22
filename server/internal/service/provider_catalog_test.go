@@ -18,8 +18,7 @@ import (
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 	"github.com/obot-platform/discobox/server/internal/transport"
-	providerdocker "github.com/obot-platform/discobox/server/providers/sandbox/provider/docker"
-	dockerdriver "github.com/obot-platform/discobox/server/providers/sandbox/vm/docker"
+	providerdocker "github.com/obot-platform/discobox/server/providers/docker"
 )
 
 func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
@@ -371,8 +370,8 @@ func assertDefaultDockerProviderConfig(t *testing.T, data []byte, expectedImage 
 	if cfg.Image != expectedImage {
 		t.Fatalf("config image = %q, want %q", cfg.Image, expectedImage)
 	}
-	if cfg.AgentPort != dockerdriver.DefaultAgentPort() {
-		t.Fatalf("config agentPort = %d, want %d", cfg.AgentPort, dockerdriver.DefaultAgentPort())
+	if cfg.AgentPort != providerdocker.DefaultAgentPort() {
+		t.Fatalf("config agentPort = %d, want %d", cfg.AgentPort, providerdocker.DefaultAgentPort())
 	}
 	if !cfg.Systemd || cfg.MinWorkers != 1 || cfg.MaxWorkers != 1 || cfg.MinHealthyWorkers != 1 {
 		t.Fatalf("provider config = %+v, want systemd and worker pool defaults", cfg)

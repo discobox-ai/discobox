@@ -11,8 +11,7 @@ import (
 
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/store"
-	providerdocker "github.com/obot-platform/discobox/server/providers/sandbox/provider/docker"
-	dockerdriver "github.com/obot-platform/discobox/server/providers/sandbox/vm/docker"
+	providerdocker "github.com/obot-platform/discobox/server/providers/docker"
 )
 
 const (
@@ -195,7 +194,7 @@ func defaultDockerProviderConfig() json.RawMessage {
 	systemd := true
 	data, err := json.Marshal(map[string]any{
 		"image":             providerdocker.DefaultWorkerImage(),
-		"agentPort":         dockerdriver.DefaultAgentPort(),
+		"agentPort":         providerdocker.DefaultAgentPort(),
 		"systemd":           systemd,
 		"minWorkers":        1,
 		"maxWorkers":        1,
@@ -220,7 +219,7 @@ func shouldUpdateDefaultProviderConfig(current, defaults json.RawMessage) bool {
 		if !ok {
 			return true
 		}
-		if key == "image" && currentField == dockerdriver.DefaultImage() && defaultField != dockerdriver.DefaultImage() {
+		if key == "image" && currentField == providerdocker.DefaultImage() && defaultField != providerdocker.DefaultImage() {
 			return true
 		}
 	}
@@ -237,7 +236,7 @@ func mergeDefaultProviderConfig(current, defaults json.RawMessage) json.RawMessa
 	}
 	for key, defaultField := range defaultValue {
 		currentField, ok := currentValue[key]
-		if !ok || key == "image" && currentField == dockerdriver.DefaultImage() && defaultField != dockerdriver.DefaultImage() {
+		if !ok || key == "image" && currentField == providerdocker.DefaultImage() && defaultField != providerdocker.DefaultImage() {
 			currentValue[key] = defaultField
 		}
 	}

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/providers/sandbox/vm"
-	"github.com/obot-platform/discobox/server/providers/sandbox/vm/digitalocean"
+	"github.com/obot-platform/discobox/server/providers/digitalocean"
+	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
 	workeragent "github.com/obot-platform/discobox/worker-agent"
 )
 
@@ -31,7 +31,7 @@ func TestCreateVMSendsDropletRequestWithCloudInitAndTags(t *testing.T) {
 	}))
 	defer server.Close()
 
-	driver, err := digitalocean.NewDriver(digitalocean.Config{
+	driver, err := digitalocean.NewDriver(digitalocean.DriverConfig{
 		Token:      "token-1",
 		APIBaseURL: server.URL,
 		Region:     "sfo3",
@@ -110,7 +110,7 @@ func TestLifecycleActionsAndInspect(t *testing.T) {
 	}))
 	defer server.Close()
 
-	driver, err := digitalocean.NewDriver(digitalocean.Config{Token: "token-1", APIBaseURL: server.URL, HTTPClient: server.Client()})
+	driver, err := digitalocean.NewDriver(digitalocean.DriverConfig{Token: "token-1", APIBaseURL: server.URL, HTTPClient: server.Client()})
 	if err != nil {
 		t.Fatalf("new driver: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestLifecycleActionsAndInspect(t *testing.T) {
 }
 
 func TestNewProviderWrapsDigitalOceanDriver(t *testing.T) {
-	provider, err := digitalocean.NewProvider(digitalocean.Config{
+	provider, err := digitalocean.NewProvider(digitalocean.DriverConfig{
 		Token:      "token-1",
 		APIBaseURL: "https://api.example.invalid",
 	}, vm.Config{})

@@ -68,13 +68,13 @@ For a simpler non-systemd local test image:
 ## Running Docker provider integration tests
 
 The integration tests are skipped by default. When enabled, they build local test
-images from Dockerfiles under `server/providers/sandbox/vm/docker/testdata`
+images from Dockerfiles under `server/providers/docker/testdata`
 instead of pulling a project-published image.
 
 To run the Docker lifecycle tests:
 
 ```bash
-cd server && DISCOBOX_DOCKER_INTEGRATION=1 go test ./providers/sandbox/vm/docker -run Integration -count=1 -v
+cd server && DISCOBOX_DOCKER_INTEGRATION=1 go test ./providers/docker -run Integration -count=1 -v
 ```
 
 The systemd test builds `testdata/systemd/Dockerfile` automatically. It requires

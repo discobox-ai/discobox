@@ -1,7 +1,7 @@
 # Sandbox Provider Design
 
 This package contains concrete sandbox provider implementations, factory
-registration, and reusable VM-backed provider adapters. It consumes
+registration, and worker-pool VM-backed provider adapters. It consumes
 `server/internal/sandbox` for the Go-level provider interface, provider
 manager, and shared provider types. It also consumes server-owned persistence
 models and the worker-agent package for worker boot metadata.
@@ -25,39 +25,41 @@ Built-in worker-backed providers are layered deliberately:
 flowchart TD
     pool["workerpool.WorkerPoolProvider\nimplements sandbox.Provider"]
     worker["workerpool.WorkerProvider interface\nworker lifecycle + per-worker access"]
-    vmProvider["vm.Provider\nimplements WorkerProvider"]
-    driver["vm.Driver\nDocker, DigitalOcean, ..."]
+    vmProvider["workerpool/vm.Provider\nimplements WorkerProvider"]
+    driver["workerpool/vm.Driver\nimplemented by docker, digitalocean, ..."]
 
     pool --> worker
     worker --> vmProvider
     vmProvider --> driver
 ```
 
-`server/providers/sandbox/workerpool.WorkerPoolProvider` is the registered
+`server/providers/workerpool.WorkerPoolProvider` is the registered
 `server/internal/sandbox.Provider` for worker-backed provider instances. It owns
 warm worker pool sizing, provider initialization, worker selection, capacity
 waits, and user-sandbox operations through the worker-agent API.
 
-`server/providers/sandbox/workerpool.WorkerProvider` is a narrow interface for
+`server/providers/workerpool.WorkerProvider` is a narrow interface for
 worker runtime lifecycle and access. It can create/remove worker runtimes and
 return a `transport.HTTPClientLease` for a specific worker. The pool layer owns
 the worker-agent client and sandbox CRUD adapter, and depends on this interface
 instead of VM implementation details.
 
-`server/providers/sandbox/vm.Provider` implements `WorkerProvider`. It owns the
-VM/container mechanics for worker runtimes and obtains worker-agent HTTP leases
-through driver-provided routing.
+`server/providers/workerpool/vm.Provider` implements `WorkerProvider`. It owns
+the VM/container mechanics for worker runtimes and obtains worker-agent HTTP
+leases through driver-provided routing.
 
-`server/providers/sandbox/vm.Driver` is the low-level platform adapter. It
+`server/providers/workerpool/vm.Driver` is the low-level platform adapter. It
 creates, starts, stops, deletes, and inspects VM-like instances:
 
 - create a VM from an `InstanceSpec`,
 - start/stop/delete/inspect a VM by instance ID,
 - optionally provide an HTTP client lease to reach the sandbox agent.
 
-Drivers should be thin platform integrations for Docker, DigitalOcean, KVM,
-HCS, Apple Virtualization, AWS, Azure, GCP, or similar VM/container backends.
-They should not own worker-pool scheduling or control-plane persistence.
+Driver implementations live with their provider package, such as
+`server/providers/docker` and `server/providers/digitalocean`. Drivers should be
+thin platform integrations for Docker, DigitalOcean, KVM, HCS, Apple
+Virtualization, AWS, Azure, GCP, or similar VM/container backends. They should
+not own worker-pool scheduling or control-plane persistence.
 
 ## Worker Agent HTTP Routing
 
@@ -182,7 +184,7 @@ the VM boots.
 
 ## DigitalOcean Driver
 
-`server/providers/sandbox/vm/digitalocean` implements the VM driver contract
+`server/providers/digitalocean` implements the VM driver contract
 with one DigitalOcean Droplet per sandbox worker.
 
 Provider instances use type `digitalocean`. Configuration includes the

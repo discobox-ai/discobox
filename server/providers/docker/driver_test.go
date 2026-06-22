@@ -8,7 +8,7 @@ import (
 	"github.com/moby/moby/api/types/mount"
 
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/providers/sandbox/vm"
+	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
 	workeragent "github.com/obot-platform/discobox/worker-agent"
 )
 
@@ -40,7 +40,7 @@ func TestDefinitionIncludesSystemdConfig(t *testing.T) {
 }
 
 func TestNewDriverWithClientDefaultsToSystemdContainer(t *testing.T) {
-	d := NewDriverWithClient(nil, Config{})
+	d := NewDriverWithClient(nil, DriverConfig{})
 	if d.image != defaultImage {
 		t.Fatalf("image = %q", d.image)
 	}
@@ -56,7 +56,7 @@ func TestNewDriverWithClientDefaultsToSystemdContainer(t *testing.T) {
 }
 
 func TestNewDriverWithClientSystemdDefaults(t *testing.T) {
-	d := NewDriverWithClient(nil, Config{Systemd: true})
+	d := NewDriverWithClient(nil, DriverConfig{Systemd: true})
 	if !d.systemd {
 		t.Fatalf("systemd = false")
 	}
@@ -70,7 +70,7 @@ func TestNewDriverWithClientSystemdDefaults(t *testing.T) {
 
 func TestNewDriverWithClientHonorsPrivilegedOverride(t *testing.T) {
 	privileged := false
-	d := NewDriverWithClient(nil, Config{Systemd: true, Privileged: &privileged})
+	d := NewDriverWithClient(nil, DriverConfig{Systemd: true, Privileged: &privileged})
 	if d.privileged {
 		t.Fatalf("privileged override ignored")
 	}
@@ -78,7 +78,7 @@ func TestNewDriverWithClientHonorsPrivilegedOverride(t *testing.T) {
 
 func TestContainerBootConfigDerivesControlPlaneURL(t *testing.T) {
 	t.Setenv("PORT", "9090")
-	d := NewDriverWithClient(nil, Config{})
+	d := NewDriverWithClient(nil, DriverConfig{})
 	boot := d.containerBootConfig(vm.BootConfig{})
 	if got := boot.Env[workeragent.EnvControlPlaneURL]; got != "http://host.docker.internal:9090" {
 		t.Fatalf("control plane url = %q", got)
@@ -86,7 +86,7 @@ func TestContainerBootConfigDerivesControlPlaneURL(t *testing.T) {
 }
 
 func TestContainerBootConfigPreservesConfiguredControlPlaneURL(t *testing.T) {
-	d := NewDriverWithClient(nil, Config{})
+	d := NewDriverWithClient(nil, DriverConfig{})
 	boot := d.containerBootConfig(vm.BootConfig{Env: map[string]string{
 		workeragent.EnvControlPlaneURL: "http://control.example",
 	}})
@@ -97,7 +97,7 @@ func TestContainerBootConfigPreservesConfiguredControlPlaneURL(t *testing.T) {
 
 func TestDefaultControlPlaneURLAddsHostGateway(t *testing.T) {
 	t.Setenv("PORT", "9090")
-	d := NewDriverWithClient(nil, Config{})
+	d := NewDriverWithClient(nil, DriverConfig{})
 	original := vm.BootConfig{}
 	boot := d.containerBootConfig(original)
 
@@ -127,7 +127,7 @@ func TestConfiguredControlPlaneURLDoesNotCountAsDefaulted(t *testing.T) {
 }
 
 func TestContainerLabelsIncludeSandboxIDByDefault(t *testing.T) {
-	d := NewDriverWithClient(nil, Config{})
+	d := NewDriverWithClient(nil, DriverConfig{})
 	labels := d.containerLabels(vm.InstanceSpec{
 		Ref:  sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"},
 		Name: "instance-1",
@@ -143,7 +143,7 @@ func TestContainerLabelsIncludeSandboxIDByDefault(t *testing.T) {
 }
 
 func TestContainerLabelsOmitSandboxIDForWorkerAgent(t *testing.T) {
-	d := NewDriverWithClient(nil, Config{})
+	d := NewDriverWithClient(nil, DriverConfig{})
 	labels := d.containerLabels(vm.InstanceSpec{
 		Ref:      sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "worker-worker-1"},
 		Name:     "instance-1",
@@ -163,7 +163,7 @@ func TestContainerLabelsOmitSandboxIDForWorkerAgent(t *testing.T) {
 }
 
 func TestContainerMountsBindHostDockerSocketForWorkerAgent(t *testing.T) {
-	d := NewDriverWithClient(nil, Config{})
+	d := NewDriverWithClient(nil, DriverConfig{})
 	mounts := d.containerMounts(true, "worker-1")
 
 	if !hasMount(mounts, dockerSocketPath, dockerSocketPath) {
@@ -172,7 +172,7 @@ func TestContainerMountsBindHostDockerSocketForWorkerAgent(t *testing.T) {
 }
 
 func TestContainerMountsDoNotBindHostDockerSocketForNonWorkerAgent(t *testing.T) {
-	d := NewDriverWithClient(nil, Config{})
+	d := NewDriverWithClient(nil, DriverConfig{})
 	mounts := d.containerMounts(false, "worker-1")
 
 	if hasMount(mounts, dockerSocketPath, dockerSocketPath) {

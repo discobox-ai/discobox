@@ -8,16 +8,11 @@ import (
 
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/providers/sandbox/provider/vmprovider"
-	"github.com/obot-platform/discobox/server/providers/sandbox/vm"
-	dockerdriver "github.com/obot-platform/discobox/server/providers/sandbox/vm/docker"
-	"github.com/obot-platform/discobox/server/providers/sandbox/workerpool"
+	"github.com/obot-platform/discobox/server/providers/workerpool"
+	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
 )
 
-const ProviderType = dockerdriver.ProviderType
 const workerImageEnv = "DISCOBOX_DOCKER_WORKER_IMAGE"
-
-var Definition = dockerdriver.Definition()
 
 func FactoryWithWorkerManager(workerManager workerpool.WorkerManager) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
@@ -34,12 +29,12 @@ type Config struct {
 	Systemd         *bool                 `json:"systemd,omitempty"`
 	Privileged      *bool                 `json:"privileged,omitempty"`
 	CgroupNSMode    string                `json:"cgroupNsMode,omitempty"`
-	Command         vmprovider.StringList `json:"command,omitempty"`
-	vmprovider.WorkerPoolConfigFields
+	Command         workerpool.StringList `json:"command,omitempty"`
+	workerpool.WorkerPoolConfigFields
 }
 
 func Decode(data json.RawMessage) (Config, error) {
-	return vmprovider.DecodeConfig[Config](data, ProviderType)
+	return workerpool.DecodeConfig[Config](data, ProviderType)
 }
 
 func Validate(data json.RawMessage) error {
@@ -53,7 +48,7 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 		return nil, err
 	}
 	cfg.Image = configuredWorkerImage(cfg.Image)
-	return vmprovider.NewWorkerPoolProvider(ctx, vmprovider.WorkerPoolProviderConfig{
+	return workerpool.NewVMWorkerPoolProvider(ctx, workerpool.VMWorkerPoolProviderConfig{
 		ControlPlaneURL: cfg.ControlPlaneURL,
 		DefaultImage:    cfg.Image,
 		AgentPort:       cfg.AgentPort,
@@ -66,7 +61,7 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 }
 
 func DefaultWorkerImage() string {
-	return configuredWorkerImage(dockerdriver.DefaultImage())
+	return configuredWorkerImage(DefaultImage())
 }
 
 func configuredWorkerImage(image string) string {
@@ -77,7 +72,7 @@ func configuredWorkerImage(image string) string {
 }
 
 func newProvider(ctx context.Context, cfg Config, vmConfig vm.Config) (*vm.Provider, error) {
-	return dockerdriver.NewProvider(ctx, dockerdriver.Config{
+	return NewProvider(ctx, DriverConfig{
 		Host:         cfg.Host,
 		Image:        cfg.Image,
 		Network:      cfg.Network,

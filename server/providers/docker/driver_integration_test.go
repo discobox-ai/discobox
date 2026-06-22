@@ -15,7 +15,7 @@ import (
 	"github.com/moby/moby/client"
 
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/providers/sandbox/vm"
+	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
 )
 
 const dockerIntegrationEnv = "DISCOBOX_DOCKER_INTEGRATION"
@@ -32,7 +32,7 @@ func TestDockerIntegrationLifecycle(t *testing.T) {
 		buildDockerImage(ctx, t, "testdata/sleep/Dockerfile", image)
 	}
 
-	driver, err := NewDriver(ctx, Config{Image: image, Command: []string{"sleep", "300"}})
+	driver, err := NewDriver(ctx, DriverConfig{Image: image, Command: []string{"sleep", "300"}})
 	if err != nil {
 		t.Fatalf("new driver: %v", err)
 	}
@@ -101,7 +101,7 @@ func TestDockerIntegrationSystemdContainer(t *testing.T) {
 		buildDockerImage(ctx, t, "testdata/systemd/Dockerfile", image)
 	}
 
-	driver, err := NewDriver(ctx, Config{Image: image, Systemd: true, CgroupNSMode: "host"})
+	driver, err := NewDriver(ctx, DriverConfig{Image: image, Systemd: true, CgroupNSMode: "host"})
 	if err != nil {
 		t.Fatalf("new systemd driver: %v", err)
 	}
