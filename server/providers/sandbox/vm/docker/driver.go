@@ -236,7 +236,7 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 		return nil, err
 	}
 
-	exposedPort, ok := network.PortFrom(uint16(d.agentPort), network.TCP)
+	exposedPort, ok := agentNetworkPort(d.agentPort)
 	if !ok {
 		return nil, fmt.Errorf("invalid agent port %d", d.agentPort)
 	}
@@ -554,7 +554,7 @@ func shortContainerID(id string) string {
 }
 
 func assignedAgentEndpoint(ports network.PortMap, agentPort int) (string, int) {
-	port, ok := network.PortFrom(uint16(agentPort), network.TCP)
+	port, ok := agentNetworkPort(agentPort)
 	if !ok {
 		return "", 0
 	}
@@ -568,6 +568,13 @@ func assignedAgentEndpoint(ports network.PortMap, agentPort int) (string, int) {
 	}
 	hostPort, _ := strconv.Atoi(bindings[0].HostPort)
 	return host, hostPort
+}
+
+func agentNetworkPort(agentPort int) (network.Port, bool) {
+	if agentPort <= 0 || agentPort > 65535 {
+		return network.Port{}, false
+	}
+	return network.PortFrom(uint16(agentPort), network.TCP)
 }
 
 func mapDockerNotFound(err error) error {

@@ -27,6 +27,7 @@ func ExecSystemdChildIfRequested() error {
 	if err := syscall.Mount("proc", "/proc", "proc", 0, ""); err != nil {
 		return err
 	}
+	//nolint:gosec // Path and argv are fixed constants for entering the systemd child process.
 	return syscall.Exec(defaultSystemdPath, []string{defaultSystemdPath}, childEnv())
 }
 

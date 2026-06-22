@@ -119,7 +119,10 @@ func RowToSession(row models.CodingSession) sessions.Session {
 }
 
 func EncodeCommand(command []string) []byte {
-	data, _ := json.Marshal(command)
+	data, err := json.Marshal(command)
+	if err != nil {
+		return nil
+	}
 	return data
 }
 

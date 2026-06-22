@@ -100,6 +100,7 @@ func WriteFrame(w io.Writer, typ byte, payload []byte) error {
 	}
 	var header [5]byte
 	header[0] = typ
+	//nolint:gosec // maxFramePayload is far below MaxUint32 and is checked above.
 	binary.BigEndian.PutUint32(header[1:], uint32(len(payload)))
 	if _, err := w.Write(header[:]); err != nil {
 		return err

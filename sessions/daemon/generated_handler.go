@@ -90,7 +90,17 @@ func createBadRequest(err error) sessionapigen.SessionsCreateRes {
 }
 
 func sessionsResizeRequest(req *sessionapigen.ResizeRequest) sessions.ResizeRequest {
-	return sessions.ResizeRequest{Cols: uint16(req.Cols), Rows: uint16(req.Rows)}
+	return sessions.ResizeRequest{Cols: resizeDimension(req.Cols), Rows: resizeDimension(req.Rows)}
+}
+
+func resizeDimension(value int) uint16 {
+	if value <= 0 {
+		return 0
+	}
+	if value > 65535 {
+		return 65535
+	}
+	return uint16(value)
 }
 
 func resizeError(err error) sessionapigen.SessionsResizeRes {

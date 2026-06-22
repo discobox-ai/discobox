@@ -74,7 +74,7 @@ func supervisorErrorHandler(_ context.Context, w http.ResponseWriter, _ *http.Re
 }
 
 func (h *supervisorGeneratedHandler) resize(req *supervisorapigen.ResizeRequest) string {
-	if err := pty.Setsize(h.r.tty, &pty.Winsize{Rows: uint16(req.Rows), Cols: uint16(req.Cols)}); err != nil {
+	if err := pty.Setsize(h.r.tty, &pty.Winsize{Rows: resizeDimension(req.Rows), Cols: resizeDimension(req.Cols)}); err != nil {
 		return err.Error()
 	}
 	return ""

@@ -147,6 +147,7 @@ func readConfig(cfg Config) (sessions.Config, error) {
 		candidates = append(candidates, filepath.Join(home, ".config", "discobox", "sessions.json"))
 	}
 	for _, path := range candidates {
+		//nolint:gosec // Session config paths are explicit user/repo configuration locations.
 		data, err := os.ReadFile(path)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
@@ -202,7 +203,7 @@ func (r *runtimeState) startServer() error {
 	if err := prepareSocketPath(r.cfg.SocketPath); err != nil {
 		return err
 	}
-	ln, err := net.Listen("unix", r.cfg.SocketPath)
+	ln, err := (&net.ListenConfig{}).Listen(r.ctx, "unix", r.cfg.SocketPath)
 	if err != nil {
 		return err
 	}
@@ -212,7 +213,13 @@ func (r *runtimeState) startServer() error {
 		return err
 	}
 	r.listener = ln
-	r.server = &http.Server{Handler: r.withRequestTracking(routes)}
+	r.server = &http.Server{
+		Handler:           r.withRequestTracking(routes),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 	return nil
 }
 
@@ -250,7 +257,7 @@ func (r *runtimeState) generatedRoutes() (http.Handler, error) {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		if req.Method == http.MethodPost {
 			if sessionID, ok := attachSessionID(req.URL.Path); ok {
-				r.proxyAttach(w, sessionID)
+				r.proxyAttach(req.Context(), w, sessionID)
 				return
 			}
 		}
@@ -389,7 +396,7 @@ func (r *runtimeState) startDetachedSupervisor(session sessions.Session, rows, c
 		"--cols", strconv.Itoa(int(cols)),
 		"--command", base64.StdEncoding.EncodeToString(commandJSON),
 	}
-	cmd := exec.Command(exe, args...)
+	cmd := exec.CommandContext(context.WithoutCancel(r.ctx), exe, args...)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil
@@ -598,7 +605,7 @@ func supervisorSignal(ctx context.Context, socket string, token string, signal s
 	return nil
 }
 
-func (r *runtimeState) proxyAttach(w http.ResponseWriter, sessionID string) {
+func (r *runtimeState) proxyAttach(ctx context.Context, w http.ResponseWriter, sessionID string) {
 	row, err := r.store.GetSession(context.Background(), sessionID)
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -608,7 +615,7 @@ func (r *runtimeState) proxyAttach(w http.ResponseWriter, sessionID string) {
 		writeError(w, status, err)
 		return
 	}
-	proxyHijacked(w, row.SupervisorSocket, row.SupervisorToken, "/attach")
+	proxyHijacked(ctx, w, row.SupervisorSocket, row.SupervisorToken, "/attach")
 }
 
 func (r *runtimeState) supervisorResize(ctx context.Context, sessionID string, req sessions.ResizeRequest) error {
@@ -627,21 +634,21 @@ func (r *runtimeState) supervisorSignal(ctx context.Context, sessionID string, s
 	return supervisorSignal(ctx, row.SupervisorSocket, row.SupervisorToken, signal)
 }
 
-func proxyHijacked(w http.ResponseWriter, socket, token, path string) {
+func proxyHijacked(ctx context.Context, w http.ResponseWriter, socket, token, path string) {
 	clientConn, clientRW, err := http.NewResponseController(w).Hijack()
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	defer clientConn.Close()
-	supervisorConn, err := net.Dial("unix", socket)
+	supervisorConn, err := (&net.Dialer{}).DialContext(ctx, "unix", socket)
 	if err != nil {
 		_, _ = clientRW.WriteString("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
 		_ = clientRW.Flush()
 		return
 	}
 	defer supervisorConn.Close()
-	req, err := http.NewRequest(http.MethodPost, "http://unix"+path, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://unix"+path, nil)
 	if err != nil {
 		return
 	}
@@ -797,7 +804,9 @@ func (r *runtimeState) writeRuntimeMetadata() error {
 func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+		return
+	}
 }
 
 func writeError(w http.ResponseWriter, status int, err error) {

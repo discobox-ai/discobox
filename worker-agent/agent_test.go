@@ -52,7 +52,10 @@ func TestHTTPClientRegistersWorker(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
-		_ = json.NewEncoder(w).Encode(workeragent.RegisterResponse{AuthToken: "auth-token"})
+		//nolint:gosec // Test fixture response exercises auth-token decoding; token value is not real.
+		if err := json.NewEncoder(w).Encode(workeragent.RegisterResponse{AuthToken: "auth-token"}); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
 	}))
 	defer server.Close()
 

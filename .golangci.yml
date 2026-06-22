@@ -7,13 +7,19 @@ run:
 linters:
   default: standard
   enable:
+    - bidichk
     - bodyclose
     - errcheck
+    - errchkjson
     - errorlint
+    - gosec
     - misspell
     - nilerr
+    - noctx
     - nolintlint
     - rowserrcheck
+    - loggercheck
+    - sloglint
     - sqlclosecheck
     - unconvert
     - wastedassign
@@ -41,6 +47,10 @@ linters:
       - path: _test\.go
         linters:
           - errcheck
+      - path: _test\.go
+        text: "G306:"
+        linters:
+          - gosec
 
 formatters:
   enable:

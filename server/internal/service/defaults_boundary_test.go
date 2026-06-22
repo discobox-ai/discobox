@@ -27,6 +27,7 @@ func TestDefaultProjectIDProductionReferencesStayInDefaults(t *testing.T) {
 		if filepath.Ext(path) != ".go" || strings.HasSuffix(path, "_test.go") {
 			return nil
 		}
+		//nolint:gosec // Test scans repository source files discovered by WalkDir, not user-controlled paths.
 		data, err := os.ReadFile(path)
 		if err != nil {
 			return err

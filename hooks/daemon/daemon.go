@@ -220,7 +220,7 @@ func (r *runtimeState) run(parent context.Context) (err error) {
 		return err
 	}
 	if initialSnapshot == nil {
-		initialChanges := initialWorkingTreeChanges(r.cfg.RepoRoot)
+		initialChanges := initialWorkingTreeChanges(r.ctx, r.cfg.RepoRoot)
 		if len(initialChanges) > 0 {
 			r.addBatch(initialChanges, w.Snapshot())
 		} else if err := r.store.ReplaceWatchedSnapshot(r.ctx, w.Snapshot()); err != nil {
@@ -252,7 +252,7 @@ func (r *runtimeState) startServer() error {
 	if err := prepareSocketPath(r.cfg.SocketPath); err != nil {
 		return err
 	}
-	ln, err := net.Listen("unix", r.cfg.SocketPath)
+	ln, err := (&net.ListenConfig{}).Listen(r.ctx, "unix", r.cfg.SocketPath)
 	if err != nil {
 		return err
 	}
@@ -263,7 +263,13 @@ func (r *runtimeState) startServer() error {
 		return err
 	}
 	r.listener = ln
-	r.server = &http.Server{Handler: r.withRequestTracking(routes)}
+	r.server = &http.Server{
+		Handler:           r.withRequestTracking(routes),
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 	return nil
 }
 
@@ -274,7 +280,7 @@ func prepareSocketPath(path string) error {
 		}
 		return err
 	}
-	conn, err := net.DialTimeout("unix", path, 200*time.Millisecond)
+	conn, err := (&net.Dialer{Timeout: 200 * time.Millisecond}).DialContext(context.Background(), "unix", path)
 	if err == nil {
 		_ = conn.Close()
 		return fmt.Errorf("hook daemon socket %s is already in use", path)
@@ -667,11 +673,11 @@ func cloneWatcherSnapshot(in map[string]watcher.Entry) map[string]watcher.Entry 
 	return out
 }
 
-func initialWorkingTreeChanges(repoRoot string) []watcher.Change {
-	if gitOutput(repoRoot, "rev-parse", "--verify", "HEAD") == "" {
+func initialWorkingTreeChanges(ctx context.Context, repoRoot string) []watcher.Change {
+	if gitOutput(ctx, repoRoot, "rev-parse", "--verify", "HEAD") == "" {
 		return nil
 	}
-	cmd := exec.Command("git", "status", "--porcelain=v1", "-z", "--untracked-files=all")
+	cmd := exec.CommandContext(ctx, "git", "status", "--porcelain=v1", "-z", "--untracked-files=all")
 	cmd.Dir = repoRoot
 	out, err := cmd.Output()
 	if err != nil || len(out) == 0 {
@@ -808,7 +814,7 @@ func isHookConfigPath(path string) bool {
 }
 
 func (r *runtimeState) recordObservedChanges(ctx context.Context, changes []watcher.Change) ([]store.ObservedFileChange, error) {
-	baseCommit := gitOutput(r.cfg.RepoRoot, "rev-parse", "HEAD")
+	baseCommit := gitOutput(ctx, r.cfg.RepoRoot, "rev-parse", "HEAD")
 	rows := make([]store.ObservedFileChange, 0, len(changes))
 	for _, change := range changes {
 		path := filepath.ToSlash(strings.TrimSpace(change.Path))
@@ -819,7 +825,7 @@ func (r *runtimeState) recordObservedChanges(ctx context.Context, changes []watc
 			Path:       path,
 			Kind:       change.Kind,
 			BaseCommit: baseCommit,
-			Diff:       gitDiffForPath(r.cfg.RepoRoot, baseCommit, path, change.Kind),
+			Diff:       gitDiffForPath(ctx, r.cfg.RepoRoot, baseCommit, path, change.Kind),
 		})
 	}
 	recorded, err := r.store.RecordObservedChanges(ctx, rows)
@@ -839,8 +845,8 @@ func (r *runtimeState) recordObservedChanges(ctx context.Context, changes []watc
 	return recorded, nil
 }
 
-func gitOutput(repoRoot string, args ...string) string {
-	cmd := exec.Command("git", args...)
+func gitOutput(ctx context.Context, repoRoot string, args ...string) string {
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = repoRoot
 	out, err := cmd.Output()
 	if err != nil {
@@ -849,27 +855,27 @@ func gitOutput(repoRoot string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func gitDiffForPath(repoRoot, baseCommit, path string, kind watcher.ChangeKind) string {
+func gitDiffForPath(ctx context.Context, repoRoot, baseCommit, path string, kind watcher.ChangeKind) string {
 	args := []string{"diff", "--no-ext-diff"}
 	if baseCommit != "" {
 		args = append(args, baseCommit)
 	}
 	args = append(args, "--", path)
-	if out, ok := gitDiffOutput(repoRoot, args...); ok && out != "" {
+	if out, ok := gitDiffOutput(ctx, repoRoot, args...); ok && out != "" {
 		return out
 	}
 	if kind != watcher.Created {
 		return ""
 	}
 	abs := filepath.Join(repoRoot, filepath.FromSlash(path))
-	if out, ok := gitDiffOutput(repoRoot, "diff", "--no-ext-diff", "--no-index", "--", os.DevNull, abs); ok {
+	if out, ok := gitDiffOutput(ctx, repoRoot, "diff", "--no-ext-diff", "--no-index", "--", os.DevNull, abs); ok {
 		return out
 	}
 	return ""
 }
 
-func gitDiffOutput(repoRoot string, args ...string) (string, bool) {
-	cmd := exec.Command("git", args...)
+func gitDiffOutput(ctx context.Context, repoRoot string, args ...string) (string, bool) {
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = repoRoot
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1329,7 +1335,9 @@ func ignoreHookRuntimePaths(cfg Config) watcher.IgnoreFunc {
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		return
+	}
 }
 func writeError(w http.ResponseWriter, status int, err error) {
 	writeJSON(w, status, map[string]string{"error": err.Error()})

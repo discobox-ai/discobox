@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -29,7 +30,7 @@ func TestAuthorizationAllowsFirstAuthorizerThatMatches(t *testing.T) {
 	}))
 
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/projects/project-1", nil))
+	handler.ServeHTTP(recorder, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1", nil))
 
 	if recorder.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNoContent)
@@ -50,7 +51,7 @@ func TestAuthorizationTriesNextAuthorizerWhenOneDoesNotApply(t *testing.T) {
 	}))
 
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/projects/project-1", nil))
+	handler.ServeHTTP(recorder, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1", nil))
 
 	if recorder.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNoContent)
@@ -71,7 +72,7 @@ func TestAuthorizationStopsOnAuthorizerError(t *testing.T) {
 	}))
 
 	recorder := httptest.NewRecorder()
-	handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/api/projects/project-1", nil))
+	handler.ServeHTTP(recorder, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1", nil))
 
 	if recorder.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusForbidden)
@@ -91,7 +92,7 @@ func TestAuthenticatedAuthorizerAllowsOnlyExplicitPaths(t *testing.T) {
 		"/providers/catalog",
 	} {
 		t.Run(path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
 			req = req.WithContext(WithPrincipal(req.Context(), principal))
 			ok, err := (AuthenticatedAuthorizer{}).Authorize(req)
 			if err != nil {
@@ -115,7 +116,7 @@ func TestAuthenticatedAuthorizerDoesNotAuthorizeUnlistedPaths(t *testing.T) {
 		"/unknown",
 	} {
 		t.Run(path, func(t *testing.T) {
-			req := httptest.NewRequest(http.MethodGet, path, nil)
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
 			req = req.WithContext(WithPrincipal(req.Context(), principal))
 			ok, err := (AuthenticatedAuthorizer{}).Authorize(req)
 			if err != nil {

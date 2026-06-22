@@ -8,6 +8,13 @@ import (
 	"github.com/obot-platform/discobox/gormdb"
 )
 
+const (
+	//nolint:gosec // Test fixture DSN verifies config parsing; it is not a real credential.
+	testDatabaseDSN = "postgres://user:pass@localhost/discobox"
+	//nolint:gosec // Test fixture DSN verifies config parsing; it is not a real credential.
+	testDatabaseReadDSN = "postgres://user:pass@localhost/discobox_read"
+)
+
 func TestLoadDefaults(t *testing.T) {
 	clearConfigEnv(t)
 
@@ -58,8 +65,8 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	t.Setenv("DISCOBOX_CONFIG_DIR", "/tmp/discobox/config")
 	t.Setenv("DISCOBOX_CACHE_DIR", "/tmp/discobox/cache")
 	t.Setenv("DISCOBOX_STATE_DIR", "/tmp/discobox/state")
-	t.Setenv("DATABASE_DSN", "postgres://user:pass@localhost/discobox")
-	t.Setenv("DATABASE_READ_DSN", "postgres://user:pass@localhost/discobox_read")
+	t.Setenv("DATABASE_DSN", testDatabaseDSN)
+	t.Setenv("DATABASE_READ_DSN", testDatabaseReadDSN)
 	t.Setenv("DATABASE_DRIVER", "postgres")
 	t.Setenv("JOB_MAX_ATTEMPTS", "7")
 	t.Setenv("DISPATCHER_ENABLED", "false")
@@ -93,13 +100,13 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	if cfg.StateDir != "/tmp/discobox/state" {
 		t.Fatalf("StateDir = %q", cfg.StateDir)
 	}
-	if cfg.DatabaseDSN != "postgres://user:pass@localhost/discobox" {
+	if cfg.DatabaseDSN != testDatabaseDSN {
 		t.Fatalf("DatabaseDSN = %q", cfg.DatabaseDSN)
 	}
 	if cfg.DatabaseDriver != gormdb.DriverPostgres {
 		t.Fatalf("DatabaseDriver = %q, want %q", cfg.DatabaseDriver, gormdb.DriverPostgres)
 	}
-	if cfg.DatabaseReadDSN != "postgres://user:pass@localhost/discobox_read" {
+	if cfg.DatabaseReadDSN != testDatabaseReadDSN {
 		t.Fatalf("DatabaseReadDSN = %q", cfg.DatabaseReadDSN)
 	}
 	if cfg.JobMaxAttempts != 7 {

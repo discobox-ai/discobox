@@ -164,6 +164,14 @@ func (a *app) newSupervisorCommand() *cobra.Command {
 			if token == "" {
 				return fmt.Errorf("DISCOBOX_SUPERVISOR_TOKEN is required")
 			}
+			rows16, err := terminalDimensionFromInt(rows)
+			if err != nil {
+				return fmt.Errorf("invalid rows: %w", err)
+			}
+			cols16, err := terminalDimensionFromInt(cols)
+			if err != nil {
+				return fmt.Errorf("invalid cols: %w", err)
+			}
 			return daemon.RunSupervisor(cmd.Context(), daemon.SupervisorConfig{
 				Session: sessions.Session{
 					ID:        sessionID,
@@ -175,8 +183,8 @@ func (a *app) newSupervisorCommand() *cobra.Command {
 				},
 				SocketPath:  socketPath,
 				RuntimePath: runtimePath,
-				Rows:        uint16(rows),
-				Cols:        uint16(cols),
+				Rows:        rows16,
+				Cols:        cols16,
 				Token:       token,
 			})
 		},
@@ -554,7 +562,22 @@ func currentTerminalSizeFrom(file *os.File) (uint16, uint16) {
 	if err != nil || width <= 0 || height <= 0 {
 		return 80, 24
 	}
-	return uint16(width), uint16(height)
+	cols, err := terminalDimensionFromInt(width)
+	if err != nil {
+		cols = 80
+	}
+	rows, err := terminalDimensionFromInt(height)
+	if err != nil {
+		rows = 24
+	}
+	return cols, rows
+}
+
+func terminalDimensionFromInt(value int) (uint16, error) {
+	if value <= 0 || value > 65535 {
+		return 0, fmt.Errorf("dimension %d outside uint16 range", value)
+	}
+	return uint16(value), nil
 }
 
 func (a *app) writeStatus(cmd *cobra.Command, status *sessions.StatusResponse) error {
@@ -676,7 +699,7 @@ func ensureDaemon(ctx context.Context, c *client.Client, paths sessionPaths) err
 	} else if !errors.Is(err, client.ErrNotRunning) {
 		return err
 	}
-	if err := startDetachedDaemon(paths); err != nil {
+	if err := startDetachedDaemon(ctx, paths); err != nil {
 		return fmt.Errorf("start daemon: %w", err)
 	}
 	deadline := time.Now().Add(10 * time.Second)
@@ -734,12 +757,12 @@ func acquireStartupLock(path string) (func(), error) {
 	}, nil
 }
 
-func startDetachedDaemon(paths sessionPaths) error {
+func startDetachedDaemon(ctx context.Context, paths sessionPaths) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(exe, "--session-id", paths.SessionID, "--repo-root", paths.RepoRoot, "daemon", "--foreground")
+	cmd := exec.CommandContext(ctx, exe, "--session-id", paths.SessionID, "--repo-root", paths.RepoRoot, "daemon", "--foreground")
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil

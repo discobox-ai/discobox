@@ -80,7 +80,7 @@ func assertOpenAPIAndScalarDocs(t *testing.T, router http.Handler) {
 	t.Helper()
 
 	openapiResp := httptest.NewRecorder()
-	router.ServeHTTP(openapiResp, httptest.NewRequest(http.MethodGet, "/openapi.yaml", nil))
+	router.ServeHTTP(openapiResp, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/openapi.yaml", nil))
 	if openapiResp.Code != http.StatusOK {
 		t.Fatalf("GET /openapi.yaml status = %d, want %d", openapiResp.Code, http.StatusOK)
 	}
@@ -92,7 +92,7 @@ func assertOpenAPIAndScalarDocs(t *testing.T, router http.Handler) {
 	}
 
 	docsResp := httptest.NewRecorder()
-	router.ServeHTTP(docsResp, httptest.NewRequest(http.MethodGet, "/docs", nil))
+	router.ServeHTTP(docsResp, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/docs", nil))
 	if docsResp.Code != http.StatusOK {
 		t.Fatalf("GET /docs status = %d, want %d", docsResp.Code, http.StatusOK)
 	}
@@ -105,7 +105,7 @@ func assertOpenAPIAndScalarDocs(t *testing.T, router http.Handler) {
 }
 
 func jsonRequest(method, target, body string) *http.Request {
-	req := httptest.NewRequest(method, target, strings.NewReader(body))
+	req := httptest.NewRequestWithContext(context.Background(), method, target, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	return req
 }
@@ -155,7 +155,7 @@ func TestNewAppStartsWithDefaults(t *testing.T) {
 	}
 
 	resp := httptest.NewRecorder()
-	router.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/projects", nil))
+	router.ServeHTTP(resp, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/projects", nil))
 	if resp.Code != http.StatusOK {
 		t.Fatalf("GET /projects status = %d, body = %s", resp.Code, resp.Body.String())
 	}
@@ -186,7 +186,7 @@ func TestNewAppResolvesDefaultProjectAlias(t *testing.T) {
 	}
 
 	resp := httptest.NewRecorder()
-	router.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, "/projects/default", nil))
+	router.ServeHTTP(resp, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/projects/default", nil))
 	if resp.Code != http.StatusOK {
 		t.Fatalf("GET /projects/default status = %d, body = %s", resp.Code, resp.Body.String())
 	}
@@ -243,7 +243,12 @@ func TestProjectStreamReceivesSandboxMutation(t *testing.T) {
 	readProjectStreamMessage(t, wsCtx, conn, "subscribed", "")
 	readProjectStreamMessage(t, wsCtx, conn, "event", "connected")
 
-	resp, err := http.Post(server.URL+"/projects/default/sandboxes", "application/json", strings.NewReader(`{"name":"live","description":"test sandbox"}`))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/projects/default/sandboxes", strings.NewReader(`{"name":"live","description":"test sandbox"}`))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}

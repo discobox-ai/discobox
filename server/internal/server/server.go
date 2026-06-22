@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/joho/godotenv"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
@@ -79,7 +80,15 @@ func Run(ctx context.Context) error {
 	log.Printf("openapi spec available at http://localhost%s/openapi.yaml", addr)
 	log.Printf("api docs available at http://localhost%s/docs", addr)
 	handler := otelhttp.NewHandler(router, "discobox-server")
-	if err := http.ListenAndServe(addr, handler); err != nil {
+	server := &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	if err := server.ListenAndServe(); err != nil {
 		return fmt.Errorf("server failed: %w", err)
 	}
 	return nil

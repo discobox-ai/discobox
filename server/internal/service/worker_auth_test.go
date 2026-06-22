@@ -146,7 +146,7 @@ func updateTestWorkerStatus(ctx context.Context, svc *service.Service, appStore 
 }
 
 func authenticateTestWorker(ctx context.Context, appStore *store.Store, authorization string) (context.Context, error) {
-	req := httptest.NewRequest(http.MethodPost, "/api/workers/test-worker/status", nil).WithContext(ctx)
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/workers/test-worker/status", nil)
 	req.Header.Set("Authorization", authorization)
 	principal, ok, err := (auth.WorkerAuthenticator{Store: appStore}).Authenticate(req)
 	if err != nil {

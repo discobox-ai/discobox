@@ -255,6 +255,7 @@ func updateEnv(path string, values map[string]string) error {
 	for _, key := range missing {
 		lines = append(lines, key+"="+values[key])
 	}
+	//nolint:gosec // Development watcher writes a repository .env file meant to be user-editable.
 	return os.WriteFile(path, []byte(strings.Join(lines, "\n")+"\n"), 0o644)
 }
 

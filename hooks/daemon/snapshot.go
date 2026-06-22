@@ -27,15 +27,15 @@ type workspaceSnapshotCandidate struct {
 }
 
 func (r *runtimeState) captureWorkspaceSnapshot(ctx context.Context) (*store.WorkspaceSnapshot, error) {
-	baseCommit := gitOutput(r.cfg.RepoRoot, "rev-parse", "HEAD")
+	baseCommit := gitOutput(ctx, r.cfg.RepoRoot, "rev-parse", "HEAD")
 	baseTree := ""
 	if baseCommit != "" {
-		baseTree = gitOutput(r.cfg.RepoRoot, "rev-parse", "HEAD^{tree}")
+		baseTree = gitOutput(ctx, r.cfg.RepoRoot, "rev-parse", "HEAD^{tree}")
 	}
 	if baseCommit == "" || baseTree == "" {
 		return nil, nil
 	}
-	candidates, err := workspaceSnapshotCandidates(r.cfg.RepoRoot)
+	candidates, err := workspaceSnapshotCandidates(ctx, r.cfg.RepoRoot)
 	if err != nil {
 		return nil, err
 	}
@@ -47,7 +47,7 @@ func (r *runtimeState) captureWorkspaceSnapshot(ctx context.Context) (*store.Wor
 	eligible := make([]workspaceSnapshotCandidate, 0, len(candidates))
 	omitted := make([]store.SnapshotOmission, 0)
 	for _, candidate := range candidates {
-		ok, omission := workspaceSnapshotCandidateAllowed(r.cfg.RepoRoot, candidate, maxFileBytes)
+		ok, omission := workspaceSnapshotCandidateAllowed(ctx, r.cfg.RepoRoot, candidate, maxFileBytes)
 		if ok {
 			eligible = append(eligible, candidate)
 			continue
@@ -82,7 +82,7 @@ func (r *runtimeState) captureWorkspaceSnapshot(ctx context.Context) (*store.Wor
 	}
 	defer os.RemoveAll(tmpObjects)
 
-	objectDir := gitOutput(r.cfg.RepoRoot, "rev-parse", "--git-path", "objects")
+	objectDir := gitOutput(ctx, r.cfg.RepoRoot, "rev-parse", "--git-path", "objects")
 	if objectDir == "" {
 		return nil, fmt.Errorf("resolve git objects directory")
 	}
@@ -94,28 +94,28 @@ func (r *runtimeState) captureWorkspaceSnapshot(ctx context.Context) (*store.Wor
 		"GIT_OBJECT_DIRECTORY":             tmpObjects,
 		"GIT_ALTERNATE_OBJECT_DIRECTORIES": objectDir,
 	}
-	if _, err := snapshotGitOutput(r.cfg.RepoRoot, gitEnv, nil, "read-tree", "HEAD"); err != nil {
+	if _, err := snapshotGitOutput(ctx, r.cfg.RepoRoot, gitEnv, nil, "read-tree", "HEAD"); err != nil {
 		return nil, fmt.Errorf("read HEAD into temporary index: %w", err)
 	}
 	for _, candidate := range eligible {
 		if candidate.kind == watcher.Deleted {
-			if _, err := snapshotGitOutput(r.cfg.RepoRoot, gitEnv, nil, "rm", "--cached", "--ignore-unmatch", "--", candidate.path); err != nil {
+			if _, err := snapshotGitOutput(ctx, r.cfg.RepoRoot, gitEnv, nil, "rm", "--cached", "--ignore-unmatch", "--", candidate.path); err != nil {
 				return nil, fmt.Errorf("remove deleted path %s from temporary index: %w", candidate.path, err)
 			}
 			continue
 		}
-		if _, err := snapshotGitOutput(r.cfg.RepoRoot, gitEnv, nil, "add", "--", candidate.path); err != nil {
+		if _, err := snapshotGitOutput(ctx, r.cfg.RepoRoot, gitEnv, nil, "add", "--", candidate.path); err != nil {
 			return nil, fmt.Errorf("add path %s to temporary index: %w", candidate.path, err)
 		}
 	}
-	tree, err := snapshotGitOutput(r.cfg.RepoRoot, gitEnv, nil, "write-tree")
+	tree, err := snapshotGitOutput(ctx, r.cfg.RepoRoot, gitEnv, nil, "write-tree")
 	if err != nil {
 		return nil, fmt.Errorf("write workspace snapshot tree: %w", err)
 	}
 	if tree == "" || tree == baseTree {
 		return nil, nil
 	}
-	patch, err := snapshotGitOutput(r.cfg.RepoRoot, gitEnv, nil, "diff", "--binary", baseTree, tree)
+	patch, err := snapshotGitOutput(ctx, r.cfg.RepoRoot, gitEnv, nil, "diff", "--binary", baseTree, tree)
 	if err != nil {
 		return nil, fmt.Errorf("generate workspace snapshot patch: %w", err)
 	}
@@ -159,8 +159,8 @@ func (r *runtimeState) workspaceSnapshotTempDir() (string, error) {
 	return dir, nil
 }
 
-func workspaceSnapshotCandidates(repoRoot string) ([]workspaceSnapshotCandidate, error) {
-	cmd := exec.Command("git", "status", "--porcelain=v1", "-z", "--untracked-files=all")
+func workspaceSnapshotCandidates(ctx context.Context, repoRoot string) ([]workspaceSnapshotCandidate, error) {
+	cmd := exec.CommandContext(ctx, "git", "status", "--porcelain=v1", "-z", "--untracked-files=all")
 	cmd.Dir = repoRoot
 	out, err := cmd.Output()
 	if err != nil {
@@ -206,9 +206,9 @@ func workspaceSnapshotCandidates(repoRoot string) ([]workspaceSnapshotCandidate,
 	return candidates, nil
 }
 
-func workspaceSnapshotCandidateAllowed(repoRoot string, candidate workspaceSnapshotCandidate, limit int64) (bool, store.SnapshotOmission) {
+func workspaceSnapshotCandidateAllowed(ctx context.Context, repoRoot string, candidate workspaceSnapshotCandidate, limit int64) (bool, store.SnapshotOmission) {
 	omission := store.SnapshotOmission{Path: candidate.path, Kind: candidate.kind, LimitBytes: limit}
-	oldSize, oldOK := gitBlobSize(repoRoot, "HEAD", candidate.path)
+	oldSize, oldOK := gitBlobSize(ctx, repoRoot, "HEAD", candidate.path)
 	if oldOK && oldSize > limit {
 		omission.Reason = "too_large"
 		omission.SizeBytes = oldSize
@@ -238,8 +238,9 @@ func workspaceSnapshotCandidateAllowed(repoRoot string, candidate workspaceSnaps
 	return true, store.SnapshotOmission{}
 }
 
-func gitBlobSize(repoRoot, rev, path string) (int64, bool) {
-	cmd := exec.Command("git", "cat-file", "-s", rev+":"+path)
+func gitBlobSize(ctx context.Context, repoRoot, rev, path string) (int64, bool) {
+	//nolint:gosec // Arguments are passed directly to git, not through a shell; path comes from git status output.
+	cmd := exec.CommandContext(ctx, "git", "cat-file", "-s", rev+":"+path)
 	cmd.Dir = repoRoot
 	out, err := cmd.Output()
 	if err != nil {
@@ -249,8 +250,8 @@ func gitBlobSize(repoRoot, rev, path string) (int64, bool) {
 	return size, err == nil
 }
 
-func snapshotGitOutput(dir string, extraEnv map[string]string, stdin []byte, args ...string) (string, error) {
-	cmd := exec.Command("git", args...)
+func snapshotGitOutput(ctx context.Context, dir string, extraEnv map[string]string, stdin []byte, args ...string) (string, error) {
+	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)

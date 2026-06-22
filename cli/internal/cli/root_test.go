@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -618,7 +619,11 @@ func TestHTTPClientAddsAuthorizationHeader(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	app := &App{token: "token-1"}
-	resp, err := app.httpClient().Get(server.URL)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := app.httpClient().Do(req)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -644,7 +649,7 @@ func TestDebugTransportPrintsRequestAndRedactsAuthorization(t *testing.T) {
 			}, nil
 		}),
 	}
-	req, err := http.NewRequest(http.MethodPost, "http://user:pass@example.test/path?x=1", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://user:pass@example.test/path?x=1", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
@@ -685,7 +690,11 @@ func TestHTTPClientDebugLogsAddedHeaders(t *testing.T) {
 
 	var log bytes.Buffer
 	app := &App{token: "token-1", debug: true, errOut: &log}
-	resp, err := app.httpClient().Get(server.URL)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL, nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := app.httpClient().Do(req)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -729,7 +738,7 @@ func TestDebugTransportPrintsRequestAndResponseBodies(t *testing.T) {
 			}, nil
 		}),
 	}
-	req, err := http.NewRequest(http.MethodPost, "http://example.test/sandboxes", strings.NewReader(`{"name":"sandbox-1"}`))
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://example.test/sandboxes", strings.NewReader(`{"name":"sandbox-1"}`))
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}

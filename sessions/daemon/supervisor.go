@@ -52,7 +52,7 @@ func RunSupervisor(ctx context.Context, cfg SupervisorConfig) error {
 		return fmt.Errorf("supervisor token is required")
 	}
 	r := &supervisorRuntime{cfg: cfg, done: make(chan struct{}), attachers: map[*attachWriter]struct{}{}}
-	if err := r.start(); err != nil {
+	if err := r.start(ctx); err != nil {
 		return err
 	}
 	defer r.close()
@@ -68,11 +68,12 @@ func RunSupervisor(ctx context.Context, cfg SupervisorConfig) error {
 	}
 }
 
-func (r *supervisorRuntime) start() error {
+func (r *supervisorRuntime) start(ctx context.Context) error {
 	if len(r.cfg.Session.Command) == 0 {
 		return fmt.Errorf("command is required")
 	}
-	cmd := exec.Command(r.cfg.Session.Command[0], r.cfg.Session.Command[1:]...)
+	//nolint:gosec // The sessions module intentionally launches the configured local coding-agent command.
+	cmd := exec.CommandContext(ctx, r.cfg.Session.Command[0], r.cfg.Session.Command[1:]...)
 	cmd.Dir = r.cfg.Session.Workdir
 	cmd.Env = append(os.Environ(), "DISCOBOX_CODING_AGENT_SESSION=1")
 	cmd.SysProcAttr = agentSysProcAttr()
@@ -99,7 +100,7 @@ func (r *supervisorRuntime) start() error {
 		_ = cmd.Process.Kill()
 		return err
 	}
-	ln, err := net.Listen("unix", r.cfg.SocketPath)
+	ln, err := (&net.ListenConfig{}).Listen(ctx, "unix", r.cfg.SocketPath)
 	if err != nil {
 		_ = tty.Close()
 		_ = cmd.Process.Kill()
@@ -113,7 +114,13 @@ func (r *supervisorRuntime) start() error {
 		return err
 	}
 	r.listener = ln
-	r.server = &http.Server{Handler: handler}
+	r.server = &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 	return r.writeRuntime(store.RuntimeExit{SessionID: r.cfg.Session.ID, PID: cmd.Process.Pid})
 }
 

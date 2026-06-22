@@ -541,7 +541,7 @@ echo review
 
 func TestPrepareSocketPathRejectsLiveSocket(t *testing.T) {
 	socketPath := filepath.Join(t.TempDir(), "daemon.sock")
-	ln, err := net.Listen("unix", socketPath)
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", socketPath)
 	if err != nil {
 		t.Fatalf("listen unix socket: %v", err)
 	}
@@ -686,7 +686,7 @@ func TestInitialWorkingTreeChangesExpandsStagedRename(t *testing.T) {
 	gitTestCommand(t, repo, "commit", "-m", "initial")
 	gitTestCommand(t, repo, "mv", "old.go", "new.go")
 
-	changes := initialWorkingTreeChanges(repo)
+	changes := initialWorkingTreeChanges(context.Background(), repo)
 	if len(changes) != 2 {
 		t.Fatalf("expected two rename changes, got %#v", changes)
 	}
@@ -974,7 +974,7 @@ func TestInitialWorkingTreeChanges(t *testing.T) {
 	gitTestCommand(t, repo, "add", ".")
 	gitTestCommand(t, repo, "commit", "-m", "initial")
 
-	if changes := initialWorkingTreeChanges(repo); len(changes) != 0 {
+	if changes := initialWorkingTreeChanges(context.Background(), repo); len(changes) != 0 {
 		t.Fatalf("clean repo initial changes = %#v, want none", changes)
 	}
 
@@ -988,7 +988,7 @@ func TestInitialWorkingTreeChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	changes := initialWorkingTreeChanges(repo)
+	changes := initialWorkingTreeChanges(context.Background(), repo)
 	got := map[string]watcher.ChangeKind{}
 	for _, change := range changes {
 		got[change.Path] = change.Kind
@@ -1034,7 +1034,7 @@ func hasStoreEvent(events []hookstore.Event, eventType string) bool {
 
 func gitTestCommand(t *testing.T, dir string, args ...string) {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := exec.CommandContext(context.Background(), "git", args...)
 	cmd.Dir = dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, string(out))
@@ -1043,7 +1043,7 @@ func gitTestCommand(t *testing.T, dir string, args ...string) {
 
 func gitTestOutput(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := exec.CommandContext(context.Background(), "git", args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -1212,7 +1212,7 @@ func tryJSON(client *http.Client, method, url string, body any, out any) error {
 	} else {
 		reader = bytes.NewReader(nil)
 	}
-	req, err := http.NewRequest(method, url, reader)
+	req, err := http.NewRequestWithContext(context.Background(), method, url, reader)
 	if err != nil {
 		return err
 	}

@@ -1995,7 +1995,7 @@ func ensureDaemon(ctx context.Context, c *client.Client, paths sessionPaths) err
 	} else if !errors.Is(err, client.ErrNotRunning) {
 		return err
 	}
-	if err := startDetachedDaemon(paths); err != nil {
+	if err := startDetachedDaemon(ctx, paths); err != nil {
 		return fmt.Errorf("start daemon: %w", err)
 	}
 	deadline := time.Now().Add(10 * time.Second)
@@ -2050,12 +2050,12 @@ func acquireStartupLock(path string) (func(), error) {
 	return func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN); _ = f.Close() }, nil
 }
 
-func startDetachedDaemon(paths sessionPaths) error {
+func startDetachedDaemon(ctx context.Context, paths sessionPaths) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(exe, "--session-id", paths.SessionID, "--repo-root", paths.RepoRoot, "daemon", "--foreground")
+	cmd := exec.CommandContext(ctx, exe, "--session-id", paths.SessionID, "--repo-root", paths.RepoRoot, "daemon", "--foreground")
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil

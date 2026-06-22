@@ -62,8 +62,8 @@ func TestSandboxSubscriptionSendsListAndLiveEvents(t *testing.T) {
 	service := &fakeProjectEventService{
 		maxSeq: 10,
 		snapshots: []model.ProjectEvent{
-			testProjectEvent("snapshot-1", 10, "sandbox-1", model.EventActionListed),
-			testProjectEvent("snapshot-2", 10, "sandbox-2", model.EventActionListed),
+			testProjectEvent(t, "snapshot-1", 10, "sandbox-1", model.EventActionListed),
+			testProjectEvent(t, "snapshot-2", 10, "sandbox-2", model.EventActionListed),
 		},
 		live: live,
 	}
@@ -78,7 +78,7 @@ func TestSandboxSubscriptionSendsListAndLiveEvents(t *testing.T) {
 	assertMessage(t, socket.outgoing, messageTypeEvent, streamSandbox, model.EventTypeResourceListed, "snapshot-2")
 	assertMessage(t, socket.outgoing, messageTypeEvent, streamSandbox, eventListEnd, "")
 
-	live <- testProjectEvent("live-1", 11, "sandbox-1", model.EventActionUpdated)
+	live <- testProjectEvent(t, "live-1", 11, "sandbox-1", model.EventActionUpdated)
 	assertMessage(t, socket.outgoing, messageTypeEvent, streamSandbox, model.EventTypeResourceChanged, "live-1")
 }
 
@@ -98,9 +98,9 @@ func TestSandboxSubscriptionFiltersLiveEventsAfterConnect(t *testing.T) {
 
 	assertMessage(t, socket.outgoing, messageTypeSubscribed, streamSandbox, "", "")
 	assertMessage(t, socket.outgoing, messageTypeEvent, streamSandbox, eventConnected, "")
-	live <- testProjectEvent("old", 99, "sandbox-1", model.EventActionUpdated)
-	live <- testProjectEvent("other", 100, "sandbox-2", model.EventActionUpdated)
-	live <- testProjectEvent("match", 101, "sandbox-1", model.EventActionUpdated)
+	live <- testProjectEvent(t, "old", 99, "sandbox-1", model.EventActionUpdated)
+	live <- testProjectEvent(t, "other", 100, "sandbox-2", model.EventActionUpdated)
+	live <- testProjectEvent(t, "match", 101, "sandbox-1", model.EventActionUpdated)
 	assertMessage(t, socket.outgoing, messageTypeEvent, streamSandbox, model.EventTypeResourceChanged, "match")
 	assertNoMessage(t, socket.outgoing)
 }
@@ -112,7 +112,7 @@ func TestSandboxSubscriptionListOnlyCompletesWithoutLiveSubscription(t *testing.
 	service := &fakeProjectEventService{
 		maxSeq: 1,
 		snapshots: []model.ProjectEvent{
-			testProjectEvent("snapshot", 1, "sandbox-1", model.EventActionListed),
+			testProjectEvent(t, "snapshot", 1, "sandbox-1", model.EventActionListed),
 		},
 		live: make(chan model.ProjectEvent),
 	}
@@ -221,13 +221,13 @@ func TestProjectStreamSSESendsListWithoutSSEIDs(t *testing.T) {
 	server := testProjectStreamSSEServer(t, &fakeProjectEventService{
 		maxSeq: 2,
 		snapshots: []model.ProjectEvent{
-			testProjectEvent("first", 2, "sandbox-1", model.EventActionListed),
-			testProjectEvent("second", 2, "sandbox-2", model.EventActionListed),
+			testProjectEvent(t, "first", 2, "sandbox-1", model.EventActionListed),
+			testProjectEvent(t, "second", 2, "sandbox-2", model.EventActionListed),
 		},
 		live: make(chan model.ProjectEvent),
 	})
 
-	req, err := http.NewRequest(http.MethodGet, server.URL+"/projects/project-1/stream/sse?listOnly=true", nil)
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL+"/projects/project-1/stream/sse?listOnly=true", nil)
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
@@ -266,12 +266,16 @@ func TestProjectStreamSSECanOptOutOfHistory(t *testing.T) {
 	server := testProjectStreamSSEServer(t, &fakeProjectEventService{
 		maxSeq: 1,
 		snapshots: []model.ProjectEvent{
-			testProjectEvent("first", 1, "sandbox-1", model.EventActionUpdated),
+			testProjectEvent(t, "first", 1, "sandbox-1", model.EventActionUpdated),
 		},
 		live: make(chan model.ProjectEvent),
 	})
 
-	resp, err := http.Get(server.URL + "/projects/project-1/stream/sse?history=false&listOnly=true")
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL+"/projects/project-1/stream/sse?history=false&listOnly=true", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatalf("get sse stream: %v", err)
 	}
@@ -379,8 +383,12 @@ func (s *resubscribeProjectEventService) SubscribeProjectEvents(context.Context,
 	}
 }
 
-func testProjectEvent(id string, seq int64, sandboxID, action string) model.ProjectEvent {
-	payload, _ := json.Marshal(map[string]string{"id": sandboxID})
+func testProjectEvent(t *testing.T, id string, seq int64, sandboxID, action string) model.ProjectEvent {
+	t.Helper()
+	payload, err := json.Marshal(map[string]string{"id": sandboxID})
+	if err != nil {
+		t.Fatalf("encode project event payload: %v", err)
+	}
 	return model.ProjectEvent{
 		ID:           id,
 		Seq:          seq,

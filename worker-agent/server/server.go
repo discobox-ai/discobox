@@ -75,7 +75,14 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	httpServer := &http.Server{Addr: fmt.Sprintf(":%d", port), Handler: router}
+	httpServer := &http.Server{
+		Addr:              fmt.Sprintf(":%d", port),
+		Handler:           router,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 	errCh := make(chan error, 1)
 	go func() {
 		logger.Info("worker agent serving", "addr", httpServer.Addr)

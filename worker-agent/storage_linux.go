@@ -2,12 +2,23 @@
 
 package workeragent
 
-import "syscall"
+import (
+	"math"
+	"syscall"
+)
 
 func availableStorageBytes(path string) int64 {
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs(path, &stat); err != nil {
 		return 0
 	}
-	return int64(stat.Bavail) * stat.Bsize
+	if stat.Bsize <= 0 {
+		return 0
+	}
+	blockSize := uint64(stat.Bsize)
+	if stat.Bavail > uint64(math.MaxInt64)/blockSize {
+		return math.MaxInt64
+	}
+	//nolint:gosec // Guard above clamps values larger than MaxInt64 before this conversion.
+	return int64(stat.Bavail * blockSize)
 }

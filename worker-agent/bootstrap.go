@@ -18,7 +18,7 @@ const (
 	EnvProjectID       = "DISCOBOX_PROJECT_ID"
 	EnvSandboxID       = "DISCOBOX_SANDBOX_ID"
 	EnvWorkerID        = "DISCOBOX_WORKER_ID"
-	EnvBootstrapToken  = "DISCOBOX_WORKER_BOOTSTRAP_TOKEN"
+	EnvBootstrapToken  = "DISCOBOX_WORKER_BOOTSTRAP_TOKEN" //nolint:gosec // Environment variable name, not a credential value.
 	EnvAgentPort       = "DISCOBOX_AGENT_PORT"
 )
 

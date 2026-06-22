@@ -50,6 +50,7 @@ func main() {
 	if err := os.MkdirAll(filepath.Dir(*outPath), 0o755); err != nil {
 		fatalf("create output directory: %v", err)
 	}
+	//nolint:gosec // Generated Go source should use normal repository-readable permissions.
 	if err := os.WriteFile(*outPath, formatted, 0o644); err != nil {
 		fatalf("write output: %v", err)
 	}

@@ -23,6 +23,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func writeTestJSON(t *testing.T, w http.ResponseWriter, v any) {
+	t.Helper()
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		t.Fatalf("encode response: %v", err)
+	}
+}
+
 func TestRootCommandRejectsUnknownOutput(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	cmd := newRootCommand(cliOptions{stdout: &stdout, stderr: &stderr})
@@ -83,21 +90,21 @@ func TestChangesLimitZeroSendsExplicitLimit(t *testing.T) {
 	if err := os.MkdirAll(paths.RuntimeDir, 0755); err != nil {
 		t.Fatal(err)
 	}
-	ln, err := net.Listen("unix", paths.Socket)
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", paths.Socket)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ln.Close()
 
 	seen := make(chan string, 1)
-	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := &http.Server{ReadHeaderTimeout: time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet || r.URL.EscapedPath() != "/changes" {
 			http.NotFound(w, r)
 			return
 		}
 		seen <- r.URL.RawQuery
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(client.ChangesResponse{Changes: []client.ObservedFileChange{}})
+		writeTestJSON(t, w, client.ChangesResponse{Changes: []client.ObservedFileChange{}})
 	})}
 	go func() { _ = srv.Serve(ln) }()
 	defer srv.Shutdown(context.Background())
@@ -749,6 +756,7 @@ func productionEventLiterals(t *testing.T) []string {
 		if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") || filepath.ToSlash(path) == filepath.ToSlash(filepath.Join(root, "api", "event_types.go")) {
 			return nil
 		}
+		//nolint:gosec // Test scans repository source files discovered by WalkDir, not user-controlled paths.
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return err
@@ -812,7 +820,7 @@ func testOutputCommand() (*cobra.Command, *bytes.Buffer) {
 
 func runTestGit(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command("git", args...)
+	cmd := exec.CommandContext(context.Background(), "git", args...)
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	if err != nil {

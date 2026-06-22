@@ -11,52 +11,60 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/obot-platform/discobox/hooks/api/model"
 )
 
+func writeTestJSON(t *testing.T, w http.ResponseWriter, v any) {
+	t.Helper()
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		t.Fatalf("encode response: %v", err)
+	}
+}
+
 func TestUnixTransportAndRequestShapes(t *testing.T) {
 	sock := filepath.Join(t.TempDir(), "daemon.sock")
-	ln, err := net.Listen("unix", sock)
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", sock)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ln.Close()
 
 	seen := make(chan string, 4)
-	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := &http.Server{ReadHeaderTimeout: time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen <- r.Method + " " + r.URL.EscapedPath()
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.EscapedPath() {
 		case "/ping":
-			_ = json.NewEncoder(w).Encode(PingResponse{OK: true, SessionID: "s1", Version: 123})
+			writeTestJSON(t, w, PingResponse{OK: true, SessionID: "s1", Version: 123})
 		case "/events":
 			if r.URL.Query().Get("hook_id") != "hook one" || r.URL.Query().Get("limit") != "5" {
 				t.Fatalf("unexpected events query: %s", r.URL.RawQuery)
 			}
-			_ = json.NewEncoder(w).Encode(EventsResponse{Events: []Event{{ID: "01test", Type: "hook.run.finished", HookID: "hook one"}}})
+			writeTestJSON(t, w, EventsResponse{Events: []Event{{ID: "01test", Type: "hook.run.finished", HookID: "hook one"}}})
 		case "/runs":
 			if r.URL.Query().Get("hook_id") != "hook one" || !isExpectedLimit(r, "5", "0") {
 				t.Fatalf("unexpected runs query: %s", r.URL.RawQuery)
 			}
-			_ = json.NewEncoder(w).Encode(RunsResponse{Runs: []Run{{ID: "run-1", HookID: "hook one", Status: "success"}}})
+			writeTestJSON(t, w, RunsResponse{Runs: []Run{{ID: "run-1", HookID: "hook one", Status: "success"}}})
 		case "/changes":
 			if !isExpectedLimit(r, "5", "0") {
 				t.Fatalf("unexpected changes query: %s", r.URL.RawQuery)
 			}
-			_ = json.NewEncoder(w).Encode(ChangesResponse{Changes: []ObservedFileChange{{ID: "change-1", Path: "main.go", Kind: "modified"}}})
+			writeTestJSON(t, w, ChangesResponse{Changes: []ObservedFileChange{{ID: "change-1", Path: "main.go", Kind: "modified"}}})
 		case "/snapshots":
 			if !isExpectedLimit(r, "5", "0") {
 				t.Fatalf("unexpected snapshots query: %s", r.URL.RawQuery)
 			}
-			_ = json.NewEncoder(w).Encode(SnapshotsResponse{Snapshots: []WorkspaceSnapshot{{ID: "snapshot-1", PatchBytes: 42}}})
+			writeTestJSON(t, w, SnapshotsResponse{Snapshots: []WorkspaceSnapshot{{ID: "snapshot-1", PatchBytes: 42}}})
 		case "/snapshots/snapshot-1":
-			_ = json.NewEncoder(w).Encode(WorkspaceSnapshot{ID: "snapshot-1", Patch: "diff", PatchBytes: 4})
+			writeTestJSON(t, w, WorkspaceSnapshot{ID: "snapshot-1", Patch: "diff", PatchBytes: 4})
 		case "/queue":
 			if !isExpectedLimit(r, "5", "0") {
 				t.Fatalf("unexpected queue query: %s", r.URL.RawQuery)
 			}
-			_ = json.NewEncoder(w).Encode(QueueResponse{Queue: []QueuedHook{{HookID: "hook one", Position: 1}}})
+			writeTestJSON(t, w, QueueResponse{Queue: []QueuedHook{{HookID: "hook one", Position: 1}}})
 		case "/events/stream":
 			if r.URL.Query().Get("hook_id") != "hook one" || r.URL.Query().Get("limit") != "5" || r.Header.Get("Last-Event-ID") != "01test" {
 				t.Fatalf("unexpected stream request query=%s last=%q", r.URL.RawQuery, r.Header.Get("Last-Event-ID"))
@@ -68,15 +76,15 @@ func TestUnixTransportAndRequestShapes(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Paused {
 				t.Fatalf("unexpected execution body: %#v err=%v", body, err)
 			}
-			_ = json.NewEncoder(w).Encode(model.ExecutionResponse{Paused: true})
+			writeTestJSON(t, w, model.ExecutionResponse{Paused: true})
 		case "/hooks/hook%20one/run":
 			var body model.RunRequest
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Force || body.Phase != "review" {
 				t.Fatalf("unexpected run body: %#v err=%v", body, err)
 			}
-			_ = json.NewEncoder(w).Encode(RunResponse{HookID: "hook one", Enqueued: true})
+			writeTestJSON(t, w, RunResponse{HookID: "hook one", Enqueued: true})
 		case "/hooks/hook%20one/output":
-			_ = json.NewEncoder(w).Encode(struct {
+			writeTestJSON(t, w, struct {
 				HookID string `json:"hook_id"`
 				Output string `json:"output"`
 			}{HookID: "hook one"})
@@ -258,20 +266,20 @@ func TestMissingSocketIsNotRunning(t *testing.T) {
 
 func TestShutdownSuccessIgnoresRemovedSocket(t *testing.T) {
 	sock := filepath.Join(t.TempDir(), "daemon.sock")
-	ln, err := net.Listen("unix", sock)
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", sock)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer ln.Close()
 
-	srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := &http.Server{ReadHeaderTimeout: time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.EscapedPath() != "/shutdown" {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = os.Remove(sock)
-		_ = json.NewEncoder(w).Encode(model.ShutdownResponse{OK: true})
+		writeTestJSON(t, w, model.ShutdownResponse{OK: true})
 	})}
 	go func() { _ = srv.Serve(ln) }()
 	defer srv.Shutdown(context.Background())

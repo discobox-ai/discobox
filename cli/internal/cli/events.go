@@ -80,10 +80,16 @@ func (a *App) writeEvent(cmd *cobra.Command, msg *apiclientgen.ProjectEventMessa
 	case *apiclientgen.ResourceListFinishEvent:
 		fmt.Fprintf(tw, "%s\tseq=%d\tresources=%s\t%s\n", msg.Event, data.Seq, strings.Join(data.Resources, ","), data.FinishedAt.Local().Format("2006-01-02T15:04:05Z07:00"))
 	case *apiclientgen.UnknownProjectEvent:
-		encoded, _ := json.Marshal(data.Data)
+		encoded, err := json.Marshal(data.Data)
+		if err != nil {
+			return fmt.Errorf("encode event data: %w", err)
+		}
 		fmt.Fprintf(tw, "%s\t%s\n", msg.Event, string(encoded))
 	default:
-		encoded, _ := json.Marshal(data)
+		encoded, err := json.Marshal(data)
+		if err != nil {
+			return fmt.Errorf("encode event data: %w", err)
+		}
 		fmt.Fprintf(tw, "%s\t%s\n", msg.Event, string(encoded))
 	}
 	return tw.Flush()

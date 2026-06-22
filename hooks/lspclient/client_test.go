@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -117,7 +118,7 @@ func decodeTestNotification(t *testing.T, reader *bufio.Reader) testNotification
 	t.Helper()
 	body, err := readMessage(reader)
 	if err != nil {
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			t.Fatal("expected notification, got EOF")
 		}
 		t.Fatalf("read message: %v", err)
