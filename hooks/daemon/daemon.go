@@ -312,7 +312,7 @@ func (r *runtimeState) generatedRoutes() (http.Handler, error) {
 	generated, err := hookapigen.NewServer(
 		&generatedHandler{manager: r.manager, wait: r.wait},
 		hookapigen.WithNotFound(func(w http.ResponseWriter, req *http.Request) { http.NotFound(w, req) }),
-		hookapigen.WithMethodNotAllowed(func(w http.ResponseWriter, req *http.Request, _ string) { methodNotAllowed(w) }),
+		hookapigen.WithMethodNotAllowed(func(w http.ResponseWriter, _ *http.Request, _ string) { methodNotAllowed(w) }),
 	)
 	if err != nil {
 		return nil, err
@@ -1314,7 +1314,7 @@ func (r *runtimeState) signalDrain() {
 }
 
 func ignoreHookRuntimePaths(cfg Config) watcher.IgnoreFunc {
-	return func(path string, entry watcher.Entry) bool {
+	return func(path string, _ watcher.Entry) bool {
 		for _, p := range []string{cfg.DBPath, cfg.SocketPath} {
 			if p == "" {
 				continue

@@ -29,7 +29,7 @@ func TestDockerIntegrationLifecycle(t *testing.T) {
 	image := os.Getenv("DISCOBOX_DOCKER_TEST_IMAGE")
 	if image == "" {
 		image = "discobox-docker-sleep:test-" + uuid.NewString()
-		buildDockerImage(t, ctx, "testdata/sleep/Dockerfile", image)
+		buildDockerImage(ctx, t, "testdata/sleep/Dockerfile", image)
 	}
 
 	driver, err := NewDriver(ctx, Config{Image: image, Command: []string{"sleep", "300"}})
@@ -98,7 +98,7 @@ func TestDockerIntegrationSystemdContainer(t *testing.T) {
 	image := os.Getenv("DISCOBOX_DOCKER_SYSTEMD_IMAGE")
 	if image == "" {
 		image = "discobox-docker-systemd:test-" + uuid.NewString()
-		buildDockerImage(t, ctx, "testdata/systemd/Dockerfile", image)
+		buildDockerImage(ctx, t, "testdata/systemd/Dockerfile", image)
 	}
 
 	driver, err := NewDriver(ctx, Config{Image: image, Systemd: true, CgroupNSMode: "host"})
@@ -123,7 +123,7 @@ func TestDockerIntegrationSystemdContainer(t *testing.T) {
 	}
 }
 
-func buildDockerImage(t *testing.T, ctx context.Context, dockerfilePath, tag string) {
+func buildDockerImage(ctx context.Context, t *testing.T, dockerfilePath, tag string) {
 	t.Helper()
 	cli, err := client.New(client.FromEnv)
 	if err != nil {

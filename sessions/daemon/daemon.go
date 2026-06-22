@@ -247,7 +247,7 @@ func (r *runtimeState) generatedRoutes() (http.Handler, error) {
 	generated, err := sessionapigen.NewServer(
 		&generatedHandler{r: r},
 		sessionapigen.WithNotFound(func(w http.ResponseWriter, req *http.Request) { http.NotFound(w, req) }),
-		sessionapigen.WithMethodNotAllowed(func(w http.ResponseWriter, req *http.Request, _ string) {
+		sessionapigen.WithMethodNotAllowed(func(w http.ResponseWriter, _ *http.Request, _ string) {
 			writeError(w, http.StatusMethodNotAllowed, fmt.Errorf("method not allowed"))
 		}),
 	)

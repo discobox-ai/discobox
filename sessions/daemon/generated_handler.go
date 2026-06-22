@@ -15,7 +15,7 @@ type generatedHandler struct {
 	r *runtimeState
 }
 
-func (h *generatedHandler) SessionsAgents(ctx context.Context) (*sessionapigen.AgentsResponse, error) {
+func (h *generatedHandler) SessionsAgents(_ context.Context) (*sessionapigen.AgentsResponse, error) {
 	return convertToGenerated[sessionapigen.AgentsResponse](map[string]any{"agents": h.r.agents})
 }
 

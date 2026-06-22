@@ -27,7 +27,7 @@ const scalarDocsHTML = `<!doctype html>
 
 // RegisterDocsRoutes serves the canonical OpenAPI contract and Scalar API docs.
 func RegisterDocsRoutes(router chi.Router) {
-	router.Get("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
+	router.Get("/openapi.yaml", func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "application/openapi+yaml; charset=utf-8")
 		_, _ = w.Write(rootopenapi.ServerYAML)
 	})
@@ -35,7 +35,7 @@ func RegisterDocsRoutes(router chi.Router) {
 	router.Get("/docs/", serveScalarDocs)
 }
 
-func serveScalarDocs(w http.ResponseWriter, r *http.Request) {
+func serveScalarDocs(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(scalarDocsHTML))
 }

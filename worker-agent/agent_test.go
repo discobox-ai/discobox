@@ -85,7 +85,7 @@ func TestHTTPClientRegistersWorker(t *testing.T) {
 
 func TestHTTPClientUpdatesWorkerStatusByPath(t *testing.T) {
 	var got map[string]any
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/workers/worker-1/status" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}

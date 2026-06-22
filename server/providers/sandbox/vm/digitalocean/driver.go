@@ -315,7 +315,7 @@ func publicIPv4(networks dropletNetworks) string {
 	return ""
 }
 
-func effectiveSize(defaultSize string, resources sandbox.ResourceConfig) string {
+func effectiveSize(defaultSize string, _ sandbox.ResourceConfig) string {
 	return defaultSize
 }
 

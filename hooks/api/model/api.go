@@ -1,4 +1,3 @@
-// Package model exposes stable hooks daemon socket API models.
 package model
 
 import (

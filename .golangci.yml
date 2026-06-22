@@ -12,12 +12,15 @@ linters:
     - errcheck
     - errchkjson
     - errorlint
+    - godoclint
+    - godot
     - gosec
     - misspell
     - nilerr
     - noctx
     - nolintlint
     - rowserrcheck
+    - revive
     - loggercheck
     - sloglint
     - sqlclosecheck
@@ -36,6 +39,11 @@ linters:
     nolintlint:
       require-explanation: true
       require-specific: true
+    revive:
+      enable-default-rules: true
+      rules:
+        - name: exported
+          disabled: true
   exclusions:
     generated: lax
     presets:

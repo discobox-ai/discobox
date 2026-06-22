@@ -342,7 +342,7 @@ exit 1
 	if r.drainOne() {
 		t.Fatal("expected failing review hook to stop drain")
 	}
-	st1 := hookStatusByID(t, st, ctx, "review")
+	st1 := hookStatusByID(ctx, t, st, "review")
 	if st1.Status != models.StatusFailure || st1.RunCount != 1 || st1.FailCount != 1 {
 		t.Fatalf("expected first review run to fail, got %#v", st1)
 	}
@@ -356,7 +356,7 @@ exit 1
 	if r.drainOne() {
 		t.Fatal("later review change ran without a new explicit phase activation")
 	}
-	st2 := hookStatusByID(t, st, ctx, "review")
+	st2 := hookStatusByID(ctx, t, st, "review")
 	if st2.Status != models.StatusQueued || st2.RunCount != 1 || st2.FailCount != 1 {
 		t.Fatalf("expected later review change to remain queued, got %#v", st2)
 	}
@@ -365,7 +365,7 @@ exit 1
 	if r.drainOne() {
 		t.Fatal("expected explicitly activated failing review hook to stop drain")
 	}
-	st3 := hookStatusByID(t, st, ctx, "review")
+	st3 := hookStatusByID(ctx, t, st, "review")
 	if st3.Status != models.StatusFailure || st3.RunCount != 2 || st3.FailCount != 2 {
 		t.Fatalf("expected explicit phase activation to run queued review hook, got %#v", st3)
 	}
@@ -1008,7 +1008,7 @@ func TestInitialWorkingTreeChanges(t *testing.T) {
 	}
 }
 
-func hookStatusByID(t *testing.T, st *hookstore.Store, ctx context.Context, hookID string) hookstore.StatusRow {
+func hookStatusByID(ctx context.Context, t *testing.T, st *hookstore.Store, hookID string) hookstore.StatusRow {
 	t.Helper()
 	statuses, err := st.ListStatus(ctx)
 	if err != nil {
@@ -1132,10 +1132,12 @@ func TestEventsStreamSendsNewEvents(t *testing.T) {
 	scanner := bufio.NewScanner(resp.Body)
 	deadline := time.After(3 * time.Second)
 	lines := make(chan string, 1)
+	scanErr := make(chan error, 1)
 	go func() {
 		for scanner.Scan() {
 			lines <- scanner.Text()
 		}
+		scanErr <- scanner.Err()
 	}()
 	for {
 		select {
@@ -1146,6 +1148,11 @@ func TestEventsStreamSendsNewEvents(t *testing.T) {
 			if strings.Contains(line, `"type":"daemon.shutdown.requested"`) {
 				t.Fatalf("stream replayed existing event: %q", line)
 			}
+		case err := <-scanErr:
+			if err != nil {
+				t.Fatalf("scan event stream: %v", err)
+			}
+			t.Fatal("event stream closed before expected event")
 		case <-deadline:
 			t.Fatal("timed out waiting for streamed event")
 		}
@@ -1172,7 +1179,7 @@ func modelEventByType(events []model.Event, eventType, hookID string) *model.Eve
 
 func unixHTTPClient(socketPath string) *http.Client {
 	transport := &http.Transport{
-		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			var d net.Dialer
 			return d.DialContext(ctx, "unix", socketPath)
 		},

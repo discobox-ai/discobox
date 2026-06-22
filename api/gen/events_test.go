@@ -141,7 +141,7 @@ func writeProjectStreamMessage(ctx context.Context, conn *websocket.Conn, eventN
 	return wsjson.Write(ctx, conn, projectStreamSocketMessage{Type: "event", Stream: "sandbox", Event: eventName, Data: payload}) == nil
 }
 
-func filterProjectEvents(events []ProjectEvent, afterSeq int64, resourceTypes []string) []ProjectEvent {
+func filterProjectEvents(events []ProjectEvent, afterSeq int64, _ []string) []ProjectEvent {
 	var result []ProjectEvent
 	for _, event := range events {
 		if event.Seq <= afterSeq || event.ResourceType != "sandbox" {

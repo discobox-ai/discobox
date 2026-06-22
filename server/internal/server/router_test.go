@@ -34,7 +34,7 @@ func newStubRouterForTest() *chi.Mux {
 	return router
 }
 
-func newAppTestDB(t *testing.T, ctx context.Context) *database.DB {
+func newAppTestDB(ctx context.Context, t *testing.T) *database.DB {
 	t.Helper()
 	db, err := database.New(database.Config{
 		Driver: gormdb.DriverSQLite,
@@ -145,7 +145,7 @@ func TestNewRouterCreateSandboxResolvesAgentName(t *testing.T) {
 
 func TestNewAppStartsWithDefaults(t *testing.T) {
 	ctx := context.Background()
-	db := newAppTestDB(t, ctx)
+	db := newAppTestDB(ctx, t)
 
 	router, err := NewApp(ctx, db.Write, db.Read, AppOptions{
 		DispatcherEnabled: false,
@@ -176,7 +176,7 @@ func TestNewAppStartsWithDefaults(t *testing.T) {
 
 func TestNewAppResolvesDefaultProjectAlias(t *testing.T) {
 	ctx := context.Background()
-	db := newAppTestDB(t, ctx)
+	db := newAppTestDB(ctx, t)
 
 	router, err := NewApp(ctx, db.Write, db.Read, AppOptions{
 		DispatcherEnabled: false,
@@ -205,7 +205,7 @@ func TestNewAppResolvesDefaultProjectAlias(t *testing.T) {
 
 func TestProjectStreamReceivesSandboxMutation(t *testing.T) {
 	ctx := context.Background()
-	db := newAppTestDB(t, ctx)
+	db := newAppTestDB(ctx, t)
 
 	router, err := NewApp(ctx, db.Write, db.Read, AppOptions{
 		DispatcherEnabled: false,
@@ -240,8 +240,8 @@ func TestProjectStreamReceivesSandboxMutation(t *testing.T) {
 		t.Fatalf("subscribe project stream: %v", err)
 	}
 
-	readProjectStreamMessage(t, wsCtx, conn, "subscribed", "")
-	readProjectStreamMessage(t, wsCtx, conn, "event", "connected")
+	readProjectStreamMessage(wsCtx, t, conn, "subscribed", "")
+	readProjectStreamMessage(wsCtx, t, conn, "event", "connected")
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/projects/default/sandboxes", strings.NewReader(`{"name":"live","description":"test sandbox"}`))
 	if err != nil {
@@ -257,7 +257,7 @@ func TestProjectStreamReceivesSandboxMutation(t *testing.T) {
 		t.Fatalf("create sandbox status = %d", resp.StatusCode)
 	}
 
-	msg := readProjectStreamMessage(t, wsCtx, conn, "event", model.EventTypeResourceChanged)
+	msg := readProjectStreamMessage(wsCtx, t, conn, "event", model.EventTypeResourceChanged)
 	var event model.ProjectEvent
 	if err := json.Unmarshal(msg.Data, &event); err != nil {
 		t.Fatalf("decode project event: %v", err)
@@ -273,7 +273,7 @@ type projectStreamTestMessage struct {
 	Data  json.RawMessage `json:"data,omitempty"`
 }
 
-func readProjectStreamMessage(t *testing.T, ctx context.Context, conn *websocket.Conn, wantType, wantEvent string) projectStreamTestMessage {
+func readProjectStreamMessage(ctx context.Context, t *testing.T, conn *websocket.Conn, wantType, wantEvent string) projectStreamTestMessage {
 	t.Helper()
 	for {
 		var msg projectStreamTestMessage

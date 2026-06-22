@@ -1335,11 +1335,11 @@ func pendingToRow(p models.PendingHook) (PendingRow, error) {
 }
 
 func nextPendingPosition(tx *gorm.DB) (int64, error) {
-	var max sql.NullInt64
-	if err := tx.Model(&models.PendingHook{}).Select("max(position)").Scan(&max).Error; err != nil {
+	var maxPosition sql.NullInt64
+	if err := tx.Model(&models.PendingHook{}).Select("max(position)").Scan(&maxPosition).Error; err != nil {
 		return 0, err
 	}
-	return max.Int64 + 1, nil
+	return maxPosition.Int64 + 1, nil
 }
 
 func mergeInputsIntoPending(tx *gorm.DB, hookID string, files []models.ChangedFile, ids []string, now time.Time, next *int64) error {

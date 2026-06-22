@@ -53,7 +53,7 @@ func TestEnqueueProviderWorkersSchedulesEveryWorkerWithDefaultAttempts(t *testin
 		}
 	}
 
-	jobManager := newStartedProviderStartupTestJobManager(t, ctx, appStore, orchestration.QueueConfig{DefaultMaxAttempts: 5})
+	jobManager := newStartedProviderStartupTestJobManager(ctx, t, appStore, orchestration.QueueConfig{DefaultMaxAttempts: 5})
 	svc := New(appStore, jobManager, JobManagerOptions{})
 	if err := svc.enqueueProviderWorkers(ctx, project.ID, provider.ID); err != nil {
 		t.Fatalf("enqueue provider workers: %v", err)
@@ -126,7 +126,7 @@ func TestEnsureExistingSandboxProviderInstancesSchedulesWorkerProviderReconcile(
 		}
 	}
 
-	jobManager := newStartedProviderStartupTestJobManager(t, ctx, appStore, orchestration.QueueConfig{DefaultMaxAttempts: 5})
+	jobManager := newStartedProviderStartupTestJobManager(ctx, t, appStore, orchestration.QueueConfig{DefaultMaxAttempts: 5})
 	svc := New(appStore, jobManager, JobManagerOptions{})
 	if err := svc.EnsureExistingSandboxProviderInstances(ctx); err != nil {
 		t.Fatalf("ensure existing providers: %v", err)
@@ -156,7 +156,7 @@ func TestEnsureExistingSandboxProviderInstancesSchedulesWorkerProviderReconcile(
 	}
 }
 
-func newStartedProviderStartupTestJobManager(t *testing.T, ctx context.Context, appStore *store.Store, queueConfig orchestration.QueueConfig) *jobs.Manager {
+func newStartedProviderStartupTestJobManager(ctx context.Context, t *testing.T, appStore *store.Store, queueConfig orchestration.QueueConfig) *jobs.Manager {
 	t.Helper()
 
 	manager := jobs.NewManager(ctx, appStore, jobs.ManagerConfig{

@@ -16,7 +16,7 @@ import (
 
 func TestOpenMigratesExpectedTables(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 
 	for _, table := range []string{"hook_definitions", "hook_statuses", "hook_runs", "pending_hooks", "daemon_states", "daemon_sessions", "hook_events", "hook_logs", "observed_file_changes", "workspace_snapshots", "watched_files"} {
 		if !s.DB().Migrator().HasTable(table) {
@@ -27,7 +27,7 @@ func TestOpenMigratesExpectedTables(t *testing.T) {
 
 func TestWorkspaceSnapshotRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 
 	first, err := s.RecordWorkspaceSnapshot(ctx, WorkspaceSnapshot{
 		BaseCommit:   "base",
@@ -73,7 +73,7 @@ func TestWorkspaceSnapshotRoundTrip(t *testing.T) {
 
 func TestWatchedSnapshotRoundTripAndReplace(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 	modTime := time.Unix(123, 456).UTC()
 
 	if err := s.ReplaceWatchedSnapshot(ctx, map[string]watcher.Entry{
@@ -115,7 +115,7 @@ func TestWatchedSnapshotRoundTripAndReplace(t *testing.T) {
 
 func TestRefreshDefinitionsAndListStatus(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 
 	defs := []hooks.Hook{
 		{ID: "lint", Name: "Lint", Type: hooks.HookTypeFile, Engine: hooks.HookEngineScript, Pattern: "**/*.go", Ignore: []string{"vendor/**"}, AbsPath: "/repo/.discobox/hooks/lint", RelPath: ".discobox/hooks/lint", Extensions: map[string]any{"x": "y"}},
@@ -150,7 +150,7 @@ func TestRefreshDefinitionsAndListStatus(t *testing.T) {
 
 func TestLSPHookReadyUsesCurrentDiagnostics(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 	hook := hooks.Hook{ID: "go-lsp", Name: "Go LSP", Type: hooks.HookTypeFile, Engine: hooks.HookEngineLSP, Pattern: "**/*.go"}
 	if err := s.RefreshDefinitions(ctx, []hooks.Hook{hook}); err != nil {
 		t.Fatal(err)
@@ -195,7 +195,7 @@ func TestLSPHookReadyUsesCurrentDiagnostics(t *testing.T) {
 
 func TestEnqueueMergesAndRunningFinishTransitions(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 	defs := []hooks.Hook{
 		{ID: "a", Name: "A", Type: hooks.HookTypeFile, Engine: hooks.HookEngineScript, AbsPath: "/repo/a", RelPath: "a"},
 		{ID: "b", Name: "B", Type: hooks.HookTypeFile, Engine: hooks.HookEngineScript, AbsPath: "/repo/b", RelPath: "b"},
@@ -288,7 +288,7 @@ func TestEnqueueMergesAndRunningFinishTransitions(t *testing.T) {
 
 func TestNextPendingForPhasesSkipsPhaseHooksUntilActivated(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 	if err := s.RefreshDefinitions(ctx, []hooks.Hook{
 		{ID: "lint", Name: "Lint", Type: hooks.HookTypeFile, Engine: hooks.HookEngineScript},
 		{ID: "review", Name: "Review", Type: hooks.HookTypeFile, Engine: hooks.HookEngineScript, Phase: "review"},
@@ -329,7 +329,7 @@ func TestNextPendingForPhasesSkipsPhaseHooksUntilActivated(t *testing.T) {
 
 func TestListPendingReturnsQueueRowsInOrder(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 	if err := s.RefreshDefinitions(ctx, []hooks.Hook{
 		{ID: "a", Name: "A", Type: hooks.HookTypeFile, Engine: hooks.HookEngineScript},
 		{ID: "b", Name: "B", Type: hooks.HookTypeFile, Engine: hooks.HookEngineScript},
@@ -361,7 +361,7 @@ func TestListPendingReturnsQueueRowsInOrder(t *testing.T) {
 
 func TestFailedRunInputsCarryForwardToLaterSchedule(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 	if err := s.RefreshDefinitions(ctx, []hooks.Hook{{ID: "a", Name: "A", Type: hooks.HookTypeFile, Engine: hooks.HookEngineScript}}); err != nil {
 		t.Fatal(err)
 	}
@@ -415,7 +415,7 @@ func TestFailedRunInputsCarryForwardToLaterSchedule(t *testing.T) {
 
 func TestChangesDuringFailedRunMergeWithRunInputs(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 	if err := s.RefreshDefinitions(ctx, []hooks.Hook{{ID: "a", Name: "A", Type: hooks.HookTypeFile, Engine: hooks.HookEngineScript}}); err != nil {
 		t.Fatal(err)
 	}
@@ -447,7 +447,7 @@ func TestChangesDuringFailedRunMergeWithRunInputs(t *testing.T) {
 
 func TestReconcileRunningRunsFailsAndRequeues(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 	if err := s.RefreshDefinitions(ctx, []hooks.Hook{{ID: "a", Name: "A", Type: hooks.HookTypeFile, Engine: hooks.HookEngineScript}}); err != nil {
 		t.Fatal(err)
 	}
@@ -513,7 +513,7 @@ func TestReconcileRunningRunsFailsAndRequeues(t *testing.T) {
 
 func TestPauseResumeAndDaemonState(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 	if err := s.RefreshDefinitions(ctx, []hooks.Hook{{ID: "a", Name: "A", Type: hooks.HookTypeSession, Engine: hooks.HookEngineScript}}); err != nil {
 		t.Fatal(err)
 	}
@@ -554,7 +554,7 @@ func TestPauseResumeAndDaemonState(t *testing.T) {
 
 func TestDaemonSessionLifecycle(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 
 	first, err := s.StartDaemonSession(ctx, "session-1", "/repo", 7, 123)
 	if err != nil {
@@ -598,7 +598,7 @@ func TestDaemonSessionLifecycle(t *testing.T) {
 
 func TestStartDaemonSessionTerminatesStaleSessions(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 
 	stale, err := s.StartDaemonSession(ctx, "session-1", "/repo", 1, 111)
 	if err != nil {
@@ -645,7 +645,7 @@ func TestStartDaemonSessionTerminatesStaleSessions(t *testing.T) {
 
 func TestRecordAndListEvents(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 
 	first, err := s.RecordEvent(ctx, Event{Type: "daemon.started", Message: "daemon started", Details: map[string]any{"daemon_session_id": "daemon-1", "session_id": "s1", "repo_root": "/repo", "version": int64(1), "pid": 123, "started_at": time.Now().UTC()}})
 	if err != nil {
@@ -681,7 +681,7 @@ func TestRecordAndListEvents(t *testing.T) {
 
 func TestListEventsAfterCursorAscending(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 
 	first, err := s.RecordEvent(ctx, Event{Type: "daemon.shutdown.requested", Details: map[string]any{"session_id": "s1", "repo_root": "/repo"}})
 	if err != nil {
@@ -708,7 +708,7 @@ func TestListEventsAfterCursorAscending(t *testing.T) {
 
 func TestRecordEventPanicsForMissingRequiredDetailsInTests(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 
 	assertPanics(t, func() {
 		_, _ = s.RecordEvent(ctx, Event{Type: "watch.snapshot.persist.failed", Details: map[string]any{"error": "boom"}})
@@ -717,7 +717,7 @@ func TestRecordEventPanicsForMissingRequiredDetailsInTests(t *testing.T) {
 
 func TestRecordEventPanicsForUnknownEventTypesInTests(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 
 	assertPanics(t, func() {
 		_, _ = s.RecordEvent(ctx, Event{Type: "not.documented"})
@@ -726,7 +726,7 @@ func TestRecordEventPanicsForUnknownEventTypesInTests(t *testing.T) {
 
 func TestAppendAndListHookLogs(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 
 	if _, err := s.AppendHookLog(ctx, models.HookLog{HookID: "lint", RunID: "run-7", Line: "first"}); err != nil {
 		t.Fatalf("append first log: %v", err)
@@ -749,7 +749,7 @@ func TestAppendAndListHookLogs(t *testing.T) {
 
 func TestAppendHookLogEventRecordsLogAndAuditEvent(t *testing.T) {
 	ctx := context.Background()
-	s := newTestStore(t, ctx)
+	s := newTestStore(ctx, t)
 
 	log, err := s.AppendHookLogEvent(ctx, models.HookLog{HookID: "lint", RunID: "run-7", Line: "hello"})
 	if err != nil {
@@ -779,7 +779,7 @@ func TestAppendHookLogEventRecordsLogAndAuditEvent(t *testing.T) {
 	}
 }
 
-func newTestStore(t *testing.T, ctx context.Context) *Store {
+func newTestStore(ctx context.Context, t *testing.T) *Store {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "hooks.db")
 	s, err := Open(ctx, Options{Path: path})

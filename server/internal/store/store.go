@@ -85,7 +85,7 @@ func (s *Store) getWrite(ctx context.Context) (*gorm.DB, error) {
 	return write.WithContext(ctx), nil
 }
 
-func (s *Store) resolve(ctx context.Context) (*gorm.DB, *gorm.DB, error) {
+func (s *Store) resolve(_ context.Context) (*gorm.DB, *gorm.DB, error) {
 	if s == nil || s.write == nil {
 		return nil, nil, errors.New("database write handle is required")
 	}

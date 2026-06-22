@@ -22,7 +22,7 @@ func (s testHookSet) HookByID(id string) (hooks.Hook, bool) {
 
 func TestRunHookSkipsAfterSuccessUnlessForced(t *testing.T) {
 	ctx := context.Background()
-	svc, st := newTestService(t, ctx)
+	svc, st := newTestService(ctx, t)
 
 	resp, err := svc.RunHook(ctx, "lint", model.RunRequest{})
 	if err != nil {
@@ -68,7 +68,7 @@ func TestRunHookSkipsAfterSuccessUnlessForced(t *testing.T) {
 
 func TestOutputAssemblesLatestRunLogs(t *testing.T) {
 	ctx := context.Background()
-	svc, st := newTestService(t, ctx)
+	svc, st := newTestService(ctx, t)
 
 	run, err := st.MarkRunning(ctx, "lint", nil)
 	if err != nil {
@@ -125,7 +125,7 @@ func TestRunHookRequiresMatchingPhaseForPhaseHooks(t *testing.T) {
 
 func TestHookOperationsReturnNotFound(t *testing.T) {
 	ctx := context.Background()
-	svc, _ := newTestService(t, ctx)
+	svc, _ := newTestService(ctx, t)
 	if _, err := svc.SetHookExecution(ctx, "missing", model.ExecutionPatchRequest{Paused: true}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("set execution error = %v, want ErrNotFound", err)
 	}
@@ -137,7 +137,7 @@ func TestHookOperationsReturnNotFound(t *testing.T) {
 	}
 }
 
-func newTestService(t *testing.T, ctx context.Context) (*Service, *store.Store) {
+func newTestService(ctx context.Context, t *testing.T) (*Service, *store.Store) {
 	t.Helper()
 	st, err := store.Open(ctx, store.Options{Path: filepath.Join(t.TempDir(), "hooks.db")})
 	if err != nil {

@@ -1473,14 +1473,14 @@ func filterRunTargets(hooks []client.HookStatus, opts runTargetOptions) []string
 			continue
 		}
 		hookPhase := strings.TrimSpace(strings.ToLower(h.Hook.Phase))
-		if opts.AllPhases {
-			// No phase filter.
-		} else if opts.Phase == "" {
-			if hookPhase != "" {
+		if !opts.AllPhases {
+			if opts.Phase == "" {
+				if hookPhase != "" {
+					continue
+				}
+			} else if hookPhase != "" && hookPhase != opts.Phase {
 				continue
 			}
-		} else if hookPhase != "" && hookPhase != opts.Phase {
-			continue
 		}
 		if !opts.Force && !runAllStatusEligible(h) {
 			continue

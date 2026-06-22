@@ -88,7 +88,7 @@ func (c *Client) generatedClient() (*hookapigen.Client, error) {
 }
 
 func unixHTTPClient(socketPath string, timeout time.Duration) *http.Client {
-	tr := &http.Transport{DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+	tr := &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		if socketPath == "" {
 			return nil, fmt.Errorf("socket path is required")
 		}
@@ -436,8 +436,6 @@ func readSSEEvents(r io.Reader, fn func(Event) error) error {
 			if err := dispatch(); err != nil {
 				return err
 			}
-		} else if strings.HasPrefix(line, ":") {
-			// Ignore SSE comments/keepalives.
 		} else if strings.HasPrefix(line, "data:") {
 			value := strings.TrimPrefix(line, "data:")
 			value = strings.TrimPrefix(value, " ")

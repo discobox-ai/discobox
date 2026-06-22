@@ -119,7 +119,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	sandbox = waitForSandboxPhase(t, ctx, svc, sandbox.ID, model.SandboxPhaseRunning)
+	sandbox = waitForSandboxPhase(ctx, t, svc, sandbox.ID, model.SandboxPhaseRunning)
 	if sandbox.DesiredState != model.SandboxDesiredStateRunning {
 		t.Fatalf("created desired state = %q, want %q", sandbox.DesiredState, model.SandboxDesiredStateRunning)
 	}
@@ -130,7 +130,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	if _, err := svc.StopSandbox(ctx, service.DefaultProjectID, sandbox.ID, services.StopSandboxBody{}); err != nil {
 		t.Fatalf("stop sandbox: %v", err)
 	}
-	sandbox = waitForSandboxPhase(t, ctx, svc, sandbox.ID, model.SandboxPhaseStopped)
+	sandbox = waitForSandboxPhase(ctx, t, svc, sandbox.ID, model.SandboxPhaseStopped)
 	if sandbox.DesiredState != model.SandboxDesiredStateStopped {
 		t.Fatalf("stopped desired state = %q, want %q", sandbox.DesiredState, model.SandboxDesiredStateStopped)
 	}
@@ -138,7 +138,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	if _, err := svc.StartSandbox(ctx, service.DefaultProjectID, sandbox.ID, services.StartSandboxBody{}); err != nil {
 		t.Fatalf("start sandbox: %v", err)
 	}
-	sandbox = waitForSandboxPhase(t, ctx, svc, sandbox.ID, model.SandboxPhaseRunning)
+	sandbox = waitForSandboxPhase(ctx, t, svc, sandbox.ID, model.SandboxPhaseRunning)
 	if sandbox.DesiredState != model.SandboxDesiredStateRunning {
 		t.Fatalf("started desired state = %q, want %q", sandbox.DesiredState, model.SandboxDesiredStateRunning)
 	}
@@ -146,7 +146,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	if _, err := svc.RestartSandbox(ctx, service.DefaultProjectID, sandbox.ID, services.RestartSandboxBody{}); err != nil {
 		t.Fatalf("restart sandbox: %v", err)
 	}
-	sandbox = waitForSandboxPhase(t, ctx, svc, sandbox.ID, model.SandboxPhaseRunning)
+	sandbox = waitForSandboxPhase(ctx, t, svc, sandbox.ID, model.SandboxPhaseRunning)
 	if sandbox.RestartGeneration != 1 {
 		t.Fatalf("restart generation = %d, want 1", sandbox.RestartGeneration)
 	}
@@ -157,7 +157,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	if err := svc.DeleteSandbox(ctx, service.DefaultProjectID, sandbox.ID); err != nil {
 		t.Fatalf("delete sandbox: %v", err)
 	}
-	sandbox = waitForSandboxPhase(t, ctx, svc, sandbox.ID, model.SandboxPhaseDeleted)
+	sandbox = waitForSandboxPhase(ctx, t, svc, sandbox.ID, model.SandboxPhaseDeleted)
 	if sandbox.DesiredState != model.SandboxDesiredStateDeleted {
 		t.Fatalf("deleted desired state = %q, want %q", sandbox.DesiredState, model.SandboxDesiredStateDeleted)
 	}
@@ -209,7 +209,7 @@ func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sand
 	return svc, svc.NewSandboxReconcileExecutor()
 }
 
-func waitForSandboxPhase(t *testing.T, ctx context.Context, svc *service.Service, sandboxID, phase string) *model.Sandbox {
+func waitForSandboxPhase(ctx context.Context, t *testing.T, svc *service.Service, sandboxID, phase string) *model.Sandbox {
 	t.Helper()
 
 	deadline := time.Now().Add(time.Second)

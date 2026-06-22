@@ -559,7 +559,7 @@ func writeSSESandboxList(ctx context.Context, service services.ProjectEventServi
 	return send(eventListEnd, finish) == nil
 }
 
-func sendSSEProjectEvent(req ProjectStreamSubscriptionRequest, event model.ProjectEvent, send sseSendFunc) bool {
+func sendSSEProjectEvent(_ ProjectStreamSubscriptionRequest, event model.ProjectEvent, send sseSendFunc) bool {
 	switch event.Type {
 	case model.EventTypeResourceListed:
 		listed := ResourceListedEvent(event)

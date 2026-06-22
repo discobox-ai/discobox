@@ -223,10 +223,10 @@ func parseFrontMatter(data []byte) (parsedFrontMatter, error) {
 	}
 
 	var meta bytes.Buffer
-	close := -1
+	closeIndex := -1
 	for i := start + 1; i < len(lines); i++ {
 		if delimiterKind(lines[i]) == delim {
-			close = i
+			closeIndex = i
 			break
 		}
 		line := strings.TrimSuffix(lines[i], "\n")
@@ -240,10 +240,10 @@ func parseFrontMatter(data []byte) (parsedFrontMatter, error) {
 		meta.WriteString(line)
 		meta.WriteByte('\n')
 	}
-	if close == -1 {
+	if closeIndex == -1 {
 		return parsedFrontMatter{}, errors.New("missing closing delimiter")
 	}
-	body := strings.Join(lines[close+1:], "")
+	body := strings.Join(lines[closeIndex+1:], "")
 	return parsedFrontMatter{meta: meta.Bytes(), body: body, hasShebang: hasShebang, delimiter: delim}, nil
 }
 

@@ -25,7 +25,7 @@ import (
 func TestUpdateWorkerStatusRequiresValidBearerToken(t *testing.T) {
 	ctx := context.Background()
 	svc, appStore, db := newWorkerAuthService(t)
-	workerID, token := registerTestWorker(t, ctx, svc, appStore)
+	workerID, token := registerTestWorker(ctx, t, svc, appStore)
 
 	if _, err := updateTestWorkerStatus(ctx, svc, appStore, "Bearer "+token, workerID, services.UpdateWorkerStatusBody{Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err != nil {
 		t.Fatalf("update with valid token: %v", err)
@@ -41,7 +41,7 @@ func TestUpdateWorkerStatusRequiresValidBearerToken(t *testing.T) {
 		t.Fatal("expected expired token to be rejected")
 	}
 
-	workerID, token = registerTestWorker(t, ctx, svc, appStore)
+	workerID, token = registerTestWorker(ctx, t, svc, appStore)
 	revokedAt := time.Now().UTC()
 	if err := db.Write.WithContext(ctx).Model(&model.WorkerAuthToken{}).Where("worker_id = ?", workerID).Update("revoked_at", revokedAt).Error; err != nil {
 		t.Fatalf("revoke auth token: %v", err)
@@ -49,7 +49,7 @@ func TestUpdateWorkerStatusRequiresValidBearerToken(t *testing.T) {
 	if _, err := authenticateTestWorker(ctx, appStore, "Bearer "+token); err == nil {
 		t.Fatal("expected revoked token to be rejected")
 	}
-	otherWorkerID, otherToken := registerTestWorker(t, ctx, svc, appStore)
+	otherWorkerID, otherToken := registerTestWorker(ctx, t, svc, appStore)
 	workerCtx, err := authenticateTestWorker(ctx, appStore, "Bearer "+otherToken)
 	if err != nil {
 		t.Fatalf("authenticate other worker token: %v", err)
@@ -66,7 +66,7 @@ func TestUpdateWorkerStatusRequiresValidBearerToken(t *testing.T) {
 func TestGetSandboxProviderInstanceIncludesWorkerStatus(t *testing.T) {
 	ctx := context.Background()
 	svc, appStore, db := newWorkerAuthService(t)
-	workerID, token := registerTestWorker(t, ctx, svc, appStore)
+	workerID, token := registerTestWorker(ctx, t, svc, appStore)
 	if _, err := updateTestWorkerStatus(ctx, svc, appStore, "Bearer "+token, workerID, services.UpdateWorkerStatusBody{
 		Ready:                 true,
 		Schedulable:           true,
@@ -161,7 +161,7 @@ func authenticateTestWorker(ctx context.Context, appStore *store.Store, authoriz
 	return auth.WithPrincipal(ctx, principal), nil
 }
 
-func registerTestWorker(t *testing.T, ctx context.Context, svc *service.Service, appStore *store.Store) (string, string) {
+func registerTestWorker(ctx context.Context, t *testing.T, svc *service.Service, appStore *store.Store) (string, string) {
 	t.Helper()
 	worker := &model.Worker{ID: id.NewString(), ProjectID: service.DefaultProjectID, ProviderInstanceID: "provider-auth"}
 	bootstrap := "bootstrap-" + time.Now().String()

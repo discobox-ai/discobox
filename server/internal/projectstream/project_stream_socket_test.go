@@ -43,7 +43,7 @@ func (f *fakeProjectEventService) SubscribeProjectEvents(context.Context, string
 	return f.live, func() {}, nil
 }
 
-func filterEvents(events []model.ProjectEvent, afterSeq int64, resourceTypes []string) []model.ProjectEvent {
+func filterEvents(events []model.ProjectEvent, afterSeq int64, _ []string) []model.ProjectEvent {
 	var result []model.ProjectEvent
 	for _, event := range events {
 		if event.Seq <= afterSeq || event.ResourceType != "sandbox" {

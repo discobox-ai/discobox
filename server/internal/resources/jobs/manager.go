@@ -40,7 +40,7 @@ func NewManager(ctx context.Context, appStore *store.Store, cfg ManagerConfig) *
 	return &Manager{rootCtx: ctx, store: appStore, cfg: cfg}
 }
 
-func (m *Manager) Start(ctx context.Context) error {
+func (m *Manager) Start(_ context.Context) error {
 	if m == nil || !m.cfg.Enabled {
 		return nil
 	}

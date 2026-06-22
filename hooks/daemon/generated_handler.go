@@ -172,7 +172,7 @@ func (h *generatedHandler) HooksOutput(ctx context.Context, params hookapigen.Ho
 	return convertToGenerated[hookapigen.OutputResponse](resp)
 }
 
-func (h *generatedHandler) HooksStreamEvents(ctx context.Context, params hookapigen.HooksStreamEventsParams) (hookapigen.HooksStreamEventsOK, error) {
+func (h *generatedHandler) HooksStreamEvents(_ context.Context, _ hookapigen.HooksStreamEventsParams) (hookapigen.HooksStreamEventsOK, error) {
 	// The daemon intercepts GET /events/stream before generated routing so it can
 	// preserve explicit SSE flush behavior. This method only satisfies the
 	// generated handler interface for non-routed fallback paths.

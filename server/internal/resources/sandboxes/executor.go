@@ -1,4 +1,4 @@
-// Package jobs contains durable job payloads and executors.
+// Package sandboxes contains sandbox API behavior, lifecycle intent, and reconciliation.
 package sandboxes
 
 import (

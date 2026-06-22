@@ -48,7 +48,7 @@ func TestDockerProviderWorkerCreateFlowE2E(t *testing.T) {
 	image := os.Getenv("DISCOBOX_DOCKER_TEST_IMAGE")
 	if image == "" {
 		image = "discobox-docker-worker-flow:test-" + uuid.NewString()
-		buildDockerWorkerFlowImage(t, ctx, dockerClient, image)
+		buildDockerWorkerFlowImage(ctx, t, dockerClient, image)
 	}
 
 	db, err := database.New(database.Config{DSN: ":memory:"})
@@ -113,7 +113,7 @@ func TestDockerProviderWorkerCreateFlowE2E(t *testing.T) {
 	}
 	t.Cleanup(func() { cleanupDockerProviderContainers(t, dockerClient, provider.ID) })
 
-	worker := waitForProviderWorker(t, ctx, appStore, provider.ID)
+	worker := waitForProviderWorker(ctx, t, appStore, provider.ID)
 	if worker.LastJobID == nil {
 		t.Fatal("worker last job ID is nil")
 	}
@@ -146,7 +146,7 @@ func TestDockerProviderWorkerCreateFlowE2E(t *testing.T) {
 	}
 }
 
-func waitForProviderWorker(t *testing.T, ctx context.Context, appStore *store.Store, providerID string) model.Worker {
+func waitForProviderWorker(ctx context.Context, t *testing.T, appStore *store.Store, providerID string) model.Worker {
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
 	var last []model.Worker
@@ -167,7 +167,7 @@ func waitForProviderWorker(t *testing.T, ctx context.Context, appStore *store.St
 	return model.Worker{}
 }
 
-func buildDockerWorkerFlowImage(t *testing.T, ctx context.Context, dockerClient *client.Client, tag string) {
+func buildDockerWorkerFlowImage(ctx context.Context, t *testing.T, dockerClient *client.Client, tag string) {
 	t.Helper()
 	dockerfile := []byte("FROM debian:13-slim\nRUN apt-get update \\\n    && apt-get install -y --no-install-recommends ca-certificates \\\n    && apt-get clean \\\n    && rm -rf /var/lib/apt/lists/*\nCMD [\"sleep\", \"300\"]\n")
 	var buf bytes.Buffer

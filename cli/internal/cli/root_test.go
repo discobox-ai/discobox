@@ -473,8 +473,8 @@ func TestJobsTableErrorWidthUsesTerminalWidth(t *testing.T) {
 	if got <= 20 || got >= 80 {
 		t.Fatalf("jobsTableErrorWidth() = %d, want terminal-derived width", got)
 	}
-	if min := jobsTableErrorWidth(40, rows); min != 20 {
-		t.Fatalf("jobsTableErrorWidth(small terminal) = %d, want min width 20", min)
+	if minWidth := jobsTableErrorWidth(40, rows); minWidth != 20 {
+		t.Fatalf("jobsTableErrorWidth(small terminal) = %d, want min width 20", minWidth)
 	}
 	if fallback := jobsTableErrorWidth(0, rows); fallback != 80 {
 		t.Fatalf("jobsTableErrorWidth(no terminal) = %d, want fallback width 80", fallback)

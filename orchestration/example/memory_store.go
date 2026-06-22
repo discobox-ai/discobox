@@ -230,15 +230,15 @@ func claimableStatus(status orchestration.Status) bool {
 	return status == orchestration.StatusPending || status == orchestration.StatusBackoff
 }
 
-func (s *memoryStore) CleanupStaleJobs(_ context.Context, staleAfter time.Duration) (int64, error) {
+func (s *memoryStore) CleanupStaleJobs(_ context.Context, _ time.Duration) (int64, error) {
 	return 0, nil
 }
 
-func (s *memoryStore) TryAcquireLeadership(_ context.Context, workerID string, timeout time.Duration) (bool, error) {
+func (s *memoryStore) TryAcquireLeadership(_ context.Context, _ string, _ time.Duration) (bool, error) {
 	return true, nil
 }
 
-func (s *memoryStore) ReleaseLeadership(_ context.Context, workerID string) error {
+func (s *memoryStore) ReleaseLeadership(_ context.Context, _ string) error {
 	return nil
 }
 
