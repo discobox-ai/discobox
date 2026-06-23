@@ -27,6 +27,7 @@ type WorkerManager interface {
 	CreateWorker(ctx context.Context, worker *model.Worker) (*model.Worker, error)
 	CreateWorkerBootstrapToken(ctx context.Context, token *model.WorkerBootstrapToken) error
 	FindSchedulableWorker(ctx context.Context, sandbox *model.Sandbox) (*model.Worker, error)
+	MarkWorkerRuntimeLost(ctx context.Context, projectID, providerID, workerID, message string) (bool, error)
 	ScheduleWorkerProviderReconciliation(ctx context.Context, projectID, providerID string) error
 }
 

@@ -97,6 +97,53 @@ func TestReconcileWorkerChecksRuntimeForSuccessfulGeneration(t *testing.T) {
 	}
 }
 
+func TestReconcileWorkerPreservesConcurrentStatusUpdate(t *testing.T) {
+	ctx := context.Background()
+	appStore := newExecutorTestStore(t)
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "registering", Name: "registering"}
+	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	worker := &model.Worker{
+		ID:                 "worker-1",
+		ProjectID:          "project-1",
+		ProviderInstanceID: "provider-1",
+		ResourceLifecycle:  model.NewResourceLifecycle(model.WorkerCreateOperation, nil),
+	}
+	worker.IncrementGeneration()
+	if err := appStore.CreateWorker(ctx, worker); err != nil {
+		t.Fatalf("create worker: %v", err)
+	}
+
+	providerImpl := &registeringWorkerProvider{store: appStore}
+	manager := sandboxes.NewProviderManager()
+	manager.RegisterProvider("registering", providerImpl)
+	executor := workers.NewWorkerReconcileExecutor(appStore, workers.WithWorkerProviderManager(manager))
+
+	if err := executor.ReconcileWorkerJob(ctx, worker.ProjectID, worker.ProviderInstanceID, worker.ID, "job-1", worker.Generation); err != nil {
+		t.Fatalf("reconcile worker: %v", err)
+	}
+	updated, err := appStore.GetWorker(ctx, worker.ID)
+	if err != nil {
+		t.Fatalf("get updated worker: %v", err)
+	}
+	if !updated.Ready || !updated.Schedulable {
+		t.Fatalf("worker ready/schedulable = %v/%v, want true/true", updated.Ready, updated.Schedulable)
+	}
+	if updated.Phase != model.WorkerPhaseActive || updated.LastOperationStatus != model.OperationStatusSuccess {
+		t.Fatalf("worker phase/status = %q/%q, want active/success", updated.Phase, updated.LastOperationStatus)
+	}
+	if string(updated.RuntimeState) != `{"instanceId":"runtime-1"}` {
+		t.Fatalf("runtime state = %s, want runtime-1", updated.RuntimeState)
+	}
+	if updated.AvailableCPUVCPUs != 4 || updated.AvailableMemoryBytes != 8<<30 || updated.AvailableStorageBytes != 20<<30 {
+		t.Fatalf("worker capacity = cpu %v memory %d storage %d", updated.AvailableCPUVCPUs, updated.AvailableMemoryBytes, updated.AvailableStorageBytes)
+	}
+	if updated.LastSeenAt == nil {
+		t.Fatal("worker last seen was not preserved")
+	}
+}
+
 func TestReconcileWorkerDeletedRemovesRuntimeBeforeMarkingDeleted(t *testing.T) {
 	ctx := context.Background()
 	appStore := newExecutorTestStore(t)
@@ -179,6 +226,21 @@ func (p *countingWorkerProvider) ReconcileWorker(context.Context, any, *model.Pr
 func (p *countingWorkerProvider) RemoveWorker(_ context.Context, _ any, _ *model.Project, _ *model.SandboxProviderInstance, worker *model.Worker) error {
 	p.removeCalls++
 	worker.RuntimeState = nil
+	return nil
+}
+
+type registeringWorkerProvider struct {
+	sandboxes.Provider
+	store *store.Store
+}
+
+func (p *registeringWorkerProvider) ReconcileWorker(ctx context.Context, _ any, _ *model.Project, _ *model.SandboxProviderInstance, worker *model.Worker) error {
+	worker.RuntimeState = []byte(`{"instanceId":"runtime-1"}`)
+	_, err := p.store.UpdateWorkerStatus(ctx, worker.ID, true, true, false, 4, 8<<30, 20<<30, []byte(`{"status":"ready"}`))
+	return err
+}
+
+func (p *registeringWorkerProvider) RemoveWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
 	return nil
 }
 

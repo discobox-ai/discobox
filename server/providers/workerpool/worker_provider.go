@@ -30,6 +30,7 @@ var (
 
 // WorkerProvider owns worker runtime lifecycle and worker-local sandbox access.
 type WorkerProvider interface {
+	InitializeWorkerProvider(ctx context.Context, provider *model.SandboxProviderInstance, manager any) error
 	CreateWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string) error
 	RemoveWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error
 	AcquireWorkerHTTPClient(ctx context.Context, worker *model.Worker) (*transport.HTTPClientLease, error)
@@ -56,6 +57,9 @@ func NewWorkerPoolProvider(provider WorkerProvider, poolConfig WorkerPoolConfig,
 }
 
 func (p *WorkerPoolProvider) Initialize(ctx context.Context, provider *model.SandboxProviderInstance) error {
+	if err := p.workerProvider.InitializeWorkerProvider(ctx, provider, p.manager); err != nil {
+		return err
+	}
 	return p.manager.ScheduleWorkerProviderReconciliation(ctx, provider.ProjectID, provider.ID)
 }
 

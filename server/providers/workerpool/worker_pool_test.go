@@ -586,6 +586,14 @@ func (d *existingInstanceDriver) CreateVM(context.Context, vm.InstanceSpec) (*vm
 	return nil, errors.New("CreateVM should not be called for existing state")
 }
 
+func (d *existingInstanceDriver) InitializeWorkerProvider(context.Context, *model.SandboxProviderInstance, any) error {
+	return nil
+}
+
+func (d *existingInstanceDriver) Close() error {
+	return nil
+}
+
 func (d *existingInstanceDriver) StartVM(context.Context, string) (*vm.Instance, error) {
 	return nil, errors.New("StartVM should not be called")
 }
@@ -608,6 +616,14 @@ func (d *existingInstanceDriver) InspectVM(_ context.Context, id string) (*vm.In
 
 func (d *workerHTTPOnlyDriver) CreateVM(context.Context, vm.InstanceSpec) (*vm.Instance, error) {
 	return nil, errors.New("CreateVM should not be called")
+}
+
+func (d *workerHTTPOnlyDriver) InitializeWorkerProvider(context.Context, *model.SandboxProviderInstance, any) error {
+	return nil
+}
+
+func (d *workerHTTPOnlyDriver) Close() error {
+	return nil
 }
 
 func (d *workerHTTPOnlyDriver) StartVM(context.Context, string) (*vm.Instance, error) {
@@ -653,6 +669,10 @@ type testWorkerProvider struct {
 	baseURL string
 	client  *http.Client
 	token   string
+}
+
+func (p *testWorkerProvider) InitializeWorkerProvider(context.Context, *model.SandboxProviderInstance, any) error {
+	return nil
 }
 
 func (p *testWorkerProvider) CreateWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker, string) error {
@@ -715,6 +735,10 @@ func (s *recordingWorkerManager) ScheduleWorkerProviderReconciliation(context.Co
 	return nil
 }
 
+func (s *recordingWorkerManager) MarkWorkerRuntimeLost(context.Context, string, string, string, string) (bool, error) {
+	return false, nil
+}
+
 type capacityWaitWorkerManager struct {
 	project        *model.Project
 	provider       *model.SandboxProviderInstance
@@ -761,6 +785,10 @@ func (s *capacityWaitWorkerManager) ScheduleWorkerProviderReconciliation(context
 	return nil
 }
 
+func (s *capacityWaitWorkerManager) MarkWorkerRuntimeLost(context.Context, string, string, string, string) (bool, error) {
+	return false, nil
+}
+
 type repairingWorkerManager struct {
 	workers        []model.Worker
 	jobs           map[string]*orchestration.Job
@@ -797,6 +825,10 @@ func (s *repairingWorkerManager) FindSchedulableWorker(context.Context, *model.S
 
 func (s *repairingWorkerManager) ScheduleWorkerProviderReconciliation(context.Context, string, string) error {
 	return nil
+}
+
+func (s *repairingWorkerManager) MarkWorkerRuntimeLost(context.Context, string, string, string, string) (bool, error) {
+	return false, nil
 }
 
 func (s *repairingWorkerManager) GetJob(_ context.Context, id string) (*orchestration.Job, error) {

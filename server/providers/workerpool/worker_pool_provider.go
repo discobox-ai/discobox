@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
 )
 
 // StringList accepts either a JSON array of strings or a comma-separated string.
@@ -69,7 +68,13 @@ func RequireControlPlaneURL(providerType, value string) error {
 	return nil
 }
 
-type NewProviderFunc func(context.Context, vm.Config) (*vm.Provider, error)
+type NewProviderFunc func(context.Context, VMProviderConfig) (WorkerProvider, error)
+
+type VMProviderConfig struct {
+	ControlPlaneURL string
+	DefaultImage    string
+	AgentPort       int
+}
 
 type VMWorkerPoolProviderConfig struct {
 	ControlPlaneURL string
@@ -81,7 +86,7 @@ type VMWorkerPoolProviderConfig struct {
 }
 
 func NewVMWorkerPoolProvider(ctx context.Context, cfg VMWorkerPoolProviderConfig, newProvider NewProviderFunc) (sandbox.Provider, error) {
-	provider, err := newProvider(ctx, vm.Config{
+	provider, err := newProvider(ctx, VMProviderConfig{
 		ControlPlaneURL: cfg.ControlPlaneURL,
 		DefaultImage:    cfg.DefaultImage,
 		AgentPort:       cfg.AgentPort,

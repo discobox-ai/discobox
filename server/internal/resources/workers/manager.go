@@ -84,6 +84,10 @@ func (s *Manager) DeleteWorkerForExpiredRegistration(ctx context.Context, worker
 	return s.jobs.DeleteWorkerForExpiredRegistration(ctx, workerID, generation, cutoff, message)
 }
 
+func (s *Manager) MarkWorkerRuntimeLost(ctx context.Context, projectID, providerID, workerID, message string) (bool, error) {
+	return s.store.MarkWorkerRuntimeLost(ctx, projectID, providerID, workerID, message)
+}
+
 func (s *Manager) ScheduleWorkerProviderReconciliation(ctx context.Context, projectID, providerID string) error {
 	_, err := s.jobs.EnqueueWorkerProviderCurrent(ctx, projectID, providerID)
 	return err

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
 	workeragent "github.com/obot-platform/discobox/worker-agent"
@@ -90,6 +91,14 @@ func (d *recordingDriver) CreateVM(_ context.Context, spec vm.InstanceSpec) (*vm
 	d.createdSpec = spec
 	now := time.Now().UTC()
 	return &vm.Instance{ID: "vm-1", Name: spec.Name, Image: spec.Image, Status: sandbox.StatusCreated, CreatedAt: now}, nil
+}
+
+func (d *recordingDriver) InitializeWorkerProvider(context.Context, *model.SandboxProviderInstance, any) error {
+	return nil
+}
+
+func (d *recordingDriver) Close() error {
+	return nil
 }
 
 func (d *recordingDriver) StartVM(context.Context, string) (*vm.Instance, error) {

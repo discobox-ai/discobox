@@ -63,15 +63,20 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 	if err != nil {
 		return nil, err
 	}
+	newWorkerProvider := workerpool.NewProviderFunc(func(ctx context.Context, providerConfig workerpool.VMProviderConfig) (workerpool.WorkerProvider, error) {
+		return newProvider(ctx, cfg, vm.Config{
+			ControlPlaneURL: providerConfig.ControlPlaneURL,
+			DefaultImage:    providerConfig.DefaultImage,
+			AgentPort:       providerConfig.AgentPort,
+		})
+	})
 	return workerpool.NewVMWorkerPoolProvider(ctx, workerpool.VMWorkerPoolProviderConfig{
 		ControlPlaneURL: cfg.ControlPlaneURL,
 		DefaultImage:    cfg.Image,
 		AgentPort:       cfg.AgentPort,
 		WorkerPool:      cfg.WorkerPoolConfig(),
 		WorkerManager:   workerManager,
-	}, func(ctx context.Context, vmConfig vm.Config) (*vm.Provider, error) {
-		return newProvider(ctx, cfg, vmConfig)
-	})
+	}, newWorkerProvider)
 }
 
 func newProvider(_ context.Context, cfg Config, vmConfig vm.Config) (*vm.Provider, error) {

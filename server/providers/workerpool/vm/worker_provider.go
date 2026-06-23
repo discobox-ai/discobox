@@ -12,6 +12,13 @@ import (
 	workeragent "github.com/obot-platform/discobox/worker-agent"
 )
 
+func (p *Provider) InitializeWorkerProvider(ctx context.Context, provider *model.SandboxProviderInstance, manager any) error {
+	if p == nil {
+		return errors.New("vm provider is required")
+	}
+	return p.driver.InitializeWorkerProvider(ctx, provider, manager)
+}
+
 func (p *Provider) CreateWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string) error {
 	if p == nil {
 		return errors.New("vm provider is required")

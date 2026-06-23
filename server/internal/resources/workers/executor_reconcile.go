@@ -174,13 +174,26 @@ func (r *WorkerReconcileExecutor) reconcileActive(ctx context.Context, worker *m
 		}
 		return err
 	}
-	worker.ObservedGeneration = generation
+	current, err := r.store.GetWorker(ctx, worker.ID, store.WithWorkerGeneration(generation))
+	if errors.Is(err, store.ErrGenerationConflict) {
+		return orchestration.Superseded("worker generation changed")
+	}
+	if err != nil {
+		return err
+	}
+	if current.LastOperationStatus == model.OperationStatusFailed {
+		return nil
+	}
+	current.RuntimeState = worker.RuntimeState
+	current.ObservedGeneration = generation
 	phase := model.WorkerPhaseRegistering
 	if alreadySuccessful {
-		phase = worker.Phase
+		phase = current.Phase
+	} else if current.RegisteredAt != nil || current.Ready {
+		phase = model.WorkerPhaseActive
 	}
-	worker.CompleteOperation(phase, nil)
-	return r.update(ctx, worker, generation)
+	current.CompleteOperation(phase, nil)
+	return r.update(ctx, current, generation)
 }
 
 func (r *WorkerReconcileExecutor) completeNoop(ctx context.Context, worker *model.Worker, generation int64, phase string, status string) error {

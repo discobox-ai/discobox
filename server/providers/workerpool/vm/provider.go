@@ -23,6 +23,8 @@ const defaultAgentPort = 3002
 // Virtualization, AWS, Azure, or GCP. The generic Provider owns Disco-specific
 // boot metadata and sandbox.Provider adaptation; drivers own VM mechanics.
 type Driver interface {
+	InitializeWorkerProvider(ctx context.Context, provider *model.SandboxProviderInstance, manager any) error
+	Close() error
 	CreateVM(ctx context.Context, spec InstanceSpec) (*Instance, error)
 	StartVM(ctx context.Context, id string) (*Instance, error)
 	StopVM(ctx context.Context, id string, timeout time.Duration) (*Instance, error)
@@ -107,6 +109,13 @@ func New(cfg Config) (*Provider, error) {
 
 func (p *Provider) Initialize(context.Context, *model.SandboxProviderInstance) error {
 	return nil
+}
+
+func (p *Provider) Close() error {
+	if p == nil {
+		return nil
+	}
+	return p.driver.Close()
 }
 
 func (p *Provider) Create(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {

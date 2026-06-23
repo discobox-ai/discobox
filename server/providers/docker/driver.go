@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -32,21 +33,22 @@ import (
 )
 
 const (
-	ProviderType        = "docker"
-	defaultImage        = "ghcr.io/obot-platform/discobox-systemd:latest"
-	defaultAgentPort    = 3002
-	defaultServerPort   = "8080"
-	noHealthWaitTimeout = 30 * time.Second
-	healthPollDelay     = 500 * time.Millisecond
-	dockerHostGateway   = "host.docker.internal"
-	dockerSocketPath    = "/var/run/docker.sock"
-	labelManaged        = "discobox.vm.managed"
-	labelInstanceID     = "discobox.vm.instance_id"
-	labelProjectID      = "discobox.project_id"
-	labelSandboxID      = "discobox.sandbox_id"
-	labelWorkerAgent    = "discobox.worker_agent"
-	labelWorkerID       = "discobox.worker_id"
-	labelProviderType   = "discobox.provider_type"
+	ProviderType            = "docker"
+	defaultImage            = "ghcr.io/obot-platform/discobox-systemd:latest"
+	defaultAgentPort        = 3002
+	defaultServerPort       = "8080"
+	noHealthWaitTimeout     = 30 * time.Second
+	healthPollDelay         = 500 * time.Millisecond
+	dockerHostGateway       = "host.docker.internal"
+	dockerSocketPath        = "/var/run/docker.sock"
+	labelManaged            = "discobox.vm.managed"
+	labelInstanceID         = "discobox.vm.instance_id"
+	labelProjectID          = "discobox.project_id"
+	labelSandboxID          = "discobox.sandbox_id"
+	labelWorkerAgent        = "discobox.worker_agent"
+	labelWorkerID           = "discobox.worker_id"
+	labelProviderInstanceID = "discobox.provider_instance_id"
+	labelProviderType       = "discobox.provider_type"
 )
 
 // DefaultImage returns the default Docker worker image.
@@ -122,6 +124,9 @@ type Driver struct {
 	cgroupNSMode string
 	command      []string
 	labels       map[string]string
+
+	watcherMu     sync.Mutex
+	watcherCancel context.CancelFunc
 }
 
 // NewDriver creates a Docker-backed VM driver and verifies Docker API connectivity.
@@ -200,7 +205,29 @@ func NewProvider(ctx context.Context, cfg DriverConfig, providerCfg vm.Config) (
 	if providerCfg.AgentPort == 0 {
 		providerCfg.AgentPort = driver.agentPort
 	}
-	return vm.New(providerCfg)
+	provider, err := vm.New(providerCfg)
+	if err != nil {
+		_ = driver.Close()
+		return nil, err
+	}
+	return provider, nil
+}
+
+func (d *Driver) Close() error {
+	if d == nil {
+		return nil
+	}
+	d.watcherMu.Lock()
+	cancel := d.watcherCancel
+	d.watcherCancel = nil
+	d.watcherMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	if d.client == nil || !d.ownsClient {
+		return nil
+	}
+	return d.client.Close()
 }
 
 func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instance, error) {

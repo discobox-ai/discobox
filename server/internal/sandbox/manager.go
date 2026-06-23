@@ -319,7 +319,7 @@ func (m *ProviderManager) RemoveProjectResources(ctx context.Context, projectID 
 
 // Shutdown closes registered providers that implement Close.
 func (m *ProviderManager) Shutdown() {
-	for _, provider := range m.snapshotProviders() {
+	for _, provider := range m.snapshotAllProviders() {
 		if closer, ok := provider.(interface{ Close() error }); ok {
 			_ = closer.Close()
 		}
@@ -349,8 +349,12 @@ func (m *ProviderManager) cachedProvider(ctx context.Context, instance *model.Sa
 		return nil, err
 	}
 	m.mu.Lock()
+	previous := m.cache[instance.ID].provider
 	m.cache[instance.ID] = cachedProvider{provider: provider, updatedAt: instance.UpdatedAt}
 	m.mu.Unlock()
+	if previous != nil && previous != provider {
+		closeProvider(previous)
+	}
 	return provider, nil
 }
 
@@ -360,6 +364,23 @@ func (m *ProviderManager) snapshotProviders() map[string]Provider {
 	providers := make(map[string]Provider, len(m.providers))
 	maps.Copy(providers, m.providers)
 	return providers
+}
+
+func (m *ProviderManager) snapshotAllProviders() map[string]Provider {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	providers := make(map[string]Provider, len(m.providers)+len(m.cache))
+	maps.Copy(providers, m.providers)
+	for id, cached := range m.cache {
+		providers["instance:"+id] = cached.provider
+	}
+	return providers
+}
+
+func closeProvider(provider Provider) {
+	if closer, ok := provider.(interface{ Close() error }); ok {
+		_ = closer.Close()
+	}
 }
 
 func statusFor(provider Provider) ProviderStatus {

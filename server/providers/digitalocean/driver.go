@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/transport"
 	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
@@ -165,6 +166,14 @@ func NewProvider(cfg DriverConfig, providerCfg vm.Config) (*vm.Provider, error) 
 		providerCfg.AgentPort = driver.agentPort
 	}
 	return vm.New(providerCfg)
+}
+
+func (d *Driver) InitializeWorkerProvider(context.Context, *model.SandboxProviderInstance, any) error {
+	return nil
+}
+
+func (d *Driver) Close() error {
+	return nil
 }
 
 func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instance, error) {

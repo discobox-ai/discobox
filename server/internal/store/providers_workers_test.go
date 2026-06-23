@@ -328,6 +328,69 @@ func TestMarkWorkerRegistrationExpiredRequiresCurrentRegisteringWorker(t *testin
 	}
 }
 
+func TestMarkWorkerRuntimeLostRequiresActiveProviderWorker(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	provider := &model.SandboxProviderInstance{ID: "provider-runtime-lost", ProjectID: "project-1", Type: "docker", Name: "docker"}
+	if err := s.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	worker := &model.Worker{
+		ID:                 "worker-runtime-lost",
+		ProjectID:          "project-1",
+		ProviderInstanceID: provider.ID,
+		Identity:           "worker-runtime-lost",
+		Ready:              true,
+		Schedulable:        true,
+		ResourceLifecycle: model.ResourceLifecycle{
+			DesiredState:        model.WorkerDesiredStateActive,
+			Phase:               model.WorkerPhaseActive,
+			LastOperationStatus: model.OperationStatusSuccess,
+		},
+	}
+	if err := s.CreateWorker(ctx, worker); err != nil {
+		t.Fatalf("create worker: %v", err)
+	}
+
+	updated, err := s.MarkWorkerRuntimeLost(ctx, "project-1", "other-provider", worker.ID, "wrong provider")
+	if err != nil {
+		t.Fatalf("mark wrong provider runtime lost: %v", err)
+	}
+	if updated {
+		t.Fatal("wrong provider updated worker")
+	}
+
+	updated, err = s.MarkWorkerRuntimeLost(ctx, "project-1", provider.ID, worker.ID, "container exited")
+	if err != nil {
+		t.Fatalf("mark runtime lost: %v", err)
+	}
+	if !updated {
+		t.Fatal("runtime lost did not update worker")
+	}
+	got, err := s.GetWorker(ctx, worker.ID)
+	if err != nil {
+		t.Fatalf("get worker after runtime lost: %v", err)
+	}
+	if got.Ready || got.Schedulable || !got.Degraded {
+		t.Fatalf("worker scheduling flags = ready %v schedulable %v degraded %v, want false/false/true", got.Ready, got.Schedulable, got.Degraded)
+	}
+	if got.Phase != model.WorkerPhaseFailed || got.LastOperationStatus != model.OperationStatusFailed {
+		t.Fatalf("worker phase/status = %q/%q, want failed/failed", got.Phase, got.LastOperationStatus)
+	}
+	if got.ErrorMessage == nil || *got.ErrorMessage != "container exited" {
+		t.Fatalf("worker error = %v, want container exited", got.ErrorMessage)
+	}
+
+	updated, err = s.MarkWorkerRuntimeLost(ctx, "project-1", provider.ID, worker.ID, "duplicate")
+	if err != nil {
+		t.Fatalf("mark duplicate runtime lost: %v", err)
+	}
+	if updated {
+		t.Fatal("duplicate runtime lost updated worker")
+	}
+}
+
 func sandboxForClaim(projectID, providerID string, cpuVCPUs float64, memoryBytes, storageBytes int64) *model.Sandbox {
 	return &model.Sandbox{
 		ProjectID:          projectID,
