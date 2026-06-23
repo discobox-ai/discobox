@@ -11,6 +11,7 @@ import (
 
 	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/orchestration"
+	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	"github.com/obot-platform/discobox/server/internal/model"
 )
 
@@ -26,6 +27,8 @@ type WorkerManager interface {
 	GetWorker(ctx context.Context, workerID string) (*model.Worker, error)
 	CreateWorker(ctx context.Context, worker *model.Worker) (*model.Worker, error)
 	CreateWorkerBootstrapToken(ctx context.Context, token *model.WorkerBootstrapToken) error
+	EnsureWorkerAgentTrustKey(ctx context.Context) (string, error)
+	CreateWorkerAgentToken(ctx context.Context, claims workeragentauth.TokenClaims) (string, error)
 	FindSchedulableWorker(ctx context.Context, sandbox *model.Sandbox) (*model.Worker, error)
 	MarkWorkerRuntimeLost(ctx context.Context, projectID, providerID, workerID, message string) (bool, error)
 	ScheduleWorkerProviderReconciliation(ctx context.Context, projectID, providerID string) error

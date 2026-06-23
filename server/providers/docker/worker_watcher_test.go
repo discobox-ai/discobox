@@ -6,6 +6,7 @@ import (
 
 	"github.com/moby/moby/api/types/events"
 
+	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	"github.com/obot-platform/discobox/server/internal/model"
 )
 
@@ -92,6 +93,14 @@ func (m *recordingRuntimeLostManager) CreateWorker(context.Context, *model.Worke
 
 func (m *recordingRuntimeLostManager) CreateWorkerBootstrapToken(context.Context, *model.WorkerBootstrapToken) error {
 	return nil
+}
+
+func (m *recordingRuntimeLostManager) EnsureWorkerAgentTrustKey(context.Context) (string, error) {
+	return "control-plane-public-key", nil
+}
+
+func (m *recordingRuntimeLostManager) CreateWorkerAgentToken(context.Context, workeragentauth.TokenClaims) (string, error) {
+	return "worker-token", nil
 }
 
 func (m *recordingRuntimeLostManager) FindSchedulableWorker(context.Context, *model.Sandbox) (*model.Worker, error) {

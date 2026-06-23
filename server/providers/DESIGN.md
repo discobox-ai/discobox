@@ -98,11 +98,13 @@ endpoint is reachable by the default network stack.
 
 The worker agent should validate that `{project_id}` and `{worker_id}` match its
 bootstrap identity before performing any operation. Worker-local sandbox routes
-must also require an authenticated request, such as a bearer token provisioned
-through bootstrap or registration and carried by the driver's HTTP client lease.
-Transport security depends on the driver path: remote paths should use TLS or an
-authenticated tunnel; localhost-only Docker paths do not need to expose HTTPS as
-long as the driver rewrites the logical URL to the local transport.
+must also require a short-lived scoped bearer token signed by the control plane.
+Drivers should return connectivity leases only; the workerpool layer attaches a
+per-request token provider to the lease so credentials are minted close to use
+and are not cached as driver or lease state. Transport security depends on the
+driver path: remote paths should use TLS or an authenticated tunnel;
+localhost-only Docker paths do not need to expose HTTPS as long as the driver
+rewrites the logical URL to the local transport.
 
 ## Sandbox Worker API
 

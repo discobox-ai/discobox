@@ -84,6 +84,21 @@ Rules:
 - Worker authorization should be scoped to assigned work and provider/sandbox
   scope.
 
+## Worker-Agent Request Tokens
+
+Control-plane calls to a worker agent use a separate server-owned issuer key.
+The public key is delivered to the worker in bootstrap metadata as
+`DISCOBOX_CONTROL_PLANE_PUBLIC_KEY`; the private key remains on the control
+plane and is stored in `server_state` as encrypted-at-rest key material when a
+sealer is configured.
+
+The workerpool layer mints short-lived PASETO v4.public bearer tokens when it
+builds worker-agent clients or reverse-proxy requests. Tokens are audience-bound
+to `worker-agent`, include `project_id`, `worker_id`, optional `sandbox_id`, and
+operation scopes, and backdate `nbf` to tolerate local VM clock skew. Driver
+HTTP leases should carry routing/connectivity only; they should not cache or
+persist worker-agent request tokens.
+
 ## Key Ownership
 
 | Flow | Private key owner | Purpose |

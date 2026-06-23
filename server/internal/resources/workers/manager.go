@@ -5,14 +5,16 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/orchestration"
+	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
 type Manager struct {
-	store *store.Store
-	jobs  WorkerJobManager
+	store           *store.Store
+	jobs            WorkerJobManager
+	workerAgentAuth *workeragentauth.Manager
 }
 
 type WorkerJobManager interface {
@@ -29,6 +31,10 @@ type JobRegistrar interface {
 
 func NewManager(appStore *store.Store, jobs WorkerJobManager) *Manager {
 	return &Manager{store: appStore, jobs: jobs}
+}
+
+func (s *Manager) SetWorkerAgentAuthManager(manager *workeragentauth.Manager) {
+	s.workerAgentAuth = manager
 }
 
 func (s *Manager) RegisterJobs(registrar JobRegistrar, providerManager *sandbox.ProviderManager, opts ...orchestration.ExecutorOption) error {
@@ -66,6 +72,20 @@ func (s *Manager) CreateWorker(ctx context.Context, worker *model.Worker) (*mode
 
 func (s *Manager) CreateWorkerBootstrapToken(ctx context.Context, token *model.WorkerBootstrapToken) error {
 	return s.store.CreateWorkerBootstrapToken(ctx, token)
+}
+
+func (s *Manager) EnsureWorkerAgentTrustKey(ctx context.Context) (string, error) {
+	if s.workerAgentAuth == nil {
+		return "", nil
+	}
+	return s.workerAgentAuth.EnsureTrustKey(ctx)
+}
+
+func (s *Manager) CreateWorkerAgentToken(ctx context.Context, claims workeragentauth.TokenClaims) (string, error) {
+	if s.workerAgentAuth == nil {
+		return "", nil
+	}
+	return s.workerAgentAuth.CreateToken(ctx, claims)
 }
 
 func (s *Manager) FindSchedulableWorker(ctx context.Context, sandbox *model.Sandbox) (*model.Worker, error) {

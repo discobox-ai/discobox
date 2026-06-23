@@ -19,7 +19,7 @@ func (p *Provider) InitializeWorkerProvider(ctx context.Context, provider *model
 	return p.driver.InitializeWorkerProvider(ctx, provider, manager)
 }
 
-func (p *Provider) CreateWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string) error {
+func (p *Provider) CreateWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string, controlPlanePublicKey string) error {
 	if p == nil {
 		return errors.New("vm provider is required")
 	}
@@ -29,7 +29,7 @@ func (p *Provider) CreateWorker(ctx context.Context, project *model.Project, pro
 	}
 	workerProvider := *p
 	workerProvider.bootstrap = BootstrapProviderFunc(func(context.Context, sandbox.SandboxRef, sandbox.CreateOptions) (WorkerBootstrap, error) {
-		return workeragent.Bootstrap{ControlPlaneURL: p.controlPlaneURL, ProjectID: project.ID, WorkerID: worker.ID, Token: token, AgentPort: p.agentPort}, nil
+		return workeragent.Bootstrap{ControlPlaneURL: p.controlPlaneURL, ProjectID: project.ID, WorkerID: worker.ID, Token: token, ControlPlaneKey: controlPlanePublicKey, AgentPort: p.agentPort}, nil
 	})
 	workerProvider.metadata = labels
 

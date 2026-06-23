@@ -10,6 +10,7 @@ import (
 	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/auth"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
+	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	"github.com/obot-platform/discobox/server/internal/events"
 	"github.com/obot-platform/discobox/server/internal/handlers"
 	"github.com/obot-platform/discobox/server/internal/projectstream"
@@ -106,6 +107,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	if opts.SecretSealer != nil {
 		appServices.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.SecretSealer))
 	}
+	appServices.SetWorkerAgentAuthManager(workeragentauth.NewManager(appStore, opts.SecretSealer))
 	if err := appServices.InitializeDefaults(ctx, opts.UserID); err != nil {
 		return nil, err
 	}

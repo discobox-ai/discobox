@@ -63,6 +63,7 @@ func BuildBootConfig(input BootInput) BootConfig {
 		workeragent.EnvSandboxID:       firstNonEmpty(input.WorkerBootstrap.SandboxID, input.Ref.SandboxID),
 		workeragent.EnvWorkerID:        input.WorkerBootstrap.WorkerID,
 		workeragent.EnvBootstrapToken:  input.WorkerBootstrap.Token,
+		workeragent.EnvControlPlaneKey: input.WorkerBootstrap.ControlPlaneKey,
 	}
 	if input.AgentPort > 0 {
 		env[workeragent.EnvAgentPort] = strconv.Itoa(input.AgentPort)

@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"net/http"
 	"sync"
 )
@@ -10,11 +11,12 @@ import (
 // a Unix socket, VS Code socket, tunnel, or provider proxy. BaseURL is optional;
 // when empty, callers use their own logical URL.
 type HTTPClientLease struct {
-	Client    *http.Client
-	BaseURL   string
-	AuthToken string
-	release   func()
-	once      sync.Once
+	Client            *http.Client
+	BaseURL           string
+	AuthToken         string
+	AuthTokenProvider func(context.Context) (string, error)
+	release           func()
+	once              sync.Once
 }
 
 // NewHTTPClientLease creates a lease around a client and release callback.
@@ -32,11 +34,34 @@ func NewHTTPClientLeaseWithBaseURLAndAuth(client *http.Client, baseURL, authToke
 	return &HTTPClientLease{Client: client, BaseURL: baseURL, AuthToken: authToken, release: release}
 }
 
+// NewHTTPClientLeaseWithBaseURLAndAuthProvider creates a lease with a base URL
+// and a bearer token provider. The provider is invoked by callers immediately
+// before sending a request so short-lived credentials are not cached on leases.
+func NewHTTPClientLeaseWithBaseURLAndAuthProvider(client *http.Client, baseURL string, authTokenProvider func(context.Context) (string, error), release func()) *HTTPClientLease {
+	return &HTTPClientLease{Client: client, BaseURL: baseURL, AuthTokenProvider: authTokenProvider, release: release}
+}
+
 // NewHTTPClientLeaseWithAuth creates an authenticated lease for a client that
 // handles the logical URL itself, for example by dialing a socket or tunnel from
 // a custom RoundTripper.
 func NewHTTPClientLeaseWithAuth(client *http.Client, authToken string, release func()) *HTTPClientLease {
 	return &HTTPClientLease{Client: client, AuthToken: authToken, release: release}
+}
+
+// NewHTTPClientLeaseWithAuthProvider creates an authenticated lease for a client
+// whose transport handles the logical URL itself.
+func NewHTTPClientLeaseWithAuthProvider(client *http.Client, authTokenProvider func(context.Context) (string, error), release func()) *HTTPClientLease {
+	return &HTTPClientLease{Client: client, AuthTokenProvider: authTokenProvider, release: release}
+}
+
+func (l *HTTPClientLease) AuthorizationToken(ctx context.Context) (string, error) {
+	if l == nil {
+		return "", nil
+	}
+	if l.AuthTokenProvider != nil {
+		return l.AuthTokenProvider(ctx)
+	}
+	return l.AuthToken, nil
 }
 
 // Release returns the leased client.

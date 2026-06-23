@@ -585,11 +585,7 @@ func (d *Driver) AcquireWorkerHTTPClient(ctx context.Context, workerID string) (
 	if strings.TrimSpace(inst.AgentURL) == "" {
 		return nil, fmt.Errorf("worker %q does not expose an agent URL", workerID)
 	}
-	authToken := envValue(inspect.Container.Config.Env, workeragent.EnvBootstrapToken)
-	if strings.TrimSpace(authToken) == "" {
-		return nil, fmt.Errorf("worker %q does not expose worker API auth metadata", workerID)
-	}
-	return vm.NewDirectHTTPClientLeaseForBaseURLAndAuth(inst.AgentURL, authToken), nil
+	return vm.NewDirectHTTPClientLeaseForBaseURL(inst.AgentURL), nil
 }
 
 func (d *Driver) containerLabels(spec vm.InstanceSpec) map[string]string {
@@ -769,16 +765,6 @@ func envList(values map[string]string) []string {
 	}
 	sort.Strings(env)
 	return env
-}
-
-func envValue(values []string, key string) string {
-	prefix := key + "="
-	for _, value := range values {
-		if strings.HasPrefix(value, prefix) {
-			return strings.TrimPrefix(value, prefix)
-		}
-	}
-	return ""
 }
 
 func copyStringMap(values map[string]string) map[string]string {

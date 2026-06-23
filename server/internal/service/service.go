@@ -7,6 +7,7 @@ import (
 
 	"github.com/obot-platform/discobox/orchestration"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
+	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	eventbroker "github.com/obot-platform/discobox/server/internal/events"
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/resources/agentconfigs"
@@ -98,6 +99,10 @@ func New(store *store.Store, jobManager JobManager, jobManagerOptions JobManager
 
 func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 	s.Service.SetSandboxAuthManager(manager)
+}
+
+func (s *Service) SetWorkerAgentAuthManager(manager *workeragentauth.Manager) {
+	s.workerManager.SetWorkerAgentAuthManager(manager)
 }
 
 func (s *Service) Start(ctx context.Context) error {

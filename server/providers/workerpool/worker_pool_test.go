@@ -6,11 +6,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
+	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/transport"
@@ -239,17 +241,18 @@ func TestWorkerProviderCreateClaimsWorkerAndReturnsWorkerID(t *testing.T) {
 
 func TestWorkerProviderCreateCallsWorkerAgentRuntime(t *testing.T) {
 	runtime := sandboxruntime.NewMemorySandboxRuntime()
+	controlPlaneKey, workerToken := newWorkerAgentTestAuth(t, "project-1", "worker-1")
 	router, _ := server.NewRouter(server.Config{
-		Identity: server.Identity{ProjectID: "project-1", WorkerID: "worker-1"},
-		Runtime:  runtime,
-		AuthTokens: []string{
-			"worker-token",
-		},
+		Identity:              server.Identity{ProjectID: "project-1", WorkerID: "worker-1"},
+		Runtime:               runtime,
+		ControlPlanePublicKey: controlPlaneKey,
 	})
 	workerAgent := httptest.NewServer(router)
 	defer workerAgent.Close()
 
-	driver := &workerHTTPOnlyDriver{baseURL: workerAgent.URL, client: workerAgent.Client(), authToken: "worker-token"}
+	driver := &workerHTTPOnlyDriver{baseURL: workerAgent.URL, client: workerAgent.Client(), authTokenProvider: func(context.Context) (string, error) {
+		return workerToken, nil
+	}}
 	baseProvider, err := vm.New(vm.Config{Driver: driver})
 	if err != nil {
 		t.Fatalf("new provider: %v", err)
@@ -405,7 +408,7 @@ func TestVMProviderCreateWorkerTreatsExistingRuntimeStateAsSuccess(t *testing.T)
 		RuntimeState: []byte(`{"instanceId":"instance-1"}`),
 	}
 
-	err = provider.CreateWorker(context.Background(), &model.Project{ID: "project-1"}, &model.SandboxProviderInstance{ID: "provider-1"}, worker, "bootstrap-token")
+	err = provider.CreateWorker(context.Background(), &model.Project{ID: "project-1"}, &model.SandboxProviderInstance{ID: "provider-1"}, worker, "bootstrap-token", "control-plane-public-key")
 	if err != nil {
 		t.Fatalf("launch existing worker: %v", err)
 	}
@@ -535,6 +538,12 @@ func TestWorkerProviderGetUsesWorkerAPIState(t *testing.T) {
 	if driver.workerID != "worker-1" {
 		t.Fatalf("worker HTTP lease workerID = %q", driver.workerID)
 	}
+	if len(workerManager.workerAgentTokenClaims) != 1 {
+		t.Fatalf("worker-agent token claims count = %d, want 1", len(workerManager.workerAgentTokenClaims))
+	}
+	if claims := workerManager.workerAgentTokenClaims[0]; claims.ProjectID != "project-1" || claims.WorkerID != "worker-1" || claims.SandboxID != "sandbox-1" || !reflect.DeepEqual(claims.Scopes, []string{workeragentauth.ScopeSandboxRead}) {
+		t.Fatalf("worker-agent token claims = %#v", claims)
+	}
 }
 
 func TestWorkerProviderAcquireHTTPClientUsesWorkerIDFromState(t *testing.T) {
@@ -555,6 +564,19 @@ func TestWorkerProviderAcquireHTTPClientUsesWorkerIDFromState(t *testing.T) {
 	if lease.BaseURL != "https://worker.example" || lease.AuthToken != "worker-token" {
 		t.Fatalf("lease = %#v", lease)
 	}
+	token, err := lease.AuthorizationToken(context.Background())
+	if err != nil {
+		t.Fatalf("lease authorization token: %v", err)
+	}
+	if token != "worker-token" {
+		t.Fatalf("lease token = %q", token)
+	}
+	if len(workerManager.workerAgentTokenClaims) != 1 {
+		t.Fatalf("worker-agent token claims count = %d, want 1", len(workerManager.workerAgentTokenClaims))
+	}
+	if claims := workerManager.workerAgentTokenClaims[0]; claims.ProjectID != "project-1" || claims.WorkerID != "worker-1" || claims.SandboxID != "sandbox-1" || !reflect.DeepEqual(claims.Scopes, []string{workeragentauth.ScopeSandboxRead, workeragentauth.ScopeSandboxWrite}) {
+		t.Fatalf("worker-agent token claims = %#v", claims)
+	}
 	if driver.workerID != "worker-1" {
 		t.Fatalf("worker ID = %q", driver.workerID)
 	}
@@ -573,11 +595,12 @@ func workerRuntimeState(t *testing.T, runtimeSandbox *sandbox.Sandbox) []byte {
 }
 
 type workerHTTPOnlyDriver struct {
-	client       *http.Client
-	baseURL      string
-	authToken    string
-	workerID     string
-	inspectCalls int
+	client            *http.Client
+	baseURL           string
+	authToken         string
+	authTokenProvider func(context.Context) (string, error)
+	workerID          string
+	inspectCalls      int
 }
 
 type existingInstanceDriver struct {
@@ -650,23 +673,27 @@ func (d *workerHTTPOnlyDriver) InspectVM(context.Context, string) (*vm.Instance,
 
 func (d *workerHTTPOnlyDriver) AcquireWorkerHTTPClient(_ context.Context, workerID string) (*transport.HTTPClientLease, error) {
 	d.workerID = workerID
+	if d.authTokenProvider != nil {
+		return transport.NewHTTPClientLeaseWithBaseURLAndAuthProvider(d.client, d.baseURL, d.authTokenProvider, nil), nil
+	}
 	return transport.NewHTTPClientLeaseWithBaseURLAndAuth(d.client, d.baseURL, d.authToken, nil), nil
 }
 
 func newTestWorkerProvider(t *testing.T, projectID, workerID string) *testWorkerProvider {
 	t.Helper()
 	runtime := sandboxruntime.NewMemorySandboxRuntime()
+	controlPlaneKey, workerToken := newWorkerAgentTestAuth(t, projectID, workerID)
 	router, _ := server.NewRouter(server.Config{
-		Identity:   server.Identity{ProjectID: projectID, WorkerID: workerID},
-		Runtime:    runtime,
-		AuthTokens: []string{"worker-token"},
+		Identity:              server.Identity{ProjectID: projectID, WorkerID: workerID},
+		Runtime:               runtime,
+		ControlPlanePublicKey: controlPlaneKey,
 	})
 	workerAgent := httptest.NewServer(router)
 	t.Cleanup(workerAgent.Close)
 	return &testWorkerProvider{
 		baseURL: workerAgent.URL,
 		client:  workerAgent.Client(),
-		token:   "worker-token",
+		token:   workerToken,
 	}
 }
 
@@ -680,7 +707,7 @@ func (p *testWorkerProvider) InitializeWorkerProvider(context.Context, *model.Sa
 	return nil
 }
 
-func (p *testWorkerProvider) CreateWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker, string) error {
+func (p *testWorkerProvider) CreateWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker, string, string) error {
 	return nil
 }
 
@@ -689,15 +716,18 @@ func (p *testWorkerProvider) RemoveWorker(context.Context, *model.Project, *mode
 }
 
 func (p *testWorkerProvider) AcquireWorkerHTTPClient(context.Context, *model.Worker) (*transport.HTTPClientLease, error) {
-	return transport.NewHTTPClientLeaseWithBaseURLAndAuth(p.client, p.baseURL, p.token, nil), nil
+	return transport.NewHTTPClientLeaseWithBaseURLAndAuthProvider(p.client, p.baseURL, func(context.Context) (string, error) {
+		return p.token, nil
+	}, nil), nil
 }
 
 type recordingWorkerManager struct {
-	worker      *model.Worker
-	workersByID map[string]*model.Worker
-	err         error
-	sandbox     *model.Sandbox
-	findCalls   int
+	worker                 *model.Worker
+	workersByID            map[string]*model.Worker
+	err                    error
+	sandbox                *model.Sandbox
+	findCalls              int
+	workerAgentTokenClaims []workeragentauth.TokenClaims
 }
 
 func (s *recordingWorkerManager) ListWorkers(context.Context, string, string) ([]model.Worker, error) {
@@ -722,6 +752,15 @@ func (s *recordingWorkerManager) CreateWorker(_ context.Context, worker *model.W
 
 func (s *recordingWorkerManager) CreateWorkerBootstrapToken(context.Context, *model.WorkerBootstrapToken) error {
 	return nil
+}
+
+func (s *recordingWorkerManager) EnsureWorkerAgentTrustKey(context.Context) (string, error) {
+	return "control-plane-public-key", nil
+}
+
+func (s *recordingWorkerManager) CreateWorkerAgentToken(_ context.Context, claims workeragentauth.TokenClaims) (string, error) {
+	s.workerAgentTokenClaims = append(s.workerAgentTokenClaims, claims)
+	return "worker-token", nil
 }
 
 func (s *recordingWorkerManager) FindSchedulableWorker(_ context.Context, sandbox *model.Sandbox) (*model.Worker, error) {
@@ -779,6 +818,14 @@ func (s *capacityWaitWorkerManager) CreateWorkerBootstrapToken(context.Context, 
 	return nil
 }
 
+func (s *capacityWaitWorkerManager) EnsureWorkerAgentTrustKey(context.Context) (string, error) {
+	return "control-plane-public-key", nil
+}
+
+func (s *capacityWaitWorkerManager) CreateWorkerAgentToken(context.Context, workeragentauth.TokenClaims) (string, error) {
+	return "worker-token", nil
+}
+
 func (s *capacityWaitWorkerManager) FindSchedulableWorker(context.Context, *model.Sandbox) (*model.Worker, error) {
 	if s.createdWorkers == 0 || s.worker == nil {
 		return nil, apperrors.ErrNotFound
@@ -822,6 +869,14 @@ func (s *repairingWorkerManager) CreateWorker(_ context.Context, worker *model.W
 
 func (s *repairingWorkerManager) CreateWorkerBootstrapToken(context.Context, *model.WorkerBootstrapToken) error {
 	return nil
+}
+
+func (s *repairingWorkerManager) EnsureWorkerAgentTrustKey(context.Context) (string, error) {
+	return "control-plane-public-key", nil
+}
+
+func (s *repairingWorkerManager) CreateWorkerAgentToken(context.Context, workeragentauth.TokenClaims) (string, error) {
+	return "worker-token", nil
 }
 
 func (s *repairingWorkerManager) FindSchedulableWorker(context.Context, *model.Sandbox) (*model.Worker, error) {

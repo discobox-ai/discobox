@@ -365,11 +365,6 @@ func NewDirectHTTPClientLeaseForBaseURL(baseURL string) *transport.HTTPClientLea
 	return transport.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, baseURL, nil)
 }
 
-// NewDirectHTTPClientLeaseForBaseURLAndAuth returns a direct HTTP client with a concrete base URL and bearer token.
-func NewDirectHTTPClientLeaseForBaseURLAndAuth(baseURL, authToken string) *transport.HTTPClientLease {
-	return transport.NewHTTPClientLeaseWithBaseURLAndAuth(http.DefaultClient, baseURL, authToken, nil)
-}
-
 // WorkerBootstrap aliases the worker agent package payload so VM drivers and
 // agent registration share one boot contract.
 type WorkerBootstrap = workeragent.Bootstrap

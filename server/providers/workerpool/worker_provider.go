@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/server/internal/apperrors"
+	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/transport"
@@ -31,7 +32,7 @@ var (
 // WorkerProvider owns worker runtime lifecycle and worker-local sandbox access.
 type WorkerProvider interface {
 	InitializeWorkerProvider(ctx context.Context, provider *model.SandboxProviderInstance, manager any) error
-	CreateWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string) error
+	CreateWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string, controlPlanePublicKey string) error
 	RemoveWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error
 	AcquireWorkerHTTPClient(ctx context.Context, worker *model.Worker) (*transport.HTTPClientLease, error)
 }
@@ -111,7 +112,11 @@ func (p *WorkerPoolProvider) ReconcileWorker(ctx context.Context, manager any, p
 	if err != nil {
 		return err
 	}
-	return p.workerProvider.CreateWorker(ctx, project, provider, worker, token)
+	controlPlanePublicKey, err := workerManager.EnsureWorkerAgentTrustKey(ctx)
+	if err != nil {
+		return err
+	}
+	return p.workerProvider.CreateWorker(ctx, project, provider, worker, token, controlPlanePublicKey)
 }
 
 func (p *WorkerPoolProvider) RemoveWorker(ctx context.Context, _ any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error {
@@ -344,7 +349,7 @@ func (p *WorkerPoolProvider) sandboxProviderForWorker(ctx context.Context, worke
 	if err != nil {
 		return nil, err
 	}
-	return &workerAgentSandboxProvider{workerID: worker.ID, lease: lease}, nil
+	return &workerAgentSandboxProvider{workerID: worker.ID, tokenIssuer: p.manager, lease: lease}, nil
 }
 
 func workerIDFromRuntimeState(state []byte) (string, error) {
@@ -367,8 +372,13 @@ func workerIDFromRuntimeState(state []byte) (string, error) {
 const defaultWorkerBaseURL = "https://worker"
 
 type workerAgentSandboxProvider struct {
-	workerID string
-	lease    *transport.HTTPClientLease
+	workerID    string
+	tokenIssuer workerAgentTokenIssuer
+	lease       *transport.HTTPClientLease
+}
+
+type workerAgentTokenIssuer interface {
+	CreateWorkerAgentToken(ctx context.Context, claims workeragentauth.TokenClaims) (string, error)
 }
 
 func (p *workerAgentSandboxProvider) Initialize(context.Context, *model.SandboxProviderInstance) error {
@@ -380,7 +390,7 @@ func (p *workerAgentSandboxProvider) List(context.Context) ([]*sandbox.Sandbox, 
 }
 
 func (p *workerAgentSandboxProvider) Create(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {
-	client, release, err := p.workerClient()
+	client, release, err := p.workerClient(ref, workeragentauth.ScopeSandboxWrite)
 	if err != nil {
 		return nil, state, err
 	}
@@ -406,7 +416,7 @@ func (p *workerAgentSandboxProvider) Create(ctx context.Context, ref sandbox.San
 }
 
 func (p *workerAgentSandboxProvider) Start(ctx context.Context, ref sandbox.SandboxRef, state []byte) (*sandbox.Sandbox, []byte, error) {
-	client, release, err := p.workerClient()
+	client, release, err := p.workerClient(ref, workeragentauth.ScopeSandboxWrite)
 	if err != nil {
 		return nil, state, err
 	}
@@ -424,7 +434,7 @@ func (p *workerAgentSandboxProvider) Start(ctx context.Context, ref sandbox.Sand
 }
 
 func (p *workerAgentSandboxProvider) Stop(ctx context.Context, ref sandbox.SandboxRef, state []byte, _ time.Duration) (*sandbox.Sandbox, []byte, error) {
-	client, release, err := p.workerClient()
+	client, release, err := p.workerClient(ref, workeragentauth.ScopeSandboxWrite)
 	if err != nil {
 		return nil, state, err
 	}
@@ -442,7 +452,7 @@ func (p *workerAgentSandboxProvider) Stop(ctx context.Context, ref sandbox.Sandb
 }
 
 func (p *workerAgentSandboxProvider) Remove(ctx context.Context, ref sandbox.SandboxRef, state []byte, _ ...sandbox.RemoveOption) ([]byte, error) {
-	client, release, err := p.workerClient()
+	client, release, err := p.workerClient(ref, workeragentauth.ScopeSandboxWrite)
 	if err != nil {
 		return state, err
 	}
@@ -454,7 +464,7 @@ func (p *workerAgentSandboxProvider) Remove(ctx context.Context, ref sandbox.San
 }
 
 func (p *workerAgentSandboxProvider) Get(ctx context.Context, ref sandbox.SandboxRef, _ []byte) (*sandbox.Sandbox, error) {
-	client, release, err := p.workerClient()
+	client, release, err := p.workerClient(ref, workeragentauth.ScopeSandboxRead)
 	if err != nil {
 		return nil, err
 	}
@@ -466,15 +476,21 @@ func (p *workerAgentSandboxProvider) Get(ctx context.Context, ref sandbox.Sandbo
 	return sandboxFromWorker(workerSandbox, p.workerID), nil
 }
 
-func (p *workerAgentSandboxProvider) AcquireHTTPClient(context.Context, sandbox.SandboxRef, []byte) (*transport.HTTPClientLease, error) {
+func (p *workerAgentSandboxProvider) AcquireHTTPClient(_ context.Context, ref sandbox.SandboxRef, _ []byte) (*transport.HTTPClientLease, error) {
 	lease := p.lease
 	p.lease = nil
+	if lease != nil && lease.AuthTokenProvider == nil {
+		lease.AuthTokenProvider = p.authTokenProvider(ref, workeragentauth.ScopeSandboxRead, workeragentauth.ScopeSandboxWrite)
+	}
 	return lease, nil
 }
 
-func (p *workerAgentSandboxProvider) workerClient() (*workerclient.Client, func(), error) {
+func (p *workerAgentSandboxProvider) workerClient(ref sandbox.SandboxRef, scopes ...string) (*workerclient.Client, func(), error) {
 	lease := p.lease
 	p.lease = nil
+	if lease != nil && lease.AuthTokenProvider == nil {
+		lease.AuthTokenProvider = p.authTokenProvider(ref, scopes...)
+	}
 	client, err := newWorkerAgentClient(lease)
 	if err != nil {
 		if lease != nil {
@@ -489,10 +505,23 @@ func (p *workerAgentSandboxProvider) workerClient() (*workerclient.Client, func(
 	}, nil
 }
 
+func (p *workerAgentSandboxProvider) authTokenProvider(ref sandbox.SandboxRef, scopes ...string) func(context.Context) (string, error) {
+	return func(ctx context.Context) (string, error) {
+		if p.tokenIssuer == nil {
+			return "", fmt.Errorf("worker-agent token issuer is required")
+		}
+		return p.tokenIssuer.CreateWorkerAgentToken(ctx, workeragentauth.TokenClaims{
+			ProjectID: ref.ProjectID,
+			WorkerID:  p.workerID,
+			SandboxID: ref.SandboxID,
+			Scopes:    scopes,
+		})
+	}
+}
+
 func newWorkerAgentClient(lease *transport.HTTPClientLease) (*workerclient.Client, error) {
 	httpClient := http.DefaultClient
 	baseURL := defaultWorkerBaseURL
-	authToken := ""
 	if lease != nil {
 		if lease.Client != nil {
 			httpClient = lease.Client
@@ -500,9 +529,8 @@ func newWorkerAgentClient(lease *transport.HTTPClientLease) (*workerclient.Clien
 		if strings.TrimSpace(lease.BaseURL) != "" {
 			baseURL = lease.BaseURL
 		}
-		authToken = strings.TrimSpace(lease.AuthToken)
 	}
-	return workerclient.NewClient(strings.TrimRight(baseURL, "/"), workerSecuritySource{token: authToken}, workerclient.WithClient(httpClient))
+	return workerclient.NewClient(strings.TrimRight(baseURL, "/"), workerSecuritySource{lease: lease}, workerclient.WithClient(httpClient))
 }
 
 func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) *workerapimodel.WorkerSandboxCreateRequest {
@@ -707,9 +735,13 @@ func mapWorkerClientError(err error) error {
 }
 
 type workerSecuritySource struct {
-	token string
+	lease *transport.HTTPClientLease
 }
 
-func (s workerSecuritySource) WorkerBearerAuth(context.Context, workerclient.OperationName) (workerclient.WorkerBearerAuth, error) {
-	return workerclient.WorkerBearerAuth{Token: s.token}, nil
+func (s workerSecuritySource) WorkerBearerAuth(ctx context.Context, _ workerclient.OperationName) (workerclient.WorkerBearerAuth, error) {
+	token, err := s.lease.AuthorizationToken(ctx)
+	if err != nil {
+		return workerclient.WorkerBearerAuth{}, err
+	}
+	return workerclient.WorkerBearerAuth{Token: strings.TrimSpace(token)}, nil
 }

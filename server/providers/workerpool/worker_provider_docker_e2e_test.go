@@ -52,15 +52,18 @@ func TestWorkerProviderCreateCreatesDockerContainerE2E(t *testing.T) {
 	}
 	t.Cleanup(func() { cleanupWorkerProviderSandboxContainers(t, dockerClient, projectID, workerID, sandboxID) })
 
+	controlPlaneKey, workerToken := newWorkerAgentTestAuth(t, projectID, workerID)
 	router, _ := server.NewRouter(server.Config{
-		Identity:   server.Identity{ProjectID: projectID, WorkerID: workerID},
-		Runtime:    runtime,
-		AuthTokens: []string{"worker-token"},
+		Identity:              server.Identity{ProjectID: projectID, WorkerID: workerID},
+		Runtime:               runtime,
+		ControlPlanePublicKey: controlPlaneKey,
 	})
 	workerAgent := httptest.NewServer(router)
 	defer workerAgent.Close()
 
-	driver := &workerHTTPOnlyDriver{baseURL: workerAgent.URL, client: workerAgent.Client(), authToken: "worker-token"}
+	driver := &workerHTTPOnlyDriver{baseURL: workerAgent.URL, client: workerAgent.Client(), authTokenProvider: func(context.Context) (string, error) {
+		return workerToken, nil
+	}}
 	baseProvider, err := vm.New(vm.Config{Driver: driver})
 	if err != nil {
 		t.Fatalf("new provider: %v", err)
