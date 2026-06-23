@@ -191,6 +191,53 @@ func TestLSPHookReadyUsesCurrentDiagnostics(t *testing.T) {
 	if len(statuses) != 1 || statuses[0].Status != models.StatusFailure || statuses[0].LastError != "1 diagnostics" {
 		t.Fatalf("expected ready LSP with diagnostics to fail, got %#v", statuses)
 	}
+
+	hook.Pattern = "**/*.ts"
+	if err := s.RefreshDefinitions(ctx, []hooks.Hook{hook}); err != nil {
+		t.Fatalf("refresh changed lsp definition: %v", err)
+	}
+	diagnostics, err := s.ListDiagnostics(ctx, DiagnosticQuery{HookID: hook.ID})
+	if err != nil {
+		t.Fatalf("list diagnostics after changed lsp definition: %v", err)
+	}
+	if len(diagnostics) != 0 {
+		t.Fatalf("expected changed LSP definition to clear diagnostics, got %#v", diagnostics)
+	}
+	statuses, err = s.ListStatus(ctx)
+	if err != nil {
+		t.Fatalf("list status after changed lsp definition: %v", err)
+	}
+	if len(statuses) != 1 || statuses[0].Status != models.StatusSuccess || statuses[0].LastError != "" {
+		t.Fatalf("expected changed LSP definition to reset status from diagnostics, got %#v", statuses)
+	}
+
+	if err := s.ReplaceDiagnosticsForURI(ctx, hook.ID, "file:///repo/main.go", "main.go", []Diagnostic{{
+		HookID:  hook.ID,
+		URI:     "file:///repo/main.go",
+		Path:    "main.go",
+		Message: "stale diagnostic",
+	}}); err != nil {
+		t.Fatalf("replace stale diagnostics: %v", err)
+	}
+	if err := s.RefreshDefinitions(ctx, []hooks.Hook{hook}); err != nil {
+		t.Fatalf("refresh same lsp definition: %v", err)
+	}
+	diagnostics, err = s.ListDiagnostics(ctx, DiagnosticQuery{HookID: hook.ID})
+	if err != nil {
+		t.Fatalf("list diagnostics after same lsp definition: %v", err)
+	}
+	if len(diagnostics) != 0 {
+		t.Fatalf("expected same LSP definition to prune non-matching diagnostics, got %#v", diagnostics)
+	}
+	if err := s.EnqueueChanges(ctx, []string{hook.ID}, []watcher.Change{{Path: "main.go", Kind: watcher.Modified}}); err != nil {
+		t.Fatalf("enqueue stale LSP pending row: %v", err)
+	}
+	if err := s.RefreshDefinitions(ctx, []hooks.Hook{hook}); err != nil {
+		t.Fatalf("refresh lsp definition with stale pending row: %v", err)
+	}
+	if pending, err := s.NextPending(ctx); err != nil || pending != nil {
+		t.Fatalf("expected LSP refresh to clear pending row, got %#v, %v", pending, err)
+	}
 }
 
 func TestEnqueueMergesAndRunningFinishTransitions(t *testing.T) {

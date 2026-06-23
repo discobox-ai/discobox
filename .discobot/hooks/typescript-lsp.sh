@@ -3,7 +3,9 @@
 # name: TypeScript LSP
 # type: file
 # engine: lsp
-# pattern: "**/*.{ts,tsx,js,jsx,svelte}"
+# pattern: "**/*.{ts,tsx,js,jsx}"
+# ignore:
+#   - ui/**
 # language_id: typescript
 # min_severity: warning
 #---

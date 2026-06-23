@@ -94,11 +94,15 @@ tasks:
       - ./{{.BINARY}}
 
   dev:
-    desc: Run the server, UI, and worker-agent image watcher dev tasks
-    deps:
-      - dev:server
-      - dev:ui
-      - dev:worker-agent-image-watch
+    desc: Run Storybook for UI component development
+    cmds:
+      - task: storybook
+
+  storybook:
+    desc: Run Storybook for UI component development
+    cmds:
+      - pnpm --dir {{.UI_DIR}} install --frozen-lockfile
+      - pnpm --dir {{.UI_DIR}} exec storybook dev -p 6006 --host 127.0.0.1
 
   dev:server:
     desc: Run discobox-server with Air hot reload
@@ -120,7 +124,7 @@ tasks:
     desc: Run the SvelteKit UI dev server
     cmds:
       - pnpm --dir {{.UI_DIR}} install --frozen-lockfile
-      - pnpm --dir {{.UI_DIR}} run dev --host 0.0.0.0 --port 5173 --strictPort
+      - pnpm --dir {{.UI_DIR}} run dev --host 127.0.0.1 --port 5173 --strictPort
 
   dev:electron:
     desc: Run the Discobox Electron shell against the UI dev server

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bmatcuk/doublestar/v4"
 	hooks "github.com/obot-platform/discobox/hooks"
 	"github.com/obot-platform/discobox/hooks/lspclient"
 	"github.com/obot-platform/discobox/hooks/runner"
@@ -81,7 +82,11 @@ func (r *runtimeState) startLSPHook(hook hooks.Hook) {
 		LanguageID: hook.LanguageID,
 		Env:        runner.BuildEnv(req, "[]"),
 		OnDiagnostic: func(uri string, diagnostics []lspclient.Diagnostic) {
-			r.recordLSPDiagnostics(hook, uri, diagnostics)
+			currentHook := hook
+			if h, ok := r.hookByID(hook.ID); ok {
+				currentHook = h
+			}
+			r.recordLSPDiagnostics(currentHook, uri, diagnostics)
 		},
 	})
 	if err != nil {
@@ -190,6 +195,24 @@ func (r *runtimeState) lspRuntimeForHook(hook hooks.Hook) *lspRuntime {
 }
 
 func (r *runtimeState) recordLSPDiagnostics(hook hooks.Hook, uri string, diagnostics []lspclient.Diagnostic) {
+	path := lspclient.PathFromURI(r.cfg.RepoRoot, uri)
+	matched, err := lspDiagnosticPathMatchesHook(hook, path)
+	if err != nil {
+		r.clearPendingLSP(hook.ID, uri)
+		_ = r.store.SetLSPHookError(r.ctx, hook.ID, err.Error())
+		_ = r.recordEvent("lsp.diagnostics.persist.failed", hook.ID, "", "language server diagnostics persist failed", map[string]any{"uri": uri, "path": path, "error": err.Error()})
+		return
+	}
+	if !matched {
+		if err := r.store.ReplaceDiagnosticsForURI(r.ctx, hook.ID, uri, path, nil); err != nil {
+			r.clearPendingLSP(hook.ID, uri)
+			_ = r.store.SetLSPHookError(r.ctx, hook.ID, err.Error())
+			_ = r.recordEvent("lsp.diagnostics.persist.failed", hook.ID, "", "language server diagnostics persist failed", map[string]any{"uri": uri, "path": path, "error": err.Error()})
+			return
+		}
+		r.clearPendingLSP(hook.ID, uri)
+		return
+	}
 	filtered := make([]store.Diagnostic, 0, len(diagnostics))
 	for _, diagnostic := range diagnostics {
 		if !severityIncluded(diagnostic.Severity, hook.MinSeverity) {
@@ -209,7 +232,6 @@ func (r *runtimeState) recordLSPDiagnostics(hook hooks.Hook, uri string, diagnos
 			EndCol:    diagnostic.EndCol,
 		})
 	}
-	path := lspclient.PathFromURI(r.cfg.RepoRoot, uri)
 	if err := r.store.ReplaceDiagnosticsForURI(r.ctx, hook.ID, uri, path, filtered); err != nil {
 		r.clearPendingLSP(hook.ID, uri)
 		_ = r.store.SetLSPHookError(r.ctx, hook.ID, err.Error())
@@ -219,6 +241,27 @@ func (r *runtimeState) recordLSPDiagnostics(hook hooks.Hook, uri string, diagnos
 	r.clearPendingLSP(hook.ID, uri)
 	_ = r.recordEvent("lsp.diagnostics.updated", hook.ID, "", "language server diagnostics updated", map[string]any{"uri": uri, "path": path, "diagnostics": len(filtered)})
 	r.touch()
+}
+
+func lspDiagnosticPathMatchesHook(hook hooks.Hook, path string) (bool, error) {
+	path = filepath.ToSlash(strings.TrimSpace(path))
+	if path == "" {
+		return false, nil
+	}
+	matched, err := doublestar.Match(hook.Pattern, path)
+	if err != nil || !matched {
+		return matched, err
+	}
+	for _, pattern := range hook.Ignore {
+		ignored, err := doublestar.Match(pattern, path)
+		if err != nil {
+			return false, err
+		}
+		if ignored {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func (r *runtimeState) closeLSPClients() {

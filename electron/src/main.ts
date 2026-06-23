@@ -4,6 +4,13 @@ import path from "node:path";
 
 const APP_SCHEME = "app";
 const DEFAULT_DEV_SERVER_URL = "http://localhost:5173";
+const TITLE_BAR_HEIGHT = 40;
+type WindowControlsMode =
+  | "macos"
+  | "windows"
+  | "linux"
+  | "none"
+  | "macos-fullscreen";
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -92,6 +99,26 @@ function currentWindow(event: Electron.IpcMainInvokeEvent): BrowserWindow {
   return window;
 }
 
+function windowControlsMode(window?: BrowserWindow): WindowControlsMode {
+  switch (process.platform) {
+    case "darwin":
+      return window?.isFullScreen() ? "macos-fullscreen" : "macos";
+    case "win32":
+      return "windows";
+    case "linux":
+      return "linux";
+    default:
+      return "none";
+  }
+}
+
+function notifyWindowControlsMode(window: BrowserWindow): void {
+  window.webContents.send(
+    "desktop:window-controls-changed",
+    windowControlsMode(window),
+  );
+}
+
 function preloadPath(): string {
   return path.resolve(import.meta.dirname, "preload.js");
 }
@@ -121,6 +148,9 @@ function registerDesktopHandlers(): void {
   );
   ipcMain.handle("desktop:window-is-maximized", (event) =>
     currentWindow(event).isMaximized(),
+  );
+  ipcMain.handle("desktop:window-controls", (event) =>
+    windowControlsMode(currentWindow(event)),
   );
   ipcMain.handle("desktop:window-close", (event) =>
     currentWindow(event).close(),
@@ -152,6 +182,18 @@ function setupDevContextMenu(window: BrowserWindow): void {
 }
 
 async function createMainWindow(): Promise<BrowserWindow> {
+  const nativeTitleBarOverlay =
+    process.platform === "darwin"
+      ? {}
+      : {
+          frame: false,
+          titleBarOverlay: {
+            color: "#0b0b0d",
+            symbolColor: "#f4f4f5",
+            height: TITLE_BAR_HEIGHT,
+          },
+        };
+
   const window = new BrowserWindow({
     width: 1440,
     height: 960,
@@ -163,6 +205,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
     backgroundColor: "#0b0b0d",
     titleBarStyle: process.platform === "darwin" ? "hiddenInset" : "hidden",
     frame: process.platform === "darwin",
+    ...nativeTitleBarOverlay,
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -172,6 +215,8 @@ async function createMainWindow(): Promise<BrowserWindow> {
   });
 
   window.on("ready-to-show", () => window.show());
+  window.on("enter-full-screen", () => notifyWindowControlsMode(window));
+  window.on("leave-full-screen", () => notifyWindowControlsMode(window));
   setupDevContextMenu(window);
 
   if (app.isPackaged) {

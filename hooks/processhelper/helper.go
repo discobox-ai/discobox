@@ -81,7 +81,7 @@ func runEntry(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	}
 	childArgs := args[1:]
 	//nolint:gosec // The helper only re-launches commands supplied by the already-running parent process.
-	cmd := exec.Command(childArgs[0], childArgs[1:]...)
+	cmd := exec.CommandContext(context.Background(), childArgs[0], childArgs[1:]...)
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	configureChildCommand(cmd)

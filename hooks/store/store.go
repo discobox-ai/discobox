@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/obot-platform/discobox/gormdb"
 	hooks "github.com/obot-platform/discobox/hooks"
 	hookapi "github.com/obot-platform/discobox/hooks/api"
@@ -254,6 +255,7 @@ func (s *Store) RefreshDefinitions(ctx context.Context, defs []hooks.Hook) error
 	now := time.Now().UTC()
 	return s.write.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		ids := make([]string, 0, len(defs))
+		changedLSPIDs := map[string]struct{}{}
 		for _, def := range defs {
 			if def.ID == "" {
 				return fmt.Errorf("hook definition id is required")
@@ -263,12 +265,39 @@ func (s *Store) RefreshDefinitions(ctx context.Context, defs []hooks.Hook) error
 			if err != nil {
 				return err
 			}
+			var existing models.HookDefinition
+			err = tx.Where("id = ?", def.ID).First(&existing).Error
+			if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return err
+			}
+			if err == nil && existing.ConfigHash != row.ConfigHash {
+				if existing.Engine == string(hooks.HookEngineLSP) {
+					if err := tx.Where("hook_id = ?", def.ID).Delete(&models.HookDiagnostic{}).Error; err != nil {
+						return err
+					}
+				}
+				if def.IsLSP() {
+					changedLSPIDs[def.ID] = struct{}{}
+				}
+			}
 			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "id"}}, UpdateAll: true}).Create(&row).Error; err != nil {
 				return err
 			}
 			status := models.HookStatus{HookID: def.ID, Status: string(models.StatusIdle), UpdatedAt: now}
 			if err := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "hook_id"}}, DoNothing: true}).Create(&status).Error; err != nil {
 				return err
+			}
+			if def.IsLSP() {
+				if err := tx.Where("hook_id = ?", def.ID).Delete(&models.PendingHook{}).Error; err != nil {
+					return err
+				}
+			}
+			pruned, err := pruneLSPDiagnosticsForHookTx(tx, def)
+			if err != nil {
+				return err
+			}
+			if pruned {
+				changedLSPIDs[def.ID] = struct{}{}
 			}
 		}
 		if len(ids) == 0 {
@@ -278,7 +307,10 @@ func (s *Store) RefreshDefinitions(ctx context.Context, defs []hooks.Hook) error
 			if err := tx.Where("1 = 1").Delete(&models.HookStatus{}).Error; err != nil {
 				return err
 			}
-			return tx.Where("1 = 1").Delete(&models.PendingHook{}).Error
+			if err := tx.Where("1 = 1").Delete(&models.PendingHook{}).Error; err != nil {
+				return err
+			}
+			return tx.Where("1 = 1").Delete(&models.HookDiagnostic{}).Error
 		}
 		if err := tx.Where("id NOT IN ?", ids).Delete(&models.HookDefinition{}).Error; err != nil {
 			return err
@@ -286,7 +318,18 @@ func (s *Store) RefreshDefinitions(ctx context.Context, defs []hooks.Hook) error
 		if err := tx.Where("hook_id NOT IN ?", ids).Delete(&models.HookStatus{}).Error; err != nil {
 			return err
 		}
-		return tx.Where("hook_id NOT IN ?", ids).Delete(&models.PendingHook{}).Error
+		if err := tx.Where("hook_id NOT IN ?", ids).Delete(&models.PendingHook{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("hook_id NOT IN ?", ids).Delete(&models.HookDiagnostic{}).Error; err != nil {
+			return err
+		}
+		for hookID := range changedLSPIDs {
+			if err := setLSPStatusFromDiagnosticsTx(tx, hookID, now); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 
@@ -1079,17 +1122,7 @@ func (s *Store) ReplaceDiagnosticsForURI(ctx context.Context, hookID, uri, path 
 				return err
 			}
 		}
-		status := string(models.StatusSuccess)
-		lastError := ""
-		count, err := countDiagnosticsTx(tx, hookID)
-		if err != nil {
-			return err
-		}
-		if count > 0 {
-			status = string(models.StatusFailure)
-			lastError = fmt.Sprintf("%d diagnostics", count)
-		}
-		return tx.Model(&models.HookStatus{}).Where("hook_id = ?", hookID).Updates(map[string]any{"status": status, "last_error": lastError, "updated_at": now}).Error
+		return setLSPStatusFromDiagnosticsTx(tx, hookID, now)
 	})
 }
 
@@ -1111,17 +1144,7 @@ func (s *Store) SetLSPHookReady(ctx context.Context, hookID string) error {
 	}
 	now := time.Now().UTC()
 	return s.write.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		status := string(models.StatusSuccess)
-		lastError := ""
-		count, err := countDiagnosticsTx(tx, hookID)
-		if err != nil {
-			return err
-		}
-		if count > 0 {
-			status = string(models.StatusFailure)
-			lastError = fmt.Sprintf("%d diagnostics", count)
-		}
-		return tx.Model(&models.HookStatus{}).Where("hook_id = ?", hookID).Updates(map[string]any{"status": status, "last_error": lastError, "updated_at": now}).Error
+		return setLSPStatusFromDiagnosticsTx(tx, hookID, now)
 	})
 }
 
@@ -1167,6 +1190,68 @@ func countDiagnosticsTx(tx *gorm.DB, hookID string) (int64, error) {
 	var count int64
 	err := tx.Model(&models.HookDiagnostic{}).Where("hook_id = ?", hookID).Count(&count).Error
 	return count, err
+}
+
+func setLSPStatusFromDiagnosticsTx(tx *gorm.DB, hookID string, now time.Time) error {
+	status := string(models.StatusSuccess)
+	lastError := ""
+	count, err := countDiagnosticsTx(tx, hookID)
+	if err != nil {
+		return err
+	}
+	if count > 0 {
+		status = string(models.StatusFailure)
+		lastError = fmt.Sprintf("%d diagnostics", count)
+	}
+	return tx.Model(&models.HookStatus{}).Where("hook_id = ?", hookID).Updates(map[string]any{"status": status, "last_error": lastError, "updated_at": now}).Error
+}
+
+func pruneLSPDiagnosticsForHookTx(tx *gorm.DB, hook hooks.Hook) (bool, error) {
+	if !hook.IsLSP() {
+		return false, nil
+	}
+	var rows []models.HookDiagnostic
+	if err := tx.Select("id", "path").Where("hook_id = ?", hook.ID).Find(&rows).Error; err != nil {
+		return false, err
+	}
+	staleIDs := make([]string, 0)
+	for _, row := range rows {
+		matched, err := lspDiagnosticPathMatchesHook(hook, row.Path)
+		if err != nil {
+			return false, err
+		}
+		if !matched {
+			staleIDs = append(staleIDs, row.ID)
+		}
+	}
+	if len(staleIDs) == 0 {
+		return false, nil
+	}
+	if err := tx.Where("id IN ?", staleIDs).Delete(&models.HookDiagnostic{}).Error; err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func lspDiagnosticPathMatchesHook(hook hooks.Hook, path string) (bool, error) {
+	path = filepath.ToSlash(strings.TrimSpace(path))
+	if path == "" {
+		return false, nil
+	}
+	matched, err := doublestar.Match(hook.Pattern, path)
+	if err != nil || !matched {
+		return matched, err
+	}
+	for _, pattern := range hook.Ignore {
+		ignored, err := doublestar.Match(pattern, path)
+		if err != nil {
+			return false, err
+		}
+		if ignored {
+			return false, nil
+		}
+	}
+	return true, nil
 }
 
 func normalizeSeverity(severity string) string {
