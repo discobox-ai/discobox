@@ -314,9 +314,6 @@ func (r *SandboxReconcileExecutor) resolveProvider(ctx context.Context, sb *mode
 		return nil, nil
 	}
 	if r.manager != nil {
-		if len(r.manager.ListProviders()) == 0 {
-			return nil, nil
-		}
 		return r.manager.ResolveForSandbox(ctx, sb)
 	}
 	return r.provider, nil
