@@ -6,6 +6,7 @@
 	import SettingsDialog from '$lib/components/SettingsDialog.svelte';
 	import type { Sandbox, WorkspaceFile } from '$lib/components/types';
 	import { createContext, setContext } from '$lib/context';
+	import { getAppEnvironment } from '$lib/environment';
 	import { getThemeMetadata, type ThemeColorScheme, type ThemeMode } from '$lib/theme';
 
 	const sandboxes: Sandbox[] = [
@@ -14,53 +15,54 @@
 			directory: '/home/discobot/workspace',
 			name: 'api-reconcile-flow',
 			branch: 'feature/reconcile-events',
-			status: 'running',
+			taskState: 'open',
+			sandboxState: 'running',
+			agentStatus: 'newly_idle',
+			agentStatusMessage: 'Session is waiting for an answer',
 			updated: '2m ago',
-			provider: 'Docker'
+			provider: 'Docker',
+			diff: { files: 14, additions: 428, deletions: 96 }
 		},
 		{
 			id: 'sbx-ui-117',
 			directory: '/home/discobot/workspace/ui',
 			name: 'sandbox-shell-mock',
 			branch: 'feature/ui-shell',
-			status: 'review',
+			taskState: 'open',
+			sandboxState: 'running',
+			agentStatus: 'running_completion',
 			updated: '8m ago',
-			provider: 'Docker'
+			provider: 'Docker',
+			diff: { files: 8, additions: 281, deletions: 74 }
 		},
 		{
 			id: 'sbx-agent-009',
 			directory: '/home/discobot/experiments/agent',
 			name: 'worker-agent-test',
 			branch: 'main',
-			status: 'paused',
+			taskState: 'closed',
+			sandboxState: 'stopped',
+			agentStatus: 'newly_idle',
+			agentStatusMessage: 'Stopped recently after running',
 			updated: '21m ago',
-			provider: 'Firecracker'
+			provider: 'Firecracker',
+			diff: { files: 3, additions: 21, deletions: 118 }
 		},
 		{
 			id: 'sbx-docs-031',
 			directory: '/home/discobot/experiments/docs',
 			name: 'docs-openapi-pass',
 			branch: 'docs/api-examples',
-			status: 'running',
+			taskState: 'merged',
+			sandboxState: 'stopped',
+			agentStatus: 'idle',
 			updated: '34m ago',
-			provider: 'Docker'
+			provider: 'Docker',
+			diff: { files: 6, additions: 152, deletions: 18 }
 		}
 	];
 
 	const settingsDialogId = 'settings-dialog';
-	const groupedSandboxes = Object.entries(
-		sandboxes.reduce<Record<string, Sandbox[]>>((groups, sandbox) => {
-			groups[sandbox.directory] ??= [];
-			groups[sandbox.directory].push(sandbox);
-			return groups;
-		}, {})
-	)
-		.sort(([directoryA], [directoryB]) => directoryA.localeCompare(directoryB))
-		.map(([directory, items]) => ({
-			directory,
-			items: items.toSorted((a, b) => a.name.localeCompare(b.name))
-		}));
-
 	const activeSandbox = sandboxes[1];
 	const themeModes: ThemeMode[] = ['light', 'dark', 'system'];
 	const context = setContext(createContext());
@@ -71,6 +73,7 @@
 	const activeTheme = $derived(getThemeMetadata(resolvedTheme, colorScheme));
 	const sidebarCollapsed = $derived(!context.view.navigation.desktopSidebarOpen);
 	const settingsOpen = $derived(context.view.app.dialogs.settings.open);
+	const windowControls = $derived(context.view.app.environment.windowControls);
 
 	const files: WorkspaceFile[] = [
 		{ name: 'internal/service/sandbox.go', state: 'M' },
@@ -125,6 +128,17 @@
 	}
 
 	onMount(() => {
+		const environment = getAppEnvironment();
+
+		let unsubscribeWindowControls: (() => void) | undefined;
+		void context.commands.environment.hydrateEnvironment();
+		void environment.getWindowControls().then((mode) => {
+			void context.commands.environment.setWindowControls(mode);
+		});
+		unsubscribeWindowControls = environment.onWindowControlsChange((mode) => {
+			void context.commands.environment.setWindowControls(mode);
+		});
+
 		void context.commands.preferences.setTheme(context.view.app.preferences.theme);
 
 		const media = window.matchMedia('(prefers-color-scheme: dark)');
@@ -133,7 +147,10 @@
 		};
 
 		media.addEventListener('change', handleSystemThemeChange);
-		return () => media.removeEventListener('change', handleSystemThemeChange);
+		return () => {
+			media.removeEventListener('change', handleSystemThemeChange);
+			unsubscribeWindowControls?.();
+		};
 	});
 </script>
 
@@ -142,11 +159,17 @@
 </svelte:head>
 
 <div class="flex h-[100dvh] flex-col overflow-hidden bg-background text-foreground">
-	<AppHeader {sidebarCollapsed} onSidebarToggle={toggleSidebar} onSettingsOpen={openSettings} />
+	<AppHeader
+		{sidebarCollapsed}
+		{windowControls}
+		onSidebarToggle={toggleSidebar}
+		onSettingsOpen={openSettings}
+		onTitleBarDoubleClick={() => void context.commands.environment.toggleWindowMaximized()}
+	/>
 
 	<div class="flex min-h-0 flex-1 overflow-hidden">
 		{#if !sidebarCollapsed}
-			<SandboxSidebar {activeSandbox} groups={groupedSandboxes} />
+			<SandboxSidebar {activeSandbox} {sandboxes} homeDirectory="/home/discobot" />
 		{/if}
 		<SandboxWorkspace {activeSandbox} {files} {codeLines} {terminalLines} />
 	</div>

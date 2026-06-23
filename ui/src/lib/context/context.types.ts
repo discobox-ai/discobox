@@ -1,4 +1,5 @@
 import type { ResolvedTheme, ThemeColorScheme, ThemeMetadata, ThemeMode } from '$lib/theme';
+import type { AppPlatform, WindowControlsMode } from '$lib/environment';
 
 export type CommandOptions = {
 	wait?: boolean;
@@ -14,6 +15,7 @@ export type DataState = {
 	environment: {
 		apiBase: string;
 		isDesktop: boolean;
+		platform: AppPlatform;
 	};
 };
 
@@ -26,6 +28,7 @@ export type AppViewState = {
 	environment: {
 		isMobile: boolean;
 		isMacPlatform: boolean;
+		windowControls: WindowControlsMode;
 	};
 	dialogs: {
 		settings: {
@@ -58,5 +61,10 @@ export type Commands = {
 		setTheme(theme: ThemeMode, options?: CommandOptions): Promise<void>;
 		setColorScheme(scheme: ThemeColorScheme, options?: CommandOptions): Promise<void>;
 		refreshSystemTheme(options?: CommandOptions): Promise<void>;
+	};
+	environment: {
+		hydrateEnvironment(options?: CommandOptions): Promise<void>;
+		setWindowControls(windowControls: WindowControlsMode, options?: CommandOptions): Promise<void>;
+		toggleWindowMaximized(options?: CommandOptions): Promise<void>;
 	};
 };

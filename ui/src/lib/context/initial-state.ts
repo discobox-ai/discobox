@@ -11,7 +11,8 @@ export function createInitialDataState(): DataState {
 	return {
 		environment: {
 			apiBase: '',
-			isDesktop: false
+			isDesktop: false,
+			platform: 'web'
 		}
 	};
 }
@@ -25,7 +26,8 @@ export function createInitialViewState(): ViewState {
 		app: {
 			environment: {
 				isMobile: false,
-				isMacPlatform: false
+				isMacPlatform: false,
+				windowControls: 'none'
 			},
 			dialogs: {
 				settings: {

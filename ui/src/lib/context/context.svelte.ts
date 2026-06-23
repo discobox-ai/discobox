@@ -15,8 +15,8 @@ export function createContext(): Context {
 		commands: undefined as unknown as Context['commands']
 	});
 
-	context.view.app.environment.isMacPlatform = detectIsMacPlatform();
 	context.commands = createCommands(context);
+	void context.commands.environment.hydrateEnvironment();
 	currentContext = context;
 
 	return context;
@@ -37,9 +37,4 @@ export function getContext(): Context {
 
 export function useContext(): Context {
 	return getSvelteContext<Context>(CONTEXT_KEY);
-}
-
-function detectIsMacPlatform(): boolean {
-	if (typeof navigator === 'undefined') return false;
-	return /Mac|iPhone|iPad|iPod/.test(navigator.platform);
 }

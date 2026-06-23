@@ -17,6 +17,8 @@
 		codeLines: string[];
 		terminalLines: string[];
 	} = $props();
+
+	const terminalInitialData = $derived(`${terminalLines.join('\r\n')}\r\n$ `);
 </script>
 
 <main class="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-2 md:p-3">
@@ -57,6 +59,6 @@
 		class="grid min-h-0 flex-1 grid-rows-[minmax(0,1fr)_240px] gap-2 xl:grid-rows-[minmax(0,1fr)_260px]"
 	>
 		<EditorPanel {files} {codeLines} />
-		<TerminalPanel {activeSandbox} lines={terminalLines} />
+		<TerminalPanel {activeSandbox} connectionStatus="connected" initialData={terminalInitialData} />
 	</div>
 </main>

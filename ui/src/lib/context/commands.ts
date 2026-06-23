@@ -3,6 +3,11 @@ import {
 	openSettingsDialog,
 	setSettingsDialogOpen
 } from '$lib/context/domains/dialogs';
+import {
+	hydrateEnvironment,
+	setWindowControls,
+	toggleWindowMaximized
+} from '$lib/context/domains/environment';
 import { setDesktopSidebarOpen, toggleDesktopSidebarOpen } from '$lib/context/domains/navigation';
 import { refreshSystemTheme, setColorScheme, setTheme } from '$lib/context/domains/preferences';
 import type { CommandOptions, Commands, Context } from '$lib/context/context.types';
@@ -43,6 +48,11 @@ export function createCommands(context: Context): Commands {
 			setTheme,
 			setColorScheme,
 			refreshSystemTheme
+		},
+		environment: {
+			hydrateEnvironment,
+			setWindowControls,
+			toggleWindowMaximized
 		}
 	} satisfies CommandRegistrationSpec<Commands>);
 }

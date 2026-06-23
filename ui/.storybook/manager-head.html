@@ -1,0 +1,51 @@
+<style>
+	button[aria-label='Open in editor'],
+	button[title='Open in editor'],
+	button[aria-label='Open in Editor'],
+	button[title='Open in Editor'],
+	[role='menuitem'][aria-label='Open in editor'],
+	[role='menuitem'][title='Open in editor'],
+	[role='menuitem'][aria-label='Open in Editor'],
+	[role='menuitem'][title='Open in Editor'] {
+		display: none !important;
+	}
+</style>
+<script>
+	(() => {
+		const blockedEvent = 'openInEditorRequest';
+
+		const patchChannel = () => {
+			const channel = window.__STORYBOOK_ADDONS_CHANNEL__;
+
+			if (!channel || channel.__discoboxOpenInEditorDisabled) {
+				return;
+			}
+
+			const emit = channel.emit?.bind(channel);
+
+			if (typeof emit === 'function') {
+				channel.emit = (eventName, ...args) => {
+					if (eventName === blockedEvent) {
+						return undefined;
+					}
+
+					return emit(eventName, ...args);
+				};
+			}
+
+			channel.__discoboxOpenInEditorDisabled = true;
+		};
+
+		patchChannel();
+
+		const interval = window.setInterval(() => {
+			patchChannel();
+
+			if (window.__STORYBOOK_ADDONS_CHANNEL__?.__discoboxOpenInEditorDisabled) {
+				window.clearInterval(interval);
+			}
+		}, 100);
+
+		window.setTimeout(() => window.clearInterval(interval), 10000);
+	})();
+</script>

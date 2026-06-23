@@ -3,14 +3,17 @@ export type Sandbox = {
 	directory: string;
 	name: string;
 	branch: string;
-	status: 'running' | 'review' | 'paused';
+	taskState: 'open' | 'closed' | 'merged';
+	sandboxState: 'creating' | 'running' | 'error' | 'stopped';
+	agentStatus: 'running_completion' | 'idle' | 'newly_idle';
+	agentStatusMessage?: string;
 	updated: string;
 	provider: string;
-};
-
-export type SandboxGroup = {
-	directory: string;
-	items: Sandbox[];
+	diff: {
+		files: number;
+		additions: number;
+		deletions: number;
+	};
 };
 
 export type WorkspaceFile = {
