@@ -97,6 +97,7 @@ type CreateOptions struct {
 	UserName                 *string
 	UserUID                  *int
 	UserGID                  *int
+	HomeDirectory            *string
 	AgentServerURL           string
 	OAuthRedirectBase        string
 	Resources                ResourceConfig

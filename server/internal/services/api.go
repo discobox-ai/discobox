@@ -29,6 +29,7 @@ type OptBool = serverapi.OptBool
 type OptString = serverapi.OptString
 type OptURI = serverapi.OptURI
 type OptInt64 = serverapi.OptInt64
+type OptSandboxUser = serverapi.OptSandboxUser
 type OptNilProviderConfigFieldArray = serverapi.OptNilProviderConfigFieldArray
 type OptCreateSandboxBodySourceCodeReferences = serverapi.OptCreateSandboxBodySourceCodeReferences
 type HTTPClientLease = transport.HTTPClientLease

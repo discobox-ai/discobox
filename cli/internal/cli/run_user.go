@@ -13,10 +13,11 @@ import (
 var runUnixUserNamePattern = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}\$?$`)
 
 type runUserIdentity struct {
-	Name      string
-	UID       int64
-	GID       int64
-	IDsUsable bool
+	Name          string
+	UID           int64
+	GID           int64
+	HomeDirectory string
+	IDsUsable     bool
 }
 
 func resolveRunUserIdentity() (runUserIdentity, bool, error) {
@@ -40,12 +41,13 @@ func parseRunUserIdentity(current *user.User) (runUserIdentity, bool, error) {
 	if validRunUnixUserName(current.Username) {
 		identity.Name = current.Username
 	}
+	identity.HomeDirectory = current.HomeDir
 	if uidOK && gidOK && uid != 0 {
 		identity.UID = uid
 		identity.GID = gid
 		identity.IDsUsable = true
 	}
-	if identity.Name == "" && !identity.IDsUsable {
+	if identity.Name == "" && identity.HomeDirectory == "" && !identity.IDsUsable {
 		return runUserIdentity{}, false, nil
 	}
 	return identity, true, nil
@@ -61,9 +63,12 @@ func validRunUnixUserName(value string) bool {
 }
 
 func (u runUserIdentity) setCreateSandboxUser(body *apimodel.CreateSandboxBody) {
-	body.SetUserName(optString(u.Name))
+	sandboxUser := apimodel.SandboxUser{}
+	sandboxUser.SetName(optString(u.Name))
+	sandboxUser.SetHomeDirectory(optString(u.HomeDirectory))
 	if u.IDsUsable {
-		body.SetUserUid(apiclientgen.NewOptInt64(u.UID))
-		body.SetUserGid(apiclientgen.NewOptInt64(u.GID))
+		sandboxUser.SetUID(apiclientgen.NewOptInt64(u.UID))
+		sandboxUser.SetGid(apiclientgen.NewOptInt64(u.GID))
 	}
+	body.SetUser(apiclientgen.NewOptSandboxUser(sandboxUser))
 }

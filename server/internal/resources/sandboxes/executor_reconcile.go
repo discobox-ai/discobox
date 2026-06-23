@@ -417,6 +417,7 @@ func (r *SandboxReconcileExecutor) createOptionsFromSandbox(sb *model.Sandbox) C
 	opts.UserName = sb.UserName
 	opts.UserUID = sb.UserUID
 	opts.UserGID = sb.UserGID
+	opts.HomeDirectory = sb.HomeDirectory
 	return opts
 }
 

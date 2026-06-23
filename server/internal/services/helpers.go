@@ -46,6 +46,57 @@ func OptIntPtr(value OptInt64) *int {
 	return nil
 }
 
+func SandboxUserToModel(value OptSandboxUser) (name *string, uid *int, gid *int, homeDirectory *string) {
+	user, ok := value.Get()
+	if !ok {
+		return nil, nil, nil, nil
+	}
+	return OptStringPtr(user.Name), OptIntPtr(user.UID), OptIntPtr(user.Gid), OptStringPtr(user.HomeDirectory)
+}
+
+func SandboxUserFromModel(sandbox *model.Sandbox) *serverapi.SandboxUser {
+	if sandbox == nil || sandbox.UserName == nil && sandbox.UserUID == nil && sandbox.UserGID == nil && sandbox.HomeDirectory == nil {
+		return nil
+	}
+	user := &serverapi.SandboxUser{}
+	if sandbox.UserName != nil {
+		user.SetName(serverapi.NewOptString(*sandbox.UserName))
+	}
+	if sandbox.UserUID != nil {
+		user.SetUID(serverapi.NewOptInt64(int64(*sandbox.UserUID)))
+	}
+	if sandbox.UserGID != nil {
+		user.SetGid(serverapi.NewOptInt64(int64(*sandbox.UserGID)))
+	}
+	if sandbox.HomeDirectory != nil {
+		user.SetHomeDirectory(serverapi.NewOptString(*sandbox.HomeDirectory))
+	}
+	return user
+}
+
+func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
+	type sandboxWithUser struct {
+		*model.Sandbox
+		User *serverapi.SandboxUser `json:"user,omitempty"`
+	}
+	return Convert[serverapi.Sandbox](sandboxWithUser{
+		Sandbox: sandbox,
+		User:    SandboxUserFromModel(sandbox),
+	})
+}
+
+func SandboxesToAPI(sandboxes []model.Sandbox) ([]serverapi.Sandbox, error) {
+	out := make([]serverapi.Sandbox, 0, len(sandboxes))
+	for i := range sandboxes {
+		converted, err := SandboxToAPI(&sandboxes[i])
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, converted)
+	}
+	return out, nil
+}
+
 func GitSourceToModel(input serverapi.GitSource) model.GitSource {
 	out := model.GitSource{Kind: string(input.Kind)}
 	if value, ok := input.Slug.Get(); ok {

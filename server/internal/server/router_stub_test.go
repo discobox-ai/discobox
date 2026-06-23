@@ -132,6 +132,7 @@ func (s *routerTestServices) CreateSandbox(_ context.Context, projectID string, 
 		converted := services.GitSourceToModel(inputSource)
 		source = &converted
 	}
+	userName, userUID, userGID, homeDirectory := services.SandboxUserToModel(input.User)
 	sandbox := model.Sandbox{
 		ID:                       id.NewString(),
 		ProjectID:                s.project.ID,
@@ -147,9 +148,10 @@ func (s *routerTestServices) CreateSandbox(_ context.Context, projectID string, 
 		Prompt:                   services.OptStringPtr(input.Prompt),
 		Source:                   source,
 		SourceCodeReferences:     stubSourceCodeReferences(input.SourceCodeReferences),
-		UserName:                 services.OptStringPtr(input.UserName),
-		UserUID:                  services.OptIntPtr(input.UserUid),
-		UserGID:                  services.OptIntPtr(input.UserGid),
+		UserName:                 userName,
+		UserUID:                  userUID,
+		UserGID:                  userGID,
+		HomeDirectory:            homeDirectory,
 		CreatedAt:                now,
 		UpdatedAt:                now,
 		CreatedBy:                &s.user,

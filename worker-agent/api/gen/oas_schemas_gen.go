@@ -1227,6 +1227,52 @@ func (o OptWorkerSandboxUpdateRequestEnv) Or(d WorkerSandboxUpdateRequestEnv) Wo
 	return d
 }
 
+// NewOptWorkerSandboxUser returns new OptWorkerSandboxUser with value set to v.
+func NewOptWorkerSandboxUser(v WorkerSandboxUser) OptWorkerSandboxUser {
+	return OptWorkerSandboxUser{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptWorkerSandboxUser is optional WorkerSandboxUser.
+type OptWorkerSandboxUser struct {
+	Value WorkerSandboxUser
+	Set   bool
+}
+
+// IsSet returns true if OptWorkerSandboxUser was set.
+func (o OptWorkerSandboxUser) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptWorkerSandboxUser) Reset() {
+	var v WorkerSandboxUser
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptWorkerSandboxUser) SetTo(v WorkerSandboxUser) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptWorkerSandboxUser) Get() (v WorkerSandboxUser, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptWorkerSandboxUser) Or(d WorkerSandboxUser) WorkerSandboxUser {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // Ref: #/components/schemas/ResourceConfig
 type ResourceConfig struct {
 	CPUCores float64 `json:"CPUCores"`
@@ -1483,9 +1529,7 @@ type WorkerSandboxCreateRequest struct {
 	Source                   OptGitSource                                      `json:"source"`
 	SourceCodeReferences     OptWorkerSandboxCreateRequestSourceCodeReferences `json:"sourceCodeReferences"`
 	StorageBytes             OptInt64                                          `json:"storageBytes"`
-	UserGid                  OptInt64                                          `json:"userGid"`
-	UserName                 OptString                                         `json:"userName"`
-	UserUid                  OptInt64                                          `json:"userUid"`
+	User                     OptWorkerSandboxUser                              `json:"user"`
 }
 
 // GetSchema returns the value of Schema.
@@ -1578,19 +1622,9 @@ func (s *WorkerSandboxCreateRequest) GetStorageBytes() OptInt64 {
 	return s.StorageBytes
 }
 
-// GetUserGid returns the value of UserGid.
-func (s *WorkerSandboxCreateRequest) GetUserGid() OptInt64 {
-	return s.UserGid
-}
-
-// GetUserName returns the value of UserName.
-func (s *WorkerSandboxCreateRequest) GetUserName() OptString {
-	return s.UserName
-}
-
-// GetUserUid returns the value of UserUid.
-func (s *WorkerSandboxCreateRequest) GetUserUid() OptInt64 {
-	return s.UserUid
+// GetUser returns the value of User.
+func (s *WorkerSandboxCreateRequest) GetUser() OptWorkerSandboxUser {
+	return s.User
 }
 
 // SetSchema sets the value of Schema.
@@ -1683,19 +1717,9 @@ func (s *WorkerSandboxCreateRequest) SetStorageBytes(val OptInt64) {
 	s.StorageBytes = val
 }
 
-// SetUserGid sets the value of UserGid.
-func (s *WorkerSandboxCreateRequest) SetUserGid(val OptInt64) {
-	s.UserGid = val
-}
-
-// SetUserName sets the value of UserName.
-func (s *WorkerSandboxCreateRequest) SetUserName(val OptString) {
-	s.UserName = val
-}
-
-// SetUserUid sets the value of UserUid.
-func (s *WorkerSandboxCreateRequest) SetUserUid(val OptInt64) {
-	s.UserUid = val
+// SetUser sets the value of User.
+func (s *WorkerSandboxCreateRequest) SetUser(val OptWorkerSandboxUser) {
+	s.User = val
 }
 
 type WorkerSandboxCreateRequestEnv map[string]string
@@ -1876,4 +1900,52 @@ func (s *WorkerSandboxUpdateRequestEnv) init() WorkerSandboxUpdateRequestEnv {
 		*s = m
 	}
 	return m
+}
+
+// Ref: #/components/schemas/WorkerSandboxUser
+type WorkerSandboxUser struct {
+	Gid           OptInt64  `json:"gid"`
+	HomeDirectory OptString `json:"homeDirectory"`
+	Name          OptString `json:"name"`
+	UID           OptInt64  `json:"uid"`
+}
+
+// GetGid returns the value of Gid.
+func (s *WorkerSandboxUser) GetGid() OptInt64 {
+	return s.Gid
+}
+
+// GetHomeDirectory returns the value of HomeDirectory.
+func (s *WorkerSandboxUser) GetHomeDirectory() OptString {
+	return s.HomeDirectory
+}
+
+// GetName returns the value of Name.
+func (s *WorkerSandboxUser) GetName() OptString {
+	return s.Name
+}
+
+// GetUID returns the value of UID.
+func (s *WorkerSandboxUser) GetUID() OptInt64 {
+	return s.UID
+}
+
+// SetGid sets the value of Gid.
+func (s *WorkerSandboxUser) SetGid(val OptInt64) {
+	s.Gid = val
+}
+
+// SetHomeDirectory sets the value of HomeDirectory.
+func (s *WorkerSandboxUser) SetHomeDirectory(val OptString) {
+	s.HomeDirectory = val
+}
+
+// SetName sets the value of Name.
+func (s *WorkerSandboxUser) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetUID sets the value of UID.
+func (s *WorkerSandboxUser) SetUID(val OptInt64) {
+	s.UID = val
 }

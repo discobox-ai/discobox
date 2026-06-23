@@ -396,8 +396,12 @@ func sandboxUser(req *workerapimodel.WorkerSandboxCreateRequest) string {
 	if req == nil {
 		return ""
 	}
-	uid, uidOK := req.UserUid.Get()
-	gid, gidOK := req.UserGid.Get()
+	user, ok := req.User.Get()
+	if !ok {
+		return ""
+	}
+	uid, uidOK := user.UID.Get()
+	gid, gidOK := user.Gid.Get()
 	if !uidOK || !gidOK || uid == 0 {
 		return ""
 	}

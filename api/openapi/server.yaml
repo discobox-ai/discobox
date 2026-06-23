@@ -177,17 +177,9 @@ components:
                     description: Requested storage capacity in bytes
                     format: int64
                     type: integer
-                userGid:
-                    description: GID to use inside the sandbox
-                    format: int64
-                    type: integer
-                userName:
-                    description: Username to use inside the sandbox
-                    type: string
-                userUid:
-                    description: UID to use inside the sandbox
-                    format: int64
-                    type: integer
+                user:
+                    $ref: '#/components/schemas/SandboxUser'
+                    description: User identity and home directory to use inside the sandbox
             required:
                 - name
             type: object
@@ -1036,17 +1028,9 @@ components:
                     description: Last update timestamp
                     format: date-time
                     type: string
-                userGid:
-                    description: GID to use inside the sandbox
-                    format: int64
-                    type: integer
-                userName:
-                    description: Username to use inside the sandbox
-                    type: string
-                userUid:
-                    description: UID to use inside the sandbox
-                    format: int64
-                    type: integer
+                user:
+                    $ref: '#/components/schemas/SandboxUser'
+                    description: User identity and home directory to use inside the sandbox
                 workerId:
                     description: Assigned worker ID, when scheduled through a worker-backed provider
                     type: string
@@ -1067,6 +1051,24 @@ components:
                 - lastOperationStatus
                 - generation
                 - observedGeneration
+            type: object
+        SandboxUser:
+            additionalProperties: false
+            properties:
+                gid:
+                    description: GID to use inside the sandbox
+                    format: int64
+                    type: integer
+                homeDirectory:
+                    description: User home directory to use inside the sandbox
+                    type: string
+                name:
+                    description: Username to use inside the sandbox
+                    type: string
+                uid:
+                    description: UID to use inside the sandbox
+                    format: int64
+                    type: integer
             type: object
         SandboxProviderCatalogItem:
             additionalProperties: false

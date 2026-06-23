@@ -37,6 +37,7 @@ type Sandbox = apigen.Sandbox
 type SandboxProviderCatalogItem = apigen.SandboxProviderCatalogItem
 type SandboxProviderInstance = apigen.SandboxProviderInstance
 type SandboxProviderInstanceStatus = apigen.SandboxProviderInstanceStatus
+type SandboxUser = apigen.SandboxUser
 type StartSandboxBody = apigen.StartSandboxBody
 type StopSandboxBody = apigen.StopSandboxBody
 type UpdateAgentConfigBody = apigen.UpdateAgentConfigBody

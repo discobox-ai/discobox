@@ -13,9 +13,13 @@ func (h *Handler) ListSandboxes(ctx context.Context, params serverapi.ListSandbo
 	if err != nil {
 		return apiError(err), nil
 	}
+	converted, err := services.SandboxesToAPI(sandboxes)
+	if err != nil {
+		return nil, err
+	}
 	body, err := services.Convert[apimodel.ListSandboxesBody](struct {
 		Sandboxes any `json:"sandboxes"`
-	}{Sandboxes: sandboxes})
+	}{Sandboxes: converted})
 	if err != nil {
 		return nil, err
 	}
@@ -27,7 +31,7 @@ func (h *Handler) CreateSandbox(ctx context.Context, req *apimodel.CreateSandbox
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[apimodel.Sandbox](sandbox)
+	body, err := services.SandboxToAPI(sandbox)
 	if err != nil {
 		return nil, err
 	}
@@ -39,7 +43,7 @@ func (h *Handler) GetSandbox(ctx context.Context, params serverapi.GetSandboxPar
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[apimodel.Sandbox](sandbox)
+	body, err := services.SandboxToAPI(sandbox)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +55,7 @@ func (h *Handler) UpdateSandbox(ctx context.Context, req *apimodel.UpdateSandbox
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[apimodel.Sandbox](sandbox)
+	body, err := services.SandboxToAPI(sandbox)
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +74,7 @@ func (h *Handler) StartSandbox(ctx context.Context, req *apimodel.StartSandboxBo
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[apimodel.Sandbox](sandbox)
+	body, err := services.SandboxToAPI(sandbox)
 	if err != nil {
 		return nil, err
 	}
@@ -82,7 +86,7 @@ func (h *Handler) StopSandbox(ctx context.Context, req *apimodel.StopSandboxBody
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[apimodel.Sandbox](sandbox)
+	body, err := services.SandboxToAPI(sandbox)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +98,7 @@ func (h *Handler) RestartSandbox(ctx context.Context, req *apimodel.RestartSandb
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[apimodel.Sandbox](sandbox)
+	body, err := services.SandboxToAPI(sandbox)
 	if err != nil {
 		return nil, err
 	}

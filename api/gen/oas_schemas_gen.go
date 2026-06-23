@@ -327,12 +327,8 @@ type CreateSandboxBody struct {
 	SourceCodeReferences OptCreateSandboxBodySourceCodeReferences `json:"sourceCodeReferences"`
 	// Requested storage capacity in bytes.
 	StorageBytes OptInt64 `json:"storageBytes"`
-	// GID to use inside the sandbox.
-	UserGid OptInt64 `json:"userGid"`
-	// Username to use inside the sandbox.
-	UserName OptString `json:"userName"`
-	// UID to use inside the sandbox.
-	UserUid OptInt64 `json:"userUid"`
+	// User identity and home directory to use inside the sandbox.
+	User OptSandboxUser `json:"user"`
 }
 
 // GetSchema returns the value of Schema.
@@ -415,19 +411,9 @@ func (s *CreateSandboxBody) GetStorageBytes() OptInt64 {
 	return s.StorageBytes
 }
 
-// GetUserGid returns the value of UserGid.
-func (s *CreateSandboxBody) GetUserGid() OptInt64 {
-	return s.UserGid
-}
-
-// GetUserName returns the value of UserName.
-func (s *CreateSandboxBody) GetUserName() OptString {
-	return s.UserName
-}
-
-// GetUserUid returns the value of UserUid.
-func (s *CreateSandboxBody) GetUserUid() OptInt64 {
-	return s.UserUid
+// GetUser returns the value of User.
+func (s *CreateSandboxBody) GetUser() OptSandboxUser {
+	return s.User
 }
 
 // SetSchema sets the value of Schema.
@@ -510,19 +496,9 @@ func (s *CreateSandboxBody) SetStorageBytes(val OptInt64) {
 	s.StorageBytes = val
 }
 
-// SetUserGid sets the value of UserGid.
-func (s *CreateSandboxBody) SetUserGid(val OptInt64) {
-	s.UserGid = val
-}
-
-// SetUserName sets the value of UserName.
-func (s *CreateSandboxBody) SetUserName(val OptString) {
-	s.UserName = val
-}
-
-// SetUserUid sets the value of UserUid.
-func (s *CreateSandboxBody) SetUserUid(val OptInt64) {
-	s.UserUid = val
+// SetUser sets the value of User.
+func (s *CreateSandboxBody) SetUser(val OptSandboxUser) {
+	s.User = val
 }
 
 // Additional Git sources to materialize in the sandbox.
@@ -2752,6 +2728,52 @@ func (o OptSandboxSourceCodeReferences) Or(d SandboxSourceCodeReferences) Sandbo
 	return d
 }
 
+// NewOptSandboxUser returns new OptSandboxUser with value set to v.
+func NewOptSandboxUser(v SandboxUser) OptSandboxUser {
+	return OptSandboxUser{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxUser is optional SandboxUser.
+type OptSandboxUser struct {
+	Value SandboxUser
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxUser was set.
+func (o OptSandboxUser) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxUser) Reset() {
+	var v SandboxUser
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxUser) SetTo(v SandboxUser) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxUser) Get() (v SandboxUser, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxUser) Or(d SandboxUser) SandboxUser {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptString returns new OptString with value set to v.
 func NewOptString(v string) OptString {
 	return OptString{
@@ -3765,12 +3787,8 @@ type Sandbox struct {
 	StorageBytes int64 `json:"storageBytes"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
-	// GID to use inside the sandbox.
-	UserGid OptInt64 `json:"userGid"`
-	// Username to use inside the sandbox.
-	UserName OptString `json:"userName"`
-	// UID to use inside the sandbox.
-	UserUid OptInt64 `json:"userUid"`
+	// User identity and home directory to use inside the sandbox.
+	User OptSandboxUser `json:"user"`
 	// Assigned worker ID, when scheduled through a worker-backed provider.
 	WorkerId OptString `json:"workerId"`
 }
@@ -3950,19 +3968,9 @@ func (s *Sandbox) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
 }
 
-// GetUserGid returns the value of UserGid.
-func (s *Sandbox) GetUserGid() OptInt64 {
-	return s.UserGid
-}
-
-// GetUserName returns the value of UserName.
-func (s *Sandbox) GetUserName() OptString {
-	return s.UserName
-}
-
-// GetUserUid returns the value of UserUid.
-func (s *Sandbox) GetUserUid() OptInt64 {
-	return s.UserUid
+// GetUser returns the value of User.
+func (s *Sandbox) GetUser() OptSandboxUser {
+	return s.User
 }
 
 // GetWorkerId returns the value of WorkerId.
@@ -4145,19 +4153,9 @@ func (s *Sandbox) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
 }
 
-// SetUserGid sets the value of UserGid.
-func (s *Sandbox) SetUserGid(val OptInt64) {
-	s.UserGid = val
-}
-
-// SetUserName sets the value of UserName.
-func (s *Sandbox) SetUserName(val OptString) {
-	s.UserName = val
-}
-
-// SetUserUid sets the value of UserUid.
-func (s *Sandbox) SetUserUid(val OptInt64) {
-	s.UserUid = val
+// SetUser sets the value of User.
+func (s *Sandbox) SetUser(val OptSandboxUser) {
+	s.User = val
 }
 
 // SetWorkerId sets the value of WorkerId.
@@ -4805,6 +4803,58 @@ func (s *SandboxSourceCodeReferences) init() SandboxSourceCodeReferences {
 		*s = m
 	}
 	return m
+}
+
+// Ref: #/components/schemas/SandboxUser
+type SandboxUser struct {
+	// GID to use inside the sandbox.
+	Gid OptInt64 `json:"gid"`
+	// User home directory to use inside the sandbox.
+	HomeDirectory OptString `json:"homeDirectory"`
+	// Username to use inside the sandbox.
+	Name OptString `json:"name"`
+	// UID to use inside the sandbox.
+	UID OptInt64 `json:"uid"`
+}
+
+// GetGid returns the value of Gid.
+func (s *SandboxUser) GetGid() OptInt64 {
+	return s.Gid
+}
+
+// GetHomeDirectory returns the value of HomeDirectory.
+func (s *SandboxUser) GetHomeDirectory() OptString {
+	return s.HomeDirectory
+}
+
+// GetName returns the value of Name.
+func (s *SandboxUser) GetName() OptString {
+	return s.Name
+}
+
+// GetUID returns the value of UID.
+func (s *SandboxUser) GetUID() OptInt64 {
+	return s.UID
+}
+
+// SetGid sets the value of Gid.
+func (s *SandboxUser) SetGid(val OptInt64) {
+	s.Gid = val
+}
+
+// SetHomeDirectory sets the value of HomeDirectory.
+func (s *SandboxUser) SetHomeDirectory(val OptString) {
+	s.HomeDirectory = val
+}
+
+// SetName sets the value of Name.
+func (s *SandboxUser) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetUID sets the value of UID.
+func (s *SandboxUser) SetUID(val OptInt64) {
+	s.UID = val
 }
 
 // Ref: #/components/schemas/StartSandboxBody

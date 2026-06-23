@@ -145,6 +145,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		source = &converted
 	}
 	services.DefaultGitSourceSlugs(source, sourceCodeReferences)
+	userName, userUID, userGID, homeDirectory := services.SandboxUserToModel(input.User)
 	sandbox := &model.Sandbox{
 		ID:                       sandboxID,
 		ProjectID:                projectID,
@@ -160,9 +161,10 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		Prompt:                   services.OptStringPtr(input.Prompt),
 		Source:                   source,
 		SourceCodeReferences:     sourceCodeReferences,
-		UserName:                 services.OptStringPtr(input.UserName),
-		UserUID:                  services.OptIntPtr(input.UserUid),
-		UserGID:                  services.OptIntPtr(input.UserGid),
+		UserName:                 userName,
+		UserUID:                  userUID,
+		UserGID:                  userGID,
+		HomeDirectory:            homeDirectory,
 		CPUVCPUs:                 input.CpuVcpus.Or(0),
 		MemoryBytes:              input.MemoryBytes.Or(0),
 		StorageBytes:             input.StorageBytes.Or(0),

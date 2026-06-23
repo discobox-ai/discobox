@@ -23,6 +23,7 @@ func TestCreateSandboxBodyIncludesAgentLaunchFields(t *testing.T) {
 		userName:                 "darren",
 		userUID:                  1000,
 		userGID:                  1000,
+		homeDirectory:            "/home/darren",
 	})
 	if err != nil {
 		t.Fatalf("createSandboxBody: %v", err)
@@ -44,8 +45,12 @@ func TestCreateSandboxBodyIncludesAgentLaunchFields(t *testing.T) {
 	if destination.Directory.Value != "/workspace/repo" || destination.WorkingDirectory.Value != "/workspace/repo" {
 		t.Fatalf("directories = source %q working %q", destination.Directory.Value, destination.WorkingDirectory.Value)
 	}
-	if body.UserName.Value != "darren" || body.UserUid.Value != 1000 || body.UserGid.Value != 1000 {
-		t.Fatalf("user = %s %d/%d, want darren 1000/1000", body.UserName.Value, body.UserUid.Value, body.UserGid.Value)
+	sandboxUser, ok := body.User.Get()
+	if !ok {
+		t.Fatal("expected user")
+	}
+	if sandboxUser.Name.Value != "darren" || sandboxUser.UID.Value != 1000 || sandboxUser.Gid.Value != 1000 || sandboxUser.HomeDirectory.Value != "/home/darren" {
+		t.Fatalf("user = %s %d/%d home %s, want darren 1000/1000 /home/darren", sandboxUser.Name.Value, sandboxUser.UID.Value, sandboxUser.Gid.Value, sandboxUser.HomeDirectory.Value)
 	}
 	ref, ok := body.SourceCodeReferences.Value["lib"]
 	if !ok {

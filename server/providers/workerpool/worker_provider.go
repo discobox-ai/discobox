@@ -574,14 +574,17 @@ func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions
 	if opts.SourceCodeReferences != nil {
 		out.SourceCodeReferences = workerclient.NewOptWorkerSandboxCreateRequestSourceCodeReferences(workerSourceCodeReferences(opts.SourceCodeReferences))
 	}
-	if opts.UserName != nil {
-		out.UserName = workerclient.NewOptString(*opts.UserName)
-	}
+	user := workerapimodel.WorkerSandboxUser{}
+	user.SetName(workerOptStringPtr(opts.UserName))
 	if opts.UserUID != nil {
-		out.UserUid = workerclient.NewOptInt64(int64(*opts.UserUID))
+		user.SetUID(workerclient.NewOptInt64(int64(*opts.UserUID)))
 	}
 	if opts.UserGID != nil {
-		out.UserGid = workerclient.NewOptInt64(int64(*opts.UserGID))
+		user.SetGid(workerclient.NewOptInt64(int64(*opts.UserGID)))
+	}
+	user.SetHomeDirectory(workerOptStringPtr(opts.HomeDirectory))
+	if user.Name.Set || user.UID.Set || user.Gid.Set || user.HomeDirectory.Set {
+		out.User = workerclient.NewOptWorkerSandboxUser(user)
 	}
 	if opts.Resources != (sandbox.ResourceConfig{}) {
 		out.Resources = workerclient.NewOptResourceConfig(workerResourceConfig(opts.Resources))
@@ -596,6 +599,13 @@ func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions
 		out.StorageBytes = workerclient.NewOptInt64(opts.StorageBytes)
 	}
 	return out
+}
+
+func workerOptStringPtr(value *string) workerclient.OptString {
+	if value == nil {
+		return workerclient.OptString{}
+	}
+	return workerclient.NewOptString(*value)
 }
 
 func workerResourceConfig(cfg sandbox.ResourceConfig) workerapimodel.ResourceConfig {

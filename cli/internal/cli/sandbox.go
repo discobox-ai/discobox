@@ -32,6 +32,7 @@ type sandboxCreateOptions struct {
 	userName                 string
 	userUID                  int64
 	userGID                  int64
+	homeDirectory            string
 	cpuVCPUs                 float64
 	memoryBytes              int64
 	storageBytes             int64
@@ -336,6 +337,7 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.userName, "user-name", "", "Username to use inside the sandbox")
 	cmd.Flags().Int64Var(&opts.userUID, "user-uid", 0, "UID to use inside the sandbox")
 	cmd.Flags().Int64Var(&opts.userGID, "user-gid", 0, "GID to use inside the sandbox")
+	cmd.Flags().StringVar(&opts.homeDirectory, "home-directory", "", "User home directory to use inside the sandbox")
 	cmd.Flags().Float64Var(&opts.cpuVCPUs, "cpu-vcpus", 0, "Requested CPU capacity in vCPUs")
 	cmd.Flags().Int64Var(&opts.memoryBytes, "memory-bytes", 0, "Requested memory capacity in bytes")
 	cmd.Flags().Int64Var(&opts.storageBytes, "storage-bytes", 0, "Requested storage capacity in bytes")
@@ -364,12 +366,6 @@ func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, 
 	if source != nil {
 		body.SetSource(apiclientgen.NewOptGitSource(*source))
 	}
-	if opts.userUID > 0 {
-		body.SetUserUid(apiclientgen.NewOptInt64(opts.userUID))
-	}
-	if opts.userGID > 0 {
-		body.SetUserGid(apiclientgen.NewOptInt64(opts.userGID))
-	}
 	if opts.cpuVCPUs > 0 {
 		body.SetCpuVcpus(apiclientgen.NewOptFloat64(opts.cpuVCPUs))
 	}
@@ -386,8 +382,23 @@ func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, 
 	if sourceCodeReferences != nil {
 		body.SetSourceCodeReferences(apiclientgen.NewOptCreateSandboxBodySourceCodeReferences(sourceCodeReferences))
 	}
-	body.SetUserName(optString(opts.userName))
+	if user, ok := sandboxUserFromCreateOptions(opts); ok {
+		body.SetUser(apiclientgen.NewOptSandboxUser(user))
+	}
 	return body, nil
+}
+
+func sandboxUserFromCreateOptions(opts sandboxCreateOptions) (apimodel.SandboxUser, bool) {
+	user := apimodel.SandboxUser{}
+	user.SetName(optString(opts.userName))
+	user.SetHomeDirectory(optString(opts.homeDirectory))
+	if opts.userUID > 0 {
+		user.SetUID(apiclientgen.NewOptInt64(opts.userUID))
+	}
+	if opts.userGID > 0 {
+		user.SetGid(apiclientgen.NewOptInt64(opts.userGID))
+	}
+	return user, user.Name.Set || user.HomeDirectory.Set || user.UID.Set || user.Gid.Set
 }
 
 func gitSourceFromCreateOptions(opts sandboxCreateOptions) (*apimodel.GitSource, error) {

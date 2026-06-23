@@ -18,3 +18,4 @@ type WorkerSandboxCreateRequest = workeragentapi.WorkerSandboxCreateRequest
 type WorkerSandboxListResponse = workeragentapi.WorkerSandboxListResponse
 type WorkerSandboxOperationRequest = workeragentapi.WorkerSandboxOperationRequest
 type WorkerSandboxUpdateRequest = workeragentapi.WorkerSandboxUpdateRequest
+type WorkerSandboxUser = workeragentapi.WorkerSandboxUser

@@ -256,16 +256,24 @@ components:
                 storageBytes:
                     format: int64
                     type: integer
-                userGid:
-                    format: int64
-                    type: integer
-                userName:
-                    type: string
-                userUid:
-                    format: int64
-                    type: integer
+                user:
+                    "$ref": "#/components/schemas/WorkerSandboxUser"
             required:
             - sandboxId
+            type: object
+        WorkerSandboxUser:
+            additionalProperties: false
+            properties:
+                gid:
+                    format: int64
+                    type: integer
+                homeDirectory:
+                    type: string
+                name:
+                    type: string
+                uid:
+                    format: int64
+                    type: integer
             type: object
         WorkerSandboxListResponse:
             additionalProperties: false
