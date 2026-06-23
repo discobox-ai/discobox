@@ -18,6 +18,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/obot-platform/discobox/hooks/processhelper"
 )
 
 // Diagnostic is a normalized LSP diagnostic.
@@ -83,13 +85,23 @@ func Start(ctx context.Context, opts Options) (*Client, error) {
 	if !filepath.IsAbs(cmdPath) {
 		cmdPath = filepath.Join(repoRoot, cmdPath)
 	}
-	cmd := exec.CommandContext(ctx, cmdPath, opts.Args...)
-	cmd.Dir = repoRoot
-	if opts.Env != nil {
-		cmd.Env = opts.Env
-	} else {
-		cmd.Env = os.Environ()
+	env := opts.Env
+	if env == nil {
+		env = os.Environ()
 	}
+	cmd, err := processhelper.CommandContext(ctx, processhelper.CommandOptions{
+		Command: cmdPath,
+		Args:    opts.Args,
+		Dir:     repoRoot,
+		Env:     env,
+		Grace:   2 * time.Second,
+	})
+	if err != nil {
+		return nil, err
+	}
+	cmd.Dir = repoRoot
+	cmd.Env = env
+	configureCommandForCleanup(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return nil, err
@@ -194,7 +206,7 @@ func (c *Client) Close() error {
 	case <-c.done:
 	case <-time.After(2 * time.Second):
 		if c.cmd.Process != nil {
-			_ = c.cmd.Process.Kill()
+			_ = terminateCommand(c.cmd)
 		}
 	}
 	return c.cmd.Wait()

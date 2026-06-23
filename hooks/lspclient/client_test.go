@@ -7,7 +7,9 @@ import (
 	"errors"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -102,6 +104,34 @@ func TestDocumentVersionsIncrementPerURI(t *testing.T) {
 	}
 }
 
+func TestContextCancelKillsProcessGroup(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("process group cleanup test is Unix-only")
+	}
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "late-marker")
+	script := writeTestScript(t, dir, "lsp-wrapper.sh", `#!/bin/sh
+(sleep 1; echo late > late-marker)&
+echo started
+sleep 5
+`)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cmd := exec.CommandContext(ctx, script)
+	cmd.Dir = dir
+	configureCommandForCleanup(cmd)
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("start command: %v", err)
+	}
+	cancel()
+	_ = cmd.Wait()
+
+	time.Sleep(1200 * time.Millisecond)
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("process group child was not killed; marker stat err=%v", err)
+	}
+}
+
 type testNotification struct {
 	JSONRPC string `json:"jsonrpc"`
 	Method  string `json:"method"`
@@ -128,4 +158,13 @@ func decodeTestNotification(t *testing.T, reader *bufio.Reader) testNotification
 		t.Fatalf("decode message: %v", err)
 	}
 	return got
+}
+
+func writeTestScript(t *testing.T, dir, name, contents string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(contents), 0o755); err != nil {
+		t.Fatalf("write script: %v", err)
+	}
+	return path
 }

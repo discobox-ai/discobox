@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -23,6 +22,7 @@ import (
 	"github.com/obot-platform/discobox/hooks/client"
 	"github.com/obot-platform/discobox/hooks/daemon"
 	"github.com/obot-platform/discobox/hooks/models"
+	"github.com/obot-platform/discobox/hooks/processhelper"
 	idpkg "github.com/obot-platform/discobox/id"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -63,6 +63,9 @@ type app struct {
 }
 
 func main() {
+	if handled, code := processhelper.HandleEntry(os.Args[1:], os.Stdin, os.Stdout, os.Stderr); handled {
+		os.Exit(code)
+	}
 	os.Exit(run(context.Background(), os.Args[1:], cliOptions{stdout: os.Stdout, stderr: os.Stderr}))
 }
 
@@ -149,6 +152,7 @@ func (a *app) newDaemonCommand() *cobra.Command {
 				RepoRoot:            paths.RepoRoot,
 				DBPath:              paths.DB,
 				SocketPath:          paths.Socket,
+				RuntimePath:         paths.Runtime,
 				TempDir:             filepath.Join(paths.RuntimeDir, "tmp"),
 				Version:             currentBuildVersion(),
 				Debounce:            debounce,
@@ -1989,10 +1993,13 @@ func ensureDaemon(ctx context.Context, c *client.Client, paths sessionPaths) err
 		return nil
 	}
 	if err == nil && clientNewerThanDaemon(currentBuildVersion(), info.Version) {
-		if err := replaceOlderDaemon(ctx, c); err != nil {
+		if err := replaceOlderDaemon(ctx, c, paths); err != nil {
 			return err
 		}
 	} else if !errors.Is(err, client.ErrNotRunning) {
+		return err
+	}
+	if err := terminateStaleRuntimeDaemon(ctx, paths); err != nil {
 		return err
 	}
 	if err := startDetachedDaemon(ctx, paths); err != nil {
@@ -2015,7 +2022,7 @@ func clientNewerThanDaemon(clientVersion, daemonVersion int64) bool {
 	return clientVersion > daemonVersion
 }
 
-func replaceOlderDaemon(ctx context.Context, c *client.Client) error {
+func replaceOlderDaemon(ctx context.Context, c *client.Client, paths sessionPaths) error {
 	shutdownCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	err := c.Shutdown(shutdownCtx)
 	cancel()
@@ -2032,36 +2039,87 @@ func replaceOlderDaemon(ctx context.Context, c *client.Client) error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
+	if err := terminateStaleRuntimeDaemon(ctx, paths); err != nil {
+		return err
+	}
 	return fmt.Errorf("older daemon did not stop at %s", c.SocketPath())
 }
 
-func acquireStartupLock(path string) (func(), error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return nil, err
-	}
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0644)
-	if err != nil {
-		return nil, err
-	}
-	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
-		_ = f.Close()
-		return nil, err
-	}
-	return func() { _ = syscall.Flock(int(f.Fd()), syscall.LOCK_UN); _ = f.Close() }, nil
+type hookDaemonRuntimeFile struct {
+	SessionID string `json:"session_id"`
+	RepoRoot  string `json:"repo_root"`
+	PID       int    `json:"pid"`
 }
 
-func startDetachedDaemon(ctx context.Context, paths sessionPaths) error {
-	exe, err := os.Executable()
-	if err != nil {
-		return err
+func terminateStaleRuntimeDaemon(ctx context.Context, paths sessionPaths) error {
+	data, readErr := os.ReadFile(paths.Runtime)
+	if readErr != nil {
+		if errors.Is(readErr, os.ErrNotExist) {
+			return nil
+		}
+		return readErr
 	}
-	cmd := exec.CommandContext(ctx, exe, "--session-id", paths.SessionID, "--repo-root", paths.RepoRoot, "daemon", "--foreground")
-	cmd.Stdout = nil
-	cmd.Stderr = nil
-	cmd.Stdin = nil
-	cmd.Env = append(os.Environ(), "DISCOBOX_SESSION_ID="+paths.SessionID)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-	return cmd.Start()
+	var runtime hookDaemonRuntimeFile
+	if json.Unmarshal(data, &runtime) != nil {
+		_ = os.Remove(paths.Runtime)
+	}
+	if runtime.SessionID != "" && runtime.SessionID != paths.SessionID {
+		return nil
+	}
+	if runtime.RepoRoot != "" && filepath.Clean(runtime.RepoRoot) != filepath.Clean(paths.RepoRoot) {
+		return nil
+	}
+	if runtime.PID <= 0 || runtime.PID == os.Getpid() {
+		return nil
+	}
+	if !processExists(runtime.PID) {
+		_ = os.Remove(paths.Runtime)
+		return nil
+	}
+	if err := terminateDaemonProcessGroup(runtime.PID); err != nil && !isProcessNotFound(err) {
+		return fmt.Errorf("terminate stale daemon pid %d: %w", runtime.PID, err)
+	}
+	if waitForProcessExit(ctx, runtime.PID, 2*time.Second) {
+		_ = os.Remove(paths.Runtime)
+		return nil
+	}
+	if err := killDaemonProcessGroup(runtime.PID); err != nil && !isProcessNotFound(err) {
+		return fmt.Errorf("kill stale daemon pid %d: %w", runtime.PID, err)
+	}
+	if waitForProcessExit(ctx, runtime.PID, 2*time.Second) {
+		_ = os.Remove(paths.Runtime)
+		return nil
+	}
+	return fmt.Errorf("stale daemon pid %d did not exit", runtime.PID)
+}
+
+func processIsZombie(pid int) bool {
+	data, err := os.ReadFile(filepath.Join("/proc", fmt.Sprint(pid), "stat"))
+	if err != nil {
+		return false
+	}
+	_, rest, ok := strings.Cut(string(data), ") ")
+	if !ok || rest == "" {
+		return false
+	}
+	return rest[0] == 'Z'
+}
+
+func waitForProcessExit(ctx context.Context, pid int, timeout time.Duration) bool {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	ticker := time.NewTicker(100 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if !processExists(pid) {
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return !processExists(pid)
+		case <-ticker.C:
+		}
+	}
 }
 
 func currentBuildVersion() int64 {

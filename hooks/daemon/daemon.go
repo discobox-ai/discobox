@@ -48,6 +48,7 @@ type Config struct {
 	RepoRoot            string
 	DBPath              string
 	SocketPath          string
+	RuntimePath         string
 	TempDir             string
 	Version             int64
 	Debounce            time.Duration
@@ -180,11 +181,11 @@ func newRuntime(ctx context.Context, cfg Config) (*runtimeState, error) {
 
 func (r *runtimeState) run(parent context.Context) (err error) {
 	defer func() {
-		r.cancel()
 		if r.watcher != nil {
 			_ = r.watcher.Close()
 		}
 		r.closeLSPClients()
+		r.cancel()
 		if r.server != nil {
 			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 			_ = r.server.Shutdown(ctx)
@@ -193,6 +194,7 @@ func (r *runtimeState) run(parent context.Context) (err error) {
 		if r.listener != nil {
 			_ = r.listener.Close()
 		}
+		r.removeRuntimeFile()
 		_ = os.Remove(r.cfg.SocketPath)
 		if r.sessionID != "" {
 			_ = r.store.EndDaemonSession(context.Background(), r.sessionID, "shutdown")
@@ -203,6 +205,9 @@ func (r *runtimeState) run(parent context.Context) (err error) {
 	}()
 
 	if err := r.startServer(); err != nil {
+		return err
+	}
+	if err := r.writeRuntimeFile(); err != nil {
 		return err
 	}
 	r.syncLSPHooks()
@@ -267,7 +272,7 @@ func (r *runtimeState) startServer() error {
 		Handler:           r.withRequestTracking(routes),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		WriteTimeout:      0,
 		IdleTimeout:       120 * time.Second,
 	}
 	return nil
@@ -300,6 +305,48 @@ func resetRuntimeTempDir(path string) error {
 		return fmt.Errorf("create temporary directory %s: %w", path, err)
 	}
 	return nil
+}
+
+type runtimeFile struct {
+	SessionID string    `json:"session_id"`
+	RepoRoot  string    `json:"repo_root"`
+	Version   int64     `json:"version"`
+	PID       int       `json:"pid"`
+	StartedAt time.Time `json:"started_at"`
+}
+
+func (r *runtimeState) writeRuntimeFile() error {
+	if r.cfg.RuntimePath == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(r.cfg.RuntimePath), 0o755); err != nil {
+		return err
+	}
+	data, err := json.Marshal(runtimeFile{
+		SessionID: r.cfg.SessionID,
+		RepoRoot:  r.cfg.RepoRoot,
+		Version:   r.cfg.Version,
+		PID:       os.Getpid(),
+		StartedAt: time.Now().UTC(),
+	})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(r.cfg.RuntimePath, append(data, '\n'), 0o600)
+}
+
+func (r *runtimeState) removeRuntimeFile() {
+	if r.cfg.RuntimePath == "" {
+		return
+	}
+	data, err := os.ReadFile(r.cfg.RuntimePath)
+	if err == nil {
+		var runtime runtimeFile
+		if json.Unmarshal(data, &runtime) == nil && runtime.PID != 0 && runtime.PID != os.Getpid() {
+			return
+		}
+	}
+	_ = os.Remove(r.cfg.RuntimePath)
 }
 
 func (r *runtimeState) serve() {

@@ -64,6 +64,7 @@ the same session do not share daemon state.
 | [`matcher`](matcher/DESIGN.md) | Git-ignore filtering, glob matching, and changed-file-to-hook mapping. |
 | [`watcher`](watcher/DESIGN.md) | Stable filesystem change detection from the Git root. |
 | [`runner`](runner/DESIGN.md) | Single hook process execution, environment construction, timeout, and output capture. |
+| [`processhelper`](processhelper/DESIGN.md) | Reusable self-reexec stdio helper for tying child process trees to parent liveness. |
 | [`store`](store/DESIGN.md) | GORM-backed session persistence, migrations, statuses, queue, and run history. |
 | [`service`](service/DESIGN.md) | API-level hook operations over store state and the manager-provided current hook set. |
 | [`manager`](manager/DESIGN.md) | Hook-domain runtime state and API-triggered side effects between daemon socket adapters/runtime loops, service, and store. |
