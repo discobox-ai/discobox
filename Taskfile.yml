@@ -94,9 +94,12 @@ tasks:
       - ./{{.BINARY}}
 
   dev:
-    desc: Run Storybook for UI component development
-    cmds:
-      - task: storybook
+    desc: Run the server, UI, worker-agent image watcher, and Storybook dev tasks
+    deps:
+      - dev:server
+      - dev:ui
+      - dev:worker-agent-image-watch
+      - storybook
 
   storybook:
     desc: Run Storybook for UI component development
