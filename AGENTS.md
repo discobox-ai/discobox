@@ -55,6 +55,24 @@ the code and hook definitions before handing work back.
 Prefer adding or updating `Taskfile.yml` targets instead of documenting ad hoc
 commands here.
 
+## Implementation Quality
+
+Prefer proper structural changes over compatibility shims or narrow patches.
+
+- Do not introduce optional interfaces for behavior that the system now
+  requires. Add required methods to the core interface and update all
+  implementations.
+- Do not add wrapper types, adapter layers, or small abstraction seams just to
+  avoid touching callers. If the design belongs in an existing core type, put
+  it there.
+- Backwards compatibility is not a priority during this phase. Prefer coherent
+  internal APIs over preserving old call shapes.
+- Avoid tiny tactical patches when the correct fix crosses package boundaries.
+  Follow the ownership path through the codebase and update the model,
+  interfaces, implementations, tests, and call sites together.
+- Keep abstractions justified by durable ownership or meaningful complexity
+  reduction. If an abstraction only exists to make the diff smaller, remove it.
+
 ## Package Design Docs
 
 Design guidance lives next to the code it describes:
