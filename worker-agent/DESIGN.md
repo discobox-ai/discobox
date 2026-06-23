@@ -60,10 +60,13 @@ serve HTTPS when the rewritten endpoint is localhost-only.
 
 The worker agent must reject requests whose `{project_id}` or `{worker_id}` do
 not match its bootstrap identity. It must also reject sandbox operation requests
-without a valid worker-local bearer token provisioned through bootstrap or
-registration. Sandbox operation handlers under this route own only local runtime
-work; control-plane persistence, user authorization, project events, and
-desired-state orchestration remain outside this module.
+without a short-lived PASETO v4.public bearer token signed by the control-plane
+key supplied in bootstrap metadata. Tokens are audience-bound to `worker-agent`,
+carry `project_id`, `worker_id`, optional `sandbox_id`, and scopes, and generated
+API operations must authorize against those scopes. Sandbox operation handlers
+under this route own only local runtime work; control-plane persistence, user
+authorization, project events, and desired-state orchestration remain outside
+this module.
 
 ## Boundary Rules
 

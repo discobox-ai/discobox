@@ -8,11 +8,15 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
+
+	"aidanwoods.dev/go-paseto"
 
 	workeragent "github.com/obot-platform/discobox/worker-agent"
 	workerclient "github.com/obot-platform/discobox/worker-agent/api/gen"
 	workerapimodel "github.com/obot-platform/discobox/worker-agent/api/model"
 	"github.com/obot-platform/discobox/worker-agent/sandboxruntime"
+	workeragentserver "github.com/obot-platform/discobox/worker-agent/server"
 )
 
 func TestRunRegistersWorkerWithGeneratedPublicKey(t *testing.T) {
@@ -117,7 +121,10 @@ func TestHTTPClientUpdatesWorkerStatusByPath(t *testing.T) {
 
 func TestWorkerSandboxHandlersValidateIdentityAndOperateOnRuntime(t *testing.T) {
 	runtime := workeragent.NewMemorySandboxRuntime()
-	server := httptest.NewServer(workeragent.NewSandboxHandler(workeragent.Bootstrap{ProjectID: "project-1", WorkerID: "worker-1"}, runtime, "worker-api-token"))
+	controlPlaneKey, signToken := workerAgentTestSigner(t)
+	token := signToken("project-1", "worker-1", "", workeragentserver.ScopeSandboxRead, workeragentserver.ScopeSandboxWrite)
+	readOnlyToken := signToken("project-1", "worker-1", "", workeragentserver.ScopeSandboxRead)
+	server := httptest.NewServer(workeragent.NewSandboxHandler(workeragent.Bootstrap{ProjectID: "project-1", WorkerID: "worker-1", ControlPlaneKey: controlPlaneKey}, runtime))
 	defer server.Close()
 	unauthenticated := server.Client()
 	unauthReq, err := http.NewRequestWithContext(context.Background(), http.MethodGet, server.URL+"/api/project/project-1/worker/worker-1/sandboxes", nil)
@@ -132,8 +139,21 @@ func TestWorkerSandboxHandlersValidateIdentityAndOperateOnRuntime(t *testing.T) 
 	if unauthResp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("unauthenticated status = %d, want %d", unauthResp.StatusCode, http.StatusUnauthorized)
 	}
+	readOnlyReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, server.URL+"/api/project/project-1/worker/worker-1/sandboxes", nil)
+	if err != nil {
+		t.Fatalf("new read-only request: %v", err)
+	}
+	readOnlyReq.Header.Set("Authorization", "Bearer "+readOnlyToken)
+	readOnlyResp, err := server.Client().Do(readOnlyReq)
+	if err != nil {
+		t.Fatalf("read-only write request: %v", err)
+	}
+	_ = readOnlyResp.Body.Close()
+	if readOnlyResp.StatusCode != http.StatusForbidden {
+		t.Fatalf("read-only write status = %d, want %d", readOnlyResp.StatusCode, http.StatusForbidden)
+	}
 
-	client, err := workerclient.NewClient(server.URL, testWorkerSecuritySource{token: "worker-api-token"}, workerclient.WithClient(server.Client()))
+	client, err := workerclient.NewClient(server.URL, testWorkerSecuritySource{token: token}, workerclient.WithClient(server.Client()))
 	if err != nil {
 		t.Fatalf("new worker client: %v", err)
 	}
@@ -184,4 +204,33 @@ type testWorkerSecuritySource struct {
 
 func (s testWorkerSecuritySource) WorkerBearerAuth(context.Context, workerclient.OperationName) (workerclient.WorkerBearerAuth, error) {
 	return workerclient.WorkerBearerAuth{Token: s.token}, nil
+}
+
+func workerAgentTestSigner(t *testing.T) (string, func(projectID, workerID, sandboxID string, scopes ...string) string) {
+	t.Helper()
+	publicKey, privateKey, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	secretKey, err := paseto.NewV4AsymmetricSecretKeyFromEd25519(privateKey)
+	if err != nil {
+		t.Fatalf("load secret key: %v", err)
+	}
+	return base64.StdEncoding.EncodeToString(publicKey), func(projectID, workerID, sandboxID string, scopes ...string) string {
+		now := time.Now()
+		token := paseto.NewToken()
+		token.SetAudience(workeragentserver.WorkerAgentAudience)
+		token.SetIssuedAt(now)
+		token.SetNotBefore(now.Add(-time.Minute))
+		token.SetExpiration(now.Add(time.Hour))
+		token.SetString("project_id", projectID)
+		token.SetString("worker_id", workerID)
+		if sandboxID != "" {
+			token.SetString("sandbox_id", sandboxID)
+		}
+		if err := token.Set("scopes", scopes); err != nil {
+			t.Fatalf("set scopes: %v", err)
+		}
+		return token.V4Sign(secretKey, nil)
+	}
 }

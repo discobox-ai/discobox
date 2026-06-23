@@ -81,10 +81,10 @@ func ServeWithRuntime(ctx context.Context, logger *slog.Logger, bootstrap Bootst
 			SandboxID: bootstrap.SandboxID,
 			WorkerID:  bootstrap.WorkerID,
 		},
-		Registration: serverRegistration(registration),
-		Runtime:      runtime,
-		AuthTokens:   workerSandboxAuthTokens(bootstrap, registration),
-		Port:         bootstrap.AgentPort,
+		Registration:          serverRegistration(registration),
+		Runtime:               runtime,
+		ControlPlanePublicKey: bootstrap.ControlPlaneKey,
+		Port:                  bootstrap.AgentPort,
 	})
 }
 
@@ -93,14 +93,6 @@ func serverRegistration(registration *Registration) *workerserver.Registration {
 		return nil
 	}
 	return &workerserver.Registration{PublicKey: registration.PublicKey, AuthToken: registration.AuthToken}
-}
-
-func workerSandboxAuthTokens(bootstrap Bootstrap, registration *Registration) []string {
-	tokens := []string{bootstrap.Token}
-	if registration != nil {
-		tokens = append(tokens, registration.AuthToken)
-	}
-	return tokens
 }
 
 func availableCPUVCPUs() float64 {

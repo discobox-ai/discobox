@@ -19,6 +19,7 @@ const (
 	EnvSandboxID       = "DISCOBOX_SANDBOX_ID"
 	EnvWorkerID        = "DISCOBOX_WORKER_ID"
 	EnvBootstrapToken  = "DISCOBOX_WORKER_BOOTSTRAP_TOKEN" //nolint:gosec // Environment variable name, not a credential value.
+	EnvControlPlaneKey = "DISCOBOX_CONTROL_PLANE_PUBLIC_KEY"
 	EnvAgentPort       = "DISCOBOX_AGENT_PORT"
 )
 
@@ -29,6 +30,7 @@ type Bootstrap struct {
 	SandboxID       string `json:"sandboxId,omitempty"`
 	WorkerID        string `json:"workerId,omitempty"`
 	Token           string `json:"token,omitempty"`
+	ControlPlaneKey string `json:"controlPlanePublicKey,omitempty"`
 	AgentPort       int    `json:"agentPort,omitempty"`
 }
 
@@ -156,6 +158,7 @@ func FromEnv() Bootstrap {
 		SandboxID:       strings.TrimSpace(os.Getenv(EnvSandboxID)),
 		WorkerID:        strings.TrimSpace(os.Getenv(EnvWorkerID)),
 		Token:           strings.TrimSpace(os.Getenv(EnvBootstrapToken)),
+		ControlPlaneKey: strings.TrimSpace(os.Getenv(EnvControlPlaneKey)),
 		AgentPort:       agentPort,
 	}
 }

@@ -19,15 +19,15 @@ func NewMemorySandboxRuntime() *MemorySandboxRuntime {
 	return sandboxruntime.NewMemorySandboxRuntime()
 }
 
-func NewSandboxHandler(bootstrap Bootstrap, runtime SandboxRuntime, authTokens ...string) http.Handler {
+func NewSandboxHandler(bootstrap Bootstrap, runtime SandboxRuntime) http.Handler {
 	router, _ := workerserver.NewRouter(workerserver.Config{
 		Identity: workerserver.Identity{
 			ProjectID: bootstrap.ProjectID,
 			SandboxID: bootstrap.SandboxID,
 			WorkerID:  bootstrap.WorkerID,
 		},
-		Runtime:    runtime,
-		AuthTokens: authTokens,
+		Runtime:               runtime,
+		ControlPlanePublicKey: bootstrap.ControlPlaneKey,
 	})
 	return router
 }

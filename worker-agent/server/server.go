@@ -24,11 +24,11 @@ type Registration struct {
 }
 
 type Config struct {
-	Identity     Identity
-	Registration *Registration
-	Runtime      sandboxruntime.Runtime
-	AuthTokens   []string
-	Port         int
+	Identity              Identity
+	Registration          *Registration
+	Runtime               sandboxruntime.Runtime
+	ControlPlanePublicKey string
+	Port                  int
 }
 
 func NewRouter(cfg Config) (*chi.Mux, error) {
@@ -53,12 +53,19 @@ func NewRouter(cfg Config) (*chi.Mux, error) {
 		}
 		_ = json.NewEncoder(w).Encode(metadata)
 	})
-	handler := newSandboxService(cfg.Identity, cfg.Runtime, cfg.AuthTokens...)
+	authenticator, err := NewSignedTokenAuthenticator(cfg.Identity, cfg.ControlPlanePublicKey)
+	if err != nil {
+		return nil, err
+	}
+	handler := newSandboxService(cfg.Identity, cfg.Runtime)
 	generated, err := workerapi.NewServer(handler, handler)
 	if err != nil {
 		return nil, err
 	}
-	router.Mount("/", generated)
+	router.Group(func(protected chi.Router) {
+		protected.Use(authenticator.Middleware)
+		protected.Mount("/", generated)
+	})
 	return router, nil
 }
 

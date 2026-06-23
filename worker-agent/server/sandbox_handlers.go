@@ -2,11 +2,9 @@ package server
 
 import (
 	"context"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"net/http"
-	"strings"
 
 	workerapi "github.com/obot-platform/discobox/worker-agent/api/gen"
 	workerapimodel "github.com/obot-platform/discobox/worker-agent/api/model"
@@ -21,21 +19,25 @@ type Identity struct {
 }
 
 type sandboxService struct {
-	identity   Identity
-	runtime    sandboxruntime.Runtime
-	authTokens []string
+	identity Identity
+	runtime  sandboxruntime.Runtime
 }
 
 var _ workerapi.Handler = (*sandboxService)(nil)
 var _ workerapi.SecurityHandler = (*sandboxService)(nil)
 
-func newSandboxService(identity Identity, runtime sandboxruntime.Runtime, authTokens ...string) *sandboxService {
-	return &sandboxService{identity: identity, runtime: runtime, authTokens: normalizeAuthTokens(authTokens...)}
+func newSandboxService(identity Identity, runtime sandboxruntime.Runtime) *sandboxService {
+	return &sandboxService{identity: identity, runtime: runtime}
 }
 
-func (s *sandboxService) HandleWorkerBearerAuth(ctx context.Context, _ workerapi.OperationName, token workerapi.WorkerBearerAuth) (context.Context, error) {
-	if !authorizedWorkerToken(token.Token, s.authTokens) {
+func (s *sandboxService) HandleWorkerBearerAuth(ctx context.Context, operation workerapi.OperationName, _ workerapi.WorkerBearerAuth) (context.Context, error) {
+	claims, ok := SignedTokenClaimsFromContext(ctx)
+	if !ok {
 		return ctx, newStatusError(http.StatusUnauthorized, http.StatusText(http.StatusUnauthorized))
+	}
+	requiredScope := requiredWorkerOperationScope(operation)
+	if requiredScope != "" && !claims.HasScope(requiredScope) {
+		return ctx, newStatusError(http.StatusForbidden, http.StatusText(http.StatusForbidden))
 	}
 	return ctx, nil
 }
@@ -214,28 +216,6 @@ func (e statusError) StatusCode() int {
 
 func newStatusError(status int, message string) error {
 	return statusError{status: status, message: message}
-}
-
-func normalizeAuthTokens(tokens ...string) []string {
-	out := make([]string, 0, len(tokens))
-	for _, token := range tokens {
-		if token = strings.TrimSpace(token); token != "" {
-			out = append(out, token)
-		}
-	}
-	return out
-}
-
-func authorizedWorkerToken(got string, tokens []string) bool {
-	if got == "" {
-		return false
-	}
-	for _, want := range tokens {
-		if subtle.ConstantTimeCompare([]byte(got), []byte(want)) == 1 {
-			return true
-		}
-	}
-	return false
 }
 
 func convert[To any](from any) (To, error) {
