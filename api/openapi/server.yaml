@@ -734,10 +734,6 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                authToken:
-                    type: string
-            required:
-                - authToken
             type: object
         ResourceChangedEvent:
             additionalProperties: false
@@ -1774,11 +1770,11 @@ paths:
                   schema:
                     description: Worker ID
                     type: string
-                - description: Bearer worker auth token returned by registration
+                - description: Bearer worker assertion signed with the registered worker private key
                   in: header
                   name: Authorization
                   schema:
-                    description: Bearer worker auth token returned by registration
+                    description: Bearer worker assertion signed with the registered worker private key
                     type: string
             requestBody:
                 content:

@@ -2,9 +2,10 @@ package service_test
 
 import (
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -20,39 +21,34 @@ import (
 	"github.com/obot-platform/discobox/server/internal/service"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/obot-platform/discobox/worker-agent/workerauth"
 )
 
-func TestUpdateWorkerStatusRequiresValidBearerToken(t *testing.T) {
+func TestUpdateWorkerStatusRequiresValidWorkerAssertion(t *testing.T) {
 	ctx := context.Background()
 	svc, appStore, db := newWorkerAuthService(t)
-	workerID, token := registerTestWorker(ctx, t, svc, appStore)
+	workerID, privateKey := registerTestWorker(ctx, t, svc, appStore)
+	token := signTestWorkerAssertion(t, service.DefaultProjectID, workerID, privateKey)
 
 	if _, err := updateTestWorkerStatus(ctx, svc, appStore, "Bearer "+token, workerID, services.UpdateWorkerStatusBody{Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err != nil {
-		t.Fatalf("update with valid token: %v", err)
+		t.Fatalf("update with valid assertion: %v", err)
 	}
 	if _, err := updateTestWorkerStatus(ctx, svc, appStore, "Bearer wrong", workerID, services.UpdateWorkerStatusBody{Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err == nil {
-		t.Fatal("expected invalid token to be rejected")
+		t.Fatal("expected invalid assertion to be rejected")
 	}
 
-	if err := db.Write.WithContext(ctx).Model(&model.WorkerAuthToken{}).Where("worker_id = ?", workerID).Update("expires_at", time.Now().UTC().Add(-time.Minute)).Error; err != nil {
-		t.Fatalf("expire auth token: %v", err)
-	}
-	if _, err := updateTestWorkerStatus(ctx, svc, appStore, "Bearer "+token, workerID, services.UpdateWorkerStatusBody{Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err == nil {
-		t.Fatal("expected expired token to be rejected")
-	}
-
-	workerID, token = registerTestWorker(ctx, t, svc, appStore)
 	revokedAt := time.Now().UTC()
-	if err := db.Write.WithContext(ctx).Model(&model.WorkerAuthToken{}).Where("worker_id = ?", workerID).Update("revoked_at", revokedAt).Error; err != nil {
-		t.Fatalf("revoke auth token: %v", err)
+	if err := db.Write.WithContext(ctx).Model(&model.Worker{}).Where("id = ?", workerID).Update("revoked_at", revokedAt).Error; err != nil {
+		t.Fatalf("revoke worker: %v", err)
 	}
-	if _, err := authenticateTestWorker(ctx, appStore, "Bearer "+token); err == nil {
-		t.Fatal("expected revoked token to be rejected")
+	if _, err := authenticateTestWorker(ctx, appStore, "Bearer "+token, workerID); err == nil {
+		t.Fatal("expected revoked worker assertion to be rejected")
 	}
-	otherWorkerID, otherToken := registerTestWorker(ctx, t, svc, appStore)
-	workerCtx, err := authenticateTestWorker(ctx, appStore, "Bearer "+otherToken)
+	otherWorkerID, otherPrivateKey := registerTestWorker(ctx, t, svc, appStore)
+	otherToken := signTestWorkerAssertion(t, service.DefaultProjectID, otherWorkerID, otherPrivateKey)
+	workerCtx, err := authenticateTestWorker(ctx, appStore, "Bearer "+otherToken, otherWorkerID)
 	if err != nil {
-		t.Fatalf("authenticate other worker token: %v", err)
+		t.Fatalf("authenticate other worker assertion: %v", err)
 	}
 	principal, ok := auth.PrincipalFromContext(workerCtx)
 	if !ok || principal.WorkerID != otherWorkerID {
@@ -66,7 +62,8 @@ func TestUpdateWorkerStatusRequiresValidBearerToken(t *testing.T) {
 func TestGetSandboxProviderInstanceIncludesWorkerStatus(t *testing.T) {
 	ctx := context.Background()
 	svc, appStore, db := newWorkerAuthService(t)
-	workerID, token := registerTestWorker(ctx, t, svc, appStore)
+	workerID, privateKey := registerTestWorker(ctx, t, svc, appStore)
+	token := signTestWorkerAssertion(t, service.DefaultProjectID, workerID, privateKey)
 	if _, err := updateTestWorkerStatus(ctx, svc, appStore, "Bearer "+token, workerID, services.UpdateWorkerStatusBody{
 		Ready:                 true,
 		Schedulable:           true,
@@ -138,22 +135,22 @@ func newWorkerAuthService(t *testing.T) (*service.Service, *store.Store, *databa
 }
 
 func updateTestWorkerStatus(ctx context.Context, svc *service.Service, appStore *store.Store, authorization, workerID string, input services.UpdateWorkerStatusBody) (*model.Worker, error) {
-	workerCtx, err := authenticateTestWorker(ctx, appStore, authorization)
+	workerCtx, err := authenticateTestWorker(ctx, appStore, authorization, workerID)
 	if err != nil {
 		return nil, err
 	}
 	return svc.UpdateWorkerStatus(workerCtx, workerID, input)
 }
 
-func authenticateTestWorker(ctx context.Context, appStore *store.Store, authorization string) (context.Context, error) {
-	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/workers/test-worker/status", nil)
+func authenticateTestWorker(ctx context.Context, appStore *store.Store, authorization, workerID string) (context.Context, error) {
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, "/api/workers/"+workerID+"/status", nil)
 	req.Header.Set("Authorization", authorization)
 	principal, ok, err := (auth.WorkerAuthenticator{Store: appStore}).Authenticate(req)
 	if err != nil {
 		return ctx, err
 	}
 	if !ok {
-		return ctx, errors.New("worker authenticator did not match")
+		return ctx, fmt.Errorf("worker authenticator did not match")
 	}
 	if principal.Type != auth.PrincipalTypeWorker || principal.WorkerID == "" {
 		return ctx, fmt.Errorf("unexpected worker principal: %#v", principal)
@@ -161,7 +158,7 @@ func authenticateTestWorker(ctx context.Context, appStore *store.Store, authoriz
 	return auth.WithPrincipal(ctx, principal), nil
 }
 
-func registerTestWorker(ctx context.Context, t *testing.T, svc *service.Service, appStore *store.Store) (string, string) {
+func registerTestWorker(ctx context.Context, t *testing.T, svc *service.Service, appStore *store.Store) (string, ed25519.PrivateKey) {
 	t.Helper()
 	worker := &model.Worker{ID: id.NewString(), ProjectID: service.DefaultProjectID, ProviderInstanceID: "provider-auth"}
 	bootstrap := "bootstrap-" + time.Now().String()
@@ -169,11 +166,28 @@ func registerTestWorker(ctx context.Context, t *testing.T, svc *service.Service,
 	if err := appStore.CreateWorkerWithBootstrapToken(ctx, worker, &model.WorkerBootstrapToken{WorkerID: worker.ID, TokenHash: h[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
 		t.Fatalf("create worker bootstrap: %v", err)
 	}
-	resp, err := svc.RegisterWorker(ctx, services.RegisterWorkerBody{ProjectId: service.DefaultProjectID, WorkerId: services.OptString{Value: worker.ID, Set: true}, BootstrapToken: bootstrap, PublicKey: "public"})
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate worker key: %v", err)
+	}
+	publicKeyText, err := workerauth.EncodePublicKey(publicKey)
+	if err != nil {
+		t.Fatalf("encode worker key: %v", err)
+	}
+	_, err = svc.RegisterWorker(ctx, services.RegisterWorkerBody{ProjectId: service.DefaultProjectID, WorkerId: services.OptString{Value: worker.ID, Set: true}, BootstrapToken: bootstrap, PublicKey: publicKeyText})
 	if err != nil {
 		t.Fatalf("register worker: %v", err)
 	}
-	return worker.ID, resp.AuthToken
+	return worker.ID, privateKey
+}
+
+func signTestWorkerAssertion(t *testing.T, projectID, workerID string, privateKey ed25519.PrivateKey) string {
+	t.Helper()
+	token, err := workerauth.CreateToken(privateKey, workerauth.Claims{ProjectID: projectID, WorkerID: workerID})
+	if err != nil {
+		t.Fatalf("create worker assertion: %v", err)
+	}
+	return token
 }
 
 func TestRegisterWorkerSupportsSandboxAssignedWorkerCompatibility(t *testing.T) {
@@ -189,12 +203,20 @@ func TestRegisterWorkerSupportsSandboxAssignedWorkerCompatibility(t *testing.T) 
 	if err := appStore.CreateSandbox(ctx, &model.Sandbox{ID: sandboxID, ProjectID: service.DefaultProjectID, CreatedByUserID: service.DefaultUserID, ProviderInstanceID: &worker.ProviderInstanceID, WorkerID: &worker.ID, Name: "worker sandbox"}); err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	resp, err := svc.RegisterWorker(ctx, services.RegisterWorkerBody{ProjectId: service.DefaultProjectID, SandboxId: services.OptString{Value: sandboxID, Set: true}, BootstrapToken: bootstrap, PublicKey: "public"})
+	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate worker key: %v", err)
+	}
+	publicKeyText, err := workerauth.EncodePublicKey(publicKey)
+	if err != nil {
+		t.Fatalf("encode worker key: %v", err)
+	}
+	resp, err := svc.RegisterWorker(ctx, services.RegisterWorkerBody{ProjectId: service.DefaultProjectID, SandboxId: services.OptString{Value: sandboxID, Set: true}, BootstrapToken: bootstrap, PublicKey: publicKeyText})
 	if err != nil {
 		t.Fatalf("register worker: %v", err)
 	}
-	if resp.AuthToken == "" {
-		t.Fatalf("auth token is empty")
+	if resp == nil {
+		t.Fatal("register response is nil")
 	}
 }
 
@@ -207,11 +229,19 @@ func TestRegisterWorkerSupportsSyntheticWorkerSandboxIDCompatibility(t *testing.
 	if err := appStore.CreateWorkerWithBootstrapToken(ctx, worker, &model.WorkerBootstrapToken{WorkerID: worker.ID, TokenHash: h[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
 		t.Fatalf("create worker bootstrap: %v", err)
 	}
-	resp, err := svc.RegisterWorker(ctx, services.RegisterWorkerBody{ProjectId: service.DefaultProjectID, SandboxId: services.OptString{Value: "worker-" + worker.ID, Set: true}, BootstrapToken: bootstrap, PublicKey: "public"})
+	publicKey, _, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate worker key: %v", err)
+	}
+	publicKeyText, err := workerauth.EncodePublicKey(publicKey)
+	if err != nil {
+		t.Fatalf("encode worker key: %v", err)
+	}
+	resp, err := svc.RegisterWorker(ctx, services.RegisterWorkerBody{ProjectId: service.DefaultProjectID, SandboxId: services.OptString{Value: "worker-" + worker.ID, Set: true}, BootstrapToken: bootstrap, PublicKey: publicKeyText})
 	if err != nil {
 		t.Fatalf("register worker: %v", err)
 	}
-	if resp.AuthToken == "" {
-		t.Fatalf("auth token is empty")
+	if resp == nil {
+		t.Fatal("register response is nil")
 	}
 }

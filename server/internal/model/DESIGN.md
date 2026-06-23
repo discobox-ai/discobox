@@ -18,7 +18,7 @@ internal conversions. Public REST API schema types live under the root
 | `SandboxProviderInstance` | Project-scoped provider configuration for creating and managing sandboxes. |
 | `Worker` | Provider-backed runtime worker for launching sandboxes. Has its own identity and public key; private key stays on the worker. Prewarmed workers belong to a provider instance/pool and can host many sandboxes. Scheduling uses `ready`, `schedulable`, and `degraded` columns; detailed condition data is opaque JSON for display. |
 | `WorkerBootstrapToken` | Short-lived, one-time token used by a new worker to register its public key. |
-| `WorkerAuthToken` | Short-lived runtime token issued after the worker proves possession of its bootstrap token. |
+| `WorkerAuthToken` | Legacy runtime token table retained for migration compatibility; active worker runtime auth uses signed assertions against `Worker.PublicKey`. |
 | `SandboxAccessIssuerKey` | Design-level name for the current `ProjectUserKey`: per-project, per-user issuer key used by the control plane to sign sandbox access tokens. |
 | `ProjectEvent` | Append-only project-scoped resource event for list/watch sync. |
 

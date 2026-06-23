@@ -73,14 +73,16 @@ Workers have their own identity. The worker private key stays on the worker.
 3. Worker generates a keypair locally.
 4. Worker registers its public key using project ID, sandbox ID, and the bootstrap token in the registration body; the control plane derives the worker ID from the sandbox assignment.
 5. Control plane validates the token for that assigned worker, stores the public key, and marks the bootstrap token used.
-6. Worker proves possession of its private key with a signed challenge.
-7. Control plane issues a short-lived WorkerAuthToken.
-8. Worker uses the token to subscribe for work and report status.
+6. Worker signs each worker-to-control-plane runtime request with its private key.
+7. Control plane validates the short-lived assertion against the stored public
+   key, project ID, worker ID, route worker ID, and worker revocation state.
 ```
 
 Rules:
 
 - Bootstrap tokens are short-lived, one-time use, and stored only as hashes.
+- Runtime assertions use PASETO v4.public with Ed25519, a short TTL, and a
+  backwards `nbf` skew allowance for local VM clocks.
 - Worker authorization should be scoped to assigned work and provider/sandbox
   scope.
 

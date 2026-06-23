@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/obot-platform/discobox/worker-agent/workerauth"
 )
 
 const (
@@ -104,12 +106,17 @@ func (c *HTTPClient) UpdateWorkerStatus(ctx context.Context, req StatusRequest) 
 	if baseURL == "" {
 		return fmt.Errorf("control plane URL is required")
 	}
-	if strings.TrimSpace(req.AuthToken) == "" {
-		return fmt.Errorf("worker auth token is required")
-	}
 	workerID := strings.TrimSpace(req.WorkerID)
 	if workerID == "" {
 		return fmt.Errorf("worker ID is required")
+	}
+	projectID := strings.TrimSpace(req.ProjectID)
+	if projectID == "" {
+		return fmt.Errorf("project ID is required")
+	}
+	token, err := workerauth.CreateToken(req.PrivateKey, workerauth.Claims{ProjectID: projectID, WorkerID: workerID})
+	if err != nil {
+		return fmt.Errorf("create worker assertion: %w", err)
 	}
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -121,7 +128,7 @@ func (c *HTTPClient) UpdateWorkerStatus(ctx context.Context, req StatusRequest) 
 		return err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+strings.TrimSpace(req.AuthToken))
+	httpReq.Header.Set("Authorization", "Bearer "+token)
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
 		return err

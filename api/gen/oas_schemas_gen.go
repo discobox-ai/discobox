@@ -3650,8 +3650,7 @@ func (s *RegisterWorkerBody) SetWorkerId(val OptString) {
 // Ref: #/components/schemas/RegisterWorkerResponseBody
 type RegisterWorkerResponseBody struct {
 	// A URL to the JSON Schema for this object.
-	Schema    OptURI `json:"$schema"`
-	AuthToken string `json:"authToken"`
+	Schema OptURI `json:"$schema"`
 }
 
 // GetSchema returns the value of Schema.
@@ -3659,19 +3658,9 @@ func (s *RegisterWorkerResponseBody) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetAuthToken returns the value of AuthToken.
-func (s *RegisterWorkerResponseBody) GetAuthToken() string {
-	return s.AuthToken
-}
-
 // SetSchema sets the value of Schema.
 func (s *RegisterWorkerResponseBody) SetSchema(val OptURI) {
 	s.Schema = val
-}
-
-// SetAuthToken sets the value of AuthToken.
-func (s *RegisterWorkerResponseBody) SetAuthToken(val string) {
-	s.AuthToken = val
 }
 
 func (*RegisterWorkerResponseBody) registerWorkerRes() {}

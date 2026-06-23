@@ -20,7 +20,6 @@ import (
 
 type Registration struct {
 	PublicKey string
-	AuthToken string
 }
 
 type Config struct {

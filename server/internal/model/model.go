@@ -457,7 +457,7 @@ type Worker struct {
 	Project          *Project                 `gorm:"foreignKey:ProjectID" json:"-"`
 	ProviderInstance *SandboxProviderInstance `gorm:"foreignKey:ProviderInstanceID" json:"providerInstance,omitempty" doc:"Sandbox provider instance"`
 	BootstrapTokens  []WorkerBootstrapToken   `gorm:"foreignKey:WorkerID" json:"-" doc:"Worker bootstrap tokens"`
-	AuthTokens       []WorkerAuthToken        `gorm:"foreignKey:WorkerID" json:"-" doc:"Worker auth tokens"`
+	AuthTokens       []WorkerAuthToken        `gorm:"foreignKey:WorkerID" json:"-" doc:"Legacy worker auth tokens"`
 }
 
 func (Worker) TableName() string { return "workers" }
@@ -530,9 +530,8 @@ func (t *WorkerBootstrapToken) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
-// WorkerAuthToken stores short-lived runtime token metadata for a registered
-// worker. Stateless token implementations can use ID as the token JTI and keep
-// this row for revocation/audit, or skip persistence for non-revocable tokens.
+// WorkerAuthToken stores legacy runtime token metadata for registered workers.
+// Active worker runtime auth verifies signed assertions against Worker.PublicKey.
 type WorkerAuthToken struct {
 	ID         string     `gorm:"primaryKey;type:text" json:"id" doc:"Stable auth token ID"`
 	WorkerID   string     `gorm:"column:worker_id;not null;type:text;index" json:"workerId" doc:"Worker ID"`

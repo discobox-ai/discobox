@@ -25,16 +25,12 @@ func TestWorkerRegisterStatusAndClaim(t *testing.T) {
 	if err := s.CreateWorkerWithBootstrapToken(ctx, worker, &model.WorkerBootstrapToken{WorkerID: worker.ID, TokenHash: h[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
 		t.Fatalf("create worker bootstrap: %v", err)
 	}
-	authHash := sha256.Sum256([]byte("auth"))
-	registered, err := s.RegisterWorker(ctx, worker.ID, h[:], "public", "ed25519", authHash[:], time.Now().Add(time.Hour))
+	registered, err := s.RegisterWorker(ctx, worker.ID, h[:], "public", "ed25519")
 	if err != nil {
 		t.Fatalf("register worker: %v", err)
 	}
 	if !registered.Ready || !registered.Schedulable || registered.PublicKey != "public" {
 		t.Fatalf("registered worker = %#v", registered)
-	}
-	if err := s.ValidateWorkerAuthToken(ctx, worker.ID, authHash[:]); err != nil {
-		t.Fatalf("validate auth token: %v", err)
 	}
 	updated, err := s.UpdateWorkerStatus(ctx, worker.ID, true, true, true, 2, 4<<30, 10<<30, []byte(`{"pressure":"high"}`))
 	if err != nil {
@@ -398,50 +394,5 @@ func sandboxForClaim(projectID, providerID string, cpuVCPUs float64, memoryBytes
 		CPUVCPUs:           cpuVCPUs,
 		MemoryBytes:        memoryBytes,
 		StorageBytes:       storageBytes,
-	}
-}
-
-func TestValidateWorkerAuthTokenRejectsInvalidExpiredAndRevoked(t *testing.T) {
-	ctx := context.Background()
-	s, db := newTestStoreWithDB(t, nil)
-	provider := &model.SandboxProviderInstance{ID: "provider-auth", ProjectID: "project-1", Type: "digitalocean", Name: "do"}
-	if err := db.Write.WithContext(ctx).Create(provider).Error; err != nil {
-		t.Fatalf("create provider: %v", err)
-	}
-	worker := &model.Worker{ID: "worker-auth", ProjectID: "project-1", ProviderInstanceID: provider.ID, Identity: "worker-auth"}
-	if err := db.Write.WithContext(ctx).Create(worker).Error; err != nil {
-		t.Fatalf("create worker: %v", err)
-	}
-
-	validHash := sha256.Sum256([]byte("valid"))
-	expiredHash := sha256.Sum256([]byte("expired"))
-	revokedHash := sha256.Sum256([]byte("revoked"))
-	invalidHash := sha256.Sum256([]byte("invalid"))
-	now := time.Now().UTC()
-	revokedAt := now
-	if err := db.Write.WithContext(ctx).Create(&[]model.WorkerAuthToken{
-		{WorkerID: worker.ID, TokenHash: validHash[:], IssuedAt: now, ExpiresAt: now.Add(time.Hour)},
-		{WorkerID: worker.ID, TokenHash: expiredHash[:], IssuedAt: now.Add(-2 * time.Hour), ExpiresAt: now.Add(-time.Hour)},
-		{WorkerID: worker.ID, TokenHash: revokedHash[:], IssuedAt: now, ExpiresAt: now.Add(time.Hour), RevokedAt: &revokedAt},
-	}).Error; err != nil {
-		t.Fatalf("create auth tokens: %v", err)
-	}
-	if err := s.ValidateWorkerAuthToken(ctx, worker.ID, validHash[:]); err != nil {
-		t.Fatalf("validate valid token: %v", err)
-	}
-	authenticatedWorkerID, err := s.AuthenticateWorkerAuthToken(ctx, validHash[:])
-	if err != nil {
-		t.Fatalf("authenticate valid token: %v", err)
-	}
-	if authenticatedWorkerID != worker.ID {
-		t.Fatalf("authenticated worker ID = %q, want %q", authenticatedWorkerID, worker.ID)
-	}
-	for name, hash := range map[string][]byte{"invalid": invalidHash[:], "expired": expiredHash[:], "revoked": revokedHash[:]} {
-		if err := s.ValidateWorkerAuthToken(ctx, worker.ID, hash); !errors.Is(err, store.ErrNotFound) {
-			t.Fatalf("%s token error = %v, want ErrNotFound", name, err)
-		}
-		if _, err := s.AuthenticateWorkerAuthToken(ctx, hash); !errors.Is(err, store.ErrNotFound) {
-			t.Fatalf("%s token authenticate error = %v, want ErrNotFound", name, err)
-		}
 	}
 }

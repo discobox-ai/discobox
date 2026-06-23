@@ -3,10 +3,12 @@ package workeragent_test
 import (
 	"context"
 	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,11 +19,12 @@ import (
 	workerapimodel "github.com/obot-platform/discobox/worker-agent/api/model"
 	"github.com/obot-platform/discobox/worker-agent/sandboxruntime"
 	workeragentserver "github.com/obot-platform/discobox/worker-agent/server"
+	"github.com/obot-platform/discobox/worker-agent/workerauth"
 )
 
 func TestRunRegistersWorkerWithGeneratedPublicKey(t *testing.T) {
 	ctx := context.Background()
-	client := &recordingClient{resp: &workeragent.RegisterResponse{AuthToken: "auth-token"}}
+	client := &recordingClient{resp: &workeragent.RegisterResponse{}}
 	registration, err := workeragent.Run(ctx, workeragent.Config{
 		Bootstrap: workeragent.Bootstrap{
 			ControlPlaneURL: "https://control.example",
@@ -35,8 +38,8 @@ func TestRunRegistersWorkerWithGeneratedPublicKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run: %v", err)
 	}
-	if registration.AuthToken != "auth-token" {
-		t.Fatalf("auth token = %q", registration.AuthToken)
+	if len(registration.PrivateKey) != ed25519.PrivateKeySize {
+		t.Fatalf("private key length = %d", len(registration.PrivateKey))
 	}
 	publicKey, err := base64.StdEncoding.DecodeString(client.req.PublicKey)
 	if err != nil {
@@ -56,8 +59,7 @@ func TestHTTPClientRegistersWorker(t *testing.T) {
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Fatalf("decode request: %v", err)
 		}
-		//nolint:gosec // Test fixture response exercises auth-token decoding; token value is not real.
-		if err := json.NewEncoder(w).Encode(workeragent.RegisterResponse{AuthToken: "auth-token"}); err != nil {
+		if err := json.NewEncoder(w).Encode(workeragent.RegisterResponse{}); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
 	}))
@@ -73,8 +75,8 @@ func TestHTTPClientRegistersWorker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register worker: %v", err)
 	}
-	if resp.AuthToken != "auth-token" {
-		t.Fatalf("auth token = %q", resp.AuthToken)
+	if resp == nil {
+		t.Fatal("register response is nil")
 	}
 	if got.ProjectID != "project-1" {
 		t.Fatalf("project ID = %q", got.ProjectID)
@@ -89,12 +91,28 @@ func TestHTTPClientRegistersWorker(t *testing.T) {
 
 func TestHTTPClientUpdatesWorkerStatusByPath(t *testing.T) {
 	var got map[string]any
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	publicKeyText, err := workerauth.EncodePublicKey(publicKey)
+	if err != nil {
+		t.Fatalf("encode public key: %v", err)
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/workers/worker-1/status" {
 			t.Fatalf("path = %q", r.URL.Path)
 		}
-		if r.Header.Get("Authorization") != "Bearer auth-token" {
+		scheme, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
+		if !ok || scheme != "Bearer" {
 			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
+		}
+		claims, err := workerauth.VerifyToken(publicKeyText, token)
+		if err != nil {
+			t.Fatalf("verify token: %v", err)
+		}
+		if claims.ProjectID != "project-1" || claims.WorkerID != "worker-1" {
+			t.Fatalf("claims = %#v", claims)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&got); err != nil {
 			t.Fatalf("decode request: %v", err)
@@ -102,9 +120,10 @@ func TestHTTPClientUpdatesWorkerStatusByPath(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := workeragent.NewHTTPClient(server.URL, workeragent.WithHTTPClient(server.Client())).UpdateWorkerStatus(context.Background(), workeragent.StatusRequest{
+	err = workeragent.NewHTTPClient(server.URL, workeragent.WithHTTPClient(server.Client())).UpdateWorkerStatus(context.Background(), workeragent.StatusRequest{
+		ProjectID:             "project-1",
 		WorkerID:              "worker-1",
-		AuthToken:             "auth-token",
+		PrivateKey:            privateKey,
 		Ready:                 true,
 		Schedulable:           true,
 		AvailableCPUVCPUs:     1,

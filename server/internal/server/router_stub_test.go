@@ -484,7 +484,7 @@ func (s *routerTestServices) ListWorkers(_ context.Context, projectID, providerI
 }
 
 func (s *routerTestServices) RegisterWorker(context.Context, services.RegisterWorkerBody) (*services.RegisterWorkerResponseBody, error) {
-	return &services.RegisterWorkerResponseBody{AuthToken: "stub"}, nil
+	return &services.RegisterWorkerResponseBody{}, nil
 }
 
 func (s *routerTestServices) UpdateWorkerStatus(context.Context, string, services.UpdateWorkerStatusBody) (*model.Worker, error) {

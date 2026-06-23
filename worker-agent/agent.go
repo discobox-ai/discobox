@@ -42,8 +42,9 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	}
 	if err := client.UpdateWorkerStatus(ctx, StatusRequest{
 		ControlPlaneURL:       bootstrap.ControlPlaneURL,
+		ProjectID:             bootstrap.ProjectID,
 		WorkerID:              bootstrap.WorkerID,
-		AuthToken:             registration.AuthToken,
+		PrivateKey:            registration.PrivateKey,
 		Ready:                 true,
 		Schedulable:           true,
 		Degraded:              false,
@@ -92,7 +93,7 @@ func serverRegistration(registration *Registration) *workerserver.Registration {
 	if registration == nil {
 		return nil
 	}
-	return &workerserver.Registration{PublicKey: registration.PublicKey, AuthToken: registration.AuthToken}
+	return &workerserver.Registration{PublicKey: registration.PublicKey}
 }
 
 func availableCPUVCPUs() float64 {

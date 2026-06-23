@@ -402,7 +402,7 @@ func (s *Store) MarkWorkerRuntimeLost(ctx context.Context, projectID, providerID
 	return true, nil
 }
 
-func (s *Store) RegisterWorker(ctx context.Context, workerID string, tokenHash []byte, publicKey, keyType string, authTokenHash []byte, authExpiresAt time.Time) (*model.Worker, error) {
+func (s *Store) RegisterWorker(ctx context.Context, workerID string, tokenHash []byte, publicKey, keyType string) (*model.Worker, error) {
 	write, err := s.getWrite(ctx)
 	if err != nil {
 		return nil, err
@@ -437,8 +437,7 @@ func (s *Store) RegisterWorker(ctx context.Context, workerID string, tokenHash [
 		if err := tx.Save(&worker).Error; err != nil {
 			return err
 		}
-		auth := &model.WorkerAuthToken{WorkerID: workerID, TokenHash: authTokenHash, IssuedAt: now, ExpiresAt: authExpiresAt}
-		return tx.Create(auth).Error
+		return nil
 	})
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -447,37 +446,6 @@ func (s *Store) RegisterWorker(ctx context.Context, workerID string, tokenHash [
 		return nil, err
 	}
 	return &worker, nil
-}
-
-func (s *Store) AuthenticateWorkerAuthToken(ctx context.Context, tokenHash []byte) (string, error) {
-	write, err := s.getWrite(ctx)
-	if err != nil {
-		return "", err
-	}
-	now := time.Now().UTC()
-	var token model.WorkerAuthToken
-	err = write.
-		Where("token_hash = ? AND expires_at > ? AND revoked_at IS NULL", tokenHash, now).
-		First(&token).Error
-	if err != nil {
-		return "", mapNotFound(err)
-	}
-	token.LastUsedAt = &now
-	if err := write.Save(&token).Error; err != nil {
-		return "", err
-	}
-	return token.WorkerID, nil
-}
-
-func (s *Store) ValidateWorkerAuthToken(ctx context.Context, workerID string, tokenHash []byte) error {
-	authenticatedWorkerID, err := s.AuthenticateWorkerAuthToken(ctx, tokenHash)
-	if err != nil {
-		return err
-	}
-	if authenticatedWorkerID != workerID {
-		return ErrNotFound
-	}
-	return nil
 }
 
 func (s *Store) UpdateWorkerStatus(ctx context.Context, workerID string, ready, schedulable, degraded bool, availableCPUVCPUs float64, availableMemoryBytes, availableStorageBytes int64, conditions []byte) (*model.Worker, error) {

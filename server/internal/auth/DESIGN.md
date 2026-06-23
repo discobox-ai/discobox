@@ -27,10 +27,11 @@ try. Returning an error rejects the request as unauthenticated.
 
 Current authenticators:
 
-- `WorkerAuthenticator` applies only to worker runtime status routes. It hashes
-  the bearer token, validates it through `store.AuthenticateWorkerAuthToken`, and
-  derives the worker ID from the token row. It must not trust the URL or body for
-  worker identity.
+- `WorkerAuthenticator` applies only to worker runtime status routes. It loads
+  the route worker, verifies the bearer PASETO assertion with that worker's
+  stored Ed25519 public key, and requires the signed `project_id` and
+  `worker_id` claims to match the route worker. It must not trust the URL or
+  body alone for worker identity.
 - `DefaultUserAuthenticator` authenticates requests as the configured default
   user in the current single-user server mode.
 
@@ -65,9 +66,9 @@ path equality:
 
 `/api/workers/register` is allowed here only as a bootstrap credential
 redemption route. It has no authenticated worker principal yet; the service
-redeems a short-lived, one-time bootstrap token for a sandbox's preassigned
-worker and returns the first runtime token. Do not model ordinary resource
-authorization on this route.
+redeems a short-lived, one-time bootstrap token for a preassigned worker and
+binds that worker to its self-generated public key. Do not model ordinary
+resource authorization on this route.
 
 Do not authorize by broad exclusion, such as "any route that is not project or
 worker scoped." Add an exact path or prefix to the allow-list only when the

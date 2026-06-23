@@ -5,12 +5,13 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/obot-platform/discobox/worker-agent/workerauth"
 )
 
 const (
@@ -75,32 +76,29 @@ type RegisterRequest struct {
 	KeyType         string `json:"keyType"`
 }
 
-// StatusRequest updates worker scheduling status using the auth token returned
-// by registration. AuthToken is sent as an Authorization: Bearer header.
+// StatusRequest updates worker scheduling status using a signed worker assertion.
 type StatusRequest struct {
-	ControlPlaneURL       string  `json:"-"`
-	WorkerID              string  `json:"-"`
-	AuthToken             string  `json:"-"`
-	Ready                 bool    `json:"ready"`
-	Schedulable           bool    `json:"schedulable"`
-	Degraded              bool    `json:"degraded"`
-	AvailableCPUVCPUs     float64 `json:"availableCpuVcpus"`
-	AvailableMemoryBytes  int64   `json:"availableMemoryBytes"`
-	AvailableStorageBytes int64   `json:"availableStorageBytes"`
-	Conditions            any     `json:"conditions,omitempty"`
+	ControlPlaneURL       string             `json:"-"`
+	ProjectID             string             `json:"-"`
+	WorkerID              string             `json:"-"`
+	PrivateKey            ed25519.PrivateKey `json:"-"`
+	Ready                 bool               `json:"ready"`
+	Schedulable           bool               `json:"schedulable"`
+	Degraded              bool               `json:"degraded"`
+	AvailableCPUVCPUs     float64            `json:"availableCpuVcpus"`
+	AvailableMemoryBytes  int64              `json:"availableMemoryBytes"`
+	AvailableStorageBytes int64              `json:"availableStorageBytes"`
+	Conditions            any                `json:"conditions,omitempty"`
 }
 
 // RegisterResponse is returned by the control plane after worker registration.
-type RegisterResponse struct {
-	AuthToken string `json:"authToken"`
-}
+type RegisterResponse struct{}
 
 // Registration is the completed worker startup identity state.
 type Registration struct {
 	Bootstrap  Bootstrap
 	PublicKey  string
 	PrivateKey ed25519.PrivateKey
-	AuthToken  string
 }
 
 // KeySource generates or loads the worker identity keypair.
@@ -138,14 +136,13 @@ func Run(ctx context.Context, cfg Config) (*Registration, error) {
 	if err != nil {
 		return nil, err
 	}
-	if resp == nil || strings.TrimSpace(resp.AuthToken) == "" {
-		return nil, errors.New("worker registration did not return an auth token")
+	if resp == nil {
+		return nil, errors.New("worker registration did not return a response")
 	}
 	return &Registration{
 		Bootstrap:  bootstrap,
 		PublicKey:  publicKey,
 		PrivateKey: privateKey,
-		AuthToken:  resp.AuthToken,
 	}, nil
 }
 
@@ -171,5 +168,9 @@ func (GenerateKeySource) KeyPair(context.Context) (string, ed25519.PrivateKey, e
 	if err != nil {
 		return "", nil, fmt.Errorf("generate worker keypair: %w", err)
 	}
-	return base64.StdEncoding.EncodeToString(pub), priv, nil
+	publicKey, err := workerauth.EncodePublicKey(pub)
+	if err != nil {
+		return "", nil, err
+	}
+	return publicKey, priv, nil
 }

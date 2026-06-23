@@ -1,12 +1,13 @@
 package auth
 
 import (
-	"crypto/sha256"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/obot-platform/discobox/worker-agent/workerauth"
 )
 
 // Authenticator authenticates a request and returns the matched principal.
@@ -14,7 +15,7 @@ type Authenticator interface {
 	Authenticate(*http.Request) (Principal, bool, error)
 }
 
-// WorkerAuthenticator authenticates worker runtime requests from bearer tokens.
+// WorkerAuthenticator authenticates worker runtime requests from signed worker assertions.
 type WorkerAuthenticator struct {
 	Store *store.Store
 }
@@ -25,14 +26,30 @@ func (a WorkerAuthenticator) Authenticate(r *http.Request) (Principal, bool, err
 	}
 	token := bearerToken(r.Header.Get("Authorization"))
 	if token == "" {
-		return Principal{}, false, errors.New("worker auth token required")
+		return Principal{}, false, errors.New("worker assertion required")
 	}
-	h := sha256.Sum256([]byte(token))
-	workerID, err := a.Store.AuthenticateWorkerAuthToken(r.Context(), h[:])
+	routeWorkerID, err := workerIDFromRuntimePath(r.URL.Path)
 	if err != nil {
-		return Principal{}, false, errors.New("invalid worker auth token")
+		return Principal{}, false, err
 	}
-	return Principal{Type: PrincipalTypeWorker, WorkerID: workerID}, true, nil
+	worker, err := a.Store.GetWorker(r.Context(), routeWorkerID)
+	if err != nil {
+		return Principal{}, false, errors.New("worker not found")
+	}
+	if worker.RevokedAt != nil {
+		return Principal{}, false, errors.New("worker is revoked")
+	}
+	if worker.KeyType != workerauth.KeyType {
+		return Principal{}, false, errors.New("unsupported worker key type")
+	}
+	claims, err := workerauth.VerifyToken(worker.PublicKey, token)
+	if err != nil {
+		return Principal{}, false, errors.New("invalid worker assertion")
+	}
+	if claims.WorkerID != worker.ID || claims.WorkerID != routeWorkerID || claims.ProjectID != worker.ProjectID {
+		return Principal{}, false, errors.New("worker assertion identity does not match route")
+	}
+	return Principal{Type: PrincipalTypeWorker, WorkerID: claims.WorkerID}, true, nil
 }
 
 // DefaultUserAuthenticator authenticates every request as the configured user.
@@ -61,4 +78,20 @@ func bearerToken(authorization string) string {
 
 func isWorkerRuntimePath(path string) bool {
 	return strings.HasPrefix(path, "/api/workers/") && strings.HasSuffix(path, "/status")
+}
+
+func workerIDFromRuntimePath(path string) (string, error) {
+	segments := strings.Split(strings.Trim(path, "/"), "/")
+	if len(segments) != 4 || segments[0] != "api" || segments[1] != "workers" || segments[3] != "status" {
+		return "", errors.New("worker runtime path is invalid")
+	}
+	workerID, err := url.PathUnescape(segments[2])
+	if err != nil {
+		return "", err
+	}
+	workerID = strings.TrimSpace(workerID)
+	if workerID == "" {
+		return "", errors.New("worker ID is required")
+	}
+	return workerID, nil
 }

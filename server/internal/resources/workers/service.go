@@ -2,20 +2,18 @@ package workers
 
 import (
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/auth"
 	"github.com/obot-platform/discobox/server/internal/model"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/obot-platform/discobox/worker-agent/workerauth"
 )
 
 type Service struct {
@@ -59,16 +57,11 @@ func (s *Service) RegisterWorker(ctx context.Context, input services.RegisterWor
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "worker not found")
 	}
 	h := sha256.Sum256([]byte(input.BootstrapToken))
-	authToken, err := randomToken()
-	if err != nil {
-		return nil, err
-	}
-	authHash := sha256.Sum256([]byte(authToken))
-	_, err = s.store.RegisterWorker(ctx, workerID, h[:], input.PublicKey, defaultString(input.KeyType.Or(""), "ed25519"), authHash[:], time.Now().UTC().Add(time.Hour))
+	_, err := s.store.RegisterWorker(ctx, workerID, h[:], input.PublicKey, defaultString(input.KeyType.Or(""), workerauth.KeyType))
 	if err != nil {
 		return nil, apiError(err, "worker bootstrap token not found")
 	}
-	return &services.RegisterWorkerResponseBody{AuthToken: authToken}, nil
+	return &services.RegisterWorkerResponseBody{}, nil
 }
 
 func (s *Service) ListWorkers(ctx context.Context, projectID, providerID string) ([]model.Worker, error) {
@@ -102,14 +95,6 @@ func (s *Service) UpdateWorkerStatus(ctx context.Context, workerID string, input
 		return nil, apiError(err, "worker not found")
 	}
 	return worker, nil
-}
-
-func randomToken() (string, error) {
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
 func defaultString(value, fallback string) string {
