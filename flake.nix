@@ -29,7 +29,7 @@
             packages = with pkgs; [
               corepack
               delve
-              git
+              gitFull
               gnumake
               go_1_26
               go-task
