@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"os"
 	"runtime"
 	"time"
 
@@ -192,18 +193,36 @@ func defaultSandboxProviderForOS() *model.SandboxProviderInstance {
 
 func defaultDockerProviderConfig() json.RawMessage {
 	systemd := true
-	data, err := json.Marshal(map[string]any{
+	config := map[string]any{
+		"bindDockerSocket":  "/var/run/docker.sock",
 		"image":             providerdocker.DefaultWorkerImage(),
 		"agentPort":         providerdocker.DefaultAgentPort(),
 		"systemd":           systemd,
 		"minWorkers":        1,
 		"maxWorkers":        1,
 		"minHealthyWorkers": 1,
-	})
+	}
+	if hostMounts := defaultDockerHostMounts(); len(hostMounts) > 0 {
+		config["hostMounts"] = hostMounts
+	}
+	data, err := json.Marshal(config)
 	if err != nil {
 		return nil
 	}
 	return data
+}
+
+func defaultDockerHostMounts() []providerdocker.HostMount {
+	candidates := []string{"/home", "/Users"}
+	mounts := make([]providerdocker.HostMount, 0, len(candidates))
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate)
+		if err != nil || !info.IsDir() {
+			continue
+		}
+		mounts = append(mounts, providerdocker.HostMount{Source: candidate, ReadOnly: true})
+	}
+	return mounts
 }
 
 func shouldUpdateDefaultProviderConfig(current, defaults json.RawMessage) bool {

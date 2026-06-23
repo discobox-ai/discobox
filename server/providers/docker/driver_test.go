@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -163,20 +164,94 @@ func TestContainerLabelsOmitSandboxIDForWorkerAgent(t *testing.T) {
 }
 
 func TestContainerMountsBindHostDockerSocketForWorkerAgent(t *testing.T) {
-	d := NewDriverWithClient(nil, DriverConfig{})
+	d := NewDriverWithClient(nil, DriverConfig{DockerSocket: "/custom/docker.sock"})
 	mounts := d.containerMounts(true, "worker-1")
 
-	if !hasMount(mounts, dockerSocketPath, dockerSocketPath) {
+	if !hasMountWithReadOnly(mounts, "/custom/docker.sock", dockerSocketPath, false) {
 		t.Fatalf("mounts = %#v, missing host Docker socket bind mount", mounts)
 	}
 }
 
+func TestContainerMountsBindConfiguredHostMountsForWorkerAgent(t *testing.T) {
+	d := NewDriverWithClient(nil, DriverConfig{HostMounts: []HostMount{
+		{Source: "/home", ReadOnly: true},
+		{Source: "/Users", ReadOnly: true},
+	}})
+	mounts := d.containerMounts(true, "worker-1")
+
+	if !hasMountWithReadOnly(mounts, "/home", "/host/home", true) {
+		t.Fatalf("mounts = %#v, missing readonly /home host mount", mounts)
+	}
+	if !hasMountWithReadOnly(mounts, "/Users", "/host/Users", true) {
+		t.Fatalf("mounts = %#v, missing readonly /Users host mount", mounts)
+	}
+}
+
 func TestContainerMountsDoNotBindHostDockerSocketForNonWorkerAgent(t *testing.T) {
-	d := NewDriverWithClient(nil, DriverConfig{})
+	d := NewDriverWithClient(nil, DriverConfig{DockerSocket: dockerSocketPath, HostMounts: []HostMount{{Source: "/home", ReadOnly: true}}})
 	mounts := d.containerMounts(false, "worker-1")
 
 	if hasMount(mounts, dockerSocketPath, dockerSocketPath) {
 		t.Fatalf("mounts = %#v, host Docker socket should only be mounted for worker agents", mounts)
+	}
+	if hasMount(mounts, "/home", "/host/home") {
+		t.Fatalf("mounts = %#v, host directories should only be mounted for worker agents", mounts)
+	}
+}
+
+func TestHostMountsAreNormalized(t *testing.T) {
+	d := NewDriverWithClient(nil, DriverConfig{HostMounts: []HostMount{
+		{Source: "relative", ReadOnly: true},
+		{Source: "/home/../home/", ReadOnly: true},
+		{Source: "/home", ReadOnly: false},
+	}})
+
+	if len(d.hostMounts) != 1 {
+		t.Fatalf("host mounts = %#v, want one normalized mount", d.hostMounts)
+	}
+	if d.hostMounts[0].Source != "/home" || !d.hostMounts[0].ReadOnly {
+		t.Fatalf("host mount = %#v, want readonly /home", d.hostMounts[0])
+	}
+}
+
+func TestHostMountJSONAcceptsDockerStyleStrings(t *testing.T) {
+	var mounts []HostMount
+	if err := json.Unmarshal([]byte(`["/home:ro","/var/lib/discobox:rw","/var/run/docker.sock"]`), &mounts); err != nil {
+		t.Fatalf("decode host mounts: %v", err)
+	}
+	d := NewDriverWithClient(nil, DriverConfig{HostMounts: mounts})
+
+	if !hasMountWithReadOnly(d.containerMounts(true, "worker-1"), "/home", "/host/home", true) {
+		t.Fatalf("mounts = %#v, missing readonly /home mount", d.containerMounts(true, "worker-1"))
+	}
+	if !hasMountWithReadOnly(d.containerMounts(true, "worker-1"), "/var/lib/discobox", "/host/var/lib/discobox", false) {
+		t.Fatalf("mounts = %#v, missing read-write /var/lib/discobox mount", d.containerMounts(true, "worker-1"))
+	}
+	if !hasMountWithReadOnly(d.containerMounts(true, "worker-1"), dockerSocketPath, "/host/var/run/docker.sock", false) {
+		t.Fatalf("mounts = %#v, missing read-write host mount for Docker socket path", d.containerMounts(true, "worker-1"))
+	}
+
+	data, err := json.Marshal([]HostMount{{Source: "/home", ReadOnly: true}, {Source: dockerSocketPath}})
+	if err != nil {
+		t.Fatalf("encode host mounts: %v", err)
+	}
+	if string(data) != `["/home:ro","/var/run/docker.sock:rw"]` {
+		t.Fatalf("encoded host mounts = %s, want [\"/home:ro\",\"/var/run/docker.sock:rw\"]", data)
+	}
+}
+
+func TestConfiguredDockerSocketIsSeparateFromHostMountTargeting(t *testing.T) {
+	d := NewDriverWithClient(nil, DriverConfig{
+		DockerSocket: "/run/user/1000/docker.sock",
+		HostMounts:   []HostMount{{Source: dockerSocketPath}},
+	})
+	mounts := d.containerMounts(true, "worker-1")
+
+	if !hasMountWithReadOnly(mounts, "/run/user/1000/docker.sock", dockerSocketPath, false) {
+		t.Fatalf("mounts = %#v, missing configured Docker socket bind", mounts)
+	}
+	if !hasMountWithReadOnly(mounts, dockerSocketPath, "/host/var/run/docker.sock", false) {
+		t.Fatalf("mounts = %#v, hostMounts Docker socket path should still mount under /host", mounts)
 	}
 }
 
@@ -255,6 +330,15 @@ func TestContainerReadyErrorReportsStoppedContainer(t *testing.T) {
 func hasMount(mounts []mount.Mount, source, target string) bool {
 	for _, m := range mounts {
 		if m.Type == mount.TypeBind && m.Source == source && m.Target == target {
+			return true
+		}
+	}
+	return false
+}
+
+func hasMountWithReadOnly(mounts []mount.Mount, source, target string, readOnly bool) bool {
+	for _, m := range mounts {
+		if m.Type == mount.TypeBind && m.Source == source && m.Target == target && m.ReadOnly == readOnly {
 			return true
 		}
 	}

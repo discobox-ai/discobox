@@ -7,6 +7,7 @@ package docker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -41,6 +42,7 @@ const (
 	healthPollDelay         = 500 * time.Millisecond
 	dockerHostGateway       = "host.docker.internal"
 	dockerSocketPath        = "/var/run/docker.sock"
+	hostMountTargetRoot     = "/host"
 	labelManaged            = "discobox.vm.managed"
 	labelInstanceID         = "discobox.vm.instance_id"
 	labelProjectID          = "discobox.project_id"
@@ -67,25 +69,73 @@ type DriverConfig struct {
 	Privileged   *bool
 	CgroupNSMode string
 	Command      []string
+	DockerSocket string
+	HostMounts   []HostMount
 	Labels       map[string]string
 	HTTPClient   *http.Client
 }
 
+// HostMount describes a host path mounted into Docker worker-agent containers.
+type HostMount struct {
+	Source   string `json:"source,omitempty"`
+	ReadOnly bool   `json:"readOnly,omitempty"`
+}
+
+func (m HostMount) MarshalJSON() ([]byte, error) {
+	mode := "rw"
+	if m.ReadOnly {
+		mode = "ro"
+	}
+	return json.Marshal(cleanAbsPath(m.Source) + ":" + mode)
+}
+
+func (m *HostMount) UnmarshalJSON(data []byte) error {
+	var value string
+	if err := json.Unmarshal(data, &value); err == nil {
+		*m = parseHostMount(value)
+		return nil
+	}
+	var object struct {
+		Source   string `json:"source"`
+		ReadOnly bool   `json:"readOnly"`
+	}
+	if err := json.Unmarshal(data, &object); err != nil {
+		return err
+	}
+	*m = HostMount{Source: object.Source, ReadOnly: object.ReadOnly}
+	return nil
+}
+
+func parseHostMount(value string) HostMount {
+	value = strings.TrimSpace(value)
+	readOnly := false
+	for _, suffix := range []string{":ro", ":rw"} {
+		if strings.HasSuffix(value, suffix) {
+			readOnly = suffix == ":ro"
+			value = strings.TrimSuffix(value, suffix)
+			break
+		}
+	}
+	return HostMount{Source: value, ReadOnly: readOnly}
+}
+
 // ProviderInstanceConfig is the persisted provider instance configuration.
 type ProviderInstanceConfig struct {
-	ControlPlaneURL string   `json:"controlPlaneUrl,omitempty"`
-	Host            string   `json:"host,omitempty"`
-	Image           string   `json:"image,omitempty"`
-	Network         string   `json:"network,omitempty"`
-	AgentPort       int      `json:"agentPort,omitempty"`
-	Systemd         *bool    `json:"systemd,omitempty"`
-	Privileged      *bool    `json:"privileged,omitempty"`
-	CgroupNSMode    string   `json:"cgroupNsMode,omitempty"`
-	Command         []string `json:"command,omitempty"`
-	PoolSize        int      `json:"poolSize,omitempty"`
-	MinWorkers      int      `json:"minWorkers,omitempty"`
-	MaxWorkers      int      `json:"maxWorkers,omitempty"`
-	MinHealthy      int      `json:"minHealthyWorkers,omitempty"`
+	ControlPlaneURL string      `json:"controlPlaneUrl,omitempty"`
+	Host            string      `json:"host,omitempty"`
+	Image           string      `json:"image,omitempty"`
+	Network         string      `json:"network,omitempty"`
+	AgentPort       int         `json:"agentPort,omitempty"`
+	Systemd         *bool       `json:"systemd,omitempty"`
+	Privileged      *bool       `json:"privileged,omitempty"`
+	CgroupNSMode    string      `json:"cgroupNsMode,omitempty"`
+	Command         []string    `json:"command,omitempty"`
+	DockerSocket    string      `json:"bindDockerSocket,omitempty"`
+	HostMounts      []HostMount `json:"hostMounts,omitempty"`
+	PoolSize        int         `json:"poolSize,omitempty"`
+	MinWorkers      int         `json:"minWorkers,omitempty"`
+	MaxWorkers      int         `json:"maxWorkers,omitempty"`
+	MinHealthy      int         `json:"minHealthyWorkers,omitempty"`
 }
 
 // Definition describes the Docker provider for provider catalogs.
@@ -107,6 +157,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "privileged", Label: "Privileged", Type: "boolean", Advanced: true},
 			{Key: "cgroupNsMode", Label: "Cgroup Namespace", Type: "string", Advanced: true},
 			{Key: "command", Label: "Command", Type: "string", Advanced: true},
+			{Key: "bindDockerSocket", Label: "Bind Docker Socket", Type: "string", Placeholder: dockerSocketPath, Advanced: true},
 			{Key: "agentPort", Label: "Agent Port", Type: "number", Placeholder: strconv.Itoa(defaultAgentPort), Advanced: true},
 		},
 	}
@@ -123,6 +174,8 @@ type Driver struct {
 	privileged   bool
 	cgroupNSMode string
 	command      []string
+	dockerSocket string
+	hostMounts   []HostMount
 	labels       map[string]string
 
 	watcherMu     sync.Mutex
@@ -173,6 +226,11 @@ func NewDriverWithClient(cli *client.Client, cfg DriverConfig) *Driver {
 	}
 	labels[labelProviderType] = ProviderType
 	labels[labelManaged] = "true"
+	dockerSocket := cleanAbsPath(cfg.DockerSocket)
+	if dockerSocket == "" {
+		dockerSocket = dockerSocketPath
+	}
+	hostMounts := normalizeHostMounts(cfg.HostMounts)
 	return &Driver{
 		client:       cli,
 		image:        image,
@@ -182,6 +240,8 @@ func NewDriverWithClient(cli *client.Client, cfg DriverConfig) *Driver {
 		privileged:   privileged,
 		cgroupNSMode: strings.TrimSpace(cfg.CgroupNSMode),
 		command:      command,
+		dockerSocket: dockerSocket,
+		hostMounts:   hostMounts,
 		labels:       labels,
 	}
 }
@@ -381,7 +441,17 @@ func controlPlaneExtraHosts(defaulted bool, controlPlaneURL string) []string {
 func (d *Driver) containerMounts(workerAgent bool, workerID string) []mount.Mount {
 	var mounts []mount.Mount
 	if workerAgent {
-		mounts = append(mounts, mount.Mount{Type: mount.TypeBind, Source: dockerSocketPath, Target: dockerSocketPath})
+		if d.dockerSocket != "" {
+			mounts = append(mounts, mount.Mount{Type: mount.TypeBind, Source: d.dockerSocket, Target: dockerSocketPath})
+		}
+		for _, hostMount := range d.hostMounts {
+			mounts = append(mounts, mount.Mount{
+				Type:     mount.TypeBind,
+				Source:   hostMount.Source,
+				Target:   hostMountTarget(hostMount.Source),
+				ReadOnly: hostMount.ReadOnly,
+			})
+		}
 	}
 	if d.systemd {
 		mounts = append(mounts,
@@ -391,6 +461,57 @@ func (d *Driver) containerMounts(workerAgent bool, workerID string) []mount.Moun
 		)
 	}
 	return mounts
+}
+
+func normalizeHostMounts(hostMounts []HostMount) []HostMount {
+	out := make([]HostMount, 0, len(hostMounts))
+	seen := map[string]struct{}{}
+	for _, hostMount := range hostMounts {
+		source := cleanAbsPath(hostMount.Source)
+		if source == "" {
+			continue
+		}
+		if _, ok := seen[source]; ok {
+			continue
+		}
+		seen[source] = struct{}{}
+		out = append(out, HostMount{Source: source, ReadOnly: hostMount.ReadOnly})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Source < out[j].Source })
+	return out
+}
+
+func cleanAbsPath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" || !strings.HasPrefix(path, "/") {
+		return ""
+	}
+	parts := make([]string, 0, strings.Count(path, "/")+1)
+	for _, part := range strings.Split(path, "/") {
+		switch part {
+		case "", ".":
+			continue
+		case "..":
+			if len(parts) > 0 {
+				parts = parts[:len(parts)-1]
+			}
+		default:
+			parts = append(parts, part)
+		}
+	}
+	if len(parts) == 0 {
+		return "/"
+	}
+	return "/" + strings.Join(parts, "/")
+}
+
+func hostMountTarget(source string) string {
+	source = cleanAbsPath(source)
+	source = strings.TrimPrefix(source, "/")
+	if source == "" {
+		return hostMountTargetRoot
+	}
+	return hostMountTargetRoot + "/" + source
 }
 
 func (d *Driver) StartVM(ctx context.Context, id string) (*vm.Instance, error) {

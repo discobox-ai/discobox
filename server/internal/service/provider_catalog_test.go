@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"os"
 	"runtime"
 	"testing"
 	"time"
@@ -362,12 +363,14 @@ func TestInitializeDefaultsRepairsBuiltInDockerProviderConfigImageFromEnv(t *tes
 func assertDefaultDockerProviderConfig(t *testing.T, data []byte, expectedImage string) {
 	t.Helper()
 	var cfg struct {
-		Image             string `json:"image"`
-		AgentPort         int    `json:"agentPort"`
-		Systemd           bool   `json:"systemd"`
-		MinWorkers        int    `json:"minWorkers"`
-		MaxWorkers        int    `json:"maxWorkers"`
-		MinHealthyWorkers int    `json:"minHealthyWorkers"`
+		Image             string   `json:"image"`
+		AgentPort         int      `json:"agentPort"`
+		Systemd           bool     `json:"systemd"`
+		MinWorkers        int      `json:"minWorkers"`
+		MaxWorkers        int      `json:"maxWorkers"`
+		MinHealthyWorkers int      `json:"minHealthyWorkers"`
+		BindDockerSocket  string   `json:"bindDockerSocket"`
+		HostMounts        []string `json:"hostMounts"`
 	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		t.Fatalf("decode provider config %s: %v", data, err)
@@ -381,6 +384,30 @@ func assertDefaultDockerProviderConfig(t *testing.T, data []byte, expectedImage 
 	if !cfg.Systemd || cfg.MinWorkers != 1 || cfg.MaxWorkers != 1 || cfg.MinHealthyWorkers != 1 {
 		t.Fatalf("provider config = %+v, want systemd and worker pool defaults", cfg)
 	}
+	if cfg.BindDockerSocket != "/var/run/docker.sock" {
+		t.Fatalf("bindDockerSocket = %q, want /var/run/docker.sock", cfg.BindDockerSocket)
+	}
+	expectedHostMounts := existingDefaultHostMounts(t)
+	if len(cfg.HostMounts) != len(expectedHostMounts) {
+		t.Fatalf("hostMounts = %#v, want %#v", cfg.HostMounts, expectedHostMounts)
+	}
+	for i, expected := range expectedHostMounts {
+		if cfg.HostMounts[i] != expected {
+			t.Fatalf("hostMounts[%d] = %#v, want %q", i, cfg.HostMounts[i], expected)
+		}
+	}
+}
+
+func existingDefaultHostMounts(t *testing.T) []string {
+	t.Helper()
+	var mounts []string
+	for _, candidate := range []string{"/home", "/Users"} {
+		info, err := os.Stat(candidate)
+		if err == nil && info.IsDir() {
+			mounts = append(mounts, candidate+":ro")
+		}
+	}
+	return mounts
 }
 
 func TestServiceResolvesDigitalOceanProviderInstance(t *testing.T) {

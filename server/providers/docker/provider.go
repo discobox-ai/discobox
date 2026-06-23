@@ -30,6 +30,8 @@ type Config struct {
 	Privileged      *bool                 `json:"privileged,omitempty"`
 	CgroupNSMode    string                `json:"cgroupNsMode,omitempty"`
 	Command         workerpool.StringList `json:"command,omitempty"`
+	DockerSocket    string                `json:"bindDockerSocket,omitempty"`
+	HostMounts      []HostMount           `json:"hostMounts,omitempty"`
 	workerpool.WorkerPoolConfigFields
 }
 
@@ -85,6 +87,8 @@ func newProvider(ctx context.Context, cfg Config, vmConfig vm.Config) (*vm.Provi
 		Privileged:   cfg.Privileged,
 		CgroupNSMode: cfg.CgroupNSMode,
 		Command:      cfg.Command.Values(),
+		DockerSocket: cfg.DockerSocket,
+		HostMounts:   cfg.HostMounts,
 	}, vmConfig)
 }
 
