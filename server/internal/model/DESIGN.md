@@ -114,10 +114,7 @@ erDiagram
         string created_by_user_id
         string provider_instance_id
         string agent_config_id
-        string source_url
-        string source_ref
-        string source_ref_type
-        string source_directory
+        json source
         json source_code_references
     }
 

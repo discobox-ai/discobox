@@ -135,7 +135,8 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		Image:      imageName,
 		Labels:     r.labels(sandboxID),
 		Env:        envList(map[string]string(optCreateEnv(req.Env))),
-		WorkingDir: optString(req.WorkingDirectory),
+		WorkingDir: sourceWorkingDirectory(req),
+		User:       sandboxUser(req),
 		Cmd:        []string{"sleep", "infinity"},
 	}
 	hostCfg := &container.HostConfig{}
@@ -389,6 +390,33 @@ func optInt64(opt workerclient.OptInt64) int64 {
 func optFloat64(opt workerclient.OptFloat64) float64 {
 	v, _ := opt.Get()
 	return v
+}
+
+func sandboxUser(req *workerapimodel.WorkerSandboxCreateRequest) string {
+	if req == nil {
+		return ""
+	}
+	uid, uidOK := req.UserUid.Get()
+	gid, gidOK := req.UserGid.Get()
+	if !uidOK || !gidOK || uid == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%d:%d", uid, gid)
+}
+
+func sourceWorkingDirectory(req *workerapimodel.WorkerSandboxCreateRequest) string {
+	if req == nil {
+		return ""
+	}
+	source, ok := req.Source.Get()
+	if !ok {
+		return ""
+	}
+	destination, ok := source.Destination.Get()
+	if !ok {
+		return ""
+	}
+	return optString(destination.WorkingDirectory)
 }
 
 func optCreateEnv(opt workerclient.OptWorkerSandboxCreateRequestEnv) workerclient.WorkerSandboxCreateRequestEnv {

@@ -14,3 +14,11 @@ func (s *ErrorModel) setDefaults() {
 		s.Type.SetTo(val)
 	}
 }
+
+// setDefaults set default value of fields.
+func (s *GitSourceWorkspace) setDefaults() {
+	{
+		val := GitSourceWorkspaceMode("clean")
+		s.Mode.SetTo(val)
+	}
+}

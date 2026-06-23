@@ -136,12 +136,14 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	}
 	sourceCodeReferences := model.SourceCodeReferences(nil)
 	if refs, ok := input.SourceCodeReferences.Get(); ok {
-		var err error
-		sourceCodeReferences, err = services.Convert[model.SourceCodeReferences](refs)
-		if err != nil {
-			return nil, err
-		}
+		sourceCodeReferences = services.SourceCodeReferencesToModel(refs)
 	}
+	var source *model.GitSource
+	if inputSource, ok := input.Source.Get(); ok {
+		converted := services.GitSourceToModel(inputSource)
+		source = &converted
+	}
+	services.DefaultGitSourceSlugs(source, sourceCodeReferences)
 	sandbox := &model.Sandbox{
 		ID:                       sandboxID,
 		ProjectID:                projectID,
@@ -155,12 +157,9 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		AgentModelServiceTier:    services.OptStringPtr(input.AgentModelServiceTier),
 		AgentModelReasoningLevel: services.OptStringPtr(input.AgentModelReasoningLevel),
 		Prompt:                   services.OptStringPtr(input.Prompt),
-		SourceURL:                services.OptURIStringPtr(input.SourceUrl),
-		SourceRef:                services.OptStringPtr(input.SourceRef),
-		SourceRefType:            services.OptStringPtr(input.SourceRefType),
-		SourceDirectory:          services.OptStringPtr(input.SourceDirectory),
-		WorkingDirectory:         services.OptStringPtr(input.WorkingDirectory),
+		Source:                   source,
 		SourceCodeReferences:     sourceCodeReferences,
+		UserName:                 services.OptStringPtr(input.UserName),
 		UserUID:                  services.OptIntPtr(input.UserUid),
 		UserGID:                  services.OptIntPtr(input.UserGid),
 		CPUVCPUs:                 input.CpuVcpus.Or(0),

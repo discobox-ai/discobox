@@ -94,31 +94,82 @@
         },
         "type": "object"
       },
-      "GitSourceReference": {
+      "GitSource": {
         "additionalProperties": false,
         "properties": {
-          "directory": {
-            "description": "Directory where this source should be placed inside the sandbox",
+          "checkout": {
+            "$ref": "#/components/schemas/GitSourceCheckout"
+          },
+          "destination": {
+            "$ref": "#/components/schemas/GitSourceDestination"
+          },
+          "kind": {
+            "enum": [
+              "git"
+            ],
             "type": "string"
           },
-          "ref": {
-            "description": "Git source branch, tag, or commit",
-            "type": "string"
-          },
-          "refType": {
-            "description": "Git source ref type, such as branch, tag, or commit",
+          "localDirectory": {
             "type": "string"
           },
           "url": {
-            "description": "Git source URL",
             "format": "uri",
             "type": "string"
+          },
+          "workspace": {
+            "$ref": "#/components/schemas/GitSourceWorkspace"
           }
         },
         "required": [
-          "url",
-          "directory"
+          "kind"
         ],
+        "type": "object"
+      },
+      "GitSourceCheckout": {
+        "additionalProperties": false,
+        "properties": {
+          "commit": {
+            "type": "string"
+          },
+          "refName": {
+            "type": "string"
+          },
+          "refType": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GitSourceDestination": {
+        "additionalProperties": false,
+        "properties": {
+          "directory": {
+            "type": "string"
+          },
+          "workingDirectory": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "GitSourceWorkspace": {
+        "additionalProperties": false,
+        "properties": {
+          "baseCommit": {
+            "type": "string"
+          },
+          "mode": {
+            "default": "clean",
+            "enum": [
+              "clean",
+              "dirty"
+            ],
+            "type": "string"
+          },
+          "snapshotRef": {
+            "type": "string"
+          }
+        },
         "type": "object"
       },
       "ResourceConfig": {
@@ -280,23 +331,14 @@
           "sandboxId": {
             "type": "string"
           },
+          "source": {
+            "$ref": "#/components/schemas/GitSource"
+          },
           "sourceCodeReferences": {
             "additionalProperties": {
-              "$ref": "#/components/schemas/GitSourceReference"
+              "$ref": "#/components/schemas/GitSource"
             },
             "type": "object"
-          },
-          "sourceDirectory": {
-            "type": "string"
-          },
-          "sourceRef": {
-            "type": "string"
-          },
-          "sourceRefType": {
-            "type": "string"
-          },
-          "sourceUrl": {
-            "type": "string"
           },
           "storageBytes": {
             "format": "int64",
@@ -306,21 +348,12 @@
             "format": "int64",
             "type": "integer"
           },
+          "userName": {
+            "type": "string"
+          },
           "userUid": {
             "format": "int64",
             "type": "integer"
-          },
-          "workingDirectory": {
-            "type": "string"
-          },
-          "workspacePath": {
-            "type": "string"
-          },
-          "workspaceRef": {
-            "type": "string"
-          },
-          "workspaceSource": {
-            "type": "string"
           }
         },
         "required": [
@@ -471,7 +504,9 @@
         },
         "security": [
           {
-            "workerBearerAuth": []
+            "workerBearerAuth": [
+
+            ]
           }
         ],
         "summary": "List worker sandboxes",
@@ -537,7 +572,9 @@
         },
         "security": [
           {
-            "workerBearerAuth": []
+            "workerBearerAuth": [
+
+            ]
           }
         ],
         "summary": "Create worker sandbox",
@@ -598,7 +635,9 @@
         },
         "security": [
           {
-            "workerBearerAuth": []
+            "workerBearerAuth": [
+
+            ]
           }
         ],
         "summary": "Delete worker sandbox",
@@ -664,7 +703,9 @@
         },
         "security": [
           {
-            "workerBearerAuth": []
+            "workerBearerAuth": [
+
+            ]
           }
         ],
         "summary": "Get worker sandbox",
@@ -740,7 +781,9 @@
         },
         "security": [
           {
-            "workerBearerAuth": []
+            "workerBearerAuth": [
+
+            ]
           }
         ],
         "summary": "Update worker sandbox",
@@ -818,7 +861,9 @@
         },
         "security": [
           {
-            "workerBearerAuth": []
+            "workerBearerAuth": [
+
+            ]
           }
         ],
         "summary": "Start worker sandbox",
@@ -896,7 +941,9 @@
         },
         "security": [
           {
-            "workerBearerAuth": []
+            "workerBearerAuth": [
+
+            ]
           }
         ],
         "summary": "Stop worker sandbox",

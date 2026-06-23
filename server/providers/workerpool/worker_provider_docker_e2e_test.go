@@ -72,7 +72,12 @@ func TestWorkerProviderCreateCreatesDockerContainerE2E(t *testing.T) {
 		ProviderInstanceID: providerID,
 		Image:              sandbox.ImageRef{Name: image},
 		Env:                map[string]string{"DISCOBOX_E2E": "true"},
-		WorkingDirectory:   "/tmp",
+		Source: &model.GitSource{
+			Kind: "git",
+			Destination: &model.GitSourceDestination{
+				WorkingDirectory: ptrString("/tmp"),
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -118,6 +123,10 @@ func TestWorkerProviderCreateCreatesDockerContainerE2E(t *testing.T) {
 	if !containsContainerEnv(inspect.Container.Config.Env, "DISCOBOX_E2E=true") {
 		t.Fatalf("container env = %#v, missing DISCOBOX_E2E=true", inspect.Container.Config.Env)
 	}
+}
+
+func ptrString(value string) *string {
+	return &value
 }
 
 func listWorkerProviderSandboxContainers(t *testing.T, dockerClient *client.Client, projectID, workerID, sandboxID string) []container.Summary {

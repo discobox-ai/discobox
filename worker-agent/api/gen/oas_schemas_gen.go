@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/go-faster/errors"
 	"github.com/go-faster/jx"
 )
 
@@ -217,56 +218,261 @@ func (s *ErrorModelStatusCode) SetResponse(val ErrorModel) {
 	s.Response = val
 }
 
-// Ref: #/components/schemas/GitSourceReference
-type GitSourceReference struct {
-	// Directory where this source should be placed inside the sandbox.
-	Directory string `json:"directory"`
-	// Git source branch, tag, or commit.
-	Ref OptString `json:"ref"`
-	// Git source ref type, such as branch, tag, or commit.
-	RefType OptString `json:"refType"`
-	// Git source URL.
-	URL url.URL `json:"url"`
+// Ref: #/components/schemas/GitSource
+type GitSource struct {
+	Checkout       OptGitSourceCheckout    `json:"checkout"`
+	Destination    OptGitSourceDestination `json:"destination"`
+	Kind           GitSourceKind           `json:"kind"`
+	LocalDirectory OptString               `json:"localDirectory"`
+	// Stable URL-safe source slug used to address the source as a sandbox Git repository.
+	Slug      OptString             `json:"slug"`
+	URL       OptURI                `json:"url"`
+	Workspace OptGitSourceWorkspace `json:"workspace"`
 }
 
-// GetDirectory returns the value of Directory.
-func (s *GitSourceReference) GetDirectory() string {
-	return s.Directory
+// GetCheckout returns the value of Checkout.
+func (s *GitSource) GetCheckout() OptGitSourceCheckout {
+	return s.Checkout
 }
 
-// GetRef returns the value of Ref.
-func (s *GitSourceReference) GetRef() OptString {
-	return s.Ref
+// GetDestination returns the value of Destination.
+func (s *GitSource) GetDestination() OptGitSourceDestination {
+	return s.Destination
 }
 
-// GetRefType returns the value of RefType.
-func (s *GitSourceReference) GetRefType() OptString {
-	return s.RefType
+// GetKind returns the value of Kind.
+func (s *GitSource) GetKind() GitSourceKind {
+	return s.Kind
+}
+
+// GetLocalDirectory returns the value of LocalDirectory.
+func (s *GitSource) GetLocalDirectory() OptString {
+	return s.LocalDirectory
+}
+
+// GetSlug returns the value of Slug.
+func (s *GitSource) GetSlug() OptString {
+	return s.Slug
 }
 
 // GetURL returns the value of URL.
-func (s *GitSourceReference) GetURL() url.URL {
+func (s *GitSource) GetURL() OptURI {
 	return s.URL
 }
 
-// SetDirectory sets the value of Directory.
-func (s *GitSourceReference) SetDirectory(val string) {
-	s.Directory = val
+// GetWorkspace returns the value of Workspace.
+func (s *GitSource) GetWorkspace() OptGitSourceWorkspace {
+	return s.Workspace
 }
 
-// SetRef sets the value of Ref.
-func (s *GitSourceReference) SetRef(val OptString) {
-	s.Ref = val
+// SetCheckout sets the value of Checkout.
+func (s *GitSource) SetCheckout(val OptGitSourceCheckout) {
+	s.Checkout = val
 }
 
-// SetRefType sets the value of RefType.
-func (s *GitSourceReference) SetRefType(val OptString) {
-	s.RefType = val
+// SetDestination sets the value of Destination.
+func (s *GitSource) SetDestination(val OptGitSourceDestination) {
+	s.Destination = val
+}
+
+// SetKind sets the value of Kind.
+func (s *GitSource) SetKind(val GitSourceKind) {
+	s.Kind = val
+}
+
+// SetLocalDirectory sets the value of LocalDirectory.
+func (s *GitSource) SetLocalDirectory(val OptString) {
+	s.LocalDirectory = val
+}
+
+// SetSlug sets the value of Slug.
+func (s *GitSource) SetSlug(val OptString) {
+	s.Slug = val
 }
 
 // SetURL sets the value of URL.
-func (s *GitSourceReference) SetURL(val url.URL) {
+func (s *GitSource) SetURL(val OptURI) {
 	s.URL = val
+}
+
+// SetWorkspace sets the value of Workspace.
+func (s *GitSource) SetWorkspace(val OptGitSourceWorkspace) {
+	s.Workspace = val
+}
+
+// Ref: #/components/schemas/GitSourceCheckout
+type GitSourceCheckout struct {
+	Commit  OptString `json:"commit"`
+	RefName OptString `json:"refName"`
+	RefType OptString `json:"refType"`
+}
+
+// GetCommit returns the value of Commit.
+func (s *GitSourceCheckout) GetCommit() OptString {
+	return s.Commit
+}
+
+// GetRefName returns the value of RefName.
+func (s *GitSourceCheckout) GetRefName() OptString {
+	return s.RefName
+}
+
+// GetRefType returns the value of RefType.
+func (s *GitSourceCheckout) GetRefType() OptString {
+	return s.RefType
+}
+
+// SetCommit sets the value of Commit.
+func (s *GitSourceCheckout) SetCommit(val OptString) {
+	s.Commit = val
+}
+
+// SetRefName sets the value of RefName.
+func (s *GitSourceCheckout) SetRefName(val OptString) {
+	s.RefName = val
+}
+
+// SetRefType sets the value of RefType.
+func (s *GitSourceCheckout) SetRefType(val OptString) {
+	s.RefType = val
+}
+
+// Ref: #/components/schemas/GitSourceDestination
+type GitSourceDestination struct {
+	Directory        OptString `json:"directory"`
+	WorkingDirectory OptString `json:"workingDirectory"`
+}
+
+// GetDirectory returns the value of Directory.
+func (s *GitSourceDestination) GetDirectory() OptString {
+	return s.Directory
+}
+
+// GetWorkingDirectory returns the value of WorkingDirectory.
+func (s *GitSourceDestination) GetWorkingDirectory() OptString {
+	return s.WorkingDirectory
+}
+
+// SetDirectory sets the value of Directory.
+func (s *GitSourceDestination) SetDirectory(val OptString) {
+	s.Directory = val
+}
+
+// SetWorkingDirectory sets the value of WorkingDirectory.
+func (s *GitSourceDestination) SetWorkingDirectory(val OptString) {
+	s.WorkingDirectory = val
+}
+
+type GitSourceKind string
+
+const (
+	GitSourceKindGit GitSourceKind = "git"
+)
+
+// AllValues returns all GitSourceKind values.
+func (GitSourceKind) AllValues() []GitSourceKind {
+	return []GitSourceKind{
+		GitSourceKindGit,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s GitSourceKind) MarshalText() ([]byte, error) {
+	switch s {
+	case GitSourceKindGit:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *GitSourceKind) UnmarshalText(data []byte) error {
+	switch GitSourceKind(data) {
+	case GitSourceKindGit:
+		*s = GitSourceKindGit
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Ref: #/components/schemas/GitSourceWorkspace
+type GitSourceWorkspace struct {
+	BaseCommit  OptString                 `json:"baseCommit"`
+	Mode        OptGitSourceWorkspaceMode `json:"mode"`
+	SnapshotRef OptString                 `json:"snapshotRef"`
+}
+
+// GetBaseCommit returns the value of BaseCommit.
+func (s *GitSourceWorkspace) GetBaseCommit() OptString {
+	return s.BaseCommit
+}
+
+// GetMode returns the value of Mode.
+func (s *GitSourceWorkspace) GetMode() OptGitSourceWorkspaceMode {
+	return s.Mode
+}
+
+// GetSnapshotRef returns the value of SnapshotRef.
+func (s *GitSourceWorkspace) GetSnapshotRef() OptString {
+	return s.SnapshotRef
+}
+
+// SetBaseCommit sets the value of BaseCommit.
+func (s *GitSourceWorkspace) SetBaseCommit(val OptString) {
+	s.BaseCommit = val
+}
+
+// SetMode sets the value of Mode.
+func (s *GitSourceWorkspace) SetMode(val OptGitSourceWorkspaceMode) {
+	s.Mode = val
+}
+
+// SetSnapshotRef sets the value of SnapshotRef.
+func (s *GitSourceWorkspace) SetSnapshotRef(val OptString) {
+	s.SnapshotRef = val
+}
+
+type GitSourceWorkspaceMode string
+
+const (
+	GitSourceWorkspaceModeClean GitSourceWorkspaceMode = "clean"
+	GitSourceWorkspaceModeDirty GitSourceWorkspaceMode = "dirty"
+)
+
+// AllValues returns all GitSourceWorkspaceMode values.
+func (GitSourceWorkspaceMode) AllValues() []GitSourceWorkspaceMode {
+	return []GitSourceWorkspaceMode{
+		GitSourceWorkspaceModeClean,
+		GitSourceWorkspaceModeDirty,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s GitSourceWorkspaceMode) MarshalText() ([]byte, error) {
+	switch s {
+	case GitSourceWorkspaceModeClean:
+		return []byte(s), nil
+	case GitSourceWorkspaceModeDirty:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *GitSourceWorkspaceMode) UnmarshalText(data []byte) error {
+	switch GitSourceWorkspaceMode(data) {
+	case GitSourceWorkspaceModeClean:
+		*s = GitSourceWorkspaceModeClean
+		return nil
+	case GitSourceWorkspaceModeDirty:
+		*s = GitSourceWorkspaceModeDirty
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // NewNilDateTime returns new NilDateTime with value set to v.
@@ -400,6 +606,236 @@ func (o OptFloat64) Get() (v float64, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptFloat64) Or(d float64) float64 {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptGitSource returns new OptGitSource with value set to v.
+func NewOptGitSource(v GitSource) OptGitSource {
+	return OptGitSource{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptGitSource is optional GitSource.
+type OptGitSource struct {
+	Value GitSource
+	Set   bool
+}
+
+// IsSet returns true if OptGitSource was set.
+func (o OptGitSource) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptGitSource) Reset() {
+	var v GitSource
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptGitSource) SetTo(v GitSource) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptGitSource) Get() (v GitSource, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptGitSource) Or(d GitSource) GitSource {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptGitSourceCheckout returns new OptGitSourceCheckout with value set to v.
+func NewOptGitSourceCheckout(v GitSourceCheckout) OptGitSourceCheckout {
+	return OptGitSourceCheckout{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptGitSourceCheckout is optional GitSourceCheckout.
+type OptGitSourceCheckout struct {
+	Value GitSourceCheckout
+	Set   bool
+}
+
+// IsSet returns true if OptGitSourceCheckout was set.
+func (o OptGitSourceCheckout) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptGitSourceCheckout) Reset() {
+	var v GitSourceCheckout
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptGitSourceCheckout) SetTo(v GitSourceCheckout) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptGitSourceCheckout) Get() (v GitSourceCheckout, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptGitSourceCheckout) Or(d GitSourceCheckout) GitSourceCheckout {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptGitSourceDestination returns new OptGitSourceDestination with value set to v.
+func NewOptGitSourceDestination(v GitSourceDestination) OptGitSourceDestination {
+	return OptGitSourceDestination{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptGitSourceDestination is optional GitSourceDestination.
+type OptGitSourceDestination struct {
+	Value GitSourceDestination
+	Set   bool
+}
+
+// IsSet returns true if OptGitSourceDestination was set.
+func (o OptGitSourceDestination) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptGitSourceDestination) Reset() {
+	var v GitSourceDestination
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptGitSourceDestination) SetTo(v GitSourceDestination) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptGitSourceDestination) Get() (v GitSourceDestination, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptGitSourceDestination) Or(d GitSourceDestination) GitSourceDestination {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptGitSourceWorkspace returns new OptGitSourceWorkspace with value set to v.
+func NewOptGitSourceWorkspace(v GitSourceWorkspace) OptGitSourceWorkspace {
+	return OptGitSourceWorkspace{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptGitSourceWorkspace is optional GitSourceWorkspace.
+type OptGitSourceWorkspace struct {
+	Value GitSourceWorkspace
+	Set   bool
+}
+
+// IsSet returns true if OptGitSourceWorkspace was set.
+func (o OptGitSourceWorkspace) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptGitSourceWorkspace) Reset() {
+	var v GitSourceWorkspace
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptGitSourceWorkspace) SetTo(v GitSourceWorkspace) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptGitSourceWorkspace) Get() (v GitSourceWorkspace, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptGitSourceWorkspace) Or(d GitSourceWorkspace) GitSourceWorkspace {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptGitSourceWorkspaceMode returns new OptGitSourceWorkspaceMode with value set to v.
+func NewOptGitSourceWorkspaceMode(v GitSourceWorkspaceMode) OptGitSourceWorkspaceMode {
+	return OptGitSourceWorkspaceMode{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptGitSourceWorkspaceMode is optional GitSourceWorkspaceMode.
+type OptGitSourceWorkspaceMode struct {
+	Value GitSourceWorkspaceMode
+	Set   bool
+}
+
+// IsSet returns true if OptGitSourceWorkspaceMode was set.
+func (o OptGitSourceWorkspaceMode) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptGitSourceWorkspaceMode) Reset() {
+	var v GitSourceWorkspaceMode
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptGitSourceWorkspaceMode) SetTo(v GitSourceWorkspaceMode) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptGitSourceWorkspaceMode) Get() (v GitSourceWorkspaceMode, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptGitSourceWorkspaceMode) Or(d GitSourceWorkspaceMode) GitSourceWorkspaceMode {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -1044,18 +1480,12 @@ type WorkerSandboxCreateRequest struct {
 	ProviderInstanceId       OptString                                         `json:"providerInstanceId"`
 	Resources                OptResourceConfig                                 `json:"resources"`
 	SandboxId                string                                            `json:"sandboxId"`
+	Source                   OptGitSource                                      `json:"source"`
 	SourceCodeReferences     OptWorkerSandboxCreateRequestSourceCodeReferences `json:"sourceCodeReferences"`
-	SourceDirectory          OptString                                         `json:"sourceDirectory"`
-	SourceRef                OptString                                         `json:"sourceRef"`
-	SourceRefType            OptString                                         `json:"sourceRefType"`
-	SourceUrl                OptString                                         `json:"sourceUrl"`
 	StorageBytes             OptInt64                                          `json:"storageBytes"`
 	UserGid                  OptInt64                                          `json:"userGid"`
+	UserName                 OptString                                         `json:"userName"`
 	UserUid                  OptInt64                                          `json:"userUid"`
-	WorkingDirectory         OptString                                         `json:"workingDirectory"`
-	WorkspacePath            OptString                                         `json:"workspacePath"`
-	WorkspaceRef             OptString                                         `json:"workspaceRef"`
-	WorkspaceSource          OptString                                         `json:"workspaceSource"`
 }
 
 // GetSchema returns the value of Schema.
@@ -1133,29 +1563,14 @@ func (s *WorkerSandboxCreateRequest) GetSandboxId() string {
 	return s.SandboxId
 }
 
+// GetSource returns the value of Source.
+func (s *WorkerSandboxCreateRequest) GetSource() OptGitSource {
+	return s.Source
+}
+
 // GetSourceCodeReferences returns the value of SourceCodeReferences.
 func (s *WorkerSandboxCreateRequest) GetSourceCodeReferences() OptWorkerSandboxCreateRequestSourceCodeReferences {
 	return s.SourceCodeReferences
-}
-
-// GetSourceDirectory returns the value of SourceDirectory.
-func (s *WorkerSandboxCreateRequest) GetSourceDirectory() OptString {
-	return s.SourceDirectory
-}
-
-// GetSourceRef returns the value of SourceRef.
-func (s *WorkerSandboxCreateRequest) GetSourceRef() OptString {
-	return s.SourceRef
-}
-
-// GetSourceRefType returns the value of SourceRefType.
-func (s *WorkerSandboxCreateRequest) GetSourceRefType() OptString {
-	return s.SourceRefType
-}
-
-// GetSourceUrl returns the value of SourceUrl.
-func (s *WorkerSandboxCreateRequest) GetSourceUrl() OptString {
-	return s.SourceUrl
 }
 
 // GetStorageBytes returns the value of StorageBytes.
@@ -1168,29 +1583,14 @@ func (s *WorkerSandboxCreateRequest) GetUserGid() OptInt64 {
 	return s.UserGid
 }
 
+// GetUserName returns the value of UserName.
+func (s *WorkerSandboxCreateRequest) GetUserName() OptString {
+	return s.UserName
+}
+
 // GetUserUid returns the value of UserUid.
 func (s *WorkerSandboxCreateRequest) GetUserUid() OptInt64 {
 	return s.UserUid
-}
-
-// GetWorkingDirectory returns the value of WorkingDirectory.
-func (s *WorkerSandboxCreateRequest) GetWorkingDirectory() OptString {
-	return s.WorkingDirectory
-}
-
-// GetWorkspacePath returns the value of WorkspacePath.
-func (s *WorkerSandboxCreateRequest) GetWorkspacePath() OptString {
-	return s.WorkspacePath
-}
-
-// GetWorkspaceRef returns the value of WorkspaceRef.
-func (s *WorkerSandboxCreateRequest) GetWorkspaceRef() OptString {
-	return s.WorkspaceRef
-}
-
-// GetWorkspaceSource returns the value of WorkspaceSource.
-func (s *WorkerSandboxCreateRequest) GetWorkspaceSource() OptString {
-	return s.WorkspaceSource
 }
 
 // SetSchema sets the value of Schema.
@@ -1268,29 +1668,14 @@ func (s *WorkerSandboxCreateRequest) SetSandboxId(val string) {
 	s.SandboxId = val
 }
 
+// SetSource sets the value of Source.
+func (s *WorkerSandboxCreateRequest) SetSource(val OptGitSource) {
+	s.Source = val
+}
+
 // SetSourceCodeReferences sets the value of SourceCodeReferences.
 func (s *WorkerSandboxCreateRequest) SetSourceCodeReferences(val OptWorkerSandboxCreateRequestSourceCodeReferences) {
 	s.SourceCodeReferences = val
-}
-
-// SetSourceDirectory sets the value of SourceDirectory.
-func (s *WorkerSandboxCreateRequest) SetSourceDirectory(val OptString) {
-	s.SourceDirectory = val
-}
-
-// SetSourceRef sets the value of SourceRef.
-func (s *WorkerSandboxCreateRequest) SetSourceRef(val OptString) {
-	s.SourceRef = val
-}
-
-// SetSourceRefType sets the value of SourceRefType.
-func (s *WorkerSandboxCreateRequest) SetSourceRefType(val OptString) {
-	s.SourceRefType = val
-}
-
-// SetSourceUrl sets the value of SourceUrl.
-func (s *WorkerSandboxCreateRequest) SetSourceUrl(val OptString) {
-	s.SourceUrl = val
 }
 
 // SetStorageBytes sets the value of StorageBytes.
@@ -1303,29 +1688,14 @@ func (s *WorkerSandboxCreateRequest) SetUserGid(val OptInt64) {
 	s.UserGid = val
 }
 
+// SetUserName sets the value of UserName.
+func (s *WorkerSandboxCreateRequest) SetUserName(val OptString) {
+	s.UserName = val
+}
+
 // SetUserUid sets the value of UserUid.
 func (s *WorkerSandboxCreateRequest) SetUserUid(val OptInt64) {
 	s.UserUid = val
-}
-
-// SetWorkingDirectory sets the value of WorkingDirectory.
-func (s *WorkerSandboxCreateRequest) SetWorkingDirectory(val OptString) {
-	s.WorkingDirectory = val
-}
-
-// SetWorkspacePath sets the value of WorkspacePath.
-func (s *WorkerSandboxCreateRequest) SetWorkspacePath(val OptString) {
-	s.WorkspacePath = val
-}
-
-// SetWorkspaceRef sets the value of WorkspaceRef.
-func (s *WorkerSandboxCreateRequest) SetWorkspaceRef(val OptString) {
-	s.WorkspaceRef = val
-}
-
-// SetWorkspaceSource sets the value of WorkspaceSource.
-func (s *WorkerSandboxCreateRequest) SetWorkspaceSource(val OptString) {
-	s.WorkspaceSource = val
 }
 
 type WorkerSandboxCreateRequestEnv map[string]string
@@ -1339,12 +1709,12 @@ func (s *WorkerSandboxCreateRequestEnv) init() WorkerSandboxCreateRequestEnv {
 	return m
 }
 
-type WorkerSandboxCreateRequestSourceCodeReferences map[string]GitSourceReference
+type WorkerSandboxCreateRequestSourceCodeReferences map[string]GitSource
 
 func (s *WorkerSandboxCreateRequestSourceCodeReferences) init() WorkerSandboxCreateRequestSourceCodeReferences {
 	m := *s
 	if m == nil {
-		m = map[string]GitSourceReference{}
+		m = map[string]GitSource{}
 		*s = m
 	}
 	return m

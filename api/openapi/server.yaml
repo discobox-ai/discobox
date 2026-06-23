@@ -165,24 +165,14 @@ components:
                     type: string
                 runtimeState:
                     description: Initial non-secret provider runtime state
+                source:
+                    $ref: '#/components/schemas/GitSource'
+                    description: Primary Git source to materialize in the sandbox
                 sourceCodeReferences:
                     additionalProperties:
-                        $ref: '#/components/schemas/GitSourceReference'
-                    description: Map of sandbox directories to additional source code Git references
+                        $ref: '#/components/schemas/GitSource'
+                    description: Additional Git sources to materialize in the sandbox
                     type: object
-                sourceDirectory:
-                    description: Directory where the main source should be placed inside the sandbox
-                    type: string
-                sourceRef:
-                    description: Git source branch, tag, or commit
-                    type: string
-                sourceRefType:
-                    description: Git source ref type, such as branch, tag, or commit
-                    type: string
-                sourceUrl:
-                    description: Git source URL
-                    format: uri
-                    type: string
                 storageBytes:
                     description: Requested storage capacity in bytes
                     format: int64
@@ -191,13 +181,13 @@ components:
                     description: GID to use inside the sandbox
                     format: int64
                     type: integer
+                userName:
+                    description: Username to use inside the sandbox
+                    type: string
                 userUid:
                     description: UID to use inside the sandbox
                     format: int64
                     type: integer
-                workingDirectory:
-                    description: Working directory inside the sandbox
-                    type: string
             required:
                 - name
             type: object
@@ -275,25 +265,77 @@ components:
                     format: uri
                     type: string
             type: object
-        GitSourceReference:
+        GitSource:
+            additionalProperties: false
+            properties:
+                checkout:
+                    $ref: '#/components/schemas/GitSourceCheckout'
+                    description: Immutable checkout target and optional user-facing ref identity
+                destination:
+                    $ref: '#/components/schemas/GitSourceDestination'
+                    description: Sandbox destination paths for this source
+                kind:
+                    description: Source kind. Currently only git is supported.
+                    enum:
+                        - git
+                    type: string
+                localDirectory:
+                    description: Absolute local Git repository directory accessible to the worker
+                    type: string
+                slug:
+                    description: Stable URL-safe source slug used to address the source as a sandbox Git repository
+                    maxLength: 63
+                    pattern: ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$
+                    type: string
+                url:
+                    description: Remote Git source URL
+                    format: uri
+                    type: string
+                workspace:
+                    $ref: '#/components/schemas/GitSourceWorkspace'
+                    description: Workspace materialization mode for this source
+            required:
+                - kind
+            type: object
+        GitSourceCheckout:
+            additionalProperties: false
+            properties:
+                commit:
+                    description: Immutable commit SHA to materialize
+                    type: string
+                refName:
+                    description: User-facing branch, tag, or ref name to recreate in the sandbox
+                    type: string
+                refType:
+                    description: User-facing ref type, such as branch, tag, or commit
+                    type: string
+            type: object
+        GitSourceDestination:
             additionalProperties: false
             properties:
                 directory:
                     description: Directory where this source should be placed inside the sandbox
                     type: string
-                ref:
-                    description: Git source branch, tag, or commit
+                workingDirectory:
+                    description: Working directory inside the sandbox for this source
                     type: string
-                refType:
-                    description: Git source ref type, such as branch, tag, or commit
+            type: object
+        GitSourceWorkspace:
+            additionalProperties: false
+            properties:
+                baseCommit:
+                    description: Commit to checkout before applying dirty workspace snapshot changes
                     type: string
-                url:
-                    description: Git source URL
-                    format: uri
+                mode:
+                    default: clean
+                    description: Whether to materialize a clean checkout or restore dirty workspace changes
+                    enum:
+                        - clean
+                        - dirty
                     type: string
-            required:
-                - url
-                - directory
+                snapshotRef:
+                    description: Discobox-owned hidden Git ref containing dirty workspace snapshot data
+                    type: string
             type: object
         ListAgentConfigDefinitionsBody:
             additionalProperties: false
@@ -979,24 +1021,14 @@ components:
                     type: integer
                 runtimeState:
                     description: Non-secret provider runtime state
+                source:
+                    $ref: '#/components/schemas/GitSource'
+                    description: Primary Git source to materialize in the sandbox
                 sourceCodeReferences:
                     additionalProperties:
-                        $ref: '#/components/schemas/GitSourceReference'
-                    description: Map of sandbox directories to additional source code Git references
+                        $ref: '#/components/schemas/GitSource'
+                    description: Additional Git sources to materialize in the sandbox
                     type: object
-                sourceDirectory:
-                    description: Directory where the main source should be placed inside the sandbox
-                    type: string
-                sourceRef:
-                    description: Git source branch, tag, or commit
-                    type: string
-                sourceRefType:
-                    description: Git source ref type, such as branch, tag, or commit
-                    type: string
-                sourceUrl:
-                    description: Git source URL
-                    format: uri
-                    type: string
                 statusMessage:
                     description: Human-readable status detail
                     type: string
@@ -1012,15 +1044,15 @@ components:
                     description: GID to use inside the sandbox
                     format: int64
                     type: integer
+                userName:
+                    description: Username to use inside the sandbox
+                    type: string
                 userUid:
                     description: UID to use inside the sandbox
                     format: int64
                     type: integer
                 workerId:
                     description: Assigned worker ID, when scheduled through a worker-backed provider
-                    type: string
-                workingDirectory:
-                    description: Working directory inside the sandbox
                     type: string
             required:
                 - id

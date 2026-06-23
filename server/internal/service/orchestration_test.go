@@ -3,9 +3,11 @@ package service_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
+	serverapi "github.com/obot-platform/discobox/api/gen"
 	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/events"
@@ -67,6 +69,49 @@ func TestSandboxIntentCreatesGenerationScopedJobs(t *testing.T) {
 	}
 	if *started.LastJobID == *created.LastJobID {
 		t.Fatalf("start reused create job ID %s; want a generation-scoped job", *started.LastJobID)
+	}
+}
+
+func TestCreateSandboxDefaultsGitSourceSlugs(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSandboxTestService(t, nil)
+
+	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+		Name: "alpha",
+		Source: serverapi.NewOptGitSource(serverapi.GitSource{
+			Kind: serverapi.GitSourceKindGit,
+		}),
+		SourceCodeReferences: serverapi.NewOptCreateSandboxBodySourceCodeReferences(serverapi.CreateSandboxBodySourceCodeReferences{
+			"/workspace/UI": {
+				Kind: serverapi.GitSourceKindGit,
+			},
+			"workspace ui": {
+				Kind: serverapi.GitSourceKindGit,
+			},
+			"tools": {
+				Kind: serverapi.GitSourceKindGit,
+				Slug: serverapi.NewOptString("custom-tools"),
+			},
+		}),
+	})
+	if err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+
+	if created.Source == nil || created.Source.Slug == nil || *created.Source.Slug != "primary" {
+		t.Fatalf("primary slug = %#v, want primary", created.Source)
+	}
+	ui := created.SourceCodeReferences["/workspace/UI"]
+	if ui.Slug == nil || *ui.Slug != "workspace-ui" {
+		t.Fatalf("ui ref slug = %v, want workspace-ui", ui.Slug)
+	}
+	colliding := created.SourceCodeReferences["workspace ui"]
+	if colliding.Slug == nil || *colliding.Slug == "workspace-ui" || !strings.HasPrefix(*colliding.Slug, "workspace-ui-") {
+		t.Fatalf("colliding ref slug = %v, want deterministic workspace-ui suffix", colliding.Slug)
+	}
+	tools := created.SourceCodeReferences["tools"]
+	if tools.Slug == nil || *tools.Slug != "custom-tools" {
+		t.Fatalf("tools ref slug = %v, want custom-tools", tools.Slug)
 	}
 }
 

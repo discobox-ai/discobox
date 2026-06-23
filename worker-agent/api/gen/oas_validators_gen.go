@@ -60,6 +60,127 @@ func (s *ErrorModelStatusCode) Validate() error {
 	return nil
 }
 
+func (s *GitSource) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Kind.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "kind",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Slug.Get(); ok {
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     0,
+					MinLengthSet:  false,
+					MaxLength:     63,
+					MaxLengthSet:  true,
+					Email:         false,
+					Hostname:      false,
+					Regex:         regexMap["^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"],
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(value)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "slug",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Workspace.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "workspace",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s GitSourceKind) Validate() error {
+	switch s {
+	case "git":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
+func (s *GitSourceWorkspace) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Mode.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "mode",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s GitSourceWorkspaceMode) Validate() error {
+	switch s {
+	case "clean":
+		return nil
+	case "dirty":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *ResourceConfig) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -125,6 +246,64 @@ func (s *WorkerSandboxCreateRequest) Validate() error {
 			Error: err,
 		})
 	}
+	if err := func() error {
+		if value, ok := s.Source.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "source",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.SourceCodeReferences.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "sourceCodeReferences",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s WorkerSandboxCreateRequestSourceCodeReferences) Validate() error {
+	var failures []validate.FieldError
+	for key, elem := range s {
+		if err := func() error {
+			if err := elem.Validate(); err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			failures = append(failures, validate.FieldError{
+				Name:  key,
+				Error: err,
+			})
+		}
+	}
+
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}

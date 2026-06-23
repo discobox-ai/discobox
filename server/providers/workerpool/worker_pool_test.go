@@ -266,9 +266,14 @@ func TestWorkerProviderCreateCallsWorkerAgentRuntime(t *testing.T) {
 		ProviderInstanceID: "provider-1",
 		Image:              sandbox.ImageRef{Name: "alpine:3.20"},
 		Env:                map[string]string{"HELLO": "world"},
-		WorkingDirectory:   "/workspace",
-		CPUVCPUs:           2,
-		MemoryBytes:        128 * 1024 * 1024,
+		Source: &model.GitSource{
+			Kind: "git",
+			Destination: &model.GitSourceDestination{
+				WorkingDirectory: ptrString("/workspace"),
+			},
+		},
+		CPUVCPUs:    2,
+		MemoryBytes: 128 * 1024 * 1024,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)

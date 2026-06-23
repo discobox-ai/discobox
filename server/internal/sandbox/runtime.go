@@ -92,17 +92,11 @@ type CreateOptions struct {
 	AgentModelServiceTier    *string
 	AgentModelReasoningLevel *string
 	Prompt                   *string
-	SourceURL                string
-	SourceRef                string
-	SourceRefType            string
-	SourceDirectory          string
+	Source                   *model.GitSource
 	SourceCodeReferences     model.SourceCodeReferences
+	UserName                 *string
 	UserUID                  *int
 	UserGID                  *int
-	WorkspacePath            string
-	WorkspaceSource          string
-	WorkspaceRef             string
-	WorkingDirectory         string
 	AgentServerURL           string
 	OAuthRedirectBase        string
 	Resources                ResourceConfig

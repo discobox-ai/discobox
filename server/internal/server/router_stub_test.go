@@ -126,6 +126,11 @@ func (s *routerTestServices) CreateSandbox(_ context.Context, projectID string, 
 	}
 
 	now := time.Now().UTC()
+	var source *model.GitSource
+	if inputSource, ok := input.Source.Get(); ok {
+		converted := services.GitSourceToModel(inputSource)
+		source = &converted
+	}
 	sandbox := model.Sandbox{
 		ID:                       id.NewString(),
 		ProjectID:                s.project.ID,
@@ -139,12 +144,9 @@ func (s *routerTestServices) CreateSandbox(_ context.Context, projectID string, 
 		AgentModelServiceTier:    services.OptStringPtr(input.AgentModelServiceTier),
 		AgentModelReasoningLevel: services.OptStringPtr(input.AgentModelReasoningLevel),
 		Prompt:                   services.OptStringPtr(input.Prompt),
-		SourceURL:                services.OptURIStringPtr(input.SourceUrl),
-		SourceRef:                services.OptStringPtr(input.SourceRef),
-		SourceRefType:            services.OptStringPtr(input.SourceRefType),
-		SourceDirectory:          services.OptStringPtr(input.SourceDirectory),
-		WorkingDirectory:         services.OptStringPtr(input.WorkingDirectory),
+		Source:                   source,
 		SourceCodeReferences:     stubSourceCodeReferences(input.SourceCodeReferences),
+		UserName:                 services.OptStringPtr(input.UserName),
 		UserUID:                  services.OptIntPtr(input.UserUid),
 		UserGID:                  services.OptIntPtr(input.UserGid),
 		CreatedAt:                now,
@@ -528,11 +530,7 @@ func stubSourceCodeReferences(input services.OptCreateSandboxBodySourceCodeRefer
 	if !ok {
 		return nil
 	}
-	out, err := services.Convert[model.SourceCodeReferences](refs)
-	if err != nil {
-		return nil
-	}
-	return out
+	return services.SourceCodeReferencesToModel(refs)
 }
 
 func (s *routerTestServices) projectWithSandboxes() model.Project {

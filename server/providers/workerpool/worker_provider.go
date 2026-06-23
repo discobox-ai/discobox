@@ -537,38 +537,23 @@ func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions
 	if opts.Prompt != nil {
 		out.Prompt = workerclient.NewOptString(*opts.Prompt)
 	}
-	if opts.SourceURL != "" {
-		out.SourceUrl = workerclient.NewOptString(opts.SourceURL)
-	}
-	if opts.SourceRef != "" {
-		out.SourceRef = workerclient.NewOptString(opts.SourceRef)
-	}
-	if opts.SourceRefType != "" {
-		out.SourceRefType = workerclient.NewOptString(opts.SourceRefType)
-	}
-	if opts.SourceDirectory != "" {
-		out.SourceDirectory = workerclient.NewOptString(opts.SourceDirectory)
+	if opts.Source != nil {
+		workerSource, err := workerGitSource(*opts.Source)
+		if err == nil {
+			out.Source = workerclient.NewOptGitSource(workerSource)
+		}
 	}
 	if opts.SourceCodeReferences != nil {
 		out.SourceCodeReferences = workerclient.NewOptWorkerSandboxCreateRequestSourceCodeReferences(workerSourceCodeReferences(opts.SourceCodeReferences))
+	}
+	if opts.UserName != nil {
+		out.UserName = workerclient.NewOptString(*opts.UserName)
 	}
 	if opts.UserUID != nil {
 		out.UserUid = workerclient.NewOptInt64(int64(*opts.UserUID))
 	}
 	if opts.UserGID != nil {
 		out.UserGid = workerclient.NewOptInt64(int64(*opts.UserGID))
-	}
-	if opts.WorkspacePath != "" {
-		out.WorkspacePath = workerclient.NewOptString(opts.WorkspacePath)
-	}
-	if opts.WorkspaceSource != "" {
-		out.WorkspaceSource = workerclient.NewOptString(opts.WorkspaceSource)
-	}
-	if opts.WorkspaceRef != "" {
-		out.WorkspaceRef = workerclient.NewOptString(opts.WorkspaceRef)
-	}
-	if opts.WorkingDirectory != "" {
-		out.WorkingDirectory = workerclient.NewOptString(opts.WorkingDirectory)
 	}
 	if opts.Resources != (sandbox.ResourceConfig{}) {
 		out.Resources = workerclient.NewOptResourceConfig(workerResourceConfig(opts.Resources))
@@ -597,23 +582,67 @@ func workerResourceConfig(cfg sandbox.ResourceConfig) workerapimodel.ResourceCon
 func workerSourceCodeReferences(in model.SourceCodeReferences) workerclient.WorkerSandboxCreateRequestSourceCodeReferences {
 	out := make(workerclient.WorkerSandboxCreateRequestSourceCodeReferences, len(in))
 	for key, ref := range in {
-		workerRef := workerapimodel.GitSourceReference{
-			Directory: ref.Directory,
-		}
-		if ref.URL != "" {
-			if parsed, err := url.Parse(ref.URL); err == nil {
-				workerRef.URL = *parsed
-			}
-		}
-		if ref.Ref != nil {
-			workerRef.Ref = workerclient.NewOptString(*ref.Ref)
-		}
-		if ref.RefType != nil {
-			workerRef.RefType = workerclient.NewOptString(*ref.RefType)
+		workerRef, err := workerGitSource(ref)
+		if err != nil {
+			continue
 		}
 		out[key] = workerRef
 	}
 	return out
+}
+
+func workerGitSource(in model.GitSource) (workerapimodel.GitSource, error) {
+	out := workerapimodel.GitSource{Kind: workerclient.GitSourceKind(in.Kind)}
+	if out.Kind == "" {
+		out.Kind = workerclient.GitSourceKindGit
+	}
+	if in.URL != nil && *in.URL != "" {
+		parsed, err := url.Parse(*in.URL)
+		if err != nil {
+			return out, err
+		}
+		out.URL = workerclient.NewOptURI(*parsed)
+	}
+	if in.LocalDirectory != nil {
+		out.LocalDirectory = workerclient.NewOptString(*in.LocalDirectory)
+	}
+	if in.Checkout != nil {
+		checkout := workerapimodel.GitSourceCheckout{}
+		if in.Checkout.Commit != nil {
+			checkout.Commit = workerclient.NewOptString(*in.Checkout.Commit)
+		}
+		if in.Checkout.RefName != nil {
+			checkout.RefName = workerclient.NewOptString(*in.Checkout.RefName)
+		}
+		if in.Checkout.RefType != nil {
+			checkout.RefType = workerclient.NewOptString(*in.Checkout.RefType)
+		}
+		out.Checkout = workerclient.NewOptGitSourceCheckout(checkout)
+	}
+	if in.Workspace != nil {
+		workspace := workerapimodel.GitSourceWorkspace{}
+		if in.Workspace.Mode != "" {
+			workspace.Mode = workerclient.NewOptGitSourceWorkspaceMode(workerclient.GitSourceWorkspaceMode(in.Workspace.Mode))
+		}
+		if in.Workspace.SnapshotRef != nil {
+			workspace.SnapshotRef = workerclient.NewOptString(*in.Workspace.SnapshotRef)
+		}
+		if in.Workspace.BaseCommit != nil {
+			workspace.BaseCommit = workerclient.NewOptString(*in.Workspace.BaseCommit)
+		}
+		out.Workspace = workerclient.NewOptGitSourceWorkspace(workspace)
+	}
+	if in.Destination != nil {
+		destination := workerapimodel.GitSourceDestination{}
+		if in.Destination.Directory != nil {
+			destination.Directory = workerclient.NewOptString(*in.Destination.Directory)
+		}
+		if in.Destination.WorkingDirectory != nil {
+			destination.WorkingDirectory = workerclient.NewOptString(*in.Destination.WorkingDirectory)
+		}
+		out.Destination = workerclient.NewOptGitSourceDestination(destination)
+	}
+	return out, nil
 }
 
 func sandboxFromWorker(in *workerapimodel.Sandbox, workerID string) *sandbox.Sandbox {

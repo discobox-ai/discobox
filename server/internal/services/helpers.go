@@ -2,6 +2,13 @@ package services
 
 import (
 	"encoding/json"
+	"fmt"
+	"hash/fnv"
+	"sort"
+	"strings"
+
+	serverapi "github.com/obot-platform/discobox/api/gen"
+	"github.com/obot-platform/discobox/server/internal/model"
 )
 
 func Convert[To any](from any) (To, error) {
@@ -37,6 +44,135 @@ func OptIntPtr(value OptInt64) *int {
 		return &i
 	}
 	return nil
+}
+
+func GitSourceToModel(input serverapi.GitSource) model.GitSource {
+	out := model.GitSource{Kind: string(input.Kind)}
+	if value, ok := input.Slug.Get(); ok {
+		out.Slug = &value
+	}
+	if urlValue, ok := input.URL.Get(); ok {
+		value := urlValue.String()
+		out.URL = &value
+	}
+	if value, ok := input.LocalDirectory.Get(); ok {
+		out.LocalDirectory = &value
+	}
+	if checkout, ok := input.Checkout.Get(); ok {
+		out.Checkout = &model.GitSourceCheckout{}
+		if value, ok := checkout.Commit.Get(); ok {
+			out.Checkout.Commit = &value
+		}
+		if value, ok := checkout.RefName.Get(); ok {
+			out.Checkout.RefName = &value
+		}
+		if value, ok := checkout.RefType.Get(); ok {
+			out.Checkout.RefType = &value
+		}
+	}
+	if workspace, ok := input.Workspace.Get(); ok {
+		out.Workspace = &model.GitSourceWorkspace{}
+		if value, ok := workspace.Mode.Get(); ok {
+			mode := string(value)
+			out.Workspace.Mode = mode
+		}
+		if value, ok := workspace.SnapshotRef.Get(); ok {
+			out.Workspace.SnapshotRef = &value
+		}
+		if value, ok := workspace.BaseCommit.Get(); ok {
+			out.Workspace.BaseCommit = &value
+		}
+	}
+	if destination, ok := input.Destination.Get(); ok {
+		out.Destination = &model.GitSourceDestination{}
+		if value, ok := destination.Directory.Get(); ok {
+			out.Destination.Directory = &value
+		}
+		if value, ok := destination.WorkingDirectory.Get(); ok {
+			out.Destination.WorkingDirectory = &value
+		}
+	}
+	return out
+}
+
+func SourceCodeReferencesToModel(input serverapi.CreateSandboxBodySourceCodeReferences) model.SourceCodeReferences {
+	out := make(model.SourceCodeReferences, len(input))
+	for key, source := range input {
+		out[key] = GitSourceToModel(source)
+	}
+	return out
+}
+
+func DefaultGitSourceSlugs(primary *model.GitSource, refs model.SourceCodeReferences) {
+	used := map[string]struct{}{}
+	if primary != nil {
+		primary.Slug = defaultGitSourceSlug(primary.Slug, "primary", used)
+	}
+
+	keys := make([]string, 0, len(refs))
+	for key := range refs {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		source := refs[key]
+		source.Slug = defaultGitSourceSlug(source.Slug, key, used)
+		refs[key] = source
+	}
+}
+
+func defaultGitSourceSlug(existing *string, seed string, used map[string]struct{}) *string {
+	base := slugify(seed)
+	if existing != nil && strings.TrimSpace(*existing) != "" {
+		base = slugify(*existing)
+	}
+	base = trimSlugBase(base, 63)
+	if base == "" {
+		base = "source"
+	}
+	slug := base
+	if _, ok := used[slug]; ok {
+		slug = fmt.Sprintf("%s-%08x", trimSlugBase(base, 54), stableSlugHash(seed))
+		for i := 2; ; i++ {
+			if _, ok := used[slug]; !ok {
+				break
+			}
+			slug = fmt.Sprintf("%s-%d", trimSlugBase(base, 61), i)
+		}
+	}
+	used[slug] = struct{}{}
+	return &slug
+}
+
+func slugify(value string) string {
+	var b strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(strings.TrimSpace(value)) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+			lastDash = false
+			continue
+		}
+		if b.Len() > 0 && !lastDash {
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+func stableSlugHash(value string) uint32 {
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(value))
+	return h.Sum32()
+}
+
+func trimSlugBase(value string, maxLen int) string {
+	value = strings.Trim(value, "-")
+	if len(value) <= maxLen {
+		return value
+	}
+	return strings.Trim(value[:maxLen], "-")
 }
 
 func OptStringValue(value OptString) (string, bool) {

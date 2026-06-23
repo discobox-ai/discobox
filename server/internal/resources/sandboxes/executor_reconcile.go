@@ -415,25 +415,9 @@ func (r *SandboxReconcileExecutor) createOptionsFromSandbox(sb *model.Sandbox) C
 	opts.CPUVCPUs = sb.CPUVCPUs
 	opts.MemoryBytes = sb.MemoryBytes
 	opts.StorageBytes = sb.StorageBytes
-	if sb.SourceURL != nil {
-		opts.SourceURL = *sb.SourceURL
-		opts.WorkspaceSource = *sb.SourceURL
-	}
-	if sb.SourceRef != nil {
-		opts.SourceRef = *sb.SourceRef
-		opts.WorkspaceRef = *sb.SourceRef
-	}
-	if sb.SourceRefType != nil {
-		opts.SourceRefType = *sb.SourceRefType
-	}
-	if sb.SourceDirectory != nil {
-		opts.SourceDirectory = *sb.SourceDirectory
-		opts.WorkspacePath = *sb.SourceDirectory
-	}
-	if sb.WorkingDirectory != nil {
-		opts.WorkingDirectory = *sb.WorkingDirectory
-	}
+	opts.Source = sb.Source
 	opts.SourceCodeReferences = sb.SourceCodeReferences
+	opts.UserName = sb.UserName
 	opts.UserUID = sb.UserUID
 	opts.UserGID = sb.UserGID
 	return opts

@@ -19,7 +19,8 @@ func TestCreateSandboxBodyIncludesAgentLaunchFields(t *testing.T) {
 		sourceRefType:            "branch",
 		sourceDirectory:          "/workspace/repo",
 		workingDirectory:         "/workspace/repo",
-		sourceCodeReferences:     `{"lib":{"url":"https://example.com/lib.git","ref":"abc123","refType":"commit","directory":"/workspace/lib"}}`,
+		sourceCodeReferences:     `{"lib":{"kind":"git","url":"https://example.com/lib.git","checkout":{"commit":"abc123","refType":"commit"},"destination":{"directory":"/workspace/lib"}}}`,
+		userName:                 "darren",
 		userUID:                  1000,
 		userGID:                  1000,
 	})
@@ -29,18 +30,33 @@ func TestCreateSandboxBodyIncludesAgentLaunchFields(t *testing.T) {
 	if body.AgentName.Value != "Codex" || body.AgentModel.Value != "gpt-5.1-codex-max" || body.Prompt.Value != "implement this" {
 		t.Fatalf("agent fields = %#v", body)
 	}
-	if body.SourceDirectory.Value != "/workspace/repo" || body.WorkingDirectory.Value != "/workspace/repo" {
-		t.Fatalf("directories = source %q working %q", body.SourceDirectory.Value, body.WorkingDirectory.Value)
+	source, ok := body.Source.Get()
+	if !ok {
+		t.Fatal("expected source")
 	}
-	if body.UserUid.Value != 1000 || body.UserGid.Value != 1000 {
-		t.Fatalf("uid/gid = %d/%d, want 1000/1000", body.UserUid.Value, body.UserGid.Value)
+	if source.Kind != "git" {
+		t.Fatalf("source kind = %q, want git", source.Kind)
+	}
+	destination, ok := source.Destination.Get()
+	if !ok {
+		t.Fatal("expected source destination")
+	}
+	if destination.Directory.Value != "/workspace/repo" || destination.WorkingDirectory.Value != "/workspace/repo" {
+		t.Fatalf("directories = source %q working %q", destination.Directory.Value, destination.WorkingDirectory.Value)
+	}
+	if body.UserName.Value != "darren" || body.UserUid.Value != 1000 || body.UserGid.Value != 1000 {
+		t.Fatalf("user = %s %d/%d, want darren 1000/1000", body.UserName.Value, body.UserUid.Value, body.UserGid.Value)
 	}
 	ref, ok := body.SourceCodeReferences.Value["lib"]
 	if !ok {
 		t.Fatal("expected lib source reference")
 	}
-	if ref.Directory != "/workspace/lib" {
-		t.Fatalf("ref directory = %q, want /workspace/lib", ref.Directory)
+	refDestination, ok := ref.Destination.Get()
+	if !ok {
+		t.Fatal("expected lib destination")
+	}
+	if refDestination.Directory.Value != "/workspace/lib" {
+		t.Fatalf("ref directory = %q, want /workspace/lib", refDestination.Directory.Value)
 	}
 }
 

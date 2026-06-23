@@ -262,16 +262,39 @@ type AgentConfigDefinition struct {
 	Capabilities   json.RawMessage `json:"capabilities,omitempty" doc:"Agent capabilities or feature metadata"`
 }
 
-// GitSourceReference describes a Git source to clone into a sandbox path.
-type GitSourceReference struct {
-	URL       string  `json:"url" doc:"Git source URL" format:"uri"`
-	Ref       *string `json:"ref,omitempty" doc:"Git source branch, tag, or commit"`
-	RefType   *string `json:"refType,omitempty" doc:"Git source ref type, such as branch, tag, or commit"`
-	Directory string  `json:"directory" doc:"Directory where this source should be placed inside the sandbox"`
+// GitSource describes a Git source to materialize into a sandbox.
+type GitSource struct {
+	Kind           string                `json:"kind" doc:"Source kind. Currently only git is supported." enum:"git"`
+	Slug           *string               `json:"slug,omitempty" doc:"Stable URL-safe source slug used to address the source as a sandbox Git repository"`
+	URL            *string               `json:"url,omitempty" doc:"Remote Git source URL" format:"uri"`
+	LocalDirectory *string               `json:"localDirectory,omitempty" doc:"Absolute local Git repository directory accessible to the worker"`
+	Checkout       *GitSourceCheckout    `json:"checkout,omitempty" doc:"Immutable checkout target and optional user-facing ref identity"`
+	Workspace      *GitSourceWorkspace   `json:"workspace,omitempty" doc:"Workspace materialization mode for this source"`
+	Destination    *GitSourceDestination `json:"destination,omitempty" doc:"Sandbox destination paths for this source"`
+}
+
+// GitSourceCheckout identifies the immutable checkout and user-facing ref.
+type GitSourceCheckout struct {
+	Commit  *string `json:"commit,omitempty" doc:"Immutable commit SHA to materialize"`
+	RefName *string `json:"refName,omitempty" doc:"User-facing branch, tag, or ref name to recreate in the sandbox"`
+	RefType *string `json:"refType,omitempty" doc:"User-facing ref type, such as branch, tag, or commit"`
+}
+
+// GitSourceWorkspace describes clean or dirty workspace materialization.
+type GitSourceWorkspace struct {
+	Mode        string  `json:"mode,omitempty" doc:"Whether to materialize a clean checkout or restore dirty workspace changes" enum:"clean,dirty"`
+	SnapshotRef *string `json:"snapshotRef,omitempty" doc:"Discobox-owned hidden Git ref containing dirty workspace snapshot data"`
+	BaseCommit  *string `json:"baseCommit,omitempty" doc:"Commit to checkout before applying dirty workspace snapshot changes"`
+}
+
+// GitSourceDestination describes where a source is placed inside the sandbox.
+type GitSourceDestination struct {
+	Directory        *string `json:"directory,omitempty" doc:"Directory where this source should be placed inside the sandbox"`
+	WorkingDirectory *string `json:"workingDirectory,omitempty" doc:"Working directory inside the sandbox for this source"`
 }
 
 // SourceCodeReferences maps sandbox destination directories to Git sources.
-type SourceCodeReferences map[string]GitSourceReference
+type SourceCodeReferences map[string]GitSource
 
 // Sandbox is the managed runtime/session unit.
 type Sandbox struct {
@@ -289,12 +312,9 @@ type Sandbox struct {
 	AgentModelServiceTier    *string              `gorm:"column:agent_model_service_tier;type:text" json:"agentModelServiceTier,omitempty" doc:"Model service tier the agent should use"`
 	AgentModelReasoningLevel *string              `gorm:"column:agent_model_reasoning_level;type:text" json:"agentModelReasoningLevel,omitempty" doc:"Model reasoning level the agent should use"`
 	Prompt                   *string              `gorm:"column:prompt;type:text" json:"prompt,omitempty" doc:"Prompt the agent should run"`
-	SourceURL                *string              `gorm:"column:source_url;type:text" json:"sourceUrl,omitempty" doc:"Git source URL" format:"uri"`
-	SourceRef                *string              `gorm:"column:source_ref;type:text" json:"sourceRef,omitempty" doc:"Git source branch, tag, or commit"`
-	SourceRefType            *string              `gorm:"column:source_ref_type;type:text" json:"sourceRefType,omitempty" doc:"Git source ref type, such as branch, tag, or commit"`
-	SourceDirectory          *string              `gorm:"column:source_directory;type:text" json:"sourceDirectory,omitempty" doc:"Directory where the main source should be placed inside the sandbox"`
-	WorkingDirectory         *string              `gorm:"column:working_directory;type:text" json:"workingDirectory,omitempty" doc:"Working directory inside the sandbox"`
-	SourceCodeReferences     SourceCodeReferences `gorm:"column:source_code_references;type:text;serializer:json" json:"sourceCodeReferences,omitempty" doc:"Map of sandbox directories to additional source code Git references"`
+	Source                   *GitSource           `gorm:"column:source;type:text;serializer:json" json:"source,omitempty" doc:"Primary Git source to materialize in the sandbox"`
+	SourceCodeReferences     SourceCodeReferences `gorm:"column:source_code_references;type:text;serializer:json" json:"sourceCodeReferences,omitempty" doc:"Additional Git sources to materialize in the sandbox"`
+	UserName                 *string              `gorm:"column:user_name;type:text" json:"userName,omitempty" doc:"Username to use inside the sandbox"`
 	UserUID                  *int                 `gorm:"column:user_uid" json:"userUid,omitempty" doc:"UID to use inside the sandbox"`
 	UserGID                  *int                 `gorm:"column:user_gid" json:"userGid,omitempty" doc:"GID to use inside the sandbox"`
 	CPUVCPUs                 float64              `gorm:"column:cpu_vcpus;not null;default:1" json:"cpuVcpus" doc:"Requested CPU capacity in vCPUs"`

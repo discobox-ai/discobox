@@ -71,25 +71,63 @@ components:
                     format: uri
                     type: string
             type: object
-        GitSourceReference:
+        GitSource:
+            additionalProperties: false
+            properties:
+                checkout:
+                    "$ref": "#/components/schemas/GitSourceCheckout"
+                destination:
+                    "$ref": "#/components/schemas/GitSourceDestination"
+                kind:
+                    enum:
+                    - git
+                    type: string
+                localDirectory:
+                    type: string
+                slug:
+                    description: Stable URL-safe source slug used to address the source as a sandbox Git repository
+                    maxLength: 63
+                    pattern: ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$
+                    type: string
+                url:
+                    format: uri
+                    type: string
+                workspace:
+                    "$ref": "#/components/schemas/GitSourceWorkspace"
+            required:
+            - kind
+            type: object
+        GitSourceCheckout:
+            additionalProperties: false
+            properties:
+                commit:
+                    type: string
+                refName:
+                    type: string
+                refType:
+                    type: string
+            type: object
+        GitSourceDestination:
             additionalProperties: false
             properties:
                 directory:
-                    description: Directory where this source should be placed inside the sandbox
                     type: string
-                ref:
-                    description: Git source branch, tag, or commit
+                workingDirectory:
                     type: string
-                refType:
-                    description: Git source ref type, such as branch, tag, or commit
+            type: object
+        GitSourceWorkspace:
+            additionalProperties: false
+            properties:
+                baseCommit:
                     type: string
-                url:
-                    description: Git source URL
-                    format: uri
+                mode:
+                    default: clean
+                    enum:
+                    - clean
+                    - dirty
                     type: string
-            required:
-            - url
-            - directory
+                snapshotRef:
+                    type: string
             type: object
         ResourceConfig:
             additionalProperties: false
@@ -209,35 +247,23 @@ components:
                     "$ref": "#/components/schemas/ResourceConfig"
                 sandboxId:
                     type: string
+                source:
+                    "$ref": "#/components/schemas/GitSource"
                 sourceCodeReferences:
                     additionalProperties:
-                        "$ref": "#/components/schemas/GitSourceReference"
+                        "$ref": "#/components/schemas/GitSource"
                     type: object
-                sourceDirectory:
-                    type: string
-                sourceRef:
-                    type: string
-                sourceRefType:
-                    type: string
-                sourceUrl:
-                    type: string
                 storageBytes:
                     format: int64
                     type: integer
                 userGid:
                     format: int64
                     type: integer
+                userName:
+                    type: string
                 userUid:
                     format: int64
                     type: integer
-                workingDirectory:
-                    type: string
-                workspacePath:
-                    type: string
-                workspaceRef:
-                    type: string
-                workspaceSource:
-                    type: string
             required:
             - sandboxId
             type: object

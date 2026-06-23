@@ -425,107 +425,156 @@ func (s *ErrorModel) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
-func (s *GitSourceReference) Encode(e *jx.Encoder) {
+func (s *GitSource) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
 	e.ObjEnd()
 }
 
 // encodeFields encodes fields.
-func (s *GitSourceReference) encodeFields(e *jx.Encoder) {
+func (s *GitSource) encodeFields(e *jx.Encoder) {
 	{
-		e.FieldStart("directory")
-		e.Str(s.Directory)
-	}
-	{
-		if s.Ref.Set {
-			e.FieldStart("ref")
-			s.Ref.Encode(e)
+		if s.Checkout.Set {
+			e.FieldStart("checkout")
+			s.Checkout.Encode(e)
 		}
 	}
 	{
-		if s.RefType.Set {
-			e.FieldStart("refType")
-			s.RefType.Encode(e)
+		if s.Destination.Set {
+			e.FieldStart("destination")
+			s.Destination.Encode(e)
 		}
 	}
 	{
-		e.FieldStart("url")
-		json.EncodeURI(e, s.URL)
+		e.FieldStart("kind")
+		s.Kind.Encode(e)
+	}
+	{
+		if s.LocalDirectory.Set {
+			e.FieldStart("localDirectory")
+			s.LocalDirectory.Encode(e)
+		}
+	}
+	{
+		if s.Slug.Set {
+			e.FieldStart("slug")
+			s.Slug.Encode(e)
+		}
+	}
+	{
+		if s.URL.Set {
+			e.FieldStart("url")
+			s.URL.Encode(e)
+		}
+	}
+	{
+		if s.Workspace.Set {
+			e.FieldStart("workspace")
+			s.Workspace.Encode(e)
+		}
 	}
 }
 
-var jsonFieldsNameOfGitSourceReference = [4]string{
-	0: "directory",
-	1: "ref",
-	2: "refType",
-	3: "url",
+var jsonFieldsNameOfGitSource = [7]string{
+	0: "checkout",
+	1: "destination",
+	2: "kind",
+	3: "localDirectory",
+	4: "slug",
+	5: "url",
+	6: "workspace",
 }
 
-// Decode decodes GitSourceReference from json.
-func (s *GitSourceReference) Decode(d *jx.Decoder) error {
+// Decode decodes GitSource from json.
+func (s *GitSource) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode GitSourceReference to nil")
+		return errors.New("invalid: unable to decode GitSource to nil")
 	}
 	var requiredBitSet [1]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
-		case "directory":
-			requiredBitSet[0] |= 1 << 0
+		case "checkout":
 			if err := func() error {
-				v, err := d.Str()
-				s.Directory = string(v)
-				if err != nil {
+				s.Checkout.Reset()
+				if err := s.Checkout.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"directory\"")
+				return errors.Wrap(err, "decode field \"checkout\"")
 			}
-		case "ref":
+		case "destination":
 			if err := func() error {
-				s.Ref.Reset()
-				if err := s.Ref.Decode(d); err != nil {
+				s.Destination.Reset()
+				if err := s.Destination.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"ref\"")
+				return errors.Wrap(err, "decode field \"destination\"")
 			}
-		case "refType":
+		case "kind":
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
-				s.RefType.Reset()
-				if err := s.RefType.Decode(d); err != nil {
+				if err := s.Kind.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"refType\"")
+				return errors.Wrap(err, "decode field \"kind\"")
+			}
+		case "localDirectory":
+			if err := func() error {
+				s.LocalDirectory.Reset()
+				if err := s.LocalDirectory.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"localDirectory\"")
+			}
+		case "slug":
+			if err := func() error {
+				s.Slug.Reset()
+				if err := s.Slug.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"slug\"")
 			}
 		case "url":
-			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
-				v, err := json.DecodeURI(d)
-				s.URL = v
-				if err != nil {
+				s.URL.Reset()
+				if err := s.URL.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"url\"")
 			}
+		case "workspace":
+			if err := func() error {
+				s.Workspace.Reset()
+				if err := s.Workspace.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workspace\"")
+			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
 		return nil
 	}); err != nil {
-		return errors.Wrap(err, "decode GitSourceReference")
+		return errors.Wrap(err, "decode GitSource")
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00001001,
+		0b00000100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -537,8 +586,8 @@ func (s *GitSourceReference) Decode(d *jx.Decoder) error {
 				bitIdx := bits.TrailingZeros8(result)
 				fieldIdx := i*8 + bitIdx
 				var name string
-				if fieldIdx < len(jsonFieldsNameOfGitSourceReference) {
-					name = jsonFieldsNameOfGitSourceReference[fieldIdx]
+				if fieldIdx < len(jsonFieldsNameOfGitSource) {
+					name = jsonFieldsNameOfGitSource[fieldIdx]
 				} else {
 					name = strconv.Itoa(fieldIdx)
 				}
@@ -559,14 +608,367 @@ func (s *GitSourceReference) Decode(d *jx.Decoder) error {
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s *GitSourceReference) MarshalJSON() ([]byte, error) {
+func (s *GitSource) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *GitSourceReference) UnmarshalJSON(data []byte) error {
+func (s *GitSource) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *GitSourceCheckout) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *GitSourceCheckout) encodeFields(e *jx.Encoder) {
+	{
+		if s.Commit.Set {
+			e.FieldStart("commit")
+			s.Commit.Encode(e)
+		}
+	}
+	{
+		if s.RefName.Set {
+			e.FieldStart("refName")
+			s.RefName.Encode(e)
+		}
+	}
+	{
+		if s.RefType.Set {
+			e.FieldStart("refType")
+			s.RefType.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfGitSourceCheckout = [3]string{
+	0: "commit",
+	1: "refName",
+	2: "refType",
+}
+
+// Decode decodes GitSourceCheckout from json.
+func (s *GitSourceCheckout) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode GitSourceCheckout to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "commit":
+			if err := func() error {
+				s.Commit.Reset()
+				if err := s.Commit.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"commit\"")
+			}
+		case "refName":
+			if err := func() error {
+				s.RefName.Reset()
+				if err := s.RefName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"refName\"")
+			}
+		case "refType":
+			if err := func() error {
+				s.RefType.Reset()
+				if err := s.RefType.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"refType\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode GitSourceCheckout")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *GitSourceCheckout) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *GitSourceCheckout) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *GitSourceDestination) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *GitSourceDestination) encodeFields(e *jx.Encoder) {
+	{
+		if s.Directory.Set {
+			e.FieldStart("directory")
+			s.Directory.Encode(e)
+		}
+	}
+	{
+		if s.WorkingDirectory.Set {
+			e.FieldStart("workingDirectory")
+			s.WorkingDirectory.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfGitSourceDestination = [2]string{
+	0: "directory",
+	1: "workingDirectory",
+}
+
+// Decode decodes GitSourceDestination from json.
+func (s *GitSourceDestination) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode GitSourceDestination to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "directory":
+			if err := func() error {
+				s.Directory.Reset()
+				if err := s.Directory.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"directory\"")
+			}
+		case "workingDirectory":
+			if err := func() error {
+				s.WorkingDirectory.Reset()
+				if err := s.WorkingDirectory.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workingDirectory\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode GitSourceDestination")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *GitSourceDestination) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *GitSourceDestination) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes GitSourceKind as json.
+func (s GitSourceKind) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes GitSourceKind from json.
+func (s *GitSourceKind) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode GitSourceKind to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch GitSourceKind(v) {
+	case GitSourceKindGit:
+		*s = GitSourceKindGit
+	default:
+		*s = GitSourceKind(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s GitSourceKind) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *GitSourceKind) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *GitSourceWorkspace) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *GitSourceWorkspace) encodeFields(e *jx.Encoder) {
+	{
+		if s.BaseCommit.Set {
+			e.FieldStart("baseCommit")
+			s.BaseCommit.Encode(e)
+		}
+	}
+	{
+		if s.Mode.Set {
+			e.FieldStart("mode")
+			s.Mode.Encode(e)
+		}
+	}
+	{
+		if s.SnapshotRef.Set {
+			e.FieldStart("snapshotRef")
+			s.SnapshotRef.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfGitSourceWorkspace = [3]string{
+	0: "baseCommit",
+	1: "mode",
+	2: "snapshotRef",
+}
+
+// Decode decodes GitSourceWorkspace from json.
+func (s *GitSourceWorkspace) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode GitSourceWorkspace to nil")
+	}
+	s.setDefaults()
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "baseCommit":
+			if err := func() error {
+				s.BaseCommit.Reset()
+				if err := s.BaseCommit.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"baseCommit\"")
+			}
+		case "mode":
+			if err := func() error {
+				s.Mode.Reset()
+				if err := s.Mode.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"mode\"")
+			}
+		case "snapshotRef":
+			if err := func() error {
+				s.SnapshotRef.Reset()
+				if err := s.SnapshotRef.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"snapshotRef\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode GitSourceWorkspace")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *GitSourceWorkspace) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *GitSourceWorkspace) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes GitSourceWorkspaceMode as json.
+func (s GitSourceWorkspaceMode) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes GitSourceWorkspaceMode from json.
+func (s *GitSourceWorkspaceMode) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode GitSourceWorkspaceMode to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch GitSourceWorkspaceMode(v) {
+	case GitSourceWorkspaceModeClean:
+		*s = GitSourceWorkspaceModeClean
+	case GitSourceWorkspaceModeDirty:
+		*s = GitSourceWorkspaceModeDirty
+	default:
+		*s = GitSourceWorkspaceMode(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s GitSourceWorkspaceMode) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *GitSourceWorkspaceMode) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -683,6 +1085,171 @@ func (s OptFloat64) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptFloat64) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes GitSource as json.
+func (o OptGitSource) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes GitSource from json.
+func (o *OptGitSource) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptGitSource to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptGitSource) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptGitSource) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes GitSourceCheckout as json.
+func (o OptGitSourceCheckout) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes GitSourceCheckout from json.
+func (o *OptGitSourceCheckout) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptGitSourceCheckout to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptGitSourceCheckout) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptGitSourceCheckout) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes GitSourceDestination as json.
+func (o OptGitSourceDestination) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes GitSourceDestination from json.
+func (o *OptGitSourceDestination) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptGitSourceDestination to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptGitSourceDestination) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptGitSourceDestination) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes GitSourceWorkspace as json.
+func (o OptGitSourceWorkspace) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes GitSourceWorkspace from json.
+func (o *OptGitSourceWorkspace) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptGitSourceWorkspace to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptGitSourceWorkspace) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptGitSourceWorkspace) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes GitSourceWorkspaceMode as json.
+func (o OptGitSourceWorkspaceMode) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	e.Str(string(o.Value))
+}
+
+// Decode decodes GitSourceWorkspaceMode from json.
+func (o *OptGitSourceWorkspaceMode) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptGitSourceWorkspaceMode to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptGitSourceWorkspaceMode) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptGitSourceWorkspaceMode) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -1642,33 +2209,15 @@ func (s *WorkerSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 		e.Str(s.SandboxId)
 	}
 	{
+		if s.Source.Set {
+			e.FieldStart("source")
+			s.Source.Encode(e)
+		}
+	}
+	{
 		if s.SourceCodeReferences.Set {
 			e.FieldStart("sourceCodeReferences")
 			s.SourceCodeReferences.Encode(e)
-		}
-	}
-	{
-		if s.SourceDirectory.Set {
-			e.FieldStart("sourceDirectory")
-			s.SourceDirectory.Encode(e)
-		}
-	}
-	{
-		if s.SourceRef.Set {
-			e.FieldStart("sourceRef")
-			s.SourceRef.Encode(e)
-		}
-	}
-	{
-		if s.SourceRefType.Set {
-			e.FieldStart("sourceRefType")
-			s.SourceRefType.Encode(e)
-		}
-	}
-	{
-		if s.SourceUrl.Set {
-			e.FieldStart("sourceUrl")
-			s.SourceUrl.Encode(e)
 		}
 	}
 	{
@@ -1684,38 +2233,20 @@ func (s *WorkerSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.UserName.Set {
+			e.FieldStart("userName")
+			s.UserName.Encode(e)
+		}
+	}
+	{
 		if s.UserUid.Set {
 			e.FieldStart("userUid")
 			s.UserUid.Encode(e)
 		}
 	}
-	{
-		if s.WorkingDirectory.Set {
-			e.FieldStart("workingDirectory")
-			s.WorkingDirectory.Encode(e)
-		}
-	}
-	{
-		if s.WorkspacePath.Set {
-			e.FieldStart("workspacePath")
-			s.WorkspacePath.Encode(e)
-		}
-	}
-	{
-		if s.WorkspaceRef.Set {
-			e.FieldStart("workspaceRef")
-			s.WorkspaceRef.Encode(e)
-		}
-	}
-	{
-		if s.WorkspaceSource.Set {
-			e.FieldStart("workspaceSource")
-			s.WorkspaceSource.Encode(e)
-		}
-	}
 }
 
-var jsonFieldsNameOfWorkerSandboxCreateRequest = [27]string{
+var jsonFieldsNameOfWorkerSandboxCreateRequest = [21]string{
 	0:  "$schema",
 	1:  "agentConfigId",
 	2:  "agentModel",
@@ -1731,18 +2262,12 @@ var jsonFieldsNameOfWorkerSandboxCreateRequest = [27]string{
 	12: "providerInstanceId",
 	13: "resources",
 	14: "sandboxId",
-	15: "sourceCodeReferences",
-	16: "sourceDirectory",
-	17: "sourceRef",
-	18: "sourceRefType",
-	19: "sourceUrl",
-	20: "storageBytes",
-	21: "userGid",
-	22: "userUid",
-	23: "workingDirectory",
-	24: "workspacePath",
-	25: "workspaceRef",
-	26: "workspaceSource",
+	15: "source",
+	16: "sourceCodeReferences",
+	17: "storageBytes",
+	18: "userGid",
+	19: "userName",
+	20: "userUid",
 }
 
 // Decode decodes WorkerSandboxCreateRequest from json.
@@ -1750,7 +2275,7 @@ func (s *WorkerSandboxCreateRequest) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode WorkerSandboxCreateRequest to nil")
 	}
-	var requiredBitSet [4]uint8
+	var requiredBitSet [3]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -1906,6 +2431,16 @@ func (s *WorkerSandboxCreateRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"sandboxId\"")
 			}
+		case "source":
+			if err := func() error {
+				s.Source.Reset()
+				if err := s.Source.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"source\"")
+			}
 		case "sourceCodeReferences":
 			if err := func() error {
 				s.SourceCodeReferences.Reset()
@@ -1915,46 +2450,6 @@ func (s *WorkerSandboxCreateRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"sourceCodeReferences\"")
-			}
-		case "sourceDirectory":
-			if err := func() error {
-				s.SourceDirectory.Reset()
-				if err := s.SourceDirectory.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"sourceDirectory\"")
-			}
-		case "sourceRef":
-			if err := func() error {
-				s.SourceRef.Reset()
-				if err := s.SourceRef.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"sourceRef\"")
-			}
-		case "sourceRefType":
-			if err := func() error {
-				s.SourceRefType.Reset()
-				if err := s.SourceRefType.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"sourceRefType\"")
-			}
-		case "sourceUrl":
-			if err := func() error {
-				s.SourceUrl.Reset()
-				if err := s.SourceUrl.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"sourceUrl\"")
 			}
 		case "storageBytes":
 			if err := func() error {
@@ -1976,6 +2471,16 @@ func (s *WorkerSandboxCreateRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"userGid\"")
 			}
+		case "userName":
+			if err := func() error {
+				s.UserName.Reset()
+				if err := s.UserName.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"userName\"")
+			}
 		case "userUid":
 			if err := func() error {
 				s.UserUid.Reset()
@@ -1986,46 +2491,6 @@ func (s *WorkerSandboxCreateRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"userUid\"")
 			}
-		case "workingDirectory":
-			if err := func() error {
-				s.WorkingDirectory.Reset()
-				if err := s.WorkingDirectory.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"workingDirectory\"")
-			}
-		case "workspacePath":
-			if err := func() error {
-				s.WorkspacePath.Reset()
-				if err := s.WorkspacePath.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"workspacePath\"")
-			}
-		case "workspaceRef":
-			if err := func() error {
-				s.WorkspaceRef.Reset()
-				if err := s.WorkspaceRef.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"workspaceRef\"")
-			}
-		case "workspaceSource":
-			if err := func() error {
-				s.WorkspaceSource.Reset()
-				if err := s.WorkspaceSource.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"workspaceSource\"")
-			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -2035,10 +2500,9 @@ func (s *WorkerSandboxCreateRequest) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [4]uint8{
+	for i, mask := range [3]uint8{
 		0b00000000,
 		0b01000000,
-		0b00000000,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
@@ -2164,7 +2628,7 @@ func (s *WorkerSandboxCreateRequestSourceCodeReferences) Decode(d *jx.Decoder) e
 	}
 	m := s.init()
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		var elem GitSourceReference
+		var elem GitSource
 		if err := func() error {
 			if err := elem.Decode(d); err != nil {
 				return err

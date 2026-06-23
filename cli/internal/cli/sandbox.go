@@ -29,6 +29,7 @@ type sandboxCreateOptions struct {
 	sourceDirectory          string
 	workingDirectory         string
 	sourceCodeReferences     string
+	userName                 string
 	userUID                  int64
 	userGID                  int64
 	cpuVCPUs                 float64
@@ -332,6 +333,7 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.sourceDirectory, "source-directory", "", "Directory where the main source should be placed inside the sandbox")
 	cmd.Flags().StringVar(&opts.workingDirectory, "working-directory", "", "Working directory inside the sandbox")
 	cmd.Flags().StringVar(&opts.sourceCodeReferences, "source-code-references", "", "Additional source code references JSON or @path")
+	cmd.Flags().StringVar(&opts.userName, "user-name", "", "Username to use inside the sandbox")
 	cmd.Flags().Int64Var(&opts.userUID, "user-uid", 0, "UID to use inside the sandbox")
 	cmd.Flags().Int64Var(&opts.userGID, "user-gid", 0, "GID to use inside the sandbox")
 	cmd.Flags().Float64Var(&opts.cpuVCPUs, "cpu-vcpus", 0, "Requested CPU capacity in vCPUs")
@@ -355,10 +357,13 @@ func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, 
 	body.SetAgentModelServiceTier(optString(opts.agentModelServiceTier))
 	body.SetAgentModelReasoningLevel(optString(opts.agentModelReasoningLevel))
 	body.SetPrompt(optString(opts.prompt))
-	body.SetSourceRef(optString(opts.sourceRef))
-	body.SetSourceRefType(optString(opts.sourceRefType))
-	body.SetSourceDirectory(optString(opts.sourceDirectory))
-	body.SetWorkingDirectory(optString(opts.workingDirectory))
+	source, err := gitSourceFromCreateOptions(opts)
+	if err != nil {
+		return nil, err
+	}
+	if source != nil {
+		body.SetSource(apiclientgen.NewOptGitSource(*source))
+	}
 	if opts.userUID > 0 {
 		body.SetUserUid(apiclientgen.NewOptInt64(opts.userUID))
 	}
@@ -374,13 +379,6 @@ func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, 
 	if opts.storageBytes > 0 {
 		body.SetStorageBytes(apiclientgen.NewOptInt64(opts.storageBytes))
 	}
-	if opts.sourceURL != "" {
-		u, err := url.Parse(opts.sourceURL)
-		if err != nil {
-			return nil, err
-		}
-		body.SetSourceUrl(apiclientgen.NewOptURI(*u))
-	}
 	sourceCodeReferences, err := sourceCodeReferences(opts.sourceCodeReferences)
 	if err != nil {
 		return nil, err
@@ -388,7 +386,39 @@ func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, 
 	if sourceCodeReferences != nil {
 		body.SetSourceCodeReferences(apiclientgen.NewOptCreateSandboxBodySourceCodeReferences(sourceCodeReferences))
 	}
+	body.SetUserName(optString(opts.userName))
 	return body, nil
+}
+
+func gitSourceFromCreateOptions(opts sandboxCreateOptions) (*apimodel.GitSource, error) {
+	if opts.sourceURL == "" && opts.sourceRef == "" && opts.sourceRefType == "" && opts.sourceDirectory == "" && opts.workingDirectory == "" {
+		return nil, nil
+	}
+	source := &apimodel.GitSource{Kind: apiclientgen.GitSourceKindGit}
+	if opts.sourceURL != "" {
+		u, err := url.Parse(opts.sourceURL)
+		if err != nil {
+			return nil, err
+		}
+		source.SetURL(apiclientgen.NewOptURI(*u))
+	}
+	if opts.sourceRef != "" || opts.sourceRefType != "" {
+		checkout := apimodel.GitSourceCheckout{}
+		if opts.sourceRefType == "commit" {
+			checkout.SetCommit(optString(opts.sourceRef))
+		} else {
+			checkout.SetRefName(optString(opts.sourceRef))
+		}
+		checkout.SetRefType(optString(opts.sourceRefType))
+		source.SetCheckout(apiclientgen.NewOptGitSourceCheckout(checkout))
+	}
+	if opts.sourceDirectory != "" || opts.workingDirectory != "" {
+		destination := apimodel.GitSourceDestination{}
+		destination.SetDirectory(optString(opts.sourceDirectory))
+		destination.SetWorkingDirectory(optString(opts.workingDirectory))
+		source.SetDestination(apiclientgen.NewOptGitSourceDestination(destination))
+	}
+	return source, nil
 }
 
 func updateSandboxBody(cmd *cobra.Command, opts sandboxUpdateOptions) (*apimodel.UpdateSandboxBody, error) {

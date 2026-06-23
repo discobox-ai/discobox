@@ -33,9 +33,14 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 
 	sourceURL := mustParseURL(t, "https://example.com/repo.git")
 	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
-		Name:      "sandbox-1",
-		SourceUrl: serverapi.NewOptURI(sourceURL),
-		SourceRef: serverapi.NewOptString("main"),
+		Name: "sandbox-1",
+		Source: serverapi.NewOptGitSource(serverapi.GitSource{
+			Kind: serverapi.GitSourceKindGit,
+			URL:  serverapi.NewOptURI(sourceURL),
+			Checkout: serverapi.NewOptGitSourceCheckout(serverapi.GitSourceCheckout{
+				RefName: serverapi.NewOptString("main"),
+			}),
+		}),
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -48,7 +53,7 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	if provider.createCalls != 1 || provider.startCalls != 1 {
 		t.Fatalf("create/start calls = %d/%d, want 1/1", provider.createCalls, provider.startCalls)
 	}
-	if provider.createRef.ProjectID != service.DefaultProjectID || provider.createOptions.WorkspaceSource != "https://example.com/repo.git" || provider.createOptions.WorkspaceRef != "main" {
+	if provider.createRef.ProjectID != service.DefaultProjectID || provider.createOptions.Source == nil || provider.createOptions.Source.URL == nil || *provider.createOptions.Source.URL != "https://example.com/repo.git" || provider.createOptions.Source.Checkout == nil || provider.createOptions.Source.Checkout.RefName == nil || *provider.createOptions.Source.Checkout.RefName != "main" {
 		t.Fatalf("create ref/options = %#v %#v", provider.createRef, provider.createOptions)
 	}
 	sb, err = svc.GetSandbox(ctx, service.DefaultProjectID, sb.ID)
