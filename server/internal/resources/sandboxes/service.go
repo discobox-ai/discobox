@@ -109,14 +109,15 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		id := project.DefaultSandboxProviderID
 		providerID = &id
 	}
-	if providerID != nil {
-		provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, *providerID)
-		if err != nil {
-			return nil, mapAPIError(err, "provider instance not found")
-		}
-		if provider.Disabled {
-			return nil, fmt.Errorf("provider instance disabled")
-		}
+	if providerID == nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "sandbox provider instance is required")
+	}
+	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, *providerID)
+	if err != nil {
+		return nil, mapAPIError(err, "provider instance not found")
+	}
+	if provider.Disabled {
+		return nil, fmt.Errorf("provider instance disabled")
 	}
 	agentConfigID, err := s.resolveAgentConfigID(ctx, projectID, input.AgentConfigId, input.AgentName)
 	if err != nil {

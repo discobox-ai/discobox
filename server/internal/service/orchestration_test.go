@@ -3,12 +3,14 @@ package service_test
 import (
 	"context"
 	"errors"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
 	serverapi "github.com/obot-platform/discobox/api/gen"
 	"github.com/obot-platform/discobox/orchestration"
+	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/events"
 	"github.com/obot-platform/discobox/server/internal/model"
@@ -115,6 +117,48 @@ func TestCreateSandboxDefaultsGitSourceSlugs(t *testing.T) {
 	}
 }
 
+func TestCreateSandboxRequiresResolvedProviderInstance(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{DSN: ":memory:"})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close db: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("migrate db: %v", err)
+	}
+
+	appStore := store.New(db.Write, db.Read)
+	jobManager := sandboxjobs.NewManager(ctx, appStore, sandboxjobs.ManagerConfig{Enabled: true})
+	svc := service.New(appStore, jobManager, service.JobManagerOptions{})
+	if err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
+		t.Fatalf("initialize defaults: %v", err)
+	}
+	if err := jobManager.Start(ctx); err != nil {
+		t.Fatalf("start job manager: %v", err)
+	}
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if err := jobManager.Stop(stopCtx); err != nil {
+			t.Fatalf("stop job manager: %v", err)
+		}
+	})
+
+	_, err = svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Name: "alpha"})
+	var statusErr apperrors.StatusError
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("create sandbox error = %v, want status error", err)
+	}
+	if statusErr.Status != http.StatusBadRequest || statusErr.Message != "sandbox provider instance is required" {
+		t.Fatalf("status error = %d %q, want 400 provider required", statusErr.Status, statusErr.Message)
+	}
+}
+
 func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -149,6 +193,8 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	if err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
+	svc.RegisterSandboxProvider("test", noopSandboxProvider{})
+	installDefaultSandboxProviderInstance(ctx, t, appStore, "provider-test", "test")
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("start service: %v", err)
 	}
@@ -241,6 +287,7 @@ func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sand
 	if err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
+	installDefaultSandboxProviderInstance(ctx, t, appStore, "provider-test", "test")
 	if err := jobManager.Start(ctx); err != nil {
 		t.Fatalf("start job manager: %v", err)
 	}
@@ -252,6 +299,69 @@ func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sand
 		}
 	})
 	return svc, svc.NewSandboxReconcileExecutor()
+}
+
+func installDefaultSandboxProviderInstance(ctx context.Context, t *testing.T, appStore *store.Store, providerID, providerType string) {
+	t.Helper()
+	provider := &model.SandboxProviderInstance{
+		ID:        providerID,
+		ProjectID: service.DefaultProjectID,
+		Type:      providerType,
+		Name:      "Test",
+	}
+	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create test provider: %v", err)
+	}
+	project, err := appStore.GetProject(ctx, service.DefaultProjectID)
+	if err != nil {
+		t.Fatalf("get default project: %v", err)
+	}
+	project.DefaultSandboxProviderID = provider.ID
+	if err := appStore.UpsertProject(ctx, project); err != nil {
+		t.Fatalf("set default provider: %v", err)
+	}
+}
+
+type noopSandboxProvider struct{}
+
+func (noopSandboxProvider) Initialize(context.Context, *model.SandboxProviderInstance) error {
+	return nil
+}
+
+func (noopSandboxProvider) List(context.Context) ([]*sandboxes.Sandbox, error) {
+	return nil, nil
+}
+
+func (noopSandboxProvider) Create(_ context.Context, ref sandboxes.SandboxRef, _ []byte, _ sandboxes.CreateOptions) (*sandboxes.Sandbox, []byte, error) {
+	return runtimeSandbox(ref, sandboxes.StatusCreated), nil, nil
+}
+
+func (noopSandboxProvider) Start(_ context.Context, ref sandboxes.SandboxRef, _ []byte) (*sandboxes.Sandbox, []byte, error) {
+	return runtimeSandbox(ref, sandboxes.Status("running")), nil, nil
+}
+
+func (noopSandboxProvider) Stop(_ context.Context, ref sandboxes.SandboxRef, _ []byte, _ time.Duration) (*sandboxes.Sandbox, []byte, error) {
+	return runtimeSandbox(ref, sandboxes.Status("stopped")), nil, nil
+}
+
+func (noopSandboxProvider) Remove(context.Context, sandboxes.SandboxRef, []byte, ...sandboxes.RemoveOption) ([]byte, error) {
+	return nil, nil
+}
+
+func (noopSandboxProvider) Get(_ context.Context, ref sandboxes.SandboxRef, _ []byte) (*sandboxes.Sandbox, error) {
+	return runtimeSandbox(ref, sandboxes.Status("running")), nil
+}
+
+func (noopSandboxProvider) AcquireHTTPClient(context.Context, sandboxes.SandboxRef, []byte) (*sandboxes.HTTPClientLease, error) {
+	return nil, nil
+}
+
+func runtimeSandbox(ref sandboxes.SandboxRef, status sandboxes.Status) *sandboxes.Sandbox {
+	return &sandboxes.Sandbox{
+		ID:        "runtime-" + ref.SandboxID,
+		SandboxID: ref.SandboxID,
+		Status:    status,
+	}
 }
 
 func waitForSandboxPhase(ctx context.Context, t *testing.T, svc *service.Service, sandboxID, phase string) *model.Sandbox {

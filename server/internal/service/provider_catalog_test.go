@@ -30,11 +30,19 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	if got := svc.DefaultSandboxProviderName(); got != "recording" {
 		t.Fatalf("default provider = %q, want recording", got)
 	}
+	providerInstance, err := svc.CreateSandboxProviderInstance(ctx, service.DefaultProjectID, services.CreateSandboxProviderInstanceBody{
+		Type: "recording",
+		Name: "recording",
+	})
+	if err != nil {
+		t.Fatalf("create recording provider instance: %v", err)
+	}
 	executor := svc.NewSandboxReconcileExecutor()
 
 	sourceURL := mustParseURL(t, "https://example.com/repo.git")
 	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
-		Name: "sandbox-1",
+		Name:               "sandbox-1",
+		ProviderInstanceId: serverapi.NewOptString(providerInstance.ID),
 		Source: serverapi.NewOptGitSource(serverapi.GitSource{
 			Kind: serverapi.GitSourceKindGit,
 			URL:  serverapi.NewOptURI(sourceURL),
@@ -169,25 +177,6 @@ func newProviderCatalogTestStore(t *testing.T) *store.Store {
 		t.Fatalf("create project: %v", err)
 	}
 	return appStore
-}
-
-func TestSandboxReconcileExecutorNoProviderKeepsStubBehavior(t *testing.T) {
-	ctx := context.Background()
-	svc, executor := newSandboxTestService(t, nil)
-	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Name: "sandbox-1"})
-	if err != nil {
-		t.Fatalf("create sandbox: %v", err)
-	}
-	if err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-start", sb.Generation); err != nil {
-		t.Fatalf("reconcile start: %v", err)
-	}
-	sb, err = svc.GetSandbox(ctx, service.DefaultProjectID, sb.ID)
-	if err != nil {
-		t.Fatalf("get sandbox: %v", err)
-	}
-	if sb.LastActiveAt == nil {
-		t.Fatal("expected last active time")
-	}
 }
 
 func TestServiceSandboxProviderCatalog(t *testing.T) {
