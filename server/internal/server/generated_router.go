@@ -13,6 +13,7 @@ func NewGeneratedRouter(services services.Services) (*chi.Mux, error) {
 	router := chi.NewRouter()
 	RegisterDocsRoutes(router)
 	registerProjectStreamTransports(router, services.Events)
+	registerSandboxGitRoutes(router, services.Sandboxes)
 
 	generated, err := handlers.NewServer(services)
 	if err != nil {

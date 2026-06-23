@@ -18,6 +18,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/service"
 	services "github.com/obot-platform/discobox/server/internal/services"
+	"github.com/obot-platform/discobox/server/internal/transport"
 )
 
 func newStubRouterForTest() *chi.Mux {
@@ -140,6 +141,66 @@ func TestNewRouterCreateSandboxResolvesAgentName(t *testing.T) {
 	}
 	if sandbox.AgentConfigID == nil || *sandbox.AgentConfigID != agent.ID {
 		t.Fatalf("agentConfigId = %v, want %q", sandbox.AgentConfigID, agent.ID)
+	}
+}
+
+func TestSandboxGitRepositoryRouteProxiesToWorker(t *testing.T) {
+	ctx := context.Background()
+	stubs := newRouterTestServices()
+	workerID := "worker-1"
+	stubs.sandboxes["sandbox-1"] = model.Sandbox{
+		ID:              "sandbox-1",
+		ProjectID:       service.DefaultProjectID,
+		CreatedByUserID: service.DefaultUserID,
+		Name:            "sandbox",
+		WorkerID:        &workerID,
+	}
+	var released bool
+	projectID := service.DefaultProjectID
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wantPath := "/api/project/" + projectID + "/worker/worker-1/sandboxes/sandbox-1/git-repositories/primary.git/info/refs"
+		if r.URL.Path != wantPath {
+			t.Fatalf("upstream path = %q", r.URL.Path)
+		}
+		if r.URL.RawQuery != "service=git-upload-pack" {
+			t.Fatalf("upstream query = %q", r.URL.RawQuery)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer worker-token" {
+			t.Fatalf("upstream auth = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/x-git-upload-pack-advertisement")
+		_, _ = w.Write([]byte("git response"))
+	}))
+	t.Cleanup(upstream.Close)
+	stubs.gitLease = transport.NewHTTPClientLeaseWithBaseURLAndAuth(upstream.Client(), upstream.URL, "worker-token", func() {
+		released = true
+	})
+
+	router, err := NewRouter(services.Services{
+		Projects:     stubs,
+		AgentConfigs: stubs,
+		Sandboxes:    stubs,
+		Providers:    stubs,
+		Workers:      stubs,
+		Jobs:         stubs,
+		Events:       stubs,
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/projects/"+projectID+"/sandboxes/sandbox-1/git-repositories/primary.git/info/refs?service=git-upload-pack", nil)
+	req.Header.Set("Authorization", "Bearer user-token")
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("GET git info/refs status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	if body := resp.Body.String(); body != "git response" {
+		t.Fatalf("body = %q, want git response", body)
+	}
+	if !released {
+		t.Fatal("expected sandbox HTTP lease to be released")
 	}
 }
 

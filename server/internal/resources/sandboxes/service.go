@@ -200,6 +200,32 @@ func (s *Service) GetSandbox(ctx context.Context, projectID, sandboxID string) (
 	return sandbox, nil
 }
 
+func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string) (*services.HTTPClientLease, *model.Sandbox, error) {
+	sandboxModel, err := s.store.GetSandbox(ctx, projectID, sandboxID)
+	if err != nil {
+		return nil, nil, mapAPIError(err, "sandbox not found")
+	}
+	if s.sandboxProviders == nil {
+		return nil, nil, fmt.Errorf("sandbox provider manager is required")
+	}
+	if sandboxModel.ProviderInstanceID != nil && strings.TrimSpace(*sandboxModel.ProviderInstanceID) != "" {
+		provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, *sandboxModel.ProviderInstanceID)
+		if err != nil {
+			return nil, nil, mapAPIError(err, "provider instance not found")
+		}
+		sandboxModel.ProviderInstance = provider
+	}
+	provider, err := s.sandboxProviders.ResolveForSandbox(ctx, sandboxModel)
+	if err != nil {
+		return nil, nil, err
+	}
+	lease, err := provider.AcquireHTTPClient(ctx, sandbox.SandboxRef{ProjectID: projectID, SandboxID: sandboxID}, sandboxModel.RuntimeState)
+	if err != nil {
+		return nil, nil, err
+	}
+	return lease, sandboxModel, nil
+}
+
 func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string, input services.UpdateSandboxBody) (*model.Sandbox, error) {
 	sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {

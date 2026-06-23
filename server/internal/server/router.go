@@ -64,6 +64,7 @@ func NewRouter(svc services.Services) (*chi.Mux, error) {
 	router := chi.NewRouter()
 	RegisterDocsRoutes(router)
 	registerProjectStreamTransports(router, svc.Events)
+	registerSandboxGitRoutes(router, svc.Sandboxes)
 	generated, err := handlers.NewServer(svc)
 	if err != nil {
 		return nil, err
@@ -126,6 +127,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	))
 	RegisterDocsRoutes(router)
 	registerProjectStreamTransports(router, appServices)
+	registerSandboxGitRoutes(router, appServices)
 	generated, err := handlers.NewServer(services.Services{
 		Projects:     appServices,
 		AgentConfigs: appServices,

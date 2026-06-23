@@ -24,6 +24,7 @@ type routerTestServices struct {
 	agentConfigs map[string]model.AgentConfig
 	providers    map[string]model.SandboxProviderInstance
 	sandboxes    map[string]model.Sandbox
+	gitLease     *services.HTTPClientLease
 }
 
 func newRouterTestServices() *routerTestServices {
@@ -166,6 +167,17 @@ func (s *routerTestServices) GetSandbox(_ context.Context, projectID, sandboxID 
 		return nil, err
 	}
 	return &sandbox, nil
+}
+
+func (s *routerTestServices) AcquireSandboxHTTPClient(_ context.Context, projectID, sandboxID string) (*services.HTTPClientLease, *model.Sandbox, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sandbox, err := s.getSandbox(projectID, sandboxID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return s.gitLease, &sandbox, nil
 }
 
 func (s *routerTestServices) UpdateSandbox(_ context.Context, projectID, sandboxID string, input services.UpdateSandboxBody) (*model.Sandbox, error) {

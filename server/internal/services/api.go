@@ -7,6 +7,7 @@ import (
 	serverapi "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
 	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/obot-platform/discobox/server/internal/transport"
 )
 
 type CreateAgentConfigBody = apimodel.CreateAgentConfigBody
@@ -30,6 +31,7 @@ type OptURI = serverapi.OptURI
 type OptInt64 = serverapi.OptInt64
 type OptNilProviderConfigFieldArray = serverapi.OptNilProviderConfigFieldArray
 type OptCreateSandboxBodySourceCodeReferences = serverapi.OptCreateSandboxBodySourceCodeReferences
+type HTTPClientLease = transport.HTTPClientLease
 
 // ProjectService provides read-only access to projects.
 type ProjectService interface {
@@ -58,6 +60,7 @@ type SandboxService interface {
 	StartSandbox(ctx context.Context, projectID, sandboxID string, input StartSandboxBody) (*model.Sandbox, error)
 	StopSandbox(ctx context.Context, projectID, sandboxID string, input StopSandboxBody) (*model.Sandbox, error)
 	RestartSandbox(ctx context.Context, projectID, sandboxID string, input RestartSandboxBody) (*model.Sandbox, error)
+	AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string) (*HTTPClientLease, *model.Sandbox, error)
 }
 
 type SandboxProviderInstanceService interface {
