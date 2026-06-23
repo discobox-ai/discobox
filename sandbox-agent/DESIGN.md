@@ -12,7 +12,7 @@ API/client types rather than server or provider internals.
 
 | Package/path | Ownership |
 | --- | --- |
-| `Dockerfile` | Debian/systemd-based sandbox runtime image with developer tools. |
+| `Dockerfile` | `codex-universal`-based systemd sandbox runtime image with Docker, desktop, and Nix tooling. |
 
 ## Boundary Rules
 
