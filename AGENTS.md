@@ -65,6 +65,9 @@ Prefer proper structural changes over compatibility shims or narrow patches.
 - Do not add wrapper types, adapter layers, or small abstraction seams just to
   avoid touching callers. If the design belongs in an existing core type, put
   it there.
+- Do not add helper wrappers around existing functions just to preserve old call
+  shapes or reduce call-site edits. Change the call sites directly instead;
+  unnecessary wrappers become maintenance cruft.
 - Backwards compatibility is not a priority during this phase. Prefer coherent
   internal APIs over preserving old call shapes.
 - Avoid tiny tactical patches when the correct fix crosses package boundaries.

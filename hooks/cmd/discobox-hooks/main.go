@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -24,6 +23,7 @@ import (
 	"github.com/obot-platform/discobox/hooks/models"
 	"github.com/obot-platform/discobox/hooks/processhelper"
 	idpkg "github.com/obot-platform/discobox/id"
+	"github.com/obot-platform/discobox/internal/gitutil"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -1285,19 +1285,23 @@ func snapshotRangeDiff(ctx context.Context, repoRoot string, diffRange snapshotD
 		}
 	}
 	args = append(args, fromTree, toTree)
-	return gitCommandOutput(ctx, repoRoot, nil, nil, args...)
+	return gitutil.Output(ctx, repoRoot, nil, nil, args...)
 }
 
 func snapshotRangeFromTree(ctx context.Context, repoRoot string, diffRange snapshotDiffRange) (string, func(), error) {
 	if diffRange.FromCurrent {
-		return currentWorkspaceTree(ctx, repoRoot)
+		workspaceTree, cleanup, err := gitutil.CurrentWorkspaceTree(ctx, repoRoot)
+		if err != nil {
+			return "", cleanup, err
+		}
+		return workspaceTree.Tree, cleanup, nil
 	}
 	if diffRange.FromBase {
 		base := strings.TrimSpace(diffRange.To.BaseCommit)
 		if base == "" {
 			return "", func() {}, fmt.Errorf("snapshot %s has no base commit", diffRange.To.ID)
 		}
-		baseTree, err := gitCommandOutput(ctx, repoRoot, nil, nil, "rev-parse", base+"^{tree}")
+		baseTree, err := gitutil.Output(ctx, repoRoot, nil, nil, "rev-parse", base+"^{tree}")
 		return strings.TrimSpace(baseTree), func() {}, err
 	}
 	if diffRange.From == nil {
@@ -1308,7 +1312,7 @@ func snapshotRangeFromTree(ctx context.Context, repoRoot string, diffRange snaps
 }
 
 func applySnapshotDiff(ctx context.Context, repoRoot string, snapshot client.WorkspaceSnapshot) (bool, error) {
-	currentTree, cleanup, err := currentWorkspaceTree(ctx, repoRoot)
+	workspaceTree, cleanup, err := gitutil.CurrentWorkspaceTree(ctx, repoRoot)
 	if err != nil {
 		return false, err
 	}
@@ -1317,7 +1321,7 @@ func applySnapshotDiff(ctx context.Context, repoRoot string, snapshot client.Wor
 	if err != nil {
 		return false, err
 	}
-	patch, err := gitCommandOutput(ctx, repoRoot, nil, nil, "diff", "--binary", currentTree, snapshotTree)
+	patch, err := gitutil.Output(ctx, repoRoot, nil, nil, "diff", "--binary", workspaceTree.Tree, snapshotTree)
 	if err != nil {
 		return false, err
 	}
@@ -1333,11 +1337,11 @@ func resetSnapshotDiff(ctx context.Context, repoRoot string, snapshot client.Wor
 	if err != nil {
 		return false, err
 	}
-	baseTree, err := gitCommandOutput(ctx, repoRoot, nil, nil, "rev-parse", base+"^{tree}")
+	baseTree, err := gitutil.Output(ctx, repoRoot, nil, nil, "rev-parse", base+"^{tree}")
 	if err != nil {
 		return false, fmt.Errorf("resolve snapshot base tree: %w", err)
 	}
-	patch, err := gitCommandOutput(ctx, repoRoot, nil, nil, "diff", "--binary", snapshotTree, strings.TrimSpace(baseTree))
+	patch, err := gitutil.Output(ctx, repoRoot, nil, nil, "diff", "--binary", snapshotTree, strings.TrimSpace(baseTree))
 	if err != nil {
 		return false, err
 	}
@@ -1349,7 +1353,7 @@ func ensureSnapshotTree(ctx context.Context, repoRoot string, snapshot client.Wo
 	if tree == "" {
 		return "", fmt.Errorf("snapshot %s has no tree hash", snapshot.ID)
 	}
-	if _, err := gitCommandOutput(ctx, repoRoot, nil, nil, "cat-file", "-e", tree+"^{tree}"); err == nil {
+	if _, err := gitutil.Output(ctx, repoRoot, nil, nil, "cat-file", "-e", tree+"^{tree}"); err == nil {
 		return tree, nil
 	}
 	if strings.TrimSpace(snapshot.Patch) == "" {
@@ -1381,15 +1385,15 @@ func reconstructSnapshotTree(ctx context.Context, repoRoot string, snapshot clie
 	indexPath := indexFile.Name()
 	_ = indexFile.Close()
 	env := map[string]string{"GIT_INDEX_FILE": indexPath}
-	if _, err := gitCommandOutput(ctx, repoRoot, nil, env, "read-tree", base); err != nil {
+	if _, err := gitutil.Output(ctx, repoRoot, nil, env, "read-tree", base); err != nil {
 		cleanup()
 		return "", func() {}, fmt.Errorf("read snapshot base into temporary index: %w", err)
 	}
-	if _, err := gitCommandOutput(ctx, repoRoot, []byte(snapshot.Patch), env, "apply", "--cached", "--binary"); err != nil {
+	if _, err := gitutil.Output(ctx, repoRoot, []byte(snapshot.Patch), env, "apply", "--cached", "--binary"); err != nil {
 		cleanup()
 		return "", func() {}, fmt.Errorf("reconstruct snapshot tree from patch: %w", err)
 	}
-	tree, err := gitCommandOutput(ctx, repoRoot, nil, env, "write-tree")
+	tree, err := gitutil.Output(ctx, repoRoot, nil, env, "write-tree")
 	if err != nil {
 		cleanup()
 		return "", func() {}, fmt.Errorf("write reconstructed snapshot tree: %w", err)
@@ -1401,7 +1405,7 @@ func applyPatch(ctx context.Context, repoRoot, patch string) (bool, error) {
 	if strings.TrimSpace(patch) == "" {
 		return false, nil
 	}
-	if _, err := gitCommandOutput(ctx, repoRoot, []byte(patch), nil, "apply", "--binary"); err != nil {
+	if _, err := gitutil.Output(ctx, repoRoot, []byte(patch), nil, "apply", "--binary"); err != nil {
 		return false, fmt.Errorf("apply snapshot patch: %w", err)
 	}
 	return true, nil
@@ -1836,118 +1840,6 @@ func gitRoot(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return filepath.Clean(strings.TrimSpace(string(out))), nil
-}
-
-func currentWorkspaceTree(ctx context.Context, repoRoot string) (string, func(), error) {
-	tempDir, err := os.MkdirTemp("", "discobox-hooks-current-*")
-	if err != nil {
-		return "", func() {}, fmt.Errorf("create temporary git index directory: %w", err)
-	}
-	cleanup := func() { _ = os.RemoveAll(tempDir) }
-	indexFile, err := os.CreateTemp(tempDir, "index-*")
-	if err != nil {
-		cleanup()
-		return "", func() {}, fmt.Errorf("create temporary git index: %w", err)
-	}
-	indexPath := indexFile.Name()
-	_ = indexFile.Close()
-	env := map[string]string{"GIT_INDEX_FILE": indexPath}
-	if _, err := gitCommandOutput(ctx, repoRoot, nil, env, "read-tree", "HEAD"); err != nil {
-		cleanup()
-		return "", func() {}, fmt.Errorf("read HEAD into temporary index: %w", err)
-	}
-	changes, err := gitStatusChanges(ctx, repoRoot)
-	if err != nil {
-		cleanup()
-		return "", func() {}, err
-	}
-	for _, change := range changes {
-		if change.deleted {
-			if _, err := gitCommandOutput(ctx, repoRoot, nil, env, "rm", "--cached", "--ignore-unmatch", "--", change.path); err != nil {
-				cleanup()
-				return "", func() {}, fmt.Errorf("remove deleted path %s from temporary index: %w", change.path, err)
-			}
-			continue
-		}
-		if _, err := gitCommandOutput(ctx, repoRoot, nil, env, "add", "--", change.path); err != nil {
-			cleanup()
-			return "", func() {}, fmt.Errorf("add path %s to temporary index: %w", change.path, err)
-		}
-	}
-	tree, err := gitCommandOutput(ctx, repoRoot, nil, env, "write-tree")
-	if err != nil {
-		cleanup()
-		return "", func() {}, fmt.Errorf("write current workspace tree: %w", err)
-	}
-	return strings.TrimSpace(tree), cleanup, nil
-}
-
-type gitStatusChange struct {
-	path    string
-	deleted bool
-}
-
-func gitStatusChanges(ctx context.Context, repoRoot string) ([]gitStatusChange, error) {
-	out, err := gitCommandOutput(ctx, repoRoot, nil, nil, "status", "--porcelain=v1", "-z", "--untracked-files=all")
-	if err != nil {
-		return nil, fmt.Errorf("read git status: %w", err)
-	}
-	entries := bytes.Split([]byte(out), []byte{0})
-	changes := make([]gitStatusChange, 0, len(entries))
-	for i := 0; i < len(entries); i++ {
-		entry := string(entries[i])
-		if entry == "" || len(entry) < 4 {
-			continue
-		}
-		status := entry[:2]
-		path := filepath.ToSlash(strings.TrimSpace(entry[3:]))
-		if status[0] == 'R' || status[0] == 'C' {
-			oldPath := ""
-			if i+1 < len(entries) {
-				oldPath = filepath.ToSlash(strings.TrimSpace(string(entries[i+1])))
-				i++
-			}
-			if status[0] == 'R' && oldPath != "" {
-				changes = append(changes, gitStatusChange{path: oldPath, deleted: true})
-			}
-			if path != "" {
-				changes = append(changes, gitStatusChange{path: path})
-			}
-			continue
-		}
-		if path == "" {
-			continue
-		}
-		changes = append(changes, gitStatusChange{path: path, deleted: status[0] == 'D' || status[1] == 'D'})
-	}
-	sort.Slice(changes, func(i, j int) bool {
-		if changes[i].path == changes[j].path {
-			return !changes[i].deleted && changes[j].deleted
-		}
-		return changes[i].path < changes[j].path
-	})
-	return changes, nil
-}
-
-func gitCommandOutput(ctx context.Context, repoRoot string, stdin []byte, extraEnv map[string]string, args ...string) (string, error) {
-	cmd := exec.CommandContext(ctx, "git", args...)
-	cmd.Dir = repoRoot
-	if stdin != nil {
-		cmd.Stdin = bytes.NewReader(stdin)
-	}
-	cmd.Env = os.Environ()
-	for key, value := range extraEnv {
-		cmd.Env = append(cmd.Env, key+"="+value)
-	}
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		trimmed := strings.TrimSpace(string(out))
-		if trimmed == "" {
-			return "", err
-		}
-		return "", fmt.Errorf("%w: %s", err, trimmed)
-	}
-	return string(out), nil
 }
 
 func computeSessionPaths(repoRoot, sessionID string) sessionPaths {

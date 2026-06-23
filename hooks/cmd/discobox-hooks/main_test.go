@@ -20,6 +20,7 @@ import (
 	hookapi "github.com/obot-platform/discobox/hooks/api"
 	"github.com/obot-platform/discobox/hooks/client"
 	"github.com/obot-platform/discobox/hooks/models"
+	"github.com/obot-platform/discobox/internal/gitutil"
 	"github.com/spf13/cobra"
 )
 
@@ -379,12 +380,12 @@ func TestSnapshotApplyAndResetUseUnstagedWorkspaceChanges(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "new.txt"), []byte("new\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	snapshotTree, cleanup, err := currentWorkspaceTree(ctx, repo)
+	snapshotTree, cleanup, err := gitutil.CurrentWorkspaceTree(ctx, repo)
 	if err != nil {
 		t.Fatalf("snapshot tree: %v", err)
 	}
 	cleanup()
-	snapshotPatch := runTestGit(t, repo, "diff", "--binary", baseCommit, snapshotTree)
+	snapshotPatch := runTestGit(t, repo, "diff", "--binary", baseCommit, snapshotTree.Tree)
 	runTestGit(t, repo, "restore", "--worktree", "tracked.txt")
 	if err := os.Remove(filepath.Join(repo, "new.txt")); err != nil {
 		t.Fatal(err)
@@ -393,7 +394,7 @@ func TestSnapshotApplyAndResetUseUnstagedWorkspaceChanges(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	snapshot := client.WorkspaceSnapshot{ID: "snapshot-1", BaseCommit: baseCommit, TreeHash: snapshotTree, Patch: snapshotPatch}
+	snapshot := client.WorkspaceSnapshot{ID: "snapshot-1", BaseCommit: baseCommit, TreeHash: snapshotTree.Tree, Patch: snapshotPatch}
 	diff, err := snapshotDiff(ctx, repo, snapshot, "--color=never")
 	if err != nil {
 		t.Fatalf("snapshot diff: %v", err)
@@ -452,25 +453,25 @@ func TestSnapshotRangeDiffSupportsSnapshotPairs(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("first\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	firstTree, firstCleanup, err := currentWorkspaceTree(ctx, repo)
+	firstTree, firstCleanup, err := gitutil.CurrentWorkspaceTree(ctx, repo)
 	if err != nil {
 		t.Fatalf("first tree: %v", err)
 	}
 	firstCleanup()
-	firstPatch := runTestGit(t, repo, "diff", "--binary", baseCommit, firstTree)
+	firstPatch := runTestGit(t, repo, "diff", "--binary", baseCommit, firstTree.Tree)
 
 	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("second\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	secondTree, secondCleanup, err := currentWorkspaceTree(ctx, repo)
+	secondTree, secondCleanup, err := gitutil.CurrentWorkspaceTree(ctx, repo)
 	if err != nil {
 		t.Fatalf("second tree: %v", err)
 	}
 	secondCleanup()
-	secondPatch := runTestGit(t, repo, "diff", "--binary", baseCommit, secondTree)
+	secondPatch := runTestGit(t, repo, "diff", "--binary", baseCommit, secondTree.Tree)
 
-	first := client.WorkspaceSnapshot{ID: "snapshot-first", BaseCommit: baseCommit, TreeHash: firstTree, Patch: firstPatch}
-	second := client.WorkspaceSnapshot{ID: "snapshot-second", ParentID: first.ID, BaseCommit: baseCommit, TreeHash: secondTree, Patch: secondPatch}
+	first := client.WorkspaceSnapshot{ID: "snapshot-first", BaseCommit: baseCommit, TreeHash: firstTree.Tree, Patch: firstPatch}
+	second := client.WorkspaceSnapshot{ID: "snapshot-second", ParentID: first.ID, BaseCommit: baseCommit, TreeHash: secondTree.Tree, Patch: secondPatch}
 	diff, err := snapshotRangeDiff(ctx, repo, snapshotDiffRange{From: &first, To: second}, "--color=never")
 	if err != nil {
 		t.Fatalf("snapshot pair diff: %v", err)
