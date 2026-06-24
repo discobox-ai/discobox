@@ -63,6 +63,7 @@ func NewRouter(cfg Config) (*chi.Mux, error) {
 	}
 	router.Group(func(protected chi.Router) {
 		protected.Use(authenticator.Middleware)
+		registerSandboxGitRoutes(protected, handler)
 		protected.Mount("/", generated)
 	})
 	return router, nil

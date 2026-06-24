@@ -78,6 +78,7 @@ type Runtime interface {
 	DeleteSandbox(ctx context.Context, sandboxID string) error
 	StartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxOperationRequest) (*Sandbox, error)
 	StopSandbox(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxOperationRequest) (*Sandbox, error)
+	GitRepositoryPath(ctx context.Context, sandboxID, repositoryID string) (string, error)
 }
 
 // DockerSandboxRuntime launches sandboxes as Docker containers inside a worker.
@@ -264,6 +265,20 @@ func (r *DockerSandboxRuntime) StopSandbox(ctx context.Context, sandboxID string
 	return r.GetSandbox(ctx, sandboxID)
 }
 
+func (r *DockerSandboxRuntime) GitRepositoryPath(ctx context.Context, sandboxID, repositoryID string) (string, error) {
+	if _, err := r.GetSandbox(ctx, sandboxID); err != nil {
+		return "", err
+	}
+	repoPath := filepath.Join(sandboxVolumesRoot(r.projectID, sandboxID), "source", repositoryID)
+	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err != nil {
+		if os.IsNotExist(err) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	return repoPath, nil
+}
+
 func (r *DockerSandboxRuntime) filters(sandboxID string) client.Filters {
 	args := client.Filters{}
 	args = args.Add("label", sandboxLabelManaged+"=true")
@@ -322,12 +337,16 @@ func (r *DockerSandboxRuntime) sandboxFromInspect(inspect container.InspectRespo
 
 // MemorySandboxRuntime is a lightweight runtime for tests and non-Docker embeds.
 type MemorySandboxRuntime struct {
-	mu        sync.Mutex
-	sandboxes map[string]*Sandbox
+	mu              sync.Mutex
+	sandboxes       map[string]*Sandbox
+	gitRepositories map[string]map[string]string
 }
 
 func NewMemorySandboxRuntime() *MemorySandboxRuntime {
-	return &MemorySandboxRuntime{sandboxes: map[string]*Sandbox{}}
+	return &MemorySandboxRuntime{
+		sandboxes:       map[string]*Sandbox{},
+		gitRepositories: map[string]map[string]string{},
+	}
 }
 
 func (r *MemorySandboxRuntime) ListSandboxes(context.Context) ([]*Sandbox, error) {
@@ -411,6 +430,28 @@ func (r *MemorySandboxRuntime) StopSandbox(_ context.Context, sandboxID string, 
 	sb.Status = StatusStopped
 	sb.StoppedAt = &now
 	return cloneSandbox(sb), nil
+}
+
+func (r *MemorySandboxRuntime) GitRepositoryPath(_ context.Context, sandboxID, repositoryID string) (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.sandboxes[sandboxID] == nil {
+		return "", ErrNotFound
+	}
+	repositories := r.gitRepositories[sandboxID]
+	if repositories == nil || repositories[repositoryID] == "" {
+		return "", ErrNotFound
+	}
+	return repositories[repositoryID], nil
+}
+
+func (r *MemorySandboxRuntime) SetGitRepositoryPath(sandboxID, repositoryID, path string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.gitRepositories[sandboxID] == nil {
+		r.gitRepositories[sandboxID] = map[string]string{}
+	}
+	r.gitRepositories[sandboxID][repositoryID] = path
 }
 
 func sandboxContainerName(workerID, sandboxID string) string {

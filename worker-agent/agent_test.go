@@ -6,8 +6,12 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -207,6 +211,57 @@ func TestWorkerSandboxHandlersValidateIdentityAndOperateOnRuntime(t *testing.T) 
 	}
 }
 
+func TestWorkerSandboxGitRepositoryRouteServesCheckedOutRepository(t *testing.T) {
+	ctx := context.Background()
+	runtime := workeragent.NewMemorySandboxRuntime()
+	if _, err := runtime.CreateSandbox(ctx, &workerapimodel.WorkerSandboxCreateRequest{SandboxId: "sandbox-1", Image: workerclient.NewOptString("alpine")}); err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+
+	repo := filepath.Join(t.TempDir(), "primary")
+	initGitRepo(t, repo, "one\n")
+	runtime.SetGitRepositoryPath("sandbox-1", "primary", repo)
+
+	controlPlaneKey, signToken := workerAgentTestSigner(t)
+	readToken := signToken("project-1", "worker-1", "sandbox-1", workeragentserver.ScopeSandboxRead)
+	writeToken := signToken("project-1", "worker-1", "sandbox-1", workeragentserver.ScopeSandboxRead, workeragentserver.ScopeSandboxWrite)
+	server := httptest.NewServer(workeragent.NewSandboxHandler(workeragent.Bootstrap{ProjectID: "project-1", WorkerID: "worker-1", ControlPlaneKey: controlPlaneKey}, runtime))
+	defer server.Close()
+
+	gitURL := server.URL + "/api/project/project-1/worker/worker-1/sandboxes/sandbox-1/git-repositories/primary.git"
+	if out := gitOutput(t, "", "-c", "http.extraHeader=Authorization: Bearer "+readToken, "ls-remote", gitURL, "HEAD"); !strings.Contains(out, "HEAD") {
+		t.Fatalf("ls-remote output = %q, want HEAD", out)
+	}
+
+	clientRepo := filepath.Join(t.TempDir(), "client")
+	git(t, "", "-c", "http.extraHeader=Authorization: Bearer "+writeToken, "clone", gitURL, clientRepo)
+	if err := os.WriteFile(filepath.Join(clientRepo, "README.md"), []byte("two\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, clientRepo, "add", "README.md")
+	git(t, clientRepo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "two")
+	git(t, clientRepo, "-c", "http.extraHeader=Authorization: Bearer "+writeToken, "push", "origin", "main")
+
+	data, err := os.ReadFile(filepath.Join(repo, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "two\n" {
+		t.Fatalf("sandbox worktree README = %q, want pushed content", string(data))
+	}
+
+	readOnlyClientRepo := filepath.Join(t.TempDir(), "readonly-client")
+	git(t, "", "-c", "http.extraHeader=Authorization: Bearer "+readToken, "clone", gitURL, readOnlyClientRepo)
+	if err := os.WriteFile(filepath.Join(readOnlyClientRepo, "README.md"), []byte("three\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, readOnlyClientRepo, "add", "README.md")
+	git(t, readOnlyClientRepo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "three")
+	if err := gitErr(readOnlyClientRepo, "-c", "http.extraHeader=Authorization: Bearer "+readToken, "push", "origin", "main"); err == nil {
+		t.Fatal("read-only token push succeeded, want failure")
+	}
+}
+
 type recordingClient struct {
 	req  workeragent.RegisterRequest
 	resp *workeragent.RegisterResponse
@@ -252,4 +307,49 @@ func workerAgentTestSigner(t *testing.T) (string, func(projectID, workerID, sand
 		}
 		return token.V4Sign(secretKey, nil)
 	}
+}
+
+func initGitRepo(t *testing.T, dir, readme string) {
+	t.Helper()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(t, dir, "init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte(readme), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, dir, "add", "README.md")
+	git(t, dir, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "initial")
+}
+
+func git(t *testing.T, dir string, args ...string) {
+	t.Helper()
+	if err := gitErr(dir, args...); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func gitErr(dir string, args ...string) error {
+	cmd := exec.CommandContext(context.Background(), "git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func gitOutput(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.CommandContext(context.Background(), "git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s: %v: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	}
+	return strings.TrimSpace(string(out))
 }
