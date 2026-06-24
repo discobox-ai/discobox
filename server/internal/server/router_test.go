@@ -16,6 +16,7 @@ import (
 	"github.com/coder/websocket/wsjson"
 	"github.com/go-chi/chi/v5"
 	"github.com/obot-platform/discobox/gormdb"
+	"github.com/obot-platform/discobox/server/internal/auth"
 	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/model"
@@ -112,6 +113,16 @@ func jsonRequest(method, target, body string) *http.Request {
 	req := httptest.NewRequestWithContext(context.Background(), method, target, strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	return req
+}
+
+func scopedUserRequest(ctx context.Context, method, target string, body io.Reader, scopes ...string) *http.Request {
+	req := httptest.NewRequestWithContext(ctx, method, target, body)
+	principal := auth.Principal{
+		Type:   auth.PrincipalTypeUser,
+		UserID: service.DefaultUserID,
+		Scopes: scopes,
+	}
+	return req.WithContext(auth.WithPrincipal(req.Context(), principal))
 }
 
 func TestNewRouterCreateSandboxResolvesAgentName(t *testing.T) {
@@ -226,7 +237,7 @@ func TestSandboxGitRepositoryRouteProxiesToWorker(t *testing.T) {
 		t.Fatalf("new router: %v", err)
 	}
 	resp := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/projects/"+projectID+"/sandboxes/sandbox-1/git-repositories/primary.git/info/refs?service=git-upload-pack", nil)
+	req := scopedUserRequest(ctx, http.MethodGet, "/projects/"+projectID+"/sandboxes/sandbox-1/git-repositories/primary.git/info/refs?service=git-upload-pack", nil, workeragentauth.ScopeSandboxRead)
 	req.Header.Set("Authorization", "Bearer user-token")
 	router.ServeHTTP(resp, req)
 
@@ -239,7 +250,53 @@ func TestSandboxGitRepositoryRouteProxiesToWorker(t *testing.T) {
 	if !released {
 		t.Fatal("expected sandbox HTTP lease to be released")
 	}
-	if !slices.Equal(stubs.sandboxScopes, []string{workeragentauth.ScopeSandboxRead, workeragentauth.ScopeSandboxWrite}) {
+	if !slices.Equal(stubs.sandboxScopes, []string{workeragentauth.ScopeSandboxRead}) {
+		t.Fatalf("sandbox HTTP scopes = %#v", stubs.sandboxScopes)
+	}
+}
+
+func TestSandboxGitRepositoryRouteUsesWriteScopeForReceivePack(t *testing.T) {
+	ctx := context.Background()
+	stubs := newRouterTestServices()
+	workerID := "worker-1"
+	stubs.sandboxes["sandbox-1"] = model.Sandbox{
+		ID:              "sandbox-1",
+		ProjectID:       service.DefaultProjectID,
+		CreatedByUserID: service.DefaultUserID,
+		Name:            "sandbox",
+		WorkerID:        &workerID,
+	}
+	projectID := service.DefaultProjectID
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery != "service=git-receive-pack" {
+			t.Fatalf("upstream query = %q", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/x-git-receive-pack-advertisement")
+		_, _ = w.Write([]byte("git receive response"))
+	}))
+	t.Cleanup(upstream.Close)
+	stubs.sandboxLease = transport.NewHTTPClientLeaseWithBaseURLAndAuth(upstream.Client(), upstream.URL, "worker-token", nil)
+
+	router, err := NewRouter(services.Services{
+		Projects:     stubs,
+		AgentConfigs: stubs,
+		Sandboxes:    stubs,
+		Providers:    stubs,
+		Workers:      stubs,
+		Jobs:         stubs,
+		Events:       stubs,
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	resp := httptest.NewRecorder()
+	req := scopedUserRequest(ctx, http.MethodGet, "/projects/"+projectID+"/sandboxes/sandbox-1/git-repositories/primary.git/info/refs?service=git-receive-pack", nil, workeragentauth.ScopeSandboxWrite)
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("GET git receive info/refs status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	if !slices.Equal(stubs.sandboxScopes, []string{workeragentauth.ScopeSandboxWrite}) {
 		t.Fatalf("sandbox HTTP scopes = %#v", stubs.sandboxScopes)
 	}
 }
@@ -289,7 +346,7 @@ func TestSandboxHTTPRouteProxiesPortToWorker(t *testing.T) {
 		t.Fatalf("new router: %v", err)
 	}
 	resp := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/projects/"+projectID+"/sandboxes/sandbox-1/http/8080/api/status?verbose=true", nil)
+	req := scopedUserRequest(ctx, http.MethodGet, "/projects/"+projectID+"/sandboxes/sandbox-1/http/8080/api/status?verbose=true", nil, workeragentauth.ScopeSandboxHTTP)
 	req.Header.Set("Authorization", "Bearer user-token")
 	router.ServeHTTP(resp, req)
 

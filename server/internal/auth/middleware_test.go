@@ -128,3 +128,19 @@ func TestAuthenticatedAuthorizerDoesNotAuthorizeUnlistedPaths(t *testing.T) {
 		})
 	}
 }
+
+func TestDefaultUserAuthenticatorGrantsAllScopes(t *testing.T) {
+	principal, ok, err := (DefaultUserAuthenticator{UserID: "user-1"}).Authenticate(httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/projects", nil))
+	if err != nil {
+		t.Fatalf("authenticate: %v", err)
+	}
+	if !ok {
+		t.Fatal("authenticate ok = false, want true")
+	}
+	if principal.Type != PrincipalTypeUser || principal.UserID != "user-1" {
+		t.Fatalf("principal = %#v", principal)
+	}
+	if !principal.HasScope("sandbox:read") || !principal.HasScope("sandbox:write") || !principal.HasScope("sandbox:http") {
+		t.Fatalf("default principal scopes = %#v, want all scopes", principal.Scopes)
+	}
+}

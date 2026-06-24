@@ -217,6 +217,9 @@ func (s *Service) GetSandbox(ctx context.Context, projectID, sandboxID string) (
 }
 
 func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
+	if err := authorizeRequestedScopes(ctx, scopes); err != nil {
+		return nil, nil, err
+	}
 	sandboxModel, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
 		return nil, nil, mapAPIError(err, "sandbox not found")
@@ -240,6 +243,22 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 		return nil, nil, err
 	}
 	return lease, sandboxModel, nil
+}
+
+func authorizeRequestedScopes(ctx context.Context, scopes []string) error {
+	if len(scopes) == 0 {
+		return nil
+	}
+	principal, ok := auth.PrincipalFromContext(ctx)
+	if !ok || principal.Type != auth.PrincipalTypeUser || principal.UserID == "" {
+		return apperrors.NewStatusError(http.StatusForbidden, "user access required")
+	}
+	for _, scope := range scopes {
+		if !principal.HasScope(scope) {
+			return apperrors.NewStatusError(http.StatusForbidden, "user scope required: "+scope)
+		}
+	}
+	return nil
 }
 
 func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string, input services.UpdateSandboxBody) (*model.Sandbox, error) {

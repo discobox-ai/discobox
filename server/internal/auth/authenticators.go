@@ -61,6 +61,7 @@ func (a DefaultUserAuthenticator) Authenticate(*http.Request) (Principal, bool, 
 	return Principal{
 		Type:   PrincipalTypeUser,
 		UserID: a.UserID,
+		Scopes: []string{ScopeAll},
 	}, true, nil
 }
 

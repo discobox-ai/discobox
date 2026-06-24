@@ -17,8 +17,6 @@ import (
 
 const defaultSandboxWorkerBaseURL = "https://worker"
 
-var sandboxGitProxyScopes = []string{workeragentauth.ScopeSandboxRead, workeragentauth.ScopeSandboxWrite}
-
 func registerSandboxGitRoutes(router chi.Router, service services.SandboxService) {
 	router.Handle("/projects/{projectId}/sandboxes/{sandboxId}/git-repositories/*", sandboxGitProxyHandler(service))
 }
@@ -34,10 +32,11 @@ func sandboxGitProxyHandler(service services.SandboxService) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
+		workerScopes := sandboxGitProxyScopes(r)
 
 		projectID := chi.URLParam(r, "projectId")
 		sandboxID := chi.URLParam(r, "sandboxId")
-		lease, sandboxModel, err := service.AcquireSandboxHTTPClient(r.Context(), projectID, sandboxID, sandboxGitProxyScopes)
+		lease, sandboxModel, err := service.AcquireSandboxHTTPClient(r.Context(), projectID, sandboxID, workerScopes)
 		if err != nil {
 			http.Error(w, err.Error(), statusCodeForProxyError(err))
 			return
@@ -60,6 +59,17 @@ func sandboxGitProxyHandler(service services.SandboxService) http.Handler {
 		proxy := sandboxWorkerReverseProxy(target, lease)
 		proxy.ServeHTTP(w, r)
 	})
+}
+
+func sandboxGitProxyScopes(r *http.Request) []string {
+	switch {
+	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git-receive-pack"):
+		return []string{workeragentauth.ScopeSandboxWrite}
+	case r.URL.Query().Get("service") == "git-receive-pack":
+		return []string{workeragentauth.ScopeSandboxWrite}
+	default:
+		return []string{workeragentauth.ScopeSandboxRead}
+	}
 }
 
 func parseSandboxGitRepositoryPath(path string) (repositoryID, suffix string, ok bool) {
