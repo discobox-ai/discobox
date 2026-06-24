@@ -30,7 +30,7 @@ type WorkerManager interface {
 	EnsureWorkerAgentTrustKey(ctx context.Context) (string, error)
 	CreateWorkerAgentToken(ctx context.Context, claims workeragentauth.TokenClaims) (string, error)
 	FindSchedulableWorker(ctx context.Context, sandbox *model.Sandbox) (*model.Worker, error)
-	MarkWorkerRuntimeLost(ctx context.Context, projectID, providerID, workerID, message string) (bool, error)
+	ScheduleWorkerReconciliation(ctx context.Context, workerID string) error
 	ScheduleWorkerProviderReconciliation(ctx context.Context, projectID, providerID string) error
 }
 

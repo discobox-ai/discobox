@@ -37,6 +37,10 @@ type WorkerProvider interface {
 	AcquireWorkerHTTPClient(ctx context.Context, worker *model.Worker) (*transport.HTTPClientLease, error)
 }
 
+type workerProviderInventoryReconciler interface {
+	ReconcileWorkerProviderInventory(ctx context.Context, manager any, project *model.Project, provider *model.SandboxProviderInstance) (bool, error)
+}
+
 // WorkerPoolProvider is a sandbox provider backed by a warm worker pool.
 //
 // WorkerPoolProvider owns sandbox placement and worker-pool reconciliation. The
@@ -96,6 +100,15 @@ func (p *WorkerPoolProvider) ReconcileWorkerProvider(ctx context.Context, manage
 	workerManager, ok := manager.(WorkerManager)
 	if !ok {
 		return fmt.Errorf("worker manager is required")
+	}
+	if reconciler, ok := p.workerProvider.(workerProviderInventoryReconciler); ok {
+		pendingWorkerReconcile, err := reconciler.ReconcileWorkerProviderInventory(ctx, workerManager, project, provider)
+		if err != nil {
+			return err
+		}
+		if pendingWorkerReconcile {
+			return nil
+		}
 	}
 	return p.ensureWorkerPool(ctx, workerManager, project, provider)
 }

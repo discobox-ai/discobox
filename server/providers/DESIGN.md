@@ -61,6 +61,27 @@ thin platform integrations for Docker, DigitalOcean, KVM, HCS, Apple
 Virtualization, AWS, Azure, GCP, or similar VM/container backends. They should
 not own worker-pool scheduling or control-plane persistence.
 
+## Worker Runtime Inventory
+
+Provider inventory is observational. A provider may list managed worker runtimes
+and compare them with worker rows to detect stale runtime state, failed rows with
+live runtimes, deleted rows with remaining runtimes, or other mismatches. For
+worker rows that still exist, inventory must enqueue the worker reconcile job and
+let the worker reconciler perform generation-aware lifecycle and runtime-state
+updates. If that enqueue happens during provider reconciliation, provider pool
+sizing should pause until the worker job completes and requeues provider
+reconciliation.
+
+Worker runtime inventory is only about worker runtimes, even when the local
+backend represents workers as Docker containers. It must not inspect, reconcile,
+delete, or otherwise reason about user sandbox containers that are hosted inside
+a worker. Sandbox container reconciliation belongs behind the worker-agent
+sandbox runtime API and is triggered by sandbox reconciliation through that API.
+
+The direct runtime side-effect exception is an orphan managed runtime with no
+worker row. The provider that owns that runtime may delete it immediately because
+there is no persisted worker lifecycle left to reconcile.
+
 ## Worker Agent HTTP Routing
 
 VM-backed providers must be able to send provider/runtime requests to worker

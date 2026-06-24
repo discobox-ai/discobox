@@ -19,6 +19,25 @@ func (p *Provider) InitializeWorkerProvider(ctx context.Context, provider *model
 	return p.driver.InitializeWorkerProvider(ctx, provider, manager)
 }
 
+type workerProviderInventoryReconciler interface {
+	ReconcileWorkerProviderInventory(ctx context.Context, manager any, project *model.Project, provider *model.SandboxProviderInstance) (bool, error)
+}
+
+type workerVMInspector interface {
+	InspectWorkerVM(ctx context.Context, workerID string) (*Instance, error)
+}
+
+func (p *Provider) ReconcileWorkerProviderInventory(ctx context.Context, manager any, project *model.Project, provider *model.SandboxProviderInstance) (bool, error) {
+	if p == nil {
+		return false, errors.New("vm provider is required")
+	}
+	reconciler, ok := p.driver.(workerProviderInventoryReconciler)
+	if !ok {
+		return false, nil
+	}
+	return reconciler.ReconcileWorkerProviderInventory(ctx, manager, project, provider)
+}
+
 func (p *Provider) CreateWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string, controlPlanePublicKey string) error {
 	if p == nil {
 		return errors.New("vm provider is required")
@@ -62,9 +81,26 @@ func (p *Provider) RemoveWorker(ctx context.Context, project *model.Project, _ *
 		return errors.New("vm provider is required")
 	}
 	ref := sandbox.SandboxRef{ProjectID: project.ID, SandboxID: "worker-" + worker.ID}
+	removed := false
 	if len(worker.RuntimeState) > 0 {
 		if _, err := p.Remove(ctx, ref, worker.RuntimeState, sandbox.RemoveVolumes()); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 			return err
+		} else if err == nil {
+			removed = true
+		}
+	}
+	if !removed {
+		inspector, ok := p.driver.(workerVMInspector)
+		if ok {
+			inst, err := inspector.InspectWorkerVM(ctx, worker.ID)
+			if err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+				return err
+			}
+			if err == nil {
+				if err := p.driver.DeleteVM(ctx, inst.ID, true); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+					return err
+				}
+			}
 		}
 	}
 	worker.RuntimeState = nil

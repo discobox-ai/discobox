@@ -199,6 +199,47 @@ func TestNormalizeWorkerPoolConfigKeepsPoolSizeAsMinimumWithReplacementHeadroom(
 	}
 }
 
+func TestWorkerPoolProviderReconcileRunsInventoryBeforeCapacity(t *testing.T) {
+	workerManager := &recordingWorkerManager{}
+	workerProvider := &inventoryTestWorkerProvider{}
+	pool := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{Max: 1}, workerManager, false)
+	project := &model.Project{ID: "project-1"}
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
+
+	if err := pool.ReconcileWorkerProvider(context.Background(), workerManager, project, provider); err != nil {
+		t.Fatalf("reconcile worker provider: %v", err)
+	}
+
+	if workerProvider.reconcileCalls != 1 {
+		t.Fatalf("inventory reconcile calls = %d, want 1", workerProvider.reconcileCalls)
+	}
+	if workerProvider.listCallsAtReconcile != 0 {
+		t.Fatalf("list calls at inventory reconcile = %d, want 0", workerProvider.listCallsAtReconcile)
+	}
+	if workerManager.listCalls != 1 {
+		t.Fatalf("list calls after reconcile = %d, want 1", workerManager.listCalls)
+	}
+}
+
+func TestWorkerPoolProviderReconcileDefersCapacityWhenInventorySchedulesWorker(t *testing.T) {
+	workerManager := &recordingWorkerManager{}
+	workerProvider := &inventoryTestWorkerProvider{pendingWorkerReconcile: true}
+	pool := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{Max: 1}, workerManager, false)
+	project := &model.Project{ID: "project-1"}
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
+
+	if err := pool.ReconcileWorkerProvider(context.Background(), workerManager, project, provider); err != nil {
+		t.Fatalf("reconcile worker provider: %v", err)
+	}
+
+	if workerProvider.reconcileCalls != 1 {
+		t.Fatalf("inventory reconcile calls = %d, want 1", workerProvider.reconcileCalls)
+	}
+	if workerManager.listCalls != 0 {
+		t.Fatalf("list calls after deferred reconcile = %d, want 0", workerManager.listCalls)
+	}
+}
+
 func TestWorkerProviderCreateClaimsWorkerAndReturnsWorkerID(t *testing.T) {
 	createdAt := time.Now().UTC()
 	registeredAt := createdAt.Add(time.Second)
@@ -721,16 +762,33 @@ func (p *testWorkerProvider) AcquireWorkerHTTPClient(context.Context, *model.Wor
 	}, nil), nil
 }
 
+type inventoryTestWorkerProvider struct {
+	testWorkerProvider
+	pendingWorkerReconcile bool
+	reconcileCalls         int
+	listCallsAtReconcile   int
+}
+
+func (p *inventoryTestWorkerProvider) ReconcileWorkerProviderInventory(_ context.Context, manager any, _ *model.Project, _ *model.SandboxProviderInstance) (bool, error) {
+	p.reconcileCalls++
+	if recording, ok := manager.(*recordingWorkerManager); ok {
+		p.listCallsAtReconcile = recording.listCalls
+	}
+	return p.pendingWorkerReconcile, nil
+}
+
 type recordingWorkerManager struct {
 	worker                 *model.Worker
 	workersByID            map[string]*model.Worker
 	err                    error
 	sandbox                *model.Sandbox
 	findCalls              int
+	listCalls              int
 	workerAgentTokenClaims []workeragentauth.TokenClaims
 }
 
 func (s *recordingWorkerManager) ListWorkers(context.Context, string, string) ([]model.Worker, error) {
+	s.listCalls++
 	return nil, nil
 }
 
@@ -779,8 +837,8 @@ func (s *recordingWorkerManager) ScheduleWorkerProviderReconciliation(context.Co
 	return nil
 }
 
-func (s *recordingWorkerManager) MarkWorkerRuntimeLost(context.Context, string, string, string, string) (bool, error) {
-	return false, nil
+func (s *recordingWorkerManager) ScheduleWorkerReconciliation(context.Context, string) error {
+	return nil
 }
 
 type capacityWaitWorkerManager struct {
@@ -837,8 +895,8 @@ func (s *capacityWaitWorkerManager) ScheduleWorkerProviderReconciliation(context
 	return nil
 }
 
-func (s *capacityWaitWorkerManager) MarkWorkerRuntimeLost(context.Context, string, string, string, string) (bool, error) {
-	return false, nil
+func (s *capacityWaitWorkerManager) ScheduleWorkerReconciliation(context.Context, string) error {
+	return nil
 }
 
 type repairingWorkerManager struct {
@@ -887,8 +945,8 @@ func (s *repairingWorkerManager) ScheduleWorkerProviderReconciliation(context.Co
 	return nil
 }
 
-func (s *repairingWorkerManager) MarkWorkerRuntimeLost(context.Context, string, string, string, string) (bool, error) {
-	return false, nil
+func (s *repairingWorkerManager) ScheduleWorkerReconciliation(context.Context, string) error {
+	return nil
 }
 
 func (s *repairingWorkerManager) GetJob(_ context.Context, id string) (*orchestration.Job, error) {

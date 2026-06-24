@@ -114,9 +114,39 @@ func TestProviderCreateWorkerRecreatesRuntimeWhenDesiredMetadataChanges(t *testi
 	}
 }
 
+func TestProviderRemoveWorkerDeletesCurrentWorkerVMWhenStateIsStale(t *testing.T) {
+	ctx := context.Background()
+	driver := &recordingDriver{
+		missingDeleteIDs: map[string]bool{"stale-vm": true},
+		workerInstance:   &vm.Instance{ID: "current-vm", Status: sandbox.StatusRunning},
+	}
+	provider, err := vm.New(vm.Config{Driver: driver})
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+	worker := &model.Worker{
+		ID:           "worker-1",
+		RuntimeState: []byte(`{"instanceId":"stale-vm"}`),
+	}
+
+	if err := provider.RemoveWorker(ctx, &model.Project{ID: "project-1"}, &model.SandboxProviderInstance{ID: "provider-1"}, worker); err != nil {
+		t.Fatalf("remove worker: %v", err)
+	}
+
+	if len(driver.deletedVMIDs) != 2 || driver.deletedVMIDs[0] != "stale-vm" || driver.deletedVMIDs[1] != "current-vm" {
+		t.Fatalf("deleted VM IDs = %#v, want stale-vm then current-vm", driver.deletedVMIDs)
+	}
+	if len(worker.RuntimeState) != 0 || worker.Ready || worker.Schedulable || worker.Degraded {
+		t.Fatalf("worker after remove = %#v", worker)
+	}
+}
+
 type recordingDriver struct {
-	createdSpec vm.InstanceSpec
-	createCalls int
+	createdSpec      vm.InstanceSpec
+	createCalls      int
+	deletedVMIDs     []string
+	missingDeleteIDs map[string]bool
+	workerInstance   *vm.Instance
 }
 
 func (d *recordingDriver) CreateVM(_ context.Context, spec vm.InstanceSpec) (*vm.Instance, error) {
@@ -144,9 +174,22 @@ func (d *recordingDriver) StopVM(context.Context, string, time.Duration) (*vm.In
 	return &vm.Instance{ID: "vm-1", Status: sandbox.StatusStopped, CreatedAt: now}, nil
 }
 
-func (d *recordingDriver) DeleteVM(context.Context, string, bool) error { return nil }
+func (d *recordingDriver) DeleteVM(_ context.Context, id string, _ bool) error {
+	d.deletedVMIDs = append(d.deletedVMIDs, id)
+	if d.missingDeleteIDs[id] {
+		return sandbox.ErrNotFound
+	}
+	return nil
+}
 
 func (d *recordingDriver) InspectVM(context.Context, string) (*vm.Instance, error) {
 	now := time.Now().UTC()
 	return &vm.Instance{ID: "vm-1", Status: sandbox.StatusRunning, CreatedAt: now}, nil
+}
+
+func (d *recordingDriver) InspectWorkerVM(context.Context, string) (*vm.Instance, error) {
+	if d.workerInstance == nil {
+		return nil, sandbox.ErrNotFound
+	}
+	return d.workerInstance, nil
 }

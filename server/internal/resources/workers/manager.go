@@ -2,6 +2,7 @@ package workers
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/obot-platform/discobox/orchestration"
@@ -19,9 +20,10 @@ type Manager struct {
 
 type WorkerJobManager interface {
 	CreateWorker(context.Context, *model.Worker) (*model.Worker, error)
+	SubmitWorkerReconcile(context.Context, string) (*orchestration.Job, error)
 	DeleteWorkerForFailedJob(context.Context, string, int64, string, string) (bool, error)
 	DeleteWorkerForExpiredRegistration(context.Context, string, int64, time.Time, string) (bool, error)
-	EnqueueWorkerProviderCurrent(context.Context, string, string) (*orchestration.Job, error)
+	SubmitWorkerProviderReconcile(context.Context, string, string) (*orchestration.Job, error)
 }
 
 type JobRegistrar interface {
@@ -104,11 +106,19 @@ func (s *Manager) DeleteWorkerForExpiredRegistration(ctx context.Context, worker
 	return s.jobs.DeleteWorkerForExpiredRegistration(ctx, workerID, generation, cutoff, message)
 }
 
-func (s *Manager) MarkWorkerRuntimeLost(ctx context.Context, projectID, providerID, workerID, message string) (bool, error) {
-	return s.store.MarkWorkerRuntimeLost(ctx, projectID, providerID, workerID, message)
+func (s *Manager) ScheduleWorkerReconciliation(ctx context.Context, workerID string) error {
+	worker, err := s.store.GetWorker(ctx, workerID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	_, err = s.jobs.SubmitWorkerReconcile(ctx, worker)
+	return err
 }
 
 func (s *Manager) ScheduleWorkerProviderReconciliation(ctx context.Context, projectID, providerID string) error {
-	_, err := s.jobs.EnqueueWorkerProviderCurrent(ctx, projectID, providerID)
+	_, err := s.jobs.SubmitWorkerProviderReconcile(ctx, projectID, providerID)
 	return err
 }

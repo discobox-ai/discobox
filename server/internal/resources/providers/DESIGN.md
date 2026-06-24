@@ -27,3 +27,7 @@ flowchart LR
 - `WorkerProviderReconcileExecutor` owns payload decode and provider-instance
   reconciliation. Keep provider job execution logic in the executor unless a
   dependency has clear ownership elsewhere.
+- Provider-instance reconciliation may compare provider inventory with worker
+  rows before sizing the pool. When inventory finds a worker/runtime mismatch,
+  it should enqueue the affected worker reconcile job and defer pool sizing until
+  that worker job completes and requeues provider reconciliation.

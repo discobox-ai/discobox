@@ -588,6 +588,40 @@ func (d *Driver) InspectVM(ctx context.Context, id string) (*vm.Instance, error)
 	return d.instanceFromInspect(inspect.Container), nil
 }
 
+func (d *Driver) ListWorkerVMs(ctx context.Context, providerID string) ([]vm.Instance, error) {
+	filters := make(client.Filters).
+		Add("label", labelManaged+"=true").
+		Add("label", labelWorkerAgent+"=true").
+		Add("label", labelProviderInstanceID+"="+providerID)
+	summaries, err := d.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: filters})
+	if err != nil {
+		return nil, err
+	}
+	instances := make([]vm.Instance, 0, len(summaries.Items))
+	for _, summary := range summaries.Items {
+		inspect, err := d.client.ContainerInspect(ctx, summary.ID, client.ContainerInspectOptions{})
+		if err != nil {
+			if errors.Is(mapDockerNotFound(err), sandbox.ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		instances = append(instances, *d.instanceFromInspect(inspect.Container))
+	}
+	return instances, nil
+}
+
+func (d *Driver) InspectWorkerVM(ctx context.Context, workerID string) (*vm.Instance, error) {
+	if strings.TrimSpace(workerID) == "" {
+		return nil, sandbox.ErrNotFound
+	}
+	inspect, err := d.client.ContainerInspect(ctx, containerName(workerID, ""), client.ContainerInspectOptions{})
+	if err != nil {
+		return nil, mapDockerNotFound(err)
+	}
+	return d.instanceFromInspect(inspect.Container), nil
+}
+
 func (d *Driver) AcquireHTTPClient(_ context.Context, inst *vm.Instance) (*transport.HTTPClientLease, error) {
 	baseURL := ""
 	if inst != nil {

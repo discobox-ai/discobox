@@ -16,6 +16,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/providers/workerpool"
+	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
 )
 
 func (d *Driver) InitializeWorkerProvider(ctx context.Context, provider *model.SandboxProviderInstance, manager any) error {
@@ -42,7 +43,7 @@ func (d *Driver) InitializeWorkerProvider(ctx context.Context, provider *model.S
 		projectID:  provider.ProjectID,
 		providerID: provider.ID,
 	}
-	if err := watcher.scan(ctx); err != nil {
+	if _, err := watcher.scan(ctx); err != nil {
 		cancel()
 		d.watcherMu.Lock()
 		d.watcherCancel = nil
@@ -51,6 +52,23 @@ func (d *Driver) InitializeWorkerProvider(ctx context.Context, provider *model.S
 	}
 	go watcher.watch(watchCtx)
 	return nil
+}
+
+func (d *Driver) ReconcileWorkerProviderInventory(ctx context.Context, manager any, _ *model.Project, provider *model.SandboxProviderInstance) (bool, error) {
+	if d == nil || provider == nil || manager == nil {
+		return false, nil
+	}
+	workerManager, ok := manager.(workerpool.WorkerManager)
+	if !ok {
+		return false, fmt.Errorf("worker manager is required")
+	}
+	watcher := dockerWorkerWatcher{
+		driver:     d,
+		manager:    workerManager,
+		projectID:  provider.ProjectID,
+		providerID: provider.ID,
+	}
+	return watcher.scan(ctx)
 }
 
 type dockerWorkerWatcher struct {
@@ -64,44 +82,88 @@ type dockerWorkerRuntimeState struct {
 	InstanceID string `json:"instanceId"`
 }
 
-func (w dockerWorkerWatcher) scan(ctx context.Context) error {
+func (w dockerWorkerWatcher) scan(ctx context.Context) (bool, error) {
 	workers, err := w.manager.ListWorkers(ctx, w.projectID, w.providerID)
 	if err != nil {
-		return err
+		return false, err
 	}
+	containers, err := w.driver.ListWorkerVMs(ctx, w.providerID)
+	if err != nil {
+		return false, err
+	}
+	containersByWorker := make(map[string]*vm.Instance, len(containers))
+	for i := range containers {
+		workerID := strings.TrimSpace(containers[i].Metadata[labelWorkerID])
+		if workerID == "" {
+			continue
+		}
+		containersByWorker[workerID] = &containers[i]
+	}
+	workersByID := make(map[string]struct{}, len(workers))
+	pendingWorkerReconcile := false
 	for i := range workers {
-		if err := w.checkWorker(ctx, &workers[i]); err != nil {
-			return err
+		workersByID[workers[i].ID] = struct{}{}
+		scheduled, err := w.checkWorker(ctx, &workers[i], containersByWorker[workers[i].ID])
+		if err != nil {
+			return false, err
+		}
+		pendingWorkerReconcile = pendingWorkerReconcile || scheduled
+	}
+	for i := range containers {
+		workerID := strings.TrimSpace(containers[i].Metadata[labelWorkerID])
+		if workerID == "" {
+			continue
+		}
+		if _, ok := workersByID[workerID]; ok {
+			continue
+		}
+		if err := w.driver.DeleteVM(ctx, containers[i].ID, true); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+			return false, err
 		}
 	}
-	return nil
+	return pendingWorkerReconcile, nil
 }
 
-func (w dockerWorkerWatcher) checkWorker(ctx context.Context, worker *model.Worker) error {
+func (w dockerWorkerWatcher) checkWorker(ctx context.Context, worker *model.Worker, current *vm.Instance) (bool, error) {
 	if worker == nil || worker.ProjectID != w.projectID || worker.ProviderInstanceID != w.providerID {
-		return nil
+		return false, nil
 	}
-	if worker.DesiredState != model.WorkerDesiredStateActive || worker.RevokedAt != nil || worker.LastOperationStatus == model.OperationStatusFailed {
-		return nil
+	if current != nil && worker.DesiredState == model.WorkerDesiredStateDeleted {
+		return w.scheduleWorkerReconciliation(ctx, worker.ID)
+	}
+	if worker.DesiredState != model.WorkerDesiredStateActive || worker.RevokedAt != nil {
+		return false, nil
+	}
+	if worker.LastOperationStatus == model.OperationStatusFailed || worker.Phase == model.WorkerPhaseFailed {
+		if current != nil && current.Status == sandbox.StatusRunning {
+			return w.scheduleWorkerReconciliation(ctx, worker.ID)
+		}
+		return false, nil
 	}
 	state, err := decodeDockerWorkerRuntimeState(worker.RuntimeState)
 	if err != nil {
 		if errors.Is(err, sandbox.ErrNotFound) {
-			return nil
+			if current != nil {
+				return w.scheduleWorkerReconciliation(ctx, worker.ID)
+			}
+			return false, nil
 		}
-		return err
+		return false, err
 	}
 	inst, err := w.driver.InspectVM(ctx, state.InstanceID)
 	if errors.Is(err, sandbox.ErrNotFound) {
-		return w.markRuntimeLost(ctx, worker.ID, fmt.Sprintf("worker container %s is missing", shortContainerID(state.InstanceID)))
+		return w.scheduleWorkerReconciliation(ctx, worker.ID)
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	if inst.Status == sandbox.StatusRunning {
-		return nil
+		if current != nil && current.ID != inst.ID {
+			return w.scheduleWorkerReconciliation(ctx, worker.ID)
+		}
+		return false, nil
 	}
-	return w.markRuntimeLost(ctx, worker.ID, runtimeLostMessage(inst.ID, inst.Status, inst.Error))
+	return w.scheduleWorkerReconciliation(ctx, worker.ID)
 }
 
 func (w dockerWorkerWatcher) watch(ctx context.Context) {
@@ -164,16 +226,12 @@ func (w dockerWorkerWatcher) handleEvent(ctx context.Context, event events.Messa
 	if workerID == "" {
 		return nil
 	}
-	message := fmt.Sprintf("worker container %s %s", shortContainerID(event.Actor.ID), event.Action)
-	return w.markRuntimeLost(ctx, workerID, message)
+	_, err := w.scheduleWorkerReconciliation(ctx, workerID)
+	return err
 }
 
-func (w dockerWorkerWatcher) markRuntimeLost(ctx context.Context, workerID string, message string) error {
-	updated, err := w.manager.MarkWorkerRuntimeLost(ctx, w.projectID, w.providerID, workerID, message)
-	if err != nil || !updated {
-		return err
-	}
-	return w.manager.ScheduleWorkerProviderReconciliation(ctx, w.projectID, w.providerID)
+func (w dockerWorkerWatcher) scheduleWorkerReconciliation(ctx context.Context, workerID string) (bool, error) {
+	return true, w.manager.ScheduleWorkerReconciliation(ctx, workerID)
 }
 
 func decodeDockerWorkerRuntimeState(data []byte) (dockerWorkerRuntimeState, error) {
@@ -197,12 +255,4 @@ func workerContainerLostAction(action events.Action) bool {
 	default:
 		return false
 	}
-}
-
-func runtimeLostMessage(id string, status sandbox.Status, detail string) string {
-	message := fmt.Sprintf("worker container %s is %s", shortContainerID(id), status)
-	if strings.TrimSpace(detail) != "" {
-		message += ": " + strings.TrimSpace(detail)
-	}
-	return message
 }
