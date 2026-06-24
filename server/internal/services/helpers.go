@@ -75,14 +75,22 @@ func SandboxUserFromModel(sandbox *model.Sandbox) *serverapi.SandboxUser {
 }
 
 func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
-	type sandboxWithUser struct {
-		*model.Sandbox
-		User *serverapi.SandboxUser `json:"user,omitempty"`
+	var fields map[string]any
+	data, err := json.Marshal(sandbox)
+	if err != nil {
+		return serverapi.Sandbox{}, err
 	}
-	return Convert[serverapi.Sandbox](sandboxWithUser{
-		Sandbox: sandbox,
-		User:    SandboxUserFromModel(sandbox),
-	})
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return serverapi.Sandbox{}, err
+	}
+	delete(fields, "userName")
+	delete(fields, "userUid")
+	delete(fields, "userGid")
+	delete(fields, "homeDirectory")
+	if user := SandboxUserFromModel(sandbox); user != nil {
+		fields["user"] = user
+	}
+	return Convert[serverapi.Sandbox](fields)
 }
 
 func SandboxesToAPI(sandboxes []model.Sandbox) ([]serverapi.Sandbox, error) {

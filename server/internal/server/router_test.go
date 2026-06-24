@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -130,7 +131,13 @@ func TestNewRouterCreateSandboxResolvesAgentName(t *testing.T) {
 	createSandboxResp := httptest.NewRecorder()
 	router.ServeHTTP(createSandboxResp, jsonRequest(http.MethodPost, "/projects/"+service.DefaultProjectID+"/sandboxes", `{
 		"name": "sandbox",
-		"agentName": "Codex"
+		"agentName": "Codex",
+		"user": {
+			"name": "darren",
+			"uid": 1002,
+			"gid": 1002,
+			"homeDirectory": "/home/darren"
+		}
 	}`))
 	if createSandboxResp.Code != http.StatusAccepted {
 		t.Fatalf("POST /sandboxes status = %d, body = %s", createSandboxResp.Code, createSandboxResp.Body.String())
@@ -141,6 +148,34 @@ func TestNewRouterCreateSandboxResolvesAgentName(t *testing.T) {
 	}
 	if sandbox.AgentConfigID == nil || *sandbox.AgentConfigID != agent.ID {
 		t.Fatalf("agentConfigId = %v, want %q", sandbox.AgentConfigID, agent.ID)
+	}
+}
+
+func TestNewRouterGeneratedErrorsUseProblemJSON(t *testing.T) {
+	router := newStubRouterForTest()
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/projects/"+service.DefaultProjectID+"/sandboxes", strings.NewReader(`{"name":`))
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("POST /sandboxes status = %d, want %d", resp.Code, http.StatusBadRequest)
+	}
+	if got := resp.Header().Get("Content-Type"); got != "application/problem+json" {
+		t.Fatalf("Content-Type = %q, want application/problem+json", got)
+	}
+
+	var body struct {
+		Status int    `json:"status"`
+		Title  string `json:"title"`
+		Detail string `json:"detail"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode problem body: %v", err)
+	}
+	if body.Status != http.StatusBadRequest || body.Title != http.StatusText(http.StatusBadRequest) || body.Detail == "" {
+		t.Fatalf("problem body = %#v", body)
 	}
 }
 
@@ -315,7 +350,8 @@ func TestProjectStreamReceivesSandboxMutation(t *testing.T) {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusAccepted {
-		t.Fatalf("create sandbox status = %d", resp.StatusCode)
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("create sandbox status = %d: %s", resp.StatusCode, string(body))
 	}
 
 	msg := readProjectStreamMessage(wsCtx, t, conn, "event", model.EventTypeResourceChanged)

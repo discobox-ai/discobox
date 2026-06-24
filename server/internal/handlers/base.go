@@ -1,12 +1,15 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
+	"github.com/go-faster/jx"
 	serverapi "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
 	services "github.com/obot-platform/discobox/server/internal/services"
+	"github.com/ogen-go/ogen/ogenerrors"
 )
 
 // Handler adapts server services to the generated OpenAPI server interface.
@@ -23,6 +26,7 @@ func New(services services.Services) *Handler {
 
 // NewServer creates an http.Handler from the generated OpenAPI server scaffold.
 func NewServer(services services.Services, opts ...serverapi.ServerOption) (http.Handler, error) {
+	opts = append(opts, serverapi.WithErrorHandler(problemErrorHandler))
 	return serverapi.NewServer(New(services), opts...)
 }
 
@@ -30,17 +34,37 @@ func apiError(err error) *serverapi.ErrorModelStatusCode {
 	if err == nil {
 		return nil
 	}
-	status := http.StatusInternalServerError
+	status := statusCodeForError(err)
+	return &serverapi.ErrorModelStatusCode{
+		StatusCode: status,
+		Response:   errorModel(status, err),
+	}
+}
+
+func problemErrorHandler(_ context.Context, w http.ResponseWriter, _ *http.Request, err error) {
+	status := statusCodeForError(err)
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(status)
+
+	e := new(jx.Encoder)
+	body := errorModel(status, err)
+	body.Encode(e)
+	_, _ = e.WriteTo(w)
+}
+
+func statusCodeForError(err error) int {
+	status := ogenerrors.ErrorCode(err)
 	var statusErr interface{ StatusCode() int }
 	if errors.As(err, &statusErr) {
 		status = statusErr.StatusCode()
 	}
-	return &serverapi.ErrorModelStatusCode{
-		StatusCode: status,
-		Response: apimodel.ErrorModel{
-			Status: serverapi.NewOptInt64(int64(status)),
-			Title:  serverapi.NewOptString(http.StatusText(status)),
-			Detail: serverapi.NewOptString(err.Error()),
-		},
+	return status
+}
+
+func errorModel(status int, err error) apimodel.ErrorModel {
+	return apimodel.ErrorModel{
+		Status: serverapi.NewOptInt64(int64(status)),
+		Title:  serverapi.NewOptString(http.StatusText(status)),
+		Detail: serverapi.NewOptString(err.Error()),
 	}
 }
