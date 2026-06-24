@@ -23,7 +23,7 @@ type Provider interface {
 	Stop(ctx context.Context, ref SandboxRef, state []byte, timeout time.Duration) (*Sandbox, []byte, error)
 	Remove(ctx context.Context, ref SandboxRef, state []byte, opts ...RemoveOption) ([]byte, error)
 	Get(ctx context.Context, ref SandboxRef, state []byte) (*Sandbox, error)
-	AcquireHTTPClient(ctx context.Context, ref SandboxRef, state []byte) (*transport.HTTPClientLease, error)
+	AcquireHTTPClient(ctx context.Context, ref SandboxRef, state []byte, scopes []string) (*transport.HTTPClientLease, error)
 }
 
 // SandboxRef identifies the sandbox and its project ownership context.

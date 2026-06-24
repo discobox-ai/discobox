@@ -203,7 +203,7 @@ func (p *fakeProvider) Remove(context.Context, sandbox.SandboxRef, []byte, ...sa
 func (p *fakeProvider) Get(context.Context, sandbox.SandboxRef, []byte) (*sandbox.Sandbox, error) {
 	return nil, nil
 }
-func (p *fakeProvider) AcquireHTTPClient(context.Context, sandbox.SandboxRef, []byte) (*transport.HTTPClientLease, error) {
+func (p *fakeProvider) AcquireHTTPClient(context.Context, sandbox.SandboxRef, []byte, []string) (*transport.HTTPClientLease, error) {
 	return transport.NewHTTPClientLease(http.DefaultClient, nil), nil
 }
 func (p *fakeProvider) Status() sandbox.ProviderStatus {

@@ -56,6 +56,32 @@ Current transition state:
 New endpoints should prefer the contract-first generated path. Keep streaming
 transports hand-wired unless the generator can own them behavior-compatibly.
 
+### Hand-Wired Sandbox Proxies
+
+Sandbox proxy routes are project-scoped control-plane routes and are authorized
+by `ProjectAuthorizer` before the proxy handler runs. They remain hand-wired in
+`internal/server` because they forward arbitrary methods, headers, path suffixes,
+and query strings through a provider-supplied HTTP client lease instead of using
+generated request/response DTOs.
+
+Current proxy routes:
+
+- `/projects/{projectId}/sandboxes/{sandboxId}/git-repositories/{repository}.git...`
+  is exposed as `/projects/{projectId}/sandboxes/{sandboxId}/git-repositories/*`
+  and forwards to the worker-agent git route
+  `/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/git-repositories/{repository}.git...`.
+- `/projects/{projectId}/sandboxes/{sandboxId}/http/{port}/{path...}` forwards
+  to the worker-agent route
+  `/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/http/{port}/{path...}`.
+  The future worker-agent implementation owns translating that worker-local
+  route to `http://localhost:{port}/{path...}` inside the sandbox.
+
+Proxy handlers must request the narrow worker-agent token scopes needed for the
+flow. The git proxy requests `sandbox:read` and `sandbox:write` because Git HTTP
+uses method and service-specific read/write behavior. The sandbox HTTP port
+proxy requests only `sandbox:http`; worker-agent support for this route must
+require that scope rather than accepting the broader sandbox read/write scopes.
+
 Authorization must be decidable from request attributes available before body
 interpretation: authenticated principal, method, route/path parameters, query
 parameters, headers, and resource ownership loaded by those attributes. Do not

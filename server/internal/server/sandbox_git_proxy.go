@@ -10,11 +10,14 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
+	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
-const defaultSandboxGitWorkerBaseURL = "https://worker"
+const defaultSandboxWorkerBaseURL = "https://worker"
+
+var sandboxGitProxyScopes = []string{workeragentauth.ScopeSandboxRead, workeragentauth.ScopeSandboxWrite}
 
 func registerSandboxGitRoutes(router chi.Router, service services.SandboxService) {
 	router.Handle("/projects/{projectId}/sandboxes/{sandboxId}/git-repositories/*", sandboxGitProxyHandler(service))
@@ -34,7 +37,7 @@ func sandboxGitProxyHandler(service services.SandboxService) http.Handler {
 
 		projectID := chi.URLParam(r, "projectId")
 		sandboxID := chi.URLParam(r, "sandboxId")
-		lease, sandboxModel, err := service.AcquireSandboxHTTPClient(r.Context(), projectID, sandboxID)
+		lease, sandboxModel, err := service.AcquireSandboxHTTPClient(r.Context(), projectID, sandboxID, sandboxGitProxyScopes)
 		if err != nil {
 			http.Error(w, err.Error(), statusCodeForProxyError(err))
 			return
@@ -54,7 +57,7 @@ func sandboxGitProxyHandler(service services.SandboxService) http.Handler {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		proxy := sandboxGitReverseProxy(target, lease)
+		proxy := sandboxWorkerReverseProxy(target, lease)
 		proxy.ServeHTTP(w, r)
 	})
 }
@@ -88,7 +91,7 @@ func validSandboxGitRepositoryID(value string) bool {
 
 func sandboxGitProxyTargetURL(baseURL, projectID, workerID, sandboxID, repositoryID, suffix string) (*url.URL, error) {
 	if strings.TrimSpace(baseURL) == "" {
-		baseURL = defaultSandboxGitWorkerBaseURL
+		baseURL = defaultSandboxWorkerBaseURL
 	}
 	target, err := url.Parse(strings.TrimRight(baseURL, "/"))
 	if err != nil {
@@ -110,7 +113,7 @@ func sandboxGitProxyTargetURL(baseURL, projectID, workerID, sandboxID, repositor
 	return target, nil
 }
 
-func sandboxGitReverseProxy(target *url.URL, lease *services.HTTPClientLease) *httputil.ReverseProxy {
+func sandboxWorkerReverseProxy(target *url.URL, lease *services.HTTPClientLease) *httputil.ReverseProxy {
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(req *httputil.ProxyRequest) {
 			rawQuery := req.In.URL.RawQuery

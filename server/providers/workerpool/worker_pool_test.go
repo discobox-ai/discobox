@@ -556,7 +556,7 @@ func TestWorkerProviderAcquireHTTPClientUsesWorkerIDFromState(t *testing.T) {
 	provider := NewWorkerPoolProvider(baseProvider, WorkerPoolConfig{}, workerManager, false)
 	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"worker_id": "worker-1"}})
 
-	lease, err := provider.AcquireHTTPClient(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state)
+	lease, err := provider.AcquireHTTPClient(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, []string{workeragentauth.ScopeSandboxRead, workeragentauth.ScopeSandboxWrite})
 	if err != nil {
 		t.Fatalf("acquire HTTP client: %v", err)
 	}

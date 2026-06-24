@@ -352,7 +352,7 @@ func (noopSandboxProvider) Get(_ context.Context, ref sandboxes.SandboxRef, _ []
 	return runtimeSandbox(ref, sandboxes.Status("running")), nil
 }
 
-func (noopSandboxProvider) AcquireHTTPClient(context.Context, sandboxes.SandboxRef, []byte) (*sandboxes.HTTPClientLease, error) {
+func (noopSandboxProvider) AcquireHTTPClient(context.Context, sandboxes.SandboxRef, []byte, []string) (*sandboxes.HTTPClientLease, error) {
 	return nil, nil
 }
 

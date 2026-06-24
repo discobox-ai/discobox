@@ -565,7 +565,7 @@ func (p *recordingSandboxProvider) Remove(context.Context, sandboxes.SandboxRef,
 func (p *recordingSandboxProvider) Get(context.Context, sandboxes.SandboxRef, []byte) (*sandboxes.Sandbox, error) {
 	return nil, nil
 }
-func (p *recordingSandboxProvider) AcquireHTTPClient(context.Context, sandboxes.SandboxRef, []byte) (*transport.HTTPClientLease, error) {
+func (p *recordingSandboxProvider) AcquireHTTPClient(context.Context, sandboxes.SandboxRef, []byte, []string) (*transport.HTTPClientLease, error) {
 	return transport.NewHTTPClientLease(http.DefaultClient, nil), nil
 }
 

@@ -310,7 +310,7 @@ func (p *WorkerPoolProvider) Get(ctx context.Context, ref sandbox.SandboxRef, st
 	return provider.Get(ctx, ref, state)
 }
 
-func (p *WorkerPoolProvider) AcquireHTTPClient(ctx context.Context, ref sandbox.SandboxRef, state []byte) (*transport.HTTPClientLease, error) {
+func (p *WorkerPoolProvider) AcquireHTTPClient(ctx context.Context, ref sandbox.SandboxRef, state []byte, scopes []string) (*transport.HTTPClientLease, error) {
 	if p.workerProvider == nil {
 		return nil, fmt.Errorf("worker provider is required")
 	}
@@ -318,7 +318,7 @@ func (p *WorkerPoolProvider) AcquireHTTPClient(ctx context.Context, ref sandbox.
 	if err != nil {
 		return nil, err
 	}
-	return provider.AcquireHTTPClient(ctx, ref, state)
+	return provider.AcquireHTTPClient(ctx, ref, state, scopes)
 }
 
 func (p *WorkerPoolProvider) Remove(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts ...sandbox.RemoveOption) ([]byte, error) {
@@ -476,11 +476,11 @@ func (p *workerAgentSandboxProvider) Get(ctx context.Context, ref sandbox.Sandbo
 	return sandboxFromWorker(workerSandbox, p.workerID), nil
 }
 
-func (p *workerAgentSandboxProvider) AcquireHTTPClient(_ context.Context, ref sandbox.SandboxRef, _ []byte) (*transport.HTTPClientLease, error) {
+func (p *workerAgentSandboxProvider) AcquireHTTPClient(_ context.Context, ref sandbox.SandboxRef, _ []byte, scopes []string) (*transport.HTTPClientLease, error) {
 	lease := p.lease
 	p.lease = nil
 	if lease != nil && lease.AuthTokenProvider == nil {
-		lease.AuthTokenProvider = p.authTokenProvider(ref, workeragentauth.ScopeSandboxRead, workeragentauth.ScopeSandboxWrite)
+		lease.AuthTokenProvider = p.authTokenProvider(ref, scopes...)
 	}
 	return lease, nil
 }
@@ -506,6 +506,7 @@ func (p *workerAgentSandboxProvider) workerClient(ref sandbox.SandboxRef, scopes
 }
 
 func (p *workerAgentSandboxProvider) authTokenProvider(ref sandbox.SandboxRef, scopes ...string) func(context.Context) (string, error) {
+	tokenScopes := append([]string(nil), scopes...)
 	return func(ctx context.Context) (string, error) {
 		if p.tokenIssuer == nil {
 			return "", fmt.Errorf("worker-agent token issuer is required")
@@ -514,7 +515,7 @@ func (p *workerAgentSandboxProvider) authTokenProvider(ref sandbox.SandboxRef, s
 			ProjectID: ref.ProjectID,
 			WorkerID:  p.workerID,
 			SandboxID: ref.SandboxID,
-			Scopes:    scopes,
+			Scopes:    tokenScopes,
 		})
 	}
 }

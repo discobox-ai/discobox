@@ -25,6 +25,7 @@ const (
 	Audience          = "worker-agent"
 	ScopeSandboxRead  = "sandbox:read"
 	ScopeSandboxWrite = "sandbox:write"
+	ScopeSandboxHTTP  = "sandbox:http"
 
 	TokenTTL  = 15 * time.Minute
 	ClockSkew = 5 * time.Minute

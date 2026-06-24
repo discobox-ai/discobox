@@ -215,7 +215,7 @@ func (p *Provider) List(context.Context) ([]*sandbox.Sandbox, error) {
 	return nil, nil
 }
 
-func (p *Provider) AcquireHTTPClient(ctx context.Context, _ sandbox.SandboxRef, state []byte) (*transport.HTTPClientLease, error) {
+func (p *Provider) AcquireHTTPClient(ctx context.Context, _ sandbox.SandboxRef, state []byte, _ []string) (*transport.HTTPClientLease, error) {
 	clientDriver, ok := p.driver.(HTTPClientDriver)
 	if !ok {
 		return nil, errors.New("vm driver does not provide sandbox agent HTTP access")

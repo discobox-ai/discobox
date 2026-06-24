@@ -216,7 +216,7 @@ func (s *Service) GetSandbox(ctx context.Context, projectID, sandboxID string) (
 	return sandbox, nil
 }
 
-func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string) (*services.HTTPClientLease, *model.Sandbox, error) {
+func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
 	sandboxModel, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
 		return nil, nil, mapAPIError(err, "sandbox not found")
@@ -235,7 +235,7 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 	if err != nil {
 		return nil, nil, err
 	}
-	lease, err := provider.AcquireHTTPClient(ctx, sandbox.SandboxRef{ProjectID: projectID, SandboxID: sandboxID}, sandboxModel.RuntimeState)
+	lease, err := provider.AcquireHTTPClient(ctx, sandbox.SandboxRef{ProjectID: projectID, SandboxID: sandboxID}, sandboxModel.RuntimeState, scopes)
 	if err != nil {
 		return nil, nil, err
 	}

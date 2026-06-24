@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,6 +16,7 @@ import (
 	"github.com/coder/websocket/wsjson"
 	"github.com/go-chi/chi/v5"
 	"github.com/obot-platform/discobox/gormdb"
+	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/service"
@@ -207,7 +209,7 @@ func TestSandboxGitRepositoryRouteProxiesToWorker(t *testing.T) {
 		_, _ = w.Write([]byte("git response"))
 	}))
 	t.Cleanup(upstream.Close)
-	stubs.gitLease = transport.NewHTTPClientLeaseWithBaseURLAndAuth(upstream.Client(), upstream.URL, "worker-token", func() {
+	stubs.sandboxLease = transport.NewHTTPClientLeaseWithBaseURLAndAuth(upstream.Client(), upstream.URL, "worker-token", func() {
 		released = true
 	})
 
@@ -236,6 +238,72 @@ func TestSandboxGitRepositoryRouteProxiesToWorker(t *testing.T) {
 	}
 	if !released {
 		t.Fatal("expected sandbox HTTP lease to be released")
+	}
+	if !slices.Equal(stubs.sandboxScopes, []string{workeragentauth.ScopeSandboxRead, workeragentauth.ScopeSandboxWrite}) {
+		t.Fatalf("sandbox HTTP scopes = %#v", stubs.sandboxScopes)
+	}
+}
+
+func TestSandboxHTTPRouteProxiesPortToWorker(t *testing.T) {
+	ctx := context.Background()
+	stubs := newRouterTestServices()
+	workerID := "worker-1"
+	stubs.sandboxes["sandbox-1"] = model.Sandbox{
+		ID:              "sandbox-1",
+		ProjectID:       service.DefaultProjectID,
+		CreatedByUserID: service.DefaultUserID,
+		Name:            "sandbox",
+		WorkerID:        &workerID,
+	}
+	var released bool
+	projectID := service.DefaultProjectID
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wantPath := "/api/project/" + projectID + "/worker/worker-1/sandboxes/sandbox-1/http/8080/api/status"
+		if r.URL.Path != wantPath {
+			t.Fatalf("upstream path = %q", r.URL.Path)
+		}
+		if r.URL.RawQuery != "verbose=true" {
+			t.Fatalf("upstream query = %q", r.URL.RawQuery)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer worker-token" {
+			t.Fatalf("upstream auth = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"ok":true}`))
+	}))
+	t.Cleanup(upstream.Close)
+	stubs.sandboxLease = transport.NewHTTPClientLeaseWithBaseURLAndAuth(upstream.Client(), upstream.URL, "worker-token", func() {
+		released = true
+	})
+
+	router, err := NewRouter(services.Services{
+		Projects:     stubs,
+		AgentConfigs: stubs,
+		Sandboxes:    stubs,
+		Providers:    stubs,
+		Workers:      stubs,
+		Jobs:         stubs,
+		Events:       stubs,
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/projects/"+projectID+"/sandboxes/sandbox-1/http/8080/api/status?verbose=true", nil)
+	req.Header.Set("Authorization", "Bearer user-token")
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("GET sandbox HTTP status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	if body := resp.Body.String(); body != `{"ok":true}` {
+		t.Fatalf("body = %q, want proxied response", body)
+	}
+	if !released {
+		t.Fatal("expected sandbox HTTP lease to be released")
+	}
+	if !slices.Equal(stubs.sandboxScopes, []string{workeragentauth.ScopeSandboxHTTP}) {
+		t.Fatalf("sandbox HTTP scopes = %#v", stubs.sandboxScopes)
 	}
 }
 

@@ -18,13 +18,14 @@ import (
 )
 
 type routerTestServices struct {
-	mu           sync.Mutex
-	user         model.User
-	project      model.Project
-	agentConfigs map[string]model.AgentConfig
-	providers    map[string]model.SandboxProviderInstance
-	sandboxes    map[string]model.Sandbox
-	gitLease     *services.HTTPClientLease
+	mu            sync.Mutex
+	user          model.User
+	project       model.Project
+	agentConfigs  map[string]model.AgentConfig
+	providers     map[string]model.SandboxProviderInstance
+	sandboxes     map[string]model.Sandbox
+	sandboxLease  *services.HTTPClientLease
+	sandboxScopes []string
 }
 
 func newRouterTestServices() *routerTestServices {
@@ -171,7 +172,7 @@ func (s *routerTestServices) GetSandbox(_ context.Context, projectID, sandboxID 
 	return &sandbox, nil
 }
 
-func (s *routerTestServices) AcquireSandboxHTTPClient(_ context.Context, projectID, sandboxID string) (*services.HTTPClientLease, *model.Sandbox, error) {
+func (s *routerTestServices) AcquireSandboxHTTPClient(_ context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -179,7 +180,8 @@ func (s *routerTestServices) AcquireSandboxHTTPClient(_ context.Context, project
 	if err != nil {
 		return nil, nil, err
 	}
-	return s.gitLease, &sandbox, nil
+	s.sandboxScopes = append([]string(nil), scopes...)
+	return s.sandboxLease, &sandbox, nil
 }
 
 func (s *routerTestServices) UpdateSandbox(_ context.Context, projectID, sandboxID string, input services.UpdateSandboxBody) (*model.Sandbox, error) {
