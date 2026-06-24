@@ -5,7 +5,8 @@
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
-    "build": "node scripts/build.mjs && node scripts/build-renderer.mjs",
+    "build": "node scripts/build-server.mjs && node scripts/build.mjs && node scripts/build-renderer.mjs",
+    "build:server": "node scripts/build-server.mjs",
     "build:shell": "node scripts/build.mjs",
     "build:renderer": "node scripts/build-renderer.mjs",
     "check": "tsc --noEmit",
@@ -27,6 +28,9 @@
     "appId": "com.obot.discobox",
     "productName": "Discobox",
     "asar": true,
+    "asarUnpack": [
+      "dist/bin/**/*"
+    ],
     "files": [
       "dist/**/*"
     ],

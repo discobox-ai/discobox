@@ -623,7 +623,11 @@ func TestHTTPClientAddsAuthorizationHeader(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
-	resp, err := app.httpClient().Do(req)
+	_, client, err := app.httpClient()
+	if err != nil {
+		t.Fatalf("http client: %v", err)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}
@@ -694,7 +698,11 @@ func TestHTTPClientDebugLogsAddedHeaders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}
-	resp, err := app.httpClient().Do(req)
+	_, client, err := app.httpClient()
+	if err != nil {
+		t.Fatalf("http client: %v", err)
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		t.Fatalf("get: %v", err)
 	}

@@ -26,6 +26,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Port != 8080 {
 		t.Fatalf("Port = %d, want 8080", cfg.Port)
 	}
+	if cfg.Listen == "" {
+		t.Fatalf("Listen is empty")
+	}
 	if cfg.DatabaseDSN == "" {
 		t.Fatalf("DatabaseDSN is empty")
 	}
@@ -92,6 +95,9 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	if cfg.Port != 9090 {
 		t.Fatalf("Port = %d, want 9090", cfg.Port)
 	}
+	if cfg.Listen != "http://localhost:9090" {
+		t.Fatalf("Listen = %q, want PORT-derived HTTP endpoint", cfg.Listen)
+	}
 	if cfg.DataDir != "/tmp/discobox/data" {
 		t.Fatalf("DataDir = %q", cfg.DataDir)
 	}
@@ -151,6 +157,20 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadServerEndpointOverride(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("DISCOBOX_SERVER_LISTEN", "unix:///tmp/discobox/server.sock")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.Listen != "unix:///tmp/discobox/server.sock" {
+		t.Fatalf("Listen = %q", cfg.Listen)
+	}
+}
+
 func TestLoadUsesDataDirForDefaultDatabaseDSN(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("DISCOBOX_DATA_DIR", "/tmp/discobox-data")
@@ -200,6 +220,8 @@ func clearConfigEnv(t *testing.T) {
 	t.Helper()
 	for _, key := range []string{
 		"PORT",
+		"DISCOBOX_SERVER",
+		"DISCOBOX_SERVER_LISTEN",
 		"DISCOBOX_DATA_DIR",
 		"DISCOBOX_CONFIG_DIR",
 		"DISCOBOX_CACHE_DIR",

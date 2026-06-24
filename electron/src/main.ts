@@ -1,10 +1,15 @@
 import { app, BrowserWindow, Menu, ipcMain, protocol, shell } from "electron";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
+import type { Readable } from "node:stream";
 import { readFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 const APP_SCHEME = "app";
 const DEFAULT_DEV_SERVER_URL = "http://localhost:5173";
 const TITLE_BAR_HEIGHT = 40;
+const IS_DEV = !app.isPackaged;
+let serverProcess: ChildProcessByStdio<null, Readable, Readable> | null = null;
 type WindowControlsMode =
   | "macos"
   | "windows"
@@ -26,6 +31,94 @@ protocol.registerSchemesAsPrivileged([
 
 function rendererDevURL(): string {
   return process.env.DISCOBOX_UI_DEV_URL || DEFAULT_DEV_SERVER_URL;
+}
+
+function devLog(message: string): void {
+  if (IS_DEV) {
+    console.log(`[discobox-electron] ${message}`);
+  }
+}
+
+function appLog(message: string): void {
+  console.log(`[discobox-electron] ${message}`);
+}
+
+function defaultServerEndpoint(): string {
+  if (process.platform === "win32") {
+    return "npipe:////./pipe/discobox";
+  }
+
+  const runtimeDir =
+    process.env.XDG_RUNTIME_DIR ||
+    path.join(os.tmpdir(), `discobox-${os.userInfo().uid}`);
+  return `unix://${path.join(runtimeDir, "discobox", "server.sock")}`;
+}
+
+function packagedServerPath(): string {
+  const binaryName =
+    process.platform === "win32" ? "discobox-server.exe" : "discobox-server";
+  if (app.isPackaged) {
+    return path.join(
+      process.resourcesPath,
+      "app.asar.unpacked",
+      "dist",
+      "bin",
+      binaryName,
+    );
+  }
+  return path.resolve(import.meta.dirname, "bin", binaryName);
+}
+
+function startPackagedServer(): void {
+  if (IS_DEV || serverProcess) {
+    return;
+  }
+
+  const endpoint = process.env.DISCOBOX_SERVER || defaultServerEndpoint();
+  const userDataDir = app.getPath("userData");
+  const env = {
+    ...process.env,
+    DISCOBOX_SERVER_LISTEN: endpoint,
+    DISCOBOX_SERVER: endpoint,
+    DISCOBOX_DATA_DIR:
+      process.env.DISCOBOX_DATA_DIR || path.join(userDataDir, "data"),
+    DISCOBOX_CONFIG_DIR:
+      process.env.DISCOBOX_CONFIG_DIR || path.join(userDataDir, "config"),
+    DISCOBOX_CACHE_DIR:
+      process.env.DISCOBOX_CACHE_DIR || path.join(userDataDir, "cache"),
+    DISCOBOX_STATE_DIR:
+      process.env.DISCOBOX_STATE_DIR || path.join(userDataDir, "state"),
+  };
+
+  const binaryPath = packagedServerPath();
+  appLog(`starting server ${binaryPath} on ${endpoint}`);
+  const child = spawn(binaryPath, [], {
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  serverProcess = child;
+  child.stdout.on("data", (chunk: Buffer) => {
+    process.stdout.write(`[discobox-server] ${chunk.toString()}`);
+  });
+  child.stderr.on("data", (chunk: Buffer) => {
+    process.stderr.write(`[discobox-server] ${chunk.toString()}`);
+  });
+  child.on("exit", (code, signal) => {
+    appLog(`server exited code=${code ?? "null"} signal=${signal ?? "null"}`);
+    serverProcess = null;
+  });
+  child.on("error", (error) => {
+    console.error("[discobox-electron] failed to start server", error);
+    serverProcess = null;
+  });
+}
+
+function stopPackagedServer(): void {
+  if (!serverProcess) {
+    return;
+  }
+  serverProcess.kill();
+  serverProcess = null;
 }
 
 function uiBuildDir(): string {
@@ -181,7 +274,18 @@ function setupDevContextMenu(window: BrowserWindow): void {
   });
 }
 
+function revealWindow(window: BrowserWindow): void {
+  if (window.isDestroyed() || window.isVisible()) {
+    return;
+  }
+
+  window.show();
+  window.focus();
+}
+
 async function createMainWindow(): Promise<BrowserWindow> {
+  devLog("creating main window");
+
   const nativeTitleBarOverlay =
     process.platform === "darwin"
       ? {}
@@ -214,7 +318,9 @@ async function createMainWindow(): Promise<BrowserWindow> {
     },
   });
 
-  window.on("ready-to-show", () => window.show());
+  window.on("ready-to-show", () => revealWindow(window));
+  window.webContents.on("did-finish-load", () => revealWindow(window));
+  setTimeout(() => revealWindow(window), 3000);
   window.on("enter-full-screen", () => notifyWindowControlsMode(window));
   window.on("leave-full-screen", () => notifyWindowControlsMode(window));
   setupDevContextMenu(window);
@@ -222,9 +328,12 @@ async function createMainWindow(): Promise<BrowserWindow> {
   if (app.isPackaged) {
     await window.loadURL(`${APP_SCHEME}://discobox/`);
   } else {
-    await window.loadURL(rendererDevURL());
+    const devURL = rendererDevURL();
+    devLog(`loading renderer from ${devURL}`);
+    await window.loadURL(devURL);
   }
 
+  devLog("main window loaded");
   return window;
 }
 
@@ -234,13 +343,27 @@ app.on("window-all-closed", () => {
   }
 });
 
+app.on("before-quit", () => {
+  stopPackagedServer();
+});
+
 app.on("activate", async () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     await createMainWindow();
   }
 });
 
-await app.whenReady();
-await registerAppProtocol();
-registerDesktopHandlers();
-await createMainWindow();
+devLog("waiting for Electron app readiness");
+void app
+  .whenReady()
+  .then(async () => {
+    devLog("Electron app is ready");
+    startPackagedServer();
+    await registerAppProtocol();
+    registerDesktopHandlers();
+    await createMainWindow();
+  })
+  .catch((error: unknown) => {
+    console.error("[discobox-electron] failed to start", error);
+    app.quit();
+  });

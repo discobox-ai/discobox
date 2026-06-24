@@ -10,6 +10,7 @@ import (
 	"github.com/joho/godotenv"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 
+	"github.com/obot-platform/discobox/localipc"
 	"github.com/obot-platform/discobox/server/internal/config"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/secrets"
@@ -76,20 +77,23 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("initialize app: %w", err)
 	}
 
-	addr := fmt.Sprintf(":%d", cfg.Port)
-	log.Printf("listening on http://localhost%s", addr)
-	log.Printf("openapi spec available at http://localhost%s/openapi.yaml", addr)
-	log.Printf("api docs available at http://localhost%s/docs", addr)
+	listener, listenDisplay, cleanupListener, err := localipc.Listen(cfg.Listen)
+	if err != nil {
+		return fmt.Errorf("listen: %w", err)
+	}
+	defer cleanupListener()
+	log.Printf("listening on %s", listenDisplay)
+	log.Printf("openapi spec available at %s/openapi.yaml", listenDisplay)
+	log.Printf("api docs available at %s/docs", listenDisplay)
 	handler := otelhttp.NewHandler(router, "discobox-server")
 	server := &http.Server{
-		Addr:              addr,
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-	if err := server.ListenAndServe(); err != nil {
+	if err := server.Serve(listener); err != nil {
 		return fmt.Errorf("server failed: %w", err)
 	}
 	return nil

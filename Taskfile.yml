@@ -94,10 +94,11 @@ tasks:
       - ./{{.BINARY}}
 
   dev:
-    desc: Run the server, UI, Docker image watcher, and Storybook dev tasks
+    desc: Run the server, UI, Electron shell, Docker image watcher, and Storybook dev tasks
     deps:
       - dev:server
       - dev:ui
+      - dev:electron
       - dev:docker-image-watch
       - storybook
 
@@ -135,26 +136,30 @@ tasks:
       - pnpm --dir {{.UI_DIR}} run dev --host 127.0.0.1 --port 5173 --strictPort
 
   dev:electron:
-    desc: Run the Discobox Electron shell against the UI dev server
+    desc: Run the Discobox Electron shell against an existing UI dev server
     cmds:
       - pnpm --dir {{.ELECTRON_DIR}} install --frozen-lockfile
       - |
         bash -c '
         set -euo pipefail
-        pnpm --dir {{.UI_DIR}} install --frozen-lockfile
-        pnpm --dir {{.UI_DIR}} run dev --host 127.0.0.1 --port 5173 --strictPort &
-        ui_pid=$!
-        cleanup() { kill "$ui_pid" 2>/dev/null || true; }
-        trap cleanup EXIT INT TERM
-        sleep 2
-        DISCOBOX_UI_DEV_URL=http://127.0.0.1:5173 pnpm --dir {{.ELECTRON_DIR}} run dev
+        ui_url="${DISCOBOX_UI_DEV_URL:-http://127.0.0.1:5173}"
+        echo "Waiting for UI dev server at $ui_url"
+        for _ in $(seq 1 60); do
+          if curl --max-time 2 -fs "$ui_url" >/dev/null 2>&1; then
+            echo "Launching Electron against $ui_url"
+            DISCOBOX_UI_DEV_URL="$ui_url" pnpm --dir {{.ELECTRON_DIR}} run dev
+            exit $?
+          fi
+          sleep 1
+        done
+        echo "UI dev server did not become ready at $ui_url" >&2
+        exit 1
         '
 
   dev:electron:shell:
-    desc: Run only the Discobox Electron shell against an existing UI dev server
+    desc: Alias for dev:electron
     cmds:
-      - pnpm --dir {{.ELECTRON_DIR}} install --frozen-lockfile
-      - DISCOBOX_UI_DEV_URL=${DISCOBOX_UI_DEV_URL:-http://127.0.0.1:5173} pnpm --dir {{.ELECTRON_DIR}} run dev
+      - task: dev:electron
 
   test:
     desc: Run root module tests

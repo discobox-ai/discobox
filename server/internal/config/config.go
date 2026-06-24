@@ -13,6 +13,7 @@ import (
 	"github.com/adrg/xdg"
 
 	"github.com/obot-platform/discobox/gormdb"
+	"github.com/obot-platform/discobox/localipc"
 	"github.com/obot-platform/discobox/server/internal/sandbox"
 )
 
@@ -21,7 +22,8 @@ const appName = "discobox"
 // Config holds all configuration for discobox-server.
 type Config struct {
 	// Server settings.
-	Port int
+	Port   int
+	Listen string
 
 	// XDG-backed application directories.
 	DataDir   string
@@ -62,6 +64,7 @@ func Load() (*Config, error) {
 	cfg := &Config{}
 
 	cfg.Port = getEnvInt("PORT", 8080)
+	cfg.Listen = getEnv("DISCOBOX_SERVER_LISTEN", getEnv("DISCOBOX_SERVER", defaultListenEndpoint(cfg.Port)))
 
 	cfg.DataDir = getEnv("DISCOBOX_DATA_DIR", filepath.Join(xdg.DataHome, appName))
 	cfg.ConfigDir = getEnv("DISCOBOX_CONFIG_DIR", filepath.Join(xdg.ConfigHome, appName))
@@ -87,6 +90,9 @@ func Load() (*Config, error) {
 
 	if cfg.Port <= 0 || cfg.Port > 65535 {
 		return nil, fmt.Errorf("PORT must be between 1 and 65535")
+	}
+	if _, err := localipc.Parse(cfg.Listen); err != nil {
+		return nil, fmt.Errorf("DISCOBOX_SERVER_LISTEN: %w", err)
 	}
 	if cfg.DataDir == "" {
 		return nil, fmt.Errorf("DISCOBOX_DATA_DIR is required")
@@ -135,6 +141,13 @@ func Load() (*Config, error) {
 
 func defaultDatabaseDSN(dataDir string) string {
 	return "sqlite3://" + filepath.Join(dataDir, "discobox.db")
+}
+
+func defaultListenEndpoint(port int) string {
+	if strings.TrimSpace(os.Getenv("PORT")) != "" {
+		return fmt.Sprintf("http://localhost:%d", port)
+	}
+	return localipc.DefaultEndpoint()
 }
 
 func getEnv(key, defaultValue string) string {

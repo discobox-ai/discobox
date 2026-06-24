@@ -11,9 +11,9 @@ import (
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
+	"github.com/obot-platform/discobox/localipc"
 )
 
-const defaultServerURL = "http://localhost:8080"
 const defaultProjectAlias = "default"
 
 type App struct {
@@ -37,7 +37,7 @@ func NewRootCommand() *cobra.Command {
 			return app.validate()
 		},
 	}
-	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCOBOX_SERVER", defaultServerURL), "Discobox API server URL")
+	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCOBOX_SERVER", localipc.DefaultEndpoint()), "Discobox API server endpoint")
 	cmd.PersistentFlags().StringVarP(&app.projectID, "project", "p", envOrDefault("DISCOBOX_PROJECT", defaultProjectAlias), "Project ID for this invocation; use default for the user's default project")
 	cmd.PersistentFlags().StringVar(&app.token, "token", os.Getenv("DISCOBOX_TOKEN"), "Bearer token for API requests")
 	cmd.PersistentFlags().StringVarP(&app.output, "output", "o", "table", "Output format: table or json")
@@ -72,11 +72,24 @@ func (a *App) projectIDValue() (string, error) {
 }
 
 func (a *App) apiClient() (*apiclientgen.Client, error) {
-	return apiclientgen.NewClient(a.serverURL, apiclientgen.WithClient(a.httpClient()))
+	baseURL, client, err := a.httpClient()
+	if err != nil {
+		return nil, err
+	}
+	return apiclientgen.NewClient(baseURL, apiclientgen.WithClient(client))
 }
 
-func (a *App) httpClient() *http.Client {
+func (a *App) httpClient() (string, *http.Client, error) {
 	transport := http.DefaultTransport
+	baseURL := a.serverURL
+	if isLocalEndpoint(a.serverURL) {
+		localBaseURL, client, err := localipc.HTTPClient(a.serverURL, transport)
+		if err != nil {
+			return "", nil, err
+		}
+		baseURL = localBaseURL
+		transport = client.Transport
+	}
 	if a.debug {
 		transport = debugTransport{
 			out:  a.errOut,
@@ -90,11 +103,16 @@ func (a *App) httpClient() *http.Client {
 		}
 	}
 	if transport == http.DefaultTransport {
-		return http.DefaultClient
+		return baseURL, http.DefaultClient, nil
 	}
-	return &http.Client{
+	return baseURL, &http.Client{
 		Transport: transport,
-	}
+	}, nil
+}
+
+func isLocalEndpoint(endpoint string) bool {
+	endpoint = strings.TrimSpace(strings.ToLower(endpoint))
+	return strings.HasPrefix(endpoint, "unix://") || strings.HasPrefix(endpoint, "npipe://")
 }
 
 type requestHeaderTransport struct {
