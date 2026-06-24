@@ -4,11 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"os/exec"
+	"path"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 
 	workerclient "github.com/obot-platform/discobox/worker-agent/api/gen"
@@ -17,6 +23,7 @@ import (
 
 const (
 	defaultSandboxImage = "alpine:3.20"
+	sandboxDataRoot     = "/var/lib/discobox/projects"
 	sandboxLabelManaged = "discobox.sandbox.managed"
 	sandboxLabelProject = "discobox.project_id"
 	sandboxLabelWorker  = "discobox.worker_id"
@@ -130,16 +137,20 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		return nil, err
 	}
 	_ = pull.Close()
+	user := resolveSandboxUser(req)
+	mounts, err := r.prepareSandboxVolumes(ctx, sandboxID, req, user)
+	if err != nil {
+		return nil, err
+	}
 	name := sandboxContainerName(r.workerID, sandboxID)
 	cfg := &container.Config{
 		Image:      imageName,
 		Labels:     r.labels(sandboxID),
-		Env:        envList(map[string]string(optCreateEnv(req.Env))),
+		Env:        envList(envWithSandboxUser(map[string]string(optCreateEnv(req.Env)), user)),
 		WorkingDir: sourceWorkingDirectory(req),
-		User:       sandboxUser(req),
 		Cmd:        []string{"sleep", "infinity"},
 	}
-	hostCfg := &container.HostConfig{}
+	hostCfg := &container.HostConfig{Mounts: mounts}
 	if memoryBytes := optInt64(req.MemoryBytes); memoryBytes > 0 {
 		hostCfg.Memory = memoryBytes
 	} else if resources, ok := req.Resources.Get(); ok && resources.MemoryMB > 0 {
@@ -158,6 +169,42 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		return nil, err
 	}
 	return r.GetSandbox(ctx, sandboxID)
+}
+
+func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxCreateRequest, user sandboxUserIdentity) ([]mount.Mount, error) {
+	sources := sandboxSources(req)
+	mounts := make([]mount.Mount, 0, len(sources)+1)
+	homePath := filepath.Join(sandboxVolumesRoot(r.projectID, sandboxID), "home")
+	if err := prepareOwnedDirectory(ctx, homePath, user.uid, user.gid); err != nil {
+		return nil, fmt.Errorf("set home ownership: %w", err)
+	}
+	mounts = append(mounts, mount.Mount{
+		Type:   mount.TypeBind,
+		Source: homePath,
+		Target: user.homeDirectory,
+	})
+	for _, source := range sources {
+		hostPath := filepath.Join(sandboxVolumesRoot(r.projectID, sandboxID), "source", source.slug)
+		if err := materializeGitSource(ctx, source.git, hostPath); err != nil {
+			return nil, fmt.Errorf("materialize source %q: %w", source.slug, err)
+		}
+		if err := prepareOwnedDirectory(ctx, hostPath, user.uid, user.gid); err != nil {
+			return nil, fmt.Errorf("set source ownership %q: %w", source.slug, err)
+		}
+		mounts = append(mounts, mount.Mount{
+			Type:   mount.TypeBind,
+			Source: hostPath,
+			Target: source.target,
+		})
+	}
+	return mounts, nil
+}
+
+func prepareOwnedDirectory(ctx context.Context, dir string, uid, gid int) error {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	return chownRecursive(ctx, dir, uid, gid)
 }
 
 func (r *DockerSandboxRuntime) GetSandbox(ctx context.Context, sandboxID string) (*Sandbox, error) {
@@ -392,20 +439,44 @@ func optFloat64(opt workerclient.OptFloat64) float64 {
 	return v
 }
 
-func sandboxUser(req *workerapimodel.WorkerSandboxCreateRequest) string {
+type sandboxUserIdentity struct {
+	uid           int
+	gid           int
+	name          string
+	homeDirectory string
+}
+
+func resolveSandboxUser(req *workerapimodel.WorkerSandboxCreateRequest) sandboxUserIdentity {
+	out := sandboxUserIdentity{
+		uid:           0,
+		gid:           0,
+		name:          "root",
+		homeDirectory: "/root",
+	}
 	if req == nil {
-		return ""
+		return out
 	}
 	user, ok := req.User.Get()
 	if !ok {
-		return ""
+		return out
 	}
-	uid, uidOK := user.UID.Get()
-	gid, gidOK := user.Gid.Get()
-	if !uidOK || !gidOK || uid == 0 {
-		return ""
+	if uid, ok := user.UID.Get(); ok {
+		out.uid = int(uid)
 	}
-	return fmt.Sprintf("%d:%d", uid, gid)
+	if gid, ok := user.Gid.Get(); ok {
+		out.gid = int(gid)
+	} else if user.UID.Set {
+		out.gid = out.uid
+	}
+	if name := strings.TrimSpace(optString(user.Name)); name != "" {
+		out.name = name
+	}
+	if home := cleanContainerPath(optString(user.HomeDirectory)); home != "" {
+		out.homeDirectory = home
+	} else if out.name != "" && out.name != "root" {
+		out.homeDirectory = path.Join("/home", out.name)
+	}
+	return out
 }
 
 func sourceWorkingDirectory(req *workerapimodel.WorkerSandboxCreateRequest) string {
@@ -423,6 +494,204 @@ func sourceWorkingDirectory(req *workerapimodel.WorkerSandboxCreateRequest) stri
 	return optString(destination.WorkingDirectory)
 }
 
+type sandboxSource struct {
+	slug   string
+	target string
+	git    workerapimodel.GitSource
+}
+
+func sandboxSources(req *workerapimodel.WorkerSandboxCreateRequest) []sandboxSource {
+	if req == nil {
+		return nil
+	}
+	var out []sandboxSource
+	used := map[string]struct{}{}
+	if source, ok := req.Source.Get(); ok {
+		out = append(out, sandboxSourceFor("primary", source, "/workspace", used))
+	}
+	if refs, ok := req.SourceCodeReferences.Get(); ok {
+		keys := make([]string, 0, len(refs))
+		for key := range refs {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			source := refs[key]
+			defaultTarget := cleanContainerPath(key)
+			if defaultTarget == "" {
+				defaultTarget = path.Join("/workspace", defaultSourceSlug(source, key))
+			}
+			out = append(out, sandboxSourceFor(key, source, defaultTarget, used))
+		}
+	}
+	return out
+}
+
+func sandboxSourceFor(seed string, source workerapimodel.GitSource, defaultTarget string, used map[string]struct{}) sandboxSource {
+	slug := sourceSlug(source, seed, used)
+	target := defaultTarget
+	if destination, ok := source.Destination.Get(); ok {
+		if directory := cleanContainerPath(optString(destination.Directory)); directory != "" {
+			target = directory
+		}
+	}
+	if target == "" {
+		target = path.Join("/workspace", slug)
+	}
+	return sandboxSource{slug: slug, target: target, git: source}
+}
+
+func sourceSlug(source workerapimodel.GitSource, seed string, used map[string]struct{}) string {
+	base := defaultSourceSlug(source, seed)
+	slug := base
+	for i := 2; ; i++ {
+		if _, ok := used[slug]; !ok {
+			used[slug] = struct{}{}
+			return slug
+		}
+		slug = fmt.Sprintf("%s-%d", strings.TrimRight(base[:min(len(base), 61)], "-"), i)
+	}
+}
+
+func defaultSourceSlug(source workerapimodel.GitSource, seed string) string {
+	base := slugifySource(optString(source.Slug))
+	if base == "" {
+		base = slugifySource(seed)
+	}
+	if base == "" {
+		base = "source"
+	}
+	return base
+}
+
+func slugifySource(value string) string {
+	var b strings.Builder
+	lastDash := false
+	for _, r := range strings.ToLower(strings.TrimSpace(value)) {
+		switch {
+		case r >= 'a' && r <= 'z' || r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastDash = false
+		case b.Len() > 0 && !lastDash:
+			b.WriteByte('-')
+			lastDash = true
+		}
+		if b.Len() >= 63 {
+			break
+		}
+	}
+	return strings.Trim(b.String(), "-")
+}
+
+func cleanContainerPath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if strings.ContainsAny(value, " \t\r\n") {
+		return ""
+	}
+	cleaned := path.Clean("/" + strings.TrimPrefix(value, "/"))
+	if cleaned == "/" {
+		return ""
+	}
+	return cleaned
+}
+
+func sandboxVolumesRoot(projectID, sandboxID string) string {
+	return filepath.Join(sandboxDataRoot, projectID, "sandboxes", sandboxID, "volumes")
+}
+
+func materializeGitSource(ctx context.Context, source workerapimodel.GitSource, target string) error {
+	if _, err := os.Stat(filepath.Join(target, ".git")); err == nil {
+		return checkoutGitSource(ctx, target, source)
+	} else if !os.IsNotExist(err) {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+		return err
+	}
+	cloneURL, err := gitSourceCloneURL(source)
+	if err != nil {
+		return err
+	}
+	args := []string{"clone"}
+	if checkout, ok := source.Checkout.Get(); ok {
+		if refName := strings.TrimSpace(optString(checkout.RefName)); refName != "" {
+			args = append(args, "--branch", refName)
+		}
+	}
+	args = append(args, cloneURL, target)
+	if err := runGit(ctx, "", args...); err != nil {
+		return err
+	}
+	return checkoutGitSource(ctx, target, source)
+}
+
+func gitSourceCloneURL(source workerapimodel.GitSource) (string, error) {
+	if local := strings.TrimSpace(optString(source.LocalDirectory)); local != "" {
+		return local, nil
+	}
+	if sourceURL, ok := source.URL.Get(); ok {
+		return sourceURL.String(), nil
+	}
+	return "", fmt.Errorf("source URL or localDirectory is required")
+}
+
+func checkoutGitSource(ctx context.Context, repo string, source workerapimodel.GitSource) error {
+	checkout, ok := source.Checkout.Get()
+	if !ok {
+		return nil
+	}
+	refName := strings.TrimSpace(optString(checkout.RefName))
+	refType := strings.ToLower(strings.TrimSpace(optString(checkout.RefType)))
+	if commit := strings.TrimSpace(optString(checkout.Commit)); commit != "" {
+		if refName != "" && refType == "branch" {
+			return runGit(ctx, repo, "checkout", "-B", refName, commit)
+		}
+		return runGit(ctx, repo, "checkout", "--detach", commit)
+	}
+	if refName != "" {
+		return runGit(ctx, repo, "checkout", refName)
+	}
+	return nil
+}
+
+func runGit(ctx context.Context, dir string, args ...string) error {
+	cmd := exec.CommandContext(ctx, "git", args...)
+	if dir != "" {
+		cmd.Dir = dir
+	}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
+func chownRecursive(ctx context.Context, root string, uid, gid int) error {
+	if err := runChown(ctx, root, uid, gid); err == nil {
+		return nil
+	}
+	return filepath.WalkDir(root, func(p string, _ os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		//nolint:gosec // The tree is a worker-owned clone target; Lchown avoids following repository symlinks.
+		return os.Lchown(p, uid, gid)
+	})
+}
+
+func runChown(ctx context.Context, root string, uid, gid int) error {
+	//nolint:gosec // root is a worker-owned source volume path and args are passed without a shell.
+	cmd := exec.CommandContext(ctx, "chown", "-R", "--no-dereference", fmt.Sprintf("%d:%d", uid, gid), root)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("chown %s: %w: %s", root, err, strings.TrimSpace(string(out)))
+	}
+	return nil
+}
+
 func optCreateEnv(opt workerclient.OptWorkerSandboxCreateRequestEnv) workerclient.WorkerSandboxCreateRequestEnv {
 	v, _ := opt.Get()
 	return v
@@ -432,6 +701,21 @@ func envList(values map[string]string) []string {
 	out := make([]string, 0, len(values))
 	for key, value := range values {
 		out = append(out, key+"="+value)
+	}
+	return out
+}
+
+func envWithSandboxUser(values map[string]string, user sandboxUserIdentity) map[string]string {
+	out := copyMap(values)
+	out["DISCOBOX_USER_UID"] = fmt.Sprintf("%d", user.uid)
+	out["DISCOBOX_USER_GID"] = fmt.Sprintf("%d", user.gid)
+	out["DISCOBOX_USER_NAME"] = user.name
+	out["DISCOBOX_USER_HOME"] = user.homeDirectory
+	if _, ok := out["HOME"]; !ok && user.homeDirectory != "" {
+		out["HOME"] = user.homeDirectory
+	}
+	if _, ok := out["USER"]; !ok && user.name != "" {
+		out["USER"] = user.name
 	}
 	return out
 }

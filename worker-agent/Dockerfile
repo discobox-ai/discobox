@@ -22,6 +22,7 @@ RUN apt-get update \
         curl \
         dbus \
         docker.io \
+        git \
         systemd \
         systemd-sysv \
     && apt-get clean \
