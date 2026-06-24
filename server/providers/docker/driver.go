@@ -299,6 +299,10 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 	boot := d.containerBootConfig(spec.Boot)
 	spec.Boot = boot
 	workerID := strings.TrimSpace(boot.Env[workeragent.EnvWorkerID])
+	projectID := strings.TrimSpace(spec.Ref.ProjectID)
+	if projectID == "" {
+		projectID = strings.TrimSpace(boot.Env[workeragent.EnvProjectID])
+	}
 	name := containerName(workerID, spec.Name)
 	image := strings.TrimSpace(spec.Image)
 	if image == "" {
@@ -345,7 +349,7 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 	if d.cgroupNSMode != "" {
 		hostConfig.CgroupnsMode = container.CgroupnsMode(d.cgroupNSMode)
 	}
-	hostConfig.Mounts = d.containerMounts(workerAgent, workerID)
+	hostConfig.Mounts = d.containerMounts(workerAgent, workerID, projectID)
 	if d.systemd {
 		hostConfig.Tmpfs = map[string]string{"/run": "rw,noexec,nosuid,size=64m", "/run/lock": "rw,noexec,nosuid,size=64m", "/tmp": "rw,size=64m"}
 	}
@@ -457,7 +461,7 @@ func controlPlaneExtraHosts(defaulted bool, controlPlaneURL string) []string {
 	return nil
 }
 
-func (d *Driver) containerMounts(workerAgent bool, workerID string) []mount.Mount {
+func (d *Driver) containerMounts(workerAgent bool, workerID, projectID string) []mount.Mount {
 	var mounts []mount.Mount
 	if workerAgent {
 		if d.dockerSocket != "" {
@@ -475,8 +479,8 @@ func (d *Driver) containerMounts(workerAgent bool, workerID string) []mount.Moun
 	if d.systemd {
 		mounts = append(mounts,
 			mount.Mount{Type: mount.TypeBind, Source: "/sys/fs/cgroup", Target: "/sys/fs/cgroup", ReadOnly: false},
-			mount.Mount{Type: mount.TypeVolume, Source: scopedVolumeName(workerID, "docker"), Target: "/var/lib/docker"},
-			mount.Mount{Type: mount.TypeVolume, Source: scopedVolumeName(workerID, "discobox"), Target: "/var/lib/discobox"},
+			mount.Mount{Type: mount.TypeVolume, Source: workerScopedVolumeName(workerID, "docker"), Target: "/var/lib/docker"},
+			mount.Mount{Type: mount.TypeVolume, Source: projectScopedVolumeName(projectID, "discobox"), Target: "/var/lib/discobox"},
 		)
 	}
 	return mounts
@@ -764,8 +768,16 @@ func containerName(workerID, name string) string {
 	return "discobox-vm-" + name
 }
 
-func scopedVolumeName(workerID, suffix string) string {
-	name := workerID
+func workerScopedVolumeName(workerID, suffix string) string {
+	return scopedVolumeName("worker", workerID, suffix)
+}
+
+func projectScopedVolumeName(projectID, suffix string) string {
+	return scopedVolumeName("project", projectID, suffix)
+}
+
+func scopedVolumeName(scope, id, suffix string) string {
+	name := id
 	if strings.TrimSpace(name) == "" {
 		name = "unknown"
 	}
@@ -774,7 +786,7 @@ func scopedVolumeName(workerID, suffix string) string {
 	if name == "" {
 		name = "unknown"
 	}
-	return "discobox-worker-" + name + "-" + suffix
+	return "discobox-" + scope + "-" + name + "-" + suffix
 }
 
 func envList(values map[string]string) []string {

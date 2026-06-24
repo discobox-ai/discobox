@@ -15,6 +15,7 @@ import (
 )
 
 const workerImageEnv = "DISCOBOX_DOCKER_WORKER_IMAGE"
+const workerAgentMountLayoutVersion = 2
 
 func FactoryWithWorkerManager(workerManager workerpool.WorkerManager) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
@@ -131,27 +132,29 @@ func workerAgentConfigRevision(cfg Config, vmConfig vm.Config) string {
 		dockerSocket = dockerSocketPath
 	}
 	payload := struct {
-		ControlPlaneURL string      `json:"controlPlaneUrl"`
-		Image           string      `json:"image"`
-		Network         string      `json:"network"`
-		AgentPort       int         `json:"agentPort"`
-		Systemd         bool        `json:"systemd"`
-		Privileged      bool        `json:"privileged"`
-		CgroupNSMode    string      `json:"cgroupNsMode"`
-		Command         []string    `json:"command,omitempty"`
-		DockerSocket    string      `json:"bindDockerSocket"`
-		HostMounts      []HostMount `json:"hostMounts,omitempty"`
+		ControlPlaneURL    string      `json:"controlPlaneUrl"`
+		Image              string      `json:"image"`
+		Network            string      `json:"network"`
+		AgentPort          int         `json:"agentPort"`
+		Systemd            bool        `json:"systemd"`
+		Privileged         bool        `json:"privileged"`
+		CgroupNSMode       string      `json:"cgroupNsMode"`
+		Command            []string    `json:"command,omitempty"`
+		DockerSocket       string      `json:"bindDockerSocket"`
+		HostMounts         []HostMount `json:"hostMounts,omitempty"`
+		MountLayoutVersion int         `json:"mountLayoutVersion"`
 	}{
-		ControlPlaneURL: controlPlaneURL,
-		Image:           image,
-		Network:         strings.TrimSpace(cfg.Network),
-		AgentPort:       agentPort,
-		Systemd:         systemd,
-		Privileged:      privileged,
-		CgroupNSMode:    strings.TrimSpace(cfg.CgroupNSMode),
-		Command:         command,
-		DockerSocket:    dockerSocket,
-		HostMounts:      normalizeHostMounts(cfg.HostMounts),
+		ControlPlaneURL:    controlPlaneURL,
+		Image:              image,
+		Network:            strings.TrimSpace(cfg.Network),
+		AgentPort:          agentPort,
+		Systemd:            systemd,
+		Privileged:         privileged,
+		CgroupNSMode:       strings.TrimSpace(cfg.CgroupNSMode),
+		Command:            command,
+		DockerSocket:       dockerSocket,
+		HostMounts:         normalizeHostMounts(cfg.HostMounts),
+		MountLayoutVersion: workerAgentMountLayoutVersion,
 	}
 	data, err := json.Marshal(payload)
 	if err != nil {

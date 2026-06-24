@@ -166,7 +166,7 @@ func TestContainerLabelsOmitSandboxIDForWorkerAgent(t *testing.T) {
 
 func TestContainerMountsBindHostDockerSocketForWorkerAgent(t *testing.T) {
 	d := NewDriverWithClient(nil, DriverConfig{DockerSocket: "/custom/docker.sock"})
-	mounts := d.containerMounts(true, "worker-1")
+	mounts := d.containerMounts(true, "worker-1", "project-1")
 
 	if !hasMountWithReadOnly(mounts, "/custom/docker.sock", dockerSocketPath, false) {
 		t.Fatalf("mounts = %#v, missing host Docker socket bind mount", mounts)
@@ -178,7 +178,7 @@ func TestContainerMountsBindConfiguredHostMountsForWorkerAgent(t *testing.T) {
 		{Source: "/home", ReadOnly: true},
 		{Source: "/Users", ReadOnly: true},
 	}})
-	mounts := d.containerMounts(true, "worker-1")
+	mounts := d.containerMounts(true, "worker-1", "project-1")
 
 	if !hasMountWithReadOnly(mounts, "/home", "/host/home", true) {
 		t.Fatalf("mounts = %#v, missing readonly /home host mount", mounts)
@@ -190,7 +190,7 @@ func TestContainerMountsBindConfiguredHostMountsForWorkerAgent(t *testing.T) {
 
 func TestContainerMountsDoNotBindHostDockerSocketForNonWorkerAgent(t *testing.T) {
 	d := NewDriverWithClient(nil, DriverConfig{DockerSocket: dockerSocketPath, HostMounts: []HostMount{{Source: "/home", ReadOnly: true}}})
-	mounts := d.containerMounts(false, "worker-1")
+	mounts := d.containerMounts(false, "worker-1", "project-1")
 
 	if hasMount(mounts, dockerSocketPath, dockerSocketPath) {
 		t.Fatalf("mounts = %#v, host Docker socket should only be mounted for worker agents", mounts)
@@ -305,14 +305,14 @@ func TestHostMountJSONAcceptsDockerStyleStrings(t *testing.T) {
 	}
 	d := NewDriverWithClient(nil, DriverConfig{HostMounts: mounts})
 
-	if !hasMountWithReadOnly(d.containerMounts(true, "worker-1"), "/home", "/host/home", true) {
-		t.Fatalf("mounts = %#v, missing readonly /home mount", d.containerMounts(true, "worker-1"))
+	if !hasMountWithReadOnly(d.containerMounts(true, "worker-1", "project-1"), "/home", "/host/home", true) {
+		t.Fatalf("mounts = %#v, missing readonly /home mount", d.containerMounts(true, "worker-1", "project-1"))
 	}
-	if !hasMountWithReadOnly(d.containerMounts(true, "worker-1"), "/var/lib/discobox", "/host/var/lib/discobox", false) {
-		t.Fatalf("mounts = %#v, missing read-write /var/lib/discobox mount", d.containerMounts(true, "worker-1"))
+	if !hasMountWithReadOnly(d.containerMounts(true, "worker-1", "project-1"), "/var/lib/discobox", "/host/var/lib/discobox", false) {
+		t.Fatalf("mounts = %#v, missing read-write /var/lib/discobox mount", d.containerMounts(true, "worker-1", "project-1"))
 	}
-	if !hasMountWithReadOnly(d.containerMounts(true, "worker-1"), dockerSocketPath, "/host/var/run/docker.sock", false) {
-		t.Fatalf("mounts = %#v, missing read-write host mount for Docker socket path", d.containerMounts(true, "worker-1"))
+	if !hasMountWithReadOnly(d.containerMounts(true, "worker-1", "project-1"), dockerSocketPath, "/host/var/run/docker.sock", false) {
+		t.Fatalf("mounts = %#v, missing read-write host mount for Docker socket path", d.containerMounts(true, "worker-1", "project-1"))
 	}
 
 	data, err := json.Marshal([]HostMount{{Source: "/home", ReadOnly: true}, {Source: dockerSocketPath}})
@@ -329,7 +329,7 @@ func TestConfiguredDockerSocketIsSeparateFromHostMountTargeting(t *testing.T) {
 		DockerSocket: "/run/user/1000/docker.sock",
 		HostMounts:   []HostMount{{Source: dockerSocketPath}},
 	})
-	mounts := d.containerMounts(true, "worker-1")
+	mounts := d.containerMounts(true, "worker-1", "project-1")
 
 	if !hasMountWithReadOnly(mounts, "/run/user/1000/docker.sock", dockerSocketPath, false) {
 		t.Fatalf("mounts = %#v, missing configured Docker socket bind", mounts)
@@ -348,12 +348,30 @@ func TestContainerNameUsesWorkerID(t *testing.T) {
 	}
 }
 
-func TestScopedVolumeNameUsesWorkerID(t *testing.T) {
-	if got := scopedVolumeName("worker:one", "docker"); got != "discobox-worker-worker-one-docker" {
-		t.Fatalf("volume name = %q", got)
+func TestSystemdContainerMountsScopeVolumes(t *testing.T) {
+	d := NewDriverWithClient(nil, DriverConfig{Systemd: true})
+	mounts := d.containerMounts(true, "worker:one", "project:one")
+
+	if !hasVolumeMount(mounts, "discobox-worker-worker-one-docker", "/var/lib/docker") {
+		t.Fatalf("mounts = %#v, missing worker-scoped Docker volume", mounts)
 	}
-	if got := scopedVolumeName("", "discobox"); got != "discobox-worker-unknown-discobox" {
-		t.Fatalf("fallback volume name = %q", got)
+	if !hasVolumeMount(mounts, "discobox-project-project-one-discobox", "/var/lib/discobox") {
+		t.Fatalf("mounts = %#v, missing project-scoped Discobox volume", mounts)
+	}
+}
+
+func TestScopedVolumeNames(t *testing.T) {
+	if got := workerScopedVolumeName("worker:one", "docker"); got != "discobox-worker-worker-one-docker" {
+		t.Fatalf("worker volume name = %q", got)
+	}
+	if got := projectScopedVolumeName("project:one", "discobox"); got != "discobox-project-project-one-discobox" {
+		t.Fatalf("project volume name = %q", got)
+	}
+	if got := workerScopedVolumeName("", "docker"); got != "discobox-worker-unknown-docker" {
+		t.Fatalf("worker fallback volume name = %q", got)
+	}
+	if got := projectScopedVolumeName("", "discobox"); got != "discobox-project-unknown-discobox" {
+		t.Fatalf("project fallback volume name = %q", got)
 	}
 }
 
@@ -414,6 +432,15 @@ func TestContainerReadyErrorReportsStoppedContainer(t *testing.T) {
 func hasMount(mounts []mount.Mount, source, target string) bool {
 	for _, m := range mounts {
 		if m.Type == mount.TypeBind && m.Source == source && m.Target == target {
+			return true
+		}
+	}
+	return false
+}
+
+func hasVolumeMount(mounts []mount.Mount, source, target string) bool {
+	for _, m := range mounts {
+		if m.Type == mount.TypeVolume && m.Source == source && m.Target == target {
 			return true
 		}
 	}
