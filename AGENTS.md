@@ -18,10 +18,10 @@
 - `server/internal/events`: project event broker.
 - `server/internal/auth/sandbox`: sandbox and worker authentication helpers.
 - `server/providers`: Docker, VM, cloud, and worker-backed provider implementations.
-- `worker-agent`: nested Go module for the worker agent implementation and local image watcher.
+- `worker-agent`: nested Go module for the worker agent implementation.
 - `sandbox-agent`: nested Go module and image context for the sandbox agent runtime environment.
 - `worker-agent/cmd/discobox-worker-agent`: worker agent entrypoint.
-- `worker-agent/cmd/discobox-worker-agent-watch`: local worker-agent image rebuild watcher.
+- `cmd/discobox-docker-image-watch`: local Docker image rebuild watcher for worker-agent and sandbox-agent images.
 - `ui`: SvelteKit frontend application.
 - `electron`: Electron shell for the UI.
 - `docs`: user/developer documentation.

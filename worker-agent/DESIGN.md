@@ -1,7 +1,6 @@
 # Worker Agent Design
 
-This module owns the in-guest worker agent process and local worker-agent image
-watcher.
+This module owns the in-guest worker agent process.
 
 The worker agent owns and reads worker bootstrap metadata, authenticates to the
 control plane, reports worker health/capacity, and runs the local worker runtime
@@ -17,7 +16,6 @@ from the future in-sandbox `sandbox-agent` API.
 | `api/gen` | Generated worker-local sandbox operations client/server scaffold. |
 | `api/model` | Generated stable aliases for worker-local sandbox operation schema types. |
 | `cmd/discobox-worker-agent` | Worker agent binary entrypoint. |
-| `cmd/discobox-worker-agent-watch` | Local development watcher that rebuilds the worker-agent image and updates the repo `.env`. |
 | `.` | Root `workeragent` Go package: boot contract, registration flow, status reporting, and high-level command orchestration. |
 | `server` | Worker-local HTTP server, health/metadata endpoints, and generated sandbox API route/auth adapter. |
 | `sandboxruntime` | Local sandbox runtime implementations used by the worker server. |

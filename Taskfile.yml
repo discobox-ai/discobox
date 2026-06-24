@@ -94,11 +94,11 @@ tasks:
       - ./{{.BINARY}}
 
   dev:
-    desc: Run the server, UI, worker-agent image watcher, and Storybook dev tasks
+    desc: Run the server, UI, Docker image watcher, and Storybook dev tasks
     deps:
       - dev:server
       - dev:ui
-      - dev:worker-agent-image-watch
+      - dev:docker-image-watch
       - storybook
 
   storybook:
@@ -118,10 +118,15 @@ tasks:
     cmds:
       - go tool air -c .air.cli.toml
 
-  dev:worker-agent-image-watch:
-    desc: Rebuild the Docker worker-agent image when its Docker inputs change
+  dev:docker-image-watch:
+    desc: Rebuild Docker development images when their Docker inputs change
     cmds:
-      - cd worker-agent && go run ./cmd/discobox-worker-agent-watch
+      - go run ./cmd/discobox-docker-image-watch
+
+  dev:worker-agent-image-watch:
+    desc: Alias for dev:docker-image-watch
+    cmds:
+      - task: dev:docker-image-watch
 
   dev:ui:
     desc: Run the SvelteKit UI dev server

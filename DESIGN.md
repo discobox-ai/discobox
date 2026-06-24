@@ -100,9 +100,11 @@ flowchart TD
   agent CLIs in daemon-owned PTYs, exposes attach streams over a local Unix
   socket, and must not depend on server internals. See
   [`sessions/DESIGN.md`](sessions/DESIGN.md).
-- Worker-agent module: in-guest worker process, local worker image watcher,
-  worker-local runtime DTOs, and generated worker-local sandbox operations API
-  server adapter; depends on root worker boot contracts and OpenAPI contracts.
+- Worker-agent module: in-guest worker process, worker-local runtime DTOs, and
+  generated worker-local sandbox operations API server adapter; depends on root
+  worker boot contracts and OpenAPI contracts.
+- Root module: local Docker development image watcher for worker-agent and
+  sandbox-agent images.
 - Sandbox-agent module: future in-sandbox agent REST API runtime environment and
   agent implementation; depends on root contracts and generated API types.
 
