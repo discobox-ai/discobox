@@ -100,6 +100,24 @@ func (r *SandboxReconcileExecutor) ReconcileSandboxJob(ctx context.Context, proj
 	}
 }
 
+func (r *SandboxReconcileExecutor) MarkSandboxJobFailed(ctx context.Context, projectID, sandboxID, jobID string, generation int64, message string) error {
+	sandbox, err := r.store.GetSandbox(ctx, projectID, sandboxID, store.WithGeneration(generation))
+	if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrGenerationConflict) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if sandbox.LastJobID == nil || *sandbox.LastJobID != jobID {
+		return nil
+	}
+	if sandbox.LastOperationStatus == model.SandboxOperationStatusFailed || sandbox.LastOperationStatus == model.SandboxOperationStatusSuccess {
+		return nil
+	}
+	sandbox.FailOperation(message)
+	return r.update(ctx, sandbox, generation)
+}
+
 func (r *SandboxReconcileExecutor) start(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
 	if sandbox.Phase == model.SandboxPhaseRunning && sandbox.ObservedGeneration == generation && sandbox.LastOperationStatus == model.SandboxOperationStatusSuccess {
 		return nil
@@ -111,12 +129,9 @@ func (r *SandboxReconcileExecutor) start(ctx context.Context, sandbox *model.San
 		return err
 	}
 	if err := r.startSandbox(ctx, sandbox); err != nil {
-		if errors.Is(err, ErrNoSandboxCapacity) {
-			sandbox.FailOperation(err.Error())
-			if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
-				return updateErr
-			}
-			return err
+		sandbox.FailOperation(err.Error())
+		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
+			return updateErr
 		}
 		return err
 	}
@@ -132,15 +147,16 @@ func (r *SandboxReconcileExecutor) restart(ctx context.Context, sandbox *model.S
 		return err
 	}
 	if err := r.stopSandbox(ctx, sandbox); err != nil {
+		sandbox.FailOperation(err.Error())
+		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
+			return updateErr
+		}
 		return err
 	}
 	if err := r.startSandbox(ctx, sandbox); err != nil {
-		if errors.Is(err, ErrNoSandboxCapacity) {
-			sandbox.FailOperation(err.Error())
-			if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
-				return updateErr
-			}
-			return err
+		sandbox.FailOperation(err.Error())
+		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
+			return updateErr
 		}
 		return err
 	}
@@ -161,6 +177,10 @@ func (r *SandboxReconcileExecutor) stop(ctx context.Context, sandbox *model.Sand
 		return err
 	}
 	if err := r.stopSandbox(ctx, sandbox); err != nil {
+		sandbox.FailOperation(err.Error())
+		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
+			return updateErr
+		}
 		return err
 	}
 	sandbox.ObservedGeneration = generation
@@ -179,6 +199,10 @@ func (r *SandboxReconcileExecutor) delete(ctx context.Context, sandbox *model.Sa
 		return err
 	}
 	if err := r.deleteSandbox(ctx, sandbox); err != nil {
+		sandbox.FailOperation(err.Error())
+		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
+			return updateErr
+		}
 		return err
 	}
 	sandbox.ObservedGeneration = generation

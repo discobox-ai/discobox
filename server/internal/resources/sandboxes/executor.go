@@ -45,6 +45,23 @@ func (e *SandboxReconcileExecutor) Execute(ctx context.Context, job *orchestrati
 	return orchestration.JobResult{}, e.ReconcileSandboxJob(ctx, payload.ProjectID, payload.SandboxID, job.ID, payload.Generation)
 }
 
+func (e *SandboxReconcileExecutor) OnTerminal(ctx context.Context, job *orchestration.Job) error {
+	if job.Status != orchestration.StatusFailed {
+		return nil
+	}
+	payload, err := decodeSandboxReconcilePayload(job)
+	if err != nil {
+		return err
+	}
+	message := "sandbox reconcile failed"
+	if job.Error != nil && *job.Error != "" {
+		message = *job.Error
+	} else if job.Message != nil && *job.Message != "" {
+		message = *job.Message
+	}
+	return e.MarkSandboxJobFailed(ctx, payload.ProjectID, payload.SandboxID, job.ID, payload.Generation, message)
+}
+
 func decodeSandboxReconcilePayload(job *orchestration.Job) (SandboxReconcilePayload, error) {
 	var payload SandboxReconcilePayload
 	if err := json.Unmarshal(job.Payload, &payload); err != nil {
