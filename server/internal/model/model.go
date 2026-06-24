@@ -312,6 +312,7 @@ type Sandbox struct {
 	AgentModelServiceTier    *string              `gorm:"column:agent_model_service_tier;type:text" json:"agentModelServiceTier,omitempty" doc:"Model service tier the agent should use"`
 	AgentModelReasoningLevel *string              `gorm:"column:agent_model_reasoning_level;type:text" json:"agentModelReasoningLevel,omitempty" doc:"Model reasoning level the agent should use"`
 	Prompt                   *string              `gorm:"column:prompt;type:text" json:"prompt,omitempty" doc:"Prompt the agent should run"`
+	Image                    string               `gorm:"column:image;type:text" json:"image,omitempty" doc:"Sandbox base image"`
 	Source                   *GitSource           `gorm:"column:source;type:text;serializer:json" json:"source,omitempty" doc:"Primary Git source to materialize in the sandbox"`
 	SourceCodeReferences     SourceCodeReferences `gorm:"column:source_code_references;type:text;serializer:json" json:"sourceCodeReferences,omitempty" doc:"Additional Git sources to materialize in the sandbox"`
 	UserName                 *string              `gorm:"column:user_name;type:text" json:"userName,omitempty" doc:"Username to use inside the sandbox"`

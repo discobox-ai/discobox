@@ -70,6 +70,7 @@ func Run(ctx context.Context) error {
 		DispatcherImmediateExecution:   cfg.DispatcherImmediateExecution,
 		DispatcherDefaultConcurrency:   cfg.DispatcherDefaultConcurrency,
 		SandboxReconcileJobConcurrency: cfg.SandboxReconcileJobConcurrency,
+		DefaultSandboxImage:            cfg.DefaultSandboxImage,
 	})
 	if err != nil {
 		return fmt.Errorf("initialize app: %w", err)

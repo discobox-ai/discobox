@@ -15,6 +15,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/handlers"
 	"github.com/obot-platform/discobox/server/internal/projectstream"
 	sandboxjobs "github.com/obot-platform/discobox/server/internal/resources/jobs"
+	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/secrets"
 	"github.com/obot-platform/discobox/server/internal/service"
 	services "github.com/obot-platform/discobox/server/internal/services"
@@ -43,6 +44,7 @@ type AppOptions struct {
 	DispatcherDefaultConcurrency int
 
 	SandboxReconcileJobConcurrency int
+	DefaultSandboxImage            string
 }
 
 // DefaultAppOptions returns the production defaults for the app.
@@ -56,6 +58,7 @@ func DefaultAppOptions() AppOptions {
 		DispatcherImmediateExecution:   true,
 		DispatcherDefaultConcurrency:   1,
 		SandboxReconcileJobConcurrency: 4,
+		DefaultSandboxImage:            sandbox.DefaultSandboxImageName,
 	}
 }
 
@@ -105,6 +108,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	appServices := service.New(appStore, jobManager, service.JobManagerOptions{
 		SandboxReconcileJobConcurrency: opts.SandboxReconcileJobConcurrency,
 	}, broker)
+	appServices.SetDefaultSandboxImage(opts.DefaultSandboxImage)
 	if opts.SecretSealer != nil {
 		appServices.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.SecretSealer))
 	}

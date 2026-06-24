@@ -50,6 +50,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.SandboxReconcileJobConcurrency != 4 {
 		t.Fatalf("SandboxReconcileJobConcurrency = %d, want 4", cfg.SandboxReconcileJobConcurrency)
 	}
+	if cfg.DefaultSandboxImage != "discobox-sandbox-agent:local" {
+		t.Fatalf("DefaultSandboxImage = %q, want local sandbox image", cfg.DefaultSandboxImage)
+	}
 	if cfg.OTelMetricsEnabled {
 		t.Fatalf("OTelMetricsEnabled = true, want false")
 	}
@@ -76,6 +79,7 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	t.Setenv("DISPATCHER_IMMEDIATE_EXECUTION", "false")
 	t.Setenv("DISPATCHER_DEFAULT_CONCURRENCY", "3")
 	t.Setenv("SANDBOX_RECONCILE_JOB_CONCURRENCY", "9")
+	t.Setenv("DISCOBOX_DEFAULT_SANDBOX_IMAGE", "discobox-sandbox-agent:test")
 	t.Setenv("DISCOBOX_ENCRYPTION_KEY", "key")
 	t.Setenv("OTEL_METRICS_EXPORTER", "otlp")
 	t.Setenv("OTEL_METRIC_EXPORT_INTERVAL", "5000")
@@ -132,6 +136,9 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	}
 	if cfg.SandboxReconcileJobConcurrency != 9 {
 		t.Fatalf("SandboxReconcileJobConcurrency = %d, want 9", cfg.SandboxReconcileJobConcurrency)
+	}
+	if cfg.DefaultSandboxImage != "discobox-sandbox-agent:test" {
+		t.Fatalf("DefaultSandboxImage = %q, want test image", cfg.DefaultSandboxImage)
 	}
 	if cfg.EncryptionKey != "key" {
 		t.Fatalf("EncryptionKey = %q, want key", cfg.EncryptionKey)
@@ -208,6 +215,7 @@ func clearConfigEnv(t *testing.T) {
 		"DISPATCHER_IMMEDIATE_EXECUTION",
 		"DISPATCHER_DEFAULT_CONCURRENCY",
 		"SANDBOX_RECONCILE_JOB_CONCURRENCY",
+		"DISCOBOX_DEFAULT_SANDBOX_IMAGE",
 		"DISCOBOX_ENCRYPTION_KEY",
 		"OTEL_METRICS_EXPORTER",
 		"OTEL_METRIC_EXPORT_INTERVAL",

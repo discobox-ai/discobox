@@ -311,6 +311,8 @@ type CreateSandboxBody struct {
 	CpuVcpus OptFloat64 `json:"cpuVcpus"`
 	// Sandbox description.
 	Description OptString `json:"description"`
+	// Sandbox base image. Defaults to the server configured sandbox image when omitted.
+	Image OptString `json:"image"`
 	// Requested memory capacity in bytes.
 	MemoryBytes OptInt64 `json:"memoryBytes"`
 	// Sandbox name.
@@ -369,6 +371,11 @@ func (s *CreateSandboxBody) GetCpuVcpus() OptFloat64 {
 // GetDescription returns the value of Description.
 func (s *CreateSandboxBody) GetDescription() OptString {
 	return s.Description
+}
+
+// GetImage returns the value of Image.
+func (s *CreateSandboxBody) GetImage() OptString {
+	return s.Image
 }
 
 // GetMemoryBytes returns the value of MemoryBytes.
@@ -454,6 +461,11 @@ func (s *CreateSandboxBody) SetCpuVcpus(val OptFloat64) {
 // SetDescription sets the value of Description.
 func (s *CreateSandboxBody) SetDescription(val OptString) {
 	s.Description = val
+}
+
+// SetImage sets the value of Image.
+func (s *CreateSandboxBody) SetImage(val OptString) {
+	s.Image = val
 }
 
 // SetMemoryBytes sets the value of MemoryBytes.
@@ -3749,6 +3761,8 @@ type Sandbox struct {
 	Generation int64 `json:"generation"`
 	// Stable sandbox ID.
 	ID string `json:"id"`
+	// Sandbox base image.
+	Image OptString `json:"image"`
 	// Last observed activity timestamp.
 	LastActiveAt OptDateTime `json:"lastActiveAt"`
 	// Most recent lifecycle job ID.
@@ -3871,6 +3885,11 @@ func (s *Sandbox) GetGeneration() int64 {
 // GetID returns the value of ID.
 func (s *Sandbox) GetID() string {
 	return s.ID
+}
+
+// GetImage returns the value of Image.
+func (s *Sandbox) GetImage() OptString {
+	return s.Image
 }
 
 // GetLastActiveAt returns the value of LastActiveAt.
@@ -4056,6 +4075,11 @@ func (s *Sandbox) SetGeneration(val int64) {
 // SetID sets the value of ID.
 func (s *Sandbox) SetID(val string) {
 	s.ID = val
+}
+
+// SetImage sets the value of Image.
+func (s *Sandbox) SetImage(val OptString) {
+	s.Image = val
 }
 
 // SetLastActiveAt sets the value of LastActiveAt.

@@ -11,6 +11,8 @@ type ImageRef struct {
 	Name string `json:"name"`
 }
 
+const DefaultSandboxImageName = "discobox-sandbox-agent:local"
+
 // ImageStatus describes provider image availability.
 type ImageStatus string
 

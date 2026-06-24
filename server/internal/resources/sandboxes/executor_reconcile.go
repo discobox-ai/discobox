@@ -396,6 +396,7 @@ func (r *SandboxReconcileExecutor) createOptionsFromSandbox(sb *model.Sandbox) C
 			"discobox.sandbox_id": sb.ID,
 		},
 	}
+	opts.Image = ImageRef{Name: sb.Image}
 	if sb.ProviderInstanceID != nil {
 		opts.ProviderInstanceID = *sb.ProviderInstanceID
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/adrg/xdg"
 
 	"github.com/obot-platform/discobox/gormdb"
+	"github.com/obot-platform/discobox/server/internal/sandbox"
 )
 
 const appName = "discobox"
@@ -48,6 +49,9 @@ type Config struct {
 	DispatcherDefaultConcurrency   int
 	SandboxReconcileJobConcurrency int
 
+	// Sandbox settings.
+	DefaultSandboxImage string
+
 	// OpenTelemetry metrics settings.
 	OTelMetricsEnabled       bool
 	OTelMetricExportInterval time.Duration
@@ -77,6 +81,7 @@ func Load() (*Config, error) {
 	cfg.DispatcherImmediateExecution = getEnvBool("DISPATCHER_IMMEDIATE_EXECUTION", true)
 	cfg.DispatcherDefaultConcurrency = getEnvInt("DISPATCHER_DEFAULT_CONCURRENCY", 1)
 	cfg.SandboxReconcileJobConcurrency = getEnvInt("SANDBOX_RECONCILE_JOB_CONCURRENCY", 4)
+	cfg.DefaultSandboxImage = getEnv("DISCOBOX_DEFAULT_SANDBOX_IMAGE", sandbox.DefaultSandboxImageName)
 	cfg.OTelMetricsEnabled = strings.EqualFold(getEnv("OTEL_METRICS_EXPORTER", "none"), "otlp")
 	cfg.OTelMetricExportInterval = getEnvMillisecondsDuration("OTEL_METRIC_EXPORT_INTERVAL", time.Second)
 

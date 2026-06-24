@@ -101,6 +101,10 @@ func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 	s.Service.SetSandboxAuthManager(manager)
 }
 
+func (s *Service) SetDefaultSandboxImage(image string) {
+	s.Service.SetDefaultSandboxImage(image)
+}
+
 func (s *Service) SetWorkerAgentAuthManager(manager *workeragentauth.Manager) {
 	s.workerManager.SetWorkerAgentAuthManager(manager)
 }

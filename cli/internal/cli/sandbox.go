@@ -16,6 +16,7 @@ import (
 type sandboxCreateOptions struct {
 	name                     string
 	description              string
+	image                    string
 	providerInstanceID       string
 	agentConfigID            string
 	agentName                string
@@ -321,6 +322,7 @@ func (a *App) sandboxRequest(ctx context.Context, sandboxArg string) (projectID 
 func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Sandbox name")
 	cmd.Flags().StringVar(&opts.description, "description", "", "Sandbox description")
+	cmd.Flags().StringVar(&opts.image, "image", "", "Sandbox base image")
 	cmd.Flags().StringVar(&opts.providerInstanceID, "provider-instance", "", "Sandbox provider instance ID")
 	cmd.Flags().StringVar(&opts.agentConfigID, "agent-config", "", "Agent config ID")
 	cmd.Flags().StringVar(&opts.agentName, "agent", "", "Agent config name to resolve at create time")
@@ -352,6 +354,7 @@ func addUpdateFlags(cmd *cobra.Command, opts *sandboxUpdateOptions) {
 func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, error) {
 	body := &apimodel.CreateSandboxBody{Name: opts.name}
 	body.SetDescription(optString(opts.description))
+	body.SetImage(optString(opts.image))
 	body.SetProviderInstanceId(optString(opts.providerInstanceID))
 	body.SetAgentConfigId(optString(opts.agentConfigID))
 	body.SetAgentName(optString(opts.agentName))

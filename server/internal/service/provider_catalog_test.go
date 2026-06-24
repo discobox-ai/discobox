@@ -125,6 +125,73 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	}
 }
 
+func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSandboxTestService(t, nil)
+	svc.SetDefaultSandboxImage("discobox-sandbox-agent:default")
+	provider := &recordingSandboxProvider{}
+	svc.RegisterSandboxProvider("recording", provider)
+	providerInstance, err := svc.CreateSandboxProviderInstance(ctx, service.DefaultProjectID, services.CreateSandboxProviderInstanceBody{
+		Type: "recording",
+		Name: "recording",
+	})
+	if err != nil {
+		t.Fatalf("create recording provider instance: %v", err)
+	}
+	executor := svc.NewSandboxReconcileExecutor()
+
+	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+		Name:               "sandbox-default-image",
+		ProviderInstanceId: serverapi.NewOptString(providerInstance.ID),
+	})
+	if err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	if sb.Image != "discobox-sandbox-agent:default" {
+		t.Fatalf("sandbox image = %q, want default image", sb.Image)
+	}
+	if err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-start", sb.Generation); err != nil {
+		t.Fatalf("reconcile start: %v", err)
+	}
+	if provider.createOptions.Image.Name != "discobox-sandbox-agent:default" {
+		t.Fatalf("provider image = %q, want default image", provider.createOptions.Image.Name)
+	}
+}
+
+func TestCreateSandboxExplicitImageOverridesDefault(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSandboxTestService(t, nil)
+	svc.SetDefaultSandboxImage("discobox-sandbox-agent:default")
+	provider := &recordingSandboxProvider{}
+	svc.RegisterSandboxProvider("recording", provider)
+	providerInstance, err := svc.CreateSandboxProviderInstance(ctx, service.DefaultProjectID, services.CreateSandboxProviderInstanceBody{
+		Type: "recording",
+		Name: "recording",
+	})
+	if err != nil {
+		t.Fatalf("create recording provider instance: %v", err)
+	}
+	executor := svc.NewSandboxReconcileExecutor()
+
+	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+		Name:               "sandbox-explicit-image",
+		ProviderInstanceId: serverapi.NewOptString(providerInstance.ID),
+		Image:              serverapi.NewOptString("custom:sandbox"),
+	})
+	if err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	if sb.Image != "custom:sandbox" {
+		t.Fatalf("sandbox image = %q, want explicit image", sb.Image)
+	}
+	if err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-start", sb.Generation); err != nil {
+		t.Fatalf("reconcile start: %v", err)
+	}
+	if provider.createOptions.Image.Name != "custom:sandbox" {
+		t.Fatalf("provider image = %q, want explicit image", provider.createOptions.Image.Name)
+	}
+}
+
 func TestSandboxReconcileExecutorInjectsTrustKey(t *testing.T) {
 	ctx := context.Background()
 	appStore := newProviderCatalogTestStore(t)

@@ -653,6 +653,12 @@ func (s *CreateSandboxBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Image.Set {
+			e.FieldStart("image")
+			s.Image.Encode(e)
+		}
+	}
+	{
 		if s.MemoryBytes.Set {
 			e.FieldStart("memoryBytes")
 			s.MemoryBytes.Encode(e)
@@ -706,7 +712,7 @@ func (s *CreateSandboxBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCreateSandboxBody = [17]string{
+var jsonFieldsNameOfCreateSandboxBody = [18]string{
 	0:  "$schema",
 	1:  "agentConfigId",
 	2:  "agentModel",
@@ -715,15 +721,16 @@ var jsonFieldsNameOfCreateSandboxBody = [17]string{
 	5:  "agentName",
 	6:  "cpuVcpus",
 	7:  "description",
-	8:  "memoryBytes",
-	9:  "name",
-	10: "prompt",
-	11: "providerInstanceId",
-	12: "runtimeState",
-	13: "source",
-	14: "sourceCodeReferences",
-	15: "storageBytes",
-	16: "user",
+	8:  "image",
+	9:  "memoryBytes",
+	10: "name",
+	11: "prompt",
+	12: "providerInstanceId",
+	13: "runtimeState",
+	14: "source",
+	15: "sourceCodeReferences",
+	16: "storageBytes",
+	17: "user",
 }
 
 // Decode decodes CreateSandboxBody from json.
@@ -815,6 +822,16 @@ func (s *CreateSandboxBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"description\"")
 			}
+		case "image":
+			if err := func() error {
+				s.Image.Reset()
+				if err := s.Image.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"image\"")
+			}
 		case "memoryBytes":
 			if err := func() error {
 				s.MemoryBytes.Reset()
@@ -826,7 +843,7 @@ func (s *CreateSandboxBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"memoryBytes\"")
 			}
 		case "name":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -919,7 +936,7 @@ func (s *CreateSandboxBody) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
 		0b00000000,
-		0b00000010,
+		0b00000100,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
@@ -6304,6 +6321,12 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 		e.Str(s.ID)
 	}
 	{
+		if s.Image.Set {
+			e.FieldStart("image")
+			s.Image.Encode(e)
+		}
+	}
+	{
 		if s.LastActiveAt.Set {
 			e.FieldStart("lastActiveAt")
 			s.LastActiveAt.Encode(e, json.EncodeDateTime)
@@ -6411,7 +6434,7 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandbox = [37]string{
+var jsonFieldsNameOfSandbox = [38]string{
 	0:  "$schema",
 	1:  "activeOperation",
 	2:  "agentConfig",
@@ -6428,27 +6451,28 @@ var jsonFieldsNameOfSandbox = [37]string{
 	13: "errorMessage",
 	14: "generation",
 	15: "id",
-	16: "lastActiveAt",
-	17: "lastJobId",
-	18: "lastOperationStatus",
-	19: "memoryBytes",
-	20: "name",
-	21: "observedGeneration",
-	22: "phase",
-	23: "projectId",
-	24: "prompt",
-	25: "providerInstance",
-	26: "providerInstanceId",
-	27: "restartGeneration",
-	28: "restartedGeneration",
-	29: "runtimeState",
-	30: "source",
-	31: "sourceCodeReferences",
-	32: "statusMessage",
-	33: "storageBytes",
-	34: "updatedAt",
-	35: "user",
-	36: "workerId",
+	16: "image",
+	17: "lastActiveAt",
+	18: "lastJobId",
+	19: "lastOperationStatus",
+	20: "memoryBytes",
+	21: "name",
+	22: "observedGeneration",
+	23: "phase",
+	24: "projectId",
+	25: "prompt",
+	26: "providerInstance",
+	27: "providerInstanceId",
+	28: "restartGeneration",
+	29: "restartedGeneration",
+	30: "runtimeState",
+	31: "source",
+	32: "sourceCodeReferences",
+	33: "statusMessage",
+	34: "storageBytes",
+	35: "updatedAt",
+	36: "user",
+	37: "workerId",
 }
 
 // Decode decodes Sandbox from json.
@@ -6630,6 +6654,16 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"id\"")
 			}
+		case "image":
+			if err := func() error {
+				s.Image.Reset()
+				if err := s.Image.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"image\"")
+			}
 		case "lastActiveAt":
 			if err := func() error {
 				s.LastActiveAt.Reset()
@@ -6651,7 +6685,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"lastJobId\"")
 			}
 		case "lastOperationStatus":
-			requiredBitSet[2] |= 1 << 2
+			requiredBitSet[2] |= 1 << 3
 			if err := func() error {
 				if err := s.LastOperationStatus.Decode(d); err != nil {
 					return err
@@ -6661,7 +6695,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"lastOperationStatus\"")
 			}
 		case "memoryBytes":
-			requiredBitSet[2] |= 1 << 3
+			requiredBitSet[2] |= 1 << 4
 			if err := func() error {
 				v, err := d.Int64()
 				s.MemoryBytes = int64(v)
@@ -6673,7 +6707,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"memoryBytes\"")
 			}
 		case "name":
-			requiredBitSet[2] |= 1 << 4
+			requiredBitSet[2] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -6685,7 +6719,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "observedGeneration":
-			requiredBitSet[2] |= 1 << 5
+			requiredBitSet[2] |= 1 << 6
 			if err := func() error {
 				v, err := d.Int64()
 				s.ObservedGeneration = int64(v)
@@ -6697,7 +6731,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"observedGeneration\"")
 			}
 		case "phase":
-			requiredBitSet[2] |= 1 << 6
+			requiredBitSet[2] |= 1 << 7
 			if err := func() error {
 				if err := s.Phase.Decode(d); err != nil {
 					return err
@@ -6707,7 +6741,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"phase\"")
 			}
 		case "projectId":
-			requiredBitSet[2] |= 1 << 7
+			requiredBitSet[3] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -6749,7 +6783,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"providerInstanceId\"")
 			}
 		case "restartGeneration":
-			requiredBitSet[3] |= 1 << 3
+			requiredBitSet[3] |= 1 << 4
 			if err := func() error {
 				v, err := d.Int64()
 				s.RestartGeneration = int64(v)
@@ -6761,7 +6795,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"restartGeneration\"")
 			}
 		case "restartedGeneration":
-			requiredBitSet[3] |= 1 << 4
+			requiredBitSet[3] |= 1 << 5
 			if err := func() error {
 				v, err := d.Int64()
 				s.RestartedGeneration = int64(v)
@@ -6814,7 +6848,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"statusMessage\"")
 			}
 		case "storageBytes":
-			requiredBitSet[4] |= 1 << 1
+			requiredBitSet[4] |= 1 << 2
 			if err := func() error {
 				v, err := d.Int64()
 				s.StorageBytes = int64(v)
@@ -6826,7 +6860,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"storageBytes\"")
 			}
 		case "updatedAt":
-			requiredBitSet[4] |= 1 << 2
+			requiredBitSet[4] |= 1 << 3
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -6869,9 +6903,9 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 	for i, mask := range [5]uint8{
 		0b10000000,
 		0b11010101,
-		0b11111100,
-		0b00011000,
-		0b00000110,
+		0b11111000,
+		0b00110001,
+		0b00001100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

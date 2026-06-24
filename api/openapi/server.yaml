@@ -149,6 +149,9 @@ components:
                 description:
                     description: Sandbox description
                     type: string
+                image:
+                    description: Sandbox base image. Defaults to the server configured sandbox image when omitted.
+                    type: string
                 memoryBytes:
                     description: Requested memory capacity in bytes
                     format: int64
@@ -946,6 +949,9 @@ components:
                     type: integer
                 id:
                     description: Stable sandbox ID
+                    type: string
+                image:
+                    description: Sandbox base image
                     type: string
                 lastActiveAt:
                     description: Last observed activity timestamp

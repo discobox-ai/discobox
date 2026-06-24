@@ -30,6 +30,7 @@ type Service struct {
 	providerStore    any
 	sandboxAuth      *sandboxauth.Manager
 	defaultUserID    string
+	defaultImage     string
 }
 
 type SandboxJobManager interface {
@@ -50,6 +51,7 @@ func NewService(store *store.Store, manager *sandbox.ProviderManager, defaultUse
 		jobs:             jobs,
 		sandboxProviders: manager,
 		defaultUserID:    defaultUserID,
+		defaultImage:     sandbox.DefaultSandboxImageName,
 	}
 	if len(providerStore) > 0 {
 		svc.providerStore = providerStore[0]
@@ -71,6 +73,12 @@ func (s *Service) RegisterJobs(registrar JobRegistrar, opts ...orchestration.Exe
 
 func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 	s.sandboxAuth = manager
+}
+
+func (s *Service) SetDefaultSandboxImage(image string) {
+	if image = strings.TrimSpace(image); image != "" {
+		s.defaultImage = image
+	}
 }
 
 func mapAPIError(err error, notFoundMessage string) error {
@@ -146,6 +154,10 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	}
 	services.DefaultGitSourceSlugs(source, sourceCodeReferences)
 	userName, userUID, userGID, homeDirectory := services.SandboxUserToModel(input.User)
+	image := strings.TrimSpace(input.Image.Or(""))
+	if image == "" {
+		image = s.defaultImage
+	}
 	sandbox := &model.Sandbox{
 		ID:                       sandboxID,
 		ProjectID:                projectID,
@@ -159,6 +171,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		AgentModelServiceTier:    services.OptStringPtr(input.AgentModelServiceTier),
 		AgentModelReasoningLevel: services.OptStringPtr(input.AgentModelReasoningLevel),
 		Prompt:                   services.OptStringPtr(input.Prompt),
+		Image:                    image,
 		Source:                   source,
 		SourceCodeReferences:     sourceCodeReferences,
 		UserName:                 userName,
