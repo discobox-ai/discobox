@@ -67,7 +67,7 @@ teardown_file() {
   docker rm -f $(docker ps -aq \
     --filter "ancestor=discobox-worker-agent:local" \
     --filter "label=discobox.provider_type=docker" \
-    --filter "label=discobox.project_id=00000000000000000000000002") >/dev/null 2>&1 || true
+    --filter "label=discobox.project_id=prj_default") >/dev/null 2>&1 || true
 }
 
 cli() {
@@ -98,7 +98,7 @@ while time.time() < deadline:
         WHERE project_id = ? AND provider_instance_id = ?
         ORDER BY created_at ASC
         """,
-        ("00000000000000000000000002", provider_id),
+        ("prj_default", provider_id),
     ).fetchall()
     con.close()
     last = [dict(row) for row in rows]

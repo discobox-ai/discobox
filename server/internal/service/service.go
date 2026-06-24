@@ -24,7 +24,7 @@ import (
 )
 
 const (
-	DefaultUserID = "00000000000000000000000001"
+	DefaultUserID = "usr_default"
 )
 
 // Service implements the API service interfaces using the database store.

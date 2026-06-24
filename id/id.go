@@ -40,10 +40,20 @@ func Short(id string) string {
 // ShortN returns the rightmost n characters of id, or id itself when shorter.
 func ShortN(id string, n int) string {
 	id = strings.TrimSpace(id)
+	if IsFriendly(id) {
+		return id
+	}
 	if n <= 0 || len(id) <= n {
 		return id
 	}
 	return id[len(id)-n:]
+}
+
+// IsFriendly reports whether value is a typed, human-readable ID rather than a
+// generated Discobox ID.
+func IsFriendly(value string) bool {
+	value = strings.TrimSpace(value)
+	return value != "" && len(value) < GeneratedLength && strings.Contains(value, "_")
 }
 
 // IsShort reports whether value is shorter than a generated Discobox ID.

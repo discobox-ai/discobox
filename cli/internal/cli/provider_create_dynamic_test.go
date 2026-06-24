@@ -369,7 +369,7 @@ func TestProviderCreateCommandSendsDynamicConfig(t *testing.T) {
 			now := time.Now().UTC().Format(time.RFC3339Nano)
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id":        "00000000000000000000000010",
-				"projectId": "00000000000000000000000002",
+				"projectId": "prj_default",
 				"name":      "local",
 				"type":      "example",
 				"config":    posted["config"],
@@ -426,7 +426,7 @@ func TestProviderCreateCommandConsumesDebugGlobalFlag(t *testing.T) {
 			now := time.Now().UTC().Format(time.RFC3339Nano)
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"id":        "00000000000000000000000010",
-				"projectId": "00000000000000000000000002",
+				"projectId": "prj_default",
 				"name":      "local",
 				"type":      "example",
 				"config":    map[string]any{},
