@@ -83,11 +83,44 @@ func TestProviderCreatesVMWithBootConfigAndState(t *testing.T) {
 	}
 }
 
+func TestProviderCreateWorkerRecreatesRuntimeWhenDesiredMetadataChanges(t *testing.T) {
+	ctx := context.Background()
+	driver := &recordingDriver{}
+	provider, err := vm.New(vm.Config{
+		Driver:       driver,
+		DefaultImage: "image-default",
+		Metadata:     map[string]string{"config-revision": "new"},
+	})
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+	worker := &model.Worker{
+		ID:           "worker-1",
+		RuntimeState: []byte(`{"instanceId":"vm-1"}`),
+	}
+
+	err = provider.CreateWorker(ctx, &model.Project{ID: "project-1"}, &model.SandboxProviderInstance{ID: "provider-1"}, worker, "token-1", "control-plane-public-key")
+	if err != nil {
+		t.Fatalf("create worker: %v", err)
+	}
+	if driver.createCalls != 1 {
+		t.Fatalf("CreateVM calls = %d, want 1", driver.createCalls)
+	}
+	if driver.createdSpec.Metadata["config-revision"] != "new" {
+		t.Fatalf("created metadata = %#v, missing config revision", driver.createdSpec.Metadata)
+	}
+	if string(worker.RuntimeState) != `{"instanceId":"vm-1"}` {
+		t.Fatalf("worker runtime state = %s", worker.RuntimeState)
+	}
+}
+
 type recordingDriver struct {
 	createdSpec vm.InstanceSpec
+	createCalls int
 }
 
 func (d *recordingDriver) CreateVM(_ context.Context, spec vm.InstanceSpec) (*vm.Instance, error) {
+	d.createCalls++
 	d.createdSpec = spec
 	now := time.Now().UTC()
 	return &vm.Instance{ID: "vm-1", Name: spec.Name, Image: spec.Image, Status: sandbox.StatusCreated, CreatedAt: now}, nil

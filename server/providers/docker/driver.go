@@ -49,6 +49,7 @@ const (
 	labelSandboxID          = "discobox.sandbox_id"
 	labelWorkerAgent        = "discobox.worker_agent"
 	labelWorkerID           = "discobox.worker_id"
+	labelWorkerConfig       = "discobox.worker_agent.config_revision"
 	labelProviderInstanceID = "discobox.provider_instance_id"
 	labelProviderType       = "discobox.provider_type"
 )
@@ -306,7 +307,7 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 	labels := d.containerLabels(spec)
 	workerAgent := labels[labelWorkerAgent] == "true"
 	if existing, err := d.client.ContainerInspect(ctx, name, client.ContainerInspectOptions{}); err == nil {
-		if !workerAgent && existing.Container.Config != nil && existing.Container.Config.Image != image {
+		if shouldRemoveExistingContainer(existing.Container, image, labels, workerAgent) {
 			if _, err := d.client.ContainerRemove(ctx, existing.Container.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
 				return nil, err
 			}
@@ -366,6 +367,24 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 		return nil, err
 	}
 	return d.instanceFromHealthyInspect(ctx, created.ID, true)
+}
+
+func shouldRemoveExistingContainer(existing container.InspectResponse, desiredImage string, desiredLabels map[string]string, workerAgent bool) bool {
+	if existing.Config != nil && strings.TrimSpace(desiredImage) != "" && existing.Config.Image != desiredImage {
+		return true
+	}
+	if !workerAgent || existing.Config == nil {
+		return false
+	}
+	for key, value := range desiredLabels {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		if existing.Config.Labels[key] != value {
+			return true
+		}
+	}
+	return false
 }
 
 func (d *Driver) instanceFromHealthyInspect(ctx context.Context, id string, wait bool) (*vm.Instance, error) {

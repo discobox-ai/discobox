@@ -2,6 +2,8 @@ package docker
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"strings"
@@ -78,6 +80,9 @@ func configuredWorkerImage(image string) string {
 }
 
 func newProvider(ctx context.Context, cfg Config, vmConfig vm.Config) (*vm.Provider, error) {
+	vmConfig.Metadata = mergeStringMaps(vmConfig.Metadata, map[string]string{
+		labelWorkerConfig: workerAgentConfigRevision(cfg, vmConfig),
+	})
 	return NewProvider(ctx, DriverConfig{
 		Host:         cfg.Host,
 		Image:        cfg.Image,
@@ -97,4 +102,78 @@ func (c Config) systemdValue() bool {
 		return true
 	}
 	return *c.Systemd
+}
+
+func workerAgentConfigRevision(cfg Config, vmConfig vm.Config) string {
+	systemd := cfg.systemdValue()
+	privileged := systemd
+	if cfg.Privileged != nil {
+		privileged = *cfg.Privileged
+	}
+	command := cfg.Command.Values()
+	if len(command) == 0 && systemd {
+		command = []string{"/usr/local/bin/discobox-worker-agent"}
+	}
+	agentPort := cfg.AgentPort
+	if agentPort == 0 {
+		agentPort = DefaultAgentPort()
+	}
+	controlPlaneURL := strings.TrimSpace(vmConfig.ControlPlaneURL)
+	if controlPlaneURL == "" {
+		controlPlaneURL = defaultDockerControlPlaneURL()
+	}
+	image := strings.TrimSpace(cfg.Image)
+	if image == "" {
+		image = DefaultImage()
+	}
+	dockerSocket := cleanAbsPath(cfg.DockerSocket)
+	if dockerSocket == "" {
+		dockerSocket = dockerSocketPath
+	}
+	payload := struct {
+		ControlPlaneURL string      `json:"controlPlaneUrl"`
+		Image           string      `json:"image"`
+		Network         string      `json:"network"`
+		AgentPort       int         `json:"agentPort"`
+		Systemd         bool        `json:"systemd"`
+		Privileged      bool        `json:"privileged"`
+		CgroupNSMode    string      `json:"cgroupNsMode"`
+		Command         []string    `json:"command,omitempty"`
+		DockerSocket    string      `json:"bindDockerSocket"`
+		HostMounts      []HostMount `json:"hostMounts,omitempty"`
+	}{
+		ControlPlaneURL: controlPlaneURL,
+		Image:           image,
+		Network:         strings.TrimSpace(cfg.Network),
+		AgentPort:       agentPort,
+		Systemd:         systemd,
+		Privileged:      privileged,
+		CgroupNSMode:    strings.TrimSpace(cfg.CgroupNSMode),
+		Command:         command,
+		DockerSocket:    dockerSocket,
+		HostMounts:      normalizeHostMounts(cfg.HostMounts),
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		panic(err)
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func mergeStringMaps(base map[string]string, overlays ...map[string]string) map[string]string {
+	size := len(base)
+	for _, overlay := range overlays {
+		size += len(overlay)
+	}
+	merged := make(map[string]string, size)
+	for key, value := range base {
+		merged[key] = value
+	}
+	for _, overlay := range overlays {
+		for key, value := range overlay {
+			merged[key] = value
+		}
+	}
+	return merged
 }

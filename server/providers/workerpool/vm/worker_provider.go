@@ -37,7 +37,7 @@ func (p *Provider) CreateWorker(ctx context.Context, project *model.Project, pro
 	state := worker.RuntimeState
 	if len(state) > 0 {
 		runtimeWorker, err := workerProvider.Get(ctx, ref, state)
-		if errors.Is(err, sandbox.ErrNotFound) || shouldRecreateWorkerRuntime(runtimeWorker, p.defaultImage) {
+		if errors.Is(err, sandbox.ErrNotFound) || shouldRecreateWorkerRuntime(runtimeWorker, p.defaultImage, p.metadata) {
 			state = nil
 			worker.RuntimeState = nil
 			worker.Ready = false
@@ -84,14 +84,25 @@ func (p *Provider) AcquireWorkerHTTPClient(ctx context.Context, worker *model.Wo
 	return p.AcquireWorkerHTTPClientForID(ctx, worker.ID)
 }
 
-func shouldRecreateWorkerRuntime(runtimeWorker *sandbox.Sandbox, desiredImage string) bool {
+func shouldRecreateWorkerRuntime(runtimeWorker *sandbox.Sandbox, desiredImage string, desiredMetadata map[string]string) bool {
 	if runtimeWorker == nil {
 		return true
 	}
 	if runtimeWorker.Status != sandbox.StatusRunning {
 		return true
 	}
-	return strings.TrimSpace(desiredImage) != "" && runtimeWorker.Image != desiredImage
+	if strings.TrimSpace(desiredImage) != "" && runtimeWorker.Image != desiredImage {
+		return true
+	}
+	for key, value := range desiredMetadata {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		if runtimeWorker.Metadata[key] != value {
+			return true
+		}
+	}
+	return false
 }
 
 func safeWorkerRuntimeState(state []byte) ([]byte, error) {

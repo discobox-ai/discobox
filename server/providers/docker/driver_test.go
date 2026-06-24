@@ -2,6 +2,7 @@ package docker
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -199,6 +200,89 @@ func TestContainerMountsDoNotBindHostDockerSocketForNonWorkerAgent(t *testing.T)
 	}
 }
 
+func TestShouldRemoveExistingWorkerAgentContainerWhenConfigRevisionChanges(t *testing.T) {
+	existing := container.InspectResponse{
+		Config: &container.Config{
+			Image:  "worker-image",
+			Labels: map[string]string{labelWorkerConfig: "old"},
+		},
+	}
+	desired := map[string]string{labelWorkerAgent: "true", labelWorkerConfig: "new"}
+
+	if !shouldRemoveExistingContainer(existing, "worker-image", desired, true) {
+		t.Fatalf("shouldRemoveExistingContainer = false, want true for stale worker config")
+	}
+	if shouldRemoveExistingContainer(existing, "worker-image", desired, false) {
+		t.Fatalf("shouldRemoveExistingContainer = true, want false for non-worker config labels")
+	}
+}
+
+func TestWorkerAgentConfigRevisionChangesWithContainerConfig(t *testing.T) {
+	base := Config{Image: "worker-image", DockerSocket: "/var/run/docker.sock"}
+	if got := workerAgentConfigRevision(base, vm.Config{}); got == "" {
+		t.Fatalf("worker config revision is empty")
+	}
+
+	withMount := base
+	withMount.HostMounts = []HostMount{{Source: "/home", ReadOnly: true}}
+	if workerAgentConfigRevision(base, vm.Config{}) == workerAgentConfigRevision(withMount, vm.Config{}) {
+		t.Fatalf("worker config revision did not change after host mount change")
+	}
+
+	withPoolSize := base
+	withPoolSize.PoolSize = 10
+	if workerAgentConfigRevision(base, vm.Config{}) != workerAgentConfigRevision(withPoolSize, vm.Config{}) {
+		t.Fatalf("worker config revision changed for worker pool sizing")
+	}
+}
+
+func TestWorkerAgentConfigRevisionAccountsForProviderConfigFields(t *testing.T) {
+	falseValue := false
+	base := Config{Image: "worker-image", DockerSocket: "/var/run/docker.sock"}
+	baseVMConfig := vm.Config{ControlPlaneURL: "http://control.example"}
+	excludedFields := map[string]string{
+		"host":              "Docker daemon connection does not change worker container config",
+		"poolSize":          "worker pool sizing does not change worker container config",
+		"minWorkers":        "worker pool sizing does not change worker container config",
+		"maxWorkers":        "worker pool sizing does not change worker container config",
+		"minHealthyWorkers": "worker pool sizing does not change worker container config",
+	}
+	mutators := map[string]func(*Config, *vm.Config){
+		"controlPlaneUrl": func(cfg *Config, vmConfig *vm.Config) {
+			cfg.ControlPlaneURL = "http://other-control.example"
+			vmConfig.ControlPlaneURL = cfg.ControlPlaneURL
+		},
+		"image":            func(cfg *Config, _ *vm.Config) { cfg.Image = "other-worker-image" },
+		"network":          func(cfg *Config, _ *vm.Config) { cfg.Network = "discobox-net" },
+		"agentPort":        func(cfg *Config, _ *vm.Config) { cfg.AgentPort = 3902 },
+		"systemd":          func(cfg *Config, _ *vm.Config) { cfg.Systemd = &falseValue },
+		"privileged":       func(cfg *Config, _ *vm.Config) { cfg.Privileged = &falseValue },
+		"cgroupNsMode":     func(cfg *Config, _ *vm.Config) { cfg.CgroupNSMode = "host" },
+		"command":          func(cfg *Config, _ *vm.Config) { cfg.Command = []string{"/bin/discobox-worker-agent", "--debug"} },
+		"bindDockerSocket": func(cfg *Config, _ *vm.Config) { cfg.DockerSocket = "/run/user/1000/docker.sock" },
+		"hostMounts":       func(cfg *Config, _ *vm.Config) { cfg.HostMounts = []HostMount{{Source: "/home", ReadOnly: true}} },
+	}
+
+	for _, field := range configJSONFields(t, reflect.TypeOf(Config{})) {
+		if _, excluded := excludedFields[field]; excluded {
+			continue
+		}
+		mutate, ok := mutators[field]
+		if !ok {
+			t.Fatalf("provider config field %q must affect worker config revision or be explicitly excluded", field)
+		}
+
+		cfg := base
+		vmConfig := baseVMConfig
+		before := workerAgentConfigRevision(cfg, vmConfig)
+		mutate(&cfg, &vmConfig)
+		after := workerAgentConfigRevision(cfg, vmConfig)
+		if before == after {
+			t.Fatalf("provider config field %q did not change worker config revision", field)
+		}
+	}
+}
+
 func TestHostMountsAreNormalized(t *testing.T) {
 	d := NewDriverWithClient(nil, DriverConfig{HostMounts: []HostMount{
 		{Source: "relative", ReadOnly: true},
@@ -334,6 +418,33 @@ func hasMount(mounts []mount.Mount, source, target string) bool {
 		}
 	}
 	return false
+}
+
+func configJSONFields(t *testing.T, typ reflect.Type) []string {
+	t.Helper()
+	if typ.Kind() == reflect.Pointer {
+		typ = typ.Elem()
+	}
+	if typ.Kind() != reflect.Struct {
+		t.Fatalf("config type kind = %s, want struct", typ.Kind())
+	}
+	var fields []string
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+		if field.Anonymous {
+			fields = append(fields, configJSONFields(t, field.Type)...)
+			continue
+		}
+		name := strings.Split(field.Tag.Get("json"), ",")[0]
+		if name == "-" {
+			continue
+		}
+		if name == "" {
+			name = field.Name
+		}
+		fields = append(fields, name)
+	}
+	return fields
 }
 
 func hasMountWithReadOnly(mounts []mount.Mount, source, target string, readOnly bool) bool {
