@@ -33,7 +33,7 @@ type SandboxCatalogService interface {
 type SandboxProviderCatalogItem = sandboxesvc.SandboxProviderCatalogItem
 
 type JobManager interface {
-	EnqueueWorkerCurrent(context.Context, *model.Worker) (*orchestration.Job, error)
+	SubmitWorkerReconcile(context.Context, string) (*orchestration.Job, error)
 }
 
 type JobRegistrar interface {
@@ -364,7 +364,7 @@ func (s *Service) EnqueueProviderWorkers(ctx context.Context, projectID, provide
 		return err
 	}
 	for i := range workers {
-		if _, err := s.jobs.EnqueueWorkerCurrent(ctx, &workers[i]); err != nil {
+		if _, err := s.jobs.SubmitWorkerReconcile(ctx, workers[i].ID); err != nil {
 			return err
 		}
 	}

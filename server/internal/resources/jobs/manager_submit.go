@@ -278,7 +278,7 @@ func (m *Manager) deleteWorkerIfCurrent(ctx context.Context, workerID string, ge
 	return updated, nil
 }
 
-func (m *Manager) EnqueueWorkerCurrent(ctx context.Context, worker *model.Worker) (*orchestration.Job, error) {
+func (m *Manager) SubmitWorkerReconcile(ctx context.Context, workerID string) (*orchestration.Job, error) {
 	dispatcher, err := m.dispatcherForSubmit()
 	if err != nil {
 		return nil, err
@@ -289,7 +289,7 @@ func (m *Manager) EnqueueWorkerCurrent(ctx context.Context, worker *model.Worker
 		orchestration.WithSubmitTransaction(func(ctx context.Context, appendJob orchestration.SubmitAppendFunc) (*orchestration.Job, error) {
 			var job *orchestration.Job
 			err := workerStore.Transaction(ctx, func(ctx context.Context, txStore *store.WorkerStore) error {
-				current, err := txStore.GetWorker(ctx, worker.ID)
+				current, err := txStore.GetWorker(ctx, workerID)
 				if err != nil {
 					return err
 				}
@@ -307,7 +307,7 @@ func (m *Manager) EnqueueWorkerCurrent(ctx context.Context, worker *model.Worker
 	)
 }
 
-func (m *Manager) EnqueueWorkerProviderCurrent(ctx context.Context, projectID, providerID string) (*orchestration.Job, error) {
+func (m *Manager) SubmitWorkerProviderReconcile(ctx context.Context, projectID, providerID string) (*orchestration.Job, error) {
 	dispatcher, err := m.dispatcherForSubmit()
 	if err != nil {
 		return nil, err
@@ -353,6 +353,6 @@ func (m *Manager) OnWorkerReconcileTerminal(ctx context.Context, job *orchestrat
 	if job.Status != orchestration.StatusCompleted && job.Status != orchestration.StatusFailed {
 		return nil
 	}
-	_, err := m.EnqueueWorkerProviderCurrent(ctx, payload.ProjectID, payload.ProviderID)
+	_, err := m.SubmitWorkerProviderReconcile(ctx, payload.ProjectID, payload.ProviderID)
 	return err
 }

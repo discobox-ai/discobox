@@ -58,8 +58,8 @@ type JobManager interface {
 	CreateWorker(context.Context, *model.Worker) (*model.Worker, error)
 	DeleteWorkerForFailedJob(context.Context, string, int64, string, string) (bool, error)
 	DeleteWorkerForExpiredRegistration(context.Context, string, int64, time.Time, string) (bool, error)
-	EnqueueWorkerCurrent(context.Context, *model.Worker) (*orchestration.Job, error)
-	EnqueueWorkerProviderCurrent(context.Context, string, string) (*orchestration.Job, error)
+	SubmitWorkerReconcile(context.Context, string) (*orchestration.Job, error)
+	SubmitWorkerProviderReconcile(context.Context, string, string) (*orchestration.Job, error)
 	OnWorkerReconcileTerminal(context.Context, *orchestration.Job, workers.WorkerReconcilePayload) error
 }
 

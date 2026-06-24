@@ -107,14 +107,13 @@ func (s *Manager) DeleteWorkerForExpiredRegistration(ctx context.Context, worker
 }
 
 func (s *Manager) ScheduleWorkerReconciliation(ctx context.Context, workerID string) error {
-	worker, err := s.store.GetWorker(ctx, workerID)
-	if err != nil {
+	if _, err := s.store.GetWorker(ctx, workerID); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return nil
 		}
 		return err
 	}
-	_, err = s.jobs.SubmitWorkerReconcile(ctx, worker)
+	_, err := s.jobs.SubmitWorkerReconcile(ctx, workerID)
 	return err
 }
 
