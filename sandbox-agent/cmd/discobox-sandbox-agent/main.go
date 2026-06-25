@@ -54,6 +54,7 @@ func runShim(args []string) int {
 	flags.StringVar(&cfg.Workdir, "workdir", "", "terminal working directory")
 	flags.StringVar(&cfg.SocketPath, "socket", "", "shim unix socket path")
 	flags.StringVar(&cfg.RuntimePath, "runtime", "", "shim runtime status path")
+	flags.StringVar(&cfg.LogDir, "logs", "", "terminal log directory")
 	flags.IntVar(&rows, "rows", 0, "initial PTY rows")
 	flags.IntVar(&cols, "cols", 0, "initial PTY cols")
 	flags.StringVar(&commandBase64, "command", "", "base64 encoded JSON command argv")

@@ -28,6 +28,7 @@ type Config struct {
 	Workdir     string
 	SocketPath  string
 	RuntimePath string
+	LogDir      string
 	Rows        uint16
 	Cols        uint16
 	Env         map[string]string
@@ -37,6 +38,7 @@ type Runtime struct {
 	cfg       Config
 	cmd       *exec.Cmd
 	tty       *os.File
+	logger    *terminal.AsyncLogger
 	server    *http.Server
 	listener  net.Listener
 	done      chan struct{}
@@ -103,6 +105,13 @@ func (r *Runtime) start(ctx context.Context) error {
 	}
 	r.cmd = cmd
 	r.tty = tty
+	logger, err := terminal.NewAsyncLogger(r.cfg.LogDir, r.cfg.TerminalID)
+	if err != nil {
+		_ = tty.Close()
+		_ = cmd.Process.Kill()
+		return err
+	}
+	r.logger = logger
 	now := time.Now().UTC()
 	started := now
 	r.status = terminal.Terminal{
@@ -202,6 +211,7 @@ func (r *Runtime) readPTY() {
 	for {
 		n, err := r.tty.Read(buf)
 		if n > 0 {
+			r.logger.Record(terminal.LogStreamOutput, buf[:n])
 			r.broadcast(buf[:n])
 		}
 		if err != nil {
@@ -227,6 +237,7 @@ func (r *Runtime) readAttachFrames(attach *attachWriter, rw io.Reader) {
 				attach.close()
 				return
 			}
+			r.logger.Record(terminal.LogStreamInput, next.Payload)
 		case frame.Resize:
 			resize, err := frame.DecodeResize(next.Payload)
 			if err != nil {
@@ -295,6 +306,9 @@ func (r *Runtime) close() {
 	}
 	if r.tty != nil {
 		_ = r.tty.Close()
+	}
+	if r.logger != nil {
+		r.logger.Close()
 	}
 }
 

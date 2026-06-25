@@ -20,6 +20,7 @@ func registerSandboxAgentTerminalRoutes(router chi.Router, service services.Sand
 	router.Method(http.MethodDelete, "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodPost, "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/attach", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/events", sandboxAgentTerminalProxyHandler(service))
+	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/logs", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/history", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/stream", sandboxAgentTerminalProxyHandler(service))

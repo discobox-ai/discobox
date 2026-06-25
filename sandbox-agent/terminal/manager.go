@@ -74,6 +74,7 @@ type StartRequest struct {
 	Env         map[string]string
 	SocketPath  string
 	RuntimePath string
+	LogDir      string
 	Rows        uint16
 	Cols        uint16
 }
@@ -105,6 +106,7 @@ type Manager struct {
 	defaultID   string
 	workingRoot string
 	runtimeDir  string
+	logDir      string
 	units       UnitManager
 	audit       AuditRecorder
 }
@@ -123,6 +125,7 @@ func NewManager(agents []config.Agent, workingRoot string, runtimeDir string, un
 		agents:      map[string]config.Agent{},
 		workingRoot: filepath.Clean(workingRoot),
 		runtimeDir:  filepath.Clean(runtimeDir),
+		logDir:      filepath.Join(filepath.Clean(runtimeDir), "logs"),
 		units:       units,
 		audit:       audit,
 	}
@@ -189,6 +192,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Terminal, erro
 		Env:         cloneMap(req.Env),
 		SocketPath:  socketPath,
 		RuntimePath: runtimePath,
+		LogDir:      m.logDir,
 		Rows:        req.Rows,
 		Cols:        req.Cols,
 	})
@@ -291,6 +295,13 @@ func (m *Manager) Attach(ctx context.Context, w http.ResponseWriter, id string) 
 		_ = m.recordEvent(context.Background(), id, "terminal.attach.closed", "terminal attach closed", map[string]any{"unit": terminal.Unit})
 	}()
 	return proxyAttach(ctx, w, terminal.SocketPath)
+}
+
+func (m *Manager) Logs(ctx context.Context, id string) ([]LogEntry, error) {
+	if _, ok := m.Get(id); !ok {
+		return nil, ErrNotFound
+	}
+	return ReadLogs(ctx, m.logDir, id)
 }
 
 var ErrNotFound = errors.New("agent terminal not found")

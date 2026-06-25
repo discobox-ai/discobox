@@ -196,6 +196,15 @@ func (UnimplementedHandler) ListAgentTerminalEvents(ctx context.Context, params 
 	return r, ht.ErrNotImplemented
 }
 
+// ListAgentTerminalLogs implements list-agent-terminal-logs operation.
+//
+// List PTY logs for an agent terminal.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/logs
+func (UnimplementedHandler) ListAgentTerminalLogs(ctx context.Context, params ListAgentTerminalLogsParams) (r ListAgentTerminalLogsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListAgentTerminalResourceHistory implements list-agent-terminal-resource-history operation.
 //
 // List recent opaque resource snapshots for an agent terminal.

@@ -262,6 +262,103 @@ func (s *AgentTerminalEventsResponse) SetEvents(val []AgentTerminalEvent) {
 	s.Events = val
 }
 
+// Ref: #/components/schemas/AgentTerminalLogEntry
+type AgentTerminalLogEntry struct {
+	// Base64-encoded raw PTY bytes.
+	Data []byte `json:"data"`
+	// PTY direction for this chunk.
+	Stream AgentTerminalLogEntryStream `json:"stream"`
+	// Time this PTY input or output chunk was observed.
+	Timestamp time.Time `json:"timestamp"`
+}
+
+// GetData returns the value of Data.
+func (s *AgentTerminalLogEntry) GetData() []byte {
+	return s.Data
+}
+
+// GetStream returns the value of Stream.
+func (s *AgentTerminalLogEntry) GetStream() AgentTerminalLogEntryStream {
+	return s.Stream
+}
+
+// GetTimestamp returns the value of Timestamp.
+func (s *AgentTerminalLogEntry) GetTimestamp() time.Time {
+	return s.Timestamp
+}
+
+// SetData sets the value of Data.
+func (s *AgentTerminalLogEntry) SetData(val []byte) {
+	s.Data = val
+}
+
+// SetStream sets the value of Stream.
+func (s *AgentTerminalLogEntry) SetStream(val AgentTerminalLogEntryStream) {
+	s.Stream = val
+}
+
+// SetTimestamp sets the value of Timestamp.
+func (s *AgentTerminalLogEntry) SetTimestamp(val time.Time) {
+	s.Timestamp = val
+}
+
+// PTY direction for this chunk.
+type AgentTerminalLogEntryStream string
+
+const (
+	AgentTerminalLogEntryStreamInput  AgentTerminalLogEntryStream = "input"
+	AgentTerminalLogEntryStreamOutput AgentTerminalLogEntryStream = "output"
+)
+
+// AllValues returns all AgentTerminalLogEntryStream values.
+func (AgentTerminalLogEntryStream) AllValues() []AgentTerminalLogEntryStream {
+	return []AgentTerminalLogEntryStream{
+		AgentTerminalLogEntryStreamInput,
+		AgentTerminalLogEntryStreamOutput,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s AgentTerminalLogEntryStream) MarshalText() ([]byte, error) {
+	switch s {
+	case AgentTerminalLogEntryStreamInput:
+		return []byte(s), nil
+	case AgentTerminalLogEntryStreamOutput:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *AgentTerminalLogEntryStream) UnmarshalText(data []byte) error {
+	switch AgentTerminalLogEntryStream(data) {
+	case AgentTerminalLogEntryStreamInput:
+		*s = AgentTerminalLogEntryStreamInput
+		return nil
+	case AgentTerminalLogEntryStreamOutput:
+		*s = AgentTerminalLogEntryStreamOutput
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Ref: #/components/schemas/AgentTerminalLogsResponse
+type AgentTerminalLogsResponse struct {
+	Entries []AgentTerminalLogEntry `json:"entries"`
+}
+
+// GetEntries returns the value of Entries.
+func (s *AgentTerminalLogsResponse) GetEntries() []AgentTerminalLogEntry {
+	return s.Entries
+}
+
+// SetEntries sets the value of Entries.
+func (s *AgentTerminalLogsResponse) SetEntries(val []AgentTerminalLogEntry) {
+	s.Entries = val
+}
+
 // Sandbox-agent-owned terminal metadata.
 type AgentTerminalMetadata map[string]string
 

@@ -11,6 +11,7 @@ const (
 	DeleteAgentTerminalOperation              OperationName = "DeleteAgentTerminal"
 	GetAgentTerminalResourcesOperation        OperationName = "GetAgentTerminalResources"
 	ListAgentTerminalEventsOperation          OperationName = "ListAgentTerminalEvents"
+	ListAgentTerminalLogsOperation            OperationName = "ListAgentTerminalLogs"
 	ListAgentTerminalResourceHistoryOperation OperationName = "ListAgentTerminalResourceHistory"
 	ListAgentTerminalsOperation               OperationName = "ListAgentTerminals"
 	StreamAgentTerminalResourcesOperation     OperationName = "StreamAgentTerminalResources"

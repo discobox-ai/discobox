@@ -26,6 +26,7 @@ const (
 	ListAgentConfigDefinitionsOperation       OperationName = "ListAgentConfigDefinitions"
 	ListAgentConfigsOperation                 OperationName = "ListAgentConfigs"
 	ListAgentTerminalEventsOperation          OperationName = "ListAgentTerminalEvents"
+	ListAgentTerminalLogsOperation            OperationName = "ListAgentTerminalLogs"
 	ListAgentTerminalResourceHistoryOperation OperationName = "ListAgentTerminalResourceHistory"
 	ListAgentTerminalsOperation               OperationName = "ListAgentTerminals"
 	ListJobsOperation                         OperationName = "ListJobs"

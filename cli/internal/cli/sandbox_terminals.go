@@ -58,6 +58,7 @@ func (a *App) newSandboxTerminalsCommand() *cobra.Command {
 	cmd.AddCommand(a.newSandboxTerminalListCommand(&sandboxID))
 	cmd.AddCommand(a.newSandboxTerminalCreateCommand(&sandboxID))
 	cmd.AddCommand(a.newSandboxTerminalAttachCommand(&sandboxID))
+	cmd.AddCommand(a.newSandboxTerminalLogsCommand(&sandboxID))
 	cmd.AddCommand(a.newSandboxTerminalDeleteCommand(&sandboxID))
 	return cmd
 }
@@ -142,6 +143,43 @@ func (a *App) newSandboxTerminalAttachCommand(sandboxID *string) *cobra.Command 
 			return a.attachAgentTerminal(cmd.Context(), projectID, resolvedSandboxID, terminalID, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}
+}
+
+func (a *App) newSandboxTerminalLogsCommand(sandboxID *string) *cobra.Command {
+	var includeInput bool
+	cmd := &cobra.Command{
+		Use:   "logs TERMINAL_ID",
+		Short: "Print sandbox terminal output logs",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projectID, resolvedSandboxID, client, err := a.sandboxTerminalRequest(cmd.Context(), *sandboxID)
+			if err != nil {
+				return err
+			}
+			terminalID, err := a.resolveAgentTerminalID(cmd.Context(), client, projectID, resolvedSandboxID, args[0])
+			if err != nil {
+				return err
+			}
+			res, err := client.ListAgentTerminalLogs(cmd.Context(), apiclientgen.ListAgentTerminalLogsParams{
+				ProjectId:  projectID,
+				SandboxId:  resolvedSandboxID,
+				TerminalId: terminalID,
+			})
+			if err != nil {
+				return err
+			}
+			body, err := expectResponse[apimodel.AgentTerminalLogsResponse](res)
+			if err != nil {
+				return err
+			}
+			if a.output == "json" {
+				return writeJSON(cmd.OutOrStdout(), body)
+			}
+			return writeAgentTerminalLogs(cmd.OutOrStdout(), body.GetEntries(), includeInput)
+		},
+	}
+	cmd.Flags().BoolVar(&includeInput, "include-input", false, "Include input bytes as well as terminal output")
+	return cmd
 }
 
 func (a *App) newSandboxTerminalDeleteCommand(sandboxID *string) *cobra.Command {
@@ -282,6 +320,18 @@ func (a *App) writeAgentTerminals(cmd *cobra.Command, terminals []apimodel.Agent
 		)
 	}
 	return tw.Flush()
+}
+
+func writeAgentTerminalLogs(w io.Writer, entries []apimodel.AgentTerminalLogEntry, includeInput bool) error {
+	for _, entry := range entries {
+		if entry.Stream == apiclientgen.AgentTerminalLogEntryStreamInput && !includeInput {
+			continue
+		}
+		if _, err := w.Write(entry.Data); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (a *App) attachAgentTerminal(ctx context.Context, projectID, sandboxID, terminalID string, stdin io.Reader, stdout, stderr io.Writer) error {

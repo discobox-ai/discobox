@@ -104,6 +104,21 @@ func (h *handler) ListAgentTerminalEvents(ctx context.Context, params sandboxapi
 	return &response, nil
 }
 
+func (h *handler) ListAgentTerminalLogs(ctx context.Context, params sandboxapi.ListAgentTerminalLogsParams) (*sandboxapi.AgentTerminalLogsResponse, error) {
+	entries, err := h.terminals.Logs(ctx, params.TerminalId)
+	if err != nil {
+		if errors.Is(err, terminal.ErrNotFound) {
+			return nil, statusError{status: http.StatusNotFound, message: "agent terminal not found"}
+		}
+		return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
+	}
+	response := sandboxapi.AgentTerminalLogsResponse{Entries: make([]sandboxapi.AgentTerminalLogEntry, 0, len(entries))}
+	for _, entry := range entries {
+		response.Entries = append(response.Entries, agentTerminalLogEntry(entry))
+	}
+	return &response, nil
+}
+
 func (h *handler) ListAgentTerminalResourceHistory(ctx context.Context, params sandboxapi.ListAgentTerminalResourceHistoryParams) (*sandboxapi.ResourceHistoryResponse, error) {
 	if _, ok := h.terminals.Get(params.TerminalId); !ok {
 		return nil, statusError{status: http.StatusNotFound, message: "agent terminal not found"}
@@ -181,6 +196,14 @@ func agentTerminal(in terminal.Terminal) sandboxapi.AgentTerminal {
 		out.Metadata = sandboxapi.NewOptAgentTerminalMetadata(sandboxapi.AgentTerminalMetadata(stringMap(in.Metadata)))
 	}
 	return out
+}
+
+func agentTerminalLogEntry(in terminal.LogEntry) sandboxapi.AgentTerminalLogEntry {
+	return sandboxapi.AgentTerminalLogEntry{
+		Timestamp: in.Timestamp,
+		Stream:    sandboxapi.AgentTerminalLogEntryStream(in.Stream),
+		Data:      append([]byte{}, in.Data...),
+	}
 }
 
 func agentTerminalEvent(in store.Event) sandboxapi.AgentTerminalEvent {

@@ -41,6 +41,12 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/events
 	ListAgentTerminalEvents(ctx context.Context, params ListAgentTerminalEventsParams) (*AgentTerminalEventsResponse, error)
+	// ListAgentTerminalLogs implements list-agent-terminal-logs operation.
+	//
+	// List PTY logs for an agent terminal.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/logs
+	ListAgentTerminalLogs(ctx context.Context, params ListAgentTerminalLogsParams) (*AgentTerminalLogsResponse, error)
 	// ListAgentTerminalResourceHistory implements list-agent-terminal-resource-history operation.
 	//
 	// List recent opaque resource snapshots for an agent terminal.

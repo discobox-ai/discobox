@@ -27,6 +27,10 @@ func (h *Handler) ListAgentTerminalEvents(context.Context, serverapi.ListAgentTe
 	return sandboxAgentTerminalNotImplemented(), nil
 }
 
+func (h *Handler) ListAgentTerminalLogs(context.Context, serverapi.ListAgentTerminalLogsParams) (serverapi.ListAgentTerminalLogsRes, error) {
+	return sandboxAgentTerminalNotImplemented(), nil
+}
+
 func (h *Handler) ListAgentTerminalResourceHistory(context.Context, serverapi.ListAgentTerminalResourceHistoryParams) (serverapi.ListAgentTerminalResourceHistoryRes, error) {
 	return sandboxAgentTerminalNotImplemented(), nil
 }

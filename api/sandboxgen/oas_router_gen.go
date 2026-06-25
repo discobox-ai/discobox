@@ -236,6 +236,35 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									return
 								}
 
+							case 'l': // Prefix: "logs"
+
+								if l := len("logs"); len(elem) >= l && elem[0:l] == "logs" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch r.Method {
+									case "GET":
+										s.handleListAgentTerminalLogsRequest([3]string{
+											args[0],
+											args[1],
+											args[2],
+										}, elemIsEscaped, w, r)
+									default:
+										s.notAllowed(w, r, notAllowedParams{
+											allowedMethods: "GET",
+											allowedHeaders: nil,
+											acceptPost:     "",
+											acceptPatch:    "",
+										})
+									}
+
+									return
+								}
+
 							case 'r': // Prefix: "resources"
 
 								if l := len("resources"); len(elem) >= l && elem[0:l] == "resources" {
@@ -596,6 +625,31 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 										r.operationID = "list-agent-terminal-events"
 										r.operationGroup = ""
 										r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/events"
+										r.args = args
+										r.count = 3
+										return r, true
+									default:
+										return
+									}
+								}
+
+							case 'l': // Prefix: "logs"
+
+								if l := len("logs"); len(elem) >= l && elem[0:l] == "logs" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch method {
+									case "GET":
+										r.name = ListAgentTerminalLogsOperation
+										r.summary = "List PTY logs for an agent terminal."
+										r.operationID = "list-agent-terminal-logs"
+										r.operationGroup = ""
+										r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/logs"
 										r.args = args
 										r.count = 3
 										return r, true

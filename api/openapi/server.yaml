@@ -350,6 +350,38 @@ components:
             required:
                 - events
             type: object
+        AgentTerminalLogEntry:
+            additionalProperties: false
+            properties:
+                timestamp:
+                    description: Time this PTY input or output chunk was observed.
+                    format: date-time
+                    type: string
+                stream:
+                    description: PTY direction for this chunk.
+                    enum:
+                        - input
+                        - output
+                    type: string
+                data:
+                    description: Base64-encoded raw PTY bytes.
+                    format: byte
+                    type: string
+            required:
+                - timestamp
+                - stream
+                - data
+            type: object
+        AgentTerminalLogsResponse:
+            additionalProperties: false
+            properties:
+                entries:
+                    items:
+                        $ref: '#/components/schemas/AgentTerminalLogEntry'
+                    type: array
+            required:
+                - entries
+            type: object
         AgentTerminalsResponse:
             additionalProperties: false
             properties:
@@ -3004,6 +3036,45 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Error response.
             summary: List recent audit events for an agent terminal.
+            tags:
+                - Agent Terminals
+            x-sandbox-agent: true
+    /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/logs:
+        get:
+            operationId: list-agent-terminal-logs
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Agent terminal runtime ID.
+                  in: path
+                  name: terminalId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentTerminalLogsResponse'
+                    description: Terminal PTY input and output log entries.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: List PTY logs for an agent terminal.
             tags:
                 - Agent Terminals
             x-sandbox-agent: true

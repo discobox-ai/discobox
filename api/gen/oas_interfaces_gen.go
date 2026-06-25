@@ -81,6 +81,10 @@ type ListAgentTerminalEventsRes interface {
 	listAgentTerminalEventsRes()
 }
 
+type ListAgentTerminalLogsRes interface {
+	listAgentTerminalLogsRes()
+}
+
 type ListAgentTerminalResourceHistoryRes interface {
 	listAgentTerminalResourceHistoryRes()
 }
