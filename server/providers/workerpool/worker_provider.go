@@ -102,12 +102,9 @@ func (p *WorkerPoolProvider) ReconcileWorkerProvider(ctx context.Context, manage
 		return fmt.Errorf("worker manager is required")
 	}
 	if reconciler, ok := p.workerProvider.(workerProviderInventoryReconciler); ok {
-		pendingWorkerReconcile, err := reconciler.ReconcileWorkerProviderInventory(ctx, workerManager, project, provider)
+		_, err := reconciler.ReconcileWorkerProviderInventory(ctx, workerManager, project, provider)
 		if err != nil {
 			return err
-		}
-		if pendingWorkerReconcile {
-			return nil
 		}
 	}
 	return p.ensureWorkerPool(ctx, workerManager, project, provider)

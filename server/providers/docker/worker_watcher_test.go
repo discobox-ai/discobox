@@ -140,6 +140,10 @@ func (m *recordingWorkerReconcileManager) CreateWorker(context.Context, *model.W
 	return nil, nil
 }
 
+func (m *recordingWorkerReconcileManager) DeleteWorker(context.Context, string) (*model.Worker, error) {
+	return nil, nil
+}
+
 func (m *recordingWorkerReconcileManager) CreateWorkerBootstrapToken(context.Context, *model.WorkerBootstrapToken) error {
 	return nil
 }

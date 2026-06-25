@@ -20,6 +20,7 @@ type Manager struct {
 
 type WorkerJobManager interface {
 	CreateWorker(context.Context, *model.Worker) (*model.Worker, error)
+	DeleteWorker(context.Context, string) (*model.Worker, error)
 	SubmitWorkerReconcile(context.Context, string) (*orchestration.Job, error)
 	DeleteWorkerForFailedJob(context.Context, string, int64, string, string) (bool, error)
 	DeleteWorkerForExpiredRegistration(context.Context, string, int64, time.Time, string) (bool, error)
@@ -70,6 +71,10 @@ func (s *Manager) GetSandboxProviderInstance(ctx context.Context, projectID, pro
 
 func (s *Manager) CreateWorker(ctx context.Context, worker *model.Worker) (*model.Worker, error) {
 	return s.jobs.CreateWorker(ctx, worker)
+}
+
+func (s *Manager) DeleteWorker(ctx context.Context, workerID string) (*model.Worker, error) {
+	return s.jobs.DeleteWorker(ctx, workerID)
 }
 
 func (s *Manager) CreateWorkerBootstrapToken(ctx context.Context, token *model.WorkerBootstrapToken) error {

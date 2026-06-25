@@ -192,6 +192,64 @@ func TestEnsureWorkerPoolRepairsExpiredRegisteringWorkers(t *testing.T) {
 	}
 }
 
+func TestEnsureWorkerPoolDeletesExcessActiveWorkers(t *testing.T) {
+	oldSeen := time.Now().UTC().Add(-time.Minute)
+	newSeen := time.Now().UTC()
+	store := &repairingWorkerManager{
+		workers: []model.Worker{
+			{
+				ID:                 "worker-old",
+				ProjectID:          "project-1",
+				ProviderInstanceID: "provider-1",
+				Ready:              true,
+				Schedulable:        true,
+				LastSeenAt:         &oldSeen,
+				ResourceLifecycle: model.ResourceLifecycle{
+					DesiredState:        model.WorkerDesiredStateActive,
+					Phase:               model.WorkerPhaseActive,
+					LastOperationStatus: model.OperationStatusSuccess,
+				},
+			},
+			{
+				ID:                 "worker-new",
+				ProjectID:          "project-1",
+				ProviderInstanceID: "provider-1",
+				Ready:              true,
+				Schedulable:        true,
+				LastSeenAt:         &newSeen,
+				ResourceLifecycle: model.ResourceLifecycle{
+					DesiredState:        model.WorkerDesiredStateActive,
+					Phase:               model.WorkerPhaseActive,
+					LastOperationStatus: model.OperationStatusSuccess,
+				},
+			},
+			{
+				ID:                 "worker-launching",
+				ProjectID:          "project-1",
+				ProviderInstanceID: "provider-1",
+				ResourceLifecycle: model.ResourceLifecycle{
+					DesiredState:        model.WorkerDesiredStateActive,
+					Phase:               model.WorkerPhaseLaunching,
+					LastOperationStatus: model.OperationStatusRunning,
+				},
+			},
+		},
+	}
+	project := &model.Project{ID: "project-1"}
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
+
+	if err := ensureWorkerPool(context.Background(), store, project, provider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}); err != nil {
+		t.Fatalf("ensure worker pool: %v", err)
+	}
+
+	if !reflect.DeepEqual(store.deletedWorkerIDs, []string{"worker-launching", "worker-old"}) {
+		t.Fatalf("deleted workers = %#v, want launching then old", store.deletedWorkerIDs)
+	}
+	if store.createdWorkers != 0 {
+		t.Fatalf("created workers = %d, want none", store.createdWorkers)
+	}
+}
+
 func TestNormalizeWorkerPoolConfigKeepsPoolSizeAsMinimumWithReplacementHeadroom(t *testing.T) {
 	cfg := NormalizeWorkerPoolConfig(1, 0, 0, 0)
 	if cfg.Min != 1 || cfg.Max != 2 || cfg.MinHealthy != 1 {
@@ -221,7 +279,7 @@ func TestWorkerPoolProviderReconcileRunsInventoryBeforeCapacity(t *testing.T) {
 	}
 }
 
-func TestWorkerPoolProviderReconcileDefersCapacityWhenInventorySchedulesWorker(t *testing.T) {
+func TestWorkerPoolProviderReconcileRunsCapacityWhenInventorySchedulesWorker(t *testing.T) {
 	workerManager := &recordingWorkerManager{}
 	workerProvider := &inventoryTestWorkerProvider{pendingWorkerReconcile: true}
 	pool := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{Max: 1}, workerManager, false)
@@ -235,8 +293,8 @@ func TestWorkerPoolProviderReconcileDefersCapacityWhenInventorySchedulesWorker(t
 	if workerProvider.reconcileCalls != 1 {
 		t.Fatalf("inventory reconcile calls = %d, want 1", workerProvider.reconcileCalls)
 	}
-	if workerManager.listCalls != 0 {
-		t.Fatalf("list calls after deferred reconcile = %d, want 0", workerManager.listCalls)
+	if workerManager.listCalls != 1 {
+		t.Fatalf("list calls after inventory reconcile = %d, want 1", workerManager.listCalls)
 	}
 }
 
@@ -809,6 +867,10 @@ func (s *recordingWorkerManager) CreateWorker(_ context.Context, worker *model.W
 	return worker, nil
 }
 
+func (s *recordingWorkerManager) DeleteWorker(context.Context, string) (*model.Worker, error) {
+	return nil, nil
+}
+
 func (s *recordingWorkerManager) CreateWorkerBootstrapToken(context.Context, *model.WorkerBootstrapToken) error {
 	return nil
 }
@@ -878,6 +940,10 @@ func (s *capacityWaitWorkerManager) CreateWorker(_ context.Context, worker *mode
 	return worker, nil
 }
 
+func (s *capacityWaitWorkerManager) DeleteWorker(context.Context, string) (*model.Worker, error) {
+	return nil, nil
+}
+
 func (s *capacityWaitWorkerManager) CreateWorkerBootstrapToken(context.Context, *model.WorkerBootstrapToken) error {
 	return nil
 }
@@ -910,11 +976,12 @@ func (s *capacityWaitWorkerManager) ScheduleWorkerReconciliation(context.Context
 }
 
 type repairingWorkerManager struct {
-	workers        []model.Worker
-	jobs           map[string]*orchestration.Job
-	updated        *model.Worker
-	repairUpdated  bool
-	createdWorkers int
+	workers          []model.Worker
+	jobs             map[string]*orchestration.Job
+	updated          *model.Worker
+	repairUpdated    bool
+	createdWorkers   int
+	deletedWorkerIDs []string
 }
 
 func (s *repairingWorkerManager) ListWorkers(context.Context, string, string) ([]model.Worker, error) {
@@ -933,6 +1000,19 @@ func (s *repairingWorkerManager) GetWorker(_ context.Context, workerID string) (
 func (s *repairingWorkerManager) CreateWorker(_ context.Context, worker *model.Worker) (*model.Worker, error) {
 	s.createdWorkers++
 	return worker, nil
+}
+
+func (s *repairingWorkerManager) DeleteWorker(_ context.Context, workerID string) (*model.Worker, error) {
+	s.deletedWorkerIDs = append(s.deletedWorkerIDs, workerID)
+	for i := range s.workers {
+		if s.workers[i].ID != workerID {
+			continue
+		}
+		s.workers[i].IncrementGeneration()
+		s.workers[i].BeginOperation(model.WorkerDeleteOperation, nil)
+		return &s.workers[i], nil
+	}
+	return nil, apperrors.ErrNotFound
 }
 
 func (s *repairingWorkerManager) CreateWorkerBootstrapToken(context.Context, *model.WorkerBootstrapToken) error {

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/obot-platform/discobox/id"
@@ -26,6 +27,7 @@ type WorkerManager interface {
 	ListWorkers(ctx context.Context, projectID, providerID string) ([]model.Worker, error)
 	GetWorker(ctx context.Context, workerID string) (*model.Worker, error)
 	CreateWorker(ctx context.Context, worker *model.Worker) (*model.Worker, error)
+	DeleteWorker(ctx context.Context, workerID string) (*model.Worker, error)
 	CreateWorkerBootstrapToken(ctx context.Context, token *model.WorkerBootstrapToken) error
 	EnsureWorkerAgentTrustKey(ctx context.Context) (string, error)
 	CreateWorkerAgentToken(ctx context.Context, claims workeragentauth.TokenClaims) (string, error)
@@ -147,6 +149,10 @@ func ensureWorkerPool(ctx context.Context, manager WorkerManager, project *model
 	if err != nil {
 		return err
 	}
+	workers, err = deleteExcessWorkers(ctx, manager, workers, cfg)
+	if err != nil {
+		return err
+	}
 	additional := desiredAdditionalWorkers(workers, cfg)
 	for i := 0; i < additional; i++ {
 		worker, err := createWorker(ctx, manager, project, provider, len(workers)+1)
@@ -156,6 +162,81 @@ func ensureWorkerPool(ctx context.Context, manager WorkerManager, project *model
 		workers = append(workers, *worker)
 	}
 	return nil
+}
+
+func deleteExcessWorkers(ctx context.Context, manager WorkerManager, workers []model.Worker, cfg WorkerPoolConfig) ([]model.Worker, error) {
+	if cfg.Max <= 0 {
+		return workers, nil
+	}
+	candidates := activeWorkersByRetentionPriority(workers)
+	excess := len(candidates) - cfg.Max
+	if excess <= 0 {
+		return workers, nil
+	}
+	deleteIDs := make(map[string]struct{}, excess)
+	for i := 0; i < excess; i++ {
+		worker := candidates[len(candidates)-1-i]
+		if _, err := manager.DeleteWorker(ctx, worker.ID); err != nil {
+			return nil, err
+		}
+		deleteIDs[worker.ID] = struct{}{}
+	}
+	for i := range workers {
+		if _, ok := deleteIDs[workers[i].ID]; !ok {
+			continue
+		}
+		workers[i].IncrementGeneration()
+		workers[i].BeginOperation(model.WorkerDeleteOperation, nil)
+	}
+	return workers, nil
+}
+
+func activeWorkersByRetentionPriority(workers []model.Worker) []model.Worker {
+	active := make([]model.Worker, 0, len(workers))
+	for i := range workers {
+		if activeWorker(&workers[i]) {
+			active = append(active, workers[i])
+		}
+	}
+	sort.SliceStable(active, func(i, j int) bool {
+		return retainWorkerBefore(active[i], active[j])
+	})
+	return active
+}
+
+func retainWorkerBefore(left, right model.Worker) bool {
+	leftHealthy := healthyWorker(&left)
+	rightHealthy := healthyWorker(&right)
+	if leftHealthy != rightHealthy {
+		return leftHealthy
+	}
+	if left.Ready != right.Ready {
+		return left.Ready
+	}
+	if left.Schedulable != right.Schedulable {
+		return left.Schedulable
+	}
+	if left.Degraded != right.Degraded {
+		return !left.Degraded
+	}
+	leftSuccess := left.LastOperationStatus == model.OperationStatusSuccess
+	rightSuccess := right.LastOperationStatus == model.OperationStatusSuccess
+	if leftSuccess != rightSuccess {
+		return leftSuccess
+	}
+	if left.LastSeenAt != nil && right.LastSeenAt != nil && !left.LastSeenAt.Equal(*right.LastSeenAt) {
+		return left.LastSeenAt.After(*right.LastSeenAt)
+	}
+	if left.LastSeenAt != nil && right.LastSeenAt == nil {
+		return true
+	}
+	if left.LastSeenAt == nil && right.LastSeenAt != nil {
+		return false
+	}
+	if !left.CreatedAt.Equal(right.CreatedAt) {
+		return left.CreatedAt.After(right.CreatedAt)
+	}
+	return left.ID < right.ID
 }
 
 func repairWorkersWithFailedJobs(ctx context.Context, manager WorkerManager, workers []model.Worker) ([]model.Worker, error) {
