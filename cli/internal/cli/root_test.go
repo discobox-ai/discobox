@@ -777,6 +777,24 @@ func TestDebugTransportPrintsRequestAndResponseBodies(t *testing.T) {
 	}
 }
 
+func TestRootCommandIncludesServerSubcommand(t *testing.T) {
+	cmd := NewRootCommand()
+	found, _, err := cmd.Find([]string{"server"})
+	if err != nil {
+		t.Fatalf("find server command: %v", err)
+	}
+	if found == nil || found.Name() != "server" {
+		t.Fatalf("server command = %v, want server", found)
+	}
+	found, _, err = cmd.Find([]string{"server", "shutdown"})
+	if err != nil {
+		t.Fatalf("find server shutdown command: %v", err)
+	}
+	if found == nil || found.Name() != "shutdown" {
+		t.Fatalf("server shutdown command = %v, want shutdown", found)
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {

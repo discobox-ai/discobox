@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	"github.com/obot-platform/discobox/localipc"
+	discoboxserver "github.com/obot-platform/discobox/server"
 )
 
 const defaultProjectAlias = "default"
@@ -22,6 +24,7 @@ type App struct {
 	token     string
 	output    string
 	debug     bool
+	noStart   bool
 	errOut    io.Writer
 }
 
@@ -42,6 +45,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVar(&app.token, "token", os.Getenv("DISCOBOX_TOKEN"), "Bearer token for API requests")
 	cmd.PersistentFlags().StringVarP(&app.output, "output", "o", "table", "Output format: table or json")
 	cmd.PersistentFlags().BoolVar(&app.debug, "debug", false, "Print HTTP requests made by the API client")
+	cmd.PersistentFlags().BoolVar(&app.noStart, "no-start", false, "Do not start a local server when the endpoint is unavailable")
 
 	cmd.AddCommand(app.newSandboxCommand())
 	cmd.AddCommand(app.newRunCommand())
@@ -51,6 +55,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(app.newEventsCommand())
 	cmd.AddCommand(app.newJobCommand())
 	cmd.AddCommand(app.newCompletionCommand())
+	cmd.AddCommand(app.newServerCommand())
 	return cmd
 }
 
@@ -80,9 +85,18 @@ func (a *App) apiClient() (*apiclientgen.Client, error) {
 }
 
 func (a *App) httpClient() (string, *http.Client, error) {
+	return a.httpClientWithAutoStart(!a.noStart)
+}
+
+func (a *App) httpClientWithAutoStart(autoStart bool) (string, *http.Client, error) {
 	transport := http.DefaultTransport
 	baseURL := a.serverURL
 	if isLocalEndpoint(a.serverURL) {
+		if autoStart {
+			if err := a.ensureLocalServer(context.Background()); err != nil {
+				return "", nil, err
+			}
+		}
 		localBaseURL, client, err := localipc.HTTPClient(a.serverURL, transport)
 		if err != nil {
 			return "", nil, err
@@ -113,6 +127,66 @@ func (a *App) httpClient() (string, *http.Client, error) {
 func isLocalEndpoint(endpoint string) bool {
 	endpoint = strings.TrimSpace(strings.ToLower(endpoint))
 	return strings.HasPrefix(endpoint, "unix://") || strings.HasPrefix(endpoint, "npipe://")
+}
+
+func (a *App) ensureLocalServer(ctx context.Context) error {
+	command, err := os.Executable()
+	if err != nil {
+		return err
+	}
+	return localipc.EnsureRunning(ctx, localipc.LaunchOptions{
+		Endpoint: a.serverURL,
+		Command:  command,
+		Args:     []string{"server"},
+		Env: []string{
+			"DISCOBOX_SERVER_LISTEN=" + a.serverURL,
+			"DISCOBOX_SERVER=" + a.serverURL,
+			"DISCOBOX_SERVER_IDLE_TIMEOUT=5m",
+		},
+	})
+}
+
+func (a *App) newServerCommand() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "server",
+		Short: "Run the Discobox API server",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			return discoboxserver.Run(cmd.Context())
+		},
+	}
+	cmd.AddCommand(a.newServerShutdownCommand())
+	return cmd
+}
+
+func (a *App) newServerShutdownCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "shutdown",
+		Short: "Ask the Discobox API server to stop",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			baseURL, httpClient, err := a.httpClientWithAutoStart(false)
+			if err != nil {
+				return err
+			}
+			req, err := http.NewRequestWithContext(cmd.Context(), http.MethodPost, baseURL+"/shutdown", nil)
+			if err != nil {
+				return err
+			}
+			resp, err := httpClient.Do(req)
+			if err != nil {
+				return fmt.Errorf("shutdown server: %w", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+				body, _ := io.ReadAll(resp.Body)
+				return fmt.Errorf("shutdown server: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+			}
+			if a.output == "json" {
+				return writeJSON(cmd.OutOrStdout(), map[string]any{"shutdown": true})
+			}
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), "shutdown requested")
+			return err
+		},
+	}
 }
 
 type requestHeaderTransport struct {

@@ -22,8 +22,9 @@ const appName = "discobox"
 // Config holds all configuration for discobox-server.
 type Config struct {
 	// Server settings.
-	Port   int
-	Listen string
+	Port                int
+	Listen              string
+	AutoShutdownTimeout time.Duration
 
 	// XDG-backed application directories.
 	DataDir   string
@@ -65,6 +66,7 @@ func Load() (*Config, error) {
 
 	cfg.Port = getEnvInt("PORT", 8080)
 	cfg.Listen = getEnv("DISCOBOX_SERVER_LISTEN", getEnv("DISCOBOX_SERVER", defaultListenEndpoint(cfg.Port)))
+	cfg.AutoShutdownTimeout = getEnvDuration("DISCOBOX_SERVER_IDLE_TIMEOUT", 0)
 
 	cfg.DataDir = getEnv("DISCOBOX_DATA_DIR", filepath.Join(xdg.DataHome, appName))
 	cfg.ConfigDir = getEnv("DISCOBOX_CONFIG_DIR", filepath.Join(xdg.ConfigHome, appName))
@@ -93,6 +95,9 @@ func Load() (*Config, error) {
 	}
 	if _, err := localipc.Parse(cfg.Listen); err != nil {
 		return nil, fmt.Errorf("DISCOBOX_SERVER_LISTEN: %w", err)
+	}
+	if cfg.AutoShutdownTimeout < 0 {
+		return nil, fmt.Errorf("DISCOBOX_SERVER_IDLE_TIMEOUT must be greater than or equal to 0")
 	}
 	if cfg.DataDir == "" {
 		return nil, fmt.Errorf("DISCOBOX_DATA_DIR is required")

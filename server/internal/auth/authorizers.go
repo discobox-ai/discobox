@@ -110,6 +110,7 @@ var authenticatedAllowedPaths = []string{
 	"/api/workers/register",
 	"/projects",
 	"/providers/catalog",
+	"/shutdown",
 }
 
 func isAuthenticatedAllowedPath(path string) bool {

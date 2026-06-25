@@ -90,6 +90,7 @@ func TestAuthenticatedAuthorizerAllowsOnlyExplicitPaths(t *testing.T) {
 		"/api/workers/register",
 		"/projects",
 		"/providers/catalog",
+		"/shutdown",
 	} {
 		t.Run(path, func(t *testing.T) {
 			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, path, nil)
@@ -140,7 +141,7 @@ func TestDefaultUserAuthenticatorGrantsAllScopes(t *testing.T) {
 	if principal.Type != PrincipalTypeUser || principal.UserID != "user-1" {
 		t.Fatalf("principal = %#v", principal)
 	}
-	if !principal.HasScope("sandbox:read") || !principal.HasScope("sandbox:write") || !principal.HasScope("sandbox:http") {
+	if !principal.HasScope("sandbox:read") || !principal.HasScope("sandbox:write") || !principal.HasScope("sandbox:http") || !principal.HasScope("terminal:read") || !principal.HasScope("terminal:write") {
 		t.Fatalf("default principal scopes = %#v, want all scopes", principal.Scopes)
 	}
 }

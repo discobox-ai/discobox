@@ -2,9 +2,12 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -86,15 +89,92 @@ func Run(ctx context.Context) error {
 	log.Printf("openapi spec available at %s/openapi.yaml", listenDisplay)
 	log.Printf("api docs available at %s/docs", listenDisplay)
 	handler := otelhttp.NewHandler(router, "discobox-server")
-	server := &http.Server{
+	activity := newActivityTracker()
+	if cfg.AutoShutdownTimeout > 0 {
+		handler = activity.Wrap(handler)
+	}
+	httpServer := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       120 * time.Second,
 	}
-	if err := server.Serve(listener); err != nil {
+	router.Post("/shutdown", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusAccepted)
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if err := httpServer.Shutdown(shutdownCtx); err != nil {
+				log.Printf("shutdown request: %v", err)
+			}
+		}()
+	})
+	if cfg.AutoShutdownTimeout > 0 {
+		go activity.ShutdownWhenIdle(ctx, httpServer, cfg.AutoShutdownTimeout)
+	}
+	if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("server failed: %w", err)
 	}
 	return nil
+}
+
+type activityTracker struct {
+	active       int64
+	lastNano     int64
+	shutdownOnce sync.Once
+}
+
+func newActivityTracker() *activityTracker {
+	t := &activityTracker{}
+	t.mark(time.Now())
+	return t
+}
+
+func (t *activityTracker) Wrap(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.mark(time.Now())
+		atomic.AddInt64(&t.active, 1)
+		defer func() {
+			t.mark(time.Now())
+			atomic.AddInt64(&t.active, -1)
+		}()
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (t *activityTracker) ShutdownWhenIdle(ctx context.Context, server *http.Server, timeout time.Duration) {
+	interval := min(timeout/4, time.Second)
+	if interval <= 0 {
+		interval = time.Nanosecond
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if atomic.LoadInt64(&t.active) > 0 {
+				continue
+			}
+			last := time.Unix(0, atomic.LoadInt64(&t.lastNano))
+			if time.Since(last) < timeout {
+				continue
+			}
+			t.shutdownOnce.Do(func() {
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				if err := server.Shutdown(shutdownCtx); err != nil {
+					log.Printf("idle shutdown: %v", err)
+				}
+			})
+			return
+		}
+	}
+}
+
+func (t *activityTracker) mark(now time.Time) {
+	atomic.StoreInt64(&t.lastNano, now.UnixNano())
 }

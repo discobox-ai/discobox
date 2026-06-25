@@ -5,12 +5,14 @@ go 1.26.0
 require (
 	github.com/go-faster/jx v1.2.0
 	github.com/obot-platform/discobox v0.0.0
+	github.com/obot-platform/discobox/server v0.0.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
 	golang.org/x/term v0.43.0
 )
 
 require (
+	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coder/websocket v1.8.14 // indirect
 	github.com/dlclark/regexp2 v1.12.0 // indirect
@@ -43,3 +45,5 @@ require (
 )
 
 replace github.com/obot-platform/discobox => ..
+
+replace github.com/obot-platform/discobox/server => ../server
