@@ -153,7 +153,7 @@ func (s *memoryStore) CountRecentJobsForResource(_ context.Context, jobType orch
 	defer s.mu.Unlock()
 	var count int
 	for _, job := range s.jobs {
-		if job.Type == jobType && job.Resource == resource && !job.CreatedAt.Before(since) {
+		if job.Type == jobType && job.Resource == resource && job.Status != orchestration.StatusCanceled && !job.CreatedAt.Before(since) {
 			count++
 		}
 	}

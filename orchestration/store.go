@@ -24,9 +24,9 @@ type Store interface {
 	// of status.
 	GetLatestJobForResource(ctx context.Context, resource Resource) (*Job, error)
 
-	// CountRecentJobsForResource counts jobs with the same type and resource
-	// created on or after since. Queue uses this to apply core submission
-	// backoff before appending a new job.
+	// CountRecentJobsForResource counts non-canceled jobs with the same type and
+	// resource created on or after since. Queue uses this to apply core
+	// submission backoff before appending a new job.
 	CountRecentJobsForResource(ctx context.Context, jobType Type, resource Resource, since time.Time) (int, error)
 
 	// HasActiveJobForResource reports whether any pending, backoff, or running

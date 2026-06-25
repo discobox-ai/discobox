@@ -199,6 +199,47 @@ func TestCreateJobSupersedesQueuedTypeResource(t *testing.T) {
 	}
 }
 
+func TestCountRecentJobsForResourceIgnoresCanceledJobs(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newTestStoreWithDB(t, nil)
+
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "docker", Name: "one"}
+	if err := s.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	worker := &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: provider.ID}
+	if err := s.CreateWorker(ctx, worker); err != nil {
+		t.Fatalf("create worker: %v", err)
+	}
+
+	first := &orchestration.Job{
+		ID:       "job-worker-1",
+		Type:     "worker.reconcile",
+		Payload:  json.RawMessage(`{}`),
+		Resource: orchestration.Resource{Type: "worker", ID: worker.ID},
+	}
+	if err := s.CreateJob(ctx, first); err != nil {
+		t.Fatalf("create first: %v", err)
+	}
+	second := &orchestration.Job{
+		ID:       "job-worker-2",
+		Type:     "worker.reconcile",
+		Payload:  json.RawMessage(`{}`),
+		Resource: orchestration.Resource{Type: "worker", ID: worker.ID},
+	}
+	if err := s.CreateJob(ctx, second); err != nil {
+		t.Fatalf("create second: %v", err)
+	}
+
+	count, err := s.CountRecentJobsForResource(ctx, "worker.reconcile", orchestration.Resource{Type: "worker", ID: worker.ID}, time.Now().Add(-time.Minute))
+	if err != nil {
+		t.Fatalf("count recent jobs: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("recent jobs = %d, want 1", count)
+	}
+}
+
 func TestFailJobDoesNotAssignActiveResourceKeyToNonUniqueRetries(t *testing.T) {
 	ctx := context.Background()
 	s, db := newTestStoreWithDB(t, nil)

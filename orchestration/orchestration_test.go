@@ -197,6 +197,50 @@ func TestQueueEnqueueAppliesResourceBackoff(t *testing.T) {
 	}
 }
 
+func TestQueueEnqueueIgnoresCanceledJobsForResourceBackoff(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	queue := orchestration.NewQueue(store, orchestration.QueueConfig{
+		DefaultMaxAttempts:       1,
+		ResourceBackoffThreshold: 2,
+		ResourceBackoffWindow:    time.Minute,
+		ResourceBackoffBaseDelay: time.Minute,
+		ResourceBackoffMaxDelay:  10 * time.Minute,
+	})
+	payload := simplePayload{TypeName: testTypeA, ResourceT: "worker", ResourceI: "worker-1"}
+
+	first, err := queue.Enqueue(ctx, payload)
+	if err != nil {
+		t.Fatalf("enqueue first: %v", err)
+	}
+	second, err := queue.Enqueue(ctx, payload)
+	if err != nil {
+		t.Fatalf("enqueue second: %v", err)
+	}
+	third, err := queue.Enqueue(ctx, payload)
+	if err != nil {
+		t.Fatalf("enqueue third: %v", err)
+	}
+
+	storedFirst, err := store.GetJob(ctx, first.ID)
+	if err != nil {
+		t.Fatalf("get first: %v", err)
+	}
+	storedSecond, err := store.GetJob(ctx, second.ID)
+	if err != nil {
+		t.Fatalf("get second: %v", err)
+	}
+	if storedFirst.Status != orchestration.StatusCanceled || storedSecond.Status != orchestration.StatusCanceled {
+		t.Fatalf("first/second status = %s/%s, want canceled/canceled", storedFirst.Status, storedSecond.Status)
+	}
+	if third.Status != orchestration.StatusPending {
+		t.Fatalf("third status = %s, want pending", third.Status)
+	}
+	if third.ScheduledAt.After(time.Now().Add(30 * time.Second)) {
+		t.Fatalf("third scheduledAt = %s, want no resource backoff", third.ScheduledAt)
+	}
+}
+
 func TestQueueEnqueueSupersedesQueuedJobForTypeAndResource(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -1784,7 +1828,7 @@ func (s *memoryStore) CountRecentJobsForResource(_ context.Context, jobType orch
 	defer s.mu.Unlock()
 	var count int
 	for _, job := range s.jobs {
-		if job.Type == jobType && job.Resource == resource && !job.CreatedAt.Before(since) {
+		if job.Type == jobType && job.Resource == resource && job.Status != orchestration.StatusCanceled && !job.CreatedAt.Before(since) {
 			count++
 		}
 	}

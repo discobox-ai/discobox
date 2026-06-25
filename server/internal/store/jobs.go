@@ -122,7 +122,7 @@ func (s *Store) GetLatestJobForResource(ctx context.Context, resource orchestrat
 	return &job, nil
 }
 
-// CountRecentJobsForResource counts jobs recently appended for a resource.
+// CountRecentJobsForResource counts non-canceled jobs recently appended for a resource.
 func (s *Store) CountRecentJobsForResource(ctx context.Context, jobType orchestration.Type, resource orchestration.Resource, since time.Time) (int, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
@@ -130,11 +130,12 @@ func (s *Store) CountRecentJobsForResource(ctx context.Context, jobType orchestr
 	}
 	var count int64
 	if err := read.Model(&jobRow{}).
-		Where("type = ? AND resource_type = ? AND resource_id = ? AND created_at >= ?",
+		Where("type = ? AND resource_type = ? AND resource_id = ? AND created_at >= ? AND status != ?",
 			jobType,
 			resource.Type,
 			resource.ID,
 			since,
+			orchestration.StatusCanceled,
 		).
 		Count(&count).Error; err != nil {
 		return 0, err
