@@ -11,6 +11,7 @@ require (
 	github.com/go-faster/jx v1.2.0
 	github.com/moby/moby/api v1.54.2
 	github.com/moby/moby/client v0.4.1
+	github.com/obot-platform/discobox v0.0.0-00010101000000-000000000000
 	github.com/ogen-go/ogen v1.20.3
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/metric v1.43.0

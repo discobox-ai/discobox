@@ -18,6 +18,7 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 
+	"github.com/obot-platform/discobox/controlplane"
 	workeragent "github.com/obot-platform/discobox/worker-agent"
 	workerclient "github.com/obot-platform/discobox/worker-agent/api/gen"
 	workerapimodel "github.com/obot-platform/discobox/worker-agent/api/model"
@@ -51,6 +52,16 @@ func TestRunRegistersWorkerWithGeneratedPublicKey(t *testing.T) {
 	}
 	if len(publicKey) != ed25519.PublicKeySize {
 		t.Fatalf("public key length = %d", len(publicKey))
+	}
+}
+
+func TestFromEnvDefaultsControlPlaneURL(t *testing.T) {
+	t.Setenv(workeragent.EnvControlPlaneURL, "")
+
+	bootstrap := workeragent.FromEnv()
+
+	if bootstrap.ControlPlaneURL != controlplane.DefaultURL("localhost", controlplane.DefaultPort) {
+		t.Fatalf("control plane URL = %q, want default localhost URL", bootstrap.ControlPlaneURL)
 	}
 }
 

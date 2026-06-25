@@ -2,10 +2,13 @@ package config
 
 import (
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
+	"github.com/obot-platform/discobox/controlplane"
 	"github.com/obot-platform/discobox/gormdb"
+	"github.com/obot-platform/discobox/localipc"
 )
 
 const (
@@ -23,11 +26,11 @@ func TestLoadDefaults(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if cfg.Port != 8080 {
-		t.Fatalf("Port = %d, want 8080", cfg.Port)
+	if cfg.Port != controlplane.DefaultPort {
+		t.Fatalf("Port = %d, want %d", cfg.Port, controlplane.DefaultPort)
 	}
-	if cfg.Listen == "" {
-		t.Fatalf("Listen is empty")
+	if !reflect.DeepEqual(cfg.Listen, []string{localipc.DefaultEndpoint(), controlplane.DefaultListenEndpoint(controlplane.DefaultPort)}) {
+		t.Fatalf("Listen = %#v, want default IPC and HTTP endpoints", cfg.Listen)
 	}
 	if cfg.AutoShutdownTimeout != 0 {
 		t.Fatalf("AutoShutdownTimeout = %s, want 0", cfg.AutoShutdownTimeout)
@@ -99,8 +102,8 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	if cfg.Port != 9090 {
 		t.Fatalf("Port = %d, want 9090", cfg.Port)
 	}
-	if cfg.Listen != "http://localhost:9090" {
-		t.Fatalf("Listen = %q, want PORT-derived HTTP endpoint", cfg.Listen)
+	if !reflect.DeepEqual(cfg.Listen, []string{localipc.DefaultEndpoint(), controlplane.DefaultListenEndpoint(9090)}) {
+		t.Fatalf("Listen = %#v, want default IPC and PORT-derived HTTP endpoint", cfg.Listen)
 	}
 	if cfg.AutoShutdownTimeout != 5*time.Minute {
 		t.Fatalf("AutoShutdownTimeout = %s, want 5m", cfg.AutoShutdownTimeout)
@@ -173,8 +176,23 @@ func TestLoadServerEndpointOverride(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if cfg.Listen != "unix:///tmp/discobox/server.sock" {
-		t.Fatalf("Listen = %q", cfg.Listen)
+	if !reflect.DeepEqual(cfg.Listen, []string{"unix:///tmp/discobox/server.sock"}) {
+		t.Fatalf("Listen = %#v", cfg.Listen)
+	}
+}
+
+func TestLoadServerEndpointListOverride(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("DISCOBOX_SERVER_LISTEN", "unix:///tmp/discobox/server.sock,http://0.0.0.0:18080")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	want := []string{"unix:///tmp/discobox/server.sock", "http://0.0.0.0:18080"}
+	if !reflect.DeepEqual(cfg.Listen, want) {
+		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, want)
 	}
 }
 

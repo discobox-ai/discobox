@@ -12,6 +12,7 @@ import (
 
 	"github.com/adrg/xdg"
 
+	"github.com/obot-platform/discobox/controlplane"
 	"github.com/obot-platform/discobox/gormdb"
 	"github.com/obot-platform/discobox/localipc"
 	"github.com/obot-platform/discobox/server/internal/sandbox"
@@ -23,7 +24,7 @@ const appName = "discobox"
 type Config struct {
 	// Server settings.
 	Port                int
-	Listen              string
+	Listen              []string
 	AutoShutdownTimeout time.Duration
 
 	// XDG-backed application directories.
@@ -64,8 +65,8 @@ type Config struct {
 func Load() (*Config, error) {
 	cfg := &Config{}
 
-	cfg.Port = getEnvInt("PORT", 8080)
-	cfg.Listen = getEnv("DISCOBOX_SERVER_LISTEN", getEnv("DISCOBOX_SERVER", defaultListenEndpoint(cfg.Port)))
+	cfg.Port = getEnvInt("PORT", controlplane.DefaultPort)
+	cfg.Listen = listenEndpoints(cfg.Port)
 	cfg.AutoShutdownTimeout = getEnvDuration("DISCOBOX_SERVER_IDLE_TIMEOUT", 0)
 
 	cfg.DataDir = getEnv("DISCOBOX_DATA_DIR", filepath.Join(xdg.DataHome, appName))
@@ -93,8 +94,13 @@ func Load() (*Config, error) {
 	if cfg.Port <= 0 || cfg.Port > 65535 {
 		return nil, fmt.Errorf("PORT must be between 1 and 65535")
 	}
-	if _, err := localipc.Parse(cfg.Listen); err != nil {
-		return nil, fmt.Errorf("DISCOBOX_SERVER_LISTEN: %w", err)
+	if len(cfg.Listen) == 0 {
+		return nil, fmt.Errorf("DISCOBOX_SERVER_LISTEN must include at least one endpoint")
+	}
+	for _, endpoint := range cfg.Listen {
+		if _, err := localipc.Parse(endpoint); err != nil {
+			return nil, fmt.Errorf("DISCOBOX_SERVER_LISTEN: %w", err)
+		}
 	}
 	if cfg.AutoShutdownTimeout < 0 {
 		return nil, fmt.Errorf("DISCOBOX_SERVER_IDLE_TIMEOUT must be greater than or equal to 0")
@@ -148,11 +154,25 @@ func defaultDatabaseDSN(dataDir string) string {
 	return "sqlite3://" + filepath.Join(dataDir, "discobox.db")
 }
 
-func defaultListenEndpoint(port int) string {
-	if strings.TrimSpace(os.Getenv("PORT")) != "" {
-		return fmt.Sprintf("http://localhost:%d", port)
+func listenEndpoints(port int) []string {
+	if endpoints := splitListenEndpoints(getEnv("DISCOBOX_SERVER_LISTEN", "")); len(endpoints) > 0 {
+		return endpoints
 	}
-	return localipc.DefaultEndpoint()
+	if endpoints := splitListenEndpoints(getEnv("DISCOBOX_SERVER", "")); len(endpoints) > 0 {
+		return endpoints
+	}
+	return []string{localipc.DefaultEndpoint(), controlplane.DefaultListenEndpoint(port)}
+}
+
+func splitListenEndpoints(value string) []string {
+	var endpoints []string
+	for _, endpoint := range strings.Split(value, ",") {
+		endpoint = strings.TrimSpace(endpoint)
+		if endpoint != "" {
+			endpoints = append(endpoints, endpoint)
+		}
+	}
+	return endpoints
 }
 
 func getEnv(key, defaultValue string) string {

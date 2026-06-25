@@ -802,7 +802,7 @@ func TestLocalServerEnvIncludesSupportedServerConfig(t *testing.T) {
 	env := localServerEnv("unix:///tmp/discobox/server.sock")
 	joined := "\n" + strings.Join(env, "\n") + "\n"
 	for _, want := range []string{
-		"\nDISCOBOX_SERVER_LISTEN=unix:///tmp/discobox/server.sock\n",
+		"\nDISCOBOX_SERVER_LISTEN=unix:///tmp/discobox/server.sock,http://0.0.0.0:18080\n",
 		"\nDISCOBOX_SERVER=unix:///tmp/discobox/server.sock\n",
 		"\nDISCOBOX_SERVER_IDLE_TIMEOUT=5m\n",
 		"\nDISCOBOX_DATA_DIR=/tmp/discobox-data\n",

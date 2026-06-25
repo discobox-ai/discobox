@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -80,14 +81,16 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("initialize app: %w", err)
 	}
 
-	listener, listenDisplay, cleanupListener, err := localipc.Listen(cfg.Listen)
+	listeners, err := listenAll(cfg.Listen)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
-	defer cleanupListener()
-	log.Printf("listening on %s", listenDisplay)
-	log.Printf("openapi spec available at %s/openapi.yaml", listenDisplay)
-	log.Printf("api docs available at %s/docs", listenDisplay)
+	defer cleanupListeners(listeners)
+	for _, listener := range listeners {
+		log.Printf("listening on %s", listener.display)
+		log.Printf("openapi spec available at %s/openapi.yaml", listener.display)
+		log.Printf("api docs available at %s/docs", listener.display)
+	}
 	handler := otelhttp.NewHandler(router, "discobox-server")
 	activity := newActivityTracker()
 	if cfg.AutoShutdownTimeout > 0 {
@@ -114,8 +117,56 @@ func Run(ctx context.Context) error {
 	if cfg.AutoShutdownTimeout > 0 {
 		go activity.ShutdownWhenIdle(ctx, httpServer, cfg.AutoShutdownTimeout)
 	}
-	if err := httpServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("server failed: %w", err)
+	return serveAll(httpServer, listeners)
+}
+
+type serverListener struct {
+	net.Listener
+	display string
+	cleanup func()
+}
+
+func listenAll(endpoints []string) ([]serverListener, error) {
+	listeners := make([]serverListener, 0, len(endpoints))
+	for _, endpoint := range endpoints {
+		listener, display, cleanup, err := localipc.Listen(endpoint)
+		if err != nil {
+			cleanupListeners(listeners)
+			return nil, err
+		}
+		listeners = append(listeners, serverListener{Listener: listener, display: display, cleanup: cleanup})
+	}
+	return listeners, nil
+}
+
+func cleanupListeners(listeners []serverListener) {
+	for _, listener := range listeners {
+		if listener.cleanup != nil {
+			listener.cleanup()
+		}
+	}
+}
+
+func serveAll(server *http.Server, listeners []serverListener) error {
+	errCh := make(chan error, len(listeners))
+	for _, listener := range listeners {
+		go func() {
+			if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				errCh <- err
+				return
+			}
+			errCh <- nil
+		}()
+	}
+	var serveErr error
+	for range listeners {
+		if err := <-errCh; err != nil && serveErr == nil {
+			serveErr = err
+			_ = server.Shutdown(context.Background())
+		}
+	}
+	if serveErr != nil {
+		return fmt.Errorf("server failed: %w", serveErr)
 	}
 	return nil
 }

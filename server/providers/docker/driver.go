@@ -27,6 +27,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
+	"github.com/obot-platform/discobox/controlplane"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/transport"
 	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
@@ -37,7 +38,6 @@ const (
 	ProviderType            = "docker"
 	defaultImage            = "ghcr.io/obot-platform/discobox-systemd:latest"
 	defaultAgentPort        = 3002
-	defaultServerPort       = "8080"
 	noHealthWaitTimeout     = 30 * time.Second
 	healthPollDelay         = 500 * time.Millisecond
 	dockerHostGateway       = "host.docker.internal"
@@ -146,7 +146,7 @@ func Definition() sandbox.ProviderDefinition {
 		Icon:        "docker",
 		Description: "Runs VM-style warm workers as Docker containers, optionally with systemd as PID 1.",
 		ConfigFields: []sandbox.ProviderConfigField{
-			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: "http://host.docker.internal:8080", Advanced: true},
+			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: controlplane.DefaultURL(dockerHostGateway, controlplane.DefaultPort), Advanced: true},
 			{Key: "host", Label: "Docker Host", Type: "string", Advanced: true},
 			{Key: "image", Label: "Image", Type: "string", Placeholder: defaultImage},
 			{Key: "network", Label: "Docker Network", Type: "string", Advanced: true},
@@ -441,7 +441,7 @@ func (d *Driver) containerBootConfig(boot vm.BootConfig) vm.BootConfig {
 func defaultDockerControlPlaneURL() string {
 	port := strings.TrimSpace(os.Getenv("PORT"))
 	if port == "" {
-		port = defaultServerPort
+		port = strconv.Itoa(controlplane.DefaultPort)
 	}
 	return "http://" + dockerHostGateway + ":" + port
 }

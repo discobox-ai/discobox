@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
+	"github.com/obot-platform/discobox/controlplane"
 	"github.com/obot-platform/discobox/localipc"
 	discoboxserver "github.com/obot-platform/discobox/server"
 )
@@ -143,8 +144,12 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 }
 
 func localServerEnv(endpoint string) []string {
+	port := strings.TrimSpace(os.Getenv("PORT"))
+	if port == "" {
+		port = fmt.Sprint(controlplane.DefaultPort)
+	}
 	env := []string{
-		"DISCOBOX_SERVER_LISTEN=" + endpoint,
+		"DISCOBOX_SERVER_LISTEN=" + strings.Join([]string{endpoint, "http://0.0.0.0:" + port}, ","),
 		"DISCOBOX_SERVER=" + endpoint,
 		"DISCOBOX_SERVER_IDLE_TIMEOUT=5m",
 	}

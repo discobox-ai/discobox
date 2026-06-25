@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/obot-platform/discobox/controlplane"
 	"github.com/obot-platform/discobox/worker-agent/workerauth"
 )
 
@@ -150,7 +151,7 @@ func Run(ctx context.Context, cfg Config) (*Registration, error) {
 func FromEnv() Bootstrap {
 	agentPort, _ := strconv.Atoi(strings.TrimSpace(os.Getenv(EnvAgentPort)))
 	return Bootstrap{
-		ControlPlaneURL: strings.TrimSpace(os.Getenv(EnvControlPlaneURL)),
+		ControlPlaneURL: controlPlaneURLFromEnv(),
 		ProjectID:       strings.TrimSpace(os.Getenv(EnvProjectID)),
 		SandboxID:       strings.TrimSpace(os.Getenv(EnvSandboxID)),
 		WorkerID:        strings.TrimSpace(os.Getenv(EnvWorkerID)),
@@ -158,6 +159,13 @@ func FromEnv() Bootstrap {
 		ControlPlaneKey: strings.TrimSpace(os.Getenv(EnvControlPlaneKey)),
 		AgentPort:       agentPort,
 	}
+}
+
+func controlPlaneURLFromEnv() string {
+	if value := strings.TrimSpace(os.Getenv(EnvControlPlaneURL)); value != "" {
+		return value
+	}
+	return controlplane.DefaultURL("localhost", controlplane.DefaultPort)
 }
 
 // GenerateKeySource creates a fresh Ed25519 keypair.
