@@ -182,6 +182,78 @@ func TestWriteProvidersTableIncludesCompactStatus(t *testing.T) {
 	}
 }
 
+func TestQuietListWritersPrintFullIDsOnly(t *testing.T) {
+	app := &App{output: "table", quiet: true}
+	tests := []struct {
+		name  string
+		write func(*cobra.Command) error
+		want  string
+	}{
+		{
+			name: "sandboxes",
+			write: func(cmd *cobra.Command) error {
+				return app.writeSandboxes(cmd, []apimodel.Sandbox{{ID: "sandbox-full-id"}})
+			},
+			want: "sandbox-full-id\n",
+		},
+		{
+			name: "provider catalog",
+			write: func(cmd *cobra.Command) error {
+				return app.writeProviderCatalog(cmd, []apimodel.SandboxProviderCatalogItem{{ID: "docker"}})
+			},
+			want: "docker\n",
+		},
+		{
+			name: "providers",
+			write: func(cmd *cobra.Command) error {
+				return app.writeProviders(cmd, []apimodel.SandboxProviderInstance{{ID: "provider-full-id"}})
+			},
+			want: "provider-full-id\n",
+		},
+		{
+			name: "workers",
+			write: func(cmd *cobra.Command) error {
+				return app.writeWorkers(cmd, []apimodel.Worker{{ID: "worker-full-id"}})
+			},
+			want: "worker-full-id\n",
+		},
+		{
+			name: "agent definitions",
+			write: func(cmd *cobra.Command) error {
+				return app.writeAgentDefinitions(cmd, []apimodel.AgentConfigDefinition{{ID: "definition-full-id"}})
+			},
+			want: "definition-full-id\n",
+		},
+		{
+			name: "agents",
+			write: func(cmd *cobra.Command) error {
+				return app.writeAgents(cmd, []apimodel.AgentConfig{{ID: "agent-full-id"}})
+			},
+			want: "agent-full-id\n",
+		},
+		{
+			name: "jobs",
+			write: func(cmd *cobra.Command) error {
+				return app.writeJobs(cmd, []apimodel.Job{{ID: "job-full-id"}})
+			},
+			want: "job-full-id\n",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd := &cobra.Command{}
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			if err := tt.write(cmd); err != nil {
+				t.Fatalf("write quiet output: %v", err)
+			}
+			if got := out.String(); got != tt.want {
+				t.Fatalf("quiet output = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestWriteEventPrintsEventIDInsteadOfSeqWhenPresent(t *testing.T) {
 	app := &App{output: "table"}
 	cmd := &cobra.Command{}
@@ -271,6 +343,30 @@ func TestRootCommandRejectsInvalidOutputFormat(t *testing.T) {
 	}
 }
 
+func TestSandboxListQuietCommandPrintsFullIDsOnly(t *testing.T) {
+	const sandboxID = "01kv9w440bpa9qk5n25t2hh2rv"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/projects/project-1/sandboxes" {
+			t.Fatalf("path = %q, want project sandboxes path", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"sandboxes":[{"id":"` + sandboxID + `","projectId":"project-1","createdByUserId":"user-1","name":"alpha","phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "sandbox", "list", "-q"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute sandbox list -q: %v", err)
+	}
+	if got := out.String(); got != sandboxID+"\n" {
+		t.Fatalf("quiet output = %q, want full sandbox ID only", got)
+	}
+}
+
 func TestJobsCommandListsProjectJobs(t *testing.T) {
 	const jobID = "01kv9w440bpa9qk5n25t2hh2rv"
 	const resourceID = "01kv9w440a7bhqnk550g3821ck"
@@ -304,6 +400,30 @@ func TestJobsCommandListsProjectJobs(t *testing.T) {
 		if strings.Contains(output, unexpected) {
 			t.Fatalf("jobs output = %q, did not expect full ID %q", output, unexpected)
 		}
+	}
+}
+
+func TestJobsParentQuietCommandPrintsFullIDsOnly(t *testing.T) {
+	const jobID = "01kv9w440bpa9qk5n25t2hh2rv"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.URL.Path; got != "/projects/project-1/jobs" {
+			t.Fatalf("path = %q, want project jobs path", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"jobs":[{"id":"` + jobID + `","type":"sandbox.reconcile","status":"pending","attempts":0,"maxAttempts":3,"resourceType":"sandbox","resourceId":"sandbox-1","scheduledAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "jobs", "-q"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute jobs -q: %v", err)
+	}
+	if got := out.String(); got != jobID+"\n" {
+		t.Fatalf("quiet output = %q, want full job ID only", got)
 	}
 }
 
@@ -540,6 +660,55 @@ func TestSandboxGetResolvesShortID(t *testing.T) {
 	}
 	if output := out.String(); !strings.Contains(output, shortID(fullID)) || strings.Contains(output, fullID) {
 		t.Fatalf("sandbox output = %q, want short ID only", output)
+	}
+}
+
+func TestSandboxDeleteContinuesAfterFailure(t *testing.T) {
+	var deleted []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Method; got != http.MethodDelete {
+			t.Fatalf("method = %q, want DELETE", got)
+		}
+		const prefix = "/projects/project-1/sandboxes/"
+		if !strings.HasPrefix(r.URL.Path, prefix) {
+			t.Fatalf("path = %q, want sandbox delete path", r.URL.Path)
+		}
+		id := strings.TrimPrefix(r.URL.Path, prefix)
+		deleted = append(deleted, id)
+		if id == "sandbox-fail" {
+			w.Header().Set("Content-Type", "application/problem+json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"title":"delete failed","detail":"sandbox is busy"}`))
+			return
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	var errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "sandbox", "delete", "sandbox-ok-1", "sandbox-fail", "sandbox-ok-2"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("execute sandbox delete error = nil, want aggregate delete failure")
+	}
+	if got, want := err.Error(), "failed to delete 1 sandbox"; got != want {
+		t.Fatalf("execute sandbox delete error = %q, want %q", got, want)
+	}
+	if got, want := strings.Join(deleted, ","), "sandbox-ok-1,sandbox-fail,sandbox-ok-2"; got != want {
+		t.Fatalf("deleted order = %q, want %q", got, want)
+	}
+	if got, want := out.String(), "sandbox-ok-1 deleted\nsandbox-ok-2 deleted\n"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+	for _, want := range []string{`failed to delete sandbox "sandbox-fail"`, "sandbox is busy"} {
+		if !strings.Contains(errOut.String(), want) {
+			t.Fatalf("stderr = %q, want %q", errOut.String(), want)
+		}
 	}
 }
 
