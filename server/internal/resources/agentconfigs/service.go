@@ -30,7 +30,8 @@ func (s *Service) ListAgentConfigs(ctx context.Context, projectID string) ([]mod
 }
 
 func (s *Service) CreateAgentConfig(ctx context.Context, projectID string, input services.CreateAgentConfigBody) (*model.AgentConfig, error) {
-	if _, err := s.store.GetProject(ctx, projectID); err != nil {
+	project, err := s.store.GetProject(ctx, projectID)
+	if err != nil {
 		return nil, apiError(err, "project not found")
 	}
 	var definition *model.AgentConfigDefinition
@@ -59,19 +60,20 @@ func (s *Service) CreateAgentConfig(ctx context.Context, projectID string, input
 	if strings.TrimSpace(runCommand) == "" {
 		return nil, apiError(fmt.Errorf("agent config run command is required"), "")
 	}
-	capabilities := services.RawMessage(input.Capabilities)
-	if capabilities == nil && definition != nil {
-		capabilities = cloneRawMessage(definition.Capabilities)
-	}
 	config := &model.AgentConfig{
 		ProjectID:      projectID,
 		Name:           name,
 		InstallCommand: installCommand,
 		RunCommand:     runCommand,
-		Capabilities:   capabilities,
 	}
 	if err := s.store.CreateAgentConfig(ctx, config); err != nil {
 		return nil, err
+	}
+	if project.DefaultAgentConfigID == "" {
+		project.DefaultAgentConfigID = config.ID
+		if err := s.store.UpsertProject(ctx, project); err != nil {
+			return nil, err
+		}
 	}
 	return s.store.GetAgentConfig(ctx, projectID, config.ID)
 }
@@ -105,17 +107,43 @@ func (s *Service) UpdateAgentConfig(ctx context.Context, projectID, configID str
 		}
 		config.RunCommand = runCommand
 	}
-	if len(input.Capabilities) > 0 {
-		config.Capabilities = services.RawMessage(input.Capabilities)
-	}
 	if err := s.store.UpdateAgentConfig(ctx, config); err != nil {
 		return nil, err
 	}
 	return s.store.GetAgentConfig(ctx, projectID, configID)
 }
 
+func (s *Service) SetDefaultAgentConfig(ctx context.Context, projectID, configID string) (*model.Project, error) {
+	project, err := s.store.GetProject(ctx, projectID)
+	if err != nil {
+		return nil, apiError(err, "project not found")
+	}
+	config, err := s.store.GetAgentConfig(ctx, projectID, configID)
+	if err != nil {
+		return nil, apiError(err, "agent config not found")
+	}
+	project.DefaultAgentConfigID = config.ID
+	if err := s.store.UpsertProject(ctx, project); err != nil {
+		return nil, err
+	}
+	return s.store.GetProject(ctx, projectID)
+}
+
 func (s *Service) DeleteAgentConfig(ctx context.Context, projectID, configID string) error {
-	return apiError(s.store.DeleteAgentConfig(ctx, projectID, configID), "agent config not found")
+	project, err := s.store.GetProject(ctx, projectID)
+	if err != nil {
+		return apiError(err, "project not found")
+	}
+	if err := s.store.DeleteAgentConfig(ctx, projectID, configID); err != nil {
+		return apiError(err, "agent config not found")
+	}
+	if project.DefaultAgentConfigID == configID {
+		project.DefaultAgentConfigID = ""
+		if err := s.store.UpsertProject(ctx, project); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func apiError(err error, notFoundMessage string) error {

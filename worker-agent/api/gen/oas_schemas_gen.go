@@ -1321,17 +1321,10 @@ func (o OptWorkerSandboxUser) Or(d WorkerSandboxUser) WorkerSandboxUser {
 
 // Ref: #/components/schemas/ResolvedAgentConfig
 type ResolvedAgentConfig struct {
-	// Opaque agent capabilities or feature metadata.
-	Capabilities   jx.Raw    `json:"capabilities"`
 	ID             string    `json:"id"`
 	InstallCommand OptString `json:"installCommand"`
 	Name           string    `json:"name"`
 	RunCommand     string    `json:"runCommand"`
-}
-
-// GetCapabilities returns the value of Capabilities.
-func (s *ResolvedAgentConfig) GetCapabilities() jx.Raw {
-	return s.Capabilities
 }
 
 // GetID returns the value of ID.
@@ -1352,11 +1345,6 @@ func (s *ResolvedAgentConfig) GetName() string {
 // GetRunCommand returns the value of RunCommand.
 func (s *ResolvedAgentConfig) GetRunCommand() string {
 	return s.RunCommand
-}
-
-// SetCapabilities sets the value of Capabilities.
-func (s *ResolvedAgentConfig) SetCapabilities(val jx.Raw) {
-	s.Capabilities = val
 }
 
 // SetID sets the value of ID.

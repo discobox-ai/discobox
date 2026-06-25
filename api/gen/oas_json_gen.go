@@ -29,12 +29,6 @@ func (s *AgentConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if len(s.Capabilities) != 0 {
-			e.FieldStart("capabilities")
-			e.Raw(s.Capabilities)
-		}
-	}
-	{
 		e.FieldStart("createdAt")
 		json.EncodeDateTime(e, s.CreatedAt)
 	}
@@ -66,16 +60,15 @@ func (s *AgentConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfAgentConfig = [9]string{
+var jsonFieldsNameOfAgentConfig = [8]string{
 	0: "$schema",
-	1: "capabilities",
-	2: "createdAt",
-	3: "id",
-	4: "installCommand",
-	5: "name",
-	6: "projectId",
-	7: "runCommand",
-	8: "updatedAt",
+	1: "createdAt",
+	2: "id",
+	3: "installCommand",
+	4: "name",
+	5: "projectId",
+	6: "runCommand",
+	7: "updatedAt",
 }
 
 // Decode decodes AgentConfig from json.
@@ -83,7 +76,7 @@ func (s *AgentConfig) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode AgentConfig to nil")
 	}
-	var requiredBitSet [2]uint8
+	var requiredBitSet [1]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -97,19 +90,8 @@ func (s *AgentConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
 			}
-		case "capabilities":
-			if err := func() error {
-				v, err := d.RawAppend(nil)
-				s.Capabilities = jx.Raw(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"capabilities\"")
-			}
 		case "createdAt":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -121,7 +103,7 @@ func (s *AgentConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"createdAt\"")
 			}
 		case "id":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -143,7 +125,7 @@ func (s *AgentConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"installCommand\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -155,7 +137,7 @@ func (s *AgentConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "projectId":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -167,7 +149,7 @@ func (s *AgentConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"projectId\"")
 			}
 		case "runCommand":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.RunCommand = string(v)
@@ -179,7 +161,7 @@ func (s *AgentConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"runCommand\"")
 			}
 		case "updatedAt":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -199,9 +181,8 @@ func (s *AgentConfig) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [2]uint8{
-		0b11101100,
-		0b00000001,
+	for i, mask := range [1]uint8{
+		0b11110110,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -263,12 +244,6 @@ func (s *AgentConfigDefinition) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if len(s.Capabilities) != 0 {
-			e.FieldStart("capabilities")
-			e.Raw(s.Capabilities)
-		}
-	}
-	{
 		if s.Description.Set {
 			e.FieldStart("description")
 			s.Description.Encode(e)
@@ -294,14 +269,13 @@ func (s *AgentConfigDefinition) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfAgentConfigDefinition = [7]string{
+var jsonFieldsNameOfAgentConfigDefinition = [6]string{
 	0: "$schema",
-	1: "capabilities",
-	2: "description",
-	3: "id",
-	4: "installCommand",
-	5: "name",
-	6: "runCommand",
+	1: "description",
+	2: "id",
+	3: "installCommand",
+	4: "name",
+	5: "runCommand",
 }
 
 // Decode decodes AgentConfigDefinition from json.
@@ -323,17 +297,6 @@ func (s *AgentConfigDefinition) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
 			}
-		case "capabilities":
-			if err := func() error {
-				v, err := d.RawAppend(nil)
-				s.Capabilities = jx.Raw(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"capabilities\"")
-			}
 		case "description":
 			if err := func() error {
 				s.Description.Reset()
@@ -345,7 +308,7 @@ func (s *AgentConfigDefinition) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"description\"")
 			}
 		case "id":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -367,7 +330,7 @@ func (s *AgentConfigDefinition) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"installCommand\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -379,7 +342,7 @@ func (s *AgentConfigDefinition) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "runCommand":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.RunCommand = string(v)
@@ -400,7 +363,7 @@ func (s *AgentConfigDefinition) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b01101000,
+		0b00110100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -1269,12 +1232,6 @@ func (s *CreateAgentConfigBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if len(s.Capabilities) != 0 {
-			e.FieldStart("capabilities")
-			e.Raw(s.Capabilities)
-		}
-	}
-	{
 		if s.DefinitionId.Set {
 			e.FieldStart("definitionId")
 			s.DefinitionId.Encode(e)
@@ -1300,13 +1257,12 @@ func (s *CreateAgentConfigBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCreateAgentConfigBody = [6]string{
+var jsonFieldsNameOfCreateAgentConfigBody = [5]string{
 	0: "$schema",
-	1: "capabilities",
-	2: "definitionId",
-	3: "installCommand",
-	4: "name",
-	5: "runCommand",
+	1: "definitionId",
+	2: "installCommand",
+	3: "name",
+	4: "runCommand",
 }
 
 // Decode decodes CreateAgentConfigBody from json.
@@ -1326,17 +1282,6 @@ func (s *CreateAgentConfigBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
-			}
-		case "capabilities":
-			if err := func() error {
-				v, err := d.RawAppend(nil)
-				s.Capabilities = jx.Raw(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"capabilities\"")
 			}
 		case "definitionId":
 			if err := func() error {
@@ -6063,6 +6008,12 @@ func (s *Project) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.DefaultAgentConfigId.Set {
+			e.FieldStart("defaultAgentConfigId")
+			s.DefaultAgentConfigId.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("id")
 		e.Str(s.ID)
 	}
@@ -6108,21 +6059,22 @@ func (s *Project) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfProject = [14]string{
+var jsonFieldsNameOfProject = [15]string{
 	0:  "$schema",
 	1:  "agentConfigs",
 	2:  "createdAt",
 	3:  "default",
 	4:  "defaultSandboxProviderId",
-	5:  "id",
-	6:  "members",
-	7:  "name",
-	8:  "owner",
-	9:  "ownerUserId",
-	10: "sandboxProviderInstances",
-	11: "sandboxes",
-	12: "slug",
-	13: "updatedAt",
+	5:  "defaultAgentConfigId",
+	6:  "id",
+	7:  "members",
+	8:  "name",
+	9:  "owner",
+	10: "ownerUserId",
+	11: "sandboxProviderInstances",
+	12: "sandboxes",
+	13: "slug",
+	14: "updatedAt",
 }
 
 // Decode decodes Project from json.
@@ -6188,8 +6140,18 @@ func (s *Project) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"defaultSandboxProviderId\"")
 			}
+		case "defaultAgentConfigId":
+			if err := func() error {
+				s.DefaultAgentConfigId.Reset()
+				if err := s.DefaultAgentConfigId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"defaultAgentConfigId\"")
+			}
 		case "id":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -6211,7 +6173,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"members\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -6233,7 +6195,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"owner\"")
 			}
 		case "ownerUserId":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.OwnerUserId = string(v)
@@ -6265,7 +6227,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"sandboxes\"")
 			}
 		case "slug":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.Slug = string(v)
@@ -6277,7 +6239,7 @@ func (s *Project) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"slug\"")
 			}
 		case "updatedAt":
-			requiredBitSet[1] |= 1 << 5
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -6298,8 +6260,8 @@ func (s *Project) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b10101100,
-		0b00110010,
+		0b01001100,
+		0b01100101,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -9890,12 +9852,6 @@ func (s *UpdateAgentConfigBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if len(s.Capabilities) != 0 {
-			e.FieldStart("capabilities")
-			e.Raw(s.Capabilities)
-		}
-	}
-	{
 		if s.InstallCommand.Set {
 			e.FieldStart("installCommand")
 			s.InstallCommand.Encode(e)
@@ -9915,12 +9871,11 @@ func (s *UpdateAgentConfigBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfUpdateAgentConfigBody = [5]string{
+var jsonFieldsNameOfUpdateAgentConfigBody = [4]string{
 	0: "$schema",
-	1: "capabilities",
-	2: "installCommand",
-	3: "name",
-	4: "runCommand",
+	1: "installCommand",
+	2: "name",
+	3: "runCommand",
 }
 
 // Decode decodes UpdateAgentConfigBody from json.
@@ -9940,17 +9895,6 @@ func (s *UpdateAgentConfigBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
-			}
-		case "capabilities":
-			if err := func() error {
-				v, err := d.RawAppend(nil)
-				s.Capabilities = jx.Raw(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"capabilities\"")
 			}
 		case "installCommand":
 			if err := func() error {

@@ -38,6 +38,7 @@ const (
 	ReconcileWorkerOperation                  OperationName = "ReconcileWorker"
 	RegisterWorkerOperation                   OperationName = "RegisterWorker"
 	RestartSandboxOperation                   OperationName = "RestartSandbox"
+	SetDefaultAgentConfigOperation            OperationName = "SetDefaultAgentConfig"
 	StartSandboxOperation                     OperationName = "StartSandbox"
 	StopSandboxOperation                      OperationName = "StopSandbox"
 	StreamAgentTerminalResourcesOperation     OperationName = "StreamAgentTerminalResources"

@@ -153,8 +153,6 @@ components:
         ResolvedAgentConfig:
             additionalProperties: false
             properties:
-                capabilities:
-                    description: Opaque agent capabilities or feature metadata.
                 id:
                     type: string
                 installCommand:

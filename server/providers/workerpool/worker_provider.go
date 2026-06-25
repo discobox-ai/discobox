@@ -600,9 +600,6 @@ func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions
 			InstallCommand: workerclient.NewOptString(opts.ResolvedAgentConfig.InstallCommand),
 			RunCommand:     opts.ResolvedAgentConfig.RunCommand,
 		}
-		if len(opts.ResolvedAgentConfig.Capabilities) > 0 {
-			resolved.Capabilities = opts.ResolvedAgentConfig.Capabilities
-		}
 		out.ResolvedAgentConfig = workerclient.NewOptResolvedAgentConfig(resolved)
 	}
 	if opts.AgentModel != nil {

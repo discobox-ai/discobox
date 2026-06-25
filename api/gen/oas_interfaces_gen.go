@@ -129,6 +129,10 @@ type RestartSandboxRes interface {
 	restartSandboxRes()
 }
 
+type SetDefaultAgentConfigRes interface {
+	setDefaultAgentConfigRes()
+}
+
 type StartSandboxRes interface {
 	startSandboxRes()
 }

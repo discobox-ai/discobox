@@ -9,8 +9,6 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                capabilities:
-                    description: Agent capabilities or feature metadata
                 createdAt:
                     description: Creation timestamp
                     format: date-time
@@ -52,8 +50,6 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                capabilities:
-                    description: Agent capabilities or feature metadata
                 description:
                     description: Agent config definition description
                     type: string
@@ -102,8 +98,6 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                capabilities:
-                    description: Agent capabilities or feature metadata
                 definitionId:
                     description: Agent config definition ID to use as defaults
                     type: string
@@ -755,6 +749,9 @@ components:
                     type: boolean
                 defaultSandboxProviderId:
                     description: Default sandbox provider instance ID
+                    type: string
+                defaultAgentConfigId:
+                    description: Default agent config ID
                     type: string
                 id:
                     description: Stable project ID
@@ -1527,8 +1524,6 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                capabilities:
-                    description: Agent capabilities or feature metadata
                 installCommand:
                     description: Command used to install the agent
                     type: string
@@ -2206,6 +2201,41 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Update an agent config
+            tags:
+                - Agent Configs
+    /projects/{projectId}/agent-configs/{agentConfigId}/default:
+        put:
+            operationId: set-default-agent-config
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Agent config ID
+                  in: path
+                  name: agentConfigId
+                  required: true
+                  schema:
+                    description: Agent config ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Project'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Set the project default agent config
             tags:
                 - Agent Configs
     /projects/{projectId}/providers:

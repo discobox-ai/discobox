@@ -48,6 +48,7 @@ type AgentConfigService interface {
 	CreateAgentConfig(ctx context.Context, projectID string, input CreateAgentConfigBody) (*model.AgentConfig, error)
 	GetAgentConfig(ctx context.Context, projectID, configID string) (*model.AgentConfig, error)
 	UpdateAgentConfig(ctx context.Context, projectID, configID string, input UpdateAgentConfigBody) (*model.AgentConfig, error)
+	SetDefaultAgentConfig(ctx context.Context, projectID, configID string) (*model.Project, error)
 	DeleteAgentConfig(ctx context.Context, projectID, configID string) error
 }
 

@@ -2,7 +2,6 @@ package agentconfigs
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 
 	"github.com/obot-platform/discobox/server/internal/apperrors"
@@ -16,8 +15,7 @@ var agentConfigDefinitions = []model.AgentConfigDefinition{
 		Name:           "Codex",
 		Description:    "OpenAI Codex coding agent.",
 		InstallCommand: "npm install -g @openai/codex",
-		RunCommand:     "codex exec",
-		Capabilities:   json.RawMessage(`{"tools":["shell","edit"]}`),
+		RunCommand:     "codex",
 	},
 	{
 		ID:             "claude-code",
@@ -25,7 +23,6 @@ var agentConfigDefinitions = []model.AgentConfigDefinition{
 		Description:    "Anthropic Claude Code coding agent.",
 		InstallCommand: "npm install -g @anthropic-ai/claude-code",
 		RunCommand:     "claude",
-		Capabilities:   json.RawMessage(`{"tools":["shell","edit"]}`),
 	},
 }
 
@@ -35,10 +32,6 @@ func Definitions() []model.AgentConfigDefinition {
 
 func DefinitionByID(definitionID string) (*model.AgentConfigDefinition, bool) {
 	return agentConfigDefinitionByID(definitionID)
-}
-
-func CloneRawMessage(in json.RawMessage) json.RawMessage {
-	return cloneRawMessage(in)
 }
 
 func (s *Service) ListAgentConfigDefinitions(context.Context) ([]model.AgentConfigDefinition, error) {
@@ -56,7 +49,6 @@ func (s *Service) GetAgentConfigDefinition(_ context.Context, definitionID strin
 func agentConfigDefinitionByID(definitionID string) (*model.AgentConfigDefinition, bool) {
 	for _, definition := range agentConfigDefinitions {
 		if definition.ID == definitionID {
-			definition.Capabilities = cloneRawMessage(definition.Capabilities)
 			return &definition, true
 		}
 	}
@@ -65,18 +57,6 @@ func agentConfigDefinitionByID(definitionID string) (*model.AgentConfigDefinitio
 
 func cloneAgentConfigDefinitions(definitions []model.AgentConfigDefinition) []model.AgentConfigDefinition {
 	out := make([]model.AgentConfigDefinition, len(definitions))
-	for i, definition := range definitions {
-		definition.Capabilities = cloneRawMessage(definition.Capabilities)
-		out[i] = definition
-	}
-	return out
-}
-
-func cloneRawMessage(in json.RawMessage) json.RawMessage {
-	if in == nil {
-		return nil
-	}
-	out := make(json.RawMessage, len(in))
-	copy(out, in)
+	copy(out, definitions)
 	return out
 }

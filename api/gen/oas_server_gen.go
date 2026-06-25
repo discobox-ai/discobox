@@ -203,6 +203,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/restart
 	RestartSandbox(ctx context.Context, req *RestartSandboxBody, params RestartSandboxParams) (RestartSandboxRes, error)
+	// SetDefaultAgentConfig implements set-default-agent-config operation.
+	//
+	// Set the project default agent config.
+	//
+	// PUT /projects/{projectId}/agent-configs/{agentConfigId}/default
+	SetDefaultAgentConfig(ctx context.Context, params SetDefaultAgentConfigParams) (SetDefaultAgentConfigRes, error)
 	// StartSandbox implements start-sandbox operation.
 	//
 	// Start a sandbox.

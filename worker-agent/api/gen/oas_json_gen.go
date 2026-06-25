@@ -1631,12 +1631,6 @@ func (s *ResolvedAgentConfig) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *ResolvedAgentConfig) encodeFields(e *jx.Encoder) {
 	{
-		if len(s.Capabilities) != 0 {
-			e.FieldStart("capabilities")
-			e.Raw(s.Capabilities)
-		}
-	}
-	{
 		e.FieldStart("id")
 		e.Str(s.ID)
 	}
@@ -1656,12 +1650,11 @@ func (s *ResolvedAgentConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfResolvedAgentConfig = [5]string{
-	0: "capabilities",
-	1: "id",
-	2: "installCommand",
-	3: "name",
-	4: "runCommand",
+var jsonFieldsNameOfResolvedAgentConfig = [4]string{
+	0: "id",
+	1: "installCommand",
+	2: "name",
+	3: "runCommand",
 }
 
 // Decode decodes ResolvedAgentConfig from json.
@@ -1673,19 +1666,8 @@ func (s *ResolvedAgentConfig) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
-		case "capabilities":
-			if err := func() error {
-				v, err := d.RawAppend(nil)
-				s.Capabilities = jx.Raw(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"capabilities\"")
-			}
 		case "id":
-			requiredBitSet[0] |= 1 << 1
+			requiredBitSet[0] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -1707,7 +1689,7 @@ func (s *ResolvedAgentConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"installCommand\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -1719,7 +1701,7 @@ func (s *ResolvedAgentConfig) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "runCommand":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.RunCommand = string(v)
@@ -1740,7 +1722,7 @@ func (s *ResolvedAgentConfig) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00011010,
+		0b00001101,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

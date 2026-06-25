@@ -84,6 +84,18 @@ func (h *Handler) UpdateAgentConfig(ctx context.Context, req *apimodel.UpdateAge
 	return &body, nil
 }
 
+func (h *Handler) SetDefaultAgentConfig(ctx context.Context, params serverapi.SetDefaultAgentConfigParams) (serverapi.SetDefaultAgentConfigRes, error) {
+	project, err := h.services.AgentConfigs.SetDefaultAgentConfig(ctx, params.ProjectId, params.AgentConfigId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[apimodel.Project](project)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
 func (h *Handler) DeleteAgentConfig(ctx context.Context, params serverapi.DeleteAgentConfigParams) (serverapi.DeleteAgentConfigRes, error) {
 	if err := h.services.AgentConfigs.DeleteAgentConfig(ctx, params.ProjectId, params.AgentConfigId); err != nil {
 		return apiError(err), nil

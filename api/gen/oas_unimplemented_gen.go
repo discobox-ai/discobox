@@ -304,6 +304,15 @@ func (UnimplementedHandler) RestartSandbox(ctx context.Context, req *RestartSand
 	return r, ht.ErrNotImplemented
 }
 
+// SetDefaultAgentConfig implements set-default-agent-config operation.
+//
+// Set the project default agent config.
+//
+// PUT /projects/{projectId}/agent-configs/{agentConfigId}/default
+func (UnimplementedHandler) SetDefaultAgentConfig(ctx context.Context, params SetDefaultAgentConfigParams) (r SetDefaultAgentConfigRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // StartSandbox implements start-sandbox operation.
 //
 // Start a sandbox.

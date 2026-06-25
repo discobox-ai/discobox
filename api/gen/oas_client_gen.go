@@ -222,6 +222,12 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/restart
 	RestartSandbox(ctx context.Context, request *RestartSandboxBody, params RestartSandboxParams) (RestartSandboxRes, error)
+	// SetDefaultAgentConfig invokes set-default-agent-config operation.
+	//
+	// Set the project default agent config.
+	//
+	// PUT /projects/{projectId}/agent-configs/{agentConfigId}/default
+	SetDefaultAgentConfig(ctx context.Context, params SetDefaultAgentConfigParams) (SetDefaultAgentConfigRes, error)
 	// StartSandbox invokes start-sandbox operation.
 	//
 	// Start a sandbox.
@@ -3709,6 +3715,118 @@ func (c *Client) sendRestartSandbox(ctx context.Context, request *RestartSandbox
 
 	stage = "DecodeResponse"
 	result, err := decodeRestartSandboxResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// SetDefaultAgentConfig invokes set-default-agent-config operation.
+//
+// Set the project default agent config.
+//
+// PUT /projects/{projectId}/agent-configs/{agentConfigId}/default
+func (c *Client) SetDefaultAgentConfig(ctx context.Context, params SetDefaultAgentConfigParams) (SetDefaultAgentConfigRes, error) {
+	res, err := c.sendSetDefaultAgentConfig(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendSetDefaultAgentConfig(ctx context.Context, params SetDefaultAgentConfigParams) (res SetDefaultAgentConfigRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("set-default-agent-config"),
+		semconv.HTTPRequestMethodKey.String("PUT"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/agent-configs/{agentConfigId}/default"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, SetDefaultAgentConfigOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/agent-configs/"
+	{
+		// Encode "agentConfigId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "agentConfigId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.AgentConfigId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/default"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PUT", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeSetDefaultAgentConfigResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

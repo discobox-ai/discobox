@@ -78,3 +78,26 @@ func TestUpdateSandboxBodyIsNameOnly(t *testing.T) {
 		t.Fatal("sandbox update should expose name flag")
 	}
 }
+
+func TestTerminalDetachSequenceFilter(t *testing.T) {
+	pending := false
+	out, detach := filterDetachSequence([]byte("abc"), &pending)
+	if detach || string(out) != "abc" || pending {
+		t.Fatalf("plain input = %q detach=%t pending=%t", out, detach, pending)
+	}
+
+	out, detach = filterDetachSequence([]byte{0x10}, &pending)
+	if detach || string(out) != "" || !pending {
+		t.Fatalf("ctrl-p input = %q detach=%t pending=%t", out, detach, pending)
+	}
+
+	out, detach = filterDetachSequence([]byte("x"), &pending)
+	if detach || string(out) != string([]byte{0x10, 'x'}) || pending {
+		t.Fatalf("non-detach followup = %v detach=%t pending=%t", out, detach, pending)
+	}
+
+	out, detach = filterDetachSequence([]byte{0x10, 'q'}, &pending)
+	if !detach || len(out) != 0 || pending {
+		t.Fatalf("detach sequence = %v detach=%t pending=%t", out, detach, pending)
+	}
+}

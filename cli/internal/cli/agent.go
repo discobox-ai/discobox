@@ -14,14 +14,12 @@ type agentCreateOptions struct {
 	definitionID   string
 	installCommand string
 	runCommand     string
-	capabilities   string
 }
 
 type agentUpdateOptions struct {
 	name           string
 	installCommand string
 	runCommand     string
-	capabilities   string
 }
 
 func (a *App) newAgentCommand() *cobra.Command {
@@ -31,6 +29,7 @@ func (a *App) newAgentCommand() *cobra.Command {
 	cmd.AddCommand(a.newAgentGetCommand())
 	cmd.AddCommand(a.newAgentCreateCommand())
 	cmd.AddCommand(a.newAgentUpdateCommand())
+	cmd.AddCommand(a.newAgentSetDefaultCommand())
 	cmd.AddCommand(a.newAgentDeleteCommand())
 	return cmd
 }
@@ -148,7 +147,6 @@ func (a *App) newAgentCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.definitionID, "definition", "", "Agent config definition ID to use as defaults")
 	cmd.Flags().StringVar(&opts.installCommand, "install-command", "", "Command used to install the agent")
 	cmd.Flags().StringVar(&opts.runCommand, "run-command", "", "Command used to run the agent")
-	cmd.Flags().StringVar(&opts.capabilities, "capabilities", "", "Agent capabilities JSON or @path")
 	return cmd
 }
 
@@ -176,8 +174,29 @@ func (a *App) newAgentUpdateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Agent config name")
 	cmd.Flags().StringVar(&opts.installCommand, "install-command", "", "Command used to install the agent")
 	cmd.Flags().StringVar(&opts.runCommand, "run-command", "", "Command used to run the agent")
-	cmd.Flags().StringVar(&opts.capabilities, "capabilities", "", "Agent capabilities JSON or @path")
 	return cmd
+}
+
+func (a *App) newAgentSetDefaultCommand() *cobra.Command {
+	return &cobra.Command{Use: "set-default AGENT_CONFIG_ID", Short: "Set the project default agent config", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		projectID, agentID, client, err := a.agentRequest(cmd.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		res, err := client.SetDefaultAgentConfig(cmd.Context(), apiclientgen.SetDefaultAgentConfigParams{ProjectId: projectID, AgentConfigId: agentID})
+		if err != nil {
+			return err
+		}
+		project, err := expectResponse[apimodel.Project](res)
+		if err != nil {
+			return err
+		}
+		if a.output == "json" {
+			return writeJSON(cmd.OutOrStdout(), project)
+		}
+		_, err = cmd.OutOrStdout().Write([]byte("default agent config set to " + shortID(agentID) + "\n"))
+		return err
+	}}
 }
 
 func (a *App) newAgentDeleteCommand() *cobra.Command {
@@ -226,11 +245,6 @@ func createAgentBody(opts agentCreateOptions) (*apimodel.CreateAgentConfigBody, 
 	body.SetDefinitionId(optString(opts.definitionID))
 	body.SetInstallCommand(optString(opts.installCommand))
 	body.SetRunCommand(optString(opts.runCommand))
-	capabilities, err := rawJSON(opts.capabilities)
-	if err != nil {
-		return nil, err
-	}
-	body.SetCapabilities(capabilities)
 	return body, nil
 }
 
@@ -244,13 +258,6 @@ func updateAgentBody(cmd *cobra.Command, opts agentUpdateOptions) (*apimodel.Upd
 	}
 	if cmd.Flags().Changed("run-command") {
 		body.SetRunCommand(apiclientgen.NewOptString(opts.runCommand))
-	}
-	if cmd.Flags().Changed("capabilities") {
-		capabilities, err := rawJSON(opts.capabilities)
-		if err != nil {
-			return nil, err
-		}
-		body.SetCapabilities(capabilities)
 	}
 	return body, nil
 }

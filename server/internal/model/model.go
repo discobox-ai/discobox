@@ -140,6 +140,7 @@ type Project struct {
 	Slug                     string         `gorm:"uniqueIndex;not null;type:text" json:"slug" doc:"URL-safe project slug" pattern:"^[a-z0-9][a-z0-9-]*$"`
 	Default                  bool           `gorm:"column:default_project;not null;default:false;index" json:"default" doc:"Whether this is the user's default project"`
 	DefaultSandboxProviderID string         `gorm:"column:default_sandbox_provider_id;type:text;default:''" json:"defaultSandboxProviderId,omitempty" doc:"Default sandbox provider instance ID"`
+	DefaultAgentConfigID     string         `gorm:"column:default_agent_config_id;type:text;default:''" json:"defaultAgentConfigId,omitempty" doc:"Default agent config ID"`
 	CreatedAt                time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt                time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 	DeletedAt                gorm.DeletedAt `gorm:"index" json:"-"`
@@ -215,15 +216,14 @@ type ProjectUserKey = SandboxAccessIssuerKey
 
 // AgentConfig stores a project-scoped agent runtime configuration.
 type AgentConfig struct {
-	ID             string          `gorm:"primaryKey;type:text" json:"id" doc:"Stable agent config ID"`
-	ProjectID      string          `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_agent_config_project_name,priority:1" json:"projectId" doc:"Project ID"`
-	Name           string          `gorm:"column:name;not null;type:text;uniqueIndex:idx_agent_config_project_name,priority:2" json:"name" doc:"Agent config name" maxLength:"200"`
-	InstallCommand string          `gorm:"column:install_command;type:text" json:"installCommand,omitempty" doc:"Command used to install the agent"`
-	RunCommand     string          `gorm:"column:run_command;not null;type:text" json:"runCommand" doc:"Command used to run the agent"`
-	Capabilities   json.RawMessage `gorm:"column:capabilities;type:text" json:"capabilities,omitempty" doc:"Agent capabilities or feature metadata"`
-	CreatedAt      time.Time       `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt      time.Time       `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-	DeletedAt      gorm.DeletedAt  `gorm:"index" json:"-"`
+	ID             string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable agent config ID"`
+	ProjectID      string         `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_agent_config_project_name,priority:1" json:"projectId" doc:"Project ID"`
+	Name           string         `gorm:"column:name;not null;type:text;uniqueIndex:idx_agent_config_project_name,priority:2" json:"name" doc:"Agent config name" maxLength:"200"`
+	InstallCommand string         `gorm:"column:install_command;type:text" json:"installCommand,omitempty" doc:"Command used to install the agent"`
+	RunCommand     string         `gorm:"column:run_command;not null;type:text" json:"runCommand" doc:"Command used to run the agent"`
+	CreatedAt      time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt      time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
 
 	Project   *Project  `gorm:"foreignKey:ProjectID" json:"-"`
 	Sandboxes []Sandbox `gorm:"foreignKey:AgentConfigID" json:"-"`
@@ -254,12 +254,11 @@ func (a *AgentConfig) BeforeCreate(_ *gorm.DB) error {
 // selected by sandboxes directly. They provide UI-visible defaults for creating
 // real AgentConfig records.
 type AgentConfigDefinition struct {
-	ID             string          `json:"id" doc:"Stable definition ID"`
-	Name           string          `json:"name" doc:"Agent config definition name" maxLength:"200"`
-	Description    string          `json:"description,omitempty" doc:"Agent config definition description"`
-	InstallCommand string          `json:"installCommand,omitempty" doc:"Command used to install the agent"`
-	RunCommand     string          `json:"runCommand" doc:"Command used to run the agent"`
-	Capabilities   json.RawMessage `json:"capabilities,omitempty" doc:"Agent capabilities or feature metadata"`
+	ID             string `json:"id" doc:"Stable definition ID"`
+	Name           string `json:"name" doc:"Agent config definition name" maxLength:"200"`
+	Description    string `json:"description,omitempty" doc:"Agent config definition description"`
+	InstallCommand string `json:"installCommand,omitempty" doc:"Command used to install the agent"`
+	RunCommand     string `json:"runCommand" doc:"Command used to run the agent"`
 }
 
 // GitSource describes a Git source to materialize into a sandbox.

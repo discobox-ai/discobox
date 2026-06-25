@@ -144,6 +144,34 @@ func TestCreateSandboxDefaultsGitSourceSlugs(t *testing.T) {
 	}
 }
 
+func TestCreateSandboxUsesDefaultAgentConfig(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSandboxTestService(t, nil)
+
+	agent, err := svc.CreateAgentConfig(ctx, service.DefaultProjectID, services.CreateAgentConfigBody{
+		Name:       serverapi.NewOptString("Codex"),
+		RunCommand: serverapi.NewOptString("codex exec"),
+	})
+	if err != nil {
+		t.Fatalf("create agent config: %v", err)
+	}
+	project, err := svc.GetProject(ctx, service.DefaultProjectID)
+	if err != nil {
+		t.Fatalf("get project: %v", err)
+	}
+	if project.DefaultAgentConfigID != agent.ID {
+		t.Fatalf("default agent config = %q, want %q", project.DefaultAgentConfigID, agent.ID)
+	}
+
+	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Name: "alpha"})
+	if err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	if created.AgentConfigID == nil || *created.AgentConfigID != agent.ID {
+		t.Fatalf("sandbox agent config = %v, want %q", created.AgentConfigID, agent.ID)
+	}
+}
+
 func TestCreateSandboxRequiresResolvedProviderInstance(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.New(database.Config{DSN: ":memory:"})

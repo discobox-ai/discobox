@@ -343,13 +343,12 @@ func (s *routerTestServices) CreateAgentConfig(_ context.Context, projectID stri
 	if strings.TrimSpace(runCommand) == "" && definition != nil {
 		runCommand = definition.RunCommand
 	}
-	capabilities := services.RawMessage(input.Capabilities)
-	if capabilities == nil && definition != nil {
-		capabilities = agentconfigs.CloneRawMessage(definition.Capabilities)
-	}
 	now := time.Now().UTC()
-	config := model.AgentConfig{ID: id.NewString(), ProjectID: projectID, Name: name, InstallCommand: installCommand, RunCommand: runCommand, Capabilities: capabilities, CreatedAt: now, UpdatedAt: now}
+	config := model.AgentConfig{ID: id.NewString(), ProjectID: projectID, Name: name, InstallCommand: installCommand, RunCommand: runCommand, CreatedAt: now, UpdatedAt: now}
 	s.agentConfigs[config.ID] = config
+	if s.project.DefaultAgentConfigID == "" {
+		s.project.DefaultAgentConfigID = config.ID
+	}
 	return &config, nil
 }
 
@@ -385,12 +384,23 @@ func (s *routerTestServices) UpdateAgentConfig(_ context.Context, projectID, con
 	if runCommand, ok := input.RunCommand.Get(); ok {
 		config.RunCommand = runCommand
 	}
-	if len(input.Capabilities) > 0 {
-		config.Capabilities = services.RawMessage(input.Capabilities)
-	}
 	config.UpdatedAt = time.Now().UTC()
 	s.agentConfigs[config.ID] = config
 	return &config, nil
+}
+
+func (s *routerTestServices) SetDefaultAgentConfig(_ context.Context, projectID, configID string) (*model.Project, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	if _, ok := s.agentConfigs[configID]; !ok {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
+	}
+	s.project.DefaultAgentConfigID = configID
+	project := s.projectWithSandboxes()
+	return &project, nil
 }
 
 func (s *routerTestServices) DeleteAgentConfig(_ context.Context, projectID, configID string) error {
@@ -403,6 +413,9 @@ func (s *routerTestServices) DeleteAgentConfig(_ context.Context, projectID, con
 		return apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
 	}
 	delete(s.agentConfigs, configID)
+	if s.project.DefaultAgentConfigID == configID {
+		s.project.DefaultAgentConfigID = ""
+	}
 	return nil
 }
 
@@ -537,23 +550,30 @@ func (s *routerTestServices) getSandbox(projectID, sandboxID string) (model.Sand
 }
 
 func (s *routerTestServices) resolveAgentConfigID(agentConfigID, agentName services.OptString) (*string, error) {
-	if id, ok := agentConfigID.Get(); ok {
+	if id, ok := agentConfigID.Get(); ok && id != "" {
 		if _, ok := s.agentConfigs[id]; !ok {
 			return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
 		}
 		return &id, nil
 	}
 	name, ok := agentName.Get()
-	if !ok {
-		return nil, nil
-	}
-	for _, config := range s.agentConfigs {
-		if config.Name == name {
-			id := config.ID
-			return &id, nil
+	if ok && strings.TrimSpace(name) != "" {
+		for _, config := range s.agentConfigs {
+			if config.Name == strings.TrimSpace(name) {
+				id := config.ID
+				return &id, nil
+			}
 		}
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
 	}
-	return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
+	if s.project.DefaultAgentConfigID != "" {
+		if _, ok := s.agentConfigs[s.project.DefaultAgentConfigID]; !ok {
+			return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
+		}
+		id := s.project.DefaultAgentConfigID
+		return &id, nil
+	}
+	return nil, nil
 }
 
 func stubSourceCodeReferences(input services.OptCreateSandboxBodySourceCodeReferences) model.SourceCodeReferences {

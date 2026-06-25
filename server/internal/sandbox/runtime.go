@@ -116,7 +116,6 @@ type ResolvedAgentConfig struct {
 	Name           string
 	InstallCommand string
 	RunCommand     string
-	Capabilities   []byte
 }
 
 // PrepareStateProvider can precompute provider-owned state before creation.

@@ -15,8 +15,6 @@ import (
 type AgentConfig struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Agent capabilities or feature metadata.
-	Capabilities jx.Raw `json:"capabilities"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
 	// Stable agent config ID.
@@ -36,11 +34,6 @@ type AgentConfig struct {
 // GetSchema returns the value of Schema.
 func (s *AgentConfig) GetSchema() OptURI {
 	return s.Schema
-}
-
-// GetCapabilities returns the value of Capabilities.
-func (s *AgentConfig) GetCapabilities() jx.Raw {
-	return s.Capabilities
 }
 
 // GetCreatedAt returns the value of CreatedAt.
@@ -81,11 +74,6 @@ func (s *AgentConfig) GetUpdatedAt() time.Time {
 // SetSchema sets the value of Schema.
 func (s *AgentConfig) SetSchema(val OptURI) {
 	s.Schema = val
-}
-
-// SetCapabilities sets the value of Capabilities.
-func (s *AgentConfig) SetCapabilities(val jx.Raw) {
-	s.Capabilities = val
 }
 
 // SetCreatedAt sets the value of CreatedAt.
@@ -131,8 +119,6 @@ func (*AgentConfig) updateAgentConfigRes() {}
 type AgentConfigDefinition struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Agent capabilities or feature metadata.
-	Capabilities jx.Raw `json:"capabilities"`
 	// Agent config definition description.
 	Description OptString `json:"description"`
 	// Stable definition ID.
@@ -148,11 +134,6 @@ type AgentConfigDefinition struct {
 // GetSchema returns the value of Schema.
 func (s *AgentConfigDefinition) GetSchema() OptURI {
 	return s.Schema
-}
-
-// GetCapabilities returns the value of Capabilities.
-func (s *AgentConfigDefinition) GetCapabilities() jx.Raw {
-	return s.Capabilities
 }
 
 // GetDescription returns the value of Description.
@@ -183,11 +164,6 @@ func (s *AgentConfigDefinition) GetRunCommand() string {
 // SetSchema sets the value of Schema.
 func (s *AgentConfigDefinition) SetSchema(val OptURI) {
 	s.Schema = val
-}
-
-// SetCapabilities sets the value of Capabilities.
-func (s *AgentConfigDefinition) SetCapabilities(val jx.Raw) {
-	s.Capabilities = val
 }
 
 // SetDescription sets the value of Description.
@@ -590,8 +566,6 @@ func (*AttachAgentTerminalSwitchingProtocols) attachAgentTerminalRes() {}
 type CreateAgentConfigBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Agent capabilities or feature metadata.
-	Capabilities jx.Raw `json:"capabilities"`
 	// Agent config definition ID to use as defaults.
 	DefinitionId OptString `json:"definitionId"`
 	// Command used to install the agent.
@@ -606,11 +580,6 @@ type CreateAgentConfigBody struct {
 // GetSchema returns the value of Schema.
 func (s *CreateAgentConfigBody) GetSchema() OptURI {
 	return s.Schema
-}
-
-// GetCapabilities returns the value of Capabilities.
-func (s *CreateAgentConfigBody) GetCapabilities() jx.Raw {
-	return s.Capabilities
 }
 
 // GetDefinitionId returns the value of DefinitionId.
@@ -636,11 +605,6 @@ func (s *CreateAgentConfigBody) GetRunCommand() OptString {
 // SetSchema sets the value of Schema.
 func (s *CreateAgentConfigBody) SetSchema(val OptURI) {
 	s.Schema = val
-}
-
-// SetCapabilities sets the value of Capabilities.
-func (s *CreateAgentConfigBody) SetCapabilities(val jx.Raw) {
-	s.Capabilities = val
 }
 
 // SetDefinitionId sets the value of DefinitionId.
@@ -1304,6 +1268,7 @@ func (*ErrorModelStatusCode) reconcileSandboxRes()              {}
 func (*ErrorModelStatusCode) reconcileWorkerRes()               {}
 func (*ErrorModelStatusCode) registerWorkerRes()                {}
 func (*ErrorModelStatusCode) restartSandboxRes()                {}
+func (*ErrorModelStatusCode) setDefaultAgentConfigRes()         {}
 func (*ErrorModelStatusCode) startSandboxRes()                  {}
 func (*ErrorModelStatusCode) stopSandboxRes()                   {}
 func (*ErrorModelStatusCode) updateAgentConfigRes()             {}
@@ -3751,6 +3716,8 @@ type Project struct {
 	Default bool `json:"default"`
 	// Default sandbox provider instance ID.
 	DefaultSandboxProviderId OptString `json:"defaultSandboxProviderId"`
+	// Default agent config ID.
+	DefaultAgentConfigId OptString `json:"defaultAgentConfigId"`
 	// Stable project ID.
 	ID string `json:"id"`
 	// Project members.
@@ -3794,6 +3761,11 @@ func (s *Project) GetDefault() bool {
 // GetDefaultSandboxProviderId returns the value of DefaultSandboxProviderId.
 func (s *Project) GetDefaultSandboxProviderId() OptString {
 	return s.DefaultSandboxProviderId
+}
+
+// GetDefaultAgentConfigId returns the value of DefaultAgentConfigId.
+func (s *Project) GetDefaultAgentConfigId() OptString {
+	return s.DefaultAgentConfigId
 }
 
 // GetID returns the value of ID.
@@ -3866,6 +3838,11 @@ func (s *Project) SetDefaultSandboxProviderId(val OptString) {
 	s.DefaultSandboxProviderId = val
 }
 
+// SetDefaultAgentConfigId sets the value of DefaultAgentConfigId.
+func (s *Project) SetDefaultAgentConfigId(val OptString) {
+	s.DefaultAgentConfigId = val
+}
+
 // SetID sets the value of ID.
 func (s *Project) SetID(val string) {
 	s.ID = val
@@ -3911,7 +3888,8 @@ func (s *Project) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
 }
 
-func (*Project) getProjectRes() {}
+func (*Project) getProjectRes()            {}
+func (*Project) setDefaultAgentConfigRes() {}
 
 // Ref: #/components/schemas/ProjectMember
 type ProjectMember struct {
@@ -5798,8 +5776,6 @@ func (*StreamAgentTerminalResourcesOK) streamAgentTerminalResourcesRes() {}
 type UpdateAgentConfigBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Agent capabilities or feature metadata.
-	Capabilities jx.Raw `json:"capabilities"`
 	// Command used to install the agent.
 	InstallCommand OptString `json:"installCommand"`
 	// Agent config name.
@@ -5811,11 +5787,6 @@ type UpdateAgentConfigBody struct {
 // GetSchema returns the value of Schema.
 func (s *UpdateAgentConfigBody) GetSchema() OptURI {
 	return s.Schema
-}
-
-// GetCapabilities returns the value of Capabilities.
-func (s *UpdateAgentConfigBody) GetCapabilities() jx.Raw {
-	return s.Capabilities
 }
 
 // GetInstallCommand returns the value of InstallCommand.
@@ -5836,11 +5807,6 @@ func (s *UpdateAgentConfigBody) GetRunCommand() OptString {
 // SetSchema sets the value of Schema.
 func (s *UpdateAgentConfigBody) SetSchema(val OptURI) {
 	s.Schema = val
-}
-
-// SetCapabilities sets the value of Capabilities.
-func (s *UpdateAgentConfigBody) SetCapabilities(val jx.Raw) {
-	s.Capabilities = val
 }
 
 // SetInstallCommand sets the value of InstallCommand.

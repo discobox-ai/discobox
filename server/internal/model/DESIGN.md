@@ -81,6 +81,7 @@ erDiagram
     PROJECT ||--o{ PROJECT_EVENT : emits
     PROJECT ||--o{ SANDBOX_ACCESS_ISSUER_KEY : has
     PROJECT ||--o| SANDBOX_PROVIDER_INSTANCE : default_provider
+    PROJECT ||--o| AGENT_CONFIG : default_agent
 
     AGENT_CONFIG ||--o{ SANDBOX : runs
     SANDBOX_PROVIDER_INSTANCE ||--o{ SANDBOX : manages
@@ -101,6 +102,7 @@ erDiagram
         string name
         string slug
         string default_sandbox_provider_id
+        string default_agent_config_id
     }
 
     SERVER_STATE {

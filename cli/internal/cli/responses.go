@@ -35,5 +35,15 @@ func responseError(res any) error {
 			return fmt.Errorf("request failed: %d %s", status, http.StatusText(status))
 		}
 	}
+	if problem, ok := res.(*apiclientgen.ErrorResponseStatusCode); ok {
+		status := problem.StatusCode
+		message := problem.Response.Error
+		if message != "" {
+			return fmt.Errorf("request failed: %d %s", status, message)
+		}
+		if status != 0 {
+			return fmt.Errorf("request failed: %d %s", status, http.StatusText(status))
+		}
+	}
 	return fmt.Errorf("unexpected response type %T", res)
 }

@@ -450,7 +450,6 @@ func (r *SandboxReconcileExecutor) createOptionsFromSandbox(ctx context.Context,
 				Name:           cfg.Name,
 				InstallCommand: cfg.InstallCommand,
 				RunCommand:     cfg.RunCommand,
-				Capabilities:   append([]byte(nil), cfg.Capabilities...),
 			}
 		}
 	}

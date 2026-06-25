@@ -128,7 +128,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if provider.Disabled {
 		return nil, fmt.Errorf("provider instance disabled")
 	}
-	agentConfigID, err := s.resolveAgentConfigID(ctx, projectID, input.AgentConfigId, input.AgentName)
+	agentConfigID, err := s.resolveAgentConfigID(ctx, project, input.AgentConfigId, input.AgentName)
 	if err != nil {
 		return nil, err
 	}
@@ -190,19 +190,29 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	return s.jobs.CreateSandbox(ctx, sandbox)
 }
 
-func (s *Service) resolveAgentConfigID(ctx context.Context, projectID string, agentConfigID, agentName services.OptString) (*string, error) {
+func (s *Service) resolveAgentConfigID(ctx context.Context, project *model.Project, agentConfigID, agentName services.OptString) (*string, error) {
+	if project == nil {
+		return nil, fmt.Errorf("project is required")
+	}
 	if id, ok := agentConfigID.Get(); ok && id != "" {
-		config, err := s.store.GetAgentConfig(ctx, projectID, id)
+		config, err := s.store.GetAgentConfig(ctx, project.ID, id)
 		if err != nil {
 			return nil, mapAPIError(err, "agent config not found")
 		}
 		return &config.ID, nil
 	}
 	name, ok := agentName.Get()
-	if !ok || strings.TrimSpace(name) == "" {
+	if ok && strings.TrimSpace(name) != "" {
+		config, err := s.store.GetAgentConfigByName(ctx, project.ID, strings.TrimSpace(name))
+		if err != nil {
+			return nil, mapAPIError(err, "agent config not found")
+		}
+		return &config.ID, nil
+	}
+	if project.DefaultAgentConfigID == "" {
 		return nil, nil
 	}
-	config, err := s.store.GetAgentConfigByName(ctx, projectID, strings.TrimSpace(name))
+	config, err := s.store.GetAgentConfig(ctx, project.ID, project.DefaultAgentConfigID)
 	if err != nil {
 		return nil, mapAPIError(err, "agent config not found")
 	}

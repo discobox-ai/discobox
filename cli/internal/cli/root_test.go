@@ -368,6 +368,31 @@ func TestSandboxListQuietCommandPrintsFullIDsOnly(t *testing.T) {
 	}
 }
 
+func TestAgentSetDefaultCommand(t *testing.T) {
+	const agentID = "agent-full-id"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/projects/project-1/agent-configs/"+agentID+"/default" {
+			t.Fatalf("request = %s %s, want PUT set-default path", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","slug":"project-1","default":true,"defaultAgentConfigId":"` + agentID + `","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "agents", "set-default", agentID})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute set-default: %v", err)
+	}
+	if got, want := out.String(), "default agent config set to "+shortID(agentID)+"\n"; got != want {
+		t.Fatalf("output = %q, want %q", got, want)
+	}
+}
+
 func TestWriteSandboxesTableIncludesErrorMessage(t *testing.T) {
 	app := &App{output: "table"}
 	cmd := &cobra.Command{}
