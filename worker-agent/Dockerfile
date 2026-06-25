@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1
+# syntax=docker/dockerfile:1.7
 
 FROM golang:1.26-trixie AS build
 
@@ -10,7 +10,9 @@ COPY worker-agent/go.mod worker-agent/go.sum ./worker-agent/
 COPY worker-agent/cmd ./worker-agent/cmd
 COPY worker-agent ./worker-agent
 WORKDIR /src/worker-agent
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/discobox-worker-agent ./cmd/discobox-worker-agent
+RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
+    --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
+    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/discobox-worker-agent ./cmd/discobox-worker-agent
 
 FROM debian:13-slim
 
