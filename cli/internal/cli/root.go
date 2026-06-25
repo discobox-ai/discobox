@@ -24,6 +24,7 @@ type App struct {
 	projectID string
 	token     string
 	output    string
+	quiet     bool
 	debug     bool
 	noStart   bool
 	errOut    io.Writer
@@ -58,6 +59,10 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(app.newCompletionCommand())
 	cmd.AddCommand(app.newServerCommand())
 	return cmd
+}
+
+func (a *App) addQuietFlag(cmd *cobra.Command) {
+	cmd.Flags().BoolVarP(&a.quiet, "quiet", "q", false, "Only display resource IDs")
 }
 
 func (a *App) validate() error {

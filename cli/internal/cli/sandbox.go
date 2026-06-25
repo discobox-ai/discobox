@@ -63,7 +63,7 @@ func (a *App) newSandboxCommand() *cobra.Command {
 }
 
 func (a *App) newSandboxListCommand() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List sandboxes",
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -86,6 +86,8 @@ func (a *App) newSandboxListCommand() *cobra.Command {
 			return a.writeSandboxes(cmd, body.GetSandboxes())
 		},
 	}
+	a.addQuietFlag(cmd)
+	return cmd
 }
 
 func (a *App) newSandboxGetCommand() *cobra.Command {
@@ -195,23 +197,32 @@ func (a *App) newSandboxUpdateCommand() *cobra.Command {
 
 func (a *App) newSandboxDeleteCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "delete SANDBOX_ID",
+		Use:   "delete SANDBOX_ID...",
 		Short: "Delete a sandbox",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
+			projectID, err := a.projectIDValue()
 			if err != nil {
 				return err
 			}
-			res, err := client.DeleteSandbox(cmd.Context(), apiclientgen.DeleteSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
+			client, err := a.apiClient()
 			if err != nil {
 				return err
 			}
-			if err := expectNoContent[apiclientgen.DeleteSandboxAccepted](res); err != nil {
-				return err
-			}
-			fmt.Fprintln(cmd.OutOrStdout(), "deleted")
-			return nil
+			return runDeleteMany(cmd, args, "sandbox", func(arg string) (string, error) {
+				sandboxID, err := a.resolveSandboxID(cmd.Context(), client, projectID, arg)
+				if err != nil {
+					return "", err
+				}
+				res, err := client.DeleteSandbox(cmd.Context(), apiclientgen.DeleteSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
+				if err != nil {
+					return "", err
+				}
+				if err := expectNoContent[apiclientgen.DeleteSandboxAccepted](res); err != nil {
+					return "", err
+				}
+				return sandboxID, nil
+			})
 		},
 	}
 }

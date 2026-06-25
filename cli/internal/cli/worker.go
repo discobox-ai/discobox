@@ -24,6 +24,7 @@ func (a *App) newWorkerCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&opts.provider, "provider", "", "Filter by provider instance ID")
+	a.addQuietFlag(cmd)
 	cmd.AddCommand(a.newWorkerListCommand())
 	return cmd
 }
@@ -38,6 +39,7 @@ func (a *App) newWorkerListCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&opts.provider, "provider", "", "Filter by provider instance ID")
+	a.addQuietFlag(cmd)
 	return cmd
 }
 

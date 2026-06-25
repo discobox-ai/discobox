@@ -25,7 +25,7 @@ func (a *App) newProviderCommand() *cobra.Command {
 }
 
 func (a *App) newProviderCatalogCommand() *cobra.Command {
-	return &cobra.Command{Use: "catalog", Short: "List available provider types", RunE: func(cmd *cobra.Command, _ []string) error {
+	cmd := &cobra.Command{Use: "catalog", Short: "List available provider types", RunE: func(cmd *cobra.Command, _ []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -40,10 +40,12 @@ func (a *App) newProviderCatalogCommand() *cobra.Command {
 		}
 		return a.writeProviderCatalog(cmd, body.GetProviders())
 	}}
+	a.addQuietFlag(cmd)
+	return cmd
 }
 
 func (a *App) newProviderListCommand() *cobra.Command {
-	return &cobra.Command{Use: "list", Short: "List provider instances", RunE: func(cmd *cobra.Command, _ []string) error {
+	cmd := &cobra.Command{Use: "list", Short: "List provider instances", RunE: func(cmd *cobra.Command, _ []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
@@ -62,6 +64,8 @@ func (a *App) newProviderListCommand() *cobra.Command {
 		}
 		return a.writeProviders(cmd, body.GetProviders())
 	}}
+	a.addQuietFlag(cmd)
+	return cmd
 }
 
 func (a *App) newProviderGetCommand() *cobra.Command {
@@ -162,7 +166,7 @@ Examples:
 }
 
 func (a *App) newProviderDeleteCommand() *cobra.Command {
-	return &cobra.Command{Use: "delete PROVIDER_ID", Short: "Delete a provider instance", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "delete PROVIDER_ID...", Short: "Delete provider instances", Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
@@ -171,19 +175,20 @@ func (a *App) newProviderDeleteCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		providerID, err := a.resolveProviderID(cmd.Context(), client, projectID, args[0])
-		if err != nil {
-			return err
-		}
-		res, err := client.DeleteSandboxProviderInstance(cmd.Context(), apiclientgen.DeleteSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID})
-		if err != nil {
-			return err
-		}
-		if err := expectNoContent[apiclientgen.DeleteSandboxProviderInstanceNoContent](res); err != nil {
-			return err
-		}
-		fmt.Fprintln(cmd.OutOrStdout(), "deleted")
-		return nil
+		return runDeleteMany(cmd, args, "provider", func(arg string) (string, error) {
+			providerID, err := a.resolveProviderID(cmd.Context(), client, projectID, arg)
+			if err != nil {
+				return "", err
+			}
+			res, err := client.DeleteSandboxProviderInstance(cmd.Context(), apiclientgen.DeleteSandboxProviderInstanceParams{ProjectId: projectID, ProviderId: providerID})
+			if err != nil {
+				return "", err
+			}
+			if err := expectNoContent[apiclientgen.DeleteSandboxProviderInstanceNoContent](res); err != nil {
+				return "", err
+			}
+			return providerID, nil
+		})
 	}}
 }
 

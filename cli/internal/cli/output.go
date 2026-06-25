@@ -23,6 +23,15 @@ func writeJSON(w io.Writer, value any) error {
 	return encoder.Encode(value)
 }
 
+func writeResourceIDs[T any](w io.Writer, values []T, id func(T) string) error {
+	for _, value := range values {
+		if _, err := fmt.Fprintln(w, id(value)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error {
 	if sandbox == nil {
 		return nil
@@ -44,6 +53,10 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 }
 
 func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox) error {
+	if a.quiet {
+		sandboxes = sortedByCreatedAt(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return sandbox.CreatedAt })
+		return writeResourceIDs(cmd.OutOrStdout(), sandboxes, func(sandbox apimodel.Sandbox) string { return sandbox.ID })
+	}
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"sandboxes": sandboxes})
 	}
@@ -64,6 +77,9 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox) e
 }
 
 func (a *App) writeProviderCatalog(cmd *cobra.Command, providers []apimodel.SandboxProviderCatalogItem) error {
+	if a.quiet {
+		return writeResourceIDs(cmd.OutOrStdout(), providers, func(provider apimodel.SandboxProviderCatalogItem) string { return provider.ID })
+	}
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"providers": providers})
 	}
@@ -100,6 +116,10 @@ func (a *App) writeProvider(cmd *cobra.Command, provider *apimodel.SandboxProvid
 }
 
 func (a *App) writeProviders(cmd *cobra.Command, providers []apimodel.SandboxProviderInstance) error {
+	if a.quiet {
+		providers = sortedByCreatedAt(providers, func(provider apimodel.SandboxProviderInstance) time.Time { return provider.CreatedAt })
+		return writeResourceIDs(cmd.OutOrStdout(), providers, func(provider apimodel.SandboxProviderInstance) string { return provider.ID })
+	}
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"providers": providers})
 	}
@@ -122,6 +142,10 @@ func (a *App) writeProviders(cmd *cobra.Command, providers []apimodel.SandboxPro
 }
 
 func (a *App) writeWorkers(cmd *cobra.Command, workers []apimodel.Worker) error {
+	if a.quiet {
+		workers = sortedByCreatedAt(workers, func(worker apimodel.Worker) time.Time { return worker.CreatedAt })
+		return writeResourceIDs(cmd.OutOrStdout(), workers, func(worker apimodel.Worker) string { return worker.ID })
+	}
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"workers": workers})
 	}
@@ -170,6 +194,9 @@ func (a *App) writeAgentDefinition(cmd *cobra.Command, definition *apimodel.Agen
 }
 
 func (a *App) writeAgentDefinitions(cmd *cobra.Command, definitions []apimodel.AgentConfigDefinition) error {
+	if a.quiet {
+		return writeResourceIDs(cmd.OutOrStdout(), definitions, func(definition apimodel.AgentConfigDefinition) string { return definition.ID })
+	}
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"agentConfigDefinitions": definitions})
 	}
@@ -195,6 +222,10 @@ func (a *App) writeAgent(cmd *cobra.Command, agent *apimodel.AgentConfig) error 
 }
 
 func (a *App) writeAgents(cmd *cobra.Command, agents []apimodel.AgentConfig) error {
+	if a.quiet {
+		agents = sortedByCreatedAt(agents, func(agent apimodel.AgentConfig) time.Time { return agent.CreatedAt })
+		return writeResourceIDs(cmd.OutOrStdout(), agents, func(agent apimodel.AgentConfig) string { return agent.ID })
+	}
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"agentConfigs": agents})
 	}
@@ -208,6 +239,10 @@ func (a *App) writeAgents(cmd *cobra.Command, agents []apimodel.AgentConfig) err
 }
 
 func (a *App) writeJobs(cmd *cobra.Command, jobs []apimodel.Job) error {
+	if a.quiet {
+		jobs = sortedByCreatedAt(jobs, func(job apimodel.Job) time.Time { return job.CreatedAt })
+		return writeResourceIDs(cmd.OutOrStdout(), jobs, func(job apimodel.Job) string { return job.ID })
+	}
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"jobs": jobs})
 	}

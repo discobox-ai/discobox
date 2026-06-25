@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/spf13/cobra"
 
@@ -68,11 +67,12 @@ func (a *App) newAgentDefinitionsCommand() *cobra.Command {
 		return a.writeAgentDefinitions(cmd, body.GetAgentConfigDefinitions())
 	}}
 	cmd.Args = cobra.MaximumNArgs(1)
+	a.addQuietFlag(cmd)
 	return cmd
 }
 
 func (a *App) newAgentListCommand() *cobra.Command {
-	return &cobra.Command{Use: "list", Short: "List agent configs", RunE: func(cmd *cobra.Command, _ []string) error {
+	cmd := &cobra.Command{Use: "list", Short: "List agent configs", RunE: func(cmd *cobra.Command, _ []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
@@ -91,6 +91,8 @@ func (a *App) newAgentListCommand() *cobra.Command {
 		}
 		return a.writeAgents(cmd, body.GetAgentConfigs())
 	}}
+	a.addQuietFlag(cmd)
+	return cmd
 }
 
 func (a *App) newAgentGetCommand() *cobra.Command {
@@ -179,20 +181,29 @@ func (a *App) newAgentUpdateCommand() *cobra.Command {
 }
 
 func (a *App) newAgentDeleteCommand() *cobra.Command {
-	return &cobra.Command{Use: "delete AGENT_CONFIG_ID", Short: "Delete an agent config", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
-		projectID, agentID, client, err := a.agentRequest(cmd.Context(), args[0])
+	return &cobra.Command{Use: "delete AGENT_CONFIG_ID...", Short: "Delete agent configs", Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
 		}
-		res, err := client.DeleteAgentConfig(cmd.Context(), apiclientgen.DeleteAgentConfigParams{ProjectId: projectID, AgentConfigId: agentID})
+		client, err := a.apiClient()
 		if err != nil {
 			return err
 		}
-		if err := expectNoContent[apiclientgen.DeleteAgentConfigNoContent](res); err != nil {
-			return err
-		}
-		fmt.Fprintln(cmd.OutOrStdout(), "deleted")
-		return nil
+		return runDeleteMany(cmd, args, "agent config", func(arg string) (string, error) {
+			agentID, err := a.resolveAgentConfigID(cmd.Context(), client, projectID, arg)
+			if err != nil {
+				return "", err
+			}
+			res, err := client.DeleteAgentConfig(cmd.Context(), apiclientgen.DeleteAgentConfigParams{ProjectId: projectID, AgentConfigId: agentID})
+			if err != nil {
+				return "", err
+			}
+			if err := expectNoContent[apiclientgen.DeleteAgentConfigNoContent](res); err != nil {
+				return "", err
+			}
+			return agentID, nil
+		})
 	}}
 }
 

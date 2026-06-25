@@ -14,6 +14,7 @@ func (a *App) newJobCommand() *cobra.Command {
 		Short:   "Inspect durable jobs",
 		RunE:    a.runJobList,
 	}
+	a.addQuietFlag(cmd)
 	cmd.AddCommand(a.newJobListCommand())
 	cmd.AddCommand(a.newJobGetCommand())
 	cmd.AddCommand(a.newJobRunNowCommand())
@@ -21,11 +22,13 @@ func (a *App) newJobCommand() *cobra.Command {
 }
 
 func (a *App) newJobListCommand() *cobra.Command {
-	return &cobra.Command{
+	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List jobs for the current project",
 		RunE:  a.runJobList,
 	}
+	a.addQuietFlag(cmd)
+	return cmd
 }
 
 func (a *App) newJobGetCommand() *cobra.Command {
