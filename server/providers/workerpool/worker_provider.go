@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	"github.com/obot-platform/discobox/server/internal/model"
@@ -355,11 +356,83 @@ func (p *WorkerPoolProvider) sandboxProviderFromState(ctx context.Context, state
 }
 
 func (p *WorkerPoolProvider) sandboxProviderForWorker(ctx context.Context, worker *model.Worker) (sandbox.Provider, error) {
-	lease, err := p.workerProvider.AcquireWorkerHTTPClient(ctx, worker)
+	lease, err := p.acquireWorkerHTTPClient(ctx, worker)
 	if err != nil {
 		return nil, err
 	}
 	return &workerAgentSandboxProvider{workerID: worker.ID, tokenIssuer: p.manager, lease: lease}, nil
+}
+
+func (p *WorkerPoolProvider) acquireWorkerHTTPClient(ctx context.Context, worker *model.Worker) (*transport.HTTPClientLease, error) {
+	lease, err := p.workerProvider.AcquireWorkerHTTPClient(ctx, worker)
+	if err == nil {
+		return lease, nil
+	}
+	if p.manager == nil || worker == nil || strings.TrimSpace(worker.ID) == "" {
+		return nil, err
+	}
+	worker, retryErr := p.reconcileWorkerAfterHTTPClientError(ctx, worker.ID)
+	if retryErr != nil {
+		return nil, retryErr
+	}
+	return p.workerProvider.AcquireWorkerHTTPClient(ctx, worker)
+}
+
+func (p *WorkerPoolProvider) reconcileWorkerAfterHTTPClientError(ctx context.Context, workerID string) (*model.Worker, error) {
+	current, err := p.manager.GetWorker(ctx, workerID)
+	if err != nil {
+		return nil, err
+	}
+	if current == nil || strings.TrimSpace(current.ID) == "" {
+		return nil, sandbox.ErrNoSandboxCapacity
+	}
+	if err := p.manager.ScheduleWorkerReconciliation(ctx, current.ID); err != nil {
+		return nil, err
+	}
+	return p.waitForWorkerReconcile(ctx, current.ID)
+}
+
+func (p *WorkerPoolProvider) waitForWorkerReconcile(ctx context.Context, workerID string) (*model.Worker, error) {
+	deadline := time.Now().Add(workerCapacityWaitTimeout)
+	for {
+		worker, err := p.manager.GetWorker(ctx, workerID)
+		if err != nil {
+			return nil, err
+		}
+		if worker != nil && worker.LastJobID != nil && strings.TrimSpace(*worker.LastJobID) != "" {
+			job, err := p.manager.GetJob(ctx, *worker.LastJobID)
+			if err != nil {
+				return nil, err
+			}
+			if workerReconcileJobTerminal(job) {
+				return worker, nil
+			}
+		}
+		if workerCapacityWaitTimeout <= 0 || !time.Now().Before(deadline) {
+			return nil, sandbox.ErrNoSandboxCapacity
+		}
+		timer := time.NewTimer(workerCapacityPollInterval)
+		select {
+		case <-ctx.Done():
+			if !timer.Stop() {
+				<-timer.C
+			}
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func workerReconcileJobTerminal(job *orchestration.Job) bool {
+	if job == nil {
+		return false
+	}
+	switch job.Status {
+	case orchestration.StatusCompleted, orchestration.StatusFailed, orchestration.StatusCanceled:
+		return true
+	default:
+		return false
+	}
 }
 
 func workerIDFromRuntimeState(state []byte) (string, error) {

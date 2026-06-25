@@ -704,6 +704,63 @@ func TestWorkerProviderAcquireHTTPClientUsesWorkerIDFromState(t *testing.T) {
 	}
 }
 
+func TestWorkerProviderAcquireHTTPClientReconcilesWorkerAndRetries(t *testing.T) {
+	oldTimeout := workerCapacityWaitTimeout
+	oldInterval := workerCapacityPollInterval
+	workerCapacityWaitTimeout = 50 * time.Millisecond
+	workerCapacityPollInterval = time.Millisecond
+	t.Cleanup(func() {
+		workerCapacityWaitTimeout = oldTimeout
+		workerCapacityPollInterval = oldInterval
+	})
+
+	driver := &workerHTTPOnlyDriver{
+		client:      http.DefaultClient,
+		baseURL:     "https://worker.example",
+		authToken:   "worker-token",
+		acquireErrs: []error{sandbox.ErrNotFound},
+	}
+	baseProvider, err := vm.New(vm.Config{Driver: driver})
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+	jobID := "worker-job-1"
+	worker := &model.Worker{
+		ID:                 "worker-1",
+		ProjectID:          "project-1",
+		ProviderInstanceID: "provider-1",
+		ResourceLifecycle: model.ResourceLifecycle{
+			DesiredState:        model.WorkerDesiredStateActive,
+			Phase:               model.WorkerPhaseActive,
+			LastOperationStatus: model.OperationStatusSuccess,
+		},
+	}
+	workerManager := &recordingWorkerManager{
+		worker: worker,
+		jobs: map[string]*orchestration.Job{
+			jobID: {ID: jobID, Status: orchestration.StatusCompleted},
+		},
+		scheduledWorkerJobID: jobID,
+	}
+	provider := NewWorkerPoolProvider(baseProvider, WorkerPoolConfig{}, workerManager, false)
+	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"worker_id": "worker-1"}})
+
+	lease, err := provider.AcquireHTTPClient(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, []string{workeragentauth.ScopeSandboxRead})
+	if err != nil {
+		t.Fatalf("acquire HTTP client: %v", err)
+	}
+	defer lease.Release()
+	if workerManager.scheduleWorkerCalls != 1 {
+		t.Fatalf("scheduled worker reconciles = %d, want 1", workerManager.scheduleWorkerCalls)
+	}
+	if driver.acquireCalls != 2 {
+		t.Fatalf("AcquireWorkerHTTPClient calls = %d, want 2", driver.acquireCalls)
+	}
+	if lease.BaseURL != "https://worker.example" {
+		t.Fatalf("lease base URL = %q, want worker URL", lease.BaseURL)
+	}
+}
+
 func workerRuntimeState(t *testing.T, runtimeSandbox *sandbox.Sandbox) []byte {
 	t.Helper()
 	state, err := json.Marshal(runtimeSandbox)
@@ -720,6 +777,8 @@ type workerHTTPOnlyDriver struct {
 	authTokenProvider func(context.Context) (string, error)
 	workerID          string
 	inspectCalls      int
+	acquireCalls      int
+	acquireErrs       []error
 }
 
 type existingInstanceDriver struct {
@@ -791,7 +850,15 @@ func (d *workerHTTPOnlyDriver) InspectVM(context.Context, string) (*vm.Instance,
 }
 
 func (d *workerHTTPOnlyDriver) AcquireWorkerHTTPClient(_ context.Context, workerID string) (*transport.HTTPClientLease, error) {
+	d.acquireCalls++
 	d.workerID = workerID
+	if len(d.acquireErrs) > 0 {
+		err := d.acquireErrs[0]
+		d.acquireErrs = d.acquireErrs[1:]
+		if err != nil {
+			return nil, err
+		}
+	}
 	if d.authTokenProvider != nil {
 		return transport.NewHTTPClientLeaseWithBaseURLAndAuthProvider(d.client, d.baseURL, d.authTokenProvider, nil), nil
 	}
@@ -862,8 +929,11 @@ type recordingWorkerManager struct {
 	sandbox                 *model.Sandbox
 	findCalls               int
 	listCalls               int
+	scheduleWorkerCalls     int
 	workerAgentTokenClaims  []workeragentauth.TokenClaims
 	sandboxAgentTokenClaims []workeragentauth.TokenClaims
+	jobs                    map[string]*orchestration.Job
+	scheduledWorkerJobID    string
 }
 
 func (s *recordingWorkerManager) ListWorkers(context.Context, string, string) ([]model.Worker, error) {
@@ -926,7 +996,22 @@ func (s *recordingWorkerManager) ScheduleWorkerProviderReconciliation(context.Co
 }
 
 func (s *recordingWorkerManager) ScheduleWorkerReconciliation(context.Context, string) error {
+	s.scheduleWorkerCalls++
+	if s.worker != nil && s.scheduledWorkerJobID != "" {
+		s.worker.LastJobID = &s.scheduledWorkerJobID
+	}
 	return nil
+}
+
+func (s *recordingWorkerManager) GetJob(_ context.Context, id string) (*orchestration.Job, error) {
+	if s.jobs == nil {
+		return nil, orchestration.ErrJobNotFound
+	}
+	job := s.jobs[id]
+	if job == nil {
+		return nil, orchestration.ErrJobNotFound
+	}
+	return job, nil
 }
 
 type capacityWaitWorkerManager struct {
@@ -993,6 +1078,10 @@ func (s *capacityWaitWorkerManager) ScheduleWorkerProviderReconciliation(context
 
 func (s *capacityWaitWorkerManager) ScheduleWorkerReconciliation(context.Context, string) error {
 	return nil
+}
+
+func (s *capacityWaitWorkerManager) GetJob(context.Context, string) (*orchestration.Job, error) {
+	return nil, orchestration.ErrJobNotFound
 }
 
 type repairingWorkerManager struct {
