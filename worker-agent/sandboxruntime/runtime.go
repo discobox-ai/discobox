@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -134,15 +135,9 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	if imageName == "" {
 		imageName = defaultSandboxImage
 	}
-	pull, err := r.client.ImagePull(ctx, imageName, client.ImagePullOptions{})
-	if err != nil {
+	if err := r.ensureImageAvailable(ctx, imageName); err != nil {
 		return nil, err
 	}
-	if err := pull.Wait(ctx); err != nil {
-		_ = pull.Close()
-		return nil, err
-	}
-	_ = pull.Close()
 	user := resolveSandboxUser(req)
 	mounts, err := r.prepareSandboxVolumes(ctx, sandboxID, req, user)
 	if err != nil {
@@ -177,6 +172,23 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		return nil, err
 	}
 	return r.GetSandbox(ctx, sandboxID)
+}
+
+func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, imageName string) error {
+	if _, err := r.client.ImageInspect(ctx, imageName); err == nil {
+		return nil
+	} else if !cerrdefs.IsNotFound(err) {
+		return err
+	}
+	pull, err := r.client.ImagePull(ctx, imageName, client.ImagePullOptions{})
+	if err != nil {
+		return fmt.Errorf("pull image %q: %w", imageName, err)
+	}
+	defer pull.Close()
+	if err := pull.Wait(ctx); err != nil {
+		return fmt.Errorf("pull image %q: %w", imageName, err)
+	}
+	return nil
 }
 
 func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxCreateRequest, user sandboxUserIdentity) ([]mount.Mount, error) {
