@@ -31,6 +31,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
         less \
         procps \
         passwd \
+        sudo \
         systemd \
         systemd-sysv \
         util-linux \

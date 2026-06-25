@@ -36,6 +36,15 @@ else
   else
     useradd --uid "$discobox_user_uid" --gid "$discobox_group_name" --home-dir "$discobox_user_home" --shell /bin/bash "$discobox_user_name"
   fi
+
+  if ! [[ "$discobox_user_name" =~ ^[A-Za-z_][A-Za-z0-9_.-]*[$]?$ ]]; then
+    echo "DISCOBOX_USER_NAME is not safe for sudoers: $discobox_user_name" >&2
+    exit 1
+  fi
+  install -d -m 0750 /etc/sudoers.d
+  printf '%s ALL=(ALL) NOPASSWD:ALL\n' "$discobox_user_name" > /etc/sudoers.d/discobox-user
+  chmod 0440 /etc/sudoers.d/discobox-user
+  visudo -cf /etc/sudoers.d/discobox-user >/dev/null
 fi
 
 install -d -m 0755 -o "$discobox_user_uid" -g "$discobox_user_gid" "$discobox_user_home"
