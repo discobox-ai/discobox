@@ -1300,6 +1300,8 @@ func (*ErrorModelStatusCode) listSandboxProviderCatalogRes()    {}
 func (*ErrorModelStatusCode) listSandboxProviderInstancesRes()  {}
 func (*ErrorModelStatusCode) listSandboxesRes()                 {}
 func (*ErrorModelStatusCode) listWorkersRes()                   {}
+func (*ErrorModelStatusCode) reconcileSandboxRes()              {}
+func (*ErrorModelStatusCode) reconcileWorkerRes()               {}
 func (*ErrorModelStatusCode) registerWorkerRes()                {}
 func (*ErrorModelStatusCode) restartSandboxRes()                {}
 func (*ErrorModelStatusCode) startSandboxRes()                  {}
@@ -5025,12 +5027,13 @@ func (s *Sandbox) SetWorkerId(val OptString) {
 	s.WorkerId = val
 }
 
-func (*Sandbox) createSandboxRes()  {}
-func (*Sandbox) getSandboxRes()     {}
-func (*Sandbox) restartSandboxRes() {}
-func (*Sandbox) startSandboxRes()   {}
-func (*Sandbox) stopSandboxRes()    {}
-func (*Sandbox) updateSandboxRes()  {}
+func (*Sandbox) createSandboxRes()    {}
+func (*Sandbox) getSandboxRes()       {}
+func (*Sandbox) reconcileSandboxRes() {}
+func (*Sandbox) restartSandboxRes()   {}
+func (*Sandbox) startSandboxRes()     {}
+func (*Sandbox) stopSandboxRes()      {}
+func (*Sandbox) updateSandboxRes()    {}
 
 // Current queued or running operation.
 type SandboxActiveOperation string
@@ -6480,6 +6483,7 @@ func (s *Worker) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
 }
 
+func (*Worker) reconcileWorkerRes()    {}
 func (*Worker) updateWorkerStatusRes() {}
 
 // Current queued or running operation.

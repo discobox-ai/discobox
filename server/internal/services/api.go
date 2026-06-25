@@ -61,6 +61,7 @@ type SandboxService interface {
 	StartSandbox(ctx context.Context, projectID, sandboxID string, input StartSandboxBody) (*model.Sandbox, error)
 	StopSandbox(ctx context.Context, projectID, sandboxID string, input StopSandboxBody) (*model.Sandbox, error)
 	RestartSandbox(ctx context.Context, projectID, sandboxID string, input RestartSandboxBody) (*model.Sandbox, error)
+	ReconcileSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
 	AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*HTTPClientLease, *model.Sandbox, error)
 }
 
@@ -77,6 +78,7 @@ type WorkerService interface {
 	ListWorkers(ctx context.Context, projectID, providerID string) ([]model.Worker, error)
 	RegisterWorker(ctx context.Context, input RegisterWorkerBody) (*RegisterWorkerResponseBody, error)
 	UpdateWorkerStatus(ctx context.Context, workerID string, input UpdateWorkerStatusBody) (*model.Worker, error)
+	ReconcileWorker(ctx context.Context, projectID, workerID string) (*model.Worker, error)
 }
 
 // JobService provides project-scoped durable job visibility.

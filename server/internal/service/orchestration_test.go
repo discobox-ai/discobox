@@ -74,6 +74,33 @@ func TestSandboxIntentCreatesGenerationScopedJobs(t *testing.T) {
 	}
 }
 
+func TestReconcileSandboxDoesNotChangeIntent(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSandboxTestService(t, nil)
+
+	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Name: "alpha"})
+	if err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	if created.LastJobID == nil {
+		t.Fatal("create last job ID is nil")
+	}
+
+	reconciled, err := svc.ReconcileSandbox(ctx, service.DefaultProjectID, created.ID)
+	if err != nil {
+		t.Fatalf("reconcile sandbox: %v", err)
+	}
+	if reconciled.Generation != created.Generation {
+		t.Fatalf("reconcile generation = %d, want %d", reconciled.Generation, created.Generation)
+	}
+	if reconciled.DesiredState != created.DesiredState || derefString(reconciled.ActiveOperation) != derefString(created.ActiveOperation) {
+		t.Fatalf("reconcile intent = %q/%q, want %q/%q", reconciled.DesiredState, derefString(reconciled.ActiveOperation), created.DesiredState, derefString(created.ActiveOperation))
+	}
+	if reconciled.LastJobID == nil || *reconciled.LastJobID == *created.LastJobID {
+		t.Fatalf("reconcile last job ID = %v, want new job", reconciled.LastJobID)
+	}
+}
+
 func TestCreateSandboxDefaultsGitSourceSlugs(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newSandboxTestService(t, nil)
@@ -320,6 +347,13 @@ func installDefaultSandboxProviderInstance(ctx context.Context, t *testing.T, ap
 	if err := appStore.UpsertProject(ctx, project); err != nil {
 		t.Fatalf("set default provider: %v", err)
 	}
+}
+
+func derefString(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
 }
 
 type noopSandboxProvider struct{}

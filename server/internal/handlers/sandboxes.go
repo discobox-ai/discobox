@@ -104,3 +104,15 @@ func (h *Handler) RestartSandbox(ctx context.Context, req *apimodel.RestartSandb
 	}
 	return &body, nil
 }
+
+func (h *Handler) ReconcileSandbox(ctx context.Context, params serverapi.ReconcileSandboxParams) (serverapi.ReconcileSandboxRes, error) {
+	sandbox, err := h.services.Sandboxes.ReconcileSandbox(ctx, params.ProjectId, params.SandboxId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.SandboxToAPI(sandbox)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/auth"
 	"github.com/obot-platform/discobox/server/internal/model"
@@ -18,10 +19,19 @@ import (
 
 type Service struct {
 	store *store.Store
+	jobs  WorkerReconcileJobManager
 }
 
-func NewService(store *store.Store) *Service {
-	return &Service{store: store}
+type WorkerReconcileJobManager interface {
+	SubmitWorkerReconcile(context.Context, string) (*orchestration.Job, error)
+}
+
+func NewService(store *store.Store, jobs ...WorkerReconcileJobManager) *Service {
+	svc := &Service{store: store}
+	if len(jobs) > 0 {
+		svc.jobs = jobs[0]
+	}
+	return svc
 }
 
 func (s *Service) RegisterWorker(ctx context.Context, input services.RegisterWorkerBody) (*services.RegisterWorkerResponseBody, error) {
@@ -91,6 +101,35 @@ func (s *Service) UpdateWorkerStatus(ctx context.Context, workerID string, input
 		return nil, apperrors.NewStatusError(http.StatusForbidden, "worker is not authorized to update this status")
 	}
 	worker, err := s.store.UpdateWorkerStatus(ctx, workerID, input.Ready, input.Schedulable, input.Degraded, input.AvailableCpuVcpus, input.AvailableMemoryBytes, input.AvailableStorageBytes, services.RawMessage(input.Conditions))
+	if err != nil {
+		return nil, apiError(err, "worker not found")
+	}
+	return worker, nil
+}
+
+func (s *Service) ReconcileWorker(ctx context.Context, projectID, workerID string) (*model.Worker, error) {
+	if s.jobs == nil {
+		return nil, fmt.Errorf("job manager is required")
+	}
+	projectID = strings.TrimSpace(projectID)
+	workerID = strings.TrimSpace(workerID)
+	if projectID == "" {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "projectId is required")
+	}
+	if workerID == "" {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "workerId is required")
+	}
+	worker, err := s.store.GetWorker(ctx, workerID)
+	if err != nil {
+		return nil, apiError(err, "worker not found")
+	}
+	if worker.ProjectID != projectID {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "worker not found")
+	}
+	if _, err := s.jobs.SubmitWorkerReconcile(ctx, workerID); err != nil {
+		return nil, apiError(err, "worker not found")
+	}
+	worker, err = s.store.GetWorker(ctx, workerID)
 	if err != nil {
 		return nil, apiError(err, "worker not found")
 	}

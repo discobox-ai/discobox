@@ -172,6 +172,38 @@ func (m *Manager) DeleteSandbox(ctx context.Context, projectID, sandboxID string
 	return m.submitSandbox(ctx, projectID, sandboxID, model.SandboxDeleteOperation)
 }
 
+func (m *Manager) SubmitSandboxReconcile(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error) {
+	dispatcher, err := m.dispatcherForSubmit()
+	if err != nil {
+		return nil, err
+	}
+	sandboxStore := m.store.Sandboxes()
+	if _, err := dispatcher.Submit(ctx, nil,
+		orchestration.WithQueueConfig(m.cfg.QueueConfig),
+		orchestration.WithSubmitTransaction(func(ctx context.Context, appendJob orchestration.SubmitAppendFunc) (*orchestration.Job, error) {
+			var job *orchestration.Job
+			err := sandboxStore.Transaction(ctx, func(ctx context.Context, txStore *store.SandboxStore) error {
+				current, err := txStore.GetSandbox(ctx, projectID, sandboxID)
+				if err != nil {
+					return err
+				}
+				job, err = appendJob(ctx, txStore, sandboxReconcilePayload(current))
+				if err != nil {
+					return err
+				}
+				if job != nil {
+					current.SetLastJobID(&job.ID)
+				}
+				return txStore.UpdateWithGeneration(ctx, current, current.Generation)
+			})
+			return job, err
+		}),
+	); err != nil {
+		return nil, err
+	}
+	return sandboxStore.Reload(ctx, store.SandboxID{ProjectID: projectID, SandboxID: sandboxID})
+}
+
 func (m *Manager) submitSandbox(ctx context.Context, projectID, sandboxID string, operation model.OperationSpec, mutate ...func(*model.Sandbox)) (*model.Sandbox, error) {
 	dispatcher, err := m.dispatcherForSubmit()
 	if err != nil {

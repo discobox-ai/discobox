@@ -268,6 +268,24 @@ func (UnimplementedHandler) ListWorkers(ctx context.Context, params ListWorkersP
 	return r, ht.ErrNotImplemented
 }
 
+// ReconcileSandbox implements reconcile-sandbox operation.
+//
+// Reconcile a sandbox.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/reconcile
+func (UnimplementedHandler) ReconcileSandbox(ctx context.Context, params ReconcileSandboxParams) (r ReconcileSandboxRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ReconcileWorker implements reconcile-worker operation.
+//
+// Reconcile a worker.
+//
+// POST /projects/{projectId}/workers/{workerId}/reconcile
+func (UnimplementedHandler) ReconcileWorker(ctx context.Context, params ReconcileWorkerParams) (r ReconcileWorkerRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // RegisterWorker implements register-worker operation.
 //
 // Register a bootstrapped worker.

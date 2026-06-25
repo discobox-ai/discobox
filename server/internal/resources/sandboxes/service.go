@@ -39,6 +39,7 @@ type SandboxJobManager interface {
 	StopSandbox(context.Context, string, string) (*model.Sandbox, error)
 	RestartSandbox(context.Context, string, string) (*model.Sandbox, error)
 	DeleteSandbox(context.Context, string, string) (*model.Sandbox, error)
+	SubmitSandboxReconcile(context.Context, string, string) (*model.Sandbox, error)
 }
 
 type JobRegistrar interface {
@@ -315,6 +316,17 @@ func (s *Service) RestartSandbox(ctx context.Context, projectID, sandboxID strin
 		return nil, fmt.Errorf("job manager is required")
 	}
 	sandbox, err := s.jobs.RestartSandbox(ctx, projectID, sandboxID)
+	if err != nil {
+		return nil, mapAPIError(err, "sandbox not found")
+	}
+	return sandbox, nil
+}
+
+func (s *Service) ReconcileSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error) {
+	if s.jobs == nil {
+		return nil, fmt.Errorf("job manager is required")
+	}
+	sandbox, err := s.jobs.SubmitSandboxReconcile(ctx, projectID, sandboxID)
 	if err != nil {
 		return nil, mapAPIError(err, "sandbox not found")
 	}

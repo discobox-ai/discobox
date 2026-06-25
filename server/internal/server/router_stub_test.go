@@ -224,6 +224,17 @@ func (s *routerTestServices) RestartSandbox(_ context.Context, projectID, sandbo
 	return s.beginSandboxOperation(projectID, sandboxID, model.SandboxRestartOperation)
 }
 
+func (s *routerTestServices) ReconcileSandbox(_ context.Context, projectID, sandboxID string) (*model.Sandbox, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sandbox, err := s.getSandbox(projectID, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	return &sandbox, nil
+}
+
 func (s *routerTestServices) MaxProjectEventSeq(_ context.Context, projectID string) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -492,6 +503,10 @@ func (s *routerTestServices) RegisterWorker(context.Context, services.RegisterWo
 }
 
 func (s *routerTestServices) UpdateWorkerStatus(context.Context, string, services.UpdateWorkerStatusBody) (*model.Worker, error) {
+	return &model.Worker{}, nil
+}
+
+func (s *routerTestServices) ReconcileWorker(context.Context, string, string) (*model.Worker, error) {
 	return &model.Worker{}, nil
 }
 

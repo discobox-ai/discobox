@@ -55,6 +55,7 @@ type JobManager interface {
 	StopSandbox(context.Context, string, string) (*model.Sandbox, error)
 	RestartSandbox(context.Context, string, string) (*model.Sandbox, error)
 	DeleteSandbox(context.Context, string, string) (*model.Sandbox, error)
+	SubmitSandboxReconcile(context.Context, string, string) (*model.Sandbox, error)
 	CreateWorker(context.Context, *model.Worker) (*model.Worker, error)
 	DeleteWorker(context.Context, string) (*model.Worker, error)
 	DeleteWorkerForFailedJob(context.Context, string, int64, string, string) (bool, error)
@@ -84,7 +85,7 @@ func New(store *store.Store, jobManager JobManager, jobManagerOptions JobManager
 		AgentConfigService:             agentconfigs.NewService(store),
 		Service:                        sandboxService,
 		SandboxProviderInstanceService: providerService,
-		WorkerService:                  workers.NewService(store),
+		WorkerService:                  workers.NewService(store, jobManager),
 		JobService:                     jobsService,
 		ProjectEventService:            resourceevents.NewService(store, b),
 

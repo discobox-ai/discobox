@@ -2408,6 +2408,41 @@ paths:
             summary: List workers
             tags:
                 - Workers
+    /projects/{projectId}/workers/{workerId}/reconcile:
+        post:
+            operationId: reconcile-worker
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Worker ID
+                  in: path
+                  name: workerId
+                  required: true
+                  schema:
+                    description: Worker ID
+                    type: string
+            responses:
+                202:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Worker'
+                    description: Accepted
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Reconcile a worker
+            tags:
+                - Workers
     /projects/{projectId}/sandboxes:
         get:
             operationId: list-sandboxes
@@ -2613,6 +2648,41 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Restart a sandbox
+            tags:
+                - Sandboxes
+    /projects/{projectId}/sandboxes/{sandboxId}/reconcile:
+        post:
+            operationId: reconcile-sandbox
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Sandbox ID
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    description: Sandbox ID
+                    type: string
+            responses:
+                202:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Sandbox'
+                    description: Accepted
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Reconcile a sandbox
             tags:
                 - Sandboxes
     /projects/{projectId}/sandboxes/{sandboxId}/start:

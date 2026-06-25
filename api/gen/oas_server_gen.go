@@ -179,6 +179,18 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/workers
 	ListWorkers(ctx context.Context, params ListWorkersParams) (ListWorkersRes, error)
+	// ReconcileSandbox implements reconcile-sandbox operation.
+	//
+	// Reconcile a sandbox.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/reconcile
+	ReconcileSandbox(ctx context.Context, params ReconcileSandboxParams) (ReconcileSandboxRes, error)
+	// ReconcileWorker implements reconcile-worker operation.
+	//
+	// Reconcile a worker.
+	//
+	// POST /projects/{projectId}/workers/{workerId}/reconcile
+	ReconcileWorker(ctx context.Context, params ReconcileWorkerParams) (ReconcileWorkerRes, error)
 	// RegisterWorker implements register-worker operation.
 	//
 	// Register a bootstrapped worker.

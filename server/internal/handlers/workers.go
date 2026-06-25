@@ -45,3 +45,15 @@ func (h *Handler) UpdateWorkerStatus(ctx context.Context, req *apimodel.UpdateWo
 	}
 	return &body, nil
 }
+
+func (h *Handler) ReconcileWorker(ctx context.Context, params serverapi.ReconcileWorkerParams) (serverapi.ReconcileWorkerRes, error) {
+	worker, err := h.services.Workers.ReconcileWorker(ctx, params.ProjectId, params.WorkerId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[apimodel.Worker](worker)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}

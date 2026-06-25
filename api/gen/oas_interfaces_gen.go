@@ -113,6 +113,14 @@ type ListWorkersRes interface {
 	listWorkersRes()
 }
 
+type ReconcileSandboxRes interface {
+	reconcileSandboxRes()
+}
+
+type ReconcileWorkerRes interface {
+	reconcileWorkerRes()
+}
+
 type RegisterWorkerRes interface {
 	registerWorkerRes()
 }
