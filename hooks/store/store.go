@@ -1132,7 +1132,12 @@ func (s *Store) SetLSPHookRunning(ctx context.Context, hookID string) error {
 	if hookID == "" {
 		return fmt.Errorf("hook id is required")
 	}
-	return s.write.WithContext(ctx).Model(&models.HookStatus{}).Where("hook_id = ?", hookID).Updates(map[string]any{"status": string(models.StatusRunning), "last_error": "", "updated_at": time.Now().UTC()}).Error
+	return s.write.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("hook_id = ?", hookID).Delete(&models.HookDiagnostic{}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&models.HookStatus{}).Where("hook_id = ?", hookID).Updates(map[string]any{"status": string(models.StatusRunning), "last_error": "", "updated_at": time.Now().UTC()}).Error
+	})
 }
 
 // SetLSPHookReady records that an LSP hook has no pending lifecycle work. The

@@ -178,9 +178,6 @@ func TestLSPHookReadyUsesCurrentDiagnostics(t *testing.T) {
 	}}); err != nil {
 		t.Fatalf("replace diagnostics: %v", err)
 	}
-	if err := s.SetLSPHookRunning(ctx, hook.ID); err != nil {
-		t.Fatalf("mark lsp running again: %v", err)
-	}
 	if err := s.SetLSPHookReady(ctx, hook.ID); err != nil {
 		t.Fatalf("mark lsp ready with diagnostics: %v", err)
 	}
@@ -191,12 +188,32 @@ func TestLSPHookReadyUsesCurrentDiagnostics(t *testing.T) {
 	if len(statuses) != 1 || statuses[0].Status != models.StatusFailure || statuses[0].LastError != "1 diagnostics" {
 		t.Fatalf("expected ready LSP with diagnostics to fail, got %#v", statuses)
 	}
+	if err := s.SetLSPHookRunning(ctx, hook.ID); err != nil {
+		t.Fatalf("mark lsp running again: %v", err)
+	}
+	if err := s.SetLSPHookReady(ctx, hook.ID); err != nil {
+		t.Fatalf("mark lsp ready after restart: %v", err)
+	}
+	diagnostics, err := s.ListDiagnostics(ctx, DiagnosticQuery{HookID: hook.ID})
+	if err != nil {
+		t.Fatalf("list diagnostics after lsp restart: %v", err)
+	}
+	if len(diagnostics) != 0 {
+		t.Fatalf("expected LSP restart to clear diagnostics, got %#v", diagnostics)
+	}
+	statuses, err = s.ListStatus(ctx)
+	if err != nil {
+		t.Fatalf("list status after lsp restart: %v", err)
+	}
+	if len(statuses) != 1 || statuses[0].Status != models.StatusSuccess || statuses[0].LastError != "" {
+		t.Fatalf("expected restarted LSP with no diagnostics to be successful, got %#v", statuses)
+	}
 
 	hook.Pattern = "**/*.ts"
 	if err := s.RefreshDefinitions(ctx, []hooks.Hook{hook}); err != nil {
 		t.Fatalf("refresh changed lsp definition: %v", err)
 	}
-	diagnostics, err := s.ListDiagnostics(ctx, DiagnosticQuery{HookID: hook.ID})
+	diagnostics, err = s.ListDiagnostics(ctx, DiagnosticQuery{HookID: hook.ID})
 	if err != nil {
 		t.Fatalf("list diagnostics after changed lsp definition: %v", err)
 	}
