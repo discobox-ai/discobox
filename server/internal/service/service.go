@@ -120,6 +120,7 @@ func (s *Service) Start(ctx context.Context) error {
 			return err
 		}
 	}
+	s.workerManager.StartDeletedWorkerCleanup(ctx)
 	startedJobs := s.jobManager != nil
 	if err := s.EnsureExistingSandboxProviderInstances(ctx); err != nil {
 		if startedJobs {

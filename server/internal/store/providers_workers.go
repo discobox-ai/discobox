@@ -514,6 +514,16 @@ func workerLessLoaded(candidate, current model.Worker, cpuVCPUs float64, memoryB
 	return candidate.CreatedAt.Before(current.CreatedAt)
 }
 
+func (s *Store) PurgeDeletedWorkers(ctx context.Context, deletedBefore time.Time) (int64, error) {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return 0, err
+	}
+	result := write.Where("phase = ? AND updated_at < ?", model.WorkerPhaseDeleted, deletedBefore).
+		Delete(&model.Worker{})
+	return result.RowsAffected, result.Error
+}
+
 func workerResourceScore(worker model.Worker, cpuVCPUs float64, memoryBytes, storageBytes int64) float64 {
 	cpuRemainder := worker.AvailableCPUVCPUs - cpuVCPUs
 	memoryRemainder := float64(worker.AvailableMemoryBytes - memoryBytes)
