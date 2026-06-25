@@ -41,7 +41,7 @@ build_dockerfile() {
   fi
 
   case "$dockerfile" in
-    Dockerfile*|worker-agent/Dockerfile)
+    Dockerfile*|*/worker-agent/Dockerfile|worker-agent/Dockerfile|*/sandbox-agent/Dockerfile|sandbox-agent/Dockerfile)
       context="."
       ;;
     *)

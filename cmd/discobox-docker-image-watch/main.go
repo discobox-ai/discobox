@@ -134,6 +134,22 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 	if err := addTree(sandboxRoot, sandboxSeen); err != nil {
 		return nil, err
 	}
+	for _, rel := range []string{
+		".dockerignore",
+		"go.mod",
+		"go.sum",
+		"api/sandboxgen",
+		"gormdb",
+	} {
+		path := filepath.Join(repoRoot, rel)
+		if info, err := os.Stat(path); err == nil && info.IsDir() {
+			if err := addTree(path, sandboxSeen); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		addFile(repoRoot, rel, sandboxSeen)
+	}
 	addFile(repoRoot, ".dockerignore", sandboxSeen)
 	return []imageSpec{
 		{
@@ -152,8 +168,8 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 			devPrefix:    "discobox-sandbox-agent:dev-",
 			envImageKey:  "DISCOBOX_DEFAULT_SANDBOX_IMAGE",
 			envDigestKey: "DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST",
-			buildDir:     sandboxRoot,
-			buildArgs:    []string{"build", "-f", "Dockerfile", "-t", "discobox-sandbox-agent:local", "."},
+			buildDir:     repoRoot,
+			buildArgs:    []string{"build", "-f", "sandbox-agent/Dockerfile", "-t", "discobox-sandbox-agent:local", "."},
 			files:        sortedFiles(sandboxSeen),
 		},
 	}, nil
