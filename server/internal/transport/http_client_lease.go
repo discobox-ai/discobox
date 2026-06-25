@@ -11,12 +11,13 @@ import (
 // a Unix socket, VS Code socket, tunnel, or provider proxy. BaseURL is optional;
 // when empty, callers use their own logical URL.
 type HTTPClientLease struct {
-	Client            *http.Client
-	BaseURL           string
-	AuthToken         string
-	AuthTokenProvider func(context.Context) (string, error)
-	release           func()
-	once              sync.Once
+	Client                   *http.Client
+	BaseURL                  string
+	AuthToken                string
+	AuthTokenProvider        func(context.Context) (string, error)
+	ForwardAuthTokenProvider func(context.Context) (string, error)
+	release                  func()
+	once                     sync.Once
 }
 
 // NewHTTPClientLease creates a lease around a client and release callback.
@@ -62,6 +63,13 @@ func (l *HTTPClientLease) AuthorizationToken(ctx context.Context) (string, error
 		return l.AuthTokenProvider(ctx)
 	}
 	return l.AuthToken, nil
+}
+
+func (l *HTTPClientLease) ForwardAuthorizationToken(ctx context.Context) (string, error) {
+	if l == nil || l.ForwardAuthTokenProvider == nil {
+		return "", nil
+	}
+	return l.ForwardAuthTokenProvider(ctx)
 }
 
 // Release returns the leased client.

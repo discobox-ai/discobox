@@ -11,37 +11,40 @@ import (
 )
 
 var (
-	rn26AllowedHeaders = map[string]string{
-		"POST": "Content-Type",
-	}
-	rn34AllowedHeaders = map[string]string{
-		"POST": "Content-Type",
-	}
-	rn3AllowedHeaders = map[string]string{
-		"POST": "Content-Type",
-	}
-	rn8AllowedHeaders = map[string]string{
-		"PATCH": "Content-Type",
-	}
-	rn6AllowedHeaders = map[string]string{
-		"POST": "Content-Type",
-	}
 	rn12AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn39AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn49AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn11AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn17AllowedHeaders = map[string]string{
 		"PATCH": "Content-Type",
 	}
-	rn5AllowedHeaders = map[string]string{
+	rn15AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn10AllowedHeaders = map[string]string{
+	rn21AllowedHeaders = map[string]string{
 		"PATCH": "Content-Type",
 	}
-	rn27AllowedHeaders = map[string]string{
+	rn14AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn29AllowedHeaders = map[string]string{
+	rn19AllowedHeaders = map[string]string{
+		"PATCH": "Content-Type",
+	}
+	rn40AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn31AllowedHeaders = map[string]string{
+	rn42AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn44AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 )
@@ -76,7 +79,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		s.notFound(w, r)
 		return
 	}
-	args := [2]string{}
+	args := [3]string{}
 
 	// Static code generated router with unwrapped path search.
 	switch {
@@ -171,9 +174,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 					}
 
-				case 'p': // Prefix: "pi/workers/"
+				case 'p': // Prefix: "pi/"
 
-					if l := len("pi/workers/"); len(elem) >= l && elem[0:l] == "pi/workers/" {
+					if l := len("pi/"); len(elem) >= l && elem[0:l] == "pi/" {
 						elem = elem[l:]
 					} else {
 						break
@@ -183,71 +186,378 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						break
 					}
 					switch elem[0] {
-					case 'r': // Prefix: "register"
-						origElem := elem
-						if l := len("register"); len(elem) >= l && elem[0:l] == "register" {
+					case 'p': // Prefix: "projects/"
+
+						if l := len("projects/"); len(elem) >= l && elem[0:l] == "projects/" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						// Param: "projectId"
+						// Match until "/"
+						idx := strings.IndexByte(elem, '/')
+						if idx < 0 {
+							idx = len(elem)
+						}
+						args[0] = elem[:idx]
+						elem = elem[idx:]
+
+						if len(elem) == 0 {
+							break
+						}
+						switch elem[0] {
+						case '/': // Prefix: "/sandboxes/"
+
+							if l := len("/sandboxes/"); len(elem) >= l && elem[0:l] == "/sandboxes/" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							// Param: "sandboxId"
+							// Match until "/"
+							idx := strings.IndexByte(elem, '/')
+							if idx < 0 {
+								idx = len(elem)
+							}
+							args[1] = elem[:idx]
+							elem = elem[idx:]
+
+							if len(elem) == 0 {
+								break
+							}
+							switch elem[0] {
+							case '/': // Prefix: "/agent-terminals"
+
+								if l := len("/agent-terminals"); len(elem) >= l && elem[0:l] == "/agent-terminals" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									switch r.Method {
+									case "GET":
+										s.handleListAgentTerminalsRequest([2]string{
+											args[0],
+											args[1],
+										}, elemIsEscaped, w, r)
+									case "POST":
+										s.handleCreateAgentTerminalRequest([2]string{
+											args[0],
+											args[1],
+										}, elemIsEscaped, w, r)
+									default:
+										s.notAllowed(w, r, notAllowedParams{
+											allowedMethods: "GET,POST",
+											allowedHeaders: rn12AllowedHeaders,
+											acceptPost:     "application/json",
+											acceptPatch:    "",
+										})
+									}
+
+									return
+								}
+								switch elem[0] {
+								case '/': // Prefix: "/"
+
+									if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									// Param: "terminalId"
+									// Match until "/"
+									idx := strings.IndexByte(elem, '/')
+									if idx < 0 {
+										idx = len(elem)
+									}
+									args[2] = elem[:idx]
+									elem = elem[idx:]
+
+									if len(elem) == 0 {
+										switch r.Method {
+										case "DELETE":
+											s.handleDeleteAgentTerminalRequest([3]string{
+												args[0],
+												args[1],
+												args[2],
+											}, elemIsEscaped, w, r)
+										default:
+											s.notAllowed(w, r, notAllowedParams{
+												allowedMethods: "DELETE",
+												allowedHeaders: nil,
+												acceptPost:     "",
+												acceptPatch:    "",
+											})
+										}
+
+										return
+									}
+									switch elem[0] {
+									case '/': // Prefix: "/"
+
+										if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											break
+										}
+										switch elem[0] {
+										case 'a': // Prefix: "attach"
+
+											if l := len("attach"); len(elem) >= l && elem[0:l] == "attach" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch r.Method {
+												case "POST":
+													s.handleAttachAgentTerminalRequest([3]string{
+														args[0],
+														args[1],
+														args[2],
+													}, elemIsEscaped, w, r)
+												default:
+													s.notAllowed(w, r, notAllowedParams{
+														allowedMethods: "POST",
+														allowedHeaders: nil,
+														acceptPost:     "",
+														acceptPatch:    "",
+													})
+												}
+
+												return
+											}
+
+										case 'e': // Prefix: "events"
+
+											if l := len("events"); len(elem) >= l && elem[0:l] == "events" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch r.Method {
+												case "GET":
+													s.handleListAgentTerminalEventsRequest([3]string{
+														args[0],
+														args[1],
+														args[2],
+													}, elemIsEscaped, w, r)
+												default:
+													s.notAllowed(w, r, notAllowedParams{
+														allowedMethods: "GET",
+														allowedHeaders: nil,
+														acceptPost:     "",
+														acceptPatch:    "",
+													})
+												}
+
+												return
+											}
+
+										case 'r': // Prefix: "resources"
+
+											if l := len("resources"); len(elem) >= l && elem[0:l] == "resources" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												switch r.Method {
+												case "GET":
+													s.handleGetAgentTerminalResourcesRequest([3]string{
+														args[0],
+														args[1],
+														args[2],
+													}, elemIsEscaped, w, r)
+												default:
+													s.notAllowed(w, r, notAllowedParams{
+														allowedMethods: "GET",
+														allowedHeaders: nil,
+														acceptPost:     "",
+														acceptPatch:    "",
+													})
+												}
+
+												return
+											}
+											switch elem[0] {
+											case '/': // Prefix: "/"
+
+												if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+													elem = elem[l:]
+												} else {
+													break
+												}
+
+												if len(elem) == 0 {
+													break
+												}
+												switch elem[0] {
+												case 'h': // Prefix: "history"
+
+													if l := len("history"); len(elem) >= l && elem[0:l] == "history" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch r.Method {
+														case "GET":
+															s.handleListAgentTerminalResourceHistoryRequest([3]string{
+																args[0],
+																args[1],
+																args[2],
+															}, elemIsEscaped, w, r)
+														default:
+															s.notAllowed(w, r, notAllowedParams{
+																allowedMethods: "GET",
+																allowedHeaders: nil,
+																acceptPost:     "",
+																acceptPatch:    "",
+															})
+														}
+
+														return
+													}
+
+												case 's': // Prefix: "stream"
+
+													if l := len("stream"); len(elem) >= l && elem[0:l] == "stream" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch r.Method {
+														case "GET":
+															s.handleStreamAgentTerminalResourcesRequest([3]string{
+																args[0],
+																args[1],
+																args[2],
+															}, elemIsEscaped, w, r)
+														default:
+															s.notAllowed(w, r, notAllowedParams{
+																allowedMethods: "GET",
+																allowedHeaders: nil,
+																acceptPost:     "",
+																acceptPatch:    "",
+															})
+														}
+
+														return
+													}
+
+												}
+
+											}
+
+										}
+
+									}
+
+								}
+
+							}
+
+						}
+
+					case 'w': // Prefix: "workers/"
+
+						if l := len("workers/"); len(elem) >= l && elem[0:l] == "workers/" {
 							elem = elem[l:]
 						} else {
 							break
 						}
 
 						if len(elem) == 0 {
-							// Leaf node.
-							switch r.Method {
-							case "POST":
-								s.handleRegisterWorkerRequest([0]string{}, elemIsEscaped, w, r)
-							default:
-								s.notAllowed(w, r, notAllowedParams{
-									allowedMethods: "POST",
-									allowedHeaders: rn26AllowedHeaders,
-									acceptPost:     "application/json",
-									acceptPatch:    "",
-								})
-							}
-
-							return
-						}
-
-						elem = origElem
-					}
-					// Param: "workerId"
-					// Match until "/"
-					idx := strings.IndexByte(elem, '/')
-					if idx < 0 {
-						idx = len(elem)
-					}
-					args[0] = elem[:idx]
-					elem = elem[idx:]
-
-					if len(elem) == 0 {
-						break
-					}
-					switch elem[0] {
-					case '/': // Prefix: "/status"
-
-						if l := len("/status"); len(elem) >= l && elem[0:l] == "/status" {
-							elem = elem[l:]
-						} else {
 							break
 						}
-
-						if len(elem) == 0 {
-							// Leaf node.
-							switch r.Method {
-							case "POST":
-								s.handleUpdateWorkerStatusRequest([1]string{
-									args[0],
-								}, elemIsEscaped, w, r)
-							default:
-								s.notAllowed(w, r, notAllowedParams{
-									allowedMethods: "POST",
-									allowedHeaders: rn34AllowedHeaders,
-									acceptPost:     "application/json",
-									acceptPatch:    "",
-								})
+						switch elem[0] {
+						case 'r': // Prefix: "register"
+							origElem := elem
+							if l := len("register"); len(elem) >= l && elem[0:l] == "register" {
+								elem = elem[l:]
+							} else {
+								break
 							}
 
-							return
+							if len(elem) == 0 {
+								// Leaf node.
+								switch r.Method {
+								case "POST":
+									s.handleRegisterWorkerRequest([0]string{}, elemIsEscaped, w, r)
+								default:
+									s.notAllowed(w, r, notAllowedParams{
+										allowedMethods: "POST",
+										allowedHeaders: rn39AllowedHeaders,
+										acceptPost:     "application/json",
+										acceptPatch:    "",
+									})
+								}
+
+								return
+							}
+
+							elem = origElem
+						}
+						// Param: "workerId"
+						// Match until "/"
+						idx := strings.IndexByte(elem, '/')
+						if idx < 0 {
+							idx = len(elem)
+						}
+						args[0] = elem[:idx]
+						elem = elem[idx:]
+
+						if len(elem) == 0 {
+							break
+						}
+						switch elem[0] {
+						case '/': // Prefix: "/status"
+
+							if l := len("/status"); len(elem) >= l && elem[0:l] == "/status" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch r.Method {
+								case "POST":
+									s.handleUpdateWorkerStatusRequest([1]string{
+										args[0],
+									}, elemIsEscaped, w, r)
+								default:
+									s.notAllowed(w, r, notAllowedParams{
+										allowedMethods: "POST",
+										allowedHeaders: rn49AllowedHeaders,
+										acceptPost:     "application/json",
+										acceptPatch:    "",
+									})
+								}
+
+								return
+							}
+
 						}
 
 					}
@@ -358,7 +668,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "GET,POST",
-											allowedHeaders: rn3AllowedHeaders,
+											allowedHeaders: rn11AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
 										})
@@ -405,7 +715,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 										default:
 											s.notAllowed(w, r, notAllowedParams{
 												allowedMethods: "DELETE,GET,PATCH",
-												allowedHeaders: rn8AllowedHeaders,
+												allowedHeaders: rn17AllowedHeaders,
 												acceptPost:     "",
 												acceptPatch:    "application/json",
 											})
@@ -531,7 +841,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "GET,POST",
-											allowedHeaders: rn6AllowedHeaders,
+											allowedHeaders: rn15AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
 										})
@@ -578,7 +888,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 										default:
 											s.notAllowed(w, r, notAllowedParams{
 												allowedMethods: "DELETE,GET,PATCH",
-												allowedHeaders: rn12AllowedHeaders,
+												allowedHeaders: rn21AllowedHeaders,
 												acceptPost:     "",
 												acceptPatch:    "application/json",
 											})
@@ -610,7 +920,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "GET,POST",
-											allowedHeaders: rn5AllowedHeaders,
+											allowedHeaders: rn14AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
 										})
@@ -656,7 +966,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 										default:
 											s.notAllowed(w, r, notAllowedParams{
 												allowedMethods: "DELETE,GET,PATCH",
-												allowedHeaders: rn10AllowedHeaders,
+												allowedHeaders: rn19AllowedHeaders,
 												acceptPost:     "",
 												acceptPatch:    "application/json",
 											})
@@ -696,7 +1006,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 												default:
 													s.notAllowed(w, r, notAllowedParams{
 														allowedMethods: "POST",
-														allowedHeaders: rn27AllowedHeaders,
+														allowedHeaders: rn40AllowedHeaders,
 														acceptPost:     "application/json",
 														acceptPatch:    "",
 													})
@@ -736,7 +1046,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 													default:
 														s.notAllowed(w, r, notAllowedParams{
 															allowedMethods: "POST",
-															allowedHeaders: rn29AllowedHeaders,
+															allowedHeaders: rn42AllowedHeaders,
 															acceptPost:     "application/json",
 															acceptPatch:    "",
 														})
@@ -764,7 +1074,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 													default:
 														s.notAllowed(w, r, notAllowedParams{
 															allowedMethods: "POST",
-															allowedHeaders: rn31AllowedHeaders,
+															allowedHeaders: rn44AllowedHeaders,
 															acceptPost:     "application/json",
 															acceptPatch:    "",
 														})
@@ -856,7 +1166,7 @@ type Route struct {
 	operationGroup string
 	pathPattern    string
 	count          int
-	args           [2]string
+	args           [3]string
 }
 
 // Name returns ogen operation name.
@@ -1013,9 +1323,9 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 
 					}
 
-				case 'p': // Prefix: "pi/workers/"
+				case 'p': // Prefix: "pi/"
 
-					if l := len("pi/workers/"); len(elem) >= l && elem[0:l] == "pi/workers/" {
+					if l := len("pi/"); len(elem) >= l && elem[0:l] == "pi/" {
 						elem = elem[l:]
 					} else {
 						break
@@ -1025,69 +1335,353 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 						break
 					}
 					switch elem[0] {
-					case 'r': // Prefix: "register"
-						origElem := elem
-						if l := len("register"); len(elem) >= l && elem[0:l] == "register" {
+					case 'p': // Prefix: "projects/"
+
+						if l := len("projects/"); len(elem) >= l && elem[0:l] == "projects/" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						// Param: "projectId"
+						// Match until "/"
+						idx := strings.IndexByte(elem, '/')
+						if idx < 0 {
+							idx = len(elem)
+						}
+						args[0] = elem[:idx]
+						elem = elem[idx:]
+
+						if len(elem) == 0 {
+							break
+						}
+						switch elem[0] {
+						case '/': // Prefix: "/sandboxes/"
+
+							if l := len("/sandboxes/"); len(elem) >= l && elem[0:l] == "/sandboxes/" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							// Param: "sandboxId"
+							// Match until "/"
+							idx := strings.IndexByte(elem, '/')
+							if idx < 0 {
+								idx = len(elem)
+							}
+							args[1] = elem[:idx]
+							elem = elem[idx:]
+
+							if len(elem) == 0 {
+								break
+							}
+							switch elem[0] {
+							case '/': // Prefix: "/agent-terminals"
+
+								if l := len("/agent-terminals"); len(elem) >= l && elem[0:l] == "/agent-terminals" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									switch method {
+									case "GET":
+										r.name = ListAgentTerminalsOperation
+										r.summary = "List agent terminal runtimes in a sandbox."
+										r.operationID = "list-agent-terminals"
+										r.operationGroup = ""
+										r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals"
+										r.args = args
+										r.count = 2
+										return r, true
+									case "POST":
+										r.name = CreateAgentTerminalOperation
+										r.summary = "Create an agent terminal runtime in a sandbox."
+										r.operationID = "create-agent-terminal"
+										r.operationGroup = ""
+										r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals"
+										r.args = args
+										r.count = 2
+										return r, true
+									default:
+										return
+									}
+								}
+								switch elem[0] {
+								case '/': // Prefix: "/"
+
+									if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									// Param: "terminalId"
+									// Match until "/"
+									idx := strings.IndexByte(elem, '/')
+									if idx < 0 {
+										idx = len(elem)
+									}
+									args[2] = elem[:idx]
+									elem = elem[idx:]
+
+									if len(elem) == 0 {
+										switch method {
+										case "DELETE":
+											r.name = DeleteAgentTerminalOperation
+											r.summary = "Destroy an agent terminal runtime in a sandbox."
+											r.operationID = "delete-agent-terminal"
+											r.operationGroup = ""
+											r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}"
+											r.args = args
+											r.count = 3
+											return r, true
+										default:
+											return
+										}
+									}
+									switch elem[0] {
+									case '/': // Prefix: "/"
+
+										if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											break
+										}
+										switch elem[0] {
+										case 'a': // Prefix: "attach"
+
+											if l := len("attach"); len(elem) >= l && elem[0:l] == "attach" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch method {
+												case "POST":
+													r.name = AttachAgentTerminalOperation
+													r.summary = "Attach to an agent terminal stream."
+													r.operationID = "attach-agent-terminal"
+													r.operationGroup = ""
+													r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/attach"
+													r.args = args
+													r.count = 3
+													return r, true
+												default:
+													return
+												}
+											}
+
+										case 'e': // Prefix: "events"
+
+											if l := len("events"); len(elem) >= l && elem[0:l] == "events" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch method {
+												case "GET":
+													r.name = ListAgentTerminalEventsOperation
+													r.summary = "List recent audit events for an agent terminal."
+													r.operationID = "list-agent-terminal-events"
+													r.operationGroup = ""
+													r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/events"
+													r.args = args
+													r.count = 3
+													return r, true
+												default:
+													return
+												}
+											}
+
+										case 'r': // Prefix: "resources"
+
+											if l := len("resources"); len(elem) >= l && elem[0:l] == "resources" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												switch method {
+												case "GET":
+													r.name = GetAgentTerminalResourcesOperation
+													r.summary = "Get the latest opaque resource snapshot for an agent terminal."
+													r.operationID = "get-agent-terminal-resources"
+													r.operationGroup = ""
+													r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources"
+													r.args = args
+													r.count = 3
+													return r, true
+												default:
+													return
+												}
+											}
+											switch elem[0] {
+											case '/': // Prefix: "/"
+
+												if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+													elem = elem[l:]
+												} else {
+													break
+												}
+
+												if len(elem) == 0 {
+													break
+												}
+												switch elem[0] {
+												case 'h': // Prefix: "history"
+
+													if l := len("history"); len(elem) >= l && elem[0:l] == "history" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch method {
+														case "GET":
+															r.name = ListAgentTerminalResourceHistoryOperation
+															r.summary = "List recent opaque resource snapshots for an agent terminal."
+															r.operationID = "list-agent-terminal-resource-history"
+															r.operationGroup = ""
+															r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/history"
+															r.args = args
+															r.count = 3
+															return r, true
+														default:
+															return
+														}
+													}
+
+												case 's': // Prefix: "stream"
+
+													if l := len("stream"); len(elem) >= l && elem[0:l] == "stream" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch method {
+														case "GET":
+															r.name = StreamAgentTerminalResourcesOperation
+															r.summary = "Stream opaque resource snapshots for an agent terminal."
+															r.operationID = "stream-agent-terminal-resources"
+															r.operationGroup = ""
+															r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/stream"
+															r.args = args
+															r.count = 3
+															return r, true
+														default:
+															return
+														}
+													}
+
+												}
+
+											}
+
+										}
+
+									}
+
+								}
+
+							}
+
+						}
+
+					case 'w': // Prefix: "workers/"
+
+						if l := len("workers/"); len(elem) >= l && elem[0:l] == "workers/" {
 							elem = elem[l:]
 						} else {
 							break
 						}
 
 						if len(elem) == 0 {
-							// Leaf node.
-							switch method {
-							case "POST":
-								r.name = RegisterWorkerOperation
-								r.summary = "Register a bootstrapped worker"
-								r.operationID = "register-worker"
-								r.operationGroup = ""
-								r.pathPattern = "/api/workers/register"
-								r.args = args
-								r.count = 0
-								return r, true
-							default:
-								return
-							}
-						}
-
-						elem = origElem
-					}
-					// Param: "workerId"
-					// Match until "/"
-					idx := strings.IndexByte(elem, '/')
-					if idx < 0 {
-						idx = len(elem)
-					}
-					args[0] = elem[:idx]
-					elem = elem[idx:]
-
-					if len(elem) == 0 {
-						break
-					}
-					switch elem[0] {
-					case '/': // Prefix: "/status"
-
-						if l := len("/status"); len(elem) >= l && elem[0:l] == "/status" {
-							elem = elem[l:]
-						} else {
 							break
 						}
+						switch elem[0] {
+						case 'r': // Prefix: "register"
+							origElem := elem
+							if l := len("register"); len(elem) >= l && elem[0:l] == "register" {
+								elem = elem[l:]
+							} else {
+								break
+							}
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch method {
+								case "POST":
+									r.name = RegisterWorkerOperation
+									r.summary = "Register a bootstrapped worker"
+									r.operationID = "register-worker"
+									r.operationGroup = ""
+									r.pathPattern = "/api/workers/register"
+									r.args = args
+									r.count = 0
+									return r, true
+								default:
+									return
+								}
+							}
+
+							elem = origElem
+						}
+						// Param: "workerId"
+						// Match until "/"
+						idx := strings.IndexByte(elem, '/')
+						if idx < 0 {
+							idx = len(elem)
+						}
+						args[0] = elem[:idx]
+						elem = elem[idx:]
 
 						if len(elem) == 0 {
-							// Leaf node.
-							switch method {
-							case "POST":
-								r.name = UpdateWorkerStatusOperation
-								r.summary = "Update worker status"
-								r.operationID = "update-worker-status"
-								r.operationGroup = ""
-								r.pathPattern = "/api/workers/{workerId}/status"
-								r.args = args
-								r.count = 1
-								return r, true
-							default:
-								return
+							break
+						}
+						switch elem[0] {
+						case '/': // Prefix: "/status"
+
+							if l := len("/status"); len(elem) >= l && elem[0:l] == "/status" {
+								elem = elem[l:]
+							} else {
+								break
 							}
+
+							if len(elem) == 0 {
+								// Leaf node.
+								switch method {
+								case "POST":
+									r.name = UpdateWorkerStatusOperation
+									r.summary = "Update worker status"
+									r.operationID = "update-worker-status"
+									r.operationGroup = ""
+									r.pathPattern = "/api/workers/{workerId}/status"
+									r.args = args
+									r.count = 1
+									return r, true
+								default:
+									return
+								}
+							}
+
 						}
 
 					}

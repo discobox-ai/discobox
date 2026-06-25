@@ -22,10 +22,13 @@ const (
 	StateKey = "worker_agent_request_issuer"
 	purpose  = "worker_agent_request_issuer.private_key"
 
-	Audience          = "worker-agent"
-	ScopeSandboxRead  = "sandbox:read"
-	ScopeSandboxWrite = "sandbox:write"
-	ScopeSandboxHTTP  = "sandbox:http"
+	Audience             = "worker-agent"
+	SandboxAgentAudience = "sandbox-agent"
+	ScopeSandboxRead     = "sandbox:read"
+	ScopeSandboxWrite    = "sandbox:write"
+	ScopeSandboxHTTP     = "sandbox:http"
+	ScopeTerminalRead    = "terminal:read"
+	ScopeTerminalWrite   = "terminal:write"
 
 	TokenTTL  = 15 * time.Minute
 	ClockSkew = 5 * time.Minute
@@ -93,6 +96,17 @@ func (m *Manager) EnsureTrustKey(ctx context.Context) (string, error) {
 }
 
 func (m *Manager) CreateToken(ctx context.Context, claims TokenClaims) (string, error) {
+	return m.createToken(ctx, Audience, claims)
+}
+
+func (m *Manager) CreateSandboxAgentToken(ctx context.Context, claims TokenClaims) (string, error) {
+	if claims.SandboxID == "" {
+		return "", fmt.Errorf("sandboxID is required")
+	}
+	return m.createToken(ctx, SandboxAgentAudience, claims)
+}
+
+func (m *Manager) createToken(ctx context.Context, audience string, claims TokenClaims) (string, error) {
 	if claims.ProjectID == "" || claims.WorkerID == "" {
 		return "", fmt.Errorf("projectID and workerID are required")
 	}
@@ -114,7 +128,7 @@ func (m *Manager) CreateToken(ctx context.Context, claims TokenClaims) (string, 
 	if err != nil {
 		return "", err
 	}
-	return CreateToken(privateKey, claims, TokenTTL, ClockSkew)
+	return CreateTokenForAudience(privateKey, audience, claims, TokenTTL, ClockSkew)
 }
 
 func (m *Manager) loadIssuer(ctx context.Context) (issuerState, error) {
@@ -155,6 +169,13 @@ func DecodePrivateKey(value string) (ed25519.PrivateKey, error) {
 }
 
 func CreateToken(privateKey ed25519.PrivateKey, claims TokenClaims, ttl, clockSkew time.Duration) (string, error) {
+	return CreateTokenForAudience(privateKey, Audience, claims, ttl, clockSkew)
+}
+
+func CreateTokenForAudience(privateKey ed25519.PrivateKey, audience string, claims TokenClaims, ttl, clockSkew time.Duration) (string, error) {
+	if audience == "" {
+		return "", fmt.Errorf("audience is required")
+	}
 	pasetoKey, err := paseto.NewV4AsymmetricSecretKeyFromEd25519(privateKey)
 	if err != nil {
 		return "", err
@@ -165,7 +186,7 @@ func CreateToken(privateKey ed25519.PrivateKey, claims TokenClaims, ttl, clockSk
 	}
 	now := time.Now()
 	token := paseto.NewToken()
-	token.SetAudience(Audience)
+	token.SetAudience(audience)
 	token.SetIssuedAt(now)
 	token.SetNotBefore(now.Add(-clockSkew))
 	token.SetExpiration(now.Add(ttl))

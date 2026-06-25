@@ -27,12 +27,27 @@ func trimTrailingSlashes(u *url.URL) {
 
 // Invoker invokes operations described by OpenAPI v3 specification.
 type Invoker interface {
+	// AttachAgentTerminal invokes attach-agent-terminal operation.
+	//
+	// Upgrades to a framed bidirectional stream for a running agent terminal. Closing the stream
+	// detaches from the terminal and does not stop the underlying agent process.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/attach
+	AttachAgentTerminal(ctx context.Context, params AttachAgentTerminalParams) (AttachAgentTerminalRes, error)
 	// CreateAgentConfig invokes create-agent-config operation.
 	//
 	// Create an agent config.
 	//
 	// POST /projects/{projectId}/agent-configs
 	CreateAgentConfig(ctx context.Context, request *CreateAgentConfigBody, params CreateAgentConfigParams) (CreateAgentConfigRes, error)
+	// CreateAgentTerminal invokes create-agent-terminal operation.
+	//
+	// Creates an ephemeral terminal/TUI runtime for a coding-agent CLI. When the request is an upgrade
+	// request, the sandbox agent creates the terminal and switches protocols to the framed bidirectional
+	// attach stream instead of returning JSON.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals
+	CreateAgentTerminal(ctx context.Context, request *CreateAgentTerminalRequest, params CreateAgentTerminalParams) (CreateAgentTerminalRes, error)
 	// CreateSandbox invokes create-sandbox operation.
 	//
 	// Create a sandbox.
@@ -51,6 +66,12 @@ type Invoker interface {
 	//
 	// DELETE /projects/{projectId}/agent-configs/{agentConfigId}
 	DeleteAgentConfig(ctx context.Context, params DeleteAgentConfigParams) (DeleteAgentConfigRes, error)
+	// DeleteAgentTerminal invokes delete-agent-terminal operation.
+	//
+	// Destroy an agent terminal runtime in a sandbox.
+	//
+	// DELETE /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}
+	DeleteAgentTerminal(ctx context.Context, params DeleteAgentTerminalParams) (DeleteAgentTerminalRes, error)
 	// DeleteSandbox invokes delete-sandbox operation.
 	//
 	// Delete a sandbox.
@@ -81,6 +102,12 @@ type Invoker interface {
 	//
 	// GET /agent-config-definitions/{definitionId}
 	GetAgentConfigDefinition(ctx context.Context, params GetAgentConfigDefinitionParams) (GetAgentConfigDefinitionRes, error)
+	// GetAgentTerminalResources invokes get-agent-terminal-resources operation.
+	//
+	// Get the latest opaque resource snapshot for an agent terminal.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources
+	GetAgentTerminalResources(ctx context.Context, params GetAgentTerminalResourcesParams) (GetAgentTerminalResourcesRes, error)
 	// GetJob invokes get-job operation.
 	//
 	// Get a job.
@@ -117,6 +144,24 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/agent-configs
 	ListAgentConfigs(ctx context.Context, params ListAgentConfigsParams) (ListAgentConfigsRes, error)
+	// ListAgentTerminalEvents invokes list-agent-terminal-events operation.
+	//
+	// List recent audit events for an agent terminal.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/events
+	ListAgentTerminalEvents(ctx context.Context, params ListAgentTerminalEventsParams) (ListAgentTerminalEventsRes, error)
+	// ListAgentTerminalResourceHistory invokes list-agent-terminal-resource-history operation.
+	//
+	// List recent opaque resource snapshots for an agent terminal.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/history
+	ListAgentTerminalResourceHistory(ctx context.Context, params ListAgentTerminalResourceHistoryParams) (ListAgentTerminalResourceHistoryRes, error)
+	// ListAgentTerminals invokes list-agent-terminals operation.
+	//
+	// List agent terminal runtimes in a sandbox.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals
+	ListAgentTerminals(ctx context.Context, params ListAgentTerminalsParams) (ListAgentTerminalsRes, error)
 	// ListJobs invokes list-jobs operation.
 	//
 	// List jobs for a project.
@@ -177,6 +222,12 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/stop
 	StopSandbox(ctx context.Context, request *StopSandboxBody, params StopSandboxParams) (StopSandboxRes, error)
+	// StreamAgentTerminalResources invokes stream-agent-terminal-resources operation.
+	//
+	// Stream opaque resource snapshots for an agent terminal.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/stream
+	StreamAgentTerminalResources(ctx context.Context, params StreamAgentTerminalResourcesParams) (StreamAgentTerminalResourcesRes, error)
 	// UpdateAgentConfig invokes update-agent-config operation.
 	//
 	// Update an agent config.
@@ -240,6 +291,138 @@ func (c *Client) requestURL(ctx context.Context) *url.URL {
 		return c.serverURL
 	}
 	return u
+}
+
+// AttachAgentTerminal invokes attach-agent-terminal operation.
+//
+// Upgrades to a framed bidirectional stream for a running agent terminal. Closing the stream
+// detaches from the terminal and does not stop the underlying agent process.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/attach
+func (c *Client) AttachAgentTerminal(ctx context.Context, params AttachAgentTerminalParams) (AttachAgentTerminalRes, error) {
+	res, err := c.sendAttachAgentTerminal(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendAttachAgentTerminal(ctx context.Context, params AttachAgentTerminalParams) (res AttachAgentTerminalRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("attach-agent-terminal"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/attach"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, AttachAgentTerminalOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [7]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/agent-terminals/"
+	{
+		// Encode "terminalId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "terminalId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.TerminalId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[5] = encoded
+	}
+	pathParts[6] = "/attach"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeAttachAgentTerminalResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
 }
 
 // CreateAgentConfig invokes create-agent-config operation.
@@ -331,6 +514,123 @@ func (c *Client) sendCreateAgentConfig(ctx context.Context, request *CreateAgent
 
 	stage = "DecodeResponse"
 	result, err := decodeCreateAgentConfigResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// CreateAgentTerminal invokes create-agent-terminal operation.
+//
+// Creates an ephemeral terminal/TUI runtime for a coding-agent CLI. When the request is an upgrade
+// request, the sandbox agent creates the terminal and switches protocols to the framed bidirectional
+// attach stream instead of returning JSON.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals
+func (c *Client) CreateAgentTerminal(ctx context.Context, request *CreateAgentTerminalRequest, params CreateAgentTerminalParams) (CreateAgentTerminalRes, error) {
+	res, err := c.sendCreateAgentTerminal(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendCreateAgentTerminal(ctx context.Context, request *CreateAgentTerminalRequest, params CreateAgentTerminalParams) (res CreateAgentTerminalRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("create-agent-terminal"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CreateAgentTerminalOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/agent-terminals"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeCreateAgentTerminalRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCreateAgentTerminalResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -634,6 +934,136 @@ func (c *Client) sendDeleteAgentConfig(ctx context.Context, params DeleteAgentCo
 
 	stage = "DecodeResponse"
 	result, err := decodeDeleteAgentConfigResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// DeleteAgentTerminal invokes delete-agent-terminal operation.
+//
+// Destroy an agent terminal runtime in a sandbox.
+//
+// DELETE /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}
+func (c *Client) DeleteAgentTerminal(ctx context.Context, params DeleteAgentTerminalParams) (DeleteAgentTerminalRes, error) {
+	res, err := c.sendDeleteAgentTerminal(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendDeleteAgentTerminal(ctx context.Context, params DeleteAgentTerminalParams) (res DeleteAgentTerminalRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("delete-agent-terminal"),
+		semconv.HTTPRequestMethodKey.String("DELETE"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DeleteAgentTerminalOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [6]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/agent-terminals/"
+	{
+		// Encode "terminalId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "terminalId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.TerminalId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[5] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "DELETE", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDeleteAgentTerminalResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -1171,6 +1601,137 @@ func (c *Client) sendGetAgentConfigDefinition(ctx context.Context, params GetAge
 
 	stage = "DecodeResponse"
 	result, err := decodeGetAgentConfigDefinitionResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetAgentTerminalResources invokes get-agent-terminal-resources operation.
+//
+// Get the latest opaque resource snapshot for an agent terminal.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources
+func (c *Client) GetAgentTerminalResources(ctx context.Context, params GetAgentTerminalResourcesParams) (GetAgentTerminalResourcesRes, error) {
+	res, err := c.sendGetAgentTerminalResources(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetAgentTerminalResources(ctx context.Context, params GetAgentTerminalResourcesParams) (res GetAgentTerminalResourcesRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-agent-terminal-resources"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetAgentTerminalResourcesOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [7]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/agent-terminals/"
+	{
+		// Encode "terminalId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "terminalId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.TerminalId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[5] = encoded
+	}
+	pathParts[6] = "/resources"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetAgentTerminalResourcesResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -1763,6 +2324,422 @@ func (c *Client) sendListAgentConfigs(ctx context.Context, params ListAgentConfi
 
 	stage = "DecodeResponse"
 	result, err := decodeListAgentConfigsResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListAgentTerminalEvents invokes list-agent-terminal-events operation.
+//
+// List recent audit events for an agent terminal.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/events
+func (c *Client) ListAgentTerminalEvents(ctx context.Context, params ListAgentTerminalEventsParams) (ListAgentTerminalEventsRes, error) {
+	res, err := c.sendListAgentTerminalEvents(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListAgentTerminalEvents(ctx context.Context, params ListAgentTerminalEventsParams) (res ListAgentTerminalEventsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-agent-terminal-events"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/events"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListAgentTerminalEventsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [7]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/agent-terminals/"
+	{
+		// Encode "terminalId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "terminalId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.TerminalId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[5] = encoded
+	}
+	pathParts[6] = "/events"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "limit" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "limit",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Limit.Get(); ok {
+				return e.EncodeValue(conv.IntToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListAgentTerminalEventsResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListAgentTerminalResourceHistory invokes list-agent-terminal-resource-history operation.
+//
+// List recent opaque resource snapshots for an agent terminal.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/history
+func (c *Client) ListAgentTerminalResourceHistory(ctx context.Context, params ListAgentTerminalResourceHistoryParams) (ListAgentTerminalResourceHistoryRes, error) {
+	res, err := c.sendListAgentTerminalResourceHistory(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListAgentTerminalResourceHistory(ctx context.Context, params ListAgentTerminalResourceHistoryParams) (res ListAgentTerminalResourceHistoryRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-agent-terminal-resource-history"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/history"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListAgentTerminalResourceHistoryOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [7]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/agent-terminals/"
+	{
+		// Encode "terminalId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "terminalId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.TerminalId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[5] = encoded
+	}
+	pathParts[6] = "/resources/history"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeQueryParams"
+	q := uri.NewQueryEncoder()
+	{
+		// Encode "limit" parameter.
+		cfg := uri.QueryParameterEncodingConfig{
+			Name:    "limit",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
+			if val, ok := params.Limit.Get(); ok {
+				return e.EncodeValue(conv.IntToString(val))
+			}
+			return nil
+		}); err != nil {
+			return res, errors.Wrap(err, "encode query")
+		}
+	}
+	u.RawQuery = q.Values().Encode()
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListAgentTerminalResourceHistoryResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListAgentTerminals invokes list-agent-terminals operation.
+//
+// List agent terminal runtimes in a sandbox.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals
+func (c *Client) ListAgentTerminals(ctx context.Context, params ListAgentTerminalsParams) (ListAgentTerminalsRes, error) {
+	res, err := c.sendListAgentTerminals(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListAgentTerminals(ctx context.Context, params ListAgentTerminalsParams) (res ListAgentTerminalsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-agent-terminals"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListAgentTerminalsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/agent-terminals"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListAgentTerminalsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -2726,6 +3703,137 @@ func (c *Client) sendStopSandbox(ctx context.Context, request *StopSandboxBody, 
 
 	stage = "DecodeResponse"
 	result, err := decodeStopSandboxResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// StreamAgentTerminalResources invokes stream-agent-terminal-resources operation.
+//
+// Stream opaque resource snapshots for an agent terminal.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/stream
+func (c *Client) StreamAgentTerminalResources(ctx context.Context, params StreamAgentTerminalResourcesParams) (StreamAgentTerminalResourcesRes, error) {
+	res, err := c.sendStreamAgentTerminalResources(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendStreamAgentTerminalResources(ctx context.Context, params StreamAgentTerminalResourcesParams) (res StreamAgentTerminalResourcesRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("stream-agent-terminal-resources"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/stream"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, StreamAgentTerminalResourcesOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [7]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/agent-terminals/"
+	{
+		// Encode "terminalId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "terminalId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.TerminalId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[5] = encoded
+	}
+	pathParts[6] = "/resources/stream"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeStreamAgentTerminalResourcesResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

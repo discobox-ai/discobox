@@ -8,12 +8,27 @@ import (
 
 // Handler handles operations described by OpenAPI v3 specification.
 type Handler interface {
+	// AttachAgentTerminal implements attach-agent-terminal operation.
+	//
+	// Upgrades to a framed bidirectional stream for a running agent terminal. Closing the stream
+	// detaches from the terminal and does not stop the underlying agent process.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/attach
+	AttachAgentTerminal(ctx context.Context, params AttachAgentTerminalParams) (AttachAgentTerminalRes, error)
 	// CreateAgentConfig implements create-agent-config operation.
 	//
 	// Create an agent config.
 	//
 	// POST /projects/{projectId}/agent-configs
 	CreateAgentConfig(ctx context.Context, req *CreateAgentConfigBody, params CreateAgentConfigParams) (CreateAgentConfigRes, error)
+	// CreateAgentTerminal implements create-agent-terminal operation.
+	//
+	// Creates an ephemeral terminal/TUI runtime for a coding-agent CLI. When the request is an upgrade
+	// request, the sandbox agent creates the terminal and switches protocols to the framed bidirectional
+	// attach stream instead of returning JSON.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals
+	CreateAgentTerminal(ctx context.Context, req *CreateAgentTerminalRequest, params CreateAgentTerminalParams) (CreateAgentTerminalRes, error)
 	// CreateSandbox implements create-sandbox operation.
 	//
 	// Create a sandbox.
@@ -32,6 +47,12 @@ type Handler interface {
 	//
 	// DELETE /projects/{projectId}/agent-configs/{agentConfigId}
 	DeleteAgentConfig(ctx context.Context, params DeleteAgentConfigParams) (DeleteAgentConfigRes, error)
+	// DeleteAgentTerminal implements delete-agent-terminal operation.
+	//
+	// Destroy an agent terminal runtime in a sandbox.
+	//
+	// DELETE /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}
+	DeleteAgentTerminal(ctx context.Context, params DeleteAgentTerminalParams) (DeleteAgentTerminalRes, error)
 	// DeleteSandbox implements delete-sandbox operation.
 	//
 	// Delete a sandbox.
@@ -62,6 +83,12 @@ type Handler interface {
 	//
 	// GET /agent-config-definitions/{definitionId}
 	GetAgentConfigDefinition(ctx context.Context, params GetAgentConfigDefinitionParams) (GetAgentConfigDefinitionRes, error)
+	// GetAgentTerminalResources implements get-agent-terminal-resources operation.
+	//
+	// Get the latest opaque resource snapshot for an agent terminal.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources
+	GetAgentTerminalResources(ctx context.Context, params GetAgentTerminalResourcesParams) (GetAgentTerminalResourcesRes, error)
 	// GetJob implements get-job operation.
 	//
 	// Get a job.
@@ -98,6 +125,24 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/agent-configs
 	ListAgentConfigs(ctx context.Context, params ListAgentConfigsParams) (ListAgentConfigsRes, error)
+	// ListAgentTerminalEvents implements list-agent-terminal-events operation.
+	//
+	// List recent audit events for an agent terminal.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/events
+	ListAgentTerminalEvents(ctx context.Context, params ListAgentTerminalEventsParams) (ListAgentTerminalEventsRes, error)
+	// ListAgentTerminalResourceHistory implements list-agent-terminal-resource-history operation.
+	//
+	// List recent opaque resource snapshots for an agent terminal.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/history
+	ListAgentTerminalResourceHistory(ctx context.Context, params ListAgentTerminalResourceHistoryParams) (ListAgentTerminalResourceHistoryRes, error)
+	// ListAgentTerminals implements list-agent-terminals operation.
+	//
+	// List agent terminal runtimes in a sandbox.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals
+	ListAgentTerminals(ctx context.Context, params ListAgentTerminalsParams) (ListAgentTerminalsRes, error)
 	// ListJobs implements list-jobs operation.
 	//
 	// List jobs for a project.
@@ -158,6 +203,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/stop
 	StopSandbox(ctx context.Context, req *StopSandboxBody, params StopSandboxParams) (StopSandboxRes, error)
+	// StreamAgentTerminalResources implements stream-agent-terminal-resources operation.
+	//
+	// Stream opaque resource snapshots for an agent terminal.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/stream
+	StreamAgentTerminalResources(ctx context.Context, params StreamAgentTerminalResourcesParams) (StreamAgentTerminalResourcesRes, error)
 	// UpdateAgentConfig implements update-agent-config operation.
 	//
 	// Update an agent config.

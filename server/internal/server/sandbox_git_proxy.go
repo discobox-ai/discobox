@@ -158,6 +158,14 @@ func (t workerAgentAuthTransport) RoundTrip(req *http.Request) (*http.Response, 
 	} else {
 		req.Header.Del("Authorization")
 	}
+	req.Header.Del("X-Discobox-Sandbox-Agent-Authorization")
+	forwardAuthToken, err := t.lease.ForwardAuthorizationToken(req.Context())
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(forwardAuthToken) != "" {
+		req.Header.Set("X-Discobox-Sandbox-Agent-Authorization", "Bearer "+strings.TrimSpace(forwardAuthToken))
+	}
 	return t.base.RoundTrip(req)
 }
 

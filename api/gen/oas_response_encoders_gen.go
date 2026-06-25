@@ -3,14 +3,90 @@
 package apigen
 
 import (
+	"io"
 	"net/http"
 
 	"github.com/go-faster/errors"
 	"github.com/go-faster/jx"
+	"github.com/ogen-go/ogen/conv"
 	ht "github.com/ogen-go/ogen/http"
+	"github.com/ogen-go/ogen/uri"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
+
+func encodeAttachAgentTerminalResponse(response AttachAgentTerminalRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *AttachAgentTerminalSwitchingProtocols:
+		w.Header().Set("Access-Control-Expose-Headers", "Connection,Upgrade")
+		// Encoding response headers.
+		{
+			h := uri.NewHeaderEncoder(w.Header())
+			// Encode "Connection" header.
+			{
+				cfg := uri.HeaderParameterEncodingConfig{
+					Name:    "Connection",
+					Explode: false,
+				}
+				if err := h.EncodeParam(cfg, func(e uri.Encoder) error {
+					if val, ok := response.Connection.Get(); ok {
+						return e.EncodeValue(conv.StringToString(val))
+					}
+					return nil
+				}); err != nil {
+					return errors.Wrap(err, "encode Connection header")
+				}
+			}
+			// Encode "Upgrade" header.
+			{
+				cfg := uri.HeaderParameterEncodingConfig{
+					Name:    "Upgrade",
+					Explode: false,
+				}
+				if err := h.EncodeParam(cfg, func(e uri.Encoder) error {
+					if val, ok := response.Upgrade.Get(); ok {
+						return e.EncodeValue(conv.StringToString(val))
+					}
+					return nil
+				}); err != nil {
+					return errors.Wrap(err, "encode Upgrade header")
+				}
+			}
+		}
+		w.WriteHeader(101)
+		span.SetStatus(codes.Ok, http.StatusText(101))
+
+		return nil
+
+	case *ErrorResponseStatusCode:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		code := response.StatusCode
+		if code == 0 {
+			// Set default status code.
+			code = http.StatusOK
+		}
+		w.WriteHeader(code)
+		if st := http.StatusText(code); code >= http.StatusBadRequest {
+			span.SetStatus(codes.Error, st)
+		} else {
+			span.SetStatus(codes.Ok, st)
+		}
+
+		e := new(jx.Encoder)
+		response.Response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		if code >= http.StatusInternalServerError {
+			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
+		}
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
 
 func encodeCreateAgentConfigResponse(response CreateAgentConfigRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
@@ -29,6 +105,92 @@ func encodeCreateAgentConfigResponse(response CreateAgentConfigRes, w http.Respo
 
 	case *ErrorModelStatusCode:
 		w.Header().Set("Content-Type", "application/problem+json")
+		code := response.StatusCode
+		if code == 0 {
+			// Set default status code.
+			code = http.StatusOK
+		}
+		w.WriteHeader(code)
+		if st := http.StatusText(code); code >= http.StatusBadRequest {
+			span.SetStatus(codes.Error, st)
+		} else {
+			span.SetStatus(codes.Ok, st)
+		}
+
+		e := new(jx.Encoder)
+		response.Response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		if code >= http.StatusInternalServerError {
+			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
+		}
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
+func encodeCreateAgentTerminalResponse(response CreateAgentTerminalRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *CreateAgentTerminalSwitchingProtocols:
+		w.Header().Set("Access-Control-Expose-Headers", "Connection,Upgrade")
+		// Encoding response headers.
+		{
+			h := uri.NewHeaderEncoder(w.Header())
+			// Encode "Connection" header.
+			{
+				cfg := uri.HeaderParameterEncodingConfig{
+					Name:    "Connection",
+					Explode: false,
+				}
+				if err := h.EncodeParam(cfg, func(e uri.Encoder) error {
+					if val, ok := response.Connection.Get(); ok {
+						return e.EncodeValue(conv.StringToString(val))
+					}
+					return nil
+				}); err != nil {
+					return errors.Wrap(err, "encode Connection header")
+				}
+			}
+			// Encode "Upgrade" header.
+			{
+				cfg := uri.HeaderParameterEncodingConfig{
+					Name:    "Upgrade",
+					Explode: false,
+				}
+				if err := h.EncodeParam(cfg, func(e uri.Encoder) error {
+					if val, ok := response.Upgrade.Get(); ok {
+						return e.EncodeValue(conv.StringToString(val))
+					}
+					return nil
+				}); err != nil {
+					return errors.Wrap(err, "encode Upgrade header")
+				}
+			}
+		}
+		w.WriteHeader(101)
+		span.SetStatus(codes.Ok, http.StatusText(101))
+
+		return nil
+
+	case *CreateAgentTerminalResponse:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(201)
+		span.SetStatus(codes.Ok, http.StatusText(201))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *ErrorResponseStatusCode:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		code := response.StatusCode
 		if code == 0 {
 			// Set default status code.
@@ -157,6 +319,44 @@ func encodeDeleteAgentConfigResponse(response DeleteAgentConfigRes, w http.Respo
 
 	case *ErrorModelStatusCode:
 		w.Header().Set("Content-Type", "application/problem+json")
+		code := response.StatusCode
+		if code == 0 {
+			// Set default status code.
+			code = http.StatusOK
+		}
+		w.WriteHeader(code)
+		if st := http.StatusText(code); code >= http.StatusBadRequest {
+			span.SetStatus(codes.Error, st)
+		} else {
+			span.SetStatus(codes.Ok, st)
+		}
+
+		e := new(jx.Encoder)
+		response.Response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		if code >= http.StatusInternalServerError {
+			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
+		}
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
+func encodeDeleteAgentTerminalResponse(response DeleteAgentTerminalRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *DeleteAgentTerminalNoContent:
+		w.WriteHeader(204)
+		span.SetStatus(codes.Ok, http.StatusText(204))
+
+		return nil
+
+	case *ErrorResponseStatusCode:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		code := response.StatusCode
 		if code == 0 {
 			// Set default status code.
@@ -368,6 +568,51 @@ func encodeGetAgentConfigDefinitionResponse(response GetAgentConfigDefinitionRes
 
 	case *ErrorModelStatusCode:
 		w.Header().Set("Content-Type", "application/problem+json")
+		code := response.StatusCode
+		if code == 0 {
+			// Set default status code.
+			code = http.StatusOK
+		}
+		w.WriteHeader(code)
+		if st := http.StatusText(code); code >= http.StatusBadRequest {
+			span.SetStatus(codes.Error, st)
+		} else {
+			span.SetStatus(codes.Ok, st)
+		}
+
+		e := new(jx.Encoder)
+		response.Response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		if code >= http.StatusInternalServerError {
+			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
+		}
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
+func encodeGetAgentTerminalResourcesResponse(response GetAgentTerminalResourcesRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *ResourceSnapshot:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *ErrorResponseStatusCode:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		code := response.StatusCode
 		if code == 0 {
 			// Set default status code.
@@ -638,6 +883,141 @@ func encodeListAgentConfigsResponse(response ListAgentConfigsRes, w http.Respons
 
 	case *ErrorModelStatusCode:
 		w.Header().Set("Content-Type", "application/problem+json")
+		code := response.StatusCode
+		if code == 0 {
+			// Set default status code.
+			code = http.StatusOK
+		}
+		w.WriteHeader(code)
+		if st := http.StatusText(code); code >= http.StatusBadRequest {
+			span.SetStatus(codes.Error, st)
+		} else {
+			span.SetStatus(codes.Ok, st)
+		}
+
+		e := new(jx.Encoder)
+		response.Response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		if code >= http.StatusInternalServerError {
+			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
+		}
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
+func encodeListAgentTerminalEventsResponse(response ListAgentTerminalEventsRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *AgentTerminalEventsResponse:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *ErrorResponseStatusCode:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		code := response.StatusCode
+		if code == 0 {
+			// Set default status code.
+			code = http.StatusOK
+		}
+		w.WriteHeader(code)
+		if st := http.StatusText(code); code >= http.StatusBadRequest {
+			span.SetStatus(codes.Error, st)
+		} else {
+			span.SetStatus(codes.Ok, st)
+		}
+
+		e := new(jx.Encoder)
+		response.Response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		if code >= http.StatusInternalServerError {
+			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
+		}
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
+func encodeListAgentTerminalResourceHistoryResponse(response ListAgentTerminalResourceHistoryRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *ResourceHistoryResponse:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *ErrorResponseStatusCode:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		code := response.StatusCode
+		if code == 0 {
+			// Set default status code.
+			code = http.StatusOK
+		}
+		w.WriteHeader(code)
+		if st := http.StatusText(code); code >= http.StatusBadRequest {
+			span.SetStatus(codes.Error, st)
+		} else {
+			span.SetStatus(codes.Ok, st)
+		}
+
+		e := new(jx.Encoder)
+		response.Response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		if code >= http.StatusInternalServerError {
+			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
+		}
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
+func encodeListAgentTerminalsResponse(response ListAgentTerminalsRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *AgentTerminalsResponse:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		e := new(jx.Encoder)
+		response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *ErrorResponseStatusCode:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		code := response.StatusCode
 		if code == 0 {
 			// Set default status code.
@@ -1088,6 +1468,53 @@ func encodeStopSandboxResponse(response StopSandboxRes, w http.ResponseWriter, s
 
 	case *ErrorModelStatusCode:
 		w.Header().Set("Content-Type", "application/problem+json")
+		code := response.StatusCode
+		if code == 0 {
+			// Set default status code.
+			code = http.StatusOK
+		}
+		w.WriteHeader(code)
+		if st := http.StatusText(code); code >= http.StatusBadRequest {
+			span.SetStatus(codes.Error, st)
+		} else {
+			span.SetStatus(codes.Ok, st)
+		}
+
+		e := new(jx.Encoder)
+		response.Response.Encode(e)
+		if _, err := e.WriteTo(w); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		if code >= http.StatusInternalServerError {
+			return errors.Wrapf(ht.ErrInternalServerErrorResponse, "code: %d, message: %s", code, http.StatusText(code))
+		}
+		return nil
+
+	default:
+		return errors.Errorf("unexpected response type: %T", response)
+	}
+}
+
+func encodeStreamAgentTerminalResourcesResponse(response StreamAgentTerminalResourcesRes, w http.ResponseWriter, span trace.Span) error {
+	switch response := response.(type) {
+	case *StreamAgentTerminalResourcesOK:
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(200)
+		span.SetStatus(codes.Ok, http.StatusText(200))
+
+		writer := w
+		if closer, ok := response.Data.(io.Closer); ok {
+			defer closer.Close()
+		}
+		if _, err := io.Copy(writer, response); err != nil {
+			return errors.Wrap(err, "write")
+		}
+
+		return nil
+
+	case *ErrorResponseStatusCode:
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		code := response.StatusCode
 		if code == 0 {
 			// Set default status code.

@@ -65,10 +65,12 @@ func DefaultAppOptions() AppOptions {
 // NewRouter creates a chi router backed by the generated OpenAPI server.
 func NewRouter(svc services.Services) (*chi.Mux, error) {
 	router := chi.NewRouter()
+	RegisterHealthRoutes(router)
 	RegisterDocsRoutes(router)
 	registerProjectStreamTransports(router, svc.Events)
 	registerSandboxGitRoutes(router, svc.Sandboxes)
 	registerSandboxHTTPRoutes(router, svc.Sandboxes)
+	registerSandboxAgentTerminalRoutes(router, svc.Sandboxes)
 	generated, err := handlers.NewServer(svc)
 	if err != nil {
 		return nil, err
@@ -130,10 +132,12 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		auth.WorkerRouteAuthorizer{},
 		auth.AuthenticatedAuthorizer{},
 	))
+	RegisterHealthRoutes(router)
 	RegisterDocsRoutes(router)
 	registerProjectStreamTransports(router, appServices)
 	registerSandboxGitRoutes(router, appServices)
 	registerSandboxHTTPRoutes(router, appServices)
+	registerSandboxAgentTerminalRoutes(router, appServices)
 	generated, err := handlers.NewServer(services.Services{
 		Projects:     appServices,
 		AgentConfigs: appServices,

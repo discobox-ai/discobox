@@ -6,15 +6,16 @@ import (
 	services "github.com/obot-platform/discobox/server/internal/services"
 )
 
-// NewGeneratedRouter returns a chi router backed by generated OpenAPI server
-// scaffolding. Project stream SSE remains hand-wired because ogen skips
-// text/event-stream operations.
-func NewGeneratedRouter(services services.Services) (*chi.Mux, error) {
+// NewOpenAPIRouter returns a chi router backed by generated OpenAPI server
+// scaffolding plus hand-wired transports that generated handlers cannot own
+// behavior-compatibly.
+func NewOpenAPIRouter(services services.Services) (*chi.Mux, error) {
 	router := chi.NewRouter()
 	RegisterDocsRoutes(router)
 	registerProjectStreamTransports(router, services.Events)
 	registerSandboxGitRoutes(router, services.Sandboxes)
 	registerSandboxHTTPRoutes(router, services.Sandboxes)
+	registerSandboxAgentTerminalRoutes(router, services.Sandboxes)
 
 	generated, err := handlers.NewServer(services)
 	if err != nil {

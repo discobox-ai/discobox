@@ -43,7 +43,7 @@ of deriving the contract from Go route registration.
 
 Current transition state:
 
-- `internal/server.NewRouter`, `NewApp`, and `NewGeneratedRouter`
+- `internal/server.NewRouter`, `NewApp`, and `NewOpenAPIRouter`
   compose chi routers around the generated OpenAPI server scaffold.
 - `internal/handlers` adapts generated operations to API-facing services and
   constructs the generated OpenAPI server.
@@ -75,12 +75,20 @@ Current proxy routes:
   `/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/http/{port}/{path...}`.
   The future worker-agent implementation owns translating that worker-local
   route to `http://localhost:{port}/{path...}` inside the sandbox.
+- `/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals...` forwards
+  to the sandbox-agent terminal runtime API with the same path. The worker-agent
+  forwarding layer and sandbox-agent implementation own serving that API; the
+  server owns project authorization, scope selection, and lease/token injection
+  only.
 
 Proxy handlers must request the narrow worker-agent token scopes needed for the
 flow. The git proxy requests `sandbox:read` and `sandbox:write` because Git HTTP
 uses method and service-specific read/write behavior. The sandbox HTTP port
 proxy requests only `sandbox:http`; worker-agent support for this route must
 require that scope rather than accepting the broader sandbox read/write scopes.
+The agent-terminal proxy requests `terminal:read` for listing and resource reads
+and `terminal:write` for create, attach, and delete because attach streams carry
+input, resize, and signal frames.
 
 Authorization must be decidable from request attributes available before body
 interpretation: authenticated principal, method, route/path parameters, query

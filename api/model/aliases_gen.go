@@ -7,11 +7,18 @@ import apigen "github.com/obot-platform/discobox/api/gen"
 
 type AgentConfig = apigen.AgentConfig
 type AgentConfigDefinition = apigen.AgentConfigDefinition
+type AgentTerminal = apigen.AgentTerminal
+type AgentTerminalEvent = apigen.AgentTerminalEvent
+type AgentTerminalEventsResponse = apigen.AgentTerminalEventsResponse
+type AgentTerminalsResponse = apigen.AgentTerminalsResponse
 type CreateAgentConfigBody = apigen.CreateAgentConfigBody
+type CreateAgentTerminalRequest = apigen.CreateAgentTerminalRequest
+type CreateAgentTerminalResponse = apigen.CreateAgentTerminalResponse
 type CreateSandboxBody = apigen.CreateSandboxBody
 type CreateSandboxProviderInstanceBody = apigen.CreateSandboxProviderInstanceBody
 type ErrorDetail = apigen.ErrorDetail
 type ErrorModel = apigen.ErrorModel
+type ErrorResponse = apigen.ErrorResponse
 type GitSource = apigen.GitSource
 type GitSourceCheckout = apigen.GitSourceCheckout
 type GitSourceDestination = apigen.GitSourceDestination
@@ -32,6 +39,8 @@ type ProviderStatus = apigen.ProviderStatus
 type ProviderWorkerStatus = apigen.ProviderWorkerStatus
 type RegisterWorkerBody = apigen.RegisterWorkerBody
 type RegisterWorkerResponseBody = apigen.RegisterWorkerResponseBody
+type ResourceHistoryResponse = apigen.ResourceHistoryResponse
+type ResourceSnapshot = apigen.ResourceSnapshot
 type RestartSandboxBody = apigen.RestartSandboxBody
 type Sandbox = apigen.Sandbox
 type SandboxProviderCatalogItem = apigen.SandboxProviderCatalogItem

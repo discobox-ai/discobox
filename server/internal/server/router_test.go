@@ -59,9 +59,9 @@ func newAppTestDB(ctx context.Context, t *testing.T) *database.DB {
 	return db
 }
 
-func TestNewGeneratedRouterServesOpenAPIAndScalarDocs(t *testing.T) {
+func TestNewOpenAPIRouterServesOpenAPIAndScalarDocs(t *testing.T) {
 	stubs := newRouterTestServices()
-	router, err := NewGeneratedRouter(services.Services{
+	router, err := NewOpenAPIRouter(services.Services{
 		Projects:     stubs,
 		AgentConfigs: stubs,
 		Sandboxes:    stubs,
@@ -71,7 +71,7 @@ func TestNewGeneratedRouterServesOpenAPIAndScalarDocs(t *testing.T) {
 		Events:       stubs,
 	})
 	if err != nil {
-		t.Fatalf("new generated router: %v", err)
+		t.Fatalf("new OpenAPI router: %v", err)
 	}
 	assertOpenAPIAndScalarDocs(t, router)
 }
@@ -360,6 +360,126 @@ func TestSandboxHTTPRouteProxiesPortToWorker(t *testing.T) {
 		t.Fatal("expected sandbox HTTP lease to be released")
 	}
 	if !slices.Equal(stubs.sandboxScopes, []string{workeragentauth.ScopeSandboxHTTP}) {
+		t.Fatalf("sandbox HTTP scopes = %#v", stubs.sandboxScopes)
+	}
+}
+
+func TestSandboxAgentTerminalListRouteProxiesToSandboxAgent(t *testing.T) {
+	ctx := context.Background()
+	stubs := newRouterTestServices()
+	workerID := "worker-1"
+	stubs.sandboxes["sandbox-1"] = model.Sandbox{
+		ID:              "sandbox-1",
+		ProjectID:       service.DefaultProjectID,
+		CreatedByUserID: service.DefaultUserID,
+		Name:            "sandbox",
+		WorkerID:        &workerID,
+	}
+	var released bool
+	projectID := service.DefaultProjectID
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wantPath := "/api/project/" + projectID + "/worker/worker-1/sandboxes/sandbox-1/agent-terminals"
+		if r.URL.Path != wantPath {
+			t.Fatalf("upstream path = %q", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer worker-token" {
+			t.Fatalf("upstream auth = %q", got)
+		}
+		if got := r.Header.Get("X-Discobox-Sandbox-Agent-Authorization"); got != "Bearer sandbox-agent-token" {
+			t.Fatalf("upstream sandbox-agent auth = %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"terminals":[]}`))
+	}))
+	t.Cleanup(upstream.Close)
+	stubs.sandboxLease = transport.NewHTTPClientLeaseWithBaseURLAndAuth(upstream.Client(), upstream.URL, "worker-token", func() {
+		released = true
+	})
+	stubs.sandboxLease.ForwardAuthTokenProvider = func(context.Context) (string, error) {
+		return "sandbox-agent-token", nil
+	}
+
+	router, err := NewRouter(services.Services{
+		Projects:     stubs,
+		AgentConfigs: stubs,
+		Sandboxes:    stubs,
+		Providers:    stubs,
+		Workers:      stubs,
+		Jobs:         stubs,
+		Events:       stubs,
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	resp := httptest.NewRecorder()
+	req := scopedUserRequest(ctx, http.MethodGet, "/api/projects/"+projectID+"/sandboxes/sandbox-1/agent-terminals", nil, workeragentauth.ScopeTerminalRead)
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("GET sandbox agent terminals status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	if body := resp.Body.String(); body != `{"terminals":[]}` {
+		t.Fatalf("body = %q, want proxied response", body)
+	}
+	if !released {
+		t.Fatal("expected sandbox HTTP lease to be released")
+	}
+	if !slices.Equal(stubs.sandboxScopes, []string{workeragentauth.ScopeTerminalRead}) {
+		t.Fatalf("sandbox HTTP scopes = %#v", stubs.sandboxScopes)
+	}
+}
+
+func TestSandboxAgentTerminalAttachRouteUsesWriteScope(t *testing.T) {
+	ctx := context.Background()
+	stubs := newRouterTestServices()
+	workerID := "worker-1"
+	stubs.sandboxes["sandbox-1"] = model.Sandbox{
+		ID:              "sandbox-1",
+		ProjectID:       service.DefaultProjectID,
+		CreatedByUserID: service.DefaultUserID,
+		Name:            "sandbox",
+		WorkerID:        &workerID,
+	}
+	projectID := service.DefaultProjectID
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		wantPath := "/api/project/" + projectID + "/worker/worker-1/sandboxes/sandbox-1/agent-terminals/terminal-1/attach"
+		if r.URL.Path != wantPath {
+			t.Fatalf("upstream path = %q", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer worker-token" {
+			t.Fatalf("upstream auth = %q", got)
+		}
+		if got := r.Header.Get("X-Discobox-Sandbox-Agent-Authorization"); got != "Bearer sandbox-agent-token" {
+			t.Fatalf("upstream sandbox-agent auth = %q", got)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(upstream.Close)
+	stubs.sandboxLease = transport.NewHTTPClientLeaseWithBaseURLAndAuth(upstream.Client(), upstream.URL, "worker-token", nil)
+	stubs.sandboxLease.ForwardAuthTokenProvider = func(context.Context) (string, error) {
+		return "sandbox-agent-token", nil
+	}
+
+	router, err := NewRouter(services.Services{
+		Projects:     stubs,
+		AgentConfigs: stubs,
+		Sandboxes:    stubs,
+		Providers:    stubs,
+		Workers:      stubs,
+		Jobs:         stubs,
+		Events:       stubs,
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	resp := httptest.NewRecorder()
+	req := scopedUserRequest(ctx, http.MethodPost, "/api/projects/"+projectID+"/sandboxes/sandbox-1/agent-terminals/terminal-1/attach", nil, workeragentauth.ScopeTerminalWrite)
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusNoContent {
+		t.Fatalf("POST sandbox agent terminal attach status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	if !slices.Equal(stubs.sandboxScopes, []string{workeragentauth.ScopeTerminalWrite}) {
 		t.Fatalf("sandbox HTTP scopes = %#v", stubs.sandboxScopes)
 	}
 }

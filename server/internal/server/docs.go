@@ -35,6 +35,13 @@ func RegisterDocsRoutes(router chi.Router) {
 	router.Get("/docs/", serveScalarDocs)
 }
 
+// RegisterHealthRoutes serves lightweight process readiness checks.
+func RegisterHealthRoutes(router chi.Router) {
+	router.Get("/healthz", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+}
+
 func serveScalarDocs(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(scalarDocsHTML))

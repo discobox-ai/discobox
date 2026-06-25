@@ -90,6 +90,13 @@ func (s *Manager) CreateWorkerAgentToken(ctx context.Context, claims workeragent
 	return s.workerAgentAuth.CreateToken(ctx, claims)
 }
 
+func (s *Manager) CreateSandboxAgentToken(ctx context.Context, claims workeragentauth.TokenClaims) (string, error) {
+	if s.workerAgentAuth == nil {
+		return "", nil
+	}
+	return s.workerAgentAuth.CreateSandboxAgentToken(ctx, claims)
+}
+
 func (s *Manager) FindSchedulableWorker(ctx context.Context, sandbox *model.Sandbox) (*model.Worker, error) {
 	return s.store.FindSchedulableWorker(ctx, sandbox)
 }
