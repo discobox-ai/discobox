@@ -1,0 +1,43 @@
+min_version = "2026.6.3"
+
+[settings]
+node.corepack = true
+
+[tools]
+go = "1.26"
+node = { version = "24", postinstall = "corepack prepare pnpm@11.4.0 --activate" }
+task = "latest"
+make = "latest"
+sqlite = "latest"
+"go:github.com/go-delve/delve/cmd/dlv" = "latest"
+"go:golang.org/x/tools/gopls" = "latest"
+"go:golang.org/x/tools/cmd/goimports" = "latest"
+"go:golang.org/x/tools/cmd/godoc" = "latest"
+
+[env]
+DISCOBOX_ROOT = "{{config_root}}"
+DISCOBOX_COMPLETION_DIR = "{{config_root}}/build/completions"
+DISCOBOX_BASH_COMPLETION = "{{config_root}}/build/completions/discobox.bash"
+DISCOBOX_ZSH_COMPLETION = "{{config_root}}/build/completions/_discobox"
+DISCOBOX_FISH_COMPLETION = "{{config_root}}/build/completions/discobox.fish"
+DISCOBOX_BASH_COMPLETION_USER_DIR = "{{env.HOME}}/.local/share/bash-completion/completions"
+_.path = ["build"]
+
+[hooks]
+enter = "mise run -q completions"
+
+[tasks.completions]
+description = "Generate local discobox shell completions"
+run = '''
+if [ ! -x "$DISCOBOX_ROOT/build/discobox" ]; then
+  exit 0
+fi
+
+mkdir -p "$DISCOBOX_COMPLETION_DIR"
+"$DISCOBOX_ROOT/build/discobox" completion bash > "$DISCOBOX_BASH_COMPLETION"
+"$DISCOBOX_ROOT/build/discobox" completion zsh > "$DISCOBOX_ZSH_COMPLETION"
+"$DISCOBOX_ROOT/build/discobox" completion fish > "$DISCOBOX_FISH_COMPLETION"
+
+mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions"
+cp "$DISCOBOX_BASH_COMPLETION" "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/discobox"
+'''

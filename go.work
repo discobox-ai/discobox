@@ -1,0 +1,12 @@
+go 1.26.0
+
+use (
+	.
+	./cli
+	./gormdb
+	./hooks
+	./orchestration
+	./sandbox-agent
+	./server
+	./worker-agent
+)
