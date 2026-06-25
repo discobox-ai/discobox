@@ -675,6 +675,19 @@ func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions
 		}
 		out.ResolvedAgentConfig = workerclient.NewOptResolvedAgentConfig(resolved)
 	}
+	if len(opts.AgentConfigs) > 0 {
+		configs := make([]workerapimodel.AgentConfig, 0, len(opts.AgentConfigs))
+		for _, config := range opts.AgentConfigs {
+			configs = append(configs, workerapimodel.AgentConfig{
+				ID:             config.ID,
+				Name:           config.Name,
+				InstallCommand: workerclient.NewOptString(config.InstallCommand),
+				RunCommand:     config.RunCommand,
+				IsDefault:      config.IsDefault,
+			})
+		}
+		out.AgentConfigs = workerclient.NewOptNilAgentConfigArray(configs)
+	}
 	if opts.AgentModel != nil {
 		out.AgentModel = workerclient.NewOptString(*opts.AgentModel)
 	}

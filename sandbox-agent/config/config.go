@@ -18,6 +18,8 @@ type Config struct {
 	WorkingRoot           string         `json:"workingRoot"`
 	RuntimeDir            string         `json:"runtimeDir"`
 	DatabasePath          string         `json:"databasePath"`
+	ResolvedAgentConfig   *Agent         `json:"resolvedAgentConfig,omitempty"`
+	AgentConfigs          []Agent        `json:"agentConfigs,omitempty"`
 	Agents                []Agent        `json:"agents"`
 	Resources             ResourceConfig `json:"resources"`
 }
@@ -29,9 +31,11 @@ type Identity struct {
 }
 
 type Agent struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	Command []string `json:"command"`
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	InstallCommand string   `json:"installCommand,omitempty"`
+	Command        []string `json:"command"`
+	IsDefault      bool     `json:"isDefault,omitempty"`
 }
 
 type ResourceConfig struct {
@@ -53,10 +57,42 @@ func Load(path string) (Config, error) {
 	}
 	applyEnv(&cfg)
 	applyDefaults(&cfg)
+	cfg.Agents = launchableAgents(cfg.Agents, cfg.ResolvedAgentConfig, cfg.AgentConfigs)
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func launchableAgents(agents []Agent, resolved *Agent, configs []Agent) []Agent {
+	if len(configs) == 0 && resolved == nil {
+		return agents
+	}
+	seen := make(map[string]struct{}, len(agents)+len(configs)+1)
+	out := make([]Agent, 0, len(agents)+len(configs)+1)
+	for _, agent := range agents {
+		if strings.TrimSpace(agent.ID) == "" {
+			continue
+		}
+		seen[agent.ID] = struct{}{}
+		out = append(out, agent)
+	}
+	for _, agent := range configs {
+		if strings.TrimSpace(agent.ID) == "" {
+			continue
+		}
+		if _, ok := seen[agent.ID]; ok {
+			continue
+		}
+		seen[agent.ID] = struct{}{}
+		out = append(out, agent)
+	}
+	if resolved != nil && strings.TrimSpace(resolved.ID) != "" {
+		if _, ok := seen[resolved.ID]; !ok {
+			out = append(out, *resolved)
+		}
+	}
+	return out
 }
 
 func (c Config) Validate() error {

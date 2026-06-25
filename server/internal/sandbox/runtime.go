@@ -99,6 +99,7 @@ type CreateOptions struct {
 	UserGID                  *int
 	HomeDirectory            *string
 	ResolvedAgentConfig      *ResolvedAgentConfig
+	AgentConfigs             []AgentConfig
 	AgentServerURL           string
 	OAuthRedirectBase        string
 	Resources                ResourceConfig
@@ -116,6 +117,16 @@ type ResolvedAgentConfig struct {
 	Name           string
 	InstallCommand string
 	RunCommand     string
+}
+
+// AgentConfig is a project-scoped coding agent configuration made available to
+// the sandbox runtime.
+type AgentConfig struct {
+	ID             string
+	Name           string
+	InstallCommand string
+	RunCommand     string
+	IsDefault      bool
 }
 
 // PrepareStateProvider can precompute provider-owned state before creation.

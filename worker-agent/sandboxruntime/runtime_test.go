@@ -186,6 +186,45 @@ func TestDockerSandboxRuntimeWorkerHostPathPreservesHostPathWithoutPrefix(t *tes
 	}
 }
 
+func TestBuildSandboxAgentConfigIncludesProjectAgentConfigs(t *testing.T) {
+	req := &workerapimodel.WorkerSandboxCreateRequest{
+		ResolvedAgentConfig: workerclient.NewOptResolvedAgentConfig(workerapimodel.ResolvedAgentConfig{
+			ID:             "claude",
+			Name:           "Claude",
+			InstallCommand: workerclient.NewOptString("npm install -g @anthropic-ai/claude-code"),
+			RunCommand:     "claude",
+		}),
+		AgentConfigs: workerclient.NewOptNilAgentConfigArray([]workerapimodel.AgentConfig{
+			{
+				ID:             "codex",
+				Name:           "Codex",
+				InstallCommand: workerclient.NewOptString("npm install -g @openai/codex"),
+				RunCommand:     "codex",
+				IsDefault:      true,
+			},
+			{
+				ID:         "claude",
+				Name:       "Claude",
+				RunCommand: "claude",
+			},
+		}),
+	}
+
+	cfg := buildSandboxAgentConfig("project-1", "sandbox-1", "worker-1", "public-key", req)
+	if cfg.ResolvedAgentConfig == nil || cfg.ResolvedAgentConfig.ID != "claude" {
+		t.Fatalf("resolved agent config = %#v, want claude", cfg.ResolvedAgentConfig)
+	}
+	if len(cfg.AgentConfigs) != 2 {
+		t.Fatalf("agent configs = %#v, want 2", cfg.AgentConfigs)
+	}
+	if !cfg.AgentConfigs[0].IsDefault || cfg.AgentConfigs[0].InstallCommand == "" {
+		t.Fatalf("default agent config = %#v, want default with install command", cfg.AgentConfigs[0])
+	}
+	if len(cfg.Agents) != 2 || cfg.Agents[0].ID != "codex" || cfg.Agents[1].ID != "claude" {
+		t.Fatalf("launchable agents = %#v, want codex and claude", cfg.Agents)
+	}
+}
+
 func TestRunGitWithSafeDirectoriesUsesTemporaryGlobalConfig(t *testing.T) {
 	ctx := context.Background()
 	repo := t.TempDir()

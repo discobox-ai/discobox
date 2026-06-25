@@ -131,7 +131,7 @@ func NewManager(agents []config.Agent, workingRoot string, runtimeDir string, un
 			return nil, fmt.Errorf("duplicate agent %q", agent.ID)
 		}
 		m.agents[agent.ID] = agent
-		if m.defaultID == "" {
+		if m.defaultID == "" || agent.IsDefault {
 			m.defaultID = agent.ID
 		}
 	}

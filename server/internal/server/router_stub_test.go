@@ -566,13 +566,6 @@ func (s *routerTestServices) resolveAgentConfigID(agentConfigID, agentName servi
 		}
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
 	}
-	if s.project.DefaultAgentConfigID != "" {
-		if _, ok := s.agentConfigs[s.project.DefaultAgentConfigID]; !ok {
-			return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
-		}
-		id := s.project.DefaultAgentConfigID
-		return &id, nil
-	}
 	return nil, nil
 }
 

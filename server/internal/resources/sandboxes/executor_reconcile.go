@@ -453,6 +453,24 @@ func (r *SandboxReconcileExecutor) createOptionsFromSandbox(ctx context.Context,
 			}
 		}
 	}
+	if r.store != nil {
+		if configs, err := r.store.ListAgentConfigs(ctx, sb.ProjectID); err == nil {
+			opts.AgentConfigs = make([]AgentConfig, 0, len(configs))
+			defaultAgentConfigID := ""
+			if sb.Project != nil {
+				defaultAgentConfigID = sb.Project.DefaultAgentConfigID
+			}
+			for _, cfg := range configs {
+				opts.AgentConfigs = append(opts.AgentConfigs, AgentConfig{
+					ID:             cfg.ID,
+					Name:           cfg.Name,
+					InstallCommand: cfg.InstallCommand,
+					RunCommand:     cfg.RunCommand,
+					IsDefault:      cfg.ID == defaultAgentConfigID,
+				})
+			}
+		}
+	}
 	return opts
 }
 

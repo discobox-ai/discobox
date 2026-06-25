@@ -209,14 +209,7 @@ func (s *Service) resolveAgentConfigID(ctx context.Context, project *model.Proje
 		}
 		return &config.ID, nil
 	}
-	if project.DefaultAgentConfigID == "" {
-		return nil, nil
-	}
-	config, err := s.store.GetAgentConfig(ctx, project.ID, project.DefaultAgentConfigID)
-	if err != nil {
-		return nil, mapAPIError(err, "agent config not found")
-	}
-	return &config.ID, nil
+	return nil, nil
 }
 
 func (s *Service) GetSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error) {

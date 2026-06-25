@@ -252,13 +252,26 @@ func (r *DockerSandboxRuntime) writeSandboxAgentConfig(ctx context.Context, sand
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return err
 	}
+	cfg := buildSandboxAgentConfig(r.projectID, sandboxID, r.workerID, r.controlPlanePublicKey, req)
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(configDir, "sandbox-agent.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return err
+	}
+	return chownRecursive(ctx, configDir, 0, 0)
+}
+
+func buildSandboxAgentConfig(projectID, sandboxID, workerID, controlPlanePublicKey string, req *workerapimodel.WorkerSandboxCreateRequest) sandboxAgentConfig {
 	cfg := sandboxAgentConfig{
 		Identity: sandboxAgentIdentity{
-			ProjectID: r.projectID,
+			ProjectID: projectID,
 			SandboxID: sandboxID,
-			WorkerID:  r.workerID,
+			WorkerID:  workerID,
 		},
-		ControlPlanePublicKey: r.controlPlanePublicKey,
+		ControlPlanePublicKey: controlPlanePublicKey,
 		ListenAddress:         fmt.Sprintf(":%d", sandboxAgentPort),
 		WorkingRoot:           "/workspace",
 		RuntimeDir:            "/run/discobox/agent-terminals",
@@ -270,22 +283,34 @@ func (r *DockerSandboxRuntime) writeSandboxAgentConfig(ctx context.Context, sand
 	}
 	if req != nil {
 		if resolved, ok := req.ResolvedAgentConfig.Get(); ok {
-			cfg.Agents = append(cfg.Agents, sandboxAgentConfigAgent{
+			resolvedConfig := sandboxAgentConfigAgentConfig{
 				ID:      resolved.ID,
 				Name:    resolved.Name,
 				Command: []string{"/bin/bash", "-lc", resolved.RunCommand},
-			})
+			}
+			if installCommand, ok := resolved.InstallCommand.Get(); ok {
+				resolvedConfig.InstallCommand = installCommand
+			}
+			cfg.ResolvedAgentConfig = &resolvedConfig
+		}
+		if configs, ok := req.AgentConfigs.Get(); ok {
+			cfg.AgentConfigs = make([]sandboxAgentConfigAgentConfig, 0, len(configs))
+			for _, config := range configs {
+				agentConfig := sandboxAgentConfigAgentConfig{
+					ID:        config.ID,
+					Name:      config.Name,
+					Command:   []string{"/bin/bash", "-lc", config.RunCommand},
+					IsDefault: config.IsDefault,
+				}
+				if installCommand, ok := config.InstallCommand.Get(); ok {
+					agentConfig.InstallCommand = installCommand
+				}
+				cfg.AgentConfigs = append(cfg.AgentConfigs, agentConfig)
+			}
 		}
 	}
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return err
-	}
-	path := filepath.Join(configDir, "sandbox-agent.json")
-	if err := os.WriteFile(path, data, 0o600); err != nil {
-		return err
-	}
-	return chownRecursive(ctx, configDir, 0, 0)
+	cfg.Agents = launchableSandboxAgentConfigs(cfg.ResolvedAgentConfig, cfg.AgentConfigs)
+	return cfg
 }
 
 func prepareOwnedDirectory(ctx context.Context, dir string, uid, gid int) error {
@@ -600,14 +625,16 @@ func containerIPAddress(inspect container.InspectResponse) string {
 }
 
 type sandboxAgentConfig struct {
-	Identity              sandboxAgentIdentity       `json:"identity"`
-	ControlPlanePublicKey string                     `json:"controlPlanePublicKey"`
-	ListenAddress         string                     `json:"listenAddress"`
-	WorkingRoot           string                     `json:"workingRoot"`
-	RuntimeDir            string                     `json:"runtimeDir"`
-	DatabasePath          string                     `json:"databasePath"`
-	Agents                []sandboxAgentConfigAgent  `json:"agents,omitempty"`
-	Resources             sandboxAgentResourceConfig `json:"resources"`
+	Identity              sandboxAgentIdentity            `json:"identity"`
+	ControlPlanePublicKey string                          `json:"controlPlanePublicKey"`
+	ListenAddress         string                          `json:"listenAddress"`
+	WorkingRoot           string                          `json:"workingRoot"`
+	RuntimeDir            string                          `json:"runtimeDir"`
+	DatabasePath          string                          `json:"databasePath"`
+	ResolvedAgentConfig   *sandboxAgentConfigAgentConfig  `json:"resolvedAgentConfig,omitempty"`
+	AgentConfigs          []sandboxAgentConfigAgentConfig `json:"agentConfigs,omitempty"`
+	Agents                []sandboxAgentConfigAgentConfig `json:"agents,omitempty"`
+	Resources             sandboxAgentResourceConfig      `json:"resources"`
 }
 
 type sandboxAgentIdentity struct {
@@ -616,15 +643,38 @@ type sandboxAgentIdentity struct {
 	WorkerID  string `json:"workerId"`
 }
 
-type sandboxAgentConfigAgent struct {
-	ID      string   `json:"id"`
-	Name    string   `json:"name"`
-	Command []string `json:"command"`
+type sandboxAgentConfigAgentConfig struct {
+	ID             string   `json:"id"`
+	Name           string   `json:"name"`
+	InstallCommand string   `json:"installCommand,omitempty"`
+	Command        []string `json:"command"`
+	IsDefault      bool     `json:"isDefault,omitempty"`
 }
 
 type sandboxAgentResourceConfig struct {
 	SampleInterval int64 `json:"sampleInterval"`
 	RetentionCount int   `json:"retentionCount"`
+}
+
+func launchableSandboxAgentConfigs(resolved *sandboxAgentConfigAgentConfig, configs []sandboxAgentConfigAgentConfig) []sandboxAgentConfigAgentConfig {
+	if len(configs) == 0 && resolved == nil {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]sandboxAgentConfigAgentConfig, 0, len(configs)+1)
+	for _, config := range configs {
+		if config.ID == "" {
+			continue
+		}
+		seen[config.ID] = struct{}{}
+		out = append(out, config)
+	}
+	if resolved != nil {
+		if _, ok := seen[resolved.ID]; !ok && resolved.ID != "" {
+			out = append(out, *resolved)
+		}
+	}
+	return out
 }
 
 func optString(opt workerclient.OptString) string {

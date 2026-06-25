@@ -166,6 +166,25 @@ components:
             - name
             - runCommand
             type: object
+        AgentConfig:
+            additionalProperties: false
+            properties:
+                id:
+                    type: string
+                installCommand:
+                    type: string
+                isDefault:
+                    type: boolean
+                name:
+                    type: string
+                runCommand:
+                    type: string
+            required:
+            - id
+            - name
+            - runCommand
+            - isDefault
+            type: object
         Sandbox:
             additionalProperties: false
             properties:
@@ -261,6 +280,11 @@ components:
                     type: string
                 resolvedAgentConfig:
                     "$ref": "#/components/schemas/ResolvedAgentConfig"
+                agentConfigs:
+                    items:
+                        "$ref": "#/components/schemas/AgentConfig"
+                    nullable: true
+                    type: array
                 resources:
                     "$ref": "#/components/schemas/ResourceConfig"
                 sandboxId:

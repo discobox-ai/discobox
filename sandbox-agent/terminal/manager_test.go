@@ -65,6 +65,31 @@ func TestManagerRejectsWorkdirOutsideRoot(t *testing.T) {
 	}
 }
 
+func TestManagerUsesMarkedDefaultAgent(t *testing.T) {
+	runner := &fakeRunner{}
+	manager, err := NewManager([]config.Agent{
+		{
+			ID:      "codex",
+			Command: []string{"codex"},
+		},
+		{
+			ID:        "claude",
+			Command:   []string{"claude"},
+			IsDefault: true,
+		},
+	}, "/workspace", t.TempDir(), runner, nil)
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	if _, err := manager.Create(context.Background(), CreateRequest{}); err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+	if got := runner.starts[0].Command; len(got) != 1 || got[0] != "claude" {
+		t.Fatalf("command = %#v, want claude", got)
+	}
+}
+
 func TestManagerMarksFailedWhenRunnerFails(t *testing.T) {
 	manager, err := NewManager([]config.Agent{{
 		ID:      "codex",

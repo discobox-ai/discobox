@@ -229,6 +229,24 @@ func (s *WorkerSandboxCreateRequest) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.AgentConfigs.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "agentConfigs",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.Resources.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {

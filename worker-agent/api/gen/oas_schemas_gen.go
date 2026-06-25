@@ -15,6 +15,65 @@ func (s *ErrorModelStatusCode) Error() string {
 	return fmt.Sprintf("code %d: %+v", s.StatusCode, s.Response)
 }
 
+// Ref: #/components/schemas/AgentConfig
+type AgentConfig struct {
+	ID             string    `json:"id"`
+	InstallCommand OptString `json:"installCommand"`
+	IsDefault      bool      `json:"isDefault"`
+	Name           string    `json:"name"`
+	RunCommand     string    `json:"runCommand"`
+}
+
+// GetID returns the value of ID.
+func (s *AgentConfig) GetID() string {
+	return s.ID
+}
+
+// GetInstallCommand returns the value of InstallCommand.
+func (s *AgentConfig) GetInstallCommand() OptString {
+	return s.InstallCommand
+}
+
+// GetIsDefault returns the value of IsDefault.
+func (s *AgentConfig) GetIsDefault() bool {
+	return s.IsDefault
+}
+
+// GetName returns the value of Name.
+func (s *AgentConfig) GetName() string {
+	return s.Name
+}
+
+// GetRunCommand returns the value of RunCommand.
+func (s *AgentConfig) GetRunCommand() string {
+	return s.RunCommand
+}
+
+// SetID sets the value of ID.
+func (s *AgentConfig) SetID(val string) {
+	s.ID = val
+}
+
+// SetInstallCommand sets the value of InstallCommand.
+func (s *AgentConfig) SetInstallCommand(val OptString) {
+	s.InstallCommand = val
+}
+
+// SetIsDefault sets the value of IsDefault.
+func (s *AgentConfig) SetIsDefault(val bool) {
+	s.IsDefault = val
+}
+
+// SetName sets the value of Name.
+func (s *AgentConfig) SetName(val string) {
+	s.Name = val
+}
+
+// SetRunCommand sets the value of RunCommand.
+func (s *AgentConfig) SetRunCommand(val string) {
+	s.RunCommand = val
+}
+
 // Ref: #/components/schemas/AssignedPort
 type AssignedPort struct {
 	ContainerPort int64  `json:"ContainerPort"`
@@ -888,6 +947,69 @@ func (o OptInt64) Or(d int64) int64 {
 	return d
 }
 
+// NewOptNilAgentConfigArray returns new OptNilAgentConfigArray with value set to v.
+func NewOptNilAgentConfigArray(v []AgentConfig) OptNilAgentConfigArray {
+	return OptNilAgentConfigArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilAgentConfigArray is optional nullable []AgentConfig.
+type OptNilAgentConfigArray struct {
+	Value []AgentConfig
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilAgentConfigArray was set.
+func (o OptNilAgentConfigArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilAgentConfigArray) Reset() {
+	var v []AgentConfig
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilAgentConfigArray) SetTo(v []AgentConfig) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilAgentConfigArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilAgentConfigArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []AgentConfig
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilAgentConfigArray) Get() (v []AgentConfig, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilAgentConfigArray) Or(d []AgentConfig) []AgentConfig {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptNilErrorDetailArray returns new OptNilErrorDetailArray with value set to v.
 func NewOptNilErrorDetailArray(v []ErrorDetail) OptNilErrorDetailArray {
 	return OptNilErrorDetailArray{
@@ -1619,6 +1741,7 @@ type WorkerSandboxCreateRequest struct {
 	Prompt                   OptString                                         `json:"prompt"`
 	ProviderInstanceId       OptString                                         `json:"providerInstanceId"`
 	ResolvedAgentConfig      OptResolvedAgentConfig                            `json:"resolvedAgentConfig"`
+	AgentConfigs             OptNilAgentConfigArray                            `json:"agentConfigs"`
 	Resources                OptResourceConfig                                 `json:"resources"`
 	SandboxId                string                                            `json:"sandboxId"`
 	Source                   OptGitSource                                      `json:"source"`
@@ -1695,6 +1818,11 @@ func (s *WorkerSandboxCreateRequest) GetProviderInstanceId() OptString {
 // GetResolvedAgentConfig returns the value of ResolvedAgentConfig.
 func (s *WorkerSandboxCreateRequest) GetResolvedAgentConfig() OptResolvedAgentConfig {
 	return s.ResolvedAgentConfig
+}
+
+// GetAgentConfigs returns the value of AgentConfigs.
+func (s *WorkerSandboxCreateRequest) GetAgentConfigs() OptNilAgentConfigArray {
+	return s.AgentConfigs
 }
 
 // GetResources returns the value of Resources.
@@ -1795,6 +1923,11 @@ func (s *WorkerSandboxCreateRequest) SetProviderInstanceId(val OptString) {
 // SetResolvedAgentConfig sets the value of ResolvedAgentConfig.
 func (s *WorkerSandboxCreateRequest) SetResolvedAgentConfig(val OptResolvedAgentConfig) {
 	s.ResolvedAgentConfig = val
+}
+
+// SetAgentConfigs sets the value of AgentConfigs.
+func (s *WorkerSandboxCreateRequest) SetAgentConfigs(val OptNilAgentConfigArray) {
+	s.AgentConfigs = val
 }
 
 // SetResources sets the value of Resources.

@@ -5,6 +5,7 @@ package model
 
 import workeragentapi "github.com/obot-platform/discobox/worker-agent/api/gen"
 
+type AgentConfig = workeragentapi.AgentConfig
 type AssignedPort = workeragentapi.AssignedPort
 type ErrorDetail = workeragentapi.ErrorDetail
 type ErrorModel = workeragentapi.ErrorModel

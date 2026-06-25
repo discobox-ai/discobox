@@ -144,7 +144,7 @@ func TestCreateSandboxDefaultsGitSourceSlugs(t *testing.T) {
 	}
 }
 
-func TestCreateSandboxUsesDefaultAgentConfig(t *testing.T) {
+func TestCreateSandboxDoesNotSelectDefaultAgentConfig(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newSandboxTestService(t, nil)
 
@@ -167,8 +167,8 @@ func TestCreateSandboxUsesDefaultAgentConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	if created.AgentConfigID == nil || *created.AgentConfigID != agent.ID {
-		t.Fatalf("sandbox agent config = %v, want %q", created.AgentConfigID, agent.ID)
+	if created.AgentConfigID != nil {
+		t.Fatalf("sandbox agent config = %v, want nil", *created.AgentConfigID)
 	}
 }
 
