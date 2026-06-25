@@ -105,6 +105,19 @@ func (s *memoryStore) CreateJob(_ context.Context, job *orchestration.Job, optio
 	}
 	job.UpdatedAt = now
 
+	if job.Resource.Type != "" && job.Resource.ID != "" && claimableStatus(job.Status) {
+		for _, existing := range s.jobs {
+			if existing.Type == job.Type && existing.Resource == job.Resource && claimableStatus(existing.Status) {
+				existing.Status = orchestration.StatusCanceled
+				message := "superseded by newer queued job"
+				existing.Message = &message
+				existing.CompletedAt = &now
+				existing.UpdatedAt = now
+				delete(s.active, memoryResourceKey(existing.Resource))
+			}
+		}
+	}
+
 	opts := orchestration.ResolveCreateJobOptions(options...)
 	if opts.UniqueResource && job.Resource.Type != "" && job.Resource.ID != "" {
 		key := memoryResourceKey(job.Resource)
@@ -214,6 +227,16 @@ func (s *memoryStore) FailJob(_ context.Context, id string, message string, resu
 	job.Message = result.Message
 	job.Metadata = result.Metadata
 	if job.Attempts < job.MaxAttempts {
+		if job.Resource.Type != "" && job.Resource.ID != "" {
+			for _, existing := range s.jobs {
+				if existing.ID != id && existing.Type == job.Type && existing.Resource == job.Resource && claimableStatus(existing.Status) {
+					job.Status = orchestration.StatusCanceled
+					job.CompletedAt = &now
+					job.UpdatedAt = now
+					return nil
+				}
+			}
+		}
 		job.Status = orchestration.StatusPending
 		job.WorkerID = nil
 		job.StartedAt = nil

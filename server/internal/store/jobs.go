@@ -44,24 +44,44 @@ func (s *Store) CreateJob(ctx context.Context, job *orchestration.Job, options .
 	}
 	job.UpdatedAt = now
 
-	var activeResourceKey *string
-	if opts.UniqueResource && job.Resource.Type != "" && job.Resource.ID != "" {
-		key := resourceKey(job.Resource)
-		activeResourceKey = &key
-	}
-
-	projectID, err := projectIDForJob(ctx, write, job)
-	if err != nil {
-		return err
-	}
-	row := rowFromJob(job, projectID, activeResourceKey)
-	if err := write.Create(row).Error; err != nil {
-		if isUniqueConstraintError(err) {
-			return orchestration.ErrJobAlreadyExists
+	var created orchestration.Job
+	if err := write.Transaction(func(tx *gorm.DB) error {
+		if jobHasResource(job.Type, job.Resource) && queuedStatus(job.Status) {
+			if err := tx.Model(&jobRow{}).
+				Where("type = ? AND resource_type = ? AND resource_id = ? AND status IN ?",
+					job.Type,
+					job.Resource.Type,
+					job.Resource.ID,
+					queuedStatuses(),
+				).
+				Updates(map[string]any{
+					"status":              orchestration.StatusCanceled,
+					"active_resource_key": nil,
+					"message":             "superseded by newer queued job",
+					"completed_at":        now,
+					"updated_at":          now,
+				}).Error; err != nil {
+				return err
+			}
 		}
+
+		projectID, err := projectIDForJob(ctx, tx, job)
+		if err != nil {
+			return err
+		}
+		row := rowFromJob(job, projectID, opts.UniqueResource)
+		if err := tx.Create(row).Error; err != nil {
+			if isUniqueConstraintError(err) {
+				return orchestration.ErrJobAlreadyExists
+			}
+			return err
+		}
+		created = row.toJob()
+		return nil
+	}); err != nil {
 		return err
 	}
-	*job = row.toJob()
+	*job = created
 	return nil
 }
 
@@ -349,16 +369,38 @@ func (s *Store) FailJob(ctx context.Context, id string, message string, result o
 
 		now := time.Now()
 		if row.Attempts < row.MaxAttempts {
-			var activeResourceKey *string
-			if row.ResourceType != "" && row.ResourceID != "" {
-				key := resourceKey(orchestration.Resource{Type: row.ResourceType, ID: row.ResourceID})
-				activeResourceKey = &key
+			if jobRowHasResource(row) {
+				var queued int64
+				if err := tx.Model(&jobRow{}).
+					Where("id != ? AND type = ? AND resource_type = ? AND resource_id = ? AND status IN ?",
+						id,
+						row.Type,
+						row.ResourceType,
+						row.ResourceID,
+						queuedStatuses(),
+					).
+					Count(&queued).Error; err != nil {
+					return err
+				}
+				if queued > 0 {
+					return tx.Model(&jobRow{}).
+						Where("id = ?", id).
+						Updates(map[string]any{
+							"status":              orchestration.StatusCanceled,
+							"active_resource_key": nil,
+							"error":               message,
+							"message":             result.Message,
+							"metadata":            result.Metadata,
+							"completed_at":        now,
+							"updated_at":          now,
+						}).Error
+				}
 			}
 			return tx.Model(&jobRow{}).
 				Where("id = ?", id).
 				Updates(map[string]any{
 					"status":              orchestration.StatusPending,
-					"active_resource_key": activeResourceKey,
+					"active_resource_key": activeResourceKey(row.UniqueResource, orchestration.Resource{Type: row.ResourceType, ID: row.ResourceID}, orchestration.StatusPending),
 					"error":               message,
 					"message":             result.Message,
 					"metadata":            result.Metadata,
@@ -479,6 +521,7 @@ type jobRow struct {
 	ResourceType      string               `gorm:"column:resource_type;type:text;index:idx_jobqueue_resource,priority:1"`
 	ResourceID        string               `gorm:"column:resource_id;type:text;index:idx_jobqueue_resource,priority:2"`
 	ActiveResourceKey *string              `gorm:"column:active_resource_key;type:text;uniqueIndex:idx_jobqueue_active_resource_key"`
+	UniqueResource    bool                 `gorm:"column:unique_resource;not null;default:false"`
 	CreatedAt         time.Time            `gorm:"autoCreateTime;index:idx_jobqueue_ready,priority:4"`
 	UpdatedAt         time.Time            `gorm:"autoUpdateTime"`
 }
@@ -487,7 +530,7 @@ func (jobRow) TableName() string {
 	return "jobqueue_jobs"
 }
 
-func rowFromJob(job *orchestration.Job, projectID string, activeResourceKey *string) *jobRow {
+func rowFromJob(job *orchestration.Job, projectID string, uniqueResource bool) *jobRow {
 	return &jobRow{
 		ID:                job.ID,
 		ProjectID:         projectID,
@@ -506,7 +549,8 @@ func rowFromJob(job *orchestration.Job, projectID string, activeResourceKey *str
 		CompletedAt:       job.CompletedAt,
 		ResourceType:      job.Resource.Type,
 		ResourceID:        job.Resource.ID,
-		ActiveResourceKey: activeResourceKey,
+		ActiveResourceKey: activeResourceKey(uniqueResource, job.Resource, job.Status),
+		UniqueResource:    uniqueResource,
 		CreatedAt:         job.CreatedAt,
 		UpdatedAt:         job.UpdatedAt,
 	}
@@ -584,6 +628,35 @@ func (r jobRow) toJob() orchestration.Job {
 
 func resourceKey(resource orchestration.Resource) string {
 	return resource.Type + "\x00" + resource.ID
+}
+
+func queuedStatuses() []orchestration.Status {
+	return []orchestration.Status{orchestration.StatusPending, orchestration.StatusBackoff}
+}
+
+func queuedStatus(status orchestration.Status) bool {
+	return status == orchestration.StatusPending || status == orchestration.StatusBackoff
+}
+
+func jobHasResource(jobType orchestration.Type, resource orchestration.Resource) bool {
+	return jobType != "" && resource.Type != "" && resource.ID != ""
+}
+
+func jobRowHasResource(row jobRow) bool {
+	return row.Type != "" && row.ResourceType != "" && row.ResourceID != ""
+}
+
+func activeResourceKey(uniqueResource bool, resource orchestration.Resource, status orchestration.Status) *string {
+	if !uniqueResource || resource.Type == "" || resource.ID == "" {
+		return nil
+	}
+	switch status {
+	case orchestration.StatusPending, orchestration.StatusBackoff:
+	default:
+		return nil
+	}
+	key := resourceKey(resource)
+	return &key
 }
 
 func isUniqueConstraintError(err error) bool {

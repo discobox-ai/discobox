@@ -64,9 +64,10 @@ func submitExistingLifecycle[Resource lifecycleResource, ID any, Store lifecycle
 				if err != nil {
 					return err
 				}
-				if job != nil {
-					resource.SetLastJobID(&job.ID)
+				if job == nil {
+					return orchestration.ErrJobAlreadyExists
 				}
+				resource.SetLastJobID(&job.ID)
 				if err := tx.UpdateWithGeneration(ctx, resource, previousGeneration); err != nil {
 					return err
 				}
@@ -106,9 +107,10 @@ func createLifecycle[Resource lifecycleResource, ID any, Store lifecycleStore[Re
 				if err != nil {
 					return err
 				}
-				if job != nil {
-					resource.SetLastJobID(&job.ID)
+				if job == nil {
+					return orchestration.ErrJobAlreadyExists
 				}
+				resource.SetLastJobID(&job.ID)
 				return tx.Create(ctx, resource)
 			})
 			return job, err
@@ -255,9 +257,10 @@ func (m *Manager) deleteWorkerIfCurrent(ctx context.Context, workerID string, ge
 				if err != nil {
 					return err
 				}
-				if job != nil {
-					worker.SetLastJobID(&job.ID)
+				if job == nil {
+					return nil
 				}
+				worker.SetLastJobID(&job.ID)
 				if err := txStore.UpdateWorker(ctx, worker, store.WithWorkerGeneration(previousGeneration)); err != nil {
 					if errors.Is(err, store.ErrGenerationConflict) {
 						return err

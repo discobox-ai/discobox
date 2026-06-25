@@ -201,6 +201,8 @@ store must make `ClaimJob` atomic across concurrent dispatchers.
 Important expectations:
 
 - `CreateJob` assigns IDs and timestamps when absent.
+- `CreateJob` atomically cancels any older pending/backoff job with the same job
+  type and resource before appending the latest queued row.
 - `CreateJob(ctx, job, orchestration.WithUniqueResource())` must atomically reject
   another active job for the same non-empty resource by returning
   `ErrJobAlreadyExists`.
@@ -213,7 +215,8 @@ Important expectations:
 - `ClaimJob` marks exactly one eligible job running for the caller's worker ID.
 - `ClaimJob` does not claim jobs whose resource already has a running job,
   regardless of type.
-- `FailJob` either requeues with a retry delay or marks the job failed.
+- `FailJob` either requeues with a retry delay, cancels itself when a queued
+  successor for the same type/resource already exists, or marks the job failed.
 - `CancelJob` marks a job `canceled` without retrying it.
 - `CleanupStaleJobs` recovers abandoned running jobs.
 - Leadership methods are no-ops only for deployments using `SingleNode`.

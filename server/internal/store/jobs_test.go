@@ -129,6 +129,189 @@ func TestForceJobForProjectMakesBackoffJobRunnable(t *testing.T) {
 	}
 }
 
+func TestCreateJobSupersedesQueuedTypeResource(t *testing.T) {
+	ctx := context.Background()
+	s, db := newTestStoreWithDB(t, nil)
+
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "docker", Name: "one"}
+	if err := s.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	worker := &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: provider.ID}
+	if err := s.CreateWorker(ctx, worker); err != nil {
+		t.Fatalf("create worker: %v", err)
+	}
+	first := &orchestration.Job{
+		ID:       "job-worker-1",
+		Type:     "worker.reconcile",
+		Payload:  json.RawMessage(`{}`),
+		Resource: orchestration.Resource{Type: "worker", ID: worker.ID},
+	}
+	if err := s.CreateJob(ctx, first); err != nil {
+		t.Fatalf("create first: %v", err)
+	}
+	duplicate := &orchestration.Job{
+		ID:       "job-worker-2",
+		Type:     "worker.reconcile",
+		Payload:  json.RawMessage(`{}`),
+		Resource: orchestration.Resource{Type: "worker", ID: worker.ID},
+	}
+	if err := s.CreateJob(ctx, duplicate); err != nil {
+		t.Fatalf("create duplicate: %v", err)
+	}
+	storedFirst, err := s.GetJob(ctx, first.ID)
+	if err != nil {
+		t.Fatalf("get first: %v", err)
+	}
+	if storedFirst.Status != orchestration.StatusCanceled {
+		t.Fatalf("first status = %s, want canceled", storedFirst.Status)
+	}
+	otherType := &orchestration.Job{
+		ID:       "job-worker-provider",
+		Type:     "workerprovider.reconcile",
+		Payload:  json.RawMessage(`{}`),
+		Resource: orchestration.Resource{Type: "worker", ID: worker.ID},
+	}
+	if err := s.CreateJob(ctx, otherType); err != nil {
+		t.Fatalf("create other type: %v", err)
+	}
+	if _, err := s.ClaimJob(ctx, []orchestration.Type{"worker.reconcile"}, "dispatcher-1"); err != nil {
+		t.Fatalf("claim first: %v", err)
+	}
+	successor := &orchestration.Job{
+		ID:       "job-worker-3",
+		Type:     "worker.reconcile",
+		Payload:  json.RawMessage(`{}`),
+		Resource: orchestration.Resource{Type: "worker", ID: worker.ID},
+	}
+	if err := s.CreateJob(ctx, successor); err != nil {
+		t.Fatalf("create successor behind running: %v", err)
+	}
+
+	var queued int64
+	if err := db.Write.WithContext(ctx).Table("jobqueue_jobs").
+		Where("type = ? AND resource_type = ? AND resource_id = ? AND status IN ?", "worker.reconcile", "worker", worker.ID, []orchestration.Status{orchestration.StatusPending, orchestration.StatusBackoff}).
+		Count(&queued).Error; err != nil {
+		t.Fatalf("count queued: %v", err)
+	}
+	if queued != 1 {
+		t.Fatalf("queued worker jobs = %d, want 1", queued)
+	}
+}
+
+func TestFailJobDoesNotAssignActiveResourceKeyToNonUniqueRetries(t *testing.T) {
+	ctx := context.Background()
+	s, db := newTestStoreWithDB(t, nil)
+
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "docker", Name: "one"}
+	if err := s.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	worker := &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: provider.ID}
+	if err := s.CreateWorker(ctx, worker); err != nil {
+		t.Fatalf("create worker: %v", err)
+	}
+	firstJob := &orchestration.Job{
+		ID:          "job-worker-1",
+		Type:        "worker.reconcile",
+		Payload:     json.RawMessage(`{}`),
+		MaxAttempts: 2,
+		Resource:    orchestration.Resource{Type: "worker", ID: worker.ID},
+	}
+	if err := s.CreateJob(ctx, firstJob); err != nil {
+		t.Fatalf("create first job: %v", err)
+	}
+
+	first, err := s.ClaimJob(ctx, []orchestration.Type{"worker.reconcile"}, "dispatcher-1")
+	if err != nil {
+		t.Fatalf("claim first: %v", err)
+	}
+	if first == nil || first.ID != "job-worker-1" {
+		t.Fatalf("claimed first job = %#v, want job-worker-1", first)
+	}
+	secondJob := &orchestration.Job{
+		ID:          "job-worker-2",
+		Type:        "worker.reconcile",
+		Payload:     json.RawMessage(`{}`),
+		MaxAttempts: 2,
+		Resource:    orchestration.Resource{Type: "worker", ID: worker.ID},
+	}
+	if err := s.CreateJob(ctx, secondJob); err != nil {
+		t.Fatalf("create second job: %v", err)
+	}
+	if err := s.FailJob(ctx, first.ID, "try again", orchestration.JobResult{}, time.Hour); err != nil {
+		t.Fatalf("fail first: %v", err)
+	}
+
+	storedFirst, err := s.GetJob(ctx, first.ID)
+	if err != nil {
+		t.Fatalf("get first: %v", err)
+	}
+	if storedFirst.Status != orchestration.StatusCanceled {
+		t.Fatalf("first status = %s, want canceled", storedFirst.Status)
+	}
+	second, err := s.ClaimJob(ctx, []orchestration.Type{"worker.reconcile"}, "dispatcher-1")
+	if err != nil {
+		t.Fatalf("claim second: %v", err)
+	}
+	if second == nil || second.ID != "job-worker-2" {
+		t.Fatalf("claimed second job = %#v, want job-worker-2", second)
+	}
+	if err := s.FailJob(ctx, second.ID, "try again", orchestration.JobResult{}, time.Hour); err != nil {
+		t.Fatalf("fail second: %v", err)
+	}
+
+	var activeKeys int64
+	if err := db.Write.WithContext(ctx).Table("jobqueue_jobs").
+		Where("resource_type = ? AND resource_id = ? AND active_resource_key IS NOT NULL", "worker", worker.ID).
+		Count(&activeKeys).Error; err != nil {
+		t.Fatalf("count active keys: %v", err)
+	}
+	if activeKeys != 0 {
+		t.Fatalf("non-unique worker retries have %d active resource keys, want 0", activeKeys)
+	}
+}
+
+func TestFailJobRestoresActiveResourceKeyForUniqueRetry(t *testing.T) {
+	ctx := context.Background()
+	s, db := newTestStoreWithDB(t, nil)
+
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "docker", Name: "one"}
+	if err := s.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	job := &orchestration.Job{
+		ID:          "job-provider-1",
+		Type:        "workerprovider.reconcile",
+		Payload:     json.RawMessage(`{}`),
+		MaxAttempts: 2,
+		Resource:    orchestration.Resource{Type: "workerprovider", ID: provider.ID},
+	}
+	if err := s.CreateJob(ctx, job, orchestration.WithUniqueResource()); err != nil {
+		t.Fatalf("create job: %v", err)
+	}
+	claimed, err := s.ClaimJob(ctx, []orchestration.Type{"workerprovider.reconcile"}, "dispatcher-1")
+	if err != nil {
+		t.Fatalf("claim job: %v", err)
+	}
+	if claimed == nil || claimed.ID != job.ID {
+		t.Fatalf("claimed job = %#v, want %s", claimed, job.ID)
+	}
+	if err := s.FailJob(ctx, claimed.ID, "try again", orchestration.JobResult{}, time.Hour); err != nil {
+		t.Fatalf("fail job: %v", err)
+	}
+
+	var activeKeys int64
+	if err := db.Write.WithContext(ctx).Table("jobqueue_jobs").
+		Where("resource_type = ? AND resource_id = ? AND active_resource_key IS NOT NULL AND unique_resource = ?", "workerprovider", provider.ID, true).
+		Count(&activeKeys).Error; err != nil {
+		t.Fatalf("count active keys: %v", err)
+	}
+	if activeKeys != 1 {
+		t.Fatalf("unique retry active keys = %d, want 1", activeKeys)
+	}
+}
+
 func TestBackfillJobProjectIDs(t *testing.T) {
 	ctx := context.Background()
 	s, db := newTestStoreWithDB(t, nil)

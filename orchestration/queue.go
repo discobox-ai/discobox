@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -94,6 +95,9 @@ func AppendJobWithOptions(ctx context.Context, store JobStore, payload Payload, 
 		return nil, false, err
 	}
 	if err := store.CreateJob(ctx, job, opts...); err != nil {
+		if errors.Is(err, ErrJobAlreadyExists) {
+			return nil, false, nil
+		}
 		return nil, false, err
 	}
 	return job, true, nil

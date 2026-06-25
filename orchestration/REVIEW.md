@@ -9,16 +9,18 @@
 - Dispatcher notification is only a wakeup optimization. Durable job rows remain
   the source of truth.
 - Keep jobs append-only. Queue and dispatcher submit paths must create new job rows
-  instead of rewriting existing payloads to represent newer intent.
+  instead of rewriting existing payloads to represent newer intent. New queued
+  submissions for the same job type/resource should cancel the older queued row
+  before appending the latest payload.
 - Keep submission backoff application-neutral and keyed by job type, resource
   type, and resource ID. Do not collapse different job types or resource types
   into the same backoff bucket.
 - Keep job result data separate from failure state. Use `JobResult.Message` and
   `JobResult.Metadata` for operator/result data; keep `Job.Error` for execution
   or dispatch failures.
-- Keep job execution resource-serialized. Multiple pending jobs may exist for a
-  resource, but the dispatcher must not run two jobs for the same resource
-  concurrently.
+- Keep job execution resource-serialized. A job type/resource may have at most
+  one queued job plus one running job, and the dispatcher must not run two jobs
+  for the same resource concurrently.
 - Do not add resource-specific lifecycle rules here. Domain decisions belong in
   application services and reconcilers.
 - Store implementations must uphold method-level atomicity, especially job

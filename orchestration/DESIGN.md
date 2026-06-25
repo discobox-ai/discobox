@@ -42,6 +42,19 @@ Every accepted unit of work appends a new durable job row. Queue and dispatcher
 submission logic must not rewrite an existing job's payload, type, schedule, or
 resource to represent newer intent.
 
+Submission is coalesced while work is already queued for the same complete work
+identity:
+
+```text
+job type + resource type + resource id
+```
+
+At most one `pending`/`backoff` job and one `running` job may exist for that
+identity. A running job may have one queued successor. A newer queued submission
+should cancel the older queued row before appending the latest payload; a running
+job that fails while a queued successor already exists should be canceled instead
+of requeued.
+
 Reconciled resources should put their accepted generation in the payload. An
 executor can implement `GenerationAssertor` to let the dispatcher assert that
 the resource still matches the payload generation before calling `Execute`.
@@ -58,8 +71,8 @@ remains the failure/debug channel and is not overloaded with successful result
 data.
 
 Dispatch remains resource-serialized: multiple pending jobs may exist for the
-same resource, but the dispatcher must not run two jobs for that resource at the
-same time.
+same resource across different job types, but the dispatcher must not run two
+jobs for that resource at the same time.
 
 ## Resource Backoff
 

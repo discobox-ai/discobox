@@ -171,9 +171,15 @@ func TestQueueEnqueueAppliesResourceBackoff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("enqueue first: %v", err)
 	}
+	if err := store.CompleteJob(ctx, first.ID, orchestration.JobResult{}); err != nil {
+		t.Fatalf("complete first: %v", err)
+	}
 	second, err := queue.Enqueue(ctx, payload)
 	if err != nil {
 		t.Fatalf("enqueue second: %v", err)
+	}
+	if err := store.CompleteJob(ctx, second.ID, orchestration.JobResult{}); err != nil {
+		t.Fatalf("complete second: %v", err)
 	}
 	third, err := queue.Enqueue(ctx, payload)
 	if err != nil {
@@ -191,6 +197,117 @@ func TestQueueEnqueueAppliesResourceBackoff(t *testing.T) {
 	}
 }
 
+func TestQueueEnqueueSupersedesQueuedJobForTypeAndResource(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	queue := orchestration.NewQueue(store, orchestration.QueueConfig{DefaultMaxAttempts: 1})
+	payload := simplePayload{TypeName: testTypeA, ResourceT: "worker", ResourceI: "worker-1"}
+
+	first, err := queue.Enqueue(ctx, payload)
+	if err != nil {
+		t.Fatalf("enqueue first: %v", err)
+	}
+	second, err := queue.Enqueue(ctx, payload)
+	if err != nil {
+		t.Fatalf("enqueue successor: %v", err)
+	}
+	if second == nil {
+		t.Fatal("successor queued job is nil")
+	}
+
+	stored, err := store.GetJob(ctx, first.ID)
+	if err != nil {
+		t.Fatalf("get first: %v", err)
+	}
+	if stored.Status != orchestration.StatusCanceled {
+		t.Fatalf("first status = %s, want canceled", stored.Status)
+	}
+	storedSecond, err := store.GetJob(ctx, second.ID)
+	if err != nil {
+		t.Fatalf("get second: %v", err)
+	}
+	if storedSecond.Status != orchestration.StatusPending {
+		t.Fatalf("second status = %s, want pending", storedSecond.Status)
+	}
+}
+
+func TestQueueEnqueueAllowsQueuedJobBehindRunningJob(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	queue := orchestration.NewQueue(store, orchestration.QueueConfig{DefaultMaxAttempts: 2})
+	payload := simplePayload{TypeName: testTypeA, ResourceT: "worker", ResourceI: "worker-1"}
+
+	first, err := queue.Enqueue(ctx, payload)
+	if err != nil {
+		t.Fatalf("enqueue first: %v", err)
+	}
+	claimed, err := store.ClaimJob(ctx, []orchestration.Type{testTypeA}, "worker-1")
+	if err != nil {
+		t.Fatalf("claim first: %v", err)
+	}
+	if claimed == nil || claimed.ID != first.ID {
+		t.Fatalf("claimed = %#v, want %s", claimed, first.ID)
+	}
+
+	second, err := queue.Enqueue(ctx, payload)
+	if err != nil {
+		t.Fatalf("enqueue successor: %v", err)
+	}
+	if second == nil {
+		t.Fatal("successor queued behind running job is nil")
+	}
+	third, err := queue.Enqueue(ctx, payload)
+	if err != nil {
+		t.Fatalf("enqueue duplicate successor: %v", err)
+	}
+	if third == nil {
+		t.Fatal("replacement successor is nil")
+	}
+	storedSecond, err := store.GetJob(ctx, second.ID)
+	if err != nil {
+		t.Fatalf("get second: %v", err)
+	}
+	if storedSecond.Status != orchestration.StatusCanceled {
+		t.Fatalf("second status = %s, want canceled", storedSecond.Status)
+	}
+}
+
+func TestFailJobCancelsRetryWhenQueuedSuccessorExists(t *testing.T) {
+	ctx := context.Background()
+	store := newTestStore(t)
+	queue := orchestration.NewQueue(store, orchestration.QueueConfig{DefaultMaxAttempts: 2})
+	payload := simplePayload{TypeName: testTypeA, ResourceT: "worker", ResourceI: "worker-1"}
+
+	first, err := queue.Enqueue(ctx, payload)
+	if err != nil {
+		t.Fatalf("enqueue first: %v", err)
+	}
+	claimed, err := store.ClaimJob(ctx, []orchestration.Type{testTypeA}, "worker-1")
+	if err != nil {
+		t.Fatalf("claim first: %v", err)
+	}
+	if claimed == nil || claimed.ID != first.ID {
+		t.Fatalf("claimed = %#v, want %s", claimed, first.ID)
+	}
+	successor, err := queue.Enqueue(ctx, payload)
+	if err != nil {
+		t.Fatalf("enqueue successor: %v", err)
+	}
+	if successor == nil {
+		t.Fatal("successor queued behind running job is nil")
+	}
+	if err := store.FailJob(ctx, first.ID, "try again", orchestration.JobResult{}, time.Minute); err != nil {
+		t.Fatalf("fail first: %v", err)
+	}
+	stored, err := store.GetJob(ctx, first.ID)
+	if err != nil {
+		t.Fatalf("get first: %v", err)
+	}
+	if stored.Status != orchestration.StatusCanceled {
+		t.Fatalf("first status = %s, want canceled", stored.Status)
+	}
+}
+
 func TestQueueEnqueueDefaultResourceBackoffUsesLongWindowAndCap(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
@@ -204,6 +321,9 @@ func TestQueueEnqueueDefaultResourceBackoffUsesLongWindowAndCap(t *testing.T) {
 		}
 		if job.Status != orchestration.StatusPending {
 			t.Fatalf("job %d status = %s, want pending", i, job.Status)
+		}
+		if err := store.CompleteJob(ctx, job.ID, orchestration.JobResult{}); err != nil {
+			t.Fatalf("complete %d: %v", i, err)
 		}
 	}
 	backoff, err := queue.Enqueue(ctx, payload)
@@ -321,7 +441,7 @@ func TestQueueEnqueueAppendsJobsAcrossJobTypesByResource(t *testing.T) {
 	}
 }
 
-func TestQueueEnqueueAppendsConcurrentJobsByResource(t *testing.T) {
+func TestQueueEnqueueKeepsOneQueuedJobByTypeAndResource(t *testing.T) {
 	ctx := context.Background()
 	store := newTestStore(t)
 	queue := orchestration.NewQueue(store, orchestration.QueueConfig{DefaultMaxAttempts: 1})
@@ -366,9 +486,22 @@ func TestQueueEnqueueAppendsConcurrentJobsByResource(t *testing.T) {
 	seen := map[string]bool{}
 	for _, job := range jobs {
 		if seen[job.ID] {
-			t.Fatalf("duplicate job id %s, want append-only unique rows", job.ID)
+			t.Fatalf("duplicate job id %s", job.ID)
 		}
 		seen[job.ID] = true
+	}
+	queued := 0
+	for _, job := range jobs {
+		stored, err := store.GetJob(ctx, job.ID)
+		if err != nil {
+			t.Fatalf("get job %s: %v", job.ID, err)
+		}
+		if stored.Status == orchestration.StatusPending || stored.Status == orchestration.StatusBackoff {
+			queued++
+		}
+	}
+	if queued != 1 {
+		t.Fatalf("queued jobs = %d, want 1", queued)
 	}
 
 	if _, err := queue.Enqueue(ctx, simplePayload{TypeName: testTypeB, ResourceT: "sandbox", ResourceI: "shared"}); err != nil {
@@ -1595,6 +1728,19 @@ func (s *memoryStore) CreateJob(_ context.Context, job *orchestration.Job, optio
 		job.CreatedAt = now
 	}
 	job.UpdatedAt = now
+	if job.Resource.Type != "" && job.Resource.ID != "" && claimableStatus(job.Status) {
+		for _, existing := range s.jobs {
+			if existing.Type == job.Type && existing.Resource == job.Resource && claimableStatus(existing.Status) {
+				existing.Status = orchestration.StatusCanceled
+				message := "superseded by newer queued job"
+				existing.Message = &message
+				completed := now
+				existing.CompletedAt = &completed
+				existing.UpdatedAt = now
+				delete(s.active, memoryResourceKey(existing.Resource))
+			}
+		}
+	}
 	if opts.UniqueResource && job.Resource.Type != "" && job.Resource.ID != "" {
 		key := memoryResourceKey(job.Resource)
 		if _, ok := s.active[key]; ok {
@@ -1725,6 +1871,18 @@ func (s *memoryStore) FailJob(_ context.Context, id string, message string, resu
 	job.Message = result.Message
 	job.Metadata = result.Metadata
 	if job.Attempts < job.MaxAttempts {
+		if job.Resource.Type != "" && job.Resource.ID != "" {
+			for _, existing := range s.jobs {
+				if existing.ID != id && existing.Type == job.Type && existing.Resource == job.Resource && claimableStatus(existing.Status) {
+					job.Status = orchestration.StatusCanceled
+					completed := now
+					job.CompletedAt = &completed
+					delete(s.active, memoryResourceKey(job.Resource))
+					job.UpdatedAt = now
+					return nil
+				}
+			}
+		}
 		job.Status = orchestration.StatusPending
 		job.WorkerID = nil
 		job.StartedAt = nil
