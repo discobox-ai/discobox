@@ -47,7 +47,11 @@ func TestWorkerProviderCreateCreatesDockerContainerE2E(t *testing.T) {
 	}
 
 	controlPlaneKey, workerToken := newWorkerAgentTestAuth(t, projectID, workerID)
-	runtime, err := sandboxruntime.NewDockerSandboxRuntime(projectID, workerID, controlPlaneKey)
+	runtime, err := sandboxruntime.NewDockerSandboxRuntime(sandboxruntime.DockerSandboxRuntimeConfig{
+		ProjectID:             projectID,
+		WorkerID:              workerID,
+		ControlPlanePublicKey: controlPlaneKey,
+	})
 	if err != nil {
 		t.Fatalf("new docker sandbox runtime: %v", err)
 	}

@@ -15,7 +15,7 @@ import (
 )
 
 const workerImageEnv = "DISCOBOX_DOCKER_WORKER_IMAGE"
-const workerAgentMountLayoutVersion = 2
+const workerAgentMountLayoutVersion = 4
 
 func FactoryWithWorkerManager(workerManager workerpool.WorkerManager) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {

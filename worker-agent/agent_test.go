@@ -65,6 +65,16 @@ func TestFromEnvDefaultsControlPlaneURL(t *testing.T) {
 	}
 }
 
+func TestFromEnvReadsHostMountPrefix(t *testing.T) {
+	t.Setenv(workeragent.EnvHostMountPrefix, "/host")
+
+	bootstrap := workeragent.FromEnv()
+
+	if bootstrap.HostMountPrefix != "/host" {
+		t.Fatalf("host mount prefix = %q, want /host", bootstrap.HostMountPrefix)
+	}
+}
+
 func TestHTTPClientRegistersWorker(t *testing.T) {
 	var got workeragent.RegisterRequest
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

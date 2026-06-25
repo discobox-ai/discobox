@@ -9,10 +9,11 @@ import (
 
 type SandboxRuntime = sandboxruntime.Runtime
 type DockerSandboxRuntime = sandboxruntime.DockerSandboxRuntime
+type DockerSandboxRuntimeConfig = sandboxruntime.DockerSandboxRuntimeConfig
 type MemorySandboxRuntime = sandboxruntime.MemorySandboxRuntime
 
-func NewDockerSandboxRuntime(projectID, workerID, controlPlanePublicKey string) (*DockerSandboxRuntime, error) {
-	return sandboxruntime.NewDockerSandboxRuntime(projectID, workerID, controlPlanePublicKey)
+func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRuntime, error) {
+	return sandboxruntime.NewDockerSandboxRuntime(cfg)
 }
 
 func NewMemorySandboxRuntime() *MemorySandboxRuntime {

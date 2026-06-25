@@ -23,6 +23,7 @@ const (
 	EnvBootstrapToken  = "DISCOBOX_WORKER_BOOTSTRAP_TOKEN" //nolint:gosec // Environment variable name, not a credential value.
 	EnvControlPlaneKey = "DISCOBOX_CONTROL_PLANE_PUBLIC_KEY"
 	EnvAgentPort       = "DISCOBOX_AGENT_PORT"
+	EnvHostMountPrefix = "DISCOBOX_WORKER_HOST_MOUNT_PREFIX"
 )
 
 // Bootstrap is the VM boot contract used by the control plane and worker agent.
@@ -34,6 +35,7 @@ type Bootstrap struct {
 	Token           string `json:"token,omitempty"`
 	ControlPlaneKey string `json:"controlPlanePublicKey,omitempty"`
 	AgentPort       int    `json:"agentPort,omitempty"`
+	HostMountPrefix string `json:"hostMountPrefix,omitempty"`
 }
 
 // Validate checks the required worker bootstrap fields.
@@ -158,6 +160,7 @@ func FromEnv() Bootstrap {
 		Token:           strings.TrimSpace(os.Getenv(EnvBootstrapToken)),
 		ControlPlaneKey: strings.TrimSpace(os.Getenv(EnvControlPlaneKey)),
 		AgentPort:       agentPort,
+		HostMountPrefix: strings.TrimSpace(os.Getenv(EnvHostMountPrefix)),
 	}
 }
 

@@ -188,6 +188,19 @@ func TestContainerMountsBindConfiguredHostMountsForWorkerAgent(t *testing.T) {
 	}
 }
 
+func TestContainerMountsBindHostSandboxRootForWorkerAgent(t *testing.T) {
+	d := NewDriverWithClient(nil, DriverConfig{DockerSocket: dockerSocketPath})
+	mounts := d.containerMounts(true, "worker-1", "project-1")
+
+	if !hasMountWithReadOnly(mounts, workerHostSandboxRoot, "/host/var/lib/discobox/projects", false) {
+		t.Fatalf("mounts = %#v, missing worker host sandbox root bind mount", mounts)
+	}
+	mount := findMount(mounts, workerHostSandboxRoot, "/host/var/lib/discobox/projects")
+	if mount == nil || mount.BindOptions == nil || !mount.BindOptions.CreateMountpoint {
+		t.Fatalf("mounts = %#v, worker host sandbox root should create mountpoint", mounts)
+	}
+}
+
 func TestContainerMountsDoNotBindHostDockerSocketForNonWorkerAgent(t *testing.T) {
 	d := NewDriverWithClient(nil, DriverConfig{DockerSocket: dockerSocketPath, HostMounts: []HostMount{{Source: "/home", ReadOnly: true}}})
 	mounts := d.containerMounts(false, "worker-1", "project-1")
@@ -430,12 +443,16 @@ func TestContainerReadyErrorReportsStoppedContainer(t *testing.T) {
 }
 
 func hasMount(mounts []mount.Mount, source, target string) bool {
+	return findMount(mounts, source, target) != nil
+}
+
+func findMount(mounts []mount.Mount, source, target string) *mount.Mount {
 	for _, m := range mounts {
 		if m.Type == mount.TypeBind && m.Source == source && m.Target == target {
-			return true
+			return &m
 		}
 	}
-	return false
+	return nil
 }
 
 func hasVolumeMount(mounts []mount.Mount, source, target string) bool {

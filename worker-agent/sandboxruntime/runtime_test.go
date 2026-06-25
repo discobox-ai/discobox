@@ -95,6 +95,107 @@ func TestSandboxSourcesUseConfiguredAndDefaultTargets(t *testing.T) {
 	assertSource(t, sources[2], "ui", "/workspace/ui")
 }
 
+func TestGitSourceCloneURLPrefixesAbsoluteLocalDirectoryWithHostMountPrefix(t *testing.T) {
+	source := workerapimodel.GitSource{
+		Kind:           workerclient.GitSourceKindGit,
+		LocalDirectory: workerclient.NewOptString("/home/darren/project"),
+	}
+	cloneURL, err := gitSourceCloneURL(source, "/host")
+	if err != nil {
+		t.Fatalf("git source clone URL: %v", err)
+	}
+	if cloneURL != "/host/home/darren/project" {
+		t.Fatalf("clone URL = %q, want host-mounted path", cloneURL)
+	}
+}
+
+func TestGitSourceCloneURLDoesNotDoublePrefixHostMountedLocalDirectory(t *testing.T) {
+	source := workerapimodel.GitSource{
+		Kind:           workerclient.GitSourceKindGit,
+		LocalDirectory: workerclient.NewOptString("/host/home/darren/project"),
+	}
+	cloneURL, err := gitSourceCloneURL(source, "/host")
+	if err != nil {
+		t.Fatalf("git source clone URL: %v", err)
+	}
+	if cloneURL != "/host/home/darren/project" {
+		t.Fatalf("clone URL = %q, want original host-mounted path", cloneURL)
+	}
+}
+
+func TestGitSourceCloneURLPreservesLocalDirectoryWithoutHostMountPrefix(t *testing.T) {
+	source := workerapimodel.GitSource{
+		Kind:           workerclient.GitSourceKindGit,
+		LocalDirectory: workerclient.NewOptString("/home/darren/project"),
+	}
+	cloneURL, err := gitSourceCloneURL(source, "")
+	if err != nil {
+		t.Fatalf("git source clone URL: %v", err)
+	}
+	if cloneURL != "/home/darren/project" {
+		t.Fatalf("clone URL = %q, want original local directory", cloneURL)
+	}
+}
+
+func TestGitSafeDirectoriesTrustsHostMountPrefixAndChildren(t *testing.T) {
+	dirs := gitSafeDirectories("/host/home/darren/src/disco2", "/host")
+	want := []string{
+		"/host",
+		"/host/*",
+	}
+	if strings.Join(dirs, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("safe directories = %#v, want %#v", dirs, want)
+	}
+}
+
+func TestGitSafeDirectoriesTrustsWorktreeAndDotGitWithoutHostMountPrefix(t *testing.T) {
+	dirs := gitSafeDirectories("/home/darren/src/disco2", "")
+	want := []string{
+		"/home/darren/src/disco2",
+		"/home/darren/src/disco2/.git",
+	}
+	if strings.Join(dirs, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("safe directories = %#v, want %#v", dirs, want)
+	}
+}
+
+func TestGitSafeDirectoriesIgnoresRemoteAndRelativeURLs(t *testing.T) {
+	for _, cloneURL := range []string{"https://example.com/repo.git", "file:///host/repo", "../repo"} {
+		if dirs := gitSafeDirectories(cloneURL, "/host"); len(dirs) != 0 {
+			t.Fatalf("safe directories for %q = %#v, want none", cloneURL, dirs)
+		}
+	}
+}
+
+func TestDockerSandboxRuntimeWorkerHostPathUsesHostMountPrefix(t *testing.T) {
+	runtime := &DockerSandboxRuntime{hostMountPrefix: "/host"}
+
+	got := runtime.workerHostPath("/var/lib/discobox/projects/prj_default/sandboxes/sandbox-1/volumes/home")
+	want := "/host/var/lib/discobox/projects/prj_default/sandboxes/sandbox-1/volumes/home"
+	if got != want {
+		t.Fatalf("worker host path = %q, want %q", got, want)
+	}
+}
+
+func TestDockerSandboxRuntimeWorkerHostPathPreservesHostPathWithoutPrefix(t *testing.T) {
+	runtime := &DockerSandboxRuntime{}
+
+	got := runtime.workerHostPath("/var/lib/discobox/projects/prj_default")
+	if got != "/var/lib/discobox/projects/prj_default" {
+		t.Fatalf("worker host path = %q, want host path", got)
+	}
+}
+
+func TestRunGitWithSafeDirectoriesUsesTemporaryGlobalConfig(t *testing.T) {
+	ctx := context.Background()
+	repo := t.TempDir()
+	git(t, repo, "init", "-b", "main")
+
+	if err := runGitWithSafeDirectories(ctx, "", []string{repo}, "config", "--global", "--get-all", "safe.directory"); err != nil {
+		t.Fatalf("run git with safe directories: %v", err)
+	}
+}
+
 func TestCheckoutGitSourceChecksOutBranchAtPinnedCommit(t *testing.T) {
 	ctx := context.Background()
 	repo := t.TempDir()

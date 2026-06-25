@@ -43,6 +43,7 @@ const (
 	dockerHostGateway       = "host.docker.internal"
 	dockerSocketPath        = "/var/run/docker.sock"
 	hostMountTargetRoot     = "/host"
+	workerHostSandboxRoot   = "/var/lib/discobox/projects"
 	labelManaged            = "discobox.vm.managed"
 	labelInstanceID         = "discobox.vm.instance_id"
 	labelProjectID          = "discobox.project_id"
@@ -310,6 +311,14 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 	}
 	labels := d.containerLabels(spec)
 	workerAgent := labels[labelWorkerAgent] == "true"
+	if workerAgent && d.usesHostMountPrefix() {
+		env := make(map[string]string, len(boot.Env)+1)
+		for key, value := range boot.Env {
+			env[key] = value
+		}
+		env[workeragent.EnvHostMountPrefix] = hostMountTargetRoot
+		boot.Env = env
+	}
 	if existing, err := d.client.ContainerInspect(ctx, name, client.ContainerInspectOptions{}); err == nil {
 		if shouldRemoveExistingContainer(existing.Container, image, labels, workerAgent) {
 			if _, err := d.client.ContainerRemove(ctx, existing.Container.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
@@ -466,6 +475,14 @@ func (d *Driver) containerMounts(workerAgent bool, workerID, projectID string) [
 	if workerAgent {
 		if d.dockerSocket != "" {
 			mounts = append(mounts, mount.Mount{Type: mount.TypeBind, Source: d.dockerSocket, Target: dockerSocketPath})
+			if !hasHostMountSource(d.hostMounts, workerHostSandboxRoot) {
+				mounts = append(mounts, mount.Mount{
+					Type:        mount.TypeBind,
+					Source:      workerHostSandboxRoot,
+					Target:      hostMountTarget(workerHostSandboxRoot),
+					BindOptions: &mount.BindOptions{CreateMountpoint: true},
+				})
+			}
 		}
 		for _, hostMount := range d.hostMounts {
 			mounts = append(mounts, mount.Mount{
@@ -484,6 +501,20 @@ func (d *Driver) containerMounts(workerAgent bool, workerID, projectID string) [
 		)
 	}
 	return mounts
+}
+
+func (d *Driver) usesHostMountPrefix() bool {
+	return d.dockerSocket != "" || len(d.hostMounts) > 0
+}
+
+func hasHostMountSource(hostMounts []HostMount, source string) bool {
+	source = cleanAbsPath(source)
+	for _, hostMount := range hostMounts {
+		if hostMount.Source == source {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeHostMounts(hostMounts []HostMount) []HostMount {

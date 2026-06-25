@@ -92,14 +92,28 @@ type DockerSandboxRuntime struct {
 	projectID             string
 	workerID              string
 	controlPlanePublicKey string
+	hostMountPrefix       string
 }
 
-func NewDockerSandboxRuntime(projectID, workerID, controlPlanePublicKey string) (*DockerSandboxRuntime, error) {
+type DockerSandboxRuntimeConfig struct {
+	ProjectID             string
+	WorkerID              string
+	ControlPlanePublicKey string
+	HostMountPrefix       string
+}
+
+func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRuntime, error) {
 	cli, err := client.New(client.FromEnv)
 	if err != nil {
 		return nil, err
 	}
-	return &DockerSandboxRuntime{client: cli, projectID: projectID, workerID: workerID, controlPlanePublicKey: controlPlanePublicKey}, nil
+	return &DockerSandboxRuntime{
+		client:                cli,
+		projectID:             cfg.ProjectID,
+		workerID:              cfg.WorkerID,
+		controlPlanePublicKey: cfg.ControlPlanePublicKey,
+		hostMountPrefix:       cleanAbsPath(cfg.HostMountPrefix),
+	}, nil
 }
 
 func (r *DockerSandboxRuntime) ListSandboxes(ctx context.Context) ([]*Sandbox, error) {
@@ -194,36 +208,39 @@ func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, imageNa
 func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxCreateRequest, user sandboxUserIdentity) ([]mount.Mount, error) {
 	sources := sandboxSources(req)
 	mounts := make([]mount.Mount, 0, len(sources)+1)
-	homePath := filepath.Join(sandboxVolumesRoot(r.projectID, sandboxID), "home")
-	if err := prepareOwnedDirectory(ctx, homePath, user.uid, user.gid); err != nil {
+	homeHostPath := filepath.Join(sandboxVolumesRoot(r.projectID, sandboxID), "home")
+	homeWorkerPath := r.workerHostPath(homeHostPath)
+	if err := prepareOwnedDirectory(ctx, homeWorkerPath, user.uid, user.gid); err != nil {
 		return nil, fmt.Errorf("set home ownership: %w", err)
 	}
 	mounts = append(mounts, mount.Mount{
 		Type:   mount.TypeBind,
-		Source: homePath,
+		Source: homeHostPath,
 		Target: user.homeDirectory,
 	})
-	configPath := sandboxConfigRoot(r.projectID, sandboxID)
-	if err := prepareOwnedDirectory(ctx, configPath, 0, 0); err != nil {
+	configHostPath := sandboxConfigRoot(r.projectID, sandboxID)
+	configWorkerPath := r.workerHostPath(configHostPath)
+	if err := prepareOwnedDirectory(ctx, configWorkerPath, 0, 0); err != nil {
 		return nil, fmt.Errorf("prepare sandbox config directory: %w", err)
 	}
 	mounts = append(mounts, mount.Mount{
 		Type:     mount.TypeBind,
-		Source:   configPath,
+		Source:   configHostPath,
 		Target:   "/etc/discobox",
 		ReadOnly: true,
 	})
 	for _, source := range sources {
-		hostPath := filepath.Join(sandboxVolumesRoot(r.projectID, sandboxID), "source", source.slug)
-		if err := materializeGitSource(ctx, source.git, hostPath); err != nil {
+		sourceHostPath := filepath.Join(sandboxVolumesRoot(r.projectID, sandboxID), "source", source.slug)
+		sourceWorkerPath := r.workerHostPath(sourceHostPath)
+		if err := r.materializeGitSource(ctx, source.git, sourceWorkerPath); err != nil {
 			return nil, fmt.Errorf("materialize source %q: %w", source.slug, err)
 		}
-		if err := prepareOwnedDirectory(ctx, hostPath, user.uid, user.gid); err != nil {
+		if err := prepareOwnedDirectory(ctx, sourceWorkerPath, user.uid, user.gid); err != nil {
 			return nil, fmt.Errorf("set source ownership %q: %w", source.slug, err)
 		}
 		mounts = append(mounts, mount.Mount{
 			Type:   mount.TypeBind,
-			Source: hostPath,
+			Source: sourceHostPath,
 			Target: source.target,
 		})
 	}
@@ -231,7 +248,7 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 }
 
 func (r *DockerSandboxRuntime) writeSandboxAgentConfig(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxCreateRequest) error {
-	configDir := sandboxConfigRoot(r.projectID, sandboxID)
+	configDir := r.workerHostPath(sandboxConfigRoot(r.projectID, sandboxID))
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return err
 	}
@@ -273,6 +290,9 @@ func (r *DockerSandboxRuntime) writeSandboxAgentConfig(ctx context.Context, sand
 
 func prepareOwnedDirectory(ctx context.Context, dir string, uid, gid int) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
 		return err
 	}
 	return chownRecursive(ctx, dir, uid, gid)
@@ -339,7 +359,7 @@ func (r *DockerSandboxRuntime) GitRepositoryPath(ctx context.Context, sandboxID,
 	if _, err := r.GetSandbox(ctx, sandboxID); err != nil {
 		return "", err
 	}
-	repoPath := filepath.Join(sandboxVolumesRoot(r.projectID, sandboxID), "source", repositoryID)
+	repoPath := r.workerHostPath(filepath.Join(sandboxVolumesRoot(r.projectID, sandboxID), "source", repositoryID))
 	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err != nil {
 		if os.IsNotExist(err) {
 			return "", ErrNotFound
@@ -781,11 +801,49 @@ func cleanContainerPath(value string) string {
 	return cleaned
 }
 
+func cleanAbsPath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || !filepath.IsAbs(value) {
+		return ""
+	}
+	parts := make([]string, 0, strings.Count(value, string(filepath.Separator))+1)
+	for _, part := range strings.Split(value, string(filepath.Separator)) {
+		switch part {
+		case "", ".":
+			continue
+		case "..":
+			if len(parts) > 0 {
+				parts = parts[:len(parts)-1]
+			}
+		default:
+			parts = append(parts, part)
+		}
+	}
+	if len(parts) == 0 {
+		return string(filepath.Separator)
+	}
+	return string(filepath.Separator) + filepath.Join(parts...)
+}
+
+func (r *DockerSandboxRuntime) workerHostPath(hostPath string) string {
+	hostPath = cleanAbsPath(hostPath)
+	if hostPath == "" {
+		return ""
+	}
+	if r.hostMountPrefix == "" {
+		return hostPath
+	}
+	if hostPath == r.hostMountPrefix || strings.HasPrefix(hostPath, r.hostMountPrefix+string(filepath.Separator)) {
+		return hostPath
+	}
+	return filepath.Join(r.hostMountPrefix, strings.TrimPrefix(hostPath, string(filepath.Separator)))
+}
+
 func sandboxVolumesRoot(projectID, sandboxID string) string {
 	return filepath.Join(sandboxDataRoot, projectID, "sandboxes", sandboxID, "volumes")
 }
 
-func materializeGitSource(ctx context.Context, source workerapimodel.GitSource, target string) error {
+func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source workerapimodel.GitSource, target string) error {
 	if _, err := os.Stat(filepath.Join(target, ".git")); err == nil {
 		return checkoutGitSource(ctx, target, source)
 	} else if !os.IsNotExist(err) {
@@ -794,7 +852,7 @@ func materializeGitSource(ctx context.Context, source workerapimodel.GitSource, 
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return err
 	}
-	cloneURL, err := gitSourceCloneURL(source)
+	cloneURL, err := gitSourceCloneURL(source, r.hostMountPrefix)
 	if err != nil {
 		return err
 	}
@@ -805,20 +863,61 @@ func materializeGitSource(ctx context.Context, source workerapimodel.GitSource, 
 		}
 	}
 	args = append(args, cloneURL, target)
-	if err := runGit(ctx, "", args...); err != nil {
+	if err := runGitWithSafeDirectories(ctx, "", gitSafeDirectories(cloneURL, r.hostMountPrefix), args...); err != nil {
 		return err
 	}
 	return checkoutGitSource(ctx, target, source)
 }
 
-func gitSourceCloneURL(source workerapimodel.GitSource) (string, error) {
+func gitSourceCloneURL(source workerapimodel.GitSource, hostMountPrefix string) (string, error) {
 	if local := strings.TrimSpace(optString(source.LocalDirectory)); local != "" {
-		return local, nil
+		return hostMountedLocalDirectory(local, hostMountPrefix), nil
 	}
 	if sourceURL, ok := source.URL.Get(); ok {
 		return sourceURL.String(), nil
 	}
 	return "", fmt.Errorf("source URL or localDirectory is required")
+}
+
+func hostMountedLocalDirectory(local, hostMountPrefix string) string {
+	hostMountPrefix = cleanAbsPath(hostMountPrefix)
+	if hostMountPrefix == "" {
+		return local
+	}
+	local = strings.TrimSpace(local)
+	if local == "" {
+		return local
+	}
+	if strings.HasPrefix(local, "file://") {
+		return local
+	}
+	if !filepath.IsAbs(local) {
+		return local
+	}
+	local = cleanAbsPath(local)
+	if local == "" || local == hostMountPrefix || strings.HasPrefix(local, hostMountPrefix+string(filepath.Separator)) {
+		return local
+	}
+	return filepath.Join(hostMountPrefix, strings.TrimPrefix(local, string(filepath.Separator)))
+}
+
+func gitSafeDirectories(cloneURL, hostMountPrefix string) []string {
+	if strings.Contains(cloneURL, "://") || !filepath.IsAbs(cloneURL) {
+		return nil
+	}
+	cloneURL = cleanAbsPath(cloneURL)
+	if cloneURL == "" {
+		return nil
+	}
+	hostMountPrefix = cleanAbsPath(hostMountPrefix)
+	if hostMountPrefix != "" && (cloneURL == hostMountPrefix || strings.HasPrefix(cloneURL, hostMountPrefix+string(filepath.Separator))) {
+		return []string{hostMountPrefix, filepath.Join(hostMountPrefix, "*")}
+	}
+	dirs := []string{cloneURL}
+	if filepath.Base(cloneURL) != ".git" {
+		dirs = append(dirs, filepath.Join(cloneURL, ".git"))
+	}
+	return dirs
 }
 
 func checkoutGitSource(ctx context.Context, repo string, source workerapimodel.GitSource) error {
@@ -841,9 +940,41 @@ func checkoutGitSource(ctx context.Context, repo string, source workerapimodel.G
 }
 
 func runGit(ctx context.Context, dir string, args ...string) error {
+	return runGitWithEnv(ctx, dir, nil, args...)
+}
+
+func runGitWithSafeDirectories(ctx context.Context, dir string, safeDirectories []string, args ...string) error {
+	if len(safeDirectories) == 0 {
+		return runGit(ctx, dir, args...)
+	}
+	config, err := os.CreateTemp("", "discobox-gitconfig-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(config.Name())
+	for _, safeDirectory := range safeDirectories {
+		if strings.ContainsAny(safeDirectory, "\x00\r\n") {
+			_ = config.Close()
+			return fmt.Errorf("invalid git safe.directory path %q", safeDirectory)
+		}
+		if _, err := fmt.Fprintf(config, "[safe]\n\tdirectory = %s\n", safeDirectory); err != nil {
+			_ = config.Close()
+			return err
+		}
+	}
+	if err := config.Close(); err != nil {
+		return err
+	}
+	return runGitWithEnv(ctx, dir, []string{"GIT_CONFIG_GLOBAL=" + config.Name()}, args...)
+}
+
+func runGitWithEnv(ctx context.Context, dir string, env []string, args ...string) error {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	if dir != "" {
 		cmd.Dir = dir
+	}
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
 	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
