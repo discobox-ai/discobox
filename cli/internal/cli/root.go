@@ -51,6 +51,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&app.noStart, "no-start", false, "Do not start a local server when the endpoint is unavailable")
 
 	cmd.AddCommand(app.newSandboxCommand())
+	cmd.AddCommand(app.newSandboxTerminalsCommand())
 	cmd.AddCommand(app.newRunCommand())
 	cmd.AddCommand(app.newAgentCommand())
 	cmd.AddCommand(app.newProviderCommand())

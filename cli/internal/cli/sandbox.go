@@ -46,13 +46,11 @@ type sandboxUpdateOptions struct {
 }
 
 func (a *App) newSandboxCommand() *cobra.Command {
-	var sandboxID string
 	cmd := &cobra.Command{
 		Use:     "sandbox",
 		Aliases: []string{"sandboxes"},
 		Short:   "Manage sandboxes",
 	}
-	cmd.PersistentFlags().StringVar(&sandboxID, "sandbox-id", "", "Sandbox ID for nested sandbox resources")
 	cmd.AddCommand(a.newSandboxListCommand())
 	cmd.AddCommand(a.newSandboxGetCommand())
 	cmd.AddCommand(a.newSandboxCreateCommand())
@@ -61,7 +59,6 @@ func (a *App) newSandboxCommand() *cobra.Command {
 	cmd.AddCommand(a.newSandboxStartCommand())
 	cmd.AddCommand(a.newSandboxStopCommand())
 	cmd.AddCommand(a.newSandboxRestartCommand())
-	cmd.AddCommand(a.newSandboxTerminalsCommand(&sandboxID))
 	return cmd
 }
 

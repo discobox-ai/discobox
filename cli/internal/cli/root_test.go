@@ -318,8 +318,8 @@ func TestRootCommandHelp(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute help: %v", err)
 	}
-	if !bytes.Contains(out.Bytes(), []byte("sandbox")) || !bytes.Contains(out.Bytes(), []byte("events")) {
-		t.Fatalf("help output = %q, want sandbox and events commands", out.String())
+	if !bytes.Contains(out.Bytes(), []byte("sandbox")) || !bytes.Contains(out.Bytes(), []byte("terminal")) || !bytes.Contains(out.Bytes(), []byte("events")) {
+		t.Fatalf("help output = %q, want sandbox, terminal, and events commands", out.String())
 	}
 }
 
@@ -365,6 +365,34 @@ func TestSandboxListQuietCommandPrintsFullIDsOnly(t *testing.T) {
 	}
 	if got := out.String(); got != sandboxID+"\n" {
 		t.Fatalf("quiet output = %q, want full sandbox ID only", got)
+	}
+}
+
+func TestTerminalListUsesTopLevelCommand(t *testing.T) {
+	var requested bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested = true
+		if got := r.URL.Path; got != "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals" {
+			t.Fatalf("path = %q, want sandbox terminal path", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"terminals":[]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "terminal", "--sandbox-id", "sandbox-1", "list"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute terminal list: %v", err)
+	}
+	if !requested {
+		t.Fatal("expected terminal list request")
+	}
+	if output := out.String(); !strings.Contains(output, "ID") || !strings.Contains(output, "AGENT") || !strings.Contains(output, "STATUS") {
+		t.Fatalf("terminal list output = %q, want table header", output)
 	}
 }
 

@@ -47,16 +47,18 @@ type sandboxTerminalCreateOptions struct {
 	attach  bool
 }
 
-func (a *App) newSandboxTerminalsCommand(sandboxID *string) *cobra.Command {
+func (a *App) newSandboxTerminalsCommand() *cobra.Command {
+	var sandboxID string
 	cmd := &cobra.Command{
-		Use:     "terminals",
-		Aliases: []string{"terminal"},
+		Use:     "terminal",
+		Aliases: []string{"terminals"},
 		Short:   "Manage sandbox terminals",
 	}
-	cmd.AddCommand(a.newSandboxTerminalListCommand(sandboxID))
-	cmd.AddCommand(a.newSandboxTerminalCreateCommand(sandboxID))
-	cmd.AddCommand(a.newSandboxTerminalAttachCommand(sandboxID))
-	cmd.AddCommand(a.newSandboxTerminalDeleteCommand(sandboxID))
+	cmd.PersistentFlags().StringVar(&sandboxID, "sandbox-id", "", "Sandbox ID")
+	cmd.AddCommand(a.newSandboxTerminalListCommand(&sandboxID))
+	cmd.AddCommand(a.newSandboxTerminalCreateCommand(&sandboxID))
+	cmd.AddCommand(a.newSandboxTerminalAttachCommand(&sandboxID))
+	cmd.AddCommand(a.newSandboxTerminalDeleteCommand(&sandboxID))
 	return cmd
 }
 
