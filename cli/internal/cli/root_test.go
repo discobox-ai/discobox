@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -990,6 +991,65 @@ func TestRootCommandIncludesServerSubcommand(t *testing.T) {
 	}
 	if found == nil || found.Name() != "shutdown" {
 		t.Fatalf("server shutdown command = %v, want shutdown", found)
+	}
+}
+
+func TestServerShutdownWaitCommandWaitsForServerToStop(t *testing.T) {
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/shutdown":
+			w.WriteHeader(http.StatusAccepted)
+			go func() {
+				time.Sleep(20 * time.Millisecond)
+				server.Close()
+			}()
+		case r.Method == http.MethodGet && r.URL.Path == "/healthz":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--server", server.URL, "server", "shutdown", "--wait"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute server shutdown --wait: %v", err)
+	}
+	if got := out.String(); got != "shutdown complete\n" {
+		t.Fatalf("output = %q, want shutdown complete", got)
+	}
+}
+
+func TestServerShutdownFallsBackToDefaultHTTPWhenSocketMissing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/shutdown" {
+			t.Fatalf("request = %s %s, want POST /shutdown", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusAccepted)
+	}))
+	t.Cleanup(server.Close)
+	serverURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse server URL: %v", err)
+	}
+	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
+	t.Setenv("PORT", serverURL.Port())
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"server", "shutdown"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute server shutdown fallback: %v", err)
+	}
+	if got := out.String(); got != "shutdown requested\n" {
+		t.Fatalf("output = %q, want shutdown requested", got)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -191,7 +192,8 @@ func (a *App) newServerCommand() *cobra.Command {
 }
 
 func (a *App) newServerShutdownCommand() *cobra.Command {
-	return &cobra.Command{
+	var wait bool
+	cmd := &cobra.Command{
 		Use:   "shutdown",
 		Short: "Ask the Discobox API server to stop",
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -199,11 +201,11 @@ func (a *App) newServerShutdownCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			req, err := http.NewRequestWithContext(cmd.Context(), http.MethodPost, baseURL+"/shutdown", nil)
-			if err != nil {
-				return err
+			resp, err := requestServerShutdown(cmd.Context(), baseURL, httpClient)
+			if err != nil && isLocalEndpoint(a.serverURL) {
+				baseURL, httpClient = defaultHTTPShutdownClient()
+				resp, err = requestServerShutdown(cmd.Context(), baseURL, httpClient)
 			}
-			resp, err := httpClient.Do(req)
 			if err != nil {
 				return fmt.Errorf("shutdown server: %w", err)
 			}
@@ -212,13 +214,74 @@ func (a *App) newServerShutdownCommand() *cobra.Command {
 				body, _ := io.ReadAll(resp.Body)
 				return fmt.Errorf("shutdown server: %s: %s", resp.Status, strings.TrimSpace(string(body)))
 			}
-			if a.output == "json" {
-				return writeJSON(cmd.OutOrStdout(), map[string]any{"shutdown": true})
+			if wait {
+				if err := waitForServerShutdown(cmd.Context(), baseURL, httpClient, 10*time.Second); err != nil {
+					return err
+				}
 			}
-			_, err = fmt.Fprintln(cmd.OutOrStdout(), "shutdown requested")
+			if a.output == "json" {
+				return writeJSON(cmd.OutOrStdout(), map[string]any{"shutdown": true, "wait": wait})
+			}
+			message := "shutdown requested"
+			if wait {
+				message = "shutdown complete"
+			}
+			_, err = fmt.Fprintln(cmd.OutOrStdout(), message)
 			return err
 		},
 	}
+	cmd.Flags().BoolVar(&wait, "wait", false, "Wait until the server stops accepting requests")
+	return cmd
+}
+
+func requestServerShutdown(ctx context.Context, baseURL string, httpClient *http.Client) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/shutdown", nil)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+func defaultHTTPShutdownClient() (string, *http.Client) {
+	port := strings.TrimSpace(os.Getenv("PORT"))
+	if port == "" {
+		port = fmt.Sprint(controlplane.DefaultPort)
+	}
+	return "http://127.0.0.1:" + port, http.DefaultClient
+}
+
+func waitForServerShutdown(ctx context.Context, baseURL string, httpClient *http.Client, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for {
+		probeCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+		req, err := http.NewRequestWithContext(probeCtx, http.MethodGet, baseURL+"/healthz", nil)
+		if err != nil {
+			cancel()
+			return err
+		}
+		resp := doShutdownProbe(httpClient, req)
+		cancel()
+		if resp == nil {
+			return nil
+		}
+		_ = resp.Body.Close()
+		if time.Now().After(deadline) {
+			return fmt.Errorf("shutdown server: still accepting requests after %s", timeout)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
+}
+
+func doShutdownProbe(httpClient *http.Client, req *http.Request) *http.Response {
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil
+	}
+	return resp
 }
 
 type requestHeaderTransport struct {

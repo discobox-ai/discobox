@@ -167,7 +167,7 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	}
 }
 
-func TestLoadServerEndpointOverride(t *testing.T) {
+func TestLoadServerEndpointAddsDefaultHTTP(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("DISCOBOX_SERVER_LISTEN", "unix:///tmp/discobox/server.sock")
 
@@ -176,8 +176,9 @@ func TestLoadServerEndpointOverride(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if !reflect.DeepEqual(cfg.Listen, []string{"unix:///tmp/discobox/server.sock"}) {
-		t.Fatalf("Listen = %#v", cfg.Listen)
+	want := []string{"unix:///tmp/discobox/server.sock", controlplane.DefaultListenEndpoint(controlplane.DefaultPort)}
+	if !reflect.DeepEqual(cfg.Listen, want) {
+		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, want)
 	}
 }
 
@@ -191,6 +192,36 @@ func TestLoadServerEndpointListOverride(t *testing.T) {
 	}
 
 	want := []string{"unix:///tmp/discobox/server.sock", "http://0.0.0.0:18080"}
+	if !reflect.DeepEqual(cfg.Listen, want) {
+		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, want)
+	}
+}
+
+func TestLoadServerEndpointAddsDefaultLocalIPC(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("DISCOBOX_SERVER_LISTEN", "http://127.0.0.1:19090")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	want := []string{localipc.DefaultEndpoint(), "http://127.0.0.1:19090"}
+	if !reflect.DeepEqual(cfg.Listen, want) {
+		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, want)
+	}
+}
+
+func TestLoadServerClientEndpointDoesNotOverrideListen(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv("DISCOBOX_SERVER", "unix:///tmp/discobox/server.sock")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	want := []string{localipc.DefaultEndpoint(), controlplane.DefaultListenEndpoint(controlplane.DefaultPort)}
 	if !reflect.DeepEqual(cfg.Listen, want) {
 		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, want)
 	}

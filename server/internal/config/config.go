@@ -155,13 +155,32 @@ func defaultDatabaseDSN(dataDir string) string {
 }
 
 func listenEndpoints(port int) []string {
-	if endpoints := splitListenEndpoints(getEnv("DISCOBOX_SERVER_LISTEN", "")); len(endpoints) > 0 {
-		return endpoints
+	endpoints := splitListenEndpoints(getEnv("DISCOBOX_SERVER_LISTEN", ""))
+	return requireLocalAndHTTPListenEndpoints(endpoints, port)
+}
+
+func requireLocalAndHTTPListenEndpoints(endpoints []string, port int) []string {
+	hasLocal := false
+	hasHTTP := false
+	for _, endpoint := range endpoints {
+		parsed, err := localipc.Parse(endpoint)
+		if err != nil {
+			continue
+		}
+		switch parsed.Scheme {
+		case "unix", "npipe":
+			hasLocal = true
+		case "http":
+			hasHTTP = true
+		}
 	}
-	if endpoints := splitListenEndpoints(getEnv("DISCOBOX_SERVER", "")); len(endpoints) > 0 {
-		return endpoints
+	if !hasLocal {
+		endpoints = append([]string{localipc.DefaultEndpoint()}, endpoints...)
 	}
-	return []string{localipc.DefaultEndpoint(), controlplane.DefaultListenEndpoint(port)}
+	if !hasHTTP {
+		endpoints = append(endpoints, controlplane.DefaultListenEndpoint(port))
+	}
+	return endpoints
 }
 
 func splitListenEndpoints(value string) []string {

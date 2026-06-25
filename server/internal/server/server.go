@@ -30,6 +30,9 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	if err := shutdownExistingLocalServer(ctx, cfg.Listen, time.Second); err != nil {
+		return fmt.Errorf("shutdown existing local server: %w", err)
+	}
 	shutdownTelemetry, err := initTelemetry(ctx, TelemetryOptions{
 		MetricsEnabled:       cfg.OTelMetricsEnabled,
 		MetricExportInterval: cfg.OTelMetricExportInterval,
@@ -145,6 +148,73 @@ func cleanupListeners(listeners []serverListener) {
 			listener.cleanup()
 		}
 	}
+}
+
+func shutdownExistingLocalServer(ctx context.Context, endpoints []string, wait time.Duration) error {
+	for _, endpoint := range shutdownEndpoints(endpoints) {
+		shutdownCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+		baseURL, client, err := localipc.HTTPClient(endpoint, nil)
+		if err != nil {
+			cancel()
+			return err
+		}
+		req, err := http.NewRequestWithContext(shutdownCtx, http.MethodPost, baseURL+"/shutdown", nil)
+		if err != nil {
+			cancel()
+			return err
+		}
+		resp := doShutdownRequest(client, req)
+		if resp == nil {
+			err := shutdownCtx.Err()
+			cancel()
+			if err != nil {
+				return err
+			}
+			continue
+		}
+		defer resp.Body.Close()
+		cancel()
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			return fmt.Errorf("%s returned %s", endpoint, resp.Status)
+		}
+		log.Printf("requested shutdown of existing server at %s", endpoint)
+		if wait > 0 {
+			time.Sleep(wait)
+		}
+		return nil
+	}
+	return nil
+}
+
+func doShutdownRequest(client *http.Client, req *http.Request) *http.Response {
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil
+	}
+	return resp
+}
+
+func shutdownEndpoints(endpoints []string) []string {
+	var result []string
+	for _, scheme := range []string{"unix", "npipe", "http"} {
+		if endpoint := firstListenEndpoint(endpoints, scheme); endpoint != "" {
+			result = append(result, endpoint)
+		}
+	}
+	return result
+}
+
+func firstListenEndpoint(endpoints []string, scheme string) string {
+	for _, endpoint := range endpoints {
+		parsed, err := localipc.Parse(endpoint)
+		if err != nil {
+			continue
+		}
+		if parsed.Scheme == scheme {
+			return endpoint
+		}
+	}
+	return ""
 }
 
 func serveAll(server *http.Server, listeners []serverListener) error {
