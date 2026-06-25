@@ -38,25 +38,22 @@ func (r *runtimeState) syncLSPHooks() {
 			continue
 		}
 		delete(r.lspClients, id)
-		r.clearPendingLSPHook(id)
-		go func(rt *lspRuntime) {
-			if rt.client != nil {
-				_ = rt.client.Close()
-			}
-		}(rt)
+		r.clearPendingLSPHookLocked(id)
+		go closeLSPRuntime(rt)
 	}
 	for id, hook := range wanted {
 		if existing, ok := r.lspClients[id]; ok {
 			existing.hook = hook
 			continue
 		}
-		r.lspClients[id] = &lspRuntime{hook: hook, open: map[string]struct{}{}}
-		go r.startLSPHook(hook)
+		rt := &lspRuntime{hook: hook, open: map[string]struct{}{}}
+		r.lspClients[id] = rt
+		go r.startLSPHook(hook, rt)
 	}
 	r.mu.Unlock()
 }
 
-func (r *runtimeState) startLSPHook(hook hooks.Hook) {
+func (r *runtimeState) startLSPHook(hook hooks.Hook, rt *lspRuntime) {
 	r.markPendingLSP(hook.ID, lspStartupKey(hook.ID))
 	_ = r.store.SetLSPHookRunning(r.ctx, hook.ID)
 	_ = r.recordEvent("lsp.starting", hook.ID, "", "language server starting", map[string]any{"language_id": hook.LanguageID, "path": hook.RelPath})
@@ -82,6 +79,9 @@ func (r *runtimeState) startLSPHook(hook hooks.Hook) {
 		LanguageID: hook.LanguageID,
 		Env:        runner.BuildEnv(req, "[]"),
 		OnDiagnostic: func(uri string, diagnostics []lspclient.Diagnostic) {
+			if !r.isCurrentLSPRuntime(hook.ID, rt) {
+				return
+			}
 			currentHook := hook
 			if h, ok := r.hookByID(hook.ID); ok {
 				currentHook = h
@@ -98,8 +98,7 @@ func (r *runtimeState) startLSPHook(hook hooks.Hook) {
 	}
 
 	r.mu.Lock()
-	rt := r.lspClients[hook.ID]
-	if rt == nil {
+	if r.lspClients[hook.ID] != rt {
 		r.mu.Unlock()
 		r.clearPendingLSP(hook.ID, lspStartupKey(hook.ID))
 		_ = client.Close()
@@ -116,11 +115,43 @@ func (r *runtimeState) startLSPHook(hook hooks.Hook) {
 	_ = r.store.SetLSPHookReady(r.ctx, hook.ID)
 	_ = r.recordEvent("lsp.started", hook.ID, "", "language server started", map[string]any{"language_id": hook.LanguageID, "path": hook.RelPath})
 	if len(pending) > 0 {
-		go r.handleLSPChanges(hook, pending)
+		go r.handleLSPHookChanges(hook, pending)
 	}
 }
 
-func (r *runtimeState) handleLSPChanges(hook hooks.Hook, changes []watcher.Change) {
+func (r *runtimeState) handleLSPChanges(changes []watcher.Change) {
+	if len(changes) == 0 {
+		return
+	}
+	disc := r.currentDiscovery()
+	for _, hook := range disc.Hooks {
+		if !hook.IsLSP() {
+			continue
+		}
+		r.handleLSPHookChanges(hook, changes)
+	}
+}
+
+func (r *runtimeState) isCurrentLSPRuntime(hookID string, rt *lspRuntime) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return rt != nil && r.lspClients[hookID] == rt
+}
+
+func closeLSPRuntime(rt *lspRuntime) {
+	if rt == nil {
+		return
+	}
+	rt.mu.Lock()
+	client := rt.client
+	rt.client = nil
+	rt.mu.Unlock()
+	if client != nil {
+		_ = client.Close()
+	}
+}
+
+func (r *runtimeState) handleLSPHookChanges(hook hooks.Hook, changes []watcher.Change) {
 	rt := r.lspRuntimeForHook(hook)
 	if rt == nil {
 		_ = r.store.SetLSPHookRunning(r.ctx, hook.ID)
@@ -135,14 +166,34 @@ func (r *runtimeState) handleLSPChanges(hook hooks.Hook, changes []watcher.Chang
 		return
 	}
 	rt.mu.Unlock()
+	watchChanges := lspFileChanges(r.cfg.RepoRoot, changes)
+	if len(watchChanges) > 0 {
+		ctx, cancel := context.WithTimeout(r.ctx, 10*time.Second)
+		err := client.DidChangeWatchedFiles(ctx, watchChanges)
+		cancel()
+		if err != nil {
+			_ = r.store.SetLSPHookError(r.ctx, hook.ID, err.Error())
+			_ = r.recordEvent("lsp.update.failed", hook.ID, "", "language server workspace update failed", map[string]any{"changes": len(watchChanges), "error": err.Error()})
+			return
+		}
+	}
 	for _, change := range changes {
 		path := filepath.ToSlash(strings.TrimSpace(change.Path))
 		if path == "" {
 			continue
 		}
+		matched, err := lspDiagnosticPathMatchesHook(hook, path)
+		if err != nil {
+			_ = r.store.SetLSPHookError(r.ctx, hook.ID, err.Error())
+			_ = r.recordEvent("lsp.update.failed", hook.ID, "", "language server file match failed", map[string]any{"path": path, "kind": string(change.Kind), "error": err.Error()})
+			continue
+		}
+		if !matched {
+			continue
+		}
 		uri := lspclient.FileURI(filepath.Join(r.cfg.RepoRoot, filepath.FromSlash(path)))
 		ctx, cancel := context.WithTimeout(r.ctx, 10*time.Second)
-		var err error
+		err = nil
 		if change.Kind == watcher.Deleted {
 			rt.mu.Lock()
 			_, wasOpen := rt.open[path]
@@ -264,6 +315,32 @@ func lspDiagnosticPathMatchesHook(hook hooks.Hook, path string) (bool, error) {
 	return true, nil
 }
 
+func lspFileChanges(repoRoot string, changes []watcher.Change) []lspclient.FileChange {
+	out := make([]lspclient.FileChange, 0, len(changes))
+	for _, change := range changes {
+		path := filepath.ToSlash(strings.TrimSpace(change.Path))
+		if path == "" {
+			continue
+		}
+		out = append(out, lspclient.FileChange{
+			URI:  lspclient.FileURI(filepath.Join(repoRoot, filepath.FromSlash(path))),
+			Type: lspFileChangeType(change.Kind),
+		})
+	}
+	return out
+}
+
+func lspFileChangeType(kind watcher.ChangeKind) lspclient.FileChangeType {
+	switch kind {
+	case watcher.Created:
+		return lspclient.FileCreated
+	case watcher.Deleted:
+		return lspclient.FileDeleted
+	default:
+		return lspclient.FileChanged
+	}
+}
+
 func (r *runtimeState) closeLSPClients() {
 	r.mu.Lock()
 	clients := make([]*lspclient.Client, 0, len(r.lspClients))
@@ -300,16 +377,13 @@ func (r *runtimeState) clearPendingLSP(hookID, uri string) {
 	r.mu.Unlock()
 }
 
-func (r *runtimeState) clearPendingLSPHook(hookID string) {
+func (r *runtimeState) clearPendingLSPHookLocked(hookID string) {
 	prefix := hookID + "\x00"
-	r.mu.Lock()
 	for key := range r.pendingLSP {
 		if strings.HasPrefix(key, prefix) {
 			delete(r.pendingLSP, key)
 		}
 	}
-	r.lastActivity = time.Now().UTC()
-	r.mu.Unlock()
 }
 
 func (r *runtimeState) expireStalePendingLSP(ctx context.Context) {

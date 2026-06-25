@@ -39,6 +39,21 @@ type Diagnostic struct {
 // DiagnosticHandler receives publishDiagnostics notifications.
 type DiagnosticHandler func(uri string, diagnostics []Diagnostic)
 
+// FileChangeType is the LSP workspace/didChangeWatchedFiles change type.
+type FileChangeType int
+
+const (
+	FileCreated FileChangeType = 1
+	FileChanged FileChangeType = 2
+	FileDeleted FileChangeType = 3
+)
+
+// FileChange is one workspace file-change notification.
+type FileChange struct {
+	URI  string
+	Type FileChangeType
+}
+
 // Client owns one stdio language server process.
 type Client struct {
 	cmd       *exec.Cmd
@@ -183,6 +198,24 @@ func (c *Client) DidSave(ctx context.Context, path string) error {
 		"text":         string(text),
 	}
 	return c.notify(ctx, "textDocument/didSave", params)
+}
+
+// DidChangeWatchedFiles sends workspace/didChangeWatchedFiles for repository files.
+func (c *Client) DidChangeWatchedFiles(ctx context.Context, changes []FileChange) error {
+	if len(changes) == 0 {
+		return nil
+	}
+	items := make([]map[string]any, 0, len(changes))
+	for _, change := range changes {
+		if strings.TrimSpace(change.URI) == "" {
+			continue
+		}
+		items = append(items, map[string]any{"uri": change.URI, "type": change.Type})
+	}
+	if len(items) == 0 {
+		return nil
+	}
+	return c.notify(ctx, "workspace/didChangeWatchedFiles", map[string]any{"changes": items})
 }
 
 // DidClose sends textDocument/didClose for a file.

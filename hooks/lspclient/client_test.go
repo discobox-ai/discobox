@@ -64,6 +64,59 @@ func TestDidSaveSendsDocumentURIAndText(t *testing.T) {
 	}
 }
 
+func TestDidChangeWatchedFilesSendsWorkspaceNotification(t *testing.T) {
+	dir := t.TempDir()
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer read.Close()
+	defer write.Close()
+
+	client := &Client{stdin: write, repoRoot: dir}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := client.DidChangeWatchedFiles(ctx, []FileChange{
+		{URI: FileURI(filepath.Join(dir, "go.mod")), Type: FileChanged},
+		{URI: FileURI(filepath.Join(dir, "old.go")), Type: FileDeleted},
+	}); err != nil {
+		t.Fatalf("did change watched files: %v", err)
+	}
+	if err := write.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	body, err := readMessage(bufio.NewReader(read))
+	if err != nil {
+		t.Fatalf("read message: %v", err)
+	}
+	var got struct {
+		JSONRPC string `json:"jsonrpc"`
+		Method  string `json:"method"`
+		Params  struct {
+			Changes []struct {
+				URI  string `json:"uri"`
+				Type int    `json:"type"`
+			} `json:"changes"`
+		} `json:"params"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode message: %v", err)
+	}
+	if got.JSONRPC != "2.0" || got.Method != "workspace/didChangeWatchedFiles" {
+		t.Fatalf("unexpected notification: %#v", got)
+	}
+	if len(got.Params.Changes) != 2 {
+		t.Fatalf("changes = %#v, want 2 entries", got.Params.Changes)
+	}
+	if got.Params.Changes[0].URI != FileURI(filepath.Join(dir, "go.mod")) || got.Params.Changes[0].Type != int(FileChanged) {
+		t.Fatalf("unexpected first change: %#v", got.Params.Changes[0])
+	}
+	if got.Params.Changes[1].URI != FileURI(filepath.Join(dir, "old.go")) || got.Params.Changes[1].Type != int(FileDeleted) {
+		t.Fatalf("unexpected second change: %#v", got.Params.Changes[1])
+	}
+}
+
 func TestDocumentVersionsIncrementPerURI(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.go")

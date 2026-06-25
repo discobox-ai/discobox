@@ -669,6 +669,7 @@ func (r *runtimeState) flushBatch() {
 			return
 		}
 	}
+	r.handleLSPChanges(changes)
 	observed, err := r.recordObservedChanges(r.ctx, changes)
 	if err != nil {
 		_ = r.recordEvent("file.change.record.failed", "", "", "file change record failed", map[string]any{"changes": len(changes), "changed_files": store.ChangedFilesFromWatcher(changes), "error": err.Error()})
@@ -683,7 +684,6 @@ func (r *runtimeState) flushBatch() {
 	}
 	for _, m := range res.Matches {
 		if m.Hook.IsLSP() {
-			r.handleLSPChanges(m.Hook, m.Changes)
 			continue
 		}
 		ids := []string{m.HookID}

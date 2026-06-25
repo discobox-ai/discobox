@@ -19,6 +19,7 @@ import (
 
 	hooks "github.com/obot-platform/discobox/hooks"
 	"github.com/obot-platform/discobox/hooks/api/model"
+	"github.com/obot-platform/discobox/hooks/lspclient"
 	"github.com/obot-platform/discobox/hooks/manager"
 	"github.com/obot-platform/discobox/hooks/models"
 	"github.com/obot-platform/discobox/hooks/parser"
@@ -228,6 +229,27 @@ func TestWaitSnapshotExpiresStalePendingLSP(t *testing.T) {
 	}
 	if len(resp.Hooks) != 1 || resp.Hooks[0].Status != models.StatusSuccess {
 		t.Fatalf("expected expired LSP hook to be successful, got %+v", resp.Hooks)
+	}
+}
+
+func TestLSPFileChangesIncludeWorkspaceMetadata(t *testing.T) {
+	repo := t.TempDir()
+	changes := lspFileChanges(repo, []watcher.Change{
+		{Path: "go.work", Kind: watcher.Modified},
+		{Path: "cli/go.mod", Kind: watcher.Created},
+		{Path: "old.go", Kind: watcher.Deleted},
+	})
+	if len(changes) != 3 {
+		t.Fatalf("lsp file changes = %#v, want 3 changes", changes)
+	}
+	if changes[0].URI != lspclient.FileURI(filepath.Join(repo, "go.work")) || changes[0].Type != lspclient.FileChanged {
+		t.Fatalf("unexpected go.work change: %#v", changes[0])
+	}
+	if changes[1].URI != lspclient.FileURI(filepath.Join(repo, "cli", "go.mod")) || changes[1].Type != lspclient.FileCreated {
+		t.Fatalf("unexpected go.mod change: %#v", changes[1])
+	}
+	if changes[2].URI != lspclient.FileURI(filepath.Join(repo, "old.go")) || changes[2].Type != lspclient.FileDeleted {
+		t.Fatalf("unexpected delete change: %#v", changes[2])
 	}
 }
 
