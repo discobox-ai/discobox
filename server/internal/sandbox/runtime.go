@@ -98,6 +98,7 @@ type CreateOptions struct {
 	UserUID                  *int
 	UserGID                  *int
 	HomeDirectory            *string
+	ResolvedAgentConfig      *ResolvedAgentConfig
 	AgentServerURL           string
 	OAuthRedirectBase        string
 	Resources                ResourceConfig
@@ -106,6 +107,16 @@ type CreateOptions struct {
 	CPUVCPUs                 float64
 	MemoryBytes              int64
 	StorageBytes             int64
+}
+
+// ResolvedAgentConfig is the sandbox-local coding agent configuration captured
+// at sandbox create time.
+type ResolvedAgentConfig struct {
+	ID             string
+	Name           string
+	InstallCommand string
+	RunCommand     string
+	Capabilities   []byte
 }
 
 // PrepareStateProvider can precompute provider-owned state before creation.

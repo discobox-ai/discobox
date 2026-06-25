@@ -951,6 +951,52 @@ func (o OptNilErrorDetailArray) Or(d []ErrorDetail) []ErrorDetail {
 	return d
 }
 
+// NewOptResolvedAgentConfig returns new OptResolvedAgentConfig with value set to v.
+func NewOptResolvedAgentConfig(v ResolvedAgentConfig) OptResolvedAgentConfig {
+	return OptResolvedAgentConfig{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptResolvedAgentConfig is optional ResolvedAgentConfig.
+type OptResolvedAgentConfig struct {
+	Value ResolvedAgentConfig
+	Set   bool
+}
+
+// IsSet returns true if OptResolvedAgentConfig was set.
+func (o OptResolvedAgentConfig) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptResolvedAgentConfig) Reset() {
+	var v ResolvedAgentConfig
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptResolvedAgentConfig) SetTo(v ResolvedAgentConfig) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptResolvedAgentConfig) Get() (v ResolvedAgentConfig, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptResolvedAgentConfig) Or(d ResolvedAgentConfig) ResolvedAgentConfig {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptResourceConfig returns new OptResourceConfig with value set to v.
 func NewOptResourceConfig(v ResourceConfig) OptResourceConfig {
 	return OptResourceConfig{
@@ -1273,6 +1319,66 @@ func (o OptWorkerSandboxUser) Or(d WorkerSandboxUser) WorkerSandboxUser {
 	return d
 }
 
+// Ref: #/components/schemas/ResolvedAgentConfig
+type ResolvedAgentConfig struct {
+	// Opaque agent capabilities or feature metadata.
+	Capabilities   jx.Raw    `json:"capabilities"`
+	ID             string    `json:"id"`
+	InstallCommand OptString `json:"installCommand"`
+	Name           string    `json:"name"`
+	RunCommand     string    `json:"runCommand"`
+}
+
+// GetCapabilities returns the value of Capabilities.
+func (s *ResolvedAgentConfig) GetCapabilities() jx.Raw {
+	return s.Capabilities
+}
+
+// GetID returns the value of ID.
+func (s *ResolvedAgentConfig) GetID() string {
+	return s.ID
+}
+
+// GetInstallCommand returns the value of InstallCommand.
+func (s *ResolvedAgentConfig) GetInstallCommand() OptString {
+	return s.InstallCommand
+}
+
+// GetName returns the value of Name.
+func (s *ResolvedAgentConfig) GetName() string {
+	return s.Name
+}
+
+// GetRunCommand returns the value of RunCommand.
+func (s *ResolvedAgentConfig) GetRunCommand() string {
+	return s.RunCommand
+}
+
+// SetCapabilities sets the value of Capabilities.
+func (s *ResolvedAgentConfig) SetCapabilities(val jx.Raw) {
+	s.Capabilities = val
+}
+
+// SetID sets the value of ID.
+func (s *ResolvedAgentConfig) SetID(val string) {
+	s.ID = val
+}
+
+// SetInstallCommand sets the value of InstallCommand.
+func (s *ResolvedAgentConfig) SetInstallCommand(val OptString) {
+	s.InstallCommand = val
+}
+
+// SetName sets the value of Name.
+func (s *ResolvedAgentConfig) SetName(val string) {
+	s.Name = val
+}
+
+// SetRunCommand sets the value of RunCommand.
+func (s *ResolvedAgentConfig) SetRunCommand(val string) {
+	s.RunCommand = val
+}
+
 // Ref: #/components/schemas/ResourceConfig
 type ResourceConfig struct {
 	CPUCores float64 `json:"CPUCores"`
@@ -1524,6 +1630,7 @@ type WorkerSandboxCreateRequest struct {
 	Name                     OptString                                         `json:"name"`
 	Prompt                   OptString                                         `json:"prompt"`
 	ProviderInstanceId       OptString                                         `json:"providerInstanceId"`
+	ResolvedAgentConfig      OptResolvedAgentConfig                            `json:"resolvedAgentConfig"`
 	Resources                OptResourceConfig                                 `json:"resources"`
 	SandboxId                string                                            `json:"sandboxId"`
 	Source                   OptGitSource                                      `json:"source"`
@@ -1595,6 +1702,11 @@ func (s *WorkerSandboxCreateRequest) GetPrompt() OptString {
 // GetProviderInstanceId returns the value of ProviderInstanceId.
 func (s *WorkerSandboxCreateRequest) GetProviderInstanceId() OptString {
 	return s.ProviderInstanceId
+}
+
+// GetResolvedAgentConfig returns the value of ResolvedAgentConfig.
+func (s *WorkerSandboxCreateRequest) GetResolvedAgentConfig() OptResolvedAgentConfig {
+	return s.ResolvedAgentConfig
 }
 
 // GetResources returns the value of Resources.
@@ -1690,6 +1802,11 @@ func (s *WorkerSandboxCreateRequest) SetPrompt(val OptString) {
 // SetProviderInstanceId sets the value of ProviderInstanceId.
 func (s *WorkerSandboxCreateRequest) SetProviderInstanceId(val OptString) {
 	s.ProviderInstanceId = val
+}
+
+// SetResolvedAgentConfig sets the value of ResolvedAgentConfig.
+func (s *WorkerSandboxCreateRequest) SetResolvedAgentConfig(val OptResolvedAgentConfig) {
+	s.ResolvedAgentConfig = val
 }
 
 // SetResources sets the value of Resources.

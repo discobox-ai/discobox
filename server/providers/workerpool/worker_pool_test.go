@@ -778,13 +778,14 @@ func (p *inventoryTestWorkerProvider) ReconcileWorkerProviderInventory(_ context
 }
 
 type recordingWorkerManager struct {
-	worker                 *model.Worker
-	workersByID            map[string]*model.Worker
-	err                    error
-	sandbox                *model.Sandbox
-	findCalls              int
-	listCalls              int
-	workerAgentTokenClaims []workeragentauth.TokenClaims
+	worker                  *model.Worker
+	workersByID             map[string]*model.Worker
+	err                     error
+	sandbox                 *model.Sandbox
+	findCalls               int
+	listCalls               int
+	workerAgentTokenClaims  []workeragentauth.TokenClaims
+	sandboxAgentTokenClaims []workeragentauth.TokenClaims
 }
 
 func (s *recordingWorkerManager) ListWorkers(context.Context, string, string) ([]model.Worker, error) {
@@ -819,6 +820,11 @@ func (s *recordingWorkerManager) EnsureWorkerAgentTrustKey(context.Context) (str
 func (s *recordingWorkerManager) CreateWorkerAgentToken(_ context.Context, claims workeragentauth.TokenClaims) (string, error) {
 	s.workerAgentTokenClaims = append(s.workerAgentTokenClaims, claims)
 	return "worker-token", nil
+}
+
+func (s *recordingWorkerManager) CreateSandboxAgentToken(_ context.Context, claims workeragentauth.TokenClaims) (string, error) {
+	s.sandboxAgentTokenClaims = append(s.sandboxAgentTokenClaims, claims)
+	return "sandbox-agent-token", nil
 }
 
 func (s *recordingWorkerManager) FindSchedulableWorker(_ context.Context, sandbox *model.Sandbox) (*model.Worker, error) {
@@ -884,6 +890,10 @@ func (s *capacityWaitWorkerManager) CreateWorkerAgentToken(context.Context, work
 	return "worker-token", nil
 }
 
+func (s *capacityWaitWorkerManager) CreateSandboxAgentToken(context.Context, workeragentauth.TokenClaims) (string, error) {
+	return "sandbox-agent-token", nil
+}
+
 func (s *capacityWaitWorkerManager) FindSchedulableWorker(context.Context, *model.Sandbox) (*model.Worker, error) {
 	if s.createdWorkers == 0 || s.worker == nil {
 		return nil, apperrors.ErrNotFound
@@ -935,6 +945,10 @@ func (s *repairingWorkerManager) EnsureWorkerAgentTrustKey(context.Context) (str
 
 func (s *repairingWorkerManager) CreateWorkerAgentToken(context.Context, workeragentauth.TokenClaims) (string, error) {
 	return "worker-token", nil
+}
+
+func (s *repairingWorkerManager) CreateSandboxAgentToken(context.Context, workeragentauth.TokenClaims) (string, error) {
+	return "sandbox-agent-token", nil
 }
 
 func (s *repairingWorkerManager) FindSchedulableWorker(context.Context, *model.Sandbox) (*model.Worker, error) {

@@ -12,6 +12,7 @@ type GitSource = workeragentapi.GitSource
 type GitSourceCheckout = workeragentapi.GitSourceCheckout
 type GitSourceDestination = workeragentapi.GitSourceDestination
 type GitSourceWorkspace = workeragentapi.GitSourceWorkspace
+type ResolvedAgentConfig = workeragentapi.ResolvedAgentConfig
 type ResourceConfig = workeragentapi.ResourceConfig
 type Sandbox = workeragentapi.Sandbox
 type WorkerSandboxCreateRequest = workeragentapi.WorkerSandboxCreateRequest

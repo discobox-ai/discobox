@@ -243,7 +243,7 @@ func (r *SandboxReconcileExecutor) startSandbox(ctx context.Context, sb *model.S
 		return nil
 	}
 	ref := sandboxRefFromSandbox(sb)
-	createOpts := r.createOptionsFromSandbox(sb)
+	createOpts := r.createOptionsFromSandbox(ctx, sb)
 	if err := r.applyTrustKey(ctx, sb, &createOpts); err != nil {
 		return err
 	}
@@ -413,7 +413,7 @@ func ensureSandboxImage(ctx context.Context, provider Provider, opts *CreateOpti
 	return nil
 }
 
-func (r *SandboxReconcileExecutor) createOptionsFromSandbox(sb *model.Sandbox) CreateOptions {
+func (r *SandboxReconcileExecutor) createOptionsFromSandbox(ctx context.Context, sb *model.Sandbox) CreateOptions {
 	opts := CreateOptions{
 		Labels: map[string]string{
 			"discobox.project_id": sb.ProjectID,
@@ -443,6 +443,17 @@ func (r *SandboxReconcileExecutor) createOptionsFromSandbox(sb *model.Sandbox) C
 	opts.UserUID = sb.UserUID
 	opts.UserGID = sb.UserGID
 	opts.HomeDirectory = sb.HomeDirectory
+	if sb.AgentConfigID != nil && r.store != nil {
+		if cfg, err := r.store.GetAgentConfig(ctx, sb.ProjectID, *sb.AgentConfigID); err == nil {
+			opts.ResolvedAgentConfig = &ResolvedAgentConfig{
+				ID:             cfg.ID,
+				Name:           cfg.Name,
+				InstallCommand: cfg.InstallCommand,
+				RunCommand:     cfg.RunCommand,
+				Capabilities:   append([]byte(nil), cfg.Capabilities...),
+			}
+		}
+	}
 	return opts
 }
 

@@ -13,6 +13,7 @@ type Sandbox = contract.Sandbox
 type Status = contract.Status
 type AssignedPort = contract.AssignedPort
 type ImageRef = contract.ImageRef
+type ResolvedAgentConfig = contract.ResolvedAgentConfig
 type ProviderStatus = contract.ProviderStatus
 type ProviderConfigField = contract.ProviderConfigField
 type ProviderDefinition = contract.ProviderDefinition

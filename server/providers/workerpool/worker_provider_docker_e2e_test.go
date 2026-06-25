@@ -46,13 +46,13 @@ func TestWorkerProviderCreateCreatesDockerContainerE2E(t *testing.T) {
 		image = "alpine:3.20"
 	}
 
-	runtime, err := sandboxruntime.NewDockerSandboxRuntime(projectID, workerID)
+	controlPlaneKey, workerToken := newWorkerAgentTestAuth(t, projectID, workerID)
+	runtime, err := sandboxruntime.NewDockerSandboxRuntime(projectID, workerID, controlPlaneKey)
 	if err != nil {
 		t.Fatalf("new docker sandbox runtime: %v", err)
 	}
 	t.Cleanup(func() { cleanupWorkerProviderSandboxContainers(t, dockerClient, projectID, workerID, sandboxID) })
 
-	controlPlaneKey, workerToken := newWorkerAgentTestAuth(t, projectID, workerID)
 	router, _ := server.NewRouter(server.Config{
 		Identity:              server.Identity{ProjectID: projectID, WorkerID: workerID},
 		Runtime:               runtime,

@@ -29,6 +29,7 @@ type WorkerManager interface {
 	CreateWorkerBootstrapToken(ctx context.Context, token *model.WorkerBootstrapToken) error
 	EnsureWorkerAgentTrustKey(ctx context.Context) (string, error)
 	CreateWorkerAgentToken(ctx context.Context, claims workeragentauth.TokenClaims) (string, error)
+	CreateSandboxAgentToken(ctx context.Context, claims workeragentauth.TokenClaims) (string, error)
 	FindSchedulableWorker(ctx context.Context, sandbox *model.Sandbox) (*model.Worker, error)
 	ScheduleWorkerReconciliation(ctx context.Context, workerID string) error
 	ScheduleWorkerProviderReconciliation(ctx context.Context, projectID, providerID string) error

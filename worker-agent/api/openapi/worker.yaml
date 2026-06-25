@@ -150,6 +150,24 @@ components:
             - DiskMB
             - Timeout
             type: object
+        ResolvedAgentConfig:
+            additionalProperties: false
+            properties:
+                capabilities:
+                    description: Opaque agent capabilities or feature metadata.
+                id:
+                    type: string
+                installCommand:
+                    type: string
+                name:
+                    type: string
+                runCommand:
+                    type: string
+            required:
+            - id
+            - name
+            - runCommand
+            type: object
         Sandbox:
             additionalProperties: false
             properties:
@@ -243,6 +261,8 @@ components:
                     type: string
                 providerInstanceId:
                     type: string
+                resolvedAgentConfig:
+                    "$ref": "#/components/schemas/ResolvedAgentConfig"
                 resources:
                     "$ref": "#/components/schemas/ResourceConfig"
                 sandboxId:

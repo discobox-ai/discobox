@@ -152,6 +152,10 @@ func (m *recordingWorkerReconcileManager) CreateWorkerAgentToken(context.Context
 	return "worker-token", nil
 }
 
+func (m *recordingWorkerReconcileManager) CreateSandboxAgentToken(context.Context, workeragentauth.TokenClaims) (string, error) {
+	return "sandbox-agent-token", nil
+}
+
 func (m *recordingWorkerReconcileManager) FindSchedulableWorker(context.Context, *model.Sandbox) (*model.Worker, error) {
 	return nil, nil
 }

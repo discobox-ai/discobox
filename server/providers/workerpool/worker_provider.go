@@ -392,6 +392,7 @@ type workerAgentSandboxProvider struct {
 
 type workerAgentTokenIssuer interface {
 	CreateWorkerAgentToken(ctx context.Context, claims workeragentauth.TokenClaims) (string, error)
+	CreateSandboxAgentToken(ctx context.Context, claims workeragentauth.TokenClaims) (string, error)
 }
 
 func (p *workerAgentSandboxProvider) Initialize(context.Context, *model.SandboxProviderInstance) error {
@@ -495,6 +496,9 @@ func (p *workerAgentSandboxProvider) AcquireHTTPClient(_ context.Context, ref sa
 	if lease != nil && lease.AuthTokenProvider == nil {
 		lease.AuthTokenProvider = p.authTokenProvider(ref, scopes...)
 	}
+	if lease != nil && lease.ForwardAuthTokenProvider == nil && requiresSandboxAgentToken(scopes) {
+		lease.ForwardAuthTokenProvider = p.sandboxAgentAuthTokenProvider(ref, scopes...)
+	}
 	return lease, nil
 }
 
@@ -533,6 +537,31 @@ func (p *workerAgentSandboxProvider) authTokenProvider(ref sandbox.SandboxRef, s
 	}
 }
 
+func (p *workerAgentSandboxProvider) sandboxAgentAuthTokenProvider(ref sandbox.SandboxRef, scopes ...string) func(context.Context) (string, error) {
+	tokenScopes := append([]string(nil), scopes...)
+	return func(ctx context.Context) (string, error) {
+		if p.tokenIssuer == nil {
+			return "", fmt.Errorf("worker-agent token issuer is required")
+		}
+		return p.tokenIssuer.CreateSandboxAgentToken(ctx, workeragentauth.TokenClaims{
+			ProjectID: ref.ProjectID,
+			WorkerID:  p.workerID,
+			SandboxID: ref.SandboxID,
+			Scopes:    tokenScopes,
+		})
+	}
+}
+
+func requiresSandboxAgentToken(scopes []string) bool {
+	for _, scope := range scopes {
+		switch scope {
+		case workeragentauth.ScopeTerminalRead, workeragentauth.ScopeTerminalWrite, "terminal:*", "*":
+			return true
+		}
+	}
+	return false
+}
+
 func newWorkerAgentClient(lease *transport.HTTPClientLease) (*workerclient.Client, error) {
 	httpClient := http.DefaultClient
 	baseURL := defaultWorkerBaseURL
@@ -566,6 +595,18 @@ func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions
 	}
 	if opts.AgentConfigID != nil {
 		out.AgentConfigId = workerclient.NewOptString(*opts.AgentConfigID)
+	}
+	if opts.ResolvedAgentConfig != nil {
+		resolved := workerapimodel.ResolvedAgentConfig{
+			ID:             opts.ResolvedAgentConfig.ID,
+			Name:           opts.ResolvedAgentConfig.Name,
+			InstallCommand: workerclient.NewOptString(opts.ResolvedAgentConfig.InstallCommand),
+			RunCommand:     opts.ResolvedAgentConfig.RunCommand,
+		}
+		if len(opts.ResolvedAgentConfig.Capabilities) > 0 {
+			resolved.Capabilities = opts.ResolvedAgentConfig.Capabilities
+		}
+		out.ResolvedAgentConfig = workerclient.NewOptResolvedAgentConfig(resolved)
 	}
 	if opts.AgentModel != nil {
 		out.AgentModel = workerclient.NewOptString(*opts.AgentModel)

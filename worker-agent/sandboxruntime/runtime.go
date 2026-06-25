@@ -2,8 +2,10 @@ package sandboxruntime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path"
@@ -23,6 +25,7 @@ import (
 
 const (
 	defaultSandboxImage = "alpine:3.20"
+	sandboxAgentPort    = 3003
 	sandboxDataRoot     = "/var/lib/discobox/projects"
 	sandboxLabelManaged = "discobox.sandbox.managed"
 	sandboxLabelProject = "discobox.project_id"
@@ -79,21 +82,23 @@ type Runtime interface {
 	StartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxOperationRequest) (*Sandbox, error)
 	StopSandbox(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxOperationRequest) (*Sandbox, error)
 	GitRepositoryPath(ctx context.Context, sandboxID, repositoryID string) (string, error)
+	HTTPBaseURL(ctx context.Context, sandboxID string, port int) (*url.URL, error)
 }
 
 // DockerSandboxRuntime launches sandboxes as Docker containers inside a worker.
 type DockerSandboxRuntime struct {
-	client    *client.Client
-	projectID string
-	workerID  string
+	client                *client.Client
+	projectID             string
+	workerID              string
+	controlPlanePublicKey string
 }
 
-func NewDockerSandboxRuntime(projectID, workerID string) (*DockerSandboxRuntime, error) {
+func NewDockerSandboxRuntime(projectID, workerID, controlPlanePublicKey string) (*DockerSandboxRuntime, error) {
 	cli, err := client.New(client.FromEnv)
 	if err != nil {
 		return nil, err
 	}
-	return &DockerSandboxRuntime{client: cli, projectID: projectID, workerID: workerID}, nil
+	return &DockerSandboxRuntime{client: cli, projectID: projectID, workerID: workerID, controlPlanePublicKey: controlPlanePublicKey}, nil
 }
 
 func (r *DockerSandboxRuntime) ListSandboxes(ctx context.Context) ([]*Sandbox, error) {
@@ -143,15 +148,17 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	if err != nil {
 		return nil, err
 	}
+	if err := r.writeSandboxAgentConfig(ctx, sandboxID, req); err != nil {
+		return nil, err
+	}
 	name := sandboxContainerName(r.workerID, sandboxID)
 	cfg := &container.Config{
 		Image:      imageName,
 		Labels:     r.labels(sandboxID),
 		Env:        envList(envWithSandboxUser(map[string]string(optCreateEnv(req.Env)), user)),
 		WorkingDir: sourceWorkingDirectory(req),
-		Cmd:        []string{"sleep", "infinity"},
 	}
-	hostCfg := &container.HostConfig{Mounts: mounts}
+	hostCfg := &container.HostConfig{Mounts: mounts, Privileged: true}
 	if memoryBytes := optInt64(req.MemoryBytes); memoryBytes > 0 {
 		hostCfg.Memory = memoryBytes
 	} else if resources, ok := req.Resources.Get(); ok && resources.MemoryMB > 0 {
@@ -184,6 +191,16 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 		Source: homePath,
 		Target: user.homeDirectory,
 	})
+	configPath := sandboxConfigRoot(r.projectID, sandboxID)
+	if err := prepareOwnedDirectory(ctx, configPath, 0, 0); err != nil {
+		return nil, fmt.Errorf("prepare sandbox config directory: %w", err)
+	}
+	mounts = append(mounts, mount.Mount{
+		Type:     mount.TypeBind,
+		Source:   configPath,
+		Target:   "/etc/discobox",
+		ReadOnly: true,
+	})
 	for _, source := range sources {
 		hostPath := filepath.Join(sandboxVolumesRoot(r.projectID, sandboxID), "source", source.slug)
 		if err := materializeGitSource(ctx, source.git, hostPath); err != nil {
@@ -199,6 +216,47 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 		})
 	}
 	return mounts, nil
+}
+
+func (r *DockerSandboxRuntime) writeSandboxAgentConfig(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxCreateRequest) error {
+	configDir := sandboxConfigRoot(r.projectID, sandboxID)
+	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		return err
+	}
+	cfg := sandboxAgentConfig{
+		Identity: sandboxAgentIdentity{
+			ProjectID: r.projectID,
+			SandboxID: sandboxID,
+			WorkerID:  r.workerID,
+		},
+		ControlPlanePublicKey: r.controlPlanePublicKey,
+		ListenAddress:         fmt.Sprintf(":%d", sandboxAgentPort),
+		WorkingRoot:           "/workspace",
+		RuntimeDir:            "/run/discobox/agent-terminals",
+		DatabasePath:          "/var/lib/discobox/sandbox-agent.db",
+		Resources: sandboxAgentResourceConfig{
+			SampleInterval: int64(time.Second),
+			RetentionCount: 300,
+		},
+	}
+	if req != nil {
+		if resolved, ok := req.ResolvedAgentConfig.Get(); ok {
+			cfg.Agents = append(cfg.Agents, sandboxAgentConfigAgent{
+				ID:      resolved.ID,
+				Name:    resolved.Name,
+				Command: []string{"/bin/bash", "-lc", resolved.RunCommand},
+			})
+		}
+	}
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(configDir, "sandbox-agent.json")
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		return err
+	}
+	return chownRecursive(ctx, configDir, 0, 0)
 }
 
 func prepareOwnedDirectory(ctx context.Context, dir string, uid, gid int) error {
@@ -277,6 +335,25 @@ func (r *DockerSandboxRuntime) GitRepositoryPath(ctx context.Context, sandboxID,
 		return "", err
 	}
 	return repoPath, nil
+}
+
+func (r *DockerSandboxRuntime) HTTPBaseURL(ctx context.Context, sandboxID string, port int) (*url.URL, error) {
+	if port < 1 || port > 65535 {
+		return nil, fmt.Errorf("invalid sandbox HTTP port %d", port)
+	}
+	sb, err := r.GetSandbox(ctx, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	inspect, err := r.client.ContainerInspect(ctx, sb.ID, client.ContainerInspectOptions{})
+	if err != nil {
+		return nil, err
+	}
+	ip := containerIPAddress(inspect.Container)
+	if ip == "" {
+		return nil, fmt.Errorf("sandbox %q does not have an inspectable IP address", sandboxID)
+	}
+	return &url.URL{Scheme: "http", Host: fmt.Sprintf("%s:%d", ip, port)}, nil
 }
 
 func (r *DockerSandboxRuntime) filters(sandboxID string) client.Filters {
@@ -445,6 +522,10 @@ func (r *MemorySandboxRuntime) GitRepositoryPath(_ context.Context, sandboxID, r
 	return repositories[repositoryID], nil
 }
 
+func (r *MemorySandboxRuntime) HTTPBaseURL(context.Context, string, int) (*url.URL, error) {
+	return nil, ErrNotFound
+}
+
 func (r *MemorySandboxRuntime) SetGitRepositoryPath(sandboxID, repositoryID, path string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -463,6 +544,55 @@ func sandboxContainerName(workerID, sandboxID string) string {
 		return '-'
 	}, name)
 	return strings.Trim(name, "-_.")
+}
+
+func sandboxConfigRoot(projectID, sandboxID string) string {
+	return filepath.Join(sandboxVolumesRoot(projectID, sandboxID), "config")
+}
+
+func containerIPAddress(inspect container.InspectResponse) string {
+	if inspect.NetworkSettings == nil {
+		return ""
+	}
+	names := make([]string, 0, len(inspect.NetworkSettings.Networks))
+	for name := range inspect.NetworkSettings.Networks {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if endpoint := inspect.NetworkSettings.Networks[name]; endpoint != nil && endpoint.IPAddress.IsValid() {
+			return endpoint.IPAddress.String()
+		}
+	}
+	return ""
+}
+
+type sandboxAgentConfig struct {
+	Identity              sandboxAgentIdentity       `json:"identity"`
+	ControlPlanePublicKey string                     `json:"controlPlanePublicKey"`
+	ListenAddress         string                     `json:"listenAddress"`
+	WorkingRoot           string                     `json:"workingRoot"`
+	RuntimeDir            string                     `json:"runtimeDir"`
+	DatabasePath          string                     `json:"databasePath"`
+	Agents                []sandboxAgentConfigAgent  `json:"agents,omitempty"`
+	Resources             sandboxAgentResourceConfig `json:"resources"`
+}
+
+type sandboxAgentIdentity struct {
+	ProjectID string `json:"projectId"`
+	SandboxID string `json:"sandboxId"`
+	WorkerID  string `json:"workerId"`
+}
+
+type sandboxAgentConfigAgent struct {
+	ID      string   `json:"id"`
+	Name    string   `json:"name"`
+	Command []string `json:"command"`
+}
+
+type sandboxAgentResourceConfig struct {
+	SampleInterval int64 `json:"sampleInterval"`
+	RetentionCount int   `json:"retentionCount"`
 }
 
 func optString(opt workerclient.OptString) string {

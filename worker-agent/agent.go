@@ -67,7 +67,7 @@ func ExecSystemdChildIfRequested() error {
 
 // Serve starts the worker-agent HTTP server.
 func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration) error {
-	runtime, err := sandboxruntime.NewDockerSandboxRuntime(bootstrap.ProjectID, bootstrap.WorkerID)
+	runtime, err := sandboxruntime.NewDockerSandboxRuntime(bootstrap.ProjectID, bootstrap.WorkerID, bootstrap.ControlPlaneKey)
 	if err != nil {
 		return err
 	}

@@ -17,8 +17,11 @@ import (
 const (
 	WorkerAgentAudience = "worker-agent"
 
-	ScopeSandboxRead  = "sandbox:read"
-	ScopeSandboxWrite = "sandbox:write"
+	ScopeSandboxRead   = "sandbox:read"
+	ScopeSandboxWrite  = "sandbox:write"
+	ScopeSandboxHTTP   = "sandbox:http"
+	ScopeTerminalRead  = "terminal:read"
+	ScopeTerminalWrite = "terminal:write"
 )
 
 type signedTokenClaimsContextKey struct{}
@@ -37,6 +40,10 @@ func (c SignedTokenClaims) HasScope(scope string) bool {
 			return true
 		case "sandbox:*":
 			if strings.HasPrefix(scope, "sandbox:") {
+				return true
+			}
+		case "terminal:*":
+			if strings.HasPrefix(scope, "terminal:") {
 				return true
 			}
 		}
