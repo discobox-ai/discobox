@@ -795,6 +795,27 @@ func TestRootCommandIncludesServerSubcommand(t *testing.T) {
 	}
 }
 
+func TestLocalServerEnvIncludesSupportedServerConfig(t *testing.T) {
+	t.Setenv("DISCOBOX_DATA_DIR", "/tmp/discobox-data")
+	t.Setenv("DISCOBOX_TOKEN", "client-token")
+
+	env := localServerEnv("unix:///tmp/discobox/server.sock")
+	joined := "\n" + strings.Join(env, "\n") + "\n"
+	for _, want := range []string{
+		"\nDISCOBOX_SERVER_LISTEN=unix:///tmp/discobox/server.sock\n",
+		"\nDISCOBOX_SERVER=unix:///tmp/discobox/server.sock\n",
+		"\nDISCOBOX_SERVER_IDLE_TIMEOUT=5m\n",
+		"\nDISCOBOX_DATA_DIR=/tmp/discobox-data\n",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("localServerEnv() missing %q in %q", want, joined)
+		}
+	}
+	if strings.Contains(joined, "\nDISCOBOX_TOKEN=client-token\n") {
+		t.Fatalf("localServerEnv() included client token")
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {

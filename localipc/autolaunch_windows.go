@@ -3,6 +3,7 @@
 package localipc
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,3 +21,7 @@ func acquireLaunchLock(path string) (func(), error) {
 }
 
 func setDetachedProcess(*exec.Cmd) {}
+
+func startUserService(context.Context, LaunchOptions) (bool, error) {
+	return false, nil
+}

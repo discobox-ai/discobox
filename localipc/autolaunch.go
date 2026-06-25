@@ -2,12 +2,15 @@ package localipc
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -97,6 +100,11 @@ func startDetached(ctx context.Context, opts LaunchOptions) error {
 	if opts.Command == "" {
 		return fmt.Errorf("server command is required")
 	}
+	if started, err := startUserService(ctx, opts); err != nil {
+		return err
+	} else if started {
+		return nil
+	}
 	//nolint:gosec // The command is supplied by trusted CLI configuration for local server startup.
 	cmd := exec.CommandContext(ctx, opts.Command, opts.Args...)
 	cmd.Stdout = nil
@@ -108,6 +116,38 @@ func startDetached(ctx context.Context, opts LaunchOptions) error {
 		return fmt.Errorf("start local server: %w", err)
 	}
 	return nil
+}
+
+func userServiceUnitName(opts LaunchOptions) string {
+	sum := sha256.Sum256([]byte(opts.Endpoint))
+	suffix := hex.EncodeToString(sum[:])[:16]
+	return systemdUnitName(filepath.Base(opts.Command), suffix)
+}
+
+func systemdUnitName(name, suffix string) string {
+	name = strings.TrimSuffix(name, filepath.Ext(name))
+	name = strings.ToLower(name)
+	var b strings.Builder
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '-' || r == '_':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	base := strings.Trim(b.String(), "-_")
+	if base == "" {
+		base = "discobox"
+	}
+	if !strings.HasPrefix(base, "discobox") {
+		base = "discobox-" + base
+	}
+	return base + "-server-" + suffix
 }
 
 func (o LaunchOptions) lockPath() string {

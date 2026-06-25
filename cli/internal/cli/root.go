@@ -138,12 +138,34 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 		Endpoint: a.serverURL,
 		Command:  command,
 		Args:     []string{"server"},
-		Env: []string{
-			"DISCOBOX_SERVER_LISTEN=" + a.serverURL,
-			"DISCOBOX_SERVER=" + a.serverURL,
-			"DISCOBOX_SERVER_IDLE_TIMEOUT=5m",
-		},
+		Env:      localServerEnv(a.serverURL),
 	})
+}
+
+func localServerEnv(endpoint string) []string {
+	env := []string{
+		"DISCOBOX_SERVER_LISTEN=" + endpoint,
+		"DISCOBOX_SERVER=" + endpoint,
+		"DISCOBOX_SERVER_IDLE_TIMEOUT=5m",
+	}
+	for _, key := range []string{
+		"DATABASE_DSN",
+		"DATABASE_READ_DSN",
+		"DISCOBOX_CACHE_DIR",
+		"DISCOBOX_CONFIG_DIR",
+		"DISCOBOX_DATA_DIR",
+		"DISCOBOX_DEFAULT_SANDBOX_IMAGE",
+		"DISCOBOX_ENCRYPTION_KEY",
+		"DISCOBOX_STATE_DIR",
+		"OTEL_METRICS_EXPORTER",
+		"PATH",
+		"PORT",
+	} {
+		if value, ok := os.LookupEnv(key); ok {
+			env = append(env, key+"="+value)
+		}
+	}
+	return env
 }
 
 func (a *App) newServerCommand() *cobra.Command {
