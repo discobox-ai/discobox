@@ -367,6 +367,35 @@ func TestSandboxListQuietCommandPrintsFullIDsOnly(t *testing.T) {
 	}
 }
 
+func TestWriteSandboxesTableIncludesErrorMessage(t *testing.T) {
+	app := &App{output: "table"}
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	err := app.writeSandboxes(cmd, []apimodel.Sandbox{{
+		ID:                  "sandbox-1",
+		Name:                "alpha",
+		Phase:               "failed",
+		DesiredState:        "running",
+		LastOperationStatus: "failed",
+		ErrorMessage:        apiclientgen.NewOptString("worker-agent request failed: git clone failed"),
+		Generation:          1,
+		CreatedAt:           time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC),
+		UpdatedAt:           time.Date(2026, 6, 17, 0, 0, 1, 0, time.UTC),
+	}})
+	if err != nil {
+		t.Fatalf("writeSandboxes: %v", err)
+	}
+
+	output := out.String()
+	for _, want := range []string{"ERROR", "worker-agent request failed: git clone failed"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("sandboxes output = %q, want %q", output, want)
+		}
+	}
+}
+
 func TestJobsCommandListsProjectJobs(t *testing.T) {
 	const jobID = "01kv9w440bpa9qk5n25t2hh2rv"
 	const resourceID = "01kv9w440a7bhqnk550g3821ck"

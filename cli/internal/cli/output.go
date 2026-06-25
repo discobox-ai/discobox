@@ -40,13 +40,14 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 		return writeJSON(cmd.OutOrStdout(), sandbox)
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tPHASE\tDESIRED\tGENERATION\tUPDATED")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\n",
+	fmt.Fprintln(tw, "ID\tNAME\tPHASE\tDESIRED\tGENERATION\tERROR\tUPDATED")
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
 		shortID(sandbox.ID),
 		sandbox.Name,
 		sandbox.Phase,
 		sandbox.DesiredState,
 		sandbox.Generation,
+		truncateTableValue(sandboxMessage(*sandbox), 80),
 		formatTime(sandbox.UpdatedAt),
 	)
 	return tw.Flush()
@@ -62,18 +63,26 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox) e
 	}
 	sandboxes = sortedByCreatedAt(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return sandbox.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tPHASE\tDESIRED\tGENERATION\tUPDATED")
+	fmt.Fprintln(tw, "ID\tNAME\tPHASE\tDESIRED\tGENERATION\tERROR\tUPDATED")
 	for _, sandbox := range sandboxes {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
 			shortID(sandbox.ID),
 			sandbox.Name,
 			sandbox.Phase,
 			sandbox.DesiredState,
 			sandbox.Generation,
+			truncateTableValue(sandboxMessage(sandbox), 80),
 			formatTime(sandbox.UpdatedAt),
 		)
 	}
 	return tw.Flush()
+}
+
+func sandboxMessage(sandbox apimodel.Sandbox) string {
+	if message, ok := sandbox.ErrorMessage.Get(); ok && strings.TrimSpace(message) != "" {
+		return message
+	}
+	return ""
 }
 
 func (a *App) writeProviderCatalog(cmd *cobra.Command, providers []apimodel.SandboxProviderCatalogItem) error {

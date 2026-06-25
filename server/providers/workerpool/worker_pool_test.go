@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/transport"
 	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
+	workerclient "github.com/obot-platform/discobox/worker-agent/api/gen"
 	"github.com/obot-platform/discobox/worker-agent/sandboxruntime"
 	"github.com/obot-platform/discobox/worker-agent/server"
 )
@@ -395,6 +397,24 @@ func TestWorkerProviderCreateCallsWorkerAgentRuntime(t *testing.T) {
 	}
 	if created.Image != "alpine:3.20" || created.Env["HELLO"] != "world" {
 		t.Fatalf("created sandbox = %#v", created)
+	}
+}
+
+func TestMapWorkerClientErrorUsesProblemDetail(t *testing.T) {
+	err := mapWorkerClientError(&workerclient.ErrorModelStatusCode{
+		StatusCode: http.StatusInternalServerError,
+		Response: workerclient.ErrorModel{
+			Status: workerclient.NewOptInt64(http.StatusInternalServerError),
+			Title:  workerclient.NewOptString(http.StatusText(http.StatusInternalServerError)),
+			Detail: workerclient.NewOptString("materialize source \"repo\": git clone failed"),
+		},
+	})
+
+	if got, want := err.Error(), `worker-agent request failed: materialize source "repo": git clone failed`; got != want {
+		t.Fatalf("mapped error = %q, want %q", got, want)
+	}
+	if strings.Contains(err.Error(), "Schema:") || strings.Contains(err.Error(), "Detail:{") {
+		t.Fatalf("mapped error still contains generated struct formatting: %q", err.Error())
 	}
 }
 

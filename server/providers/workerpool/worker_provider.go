@@ -793,7 +793,29 @@ func mapWorkerClientError(err error) error {
 	if errors.As(err, &statusErr) && statusErr.StatusCode == http.StatusConflict {
 		return sandbox.ErrAlreadyExists
 	}
+	if errors.As(err, &statusErr) {
+		return fmt.Errorf("worker-agent request failed: %s", workerClientErrorMessage(statusErr))
+	}
 	return err
+}
+
+func workerClientErrorMessage(statusErr *workerclient.ErrorModelStatusCode) string {
+	if statusErr == nil {
+		return ""
+	}
+	if detail, ok := statusErr.Response.Detail.Get(); ok && strings.TrimSpace(detail) != "" {
+		return strings.TrimSpace(detail)
+	}
+	if title, ok := statusErr.Response.Title.Get(); ok && strings.TrimSpace(title) != "" {
+		if statusErr.StatusCode != 0 {
+			return fmt.Sprintf("status %d: %s", statusErr.StatusCode, strings.TrimSpace(title))
+		}
+		return strings.TrimSpace(title)
+	}
+	if statusErr.StatusCode != 0 {
+		return fmt.Sprintf("status %d", statusErr.StatusCode)
+	}
+	return statusErr.Error()
 }
 
 type workerSecuritySource struct {
