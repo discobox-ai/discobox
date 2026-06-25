@@ -1,0 +1,19 @@
+[Unit]
+Description=Discobox Sandbox Agent
+Documentation=https://github.com/obot-platform/discobox
+After=network-online.target docker.service
+Wants=network-online.target
+ConditionPathExists=/etc/discobox/sandbox-agent.json
+
+[Service]
+Type=simple
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/root/.nix-profile/bin:/nix/var/nix/profiles/default/bin
+ExecStartPre=/usr/bin/install -d -m 0700 /run/discobox/agent-terminals
+ExecStartPre=/usr/bin/install -d -m 0755 /var/lib/discobox /workspace
+ExecStart=/usr/local/bin/discobox-sandbox-agent --config /etc/discobox/sandbox-agent.json
+Restart=on-failure
+RestartSec=2s
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

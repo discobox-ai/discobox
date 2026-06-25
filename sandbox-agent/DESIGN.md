@@ -1,23 +1,42 @@
 # Sandbox Agent Design
 
-This module owns the sandbox runtime environment and future in-sandbox agent REST
-API implementation.
+This module owns the sandbox runtime environment and in-sandbox agent REST API
+implementation.
 
-Today it contains the sandbox-agent image context. The Go implementation has not
-been added yet; when it is, it should implement the root
-`api/openapi/sandbox.yaml` in-sandbox agent API seed and depend on root generated
-API/client types rather than server or provider internals.
+The Go implementation serves the generated sandbox-agent subset of
+`api/openapi/server.yaml` using the generated `api/sandboxgen` server scaffold.
+It validates the sandbox's hard-coded project/sandbox identity, accepts
+short-lived control-plane-signed tokens, and owns sandbox-local agent terminal
+runtime operations.
 
 ## Package Map
 
 | Package/path | Ownership |
 | --- | --- |
+| `cmd/discobox-sandbox-agent` | Binary entrypoint, config loading, signal handling, and server startup. |
+| `config` | Local boot/config file parsing, environment overrides, defaults, and validation. |
+| `server` | HTTP router, generated OpenAPI handler adapter, PASETO auth middleware, and identity/scope validation. |
+| `terminal` | Agent terminal lifecycle, runtime metadata, systemd unit abstraction, and attach proxying. |
+| `terminal/shim` | Per-terminal child process that owns the PTY and local Unix socket attach/status API. |
+| `terminal/frame` | Docker-exec-style binary stream framing shared by terminal attach endpoints. |
+| `resources` | Opaque cgroup/procfs/systemd-style resource snapshot collection for terminal runtimes. |
+| `store` | Sandbox-local SQLite/GORM audit log, observed terminal state snapshots, and retained resource blobs. |
 | `Dockerfile` | `codex-universal`-based systemd sandbox runtime image with Docker, desktop, and Nix tooling. |
 
 ## Boundary Rules
 
-- Implement the future in-sandbox agent API from `api/openapi/sandbox.yaml`.
+- Implement the generated in-sandbox terminal API subset from `api/sandboxgen`;
+  canonical route and DTO definitions live in `api/openapi/server.yaml`.
 - Depend on root contracts and generated API types only for cross-module data.
 - Do not import server internals or provider implementation packages.
 - Keep worker registration and control-plane bootstrapping in the `worker-agent`
   module unless a shared contract belongs in the root module.
+- Do not call back to the worker-agent or server; resolved config is injected
+  into the sandbox and read locally.
+- Treat systemd as the source of truth for terminal unit liveness. Runtime JSON
+  files identify known terminals; reconciliation joins those files with systemd
+  status and shim status.
+- Keep terminal history local. The SQLite store records append-only lifecycle
+  events, the latest observed terminal state, and retained opaque resource
+  samples, but REST terminal state should be derived from runtime/systemd/shim
+  observations instead of an in-memory cache.

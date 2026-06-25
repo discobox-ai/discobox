@@ -5,9 +5,6 @@ vars:
   SERVER_MAIN: ./cmd/discobox-server
   CLI_BINARY: build/discobox
   CLI_MAIN: ./cmd/discobox
-  SESSION_BINARY: build/discobox-session
-  SESSIONS_BINARY: build/discobox-sessions
-  SESSION_MAIN: ./cmd/discobox-session
   PACKAGES: ./...
   UI_DIR: ui
   ELECTRON_DIR: electron
@@ -19,11 +16,10 @@ tasks:
       - task --list
 
   build:
-    desc: Compile discobox-server, discobox CLI, session CLI, UI, and Electron shell
+    desc: Compile discobox-server, discobox CLI, UI, and Electron shell
     cmds:
       - task: build:server
       - task: build:cli
-      - task: build:session
       - task: build:ui
       - task: build:electron
 
@@ -38,13 +34,6 @@ tasks:
     cmds:
       - mkdir -p build
       - cd cli && go build -o ../{{.CLI_BINARY}} {{.CLI_MAIN}}
-
-  build:session:
-    desc: Compile discobox-session CLI
-    cmds:
-      - mkdir -p build
-      - cd sessions && go build -o ../{{.SESSION_BINARY}} {{.SESSION_MAIN}}
-      - cp {{.SESSION_BINARY}} {{.SESSIONS_BINARY}}
 
   build:ui:
     desc: Build the SvelteKit UI
@@ -66,7 +55,7 @@ tasks:
   build:sandbox-agent-image:
     desc: Build the Debian sandbox agent image
     cmds:
-      - cd sandbox-agent && docker build -f Dockerfile -t discobox-sandbox-agent:local .
+      - docker build -f sandbox-agent/Dockerfile -t discobox-sandbox-agent:local .
 
   compile:
     desc: Alias for build
@@ -196,7 +185,6 @@ tasks:
       - cd gormdb && go test ./...
       - cd orchestration && go test ./...
       - cd hooks && go test ./...
-      - cd sessions && go test ./...
 
   check:
     desc: Run static checks
@@ -208,7 +196,6 @@ tasks:
       - cd gormdb && "$(go -C .. tool -n golangci-lint)" run
       - cd orchestration && "$(go -C .. tool -n golangci-lint)" run
       - cd hooks && "$(go -C .. tool -n golangci-lint)" run
-      - cd sessions && "$(go -C .. tool -n golangci-lint)" run
       - task: check:ui
       - task: check:electron
 
@@ -263,7 +250,6 @@ tasks:
       - cd gormdb && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd orchestration && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd hooks && "$(go -C .. tool -n golangci-lint)" run --fix
-      - cd sessions && "$(go -C .. tool -n golangci-lint)" run --fix
       - task: check:ui:fix
       - task: check:electron:fix
 
@@ -301,7 +287,6 @@ tasks:
     desc: Regenerate generated files
     cmds:
       - go generate {{.PACKAGES}}
-      - cd sessions && go generate ./...
 
   clean:
     desc: Remove local build artifacts
