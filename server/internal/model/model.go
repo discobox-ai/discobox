@@ -216,14 +216,13 @@ type ProjectUserKey = SandboxAccessIssuerKey
 
 // AgentConfig stores a project-scoped agent runtime configuration.
 type AgentConfig struct {
-	ID             string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable agent config ID"`
-	ProjectID      string         `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_agent_config_project_name,priority:1" json:"projectId" doc:"Project ID"`
-	Name           string         `gorm:"column:name;not null;type:text;uniqueIndex:idx_agent_config_project_name,priority:2" json:"name" doc:"Agent config name" maxLength:"200"`
-	InstallCommand string         `gorm:"column:install_command;type:text" json:"installCommand,omitempty" doc:"Command used to install the agent"`
-	RunCommand     string         `gorm:"column:run_command;not null;type:text" json:"runCommand" doc:"Command used to run the agent"`
-	CreatedAt      time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt      time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-	DeletedAt      gorm.DeletedAt `gorm:"index" json:"-"`
+	ID             string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable agent config ID"`
+	ProjectID      string    `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_agent_config_project_name,priority:1" json:"projectId" doc:"Project ID"`
+	Name           string    `gorm:"column:name;not null;type:text;uniqueIndex:idx_agent_config_project_name,priority:2" json:"name" doc:"Agent config name" maxLength:"200"`
+	InstallCommand string    `gorm:"column:install_command;type:text" json:"installCommand,omitempty" doc:"Command used to install the agent"`
+	RunCommand     string    `gorm:"column:run_command;not null;type:text" json:"runCommand" doc:"Command used to run the agent"`
+	CreatedAt      time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt      time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project   *Project  `gorm:"foreignKey:ProjectID" json:"-"`
 	Sandboxes []Sandbox `gorm:"foreignKey:AgentConfigID" json:"-"`

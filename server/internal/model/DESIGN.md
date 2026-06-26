@@ -49,6 +49,10 @@ state rows that intentionally rely on hard deletes, such as project events or
 server initialization state, should document that exception instead of adding
 soft-delete fields.
 
+`AgentConfig` intentionally hard-deletes. Disabling an agent config is modeled as
+removing that project-scoped name so the same definition name can be enabled
+again without colliding with a hidden soft-deleted row.
+
 ## Shared Lifecycle Shape
 
 Orchestrated resources embed `ResourceLifecycle`.

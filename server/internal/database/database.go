@@ -56,10 +56,20 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := write.AutoMigrate(model.AllModels()...); err != nil {
 		return err
 	}
+	if err := dropAgentConfigDeletedAt(write); err != nil {
+		return err
+	}
 	if err := write.AutoMigrate(store.JobModels()...); err != nil {
 		return err
 	}
 	return store.BackfillJobProjectIDs(ctx, write)
+}
+
+func dropAgentConfigDeletedAt(db *gorm.DB) error {
+	if !db.Migrator().HasColumn(&model.AgentConfig{}, "deleted_at") {
+		return nil
+	}
+	return db.Migrator().DropColumn(&model.AgentConfig{}, "deleted_at")
 }
 
 // Close closes the underlying database pools.

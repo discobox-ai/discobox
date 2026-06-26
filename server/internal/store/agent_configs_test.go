@@ -118,3 +118,37 @@ func TestDeleteAgentConfigClearsProjectDefault(t *testing.T) {
 		t.Fatalf("default after default delete = %q, want empty", got.DefaultAgentConfigID)
 	}
 }
+
+func TestDeleteAgentConfigHardDeletes(t *testing.T) {
+	ctx := context.Background()
+	s, db := newTestStoreWithDB(t, nil)
+
+	config := &model.AgentConfig{
+		ProjectID:  "project-1",
+		Name:       "Codex",
+		RunCommand: "codex exec",
+	}
+	if err := s.CreateAgentConfig(ctx, config); err != nil {
+		t.Fatalf("create agent config: %v", err)
+	}
+	if err := s.DeleteAgentConfig(ctx, config.ProjectID, config.ID); err != nil {
+		t.Fatalf("delete agent config: %v", err)
+	}
+
+	var count int64
+	if err := db.Read.WithContext(ctx).Model(&model.AgentConfig{}).Where("id = ?", config.ID).Count(&count).Error; err != nil {
+		t.Fatalf("count deleted agent config: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("deleted agent config row count = %d, want 0", count)
+	}
+
+	recreated := &model.AgentConfig{
+		ProjectID:  config.ProjectID,
+		Name:       config.Name,
+		RunCommand: config.RunCommand,
+	}
+	if err := s.CreateAgentConfig(ctx, recreated); err != nil {
+		t.Fatalf("recreate agent config with same name: %v", err)
+	}
+}
