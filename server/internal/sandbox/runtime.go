@@ -145,15 +145,18 @@ type ReconcileProvider interface {
 }
 
 // WorkerProviderReconciler reconciles worker-provider state for a provider
-// instance, such as maintaining a warm worker pool.
+// instance, such as maintaining a worker pool.
 type WorkerProviderReconciler interface {
 	ReconcileWorkerProvider(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance) error
 }
 
 // WorkerRuntimeReconciler reconciles provider-owned runtime state for a worker
 // resource. The caller owns worker lifecycle persistence and job semantics.
+// RepairWorker is only for preserving repair of active assigned workers; delete
+// reconciliation must use RemoveWorker and must not fall back to repair.
 type WorkerRuntimeReconciler interface {
 	ReconcileWorker(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error
+	RepairWorker(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, reason string) error
 	RemoveWorker(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error
 }
 

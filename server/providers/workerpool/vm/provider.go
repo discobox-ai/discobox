@@ -30,15 +30,8 @@ type Driver interface {
 	StopVM(ctx context.Context, id string, timeout time.Duration) (*Instance, error)
 	DeleteVM(ctx context.Context, id string, removeVolumes bool) error
 	InspectVM(ctx context.Context, id string) (*Instance, error)
-}
-
-// HTTPClientDriver can provide a transport to a VM's sandbox agent.
-type HTTPClientDriver interface {
+	RepairWorkerVM(ctx context.Context, workerID string, currentInstanceID string, spec InstanceSpec, reason string) (*Instance, error)
 	AcquireHTTPClient(ctx context.Context, instance *Instance) (*transport.HTTPClientLease, error)
-}
-
-// WorkerHTTPClientDriver can provide a transport to a warm worker by worker ID.
-type WorkerHTTPClientDriver interface {
 	AcquireWorkerHTTPClient(ctx context.Context, workerID string) (*transport.HTTPClientLease, error)
 }
 
@@ -216,10 +209,6 @@ func (p *Provider) List(context.Context) ([]*sandbox.Sandbox, error) {
 }
 
 func (p *Provider) AcquireHTTPClient(ctx context.Context, _ sandbox.SandboxRef, state []byte, _ []string) (*transport.HTTPClientLease, error) {
-	clientDriver, ok := p.driver.(HTTPClientDriver)
-	if !ok {
-		return nil, errors.New("vm driver does not provide sandbox agent HTTP access")
-	}
 	data, err := decodeState(state)
 	if err != nil {
 		return nil, err
@@ -228,15 +217,11 @@ func (p *Provider) AcquireHTTPClient(ctx context.Context, _ sandbox.SandboxRef, 
 	if err != nil {
 		return nil, err
 	}
-	return clientDriver.AcquireHTTPClient(ctx, inst)
+	return p.driver.AcquireHTTPClient(ctx, inst)
 }
 
 func (p *Provider) AcquireWorkerHTTPClientForID(ctx context.Context, workerID string) (*transport.HTTPClientLease, error) {
-	workerDriver, ok := p.driver.(WorkerHTTPClientDriver)
-	if ok {
-		return workerDriver.AcquireWorkerHTTPClient(ctx, workerID)
-	}
-	return nil, errors.New("vm driver does not provide worker HTTP access")
+	return p.driver.AcquireWorkerHTTPClient(ctx, workerID)
 }
 
 func (p *Provider) DefaultImage(context.Context) (sandbox.ImageRef, error) {

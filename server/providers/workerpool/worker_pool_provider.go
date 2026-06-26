@@ -39,7 +39,7 @@ func CleanStringList(values []string) []string {
 	return out
 }
 
-// WorkerPoolConfigFields contains common persisted warm-worker pool settings.
+// WorkerPoolConfigFields contains common persisted worker pool settings.
 type WorkerPoolConfigFields struct {
 	PoolSize   int `json:"poolSize,omitempty"`
 	MinWorkers int `json:"minWorkers,omitempty"`

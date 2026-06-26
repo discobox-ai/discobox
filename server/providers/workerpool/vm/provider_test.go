@@ -2,12 +2,14 @@ package vm_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
+	"github.com/obot-platform/discobox/server/internal/transport"
 	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
 	workeragent "github.com/obot-platform/discobox/worker-agent"
 )
@@ -141,12 +143,65 @@ func TestProviderRemoveWorkerDeletesCurrentWorkerVMWhenStateIsStale(t *testing.T
 	}
 }
 
+func TestProviderRepairWorkerRecreatesRuntimeAndPreservesNamedWorkerVolumes(t *testing.T) {
+	driver := &recordingDriver{workerInstance: &vm.Instance{ID: "vm-old", Status: sandbox.StatusRunning}}
+	provider, err := vm.New(vm.Config{
+		Driver:       driver,
+		DefaultImage: "image-default",
+		Metadata:     map[string]string{"config-revision": "new"},
+	})
+	if err != nil {
+		t.Fatalf("new provider: %v", err)
+	}
+	worker := &model.Worker{
+		ID:           "worker-1",
+		RuntimeState: []byte(`{"instanceId":"vm-old"}`),
+		Ready:        true,
+		Schedulable:  true,
+		Degraded:     true,
+	}
+
+	if err := provider.RepairWorker(context.Background(), &model.Project{ID: "project-1"}, &model.SandboxProviderInstance{ID: "provider-1"}, worker, "token-1", "control-plane-public-key", "runtime unhealthy"); err != nil {
+		t.Fatalf("repair worker: %v", err)
+	}
+	if len(driver.repairWorkerIDs) != 1 || driver.repairWorkerIDs[0] != "worker-1" {
+		t.Fatalf("repair worker IDs = %#v, want worker-1", driver.repairWorkerIDs)
+	}
+	if len(driver.deletedVMIDs) != 1 || driver.deletedVMIDs[0] != "vm-old" {
+		t.Fatalf("deleted VMs = %#v, want vm-old", driver.deletedVMIDs)
+	}
+	if len(driver.deleteRemoveVolumes) != 1 || !driver.deleteRemoveVolumes[0] {
+		t.Fatalf("delete remove volumes = %#v, want true", driver.deleteRemoveVolumes)
+	}
+	if driver.repairSpec.Image != "image-default" {
+		t.Fatalf("repair image = %q, want image-default", driver.repairSpec.Image)
+	}
+	if driver.repairSpec.Metadata["config-revision"] != "new" {
+		t.Fatalf("repair metadata = %#v, missing config revision", driver.repairSpec.Metadata)
+	}
+	if driver.repairSpec.Boot.Env[workeragent.EnvWorkerID] != "worker-1" {
+		t.Fatalf("repair worker env = %#v, want worker-1", driver.repairSpec.Boot.Env)
+	}
+	if driver.createCalls != 1 {
+		t.Fatalf("CreateVM calls = %d, want 1", driver.createCalls)
+	}
+	if worker.RuntimeState == nil {
+		t.Fatal("expected repaired runtime state")
+	}
+	if worker.Ready || worker.Schedulable || worker.Degraded || worker.Phase != model.WorkerPhaseRegistering {
+		t.Fatalf("worker after repair = %#v", worker)
+	}
+}
+
 type recordingDriver struct {
-	createdSpec      vm.InstanceSpec
-	createCalls      int
-	deletedVMIDs     []string
-	missingDeleteIDs map[string]bool
-	workerInstance   *vm.Instance
+	createdSpec         vm.InstanceSpec
+	createCalls         int
+	deletedVMIDs        []string
+	deleteRemoveVolumes []bool
+	repairWorkerIDs     []string
+	repairSpec          vm.InstanceSpec
+	missingDeleteIDs    map[string]bool
+	workerInstance      *vm.Instance
 }
 
 func (d *recordingDriver) CreateVM(_ context.Context, spec vm.InstanceSpec) (*vm.Instance, error) {
@@ -174,8 +229,9 @@ func (d *recordingDriver) StopVM(context.Context, string, time.Duration) (*vm.In
 	return &vm.Instance{ID: "vm-1", Status: sandbox.StatusStopped, CreatedAt: now}, nil
 }
 
-func (d *recordingDriver) DeleteVM(_ context.Context, id string, _ bool) error {
+func (d *recordingDriver) DeleteVM(_ context.Context, id string, removeVolumes bool) error {
 	d.deletedVMIDs = append(d.deletedVMIDs, id)
+	d.deleteRemoveVolumes = append(d.deleteRemoveVolumes, removeVolumes)
 	if d.missingDeleteIDs[id] {
 		return sandbox.ErrNotFound
 	}
@@ -192,4 +248,32 @@ func (d *recordingDriver) InspectWorkerVM(context.Context, string) (*vm.Instance
 		return nil, sandbox.ErrNotFound
 	}
 	return d.workerInstance, nil
+}
+
+func (d *recordingDriver) RepairWorkerVM(ctx context.Context, workerID string, currentInstanceID string, spec vm.InstanceSpec, _ string) (*vm.Instance, error) {
+	d.repairWorkerIDs = append(d.repairWorkerIDs, workerID)
+	d.repairSpec = spec
+	instanceID := currentInstanceID
+	if instanceID == "" {
+		inst, err := d.InspectWorkerVM(ctx, workerID)
+		if errors.Is(err, sandbox.ErrNotFound) {
+			return d.CreateVM(ctx, spec)
+		}
+		if err != nil {
+			return nil, err
+		}
+		instanceID = inst.ID
+	}
+	if err := d.DeleteVM(ctx, instanceID, true); err != nil {
+		return nil, err
+	}
+	return d.CreateVM(ctx, spec)
+}
+
+func (d *recordingDriver) AcquireHTTPClient(context.Context, *vm.Instance) (*transport.HTTPClientLease, error) {
+	return nil, errors.New("AcquireHTTPClient should not be called")
+}
+
+func (d *recordingDriver) AcquireWorkerHTTPClient(context.Context, string) (*transport.HTTPClientLease, error) {
+	return nil, errors.New("AcquireWorkerHTTPClient should not be called")
 }

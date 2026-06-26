@@ -231,8 +231,21 @@ func (d *Driver) InspectVM(ctx context.Context, id string) (*vm.Instance, error)
 	return instanceFromDroplet(out.Droplet, d.agentPort), nil
 }
 
+func (d *Driver) RepairWorkerVM(ctx context.Context, _ string, currentInstanceID string, spec vm.InstanceSpec, _ string) (*vm.Instance, error) {
+	if strings.TrimSpace(currentInstanceID) != "" {
+		if err := d.DeleteVM(ctx, currentInstanceID, true); err != nil {
+			return nil, err
+		}
+	}
+	return d.CreateVM(ctx, spec)
+}
+
 func (d *Driver) AcquireHTTPClient(context.Context, *vm.Instance) (*transport.HTTPClientLease, error) {
 	return vm.NewDirectHTTPClientLease(), nil
+}
+
+func (d *Driver) AcquireWorkerHTTPClient(context.Context, string) (*transport.HTTPClientLease, error) {
+	return nil, errors.New("digitalocean driver does not support worker HTTP access by worker ID")
 }
 
 func (d *Driver) action(ctx context.Context, id, actionType string) error {

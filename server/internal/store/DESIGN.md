@@ -52,6 +52,11 @@ resolving databases itself. Project-owned resources should filter by `project_id
 worker credentials should filter by `worker_id`; user-owned resources should
 filter by `user_id`.
 
+Worker deletion guards depend on sandbox assignment checks. Store methods that
+accept worker delete intent or purge terminal workers must treat non-deleted
+`sandboxes.worker_id` rows as authoritative stateful assignments; do not infer
+emptiness from worker health, driver drift detection, or runtime state.
+
 Do not add database-routing or request-context identity assumptions to store
 methods. Pass the resource boundary explicitly through method parameters or use
 IDs already carried by persisted rows.

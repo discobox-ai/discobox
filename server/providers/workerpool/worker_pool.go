@@ -34,13 +34,14 @@ type WorkerManager interface {
 	CreateSandboxAgentToken(ctx context.Context, claims workeragentauth.TokenClaims) (string, error)
 	FindSchedulableWorker(ctx context.Context, sandbox *model.Sandbox) (*model.Worker, error)
 	GetJob(ctx context.Context, id string) (*orchestration.Job, error)
+	CountSandboxesForWorker(ctx context.Context, workerID string) (int64, error)
 	ScheduleWorkerReconciliation(ctx context.Context, workerID string) error
 	ScheduleWorkerProviderReconciliation(ctx context.Context, projectID, providerID string) error
 }
 
 type workerLifecycleRepairManager interface {
 	GetJob(ctx context.Context, id string) (*orchestration.Job, error)
-	DeleteWorkerForFailedJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error)
+	MarkWorkerFailedForJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error)
 	DeleteWorkerForExpiredRegistration(ctx context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error)
 }
 
@@ -127,7 +128,7 @@ func desiredAdditionalWorkers(workers []model.Worker, cfg WorkerPoolConfig) int 
 	return target - active
 }
 
-// ensureWorkerPool reconciles a VM provider's warm worker pool.
+// ensureWorkerPool reconciles a VM provider's worker pool.
 func ensureWorkerPool(ctx context.Context, manager WorkerManager, project *model.Project, provider *model.SandboxProviderInstance, cfg WorkerPoolConfig) error {
 	if manager == nil {
 		return fmt.Errorf("worker manager is required")
@@ -175,8 +176,15 @@ func deleteExcessWorkers(ctx context.Context, manager WorkerManager, workers []m
 		return workers, nil
 	}
 	deleteIDs := make(map[string]struct{}, excess)
-	for i := 0; i < excess; i++ {
+	for i := 0; i < len(candidates) && len(deleteIDs) < excess; i++ {
 		worker := candidates[len(candidates)-1-i]
+		assigned, err := manager.CountSandboxesForWorker(ctx, worker.ID)
+		if err != nil {
+			return nil, err
+		}
+		if assigned > 0 {
+			continue
+		}
 		if _, err := manager.DeleteWorker(ctx, worker.ID); err != nil {
 			return nil, err
 		}
@@ -264,14 +272,16 @@ func repairWorkersWithFailedJobs(ctx context.Context, manager WorkerManager, wor
 		if job.Error != nil && *job.Error != "" {
 			message = *job.Error
 		}
-		updated, err := repairManager.DeleteWorkerForFailedJob(ctx, worker.ID, worker.Generation, *worker.LastJobID, message)
+		updated, err := repairManager.MarkWorkerFailedForJob(ctx, worker.ID, worker.Generation, *worker.LastJobID, message)
 		if err != nil {
 			return nil, err
 		}
 		if updated {
-			worker.IncrementGeneration()
-			worker.BeginOperation(model.WorkerDeleteOperation, nil)
-			worker.StatusMessage = &message
+			worker.Phase = model.WorkerPhaseFailed
+			worker.ActiveOperation = nil
+			worker.LastOperationStatus = model.OperationStatusFailed
+			worker.StatusMessage = nil
+			worker.ErrorMessage = &message
 		}
 	}
 	return workers, nil

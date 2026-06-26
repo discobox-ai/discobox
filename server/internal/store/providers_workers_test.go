@@ -264,66 +264,6 @@ func TestMarkWorkerFailedForJobRequiresCurrentJobAndGeneration(t *testing.T) {
 	}
 }
 
-func TestMarkWorkerRegistrationExpiredRequiresCurrentRegisteringWorker(t *testing.T) {
-	ctx := context.Background()
-	s := newTestStore(t)
-
-	provider := &model.SandboxProviderInstance{ID: "provider-registration", ProjectID: "project-1", Type: "digitalocean", Name: "do"}
-	if err := s.CreateSandboxProviderInstance(ctx, provider); err != nil {
-		t.Fatalf("create provider: %v", err)
-	}
-	now := time.Now().UTC()
-	worker := &model.Worker{
-		ID:                 "worker-registration",
-		ProjectID:          "project-1",
-		ProviderInstanceID: provider.ID,
-		Identity:           "worker-registration",
-		ResourceLifecycle: model.ResourceLifecycle{
-			DesiredState:        model.WorkerDesiredStateActive,
-			Phase:               model.WorkerPhaseRegistering,
-			LastOperationStatus: model.OperationStatusSuccess,
-		},
-		UpdatedAt: now.Add(-2 * time.Minute),
-	}
-	if err := s.CreateWorker(ctx, worker); err != nil {
-		t.Fatalf("create worker: %v", err)
-	}
-
-	updated, err := s.MarkWorkerRegistrationExpired(ctx, worker.ID, worker.Generation+1, now.Add(-time.Minute), "wrong generation")
-	if err != nil {
-		t.Fatalf("mark stale generation expired: %v", err)
-	}
-	if updated {
-		t.Fatal("stale generation updated worker")
-	}
-
-	updated, err = s.MarkWorkerRegistrationExpired(ctx, worker.ID, worker.Generation, now.Add(-3*time.Minute), "not expired")
-	if err != nil {
-		t.Fatalf("mark not expired: %v", err)
-	}
-	if updated {
-		t.Fatal("worker newer than cutoff was updated")
-	}
-
-	updated, err = s.MarkWorkerRegistrationExpired(ctx, worker.ID, worker.Generation, now.Add(-time.Minute), "registration timed out")
-	if err != nil {
-		t.Fatalf("mark registration expired: %v", err)
-	}
-	if !updated {
-		t.Fatal("expired registration did not update worker")
-	}
-	got, err := s.GetWorker(ctx, worker.ID)
-	if err != nil {
-		t.Fatalf("get worker after registration expiry: %v", err)
-	}
-	if got.Phase != model.WorkerPhaseFailed || got.LastOperationStatus != model.OperationStatusFailed {
-		t.Fatalf("worker after expiry = phase %q status %q, want failed/failed", got.Phase, got.LastOperationStatus)
-	}
-	if got.ErrorMessage == nil || *got.ErrorMessage != "registration timed out" {
-		t.Fatalf("worker error = %v, want registration timed out", got.ErrorMessage)
-	}
-}
-
 func sandboxForClaim(projectID, providerID string, cpuVCPUs float64, memoryBytes, storageBytes int64) *model.Sandbox {
 	return &model.Sandbox{
 		ProjectID:          projectID,

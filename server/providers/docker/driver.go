@@ -1,7 +1,7 @@
 // Package docker implements a VM driver backed by Docker containers.
 //
-// It is intended for local development and end-to-end tests of VM-backed warm
-// worker pools. Containers are launched with VM-style boot metadata and can run
+// It is intended for local development and end-to-end tests of VM-backed worker
+// pools. Containers are launched with VM-style boot metadata and can run
 // systemd as PID 1 when the selected image supports it.
 package docker
 
@@ -145,7 +145,7 @@ func Definition() sandbox.ProviderDefinition {
 	return sandbox.ProviderDefinition{
 		Name:        "Docker",
 		Icon:        "docker",
-		Description: "Runs VM-style warm workers as Docker containers, optionally with systemd as PID 1.",
+		Description: "Runs VM-style workers as Docker containers, optionally with systemd as PID 1.",
 		ConfigFields: []sandbox.ProviderConfigField{
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: controlplane.DefaultURL(dockerHostGateway, controlplane.DefaultPort), Advanced: true},
 			{Key: "host", Label: "Docker Host", Type: "string", Advanced: true},
@@ -259,7 +259,7 @@ func NewProvider(ctx context.Context, cfg DriverConfig, providerCfg vm.Config) (
 		providerCfg.Name = "Docker"
 	}
 	if providerCfg.Description == "" {
-		providerCfg.Description = "Runs VM-style warm workers as Docker containers."
+		providerCfg.Description = "Runs VM-style workers as Docker containers."
 	}
 	if providerCfg.DefaultImage == "" {
 		providerCfg.DefaultImage = driver.image
@@ -651,6 +651,25 @@ func (d *Driver) InspectWorkerVM(ctx context.Context, workerID string) (*vm.Inst
 		return nil, mapDockerNotFound(err)
 	}
 	return d.instanceFromInspect(inspect.Container), nil
+}
+
+func (d *Driver) RepairWorkerVM(ctx context.Context, workerID string, currentInstanceID string, spec vm.InstanceSpec, _ string) (*vm.Instance, error) {
+	instanceID := strings.TrimSpace(currentInstanceID)
+	if instanceID == "" {
+		inst, err := d.InspectWorkerVM(ctx, workerID)
+		if err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+			return nil, err
+		}
+		if inst != nil {
+			instanceID = inst.ID
+		}
+	}
+	if instanceID != "" {
+		if err := d.DeleteVM(ctx, instanceID, true); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+			return nil, err
+		}
+	}
+	return d.CreateVM(ctx, spec)
 }
 
 func (d *Driver) AcquireHTTPClient(_ context.Context, inst *vm.Instance) (*transport.HTTPClientLease, error) {

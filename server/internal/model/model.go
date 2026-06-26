@@ -28,6 +28,7 @@ const (
 	WorkerPhaseRegistering = "registering"
 	WorkerPhaseActive      = "active"
 	WorkerPhaseDraining    = "draining"
+	WorkerPhaseDeleting    = "deleting"
 	WorkerPhaseOffline     = "offline"
 	WorkerPhaseFailed      = "failed"
 	WorkerPhaseDeleted     = "deleted"
@@ -76,7 +77,7 @@ var (
 	WorkerDeleteOperation = OperationSpec{
 		Operation:    WorkerOperationDelete,
 		DesiredState: WorkerDesiredStateDeleted,
-		Phase:        WorkerPhaseDeleted,
+		Phase:        WorkerPhaseDeleting,
 	}
 
 	SandboxCreateOperation = OperationSpec{

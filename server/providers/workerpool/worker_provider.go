@@ -39,11 +39,7 @@ type WorkerProvider interface {
 	AcquireWorkerHTTPClient(ctx context.Context, worker *model.Worker) (*transport.HTTPClientLease, error)
 }
 
-type workerProviderInventoryReconciler interface {
-	ReconcileWorkerProviderInventory(ctx context.Context, manager any, project *model.Project, provider *model.SandboxProviderInstance) (bool, error)
-}
-
-// WorkerPoolProvider is a sandbox provider backed by a warm worker pool.
+// WorkerPoolProvider is a sandbox provider backed by a worker pool.
 //
 // WorkerPoolProvider owns sandbox placement and worker-pool reconciliation. The
 // worker provider owns the runtime mechanics for individual workers.
@@ -102,12 +98,6 @@ func (p *WorkerPoolProvider) ReconcileWorkerProvider(ctx context.Context, manage
 	workerManager, ok := manager.(WorkerManager)
 	if !ok {
 		return fmt.Errorf("worker manager is required")
-	}
-	if reconciler, ok := p.workerProvider.(workerProviderInventoryReconciler); ok {
-		_, err := reconciler.ReconcileWorkerProviderInventory(ctx, workerManager, project, provider)
-		if err != nil {
-			return err
-		}
 	}
 	return p.ensureWorkerPool(ctx, workerManager, project, provider)
 }
@@ -466,7 +456,7 @@ func workerIDFromRuntimeState(state []byte) (string, error) {
 	if runtimeSandbox.Metadata != nil && runtimeSandbox.Metadata["worker_id"] != "" {
 		return runtimeSandbox.Metadata["worker_id"], nil
 	}
-	if runtimeSandbox.ID != "" && runtimeSandbox.Image == "warm-worker" {
+	if runtimeSandbox.ID != "" && runtimeSandbox.Image == "worker-runtime" {
 		return runtimeSandbox.ID, nil
 	}
 	return "", sandbox.ErrNotFound

@@ -329,6 +329,22 @@ func (s *Service) UpdateSandboxProviderInstance(ctx context.Context, projectID, 
 }
 
 func (s *Service) DeleteSandboxProviderInstance(ctx context.Context, projectID, providerID string) error {
+	workers, err := s.store.ListWorkers(ctx, projectID, providerID)
+	if err != nil {
+		return err
+	}
+	if len(workers) > 0 {
+		return apperrors.NewStatusError(http.StatusConflict, "provider instance has workers")
+	}
+	sandboxes, err := s.store.ListSandboxes(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	for i := range sandboxes {
+		if sandboxes[i].ProviderInstanceID != nil && strings.TrimSpace(*sandboxes[i].ProviderInstanceID) == providerID {
+			return apperrors.NewStatusError(http.StatusConflict, "provider instance has sandboxes")
+		}
+	}
 	return mapAPIError(s.store.DeleteSandboxProviderInstance(ctx, projectID, providerID), "provider instance not found")
 }
 

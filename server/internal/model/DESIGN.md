@@ -16,7 +16,7 @@ internal conversions. Public REST API schema types live under the root
 | `AgentConfig` | Project-scoped agent runtime configuration selected by sandboxes. |
 | `AgentConfigDefinition` | Non-persisted, well-known template used by the UI/API to create an `AgentConfig`; definitions are not selectable by sandboxes. |
 | `SandboxProviderInstance` | Project-scoped provider configuration for creating and managing sandboxes. |
-| `Worker` | Provider-backed runtime worker for launching sandboxes. Has its own identity and public key; private key stays on the worker. Prewarmed workers belong to a provider instance/pool and can host many sandboxes. Scheduling uses `ready`, `schedulable`, and `degraded` columns; detailed condition data is opaque JSON for display. |
+| `Worker` | Provider-backed runtime worker for launching sandboxes. Has its own identity and public key; private key stays on the worker. Workers belong to a provider instance/pool and can host many stateful sandboxes. Scheduling uses `ready`, `schedulable`, and `degraded` columns; detailed condition data is opaque JSON for display. |
 | `WorkerBootstrapToken` | Short-lived, one-time token used by a new worker to register its public key. |
 | `WorkerAuthToken` | Legacy runtime token table retained for migration compatibility; active worker runtime auth uses signed assertions against `Worker.PublicKey`. |
 | `SandboxAccessIssuerKey` | Design-level name for the current `ProjectUserKey`: per-project, per-user issuer key used by the control plane to sign sandbox access tokens. |
@@ -218,4 +218,21 @@ The worker decides when local compute/storage/memory pressure should change
 
 - preferred: `ready=true`, `schedulable=true`, `degraded=false`.
 - degraded: `ready=true`, `schedulable=true`, `degraded=true`.
+
+## Worker Deletion
+
+Worker rows are stateful placement records. A worker must not be deleted or have
+its runtime removed while any non-deleted sandbox row still has `worker_id`
+pointing at that worker. Failed worker reconciliation marks the worker failed or
+unschedulable; it does not convert the worker to deleted. The narrow automatic
+delete case is an unregistered worker that never hosted a sandbox.
+
+Worker delete intent uses `phase=deleting` until runtime cleanup succeeds. Only
+successful cleanup may set `phase=deleted`, revoke the worker, and clear runtime
+state. Purge logic may remove only terminal deleted workers that were
+successfully revoked.
+
+Worker repair is not delete. Repair is an active-worker recovery operation for
+assigned workers and must preserve the worker row, worker ID, and worker-local
+state.
 - unavailable: not ready, not schedulable, drained, deleted, or revoked.

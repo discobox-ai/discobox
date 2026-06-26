@@ -335,38 +335,6 @@ func (s *Store) MarkWorkerFailedForJob(ctx context.Context, workerID string, gen
 	return true, nil
 }
 
-func (s *Store) MarkWorkerRegistrationExpired(ctx context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error) {
-	_, err := withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.Worker, error) {
-		result := tx.Model(&model.Worker{}).
-			Where("id = ? AND generation = ? AND phase = ? AND last_operation_status = ? AND registered_at IS NULL AND last_seen_at IS NULL AND updated_at < ?", workerID, generation, model.WorkerPhaseRegistering, model.OperationStatusSuccess, cutoff).
-			Updates(map[string]any{
-				"phase":                 model.WorkerPhaseFailed,
-				"active_operation":      nil,
-				"last_operation_status": model.OperationStatusFailed,
-				"status_message":        nil,
-				"error_message":         message,
-			})
-		if result.Error != nil {
-			return nil, result.Error
-		}
-		if result.RowsAffected == 0 {
-			return nil, ErrGenerationConflict
-		}
-		var worker model.Worker
-		if err := tx.First(&worker, "id = ?", workerID).Error; err != nil {
-			return nil, mapNotFound(err)
-		}
-		return &worker, nil
-	})
-	if errors.Is(err, ErrGenerationConflict) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	return true, nil
-}
-
 func (s *Store) RegisterWorker(ctx context.Context, workerID string, tokenHash []byte, publicKey, keyType string) (*model.Worker, error) {
 	write, err := s.getWrite(ctx)
 	if err != nil {
@@ -519,7 +487,7 @@ func (s *Store) PurgeDeletedWorkers(ctx context.Context, deletedBefore time.Time
 	if err != nil {
 		return 0, err
 	}
-	result := write.Where("phase = ? AND updated_at < ?", model.WorkerPhaseDeleted, deletedBefore).
+	result := write.Where("phase = ? AND last_operation_status = ? AND revoked_at IS NOT NULL AND updated_at < ?", model.WorkerPhaseDeleted, model.OperationStatusSuccess, deletedBefore).
 		Delete(&model.Worker{})
 	return result.RowsAffected, result.Error
 }

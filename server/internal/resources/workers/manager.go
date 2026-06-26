@@ -22,7 +22,7 @@ type WorkerJobManager interface {
 	CreateWorker(context.Context, *model.Worker) (*model.Worker, error)
 	DeleteWorker(context.Context, string) (*model.Worker, error)
 	SubmitWorkerReconcile(context.Context, string) (*orchestration.Job, error)
-	DeleteWorkerForFailedJob(context.Context, string, int64, string, string) (bool, error)
+	MarkWorkerFailedForJob(context.Context, string, int64, string, string) (bool, error)
 	DeleteWorkerForExpiredRegistration(context.Context, string, int64, time.Time, string) (bool, error)
 	SubmitWorkerProviderReconcile(context.Context, string, string) (*orchestration.Job, error)
 }
@@ -106,12 +106,16 @@ func (s *Manager) FindSchedulableWorker(ctx context.Context, sandbox *model.Sand
 	return s.store.FindSchedulableWorker(ctx, sandbox)
 }
 
+func (s *Manager) CountSandboxesForWorker(ctx context.Context, workerID string) (int64, error) {
+	return s.store.CountSandboxesForWorker(ctx, workerID)
+}
+
 func (s *Manager) GetJob(ctx context.Context, id string) (*orchestration.Job, error) {
 	return s.store.GetJob(ctx, id)
 }
 
-func (s *Manager) DeleteWorkerForFailedJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error) {
-	return s.jobs.DeleteWorkerForFailedJob(ctx, workerID, generation, jobID, message)
+func (s *Manager) MarkWorkerFailedForJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error) {
+	return s.jobs.MarkWorkerFailedForJob(ctx, workerID, generation, jobID, message)
 }
 
 func (s *Manager) DeleteWorkerForExpiredRegistration(ctx context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error) {

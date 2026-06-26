@@ -160,7 +160,7 @@ func TestReconcileWorkerDeletedRemovesRuntimeBeforeMarkingDeleted(t *testing.T) 
 		Schedulable:        true,
 		ResourceLifecycle: model.ResourceLifecycle{
 			DesiredState:        model.WorkerDesiredStateDeleted,
-			Phase:               model.WorkerPhaseDeleted,
+			Phase:               model.WorkerPhaseDeleting,
 			LastOperationStatus: model.OperationStatusPending,
 			Generation:          2,
 			ObservedGeneration:  1,
@@ -199,12 +199,138 @@ func TestReconcileWorkerDeletedRemovesRuntimeBeforeMarkingDeleted(t *testing.T) 
 	}
 }
 
+func TestReconcileWorkerDeletedRefusesAssignedSandboxes(t *testing.T) {
+	ctx := context.Background()
+	appStore := newExecutorTestStore(t)
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "removing", Name: "removing"}
+	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	worker := &model.Worker{
+		ID:                 "worker-1",
+		ProjectID:          "project-1",
+		ProviderInstanceID: "provider-1",
+		RuntimeState:       []byte(`{"instanceId":"runtime-1"}`),
+		ResourceLifecycle: model.ResourceLifecycle{
+			DesiredState:        model.WorkerDesiredStateDeleted,
+			Phase:               model.WorkerPhaseDeleting,
+			LastOperationStatus: model.OperationStatusPending,
+			Generation:          2,
+			ObservedGeneration:  1,
+		},
+	}
+	if err := appStore.CreateWorker(ctx, worker); err != nil {
+		t.Fatalf("create worker: %v", err)
+	}
+	providerID := provider.ID
+	if err := appStore.CreateSandbox(ctx, &model.Sandbox{
+		ID:                 "sandbox-1",
+		ProjectID:          "project-1",
+		CreatedByUserID:    "user-1",
+		ProviderInstanceID: &providerID,
+		WorkerID:           &worker.ID,
+		Name:               "assigned sandbox",
+	}); err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+
+	providerImpl := &countingWorkerProvider{}
+	manager := sandboxes.NewProviderManager()
+	manager.RegisterProvider("removing", providerImpl)
+	executor := workers.NewWorkerReconcileExecutor(appStore, workers.WithWorkerProviderManager(manager))
+
+	if err := executor.ReconcileWorkerJob(ctx, worker.ProjectID, worker.ProviderInstanceID, worker.ID, "job-1", worker.Generation); err == nil {
+		t.Fatal("expected assigned worker delete to fail")
+	}
+	if providerImpl.removeCalls != 0 {
+		t.Fatalf("RemoveWorker calls = %d, want 0", providerImpl.removeCalls)
+	}
+	if providerImpl.repairCalls != 0 {
+		t.Fatalf("RepairWorker calls = %d, want 0", providerImpl.repairCalls)
+	}
+	updated, err := appStore.GetWorker(ctx, worker.ID)
+	if err != nil {
+		t.Fatalf("get updated worker: %v", err)
+	}
+	if updated.Phase != model.WorkerPhaseFailed || updated.LastOperationStatus != model.OperationStatusFailed {
+		t.Fatalf("worker phase/status = %q/%q, want failed/failed", updated.Phase, updated.LastOperationStatus)
+	}
+	if updated.RevokedAt != nil {
+		t.Fatal("worker was revoked despite assigned sandbox")
+	}
+	if len(updated.RuntimeState) == 0 {
+		t.Fatal("runtime state was cleared despite assigned sandbox")
+	}
+}
+
+func TestReconcileWorkerRepairsAssignedWorkerAfterActiveReconcileFailure(t *testing.T) {
+	ctx := context.Background()
+	appStore := newExecutorTestStore(t)
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "repairing", Name: "repairing"}
+	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	worker := &model.Worker{
+		ID:                 "worker-1",
+		ProjectID:          "project-1",
+		ProviderInstanceID: "provider-1",
+		RuntimeState:       []byte(`{"instanceId":"stale-runtime"}`),
+		ResourceLifecycle: model.ResourceLifecycle{
+			DesiredState:        model.WorkerDesiredStateActive,
+			Phase:               model.WorkerPhaseActive,
+			LastOperationStatus: model.OperationStatusSuccess,
+			Generation:          2,
+			ObservedGeneration:  1,
+		},
+	}
+	if err := appStore.CreateWorker(ctx, worker); err != nil {
+		t.Fatalf("create worker: %v", err)
+	}
+	providerID := provider.ID
+	if err := appStore.CreateSandbox(ctx, &model.Sandbox{
+		ID:                 "sandbox-1",
+		ProjectID:          "project-1",
+		CreatedByUserID:    "user-1",
+		ProviderInstanceID: &providerID,
+		WorkerID:           &worker.ID,
+		Name:               "assigned sandbox",
+	}); err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+
+	providerImpl := &repairingWorkerProvider{reconcileErr: errors.New("runtime unhealthy")}
+	manager := sandboxes.NewProviderManager()
+	manager.RegisterProvider("repairing", providerImpl)
+	executor := workers.NewWorkerReconcileExecutor(appStore, workers.WithWorkerProviderManager(manager))
+
+	if err := executor.ReconcileWorkerJob(ctx, worker.ProjectID, worker.ProviderInstanceID, worker.ID, "job-1", worker.Generation); err != nil {
+		t.Fatalf("reconcile worker: %v", err)
+	}
+	if providerImpl.repairCalls != 1 {
+		t.Fatalf("RepairWorker calls = %d, want 1", providerImpl.repairCalls)
+	}
+	updated, err := appStore.GetWorker(ctx, worker.ID)
+	if err != nil {
+		t.Fatalf("get updated worker: %v", err)
+	}
+	if updated.LastOperationStatus != model.OperationStatusSuccess || updated.Phase != model.WorkerPhaseRegistering {
+		t.Fatalf("worker phase/status = %q/%q, want registering/success", updated.Phase, updated.LastOperationStatus)
+	}
+	if string(updated.RuntimeState) != `{"instanceId":"repaired-runtime"}` {
+		t.Fatalf("runtime state = %s, want repaired runtime", updated.RuntimeState)
+	}
+}
+
 type failingWorkerProvider struct {
 	sandboxes.Provider
 	err error
 }
 
 func (p failingWorkerProvider) ReconcileWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
+	return p.err
+}
+
+func (p failingWorkerProvider) RepairWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker, string) error {
 	return p.err
 }
 
@@ -216,10 +342,16 @@ type countingWorkerProvider struct {
 	sandboxes.Provider
 	calls       int
 	removeCalls int
+	repairCalls int
 }
 
 func (p *countingWorkerProvider) ReconcileWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
 	p.calls++
+	return nil
+}
+
+func (p *countingWorkerProvider) RepairWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker, string) error {
+	p.repairCalls++
 	return nil
 }
 
@@ -240,7 +372,34 @@ func (p *registeringWorkerProvider) ReconcileWorker(ctx context.Context, _ any, 
 	return err
 }
 
+func (p *registeringWorkerProvider) RepairWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker, string) error {
+	return nil
+}
+
 func (p *registeringWorkerProvider) RemoveWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
+	return nil
+}
+
+type repairingWorkerProvider struct {
+	sandboxes.Provider
+	reconcileErr error
+	repairCalls  int
+}
+
+func (p *repairingWorkerProvider) ReconcileWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
+	return p.reconcileErr
+}
+
+func (p *repairingWorkerProvider) RepairWorker(_ context.Context, _ any, _ *model.Project, _ *model.SandboxProviderInstance, worker *model.Worker, _ string) error {
+	p.repairCalls++
+	worker.RuntimeState = []byte(`{"instanceId":"repaired-runtime"}`)
+	worker.Ready = true
+	worker.Schedulable = true
+	worker.Degraded = false
+	return nil
+}
+
+func (p *repairingWorkerProvider) RemoveWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
 	return nil
 }
 

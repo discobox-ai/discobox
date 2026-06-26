@@ -58,7 +58,7 @@ type JobManager interface {
 	SubmitSandboxReconcile(context.Context, string, string) (*model.Sandbox, error)
 	CreateWorker(context.Context, *model.Worker) (*model.Worker, error)
 	DeleteWorker(context.Context, string) (*model.Worker, error)
-	DeleteWorkerForFailedJob(context.Context, string, int64, string, string) (bool, error)
+	MarkWorkerFailedForJob(context.Context, string, int64, string, string) (bool, error)
 	DeleteWorkerForExpiredRegistration(context.Context, string, int64, time.Time, string) (bool, error)
 	SubmitWorkerReconcile(context.Context, string) (*orchestration.Job, error)
 	SubmitWorkerProviderReconcile(context.Context, string, string) (*orchestration.Job, error)

@@ -97,6 +97,18 @@ func (r *WorkerReconcileExecutor) ReconcileWorkerJob(ctx context.Context, projec
 }
 
 func (r *WorkerReconcileExecutor) reconcileDeleted(ctx context.Context, worker *model.Worker, generation int64) error {
+	assigned, err := r.store.CountSandboxesForWorker(ctx, worker.ID)
+	if err != nil {
+		return err
+	}
+	if assigned > 0 {
+		message := fmt.Sprintf("worker has %d assigned sandbox(es)", assigned)
+		worker.FailOperation(message)
+		if updateErr := r.update(ctx, worker, generation); updateErr != nil {
+			return updateErr
+		}
+		return fmt.Errorf("%s", message)
+	}
 	status := "deleting worker"
 	worker.MarkOperationRunning(&status)
 	if err := r.update(ctx, worker, generation); err != nil {
@@ -168,11 +180,13 @@ func (r *WorkerReconcileExecutor) reconcileActive(ctx context.Context, worker *m
 		return fmt.Errorf("sandbox provider %q does not reconcile workers", provider.ID)
 	}
 	if err := workerProvider.ReconcileWorker(ctx, r.reconcileManager(), project, provider, worker); err != nil {
-		worker.FailOperation(err.Error())
-		if updateErr := r.update(ctx, worker, generation); updateErr != nil {
-			return updateErr
+		if repairErr := r.repairAssignedWorker(ctx, workerProvider, project, provider, worker, err); repairErr != nil {
+			worker.FailOperation(repairErr.Error())
+			if updateErr := r.update(ctx, worker, generation); updateErr != nil {
+				return updateErr
+			}
+			return repairErr
 		}
-		return err
 	}
 	current, err := r.store.GetWorker(ctx, worker.ID, store.WithWorkerGeneration(generation))
 	if errors.Is(err, store.ErrGenerationConflict) {
@@ -194,6 +208,21 @@ func (r *WorkerReconcileExecutor) reconcileActive(ctx context.Context, worker *m
 	}
 	current.CompleteOperation(phase, nil)
 	return r.update(ctx, current, generation)
+}
+
+func (r *WorkerReconcileExecutor) repairAssignedWorker(ctx context.Context, workerProvider sandbox.WorkerRuntimeReconciler, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, cause error) error {
+	assigned, err := r.store.CountSandboxesForWorker(ctx, worker.ID)
+	if err != nil {
+		return err
+	}
+	if assigned == 0 {
+		return cause
+	}
+	reason := cause.Error()
+	if err := workerProvider.RepairWorker(ctx, r.reconcileManager(), project, provider, worker, reason); err != nil {
+		return fmt.Errorf("%s; repair worker: %w", reason, err)
+	}
+	return nil
 }
 
 func (r *WorkerReconcileExecutor) completeNoop(ctx context.Context, worker *model.Worker, generation int64, phase string, status string) error {

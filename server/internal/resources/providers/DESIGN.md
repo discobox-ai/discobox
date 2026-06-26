@@ -24,10 +24,12 @@ flowchart LR
 - Simple provider CRUD may call store directly.
 - Startup reconciliation and worker enqueue behavior must go through the job
   manager when durable jobs are enabled.
+- Provider instance deletion must refuse deletion while sandboxes or workers are
+  still associated with the provider. Disable or drain first; worker and sandbox
+  reconciliation owns clearing those stateful references.
 - `WorkerProviderReconcileExecutor` owns payload decode and provider-instance
   reconciliation. Keep provider job execution logic in the executor unless a
   dependency has clear ownership elsewhere.
-- Provider-instance reconciliation may compare provider inventory with worker
-  rows before sizing the pool. When inventory finds a worker/runtime mismatch,
-  it should enqueue the affected worker reconcile job and defer pool sizing until
-  that worker job completes and requeues provider reconciliation.
+- Provider-instance reconciliation sizes the worker pool. Runtime drift
+  detection is owned by provider drivers and should enqueue affected worker
+  reconcile jobs directly when it detects mismatches.

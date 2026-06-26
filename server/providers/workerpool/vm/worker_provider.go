@@ -19,43 +19,19 @@ func (p *Provider) InitializeWorkerProvider(ctx context.Context, provider *model
 	return p.driver.InitializeWorkerProvider(ctx, provider, manager)
 }
 
-type workerProviderInventoryReconciler interface {
-	ReconcileWorkerProviderInventory(ctx context.Context, manager any, project *model.Project, provider *model.SandboxProviderInstance) (bool, error)
-}
-
 type workerVMInspector interface {
 	InspectWorkerVM(ctx context.Context, workerID string) (*Instance, error)
-}
-
-func (p *Provider) ReconcileWorkerProviderInventory(ctx context.Context, manager any, project *model.Project, provider *model.SandboxProviderInstance) (bool, error) {
-	if p == nil {
-		return false, errors.New("vm provider is required")
-	}
-	reconciler, ok := p.driver.(workerProviderInventoryReconciler)
-	if !ok {
-		return false, nil
-	}
-	return reconciler.ReconcileWorkerProviderInventory(ctx, manager, project, provider)
 }
 
 func (p *Provider) CreateWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string, controlPlanePublicKey string) error {
 	if p == nil {
 		return errors.New("vm provider is required")
 	}
-	labels := map[string]string{"discobox.worker_id": worker.ID, "discobox.worker_agent": "true", "discobox.provider_instance_id": provider.ID}
-	for key, value := range p.metadata {
-		labels[key] = value
-	}
-	workerProvider := *p
-	workerProvider.bootstrap = BootstrapProviderFunc(func(context.Context, sandbox.SandboxRef, sandbox.CreateOptions) (WorkerBootstrap, error) {
-		return workeragent.Bootstrap{ControlPlaneURL: p.controlPlaneURL, ProjectID: project.ID, WorkerID: worker.ID, Token: token, ControlPlaneKey: controlPlanePublicKey, AgentPort: p.agentPort}, nil
-	})
-	workerProvider.metadata = labels
+	plan := p.workerRuntimePlan(project, provider, worker, token, controlPlanePublicKey)
 
-	ref := sandbox.SandboxRef{ProjectID: project.ID, SandboxID: "worker-" + worker.ID}
 	state := worker.RuntimeState
 	if len(state) > 0 {
-		runtimeWorker, err := workerProvider.Get(ctx, ref, state)
+		runtimeWorker, err := p.Get(ctx, plan.ref, state)
 		if errors.Is(err, sandbox.ErrNotFound) || shouldRecreateWorkerRuntime(runtimeWorker, p.defaultImage, p.metadata) {
 			state = nil
 			worker.RuntimeState = nil
@@ -66,24 +42,121 @@ func (p *Provider) CreateWorker(ctx context.Context, project *model.Project, pro
 			return err
 		}
 	}
-	_, state, err := workerProvider.Create(ctx, ref, state, sandbox.CreateOptions{Labels: labels})
+	if len(state) > 0 {
+		return nil
+	}
+	inst, err := p.driver.CreateVM(ctx, plan.spec)
 	if errors.Is(err, sandbox.ErrAlreadyExists) {
 		return nil
 	}
-	if err == nil {
-		worker.RuntimeState, err = safeWorkerRuntimeState(state)
+	if err != nil {
+		return err
 	}
+	state, err = encodeState(stateData{InstanceID: inst.ID, Worker: plan.bootstrap})
+	if err != nil {
+		return err
+	}
+	worker.RuntimeState, err = safeWorkerRuntimeState(state)
 	return err
+}
+
+func (p *Provider) RepairWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string, controlPlanePublicKey string, reason string) error {
+	if p == nil {
+		return errors.New("vm provider is required")
+	}
+	plan := p.workerRuntimePlan(project, provider, worker, token, controlPlanePublicKey)
+	currentInstanceID, err := workerRuntimeInstanceID(worker.RuntimeState)
+	if err != nil {
+		return err
+	}
+	inst, err := p.driver.RepairWorkerVM(ctx, worker.ID, currentInstanceID, plan.spec, reason)
+	if err != nil {
+		return err
+	}
+	if inst == nil {
+		return errors.New("vm driver repair returned no instance")
+	}
+	state, err := encodeState(stateData{InstanceID: inst.ID, Worker: plan.bootstrap})
+	if err != nil {
+		return err
+	}
+	worker.RuntimeState, err = safeWorkerRuntimeState(state)
+	if err != nil {
+		return err
+	}
+	worker.Ready = false
+	worker.Schedulable = false
+	worker.Degraded = false
+	worker.Phase = model.WorkerPhaseRegistering
+	return nil
+}
+
+type workerRuntimePlan struct {
+	ref       sandbox.SandboxRef
+	bootstrap WorkerBootstrap
+	spec      InstanceSpec
+}
+
+func (p *Provider) workerRuntimePlan(project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string, controlPlanePublicKey string) workerRuntimePlan {
+	labels := map[string]string{
+		"discobox.worker_id":            worker.ID,
+		"discobox.worker_agent":         "true",
+		"discobox.provider_instance_id": provider.ID,
+	}
+	for key, value := range p.metadata {
+		labels[key] = value
+	}
+	ref := sandbox.SandboxRef{ProjectID: project.ID, SandboxID: "worker-" + worker.ID}
+	bootstrap := workeragent.Bootstrap{
+		ControlPlaneURL: p.controlPlaneURL,
+		ProjectID:       project.ID,
+		WorkerID:        worker.ID,
+		Token:           token,
+		ControlPlaneKey: controlPlanePublicKey,
+		AgentPort:       p.agentPort,
+	}
+	boot := BuildBootConfig(BootInput{
+		Ref:             ref,
+		WorkerBootstrap: bootstrap,
+		ControlPlaneURL: p.controlPlaneURL,
+		AgentPort:       p.agentPort,
+	})
+	return workerRuntimePlan{
+		ref:       ref,
+		bootstrap: bootstrap,
+		spec: InstanceSpec{
+			Ref:      ref,
+			Name:     instanceName(ref),
+			Image:    p.defaultImage,
+			Boot:     boot,
+			Metadata: labels,
+		},
+	}
 }
 
 func (p *Provider) RemoveWorker(ctx context.Context, project *model.Project, _ *model.SandboxProviderInstance, worker *model.Worker) error {
 	if p == nil {
 		return errors.New("vm provider is required")
 	}
+	if err := p.removeWorkerRuntime(ctx, project, worker, true); err != nil {
+		return err
+	}
+	worker.RuntimeState = nil
+	worker.Ready = false
+	worker.Schedulable = false
+	worker.Degraded = false
+	return nil
+}
+
+func (p *Provider) removeWorkerRuntime(ctx context.Context, project *model.Project, worker *model.Worker, removeVolumes bool) error {
 	ref := sandbox.SandboxRef{ProjectID: project.ID, SandboxID: "worker-" + worker.ID}
 	removed := false
 	if len(worker.RuntimeState) > 0 {
-		if _, err := p.Remove(ctx, ref, worker.RuntimeState, sandbox.RemoveVolumes()); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+		removeOptions := []sandbox.RemoveOption(nil)
+		if removeVolumes {
+			removeOptions = append(removeOptions, sandbox.RemoveVolumes())
+		}
+		if _, err := p.Remove(ctx, ref, worker.RuntimeState, removeOptions...); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 			return err
 		} else if err == nil {
 			removed = true
@@ -97,16 +170,12 @@ func (p *Provider) RemoveWorker(ctx context.Context, project *model.Project, _ *
 				return err
 			}
 			if err == nil {
-				if err := p.driver.DeleteVM(ctx, inst.ID, true); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+				if err := p.driver.DeleteVM(ctx, inst.ID, removeVolumes); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 					return err
 				}
 			}
 		}
 	}
-	worker.RuntimeState = nil
-	worker.Ready = false
-	worker.Schedulable = false
-	worker.Degraded = false
 	return nil
 }
 
@@ -155,4 +224,18 @@ func safeWorkerRuntimeState(state []byte) ([]byte, error) {
 		return nil, sandbox.ErrNotFound
 	}
 	return json.Marshal(data)
+}
+
+func workerRuntimeInstanceID(state []byte) (string, error) {
+	if len(state) == 0 {
+		return "", nil
+	}
+	data, err := decodeState(state)
+	if errors.Is(err, sandbox.ErrNotFound) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return data.InstanceID, nil
 }

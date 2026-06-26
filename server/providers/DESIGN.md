@@ -35,14 +35,31 @@ flowchart TD
 
 `server/providers/workerpool.WorkerPoolProvider` is the registered
 `server/internal/sandbox.Provider` for worker-backed provider instances. It owns
-warm worker pool sizing, provider initialization, worker selection, capacity
-waits, and user-sandbox operations through the worker-agent API.
+worker pool sizing, provider initialization, worker selection, capacity waits,
+and user-sandbox operations through the worker-agent API.
 
 `server/providers/workerpool.WorkerProvider` is a narrow interface for
 worker runtime lifecycle and access. It can create/remove worker runtimes and
 return a `transport.HTTPClientLease` for a specific worker. The pool layer owns
 the worker-agent client and sandbox CRUD adapter, and depends on this interface
 instead of VM implementation details.
+
+Worker runtime lifecycle is not the same as worker row deletion. A provider may
+replace the underlying VM/container for an existing worker during active worker
+reconciliation, such as when the worker image or launch configuration changes,
+but it must preserve the worker row and worker ID while sandboxes remain
+assigned to that worker. Worker row deletion is allowed only after the control
+plane proves no sandbox is assigned to the worker.
+
+`RepairWorker` is a recovery hook for occupied workers whose runtime is known to
+be unhealthy or drifted in a way normal active reconciliation could not fix. It
+must preserve worker identity and worker-local state. The VM worker-pool
+provider calls the required `vm.Driver.RepairWorkerVM` method with the worker
+ID, current instance ID when known, desired `InstanceSpec`, and reason; the
+driver owns whether repair means restart, in-place update, delete/recreate, or
+no-op. Docker-backed repair chooses container replacement with normal container
+cleanup; worker state lives in named Docker volumes that are preserved across
+container removal.
 
 `server/providers/workerpool/vm.Provider` implements `WorkerProvider`. It owns
 the VM/container mechanics for worker runtimes and obtains worker-agent HTTP
@@ -61,36 +78,42 @@ thin platform integrations for Docker, DigitalOcean, KVM, HCS, Apple
 Virtualization, AWS, Azure, GCP, or similar VM/container backends. They should
 not own worker-pool scheduling or control-plane persistence.
 
-## Worker Runtime Inventory
+## Worker Runtime Drift
 
-Provider inventory is observational. A provider may list managed worker runtimes
-and compare them with worker rows to detect stale runtime state, failed rows with
-live runtimes, deleted rows with remaining runtimes, or other mismatches. For
-worker rows that still exist, inventory must enqueue the worker reconcile job and
-let the worker reconciler perform generation-aware lifecycle and runtime-state
-updates. If that enqueue happens during provider reconciliation, provider pool
-sizing should pause until the worker job completes and requeues provider
-reconciliation.
+Runtime drift detection is driver-owned. A VM/container driver may list managed
+worker runtimes and compare them with worker rows to detect stale runtime state,
+failed rows with live runtimes, deleted rows with remaining runtimes, or other
+mismatches. For worker rows that still exist, drift detection must enqueue the
+worker reconcile job and let the worker reconciler perform generation-aware
+lifecycle and runtime-state updates. Provider reconciliation jobs do not run
+runtime inventory; they size the worker pool.
 
-Worker runtime inventory is only about worker runtimes, even when the local
-backend represents workers as Docker containers. It must not inspect, reconcile,
-delete, or otherwise reason about user sandbox containers that are hosted inside
-a worker. Sandbox container reconciliation belongs behind the worker-agent
-sandbox runtime API and is triggered by sandbox reconciliation through that API.
+Worker runtime drift detection is only about worker runtimes, even when the
+local backend represents workers as Docker containers. It must not inspect,
+reconcile, delete, or otherwise reason about user sandbox containers that are
+hosted inside a worker. Sandbox container reconciliation belongs behind the
+worker-agent sandbox runtime API and is triggered by sandbox reconciliation
+through that API.
 
 The direct runtime side-effect exception is an orphan managed runtime with no
 worker row. The provider that owns that runtime may delete it immediately because
 there is no persisted worker lifecycle left to reconcile.
+
+Runtime drift detection must not delete a persisted worker row, and pool downsizing
+must skip workers that still have assigned sandboxes. Failed worker reconcile
+jobs should mark the worker failed/unschedulable and allow the pool to launch
+replacement capacity; they must not delete stateful workers.
 
 ## Worker Agent HTTP Routing
 
 VM-backed providers must be able to send provider/runtime requests to worker
 agents and, in the future, sandbox agents. Transport leasing is represented by
 `server/internal/transport.HTTPClientLease`; it is intentionally not
-sandbox-specific. The generic VM provider obtains worker-agent connectivity
-through the optional driver method represented by
-`WorkerHTTPClientDriver.AcquireWorkerHTTPClient`. The returned lease contains an
-`http.Client` and any lease cleanup needed for the driver's routing mechanism.
+sandbox-specific. The generic VM provider obtains connectivity through required
+`vm.Driver` methods: `AcquireWorkerHTTPClient` for worker-agent access by
+worker ID and `AcquireHTTPClient` for instance-based sandbox-agent access. The
+returned lease contains an `http.Client` and any lease cleanup needed for the
+driver's routing mechanism.
 
 The provider-facing logical URL space for a worker agent is:
 
@@ -221,9 +244,9 @@ Droplet create API so the guest worker agent can start and register itself.
 
 ## Pull-Based Scheduling and Worker Conditions
 
-VM-backed providers maintain prewarmed workers for each provider instance. Each
-provider instance is treated as one homogeneous warm pool; heterogeneous
-capacity should be modeled as multiple provider instances.
+VM-backed providers maintain workers for each provider instance. Each provider
+instance is treated as one homogeneous worker pool; heterogeneous capacity
+should be modeled as multiple provider instances.
 
 Workers initiate scheduling by polling or subscribing for work. The control
 plane should not rely on rigid slot counts because sandbox resource requests can
@@ -248,4 +271,4 @@ Scheduling preference is therefore:
 
 Pool reconciliation should scale up when pending work is not being claimed by
 preferred or degraded workers within policy, and scale down by draining/removing
-idle workers above the warm target.
+idle workers above the desired target.

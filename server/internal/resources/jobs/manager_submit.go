@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/obot-platform/discobox/orchestration"
@@ -227,7 +228,51 @@ func (m *Manager) DrainWorker(ctx context.Context, workerID string) (*model.Work
 }
 
 func (m *Manager) DeleteWorker(ctx context.Context, workerID string) (*model.Worker, error) {
-	return m.submitWorker(ctx, workerID, model.WorkerDeleteOperation)
+	dispatcher, err := m.dispatcherForSubmit()
+	if err != nil {
+		return nil, err
+	}
+	workerStore := m.store.Workers()
+	var blocked *model.Worker
+	if _, err := dispatcher.Submit(ctx, nil,
+		orchestration.WithQueueConfig(m.cfg.QueueConfig),
+		orchestration.WithSubmitTransaction(func(ctx context.Context, appendJob orchestration.SubmitAppendFunc) (*orchestration.Job, error) {
+			var job *orchestration.Job
+			err := workerStore.Transaction(ctx, func(ctx context.Context, txStore *store.WorkerStore) error {
+				worker, err := txStore.Get(ctx, store.WorkerID{WorkerID: workerID})
+				if err != nil {
+					return err
+				}
+				assigned, err := txStore.CountSandboxesForWorker(ctx, worker.ID)
+				if err != nil {
+					return err
+				}
+				if assigned > 0 {
+					blocked = worker
+					return nil
+				}
+				previousGeneration := worker.Generation
+				worker.IncrementGeneration()
+				worker.BeginOperation(model.WorkerDeleteOperation, nil)
+				job, err = appendJob(ctx, txStore, workerReconcilePayload(worker))
+				if err != nil {
+					return err
+				}
+				if job == nil {
+					return orchestration.ErrJobAlreadyExists
+				}
+				worker.SetLastJobID(&job.ID)
+				return txStore.UpdateWithGeneration(ctx, worker, previousGeneration)
+			})
+			return job, err
+		}),
+	); err != nil {
+		return nil, err
+	}
+	if blocked != nil {
+		return blocked, fmt.Errorf("worker %s has assigned sandboxes", workerID)
+	}
+	return workerStore.Reload(ctx, store.WorkerID{WorkerID: workerID})
 }
 
 func (m *Manager) submitWorker(ctx context.Context, workerID string, operation model.OperationSpec, mutate ...func(*model.Worker)) (*model.Worker, error) {
@@ -239,13 +284,8 @@ func (m *Manager) submitWorker(ctx context.Context, workerID string, operation m
 	return submitExistingLifecycle(ctx, dispatcher, m.cfg.QueueConfig, workerStore, workerStore.Transaction, store.WorkerID{WorkerID: workerID}, operation, workerReconcilePayload, mutate...)
 }
 
-func (m *Manager) DeleteWorkerForFailedJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error) {
-	return m.deleteWorkerIfCurrent(ctx, workerID, generation, message, func(worker *model.Worker) bool {
-		return worker.LastJobID != nil &&
-			*worker.LastJobID == jobID &&
-			worker.LastOperationStatus != model.OperationStatusFailed &&
-			worker.LastOperationStatus != model.OperationStatusSuccess
-	})
+func (m *Manager) MarkWorkerFailedForJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error) {
+	return m.store.MarkWorkerFailedForJob(ctx, workerID, generation, jobID, message)
 }
 
 func (m *Manager) DeleteWorkerForExpiredRegistration(ctx context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error) {
@@ -278,6 +318,13 @@ func (m *Manager) deleteWorkerIfCurrent(ctx context.Context, workerID string, ge
 					return err
 				}
 				if !shouldDelete(worker) {
+					return nil
+				}
+				assigned, err := txStore.CountSandboxesForWorker(ctx, worker.ID)
+				if err != nil {
+					return err
+				}
+				if assigned > 0 {
 					return nil
 				}
 				previousGeneration := worker.Generation

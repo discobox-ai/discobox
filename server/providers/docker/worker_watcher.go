@@ -54,23 +54,6 @@ func (d *Driver) InitializeWorkerProvider(ctx context.Context, provider *model.S
 	return nil
 }
 
-func (d *Driver) ReconcileWorkerProviderInventory(ctx context.Context, manager any, _ *model.Project, provider *model.SandboxProviderInstance) (bool, error) {
-	if d == nil || provider == nil || manager == nil {
-		return false, nil
-	}
-	workerManager, ok := manager.(workerpool.WorkerManager)
-	if !ok {
-		return false, fmt.Errorf("worker manager is required")
-	}
-	watcher := dockerWorkerWatcher{
-		driver:     d,
-		manager:    workerManager,
-		projectID:  provider.ProjectID,
-		providerID: provider.ID,
-	}
-	return watcher.scan(ctx)
-}
-
 type dockerWorkerWatcher struct {
 	driver     *Driver
 	manager    workerpool.WorkerManager

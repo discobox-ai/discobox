@@ -109,11 +109,11 @@ func TestEnsureWorkerPoolRepairsWorkersWithFailedJobs(t *testing.T) {
 	if store.updated == nil {
 		t.Fatal("expected stale worker to be updated")
 	}
-	if store.updated.DesiredState != model.WorkerDesiredStateDeleted || store.updated.LastOperationStatus != model.OperationStatusPending {
-		t.Fatalf("updated worker desired/status = %q/%q, want deleted/pending", store.updated.DesiredState, store.updated.LastOperationStatus)
+	if store.updated.DesiredState != model.WorkerDesiredStateActive || store.updated.Phase != model.WorkerPhaseFailed || store.updated.LastOperationStatus != model.OperationStatusFailed {
+		t.Fatalf("updated worker desired/phase/status = %q/%q/%q, want active/failed/failed", store.updated.DesiredState, store.updated.Phase, store.updated.LastOperationStatus)
 	}
-	if store.updated.StatusMessage == nil || *store.updated.StatusMessage != message {
-		t.Fatalf("updated worker status message = %v, want %q", store.updated.StatusMessage, message)
+	if store.updated.ErrorMessage == nil || *store.updated.ErrorMessage != message {
+		t.Fatalf("updated worker error message = %v, want %q", store.updated.ErrorMessage, message)
 	}
 	if store.createdWorkers != 1 {
 		t.Fatalf("created workers = %d, want replacement", store.createdWorkers)
@@ -252,6 +252,46 @@ func TestEnsureWorkerPoolDeletesExcessActiveWorkers(t *testing.T) {
 	}
 }
 
+func TestEnsureWorkerPoolSkipsExcessWorkersWithAssignedSandboxes(t *testing.T) {
+	store := &repairingWorkerManager{
+		assignedSandboxes: map[string]int64{"worker-occupied": 1},
+		workers: []model.Worker{
+			{
+				ID:                 "worker-empty",
+				ProjectID:          "project-1",
+				ProviderInstanceID: "provider-1",
+				Ready:              true,
+				Schedulable:        true,
+				ResourceLifecycle: model.ResourceLifecycle{
+					DesiredState:        model.WorkerDesiredStateActive,
+					Phase:               model.WorkerPhaseActive,
+					LastOperationStatus: model.OperationStatusSuccess,
+				},
+			},
+			{
+				ID:                 "worker-occupied",
+				ProjectID:          "project-1",
+				ProviderInstanceID: "provider-1",
+				ResourceLifecycle: model.ResourceLifecycle{
+					DesiredState:        model.WorkerDesiredStateActive,
+					Phase:               model.WorkerPhaseLaunching,
+					LastOperationStatus: model.OperationStatusRunning,
+				},
+			},
+		},
+	}
+	project := &model.Project{ID: "project-1"}
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
+
+	if err := ensureWorkerPool(context.Background(), store, project, provider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}); err != nil {
+		t.Fatalf("ensure worker pool: %v", err)
+	}
+
+	if !reflect.DeepEqual(store.deletedWorkerIDs, []string{"worker-empty"}) {
+		t.Fatalf("deleted workers = %#v, want only empty worker", store.deletedWorkerIDs)
+	}
+}
+
 func TestNormalizeWorkerPoolConfigKeepsPoolSizeAsMinimumWithReplacementHeadroom(t *testing.T) {
 	cfg := NormalizeWorkerPoolConfig(1, 0, 0, 0)
 	if cfg.Min != 1 || cfg.Max != 2 || cfg.MinHealthy != 1 {
@@ -259,9 +299,9 @@ func TestNormalizeWorkerPoolConfigKeepsPoolSizeAsMinimumWithReplacementHeadroom(
 	}
 }
 
-func TestWorkerPoolProviderReconcileRunsInventoryBeforeCapacity(t *testing.T) {
+func TestWorkerPoolProviderReconcileRunsCapacity(t *testing.T) {
 	workerManager := &recordingWorkerManager{}
-	workerProvider := &inventoryTestWorkerProvider{}
+	workerProvider := &testWorkerProvider{}
 	pool := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{Max: 1}, workerManager, false)
 	project := &model.Project{ID: "project-1"}
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
@@ -270,33 +310,8 @@ func TestWorkerPoolProviderReconcileRunsInventoryBeforeCapacity(t *testing.T) {
 		t.Fatalf("reconcile worker provider: %v", err)
 	}
 
-	if workerProvider.reconcileCalls != 1 {
-		t.Fatalf("inventory reconcile calls = %d, want 1", workerProvider.reconcileCalls)
-	}
-	if workerProvider.listCallsAtReconcile != 0 {
-		t.Fatalf("list calls at inventory reconcile = %d, want 0", workerProvider.listCallsAtReconcile)
-	}
 	if workerManager.listCalls != 1 {
 		t.Fatalf("list calls after reconcile = %d, want 1", workerManager.listCalls)
-	}
-}
-
-func TestWorkerPoolProviderReconcileRunsCapacityWhenInventorySchedulesWorker(t *testing.T) {
-	workerManager := &recordingWorkerManager{}
-	workerProvider := &inventoryTestWorkerProvider{pendingWorkerReconcile: true}
-	pool := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{Max: 1}, workerManager, false)
-	project := &model.Project{ID: "project-1"}
-	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
-
-	if err := pool.ReconcileWorkerProvider(context.Background(), workerManager, project, provider); err != nil {
-		t.Fatalf("reconcile worker provider: %v", err)
-	}
-
-	if workerProvider.reconcileCalls != 1 {
-		t.Fatalf("inventory reconcile calls = %d, want 1", workerProvider.reconcileCalls)
-	}
-	if workerManager.listCalls != 1 {
-		t.Fatalf("list calls after inventory reconcile = %d, want 1", workerManager.listCalls)
 	}
 }
 
@@ -428,7 +443,7 @@ func TestWorkerProviderCreateWithExistingStateReusesWorker(t *testing.T) {
 	workerProvider := newTestWorkerProvider(t, "project-1", "worker-1")
 	provider := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{}, workerManager, false)
 
-	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Image: "warm-worker", Metadata: map[string]string{"worker_id": "worker-1"}})
+	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Image: "worker-runtime", Metadata: map[string]string{"worker_id": "worker-1"}})
 	workerManager.worker = &model.Worker{ID: "worker-2", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true}
 	workerManager.findCalls = 0
 
@@ -448,7 +463,7 @@ func TestWorkerProviderCreateWithExistingStateReusesWorker(t *testing.T) {
 }
 
 func TestWorkerProviderCreateWithExistingStateSkipsScheduling(t *testing.T) {
-	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Image: "warm-worker", Metadata: map[string]string{"worker_id": "worker-1"}})
+	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Image: "worker-runtime", Metadata: map[string]string{"worker_id": "worker-1"}})
 	workerManager := &recordingWorkerManager{
 		worker: &model.Worker{ID: "worker-2", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true},
 		workersByID: map[string]*model.Worker{
@@ -474,7 +489,7 @@ func TestWorkerProviderCreateWithExistingStateSkipsScheduling(t *testing.T) {
 }
 
 func TestWorkerProviderCreateWithExistingStateRejectsWrongProviderWorker(t *testing.T) {
-	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Image: "warm-worker", Metadata: map[string]string{"worker_id": "worker-2"}})
+	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Image: "worker-runtime", Metadata: map[string]string{"worker_id": "worker-2"}})
 	workerManager := &recordingWorkerManager{
 		worker: &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true},
 		workersByID: map[string]*model.Worker{
@@ -494,7 +509,7 @@ func TestWorkerProviderCreateWithExistingStateRejectsWrongProviderWorker(t *test
 }
 
 func TestWorkerProviderCreateWithUnassignedStateSchedulesWorker(t *testing.T) {
-	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Image: "warm-worker", Metadata: map[string]string{"worker_id": "worker-2"}})
+	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Image: "worker-runtime", Metadata: map[string]string{"worker_id": "worker-2"}})
 	workerManager := &recordingWorkerManager{
 		worker: &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true},
 		workersByID: map[string]*model.Worker{
@@ -534,8 +549,8 @@ func TestVMProviderCreateWorkerTreatsExistingRuntimeStateAsSuccess(t *testing.T)
 	if driver.createCalls != 0 {
 		t.Fatalf("CreateVM calls = %d, want 0 for existing state", driver.createCalls)
 	}
-	if driver.inspectCalls != 2 {
-		t.Fatalf("InspectVM calls = %d, want 2", driver.inspectCalls)
+	if driver.inspectCalls != 1 {
+		t.Fatalf("InspectVM calls = %d, want 1", driver.inspectCalls)
 	}
 }
 
@@ -812,6 +827,18 @@ func (d *existingInstanceDriver) DeleteVM(context.Context, string, bool) error {
 	return errors.New("DeleteVM should not be called")
 }
 
+func (d *existingInstanceDriver) RepairWorkerVM(context.Context, string, string, vm.InstanceSpec, string) (*vm.Instance, error) {
+	return nil, errors.New("RepairWorkerVM should not be called")
+}
+
+func (d *existingInstanceDriver) AcquireHTTPClient(context.Context, *vm.Instance) (*transport.HTTPClientLease, error) {
+	return nil, errors.New("AcquireHTTPClient should not be called")
+}
+
+func (d *existingInstanceDriver) AcquireWorkerHTTPClient(context.Context, string) (*transport.HTTPClientLease, error) {
+	return nil, errors.New("AcquireWorkerHTTPClient should not be called")
+}
+
 func (d *existingInstanceDriver) InspectVM(_ context.Context, id string) (*vm.Instance, error) {
 	d.inspectCalls++
 	if id != d.instanceID {
@@ -842,6 +869,14 @@ func (d *workerHTTPOnlyDriver) StopVM(context.Context, string, time.Duration) (*
 
 func (d *workerHTTPOnlyDriver) DeleteVM(context.Context, string, bool) error {
 	return errors.New("DeleteVM should not be called")
+}
+
+func (d *workerHTTPOnlyDriver) RepairWorkerVM(context.Context, string, string, vm.InstanceSpec, string) (*vm.Instance, error) {
+	return nil, errors.New("RepairWorkerVM should not be called")
+}
+
+func (d *workerHTTPOnlyDriver) AcquireHTTPClient(context.Context, *vm.Instance) (*transport.HTTPClientLease, error) {
+	return nil, errors.New("AcquireHTTPClient should not be called")
 }
 
 func (d *workerHTTPOnlyDriver) InspectVM(context.Context, string) (*vm.Instance, error) {
@@ -897,6 +932,10 @@ func (p *testWorkerProvider) CreateWorker(context.Context, *model.Project, *mode
 	return nil
 }
 
+func (p *testWorkerProvider) RepairWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker, string, string, string) error {
+	return nil
+}
+
 func (p *testWorkerProvider) RemoveWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
 	return nil
 }
@@ -905,21 +944,6 @@ func (p *testWorkerProvider) AcquireWorkerHTTPClient(context.Context, *model.Wor
 	return transport.NewHTTPClientLeaseWithBaseURLAndAuthProvider(p.client, p.baseURL, func(context.Context) (string, error) {
 		return p.token, nil
 	}, nil), nil
-}
-
-type inventoryTestWorkerProvider struct {
-	testWorkerProvider
-	pendingWorkerReconcile bool
-	reconcileCalls         int
-	listCallsAtReconcile   int
-}
-
-func (p *inventoryTestWorkerProvider) ReconcileWorkerProviderInventory(_ context.Context, manager any, _ *model.Project, _ *model.SandboxProviderInstance) (bool, error) {
-	p.reconcileCalls++
-	if recording, ok := manager.(*recordingWorkerManager); ok {
-		p.listCallsAtReconcile = recording.listCalls
-	}
-	return p.pendingWorkerReconcile, nil
 }
 
 type recordingWorkerManager struct {
@@ -1014,6 +1038,10 @@ func (s *recordingWorkerManager) GetJob(_ context.Context, id string) (*orchestr
 	return job, nil
 }
 
+func (s *recordingWorkerManager) CountSandboxesForWorker(context.Context, string) (int64, error) {
+	return 0, nil
+}
+
 type capacityWaitWorkerManager struct {
 	project        *model.Project
 	provider       *model.SandboxProviderInstance
@@ -1084,13 +1112,18 @@ func (s *capacityWaitWorkerManager) GetJob(context.Context, string) (*orchestrat
 	return nil, orchestration.ErrJobNotFound
 }
 
+func (s *capacityWaitWorkerManager) CountSandboxesForWorker(context.Context, string) (int64, error) {
+	return 0, nil
+}
+
 type repairingWorkerManager struct {
-	workers          []model.Worker
-	jobs             map[string]*orchestration.Job
-	updated          *model.Worker
-	repairUpdated    bool
-	createdWorkers   int
-	deletedWorkerIDs []string
+	workers           []model.Worker
+	jobs              map[string]*orchestration.Job
+	updated           *model.Worker
+	repairUpdated     bool
+	createdWorkers    int
+	deletedWorkerIDs  []string
+	assignedSandboxes map[string]int64
 }
 
 func (s *repairingWorkerManager) ListWorkers(context.Context, string, string) ([]model.Worker, error) {
@@ -1122,6 +1155,13 @@ func (s *repairingWorkerManager) DeleteWorker(_ context.Context, workerID string
 		return &s.workers[i], nil
 	}
 	return nil, apperrors.ErrNotFound
+}
+
+func (s *repairingWorkerManager) CountSandboxesForWorker(_ context.Context, workerID string) (int64, error) {
+	if s.assignedSandboxes == nil {
+		return 0, nil
+	}
+	return s.assignedSandboxes[workerID], nil
 }
 
 func (s *repairingWorkerManager) CreateWorkerBootstrapToken(context.Context, *model.WorkerBootstrapToken) error {
@@ -1160,7 +1200,7 @@ func (s *repairingWorkerManager) GetJob(_ context.Context, id string) (*orchestr
 	return job, nil
 }
 
-func (s *repairingWorkerManager) DeleteWorkerForFailedJob(_ context.Context, workerID string, generation int64, jobID string, message string) (bool, error) {
+func (s *repairingWorkerManager) MarkWorkerFailedForJob(_ context.Context, workerID string, generation int64, jobID string, message string) (bool, error) {
 	if !s.repairUpdated {
 		return false, nil
 	}
@@ -1174,9 +1214,11 @@ func (s *repairingWorkerManager) DeleteWorkerForFailedJob(_ context.Context, wor
 	if copied.ID == "" {
 		return false, nil
 	}
-	copied.IncrementGeneration()
-	copied.BeginOperation(model.WorkerDeleteOperation, nil)
-	copied.StatusMessage = &message
+	copied.Phase = model.WorkerPhaseFailed
+	copied.ActiveOperation = nil
+	copied.LastOperationStatus = model.OperationStatusFailed
+	copied.StatusMessage = nil
+	copied.ErrorMessage = &message
 	s.updated = &copied
 	return true, nil
 }

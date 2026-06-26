@@ -169,6 +169,10 @@ func (m *recordingWorkerReconcileManager) GetJob(context.Context, string) (*orch
 	return nil, orchestration.ErrJobNotFound
 }
 
+func (m *recordingWorkerReconcileManager) CountSandboxesForWorker(context.Context, string) (int64, error) {
+	return 0, nil
+}
+
 func (m *recordingWorkerReconcileManager) ScheduleWorkerReconciliation(_ context.Context, workerID string) error {
 	m.reconcileWorkerID = workerID
 	return nil

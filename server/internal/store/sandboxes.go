@@ -86,6 +86,18 @@ func (s *Store) ListSandboxes(ctx context.Context, projectID string) ([]model.Sa
 	return sandboxes, err
 }
 
+func (s *Store) CountSandboxesForWorker(ctx context.Context, workerID string) (int64, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var count int64
+	err = read.Model(&model.Sandbox{}).
+		Where("worker_id = ?", workerID).
+		Count(&count).Error
+	return count, err
+}
+
 func (s *Store) CreateSandbox(ctx context.Context, sandbox *model.Sandbox) error {
 	_, err := withResourceEvent(ctx, s, model.EventActionCreated, func(tx *gorm.DB) (*model.Sandbox, error) {
 		persisted, err := s.sealSandboxForWrite(ctx, sandbox)
