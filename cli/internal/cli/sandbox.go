@@ -93,9 +93,10 @@ func (a *App) newSandboxListCommand() *cobra.Command {
 
 func (a *App) newSandboxGetCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "get SANDBOX_ID",
-		Short: "Get a sandbox",
-		Args:  cobra.ExactArgs(1),
+		Use:               "get SANDBOX_ID",
+		Short:             "Get a sandbox",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
 			if err != nil {
@@ -162,6 +163,9 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 		},
 	}
 	addCreateFlags(cmd, &opts)
+	_ = cmd.RegisterFlagCompletionFunc("provider-instance", a.completeProviders)
+	_ = cmd.RegisterFlagCompletionFunc("agent-config", a.completeAgentConfigs)
+	_ = cmd.RegisterFlagCompletionFunc("agent", a.completeAgentConfigNames)
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
 }
@@ -169,9 +173,10 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 func (a *App) newSandboxUpdateCommand() *cobra.Command {
 	var opts sandboxUpdateOptions
 	cmd := &cobra.Command{
-		Use:   "update SANDBOX_ID",
-		Short: "Update a sandbox",
-		Args:  cobra.ExactArgs(1),
+		Use:               "update SANDBOX_ID",
+		Short:             "Update a sandbox",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
 			if err != nil {
@@ -198,9 +203,10 @@ func (a *App) newSandboxUpdateCommand() *cobra.Command {
 
 func (a *App) newSandboxDeleteCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "delete SANDBOX_ID...",
-		Short: "Delete a sandbox",
-		Args:  cobra.MinimumNArgs(1),
+		Use:               "delete SANDBOX_ID...",
+		Short:             "Delete a sandbox",
+		Args:              cobra.MinimumNArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projectID, err := a.projectIDValue()
 			if err != nil {
@@ -231,9 +237,10 @@ func (a *App) newSandboxDeleteCommand() *cobra.Command {
 func (a *App) newSandboxStartCommand() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
-		Use:   "start SANDBOX_ID",
-		Short: "Start a sandbox",
-		Args:  cobra.ExactArgs(1),
+		Use:               "start SANDBOX_ID",
+		Short:             "Start a sandbox",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
 			if err != nil {
@@ -261,9 +268,10 @@ func (a *App) newSandboxStartCommand() *cobra.Command {
 func (a *App) newSandboxStopCommand() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
-		Use:   "stop SANDBOX_ID",
-		Short: "Stop a sandbox",
-		Args:  cobra.ExactArgs(1),
+		Use:               "stop SANDBOX_ID",
+		Short:             "Stop a sandbox",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
 			if err != nil {
@@ -291,9 +299,10 @@ func (a *App) newSandboxStopCommand() *cobra.Command {
 func (a *App) newSandboxRestartCommand() *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
-		Use:   "restart SANDBOX_ID",
-		Short: "Restart a sandbox",
-		Args:  cobra.ExactArgs(1),
+		Use:               "restart SANDBOX_ID",
+		Short:             "Restart a sandbox",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
 			if err != nil {

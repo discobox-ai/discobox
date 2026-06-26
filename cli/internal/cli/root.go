@@ -49,6 +49,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.PersistentFlags().StringVarP(&app.output, "output", "o", "table", "Output format: table or json")
 	cmd.PersistentFlags().BoolVar(&app.debug, "debug", false, "Print HTTP requests made by the API client")
 	cmd.PersistentFlags().BoolVar(&app.noStart, "no-start", false, "Do not start a local server when the endpoint is unavailable")
+	_ = cmd.RegisterFlagCompletionFunc("project", app.completeProjects)
 
 	cmd.AddCommand(app.newSandboxCommand())
 	cmd.AddCommand(app.newSandboxTerminalsCommand())

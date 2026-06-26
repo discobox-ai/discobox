@@ -24,6 +24,7 @@ func (a *App) newWorkerCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&opts.provider, "provider", "", "Filter by provider instance ID")
+	_ = cmd.RegisterFlagCompletionFunc("provider", a.completeProviders)
 	a.addQuietFlag(cmd)
 	cmd.AddCommand(a.newWorkerListCommand())
 	return cmd
@@ -39,6 +40,7 @@ func (a *App) newWorkerListCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&opts.provider, "provider", "", "Filter by provider instance ID")
+	_ = cmd.RegisterFlagCompletionFunc("provider", a.completeProviders)
 	a.addQuietFlag(cmd)
 	return cmd
 }

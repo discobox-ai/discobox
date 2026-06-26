@@ -69,7 +69,7 @@ func (a *App) newProviderListCommand() *cobra.Command {
 }
 
 func (a *App) newProviderGetCommand() *cobra.Command {
-	return &cobra.Command{Use: "get PROVIDER_ID", Short: "Get a provider instance", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "get PROVIDER_ID", Short: "Get a provider instance", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeProviders, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
@@ -146,6 +146,7 @@ Examples:
   discobox provider update my-provider --min-workers 1 --max-workers 2`,
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		DisableFlagParsing: true,
+		ValidArgsFunction:  a.completeProviders,
 		RunE:               a.runProviderUpdate,
 	}
 	cmd.Flags().Var(helpFlag, "help", "Show update help; use --help=PROVIDER for provider-specific flags")
@@ -166,7 +167,7 @@ Examples:
 }
 
 func (a *App) newProviderDeleteCommand() *cobra.Command {
-	return &cobra.Command{Use: "delete PROVIDER_ID...", Short: "Delete provider instances", Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "delete PROVIDER_ID...", Short: "Delete provider instances", Args: cobra.MinimumNArgs(1), ValidArgsFunction: a.completeProviders, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err

@@ -33,9 +33,10 @@ func (a *App) newJobListCommand() *cobra.Command {
 
 func (a *App) newJobGetCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "get JOB_ID",
-		Short: "Get a job",
-		Args:  cobra.ExactArgs(1),
+		Use:               "get JOB_ID",
+		Short:             "Get a job",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeJobs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projectID, err := a.projectIDValue()
 			if err != nil {
@@ -64,10 +65,11 @@ func (a *App) newJobGetCommand() *cobra.Command {
 
 func (a *App) newJobRunNowCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:     "run-now JOB_ID",
-		Aliases: []string{"force"},
-		Short:   "Run a pending or backoff job now",
-		Args:    cobra.ExactArgs(1),
+		Use:               "run-now JOB_ID",
+		Aliases:           []string{"force"},
+		Short:             "Run a pending or backoff job now",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeJobs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projectID, err := a.projectIDValue()
 			if err != nil {

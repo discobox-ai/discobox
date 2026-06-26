@@ -78,6 +78,8 @@ func (a *App) newHooksLogsCommand() *cobra.Command {
 	cmd.Flags().StringVar(&sandboxID, "sandbox-id", "", "Sandbox ID")
 	cmd.Flags().StringVar(&terminalID, "terminal-id", "", "Terminal ID or prefix")
 	cmd.Flags().IntVar(&limit, "limit", 100, "Maximum number of hook records to return")
+	_ = cmd.RegisterFlagCompletionFunc("sandbox-id", a.completeSandboxes)
+	_ = cmd.RegisterFlagCompletionFunc("terminal-id", a.completeTerminals(&sandboxID))
 	return cmd
 }
 

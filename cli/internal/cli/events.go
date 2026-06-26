@@ -62,6 +62,7 @@ func (a *App) newEventsCommand() *cobra.Command {
 	cmd.Flags().BoolVar(&opts.history, "history", true, "Send current resource data before live changes")
 	cmd.Flags().BoolVar(&opts.listOnly, "list-only", false, "Return after list instead of waiting for live events")
 	cmd.Flags().StringVar(&opts.sandboxID, "sandbox", "", "Sandbox ID to stream; defaults to all sandboxes")
+	_ = cmd.RegisterFlagCompletionFunc("sandbox", a.completeSandboxes)
 	return cmd
 }
 

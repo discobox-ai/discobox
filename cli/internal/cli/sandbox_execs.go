@@ -44,6 +44,7 @@ func (a *App) newSandboxExecCommand() *cobra.Command {
 		Short:   "Manage sandbox exec commands",
 	}
 	cmd.PersistentFlags().StringVar(&sandboxID, "sandbox-id", "", "Sandbox ID")
+	_ = cmd.RegisterFlagCompletionFunc("sandbox-id", a.completeSandboxes)
 	cmd.AddCommand(a.newSandboxExecCreateCommand(&sandboxID))
 	cmd.AddCommand(a.newSandboxExecListCommand(&sandboxID))
 	cmd.AddCommand(a.newSandboxExecLogsCommand(&sandboxID))
@@ -116,9 +117,10 @@ func (a *App) newSandboxExecListCommand(sandboxID *string) *cobra.Command {
 func (a *App) newSandboxExecLogsCommand(sandboxID *string) *cobra.Command {
 	var includeInput bool
 	cmd := &cobra.Command{
-		Use:   "logs EXEC_ID",
-		Short: "Print sandbox exec logs",
-		Args:  cobra.ExactArgs(1),
+		Use:               "logs EXEC_ID",
+		Short:             "Print sandbox exec logs",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeExecs(sandboxID),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projectID, resolvedSandboxID, client, err := a.sandboxExecRequest(cmd.Context(), *sandboxID)
 			if err != nil {

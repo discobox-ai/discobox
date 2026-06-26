@@ -39,7 +39,7 @@ func (a *App) newAgentCommand() *cobra.Command {
 }
 
 func (a *App) newAgentDefinitionsCommand() *cobra.Command {
-	cmd := &cobra.Command{Use: "definitions", Aliases: []string{"definition", "defs"}, Short: "List agent config definitions", RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "definitions", Aliases: []string{"definition", "defs"}, Short: "List agent config definitions", ValidArgsFunction: a.completeAgentDefinitions, RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -102,7 +102,7 @@ func (a *App) newAgentListCommand() *cobra.Command {
 }
 
 func (a *App) newAgentGetCommand() *cobra.Command {
-	return &cobra.Command{Use: "get AGENT_CONFIG_ID", Short: "Get an agent config", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "get AGENT_CONFIG_ID", Short: "Get an agent config", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeAgentConfigs, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, agentID, client, err := a.agentRequest(cmd.Context(), args[0])
 		if err != nil {
 			return err
@@ -154,12 +154,13 @@ func (a *App) newAgentCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.definitionID, "definition", "", "Agent config definition ID to use as defaults")
 	cmd.Flags().StringVar(&opts.installCommand, "install-command", "", "Command used to install the agent")
 	cmd.Flags().StringVar(&opts.runCommand, "run-command", "", "Command used to run the agent")
+	_ = cmd.RegisterFlagCompletionFunc("definition", a.completeAgentDefinitions)
 	return cmd
 }
 
 func (a *App) newAgentEnableCommand() *cobra.Command {
 	var setDefault bool
-	cmd := &cobra.Command{Use: "enable DEFINITION_NAME", Aliases: []string{"enabled"}, Short: "Enable an agent config definition", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "enable DEFINITION_NAME", Aliases: []string{"enabled"}, Short: "Enable an agent config definition", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeAgentDefinitions, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
@@ -207,7 +208,7 @@ func (a *App) newAgentEnableCommand() *cobra.Command {
 }
 
 func (a *App) newAgentDisableCommand() *cobra.Command {
-	return &cobra.Command{Use: "disable DEFINITION_NAME", Short: "Disable an agent config definition", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "disable DEFINITION_NAME", Short: "Disable an agent config definition", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeAgentDefinitions, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err
@@ -241,7 +242,7 @@ func (a *App) newAgentDisableCommand() *cobra.Command {
 
 func (a *App) newAgentUpdateCommand() *cobra.Command {
 	var opts agentUpdateOptions
-	cmd := &cobra.Command{Use: "update AGENT_CONFIG_ID", Short: "Update an agent config", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	cmd := &cobra.Command{Use: "update AGENT_CONFIG_ID", Short: "Update an agent config", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeAgentConfigs, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, agentID, client, err := a.agentRequest(cmd.Context(), args[0])
 		if err != nil {
 			return err
@@ -267,7 +268,7 @@ func (a *App) newAgentUpdateCommand() *cobra.Command {
 }
 
 func (a *App) newAgentSetDefaultCommand() *cobra.Command {
-	return &cobra.Command{Use: "set-default AGENT_CONFIG_ID", Short: "Set the project default agent config", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "set-default AGENT_CONFIG_ID", Short: "Set the project default agent config", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeAgentConfigs, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, agentID, client, err := a.agentRequest(cmd.Context(), args[0])
 		if err != nil {
 			return err
@@ -289,7 +290,7 @@ func (a *App) newAgentSetDefaultCommand() *cobra.Command {
 }
 
 func (a *App) newAgentDeleteCommand() *cobra.Command {
-	return &cobra.Command{Use: "delete AGENT_CONFIG_ID...", Short: "Delete agent configs", Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "delete AGENT_CONFIG_ID...", Short: "Delete agent configs", Args: cobra.MinimumNArgs(1), ValidArgsFunction: a.completeAgentConfigs, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err

@@ -47,6 +47,7 @@ func (a *App) newSandboxTerminalsCommand() *cobra.Command {
 		Short:   "Manage sandbox terminals",
 	}
 	cmd.PersistentFlags().StringVar(&sandboxID, "sandbox-id", "", "Sandbox ID")
+	_ = cmd.RegisterFlagCompletionFunc("sandbox-id", a.completeSandboxes)
 	cmd.AddCommand(a.newSandboxTerminalListCommand(&sandboxID))
 	cmd.AddCommand(a.newSandboxTerminalCreateCommand(&sandboxID))
 	cmd.AddCommand(a.newSandboxTerminalAttachCommand(&sandboxID))
@@ -124,9 +125,10 @@ func (a *App) newSandboxTerminalCreateCommand(sandboxID *string) *cobra.Command 
 
 func (a *App) newSandboxTerminalAttachCommand(sandboxID *string) *cobra.Command {
 	return &cobra.Command{
-		Use:   "attach TERMINAL_ID",
-		Short: "Attach to a sandbox terminal",
-		Args:  cobra.ExactArgs(1),
+		Use:               "attach TERMINAL_ID",
+		Short:             "Attach to a sandbox terminal",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeTerminals(sandboxID),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projectID, resolvedSandboxID, client, err := a.sandboxTerminalRequest(cmd.Context(), *sandboxID)
 			if err != nil {
@@ -144,9 +146,10 @@ func (a *App) newSandboxTerminalAttachCommand(sandboxID *string) *cobra.Command 
 func (a *App) newSandboxTerminalLogsCommand(sandboxID *string) *cobra.Command {
 	var includeInput bool
 	cmd := &cobra.Command{
-		Use:   "logs TERMINAL_ID",
-		Short: "Print sandbox terminal output logs",
-		Args:  cobra.ExactArgs(1),
+		Use:               "logs TERMINAL_ID",
+		Short:             "Print sandbox terminal output logs",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeTerminals(sandboxID),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projectID, resolvedSandboxID, client, err := a.sandboxTerminalRequest(cmd.Context(), *sandboxID)
 			if err != nil {
@@ -180,10 +183,11 @@ func (a *App) newSandboxTerminalLogsCommand(sandboxID *string) *cobra.Command {
 
 func (a *App) newSandboxTerminalDeleteCommand(sandboxID *string) *cobra.Command {
 	return &cobra.Command{
-		Use:     "delete TERMINAL_ID",
-		Aliases: []string{"rm", "remove"},
-		Short:   "Delete a sandbox terminal",
-		Args:    cobra.ExactArgs(1),
+		Use:               "delete TERMINAL_ID",
+		Aliases:           []string{"rm", "remove"},
+		Short:             "Delete a sandbox terminal",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeTerminals(sandboxID),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projectID, resolvedSandboxID, client, err := a.sandboxTerminalRequest(cmd.Context(), *sandboxID)
 			if err != nil {
