@@ -2,6 +2,8 @@ package cli
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -28,6 +30,8 @@ func (a *App) newAgentCommand() *cobra.Command {
 	cmd.AddCommand(a.newAgentListCommand())
 	cmd.AddCommand(a.newAgentGetCommand())
 	cmd.AddCommand(a.newAgentCreateCommand())
+	cmd.AddCommand(a.newAgentEnableCommand())
+	cmd.AddCommand(a.newAgentDisableCommand())
 	cmd.AddCommand(a.newAgentUpdateCommand())
 	cmd.AddCommand(a.newAgentSetDefaultCommand())
 	cmd.AddCommand(a.newAgentDeleteCommand())
@@ -150,6 +154,88 @@ func (a *App) newAgentCreateCommand() *cobra.Command {
 	return cmd
 }
 
+func (a *App) newAgentEnableCommand() *cobra.Command {
+	var setDefault bool
+	cmd := &cobra.Command{Use: "enable DEFINITION_NAME", Aliases: []string{"enabled"}, Short: "Enable an agent config definition", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		projectID, err := a.projectIDValue()
+		if err != nil {
+			return err
+		}
+		client, err := a.apiClient()
+		if err != nil {
+			return err
+		}
+		definition, err := a.resolveAgentDefinition(cmd.Context(), client, args[0])
+		if err != nil {
+			return err
+		}
+		agents, err := a.listAgentConfigs(cmd.Context(), client, projectID)
+		if err != nil {
+			return err
+		}
+		existing := agentConfigByName(agents, definition.Name)
+		if existing != nil {
+			if setDefault {
+				if err := a.setDefaultAgentConfig(cmd.Context(), client, projectID, existing.ID); err != nil {
+					return err
+				}
+			}
+			return a.writeAgent(cmd, existing)
+		}
+		body := &apimodel.CreateAgentConfigBody{}
+		body.SetDefinitionId(apiclientgen.NewOptString(definition.ID))
+		agentRes, err := client.CreateAgentConfig(cmd.Context(), body, apiclientgen.CreateAgentConfigParams{ProjectId: projectID})
+		if err != nil {
+			return err
+		}
+		agent, err := expectResponse[apimodel.AgentConfig](agentRes)
+		if err != nil {
+			return err
+		}
+		if setDefault || len(agents) == 0 {
+			if err := a.setDefaultAgentConfig(cmd.Context(), client, projectID, agent.ID); err != nil {
+				return err
+			}
+		}
+		return a.writeAgent(cmd, agent)
+	}}
+	cmd.Flags().BoolVarP(&setDefault, "default", "d", false, "Set the project default agent config")
+	return cmd
+}
+
+func (a *App) newAgentDisableCommand() *cobra.Command {
+	return &cobra.Command{Use: "disable DEFINITION_NAME", Short: "Disable an agent config definition", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		projectID, err := a.projectIDValue()
+		if err != nil {
+			return err
+		}
+		client, err := a.apiClient()
+		if err != nil {
+			return err
+		}
+		definition, err := a.resolveAgentDefinition(cmd.Context(), client, args[0])
+		if err != nil {
+			return err
+		}
+		existing, err := a.agentConfigByName(cmd.Context(), client, projectID, definition.Name)
+		if err != nil {
+			return err
+		}
+		if existing == nil {
+			return nil
+		}
+		res, err := client.DeleteAgentConfig(cmd.Context(), apiclientgen.DeleteAgentConfigParams{ProjectId: projectID, AgentConfigId: existing.ID})
+		if err != nil {
+			return err
+		}
+		if err := expectNoContent[apiclientgen.DeleteAgentConfigNoContent](res); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s deleted\n", existing.ID)
+		return err
+	}}
+}
+
 func (a *App) newAgentUpdateCommand() *cobra.Command {
 	var opts agentUpdateOptions
 	cmd := &cobra.Command{Use: "update AGENT_CONFIG_ID", Short: "Update an agent config", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
@@ -237,6 +323,90 @@ func (a *App) agentRequest(ctx context.Context, agentArg string) (projectID stri
 	}
 	agentID, err = a.resolveAgentConfigID(ctx, client, projectID, agentArg)
 	return projectID, agentID, client, err
+}
+
+func (a *App) resolveAgentDefinition(ctx context.Context, client *apiclientgen.Client, value string) (*apimodel.AgentConfigDefinition, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, fmt.Errorf("agent definition name is required")
+	}
+	res, err := client.ListAgentConfigDefinitions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	body, err := expectResponse[apimodel.ListAgentConfigDefinitionsBody](res)
+	if err != nil {
+		return nil, err
+	}
+	var nameMatches []apimodel.AgentConfigDefinition
+	var ids []string
+	definitions := body.GetAgentConfigDefinitions()
+	for _, definition := range definitions {
+		ids = append(ids, definition.ID)
+		if definition.Name == value {
+			matched := definition
+			return &matched, nil
+		}
+		if strings.EqualFold(definition.Name, value) {
+			nameMatches = append(nameMatches, definition)
+		}
+	}
+	if len(nameMatches) == 1 {
+		return &nameMatches[0], nil
+	}
+	if len(nameMatches) > 1 {
+		return nil, fmt.Errorf("agent definition name %q is ambiguous", value)
+	}
+	definitionID, err := resolveShortID(value, "agent definition ID", ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, definition := range definitions {
+		if definition.ID == definitionID {
+			matched := definition
+			return &matched, nil
+		}
+	}
+	return nil, fmt.Errorf("agent definition %q not found", value)
+}
+
+func (a *App) agentConfigByName(ctx context.Context, client *apiclientgen.Client, projectID, name string) (*apimodel.AgentConfig, error) {
+	agents, err := a.listAgentConfigs(ctx, client, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return agentConfigByName(agents, name), nil
+}
+
+func (a *App) listAgentConfigs(ctx context.Context, client *apiclientgen.Client, projectID string) ([]apimodel.AgentConfig, error) {
+	res, err := client.ListAgentConfigs(ctx, apiclientgen.ListAgentConfigsParams{ProjectId: projectID})
+	if err != nil {
+		return nil, err
+	}
+	body, err := expectResponse[apimodel.ListAgentConfigsBody](res)
+	if err != nil {
+		return nil, err
+	}
+	return body.GetAgentConfigs(), nil
+}
+
+func agentConfigByName(agents []apimodel.AgentConfig, name string) *apimodel.AgentConfig {
+	for _, agent := range agents {
+		if agent.Name == name {
+			matched := agent
+			return &matched
+		}
+	}
+	return nil
+}
+
+func (a *App) setDefaultAgentConfig(ctx context.Context, client *apiclientgen.Client, projectID, agentID string) error {
+	res, err := client.SetDefaultAgentConfig(ctx, apiclientgen.SetDefaultAgentConfigParams{ProjectId: projectID, AgentConfigId: agentID})
+	if err != nil {
+		return err
+	}
+	_, err = expectResponse[apimodel.Project](res)
+	return err
 }
 
 func createAgentBody(opts agentCreateOptions) (*apimodel.CreateAgentConfigBody, error) {
