@@ -15,6 +15,14 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/attach
 	AttachAgentTerminal(ctx context.Context, params AttachAgentTerminalParams) (AttachAgentTerminalRes, error)
+	// AttachSandboxExec implements attach-sandbox-exec operation.
+	//
+	// Opens a websocket carrying the framed bidirectional stream for a running sandbox exec. Input
+	// frames write to exec stdin, output frames stream process output, and close-input frames close
+	// stdin without detaching output.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
+	AttachSandboxExec(ctx context.Context, params AttachSandboxExecParams) (AttachSandboxExecRes, error)
 	// CreateAgentConfig implements create-agent-config operation.
 	//
 	// Create an agent config.
@@ -35,6 +43,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/sandboxes
 	CreateSandbox(ctx context.Context, req *CreateSandboxBody, params CreateSandboxParams) (CreateSandboxRes, error)
+	// CreateSandboxExec implements create-sandbox-exec operation.
+	//
+	// Create an exec runtime in a sandbox.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs
+	CreateSandboxExec(ctx context.Context, req *CreateSandboxExecRequest, params CreateSandboxExecParams) (CreateSandboxExecRes, error)
 	// CreateSandboxProviderInstance implements create-sandbox-provider-instance operation.
 	//
 	// Create a sandbox provider instance.
@@ -107,6 +121,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/sandboxes/{sandboxId}
 	GetSandbox(ctx context.Context, params GetSandboxParams) (GetSandboxRes, error)
+	// GetSandboxExec implements get-sandbox-exec operation.
+	//
+	// Get an exec runtime in a sandbox.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
+	GetSandboxExec(ctx context.Context, params GetSandboxExecParams) (GetSandboxExecRes, error)
 	// GetSandboxProviderInstance implements get-sandbox-provider-instance operation.
 	//
 	// Get a sandbox provider instance.
@@ -125,6 +145,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/agent-configs
 	ListAgentConfigs(ctx context.Context, params ListAgentConfigsParams) (ListAgentConfigsRes, error)
+	// ListAgentHooks implements list-agent-hooks operation.
+	//
+	// List recent sandbox agent hook payload logs.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks
+	ListAgentHooks(ctx context.Context, params ListAgentHooksParams) (ListAgentHooksRes, error)
 	// ListAgentTerminalEvents implements list-agent-terminal-events operation.
 	//
 	// List recent audit events for an agent terminal.
@@ -161,6 +187,18 @@ type Handler interface {
 	//
 	// GET /projects
 	ListProjects(ctx context.Context) (ListProjectsRes, error)
+	// ListSandboxExecLogs implements list-sandbox-exec-logs operation.
+	//
+	// List logs for a sandbox exec.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/logs
+	ListSandboxExecLogs(ctx context.Context, params ListSandboxExecLogsParams) (ListSandboxExecLogsRes, error)
+	// ListSandboxExecs implements list-sandbox-execs operation.
+	//
+	// List exec runtimes in a sandbox.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs
+	ListSandboxExecs(ctx context.Context, params ListSandboxExecsParams) (ListSandboxExecsRes, error)
 	// ListSandboxProviderCatalog implements list-sandbox-provider-catalog operation.
 	//
 	// List sandbox provider catalog.
@@ -215,12 +253,24 @@ type Handler interface {
 	//
 	// PUT /projects/{projectId}/agent-configs/{agentConfigId}/default
 	SetDefaultAgentConfig(ctx context.Context, params SetDefaultAgentConfigParams) (SetDefaultAgentConfigRes, error)
+	// StartAgentTerminal implements start-agent-terminal operation.
+	//
+	// Starts a prepared agent terminal after any desired attach stream has connected.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/start
+	StartAgentTerminal(ctx context.Context, params StartAgentTerminalParams) (StartAgentTerminalRes, error)
 	// StartSandbox implements start-sandbox operation.
 	//
 	// Start a sandbox.
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/start
 	StartSandbox(ctx context.Context, req *StartSandboxBody, params StartSandboxParams) (StartSandboxRes, error)
+	// StartSandboxExec implements start-sandbox-exec operation.
+	//
+	// Starts a prepared sandbox exec after any desired attach stream has connected.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start
+	StartSandboxExec(ctx context.Context, params StartSandboxExecParams) (StartSandboxExecRes, error)
 	// StopSandbox implements stop-sandbox operation.
 	//
 	// Stop a sandbox.

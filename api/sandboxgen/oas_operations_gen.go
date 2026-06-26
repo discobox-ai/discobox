@@ -7,12 +7,20 @@ type OperationName = string
 
 const (
 	AttachAgentTerminalOperation              OperationName = "AttachAgentTerminal"
+	AttachSandboxExecOperation                OperationName = "AttachSandboxExec"
 	CreateAgentTerminalOperation              OperationName = "CreateAgentTerminal"
+	CreateSandboxExecOperation                OperationName = "CreateSandboxExec"
 	DeleteAgentTerminalOperation              OperationName = "DeleteAgentTerminal"
 	GetAgentTerminalResourcesOperation        OperationName = "GetAgentTerminalResources"
+	GetSandboxExecOperation                   OperationName = "GetSandboxExec"
+	ListAgentHooksOperation                   OperationName = "ListAgentHooks"
 	ListAgentTerminalEventsOperation          OperationName = "ListAgentTerminalEvents"
 	ListAgentTerminalLogsOperation            OperationName = "ListAgentTerminalLogs"
 	ListAgentTerminalResourceHistoryOperation OperationName = "ListAgentTerminalResourceHistory"
 	ListAgentTerminalsOperation               OperationName = "ListAgentTerminals"
+	ListSandboxExecLogsOperation              OperationName = "ListSandboxExecLogs"
+	ListSandboxExecsOperation                 OperationName = "ListSandboxExecs"
+	StartAgentTerminalOperation               OperationName = "StartAgentTerminal"
+	StartSandboxExecOperation                 OperationName = "StartSandboxExec"
 	StreamAgentTerminalResourcesOperation     OperationName = "StreamAgentTerminalResources"
 )

@@ -193,6 +193,98 @@ func (s *AgentConfigDefinition) SetRunCommand(val string) {
 
 func (*AgentConfigDefinition) getAgentConfigDefinitionRes() {}
 
+// Ref: #/components/schemas/AgentHookLog
+type AgentHookLog struct {
+	// Hook log ID.
+	ID string `json:"id"`
+	// Agent terminal runtime ID that emitted the hook.
+	TerminalId OptString `json:"terminalId"`
+	// Agent hook provider.
+	Provider string `json:"provider"`
+	// Provider-specific hook event name.
+	Event string `json:"event"`
+	// Raw provider hook payload.
+	Payload   jx.Raw    `json:"payload"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// GetID returns the value of ID.
+func (s *AgentHookLog) GetID() string {
+	return s.ID
+}
+
+// GetTerminalId returns the value of TerminalId.
+func (s *AgentHookLog) GetTerminalId() OptString {
+	return s.TerminalId
+}
+
+// GetProvider returns the value of Provider.
+func (s *AgentHookLog) GetProvider() string {
+	return s.Provider
+}
+
+// GetEvent returns the value of Event.
+func (s *AgentHookLog) GetEvent() string {
+	return s.Event
+}
+
+// GetPayload returns the value of Payload.
+func (s *AgentHookLog) GetPayload() jx.Raw {
+	return s.Payload
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *AgentHookLog) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// SetID sets the value of ID.
+func (s *AgentHookLog) SetID(val string) {
+	s.ID = val
+}
+
+// SetTerminalId sets the value of TerminalId.
+func (s *AgentHookLog) SetTerminalId(val OptString) {
+	s.TerminalId = val
+}
+
+// SetProvider sets the value of Provider.
+func (s *AgentHookLog) SetProvider(val string) {
+	s.Provider = val
+}
+
+// SetEvent sets the value of Event.
+func (s *AgentHookLog) SetEvent(val string) {
+	s.Event = val
+}
+
+// SetPayload sets the value of Payload.
+func (s *AgentHookLog) SetPayload(val jx.Raw) {
+	s.Payload = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *AgentHookLog) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// Ref: #/components/schemas/AgentHookLogsResponse
+type AgentHookLogsResponse struct {
+	Hooks []AgentHookLog `json:"hooks"`
+}
+
+// GetHooks returns the value of Hooks.
+func (s *AgentHookLogsResponse) GetHooks() []AgentHookLog {
+	return s.Hooks
+}
+
+// SetHooks sets the value of Hooks.
+func (s *AgentHookLogsResponse) SetHooks(val []AgentHookLog) {
+	s.Hooks = val
+}
+
+func (*AgentHookLogsResponse) listAgentHooksRes() {}
+
 // Ref: #/components/schemas/AgentTerminal
 type AgentTerminal struct {
 	// Agent terminal runtime ID.
@@ -349,6 +441,8 @@ func (s *AgentTerminal) SetExitedAt(val OptDateTime) {
 func (s *AgentTerminal) SetMetadata(val OptAgentTerminalMetadata) {
 	s.Metadata = val
 }
+
+func (*AgentTerminal) startAgentTerminalRes() {}
 
 // Ref: #/components/schemas/AgentTerminalEvent
 type AgentTerminalEvent struct {
@@ -660,6 +754,34 @@ func (s *AttachAgentTerminalSwitchingProtocols) SetUpgrade(val OptString) {
 }
 
 func (*AttachAgentTerminalSwitchingProtocols) attachAgentTerminalRes() {}
+
+// AttachSandboxExecSwitchingProtocols is response for AttachSandboxExec operation.
+type AttachSandboxExecSwitchingProtocols struct {
+	Connection OptString
+	Upgrade    OptString
+}
+
+// GetConnection returns the value of Connection.
+func (s *AttachSandboxExecSwitchingProtocols) GetConnection() OptString {
+	return s.Connection
+}
+
+// GetUpgrade returns the value of Upgrade.
+func (s *AttachSandboxExecSwitchingProtocols) GetUpgrade() OptString {
+	return s.Upgrade
+}
+
+// SetConnection sets the value of Connection.
+func (s *AttachSandboxExecSwitchingProtocols) SetConnection(val OptString) {
+	s.Connection = val
+}
+
+// SetUpgrade sets the value of Upgrade.
+func (s *AttachSandboxExecSwitchingProtocols) SetUpgrade(val OptString) {
+	s.Upgrade = val
+}
+
+func (*AttachSandboxExecSwitchingProtocols) attachSandboxExecRes() {}
 
 // Ref: #/components/schemas/CreateAgentConfigBody
 type CreateAgentConfigBody struct {
@@ -1115,6 +1237,159 @@ func (s *CreateSandboxBodySourceCodeReferences) init() CreateSandboxBodySourceCo
 	return m
 }
 
+// Ref: #/components/schemas/CreateSandboxExecRequest
+type CreateSandboxExecRequest struct {
+	// Command argv to execute in the sandbox.
+	Command []string `json:"command"`
+	// Working directory for the exec process.
+	Workdir OptString `json:"workdir"`
+	// Additional environment variables for the exec process.
+	Env OptCreateSandboxExecRequestEnv `json:"env"`
+	// User ID used to run the exec process.
+	UID OptInt64 `json:"uid"`
+	// Group ID used to run the exec process.
+	Gid OptInt64 `json:"gid"`
+	// Allocate a PTY for the exec process.
+	Tty OptBool `json:"tty"`
+	// Initial PTY columns when a PTY is allocated.
+	Cols OptInt `json:"cols"`
+	// Initial PTY rows when a PTY is allocated.
+	Rows OptInt `json:"rows"`
+	// Caller-supplied metadata to associate with the exec.
+	Metadata OptCreateSandboxExecRequestMetadata `json:"metadata"`
+}
+
+// GetCommand returns the value of Command.
+func (s *CreateSandboxExecRequest) GetCommand() []string {
+	return s.Command
+}
+
+// GetWorkdir returns the value of Workdir.
+func (s *CreateSandboxExecRequest) GetWorkdir() OptString {
+	return s.Workdir
+}
+
+// GetEnv returns the value of Env.
+func (s *CreateSandboxExecRequest) GetEnv() OptCreateSandboxExecRequestEnv {
+	return s.Env
+}
+
+// GetUID returns the value of UID.
+func (s *CreateSandboxExecRequest) GetUID() OptInt64 {
+	return s.UID
+}
+
+// GetGid returns the value of Gid.
+func (s *CreateSandboxExecRequest) GetGid() OptInt64 {
+	return s.Gid
+}
+
+// GetTty returns the value of Tty.
+func (s *CreateSandboxExecRequest) GetTty() OptBool {
+	return s.Tty
+}
+
+// GetCols returns the value of Cols.
+func (s *CreateSandboxExecRequest) GetCols() OptInt {
+	return s.Cols
+}
+
+// GetRows returns the value of Rows.
+func (s *CreateSandboxExecRequest) GetRows() OptInt {
+	return s.Rows
+}
+
+// GetMetadata returns the value of Metadata.
+func (s *CreateSandboxExecRequest) GetMetadata() OptCreateSandboxExecRequestMetadata {
+	return s.Metadata
+}
+
+// SetCommand sets the value of Command.
+func (s *CreateSandboxExecRequest) SetCommand(val []string) {
+	s.Command = val
+}
+
+// SetWorkdir sets the value of Workdir.
+func (s *CreateSandboxExecRequest) SetWorkdir(val OptString) {
+	s.Workdir = val
+}
+
+// SetEnv sets the value of Env.
+func (s *CreateSandboxExecRequest) SetEnv(val OptCreateSandboxExecRequestEnv) {
+	s.Env = val
+}
+
+// SetUID sets the value of UID.
+func (s *CreateSandboxExecRequest) SetUID(val OptInt64) {
+	s.UID = val
+}
+
+// SetGid sets the value of Gid.
+func (s *CreateSandboxExecRequest) SetGid(val OptInt64) {
+	s.Gid = val
+}
+
+// SetTty sets the value of Tty.
+func (s *CreateSandboxExecRequest) SetTty(val OptBool) {
+	s.Tty = val
+}
+
+// SetCols sets the value of Cols.
+func (s *CreateSandboxExecRequest) SetCols(val OptInt) {
+	s.Cols = val
+}
+
+// SetRows sets the value of Rows.
+func (s *CreateSandboxExecRequest) SetRows(val OptInt) {
+	s.Rows = val
+}
+
+// SetMetadata sets the value of Metadata.
+func (s *CreateSandboxExecRequest) SetMetadata(val OptCreateSandboxExecRequestMetadata) {
+	s.Metadata = val
+}
+
+// Additional environment variables for the exec process.
+type CreateSandboxExecRequestEnv map[string]string
+
+func (s *CreateSandboxExecRequestEnv) init() CreateSandboxExecRequestEnv {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Caller-supplied metadata to associate with the exec.
+type CreateSandboxExecRequestMetadata map[string]string
+
+func (s *CreateSandboxExecRequestMetadata) init() CreateSandboxExecRequestMetadata {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/CreateSandboxExecResponse
+type CreateSandboxExecResponse struct {
+	Exec SandboxExec `json:"exec"`
+}
+
+// GetExec returns the value of Exec.
+func (s *CreateSandboxExecResponse) GetExec() SandboxExec {
+	return s.Exec
+}
+
+// SetExec sets the value of Exec.
+func (s *CreateSandboxExecResponse) SetExec(val SandboxExec) {
+	s.Exec = val
+}
+
+func (*CreateSandboxExecResponse) createSandboxExecRes() {}
+
 // Ref: #/components/schemas/CreateSandboxProviderInstanceBody
 type CreateSandboxProviderInstanceBody struct {
 	// A URL to the JSON Schema for this object.
@@ -1418,13 +1693,21 @@ func (s *ErrorResponseStatusCode) SetResponse(val ErrorResponse) {
 }
 
 func (*ErrorResponseStatusCode) attachAgentTerminalRes()              {}
+func (*ErrorResponseStatusCode) attachSandboxExecRes()                {}
 func (*ErrorResponseStatusCode) createAgentTerminalRes()              {}
+func (*ErrorResponseStatusCode) createSandboxExecRes()                {}
 func (*ErrorResponseStatusCode) deleteAgentTerminalRes()              {}
 func (*ErrorResponseStatusCode) getAgentTerminalResourcesRes()        {}
+func (*ErrorResponseStatusCode) getSandboxExecRes()                   {}
+func (*ErrorResponseStatusCode) listAgentHooksRes()                   {}
 func (*ErrorResponseStatusCode) listAgentTerminalEventsRes()          {}
 func (*ErrorResponseStatusCode) listAgentTerminalLogsRes()            {}
 func (*ErrorResponseStatusCode) listAgentTerminalResourceHistoryRes() {}
 func (*ErrorResponseStatusCode) listAgentTerminalsRes()               {}
+func (*ErrorResponseStatusCode) listSandboxExecLogsRes()              {}
+func (*ErrorResponseStatusCode) listSandboxExecsRes()                 {}
+func (*ErrorResponseStatusCode) startAgentTerminalRes()               {}
+func (*ErrorResponseStatusCode) startSandboxExecRes()                 {}
 func (*ErrorResponseStatusCode) streamAgentTerminalResourcesRes()     {}
 
 // Ref: #/components/schemas/GitSource
@@ -2472,6 +2755,98 @@ func (o OptCreateSandboxBodySourceCodeReferences) Or(d CreateSandboxBodySourceCo
 	return d
 }
 
+// NewOptCreateSandboxExecRequestEnv returns new OptCreateSandboxExecRequestEnv with value set to v.
+func NewOptCreateSandboxExecRequestEnv(v CreateSandboxExecRequestEnv) OptCreateSandboxExecRequestEnv {
+	return OptCreateSandboxExecRequestEnv{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptCreateSandboxExecRequestEnv is optional CreateSandboxExecRequestEnv.
+type OptCreateSandboxExecRequestEnv struct {
+	Value CreateSandboxExecRequestEnv
+	Set   bool
+}
+
+// IsSet returns true if OptCreateSandboxExecRequestEnv was set.
+func (o OptCreateSandboxExecRequestEnv) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptCreateSandboxExecRequestEnv) Reset() {
+	var v CreateSandboxExecRequestEnv
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptCreateSandboxExecRequestEnv) SetTo(v CreateSandboxExecRequestEnv) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptCreateSandboxExecRequestEnv) Get() (v CreateSandboxExecRequestEnv, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptCreateSandboxExecRequestEnv) Or(d CreateSandboxExecRequestEnv) CreateSandboxExecRequestEnv {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptCreateSandboxExecRequestMetadata returns new OptCreateSandboxExecRequestMetadata with value set to v.
+func NewOptCreateSandboxExecRequestMetadata(v CreateSandboxExecRequestMetadata) OptCreateSandboxExecRequestMetadata {
+	return OptCreateSandboxExecRequestMetadata{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptCreateSandboxExecRequestMetadata is optional CreateSandboxExecRequestMetadata.
+type OptCreateSandboxExecRequestMetadata struct {
+	Value CreateSandboxExecRequestMetadata
+	Set   bool
+}
+
+// IsSet returns true if OptCreateSandboxExecRequestMetadata was set.
+func (o OptCreateSandboxExecRequestMetadata) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptCreateSandboxExecRequestMetadata) Reset() {
+	var v CreateSandboxExecRequestMetadata
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptCreateSandboxExecRequestMetadata) SetTo(v CreateSandboxExecRequestMetadata) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptCreateSandboxExecRequestMetadata) Get() (v CreateSandboxExecRequestMetadata, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptCreateSandboxExecRequestMetadata) Or(d CreateSandboxExecRequestMetadata) CreateSandboxExecRequestMetadata {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptDateTime returns new OptDateTime with value set to v.
 func NewOptDateTime(v time.Time) OptDateTime {
 	return OptDateTime{
@@ -3430,6 +3805,98 @@ func (o OptSandboxActiveOperation) Get() (v SandboxActiveOperation, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxActiveOperation) Or(d SandboxActiveOperation) SandboxActiveOperation {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxExecEnv returns new OptSandboxExecEnv with value set to v.
+func NewOptSandboxExecEnv(v SandboxExecEnv) OptSandboxExecEnv {
+	return OptSandboxExecEnv{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxExecEnv is optional SandboxExecEnv.
+type OptSandboxExecEnv struct {
+	Value SandboxExecEnv
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxExecEnv was set.
+func (o OptSandboxExecEnv) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxExecEnv) Reset() {
+	var v SandboxExecEnv
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxExecEnv) SetTo(v SandboxExecEnv) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxExecEnv) Get() (v SandboxExecEnv, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxExecEnv) Or(d SandboxExecEnv) SandboxExecEnv {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxExecMetadata returns new OptSandboxExecMetadata with value set to v.
+func NewOptSandboxExecMetadata(v SandboxExecMetadata) OptSandboxExecMetadata {
+	return OptSandboxExecMetadata{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxExecMetadata is optional SandboxExecMetadata.
+type OptSandboxExecMetadata struct {
+	Value SandboxExecMetadata
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxExecMetadata was set.
+func (o OptSandboxExecMetadata) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxExecMetadata) Reset() {
+	var v SandboxExecMetadata
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxExecMetadata) SetTo(v SandboxExecMetadata) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxExecMetadata) Get() (v SandboxExecMetadata, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxExecMetadata) Or(d SandboxExecMetadata) SandboxExecMetadata {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -5224,6 +5691,419 @@ func (s *SandboxDesiredState) UnmarshalText(data []byte) error {
 		return errors.Errorf("invalid value: %q", data)
 	}
 }
+
+// Ref: #/components/schemas/SandboxExec
+type SandboxExec struct {
+	// Sandbox exec runtime ID.
+	ID string `json:"id"`
+	// Current observed exec runtime status.
+	Status SandboxExecStatus `json:"status"`
+	// Command argv executed in the sandbox.
+	Command []string `json:"command"`
+	// Working directory for the exec process.
+	Workdir string `json:"workdir"`
+	// Additional environment variables for the exec process.
+	Env OptSandboxExecEnv `json:"env"`
+	// User ID used to run the exec process.
+	UID OptInt64 `json:"uid"`
+	// Group ID used to run the exec process.
+	Gid OptInt64 `json:"gid"`
+	// Whether the exec process was started with a PTY.
+	Tty bool `json:"tty"`
+	// Systemd unit or scope name when known.
+	Unit OptString `json:"unit"`
+	// Sandbox-local process ID when known.
+	Pid OptInt64 `json:"pid"`
+	// Process exit code when the exec has exited.
+	ExitCode OptInt64 `json:"exitCode"`
+	// Runtime error detail when the exec failed.
+	Error     OptString   `json:"error"`
+	CreatedAt time.Time   `json:"createdAt"`
+	StartedAt OptDateTime `json:"startedAt"`
+	ExitedAt  OptDateTime `json:"exitedAt"`
+	// Caller-supplied exec metadata.
+	Metadata OptSandboxExecMetadata `json:"metadata"`
+}
+
+// GetID returns the value of ID.
+func (s *SandboxExec) GetID() string {
+	return s.ID
+}
+
+// GetStatus returns the value of Status.
+func (s *SandboxExec) GetStatus() SandboxExecStatus {
+	return s.Status
+}
+
+// GetCommand returns the value of Command.
+func (s *SandboxExec) GetCommand() []string {
+	return s.Command
+}
+
+// GetWorkdir returns the value of Workdir.
+func (s *SandboxExec) GetWorkdir() string {
+	return s.Workdir
+}
+
+// GetEnv returns the value of Env.
+func (s *SandboxExec) GetEnv() OptSandboxExecEnv {
+	return s.Env
+}
+
+// GetUID returns the value of UID.
+func (s *SandboxExec) GetUID() OptInt64 {
+	return s.UID
+}
+
+// GetGid returns the value of Gid.
+func (s *SandboxExec) GetGid() OptInt64 {
+	return s.Gid
+}
+
+// GetTty returns the value of Tty.
+func (s *SandboxExec) GetTty() bool {
+	return s.Tty
+}
+
+// GetUnit returns the value of Unit.
+func (s *SandboxExec) GetUnit() OptString {
+	return s.Unit
+}
+
+// GetPid returns the value of Pid.
+func (s *SandboxExec) GetPid() OptInt64 {
+	return s.Pid
+}
+
+// GetExitCode returns the value of ExitCode.
+func (s *SandboxExec) GetExitCode() OptInt64 {
+	return s.ExitCode
+}
+
+// GetError returns the value of Error.
+func (s *SandboxExec) GetError() OptString {
+	return s.Error
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *SandboxExec) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetStartedAt returns the value of StartedAt.
+func (s *SandboxExec) GetStartedAt() OptDateTime {
+	return s.StartedAt
+}
+
+// GetExitedAt returns the value of ExitedAt.
+func (s *SandboxExec) GetExitedAt() OptDateTime {
+	return s.ExitedAt
+}
+
+// GetMetadata returns the value of Metadata.
+func (s *SandboxExec) GetMetadata() OptSandboxExecMetadata {
+	return s.Metadata
+}
+
+// SetID sets the value of ID.
+func (s *SandboxExec) SetID(val string) {
+	s.ID = val
+}
+
+// SetStatus sets the value of Status.
+func (s *SandboxExec) SetStatus(val SandboxExecStatus) {
+	s.Status = val
+}
+
+// SetCommand sets the value of Command.
+func (s *SandboxExec) SetCommand(val []string) {
+	s.Command = val
+}
+
+// SetWorkdir sets the value of Workdir.
+func (s *SandboxExec) SetWorkdir(val string) {
+	s.Workdir = val
+}
+
+// SetEnv sets the value of Env.
+func (s *SandboxExec) SetEnv(val OptSandboxExecEnv) {
+	s.Env = val
+}
+
+// SetUID sets the value of UID.
+func (s *SandboxExec) SetUID(val OptInt64) {
+	s.UID = val
+}
+
+// SetGid sets the value of Gid.
+func (s *SandboxExec) SetGid(val OptInt64) {
+	s.Gid = val
+}
+
+// SetTty sets the value of Tty.
+func (s *SandboxExec) SetTty(val bool) {
+	s.Tty = val
+}
+
+// SetUnit sets the value of Unit.
+func (s *SandboxExec) SetUnit(val OptString) {
+	s.Unit = val
+}
+
+// SetPid sets the value of Pid.
+func (s *SandboxExec) SetPid(val OptInt64) {
+	s.Pid = val
+}
+
+// SetExitCode sets the value of ExitCode.
+func (s *SandboxExec) SetExitCode(val OptInt64) {
+	s.ExitCode = val
+}
+
+// SetError sets the value of Error.
+func (s *SandboxExec) SetError(val OptString) {
+	s.Error = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *SandboxExec) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetStartedAt sets the value of StartedAt.
+func (s *SandboxExec) SetStartedAt(val OptDateTime) {
+	s.StartedAt = val
+}
+
+// SetExitedAt sets the value of ExitedAt.
+func (s *SandboxExec) SetExitedAt(val OptDateTime) {
+	s.ExitedAt = val
+}
+
+// SetMetadata sets the value of Metadata.
+func (s *SandboxExec) SetMetadata(val OptSandboxExecMetadata) {
+	s.Metadata = val
+}
+
+func (*SandboxExec) getSandboxExecRes()   {}
+func (*SandboxExec) startSandboxExecRes() {}
+
+// Additional environment variables for the exec process.
+type SandboxExecEnv map[string]string
+
+func (s *SandboxExecEnv) init() SandboxExecEnv {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/SandboxExecLogEntry
+type SandboxExecLogEntry struct {
+	// Time this exec stream chunk was observed.
+	Timestamp time.Time `json:"timestamp"`
+	// Exec stream this chunk came from.
+	Stream SandboxExecLogEntryStream `json:"stream"`
+	// Base64-encoded raw stream bytes.
+	Data []byte `json:"data"`
+}
+
+// GetTimestamp returns the value of Timestamp.
+func (s *SandboxExecLogEntry) GetTimestamp() time.Time {
+	return s.Timestamp
+}
+
+// GetStream returns the value of Stream.
+func (s *SandboxExecLogEntry) GetStream() SandboxExecLogEntryStream {
+	return s.Stream
+}
+
+// GetData returns the value of Data.
+func (s *SandboxExecLogEntry) GetData() []byte {
+	return s.Data
+}
+
+// SetTimestamp sets the value of Timestamp.
+func (s *SandboxExecLogEntry) SetTimestamp(val time.Time) {
+	s.Timestamp = val
+}
+
+// SetStream sets the value of Stream.
+func (s *SandboxExecLogEntry) SetStream(val SandboxExecLogEntryStream) {
+	s.Stream = val
+}
+
+// SetData sets the value of Data.
+func (s *SandboxExecLogEntry) SetData(val []byte) {
+	s.Data = val
+}
+
+// Exec stream this chunk came from.
+type SandboxExecLogEntryStream string
+
+const (
+	SandboxExecLogEntryStreamInput  SandboxExecLogEntryStream = "input"
+	SandboxExecLogEntryStreamOutput SandboxExecLogEntryStream = "output"
+	SandboxExecLogEntryStreamStdout SandboxExecLogEntryStream = "stdout"
+	SandboxExecLogEntryStreamStderr SandboxExecLogEntryStream = "stderr"
+)
+
+// AllValues returns all SandboxExecLogEntryStream values.
+func (SandboxExecLogEntryStream) AllValues() []SandboxExecLogEntryStream {
+	return []SandboxExecLogEntryStream{
+		SandboxExecLogEntryStreamInput,
+		SandboxExecLogEntryStreamOutput,
+		SandboxExecLogEntryStreamStdout,
+		SandboxExecLogEntryStreamStderr,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxExecLogEntryStream) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxExecLogEntryStreamInput:
+		return []byte(s), nil
+	case SandboxExecLogEntryStreamOutput:
+		return []byte(s), nil
+	case SandboxExecLogEntryStreamStdout:
+		return []byte(s), nil
+	case SandboxExecLogEntryStreamStderr:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxExecLogEntryStream) UnmarshalText(data []byte) error {
+	switch SandboxExecLogEntryStream(data) {
+	case SandboxExecLogEntryStreamInput:
+		*s = SandboxExecLogEntryStreamInput
+		return nil
+	case SandboxExecLogEntryStreamOutput:
+		*s = SandboxExecLogEntryStreamOutput
+		return nil
+	case SandboxExecLogEntryStreamStdout:
+		*s = SandboxExecLogEntryStreamStdout
+		return nil
+	case SandboxExecLogEntryStreamStderr:
+		*s = SandboxExecLogEntryStreamStderr
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Ref: #/components/schemas/SandboxExecLogsResponse
+type SandboxExecLogsResponse struct {
+	Entries []SandboxExecLogEntry `json:"entries"`
+}
+
+// GetEntries returns the value of Entries.
+func (s *SandboxExecLogsResponse) GetEntries() []SandboxExecLogEntry {
+	return s.Entries
+}
+
+// SetEntries sets the value of Entries.
+func (s *SandboxExecLogsResponse) SetEntries(val []SandboxExecLogEntry) {
+	s.Entries = val
+}
+
+func (*SandboxExecLogsResponse) listSandboxExecLogsRes() {}
+
+// Caller-supplied exec metadata.
+type SandboxExecMetadata map[string]string
+
+func (s *SandboxExecMetadata) init() SandboxExecMetadata {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Current observed exec runtime status.
+type SandboxExecStatus string
+
+const (
+	SandboxExecStatusStarting SandboxExecStatus = "starting"
+	SandboxExecStatusRunning  SandboxExecStatus = "running"
+	SandboxExecStatusExited   SandboxExecStatus = "exited"
+	SandboxExecStatusFailed   SandboxExecStatus = "failed"
+	SandboxExecStatusLost     SandboxExecStatus = "lost"
+)
+
+// AllValues returns all SandboxExecStatus values.
+func (SandboxExecStatus) AllValues() []SandboxExecStatus {
+	return []SandboxExecStatus{
+		SandboxExecStatusStarting,
+		SandboxExecStatusRunning,
+		SandboxExecStatusExited,
+		SandboxExecStatusFailed,
+		SandboxExecStatusLost,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxExecStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxExecStatusStarting:
+		return []byte(s), nil
+	case SandboxExecStatusRunning:
+		return []byte(s), nil
+	case SandboxExecStatusExited:
+		return []byte(s), nil
+	case SandboxExecStatusFailed:
+		return []byte(s), nil
+	case SandboxExecStatusLost:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxExecStatus) UnmarshalText(data []byte) error {
+	switch SandboxExecStatus(data) {
+	case SandboxExecStatusStarting:
+		*s = SandboxExecStatusStarting
+		return nil
+	case SandboxExecStatusRunning:
+		*s = SandboxExecStatusRunning
+		return nil
+	case SandboxExecStatusExited:
+		*s = SandboxExecStatusExited
+		return nil
+	case SandboxExecStatusFailed:
+		*s = SandboxExecStatusFailed
+		return nil
+	case SandboxExecStatusLost:
+		*s = SandboxExecStatusLost
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Ref: #/components/schemas/SandboxExecsResponse
+type SandboxExecsResponse struct {
+	Execs []SandboxExec `json:"execs"`
+}
+
+// GetExecs returns the value of Execs.
+func (s *SandboxExecsResponse) GetExecs() []SandboxExec {
+	return s.Execs
+}
+
+// SetExecs sets the value of Execs.
+func (s *SandboxExecsResponse) SetExecs(val []SandboxExec) {
+	s.Execs = val
+}
+
+func (*SandboxExecsResponse) listSandboxExecsRes() {}
 
 // Status of the most recent operation.
 type SandboxLastOperationStatus string

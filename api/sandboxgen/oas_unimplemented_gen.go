@@ -23,6 +23,17 @@ func (UnimplementedHandler) AttachAgentTerminal(ctx context.Context, params Atta
 	return r, ht.ErrNotImplemented
 }
 
+// AttachSandboxExec implements attach-sandbox-exec operation.
+//
+// Opens a websocket carrying the framed bidirectional stream for a running sandbox exec. Input
+// frames write to exec stdin, output frames stream process output, and close-input frames close
+// stdin without detaching output.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
+func (UnimplementedHandler) AttachSandboxExec(ctx context.Context, params AttachSandboxExecParams) (r *AttachSandboxExecSwitchingProtocols, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // CreateAgentTerminal implements create-agent-terminal operation.
 //
 // Creates an ephemeral terminal/TUI runtime for a coding-agent CLI. When the request is an upgrade
@@ -31,6 +42,15 @@ func (UnimplementedHandler) AttachAgentTerminal(ctx context.Context, params Atta
 //
 // POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals
 func (UnimplementedHandler) CreateAgentTerminal(ctx context.Context, req *CreateAgentTerminalRequest, params CreateAgentTerminalParams) (r CreateAgentTerminalRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// CreateSandboxExec implements create-sandbox-exec operation.
+//
+// Create an exec runtime in a sandbox.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs
+func (UnimplementedHandler) CreateSandboxExec(ctx context.Context, req *CreateSandboxExecRequest, params CreateSandboxExecParams) (r *CreateSandboxExecResponse, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -49,6 +69,24 @@ func (UnimplementedHandler) DeleteAgentTerminal(ctx context.Context, params Dele
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources
 func (UnimplementedHandler) GetAgentTerminalResources(ctx context.Context, params GetAgentTerminalResourcesParams) (r *ResourceSnapshot, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetSandboxExec implements get-sandbox-exec operation.
+//
+// Get an exec runtime in a sandbox.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
+func (UnimplementedHandler) GetSandboxExec(ctx context.Context, params GetSandboxExecParams) (r *SandboxExec, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListAgentHooks implements list-agent-hooks operation.
+//
+// List recent sandbox agent hook payload logs.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks
+func (UnimplementedHandler) ListAgentHooks(ctx context.Context, params ListAgentHooksParams) (r *AgentHookLogsResponse, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -85,6 +123,42 @@ func (UnimplementedHandler) ListAgentTerminalResourceHistory(ctx context.Context
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals
 func (UnimplementedHandler) ListAgentTerminals(ctx context.Context, params ListAgentTerminalsParams) (r *AgentTerminalsResponse, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListSandboxExecLogs implements list-sandbox-exec-logs operation.
+//
+// List logs for a sandbox exec.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/logs
+func (UnimplementedHandler) ListSandboxExecLogs(ctx context.Context, params ListSandboxExecLogsParams) (r *SandboxExecLogsResponse, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListSandboxExecs implements list-sandbox-execs operation.
+//
+// List exec runtimes in a sandbox.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs
+func (UnimplementedHandler) ListSandboxExecs(ctx context.Context, params ListSandboxExecsParams) (r *SandboxExecsResponse, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// StartAgentTerminal implements start-agent-terminal operation.
+//
+// Starts a prepared agent terminal after any desired attach stream has connected.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/start
+func (UnimplementedHandler) StartAgentTerminal(ctx context.Context, params StartAgentTerminalParams) (r *AgentTerminal, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// StartSandboxExec implements start-sandbox-exec operation.
+//
+// Starts a prepared sandbox exec after any desired attach stream has connected.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start
+func (UnimplementedHandler) StartSandboxExec(ctx context.Context, params StartSandboxExecParams) (r *SandboxExec, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

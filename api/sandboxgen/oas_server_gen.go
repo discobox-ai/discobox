@@ -15,6 +15,14 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/attach
 	AttachAgentTerminal(ctx context.Context, params AttachAgentTerminalParams) (*AttachAgentTerminalSwitchingProtocols, error)
+	// AttachSandboxExec implements attach-sandbox-exec operation.
+	//
+	// Opens a websocket carrying the framed bidirectional stream for a running sandbox exec. Input
+	// frames write to exec stdin, output frames stream process output, and close-input frames close
+	// stdin without detaching output.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
+	AttachSandboxExec(ctx context.Context, params AttachSandboxExecParams) (*AttachSandboxExecSwitchingProtocols, error)
 	// CreateAgentTerminal implements create-agent-terminal operation.
 	//
 	// Creates an ephemeral terminal/TUI runtime for a coding-agent CLI. When the request is an upgrade
@@ -23,6 +31,12 @@ type Handler interface {
 	//
 	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals
 	CreateAgentTerminal(ctx context.Context, req *CreateAgentTerminalRequest, params CreateAgentTerminalParams) (CreateAgentTerminalRes, error)
+	// CreateSandboxExec implements create-sandbox-exec operation.
+	//
+	// Create an exec runtime in a sandbox.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs
+	CreateSandboxExec(ctx context.Context, req *CreateSandboxExecRequest, params CreateSandboxExecParams) (*CreateSandboxExecResponse, error)
 	// DeleteAgentTerminal implements delete-agent-terminal operation.
 	//
 	// Destroy an agent terminal runtime in a sandbox.
@@ -35,6 +49,18 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources
 	GetAgentTerminalResources(ctx context.Context, params GetAgentTerminalResourcesParams) (*ResourceSnapshot, error)
+	// GetSandboxExec implements get-sandbox-exec operation.
+	//
+	// Get an exec runtime in a sandbox.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
+	GetSandboxExec(ctx context.Context, params GetSandboxExecParams) (*SandboxExec, error)
+	// ListAgentHooks implements list-agent-hooks operation.
+	//
+	// List recent sandbox agent hook payload logs.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks
+	ListAgentHooks(ctx context.Context, params ListAgentHooksParams) (*AgentHookLogsResponse, error)
 	// ListAgentTerminalEvents implements list-agent-terminal-events operation.
 	//
 	// List recent audit events for an agent terminal.
@@ -59,6 +85,30 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals
 	ListAgentTerminals(ctx context.Context, params ListAgentTerminalsParams) (*AgentTerminalsResponse, error)
+	// ListSandboxExecLogs implements list-sandbox-exec-logs operation.
+	//
+	// List logs for a sandbox exec.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/logs
+	ListSandboxExecLogs(ctx context.Context, params ListSandboxExecLogsParams) (*SandboxExecLogsResponse, error)
+	// ListSandboxExecs implements list-sandbox-execs operation.
+	//
+	// List exec runtimes in a sandbox.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs
+	ListSandboxExecs(ctx context.Context, params ListSandboxExecsParams) (*SandboxExecsResponse, error)
+	// StartAgentTerminal implements start-agent-terminal operation.
+	//
+	// Starts a prepared agent terminal after any desired attach stream has connected.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/start
+	StartAgentTerminal(ctx context.Context, params StartAgentTerminalParams) (*AgentTerminal, error)
+	// StartSandboxExec implements start-sandbox-exec operation.
+	//
+	// Starts a prepared sandbox exec after any desired attach stream has connected.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start
+	StartSandboxExec(ctx context.Context, params StartSandboxExecParams) (*SandboxExec, error)
 	// StreamAgentTerminalResources implements stream-agent-terminal-resources operation.
 	//
 	// Stream opaque resource snapshots for an agent terminal.

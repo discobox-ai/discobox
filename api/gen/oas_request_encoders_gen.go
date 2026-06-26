@@ -52,6 +52,20 @@ func encodeCreateSandboxRequest(
 	return nil
 }
 
+func encodeCreateSandboxExecRequest(
+	req *CreateSandboxExecRequest,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeCreateSandboxProviderInstanceRequest(
 	req *CreateSandboxProviderInstanceBody,
 	r *http.Request,

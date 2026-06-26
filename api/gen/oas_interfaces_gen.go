@@ -5,12 +5,20 @@ type AttachAgentTerminalRes interface {
 	attachAgentTerminalRes()
 }
 
+type AttachSandboxExecRes interface {
+	attachSandboxExecRes()
+}
+
 type CreateAgentConfigRes interface {
 	createAgentConfigRes()
 }
 
 type CreateAgentTerminalRes interface {
 	createAgentTerminalRes()
+}
+
+type CreateSandboxExecRes interface {
+	createSandboxExecRes()
 }
 
 type CreateSandboxProviderInstanceRes interface {
@@ -61,6 +69,10 @@ type GetProjectRes interface {
 	getProjectRes()
 }
 
+type GetSandboxExecRes interface {
+	getSandboxExecRes()
+}
+
 type GetSandboxProviderInstanceRes interface {
 	getSandboxProviderInstanceRes()
 }
@@ -75,6 +87,10 @@ type ListAgentConfigDefinitionsRes interface {
 
 type ListAgentConfigsRes interface {
 	listAgentConfigsRes()
+}
+
+type ListAgentHooksRes interface {
+	listAgentHooksRes()
 }
 
 type ListAgentTerminalEventsRes interface {
@@ -99,6 +115,14 @@ type ListJobsRes interface {
 
 type ListProjectsRes interface {
 	listProjectsRes()
+}
+
+type ListSandboxExecLogsRes interface {
+	listSandboxExecLogsRes()
+}
+
+type ListSandboxExecsRes interface {
+	listSandboxExecsRes()
 }
 
 type ListSandboxProviderCatalogRes interface {
@@ -135,6 +159,14 @@ type RestartSandboxRes interface {
 
 type SetDefaultAgentConfigRes interface {
 	setDefaultAgentConfigRes()
+}
+
+type StartAgentTerminalRes interface {
+	startAgentTerminalRes()
+}
+
+type StartSandboxExecRes interface {
+	startSandboxExecRes()
 }
 
 type StartSandboxRes interface {
