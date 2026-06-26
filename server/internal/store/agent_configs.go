@@ -67,6 +67,11 @@ func (s *Store) DeleteAgentConfig(ctx context.Context, projectID, configID strin
 		if err != nil {
 			return nil, err
 		}
+		if err := tx.Model(&model.Project{}).
+			Where("id = ? AND default_agent_config_id = ?", projectID, configID).
+			Update("default_agent_config_id", "").Error; err != nil {
+			return nil, err
+		}
 		if err := tx.Delete(config).Error; err != nil {
 			return nil, err
 		}

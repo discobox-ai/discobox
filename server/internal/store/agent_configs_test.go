@@ -59,3 +59,62 @@ func TestAgentConfigResourceEvents(t *testing.T) {
 		t.Fatalf("event seqs are not increasing: %d, %d, %d", events[0].Seq, events[1].Seq, events[2].Seq)
 	}
 }
+
+func TestDeleteAgentConfigClearsProjectDefault(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newTestStoreWithDB(t, nil)
+
+	project := &model.Project{
+		ID:          "project-1",
+		OwnerUserID: "user-1",
+		Name:        "Project",
+		Slug:        "project",
+	}
+	if err := s.UpsertProject(ctx, project); err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	defaultConfig := &model.AgentConfig{
+		ProjectID:  project.ID,
+		Name:       "Default",
+		RunCommand: "default-agent",
+	}
+	if err := s.CreateAgentConfig(ctx, defaultConfig); err != nil {
+		t.Fatalf("create default agent config: %v", err)
+	}
+	otherConfig := &model.AgentConfig{
+		ProjectID:  project.ID,
+		Name:       "Other",
+		RunCommand: "other-agent",
+	}
+	if err := s.CreateAgentConfig(ctx, otherConfig); err != nil {
+		t.Fatalf("create other agent config: %v", err)
+	}
+
+	project.DefaultAgentConfigID = defaultConfig.ID
+	if err := s.UpsertProject(ctx, project); err != nil {
+		t.Fatalf("set project default agent config: %v", err)
+	}
+
+	if err := s.DeleteAgentConfig(ctx, project.ID, otherConfig.ID); err != nil {
+		t.Fatalf("delete non-default agent config: %v", err)
+	}
+	got, err := s.GetProject(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("get project after non-default delete: %v", err)
+	}
+	if got.DefaultAgentConfigID != defaultConfig.ID {
+		t.Fatalf("default after non-default delete = %q, want %q", got.DefaultAgentConfigID, defaultConfig.ID)
+	}
+
+	if err := s.DeleteAgentConfig(ctx, project.ID, defaultConfig.ID); err != nil {
+		t.Fatalf("delete default agent config: %v", err)
+	}
+	got, err = s.GetProject(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("get project after default delete: %v", err)
+	}
+	if got.DefaultAgentConfigID != "" {
+		t.Fatalf("default after default delete = %q, want empty", got.DefaultAgentConfigID)
+	}
+}

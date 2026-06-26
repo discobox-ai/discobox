@@ -130,18 +130,11 @@ func (s *Service) SetDefaultAgentConfig(ctx context.Context, projectID, configID
 }
 
 func (s *Service) DeleteAgentConfig(ctx context.Context, projectID, configID string) error {
-	project, err := s.store.GetProject(ctx, projectID)
-	if err != nil {
+	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return apiError(err, "project not found")
 	}
 	if err := s.store.DeleteAgentConfig(ctx, projectID, configID); err != nil {
 		return apiError(err, "agent config not found")
-	}
-	if project.DefaultAgentConfigID == configID {
-		project.DefaultAgentConfigID = ""
-		if err := s.store.UpsertProject(ctx, project); err != nil {
-			return err
-		}
 	}
 	return nil
 }
