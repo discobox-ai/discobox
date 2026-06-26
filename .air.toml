@@ -5,7 +5,7 @@ tmp_dir = "build"
 [build]
   args_bin = []
   entrypoint = "./build/discobox-server"
-  cmd = "cd cli && go build -o ../build/discobox ./cmd/discobox && cd ../server && go build -gcflags=\"all=-N -l\" -o ../build/discobox-server ./cmd/discobox-server"
+  cmd = "cd cli && go build -o ../build/discobox ./cmd/discobox && cd ../server && go build -gcflags=\"all=-N -l\" -o ../build/discobox-server ./cmd/discobox-server && cd .. && go tool task build:hooks"
   delay = 1000
   exclude_dir = ["build", "vendor", "testdata", "node_modules"]
   exclude_file = []
@@ -13,7 +13,7 @@ tmp_dir = "build"
   exclude_unchanged = false
   follow_symlink = false
   full_bin = "./build/discobox-server"
-  include_dir = ["api", "apiclient", "apperrors", "cli", "gormdb", "id", "model", "orchestration", "providers", "sandboxprovider", "server", "workerbootstrap"]
+  include_dir = ["api", "apiclient", "apperrors", "cli", "gormdb", "hooks", "id", "model", "orchestration", "providers", "sandboxprovider", "server", "workerbootstrap"]
   include_ext = ["go", "tpl", "tmpl", "html", "sql"]
   include_file = [".env"]
   kill_delay = "10m"

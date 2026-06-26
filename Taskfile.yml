@@ -5,6 +5,8 @@ vars:
   SERVER_MAIN: ./cmd/discobox-server
   CLI_BINARY: build/discobox
   CLI_MAIN: ./cmd/discobox
+  HOOKS_BINARY: build/discobox-hooks
+  HOOKS_MAIN: ./cmd/discobox-hooks
   PACKAGES: ./...
   UI_DIR: ui
   ELECTRON_DIR: electron
@@ -16,10 +18,11 @@ tasks:
       - task --list
 
   build:
-    desc: Compile discobox-server, discobox CLI, UI, and Electron shell
+    desc: Compile discobox-server, discobox CLI, hooks CLI, UI, and Electron shell
     cmds:
       - task: build:server
       - task: build:cli
+      - task: build:hooks
       - task: build:ui
       - task: build:electron
 
@@ -34,6 +37,12 @@ tasks:
     cmds:
       - mkdir -p build
       - cd cli && go build -o ../{{.CLI_BINARY}} {{.CLI_MAIN}}
+
+  build:hooks:
+    desc: Compile discobox-hooks CLI
+    cmds:
+      - mkdir -p build
+      - cd hooks && go build -o ../{{.HOOKS_BINARY}} {{.HOOKS_MAIN}}
 
   build:ui:
     desc: Build the SvelteKit UI
