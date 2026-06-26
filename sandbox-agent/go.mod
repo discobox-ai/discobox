@@ -6,8 +6,10 @@ replace github.com/obot-platform/discobox => ..
 
 require (
 	aidanwoods.dev/go-paseto v1.6.0
+	github.com/coder/websocket v1.8.14
 	github.com/creack/pty v1.1.24
 	github.com/go-chi/chi/v5 v5.3.0
+	github.com/go-faster/jx v1.2.0
 	github.com/obot-platform/discobox v0.0.0
 	github.com/obot-platform/discobox/gormdb v0.0.0
 	gorm.io/gorm v1.31.1
@@ -24,7 +26,6 @@ require (
 	github.com/glebarez/go-sqlite v1.21.2 // indirect
 	github.com/glebarez/sqlite v1.11.0 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect
-	github.com/go-faster/jx v1.2.0 // indirect
 	github.com/go-faster/yaml v0.4.6 // indirect
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect

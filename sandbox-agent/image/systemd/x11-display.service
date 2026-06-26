@@ -1,0 +1,8 @@
+[Unit]
+Description=X11 display :0 socket proxy
+Requires=xvfb.service
+After=xvfb.service
+
+[Service]
+Type=notify
+ExecStart=/usr/lib/systemd/systemd-socket-proxyd 127.0.0.1:6000

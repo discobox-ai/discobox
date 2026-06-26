@@ -1,0 +1,8 @@
+[Unit]
+Description=WebSocket proxy socket activation on localhost port 6080
+
+[Socket]
+ListenStream=127.0.0.1:6080
+
+[Install]
+WantedBy=sockets.target

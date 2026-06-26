@@ -1,0 +1,16 @@
+[Unit]
+Description=Openbox window manager on display :0
+Requires=xvfb.service
+After=xvfb.service
+PartOf=xvfb.service
+
+[Service]
+Type=simple
+User=%i
+Environment=DISPLAY=:0
+ExecStart=/usr/bin/openbox-session
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

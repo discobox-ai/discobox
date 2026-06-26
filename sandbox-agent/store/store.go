@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/gormdb"
+	"github.com/obot-platform/discobox/sandbox-agent/execs"
 	"github.com/obot-platform/discobox/sandbox-agent/terminal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -39,6 +40,15 @@ type ResourceSample struct {
 	Data       json.RawMessage `json:"data"`
 }
 
+type AgentHookRecord struct {
+	ID         string          `json:"id,omitempty"`
+	TerminalID string          `json:"terminalId,omitempty"`
+	Provider   string          `json:"provider"`
+	Event      string          `json:"event"`
+	Payload    json.RawMessage `json:"payload"`
+	CreatedAt  time.Time       `json:"createdAt"`
+}
+
 func Open(ctx context.Context, dsn string) (*Store, error) {
 	if strings.TrimSpace(dsn) == "" {
 		dsn = DefaultDBPath
@@ -48,7 +58,7 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{write: pools.Write, read: pools.Read}
-	if err := s.write.WithContext(ctx).AutoMigrate(&TerminalState{}, &TerminalEvent{}, &ResourceSnapshot{}); err != nil {
+	if err := s.write.WithContext(ctx).AutoMigrate(&TerminalState{}, &TerminalEvent{}, &ResourceSnapshot{}, &AgentHookLog{}, &ExecState{}, &ExecEvent{}); err != nil {
 		return nil, fmt.Errorf("migrate sandbox-agent store: %w", err)
 	}
 	return s, nil
@@ -120,6 +130,77 @@ func (s *Store) ObserveTerminal(ctx context.Context, current terminal.Terminal) 
 		}
 		if previous.ExitedAt == nil && next.ExitedAt != nil {
 			return createEventTx(tx, current.ID, "terminal.exited", "terminal exited", terminalDetails(current))
+		}
+		return nil
+	})
+}
+
+func (s *Store) RecordExecEvent(ctx context.Context, execID, typ, message string, details map[string]any) error {
+	if s == nil {
+		return nil
+	}
+	typ = strings.TrimSpace(typ)
+	if typ == "" {
+		return fmt.Errorf("event type is required")
+	}
+	detailsJSON, err := json.Marshal(details)
+	if err != nil {
+		return err
+	}
+	id, err := newID()
+	if err != nil {
+		return err
+	}
+	return s.write.WithContext(ctx).Create(&ExecEvent{
+		ID:        id,
+		ExecID:    strings.TrimSpace(execID),
+		Type:      typ,
+		Message:   strings.TrimSpace(message),
+		Details:   detailsJSON,
+		CreatedAt: time.Now().UTC(),
+	}).Error
+}
+
+func (s *Store) ObserveExec(ctx context.Context, current execs.Exec) error {
+	if s == nil || current.ID == "" {
+		return nil
+	}
+	now := time.Now().UTC()
+	next := ExecState{
+		ExecID:     current.ID,
+		Unit:       current.Unit,
+		Status:     string(current.Status),
+		PID:        current.PID,
+		ExitCode:   current.ExitCode,
+		Error:      current.Error,
+		CreatedAt:  current.CreatedAt,
+		StartedAt:  current.StartedAt,
+		ExitedAt:   current.ExitedAt,
+		ObservedAt: now,
+		UpdatedAt:  now,
+	}
+	return s.write.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var previous ExecState
+		hadPrevious := tx.First(&previous, "exec_id = ?", current.ID).Error == nil
+		if err := tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "exec_id"}},
+			UpdateAll: true,
+		}).Create(&next).Error; err != nil {
+			return err
+		}
+		if !hadPrevious {
+			return createExecEventTx(tx, current.ID, "exec.observed", "exec observed", execDetails(current))
+		}
+		if previous.Status != next.Status {
+			if err := createExecEventTx(tx, current.ID, "exec.status.changed", "exec status changed", map[string]any{
+				"from": previous.Status,
+				"to":   next.Status,
+			}); err != nil {
+				return err
+			}
+		}
+		if previous.ExitedAt == nil && next.ExitedAt != nil {
+			return createExecEventTx(tx, current.ID, "exec.exited", "exec exited", execDetails(current))
 		}
 		return nil
 	})
@@ -241,6 +322,76 @@ func (s *Store) ListResourceSamples(ctx context.Context, terminalID string, limi
 	return out, nil
 }
 
+func (s *Store) RecordAgentHook(ctx context.Context, record AgentHookRecord) (AgentHookRecord, error) {
+	if s == nil {
+		return record, nil
+	}
+	record.Provider = strings.TrimSpace(record.Provider)
+	if record.Provider == "" {
+		return AgentHookRecord{}, fmt.Errorf("hook provider is required")
+	}
+	record.Event = strings.TrimSpace(record.Event)
+	if record.Event == "" {
+		return AgentHookRecord{}, fmt.Errorf("hook event is required")
+	}
+	if len(record.Payload) == 0 {
+		record.Payload = json.RawMessage(`{}`)
+	}
+	if !json.Valid(record.Payload) {
+		return AgentHookRecord{}, fmt.Errorf("hook payload must be valid JSON")
+	}
+	id, err := newID()
+	if err != nil {
+		return AgentHookRecord{}, err
+	}
+	record.ID = id
+	record.TerminalID = strings.TrimSpace(record.TerminalID)
+	record.CreatedAt = time.Now().UTC()
+	row := AgentHookLog{
+		ID:         record.ID,
+		TerminalID: record.TerminalID,
+		Provider:   record.Provider,
+		Event:      record.Event,
+		Payload:    append([]byte{}, record.Payload...),
+		CreatedAt:  record.CreatedAt,
+	}
+	return record, s.write.WithContext(ctx).Create(&row).Error
+}
+
+func (s *Store) ListAgentHooks(ctx context.Context, terminalID string, limit int) ([]AgentHookRecord, error) {
+	if s == nil {
+		return nil, nil
+	}
+	if limit <= 0 {
+		limit = 100
+	}
+	query := s.read.WithContext(ctx).Order("created_at DESC").Limit(limit)
+	if strings.TrimSpace(terminalID) != "" {
+		query = query.Where("terminal_id = ?", strings.TrimSpace(terminalID))
+	}
+	var rows []AgentHookLog
+	if err := query.Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]AgentHookRecord, 0, len(rows))
+	for i := len(rows) - 1; i >= 0; i-- {
+		row := rows[i]
+		payload := json.RawMessage(append([]byte{}, row.Payload...))
+		if len(payload) == 0 || !json.Valid(payload) {
+			payload = json.RawMessage(`{}`)
+		}
+		out = append(out, AgentHookRecord{
+			ID:         row.ID,
+			TerminalID: row.TerminalID,
+			Provider:   row.Provider,
+			Event:      row.Event,
+			Payload:    payload,
+			CreatedAt:  row.CreatedAt,
+		})
+	}
+	return out, nil
+}
+
 func createEventTx(tx *gorm.DB, terminalID, typ, message string, details map[string]any) error {
 	detailsJSON, err := json.Marshal(details)
 	if err != nil {
@@ -260,6 +411,25 @@ func createEventTx(tx *gorm.DB, terminalID, typ, message string, details map[str
 	}).Error
 }
 
+func createExecEventTx(tx *gorm.DB, execID, typ, message string, details map[string]any) error {
+	detailsJSON, err := json.Marshal(details)
+	if err != nil {
+		return err
+	}
+	id, err := newID()
+	if err != nil {
+		return err
+	}
+	return tx.Create(&ExecEvent{
+		ID:        id,
+		ExecID:    execID,
+		Type:      typ,
+		Message:   message,
+		Details:   detailsJSON,
+		CreatedAt: time.Now().UTC(),
+	}).Error
+}
+
 func terminalDetails(t terminal.Terminal) map[string]any {
 	return map[string]any{
 		"status":   t.Status,
@@ -267,6 +437,16 @@ func terminalDetails(t terminal.Terminal) map[string]any {
 		"pid":      t.PID,
 		"exitCode": t.ExitCode,
 		"error":    t.Error,
+	}
+}
+
+func execDetails(e execs.Exec) map[string]any {
+	return map[string]any{
+		"status":   e.Status,
+		"unit":     e.Unit,
+		"pid":      e.PID,
+		"exitCode": e.ExitCode,
+		"error":    e.Error,
 	}
 }
 

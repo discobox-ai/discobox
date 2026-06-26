@@ -1,0 +1,18 @@
+[Unit]
+Description=x11vnc VNC server (per-connection)
+Requires=xvfb.service
+After=xvfb.service
+
+[Service]
+Type=simple
+NoNewPrivileges=true
+ProtectSystem=full
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+ExecStartPre=/bin/bash -c 'for i in {1..50}; do : > /dev/tcp/127.0.0.1/6000 && exit 0; sleep 0.1; done; exit 1'
+ExecStart=/usr/bin/x11vnc -inetd -display :0 -once -shared -nopw -xrandr resize
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal

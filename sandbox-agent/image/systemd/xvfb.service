@@ -1,0 +1,9 @@
+[Unit]
+Description=Xdummy virtual X11 display on :0
+
+[Service]
+Type=simple
+ExecStartPre=-/bin/rm -f /tmp/.X11-unix/X0 /tmp/.X0-lock
+ExecStart=/usr/lib/xorg/Xorg :0 -config /etc/X11/xorg-dummy.conf -noreset -ac -listen tcp -nolisten local +extension RANDR
+Restart=on-failure
+RestartSec=2

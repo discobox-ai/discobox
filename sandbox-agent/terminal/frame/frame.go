@@ -8,11 +8,13 @@ import (
 )
 
 const (
-	Output byte = 1
-	Input  byte = 2
-	Resize byte = 3
-	Signal byte = 4
-	Error  byte = 5
+	Output     byte = 1
+	Input      byte = 2
+	Resize     byte = 3
+	Signal     byte = 4
+	Error      byte = 5
+	Exit       byte = 6
+	CloseInput byte = 7
 )
 
 const maxPayload = 16 * 1024 * 1024
@@ -25,6 +27,12 @@ type Frame struct {
 type ResizePayload struct {
 	Cols uint16 `json:"cols"`
 	Rows uint16 `json:"rows"`
+}
+
+type ExitPayload struct {
+	Status   string `json:"status"`
+	ExitCode *int64 `json:"exitCode,omitempty"`
+	Error    string `json:"error,omitempty"`
 }
 
 func Write(w io.Writer, typ byte, payload []byte) error {
@@ -76,6 +84,22 @@ func DecodeResize(payload []byte) (ResizePayload, error) {
 	}
 	if req.Cols == 0 || req.Rows == 0 {
 		return ResizePayload{}, fmt.Errorf("rows and cols are required")
+	}
+	return req, nil
+}
+
+func EncodeExit(status string, exitCode *int64, message string) ([]byte, error) {
+	return json.Marshal(ExitPayload{
+		Status:   status,
+		ExitCode: exitCode,
+		Error:    message,
+	})
+}
+
+func DecodeExit(payload []byte) (ExitPayload, error) {
+	var req ExitPayload
+	if err := json.Unmarshal(payload, &req); err != nil {
+		return ExitPayload{}, err
 	}
 	return req, nil
 }

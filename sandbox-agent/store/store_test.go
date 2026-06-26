@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -24,6 +25,33 @@ func TestRecordAndListEvents(t *testing.T) {
 	}
 	if len(events) != 1 || events[0].Type != "terminal.created" || events[0].Details["agentId"] != "codex" {
 		t.Fatalf("events = %#v", events)
+	}
+}
+
+func TestRecordAndListAgentHooks(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "agent.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	_, err = st.RecordAgentHook(ctx, AgentHookRecord{
+		TerminalID: "agt_1",
+		Provider:   "codex",
+		Event:      "PreToolUse",
+		Payload:    json.RawMessage(`{"tool_name":"Bash"}`),
+	})
+	if err != nil {
+		t.Fatalf("record hook: %v", err)
+	}
+	hooks, err := st.ListAgentHooks(ctx, "agt_1", 10)
+	if err != nil {
+		t.Fatalf("list hooks: %v", err)
+	}
+	if len(hooks) != 1 || hooks[0].Provider != "codex" || hooks[0].Event != "PreToolUse" {
+		t.Fatalf("hooks = %#v", hooks)
+	}
+	if string(hooks[0].Payload) != `{"tool_name":"Bash"}` {
+		t.Fatalf("payload = %s", hooks[0].Payload)
 	}
 }
 

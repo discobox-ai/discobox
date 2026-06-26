@@ -119,6 +119,7 @@ Root module package map:
 | [`api/gen`](api/gen) | Generated client/server API scaffold from `api/openapi/server.yaml`, plus handwritten client helpers for transports OpenAPI generation cannot own. |
 | [`api/sandboxgen`](api/sandboxgen) | Generated client/server API scaffold from generated `api/openapi/sandbox.yaml`, the sandbox-agent subset of the server contract. |
 | [`api/model`](api/model) | Generated stable aliases for server REST API schema types. |
+| [`harness`](harness) | Coding-agent hook registration drivers for sandbox terminal agents. |
 | [`id`](id) | Shared identifier helpers. |
 
 Submodule package docs belong in their owning module trees and are intentionally

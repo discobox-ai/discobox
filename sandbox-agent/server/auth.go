@@ -17,6 +17,8 @@ const (
 
 	ScopeTerminalRead  = "terminal:read"
 	ScopeTerminalWrite = "terminal:write"
+	ScopeExecRead      = "exec:read"
+	ScopeExecWrite     = "exec:write"
 )
 
 type signedTokenClaimsContextKey struct{}
@@ -35,6 +37,10 @@ func (c SignedTokenClaims) HasScope(scope string) bool {
 			return true
 		case "terminal:*":
 			if strings.HasPrefix(scope, "terminal:") {
+				return true
+			}
+		case "exec:*":
+			if strings.HasPrefix(scope, "exec:") {
 				return true
 			}
 		}
@@ -158,17 +164,30 @@ func routeIdentity(path string) (string, string, bool) {
 }
 
 func requiredRequestScope(r *http.Request) string {
-	if !strings.Contains(r.URL.Path, "/agent-terminals") {
-		return ""
+	if strings.Contains(r.URL.Path, "/agent-terminals") || strings.Contains(r.URL.Path, "/agent-hooks") {
+		switch r.Method {
+		case http.MethodGet:
+			return ScopeTerminalRead
+		case http.MethodPost, http.MethodDelete:
+			return ScopeTerminalWrite
+		default:
+			return ""
+		}
 	}
-	switch r.Method {
-	case http.MethodGet:
-		return ScopeTerminalRead
-	case http.MethodPost, http.MethodDelete:
-		return ScopeTerminalWrite
-	default:
-		return ""
+	if strings.Contains(r.URL.Path, "/execs") {
+		if strings.HasSuffix(r.URL.Path, "/attach") {
+			return ScopeExecWrite
+		}
+		switch r.Method {
+		case http.MethodGet:
+			return ScopeExecRead
+		case http.MethodPost, http.MethodDelete:
+			return ScopeExecWrite
+		default:
+			return ""
+		}
 	}
+	return ""
 }
 
 func bearerToken(header string) (string, bool) {

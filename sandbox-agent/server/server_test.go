@@ -71,6 +71,104 @@ func TestListAgentTerminalsRejectsWriteOnlyScope(t *testing.T) {
 	}
 }
 
+func TestListAgentHooksRequiresTerminalReadScope(t *testing.T) {
+	publicKey, signToken := sandboxAgentTestSigner(t)
+	router, err := NewRouter(testConfig(publicKey))
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/agent-hooks", nil)
+	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeTerminalRead))
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("GET agent hooks status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	if body := resp.Body.String(); body != `{"hooks":[]}` {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestListAgentHooksRejectsWriteOnlyScope(t *testing.T) {
+	publicKey, signToken := sandboxAgentTestSigner(t)
+	router, err := NewRouter(testConfig(publicKey))
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/agent-hooks", nil)
+	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeTerminalWrite))
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("GET agent hooks status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestListSandboxExecsRequiresExecReadScope(t *testing.T) {
+	publicKey, signToken := sandboxAgentTestSigner(t)
+	router, err := NewRouter(testConfig(publicKey))
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/execs", nil)
+	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeExecRead))
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("GET sandbox execs status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	if body := resp.Body.String(); body != `{"execs":[]}` {
+		t.Fatalf("body = %q", body)
+	}
+}
+
+func TestListSandboxExecsRejectsTerminalReadScope(t *testing.T) {
+	publicKey, signToken := sandboxAgentTestSigner(t)
+	router, err := NewRouter(testConfig(publicKey))
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/execs", nil)
+	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeTerminalRead))
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("GET sandbox execs status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestAttachSandboxExecRequiresExecWriteScope(t *testing.T) {
+	publicKey, signToken := sandboxAgentTestSigner(t)
+	router, err := NewRouter(testConfig(publicKey))
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	readResp := httptest.NewRecorder()
+	readReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/execs/exec-1/attach", nil)
+	readReq.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeExecRead))
+	router.ServeHTTP(readResp, readReq)
+	if readResp.Code != http.StatusForbidden {
+		t.Fatalf("GET sandbox exec attach with read scope status = %d, body = %s", readResp.Code, readResp.Body.String())
+	}
+
+	writeResp := httptest.NewRecorder()
+	writeReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/execs/exec-1/attach", nil)
+	writeReq.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeExecWrite))
+	router.ServeHTTP(writeResp, writeReq)
+	if writeResp.Code == http.StatusForbidden {
+		t.Fatalf("GET sandbox exec attach with write scope status = %d, body = %s", writeResp.Code, writeResp.Body.String())
+	}
+}
+
 func TestCreateAgentTerminalRequiresWriteScope(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
 	runner := &sandboxAgentFakeRunner{}
@@ -91,7 +189,7 @@ func TestCreateAgentTerminalRequiresWriteScope(t *testing.T) {
 	if len(runner.starts) != 1 {
 		t.Fatalf("starts = %#v", runner.starts)
 	}
-	if body := resp.Body.String(); !strings.Contains(body, `"status":"running"`) || !strings.Contains(body, `"command":["codex"]`) {
+	if body := resp.Body.String(); !strings.Contains(body, `"status":"starting"`) || !strings.Contains(body, `"command":["codex"]`) {
 		t.Fatalf("body = %q", body)
 	}
 }
@@ -195,7 +293,16 @@ func TestAgentTerminalResourceStreamReplaysHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
-	created, err := terminal.NewManager(cfg.Agents, cfg.WorkingRoot, cfg.RuntimeDir, runner, st)
+	created, err := terminal.NewManager(terminal.ManagerConfig{
+		ResolvedAgentConfig: cfg.ResolvedAgentConfig,
+		AgentConfigs:        cfg.AgentConfigs,
+		Agents:              cfg.Agents,
+		WorkingRoot:         cfg.WorkingRoot,
+		RuntimeDir:          cfg.RuntimeDir,
+		Units:               runner,
+		Installer:           cfg.Installer,
+		Audit:               st,
+	})
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
@@ -244,6 +351,7 @@ func testConfig(publicKey string) Config {
 			Command: []string{"codex"},
 		}},
 		UnitManager:   &sandboxAgentFakeRunner{},
+		Installer:     sandboxAgentNoopInstaller{},
 		AuditRecorder: sandboxAgentNoopAudit{},
 	}
 }
@@ -307,6 +415,12 @@ func (r *sandboxAgentFakeRunner) List(context.Context) ([]terminal.UnitStatus, e
 }
 
 type sandboxAgentNoopAudit struct{}
+
+type sandboxAgentNoopInstaller struct{}
+
+func (sandboxAgentNoopInstaller) EnsureInstalled(context.Context, config.Agent, string, map[string]string) error {
+	return nil
+}
 
 func (sandboxAgentNoopAudit) RecordEvent(context.Context, string, string, string, map[string]any) error {
 	return nil

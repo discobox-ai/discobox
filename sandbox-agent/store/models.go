@@ -39,3 +39,41 @@ type ResourceSnapshot struct {
 }
 
 func (ResourceSnapshot) TableName() string { return "resource_snapshots" }
+
+type AgentHookLog struct {
+	ID         string    `gorm:"primaryKey" json:"id"`
+	TerminalID string    `gorm:"index:idx_agent_hook_logs_terminal_created,priority:1" json:"terminalId,omitempty"`
+	Provider   string    `gorm:"index" json:"provider"`
+	Event      string    `gorm:"index" json:"event"`
+	Payload    []byte    `gorm:"type:json" json:"payload"`
+	CreatedAt  time.Time `gorm:"index:idx_agent_hook_logs_terminal_created,priority:2" json:"createdAt"`
+}
+
+func (AgentHookLog) TableName() string { return "agent_hook_logs" }
+
+type ExecState struct {
+	ExecID     string     `gorm:"primaryKey" json:"execId"`
+	Unit       string     `gorm:"index" json:"unit,omitempty"`
+	Status     string     `gorm:"index" json:"status"`
+	PID        int64      `json:"pid,omitempty"`
+	ExitCode   *int64     `json:"exitCode,omitempty"`
+	Error      string     `json:"error,omitempty"`
+	CreatedAt  time.Time  `json:"createdAt"`
+	StartedAt  *time.Time `json:"startedAt,omitempty"`
+	ExitedAt   *time.Time `json:"exitedAt,omitempty"`
+	ObservedAt time.Time  `gorm:"index" json:"observedAt"`
+	UpdatedAt  time.Time  `json:"updatedAt"`
+}
+
+func (ExecState) TableName() string { return "exec_states" }
+
+type ExecEvent struct {
+	ID        string    `gorm:"primaryKey" json:"id"`
+	ExecID    string    `gorm:"index" json:"execId,omitempty"`
+	Type      string    `gorm:"index" json:"type"`
+	Message   string    `json:"message,omitempty"`
+	Details   []byte    `gorm:"type:json" json:"-"`
+	CreatedAt time.Time `gorm:"index" json:"createdAt"`
+}
+
+func (ExecEvent) TableName() string { return "exec_events" }

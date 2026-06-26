@@ -1,0 +1,10 @@
+[Unit]
+Description=X11 display :0 socket activation
+
+[Socket]
+ListenStream=/tmp/.X11-unix/X0
+SocketMode=0777
+DirectoryMode=0777
+
+[Install]
+WantedBy=sockets.target

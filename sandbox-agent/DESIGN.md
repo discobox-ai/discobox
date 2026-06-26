@@ -19,13 +19,15 @@ runtime operations.
 | `terminal` | Agent terminal lifecycle, runtime metadata, systemd unit abstraction, and attach proxying. |
 | `terminal/shim` | Per-terminal child process that owns the PTY and local Unix socket attach/status API. |
 | `terminal/frame` | Docker-exec-style binary stream framing shared by terminal attach endpoints. |
+| `execs` | Ephemeral sandbox exec lifecycle, runtime metadata, systemd unit abstraction, stdout/stderr or PTY logging, and shim launch. |
+| `hooks` | Local Unix-socket collector and publisher protocol for coding-agent lifecycle hook payloads. |
 | `resources` | Opaque cgroup/procfs/systemd-style resource snapshot collection for terminal runtimes. |
 | `store` | Sandbox-local SQLite/GORM audit log, observed terminal state snapshots, and retained resource blobs. |
-| `Dockerfile` | `codex-universal`-based systemd sandbox runtime image with Docker, desktop, and Nix tooling. |
+| `Dockerfile` | Debian-based systemd sandbox runtime image with Docker, development tools, Chromium, socket-activated desktop access, code-server, and Nix tooling. |
 
 ## Boundary Rules
 
-- Implement the generated in-sandbox terminal API subset from `api/sandboxgen`;
+- Implement the generated in-sandbox terminal and exec API subset from `api/sandboxgen`;
   canonical route and DTO definitions live in `api/openapi/server.yaml`.
 - Depend on root contracts and generated API types only for cross-module data.
 - Do not import server internals or provider implementation packages.
@@ -36,7 +38,7 @@ runtime operations.
 - Treat systemd as the source of truth for terminal unit liveness. Runtime JSON
   files identify known terminals; reconciliation joins those files with systemd
   status and shim status.
-- Keep terminal history local. The SQLite store records append-only lifecycle
-  events, the latest observed terminal state, and retained opaque resource
-  samples, but REST terminal state should be derived from runtime/systemd/shim
+- Keep terminal and exec history local. The SQLite store records append-only
+  lifecycle events, latest observed runtime state, and retained opaque resource
+  samples, but REST runtime state should be derived from runtime/systemd/shim
   observations instead of an in-memory cache.

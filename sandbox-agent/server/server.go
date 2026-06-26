@@ -7,12 +7,15 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	sandboxapi "github.com/obot-platform/discobox/api/sandboxgen"
 
 	"github.com/obot-platform/discobox/sandbox-agent/config"
+	"github.com/obot-platform/discobox/sandbox-agent/execs"
+	agenthooks "github.com/obot-platform/discobox/sandbox-agent/hooks"
 	"github.com/obot-platform/discobox/sandbox-agent/resources"
 	agentstore "github.com/obot-platform/discobox/sandbox-agent/store"
 	"github.com/obot-platform/discobox/sandbox-agent/terminal"
@@ -32,9 +35,14 @@ type Config struct {
 	RuntimeDir            string
 	DatabasePath          string
 	Resources             config.ResourceConfig
+	ResolvedAgentConfig   *config.Agent
+	AgentConfigs          []config.Agent
 	Agents                []config.Agent
 	UnitManager           terminal.UnitManager
+	Installer             terminal.Installer
+	ExecUnitManager       execs.UnitManager
 	AuditRecorder         terminal.AuditRecorder
+	ExecAuditRecorder     execs.AuditRecorder
 	Store                 *agentstore.Store
 	ResourceCollector     resources.Collector
 }
@@ -52,16 +60,18 @@ func ConfigFromAgentConfig(cfg config.Config) Config {
 		RuntimeDir:            cfg.RuntimeDir,
 		DatabasePath:          cfg.DatabasePath,
 		Resources:             cfg.Resources,
+		ResolvedAgentConfig:   cfg.ResolvedAgentConfig,
+		AgentConfigs:          cfg.AgentConfigs,
 		Agents:                cfg.Agents,
 	}
 }
 
 func NewRouter(cfg Config) (*chi.Mux, error) {
-	router, _, err := newRouterAndManager(cfg)
+	router, _, _, _, err := newRouterAndManager(cfg)
 	return router, err
 }
 
-func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Manager, error) {
+func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Manager, *execs.Manager, *agentstore.Store, error) {
 	if cfg.WorkingRoot == "" {
 		cfg.WorkingRoot = "/workspace"
 	}
@@ -76,28 +86,48 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Manager, error) {
 	}
 	localStore := cfg.Store
 	audit := cfg.AuditRecorder
+	execAudit := cfg.ExecAuditRecorder
 	if localStore == nil && audit == nil {
 		st, err := agentstore.Open(context.Background(), cfg.DatabasePath)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		localStore = st
 		audit = st
+		execAudit = st
 	}
 	if audit == nil && localStore != nil {
 		audit = localStore
 	}
+	if execAudit == nil && localStore != nil {
+		execAudit = localStore
+	}
 	authenticator, err := NewSignedTokenAuthenticator(cfg.Identity, cfg.ControlPlanePublicKey)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, nil, err
 	}
-	manager, err := terminal.NewManager(cfg.Agents, cfg.WorkingRoot, cfg.RuntimeDir, cfg.UnitManager, audit)
+	manager, err := terminal.NewManager(terminal.ManagerConfig{
+		ResolvedAgentConfig: cfg.ResolvedAgentConfig,
+		AgentConfigs:        cfg.AgentConfigs,
+		Agents:              cfg.Agents,
+		WorkingRoot:         cfg.WorkingRoot,
+		RuntimeDir:          cfg.RuntimeDir,
+		Units:               cfg.UnitManager,
+		Installer:           cfg.Installer,
+		Audit:               audit,
+	})
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, nil, err
+	}
+	manager.SetHookSocketPath(agenthooks.SocketPath(cfg.RuntimeDir))
+	execManager, err := execs.NewManager(cfg.WorkingRoot, filepath.Join(cfg.RuntimeDir, "execs"), cfg.ExecUnitManager, execAudit)
+	if err != nil {
+		return nil, nil, nil, nil, err
 	}
 	handler := &handler{
 		identity:          cfg.Identity,
 		terminals:         manager,
+		execs:             execManager,
 		store:             localStore,
 		resourceCollector: cfg.ResourceCollector,
 		resourceInterval:  cfg.Resources.SampleInterval,
@@ -105,7 +135,7 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Manager, error) {
 	}
 	generated, err := sandboxapi.NewServer(handler)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	router := chi.NewRouter()
@@ -127,9 +157,18 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Manager, error) {
 		protected.Post("/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/attach", func(w http.ResponseWriter, r *http.Request) {
 			handler.attachHTTP(w, r, chi.URLParam(r, "terminalId"))
 		})
+		protected.Post("/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/start", func(w http.ResponseWriter, r *http.Request) {
+			handler.startTerminalHTTP(w, r, chi.URLParam(r, "terminalId"))
+		})
+		protected.Get("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach", func(w http.ResponseWriter, r *http.Request) {
+			handler.attachExecHTTP(w, r, chi.URLParam(r, "execId"))
+		})
+		protected.Post("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start", func(w http.ResponseWriter, r *http.Request) {
+			handler.startExecHTTP(w, r, chi.URLParam(r, "execId"))
+		})
 		protected.Mount("/", generated)
 	})
-	return router, manager, nil
+	return router, manager, execManager, localStore, nil
 }
 
 func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
@@ -140,11 +179,17 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	if addr == "" {
 		addr = ":3003"
 	}
-	router, manager, err := newRouterAndManager(cfg)
+	router, manager, execManager, localStore, err := newRouterAndManager(cfg)
 	if err != nil {
 		return err
 	}
 	go reconcileLoop(ctx, logger, manager)
+	go execReconcileLoop(ctx, logger, execManager)
+	go func() {
+		if err := agenthooks.Serve(ctx, agenthooks.SocketPath(cfg.RuntimeDir), localStore); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Debug("sandbox agent hook collector stopped", "error", err)
+		}
+	}()
 	httpServer := &http.Server{
 		Addr:              addr,
 		Handler:           router,
@@ -170,6 +215,21 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 			return nil
 		}
 		return err
+	}
+}
+
+func execReconcileLoop(ctx context.Context, logger *slog.Logger, manager *execs.Manager) {
+	ticker := time.NewTicker(2 * time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if err := manager.Reconcile(ctx); err != nil {
+				logger.Debug("sandbox agent exec reconcile failed", "error", err)
+			}
+		}
 	}
 }
 

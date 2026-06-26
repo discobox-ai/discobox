@@ -1,0 +1,9 @@
+[Unit]
+Description=x11vnc VNC server socket activation on localhost port 5900
+
+[Socket]
+ListenStream=127.0.0.1:5900
+Accept=true
+
+[Install]
+WantedBy=sockets.target

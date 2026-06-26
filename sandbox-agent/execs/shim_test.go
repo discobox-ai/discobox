@@ -1,22 +1,19 @@
-package shim
+package execs
 
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/obot-platform/discobox/sandbox-agent/shimproxy"
-	"github.com/obot-platform/discobox/sandbox-agent/terminal"
 	"github.com/obot-platform/discobox/sandbox-agent/terminal/frame"
 )
 
-func TestRunRecordsExitStatus(t *testing.T) {
+func TestRunShimSendsOutputBeforeExitFrame(t *testing.T) {
 	dir := t.TempDir()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -24,64 +21,13 @@ func TestRunRecordsExitStatus(t *testing.T) {
 	socketPath := filepath.Join(dir, "shim.sock")
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- Run(ctx, Config{
-			TerminalID:  "agt_test",
-			AgentID:     "test",
-			Command:     []string{"sh", "-c", "trap '' HUP; exit 7"},
-			Workdir:     dir,
-			SocketPath:  socketPath,
-			RuntimePath: filepath.Join(dir, "runtime.json"),
-			Rows:        24,
-			Cols:        80,
-		})
-	}()
-
-	if _, err := shimproxy.StartJSON[terminal.Terminal](ctx, socketPath); err != nil {
-		t.Fatalf("start shim: %v", err)
-	}
-	if err := <-errCh; err != nil {
-		t.Fatalf("run shim: %v", err)
-	}
-
-	data, err := os.ReadFile(filepath.Join(dir, "runtime.json"))
-	if err != nil {
-		t.Fatalf("read runtime: %v", err)
-	}
-	var status terminal.Terminal
-	if err := json.Unmarshal(data, &status); err != nil {
-		t.Fatalf("parse runtime: %v", err)
-	}
-	if status.Status != terminal.StatusFailed {
-		t.Fatalf("status = %q", status.Status)
-	}
-	if status.ExitCode == nil || *status.ExitCode == 0 {
-		if status.ExitCode == nil {
-			t.Fatalf("exit code was not recorded")
-		}
-		t.Fatalf("exit code = %d", *status.ExitCode)
-	}
-	if status.ExitedAt == nil {
-		t.Fatalf("exitedAt was not recorded")
-	}
-}
-
-func TestRunSendsOutputBeforeExitFrame(t *testing.T) {
-	dir := t.TempDir()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	socketPath := filepath.Join(dir, "shim.sock")
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- Run(ctx, Config{
-			TerminalID:  "agt_test",
-			AgentID:     "test",
+		errCh <- RunShim(ctx, ShimConfig{
+			ExecID:      "exec_test",
 			Command:     []string{"sh", "-c", "printf hi; exit 7"},
 			Workdir:     dir,
 			SocketPath:  socketPath,
 			RuntimePath: filepath.Join(dir, "runtime.json"),
-			Rows:        24,
-			Cols:        80,
+			LogDir:      filepath.Join(dir, "logs"),
 		})
 	}()
 
@@ -95,7 +41,7 @@ func TestRunSendsOutputBeforeExitFrame(t *testing.T) {
 		t.Fatalf("new attach request: %v", err)
 	}
 	req.Header.Set("Connection", "Upgrade")
-	req.Header.Set("Upgrade", "discobox-agent-terminal")
+	req.Header.Set("Upgrade", "discobox-sandbox-exec")
 	if err := req.Write(conn); err != nil {
 		t.Fatalf("write attach request: %v", err)
 	}
@@ -108,7 +54,7 @@ func TestRunSendsOutputBeforeExitFrame(t *testing.T) {
 		t.Fatalf("attach status = %s", resp.Status)
 	}
 
-	if _, err := shimproxy.StartJSON[terminal.Terminal](ctx, socketPath); err != nil {
+	if _, err := shimproxy.StartJSON[Exec](ctx, socketPath); err != nil {
 		t.Fatalf("start shim: %v", err)
 	}
 

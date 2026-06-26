@@ -1,0 +1,159 @@
+#!/usr/bin/env python3
+
+import os
+import subprocess
+import sys
+import threading
+from urllib.parse import parse_qs, urlparse
+
+from websockify import websocketproxy
+
+
+MIN_WIDTH = 640
+MIN_HEIGHT = 360
+MAX_WIDTH = 3000
+MAX_HEIGHT = 2000
+RESIZE_BUCKET_SIZE = 64
+MAX_DYNAMIC_MODES = 32
+REFRESH_RATE = 60
+DISPLAY = ":0"
+COMMAND_TIMEOUT_SECONDS = 3
+XRANDR = "/usr/bin/xrandr"
+GTF = "/usr/bin/gtf"
+
+_resize_lock = threading.Lock()
+_mode_cache = set()
+
+
+class DesktopResizeError(Exception):
+    pass
+
+
+class DesktopProxyRequestHandler(websocketproxy.ProxyRequestHandler):
+    def new_websocket_client(self):
+        size = requested_desktop_size(self.path)
+        if size is not None:
+            resize_desktop(*size)
+        super().new_websocket_client()
+
+
+def requested_desktop_size(path):
+    parsed = urlparse(path)
+    values = parse_qs(parsed.query, max_num_fields=8)
+    if "x" not in values and "y" not in values:
+        return None
+    if "x" not in values or "y" not in values:
+        raise DesktopResizeError("both x and y are required")
+    width = parse_dimension(values["x"], MIN_WIDTH, MAX_WIDTH)
+    height = parse_dimension(values["y"], MIN_HEIGHT, MAX_HEIGHT)
+    return normalize_dimension(width), normalize_dimension(height)
+
+
+def parse_dimension(values, min_value, max_value):
+    if len(values) != 1 or not values[0].isdigit():
+        raise DesktopResizeError("desktop dimensions must be positive integers")
+    value = int(values[0])
+    if value < min_value or value > max_value:
+        raise DesktopResizeError("desktop dimension is out of range")
+    return value
+
+
+def normalize_dimension(value):
+    return ((value + RESIZE_BUCKET_SIZE - 1) // RESIZE_BUCKET_SIZE) * RESIZE_BUCKET_SIZE
+
+
+def resize_desktop(width, height):
+    if not _resize_lock.acquire(blocking=False):
+        raise DesktopResizeError("desktop resize already in progress")
+    try:
+        output = connected_output()
+        mode = f"{width}x{height}_{REFRESH_RATE}.00"
+        if current_size() == (width, height):
+            return
+        ensure_mode(output, mode, width, height)
+        run([XRANDR, "--output", output, "--mode", mode])
+    finally:
+        _resize_lock.release()
+
+
+def connected_output():
+    result = run([XRANDR, "--query"])
+    for line in result.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[1] == "connected":
+            return parts[0]
+    raise DesktopResizeError("no connected XRandR output found")
+
+
+def current_size():
+    result = run([XRANDR, "--query"])
+    parts = result.stdout.splitlines()[0].split()
+    return int(parts[7]), int(parts[9].rstrip(","))
+
+
+def ensure_mode(output, mode, width, height):
+    cache_key = (output, mode)
+    if cache_key in _mode_cache:
+        return
+    known_modes = run([XRANDR, "--query"]).stdout
+    if mode not in known_modes:
+        if len(_mode_cache) >= MAX_DYNAMIC_MODES:
+            raise DesktopResizeError("desktop resize mode limit reached")
+        modeline = generate_modeline(width, height)
+        add_new_mode(mode, modeline)
+    add_mode(output, mode)
+    _mode_cache.add(cache_key)
+
+
+def generate_modeline(width, height):
+    result = run([GTF, str(width), str(height), str(REFRESH_RATE)])
+    for line in result.stdout.splitlines():
+        line = line.strip()
+        if line.startswith("Modeline "):
+            return line.split()[2:]
+    raise DesktopResizeError("could not generate display mode")
+
+
+def add_new_mode(mode, modeline):
+    result = run([XRANDR, "--newmode", mode, *modeline], check=False)
+    if result.returncode != 0 and "already exists" not in result.stderr.lower():
+        raise DesktopResizeError(result.stderr.strip() or "could not create display mode")
+
+
+def add_mode(output, mode):
+    result = run([XRANDR, "--addmode", output, mode], check=False)
+    if result.returncode != 0 and "already exists" not in result.stderr.lower():
+        raise DesktopResizeError(result.stderr.strip() or "could not add display mode")
+
+
+def run(command, check=True):
+    result = subprocess.run(
+        command,
+        check=False,
+        env={"DISPLAY": DISPLAY, "PATH": "/usr/bin:/bin"},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=COMMAND_TIMEOUT_SECONDS,
+    )
+    if check and result.returncode != 0:
+        raise DesktopResizeError(result.stderr.strip() or f"{os.path.basename(command[0])} failed")
+    return result
+
+
+def main():
+    server = websocketproxy.WebSocketProxy(
+        RequestHandlerClass=DesktopProxyRequestHandler,
+        listen_host="127.0.0.1",
+        listen_port=6081,
+        target_host="127.0.0.1",
+        target_port=5900,
+    )
+    server.start_server()
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except KeyboardInterrupt:
+        sys.exit(0)

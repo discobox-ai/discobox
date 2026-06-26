@@ -140,6 +140,7 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 		"go.sum",
 		"api/sandboxgen",
 		"gormdb",
+		"harness",
 	} {
 		path := filepath.Join(repoRoot, rel)
 		if info, err := os.Stat(path); err == nil && info.IsDir() {

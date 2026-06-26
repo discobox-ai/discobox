@@ -13,7 +13,6 @@ fi
 
 if [ "$discobox_user_uid" = "0" ]; then
   discobox_user_name="root"
-  discobox_user_home="/root"
 else
   if getent group "$discobox_user_gid" >/dev/null; then
     discobox_group_name="$(getent group "$discobox_user_gid" | cut -d: -f1)"
@@ -56,11 +55,10 @@ if [ -z "$(find "$discobox_user_home" -mindepth 1 -maxdepth 1 -print -quit)" ] &
   fi
   shopt -u dotglob nullglob
 fi
-chown -R --no-dereference "$discobox_user_uid:$discobox_user_gid" "$discobox_user_home"
-
-if [ "${DISCOBOX_SKIP_CODEX_UNIVERSAL_SETUP:-}" != "1" ] && [ -x /opt/codex/setup_universal.sh ]; then
-  echo "Configuring codex-universal runtimes..."
-  /opt/codex/setup_universal.sh
+if [ "$discobox_user_uid" = "0" ]; then
+  chown --no-dereference "$discobox_user_uid:$discobox_user_gid" "$discobox_user_home"
+else
+  chown -R --no-dereference "$discobox_user_uid:$discobox_user_gid" "$discobox_user_home"
 fi
 
 if [ "$#" -eq 0 ]; then
@@ -76,6 +74,28 @@ esac
 
 case "$1" in
   /sbin/init|/lib/systemd/systemd|systemd)
+    if [ -f /etc/systemd/system/openbox@.service ] && [ -f /etc/systemd/system/xvfb.service ]; then
+      install -d -m 0755 /etc/systemd/system/xvfb.service.d
+      cat > /etc/systemd/system/xvfb.service.d/discobox-desktop-user.conf <<EOF
+[Unit]
+Wants=openbox@${discobox_user_name}.service
+EOF
+    fi
+    if [ -f /etc/systemd/system/x11vnc@.service ]; then
+      install -d -m 0755 /etc/systemd/system/x11vnc@.service.d
+      cat > /etc/systemd/system/x11vnc@.service.d/discobox-desktop-user.conf <<EOF
+[Service]
+User=${discobox_user_name}
+EOF
+    fi
+    if [ -f /etc/systemd/system/websockify@.service ] && [ -f /etc/systemd/system/websockify-proxy.service ]; then
+      install -d -m 0755 /etc/systemd/system/websockify-proxy.service.d
+      cat > /etc/systemd/system/websockify-proxy.service.d/discobox-desktop-user.conf <<EOF
+[Unit]
+Wants=websockify@${discobox_user_name}.service
+After=websockify@${discobox_user_name}.service
+EOF
+    fi
     exec "$@"
     ;;
 esac

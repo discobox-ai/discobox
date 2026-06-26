@@ -1,4 +1,4 @@
-package terminal
+package execs
 
 import (
 	"bufio"
@@ -17,7 +17,7 @@ type SystemdRunner struct{}
 
 func (SystemdRunner) Start(ctx context.Context, req StartRequest) (StartResult, error) {
 	if len(req.Command) == 0 || strings.TrimSpace(req.Command[0]) == "" {
-		return StartResult{}, fmt.Errorf("terminal command is required")
+		return StartResult{}, fmt.Errorf("exec command is required")
 	}
 	exe, err := os.Executable()
 	if err != nil {
@@ -27,24 +27,32 @@ func (SystemdRunner) Start(ctx context.Context, req StartRequest) (StartResult, 
 	if err != nil {
 		return StartResult{}, err
 	}
+	envJSON, err := json.Marshal(req.Env)
+	if err != nil {
+		return StartResult{}, err
+	}
 	args := []string{
 		"--unit=" + req.Unit,
 		"--collect",
 		"--property=KillMode=control-group",
 		"--property=WorkingDirectory=" + req.Workdir,
 	}
+	if req.UID != nil {
+		args = append(args, "--uid="+strconv.FormatInt(*req.UID, 10))
+	}
+	if req.GID != nil {
+		args = append(args, "--gid="+strconv.FormatInt(*req.GID, 10))
+	}
 	for key, value := range req.Env {
-		if strings.TrimSpace(key) == "" {
-			continue
+		if strings.TrimSpace(key) != "" {
+			args = append(args, "--setenv="+key+"="+value)
 		}
-		args = append(args, "--setenv="+key+"="+value)
 	}
 	args = append(args, "--")
 	args = append(args,
 		exe,
-		"shim",
-		"--terminal-id", req.ID,
-		"--agent-id", req.AgentID,
+		"exec-shim",
+		"--exec-id", req.ID,
 		"--unit", req.Unit,
 		"--workdir", req.Workdir,
 		"--socket", req.SocketPath,
@@ -53,28 +61,17 @@ func (SystemdRunner) Start(ctx context.Context, req StartRequest) (StartResult, 
 		"--rows", strconv.Itoa(int(req.Rows)),
 		"--cols", strconv.Itoa(int(req.Cols)),
 		"--command", base64.StdEncoding.EncodeToString(commandJSON),
+		"--env", base64.StdEncoding.EncodeToString(envJSON),
 	)
+	if req.TTY {
+		args = append(args, "--tty")
+	}
 	cmd := exec.CommandContext(ctx, "systemd-run", args...)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return StartResult{}, fmt.Errorf("systemd-run %s: %w: %s", req.Unit, err, strings.TrimSpace(string(output)))
 	}
 	return StartResult{Unit: req.Unit}, nil
-}
-
-func (SystemdRunner) Stop(ctx context.Context, unit string) error {
-	if strings.TrimSpace(unit) == "" {
-		return nil
-	}
-	cmd := exec.CommandContext(ctx, "systemctl", "stop", unit)
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		if isMissingUnitOutput(output) {
-			return nil
-		}
-		return fmt.Errorf("systemctl stop %s: %w: %s", unit, err, strings.TrimSpace(string(output)))
-	}
-	return nil
 }
 
 func (SystemdRunner) Status(ctx context.Context, unit string) (UnitStatus, error) {
@@ -105,7 +102,7 @@ func (SystemdRunner) Status(ctx context.Context, unit string) (UnitStatus, error
 }
 
 func (SystemdRunner) List(ctx context.Context) ([]UnitStatus, error) {
-	cmd := exec.CommandContext(ctx, "systemctl", "list-units", "--all", "--no-legend", "--plain", "discobox-agent-terminal-*")
+	cmd := exec.CommandContext(ctx, "systemctl", "list-units", "--all", "--no-legend", "--plain", "discobox-exec-*")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -186,20 +183,15 @@ func parseSystemdTime(value string) *time.Time {
 	if value == "" || value == "n/a" {
 		return nil
 	}
-	for _, layout := range []string{
+	layouts := []string{
 		"Mon 2006-01-02 15:04:05 MST",
-		"Mon 2006-01-02 15:04:05.999999 MST",
-		time.RFC3339Nano,
-	} {
-		if parsed, err := time.Parse(layout, value); err == nil {
-			utc := parsed.UTC()
+		"Mon 2006-01-02 15:04:05.000000 MST",
+	}
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, value); err == nil {
+			utc := t.UTC()
 			return &utc
 		}
 	}
 	return nil
-}
-
-func isMissingUnitOutput(output []byte) bool {
-	text := strings.ToLower(string(output))
-	return strings.Contains(text, "not loaded") || strings.Contains(text, "could not be found") || strings.Contains(text, "not found")
 }
