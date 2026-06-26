@@ -27,14 +27,6 @@ import (
 
 const (
 	agentTerminalProtocol = "discobox-agent-terminal"
-
-	agentTerminalFrameOutput byte = 1
-	agentTerminalFrameInput  byte = 2
-	agentTerminalFrameResize byte = 3
-	agentTerminalFrameSignal byte = 4
-	agentTerminalFrameError  byte = 5
-
-	agentTerminalMaxPayload = 16 * 1024 * 1024
 )
 
 var errAgentTerminalDetached = errors.New("detached")
@@ -115,13 +107,17 @@ func (a *App) newSandboxTerminalCreateCommand(sandboxID *string) *cobra.Command 
 			if opts.attach {
 				return a.attachAgentTerminal(cmd.Context(), projectID, resolvedSandboxID, terminal.ID, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 			}
-			return a.writeAgentTerminal(cmd, &terminal)
+			started, err := a.startAgentTerminal(cmd.Context(), projectID, resolvedSandboxID, terminal.ID)
+			if err != nil {
+				return err
+			}
+			return a.writeAgentTerminal(cmd, &started)
 		},
 	}
 	cmd.Flags().StringVar(&opts.agentID, "agent", "", "Agent ID to start; defaults to the sandbox configured agent")
 	cmd.Flags().StringArrayVar(&opts.args, "arg", nil, "Additional command argument; repeat for multiple arguments")
 	cmd.Flags().StringVar(&opts.workdir, "workdir", "", "Working directory inside the sandbox")
-	cmd.Flags().StringArrayVar(&opts.env, "env", nil, "Environment variable in KEY=VALUE form; repeat for multiple variables")
+	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables")
 	cmd.Flags().BoolVar(&opts.attach, "attach", false, "Attach after creating the terminal")
 	return cmd
 }
@@ -231,7 +227,7 @@ func createAgentTerminalBody(opts sandboxTerminalCreateOptions) (*apimodel.Creat
 		body.SetArgs(append([]string{}, opts.args...))
 	}
 	body.SetWorkdir(optString(opts.workdir))
-	env, err := keyValueMap(opts.env, "env")
+	env, err := keyValueMapFromShell(opts.env)
 	if err != nil {
 		return nil, err
 	}
@@ -245,22 +241,9 @@ func createAgentTerminalBody(opts sandboxTerminalCreateOptions) (*apimodel.Creat
 	return body, nil
 }
 
-func keyValueMap(values []string, name string) (map[string]string, error) {
-	out := make(map[string]string, len(values))
-	for _, value := range values {
-		key, val, ok := strings.Cut(value, "=")
-		key = strings.TrimSpace(key)
-		if !ok || key == "" {
-			return nil, fmt.Errorf("%s must be in KEY=VALUE form", name)
-		}
-		out[key] = val
-	}
-	return out, nil
-}
-
 func (a *App) resolveAgentTerminalID(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID, value string) (string, error) {
 	id, err := parseIDArg(value, "terminal ID")
-	if err != nil || len(id) != shortIDLength {
+	if err != nil || !isResolvableShortID(id) {
 		return id, err
 	}
 	res, err := client.ListAgentTerminals(ctx, apiclientgen.ListAgentTerminalsParams{ProjectId: projectID, SandboxId: sandboxID})
@@ -276,6 +259,23 @@ func (a *App) resolveAgentTerminalID(ctx context.Context, client *apiclientgen.C
 		ids = append(ids, terminal.ID)
 	}
 	return resolveShortID(id, "terminal ID", ids)
+}
+
+func (a *App) getAgentTerminal(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID, terminalID string) (apimodel.AgentTerminal, error) {
+	res, err := client.ListAgentTerminals(ctx, apiclientgen.ListAgentTerminalsParams{ProjectId: projectID, SandboxId: sandboxID})
+	if err != nil {
+		return apimodel.AgentTerminal{}, err
+	}
+	body, err := expectResponse[apimodel.AgentTerminalsResponse](res)
+	if err != nil {
+		return apimodel.AgentTerminal{}, err
+	}
+	for _, terminal := range body.GetTerminals() {
+		if terminal.ID == terminalID {
+			return terminal, nil
+		}
+	}
+	return apimodel.AgentTerminal{}, fmt.Errorf("agent terminal %q not found", terminalID)
 }
 
 func (a *App) writeAgentTerminal(cmd *cobra.Command, terminal *apimodel.AgentTerminal) error {
@@ -340,6 +340,9 @@ func (a *App) attachAgentTerminal(ctx context.Context, projectID, sandboxID, ter
 		return err
 	}
 	defer conn.Close()
+	if _, err := a.startAgentTerminal(ctx, projectID, sandboxID, terminalID); err != nil {
+		return err
+	}
 
 	session := &agentTerminalAttachSession{
 		conn:   conn,
@@ -352,6 +355,36 @@ func (a *App) attachAgentTerminal(ctx context.Context, projectID, sandboxID, ter
 		return nil
 	}
 	return err
+}
+
+func (a *App) startAgentTerminal(ctx context.Context, projectID, sandboxID, terminalID string) (apimodel.AgentTerminal, error) {
+	client, err := a.apiClient()
+	if err != nil {
+		return apimodel.AgentTerminal{}, err
+	}
+	res, err := client.StartAgentTerminal(ctx, apiclientgen.StartAgentTerminalParams{
+		ProjectId:  projectID,
+		SandboxId:  sandboxID,
+		TerminalId: terminalID,
+	})
+	if err != nil {
+		if isAgentTerminalStartDecodeEOF(err) {
+			return a.getAgentTerminal(ctx, client, projectID, sandboxID, terminalID)
+		}
+		return apimodel.AgentTerminal{}, err
+	}
+	started, err := expectResponse[apimodel.AgentTerminal](res)
+	if err != nil {
+		if isAgentTerminalStartDecodeEOF(err) {
+			return a.getAgentTerminal(ctx, client, projectID, sandboxID, terminalID)
+		}
+		return apimodel.AgentTerminal{}, err
+	}
+	return *started, nil
+}
+
+func isAgentTerminalStartDecodeEOF(err error) bool {
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || strings.Contains(err.Error(), "unexpected EOF")
 }
 
 func (a *App) openAgentTerminalAttach(ctx context.Context, projectID, sandboxID, terminalID string) (io.ReadWriteCloser, error) {
@@ -411,19 +444,46 @@ func (s *agentTerminalAttachSession) run(ctx context.Context) error {
 		defer func() { _ = term.Restore(int(file.Fd()), state) }()
 	}
 
-	errCh := make(chan error, 4)
-	go func() { errCh <- s.copyOutput() }()
-	go func() { errCh <- s.copyInput(ctx) }()
-	go func() { errCh <- s.watchResize(ctx, os.Stdin) }()
-	go func() { errCh <- s.proxySignals(ctx) }()
+	outputErr := make(chan error, 1)
+	otherErr := make(chan error, 3)
+	go func() { outputErr <- s.copyOutput() }()
+	go func() {
+		if err := s.copyInput(ctx); err != nil {
+			otherErr <- err
+		}
+	}()
+	go func() {
+		if err := s.watchResize(ctx, os.Stdin); err != nil {
+			otherErr <- err
+		}
+	}()
+	go func() {
+		if err := s.proxySignals(ctx); err != nil {
+			otherErr <- err
+		}
+	}()
 
-	err := <-errCh
-	cancel()
-	_ = s.conn.Close()
-	if errors.Is(err, context.Canceled) || errors.Is(err, io.EOF) {
-		return nil
+	for {
+		select {
+		case err := <-outputErr:
+			cancel()
+			_ = s.conn.Close()
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		case err := <-otherErr:
+			if isAttachDone(err) {
+				continue
+			}
+			cancel()
+			_ = s.conn.Close()
+			return err
+		case <-ctx.Done():
+			_ = s.conn.Close()
+			return ctx.Err()
+		}
 	}
-	return err
 }
 
 func (s *agentTerminalAttachSession) copyOutput() error {
@@ -433,16 +493,18 @@ func (s *agentTerminalAttachSession) copyOutput() error {
 			return err
 		}
 		switch frame.typ {
-		case agentTerminalFrameOutput:
+		case attachFrameOutput:
 			if _, err := s.stdout.Write(frame.payload); err != nil {
 				return err
 			}
-		case agentTerminalFrameError:
+		case attachFrameError:
 			message := strings.TrimSpace(string(frame.payload))
 			if message != "" {
 				_, _ = fmt.Fprintln(s.stderr, message)
 			}
 			return nil
+		case attachFrameExit:
+			return attachExitErrorFromPayload("agent terminal", frame.payload)
 		default:
 			return fmt.Errorf("attach terminal: unexpected frame type %d", frame.typ)
 		}
@@ -457,7 +519,7 @@ func (s *agentTerminalAttachSession) copyInput(ctx context.Context) error {
 		if n > 0 {
 			payload, detach := filterDetachSequence(buf[:n], &pendingCtrlP)
 			if len(payload) > 0 {
-				if writeErr := s.writeFrame(agentTerminalFrameInput, payload); writeErr != nil {
+				if writeErr := s.writeFrame(attachFrameInput, payload); writeErr != nil {
 					return writeErr
 				}
 			}
@@ -465,12 +527,15 @@ func (s *agentTerminalAttachSession) copyInput(ctx context.Context) error {
 				return errAgentTerminalDetached
 			}
 		}
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
 		if err != nil {
 			return err
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil
 		default:
 		}
 	}
@@ -507,7 +572,7 @@ func (s *agentTerminalAttachSession) watchResize(ctx context.Context, file *os.F
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil
 		case <-ticker.C:
 			nextCols, nextRows, ok := terminalSize(file)
 			if !ok || (nextCols == cols && nextRows == rows) {
@@ -528,13 +593,13 @@ func (s *agentTerminalAttachSession) proxySignals(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return nil
 		case sig := <-signals:
 			name, ok := signalName(sig)
 			if !ok {
 				continue
 			}
-			if err := s.writeFrame(agentTerminalFrameSignal, []byte(name)); err != nil {
+			if err := s.writeFrame(attachFrameSignal, []byte(name)); err != nil {
 				return err
 			}
 		}
@@ -552,7 +617,7 @@ func (s *agentTerminalAttachSession) writeResize(cols, rows int) error {
 	if err != nil {
 		return err
 	}
-	return s.writeFrame(agentTerminalFrameResize, payload)
+	return s.writeFrame(attachFrameResize, payload)
 }
 
 func (s *agentTerminalAttachSession) writeFrame(typ byte, payload []byte) error {
@@ -575,12 +640,12 @@ type agentTerminalFrame struct {
 }
 
 func writeAgentTerminalFrame(w io.Writer, typ byte, payload []byte) error {
-	if len(payload) > agentTerminalMaxPayload {
+	if len(payload) > attachFrameMaxPayload {
 		return fmt.Errorf("frame payload too large: %d", len(payload))
 	}
 	var header [5]byte
 	header[0] = typ
-	size := uint32(len(payload)) // #nosec G115 -- payload length is bounded by agentTerminalMaxPayload.
+	size := uint32(len(payload)) // #nosec G115 -- payload length is bounded by attachFrameMaxPayload.
 	binary.BigEndian.PutUint32(header[1:], size)
 	if _, err := w.Write(header[:]); err != nil {
 		return err
@@ -598,7 +663,7 @@ func readAgentTerminalFrame(r io.Reader) (agentTerminalFrame, error) {
 		return agentTerminalFrame{}, err
 	}
 	size := binary.BigEndian.Uint32(header[1:])
-	if size > agentTerminalMaxPayload {
+	if size > attachFrameMaxPayload {
 		return agentTerminalFrame{}, fmt.Errorf("frame payload too large: %d", size)
 	}
 	payload := make([]byte, int(size))

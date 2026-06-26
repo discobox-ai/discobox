@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -396,6 +397,86 @@ func TestTerminalListUsesTopLevelCommand(t *testing.T) {
 	}
 }
 
+func TestTerminalCreateFallsBackWhenStartResponseIsTruncated(t *testing.T) {
+	const terminalID = "terminal-full-id"
+	var created, started, listed bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals":
+			created = true
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"terminal":{"id":"` + terminalID + `","status":"starting","command":["/bin/bash"],"workdir":"/workspace","createdAt":"2026-01-01T00:00:00Z"}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals/"+terminalID+"/start":
+			started = true
+			_, _ = w.Write([]byte(`{`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals":
+			listed = true
+			_, _ = w.Write([]byte(`{"terminals":[{"id":"` + terminalID + `","status":"running","command":["/bin/bash"],"workdir":"/workspace","createdAt":"2026-01-01T00:00:00Z"}]}`))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "terminal", "--sandbox-id", "sandbox-1", "create"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute terminal create: %v", err)
+	}
+	if !created || !started || !listed {
+		t.Fatalf("requests created=%v started=%v listed=%v, want all true", created, started, listed)
+	}
+	output := out.String()
+	if !strings.Contains(output, shortID(terminalID)) || !strings.Contains(output, "running") {
+		t.Fatalf("terminal create output = %q, want fallback terminal row", output)
+	}
+}
+
+func TestTerminalCreateEnvSupportsShortFlagAndShellLookup(t *testing.T) {
+	const terminalID = "terminal-full-id"
+	t.Setenv("SHELL_ENV_VALUE", "from-shell")
+	var env map[string]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals":
+			var body struct {
+				Env map[string]string `json:"env"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode create body: %v", err)
+			}
+			env = body.Env
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"terminal":{"id":"` + terminalID + `","status":"starting","command":["/bin/bash"],"workdir":"/workspace","createdAt":"2026-01-01T00:00:00Z"}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals/"+terminalID+"/start":
+			_, _ = w.Write([]byte(`{"id":"` + terminalID + `","status":"running","command":["/bin/bash"],"workdir":"/workspace","createdAt":"2026-01-01T00:00:00Z"}`))
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "terminal", "--sandbox-id", "sandbox-1", "create", "-e", "EXPLICIT=value", "-e", "SHELL_ENV_VALUE"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute terminal create: %v", err)
+	}
+	if got := env["EXPLICIT"]; got != "value" {
+		t.Fatalf("EXPLICIT env = %q, want value", got)
+	}
+	if got := env["SHELL_ENV_VALUE"]; got != "from-shell" {
+		t.Fatalf("SHELL_ENV_VALUE env = %q, want from-shell", got)
+	}
+}
+
 func TestAgentSetDefaultCommand(t *testing.T) {
 	const agentID = "agent-full-id"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -743,6 +824,21 @@ func TestSandboxGetResolvesShortID(t *testing.T) {
 	}
 	if output := out.String(); !strings.Contains(output, shortID(fullID)) || strings.Contains(output, fullID) {
 		t.Fatalf("sandbox output = %q, want short ID only", output)
+	}
+}
+
+func TestResolveShortIDMatchesPrefixOrSuffix(t *testing.T) {
+	const fullID = "01kv9w440bpa9qk5n25t2hh2rv"
+	for _, value := range []string{"01kv9w44", "5t2hh2rv", "01kv9w440bpa"} {
+		t.Run(value, func(t *testing.T) {
+			got, err := resolveShortID(value, "sandbox ID", []string{fullID})
+			if err != nil {
+				t.Fatalf("resolve short id: %v", err)
+			}
+			if got != fullID {
+				t.Fatalf("resolved = %q, want %q", got, fullID)
+			}
+		})
 	}
 }
 

@@ -3,6 +3,7 @@ module github.com/obot-platform/discobox/cli
 go 1.26.0
 
 require (
+	github.com/coder/websocket v1.8.14
 	github.com/go-faster/jx v1.2.0
 	github.com/obot-platform/discobox v0.0.0
 	github.com/obot-platform/discobox/server v0.0.0
@@ -14,7 +15,6 @@ require (
 require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/coder/websocket v1.8.14 // indirect
 	github.com/dlclark/regexp2 v1.12.0 // indirect
 	github.com/fatih/color v1.19.0 // indirect
 	github.com/ghodss/yaml v1.0.0 // indirect

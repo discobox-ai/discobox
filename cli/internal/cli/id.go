@@ -10,8 +10,6 @@ import (
 	idpkg "github.com/obot-platform/discobox/id"
 )
 
-const shortIDLength = idpkg.DefaultShortLength
-
 func shortID(id string) string {
 	return idpkg.Short(id)
 }
@@ -28,12 +26,12 @@ func resolveShortID(value, name string, ids []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if len(id) != shortIDLength {
+	if !isResolvableShortID(id) {
 		return id, nil
 	}
 	var matches []string
 	for _, candidate := range ids {
-		if strings.HasSuffix(candidate, id) {
+		if strings.HasSuffix(candidate, id) || strings.HasPrefix(candidate, id) {
 			matches = append(matches, candidate)
 		}
 	}
@@ -47,9 +45,22 @@ func resolveShortID(value, name string, ids []string) (string, error) {
 	}
 }
 
+func isResolvableShortID(id string) bool {
+	if !idpkg.IsShort(id) || idpkg.IsFriendly(id) {
+		return false
+	}
+	for _, r := range id {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
 func (a *App) resolveSandboxID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
 	id, err := parseIDArg(value, "sandbox ID")
-	if err != nil || len(id) != shortIDLength {
+	if err != nil || !isResolvableShortID(id) {
 		return id, err
 	}
 	res, err := client.ListSandboxes(ctx, apiclientgen.ListSandboxesParams{ProjectId: projectID})
@@ -69,7 +80,7 @@ func (a *App) resolveSandboxID(ctx context.Context, client *apiclientgen.Client,
 
 func (a *App) resolveAgentConfigID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
 	id, err := parseIDArg(value, "agent config ID")
-	if err != nil || len(id) != shortIDLength {
+	if err != nil || !isResolvableShortID(id) {
 		return id, err
 	}
 	res, err := client.ListAgentConfigs(ctx, apiclientgen.ListAgentConfigsParams{ProjectId: projectID})
@@ -89,7 +100,7 @@ func (a *App) resolveAgentConfigID(ctx context.Context, client *apiclientgen.Cli
 
 func (a *App) resolveAgentDefinitionID(ctx context.Context, client *apiclientgen.Client, value string) (string, error) {
 	id, err := parseIDArg(value, "agent definition ID")
-	if err != nil || len(id) != shortIDLength {
+	if err != nil || !isResolvableShortID(id) {
 		return id, err
 	}
 	res, err := client.ListAgentConfigDefinitions(ctx)
@@ -109,7 +120,7 @@ func (a *App) resolveAgentDefinitionID(ctx context.Context, client *apiclientgen
 
 func (a *App) resolveProviderID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
 	id, err := parseIDArg(value, "provider ID")
-	if err != nil || len(id) != shortIDLength {
+	if err != nil || !isResolvableShortID(id) {
 		return id, err
 	}
 	res, err := client.ListSandboxProviderInstances(ctx, apiclientgen.ListSandboxProviderInstancesParams{ProjectId: projectID})
@@ -129,7 +140,7 @@ func (a *App) resolveProviderID(ctx context.Context, client *apiclientgen.Client
 
 func (a *App) resolveJobID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
 	id, err := parseIDArg(value, "job ID")
-	if err != nil || len(id) != shortIDLength {
+	if err != nil || !isResolvableShortID(id) {
 		return id, err
 	}
 	res, err := client.ListJobs(ctx, apiclientgen.ListJobsParams{ProjectId: projectID})
