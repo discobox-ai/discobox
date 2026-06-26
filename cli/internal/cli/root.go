@@ -340,7 +340,7 @@ func (t debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	fmt.Fprintf(out, "< %s\n", resp.Status)
 	if resp.Body != nil && resp.Body != http.NoBody {
 		fmt.Fprintln(out, "< body:")
-		resp.Body = debugBody{out: out, base: resp.Body}
+		resp.Body = &debugBody{out: out, base: resp.Body}
 	}
 	return resp, nil
 }
@@ -373,19 +373,26 @@ func logRequestBody(out io.Writer, req *http.Request) (*http.Request, error) {
 }
 
 type debugBody struct {
-	out  io.Writer
-	base io.ReadCloser
+	out       io.Writer
+	base      io.ReadCloser
+	wroteBody bool
+	lastByte  byte
 }
 
-func (b debugBody) Read(p []byte) (int, error) {
+func (b *debugBody) Read(p []byte) (int, error) {
 	n, err := b.base.Read(p)
 	if n > 0 {
 		_, _ = b.out.Write(p[:n])
+		b.wroteBody = true
+		b.lastByte = p[n-1]
 	}
 	return n, err
 }
 
-func (b debugBody) Close() error {
+func (b *debugBody) Close() error {
+	if b.wroteBody && b.lastByte != '\n' {
+		fmt.Fprintln(b.out)
+	}
 	return b.base.Close()
 }
 

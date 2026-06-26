@@ -1117,11 +1117,46 @@ func TestDebugTransportPrintsRequestAndResponseBodies(t *testing.T) {
 	output := log.String()
 	for _, want := range []string{
 		"> body:\n{\"name\":\"sandbox-1\"}\n",
-		"< body:\n{\"id\":\"sandbox-1\"}",
+		"< body:\n{\"id\":\"sandbox-1\"}\n",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("debug output = %q, want %q", output, want)
 		}
+	}
+}
+
+func TestDebugTransportDoesNotAddExtraResponseBodyNewline(t *testing.T) {
+	var log bytes.Buffer
+	transport := debugTransport{
+		out: &log,
+		base: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+			return &http.Response{
+				Status:     "200 OK",
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(strings.NewReader("{\"ok\":true}\n")),
+				Header:     make(http.Header),
+				Request:    req,
+			}, nil
+		}),
+	}
+	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, "http://example.test/healthz", nil)
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatalf("round trip: %v", err)
+	}
+	if _, err := io.ReadAll(resp.Body); err != nil {
+		t.Fatalf("read response body: %v", err)
+	}
+	if err := resp.Body.Close(); err != nil {
+		t.Fatalf("close body: %v", err)
+	}
+
+	if got, want := log.String(), "> GET http://example.test/healthz\n< 200 OK\n< body:\n{\"ok\":true}\n"; got != want {
+		t.Fatalf("debug output = %q, want %q", got, want)
 	}
 }
 
