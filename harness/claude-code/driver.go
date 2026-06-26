@@ -76,7 +76,10 @@ func (Driver) Prompt(ctx context.Context, prompt string, state []byte) (string, 
 	}
 
 	// claude --input-format stream-json reads JSONL messages from stdin.
-	msg, _ := json.Marshal(map[string]string{"role": "user", "content": prompt})
+	msg, err := json.Marshal(map[string]string{"role": "user", "content": prompt})
+	if err != nil {
+		return "", nil, fmt.Errorf("encode claude input: %w", err)
+	}
 	input := append(msg, '\n')
 
 	cmd := exec.CommandContext(ctx, "claude", args...)

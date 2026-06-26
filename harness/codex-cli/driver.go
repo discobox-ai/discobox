@@ -109,7 +109,7 @@ func (Driver) Prompt(ctx context.Context, prompt string, state []byte) (string, 
 }
 
 // parseCodexSessionID scans the JSONL event stream from codex --json for a session ID.
-// codex emits events like: {"type":"session","session":{"id":"..."}} or {"session_id":"..."}
+// codex emits events like: {"type":"session","session":{"id":"..."}} or {"session_id":"..."}.
 func parseCodexSessionID(data []byte) string {
 	for _, line := range bytes.Split(data, []byte{'\n'}) {
 		line = bytes.TrimSpace(line)
