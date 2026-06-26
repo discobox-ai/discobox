@@ -27,13 +27,15 @@ import (
 )
 
 const (
-	defaultSandboxImage = "alpine:3.20"
-	sandboxAgentPort    = 3003
-	sandboxDataRoot     = "/var/lib/discobox/projects"
-	sandboxLabelManaged = "discobox.sandbox.managed"
-	sandboxLabelProject = "discobox.project_id"
-	sandboxLabelWorker  = "discobox.worker_id"
-	sandboxLabelSandbox = "discobox.sandbox_id"
+	defaultSandboxImage      = "alpine:3.20"
+	sandboxAgentPort         = 3003
+	sandboxAgentReadyTimeout = 30 * time.Second
+	sandboxAgentPollInterval = 100 * time.Millisecond
+	sandboxDataRoot          = "/var/lib/discobox/projects"
+	sandboxLabelManaged      = "discobox.sandbox.managed"
+	sandboxLabelProject      = "discobox.project_id"
+	sandboxLabelWorker       = "discobox.worker_id"
+	sandboxLabelSandbox      = "discobox.sandbox_id"
 )
 
 var (
@@ -423,31 +425,39 @@ func (r *DockerSandboxRuntime) HTTPBaseURL(ctx context.Context, sandboxID string
 }
 
 func (r *DockerSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxID string) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, sandboxAgentReadyTimeout)
 	defer cancel()
 	var lastErr error
 	for {
-		base, err := r.HTTPBaseURL(ctx, sandboxID, sandboxAgentPort)
-		if err == nil {
-			healthURL := *base
-			healthURL.Path = "/healthz"
-			req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, healthURL.String(), nil)
-			if reqErr != nil {
-				return reqErr
-			}
-			resp, reqErr := http.DefaultClient.Do(req)
-			if reqErr == nil {
-				_, _ = io.Copy(io.Discard, resp.Body)
-				_ = resp.Body.Close()
-				if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-					return nil
-				}
-				lastErr = fmt.Errorf("sandbox-agent health returned %s", resp.Status)
-			} else {
-				lastErr = reqErr
-			}
-		} else {
+		sb, err := r.GetSandbox(ctx, sandboxID)
+		if err != nil {
 			lastErr = err
+		} else {
+			if err := sandboxAgentTerminalStateError(sb); err != nil {
+				return err
+			}
+			base, err := r.HTTPBaseURL(ctx, sandboxID, sandboxAgentPort)
+			if err == nil {
+				healthURL := *base
+				healthURL.Path = "/healthz"
+				req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, healthURL.String(), nil)
+				if reqErr != nil {
+					return reqErr
+				}
+				resp, reqErr := http.DefaultClient.Do(req)
+				if reqErr == nil {
+					_, _ = io.Copy(io.Discard, resp.Body)
+					_ = resp.Body.Close()
+					if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+						return nil
+					}
+					lastErr = fmt.Errorf("sandbox-agent health returned %s", resp.Status)
+				} else {
+					lastErr = reqErr
+				}
+			} else {
+				lastErr = err
+			}
 		}
 		select {
 		case <-ctx.Done():
@@ -455,8 +465,24 @@ func (r *DockerSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxI
 				return fmt.Errorf("wait for sandbox-agent: %w", lastErr)
 			}
 			return ctx.Err()
-		case <-time.After(100 * time.Millisecond):
+		case <-time.After(sandboxAgentPollInterval):
 		}
+	}
+}
+
+func sandboxAgentTerminalStateError(sb *Sandbox) error {
+	if sb == nil {
+		return nil
+	}
+	switch sb.Status {
+	case StatusFailed, StatusStopped, StatusRemoved:
+		message := fmt.Sprintf("sandbox %q reached terminal status %q before sandbox-agent became healthy", sb.SandboxID, sb.Status)
+		if sb.Error != "" {
+			message += ": " + sb.Error
+		}
+		return errors.New(message)
+	default:
+		return nil
 	}
 }
 

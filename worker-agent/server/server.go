@@ -18,6 +18,8 @@ import (
 	"github.com/obot-platform/discobox/worker-agent/sandboxruntime"
 )
 
+const workerHTTPWriteTimeout = 5 * time.Minute
+
 type Registration struct {
 	PublicKey string
 }
@@ -88,7 +90,7 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
+		WriteTimeout:      workerHTTPWriteTimeout,
 		IdleTimeout:       120 * time.Second,
 	}
 	errCh := make(chan error, 1)

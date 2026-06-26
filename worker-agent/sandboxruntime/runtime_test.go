@@ -186,6 +186,25 @@ func TestDockerSandboxRuntimeWorkerHostPathPreservesHostPathWithoutPrefix(t *tes
 	}
 }
 
+func TestSandboxAgentTerminalStateErrorStopsOnExitedSandbox(t *testing.T) {
+	err := sandboxAgentTerminalStateError(&Sandbox{
+		SandboxID: "sandbox-1",
+		Status:    StatusStopped,
+	})
+	if err == nil {
+		t.Fatal("terminal state error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "before sandbox-agent became healthy") {
+		t.Fatalf("terminal state error = %q, want sandbox-agent context", err)
+	}
+}
+
+func TestSandboxAgentTerminalStateErrorAllowsRunningSandbox(t *testing.T) {
+	if err := sandboxAgentTerminalStateError(&Sandbox{SandboxID: "sandbox-1", Status: StatusRunning}); err != nil {
+		t.Fatalf("terminal state error = %v, want nil", err)
+	}
+}
+
 func TestBuildSandboxAgentConfigIncludesProjectAgentConfigs(t *testing.T) {
 	req := &workerapimodel.WorkerSandboxCreateRequest{
 		Env: workerclient.NewOptWorkerSandboxCreateRequestEnv(workerclient.WorkerSandboxCreateRequestEnv{
