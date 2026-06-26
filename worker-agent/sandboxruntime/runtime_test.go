@@ -188,6 +188,10 @@ func TestDockerSandboxRuntimeWorkerHostPathPreservesHostPathWithoutPrefix(t *tes
 
 func TestBuildSandboxAgentConfigIncludesProjectAgentConfigs(t *testing.T) {
 	req := &workerapimodel.WorkerSandboxCreateRequest{
+		Env: workerclient.NewOptWorkerSandboxCreateRequestEnv(workerclient.WorkerSandboxCreateRequestEnv{
+			"BASE":     "sandbox",
+			"OVERRIDE": "sandbox",
+		}),
 		ResolvedAgentConfig: workerclient.NewOptResolvedAgentConfig(workerapimodel.ResolvedAgentConfig{
 			ID:             "claude",
 			Name:           "Claude",
@@ -211,6 +215,9 @@ func TestBuildSandboxAgentConfigIncludesProjectAgentConfigs(t *testing.T) {
 	}
 
 	cfg := buildSandboxAgentConfig("project-1", "sandbox-1", "worker-1", "public-key", req)
+	if cfg.Env["BASE"] != "sandbox" || cfg.Env["OVERRIDE"] != "sandbox" {
+		t.Fatalf("env = %#v, want sandbox env in agent config", cfg.Env)
+	}
 	if cfg.ResolvedAgentConfig == nil || cfg.ResolvedAgentConfig.ID != "claude" {
 		t.Fatalf("resolved agent config = %#v, want claude", cfg.ResolvedAgentConfig)
 	}

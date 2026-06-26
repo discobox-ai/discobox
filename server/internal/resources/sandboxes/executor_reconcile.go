@@ -434,6 +434,12 @@ func (r *SandboxReconcileExecutor) createOptionsFromSandbox(ctx context.Context,
 	opts.AgentModelServiceTier = sb.AgentModelServiceTier
 	opts.AgentModelReasoningLevel = sb.AgentModelReasoningLevel
 	opts.Prompt = sb.Prompt
+	if sb.Env != nil {
+		opts.Env = make(map[string]string, len(sb.Env))
+		for key, value := range sb.Env {
+			opts.Env[key] = value
+		}
+	}
 	opts.CPUVCPUs = sb.CPUVCPUs
 	opts.MemoryBytes = sb.MemoryBytes
 	opts.StorageBytes = sb.StorageBytes

@@ -88,6 +88,35 @@ func TestManagerRejectsWorkdirOutsideRoot(t *testing.T) {
 	}
 }
 
+func TestManagerMergesConfigEnvWithRequestOverrides(t *testing.T) {
+	runner := &fakeRunner{}
+	manager, err := NewManager(ManagerConfig{
+		Agents: []config.Agent{{
+			ID:      "codex",
+			Command: []string{"codex"},
+		}},
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Env:         map[string]string{"BASE": "sandbox", "OVERRIDE": "sandbox"},
+		Units:       runner,
+		Installer:   &fakeInstaller{},
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	if _, err := manager.Create(context.Background(), CreateRequest{
+		Env: map[string]string{"OVERRIDE": "terminal", "LOCAL": "terminal"},
+	}); err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+
+	env := runner.starts[0].Env
+	if env["BASE"] != "sandbox" || env["OVERRIDE"] != "terminal" || env["LOCAL"] != "terminal" {
+		t.Fatalf("env = %#v, want config env with request override", env)
+	}
+}
+
 func TestManagerUsesMarkedDefaultAgent(t *testing.T) {
 	runner := &fakeRunner{}
 	manager, err := NewManager(ManagerConfig{

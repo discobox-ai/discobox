@@ -24,6 +24,7 @@ type sandboxCreateOptions struct {
 	agentModelServiceTier    string
 	agentModelReasoningLevel string
 	prompt                   string
+	env                      []string
 	sourceURL                string
 	sourceRef                string
 	sourceRefType            string
@@ -341,6 +342,7 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.agentModelServiceTier, "agent-model-service-tier", "", "Model service tier the agent should use")
 	cmd.Flags().StringVar(&opts.agentModelReasoningLevel, "agent-model-reasoning-level", "", "Model reasoning level the agent should use")
 	cmd.Flags().StringVar(&opts.prompt, "prompt", "", "Prompt the agent should run")
+	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables")
 	cmd.Flags().StringVar(&opts.sourceURL, "source-url", "", "Source repository or archive URL")
 	cmd.Flags().StringVar(&opts.sourceRef, "source-ref", "", "Source branch, tag, or commit")
 	cmd.Flags().StringVar(&opts.sourceRefType, "source-ref-type", "", "Source ref type, such as branch, tag, or commit")
@@ -373,6 +375,13 @@ func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, 
 	body.SetAgentModelServiceTier(optString(opts.agentModelServiceTier))
 	body.SetAgentModelReasoningLevel(optString(opts.agentModelReasoningLevel))
 	body.SetPrompt(optString(opts.prompt))
+	env, err := keyValueMapFromShell(opts.env)
+	if err != nil {
+		return nil, err
+	}
+	if len(env) > 0 {
+		body.SetEnv(apiclientgen.NewOptCreateSandboxBodyEnv(apiclientgen.CreateSandboxBodyEnv(env)))
+	}
 	source, err := gitSourceFromCreateOptions(opts)
 	if err != nil {
 		return nil, err

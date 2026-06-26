@@ -114,6 +114,7 @@ type ManagerConfig struct {
 	Agents              []config.Agent
 	WorkingRoot         string
 	RuntimeDir          string
+	Env                 map[string]string
 	Units               UnitManager
 	Installer           Installer
 	Audit               AuditRecorder
@@ -127,6 +128,7 @@ type Manager struct {
 	workingRoot    string
 	runtimeDir     string
 	logDir         string
+	env            map[string]string
 	hookSocketPath string
 	units          UnitManager
 	installer      Installer
@@ -152,6 +154,7 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 		workingRoot:  filepath.Clean(workingRoot),
 		runtimeDir:   filepath.Clean(runtimeDir),
 		logDir:       filepath.Join(filepath.Clean(runtimeDir), "logs"),
+		env:          cloneMap(cfg.Env),
 		units:        units,
 		installer:    cfg.Installer,
 		audit:        cfg.Audit,
@@ -202,7 +205,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Terminal, erro
 	if err != nil {
 		return Terminal{}, err
 	}
-	env := cloneMap(req.Env)
+	env := mergeEnv(m.env, req.Env)
 	if env == nil {
 		env = map[string]string{}
 	}
@@ -466,6 +469,20 @@ func mergedEnv(env map[string]string) []string {
 			continue
 		}
 		out = append(out, key+"="+value)
+	}
+	return out
+}
+
+func mergeEnv(base, override map[string]string) map[string]string {
+	if len(base) == 0 && len(override) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(base)+len(override))
+	for key, value := range base {
+		out[key] = value
+	}
+	for key, value := range override {
+		out[key] = value
 	}
 	return out
 }

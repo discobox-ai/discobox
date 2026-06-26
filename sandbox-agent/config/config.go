@@ -12,16 +12,17 @@ import (
 const DefaultPath = "/etc/discobox/sandbox-agent.json"
 
 type Config struct {
-	Identity              Identity       `json:"identity"`
-	ControlPlanePublicKey string         `json:"controlPlanePublicKey"`
-	ListenAddress         string         `json:"listenAddress"`
-	WorkingRoot           string         `json:"workingRoot"`
-	RuntimeDir            string         `json:"runtimeDir"`
-	DatabasePath          string         `json:"databasePath"`
-	ResolvedAgentConfig   *Agent         `json:"resolvedAgentConfig,omitempty"`
-	AgentConfigs          []Agent        `json:"agentConfigs,omitempty"`
-	Agents                []Agent        `json:"agents"`
-	Resources             ResourceConfig `json:"resources"`
+	Identity              Identity          `json:"identity"`
+	ControlPlanePublicKey string            `json:"controlPlanePublicKey"`
+	ListenAddress         string            `json:"listenAddress"`
+	WorkingRoot           string            `json:"workingRoot"`
+	RuntimeDir            string            `json:"runtimeDir"`
+	DatabasePath          string            `json:"databasePath"`
+	Env                   map[string]string `json:"env,omitempty"`
+	ResolvedAgentConfig   *Agent            `json:"resolvedAgentConfig,omitempty"`
+	AgentConfigs          []Agent           `json:"agentConfigs,omitempty"`
+	Agents                []Agent           `json:"agents"`
+	Resources             ResourceConfig    `json:"resources"`
 }
 
 type Identity struct {

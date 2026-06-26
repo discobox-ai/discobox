@@ -143,6 +143,11 @@ components:
                 description:
                     description: Sandbox description
                     type: string
+                env:
+                    additionalProperties:
+                        type: string
+                    description: Environment variables available to sandbox-agent terminals and execs by default.
+                    type: object
                 image:
                     description: Sandbox base image. Defaults to the server configured sandbox image when omitted.
                     type: string
@@ -1370,6 +1375,11 @@ components:
                 errorMessage:
                     description: Latest error message
                     type: string
+                env:
+                    additionalProperties:
+                        type: string
+                    description: Environment variables available to sandbox-agent terminals and execs by default.
+                    type: object
                 generation:
                     description: Latest desired-state generation
                     format: int64

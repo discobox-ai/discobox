@@ -7,6 +7,7 @@ import (
 )
 
 func TestCreateSandboxBodyIncludesAgentLaunchFields(t *testing.T) {
+	t.Setenv("SANDBOX_ENV_FROM_SHELL", "from-shell")
 	body, err := createSandboxBody(sandboxCreateOptions{
 		name:                     "work",
 		agentName:                "Codex",
@@ -14,6 +15,7 @@ func TestCreateSandboxBodyIncludesAgentLaunchFields(t *testing.T) {
 		agentModelServiceTier:    "priority",
 		agentModelReasoningLevel: "high",
 		prompt:                   "implement this",
+		env:                      []string{"EXPLICIT=value", "SANDBOX_ENV_FROM_SHELL"},
 		sourceURL:                "https://example.com/repo.git",
 		sourceRef:                "main",
 		sourceRefType:            "branch",
@@ -30,6 +32,13 @@ func TestCreateSandboxBodyIncludesAgentLaunchFields(t *testing.T) {
 	}
 	if body.AgentName.Value != "Codex" || body.AgentModel.Value != "gpt-5.1-codex-max" || body.Prompt.Value != "implement this" {
 		t.Fatalf("agent fields = %#v", body)
+	}
+	env, ok := body.Env.Get()
+	if !ok {
+		t.Fatal("expected env")
+	}
+	if env["EXPLICIT"] != "value" || env["SANDBOX_ENV_FROM_SHELL"] != "from-shell" {
+		t.Fatalf("env = %#v, want explicit and shell values", env)
 	}
 	source, ok := body.Source.Get()
 	if !ok {

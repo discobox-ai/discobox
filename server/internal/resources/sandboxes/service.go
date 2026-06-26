@@ -173,6 +173,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		AgentModelReasoningLevel: services.OptStringPtr(input.AgentModelReasoningLevel),
 		Prompt:                   services.OptStringPtr(input.Prompt),
 		Image:                    image,
+		Env:                      map[string]string(input.Env.Or(nil)),
 		Source:                   source,
 		SourceCodeReferences:     sourceCodeReferences,
 		UserName:                 userName,

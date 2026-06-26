@@ -34,6 +34,7 @@ type Config struct {
 	WorkingRoot           string
 	RuntimeDir            string
 	DatabasePath          string
+	Env                   map[string]string
 	Resources             config.ResourceConfig
 	ResolvedAgentConfig   *config.Agent
 	AgentConfigs          []config.Agent
@@ -59,6 +60,7 @@ func ConfigFromAgentConfig(cfg config.Config) Config {
 		WorkingRoot:           cfg.WorkingRoot,
 		RuntimeDir:            cfg.RuntimeDir,
 		DatabasePath:          cfg.DatabasePath,
+		Env:                   cfg.Env,
 		Resources:             cfg.Resources,
 		ResolvedAgentConfig:   cfg.ResolvedAgentConfig,
 		AgentConfigs:          cfg.AgentConfigs,
@@ -112,6 +114,7 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Manager, *execs.Manage
 		Agents:              cfg.Agents,
 		WorkingRoot:         cfg.WorkingRoot,
 		RuntimeDir:          cfg.RuntimeDir,
+		Env:                 cfg.Env,
 		Units:               cfg.UnitManager,
 		Installer:           cfg.Installer,
 		Audit:               audit,
@@ -120,7 +123,13 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Manager, *execs.Manage
 		return nil, nil, nil, nil, err
 	}
 	manager.SetHookSocketPath(agenthooks.SocketPath(cfg.RuntimeDir))
-	execManager, err := execs.NewManager(cfg.WorkingRoot, filepath.Join(cfg.RuntimeDir, "execs"), cfg.ExecUnitManager, execAudit)
+	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
+		WorkingRoot: cfg.WorkingRoot,
+		RuntimeDir:  filepath.Join(cfg.RuntimeDir, "execs"),
+		Env:         cfg.Env,
+		Units:       cfg.ExecUnitManager,
+		Audit:       execAudit,
+	})
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}

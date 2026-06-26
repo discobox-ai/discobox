@@ -1023,6 +1023,8 @@ type CreateSandboxBody struct {
 	CpuVcpus OptFloat64 `json:"cpuVcpus"`
 	// Sandbox description.
 	Description OptString `json:"description"`
+	// Environment variables available to sandbox-agent terminals and execs by default.
+	Env OptCreateSandboxBodyEnv `json:"env"`
 	// Sandbox base image. Defaults to the server configured sandbox image when omitted.
 	Image OptString `json:"image"`
 	// Requested memory capacity in bytes.
@@ -1083,6 +1085,11 @@ func (s *CreateSandboxBody) GetCpuVcpus() OptFloat64 {
 // GetDescription returns the value of Description.
 func (s *CreateSandboxBody) GetDescription() OptString {
 	return s.Description
+}
+
+// GetEnv returns the value of Env.
+func (s *CreateSandboxBody) GetEnv() OptCreateSandboxBodyEnv {
+	return s.Env
 }
 
 // GetImage returns the value of Image.
@@ -1175,6 +1182,11 @@ func (s *CreateSandboxBody) SetDescription(val OptString) {
 	s.Description = val
 }
 
+// SetEnv sets the value of Env.
+func (s *CreateSandboxBody) SetEnv(val OptCreateSandboxBodyEnv) {
+	s.Env = val
+}
+
 // SetImage sets the value of Image.
 func (s *CreateSandboxBody) SetImage(val OptString) {
 	s.Image = val
@@ -1223,6 +1235,18 @@ func (s *CreateSandboxBody) SetStorageBytes(val OptInt64) {
 // SetUser sets the value of User.
 func (s *CreateSandboxBody) SetUser(val OptSandboxUser) {
 	s.User = val
+}
+
+// Environment variables available to sandbox-agent terminals and execs by default.
+type CreateSandboxBodyEnv map[string]string
+
+func (s *CreateSandboxBodyEnv) init() CreateSandboxBodyEnv {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // Additional Git sources to materialize in the sandbox.
@@ -2709,6 +2733,52 @@ func (o OptCreateAgentTerminalRequestMetadata) Or(d CreateAgentTerminalRequestMe
 	return d
 }
 
+// NewOptCreateSandboxBodyEnv returns new OptCreateSandboxBodyEnv with value set to v.
+func NewOptCreateSandboxBodyEnv(v CreateSandboxBodyEnv) OptCreateSandboxBodyEnv {
+	return OptCreateSandboxBodyEnv{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptCreateSandboxBodyEnv is optional CreateSandboxBodyEnv.
+type OptCreateSandboxBodyEnv struct {
+	Value CreateSandboxBodyEnv
+	Set   bool
+}
+
+// IsSet returns true if OptCreateSandboxBodyEnv was set.
+func (o OptCreateSandboxBodyEnv) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptCreateSandboxBodyEnv) Reset() {
+	var v CreateSandboxBodyEnv
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptCreateSandboxBodyEnv) SetTo(v CreateSandboxBodyEnv) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptCreateSandboxBodyEnv) Get() (v CreateSandboxBodyEnv, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptCreateSandboxBodyEnv) Or(d CreateSandboxBodyEnv) CreateSandboxBodyEnv {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptCreateSandboxBodySourceCodeReferences returns new OptCreateSandboxBodySourceCodeReferences with value set to v.
 func NewOptCreateSandboxBodySourceCodeReferences(v CreateSandboxBodySourceCodeReferences) OptCreateSandboxBodySourceCodeReferences {
 	return OptCreateSandboxBodySourceCodeReferences{
@@ -3805,6 +3875,52 @@ func (o OptSandboxActiveOperation) Get() (v SandboxActiveOperation, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxActiveOperation) Or(d SandboxActiveOperation) SandboxActiveOperation {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxEnv returns new OptSandboxEnv with value set to v.
+func NewOptSandboxEnv(v SandboxEnv) OptSandboxEnv {
+	return OptSandboxEnv{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxEnv is optional SandboxEnv.
+type OptSandboxEnv struct {
+	Value SandboxEnv
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxEnv was set.
+func (o OptSandboxEnv) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxEnv) Reset() {
+	var v SandboxEnv
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxEnv) SetTo(v SandboxEnv) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxEnv) Get() (v SandboxEnv, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxEnv) Or(d SandboxEnv) SandboxEnv {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -5142,6 +5258,8 @@ type Sandbox struct {
 	DesiredState SandboxDesiredState `json:"desiredState"`
 	// Latest error message.
 	ErrorMessage OptString `json:"errorMessage"`
+	// Environment variables available to sandbox-agent terminals and execs by default.
+	Env OptSandboxEnv `json:"env"`
 	// Latest desired-state generation.
 	Generation int64 `json:"generation"`
 	// Stable sandbox ID.
@@ -5260,6 +5378,11 @@ func (s *Sandbox) GetDesiredState() SandboxDesiredState {
 // GetErrorMessage returns the value of ErrorMessage.
 func (s *Sandbox) GetErrorMessage() OptString {
 	return s.ErrorMessage
+}
+
+// GetEnv returns the value of Env.
+func (s *Sandbox) GetEnv() OptSandboxEnv {
+	return s.Env
 }
 
 // GetGeneration returns the value of Generation.
@@ -5450,6 +5573,11 @@ func (s *Sandbox) SetDesiredState(val SandboxDesiredState) {
 // SetErrorMessage sets the value of ErrorMessage.
 func (s *Sandbox) SetErrorMessage(val OptString) {
 	s.ErrorMessage = val
+}
+
+// SetEnv sets the value of Env.
+func (s *Sandbox) SetEnv(val OptSandboxEnv) {
+	s.Env = val
 }
 
 // SetGeneration sets the value of Generation.
@@ -5690,6 +5818,18 @@ func (s *SandboxDesiredState) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Environment variables available to sandbox-agent terminals and execs by default.
+type SandboxEnv map[string]string
+
+func (s *SandboxEnv) init() SandboxEnv {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // Ref: #/components/schemas/SandboxExec

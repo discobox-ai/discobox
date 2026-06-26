@@ -107,11 +107,32 @@ type Manager struct {
 	workingRoot string
 	runtimeDir  string
 	logDir      string
+	env         map[string]string
 	units       UnitManager
 	audit       AuditRecorder
 }
 
+type ManagerConfig struct {
+	WorkingRoot string
+	RuntimeDir  string
+	Env         map[string]string
+	Units       UnitManager
+	Audit       AuditRecorder
+}
+
 func NewManager(workingRoot, runtimeDir string, units UnitManager, audit AuditRecorder) (*Manager, error) {
+	return NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: workingRoot,
+		RuntimeDir:  runtimeDir,
+		Units:       units,
+		Audit:       audit,
+	})
+}
+
+func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
+	workingRoot := cfg.WorkingRoot
+	runtimeDir := cfg.RuntimeDir
+	units := cfg.Units
 	if strings.TrimSpace(workingRoot) == "" {
 		return nil, errors.New("working root is required")
 	}
@@ -126,9 +147,24 @@ func NewManager(workingRoot, runtimeDir string, units UnitManager, audit AuditRe
 		workingRoot: filepath.Clean(workingRoot),
 		runtimeDir:  runtimeDir,
 		logDir:      filepath.Join(runtimeDir, "logs"),
+		env:         cloneMap(cfg.Env),
 		units:       units,
-		audit:       audit,
+		audit:       cfg.Audit,
 	}, nil
+}
+
+func mergeEnv(base, override map[string]string) map[string]string {
+	if len(base) == 0 && len(override) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(base)+len(override))
+	for key, value := range base {
+		out[key] = value
+	}
+	for key, value := range override {
+		out[key] = value
+	}
+	return out
 }
 
 func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
@@ -139,6 +175,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 	if err != nil {
 		return Exec{}, err
 	}
+	env := mergeEnv(m.env, req.Env)
 	id, err := newID()
 	if err != nil {
 		return Exec{}, err
@@ -152,7 +189,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		Status:      StatusStarting,
 		Command:     append([]string{}, req.Command...),
 		Workdir:     workdir,
-		Env:         cloneMap(req.Env),
+		Env:         cloneMap(env),
 		UID:         cloneInt64(req.UID),
 		GID:         cloneInt64(req.GID),
 		TTY:         req.TTY,
@@ -178,7 +215,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		Unit:        unit,
 		Command:     exec.Command,
 		Workdir:     workdir,
-		Env:         cloneMap(req.Env),
+		Env:         cloneMap(env),
 		UID:         cloneInt64(req.UID),
 		GID:         cloneInt64(req.GID),
 		TTY:         req.TTY,

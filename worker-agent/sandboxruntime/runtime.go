@@ -287,6 +287,7 @@ func buildSandboxAgentConfig(projectID, sandboxID, workerID, controlPlanePublicK
 		},
 	}
 	if req != nil {
+		cfg.Env = map[string]string(optCreateEnv(req.Env))
 		if resolved, ok := req.ResolvedAgentConfig.Get(); ok {
 			resolvedConfig := sandboxAgentConfigAgentConfig{
 				ID:      resolved.ID,
@@ -677,6 +678,7 @@ type sandboxAgentConfig struct {
 	WorkingRoot           string                          `json:"workingRoot"`
 	RuntimeDir            string                          `json:"runtimeDir"`
 	DatabasePath          string                          `json:"databasePath"`
+	Env                   map[string]string               `json:"env,omitempty"`
 	ResolvedAgentConfig   *sandboxAgentConfigAgentConfig  `json:"resolvedAgentConfig,omitempty"`
 	AgentConfigs          []sandboxAgentConfigAgentConfig `json:"agentConfigs,omitempty"`
 	Agents                []sandboxAgentConfigAgentConfig `json:"agents,omitempty"`

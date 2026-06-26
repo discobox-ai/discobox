@@ -2352,6 +2352,12 @@ func (s *CreateSandboxBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Env.Set {
+			e.FieldStart("env")
+			s.Env.Encode(e)
+		}
+	}
+	{
 		if s.Image.Set {
 			e.FieldStart("image")
 			s.Image.Encode(e)
@@ -2411,7 +2417,7 @@ func (s *CreateSandboxBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCreateSandboxBody = [18]string{
+var jsonFieldsNameOfCreateSandboxBody = [19]string{
 	0:  "$schema",
 	1:  "agentConfigId",
 	2:  "agentModel",
@@ -2420,16 +2426,17 @@ var jsonFieldsNameOfCreateSandboxBody = [18]string{
 	5:  "agentName",
 	6:  "cpuVcpus",
 	7:  "description",
-	8:  "image",
-	9:  "memoryBytes",
-	10: "name",
-	11: "prompt",
-	12: "providerInstanceId",
-	13: "runtimeState",
-	14: "source",
-	15: "sourceCodeReferences",
-	16: "storageBytes",
-	17: "user",
+	8:  "env",
+	9:  "image",
+	10: "memoryBytes",
+	11: "name",
+	12: "prompt",
+	13: "providerInstanceId",
+	14: "runtimeState",
+	15: "source",
+	16: "sourceCodeReferences",
+	17: "storageBytes",
+	18: "user",
 }
 
 // Decode decodes CreateSandboxBody from json.
@@ -2521,6 +2528,16 @@ func (s *CreateSandboxBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"description\"")
 			}
+		case "env":
+			if err := func() error {
+				s.Env.Reset()
+				if err := s.Env.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"env\"")
+			}
 		case "image":
 			if err := func() error {
 				s.Image.Reset()
@@ -2542,7 +2559,7 @@ func (s *CreateSandboxBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"memoryBytes\"")
 			}
 		case "name":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -2635,7 +2652,7 @@ func (s *CreateSandboxBody) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [3]uint8{
 		0b00000000,
-		0b00000100,
+		0b00001000,
 		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
@@ -2678,6 +2695,62 @@ func (s *CreateSandboxBody) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *CreateSandboxBody) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s CreateSandboxBodyEnv) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s CreateSandboxBodyEnv) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes CreateSandboxBodyEnv from json.
+func (s *CreateSandboxBodyEnv) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode CreateSandboxBodyEnv to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode CreateSandboxBodyEnv")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s CreateSandboxBodyEnv) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *CreateSandboxBodyEnv) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -5857,6 +5930,40 @@ func (s *OptCreateAgentTerminalRequestMetadata) UnmarshalJSON(data []byte) error
 	return s.Decode(d)
 }
 
+// Encode encodes CreateSandboxBodyEnv as json.
+func (o OptCreateSandboxBodyEnv) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes CreateSandboxBodyEnv from json.
+func (o *OptCreateSandboxBodyEnv) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptCreateSandboxBodyEnv to nil")
+	}
+	o.Set = true
+	o.Value = make(CreateSandboxBodyEnv)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptCreateSandboxBodyEnv) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptCreateSandboxBodyEnv) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes CreateSandboxBodySourceCodeReferences as json.
 func (o OptCreateSandboxBodySourceCodeReferences) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -6781,6 +6888,40 @@ func (s OptSandboxActiveOperation) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptSandboxActiveOperation) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxEnv as json.
+func (o OptSandboxEnv) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SandboxEnv from json.
+func (o *OptSandboxEnv) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxEnv to nil")
+	}
+	o.Set = true
+	o.Value = make(SandboxEnv)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxEnv) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxEnv) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -9104,6 +9245,12 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Env.Set {
+			e.FieldStart("env")
+			s.Env.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("generation")
 		e.Int64(s.Generation)
 	}
@@ -9225,7 +9372,7 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandbox = [38]string{
+var jsonFieldsNameOfSandbox = [39]string{
 	0:  "$schema",
 	1:  "activeOperation",
 	2:  "agentConfig",
@@ -9240,30 +9387,31 @@ var jsonFieldsNameOfSandbox = [38]string{
 	11: "description",
 	12: "desiredState",
 	13: "errorMessage",
-	14: "generation",
-	15: "id",
-	16: "image",
-	17: "lastActiveAt",
-	18: "lastJobId",
-	19: "lastOperationStatus",
-	20: "memoryBytes",
-	21: "name",
-	22: "observedGeneration",
-	23: "phase",
-	24: "projectId",
-	25: "prompt",
-	26: "providerInstance",
-	27: "providerInstanceId",
-	28: "restartGeneration",
-	29: "restartedGeneration",
-	30: "runtimeState",
-	31: "source",
-	32: "sourceCodeReferences",
-	33: "statusMessage",
-	34: "storageBytes",
-	35: "updatedAt",
-	36: "user",
-	37: "workerId",
+	14: "env",
+	15: "generation",
+	16: "id",
+	17: "image",
+	18: "lastActiveAt",
+	19: "lastJobId",
+	20: "lastOperationStatus",
+	21: "memoryBytes",
+	22: "name",
+	23: "observedGeneration",
+	24: "phase",
+	25: "projectId",
+	26: "prompt",
+	27: "providerInstance",
+	28: "providerInstanceId",
+	29: "restartGeneration",
+	30: "restartedGeneration",
+	31: "runtimeState",
+	32: "source",
+	33: "sourceCodeReferences",
+	34: "statusMessage",
+	35: "storageBytes",
+	36: "updatedAt",
+	37: "user",
+	38: "workerId",
 }
 
 // Decode decodes Sandbox from json.
@@ -9421,8 +9569,18 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"errorMessage\"")
 			}
+		case "env":
+			if err := func() error {
+				s.Env.Reset()
+				if err := s.Env.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"env\"")
+			}
 		case "generation":
-			requiredBitSet[1] |= 1 << 6
+			requiredBitSet[1] |= 1 << 7
 			if err := func() error {
 				v, err := d.Int64()
 				s.Generation = int64(v)
@@ -9434,7 +9592,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"generation\"")
 			}
 		case "id":
-			requiredBitSet[1] |= 1 << 7
+			requiredBitSet[2] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -9476,7 +9634,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"lastJobId\"")
 			}
 		case "lastOperationStatus":
-			requiredBitSet[2] |= 1 << 3
+			requiredBitSet[2] |= 1 << 4
 			if err := func() error {
 				if err := s.LastOperationStatus.Decode(d); err != nil {
 					return err
@@ -9486,7 +9644,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"lastOperationStatus\"")
 			}
 		case "memoryBytes":
-			requiredBitSet[2] |= 1 << 4
+			requiredBitSet[2] |= 1 << 5
 			if err := func() error {
 				v, err := d.Int64()
 				s.MemoryBytes = int64(v)
@@ -9498,7 +9656,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"memoryBytes\"")
 			}
 		case "name":
-			requiredBitSet[2] |= 1 << 5
+			requiredBitSet[2] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -9510,7 +9668,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "observedGeneration":
-			requiredBitSet[2] |= 1 << 6
+			requiredBitSet[2] |= 1 << 7
 			if err := func() error {
 				v, err := d.Int64()
 				s.ObservedGeneration = int64(v)
@@ -9522,7 +9680,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"observedGeneration\"")
 			}
 		case "phase":
-			requiredBitSet[2] |= 1 << 7
+			requiredBitSet[3] |= 1 << 0
 			if err := func() error {
 				if err := s.Phase.Decode(d); err != nil {
 					return err
@@ -9532,7 +9690,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"phase\"")
 			}
 		case "projectId":
-			requiredBitSet[3] |= 1 << 0
+			requiredBitSet[3] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -9574,7 +9732,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"providerInstanceId\"")
 			}
 		case "restartGeneration":
-			requiredBitSet[3] |= 1 << 4
+			requiredBitSet[3] |= 1 << 5
 			if err := func() error {
 				v, err := d.Int64()
 				s.RestartGeneration = int64(v)
@@ -9586,7 +9744,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"restartGeneration\"")
 			}
 		case "restartedGeneration":
-			requiredBitSet[3] |= 1 << 5
+			requiredBitSet[3] |= 1 << 6
 			if err := func() error {
 				v, err := d.Int64()
 				s.RestartedGeneration = int64(v)
@@ -9639,7 +9797,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"statusMessage\"")
 			}
 		case "storageBytes":
-			requiredBitSet[4] |= 1 << 2
+			requiredBitSet[4] |= 1 << 3
 			if err := func() error {
 				v, err := d.Int64()
 				s.StorageBytes = int64(v)
@@ -9651,7 +9809,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"storageBytes\"")
 			}
 		case "updatedAt":
-			requiredBitSet[4] |= 1 << 3
+			requiredBitSet[4] |= 1 << 4
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -9693,10 +9851,10 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [5]uint8{
 		0b10000000,
-		0b11010101,
-		0b11111000,
-		0b00110001,
-		0b00001100,
+		0b10010101,
+		0b11110001,
+		0b01100011,
+		0b00011000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -9826,6 +9984,62 @@ func (s SandboxDesiredState) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxDesiredState) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s SandboxEnv) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s SandboxEnv) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes SandboxEnv from json.
+func (s *SandboxEnv) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxEnv to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxEnv")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxEnv) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxEnv) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
