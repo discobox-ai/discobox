@@ -1,7 +1,6 @@
 package execs
 
 import (
-	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
@@ -11,12 +10,12 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/obot-platform/discobox/sandbox-agent/shimruntime"
 	"github.com/obot-platform/discobox/sandbox-agent/terminal/frame"
 )
 
@@ -47,20 +46,14 @@ type shimRuntime struct {
 	closeOnce sync.Once
 	outputWG  sync.WaitGroup
 	startMu   sync.Mutex
-	attachers map[*attachWriter]struct{}
+	stream    *shimruntime.Runtime
 	mu        sync.Mutex
 	status    Exec
 }
 
-type attachWriter struct {
-	mu        sync.Mutex
-	w         *bufio.ReadWriter
-	done      chan struct{}
-	closeOnce sync.Once
-}
-
 func RunShim(ctx context.Context, cfg ShimConfig) error {
-	r := &shimRuntime{cfg: cfg, done: make(chan struct{}), attachers: map[*attachWriter]struct{}{}}
+	r := &shimRuntime{cfg: cfg, done: make(chan struct{})}
+	r.stream = shimruntime.New("discobox-sandbox-exec", r.done, r.handleAttachFrame)
 	if err := r.start(ctx); err != nil {
 		return err
 	}
@@ -108,24 +101,8 @@ func (r *shimRuntime) start(ctx context.Context) error {
 		logger.Close()
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(r.cfg.SocketPath), 0o700); err != nil {
-		r.terminate()
-		logger.Close()
-		return err
-	}
-	if err := prepareSocketPath(r.cfg.SocketPath); err != nil {
-		r.terminate()
-		logger.Close()
-		return err
-	}
-	ln, err := (&net.ListenConfig{}).Listen(ctx, "unix", r.cfg.SocketPath)
+	ln, err := shimruntime.ListenUnix(ctx, r.cfg.SocketPath)
 	if err != nil {
-		r.terminate()
-		logger.Close()
-		return err
-	}
-	if err := os.Chmod(r.cfg.SocketPath, 0o600); err != nil {
-		_ = ln.Close()
 		r.terminate()
 		logger.Close()
 		return err
@@ -142,14 +119,12 @@ func (r *shimRuntime) start(ctx context.Context) error {
 }
 
 func (r *shimRuntime) startPTY(cmd *exec.Cmd) error {
-	size := &pty.Winsize{Rows: r.cfg.Rows, Cols: r.cfg.Cols}
-	if size.Rows == 0 {
-		size.Rows = 24
+	if r.stream.HasAttachers() {
+		resizeCtx, cancelResize := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		r.stream.WaitForResize(resizeCtx)
+		cancelResize()
 	}
-	if size.Cols == 0 {
-		size.Cols = 80
-	}
-	tty, err := pty.StartWithSize(cmd, size)
+	tty, err := pty.StartWithSize(cmd, r.stream.InitialWinsize(r.cfg.Rows, r.cfg.Cols))
 	if err != nil {
 		return err
 	}
@@ -199,24 +174,7 @@ func (r *shimRuntime) serve() {
 }
 
 func (r *shimRuntime) handleAttach(w http.ResponseWriter, _ *http.Request) {
-	conn, rw, err := http.NewResponseController(w).Hijack()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	defer conn.Close()
-	_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: discobox-sandbox-exec\r\n\r\n")
-	if err := rw.Flush(); err != nil {
-		return
-	}
-	attach := &attachWriter{w: rw, done: make(chan struct{})}
-	r.addAttacher(attach)
-	defer r.removeAttacher(attach)
-	go r.readAttachFrames(attach, rw)
-	select {
-	case <-attach.done:
-	case <-r.done:
-	}
+	r.stream.HandleAttach(w)
 }
 
 func (r *shimRuntime) handleStart(w http.ResponseWriter, _ *http.Request) {
@@ -294,7 +252,7 @@ func (r *shimRuntime) copyOutput(stream LogStream, reader io.Reader) {
 		if n > 0 {
 			chunk := append([]byte(nil), buf[:n]...)
 			r.logger.Record(stream, chunk)
-			r.broadcast(chunk)
+			r.stream.Broadcast(chunk)
 		}
 		if err != nil {
 			return
@@ -302,47 +260,37 @@ func (r *shimRuntime) copyOutput(stream LogStream, reader io.Reader) {
 	}
 }
 
-func (r *shimRuntime) readAttachFrames(attach *attachWriter, rw io.Reader) {
-	for {
-		next, err := frame.Read(rw)
+func (r *shimRuntime) handleAttachFrame(attach *shimruntime.Attacher, next frame.Frame) {
+	switch next.Type {
+	case frame.Input:
+		if err := r.writeInput(next.Payload); err != nil {
+			_ = attach.WriteFrame(frame.Error, []byte(err.Error()))
+			attach.Close()
+			return
+		}
+	case frame.Resize:
+		resize, err := frame.DecodeResize(next.Payload)
 		if err != nil {
-			if !errors.Is(err, io.EOF) {
-				_ = attach.writeFrame(frame.Error, []byte(err.Error()))
-			}
-			attach.close()
+			_ = attach.WriteFrame(frame.Error, []byte(err.Error()))
+			attach.Close()
 			return
 		}
-		switch next.Type {
-		case frame.Input:
-			if err := r.writeInput(next.Payload); err != nil {
-				_ = attach.writeFrame(frame.Error, []byte(err.Error()))
-				attach.close()
-				return
-			}
-		case frame.Resize:
-			if r.tty == nil {
-				continue
-			}
-			resize, err := frame.DecodeResize(next.Payload)
-			if err != nil {
-				_ = attach.writeFrame(frame.Error, []byte(err.Error()))
-				attach.close()
-				return
-			}
-			_ = pty.Setsize(r.tty, &pty.Winsize{Rows: resize.Rows, Cols: resize.Cols})
-		case frame.Signal:
-			if err := signalProcess(r.cmd, string(next.Payload)); err != nil {
-				_ = attach.writeFrame(frame.Error, []byte(err.Error()))
-				attach.close()
-				return
-			}
-		case frame.CloseInput:
-			r.closeInput()
-		default:
-			_ = attach.writeFrame(frame.Error, []byte("unknown frame type"))
-			attach.close()
+		r.mu.Lock()
+		tty := r.tty
+		r.mu.Unlock()
+		r.stream.ApplyResize(tty, resize)
+	case frame.Signal:
+		if err := signalProcess(r.cmd, string(next.Payload)); err != nil {
+			_ = attach.WriteFrame(frame.Error, []byte(err.Error()))
+			attach.Close()
 			return
 		}
+	case frame.CloseInput:
+		r.closeInput()
+	default:
+		_ = attach.WriteFrame(frame.Error, []byte("unknown frame type"))
+		attach.Close()
+		return
 	}
 }
 
@@ -398,17 +346,14 @@ func (r *shimRuntime) wait() {
 		r.status.ExitCode = &code
 	}
 	status := r.status
-	attachers := make([]*attachWriter, 0, len(r.attachers))
-	for attach := range r.attachers {
-		attachers = append(attachers, attach)
-	}
+	attachers := r.stream.Attachers()
 	r.mu.Unlock()
 	r.outputWG.Wait()
 	_ = r.writeStatusValue(status)
 	payload, _ := frame.EncodeExit(string(status.Status), status.ExitCode, status.Error)
 	for _, attach := range attachers {
-		_ = attach.writeFrame(frame.Exit, payload)
-		attach.close()
+		_ = attach.WriteFrame(frame.Exit, payload)
+		attach.Close()
 	}
 	r.finish()
 }
@@ -444,32 +389,6 @@ func (r *shimRuntime) finish() {
 	})
 }
 
-func (r *shimRuntime) addAttacher(attach *attachWriter) {
-	r.mu.Lock()
-	r.attachers[attach] = struct{}{}
-	r.mu.Unlock()
-}
-
-func (r *shimRuntime) removeAttacher(attach *attachWriter) {
-	r.mu.Lock()
-	delete(r.attachers, attach)
-	r.mu.Unlock()
-}
-
-func (r *shimRuntime) broadcast(payload []byte) {
-	r.mu.Lock()
-	attachers := make([]*attachWriter, 0, len(r.attachers))
-	for attach := range r.attachers {
-		attachers = append(attachers, attach)
-	}
-	r.mu.Unlock()
-	for _, attach := range attachers {
-		if err := attach.writeFrame(frame.Output, payload); err != nil {
-			r.removeAttacher(attach)
-		}
-	}
-}
-
 func (r *shimRuntime) writeStatus() error {
 	r.mu.Lock()
 	status := r.status
@@ -479,42 +398,4 @@ func (r *shimRuntime) writeStatus() error {
 
 func (r *shimRuntime) writeStatusValue(status Exec) error {
 	return writeRuntime(r.cfg.RuntimePath, status)
-}
-
-func (a *attachWriter) writeFrame(typ byte, payload []byte) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.writeFrameLocked(typ, payload)
-}
-
-func (a *attachWriter) writeFrameLocked(typ byte, payload []byte) error {
-	if err := frame.Write(a.w, typ, payload); err != nil {
-		a.close()
-		return err
-	}
-	if err := a.w.Flush(); err != nil {
-		a.close()
-		return err
-	}
-	return nil
-}
-
-func (a *attachWriter) close() {
-	a.closeOnce.Do(func() {
-		close(a.done)
-	})
-}
-
-func prepareSocketPath(path string) error {
-	info, err := os.Lstat(path)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if info.Mode()&os.ModeSocket == 0 {
-		return fmt.Errorf("refusing to remove non-socket path %s", path)
-	}
-	return os.Remove(path)
 }

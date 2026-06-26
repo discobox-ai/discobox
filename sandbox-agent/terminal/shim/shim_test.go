@@ -151,3 +151,69 @@ done:
 		t.Fatalf("run shim: %v", err)
 	}
 }
+
+func TestRunUsesResizeFrameBeforeStart(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	sizePath := filepath.Join(dir, "size.txt")
+	socketPath := filepath.Join(dir, "shim.sock")
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- Run(ctx, Config{
+			TerminalID:  "agt_test",
+			AgentID:     "test",
+			Command:     []string{"sh", "-c", "sleep 0.2; stty size > " + sizePath},
+			Workdir:     dir,
+			SocketPath:  socketPath,
+			RuntimePath: filepath.Join(dir, "runtime.json"),
+			Rows:        24,
+			Cols:        80,
+		})
+	}()
+
+	conn, err := shimproxy.Dial(ctx, socketPath, 5*time.Second)
+	if err != nil {
+		t.Fatalf("dial shim: %v", err)
+	}
+	defer conn.Close()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://unix/attach", nil)
+	if err != nil {
+		t.Fatalf("new attach request: %v", err)
+	}
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "discobox-agent-terminal")
+	if err := req.Write(conn); err != nil {
+		t.Fatalf("write attach request: %v", err)
+	}
+	reader := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(reader, req)
+	if err != nil {
+		t.Fatalf("read attach response: %v", err)
+	}
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("attach status = %s", resp.Status)
+	}
+
+	payload, err := frame.EncodeResize(101, 33)
+	if err != nil {
+		t.Fatalf("encode resize: %v", err)
+	}
+	if err := frame.Write(conn, frame.Resize, payload); err != nil {
+		t.Fatalf("write resize: %v", err)
+	}
+	if _, err := shimproxy.StartJSON[terminal.Terminal](ctx, socketPath); err != nil {
+		t.Fatalf("start shim: %v", err)
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("run shim: %v", err)
+	}
+	data, err := os.ReadFile(sizePath)
+	if err != nil {
+		t.Fatalf("read size: %v", err)
+	}
+	if got := string(data); got != "33 101\n" {
+		t.Fatalf("size = %q, want %q", got, "33 101\n")
+	}
+}

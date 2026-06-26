@@ -7,20 +7,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"net/http"
 	"net/url"
 	"os"
-	"os/signal"
 	"strconv"
 	"strings"
-	"sync"
 	"text/tabwriter"
 	"time"
 
 	"github.com/coder/websocket"
 	"github.com/spf13/cobra"
-	"golang.org/x/term"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
@@ -292,17 +288,26 @@ func (a *App) attachSandboxExec(ctx context.Context, projectID, sandboxID, execI
 	}
 	defer conn.Close()
 
+	session := &framedAttachSession{
+		conn:    conn,
+		stdin:   stdin,
+		stdout:  stdout,
+		stderr:  stderr,
+		kind:    "sandbox exec",
+		action:  "attach exec",
+		rawMode: interactive && tty,
+		resize:  tty,
+		copyInput: func(ctx context.Context, s *framedAttachSession) error {
+			return copySandboxExecInput(ctx, s, interactive)
+		},
+	}
+	if tty {
+		if err := session.writeInitialResize(); err != nil {
+			return err
+		}
+	}
 	if _, err := a.startSandboxExec(ctx, projectID, sandboxID, execID); err != nil {
 		return err
-	}
-
-	session := &sandboxExecAttachSession{
-		conn:        conn,
-		stdin:       stdin,
-		stdout:      stdout,
-		stderr:      stderr,
-		interactive: interactive,
-		tty:         tty,
 	}
 	return session.run(ctx)
 }
@@ -498,110 +503,8 @@ func (r sandboxExecRecord) model() apimodel.SandboxExec {
 	return exec
 }
 
-type sandboxExecAttachSession struct {
-	conn        io.ReadWriteCloser
-	stdin       io.Reader
-	stdout      io.Writer
-	stderr      io.Writer
-	interactive bool
-	tty         bool
-	mu          sync.Mutex
-}
-
-func (s *sandboxExecAttachSession) run(ctx context.Context) error {
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	if s.interactive && s.tty {
-		if file, ok := s.stdin.(*os.File); ok && terminalSizeIsTTY(file) {
-			state, err := makeRawTerminal(file)
-			if err != nil {
-				return err
-			}
-			defer restoreTerminal(file, state)
-		}
-	}
-
-	outputErr := make(chan error, 1)
-	otherErr := make(chan error, 3)
-	go func() { outputErr <- s.copyOutput() }()
-	go func() {
-		if err := s.copyInput(ctx); err != nil {
-			otherErr <- err
-		}
-	}()
-	if s.tty {
-		go func() {
-			if err := s.watchResize(ctx, os.Stdin); err != nil {
-				otherErr <- err
-			}
-		}()
-	}
-	go func() {
-		if err := s.proxySignals(ctx); err != nil {
-			otherErr <- err
-		}
-	}()
-
-	for {
-		select {
-		case err := <-outputErr:
-			cancel()
-			_ = s.conn.Close()
-			if errors.Is(err, io.EOF) {
-				return nil
-			}
-			return err
-		case err := <-otherErr:
-			cancel()
-			_ = s.conn.Close()
-			if isAttachDone(err) {
-				return nil
-			}
-			return err
-		case <-ctx.Done():
-			_ = s.conn.Close()
-			return ctx.Err()
-		}
-	}
-}
-
-func terminalSizeIsTTY(file *os.File) bool {
-	_, _, ok := terminalSize(file)
-	return ok
-}
-
-func makeRawTerminal(file *os.File) (*term.State, error) {
-	return term.MakeRaw(int(file.Fd()))
-}
-
-func restoreTerminal(file *os.File, state *term.State) {
-	_ = term.Restore(int(file.Fd()), state)
-}
-
-func (s *sandboxExecAttachSession) copyOutput() error {
-	for {
-		frame, err := readAgentTerminalFrame(s.conn)
-		if err != nil {
-			return err
-		}
-		switch frame.typ {
-		case attachFrameOutput:
-			if _, err := s.stdout.Write(frame.payload); err != nil {
-				return err
-			}
-		case attachFrameError:
-			return nil
-		case attachFrameExit:
-			return attachExitErrorFromPayload("sandbox exec", frame.payload)
-		default:
-			return fmt.Errorf("attach exec: unexpected frame type %d", frame.typ)
-		}
-	}
-}
-
-func (s *sandboxExecAttachSession) copyInput(ctx context.Context) error {
-	if !s.interactive {
+func copySandboxExecInput(ctx context.Context, s *framedAttachSession, interactive bool) error {
+	if !interactive {
 		return s.closeInput()
 	}
 	buf := make([]byte, 32*1024)
@@ -624,76 +527,6 @@ func (s *sandboxExecAttachSession) copyInput(ctx context.Context) error {
 		default:
 		}
 	}
-}
-
-func (s *sandboxExecAttachSession) closeInput() error {
-	return s.writeFrame(attachFrameCloseInput, nil)
-}
-
-func (s *sandboxExecAttachSession) watchResize(ctx context.Context, file *os.File) error {
-	cols, rows, ok := terminalSize(file)
-	if ok {
-		if err := s.writeResize(cols, rows); err != nil {
-			return err
-		}
-	}
-	ticker := time.NewTicker(250 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case <-ticker.C:
-			nextCols, nextRows, ok := terminalSize(file)
-			if !ok || (nextCols == cols && nextRows == rows) {
-				continue
-			}
-			cols, rows = nextCols, nextRows
-			if err := s.writeResize(cols, rows); err != nil {
-				return err
-			}
-		}
-	}
-}
-
-func (s *sandboxExecAttachSession) proxySignals(ctx context.Context) error {
-	signals := make(chan os.Signal, 8)
-	signal.Notify(signals, proxiedSignals()...)
-	defer signal.Stop(signals)
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case sig := <-signals:
-			name, ok := signalName(sig)
-			if !ok {
-				continue
-			}
-			if err := s.writeFrame(attachFrameSignal, []byte(name)); err != nil {
-				return err
-			}
-		}
-	}
-}
-
-func (s *sandboxExecAttachSession) writeResize(cols, rows int) error {
-	if cols <= 0 || rows <= 0 || cols > math.MaxUint16 || rows > math.MaxUint16 {
-		return nil
-	}
-	payload, err := json.Marshal(struct {
-		Cols uint16 `json:"cols"`
-		Rows uint16 `json:"rows"`
-	}{Cols: uint16(cols), Rows: uint16(rows)})
-	if err != nil {
-		return err
-	}
-	return s.writeFrame(attachFrameResize, payload)
-}
-
-func (s *sandboxExecAttachSession) writeFrame(typ byte, payload []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return writeAgentTerminalFrame(s.conn, typ, payload)
 }
 
 func (a *App) returnSandboxExecStatus(ctx context.Context, projectID, sandboxID, execID string) error {

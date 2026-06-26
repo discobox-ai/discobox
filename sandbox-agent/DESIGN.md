@@ -20,6 +20,7 @@ runtime operations.
 | `terminal/shim` | Per-terminal child process that owns the PTY and local Unix socket attach/status API. |
 | `terminal/frame` | Docker-exec-style binary stream framing shared by terminal attach endpoints. |
 | `execs` | Ephemeral sandbox exec lifecycle, runtime metadata, systemd unit abstraction, stdout/stderr or PTY logging, and shim launch. |
+| `shimruntime` | Shared local shim attach runtime for Unix socket setup, HTTP upgrade handling, framed stream attachers, broadcast, exit frames, and pending resize state. |
 | `hooks` | Local Unix-socket collector and publisher protocol for coding-agent lifecycle hook payloads. |
 | `resources` | Opaque cgroup/procfs/systemd-style resource snapshot collection for terminal runtimes. |
 | `store` | Sandbox-local SQLite/GORM audit log, observed terminal state snapshots, and retained resource blobs. |
@@ -42,3 +43,11 @@ runtime operations.
   lifecycle events, latest observed runtime state, and retained opaque resource
   samples, but REST runtime state should be derived from runtime/systemd/shim
   observations instead of an in-memory cache.
+- Terminal and exec shims share the same framed attach mechanics. Keep Unix
+  socket setup, HTTP upgrade, attacher tracking, frame writes, output broadcast,
+  exit frame emission, and pending resize handling in `shimruntime`; keep
+  resource-specific process startup, status persistence, stream logging, stdin
+  close behavior, and signal targeting in `terminal/shim` or `execs`.
+- Do not duplicate attach-loop or resize-handling logic between terminal and
+  exec shims. Extend `shimruntime` when a new behavior is stream plumbing, and
+  leave only semantic differences in the terminal or exec package.
