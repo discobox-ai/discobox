@@ -230,7 +230,7 @@ func (a *App) writeAgent(cmd *cobra.Command, agent *apimodel.AgentConfig) error 
 	return tw.Flush()
 }
 
-func (a *App) writeAgents(cmd *cobra.Command, agents []apimodel.AgentConfig) error {
+func (a *App) writeAgents(cmd *cobra.Command, agents []apimodel.AgentConfig, defaultAgentConfigID ...string) error {
 	if a.quiet {
 		agents = sortedByCreatedAt(agents, func(agent apimodel.AgentConfig) time.Time { return agent.CreatedAt })
 		return writeResourceIDs(cmd.OutOrStdout(), agents, func(agent apimodel.AgentConfig) string { return agent.ID })
@@ -238,13 +238,24 @@ func (a *App) writeAgents(cmd *cobra.Command, agents []apimodel.AgentConfig) err
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"agentConfigs": agents})
 	}
+	defaultID := ""
+	if len(defaultAgentConfigID) > 0 {
+		defaultID = defaultAgentConfigID[0]
+	}
 	agents = sortedByCreatedAt(agents, func(agent apimodel.AgentConfig) time.Time { return agent.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tUPDATED")
+	fmt.Fprintln(tw, "ID\tNAME\tDEFAULT\tRUN COMMAND\tUPDATED")
 	for _, agent := range agents {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(agent.ID), agent.Name, agent.RunCommand, formatTime(agent.UpdatedAt))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", shortID(agent.ID), agent.Name, formatDefaultMarker(agent.ID == defaultID), agent.RunCommand, formatTime(agent.UpdatedAt))
 	}
 	return tw.Flush()
+}
+
+func formatDefaultMarker(isDefault bool) string {
+	if isDefault {
+		return "yes"
+	}
+	return ""
 }
 
 func (a *App) writeJobs(cmd *cobra.Command, jobs []apimodel.Job) error {

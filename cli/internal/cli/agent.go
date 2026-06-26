@@ -84,15 +84,18 @@ func (a *App) newAgentListCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		bodyRes, err := client.ListAgentConfigs(cmd.Context(), apiclientgen.ListAgentConfigsParams{ProjectId: projectID})
+		agents, err := a.listAgentConfigs(cmd.Context(), client, projectID)
 		if err != nil {
 			return err
 		}
-		body, err := expectResponse[apimodel.ListAgentConfigsBody](bodyRes)
-		if err != nil {
-			return err
+		var defaultAgentConfigID string
+		if !a.quiet && a.output != "json" {
+			defaultAgentConfigID, err = a.defaultAgentConfigID(cmd.Context(), client, projectID)
+			if err != nil {
+				return err
+			}
 		}
-		return a.writeAgents(cmd, body.GetAgentConfigs())
+		return a.writeAgents(cmd, agents, defaultAgentConfigID)
 	}}
 	a.addQuietFlag(cmd)
 	return cmd
@@ -388,6 +391,18 @@ func (a *App) listAgentConfigs(ctx context.Context, client *apiclientgen.Client,
 		return nil, err
 	}
 	return body.GetAgentConfigs(), nil
+}
+
+func (a *App) defaultAgentConfigID(ctx context.Context, client *apiclientgen.Client, projectID string) (string, error) {
+	res, err := client.GetProject(ctx, apiclientgen.GetProjectParams{ProjectId: projectID})
+	if err != nil {
+		return "", err
+	}
+	project, err := expectResponse[apimodel.Project](res)
+	if err != nil {
+		return "", err
+	}
+	return project.DefaultAgentConfigId.Or(""), nil
 }
 
 func agentConfigByName(agents []apimodel.AgentConfig, name string) *apimodel.AgentConfig {
