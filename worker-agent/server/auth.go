@@ -22,6 +22,8 @@ const (
 	ScopeSandboxHTTP   = "sandbox:http"
 	ScopeTerminalRead  = "terminal:read"
 	ScopeTerminalWrite = "terminal:write"
+	ScopeExecRead      = "exec:read"
+	ScopeExecWrite     = "exec:write"
 )
 
 type signedTokenClaimsContextKey struct{}
@@ -44,6 +46,10 @@ func (c SignedTokenClaims) HasScope(scope string) bool {
 			}
 		case "terminal:*":
 			if strings.HasPrefix(scope, "terminal:") {
+				return true
+			}
+		case "exec:*":
+			if strings.HasPrefix(scope, "exec:") {
 				return true
 			}
 		}

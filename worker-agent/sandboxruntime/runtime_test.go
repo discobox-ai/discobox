@@ -38,11 +38,11 @@ func TestSandboxUserUsesReasonableDefaults(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			user := resolveSandboxUser(req)
-			if user.uid != 0 || user.gid != 0 || user.name != "root" || user.homeDirectory != "/root" {
+			if user.uid != 0 || user.gid != 0 || user.name != "root" || user.homeDirectory != "/home/root" {
 				t.Fatalf("resolveSandboxUser = %#v", user)
 			}
 			env := envWithSandboxUser(map[string]string{}, user)
-			if env["DISCOBOX_USER_UID"] != "0" || env["DISCOBOX_USER_GID"] != "0" || env["DISCOBOX_USER_NAME"] != "root" || env["DISCOBOX_USER_HOME"] != "/root" {
+			if env["DISCOBOX_USER_UID"] != "0" || env["DISCOBOX_USER_GID"] != "0" || env["DISCOBOX_USER_NAME"] != "root" || env["DISCOBOX_USER_HOME"] != "/home/root" {
 				t.Fatalf("envWithSandboxUser = %#v", env)
 			}
 		})

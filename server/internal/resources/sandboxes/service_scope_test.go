@@ -42,7 +42,7 @@ func TestAuthorizeRequestedScopesAllowsAllScope(t *testing.T) {
 		},
 	})
 
-	if err := authorizeRequestedScopes(ctx, []string{workeragentauth.ScopeSandboxRead, workeragentauth.ScopeSandboxWrite, workeragentauth.ScopeSandboxHTTP, workeragentauth.ScopeTerminalRead, workeragentauth.ScopeTerminalWrite}); err != nil {
+	if err := authorizeRequestedScopes(ctx, []string{workeragentauth.ScopeSandboxRead, workeragentauth.ScopeSandboxWrite, workeragentauth.ScopeSandboxHTTP, workeragentauth.ScopeTerminalRead, workeragentauth.ScopeTerminalWrite, workeragentauth.ScopeExecRead, workeragentauth.ScopeExecWrite}); err != nil {
 		t.Fatalf("authorize all scopes: %v", err)
 	}
 }

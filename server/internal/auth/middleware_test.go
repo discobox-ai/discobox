@@ -141,7 +141,7 @@ func TestDefaultUserAuthenticatorGrantsAllScopes(t *testing.T) {
 	if principal.Type != PrincipalTypeUser || principal.UserID != "user-1" {
 		t.Fatalf("principal = %#v", principal)
 	}
-	if !principal.HasScope("sandbox:read") || !principal.HasScope("sandbox:write") || !principal.HasScope("sandbox:http") || !principal.HasScope("terminal:read") || !principal.HasScope("terminal:write") {
+	if !principal.HasScope("sandbox:read") || !principal.HasScope("sandbox:write") || !principal.HasScope("sandbox:http") || !principal.HasScope("terminal:read") || !principal.HasScope("terminal:write") || !principal.HasScope("exec:read") || !principal.HasScope("exec:write") {
 		t.Fatalf("default principal scopes = %#v, want all scopes", principal.Scopes)
 	}
 }

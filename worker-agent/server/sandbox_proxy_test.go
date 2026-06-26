@@ -58,6 +58,109 @@ func TestSandboxAgentProxyRewritesToSandboxAgentAndForwardsDownstreamToken(t *te
 	}
 }
 
+func TestSandboxAgentHookProxyRequiresTerminalReadScope(t *testing.T) {
+	projectID := "project-1"
+	workerID := "worker-1"
+	sandboxID := "sandbox-1"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/projects/project-1/sandboxes/sandbox-1/agent-hooks" {
+			t.Fatalf("upstream path = %q", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"hooks":[]}`))
+	}))
+	t.Cleanup(upstream.Close)
+	baseURL, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	publicKey, sign := testWorkerTokenSigner(t)
+	router, err := NewRouter(Config{
+		Identity:              Identity{ProjectID: projectID, WorkerID: workerID},
+		Runtime:               proxyTestRuntime{MemorySandboxRuntime: sandboxruntime.NewMemorySandboxRuntime(), baseURL: baseURL},
+		ControlPlanePublicKey: publicKey,
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/project/project-1/worker/worker-1/sandboxes/sandbox-1/agent-hooks", nil)
+	req.Header.Set("Authorization", "Bearer "+sign(projectID, workerID, sandboxID, ScopeTerminalRead))
+	req.Header.Set(sandboxAgentAuthorizationHeader, "Bearer sandbox-token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("proxy status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestSandboxExecProxyRequiresExecScope(t *testing.T) {
+	projectID := "project-1"
+	workerID := "worker-1"
+	sandboxID := "sandbox-1"
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/projects/project-1/sandboxes/sandbox-1/execs" {
+			t.Fatalf("upstream path = %q", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"execs":[]}`))
+	}))
+	t.Cleanup(upstream.Close)
+	baseURL, err := url.Parse(upstream.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	publicKey, sign := testWorkerTokenSigner(t)
+	router, err := NewRouter(Config{
+		Identity:              Identity{ProjectID: projectID, WorkerID: workerID},
+		Runtime:               proxyTestRuntime{MemorySandboxRuntime: sandboxruntime.NewMemorySandboxRuntime(), baseURL: baseURL},
+		ControlPlanePublicKey: publicKey,
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/project/project-1/worker/worker-1/sandboxes/sandbox-1/execs", nil)
+	req.Header.Set("Authorization", "Bearer "+sign(projectID, workerID, sandboxID, ScopeExecRead))
+	req.Header.Set(sandboxAgentAuthorizationHeader, "Bearer sandbox-token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("proxy status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestSandboxExecProxyRejectsTerminalScope(t *testing.T) {
+	projectID := "project-1"
+	workerID := "worker-1"
+	sandboxID := "sandbox-1"
+	baseURL, err := url.Parse("http://sandbox.local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicKey, sign := testWorkerTokenSigner(t)
+	router, err := NewRouter(Config{
+		Identity:              Identity{ProjectID: projectID, WorkerID: workerID},
+		Runtime:               proxyTestRuntime{MemorySandboxRuntime: sandboxruntime.NewMemorySandboxRuntime(), baseURL: baseURL},
+		ControlPlanePublicKey: publicKey,
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/project/project-1/worker/worker-1/sandboxes/sandbox-1/execs", nil)
+	req.Header.Set("Authorization", "Bearer "+sign(projectID, workerID, sandboxID, ScopeTerminalRead))
+	req.Header.Set(sandboxAgentAuthorizationHeader, "Bearer sandbox-token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("proxy status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+}
+
 type proxyTestRuntime struct {
 	*sandboxruntime.MemorySandboxRuntime
 	baseURL *url.URL

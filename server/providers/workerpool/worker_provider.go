@@ -625,7 +625,7 @@ func (p *workerAgentSandboxProvider) sandboxAgentAuthTokenProvider(ref sandbox.S
 func requiresSandboxAgentToken(scopes []string) bool {
 	for _, scope := range scopes {
 		switch scope {
-		case workeragentauth.ScopeTerminalRead, workeragentauth.ScopeTerminalWrite, "terminal:*", "*":
+		case workeragentauth.ScopeTerminalRead, workeragentauth.ScopeTerminalWrite, workeragentauth.ScopeExecRead, workeragentauth.ScopeExecWrite, "terminal:*", "exec:*", "*":
 			return true
 		}
 	}

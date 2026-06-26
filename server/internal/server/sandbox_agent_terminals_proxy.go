@@ -16,14 +16,23 @@ const defaultSandboxAgentBaseURL = "http://sandbox.local"
 
 func registerSandboxAgentTerminalRoutes(router chi.Router, service services.SandboxService) {
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals", sandboxAgentTerminalProxyHandler(service))
+	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodPost, "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodDelete, "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodPost, "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/attach", sandboxAgentTerminalProxyHandler(service))
+	router.Method(http.MethodPost, "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/start", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/events", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/logs", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/history", sandboxAgentTerminalProxyHandler(service))
 	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/stream", sandboxAgentTerminalProxyHandler(service))
+	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs", sandboxAgentTerminalProxyHandler(service))
+	router.Method(http.MethodPost, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs", sandboxAgentTerminalProxyHandler(service))
+	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}", sandboxAgentTerminalProxyHandler(service))
+	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/logs", sandboxAgentTerminalProxyHandler(service))
+	router.Method(http.MethodPost, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach", sandboxAgentTerminalProxyHandler(service))
+	router.Method(http.MethodGet, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach", sandboxAgentTerminalProxyHandler(service))
+	router.Method(http.MethodPost, "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start", sandboxAgentTerminalProxyHandler(service))
 }
 
 func sandboxAgentTerminalProxyHandler(service services.SandboxService) http.Handler {
@@ -55,7 +64,7 @@ func sandboxAgentTerminalProxyHandler(service services.SandboxService) http.Hand
 			return
 		}
 
-		target, err := sandboxAgentTerminalProxyTargetURL(lease.BaseURL, projectID, strings.TrimSpace(*sandboxModel.WorkerID), sandboxID, r.URL.Path)
+		target, err := sandboxAgentTerminalProxyTargetURL(lease.BaseURL, projectID, sandboxModel.ProjectID, strings.TrimSpace(*sandboxModel.WorkerID), sandboxID, sandboxModel.ID, r.URL.Path)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -66,17 +75,33 @@ func sandboxAgentTerminalProxyHandler(service services.SandboxService) http.Hand
 }
 
 func sandboxAgentTerminalProxyScopes(r *http.Request) []string {
-	switch r.Method {
-	case http.MethodGet:
-		return []string{workeragentauth.ScopeTerminalRead}
-	case http.MethodPost, http.MethodDelete:
-		return []string{workeragentauth.ScopeTerminalWrite}
-	default:
-		return nil
+	if strings.Contains(r.URL.Path, "/agent-terminals") || strings.Contains(r.URL.Path, "/agent-hooks") {
+		switch r.Method {
+		case http.MethodGet:
+			return []string{workeragentauth.ScopeTerminalRead}
+		case http.MethodPost, http.MethodDelete:
+			return []string{workeragentauth.ScopeTerminalWrite}
+		default:
+			return nil
+		}
 	}
+	if strings.Contains(r.URL.Path, "/execs") {
+		if strings.HasSuffix(r.URL.Path, "/attach") {
+			return []string{workeragentauth.ScopeExecWrite, workeragentauth.ScopeExecRead}
+		}
+		switch r.Method {
+		case http.MethodGet:
+			return []string{workeragentauth.ScopeExecRead}
+		case http.MethodPost, http.MethodDelete:
+			return []string{workeragentauth.ScopeExecWrite}
+		default:
+			return nil
+		}
+	}
+	return nil
 }
 
-func sandboxAgentTerminalProxyTargetURL(baseURL, projectID, workerID, sandboxID, path string) (*url.URL, error) {
+func sandboxAgentTerminalProxyTargetURL(baseURL, routeProjectID, projectID, workerID, routeSandboxID, sandboxID, path string) (*url.URL, error) {
 	if strings.TrimSpace(baseURL) == "" {
 		baseURL = defaultSandboxAgentBaseURL
 	}
@@ -90,7 +115,7 @@ func sandboxAgentTerminalProxyTargetURL(baseURL, projectID, workerID, sandboxID,
 	if !strings.HasPrefix(path, "/api/projects/") {
 		return nil, fmt.Errorf("sandbox agent-terminal proxy path %q must start with /api/projects/", path)
 	}
-	suffix := strings.TrimPrefix(path, "/api/projects/"+projectID+"/sandboxes/"+sandboxID)
+	suffix := strings.TrimPrefix(path, "/api/projects/"+routeProjectID+"/sandboxes/"+routeSandboxID)
 	if suffix == path {
 		return nil, fmt.Errorf("sandbox agent-terminal proxy path identity does not match route")
 	}

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
@@ -183,6 +185,9 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		return nil, err
 	}
 	if _, err := r.client.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
+		return nil, err
+	}
+	if err := r.waitForSandboxAgent(ctx, sandboxID); err != nil {
 		return nil, err
 	}
 	return r.GetSandbox(ctx, sandboxID)
@@ -365,6 +370,9 @@ func (r *DockerSandboxRuntime) StartSandbox(ctx context.Context, sandboxID strin
 	if _, err := r.client.ContainerStart(ctx, sb.ID, client.ContainerStartOptions{}); err != nil {
 		return nil, err
 	}
+	if err := r.waitForSandboxAgent(ctx, sandboxID); err != nil {
+		return nil, err
+	}
 	return r.GetSandbox(ctx, sandboxID)
 }
 
@@ -411,6 +419,44 @@ func (r *DockerSandboxRuntime) HTTPBaseURL(ctx context.Context, sandboxID string
 		return nil, fmt.Errorf("sandbox %q does not have an inspectable IP address", sandboxID)
 	}
 	return &url.URL{Scheme: "http", Host: fmt.Sprintf("%s:%d", ip, port)}, nil
+}
+
+func (r *DockerSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxID string) error {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	var lastErr error
+	for {
+		base, err := r.HTTPBaseURL(ctx, sandboxID, sandboxAgentPort)
+		if err == nil {
+			healthURL := *base
+			healthURL.Path = "/healthz"
+			req, reqErr := http.NewRequestWithContext(ctx, http.MethodGet, healthURL.String(), nil)
+			if reqErr != nil {
+				return reqErr
+			}
+			resp, reqErr := http.DefaultClient.Do(req)
+			if reqErr == nil {
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
+				if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+					return nil
+				}
+				lastErr = fmt.Errorf("sandbox-agent health returned %s", resp.Status)
+			} else {
+				lastErr = reqErr
+			}
+		} else {
+			lastErr = err
+		}
+		select {
+		case <-ctx.Done():
+			if lastErr != nil {
+				return fmt.Errorf("wait for sandbox-agent: %w", lastErr)
+			}
+			return ctx.Err()
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 func (r *DockerSandboxRuntime) filters(sandboxID string) client.Filters {
@@ -704,7 +750,7 @@ func resolveSandboxUser(req *workerapimodel.WorkerSandboxCreateRequest) sandboxU
 		uid:           0,
 		gid:           0,
 		name:          "root",
-		homeDirectory: "/root",
+		homeDirectory: "/home/root",
 	}
 	if req == nil {
 		return out

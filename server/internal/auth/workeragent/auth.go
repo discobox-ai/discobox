@@ -29,6 +29,8 @@ const (
 	ScopeSandboxHTTP     = "sandbox:http"
 	ScopeTerminalRead    = "terminal:read"
 	ScopeTerminalWrite   = "terminal:write"
+	ScopeExecRead        = "exec:read"
+	ScopeExecWrite       = "exec:write"
 
 	TokenTTL  = 15 * time.Minute
 	ClockSkew = 5 * time.Minute

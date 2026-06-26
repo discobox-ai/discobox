@@ -228,6 +228,19 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 	if err != nil {
 		return nil, nil, mapAPIError(err, "sandbox not found")
 	}
+	if sandboxModel.Phase != model.SandboxPhaseRunning {
+		return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("sandbox is not running: phase=%s", sandboxModel.Phase))
+	}
+	if sandboxModel.WorkerID == nil || strings.TrimSpace(*sandboxModel.WorkerID) == "" {
+		return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, "sandbox worker is not assigned")
+	}
+	worker, err := s.store.GetWorker(ctx, strings.TrimSpace(*sandboxModel.WorkerID))
+	if err != nil {
+		return nil, sandboxModel, mapAPIError(err, "sandbox worker not found")
+	}
+	if worker.Phase != model.WorkerPhaseActive || !worker.Ready {
+		return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("sandbox worker is not active: worker=%s phase=%s ready=%t", worker.ID, worker.Phase, worker.Ready))
+	}
 	if s.sandboxProviders == nil {
 		return nil, nil, fmt.Errorf("sandbox provider manager is required")
 	}
@@ -242,7 +255,7 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 	if err != nil {
 		return nil, nil, err
 	}
-	lease, err := provider.AcquireHTTPClient(ctx, sandbox.SandboxRef{ProjectID: projectID, SandboxID: sandboxID}, sandboxModel.RuntimeState, scopes)
+	lease, err := provider.AcquireHTTPClient(ctx, sandbox.SandboxRef{ProjectID: sandboxModel.ProjectID, SandboxID: sandboxModel.ID}, sandboxModel.RuntimeState, scopes)
 	if err != nil {
 		return nil, nil, err
 	}

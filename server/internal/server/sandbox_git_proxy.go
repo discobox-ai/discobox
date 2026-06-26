@@ -51,7 +51,7 @@ func sandboxGitProxyHandler(service services.SandboxService) http.Handler {
 			return
 		}
 
-		target, err := sandboxGitProxyTargetURL(lease.BaseURL, projectID, strings.TrimSpace(*sandboxModel.WorkerID), sandboxID, repositoryID, suffix)
+		target, err := sandboxGitProxyTargetURL(lease.BaseURL, sandboxModel.ProjectID, strings.TrimSpace(*sandboxModel.WorkerID), sandboxModel.ID, repositoryID, suffix)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return

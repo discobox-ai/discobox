@@ -48,7 +48,7 @@ func sandboxHTTPProxyHandler(service services.SandboxService) http.Handler {
 			return
 		}
 
-		target, err := sandboxHTTPProxyTargetURL(lease.BaseURL, projectID, strings.TrimSpace(*sandboxModel.WorkerID), sandboxID, port, chi.URLParam(r, "*"))
+		target, err := sandboxHTTPProxyTargetURL(lease.BaseURL, sandboxModel.ProjectID, strings.TrimSpace(*sandboxModel.WorkerID), sandboxModel.ID, port, chi.URLParam(r, "*"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
