@@ -35,6 +35,14 @@ type Driver interface {
 	Install(context.Context, InstallRequest) error
 }
 
+// Converser is implemented by drivers that support automated multi-turn conversations.
+// Prompt sends a user message and returns the final assistant response.
+// state is an opaque blob from the previous call; nil starts a new conversation.
+// The returned state must be passed to the next call to continue the conversation.
+type Converser interface {
+	Prompt(ctx context.Context, prompt string, state []byte) (result string, newState []byte, err error)
+}
+
 func PublisherCommand(req InstallRequest) string {
 	if strings.TrimSpace(req.PublisherCommand) != "" {
 		return strings.TrimSpace(req.PublisherCommand)

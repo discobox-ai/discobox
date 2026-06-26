@@ -1,8 +1,12 @@
 package opencode
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -82,4 +86,91 @@ func jsArray(values []string) string {
 		out += `"` + strings.ReplaceAll(value, `"`, `\"`) + `"`
 	}
 	return out + "]"
+}
+
+// conversationState carries an opencode session ID between Prompt calls.
+type conversationState struct {
+	SessionID string `json:"session_id,omitempty"`
+}
+
+// Prompt implements harness.Converser.
+// It runs "opencode run --format json [--session <id>] <message>" and parses
+// the JSON event stream for the session ID and final assistant response.
+func (Driver) Prompt(ctx context.Context, prompt string, state []byte) (string, []byte, error) {
+	var s conversationState
+	if len(state) > 0 {
+		_ = json.Unmarshal(state, &s)
+	}
+
+	args := []string{"run", "--format", "json", "--dangerously-skip-permissions"}
+	if s.SessionID != "" {
+		args = append(args, "--session", s.SessionID)
+	}
+	args = append(args, prompt)
+
+	cmd := exec.CommandContext(ctx, "opencode", args...)
+	out, err := cmd.Output()
+	if err != nil {
+		return "", nil, fmt.Errorf("opencode: %w", err)
+	}
+
+	result, sessionID := parseOpencodeOutput(out)
+	if sessionID == "" {
+		sessionID = s.SessionID
+	}
+	if result == "" {
+		return "", nil, fmt.Errorf("opencode: no assistant response in output")
+	}
+
+	newState, err := json.Marshal(conversationState{SessionID: sessionID})
+	return result, newState, err
+}
+
+// parseOpencodeOutput scans the JSON event stream from "opencode run --format json"
+// for the session ID and the final assistant message text.
+//
+// opencode emits JSONL events. Known shapes include:
+//
+//	{"type":"SessionCreated","properties":{"info":{"id":"..."}}}
+//	{"type":"AssistantMessage","properties":{"sessionID":"...","message":{"role":"assistant","parts":[{"type":"text","text":"..."}]}}}
+func parseOpencodeOutput(data []byte) (text, sessionID string) {
+	for _, line := range bytes.Split(data, []byte{'\n'}) {
+		line = bytes.TrimSpace(line)
+		if len(line) == 0 {
+			continue
+		}
+		var event struct {
+			Type       string `json:"type"`
+			Properties struct {
+				SessionID string `json:"sessionID"`
+				Info      struct {
+					ID string `json:"id"`
+				} `json:"info"`
+				Message struct {
+					Role  string `json:"role"`
+					Parts []struct {
+						Type string `json:"type"`
+						Text string `json:"text"`
+					} `json:"parts"`
+				} `json:"message"`
+			} `json:"properties"`
+		}
+		if err := json.Unmarshal(line, &event); err != nil {
+			continue
+		}
+		if id := event.Properties.Info.ID; id != "" {
+			sessionID = id
+		}
+		if id := event.Properties.SessionID; id != "" {
+			sessionID = id
+		}
+		if event.Properties.Message.Role == "assistant" {
+			for _, part := range event.Properties.Message.Parts {
+				if part.Type == "text" {
+					text = part.Text
+				}
+			}
+		}
+	}
+	return
 }
