@@ -62,6 +62,11 @@ Prefer proper structural changes over compatibility shims or narrow patches.
 - Do not introduce optional interfaces for behavior that the system now
   requires. Add required methods to the core interface and update all
   implementations.
+- Avoid optional interfaces by default. Use them only when the optionality
+  provides an actual functional runtime benefit inherent to the system, such as
+  a capability that genuinely may or may not exist at runtime. Do not use
+  optional interfaces to avoid updating implementations, preserve old call
+  shapes, or make a diff smaller.
 - Do not add wrapper types, adapter layers, or small abstraction seams just to
   avoid touching callers. If the design belongs in an existing core type, put
   it there.
