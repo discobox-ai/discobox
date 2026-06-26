@@ -27,7 +27,8 @@ type Manager struct {
 
 	mu          sync.Mutex
 	hooksByID   map[string]hooks.Hook
-	runningHook bool
+	runningHook int
+	runningByID map[string]int
 	activePhase map[string]struct{}
 }
 
@@ -61,6 +62,7 @@ func New(cfg Config) (*Manager, error) {
 		cancel:      cfg.Cancel,
 		signalRun:   cfg.SignalRun,
 		hooksByID:   map[string]hooks.Hook{},
+		runningByID: map[string]int{},
 		activePhase: map[string]struct{}{},
 	}
 	for _, h := range cfg.Hooks {
@@ -92,18 +94,58 @@ func (m *Manager) HookByID(id string) (hooks.Hook, bool) {
 	return h, ok
 }
 
-// SetRunning records whether a hook process is currently running.
+// SetRunning records whether an anonymous hook process is currently running.
 func (m *Manager) SetRunning(running bool) {
+	m.SetHookRunning("", running)
+}
+
+// SetHookRunning records whether a hook process is currently running.
+func (m *Manager) SetHookRunning(hookID string, running bool) {
 	m.mu.Lock()
-	m.runningHook = running
-	m.mu.Unlock()
+	defer m.mu.Unlock()
+	if running {
+		m.runningHook++
+		if hookID != "" {
+			m.runningByID[hookID]++
+		}
+		return
+	}
+	if m.runningHook > 0 {
+		m.runningHook--
+	}
+	if hookID != "" {
+		if m.runningByID[hookID] <= 1 {
+			delete(m.runningByID, hookID)
+		} else {
+			m.runningByID[hookID]--
+		}
+	}
+}
+
+// RunningHookIDs returns hook IDs that currently have an in-flight run.
+func (m *Manager) RunningHookIDs() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]string, 0, len(m.runningByID))
+	for id := range m.runningByID {
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// RunningCount returns the number of in-flight hook processes.
+func (m *Manager) RunningCount() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.runningHook
 }
 
 // Running reports whether a hook process is currently running.
 func (m *Manager) Running() bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return m.runningHook
+	return m.runningHook > 0
 }
 
 // Ping returns daemon reachability metadata.

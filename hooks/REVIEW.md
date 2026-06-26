@@ -7,8 +7,8 @@
   socket API for mutations.
 - Use `gormdb` for DB opening and keep migrations/models compatible with SQLite
   first.
-- Preserve serial hook execution. A failed hook must block later queued hooks
-  until an explicit design says otherwise.
+- Preserve daemon-configured bounded parallel hook execution. A failed hook must
+  block future queued hook launches; hooks already in flight may finish.
 - Treat `.discobox/hooks` as repository-root relative. Resolve and validate the
   Git root before discovery or watching.
 - Respect Git ignored files before matching hooks.

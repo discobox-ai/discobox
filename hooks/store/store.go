@@ -417,11 +417,21 @@ func (s *Store) ListPending(ctx context.Context, limit int) ([]PendingRow, error
 // active phase set. Unphased hooks are always allowed and are preferred before
 // phased hooks. If phases is empty, only unphased hooks are eligible.
 func (s *Store) NextPendingForPhases(ctx context.Context, phases []string) (*PendingRow, error) {
+	return s.NextPendingForPhasesExcluding(ctx, phases, nil)
+}
+
+// NextPendingForPhasesExcluding returns the first eligible queued hook whose ID
+// is not in excludeHookIDs.
+func (s *Store) NextPendingForPhasesExcluding(ctx context.Context, phases []string, excludeHookIDs []string) (*PendingRow, error) {
 	phases = normalizePhaseList(phases)
+	excludeHookIDs = normalizeIDs(excludeHookIDs)
 	var row models.PendingHook
 	query := s.read.WithContext(ctx).
 		Joins("JOIN hook_definitions ON hook_definitions.id = pending_hooks.hook_id").
 		Where("pending_hooks.blocked = ?", false)
+	if len(excludeHookIDs) > 0 {
+		query = query.Where("pending_hooks.hook_id NOT IN ?", excludeHookIDs)
+	}
 	if len(phases) == 0 {
 		query = query.Where("hook_definitions.phase = ?", "")
 	} else {

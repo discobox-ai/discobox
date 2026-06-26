@@ -13,8 +13,9 @@ session-scoped runtime.
 - Start the watcher and collect watcher batches.
 - Apply the five-second hook scheduling debounce.
 - Call matcher to enqueue affected hooks.
-- Drain the hook queue serially through runner.
-- Stop execution on first failed hook.
+- Drain the hook queue through runner with daemon-configured bounded parallelism.
+- Stop launching new queued hooks after a failed hook while allowing in-flight
+  hooks to finish.
 - Start and update LSP hook language servers, persist their diagnostics, and map
   diagnostics to hook status without passing them through the serial script
   queue.
@@ -42,9 +43,9 @@ flowchart TD
     changes --> match["match hooks"]
     match --> enqueue["persist queued hooks"]
     enqueue --> checkpoint["persist new watcher snapshot"]
-    checkpoint --> drain["serially drain unphased + active phase queue"]
-    drain -->|"success"| next["next queued hook"]
-    drain -->|"failure"| blocked["stop; leave queue blocked"]
+    checkpoint --> drain["drain unphased + active phase queue up to parallel limit"]
+    drain -->|"slot opens"| next["next queued hook"]
+    drain -->|"failure"| blocked["stop new launches; leave queue blocked"]
     next --> drain
     snapSignal --> snapDebounce["collect snapshot quiet period"]
     snapDebounce --> capture["capture workspace snapshot asynchronously"]
@@ -52,12 +53,19 @@ flowchart TD
     capture -->|"changes arrived while running"| snapDebounce
 ```
 
-## Serial Execution Policy
+## Bounded Parallel Execution Policy
 
-Only one hook runs at a time per session. A failure blocks later queued hooks.
-The daemon may continue to watch files and merge new changed files into queued
-state while blocked, but it must not skip past the failed hook unless a command
-or policy explicitly pauses, clears, or runs it successfully.
+The daemon runs up to `MaxParallelHooks` script hooks at a time per session. The
+default limit is three. Additional eligible hooks stay queued until a running
+hook finishes and opens a slot. The daemon must not start two concurrent runs
+for the same hook ID; if a hook is re-queued while it is running, that queued row
+waits while other eligible hooks may use open slots.
+
+A failure blocks future queued hook launches. The daemon may continue to watch
+files and merge new changed files into queued state while blocked. Hooks that
+were already in flight when the failure happened may finish, but the daemon must
+not start more queued work past the failure unless a command or policy explicitly
+pauses, clears, or runs the failed hook successfully.
 
 Hooks with `phase` set are queue-gated. File changes may enqueue them, but
 `NextPending` selection excludes them until the manager activates that phase from

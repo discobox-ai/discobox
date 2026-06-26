@@ -2,7 +2,7 @@
 
 This module owns the standalone Discobox hook runner. It turns repository-local
 hook definitions into session-scoped daemon work: watch file changes, batch them,
-run matching hooks serially, and persist hook state through the common GORM DB
+run matching hooks with bounded parallelism, and persist hook state through the common GORM DB
 path.
 
 ## Scope
@@ -31,7 +31,7 @@ flowchart TD
     watcher --> snapshotter["workspace snapshot scheduler"]
     batcher --> matcher["git-ignore filter + pattern matcher"]
     matcher --> queue["hook queue"]
-    queue --> runner["serial hook runner"]
+    queue --> runner["bounded parallel hook runner"]
     snapshotter --> db
     runner --> db
     runner --> events["hook.log events"]
@@ -68,7 +68,7 @@ the same session do not share daemon state.
 | [`store`](store/DESIGN.md) | GORM-backed session persistence, migrations, statuses, queue, and run history. |
 | [`service`](service/DESIGN.md) | API-level hook operations over store state and the manager-provided current hook set. |
 | [`manager`](manager/DESIGN.md) | Hook-domain runtime state and API-triggered side effects between daemon socket adapters/runtime loops, service, and store. |
-| [`daemon`](daemon/DESIGN.md) | Session process lifecycle, watcher/scheduler/runtime loops, serial queue draining, socket server, SSE transport, and idle shutdown. |
+| [`daemon`](daemon/DESIGN.md) | Session process lifecycle, watcher/scheduler/runtime loops, bounded parallel queue draining, socket server, SSE transport, and idle shutdown. |
 | [`client`](client/DESIGN.md) | Unix-socket client used by CLI and future integrations. |
 | [`cmd/discobox-hooks`](cmd/discobox-hooks/DESIGN.md) | CLI entrypoint and on-demand daemon startup. |
 
@@ -123,18 +123,21 @@ running a batch so hook execution cannot be starved forever.
 
 ## Execution Semantics
 
-Hooks run serially for a session. The hook queue is deterministic. Hooks with
-a non-empty `phase` may be enqueued by file changes, but the daemon does not
-auto-run them until that phase is explicitly activated by a run request. Manual
-aggregate `run` requests target queued or failed hooks only; `--force` expands
-the target set to every matching hook. `run` with no hook IDs targets unphased
-hooks plus the default `review` phase, while `run --phase <name>` targets
-unphased hooks plus hooks in that phase. Explicit hook-ID runs for phase hooks
-must include the matching `--phase`. Session hooks do not run during daemon
-startup; use the CLI's session-hook run mode to trigger session hooks for the
-current session. Failed hooks still block later hooks until the failure is
-resolved by a later matching change, a manual run, pausing/skipping that hook, or
-clearing queued state.
+Hooks run with daemon-configured bounded parallelism. The default limit is three
+in-flight script hooks per session; additional eligible hooks remain in queued
+state until a slot opens. The hook queue is deterministic, and the daemon never
+starts two concurrent runs for the same hook ID. Hooks with a non-empty `phase`
+may be enqueued by file changes, but the daemon does not auto-run them until
+that phase is explicitly activated by a run request. Manual aggregate `run`
+requests target queued or failed hooks only; `--force` expands the target set to
+every matching hook. `run` with no hook IDs targets unphased hooks plus the
+default `review` phase, while `run --phase <name>` targets unphased hooks plus
+hooks in that phase. Explicit hook-ID runs for phase hooks must include the
+matching `--phase`. Session hooks do not run during daemon startup; use the
+CLI's session-hook run mode to trigger session hooks for the current session.
+Failed hooks block future queued hook launches until the failure is resolved by
+a later matching change, a manual run, pausing/skipping that hook, or clearing
+queued state; hooks already in flight may finish.
 
 Each hook run receives a stable environment. Prefer `DISCOBOX_` names for public
 contract variables, including at least:

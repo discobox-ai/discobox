@@ -393,6 +393,62 @@ exit 1
 	}
 }
 
+func TestDrainAvailableHonorsMaxParallelHooks(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	repo := t.TempDir()
+	dbPath := filepath.Join(t.TempDir(), "hooks.db")
+	st, err := hookstore.Open(ctx, hookstore.Options{Path: dbPath})
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	defer st.Close()
+	hooksList := []hooks.Hook{
+		testScriptHook(t, repo, "a"),
+		testScriptHook(t, repo, "b"),
+		testScriptHook(t, repo, "c"),
+	}
+	if err := st.RefreshDefinitions(ctx, hooksList); err != nil {
+		t.Fatalf("refresh definitions: %v", err)
+	}
+	if err := st.Enqueue(ctx, []string{"a", "b", "c"}, []models.ChangedFile{{Path: "changed.go", Kind: watcher.Modified}}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	r := &runtimeState{cfg: Config{SessionID: "parallel-test", RepoRoot: repo, DBPath: dbPath, MaxParallelHooks: 2}, store: st, ctx: ctx, cancel: cancel, drainSignal: make(chan struct{}, 1)}
+	mgr, err := manager.New(manager.Config{Store: st, Hooks: hooksList, SessionID: "parallel-test", RepoRoot: repo, Cancel: cancel, SignalRun: r.signalDrain})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	r.manager = mgr
+
+	go r.drainLoop()
+	r.signalDrain()
+	waitForCondition(t, time.Second, func() bool {
+		pending, err := st.ListPending(ctx, 10)
+		return err == nil && r.manager.RunningCount() == 2 && len(pending) == 1
+	})
+	pending, err := st.ListPending(ctx, 10)
+	if err != nil {
+		t.Fatalf("list pending: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("expected one queued hook while two run, got %#v", pending)
+	}
+	waitForCondition(t, 3*time.Second, func() bool {
+		statuses, err := st.ListStatus(ctx)
+		if err != nil {
+			return false
+		}
+		successes := 0
+		for _, status := range statuses {
+			if status.Status == models.StatusSuccess {
+				successes++
+			}
+		}
+		return successes == 3
+	})
+}
+
 func TestRunReloadsHooksWhenConfigDirectoryAppears(t *testing.T) {
 	repo := t.TempDir()
 	stateDir := t.TempDir()
@@ -1043,6 +1099,27 @@ func hookStatusByID(ctx context.Context, t *testing.T, st *hookstore.Store, hook
 	}
 	t.Fatalf("missing hook status for %q: %#v", hookID, statuses)
 	return hookstore.StatusRow{}
+}
+
+func testScriptHook(t *testing.T, repo, id string) hooks.Hook {
+	t.Helper()
+	path := filepath.Join(repo, id+".sh")
+	if err := os.WriteFile(path, []byte("#!/bin/sh\nsleep 0.2\n"), 0o755); err != nil {
+		t.Fatalf("write hook script %s: %v", id, err)
+	}
+	return hooks.Hook{ID: id, Name: id, Type: hooks.HookTypeFile, Engine: hooks.HookEngineScript, Pattern: "*.go", AbsPath: path, RelPath: id + ".sh", HasShebang: true, Executable: true}
+}
+
+func waitForCondition(t *testing.T, timeout time.Duration, fn func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if fn() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("condition did not become true within %s", timeout)
 }
 
 func hasStoreEvent(events []hookstore.Event, eventType string) bool {

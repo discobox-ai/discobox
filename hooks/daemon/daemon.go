@@ -34,6 +34,7 @@ const defaultDebounce = 5 * time.Second
 const defaultSnapshotDebounce = 15 * time.Second
 const defaultSnapshotMinInterval = time.Minute
 const defaultLSPDiagnosticsGrace = 5 * time.Second
+const defaultMaxParallelHooks = 3
 
 // daemonMatcherOptions disables matcher-level Git-ignore checks because the
 // daemon already applies and audits Git-ignore filtering in filterIgnoredChanges.
@@ -55,6 +56,7 @@ type Config struct {
 	SnapshotDebounce    time.Duration
 	SnapshotMinInterval time.Duration
 	IdleTimeout         time.Duration
+	MaxParallelHooks    int
 }
 
 type PingResponse = model.PingResponse
@@ -146,6 +148,9 @@ func newRuntime(ctx context.Context, cfg Config) (*runtimeState, error) {
 	}
 	if cfg.SnapshotMinInterval <= 0 {
 		cfg.SnapshotMinInterval = defaultSnapshotMinInterval
+	}
+	if cfg.MaxParallelHooks <= 0 {
+		cfg.MaxParallelHooks = defaultMaxParallelHooks
 	}
 
 	st, err := store.Open(ctx, store.Options{Path: cfg.DBPath, Logger: logger.Default.LogMode(logger.Silent)})
@@ -528,10 +533,35 @@ func (r *runtimeState) drainLoop() {
 		case <-r.ctx.Done():
 			return
 		case <-r.drainSignal:
-			for r.drainOne() {
-			}
+			r.drainAvailable()
 		}
 	}
+}
+
+func (r *runtimeState) drainAvailable() {
+	for r.startOneAsync() {
+	}
+}
+
+func (r *runtimeState) startOneAsync() bool {
+	if r.manager.RunningCount() >= r.cfg.MaxParallelHooks {
+		return false
+	}
+	pending, h, ok := r.nextRunnable()
+	if !ok {
+		return false
+	}
+	r.manager.SetHookRunning(h.ID, true)
+	r.touch()
+	go func() {
+		res := r.runHook(r.ctx, h, pending.ChangedFiles, pending.ChangeIDs)
+		r.manager.SetHookRunning(h.ID, false)
+		r.touch()
+		if res.Success {
+			r.signalDrain()
+		}
+	}()
+	return true
 }
 
 func (r *runtimeState) idleLoop() {
@@ -963,51 +993,58 @@ func (r *runtimeState) hookByID(id string) (hooks.Hook, bool) {
 }
 
 func (r *runtimeState) drainOne() bool {
-	paused, _ := r.globalPaused()
-	if paused {
-		return false
-	}
-	activePhases := r.manager.ActivePhases()
-	pending, err := r.store.NextPendingForPhases(r.ctx, activePhases)
-	if err != nil {
-		return false
-	}
-	if pending == nil {
-		if len(activePhases) > 0 {
-			r.manager.ClearActivePhases()
-		}
-		return false
-	}
-	h, ok := r.hookByID(pending.HookID)
+	pending, h, ok := r.nextRunnable()
 	if !ok {
 		return false
 	}
-	statuses, err := r.store.ListStatus(r.ctx)
-	if err != nil {
-		return false
-	}
-	for _, st := range statuses {
-		if st.Hook.ID == pending.HookID && st.Paused {
-			return false
-		}
-	}
+	r.manager.SetHookRunning(h.ID, true)
 	res := r.runHook(r.ctx, h, pending.ChangedFiles, pending.ChangeIDs)
+	r.manager.SetHookRunning(h.ID, false)
 	if res.Success {
 		return true
 	}
-	if len(activePhases) > 0 {
+	if len(r.manager.ActivePhases()) > 0 {
 		r.manager.ClearActivePhases()
 	}
 	return false
 }
 
+func (r *runtimeState) nextRunnable() (*store.PendingRow, hooks.Hook, bool) {
+	paused, _ := r.globalPaused()
+	if paused {
+		return nil, hooks.Hook{}, false
+	}
+	activePhases := r.manager.ActivePhases()
+	pending, err := r.store.NextPendingForPhasesExcluding(r.ctx, activePhases, r.manager.RunningHookIDs())
+	if err != nil {
+		return nil, hooks.Hook{}, false
+	}
+	if pending == nil {
+		if len(activePhases) > 0 {
+			if r.manager.RunningCount() == 0 {
+				r.manager.ClearActivePhases()
+			}
+		}
+		return nil, hooks.Hook{}, false
+	}
+	h, ok := r.hookByID(pending.HookID)
+	if !ok {
+		return nil, hooks.Hook{}, false
+	}
+	statuses, err := r.store.ListStatus(r.ctx)
+	if err != nil {
+		return nil, hooks.Hook{}, false
+	}
+	for _, st := range statuses {
+		if st.Hook.ID == pending.HookID && st.Paused {
+			return nil, hooks.Hook{}, false
+		}
+	}
+	return pending, h, true
+}
+
 func (r *runtimeState) runHook(ctx context.Context, h hooks.Hook, files []models.ChangedFile, changeIDs []string) runner.Result {
-	r.manager.SetRunning(true)
 	r.touch()
-	defer func() {
-		r.manager.SetRunning(false)
-		r.touch()
-	}()
 
 	changedPaths := make([]string, 0, len(files))
 	for _, f := range files {

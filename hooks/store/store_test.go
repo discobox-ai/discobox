@@ -391,6 +391,35 @@ func TestNextPendingForPhasesSkipsPhaseHooksUntilActivated(t *testing.T) {
 	}
 }
 
+func TestNextPendingForPhasesExcludingSkipsRunningHookIDs(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(ctx, t)
+	if err := s.RefreshDefinitions(ctx, []hooks.Hook{
+		{ID: "a", Name: "A", Type: hooks.HookTypeFile, Engine: hooks.HookEngineScript},
+		{ID: "b", Name: "B", Type: hooks.HookTypeFile, Engine: hooks.HookEngineScript},
+		{ID: "review", Name: "Review", Type: hooks.HookTypeFile, Engine: hooks.HookEngineScript, Phase: "review"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Enqueue(ctx, []string{"a", "b", "review"}, []models.ChangedFile{{Path: "changed.go", Kind: watcher.Modified}}); err != nil {
+		t.Fatalf("enqueue: %v", err)
+	}
+	pending, err := s.NextPendingForPhasesExcluding(ctx, []string{"review"}, []string{"a"})
+	if err != nil {
+		t.Fatalf("next excluding a: %v", err)
+	}
+	if pending == nil || pending.HookID != "b" {
+		t.Fatalf("expected b after excluding a, got %#v", pending)
+	}
+	pending, err = s.NextPendingForPhasesExcluding(ctx, []string{"review"}, []string{"a", "b"})
+	if err != nil {
+		t.Fatalf("next excluding a and b: %v", err)
+	}
+	if pending == nil || pending.HookID != "review" {
+		t.Fatalf("expected phase hook after excluding unphased hooks, got %#v", pending)
+	}
+}
+
 func TestListPendingReturnsQueueRowsInOrder(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(ctx, t)

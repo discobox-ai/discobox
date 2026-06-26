@@ -139,6 +139,7 @@ func (a *app) validate() error {
 
 func (a *app) newDaemonCommand() *cobra.Command {
 	var idle, debounce, snapshotDebounce, snapshotMinInterval time.Duration
+	var maxParallelHooks int
 	cmd := &cobra.Command{
 		Use:   "daemon",
 		Short: "Run the hook daemon in the foreground",
@@ -159,6 +160,7 @@ func (a *app) newDaemonCommand() *cobra.Command {
 				SnapshotDebounce:    snapshotDebounce,
 				SnapshotMinInterval: snapshotMinInterval,
 				IdleTimeout:         idle,
+				MaxParallelHooks:    maxParallelHooks,
 			}
 			return daemon.Run(cmd.Context(), cfg)
 		},
@@ -167,6 +169,7 @@ func (a *app) newDaemonCommand() *cobra.Command {
 	cmd.Flags().DurationVar(&debounce, "debounce", 0, "file-change debounce duration")
 	cmd.Flags().DurationVar(&snapshotDebounce, "snapshot-debounce", 0, "workspace snapshot quiet duration")
 	cmd.Flags().DurationVar(&snapshotMinInterval, "snapshot-min-interval", 0, "minimum time between workspace snapshot captures")
+	cmd.Flags().IntVar(&maxParallelHooks, "max-parallel-hooks", 0, "maximum hook processes to run in parallel")
 	cmd.Flags().Bool("foreground", true, "run daemon in foreground")
 	cmd.AddCommand(a.newDaemonStatusCommand())
 	cmd.AddCommand(a.newShutdownCommand())
