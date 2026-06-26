@@ -567,6 +567,80 @@ func TestJobsCommandListsProjectJobs(t *testing.T) {
 	}
 }
 
+func TestStatusCommandShowsNewestFiveOfEachResource(t *testing.T) {
+	requested := map[string]bool{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested[r.URL.Path] = true
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/projects/project-1/sandboxes":
+			_, _ = w.Write([]byte(`{"sandboxes":[` +
+				`{"id":"sandbox-old","projectId":"project-1","createdByUserId":"user-1","name":"old-sandbox","phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"},` +
+				`{"id":"sandbox-1","projectId":"project-1","createdByUserId":"user-1","name":"sandbox-1","phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-06-17T00:01:00Z","updatedAt":"2026-06-17T00:01:01Z"},` +
+				`{"id":"sandbox-2","projectId":"project-1","createdByUserId":"user-1","name":"sandbox-2","phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-06-17T00:02:00Z","updatedAt":"2026-06-17T00:02:01Z"},` +
+				`{"id":"sandbox-3","projectId":"project-1","createdByUserId":"user-1","name":"sandbox-3","phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-06-17T00:03:00Z","updatedAt":"2026-06-17T00:03:01Z"},` +
+				`{"id":"sandbox-4","projectId":"project-1","createdByUserId":"user-1","name":"sandbox-4","phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-06-17T00:04:00Z","updatedAt":"2026-06-17T00:04:01Z"},` +
+				`{"id":"sandbox-5","projectId":"project-1","createdByUserId":"user-1","name":"sandbox-5","phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-06-17T00:05:00Z","updatedAt":"2026-06-17T00:05:01Z"}` +
+				`]}`))
+		case "/projects/project-1/workers":
+			_, _ = w.Write([]byte(`{"workers":[` +
+				`{"id":"worker-old","projectId":"project-1","providerInstanceId":"provider-1","identity":"old-worker","ready":false,"schedulable":false,"degraded":false,"availableCpuVcpus":0,"availableMemoryBytes":0,"availableStorageBytes":0,"desiredState":"active","phase":"active","lastOperationStatus":"success","generation":1,"observedGeneration":1,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"},` +
+				`{"id":"worker-1","projectId":"project-1","providerInstanceId":"provider-1","identity":"worker-1","ready":true,"schedulable":true,"degraded":false,"availableCpuVcpus":1,"availableMemoryBytes":1,"availableStorageBytes":1,"desiredState":"active","phase":"active","lastOperationStatus":"success","generation":1,"observedGeneration":1,"createdAt":"2026-06-17T00:01:00Z","updatedAt":"2026-06-17T00:01:01Z"},` +
+				`{"id":"worker-2","projectId":"project-1","providerInstanceId":"provider-1","identity":"worker-2","ready":true,"schedulable":true,"degraded":false,"availableCpuVcpus":1,"availableMemoryBytes":1,"availableStorageBytes":1,"desiredState":"active","phase":"active","lastOperationStatus":"success","generation":1,"observedGeneration":1,"createdAt":"2026-06-17T00:02:00Z","updatedAt":"2026-06-17T00:02:01Z"},` +
+				`{"id":"worker-3","projectId":"project-1","providerInstanceId":"provider-1","identity":"worker-3","ready":true,"schedulable":true,"degraded":false,"availableCpuVcpus":1,"availableMemoryBytes":1,"availableStorageBytes":1,"desiredState":"active","phase":"active","lastOperationStatus":"success","generation":1,"observedGeneration":1,"createdAt":"2026-06-17T00:03:00Z","updatedAt":"2026-06-17T00:03:01Z"},` +
+				`{"id":"worker-4","projectId":"project-1","providerInstanceId":"provider-1","identity":"worker-4","ready":true,"schedulable":true,"degraded":false,"availableCpuVcpus":1,"availableMemoryBytes":1,"availableStorageBytes":1,"desiredState":"active","phase":"active","lastOperationStatus":"success","generation":1,"observedGeneration":1,"createdAt":"2026-06-17T00:04:00Z","updatedAt":"2026-06-17T00:04:01Z"},` +
+				`{"id":"worker-5","projectId":"project-1","providerInstanceId":"provider-1","identity":"worker-5","ready":true,"schedulable":true,"degraded":false,"availableCpuVcpus":1,"availableMemoryBytes":1,"availableStorageBytes":1,"desiredState":"active","phase":"active","lastOperationStatus":"success","generation":1,"observedGeneration":1,"createdAt":"2026-06-17T00:05:00Z","updatedAt":"2026-06-17T00:05:01Z"}` +
+				`]}`))
+		case "/projects/project-1/providers":
+			_, _ = w.Write([]byte(`{"providers":[` +
+				`{"id":"provider-old","projectId":"project-1","name":"old-provider","type":"docker","builtIn":false,"disabled":false,"config":{},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"},` +
+				`{"id":"provider-1","projectId":"project-1","name":"provider-1","type":"docker","builtIn":false,"disabled":false,"config":{},"createdAt":"2026-06-17T00:01:00Z","updatedAt":"2026-06-17T00:01:01Z"},` +
+				`{"id":"provider-2","projectId":"project-1","name":"provider-2","type":"docker","builtIn":false,"disabled":false,"config":{},"createdAt":"2026-06-17T00:02:00Z","updatedAt":"2026-06-17T00:02:01Z"},` +
+				`{"id":"provider-3","projectId":"project-1","name":"provider-3","type":"docker","builtIn":false,"disabled":false,"config":{},"createdAt":"2026-06-17T00:03:00Z","updatedAt":"2026-06-17T00:03:01Z"},` +
+				`{"id":"provider-4","projectId":"project-1","name":"provider-4","type":"docker","builtIn":false,"disabled":false,"config":{},"createdAt":"2026-06-17T00:04:00Z","updatedAt":"2026-06-17T00:04:01Z"},` +
+				`{"id":"provider-5","projectId":"project-1","name":"provider-5","type":"docker","builtIn":false,"disabled":false,"config":{},"createdAt":"2026-06-17T00:05:00Z","updatedAt":"2026-06-17T00:05:01Z"}` +
+				`]}`))
+		case "/projects/project-1/jobs":
+			_, _ = w.Write([]byte(`{"jobs":[` +
+				`{"id":"job-old","type":"sandbox.reconcile","status":"pending","attempts":0,"maxAttempts":3,"resourceType":"sandbox","resourceId":"sandbox-old","scheduledAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"},` +
+				`{"id":"job-1","type":"sandbox.reconcile","status":"pending","attempts":0,"maxAttempts":3,"resourceType":"sandbox","resourceId":"sandbox-1","scheduledAt":"2026-06-17T00:01:00Z","createdAt":"2026-06-17T00:01:00Z","updatedAt":"2026-06-17T00:01:01Z"},` +
+				`{"id":"job-2","type":"sandbox.reconcile","status":"pending","attempts":0,"maxAttempts":3,"resourceType":"sandbox","resourceId":"sandbox-2","scheduledAt":"2026-06-17T00:02:00Z","createdAt":"2026-06-17T00:02:00Z","updatedAt":"2026-06-17T00:02:01Z"},` +
+				`{"id":"job-3","type":"sandbox.reconcile","status":"pending","attempts":0,"maxAttempts":3,"resourceType":"sandbox","resourceId":"sandbox-3","scheduledAt":"2026-06-17T00:03:00Z","createdAt":"2026-06-17T00:03:00Z","updatedAt":"2026-06-17T00:03:01Z"},` +
+				`{"id":"job-4","type":"sandbox.reconcile","status":"pending","attempts":0,"maxAttempts":3,"resourceType":"sandbox","resourceId":"sandbox-4","scheduledAt":"2026-06-17T00:04:00Z","createdAt":"2026-06-17T00:04:00Z","updatedAt":"2026-06-17T00:04:01Z"},` +
+				`{"id":"job-5","type":"sandbox.reconcile","status":"pending","attempts":0,"maxAttempts":3,"resourceType":"sandbox","resourceId":"sandbox-5","scheduledAt":"2026-06-17T00:05:00Z","createdAt":"2026-06-17T00:05:00Z","updatedAt":"2026-06-17T00:05:01Z"}` +
+				`]}`))
+		default:
+			t.Fatalf("unexpected path %q", r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "status"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute status: %v", err)
+	}
+	for _, path := range []string{"/projects/project-1/sandboxes", "/projects/project-1/workers", "/projects/project-1/providers", "/projects/project-1/jobs"} {
+		if !requested[path] {
+			t.Fatalf("status did not request %s", path)
+		}
+	}
+	output := out.String()
+	for _, want := range []string{"Sandboxes", "Workers", "Providers", "Jobs", "sandbox-5", "worker-5", "provider-5", "job-5"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("status output = %q, want %q", output, want)
+		}
+	}
+	for _, unexpected := range []string{"old-sandbox", "worker-old", "old-provider", "job-old"} {
+		if strings.Contains(output, unexpected) {
+			t.Fatalf("status output = %q, did not expect %q", output, unexpected)
+		}
+	}
+}
+
 func TestJobsParentQuietCommandPrintsFullIDsOnly(t *testing.T) {
 	const jobID = "01kv9w440bpa9qk5n25t2hh2rv"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
