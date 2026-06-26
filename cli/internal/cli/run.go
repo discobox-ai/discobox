@@ -15,10 +15,12 @@ type runOptions struct {
 	source string
 	ref    string
 	prompt []string
+	env    []string
 }
 
 func (a *App) newRunCommand() *cobra.Command {
-	return &cobra.Command{
+	var opts runOptions
+	cmd := &cobra.Command{
 		Use:   "run [flags] SOURCE[@REF] [PROMPT...]",
 		Short: "Run a prompt against a local directory or Git repository",
 		Long: `Run a prompt against a local directory or Git repository.
@@ -28,13 +30,15 @@ then the source directory or Git repository, followed by the prompt. Use -- when
 the source or prompt needs to be separated from command flags explicitly.`,
 		Example: `  discobox run . fix the failing tests
   discobox run https://github.com/obot-platform/discobox.git@main summarize the CLI package
+  discobox run -e GITHUB_TOKEN -e MODE=test . fix the failing tests
   discobox run -- . prompt starting with --flag-like text`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts, err := parseRunArgs(args)
+			parsedOpts, err := parseRunArgs(args)
 			if err != nil {
 				return err
 			}
+			parsedOpts.env = append(parsedOpts.env, opts.env...)
 			projectID, err := a.projectIDValue()
 			if err != nil {
 				return err
@@ -43,7 +47,7 @@ the source or prompt needs to be separated from command flags explicitly.`,
 			if err != nil {
 				return err
 			}
-			body, err := createRunSandboxBody(cmd.Context(), opts)
+			body, err := createRunSandboxBody(cmd.Context(), parsedOpts)
 			if err != nil {
 				return err
 			}
@@ -58,6 +62,8 @@ the source or prompt needs to be separated from command flags explicitly.`,
 			return a.writeSandbox(cmd, sandbox)
 		},
 	}
+	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables")
+	return cmd
 }
 
 func parseRunArgs(args []string) (runOptions, error) {
@@ -96,6 +102,13 @@ func createRunSandboxBody(ctx context.Context, opts runOptions) (*apimodel.Creat
 	}
 	body := &apimodel.CreateSandboxBody{Name: "run-" + shortID(runID)}
 	body.SetPrompt(optString(strings.Join(opts.prompt, " ")))
+	env, err := keyValueMapFromShell(opts.env)
+	if err != nil {
+		return nil, err
+	}
+	if len(env) > 0 {
+		body.SetEnv(apiclientgen.NewOptCreateSandboxBodyEnv(apiclientgen.CreateSandboxBodyEnv(env)))
+	}
 	userIdentity, _, err := resolveRunUserIdentity()
 	if err != nil {
 		return nil, err

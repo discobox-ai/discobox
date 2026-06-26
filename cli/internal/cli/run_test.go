@@ -44,6 +44,7 @@ func TestParseRunArgsSplitsSSHRepoWithRef(t *testing.T) {
 }
 
 func TestRunCommandCreatesSandbox(t *testing.T) {
+	t.Setenv("RUN_ENV_FROM_SHELL", "from-shell")
 	repo := newRunSourceTestRepo(t)
 	git := runSourceTestGit(t, repo)
 	commit := strings.TrimSpace(git("rev-parse", "HEAD"))
@@ -66,7 +67,7 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", repo + "@HEAD", "fix", "tests"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-e", "EXPLICIT=value", "-e", "RUN_ENV_FROM_SHELL", repo + "@HEAD", "fix", "tests"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute run: %v", err)
@@ -76,6 +77,13 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	}
 	if posted["prompt"] != "fix tests" {
 		t.Fatalf("prompt = %q, want fix tests", posted["prompt"])
+	}
+	env, ok := posted["env"].(map[string]any)
+	if !ok {
+		t.Fatalf("env = %#v, want object", posted["env"])
+	}
+	if env["EXPLICIT"] != "value" || env["RUN_ENV_FROM_SHELL"] != "from-shell" {
+		t.Fatalf("env = %#v, want explicit and shell values", env)
 	}
 	source, ok := posted["source"].(map[string]any)
 	if !ok {
@@ -135,12 +143,17 @@ func TestCreateRunSandboxBodyUsesSplitSourceRef(t *testing.T) {
 		source: repo,
 		ref:    "HEAD",
 		prompt: []string{"hello", "world"},
+		env:    []string{"RUN_BODY_ENV=value"},
 	})
 	if err != nil {
 		t.Fatalf("createRunSandboxBody: %v", err)
 	}
 	if body.Prompt.Value != "hello world" {
 		t.Fatalf("prompt = %q, want hello world", body.Prompt.Value)
+	}
+	env, ok := body.Env.Get()
+	if !ok || env["RUN_BODY_ENV"] != "value" {
+		t.Fatalf("env = %#v ok=%t, want RUN_BODY_ENV", env, ok)
 	}
 	source, ok := body.Source.Get()
 	if !ok {
