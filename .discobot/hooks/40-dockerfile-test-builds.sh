@@ -36,6 +36,11 @@ build_dockerfile() {
   local context tag_part tag
 
   dockerfile="${dockerfile#./}"
+  case "$dockerfile" in
+    .claude/worktrees/*)
+      return 0
+      ;;
+  esac
   if [ ! -f "$dockerfile" ]; then
     return 0
   fi

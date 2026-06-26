@@ -9,6 +9,7 @@ build-errors.log
 .discobot/config/
 .discobot/data/
 .discobot/state/
+.claude/worktrees/
 /electron/node_modules/
 /electron/dist/
 /electron/release/
