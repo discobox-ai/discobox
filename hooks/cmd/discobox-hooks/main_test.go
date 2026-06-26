@@ -517,6 +517,43 @@ func TestWriteCheckResultReportsNonSuccessfulOutputs(t *testing.T) {
 	}
 }
 
+func TestWriteCheckProgressReportsPendingWork(t *testing.T) {
+	var out bytes.Buffer
+	resp := &client.StatusResponse{
+		Queued: 2,
+		Paused: true,
+		Hooks: []client.HookStatus{
+			{Hook: hooks.Hook{ID: "z-queued"}, Status: models.StatusQueued},
+			{Hook: hooks.Hook{ID: "running"}, Status: models.StatusRunning},
+			{Hook: hooks.Hook{ID: "a-queued"}, Status: models.StatusQueued},
+		},
+	}
+	writeCheckProgress(&out, resp)
+	got := out.String()
+	for _, want := range []string{"waiting for hooks:", "running=running", "queued=a-queued,z-queued", "paused=true"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("check progress missing %q: %s", want, got)
+		}
+	}
+}
+
+func TestHookIDsWithStatusUsesDashForEmpty(t *testing.T) {
+	got := hookIDsWithStatus([]client.HookStatus{{Hook: hooks.Hook{ID: "lint"}, Status: models.StatusSuccess}}, models.StatusRunning)
+	if got != "-" {
+		t.Fatalf("hook ids = %q, want dash", got)
+	}
+}
+
+func TestCheckProgressFallsBackToAggregateState(t *testing.T) {
+	resp := &client.StatusResponse{Running: true, Queued: 3}
+	if got := checkRunningSummary(resp); got != "yes" {
+		t.Fatalf("running summary = %q, want yes", got)
+	}
+	if got := checkQueuedSummary(resp); got != "3" {
+		t.Fatalf("queued summary = %q, want queued count", got)
+	}
+}
+
 func TestFailedHooksIgnoresIdleSuccessAndQueued(t *testing.T) {
 	hooksList := []client.HookStatus{
 		{Hook: hooks.Hook{ID: "idle"}, Status: models.StatusIdle},

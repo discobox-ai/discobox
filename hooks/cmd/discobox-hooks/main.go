@@ -442,7 +442,7 @@ func (a *app) newCheckCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			resp, err := c.Wait(cmd.Context(), timeout)
+			resp, err := a.waitForCheck(cmd.Context(), c, timeout, cmd.ErrOrStderr())
 			if err != nil {
 				return err
 			}
@@ -468,6 +468,38 @@ func (a *app) newCheckCommand() *cobra.Command {
 	}
 	cmd.Flags().DurationVar(&timeout, "timeout", 10*time.Minute, "maximum time to wait for terminal hook state")
 	return cmd
+}
+
+const checkProgressInterval = 2 * time.Second
+
+func (a *app) waitForCheck(ctx context.Context, c *client.Client, timeout time.Duration, progress io.Writer) (*client.WaitResponse, error) {
+	if a.opts.output == "json" {
+		return c.Wait(ctx, timeout)
+	}
+	waitCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	type waitResult struct {
+		resp *client.WaitResponse
+		err  error
+	}
+	resultCh := make(chan waitResult, 1)
+	go func() {
+		resp, err := c.Wait(waitCtx, timeout)
+		resultCh <- waitResult{resp: resp, err: err}
+	}()
+	ticker := time.NewTicker(checkProgressInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case result := <-resultCh:
+			return result.resp, result.err
+		case <-ticker.C:
+			st, err := c.Status(ctx)
+			if err == nil {
+				writeCheckProgress(progress, st)
+			}
+		}
+	}
 }
 
 func (a *app) checkOutputs(ctx context.Context, c *client.Client, hooksList []client.HookStatus) ([]checkHookOutput, error) {
@@ -1025,6 +1057,49 @@ func writeCheckResult(w io.Writer, resp *client.WaitResponse, outputs []checkHoo
 		writeCheckFailure(w, out)
 	}
 	return nil
+}
+
+func writeCheckProgress(w io.Writer, resp *client.StatusResponse) {
+	if w == nil {
+		return
+	}
+	fmt.Fprintf(w, "waiting for hooks: running=%s queued=%s paused=%t\n", checkRunningSummary(resp), checkQueuedSummary(resp), resp.Paused)
+}
+
+func checkRunningSummary(resp *client.StatusResponse) string {
+	ids := hookIDsWithStatus(resp.Hooks, models.StatusRunning)
+	if ids != "-" {
+		return ids
+	}
+	if resp.Running {
+		return "yes"
+	}
+	return "-"
+}
+
+func checkQueuedSummary(resp *client.StatusResponse) string {
+	ids := hookIDsWithStatus(resp.Hooks, models.StatusQueued)
+	if ids != "-" {
+		return ids
+	}
+	if resp.Queued > 0 {
+		return fmt.Sprintf("%d", resp.Queued)
+	}
+	return "-"
+}
+
+func hookIDsWithStatus(hooksList []client.HookStatus, status models.Status) string {
+	ids := make([]string, 0)
+	for _, h := range hooksList {
+		if h.Status == status {
+			ids = append(ids, h.Hook.ID)
+		}
+	}
+	sort.Strings(ids)
+	if len(ids) == 0 {
+		return "-"
+	}
+	return strings.Join(ids, ",")
 }
 
 func writeCheckFailure(w io.Writer, out checkHookOutput) {
