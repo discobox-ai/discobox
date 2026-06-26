@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -534,6 +536,24 @@ func TestWriteCheckProgressReportsPendingWork(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Fatalf("check progress missing %q: %s", want, got)
 		}
+	}
+}
+
+func TestRetryableCheckWaitErrorIncludesDaemonDisconnects(t *testing.T) {
+	for _, err := range []error{
+		io.EOF,
+		io.ErrUnexpectedEOF,
+		errors.Join(client.ErrNotRunning, io.EOF),
+		errors.New("net/http: HTTP/1.x transport connection broken: unexpected EOF"),
+		errors.New("net/http: HTTP/1.x transport connection broken: malformed HTTP response"),
+		errors.New("stream reset: protocol error"),
+	} {
+		if !isRetryableCheckWaitError(err) {
+			t.Fatalf("isRetryableCheckWaitError(%v) = false, want true", err)
+		}
+	}
+	if isRetryableCheckWaitError(errors.New("daemon returned 500: hook failed")) {
+		t.Fatal("non-disconnect error should not be retryable")
 	}
 }
 

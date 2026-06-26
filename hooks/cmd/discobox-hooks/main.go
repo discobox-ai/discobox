@@ -474,8 +474,60 @@ func (a *app) newCheckCommand() *cobra.Command {
 }
 
 const checkProgressInterval = 2 * time.Second
+const checkReconnectDelay = 250 * time.Millisecond
 
 func (a *app) waitForCheck(ctx context.Context, c *client.Client, timeout time.Duration, progress io.Writer) (*client.WaitResponse, error) {
+	deadline := time.Time{}
+	if timeout > 0 {
+		deadline = time.Now().Add(timeout)
+	}
+	current := c
+	for {
+		remaining := remainingCheckTimeout(timeout, deadline)
+		resp, err := a.waitForCheckOnce(ctx, current, remaining, progress)
+		if err == nil {
+			return resp, nil
+		}
+		if !isRetryableCheckWaitError(err) {
+			return nil, err
+		}
+		if !deadline.IsZero() && !time.Now().Before(deadline) {
+			return nil, fmt.Errorf("hook daemon disconnected while waiting for checks to settle and the check timeout expired: %w", err)
+		}
+		if progress != nil && a.opts.output != "json" {
+			fmt.Fprintf(progress, "hook daemon disconnected while waiting; reconnecting: %v\n", err)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(checkReconnectDelay):
+		}
+		var reconnectErr error
+		current, _, reconnectErr = a.client(ctx)
+		if reconnectErr != nil {
+			if !deadline.IsZero() && !time.Now().Before(deadline) {
+				return nil, fmt.Errorf("reconnect hook daemon after wait disconnect: %w", reconnectErr)
+			}
+			if progress != nil && a.opts.output != "json" {
+				fmt.Fprintf(progress, "waiting for hook daemon to reconnect: %v\n", reconnectErr)
+			}
+			continue
+		}
+	}
+}
+
+func remainingCheckTimeout(original time.Duration, deadline time.Time) time.Duration {
+	if original <= 0 || deadline.IsZero() {
+		return original
+	}
+	remaining := time.Until(deadline)
+	if remaining <= 0 {
+		return 0
+	}
+	return remaining
+}
+
+func (a *app) waitForCheckOnce(ctx context.Context, c *client.Client, timeout time.Duration, progress io.Writer) (*client.WaitResponse, error) {
 	if a.opts.output == "json" {
 		return c.Wait(ctx, timeout)
 	}
@@ -503,6 +555,20 @@ func (a *app) waitForCheck(ctx context.Context, c *client.Client, timeout time.D
 			}
 		}
 	}
+}
+
+func isRetryableCheckWaitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, client.ErrNotRunning) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "unexpected eof") ||
+		strings.Contains(msg, "malformed http response") ||
+		strings.Contains(msg, "protocol error") ||
+		strings.Contains(msg, "server closed idle connection")
 }
 
 func (a *app) checkOutputs(ctx context.Context, c *client.Client, hooksList []client.HookStatus) ([]checkHookOutput, error) {
