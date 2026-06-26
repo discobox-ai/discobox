@@ -1,24 +1,5 @@
 components:
     schemas:
-        AssignedPort:
-            additionalProperties: false
-            properties:
-                ContainerPort:
-                    format: int64
-                    type: integer
-                HostIP:
-                    type: string
-                HostPort:
-                    format: int64
-                    type: integer
-                Protocol:
-                    type: string
-            required:
-            - ContainerPort
-            - HostPort
-            - HostIP
-            - Protocol
-            type: object
         ErrorDetail:
             additionalProperties: false
             properties:
@@ -129,27 +110,6 @@ components:
                 snapshotRef:
                     type: string
             type: object
-        ResourceConfig:
-            additionalProperties: false
-            properties:
-                CPUCores:
-                    format: double
-                    type: number
-                DiskMB:
-                    format: int64
-                    type: integer
-                MemoryMB:
-                    format: int64
-                    type: integer
-                Timeout:
-                    format: int64
-                    type: integer
-            required:
-            - MemoryMB
-            - CPUCores
-            - DiskMB
-            - Timeout
-            type: object
         ResolvedAgentConfig:
             additionalProperties: false
             properties:
@@ -166,7 +126,7 @@ components:
             - name
             - runCommand
             type: object
-        AgentConfig:
+        SandboxAgentConfig:
             additionalProperties: false
             properties:
                 id:
@@ -185,71 +145,9 @@ components:
             - runCommand
             - isDefault
             type: object
-        Sandbox:
+        SandboxConfig:
             additionalProperties: false
             properties:
-                "$schema":
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/Sandbox.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                CreatedAt:
-                    format: date-time
-                    type: string
-                Env:
-                    additionalProperties:
-                        type: string
-                    type: object
-                Error:
-                    type: string
-                ID:
-                    type: string
-                Image:
-                    type: string
-                Metadata:
-                    additionalProperties:
-                        type: string
-                    type: object
-                Ports:
-                    items:
-                        "$ref": "#/components/schemas/AssignedPort"
-                    nullable: true
-                    type: array
-                SandboxID:
-                    type: string
-                StartedAt:
-                    format: date-time
-                    nullable: true
-                    type: string
-                Status:
-                    type: string
-                StoppedAt:
-                    format: date-time
-                    nullable: true
-                    type: string
-            required:
-            - ID
-            - SandboxID
-            - Status
-            - Image
-            - CreatedAt
-            - StartedAt
-            - StoppedAt
-            - Error
-            - Metadata
-            - Ports
-            - Env
-            type: object
-        WorkerSandboxCreateRequest:
-            additionalProperties: false
-            properties:
-                "$schema":
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/WorkerSandboxCreateRequest.json
-                    format: uri
-                    readOnly: true
-                    type: string
                 agentConfigId:
                     type: string
                 agentModel:
@@ -276,19 +174,6 @@ components:
                     type: string
                 prompt:
                     type: string
-                providerInstanceId:
-                    type: string
-                resolvedAgentConfig:
-                    "$ref": "#/components/schemas/ResolvedAgentConfig"
-                agentConfigs:
-                    items:
-                        "$ref": "#/components/schemas/AgentConfig"
-                    nullable: true
-                    type: array
-                resources:
-                    "$ref": "#/components/schemas/ResourceConfig"
-                sandboxId:
-                    type: string
                 source:
                     "$ref": "#/components/schemas/GitSource"
                 sourceCodeReferences:
@@ -299,11 +184,30 @@ components:
                     format: int64
                     type: integer
                 user:
-                    "$ref": "#/components/schemas/WorkerSandboxUser"
-            required:
-            - sandboxId
+                    "$ref": "#/components/schemas/SandboxUser"
             type: object
-        WorkerSandboxUser:
+        SandboxUpdateConfig:
+            additionalProperties: false
+            properties:
+                cpuVcpus:
+                    format: double
+                    type: number
+                env:
+                    additionalProperties:
+                        type: string
+                    type: object
+                image:
+                    type: string
+                memoryBytes:
+                    format: int64
+                    type: integer
+                storageBytes:
+                    format: int64
+                    type: integer
+                workingDirectory:
+                    type: string
+            type: object
+        SandboxUser:
             additionalProperties: false
             properties:
                 gid:
@@ -317,6 +221,61 @@ components:
                     format: int64
                     type: integer
             type: object
+        WorkerSandboxCreateRequest:
+            additionalProperties: false
+            properties:
+                "$schema":
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/WorkerSandboxCreateRequest.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                agentConfigs:
+                    items:
+                        "$ref": "#/components/schemas/SandboxAgentConfig"
+                    nullable: true
+                    type: array
+                config:
+                    "$ref": "#/components/schemas/SandboxConfig"
+                resolvedAgentConfig:
+                    "$ref": "#/components/schemas/ResolvedAgentConfig"
+                resources:
+                    "$ref": "#/components/schemas/WorkerSandboxResources"
+                sandboxId:
+                    type: string
+            required:
+            - sandboxId
+            - config
+            type: object
+        WorkerSandboxInstance:
+            additionalProperties: false
+            properties:
+                "$schema":
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/WorkerSandboxInstance.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                agentConfigs:
+                    items:
+                        "$ref": "#/components/schemas/SandboxAgentConfig"
+                    nullable: true
+                    type: array
+                config:
+                    "$ref": "#/components/schemas/SandboxConfig"
+                resolvedAgentConfig:
+                    "$ref": "#/components/schemas/ResolvedAgentConfig"
+                resources:
+                    "$ref": "#/components/schemas/WorkerSandboxResources"
+                runtime:
+                    "$ref": "#/components/schemas/WorkerSandboxRuntime"
+                sandboxId:
+                    type: string
+            required:
+            - sandboxId
+            - config
+            - runtime
+            type: object
         WorkerSandboxListResponse:
             additionalProperties: false
             properties:
@@ -328,7 +287,7 @@ components:
                     type: string
                 sandboxes:
                     items:
-                        "$ref": "#/components/schemas/Sandbox"
+                        "$ref": "#/components/schemas/WorkerSandboxInstance"
                     nullable: true
                     type: array
             required:
@@ -355,25 +314,97 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                cpuVcpus:
+                config:
+                    "$ref": "#/components/schemas/SandboxUpdateConfig"
+                resources:
+                    "$ref": "#/components/schemas/WorkerSandboxResources"
+            type: object
+        WorkerSandboxPort:
+            additionalProperties: false
+            properties:
+                containerPort:
+                    format: int64
+                    type: integer
+                hostIp:
+                    type: string
+                hostPort:
+                    format: int64
+                    type: integer
+                protocol:
+                    type: string
+            required:
+            - containerPort
+            - hostPort
+            - hostIp
+            - protocol
+            type: object
+        WorkerSandboxResources:
+            additionalProperties: false
+            properties:
+                cpuCores:
                     format: double
                     type: number
+                diskMb:
+                    format: int64
+                    type: integer
+                memoryMb:
+                    format: int64
+                    type: integer
+                timeoutSeconds:
+                    format: int64
+                    type: integer
+            required:
+            - memoryMb
+            - cpuCores
+            - diskMb
+            - timeoutSeconds
+            type: object
+        WorkerSandboxRuntime:
+            additionalProperties: false
+            properties:
+                createdAt:
+                    format: date-time
+                    type: string
                 env:
                     additionalProperties:
                         type: string
                     type: object
+                error:
+                    type: string
                 image:
                     type: string
-                memoryBytes:
-                    format: int64
-                    type: integer
-                resources:
-                    "$ref": "#/components/schemas/ResourceConfig"
-                storageBytes:
-                    format: int64
-                    type: integer
-                workingDirectory:
+                instanceId:
                     type: string
+                metadata:
+                    additionalProperties:
+                        type: string
+                    type: object
+                ports:
+                    items:
+                        "$ref": "#/components/schemas/WorkerSandboxPort"
+                    nullable: true
+                    type: array
+                startedAt:
+                    format: date-time
+                    nullable: true
+                    type: string
+                status:
+                    type: string
+                stoppedAt:
+                    format: date-time
+                    nullable: true
+                    type: string
+            required:
+            - instanceId
+            - status
+            - image
+            - createdAt
+            - startedAt
+            - stoppedAt
+            - error
+            - metadata
+            - ports
+            - env
             type: object
     securitySchemes:
         workerBearerAuth:
@@ -449,7 +480,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                "$ref": "#/components/schemas/Sandbox"
+                                "$ref": "#/components/schemas/WorkerSandboxInstance"
                     description: OK
                 default:
                     content:
@@ -530,7 +561,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                "$ref": "#/components/schemas/Sandbox"
+                                "$ref": "#/components/schemas/WorkerSandboxInstance"
                     description: OK
                 default:
                     content:
@@ -578,7 +609,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                "$ref": "#/components/schemas/Sandbox"
+                                "$ref": "#/components/schemas/WorkerSandboxInstance"
                     description: OK
                 default:
                     content:
@@ -627,7 +658,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                "$ref": "#/components/schemas/Sandbox"
+                                "$ref": "#/components/schemas/WorkerSandboxInstance"
                     description: OK
                 default:
                     content:
@@ -676,7 +707,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                "$ref": "#/components/schemas/Sandbox"
+                                "$ref": "#/components/schemas/WorkerSandboxInstance"
                     description: OK
                 default:
                     content:

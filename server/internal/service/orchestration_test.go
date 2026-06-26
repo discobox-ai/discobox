@@ -25,7 +25,7 @@ func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {
 	ctx := context.Background()
 	svc, executor := newSandboxTestService(t, nil)
 
-	sandbox, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Name: "alpha"})
+	sandbox, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
@@ -51,7 +51,7 @@ func TestSandboxIntentCreatesGenerationScopedJobs(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newSandboxTestService(t, nil)
 
-	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Name: "alpha"})
+	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestReconcileSandboxDoesNotChangeIntent(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newSandboxTestService(t, nil)
 
-	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Name: "alpha"})
+	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
@@ -106,22 +106,24 @@ func TestCreateSandboxDefaultsGitSourceSlugs(t *testing.T) {
 	svc, _ := newSandboxTestService(t, nil)
 
 	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
-		Name: "alpha",
-		Source: serverapi.NewOptGitSource(serverapi.GitSource{
-			Kind: serverapi.GitSourceKindGit,
-		}),
-		SourceCodeReferences: serverapi.NewOptCreateSandboxBodySourceCodeReferences(serverapi.CreateSandboxBodySourceCodeReferences{
-			"/workspace/UI": {
+		Config: serverapi.SandboxCreateConfig{
+			Name: "alpha",
+			Source: serverapi.NewOptGitSource(serverapi.GitSource{
 				Kind: serverapi.GitSourceKindGit,
-			},
-			"workspace ui": {
-				Kind: serverapi.GitSourceKindGit,
-			},
-			"tools": {
-				Kind: serverapi.GitSourceKindGit,
-				Slug: serverapi.NewOptString("custom-tools"),
-			},
-		}),
+			}),
+			SourceCodeReferences: serverapi.NewOptSandboxCreateConfigSourceCodeReferences(serverapi.SandboxCreateConfigSourceCodeReferences{
+				"/workspace/UI": {
+					Kind: serverapi.GitSourceKindGit,
+				},
+				"workspace ui": {
+					Kind: serverapi.GitSourceKindGit,
+				},
+				"tools": {
+					Kind: serverapi.GitSourceKindGit,
+					Slug: serverapi.NewOptString("custom-tools"),
+				},
+			}),
+		},
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -163,7 +165,7 @@ func TestCreateSandboxDoesNotSelectDefaultAgentConfig(t *testing.T) {
 		t.Fatalf("default agent config = %q, want %q", project.DefaultAgentConfigID, agent.ID)
 	}
 
-	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Name: "alpha"})
+	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
@@ -204,7 +206,7 @@ func TestCreateSandboxRequiresResolvedProviderInstance(t *testing.T) {
 		}
 	})
 
-	_, err = svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Name: "alpha"})
+	_, err = svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
 	var statusErr apperrors.StatusError
 	if !errors.As(err, &statusErr) {
 		t.Fatalf("create sandbox error = %v, want status error", err)
@@ -261,7 +263,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 		}
 	})
 
-	sandbox, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Name: "alpha"})
+	sandbox, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}

@@ -118,37 +118,38 @@ func (s *routerTestServices) ListSandboxes(_ context.Context, projectID string) 
 func (s *routerTestServices) CreateSandbox(_ context.Context, projectID string, input services.CreateSandboxBody) (*model.Sandbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	config := input.Config
 
 	if projectID != s.project.ID {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
-	agentConfigID, err := s.resolveAgentConfigID(input.AgentConfigId, input.AgentName)
+	agentConfigID, err := s.resolveAgentConfigID(config.AgentConfigId, input.AgentName)
 	if err != nil {
 		return nil, err
 	}
 
 	now := time.Now().UTC()
 	var source *model.GitSource
-	if inputSource, ok := input.Source.Get(); ok {
+	if inputSource, ok := config.Source.Get(); ok {
 		converted := services.GitSourceToModel(inputSource)
 		source = &converted
 	}
-	userName, userUID, userGID, homeDirectory := services.SandboxUserToModel(input.User)
+	userName, userUID, userGID, homeDirectory := services.SandboxUserToModel(config.User)
 	sandbox := model.Sandbox{
 		ID:                       id.NewString(),
 		ProjectID:                s.project.ID,
 		CreatedByUserID:          s.user.ID,
 		ProviderInstanceID:       services.OptStringPtr(input.ProviderInstanceId),
 		AgentConfigID:            agentConfigID,
-		Name:                     input.Name,
-		Description:              services.OptStringPtr(input.Description),
+		Name:                     config.Name,
+		Description:              services.OptStringPtr(config.Description),
 		ResourceLifecycle:        model.NewResourceLifecycle(model.SandboxCreateOperation, nil),
-		AgentModel:               services.OptStringPtr(input.AgentModel),
-		AgentModelServiceTier:    services.OptStringPtr(input.AgentModelServiceTier),
-		AgentModelReasoningLevel: services.OptStringPtr(input.AgentModelReasoningLevel),
-		Prompt:                   services.OptStringPtr(input.Prompt),
+		AgentModel:               services.OptStringPtr(config.AgentModel),
+		AgentModelServiceTier:    services.OptStringPtr(config.AgentModelServiceTier),
+		AgentModelReasoningLevel: services.OptStringPtr(config.AgentModelReasoningLevel),
+		Prompt:                   services.OptStringPtr(config.Prompt),
 		Source:                   source,
-		SourceCodeReferences:     stubSourceCodeReferences(input.SourceCodeReferences),
+		SourceCodeReferences:     stubSourceCodeReferences(config.SourceCodeReferences),
 		UserName:                 userName,
 		UserUID:                  userUID,
 		UserGID:                  userGID,
@@ -193,8 +194,10 @@ func (s *routerTestServices) UpdateSandbox(_ context.Context, projectID, sandbox
 		return nil, err
 	}
 
-	if name, ok := input.Name.Get(); ok {
-		sandbox.Name = name
+	if config, ok := input.Config.Get(); ok {
+		if name, ok := config.Name.Get(); ok {
+			sandbox.Name = name
+		}
 	}
 	sandbox.UpdatedAt = time.Now().UTC()
 	s.sandboxes[sandbox.ID] = sandbox
@@ -569,7 +572,7 @@ func (s *routerTestServices) resolveAgentConfigID(agentConfigID, agentName servi
 	return nil, nil
 }
 
-func stubSourceCodeReferences(input services.OptCreateSandboxBodySourceCodeReferences) model.SourceCodeReferences {
+func stubSourceCodeReferences(input services.OptSandboxCreateConfigSourceCodeReferences) model.SourceCodeReferences {
 	refs, ok := input.Get()
 	if !ok {
 		return nil

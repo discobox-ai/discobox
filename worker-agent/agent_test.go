@@ -202,11 +202,16 @@ func TestWorkerSandboxHandlersValidateIdentityAndOperateOnRuntime(t *testing.T) 
 		t.Fatalf("new worker client: %v", err)
 	}
 
-	created, err := client.WorkerCreateSandbox(context.Background(), &workerapimodel.WorkerSandboxCreateRequest{SandboxId: "sandbox-1", Image: workerclient.NewOptString("alpine")}, workerclient.WorkerCreateSandboxParams{ProjectId: "project-1", WorkerId: "worker-1"})
+	created, err := client.WorkerCreateSandbox(context.Background(), &workerapimodel.WorkerSandboxCreateRequest{
+		SandboxId: "sandbox-1",
+		Config: workerapimodel.SandboxConfig{
+			Image: workerclient.NewOptString("alpine"),
+		},
+	}, workerclient.WorkerCreateSandboxParams{ProjectId: "project-1", WorkerId: "worker-1"})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	if created.SandboxID != "sandbox-1" || sandboxruntime.Status(created.Status) != sandboxruntime.StatusRunning {
+	if created.SandboxId != "sandbox-1" || sandboxruntime.Status(created.Runtime.Status) != sandboxruntime.StatusRunning {
 		t.Fatalf("created sandbox = %#v", created)
 	}
 
@@ -214,16 +219,16 @@ func TestWorkerSandboxHandlersValidateIdentityAndOperateOnRuntime(t *testing.T) 
 	if err != nil {
 		t.Fatalf("start already-running sandbox: %v", err)
 	}
-	if sandboxruntime.Status(started.Status) != sandboxruntime.StatusRunning {
-		t.Fatalf("started status = %q", started.Status)
+	if sandboxruntime.Status(started.Runtime.Status) != sandboxruntime.StatusRunning {
+		t.Fatalf("started status = %q", started.Runtime.Status)
 	}
 
 	stopped, err := client.WorkerStopSandbox(context.Background(), &workerapimodel.WorkerSandboxOperationRequest{}, workerclient.WorkerStopSandboxParams{ProjectId: "project-1", WorkerId: "worker-1", SandboxId: "sandbox-1"})
 	if err != nil {
 		t.Fatalf("stop sandbox: %v", err)
 	}
-	if sandboxruntime.Status(stopped.Status) != sandboxruntime.StatusStopped {
-		t.Fatalf("stopped status = %q", stopped.Status)
+	if sandboxruntime.Status(stopped.Runtime.Status) != sandboxruntime.StatusStopped {
+		t.Fatalf("stopped status = %q", stopped.Runtime.Status)
 	}
 
 	_, err = client.WorkerGetSandbox(context.Background(), workerclient.WorkerGetSandboxParams{ProjectId: "project-other", WorkerId: "worker-1", SandboxId: "sandbox-1"})
@@ -235,7 +240,12 @@ func TestWorkerSandboxHandlersValidateIdentityAndOperateOnRuntime(t *testing.T) 
 func TestWorkerSandboxGitRepositoryRouteServesCheckedOutRepository(t *testing.T) {
 	ctx := context.Background()
 	runtime := workeragent.NewMemorySandboxRuntime()
-	if _, err := runtime.CreateSandbox(ctx, &workerapimodel.WorkerSandboxCreateRequest{SandboxId: "sandbox-1", Image: workerclient.NewOptString("alpine")}); err != nil {
+	if _, err := runtime.CreateSandbox(ctx, &workerapimodel.WorkerSandboxCreateRequest{
+		SandboxId: "sandbox-1",
+		Config: workerapimodel.SandboxConfig{
+			Image: workerclient.NewOptString("alpine"),
+		},
+	}); err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
 

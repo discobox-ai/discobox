@@ -131,7 +131,7 @@ func (a *App) listSandboxCompletions(ctx context.Context, client *apiclientgen.C
 	}
 	completions := make([]string, 0, len(body.GetSandboxes()))
 	for _, sandbox := range body.GetSandboxes() {
-		completions = append(completions, completionItem(sandbox.ID, completionDescription(sandbox.Name, string(sandbox.Phase))))
+		completions = append(completions, completionItem(sandbox.ID, completionDescription(sandbox.Config.Name, string(sandbox.Runtime.Phase))))
 	}
 	return completions, nil
 }

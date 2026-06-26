@@ -26,7 +26,7 @@ func TestProjectFlagCompletionListsDefaultAndProjects(t *testing.T) {
 
 func TestSandboxPositionalCompletionListsSandboxes(t *testing.T) {
 	server := completionServer(t, map[string]string{
-		"/projects/project-1/sandboxes": `{"sandboxes":[{"id":"sandbox-1","projectId":"project-1","createdByUserId":"user-1","name":"Alpha","phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`,
+		"/projects/project-1/sandboxes": `{"sandboxes":[{"id":"sandbox-1","projectId":"project-1","createdByUserId":"user-1","config":{"name":"Alpha","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0},"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`,
 	})
 	root := NewRootCommand()
 	setFlag(t, root, "server", server.URL)

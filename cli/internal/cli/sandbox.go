@@ -374,48 +374,49 @@ func addUpdateFlags(cmd *cobra.Command, opts *sandboxUpdateOptions) {
 }
 
 func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, error) {
-	body := &apimodel.CreateSandboxBody{Name: opts.name}
-	body.SetDescription(optString(opts.description))
-	body.SetImage(optString(opts.image))
+	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: opts.name}}
+	config := &body.Config
+	config.SetDescription(optString(opts.description))
+	config.SetImage(optString(opts.image))
 	body.SetProviderInstanceId(optString(opts.providerInstanceID))
-	body.SetAgentConfigId(optString(opts.agentConfigID))
+	config.SetAgentConfigId(optString(opts.agentConfigID))
 	body.SetAgentName(optString(opts.agentName))
-	body.SetAgentModel(optString(opts.agentModel))
-	body.SetAgentModelServiceTier(optString(opts.agentModelServiceTier))
-	body.SetAgentModelReasoningLevel(optString(opts.agentModelReasoningLevel))
-	body.SetPrompt(optString(opts.prompt))
+	config.SetAgentModel(optString(opts.agentModel))
+	config.SetAgentModelServiceTier(optString(opts.agentModelServiceTier))
+	config.SetAgentModelReasoningLevel(optString(opts.agentModelReasoningLevel))
+	config.SetPrompt(optString(opts.prompt))
 	env, err := keyValueMapFromShell(opts.env)
 	if err != nil {
 		return nil, err
 	}
 	if len(env) > 0 {
-		body.SetEnv(apiclientgen.NewOptCreateSandboxBodyEnv(apiclientgen.CreateSandboxBodyEnv(env)))
+		config.SetEnv(apiclientgen.NewOptSandboxCreateConfigEnv(apiclientgen.SandboxCreateConfigEnv(env)))
 	}
 	source, err := gitSourceFromCreateOptions(opts)
 	if err != nil {
 		return nil, err
 	}
 	if source != nil {
-		body.SetSource(apiclientgen.NewOptGitSource(*source))
+		config.SetSource(apiclientgen.NewOptGitSource(*source))
 	}
 	if opts.cpuVCPUs > 0 {
-		body.SetCpuVcpus(apiclientgen.NewOptFloat64(opts.cpuVCPUs))
+		config.SetCpuVcpus(apiclientgen.NewOptFloat64(opts.cpuVCPUs))
 	}
 	if opts.memoryBytes > 0 {
-		body.SetMemoryBytes(apiclientgen.NewOptInt64(opts.memoryBytes))
+		config.SetMemoryBytes(apiclientgen.NewOptInt64(opts.memoryBytes))
 	}
 	if opts.storageBytes > 0 {
-		body.SetStorageBytes(apiclientgen.NewOptInt64(opts.storageBytes))
+		config.SetStorageBytes(apiclientgen.NewOptInt64(opts.storageBytes))
 	}
 	sourceCodeReferences, err := sourceCodeReferences(opts.sourceCodeReferences)
 	if err != nil {
 		return nil, err
 	}
 	if sourceCodeReferences != nil {
-		body.SetSourceCodeReferences(apiclientgen.NewOptCreateSandboxBodySourceCodeReferences(sourceCodeReferences))
+		config.SetSourceCodeReferences(apiclientgen.NewOptSandboxCreateConfigSourceCodeReferences(sourceCodeReferences))
 	}
 	if user, ok := sandboxUserFromCreateOptions(opts); ok {
-		body.SetUser(apiclientgen.NewOptSandboxUser(user))
+		config.SetUser(apiclientgen.NewOptSandboxUser(user))
 	}
 	return body, nil
 }
@@ -467,7 +468,9 @@ func gitSourceFromCreateOptions(opts sandboxCreateOptions) (*apimodel.GitSource,
 func updateSandboxBody(cmd *cobra.Command, opts sandboxUpdateOptions) (*apimodel.UpdateSandboxBody, error) {
 	body := &apimodel.UpdateSandboxBody{}
 	if cmd.Flags().Changed("name") {
-		body.SetName(apiclientgen.NewOptString(opts.name))
+		body.SetConfig(apiclientgen.NewOptSandboxUpdateConfig(apimodel.SandboxUpdateConfig{
+			Name: apiclientgen.NewOptString(opts.name),
+		}))
 	}
 	return body, nil
 }
@@ -490,11 +493,11 @@ func (a *App) waitForSandbox(cmd *cobra.Command, client *apiclientgen.Client, pr
 		if err != nil {
 			return nil, err
 		}
-		if sandbox.Phase == "running" && sandbox.LastOperationStatus == "success" {
+		if sandbox.Runtime.Phase == "running" && sandbox.Runtime.LastOperationStatus == "success" {
 			return sandbox, nil
 		}
-		if sandbox.Phase == "failed" || sandbox.LastOperationStatus == "failed" {
-			return sandbox, fmt.Errorf("sandbox failed: phase=%s lastOperationStatus=%s", sandbox.Phase, sandbox.LastOperationStatus)
+		if sandbox.Runtime.Phase == "failed" || sandbox.Runtime.LastOperationStatus == "failed" {
+			return sandbox, fmt.Errorf("sandbox failed: phase=%s lastOperationStatus=%s", sandbox.Runtime.Phase, sandbox.Runtime.LastOperationStatus)
 		}
 		select {
 		case <-ctx.Done():
@@ -504,7 +507,7 @@ func (a *App) waitForSandbox(cmd *cobra.Command, client *apiclientgen.Client, pr
 	}
 }
 
-func sourceCodeReferences(value string) (apiclientgen.CreateSandboxBodySourceCodeReferences, error) {
+func sourceCodeReferences(value string) (apiclientgen.SandboxCreateConfigSourceCodeReferences, error) {
 	raw, err := rawJSON(value)
 	if err != nil {
 		return nil, err
@@ -512,7 +515,7 @@ func sourceCodeReferences(value string) (apiclientgen.CreateSandboxBodySourceCod
 	if raw == nil {
 		return nil, nil
 	}
-	var refs apiclientgen.CreateSandboxBodySourceCodeReferences
+	var refs apiclientgen.SandboxCreateConfigSourceCodeReferences
 	if err := json.Unmarshal(raw, &refs); err != nil {
 		return nil, fmt.Errorf("source code references must be valid JSON: %w", err)
 	}

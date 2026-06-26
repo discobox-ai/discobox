@@ -109,6 +109,7 @@ func (s *Service) ListSandboxes(ctx context.Context, projectID string) ([]model.
 }
 
 func (s *Service) CreateSandbox(ctx context.Context, projectID string, input services.CreateSandboxBody) (*model.Sandbox, error) {
+	config := input.Config
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
 		return nil, mapAPIError(err, "project not found")
@@ -128,12 +129,12 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if provider.Disabled {
 		return nil, fmt.Errorf("provider instance disabled")
 	}
-	agentConfigID, err := s.resolveAgentConfigID(ctx, project, input.AgentConfigId, input.AgentName)
+	agentConfigID, err := s.resolveAgentConfigID(ctx, project, config.AgentConfigId, input.AgentName)
 	if err != nil {
 		return nil, err
 	}
 
-	if strings.TrimSpace(input.Name) == "" {
+	if strings.TrimSpace(config.Name) == "" {
 		return nil, fmt.Errorf("sandbox name is required")
 	}
 	userID := s.defaultUserID
@@ -145,17 +146,17 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		return nil, err
 	}
 	sourceCodeReferences := model.SourceCodeReferences(nil)
-	if refs, ok := input.SourceCodeReferences.Get(); ok {
+	if refs, ok := config.SourceCodeReferences.Get(); ok {
 		sourceCodeReferences = services.SourceCodeReferencesToModel(refs)
 	}
 	var source *model.GitSource
-	if inputSource, ok := input.Source.Get(); ok {
+	if inputSource, ok := config.Source.Get(); ok {
 		converted := services.GitSourceToModel(inputSource)
 		source = &converted
 	}
 	services.DefaultGitSourceSlugs(source, sourceCodeReferences)
-	userName, userUID, userGID, homeDirectory := services.SandboxUserToModel(input.User)
-	image := strings.TrimSpace(input.Image.Or(""))
+	userName, userUID, userGID, homeDirectory := services.SandboxUserToModel(config.User)
+	image := strings.TrimSpace(config.Image.Or(""))
 	if image == "" {
 		image = s.defaultImage
 	}
@@ -165,25 +166,24 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		CreatedByUserID:          userID,
 		ProviderInstanceID:       providerID,
 		AgentConfigID:            agentConfigID,
-		Name:                     input.Name,
-		Description:              services.OptStringPtr(input.Description),
+		Name:                     config.Name,
+		Description:              services.OptStringPtr(config.Description),
 		ResourceLifecycle:        model.NewResourceLifecycle(model.SandboxCreateOperation, nil),
-		AgentModel:               services.OptStringPtr(input.AgentModel),
-		AgentModelServiceTier:    services.OptStringPtr(input.AgentModelServiceTier),
-		AgentModelReasoningLevel: services.OptStringPtr(input.AgentModelReasoningLevel),
-		Prompt:                   services.OptStringPtr(input.Prompt),
+		AgentModel:               services.OptStringPtr(config.AgentModel),
+		AgentModelServiceTier:    services.OptStringPtr(config.AgentModelServiceTier),
+		AgentModelReasoningLevel: services.OptStringPtr(config.AgentModelReasoningLevel),
+		Prompt:                   services.OptStringPtr(config.Prompt),
 		Image:                    image,
-		Env:                      map[string]string(input.Env.Or(nil)),
+		Env:                      map[string]string(config.Env.Or(nil)),
 		Source:                   source,
 		SourceCodeReferences:     sourceCodeReferences,
 		UserName:                 userName,
 		UserUID:                  userUID,
 		UserGID:                  userGID,
 		HomeDirectory:            homeDirectory,
-		CPUVCPUs:                 input.CpuVcpus.Or(0),
-		MemoryBytes:              input.MemoryBytes.Or(0),
-		StorageBytes:             input.StorageBytes.Or(0),
-		RuntimeState:             services.RawMessage(input.RuntimeState),
+		CPUVCPUs:                 config.CpuVcpus.Or(0),
+		MemoryBytes:              config.MemoryBytes.Or(0),
+		StorageBytes:             config.StorageBytes.Or(0),
 	}
 	if s.jobs == nil {
 		return nil, fmt.Errorf("job manager is required")
@@ -285,8 +285,10 @@ func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string
 		return nil, mapAPIError(err, "sandbox not found")
 	}
 
-	if name, ok := input.Name.Get(); ok {
-		sandbox.Name = name
+	if config, ok := input.Config.Get(); ok {
+		if name, ok := config.Name.Get(); ok {
+			sandbox.Name = name
+		}
 	}
 
 	if err := s.store.UpdateSandbox(ctx, sandbox); err != nil {

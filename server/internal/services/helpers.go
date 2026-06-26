@@ -75,20 +75,93 @@ func SandboxUserFromModel(sandbox *model.Sandbox) *serverapi.SandboxUser {
 }
 
 func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
-	var fields map[string]any
-	data, err := json.Marshal(sandbox)
-	if err != nil {
-		return serverapi.Sandbox{}, err
+	if sandbox == nil {
+		return serverapi.Sandbox{}, nil
 	}
-	if err := json.Unmarshal(data, &fields); err != nil {
-		return serverapi.Sandbox{}, err
+	config := map[string]any{
+		"cpuVcpus":     sandbox.CPUVCPUs,
+		"image":        sandbox.Image,
+		"memoryBytes":  sandbox.MemoryBytes,
+		"name":         sandbox.Name,
+		"storageBytes": sandbox.StorageBytes,
 	}
-	delete(fields, "userName")
-	delete(fields, "userUid")
-	delete(fields, "userGid")
-	delete(fields, "homeDirectory")
+	if sandbox.AgentConfigID != nil {
+		config["agentConfigId"] = *sandbox.AgentConfigID
+	}
+	if sandbox.AgentModel != nil {
+		config["agentModel"] = *sandbox.AgentModel
+	}
+	if sandbox.AgentModelServiceTier != nil {
+		config["agentModelServiceTier"] = *sandbox.AgentModelServiceTier
+	}
+	if sandbox.AgentModelReasoningLevel != nil {
+		config["agentModelReasoningLevel"] = *sandbox.AgentModelReasoningLevel
+	}
+	if sandbox.Description != nil {
+		config["description"] = *sandbox.Description
+	}
+	if sandbox.Env != nil {
+		config["env"] = sandbox.Env
+	}
+	if sandbox.Prompt != nil {
+		config["prompt"] = *sandbox.Prompt
+	}
+	if sandbox.Source != nil {
+		config["source"] = sandbox.Source
+	}
+	if sandbox.SourceCodeReferences != nil {
+		config["sourceCodeReferences"] = sandbox.SourceCodeReferences
+	}
 	if user := SandboxUserFromModel(sandbox); user != nil {
-		fields["user"] = user
+		config["user"] = user
+	}
+	runtime := map[string]any{
+		"desiredState":        sandbox.DesiredState,
+		"generation":          sandbox.Generation,
+		"lastOperationStatus": sandbox.LastOperationStatus,
+		"observedGeneration":  sandbox.ObservedGeneration,
+		"phase":               sandbox.Phase,
+		"restartGeneration":   sandbox.RestartGeneration,
+		"restartedGeneration": sandbox.RestartedGeneration,
+	}
+	if sandbox.ActiveOperation != nil {
+		runtime["activeOperation"] = *sandbox.ActiveOperation
+	}
+	if sandbox.ErrorMessage != nil {
+		runtime["errorMessage"] = *sandbox.ErrorMessage
+	}
+	if sandbox.LastActiveAt != nil {
+		runtime["lastActiveAt"] = *sandbox.LastActiveAt
+	}
+	if sandbox.LastJobID != nil {
+		runtime["lastJobId"] = *sandbox.LastJobID
+	}
+	if sandbox.StatusMessage != nil {
+		runtime["statusMessage"] = *sandbox.StatusMessage
+	}
+	if sandbox.WorkerID != nil {
+		runtime["workerId"] = *sandbox.WorkerID
+	}
+	fields := map[string]any{
+		"id":              sandbox.ID,
+		"projectId":       sandbox.ProjectID,
+		"createdByUserId": sandbox.CreatedByUserID,
+		"createdAt":       sandbox.CreatedAt,
+		"updatedAt":       sandbox.UpdatedAt,
+		"config":          config,
+		"runtime":         runtime,
+	}
+	if sandbox.ProviderInstanceID != nil {
+		fields["providerInstanceId"] = *sandbox.ProviderInstanceID
+	}
+	if sandbox.CreatedBy != nil {
+		fields["createdBy"] = sandbox.CreatedBy
+	}
+	if sandbox.ProviderInstance != nil {
+		fields["providerInstance"] = sandbox.ProviderInstance
+	}
+	if sandbox.AgentConfig != nil {
+		fields["agentConfig"] = sandbox.AgentConfig
 	}
 	return Convert[serverapi.Sandbox](fields)
 }
@@ -154,7 +227,7 @@ func GitSourceToModel(input serverapi.GitSource) model.GitSource {
 	return out
 }
 
-func SourceCodeReferencesToModel(input serverapi.CreateSandboxBodySourceCodeReferences) model.SourceCodeReferences {
+func SourceCodeReferencesToModel(input serverapi.SandboxCreateConfigSourceCodeReferences) model.SourceCodeReferences {
 	out := make(model.SourceCodeReferences, len(input))
 	for key, source := range input {
 		out[key] = GitSourceToModel(source)

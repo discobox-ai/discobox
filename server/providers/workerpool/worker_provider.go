@@ -34,6 +34,7 @@ var (
 type WorkerProvider interface {
 	InitializeWorkerProvider(ctx context.Context, provider *model.SandboxProviderInstance, manager any) error
 	CreateWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string, controlPlanePublicKey string) error
+	RepairWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string, controlPlanePublicKey string, reason string) error
 	RemoveWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error
 	AcquireWorkerHTTPClient(ctx context.Context, worker *model.Worker) (*transport.HTTPClientLease, error)
 }
@@ -128,6 +129,25 @@ func (p *WorkerPoolProvider) ReconcileWorker(ctx context.Context, manager any, p
 		return err
 	}
 	return p.workerProvider.CreateWorker(ctx, project, provider, worker, token, controlPlanePublicKey)
+}
+
+func (p *WorkerPoolProvider) RepairWorker(ctx context.Context, manager any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, reason string) error {
+	workerManager, ok := manager.(WorkerManager)
+	if !ok {
+		return fmt.Errorf("worker manager is required")
+	}
+	if p.workerProvider == nil {
+		return fmt.Errorf("worker provider is required")
+	}
+	token, err := createWorkerBootstrap(ctx, workerManager, project, worker)
+	if err != nil {
+		return err
+	}
+	controlPlanePublicKey, err := workerManager.EnsureWorkerAgentTrustKey(ctx)
+	if err != nil {
+		return err
+	}
+	return p.workerProvider.RepairWorker(ctx, project, provider, worker, token, controlPlanePublicKey, reason)
 }
 
 func (p *WorkerPoolProvider) RemoveWorker(ctx context.Context, _ any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error {
@@ -648,23 +668,21 @@ func newWorkerAgentClient(lease *transport.HTTPClientLease) (*workerclient.Clien
 
 func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) *workerapimodel.WorkerSandboxCreateRequest {
 	out := &workerapimodel.WorkerSandboxCreateRequest{SandboxId: sandboxID}
+	config := &out.Config
 	if opts.Image.Name != "" {
-		out.Image = workerclient.NewOptString(opts.Image.Name)
+		config.Image = workerclient.NewOptString(opts.Image.Name)
 	}
 	if opts.Env != nil {
-		out.Env = workerclient.NewOptWorkerSandboxCreateRequestEnv(workerclient.WorkerSandboxCreateRequestEnv(opts.Env))
+		config.Env = workerclient.NewOptSandboxConfigEnv(workerclient.SandboxConfigEnv(opts.Env))
 	}
 	if opts.Name != "" {
-		out.Name = workerclient.NewOptString(opts.Name)
+		config.Name = workerclient.NewOptString(opts.Name)
 	}
 	if opts.Description != nil {
-		out.Description = workerclient.NewOptString(*opts.Description)
-	}
-	if opts.ProviderInstanceID != "" {
-		out.ProviderInstanceId = workerclient.NewOptString(opts.ProviderInstanceID)
+		config.Description = workerclient.NewOptString(*opts.Description)
 	}
 	if opts.AgentConfigID != nil {
-		out.AgentConfigId = workerclient.NewOptString(*opts.AgentConfigID)
+		config.AgentConfigId = workerclient.NewOptString(*opts.AgentConfigID)
 	}
 	if opts.ResolvedAgentConfig != nil {
 		resolved := workerapimodel.ResolvedAgentConfig{
@@ -676,9 +694,9 @@ func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions
 		out.ResolvedAgentConfig = workerclient.NewOptResolvedAgentConfig(resolved)
 	}
 	if len(opts.AgentConfigs) > 0 {
-		configs := make([]workerapimodel.AgentConfig, 0, len(opts.AgentConfigs))
+		configs := make([]workerapimodel.SandboxAgentConfig, 0, len(opts.AgentConfigs))
 		for _, config := range opts.AgentConfigs {
-			configs = append(configs, workerapimodel.AgentConfig{
+			configs = append(configs, workerapimodel.SandboxAgentConfig{
 				ID:             config.ID,
 				Name:           config.Name,
 				InstallCommand: workerclient.NewOptString(config.InstallCommand),
@@ -686,30 +704,30 @@ func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions
 				IsDefault:      config.IsDefault,
 			})
 		}
-		out.AgentConfigs = workerclient.NewOptNilAgentConfigArray(configs)
+		out.AgentConfigs = workerclient.NewOptNilSandboxAgentConfigArray(configs)
 	}
 	if opts.AgentModel != nil {
-		out.AgentModel = workerclient.NewOptString(*opts.AgentModel)
+		config.AgentModel = workerclient.NewOptString(*opts.AgentModel)
 	}
 	if opts.AgentModelServiceTier != nil {
-		out.AgentModelServiceTier = workerclient.NewOptString(*opts.AgentModelServiceTier)
+		config.AgentModelServiceTier = workerclient.NewOptString(*opts.AgentModelServiceTier)
 	}
 	if opts.AgentModelReasoningLevel != nil {
-		out.AgentModelReasoningLevel = workerclient.NewOptString(*opts.AgentModelReasoningLevel)
+		config.AgentModelReasoningLevel = workerclient.NewOptString(*opts.AgentModelReasoningLevel)
 	}
 	if opts.Prompt != nil {
-		out.Prompt = workerclient.NewOptString(*opts.Prompt)
+		config.Prompt = workerclient.NewOptString(*opts.Prompt)
 	}
 	if opts.Source != nil {
 		workerSource, err := workerGitSource(*opts.Source)
 		if err == nil {
-			out.Source = workerclient.NewOptGitSource(workerSource)
+			config.Source = workerclient.NewOptGitSource(workerSource)
 		}
 	}
 	if opts.SourceCodeReferences != nil {
-		out.SourceCodeReferences = workerclient.NewOptWorkerSandboxCreateRequestSourceCodeReferences(workerSourceCodeReferences(opts.SourceCodeReferences))
+		config.SourceCodeReferences = workerclient.NewOptSandboxConfigSourceCodeReferences(workerSourceCodeReferences(opts.SourceCodeReferences))
 	}
-	user := workerapimodel.WorkerSandboxUser{}
+	user := workerapimodel.SandboxUser{}
 	user.SetName(workerOptStringPtr(opts.UserName))
 	if opts.UserUID != nil {
 		user.SetUID(workerclient.NewOptInt64(int64(*opts.UserUID)))
@@ -719,19 +737,19 @@ func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions
 	}
 	user.SetHomeDirectory(workerOptStringPtr(opts.HomeDirectory))
 	if user.Name.Set || user.UID.Set || user.Gid.Set || user.HomeDirectory.Set {
-		out.User = workerclient.NewOptWorkerSandboxUser(user)
+		config.User = workerclient.NewOptSandboxUser(user)
 	}
 	if opts.Resources != (sandbox.ResourceConfig{}) {
-		out.Resources = workerclient.NewOptResourceConfig(workerResourceConfig(opts.Resources))
+		out.Resources = workerclient.NewOptWorkerSandboxResources(workerResourceConfig(opts.Resources))
 	}
 	if opts.CPUVCPUs != 0 {
-		out.CpuVcpus = workerclient.NewOptFloat64(opts.CPUVCPUs)
+		config.CpuVcpus = workerclient.NewOptFloat64(opts.CPUVCPUs)
 	}
 	if opts.MemoryBytes != 0 {
-		out.MemoryBytes = workerclient.NewOptInt64(opts.MemoryBytes)
+		config.MemoryBytes = workerclient.NewOptInt64(opts.MemoryBytes)
 	}
 	if opts.StorageBytes != 0 {
-		out.StorageBytes = workerclient.NewOptInt64(opts.StorageBytes)
+		config.StorageBytes = workerclient.NewOptInt64(opts.StorageBytes)
 	}
 	return out
 }
@@ -743,17 +761,17 @@ func workerOptStringPtr(value *string) workerclient.OptString {
 	return workerclient.NewOptString(*value)
 }
 
-func workerResourceConfig(cfg sandbox.ResourceConfig) workerapimodel.ResourceConfig {
-	return workerapimodel.ResourceConfig{
-		MemoryMB: int64(cfg.MemoryMB),
-		CPUCores: cfg.CPUCores,
-		DiskMB:   int64(cfg.DiskMB),
-		Timeout:  int64(cfg.Timeout),
+func workerResourceConfig(cfg sandbox.ResourceConfig) workerapimodel.WorkerSandboxResources {
+	return workerapimodel.WorkerSandboxResources{
+		MemoryMb:       int64(cfg.MemoryMB),
+		CpuCores:       cfg.CPUCores,
+		DiskMb:         int64(cfg.DiskMB),
+		TimeoutSeconds: int64(cfg.Timeout),
 	}
 }
 
-func workerSourceCodeReferences(in model.SourceCodeReferences) workerclient.WorkerSandboxCreateRequestSourceCodeReferences {
-	out := make(workerclient.WorkerSandboxCreateRequestSourceCodeReferences, len(in))
+func workerSourceCodeReferences(in model.SourceCodeReferences) workerclient.SandboxConfigSourceCodeReferences {
+	out := make(workerclient.SandboxConfigSourceCodeReferences, len(in))
 	for key, ref := range in {
 		workerRef, err := workerGitSource(ref)
 		if err != nil {
@@ -818,27 +836,28 @@ func workerGitSource(in model.GitSource) (workerapimodel.GitSource, error) {
 	return out, nil
 }
 
-func sandboxFromWorker(in *workerapimodel.Sandbox, workerID string) *sandbox.Sandbox {
+func sandboxFromWorker(in *workerapimodel.WorkerSandboxInstance, workerID string) *sandbox.Sandbox {
 	if in == nil {
 		return nil
 	}
-	metadata := map[string]string(in.Metadata)
+	runtime := in.Runtime
+	metadata := map[string]string(runtime.Metadata)
 	if metadata == nil {
 		metadata = map[string]string{}
 	}
 	metadata["worker_id"] = workerID
 	return &sandbox.Sandbox{
-		ID:        in.ID,
-		SandboxID: in.SandboxID,
-		Status:    sandbox.Status(in.Status),
-		Image:     in.Image,
-		CreatedAt: in.CreatedAt,
-		StartedAt: timePtrFromWorker(in.StartedAt),
-		StoppedAt: timePtrFromWorker(in.StoppedAt),
-		Error:     in.Error,
+		ID:        runtime.InstanceId,
+		SandboxID: in.SandboxId,
+		Status:    sandbox.Status(runtime.Status),
+		Image:     runtime.Image,
+		CreatedAt: runtime.CreatedAt,
+		StartedAt: timePtrFromWorker(runtime.StartedAt),
+		StoppedAt: timePtrFromWorker(runtime.StoppedAt),
+		Error:     runtime.Error,
 		Metadata:  metadata,
-		Ports:     portsFromWorker(in.Ports),
-		Env:       map[string]string(in.Env),
+		Ports:     portsFromWorker(runtime.Ports),
+		Env:       map[string]string(runtime.Env),
 	}
 }
 
@@ -849,7 +868,7 @@ func timePtrFromWorker(in workerclient.NilDateTime) *time.Time {
 	return &in.Value
 }
 
-func portsFromWorker(in []workerapimodel.AssignedPort) []sandbox.AssignedPort {
+func portsFromWorker(in []workerapimodel.WorkerSandboxPort) []sandbox.AssignedPort {
 	if in == nil {
 		return nil
 	}
@@ -858,7 +877,7 @@ func portsFromWorker(in []workerapimodel.AssignedPort) []sandbox.AssignedPort {
 		out = append(out, sandbox.AssignedPort{
 			ContainerPort: int(port.ContainerPort),
 			HostPort:      int(port.HostPort),
-			HostIP:        port.HostIP,
+			HostIP:        port.HostIp,
 			Protocol:      port.Protocol,
 		})
 	}

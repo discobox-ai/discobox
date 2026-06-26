@@ -352,7 +352,7 @@ func TestSandboxListQuietCommandPrintsFullIDsOnly(t *testing.T) {
 			t.Fatalf("path = %q, want project sandboxes path", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"sandboxes":[{"id":"` + sandboxID + `","projectId":"project-1","createdByUserId":"user-1","name":"alpha","phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+		_, _ = w.Write([]byte(`{"sandboxes":[` + testSandboxJSON(sandboxID, "alpha", "2026-06-17T00:00:00Z", "2026-06-17T00:00:01Z") + `]}`))
 	}))
 	t.Cleanup(server.Close)
 
@@ -748,15 +748,17 @@ func TestWriteSandboxesTableIncludesErrorMessage(t *testing.T) {
 	cmd.SetOut(&out)
 
 	err := app.writeSandboxes(cmd, []apimodel.Sandbox{{
-		ID:                  "sandbox-1",
-		Name:                "alpha",
-		Phase:               "failed",
-		DesiredState:        "running",
-		LastOperationStatus: "failed",
-		ErrorMessage:        apiclientgen.NewOptString("worker-agent request failed: git clone failed"),
-		Generation:          1,
-		CreatedAt:           time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC),
-		UpdatedAt:           time.Date(2026, 6, 17, 0, 0, 1, 0, time.UTC),
+		ID:        "sandbox-1",
+		Config:    apimodel.SandboxConfig{Name: "alpha"},
+		CreatedAt: time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC),
+		UpdatedAt: time.Date(2026, 6, 17, 0, 0, 1, 0, time.UTC),
+		Runtime: apimodel.SandboxRuntime{
+			Phase:               "failed",
+			DesiredState:        "running",
+			LastOperationStatus: "failed",
+			ErrorMessage:        apiclientgen.NewOptString("worker-agent request failed: git clone failed"),
+			Generation:          1,
+		},
 	}})
 	if err != nil {
 		t.Fatalf("writeSandboxes: %v", err)
@@ -814,12 +816,12 @@ func TestStatusCommandShowsNewestFiveOfEachResource(t *testing.T) {
 		switch r.URL.Path {
 		case "/projects/project-1/sandboxes":
 			_, _ = w.Write([]byte(`{"sandboxes":[` +
-				`{"id":"sandbox-old","projectId":"project-1","createdByUserId":"user-1","name":"old-sandbox","phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"},` +
-				`{"id":"sandbox-1","projectId":"project-1","createdByUserId":"user-1","name":"sandbox-1","phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-06-17T00:01:00Z","updatedAt":"2026-06-17T00:01:01Z"},` +
-				`{"id":"sandbox-2","projectId":"project-1","createdByUserId":"user-1","name":"sandbox-2","phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-06-17T00:02:00Z","updatedAt":"2026-06-17T00:02:01Z"},` +
-				`{"id":"sandbox-3","projectId":"project-1","createdByUserId":"user-1","name":"sandbox-3","phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-06-17T00:03:00Z","updatedAt":"2026-06-17T00:03:01Z"},` +
-				`{"id":"sandbox-4","projectId":"project-1","createdByUserId":"user-1","name":"sandbox-4","phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-06-17T00:04:00Z","updatedAt":"2026-06-17T00:04:01Z"},` +
-				`{"id":"sandbox-5","projectId":"project-1","createdByUserId":"user-1","name":"sandbox-5","phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-06-17T00:05:00Z","updatedAt":"2026-06-17T00:05:01Z"}` +
+				testSandboxJSON("sandbox-old", "old-sandbox", "2026-06-17T00:00:00Z", "2026-06-17T00:00:01Z") + `,` +
+				testSandboxJSON("sandbox-1", "sandbox-1", "2026-06-17T00:01:00Z", "2026-06-17T00:01:01Z") + `,` +
+				testSandboxJSON("sandbox-2", "sandbox-2", "2026-06-17T00:02:00Z", "2026-06-17T00:02:01Z") + `,` +
+				testSandboxJSON("sandbox-3", "sandbox-3", "2026-06-17T00:03:00Z", "2026-06-17T00:03:01Z") + `,` +
+				testSandboxJSON("sandbox-4", "sandbox-4", "2026-06-17T00:04:00Z", "2026-06-17T00:04:01Z") + `,` +
+				testSandboxJSON("sandbox-5", "sandbox-5", "2026-06-17T00:05:00Z", "2026-06-17T00:05:01Z") +
 				`]}`))
 		case "/projects/project-1/workers":
 			_, _ = w.Write([]byte(`{"workers":[` +
@@ -1106,7 +1108,7 @@ func TestFormatRelativeTime(t *testing.T) {
 
 func TestSandboxGetResolvesShortID(t *testing.T) {
 	const fullID = "01kv9w440bpa9qk5n25t2hh2rv"
-	const sandboxJSON = `{"id":"01kv9w440bpa9qk5n25t2hh2rv","projectId":"project-1","createdByUserId":"user-1","name":"alpha","phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`
+	sandboxJSON := testSandboxJSON(fullID, "alpha", "2026-06-17T00:00:00Z", "2026-06-17T00:00:01Z")
 	var sawList bool
 	var sawGet bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1575,4 +1577,8 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+func testSandboxJSON(id, name, createdAt, updatedAt string) string {
+	return `{"id":"` + id + `","projectId":"project-1","createdByUserId":"user-1","config":{"name":"` + name + `","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0},"createdAt":"` + createdAt + `","updatedAt":"` + updatedAt + `"}`
 }

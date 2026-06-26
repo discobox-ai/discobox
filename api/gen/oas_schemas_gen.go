@@ -1009,42 +1009,12 @@ func (*CreateAgentTerminalSwitchingProtocols) createAgentTerminalRes() {}
 type CreateSandboxBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Agent config ID.
-	AgentConfigId OptString `json:"agentConfigId"`
-	// Model the agent should use.
-	AgentModel OptString `json:"agentModel"`
-	// Model reasoning level the agent should use.
-	AgentModelReasoningLevel OptString `json:"agentModelReasoningLevel"`
-	// Model service tier the agent should use.
-	AgentModelServiceTier OptString `json:"agentModelServiceTier"`
 	// Agent config name to resolve at create time.
 	AgentName OptString `json:"agentName"`
-	// Requested CPU capacity in vCPUs.
-	CpuVcpus OptFloat64 `json:"cpuVcpus"`
-	// Sandbox description.
-	Description OptString `json:"description"`
-	// Environment variables available to sandbox-agent terminals and execs by default.
-	Env OptCreateSandboxBodyEnv `json:"env"`
-	// Sandbox base image. Defaults to the server configured sandbox image when omitted.
-	Image OptString `json:"image"`
-	// Requested memory capacity in bytes.
-	MemoryBytes OptInt64 `json:"memoryBytes"`
-	// Sandbox name.
-	Name string `json:"name"`
-	// Prompt the agent should run.
-	Prompt OptString `json:"prompt"`
+	// Desired sandbox configuration.
+	Config SandboxCreateConfig `json:"config"`
 	// Sandbox provider instance ID.
 	ProviderInstanceId OptString `json:"providerInstanceId"`
-	// Initial non-secret provider runtime state.
-	RuntimeState jx.Raw `json:"runtimeState"`
-	// Primary Git source to materialize in the sandbox.
-	Source OptGitSource `json:"source"`
-	// Additional Git sources to materialize in the sandbox.
-	SourceCodeReferences OptCreateSandboxBodySourceCodeReferences `json:"sourceCodeReferences"`
-	// Requested storage capacity in bytes.
-	StorageBytes OptInt64 `json:"storageBytes"`
-	// User identity and home directory to use inside the sandbox.
-	User OptSandboxUser `json:"user"`
 }
 
 // GetSchema returns the value of Schema.
@@ -1052,64 +1022,14 @@ func (s *CreateSandboxBody) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetAgentConfigId returns the value of AgentConfigId.
-func (s *CreateSandboxBody) GetAgentConfigId() OptString {
-	return s.AgentConfigId
-}
-
-// GetAgentModel returns the value of AgentModel.
-func (s *CreateSandboxBody) GetAgentModel() OptString {
-	return s.AgentModel
-}
-
-// GetAgentModelReasoningLevel returns the value of AgentModelReasoningLevel.
-func (s *CreateSandboxBody) GetAgentModelReasoningLevel() OptString {
-	return s.AgentModelReasoningLevel
-}
-
-// GetAgentModelServiceTier returns the value of AgentModelServiceTier.
-func (s *CreateSandboxBody) GetAgentModelServiceTier() OptString {
-	return s.AgentModelServiceTier
-}
-
 // GetAgentName returns the value of AgentName.
 func (s *CreateSandboxBody) GetAgentName() OptString {
 	return s.AgentName
 }
 
-// GetCpuVcpus returns the value of CpuVcpus.
-func (s *CreateSandboxBody) GetCpuVcpus() OptFloat64 {
-	return s.CpuVcpus
-}
-
-// GetDescription returns the value of Description.
-func (s *CreateSandboxBody) GetDescription() OptString {
-	return s.Description
-}
-
-// GetEnv returns the value of Env.
-func (s *CreateSandboxBody) GetEnv() OptCreateSandboxBodyEnv {
-	return s.Env
-}
-
-// GetImage returns the value of Image.
-func (s *CreateSandboxBody) GetImage() OptString {
-	return s.Image
-}
-
-// GetMemoryBytes returns the value of MemoryBytes.
-func (s *CreateSandboxBody) GetMemoryBytes() OptInt64 {
-	return s.MemoryBytes
-}
-
-// GetName returns the value of Name.
-func (s *CreateSandboxBody) GetName() string {
-	return s.Name
-}
-
-// GetPrompt returns the value of Prompt.
-func (s *CreateSandboxBody) GetPrompt() OptString {
-	return s.Prompt
+// GetConfig returns the value of Config.
+func (s *CreateSandboxBody) GetConfig() SandboxCreateConfig {
+	return s.Config
 }
 
 // GetProviderInstanceId returns the value of ProviderInstanceId.
@@ -1117,54 +1037,9 @@ func (s *CreateSandboxBody) GetProviderInstanceId() OptString {
 	return s.ProviderInstanceId
 }
 
-// GetRuntimeState returns the value of RuntimeState.
-func (s *CreateSandboxBody) GetRuntimeState() jx.Raw {
-	return s.RuntimeState
-}
-
-// GetSource returns the value of Source.
-func (s *CreateSandboxBody) GetSource() OptGitSource {
-	return s.Source
-}
-
-// GetSourceCodeReferences returns the value of SourceCodeReferences.
-func (s *CreateSandboxBody) GetSourceCodeReferences() OptCreateSandboxBodySourceCodeReferences {
-	return s.SourceCodeReferences
-}
-
-// GetStorageBytes returns the value of StorageBytes.
-func (s *CreateSandboxBody) GetStorageBytes() OptInt64 {
-	return s.StorageBytes
-}
-
-// GetUser returns the value of User.
-func (s *CreateSandboxBody) GetUser() OptSandboxUser {
-	return s.User
-}
-
 // SetSchema sets the value of Schema.
 func (s *CreateSandboxBody) SetSchema(val OptURI) {
 	s.Schema = val
-}
-
-// SetAgentConfigId sets the value of AgentConfigId.
-func (s *CreateSandboxBody) SetAgentConfigId(val OptString) {
-	s.AgentConfigId = val
-}
-
-// SetAgentModel sets the value of AgentModel.
-func (s *CreateSandboxBody) SetAgentModel(val OptString) {
-	s.AgentModel = val
-}
-
-// SetAgentModelReasoningLevel sets the value of AgentModelReasoningLevel.
-func (s *CreateSandboxBody) SetAgentModelReasoningLevel(val OptString) {
-	s.AgentModelReasoningLevel = val
-}
-
-// SetAgentModelServiceTier sets the value of AgentModelServiceTier.
-func (s *CreateSandboxBody) SetAgentModelServiceTier(val OptString) {
-	s.AgentModelServiceTier = val
 }
 
 // SetAgentName sets the value of AgentName.
@@ -1172,93 +1047,14 @@ func (s *CreateSandboxBody) SetAgentName(val OptString) {
 	s.AgentName = val
 }
 
-// SetCpuVcpus sets the value of CpuVcpus.
-func (s *CreateSandboxBody) SetCpuVcpus(val OptFloat64) {
-	s.CpuVcpus = val
-}
-
-// SetDescription sets the value of Description.
-func (s *CreateSandboxBody) SetDescription(val OptString) {
-	s.Description = val
-}
-
-// SetEnv sets the value of Env.
-func (s *CreateSandboxBody) SetEnv(val OptCreateSandboxBodyEnv) {
-	s.Env = val
-}
-
-// SetImage sets the value of Image.
-func (s *CreateSandboxBody) SetImage(val OptString) {
-	s.Image = val
-}
-
-// SetMemoryBytes sets the value of MemoryBytes.
-func (s *CreateSandboxBody) SetMemoryBytes(val OptInt64) {
-	s.MemoryBytes = val
-}
-
-// SetName sets the value of Name.
-func (s *CreateSandboxBody) SetName(val string) {
-	s.Name = val
-}
-
-// SetPrompt sets the value of Prompt.
-func (s *CreateSandboxBody) SetPrompt(val OptString) {
-	s.Prompt = val
+// SetConfig sets the value of Config.
+func (s *CreateSandboxBody) SetConfig(val SandboxCreateConfig) {
+	s.Config = val
 }
 
 // SetProviderInstanceId sets the value of ProviderInstanceId.
 func (s *CreateSandboxBody) SetProviderInstanceId(val OptString) {
 	s.ProviderInstanceId = val
-}
-
-// SetRuntimeState sets the value of RuntimeState.
-func (s *CreateSandboxBody) SetRuntimeState(val jx.Raw) {
-	s.RuntimeState = val
-}
-
-// SetSource sets the value of Source.
-func (s *CreateSandboxBody) SetSource(val OptGitSource) {
-	s.Source = val
-}
-
-// SetSourceCodeReferences sets the value of SourceCodeReferences.
-func (s *CreateSandboxBody) SetSourceCodeReferences(val OptCreateSandboxBodySourceCodeReferences) {
-	s.SourceCodeReferences = val
-}
-
-// SetStorageBytes sets the value of StorageBytes.
-func (s *CreateSandboxBody) SetStorageBytes(val OptInt64) {
-	s.StorageBytes = val
-}
-
-// SetUser sets the value of User.
-func (s *CreateSandboxBody) SetUser(val OptSandboxUser) {
-	s.User = val
-}
-
-// Environment variables available to sandbox-agent terminals and execs by default.
-type CreateSandboxBodyEnv map[string]string
-
-func (s *CreateSandboxBodyEnv) init() CreateSandboxBodyEnv {
-	m := *s
-	if m == nil {
-		m = map[string]string{}
-		*s = m
-	}
-	return m
-}
-
-// Additional Git sources to materialize in the sandbox.
-type CreateSandboxBodySourceCodeReferences map[string]GitSource
-
-func (s *CreateSandboxBodySourceCodeReferences) init() CreateSandboxBodySourceCodeReferences {
-	m := *s
-	if m == nil {
-		m = map[string]GitSource{}
-		*s = m
-	}
-	return m
 }
 
 // Ref: #/components/schemas/CreateSandboxExecRequest
@@ -2733,98 +2529,6 @@ func (o OptCreateAgentTerminalRequestMetadata) Or(d CreateAgentTerminalRequestMe
 	return d
 }
 
-// NewOptCreateSandboxBodyEnv returns new OptCreateSandboxBodyEnv with value set to v.
-func NewOptCreateSandboxBodyEnv(v CreateSandboxBodyEnv) OptCreateSandboxBodyEnv {
-	return OptCreateSandboxBodyEnv{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptCreateSandboxBodyEnv is optional CreateSandboxBodyEnv.
-type OptCreateSandboxBodyEnv struct {
-	Value CreateSandboxBodyEnv
-	Set   bool
-}
-
-// IsSet returns true if OptCreateSandboxBodyEnv was set.
-func (o OptCreateSandboxBodyEnv) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptCreateSandboxBodyEnv) Reset() {
-	var v CreateSandboxBodyEnv
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptCreateSandboxBodyEnv) SetTo(v CreateSandboxBodyEnv) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptCreateSandboxBodyEnv) Get() (v CreateSandboxBodyEnv, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptCreateSandboxBodyEnv) Or(d CreateSandboxBodyEnv) CreateSandboxBodyEnv {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptCreateSandboxBodySourceCodeReferences returns new OptCreateSandboxBodySourceCodeReferences with value set to v.
-func NewOptCreateSandboxBodySourceCodeReferences(v CreateSandboxBodySourceCodeReferences) OptCreateSandboxBodySourceCodeReferences {
-	return OptCreateSandboxBodySourceCodeReferences{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptCreateSandboxBodySourceCodeReferences is optional CreateSandboxBodySourceCodeReferences.
-type OptCreateSandboxBodySourceCodeReferences struct {
-	Value CreateSandboxBodySourceCodeReferences
-	Set   bool
-}
-
-// IsSet returns true if OptCreateSandboxBodySourceCodeReferences was set.
-func (o OptCreateSandboxBodySourceCodeReferences) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptCreateSandboxBodySourceCodeReferences) Reset() {
-	var v CreateSandboxBodySourceCodeReferences
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptCreateSandboxBodySourceCodeReferences) SetTo(v CreateSandboxBodySourceCodeReferences) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptCreateSandboxBodySourceCodeReferences) Get() (v CreateSandboxBodySourceCodeReferences, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptCreateSandboxBodySourceCodeReferences) Or(d CreateSandboxBodySourceCodeReferences) CreateSandboxBodySourceCodeReferences {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptCreateSandboxExecRequestEnv returns new OptCreateSandboxExecRequestEnv with value set to v.
 func NewOptCreateSandboxExecRequestEnv(v CreateSandboxExecRequestEnv) OptCreateSandboxExecRequestEnv {
 	return OptCreateSandboxExecRequestEnv{
@@ -3835,38 +3539,38 @@ func (o OptNilWorkerArray) Or(d []Worker) []Worker {
 	return d
 }
 
-// NewOptSandboxActiveOperation returns new OptSandboxActiveOperation with value set to v.
-func NewOptSandboxActiveOperation(v SandboxActiveOperation) OptSandboxActiveOperation {
-	return OptSandboxActiveOperation{
+// NewOptSandboxConfigEnv returns new OptSandboxConfigEnv with value set to v.
+func NewOptSandboxConfigEnv(v SandboxConfigEnv) OptSandboxConfigEnv {
+	return OptSandboxConfigEnv{
 		Value: v,
 		Set:   true,
 	}
 }
 
-// OptSandboxActiveOperation is optional SandboxActiveOperation.
-type OptSandboxActiveOperation struct {
-	Value SandboxActiveOperation
+// OptSandboxConfigEnv is optional SandboxConfigEnv.
+type OptSandboxConfigEnv struct {
+	Value SandboxConfigEnv
 	Set   bool
 }
 
-// IsSet returns true if OptSandboxActiveOperation was set.
-func (o OptSandboxActiveOperation) IsSet() bool { return o.Set }
+// IsSet returns true if OptSandboxConfigEnv was set.
+func (o OptSandboxConfigEnv) IsSet() bool { return o.Set }
 
 // Reset unsets value.
-func (o *OptSandboxActiveOperation) Reset() {
-	var v SandboxActiveOperation
+func (o *OptSandboxConfigEnv) Reset() {
+	var v SandboxConfigEnv
 	o.Value = v
 	o.Set = false
 }
 
 // SetTo sets value to v.
-func (o *OptSandboxActiveOperation) SetTo(v SandboxActiveOperation) {
+func (o *OptSandboxConfigEnv) SetTo(v SandboxConfigEnv) {
 	o.Set = true
 	o.Value = v
 }
 
 // Get returns value and boolean that denotes whether value was set.
-func (o OptSandboxActiveOperation) Get() (v SandboxActiveOperation, ok bool) {
+func (o OptSandboxConfigEnv) Get() (v SandboxConfigEnv, ok bool) {
 	if !o.Set {
 		return v, false
 	}
@@ -3874,45 +3578,45 @@ func (o OptSandboxActiveOperation) Get() (v SandboxActiveOperation, ok bool) {
 }
 
 // Or returns value if set, or given parameter if does not.
-func (o OptSandboxActiveOperation) Or(d SandboxActiveOperation) SandboxActiveOperation {
+func (o OptSandboxConfigEnv) Or(d SandboxConfigEnv) SandboxConfigEnv {
 	if v, ok := o.Get(); ok {
 		return v
 	}
 	return d
 }
 
-// NewOptSandboxEnv returns new OptSandboxEnv with value set to v.
-func NewOptSandboxEnv(v SandboxEnv) OptSandboxEnv {
-	return OptSandboxEnv{
+// NewOptSandboxConfigSourceCodeReferences returns new OptSandboxConfigSourceCodeReferences with value set to v.
+func NewOptSandboxConfigSourceCodeReferences(v SandboxConfigSourceCodeReferences) OptSandboxConfigSourceCodeReferences {
+	return OptSandboxConfigSourceCodeReferences{
 		Value: v,
 		Set:   true,
 	}
 }
 
-// OptSandboxEnv is optional SandboxEnv.
-type OptSandboxEnv struct {
-	Value SandboxEnv
+// OptSandboxConfigSourceCodeReferences is optional SandboxConfigSourceCodeReferences.
+type OptSandboxConfigSourceCodeReferences struct {
+	Value SandboxConfigSourceCodeReferences
 	Set   bool
 }
 
-// IsSet returns true if OptSandboxEnv was set.
-func (o OptSandboxEnv) IsSet() bool { return o.Set }
+// IsSet returns true if OptSandboxConfigSourceCodeReferences was set.
+func (o OptSandboxConfigSourceCodeReferences) IsSet() bool { return o.Set }
 
 // Reset unsets value.
-func (o *OptSandboxEnv) Reset() {
-	var v SandboxEnv
+func (o *OptSandboxConfigSourceCodeReferences) Reset() {
+	var v SandboxConfigSourceCodeReferences
 	o.Value = v
 	o.Set = false
 }
 
 // SetTo sets value to v.
-func (o *OptSandboxEnv) SetTo(v SandboxEnv) {
+func (o *OptSandboxConfigSourceCodeReferences) SetTo(v SandboxConfigSourceCodeReferences) {
 	o.Set = true
 	o.Value = v
 }
 
 // Get returns value and boolean that denotes whether value was set.
-func (o OptSandboxEnv) Get() (v SandboxEnv, ok bool) {
+func (o OptSandboxConfigSourceCodeReferences) Get() (v SandboxConfigSourceCodeReferences, ok bool) {
 	if !o.Set {
 		return v, false
 	}
@@ -3920,7 +3624,99 @@ func (o OptSandboxEnv) Get() (v SandboxEnv, ok bool) {
 }
 
 // Or returns value if set, or given parameter if does not.
-func (o OptSandboxEnv) Or(d SandboxEnv) SandboxEnv {
+func (o OptSandboxConfigSourceCodeReferences) Or(d SandboxConfigSourceCodeReferences) SandboxConfigSourceCodeReferences {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxCreateConfigEnv returns new OptSandboxCreateConfigEnv with value set to v.
+func NewOptSandboxCreateConfigEnv(v SandboxCreateConfigEnv) OptSandboxCreateConfigEnv {
+	return OptSandboxCreateConfigEnv{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxCreateConfigEnv is optional SandboxCreateConfigEnv.
+type OptSandboxCreateConfigEnv struct {
+	Value SandboxCreateConfigEnv
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxCreateConfigEnv was set.
+func (o OptSandboxCreateConfigEnv) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxCreateConfigEnv) Reset() {
+	var v SandboxCreateConfigEnv
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxCreateConfigEnv) SetTo(v SandboxCreateConfigEnv) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxCreateConfigEnv) Get() (v SandboxCreateConfigEnv, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxCreateConfigEnv) Or(d SandboxCreateConfigEnv) SandboxCreateConfigEnv {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxCreateConfigSourceCodeReferences returns new OptSandboxCreateConfigSourceCodeReferences with value set to v.
+func NewOptSandboxCreateConfigSourceCodeReferences(v SandboxCreateConfigSourceCodeReferences) OptSandboxCreateConfigSourceCodeReferences {
+	return OptSandboxCreateConfigSourceCodeReferences{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxCreateConfigSourceCodeReferences is optional SandboxCreateConfigSourceCodeReferences.
+type OptSandboxCreateConfigSourceCodeReferences struct {
+	Value SandboxCreateConfigSourceCodeReferences
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxCreateConfigSourceCodeReferences was set.
+func (o OptSandboxCreateConfigSourceCodeReferences) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxCreateConfigSourceCodeReferences) Reset() {
+	var v SandboxCreateConfigSourceCodeReferences
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxCreateConfigSourceCodeReferences) SetTo(v SandboxCreateConfigSourceCodeReferences) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxCreateConfigSourceCodeReferences) Get() (v SandboxCreateConfigSourceCodeReferences, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxCreateConfigSourceCodeReferences) Or(d SandboxCreateConfigSourceCodeReferences) SandboxCreateConfigSourceCodeReferences {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -4111,38 +3907,38 @@ func (o OptSandboxProviderInstanceStatus) Or(d SandboxProviderInstanceStatus) Sa
 	return d
 }
 
-// NewOptSandboxSourceCodeReferences returns new OptSandboxSourceCodeReferences with value set to v.
-func NewOptSandboxSourceCodeReferences(v SandboxSourceCodeReferences) OptSandboxSourceCodeReferences {
-	return OptSandboxSourceCodeReferences{
+// NewOptSandboxRuntimeActiveOperation returns new OptSandboxRuntimeActiveOperation with value set to v.
+func NewOptSandboxRuntimeActiveOperation(v SandboxRuntimeActiveOperation) OptSandboxRuntimeActiveOperation {
+	return OptSandboxRuntimeActiveOperation{
 		Value: v,
 		Set:   true,
 	}
 }
 
-// OptSandboxSourceCodeReferences is optional SandboxSourceCodeReferences.
-type OptSandboxSourceCodeReferences struct {
-	Value SandboxSourceCodeReferences
+// OptSandboxRuntimeActiveOperation is optional SandboxRuntimeActiveOperation.
+type OptSandboxRuntimeActiveOperation struct {
+	Value SandboxRuntimeActiveOperation
 	Set   bool
 }
 
-// IsSet returns true if OptSandboxSourceCodeReferences was set.
-func (o OptSandboxSourceCodeReferences) IsSet() bool { return o.Set }
+// IsSet returns true if OptSandboxRuntimeActiveOperation was set.
+func (o OptSandboxRuntimeActiveOperation) IsSet() bool { return o.Set }
 
 // Reset unsets value.
-func (o *OptSandboxSourceCodeReferences) Reset() {
-	var v SandboxSourceCodeReferences
+func (o *OptSandboxRuntimeActiveOperation) Reset() {
+	var v SandboxRuntimeActiveOperation
 	o.Value = v
 	o.Set = false
 }
 
 // SetTo sets value to v.
-func (o *OptSandboxSourceCodeReferences) SetTo(v SandboxSourceCodeReferences) {
+func (o *OptSandboxRuntimeActiveOperation) SetTo(v SandboxRuntimeActiveOperation) {
 	o.Set = true
 	o.Value = v
 }
 
 // Get returns value and boolean that denotes whether value was set.
-func (o OptSandboxSourceCodeReferences) Get() (v SandboxSourceCodeReferences, ok bool) {
+func (o OptSandboxRuntimeActiveOperation) Get() (v SandboxRuntimeActiveOperation, ok bool) {
 	if !o.Set {
 		return v, false
 	}
@@ -4150,7 +3946,53 @@ func (o OptSandboxSourceCodeReferences) Get() (v SandboxSourceCodeReferences, ok
 }
 
 // Or returns value if set, or given parameter if does not.
-func (o OptSandboxSourceCodeReferences) Or(d SandboxSourceCodeReferences) SandboxSourceCodeReferences {
+func (o OptSandboxRuntimeActiveOperation) Or(d SandboxRuntimeActiveOperation) SandboxRuntimeActiveOperation {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxUpdateConfig returns new OptSandboxUpdateConfig with value set to v.
+func NewOptSandboxUpdateConfig(v SandboxUpdateConfig) OptSandboxUpdateConfig {
+	return OptSandboxUpdateConfig{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxUpdateConfig is optional SandboxUpdateConfig.
+type OptSandboxUpdateConfig struct {
+	Value SandboxUpdateConfig
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxUpdateConfig was set.
+func (o OptSandboxUpdateConfig) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxUpdateConfig) Reset() {
+	var v SandboxUpdateConfig
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxUpdateConfig) SetTo(v SandboxUpdateConfig) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxUpdateConfig) Get() (v SandboxUpdateConfig, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxUpdateConfig) Or(d SandboxUpdateConfig) SandboxUpdateConfig {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -5232,82 +5074,28 @@ func (s *RestartSandboxBody) SetForce(val OptBool) {
 type Sandbox struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Current queued or running operation.
-	ActiveOperation OptSandboxActiveOperation `json:"activeOperation"`
 	// Agent config.
 	AgentConfig OptAgentConfig `json:"agentConfig"`
-	// Agent config ID.
-	AgentConfigId OptString `json:"agentConfigId"`
-	// Model the agent should use.
-	AgentModel OptString `json:"agentModel"`
-	// Model reasoning level the agent should use.
-	AgentModelReasoningLevel OptString `json:"agentModelReasoningLevel"`
-	// Model service tier the agent should use.
-	AgentModelServiceTier OptString `json:"agentModelServiceTier"`
-	// Requested CPU capacity in vCPUs.
-	CpuVcpus float64 `json:"cpuVcpus"`
+	// Desired sandbox configuration.
+	Config SandboxConfig `json:"config"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
 	// Creating user.
 	CreatedBy OptUser `json:"createdBy"`
 	// Creating user ID.
 	CreatedByUserId string `json:"createdByUserId"`
-	// Sandbox description.
-	Description OptString `json:"description"`
-	// Requested steady state for reconciliation.
-	DesiredState SandboxDesiredState `json:"desiredState"`
-	// Latest error message.
-	ErrorMessage OptString `json:"errorMessage"`
-	// Environment variables available to sandbox-agent terminals and execs by default.
-	Env OptSandboxEnv `json:"env"`
-	// Latest desired-state generation.
-	Generation int64 `json:"generation"`
 	// Stable sandbox ID.
 	ID string `json:"id"`
-	// Sandbox base image.
-	Image OptString `json:"image"`
-	// Last observed activity timestamp.
-	LastActiveAt OptDateTime `json:"lastActiveAt"`
-	// Most recent lifecycle job ID.
-	LastJobId OptString `json:"lastJobId"`
-	// Status of the most recent operation.
-	LastOperationStatus SandboxLastOperationStatus `json:"lastOperationStatus"`
-	// Requested memory capacity in bytes.
-	MemoryBytes int64 `json:"memoryBytes"`
-	// Sandbox name.
-	Name string `json:"name"`
-	// Latest generation fully observed by reconciliation.
-	ObservedGeneration int64 `json:"observedGeneration"`
-	// Observed lifecycle phase.
-	Phase SandboxPhase `json:"phase"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
-	// Prompt the agent should run.
-	Prompt OptString `json:"prompt"`
 	// Sandbox provider instance.
 	ProviderInstance OptSandboxProviderInstance `json:"providerInstance"`
 	// Sandbox provider instance ID.
 	ProviderInstanceId OptString `json:"providerInstanceId"`
-	// Requested restart generation.
-	RestartGeneration int64 `json:"restartGeneration"`
-	// Last restart generation completed by reconciliation.
-	RestartedGeneration int64 `json:"restartedGeneration"`
-	// Non-secret provider runtime state.
-	RuntimeState jx.Raw `json:"runtimeState"`
-	// Primary Git source to materialize in the sandbox.
-	Source OptGitSource `json:"source"`
-	// Additional Git sources to materialize in the sandbox.
-	SourceCodeReferences OptSandboxSourceCodeReferences `json:"sourceCodeReferences"`
-	// Human-readable status detail.
-	StatusMessage OptString `json:"statusMessage"`
-	// Requested storage capacity in bytes.
-	StorageBytes int64 `json:"storageBytes"`
+	// Observed sandbox runtime state.
+	Runtime SandboxRuntime `json:"runtime"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
-	// User identity and home directory to use inside the sandbox.
-	User OptSandboxUser `json:"user"`
-	// Assigned worker ID, when scheduled through a worker-backed provider.
-	WorkerId OptString `json:"workerId"`
 }
 
 // GetSchema returns the value of Schema.
@@ -5315,39 +5103,14 @@ func (s *Sandbox) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetActiveOperation returns the value of ActiveOperation.
-func (s *Sandbox) GetActiveOperation() OptSandboxActiveOperation {
-	return s.ActiveOperation
-}
-
 // GetAgentConfig returns the value of AgentConfig.
 func (s *Sandbox) GetAgentConfig() OptAgentConfig {
 	return s.AgentConfig
 }
 
-// GetAgentConfigId returns the value of AgentConfigId.
-func (s *Sandbox) GetAgentConfigId() OptString {
-	return s.AgentConfigId
-}
-
-// GetAgentModel returns the value of AgentModel.
-func (s *Sandbox) GetAgentModel() OptString {
-	return s.AgentModel
-}
-
-// GetAgentModelReasoningLevel returns the value of AgentModelReasoningLevel.
-func (s *Sandbox) GetAgentModelReasoningLevel() OptString {
-	return s.AgentModelReasoningLevel
-}
-
-// GetAgentModelServiceTier returns the value of AgentModelServiceTier.
-func (s *Sandbox) GetAgentModelServiceTier() OptString {
-	return s.AgentModelServiceTier
-}
-
-// GetCpuVcpus returns the value of CpuVcpus.
-func (s *Sandbox) GetCpuVcpus() float64 {
-	return s.CpuVcpus
+// GetConfig returns the value of Config.
+func (s *Sandbox) GetConfig() SandboxConfig {
+	return s.Config
 }
 
 // GetCreatedAt returns the value of CreatedAt.
@@ -5365,84 +5128,14 @@ func (s *Sandbox) GetCreatedByUserId() string {
 	return s.CreatedByUserId
 }
 
-// GetDescription returns the value of Description.
-func (s *Sandbox) GetDescription() OptString {
-	return s.Description
-}
-
-// GetDesiredState returns the value of DesiredState.
-func (s *Sandbox) GetDesiredState() SandboxDesiredState {
-	return s.DesiredState
-}
-
-// GetErrorMessage returns the value of ErrorMessage.
-func (s *Sandbox) GetErrorMessage() OptString {
-	return s.ErrorMessage
-}
-
-// GetEnv returns the value of Env.
-func (s *Sandbox) GetEnv() OptSandboxEnv {
-	return s.Env
-}
-
-// GetGeneration returns the value of Generation.
-func (s *Sandbox) GetGeneration() int64 {
-	return s.Generation
-}
-
 // GetID returns the value of ID.
 func (s *Sandbox) GetID() string {
 	return s.ID
 }
 
-// GetImage returns the value of Image.
-func (s *Sandbox) GetImage() OptString {
-	return s.Image
-}
-
-// GetLastActiveAt returns the value of LastActiveAt.
-func (s *Sandbox) GetLastActiveAt() OptDateTime {
-	return s.LastActiveAt
-}
-
-// GetLastJobId returns the value of LastJobId.
-func (s *Sandbox) GetLastJobId() OptString {
-	return s.LastJobId
-}
-
-// GetLastOperationStatus returns the value of LastOperationStatus.
-func (s *Sandbox) GetLastOperationStatus() SandboxLastOperationStatus {
-	return s.LastOperationStatus
-}
-
-// GetMemoryBytes returns the value of MemoryBytes.
-func (s *Sandbox) GetMemoryBytes() int64 {
-	return s.MemoryBytes
-}
-
-// GetName returns the value of Name.
-func (s *Sandbox) GetName() string {
-	return s.Name
-}
-
-// GetObservedGeneration returns the value of ObservedGeneration.
-func (s *Sandbox) GetObservedGeneration() int64 {
-	return s.ObservedGeneration
-}
-
-// GetPhase returns the value of Phase.
-func (s *Sandbox) GetPhase() SandboxPhase {
-	return s.Phase
-}
-
 // GetProjectId returns the value of ProjectId.
 func (s *Sandbox) GetProjectId() string {
 	return s.ProjectId
-}
-
-// GetPrompt returns the value of Prompt.
-func (s *Sandbox) GetPrompt() OptString {
-	return s.Prompt
 }
 
 // GetProviderInstance returns the value of ProviderInstance.
@@ -5455,39 +5148,9 @@ func (s *Sandbox) GetProviderInstanceId() OptString {
 	return s.ProviderInstanceId
 }
 
-// GetRestartGeneration returns the value of RestartGeneration.
-func (s *Sandbox) GetRestartGeneration() int64 {
-	return s.RestartGeneration
-}
-
-// GetRestartedGeneration returns the value of RestartedGeneration.
-func (s *Sandbox) GetRestartedGeneration() int64 {
-	return s.RestartedGeneration
-}
-
-// GetRuntimeState returns the value of RuntimeState.
-func (s *Sandbox) GetRuntimeState() jx.Raw {
-	return s.RuntimeState
-}
-
-// GetSource returns the value of Source.
-func (s *Sandbox) GetSource() OptGitSource {
-	return s.Source
-}
-
-// GetSourceCodeReferences returns the value of SourceCodeReferences.
-func (s *Sandbox) GetSourceCodeReferences() OptSandboxSourceCodeReferences {
-	return s.SourceCodeReferences
-}
-
-// GetStatusMessage returns the value of StatusMessage.
-func (s *Sandbox) GetStatusMessage() OptString {
-	return s.StatusMessage
-}
-
-// GetStorageBytes returns the value of StorageBytes.
-func (s *Sandbox) GetStorageBytes() int64 {
-	return s.StorageBytes
+// GetRuntime returns the value of Runtime.
+func (s *Sandbox) GetRuntime() SandboxRuntime {
+	return s.Runtime
 }
 
 // GetUpdatedAt returns the value of UpdatedAt.
@@ -5495,24 +5158,9 @@ func (s *Sandbox) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
 }
 
-// GetUser returns the value of User.
-func (s *Sandbox) GetUser() OptSandboxUser {
-	return s.User
-}
-
-// GetWorkerId returns the value of WorkerId.
-func (s *Sandbox) GetWorkerId() OptString {
-	return s.WorkerId
-}
-
 // SetSchema sets the value of Schema.
 func (s *Sandbox) SetSchema(val OptURI) {
 	s.Schema = val
-}
-
-// SetActiveOperation sets the value of ActiveOperation.
-func (s *Sandbox) SetActiveOperation(val OptSandboxActiveOperation) {
-	s.ActiveOperation = val
 }
 
 // SetAgentConfig sets the value of AgentConfig.
@@ -5520,29 +5168,9 @@ func (s *Sandbox) SetAgentConfig(val OptAgentConfig) {
 	s.AgentConfig = val
 }
 
-// SetAgentConfigId sets the value of AgentConfigId.
-func (s *Sandbox) SetAgentConfigId(val OptString) {
-	s.AgentConfigId = val
-}
-
-// SetAgentModel sets the value of AgentModel.
-func (s *Sandbox) SetAgentModel(val OptString) {
-	s.AgentModel = val
-}
-
-// SetAgentModelReasoningLevel sets the value of AgentModelReasoningLevel.
-func (s *Sandbox) SetAgentModelReasoningLevel(val OptString) {
-	s.AgentModelReasoningLevel = val
-}
-
-// SetAgentModelServiceTier sets the value of AgentModelServiceTier.
-func (s *Sandbox) SetAgentModelServiceTier(val OptString) {
-	s.AgentModelServiceTier = val
-}
-
-// SetCpuVcpus sets the value of CpuVcpus.
-func (s *Sandbox) SetCpuVcpus(val float64) {
-	s.CpuVcpus = val
+// SetConfig sets the value of Config.
+func (s *Sandbox) SetConfig(val SandboxConfig) {
+	s.Config = val
 }
 
 // SetCreatedAt sets the value of CreatedAt.
@@ -5560,84 +5188,14 @@ func (s *Sandbox) SetCreatedByUserId(val string) {
 	s.CreatedByUserId = val
 }
 
-// SetDescription sets the value of Description.
-func (s *Sandbox) SetDescription(val OptString) {
-	s.Description = val
-}
-
-// SetDesiredState sets the value of DesiredState.
-func (s *Sandbox) SetDesiredState(val SandboxDesiredState) {
-	s.DesiredState = val
-}
-
-// SetErrorMessage sets the value of ErrorMessage.
-func (s *Sandbox) SetErrorMessage(val OptString) {
-	s.ErrorMessage = val
-}
-
-// SetEnv sets the value of Env.
-func (s *Sandbox) SetEnv(val OptSandboxEnv) {
-	s.Env = val
-}
-
-// SetGeneration sets the value of Generation.
-func (s *Sandbox) SetGeneration(val int64) {
-	s.Generation = val
-}
-
 // SetID sets the value of ID.
 func (s *Sandbox) SetID(val string) {
 	s.ID = val
 }
 
-// SetImage sets the value of Image.
-func (s *Sandbox) SetImage(val OptString) {
-	s.Image = val
-}
-
-// SetLastActiveAt sets the value of LastActiveAt.
-func (s *Sandbox) SetLastActiveAt(val OptDateTime) {
-	s.LastActiveAt = val
-}
-
-// SetLastJobId sets the value of LastJobId.
-func (s *Sandbox) SetLastJobId(val OptString) {
-	s.LastJobId = val
-}
-
-// SetLastOperationStatus sets the value of LastOperationStatus.
-func (s *Sandbox) SetLastOperationStatus(val SandboxLastOperationStatus) {
-	s.LastOperationStatus = val
-}
-
-// SetMemoryBytes sets the value of MemoryBytes.
-func (s *Sandbox) SetMemoryBytes(val int64) {
-	s.MemoryBytes = val
-}
-
-// SetName sets the value of Name.
-func (s *Sandbox) SetName(val string) {
-	s.Name = val
-}
-
-// SetObservedGeneration sets the value of ObservedGeneration.
-func (s *Sandbox) SetObservedGeneration(val int64) {
-	s.ObservedGeneration = val
-}
-
-// SetPhase sets the value of Phase.
-func (s *Sandbox) SetPhase(val SandboxPhase) {
-	s.Phase = val
-}
-
 // SetProjectId sets the value of ProjectId.
 func (s *Sandbox) SetProjectId(val string) {
 	s.ProjectId = val
-}
-
-// SetPrompt sets the value of Prompt.
-func (s *Sandbox) SetPrompt(val OptString) {
-	s.Prompt = val
 }
 
 // SetProviderInstance sets the value of ProviderInstance.
@@ -5650,54 +5208,14 @@ func (s *Sandbox) SetProviderInstanceId(val OptString) {
 	s.ProviderInstanceId = val
 }
 
-// SetRestartGeneration sets the value of RestartGeneration.
-func (s *Sandbox) SetRestartGeneration(val int64) {
-	s.RestartGeneration = val
-}
-
-// SetRestartedGeneration sets the value of RestartedGeneration.
-func (s *Sandbox) SetRestartedGeneration(val int64) {
-	s.RestartedGeneration = val
-}
-
-// SetRuntimeState sets the value of RuntimeState.
-func (s *Sandbox) SetRuntimeState(val jx.Raw) {
-	s.RuntimeState = val
-}
-
-// SetSource sets the value of Source.
-func (s *Sandbox) SetSource(val OptGitSource) {
-	s.Source = val
-}
-
-// SetSourceCodeReferences sets the value of SourceCodeReferences.
-func (s *Sandbox) SetSourceCodeReferences(val OptSandboxSourceCodeReferences) {
-	s.SourceCodeReferences = val
-}
-
-// SetStatusMessage sets the value of StatusMessage.
-func (s *Sandbox) SetStatusMessage(val OptString) {
-	s.StatusMessage = val
-}
-
-// SetStorageBytes sets the value of StorageBytes.
-func (s *Sandbox) SetStorageBytes(val int64) {
-	s.StorageBytes = val
+// SetRuntime sets the value of Runtime.
+func (s *Sandbox) SetRuntime(val SandboxRuntime) {
+	s.Runtime = val
 }
 
 // SetUpdatedAt sets the value of UpdatedAt.
 func (s *Sandbox) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
-}
-
-// SetUser sets the value of User.
-func (s *Sandbox) SetUser(val OptSandboxUser) {
-	s.User = val
-}
-
-// SetWorkerId sets the value of WorkerId.
-func (s *Sandbox) SetWorkerId(val OptString) {
-	s.WorkerId = val
 }
 
 func (*Sandbox) createSandboxRes()    {}
@@ -5708,125 +5226,417 @@ func (*Sandbox) startSandboxRes()     {}
 func (*Sandbox) stopSandboxRes()      {}
 func (*Sandbox) updateSandboxRes()    {}
 
-// Current queued or running operation.
-type SandboxActiveOperation string
-
-const (
-	SandboxActiveOperationCreate  SandboxActiveOperation = "create"
-	SandboxActiveOperationStart   SandboxActiveOperation = "start"
-	SandboxActiveOperationStop    SandboxActiveOperation = "stop"
-	SandboxActiveOperationRestart SandboxActiveOperation = "restart"
-	SandboxActiveOperationDelete  SandboxActiveOperation = "delete"
-)
-
-// AllValues returns all SandboxActiveOperation values.
-func (SandboxActiveOperation) AllValues() []SandboxActiveOperation {
-	return []SandboxActiveOperation{
-		SandboxActiveOperationCreate,
-		SandboxActiveOperationStart,
-		SandboxActiveOperationStop,
-		SandboxActiveOperationRestart,
-		SandboxActiveOperationDelete,
-	}
+// Ref: #/components/schemas/SandboxConfig
+type SandboxConfig struct {
+	// Agent config ID.
+	AgentConfigId OptString `json:"agentConfigId"`
+	// Model the agent should use.
+	AgentModel OptString `json:"agentModel"`
+	// Model reasoning level the agent should use.
+	AgentModelReasoningLevel OptString `json:"agentModelReasoningLevel"`
+	// Model service tier the agent should use.
+	AgentModelServiceTier OptString `json:"agentModelServiceTier"`
+	// Requested CPU capacity in vCPUs.
+	CpuVcpus float64 `json:"cpuVcpus"`
+	// Sandbox description.
+	Description OptString `json:"description"`
+	// Environment variables available to sandbox-agent terminals and execs by default.
+	Env OptSandboxConfigEnv `json:"env"`
+	// Sandbox base image.
+	Image string `json:"image"`
+	// Requested memory capacity in bytes.
+	MemoryBytes int64 `json:"memoryBytes"`
+	// Sandbox name.
+	Name string `json:"name"`
+	// Prompt the agent should run.
+	Prompt OptString `json:"prompt"`
+	// Primary Git source to materialize in the sandbox.
+	Source OptGitSource `json:"source"`
+	// Additional Git sources to materialize in the sandbox.
+	SourceCodeReferences OptSandboxConfigSourceCodeReferences `json:"sourceCodeReferences"`
+	// Requested storage capacity in bytes.
+	StorageBytes int64 `json:"storageBytes"`
+	// User identity and home directory to use inside the sandbox.
+	User OptSandboxUser `json:"user"`
 }
 
-// MarshalText implements encoding.TextMarshaler.
-func (s SandboxActiveOperation) MarshalText() ([]byte, error) {
-	switch s {
-	case SandboxActiveOperationCreate:
-		return []byte(s), nil
-	case SandboxActiveOperationStart:
-		return []byte(s), nil
-	case SandboxActiveOperationStop:
-		return []byte(s), nil
-	case SandboxActiveOperationRestart:
-		return []byte(s), nil
-	case SandboxActiveOperationDelete:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
+// GetAgentConfigId returns the value of AgentConfigId.
+func (s *SandboxConfig) GetAgentConfigId() OptString {
+	return s.AgentConfigId
 }
 
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SandboxActiveOperation) UnmarshalText(data []byte) error {
-	switch SandboxActiveOperation(data) {
-	case SandboxActiveOperationCreate:
-		*s = SandboxActiveOperationCreate
-		return nil
-	case SandboxActiveOperationStart:
-		*s = SandboxActiveOperationStart
-		return nil
-	case SandboxActiveOperationStop:
-		*s = SandboxActiveOperationStop
-		return nil
-	case SandboxActiveOperationRestart:
-		*s = SandboxActiveOperationRestart
-		return nil
-	case SandboxActiveOperationDelete:
-		*s = SandboxActiveOperationDelete
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
+// GetAgentModel returns the value of AgentModel.
+func (s *SandboxConfig) GetAgentModel() OptString {
+	return s.AgentModel
 }
 
-// Requested steady state for reconciliation.
-type SandboxDesiredState string
-
-const (
-	SandboxDesiredStateRunning SandboxDesiredState = "running"
-	SandboxDesiredStateStopped SandboxDesiredState = "stopped"
-	SandboxDesiredStateDeleted SandboxDesiredState = "deleted"
-)
-
-// AllValues returns all SandboxDesiredState values.
-func (SandboxDesiredState) AllValues() []SandboxDesiredState {
-	return []SandboxDesiredState{
-		SandboxDesiredStateRunning,
-		SandboxDesiredStateStopped,
-		SandboxDesiredStateDeleted,
-	}
+// GetAgentModelReasoningLevel returns the value of AgentModelReasoningLevel.
+func (s *SandboxConfig) GetAgentModelReasoningLevel() OptString {
+	return s.AgentModelReasoningLevel
 }
 
-// MarshalText implements encoding.TextMarshaler.
-func (s SandboxDesiredState) MarshalText() ([]byte, error) {
-	switch s {
-	case SandboxDesiredStateRunning:
-		return []byte(s), nil
-	case SandboxDesiredStateStopped:
-		return []byte(s), nil
-	case SandboxDesiredStateDeleted:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
+// GetAgentModelServiceTier returns the value of AgentModelServiceTier.
+func (s *SandboxConfig) GetAgentModelServiceTier() OptString {
+	return s.AgentModelServiceTier
 }
 
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SandboxDesiredState) UnmarshalText(data []byte) error {
-	switch SandboxDesiredState(data) {
-	case SandboxDesiredStateRunning:
-		*s = SandboxDesiredStateRunning
-		return nil
-	case SandboxDesiredStateStopped:
-		*s = SandboxDesiredStateStopped
-		return nil
-	case SandboxDesiredStateDeleted:
-		*s = SandboxDesiredStateDeleted
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
+// GetCpuVcpus returns the value of CpuVcpus.
+func (s *SandboxConfig) GetCpuVcpus() float64 {
+	return s.CpuVcpus
+}
+
+// GetDescription returns the value of Description.
+func (s *SandboxConfig) GetDescription() OptString {
+	return s.Description
+}
+
+// GetEnv returns the value of Env.
+func (s *SandboxConfig) GetEnv() OptSandboxConfigEnv {
+	return s.Env
+}
+
+// GetImage returns the value of Image.
+func (s *SandboxConfig) GetImage() string {
+	return s.Image
+}
+
+// GetMemoryBytes returns the value of MemoryBytes.
+func (s *SandboxConfig) GetMemoryBytes() int64 {
+	return s.MemoryBytes
+}
+
+// GetName returns the value of Name.
+func (s *SandboxConfig) GetName() string {
+	return s.Name
+}
+
+// GetPrompt returns the value of Prompt.
+func (s *SandboxConfig) GetPrompt() OptString {
+	return s.Prompt
+}
+
+// GetSource returns the value of Source.
+func (s *SandboxConfig) GetSource() OptGitSource {
+	return s.Source
+}
+
+// GetSourceCodeReferences returns the value of SourceCodeReferences.
+func (s *SandboxConfig) GetSourceCodeReferences() OptSandboxConfigSourceCodeReferences {
+	return s.SourceCodeReferences
+}
+
+// GetStorageBytes returns the value of StorageBytes.
+func (s *SandboxConfig) GetStorageBytes() int64 {
+	return s.StorageBytes
+}
+
+// GetUser returns the value of User.
+func (s *SandboxConfig) GetUser() OptSandboxUser {
+	return s.User
+}
+
+// SetAgentConfigId sets the value of AgentConfigId.
+func (s *SandboxConfig) SetAgentConfigId(val OptString) {
+	s.AgentConfigId = val
+}
+
+// SetAgentModel sets the value of AgentModel.
+func (s *SandboxConfig) SetAgentModel(val OptString) {
+	s.AgentModel = val
+}
+
+// SetAgentModelReasoningLevel sets the value of AgentModelReasoningLevel.
+func (s *SandboxConfig) SetAgentModelReasoningLevel(val OptString) {
+	s.AgentModelReasoningLevel = val
+}
+
+// SetAgentModelServiceTier sets the value of AgentModelServiceTier.
+func (s *SandboxConfig) SetAgentModelServiceTier(val OptString) {
+	s.AgentModelServiceTier = val
+}
+
+// SetCpuVcpus sets the value of CpuVcpus.
+func (s *SandboxConfig) SetCpuVcpus(val float64) {
+	s.CpuVcpus = val
+}
+
+// SetDescription sets the value of Description.
+func (s *SandboxConfig) SetDescription(val OptString) {
+	s.Description = val
+}
+
+// SetEnv sets the value of Env.
+func (s *SandboxConfig) SetEnv(val OptSandboxConfigEnv) {
+	s.Env = val
+}
+
+// SetImage sets the value of Image.
+func (s *SandboxConfig) SetImage(val string) {
+	s.Image = val
+}
+
+// SetMemoryBytes sets the value of MemoryBytes.
+func (s *SandboxConfig) SetMemoryBytes(val int64) {
+	s.MemoryBytes = val
+}
+
+// SetName sets the value of Name.
+func (s *SandboxConfig) SetName(val string) {
+	s.Name = val
+}
+
+// SetPrompt sets the value of Prompt.
+func (s *SandboxConfig) SetPrompt(val OptString) {
+	s.Prompt = val
+}
+
+// SetSource sets the value of Source.
+func (s *SandboxConfig) SetSource(val OptGitSource) {
+	s.Source = val
+}
+
+// SetSourceCodeReferences sets the value of SourceCodeReferences.
+func (s *SandboxConfig) SetSourceCodeReferences(val OptSandboxConfigSourceCodeReferences) {
+	s.SourceCodeReferences = val
+}
+
+// SetStorageBytes sets the value of StorageBytes.
+func (s *SandboxConfig) SetStorageBytes(val int64) {
+	s.StorageBytes = val
+}
+
+// SetUser sets the value of User.
+func (s *SandboxConfig) SetUser(val OptSandboxUser) {
+	s.User = val
 }
 
 // Environment variables available to sandbox-agent terminals and execs by default.
-type SandboxEnv map[string]string
+type SandboxConfigEnv map[string]string
 
-func (s *SandboxEnv) init() SandboxEnv {
+func (s *SandboxConfigEnv) init() SandboxConfigEnv {
 	m := *s
 	if m == nil {
 		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Additional Git sources to materialize in the sandbox.
+type SandboxConfigSourceCodeReferences map[string]GitSource
+
+func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeReferences {
+	m := *s
+	if m == nil {
+		m = map[string]GitSource{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/SandboxCreateConfig
+type SandboxCreateConfig struct {
+	// Agent config ID.
+	AgentConfigId OptString `json:"agentConfigId"`
+	// Model the agent should use.
+	AgentModel OptString `json:"agentModel"`
+	// Model reasoning level the agent should use.
+	AgentModelReasoningLevel OptString `json:"agentModelReasoningLevel"`
+	// Model service tier the agent should use.
+	AgentModelServiceTier OptString `json:"agentModelServiceTier"`
+	// Requested CPU capacity in vCPUs.
+	CpuVcpus OptFloat64 `json:"cpuVcpus"`
+	// Sandbox description.
+	Description OptString `json:"description"`
+	// Environment variables available to sandbox-agent terminals and execs by default.
+	Env OptSandboxCreateConfigEnv `json:"env"`
+	// Sandbox base image. Defaults to the server configured sandbox image when omitted.
+	Image OptString `json:"image"`
+	// Requested memory capacity in bytes.
+	MemoryBytes OptInt64 `json:"memoryBytes"`
+	// Sandbox name.
+	Name string `json:"name"`
+	// Prompt the agent should run.
+	Prompt OptString `json:"prompt"`
+	// Primary Git source to materialize in the sandbox.
+	Source OptGitSource `json:"source"`
+	// Additional Git sources to materialize in the sandbox.
+	SourceCodeReferences OptSandboxCreateConfigSourceCodeReferences `json:"sourceCodeReferences"`
+	// Requested storage capacity in bytes.
+	StorageBytes OptInt64 `json:"storageBytes"`
+	// User identity and home directory to use inside the sandbox.
+	User OptSandboxUser `json:"user"`
+}
+
+// GetAgentConfigId returns the value of AgentConfigId.
+func (s *SandboxCreateConfig) GetAgentConfigId() OptString {
+	return s.AgentConfigId
+}
+
+// GetAgentModel returns the value of AgentModel.
+func (s *SandboxCreateConfig) GetAgentModel() OptString {
+	return s.AgentModel
+}
+
+// GetAgentModelReasoningLevel returns the value of AgentModelReasoningLevel.
+func (s *SandboxCreateConfig) GetAgentModelReasoningLevel() OptString {
+	return s.AgentModelReasoningLevel
+}
+
+// GetAgentModelServiceTier returns the value of AgentModelServiceTier.
+func (s *SandboxCreateConfig) GetAgentModelServiceTier() OptString {
+	return s.AgentModelServiceTier
+}
+
+// GetCpuVcpus returns the value of CpuVcpus.
+func (s *SandboxCreateConfig) GetCpuVcpus() OptFloat64 {
+	return s.CpuVcpus
+}
+
+// GetDescription returns the value of Description.
+func (s *SandboxCreateConfig) GetDescription() OptString {
+	return s.Description
+}
+
+// GetEnv returns the value of Env.
+func (s *SandboxCreateConfig) GetEnv() OptSandboxCreateConfigEnv {
+	return s.Env
+}
+
+// GetImage returns the value of Image.
+func (s *SandboxCreateConfig) GetImage() OptString {
+	return s.Image
+}
+
+// GetMemoryBytes returns the value of MemoryBytes.
+func (s *SandboxCreateConfig) GetMemoryBytes() OptInt64 {
+	return s.MemoryBytes
+}
+
+// GetName returns the value of Name.
+func (s *SandboxCreateConfig) GetName() string {
+	return s.Name
+}
+
+// GetPrompt returns the value of Prompt.
+func (s *SandboxCreateConfig) GetPrompt() OptString {
+	return s.Prompt
+}
+
+// GetSource returns the value of Source.
+func (s *SandboxCreateConfig) GetSource() OptGitSource {
+	return s.Source
+}
+
+// GetSourceCodeReferences returns the value of SourceCodeReferences.
+func (s *SandboxCreateConfig) GetSourceCodeReferences() OptSandboxCreateConfigSourceCodeReferences {
+	return s.SourceCodeReferences
+}
+
+// GetStorageBytes returns the value of StorageBytes.
+func (s *SandboxCreateConfig) GetStorageBytes() OptInt64 {
+	return s.StorageBytes
+}
+
+// GetUser returns the value of User.
+func (s *SandboxCreateConfig) GetUser() OptSandboxUser {
+	return s.User
+}
+
+// SetAgentConfigId sets the value of AgentConfigId.
+func (s *SandboxCreateConfig) SetAgentConfigId(val OptString) {
+	s.AgentConfigId = val
+}
+
+// SetAgentModel sets the value of AgentModel.
+func (s *SandboxCreateConfig) SetAgentModel(val OptString) {
+	s.AgentModel = val
+}
+
+// SetAgentModelReasoningLevel sets the value of AgentModelReasoningLevel.
+func (s *SandboxCreateConfig) SetAgentModelReasoningLevel(val OptString) {
+	s.AgentModelReasoningLevel = val
+}
+
+// SetAgentModelServiceTier sets the value of AgentModelServiceTier.
+func (s *SandboxCreateConfig) SetAgentModelServiceTier(val OptString) {
+	s.AgentModelServiceTier = val
+}
+
+// SetCpuVcpus sets the value of CpuVcpus.
+func (s *SandboxCreateConfig) SetCpuVcpus(val OptFloat64) {
+	s.CpuVcpus = val
+}
+
+// SetDescription sets the value of Description.
+func (s *SandboxCreateConfig) SetDescription(val OptString) {
+	s.Description = val
+}
+
+// SetEnv sets the value of Env.
+func (s *SandboxCreateConfig) SetEnv(val OptSandboxCreateConfigEnv) {
+	s.Env = val
+}
+
+// SetImage sets the value of Image.
+func (s *SandboxCreateConfig) SetImage(val OptString) {
+	s.Image = val
+}
+
+// SetMemoryBytes sets the value of MemoryBytes.
+func (s *SandboxCreateConfig) SetMemoryBytes(val OptInt64) {
+	s.MemoryBytes = val
+}
+
+// SetName sets the value of Name.
+func (s *SandboxCreateConfig) SetName(val string) {
+	s.Name = val
+}
+
+// SetPrompt sets the value of Prompt.
+func (s *SandboxCreateConfig) SetPrompt(val OptString) {
+	s.Prompt = val
+}
+
+// SetSource sets the value of Source.
+func (s *SandboxCreateConfig) SetSource(val OptGitSource) {
+	s.Source = val
+}
+
+// SetSourceCodeReferences sets the value of SourceCodeReferences.
+func (s *SandboxCreateConfig) SetSourceCodeReferences(val OptSandboxCreateConfigSourceCodeReferences) {
+	s.SourceCodeReferences = val
+}
+
+// SetStorageBytes sets the value of StorageBytes.
+func (s *SandboxCreateConfig) SetStorageBytes(val OptInt64) {
+	s.StorageBytes = val
+}
+
+// SetUser sets the value of User.
+func (s *SandboxCreateConfig) SetUser(val OptSandboxUser) {
+	s.User = val
+}
+
+// Environment variables available to sandbox-agent terminals and execs by default.
+type SandboxCreateConfigEnv map[string]string
+
+func (s *SandboxCreateConfigEnv) init() SandboxCreateConfigEnv {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
+// Additional Git sources to materialize in the sandbox.
+type SandboxCreateConfigSourceCodeReferences map[string]GitSource
+
+func (s *SandboxCreateConfigSourceCodeReferences) init() SandboxCreateConfigSourceCodeReferences {
+	m := *s
+	if m == nil {
+		m = map[string]GitSource{}
 		*s = m
 	}
 	return m
@@ -6245,153 +6055,6 @@ func (s *SandboxExecsResponse) SetExecs(val []SandboxExec) {
 
 func (*SandboxExecsResponse) listSandboxExecsRes() {}
 
-// Status of the most recent operation.
-type SandboxLastOperationStatus string
-
-const (
-	SandboxLastOperationStatusPending SandboxLastOperationStatus = "pending"
-	SandboxLastOperationStatusRunning SandboxLastOperationStatus = "running"
-	SandboxLastOperationStatusSuccess SandboxLastOperationStatus = "success"
-	SandboxLastOperationStatusFailed  SandboxLastOperationStatus = "failed"
-)
-
-// AllValues returns all SandboxLastOperationStatus values.
-func (SandboxLastOperationStatus) AllValues() []SandboxLastOperationStatus {
-	return []SandboxLastOperationStatus{
-		SandboxLastOperationStatusPending,
-		SandboxLastOperationStatusRunning,
-		SandboxLastOperationStatusSuccess,
-		SandboxLastOperationStatusFailed,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s SandboxLastOperationStatus) MarshalText() ([]byte, error) {
-	switch s {
-	case SandboxLastOperationStatusPending:
-		return []byte(s), nil
-	case SandboxLastOperationStatusRunning:
-		return []byte(s), nil
-	case SandboxLastOperationStatusSuccess:
-		return []byte(s), nil
-	case SandboxLastOperationStatusFailed:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SandboxLastOperationStatus) UnmarshalText(data []byte) error {
-	switch SandboxLastOperationStatus(data) {
-	case SandboxLastOperationStatusPending:
-		*s = SandboxLastOperationStatusPending
-		return nil
-	case SandboxLastOperationStatusRunning:
-		*s = SandboxLastOperationStatusRunning
-		return nil
-	case SandboxLastOperationStatusSuccess:
-		*s = SandboxLastOperationStatusSuccess
-		return nil
-	case SandboxLastOperationStatusFailed:
-		*s = SandboxLastOperationStatusFailed
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Observed lifecycle phase.
-type SandboxPhase string
-
-const (
-	SandboxPhasePending      SandboxPhase = "pending"
-	SandboxPhaseProvisioning SandboxPhase = "provisioning"
-	SandboxPhaseStarting     SandboxPhase = "starting"
-	SandboxPhaseRunning      SandboxPhase = "running"
-	SandboxPhaseStopping     SandboxPhase = "stopping"
-	SandboxPhaseStopped      SandboxPhase = "stopped"
-	SandboxPhaseDeleting     SandboxPhase = "deleting"
-	SandboxPhaseDeleted      SandboxPhase = "deleted"
-	SandboxPhaseFailed       SandboxPhase = "failed"
-)
-
-// AllValues returns all SandboxPhase values.
-func (SandboxPhase) AllValues() []SandboxPhase {
-	return []SandboxPhase{
-		SandboxPhasePending,
-		SandboxPhaseProvisioning,
-		SandboxPhaseStarting,
-		SandboxPhaseRunning,
-		SandboxPhaseStopping,
-		SandboxPhaseStopped,
-		SandboxPhaseDeleting,
-		SandboxPhaseDeleted,
-		SandboxPhaseFailed,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s SandboxPhase) MarshalText() ([]byte, error) {
-	switch s {
-	case SandboxPhasePending:
-		return []byte(s), nil
-	case SandboxPhaseProvisioning:
-		return []byte(s), nil
-	case SandboxPhaseStarting:
-		return []byte(s), nil
-	case SandboxPhaseRunning:
-		return []byte(s), nil
-	case SandboxPhaseStopping:
-		return []byte(s), nil
-	case SandboxPhaseStopped:
-		return []byte(s), nil
-	case SandboxPhaseDeleting:
-		return []byte(s), nil
-	case SandboxPhaseDeleted:
-		return []byte(s), nil
-	case SandboxPhaseFailed:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *SandboxPhase) UnmarshalText(data []byte) error {
-	switch SandboxPhase(data) {
-	case SandboxPhasePending:
-		*s = SandboxPhasePending
-		return nil
-	case SandboxPhaseProvisioning:
-		*s = SandboxPhaseProvisioning
-		return nil
-	case SandboxPhaseStarting:
-		*s = SandboxPhaseStarting
-		return nil
-	case SandboxPhaseRunning:
-		*s = SandboxPhaseRunning
-		return nil
-	case SandboxPhaseStopping:
-		*s = SandboxPhaseStopping
-		return nil
-	case SandboxPhaseStopped:
-		*s = SandboxPhaseStopped
-		return nil
-	case SandboxPhaseDeleting:
-		*s = SandboxPhaseDeleting
-		return nil
-	case SandboxPhaseDeleted:
-		*s = SandboxPhaseDeleted
-		return nil
-	case SandboxPhaseFailed:
-		*s = SandboxPhaseFailed
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
 // Ref: #/components/schemas/SandboxProviderCatalogItem
 type SandboxProviderCatalogItem struct {
 	// Whether provider is available.
@@ -6756,16 +6419,439 @@ func (s *SandboxProviderInstanceStatus) SetWorkers(val OptNilProviderWorkerStatu
 	s.Workers = val
 }
 
-// Additional Git sources to materialize in the sandbox.
-type SandboxSourceCodeReferences map[string]GitSource
+// Ref: #/components/schemas/SandboxRuntime
+type SandboxRuntime struct {
+	// Current queued or running operation.
+	ActiveOperation OptSandboxRuntimeActiveOperation `json:"activeOperation"`
+	// Requested steady state for reconciliation.
+	DesiredState SandboxRuntimeDesiredState `json:"desiredState"`
+	// Latest error message.
+	ErrorMessage OptString `json:"errorMessage"`
+	// Latest desired-state generation.
+	Generation int64 `json:"generation"`
+	// Last observed activity timestamp.
+	LastActiveAt OptDateTime `json:"lastActiveAt"`
+	// Most recent lifecycle job ID.
+	LastJobId OptString `json:"lastJobId"`
+	// Status of the most recent operation.
+	LastOperationStatus SandboxRuntimeLastOperationStatus `json:"lastOperationStatus"`
+	// Latest generation fully observed by reconciliation.
+	ObservedGeneration int64 `json:"observedGeneration"`
+	// Observed lifecycle phase.
+	Phase SandboxRuntimePhase `json:"phase"`
+	// Requested restart generation.
+	RestartGeneration int64 `json:"restartGeneration"`
+	// Last restart generation completed by reconciliation.
+	RestartedGeneration int64 `json:"restartedGeneration"`
+	// Human-readable status detail.
+	StatusMessage OptString `json:"statusMessage"`
+	// Assigned worker ID, when scheduled through a worker-backed provider.
+	WorkerId OptString `json:"workerId"`
+}
 
-func (s *SandboxSourceCodeReferences) init() SandboxSourceCodeReferences {
-	m := *s
-	if m == nil {
-		m = map[string]GitSource{}
-		*s = m
+// GetActiveOperation returns the value of ActiveOperation.
+func (s *SandboxRuntime) GetActiveOperation() OptSandboxRuntimeActiveOperation {
+	return s.ActiveOperation
+}
+
+// GetDesiredState returns the value of DesiredState.
+func (s *SandboxRuntime) GetDesiredState() SandboxRuntimeDesiredState {
+	return s.DesiredState
+}
+
+// GetErrorMessage returns the value of ErrorMessage.
+func (s *SandboxRuntime) GetErrorMessage() OptString {
+	return s.ErrorMessage
+}
+
+// GetGeneration returns the value of Generation.
+func (s *SandboxRuntime) GetGeneration() int64 {
+	return s.Generation
+}
+
+// GetLastActiveAt returns the value of LastActiveAt.
+func (s *SandboxRuntime) GetLastActiveAt() OptDateTime {
+	return s.LastActiveAt
+}
+
+// GetLastJobId returns the value of LastJobId.
+func (s *SandboxRuntime) GetLastJobId() OptString {
+	return s.LastJobId
+}
+
+// GetLastOperationStatus returns the value of LastOperationStatus.
+func (s *SandboxRuntime) GetLastOperationStatus() SandboxRuntimeLastOperationStatus {
+	return s.LastOperationStatus
+}
+
+// GetObservedGeneration returns the value of ObservedGeneration.
+func (s *SandboxRuntime) GetObservedGeneration() int64 {
+	return s.ObservedGeneration
+}
+
+// GetPhase returns the value of Phase.
+func (s *SandboxRuntime) GetPhase() SandboxRuntimePhase {
+	return s.Phase
+}
+
+// GetRestartGeneration returns the value of RestartGeneration.
+func (s *SandboxRuntime) GetRestartGeneration() int64 {
+	return s.RestartGeneration
+}
+
+// GetRestartedGeneration returns the value of RestartedGeneration.
+func (s *SandboxRuntime) GetRestartedGeneration() int64 {
+	return s.RestartedGeneration
+}
+
+// GetStatusMessage returns the value of StatusMessage.
+func (s *SandboxRuntime) GetStatusMessage() OptString {
+	return s.StatusMessage
+}
+
+// GetWorkerId returns the value of WorkerId.
+func (s *SandboxRuntime) GetWorkerId() OptString {
+	return s.WorkerId
+}
+
+// SetActiveOperation sets the value of ActiveOperation.
+func (s *SandboxRuntime) SetActiveOperation(val OptSandboxRuntimeActiveOperation) {
+	s.ActiveOperation = val
+}
+
+// SetDesiredState sets the value of DesiredState.
+func (s *SandboxRuntime) SetDesiredState(val SandboxRuntimeDesiredState) {
+	s.DesiredState = val
+}
+
+// SetErrorMessage sets the value of ErrorMessage.
+func (s *SandboxRuntime) SetErrorMessage(val OptString) {
+	s.ErrorMessage = val
+}
+
+// SetGeneration sets the value of Generation.
+func (s *SandboxRuntime) SetGeneration(val int64) {
+	s.Generation = val
+}
+
+// SetLastActiveAt sets the value of LastActiveAt.
+func (s *SandboxRuntime) SetLastActiveAt(val OptDateTime) {
+	s.LastActiveAt = val
+}
+
+// SetLastJobId sets the value of LastJobId.
+func (s *SandboxRuntime) SetLastJobId(val OptString) {
+	s.LastJobId = val
+}
+
+// SetLastOperationStatus sets the value of LastOperationStatus.
+func (s *SandboxRuntime) SetLastOperationStatus(val SandboxRuntimeLastOperationStatus) {
+	s.LastOperationStatus = val
+}
+
+// SetObservedGeneration sets the value of ObservedGeneration.
+func (s *SandboxRuntime) SetObservedGeneration(val int64) {
+	s.ObservedGeneration = val
+}
+
+// SetPhase sets the value of Phase.
+func (s *SandboxRuntime) SetPhase(val SandboxRuntimePhase) {
+	s.Phase = val
+}
+
+// SetRestartGeneration sets the value of RestartGeneration.
+func (s *SandboxRuntime) SetRestartGeneration(val int64) {
+	s.RestartGeneration = val
+}
+
+// SetRestartedGeneration sets the value of RestartedGeneration.
+func (s *SandboxRuntime) SetRestartedGeneration(val int64) {
+	s.RestartedGeneration = val
+}
+
+// SetStatusMessage sets the value of StatusMessage.
+func (s *SandboxRuntime) SetStatusMessage(val OptString) {
+	s.StatusMessage = val
+}
+
+// SetWorkerId sets the value of WorkerId.
+func (s *SandboxRuntime) SetWorkerId(val OptString) {
+	s.WorkerId = val
+}
+
+// Current queued or running operation.
+type SandboxRuntimeActiveOperation string
+
+const (
+	SandboxRuntimeActiveOperationCreate  SandboxRuntimeActiveOperation = "create"
+	SandboxRuntimeActiveOperationStart   SandboxRuntimeActiveOperation = "start"
+	SandboxRuntimeActiveOperationStop    SandboxRuntimeActiveOperation = "stop"
+	SandboxRuntimeActiveOperationRestart SandboxRuntimeActiveOperation = "restart"
+	SandboxRuntimeActiveOperationDelete  SandboxRuntimeActiveOperation = "delete"
+)
+
+// AllValues returns all SandboxRuntimeActiveOperation values.
+func (SandboxRuntimeActiveOperation) AllValues() []SandboxRuntimeActiveOperation {
+	return []SandboxRuntimeActiveOperation{
+		SandboxRuntimeActiveOperationCreate,
+		SandboxRuntimeActiveOperationStart,
+		SandboxRuntimeActiveOperationStop,
+		SandboxRuntimeActiveOperationRestart,
+		SandboxRuntimeActiveOperationDelete,
 	}
-	return m
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxRuntimeActiveOperation) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxRuntimeActiveOperationCreate:
+		return []byte(s), nil
+	case SandboxRuntimeActiveOperationStart:
+		return []byte(s), nil
+	case SandboxRuntimeActiveOperationStop:
+		return []byte(s), nil
+	case SandboxRuntimeActiveOperationRestart:
+		return []byte(s), nil
+	case SandboxRuntimeActiveOperationDelete:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxRuntimeActiveOperation) UnmarshalText(data []byte) error {
+	switch SandboxRuntimeActiveOperation(data) {
+	case SandboxRuntimeActiveOperationCreate:
+		*s = SandboxRuntimeActiveOperationCreate
+		return nil
+	case SandboxRuntimeActiveOperationStart:
+		*s = SandboxRuntimeActiveOperationStart
+		return nil
+	case SandboxRuntimeActiveOperationStop:
+		*s = SandboxRuntimeActiveOperationStop
+		return nil
+	case SandboxRuntimeActiveOperationRestart:
+		*s = SandboxRuntimeActiveOperationRestart
+		return nil
+	case SandboxRuntimeActiveOperationDelete:
+		*s = SandboxRuntimeActiveOperationDelete
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Requested steady state for reconciliation.
+type SandboxRuntimeDesiredState string
+
+const (
+	SandboxRuntimeDesiredStateRunning SandboxRuntimeDesiredState = "running"
+	SandboxRuntimeDesiredStateStopped SandboxRuntimeDesiredState = "stopped"
+	SandboxRuntimeDesiredStateDeleted SandboxRuntimeDesiredState = "deleted"
+)
+
+// AllValues returns all SandboxRuntimeDesiredState values.
+func (SandboxRuntimeDesiredState) AllValues() []SandboxRuntimeDesiredState {
+	return []SandboxRuntimeDesiredState{
+		SandboxRuntimeDesiredStateRunning,
+		SandboxRuntimeDesiredStateStopped,
+		SandboxRuntimeDesiredStateDeleted,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxRuntimeDesiredState) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxRuntimeDesiredStateRunning:
+		return []byte(s), nil
+	case SandboxRuntimeDesiredStateStopped:
+		return []byte(s), nil
+	case SandboxRuntimeDesiredStateDeleted:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxRuntimeDesiredState) UnmarshalText(data []byte) error {
+	switch SandboxRuntimeDesiredState(data) {
+	case SandboxRuntimeDesiredStateRunning:
+		*s = SandboxRuntimeDesiredStateRunning
+		return nil
+	case SandboxRuntimeDesiredStateStopped:
+		*s = SandboxRuntimeDesiredStateStopped
+		return nil
+	case SandboxRuntimeDesiredStateDeleted:
+		*s = SandboxRuntimeDesiredStateDeleted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Status of the most recent operation.
+type SandboxRuntimeLastOperationStatus string
+
+const (
+	SandboxRuntimeLastOperationStatusPending SandboxRuntimeLastOperationStatus = "pending"
+	SandboxRuntimeLastOperationStatusRunning SandboxRuntimeLastOperationStatus = "running"
+	SandboxRuntimeLastOperationStatusSuccess SandboxRuntimeLastOperationStatus = "success"
+	SandboxRuntimeLastOperationStatusFailed  SandboxRuntimeLastOperationStatus = "failed"
+)
+
+// AllValues returns all SandboxRuntimeLastOperationStatus values.
+func (SandboxRuntimeLastOperationStatus) AllValues() []SandboxRuntimeLastOperationStatus {
+	return []SandboxRuntimeLastOperationStatus{
+		SandboxRuntimeLastOperationStatusPending,
+		SandboxRuntimeLastOperationStatusRunning,
+		SandboxRuntimeLastOperationStatusSuccess,
+		SandboxRuntimeLastOperationStatusFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxRuntimeLastOperationStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxRuntimeLastOperationStatusPending:
+		return []byte(s), nil
+	case SandboxRuntimeLastOperationStatusRunning:
+		return []byte(s), nil
+	case SandboxRuntimeLastOperationStatusSuccess:
+		return []byte(s), nil
+	case SandboxRuntimeLastOperationStatusFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxRuntimeLastOperationStatus) UnmarshalText(data []byte) error {
+	switch SandboxRuntimeLastOperationStatus(data) {
+	case SandboxRuntimeLastOperationStatusPending:
+		*s = SandboxRuntimeLastOperationStatusPending
+		return nil
+	case SandboxRuntimeLastOperationStatusRunning:
+		*s = SandboxRuntimeLastOperationStatusRunning
+		return nil
+	case SandboxRuntimeLastOperationStatusSuccess:
+		*s = SandboxRuntimeLastOperationStatusSuccess
+		return nil
+	case SandboxRuntimeLastOperationStatusFailed:
+		*s = SandboxRuntimeLastOperationStatusFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Observed lifecycle phase.
+type SandboxRuntimePhase string
+
+const (
+	SandboxRuntimePhasePending      SandboxRuntimePhase = "pending"
+	SandboxRuntimePhaseProvisioning SandboxRuntimePhase = "provisioning"
+	SandboxRuntimePhaseStarting     SandboxRuntimePhase = "starting"
+	SandboxRuntimePhaseRunning      SandboxRuntimePhase = "running"
+	SandboxRuntimePhaseStopping     SandboxRuntimePhase = "stopping"
+	SandboxRuntimePhaseStopped      SandboxRuntimePhase = "stopped"
+	SandboxRuntimePhaseDeleting     SandboxRuntimePhase = "deleting"
+	SandboxRuntimePhaseDeleted      SandboxRuntimePhase = "deleted"
+	SandboxRuntimePhaseFailed       SandboxRuntimePhase = "failed"
+)
+
+// AllValues returns all SandboxRuntimePhase values.
+func (SandboxRuntimePhase) AllValues() []SandboxRuntimePhase {
+	return []SandboxRuntimePhase{
+		SandboxRuntimePhasePending,
+		SandboxRuntimePhaseProvisioning,
+		SandboxRuntimePhaseStarting,
+		SandboxRuntimePhaseRunning,
+		SandboxRuntimePhaseStopping,
+		SandboxRuntimePhaseStopped,
+		SandboxRuntimePhaseDeleting,
+		SandboxRuntimePhaseDeleted,
+		SandboxRuntimePhaseFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxRuntimePhase) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxRuntimePhasePending:
+		return []byte(s), nil
+	case SandboxRuntimePhaseProvisioning:
+		return []byte(s), nil
+	case SandboxRuntimePhaseStarting:
+		return []byte(s), nil
+	case SandboxRuntimePhaseRunning:
+		return []byte(s), nil
+	case SandboxRuntimePhaseStopping:
+		return []byte(s), nil
+	case SandboxRuntimePhaseStopped:
+		return []byte(s), nil
+	case SandboxRuntimePhaseDeleting:
+		return []byte(s), nil
+	case SandboxRuntimePhaseDeleted:
+		return []byte(s), nil
+	case SandboxRuntimePhaseFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxRuntimePhase) UnmarshalText(data []byte) error {
+	switch SandboxRuntimePhase(data) {
+	case SandboxRuntimePhasePending:
+		*s = SandboxRuntimePhasePending
+		return nil
+	case SandboxRuntimePhaseProvisioning:
+		*s = SandboxRuntimePhaseProvisioning
+		return nil
+	case SandboxRuntimePhaseStarting:
+		*s = SandboxRuntimePhaseStarting
+		return nil
+	case SandboxRuntimePhaseRunning:
+		*s = SandboxRuntimePhaseRunning
+		return nil
+	case SandboxRuntimePhaseStopping:
+		*s = SandboxRuntimePhaseStopping
+		return nil
+	case SandboxRuntimePhaseStopped:
+		*s = SandboxRuntimePhaseStopped
+		return nil
+	case SandboxRuntimePhaseDeleting:
+		*s = SandboxRuntimePhaseDeleting
+		return nil
+	case SandboxRuntimePhaseDeleted:
+		*s = SandboxRuntimePhaseDeleted
+		return nil
+	case SandboxRuntimePhaseFailed:
+		*s = SandboxRuntimePhaseFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Ref: #/components/schemas/SandboxUpdateConfig
+type SandboxUpdateConfig struct {
+	// Sandbox name.
+	Name OptString `json:"name"`
+}
+
+// GetName returns the value of Name.
+func (s *SandboxUpdateConfig) GetName() OptString {
+	return s.Name
+}
+
+// SetName sets the value of Name.
+func (s *SandboxUpdateConfig) SetName(val OptString) {
+	s.Name = val
 }
 
 // Ref: #/components/schemas/SandboxUser
@@ -6948,8 +7034,8 @@ func (s *UpdateAgentConfigBody) SetRunCommand(val OptString) {
 type UpdateSandboxBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Sandbox name.
-	Name OptString `json:"name"`
+	// Desired sandbox configuration changes.
+	Config OptSandboxUpdateConfig `json:"config"`
 }
 
 // GetSchema returns the value of Schema.
@@ -6957,9 +7043,9 @@ func (s *UpdateSandboxBody) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetName returns the value of Name.
-func (s *UpdateSandboxBody) GetName() OptString {
-	return s.Name
+// GetConfig returns the value of Config.
+func (s *UpdateSandboxBody) GetConfig() OptSandboxUpdateConfig {
+	return s.Config
 }
 
 // SetSchema sets the value of Schema.
@@ -6967,9 +7053,9 @@ func (s *UpdateSandboxBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetName sets the value of Name.
-func (s *UpdateSandboxBody) SetName(val OptString) {
-	s.Name = val
+// SetConfig sets the value of Config.
+func (s *UpdateSandboxBody) SetConfig(val OptSandboxUpdateConfig) {
+	s.Config = val
 }
 
 // Ref: #/components/schemas/UpdateSandboxProviderInstanceBody

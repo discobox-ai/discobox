@@ -100,14 +100,14 @@ func createRunSandboxBody(ctx context.Context, opts runOptions) (*apimodel.Creat
 	if err != nil {
 		return nil, err
 	}
-	body := &apimodel.CreateSandboxBody{Name: "run-" + shortID(runID)}
-	body.SetPrompt(optString(strings.Join(opts.prompt, " ")))
+	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: "run-" + shortID(runID)}}
+	body.Config.SetPrompt(optString(strings.Join(opts.prompt, " ")))
 	env, err := keyValueMapFromShell(opts.env)
 	if err != nil {
 		return nil, err
 	}
 	if len(env) > 0 {
-		body.SetEnv(apiclientgen.NewOptCreateSandboxBodyEnv(apiclientgen.CreateSandboxBodyEnv(env)))
+		body.Config.SetEnv(apiclientgen.NewOptSandboxCreateConfigEnv(apiclientgen.SandboxCreateConfigEnv(env)))
 	}
 	userIdentity, _, err := resolveRunUserIdentity()
 	if err != nil {
@@ -125,7 +125,7 @@ func createRunSandboxBody(ctx context.Context, opts runOptions) (*apimodel.Creat
 	if err != nil {
 		return nil, err
 	}
-	body.SetSource(apiclientgen.NewOptGitSource(*apiSource))
+	body.Config.SetSource(apiclientgen.NewOptGitSource(*apiSource))
 	userIdentity.setCreateSandboxUser(body)
 	return body, nil
 }

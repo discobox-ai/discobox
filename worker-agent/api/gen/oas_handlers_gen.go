@@ -183,7 +183,7 @@ func (s *Server) handleWorkerCreateSandboxRequest(args [2]string, argsEscaped bo
 		}
 	}()
 
-	var response *Sandbox
+	var response *WorkerSandboxInstance
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
@@ -208,7 +208,7 @@ func (s *Server) handleWorkerCreateSandboxRequest(args [2]string, argsEscaped bo
 		type (
 			Request  = *WorkerSandboxCreateRequest
 			Params   = WorkerCreateSandboxParams
-			Response = *Sandbox
+			Response = *WorkerSandboxInstance
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -595,7 +595,7 @@ func (s *Server) handleWorkerGetSandboxRequest(args [3]string, argsEscaped bool,
 
 	var rawBody []byte
 
-	var response *Sandbox
+	var response *WorkerSandboxInstance
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
@@ -624,7 +624,7 @@ func (s *Server) handleWorkerGetSandboxRequest(args [3]string, argsEscaped bool,
 		type (
 			Request  = struct{}
 			Params   = WorkerGetSandboxParams
-			Response = *Sandbox
+			Response = *WorkerSandboxInstance
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -1022,7 +1022,7 @@ func (s *Server) handleWorkerStartSandboxRequest(args [3]string, argsEscaped boo
 		}
 	}()
 
-	var response *Sandbox
+	var response *WorkerSandboxInstance
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
@@ -1051,7 +1051,7 @@ func (s *Server) handleWorkerStartSandboxRequest(args [3]string, argsEscaped boo
 		type (
 			Request  = *WorkerSandboxOperationRequest
 			Params   = WorkerStartSandboxParams
-			Response = *Sandbox
+			Response = *WorkerSandboxInstance
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -1245,7 +1245,7 @@ func (s *Server) handleWorkerStopSandboxRequest(args [3]string, argsEscaped bool
 		}
 	}()
 
-	var response *Sandbox
+	var response *WorkerSandboxInstance
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
@@ -1274,7 +1274,7 @@ func (s *Server) handleWorkerStopSandboxRequest(args [3]string, argsEscaped bool
 		type (
 			Request  = *WorkerSandboxOperationRequest
 			Params   = WorkerStopSandboxParams
-			Response = *Sandbox
+			Response = *WorkerSandboxInstance
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -1468,7 +1468,7 @@ func (s *Server) handleWorkerUpdateSandboxRequest(args [3]string, argsEscaped bo
 		}
 	}()
 
-	var response *Sandbox
+	var response *WorkerSandboxInstance
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
@@ -1497,7 +1497,7 @@ func (s *Server) handleWorkerUpdateSandboxRequest(args [3]string, argsEscaped bo
 		type (
 			Request  = *WorkerSandboxUpdateRequest
 			Params   = WorkerUpdateSandboxParams
-			Response = *Sandbox
+			Response = *WorkerSandboxInstance
 		)
 		response, err = middleware.HookMiddleware[
 			Request,

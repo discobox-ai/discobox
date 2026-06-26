@@ -12,7 +12,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func encodeWorkerCreateSandboxResponse(response *Sandbox, w http.ResponseWriter, span trace.Span) error {
+func encodeWorkerCreateSandboxResponse(response *WorkerSandboxInstance, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))
@@ -33,7 +33,7 @@ func encodeWorkerDeleteSandboxResponse(response *WorkerDeleteSandboxNoContent, w
 	return nil
 }
 
-func encodeWorkerGetSandboxResponse(response *Sandbox, w http.ResponseWriter, span trace.Span) error {
+func encodeWorkerGetSandboxResponse(response *WorkerSandboxInstance, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))
@@ -61,7 +61,7 @@ func encodeWorkerListSandboxesResponse(response *WorkerSandboxListResponse, w ht
 	return nil
 }
 
-func encodeWorkerStartSandboxResponse(response *Sandbox, w http.ResponseWriter, span trace.Span) error {
+func encodeWorkerStartSandboxResponse(response *WorkerSandboxInstance, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))
@@ -75,7 +75,7 @@ func encodeWorkerStartSandboxResponse(response *Sandbox, w http.ResponseWriter, 
 	return nil
 }
 
-func encodeWorkerStopSandboxResponse(response *Sandbox, w http.ResponseWriter, span trace.Span) error {
+func encodeWorkerStopSandboxResponse(response *WorkerSandboxInstance, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))
@@ -89,7 +89,7 @@ func encodeWorkerStopSandboxResponse(response *Sandbox, w http.ResponseWriter, s
 	return nil
 }
 
-func encodeWorkerUpdateSandboxResponse(response *Sandbox, w http.ResponseWriter, span trace.Span) error {
+func encodeWorkerUpdateSandboxResponse(response *WorkerSandboxInstance, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))

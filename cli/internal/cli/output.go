@@ -43,10 +43,10 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 	fmt.Fprintln(tw, "ID\tNAME\tPHASE\tDESIRED\tGENERATION\tERROR\tUPDATED")
 	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
 		shortID(sandbox.ID),
-		sandbox.Name,
-		sandbox.Phase,
-		sandbox.DesiredState,
-		sandbox.Generation,
+		sandbox.Config.Name,
+		sandbox.Runtime.Phase,
+		sandbox.Runtime.DesiredState,
+		sandbox.Runtime.Generation,
 		truncateTableValue(sandboxMessage(*sandbox), 80),
 		formatTime(sandbox.UpdatedAt),
 	)
@@ -67,10 +67,10 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox) e
 	for _, sandbox := range sandboxes {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
 			shortID(sandbox.ID),
-			sandbox.Name,
-			sandbox.Phase,
-			sandbox.DesiredState,
-			sandbox.Generation,
+			sandbox.Config.Name,
+			sandbox.Runtime.Phase,
+			sandbox.Runtime.DesiredState,
+			sandbox.Runtime.Generation,
 			truncateTableValue(sandboxMessage(sandbox), 80),
 			formatTime(sandbox.UpdatedAt),
 		)
@@ -79,7 +79,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox) e
 }
 
 func sandboxMessage(sandbox apimodel.Sandbox) string {
-	if message, ok := sandbox.ErrorMessage.Get(); ok && strings.TrimSpace(message) != "" {
+	if message, ok := sandbox.Runtime.ErrorMessage.Get(); ok && strings.TrimSpace(message) != "" {
 		return message
 	}
 	return ""
@@ -332,9 +332,9 @@ func writeStatusSandboxes(w io.Writer, sandboxes []apimodel.Sandbox) error {
 	for _, sandbox := range sandboxes {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
 			shortID(sandbox.ID),
-			sandbox.Name,
-			sandbox.Phase,
-			sandbox.DesiredState,
+			sandbox.Config.Name,
+			sandbox.Runtime.Phase,
+			sandbox.Runtime.DesiredState,
 			formatTime(sandbox.UpdatedAt),
 			truncateTableValue(sandboxMessage(sandbox), 64),
 		)

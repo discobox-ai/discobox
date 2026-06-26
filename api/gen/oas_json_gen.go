@@ -2310,74 +2310,14 @@ func (s *CreateSandboxBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.AgentConfigId.Set {
-			e.FieldStart("agentConfigId")
-			s.AgentConfigId.Encode(e)
-		}
-	}
-	{
-		if s.AgentModel.Set {
-			e.FieldStart("agentModel")
-			s.AgentModel.Encode(e)
-		}
-	}
-	{
-		if s.AgentModelReasoningLevel.Set {
-			e.FieldStart("agentModelReasoningLevel")
-			s.AgentModelReasoningLevel.Encode(e)
-		}
-	}
-	{
-		if s.AgentModelServiceTier.Set {
-			e.FieldStart("agentModelServiceTier")
-			s.AgentModelServiceTier.Encode(e)
-		}
-	}
-	{
 		if s.AgentName.Set {
 			e.FieldStart("agentName")
 			s.AgentName.Encode(e)
 		}
 	}
 	{
-		if s.CpuVcpus.Set {
-			e.FieldStart("cpuVcpus")
-			s.CpuVcpus.Encode(e)
-		}
-	}
-	{
-		if s.Description.Set {
-			e.FieldStart("description")
-			s.Description.Encode(e)
-		}
-	}
-	{
-		if s.Env.Set {
-			e.FieldStart("env")
-			s.Env.Encode(e)
-		}
-	}
-	{
-		if s.Image.Set {
-			e.FieldStart("image")
-			s.Image.Encode(e)
-		}
-	}
-	{
-		if s.MemoryBytes.Set {
-			e.FieldStart("memoryBytes")
-			s.MemoryBytes.Encode(e)
-		}
-	}
-	{
-		e.FieldStart("name")
-		e.Str(s.Name)
-	}
-	{
-		if s.Prompt.Set {
-			e.FieldStart("prompt")
-			s.Prompt.Encode(e)
-		}
+		e.FieldStart("config")
+		s.Config.Encode(e)
 	}
 	{
 		if s.ProviderInstanceId.Set {
@@ -2385,58 +2325,13 @@ func (s *CreateSandboxBody) encodeFields(e *jx.Encoder) {
 			s.ProviderInstanceId.Encode(e)
 		}
 	}
-	{
-		if len(s.RuntimeState) != 0 {
-			e.FieldStart("runtimeState")
-			e.Raw(s.RuntimeState)
-		}
-	}
-	{
-		if s.Source.Set {
-			e.FieldStart("source")
-			s.Source.Encode(e)
-		}
-	}
-	{
-		if s.SourceCodeReferences.Set {
-			e.FieldStart("sourceCodeReferences")
-			s.SourceCodeReferences.Encode(e)
-		}
-	}
-	{
-		if s.StorageBytes.Set {
-			e.FieldStart("storageBytes")
-			s.StorageBytes.Encode(e)
-		}
-	}
-	{
-		if s.User.Set {
-			e.FieldStart("user")
-			s.User.Encode(e)
-		}
-	}
 }
 
-var jsonFieldsNameOfCreateSandboxBody = [19]string{
-	0:  "$schema",
-	1:  "agentConfigId",
-	2:  "agentModel",
-	3:  "agentModelReasoningLevel",
-	4:  "agentModelServiceTier",
-	5:  "agentName",
-	6:  "cpuVcpus",
-	7:  "description",
-	8:  "env",
-	9:  "image",
-	10: "memoryBytes",
-	11: "name",
-	12: "prompt",
-	13: "providerInstanceId",
-	14: "runtimeState",
-	15: "source",
-	16: "sourceCodeReferences",
-	17: "storageBytes",
-	18: "user",
+var jsonFieldsNameOfCreateSandboxBody = [4]string{
+	0: "$schema",
+	1: "agentName",
+	2: "config",
+	3: "providerInstanceId",
 }
 
 // Decode decodes CreateSandboxBody from json.
@@ -2444,7 +2339,7 @@ func (s *CreateSandboxBody) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode CreateSandboxBody to nil")
 	}
-	var requiredBitSet [3]uint8
+	var requiredBitSet [1]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -2458,46 +2353,6 @@ func (s *CreateSandboxBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
 			}
-		case "agentConfigId":
-			if err := func() error {
-				s.AgentConfigId.Reset()
-				if err := s.AgentConfigId.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"agentConfigId\"")
-			}
-		case "agentModel":
-			if err := func() error {
-				s.AgentModel.Reset()
-				if err := s.AgentModel.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"agentModel\"")
-			}
-		case "agentModelReasoningLevel":
-			if err := func() error {
-				s.AgentModelReasoningLevel.Reset()
-				if err := s.AgentModelReasoningLevel.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"agentModelReasoningLevel\"")
-			}
-		case "agentModelServiceTier":
-			if err := func() error {
-				s.AgentModelServiceTier.Reset()
-				if err := s.AgentModelServiceTier.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"agentModelServiceTier\"")
-			}
 		case "agentName":
 			if err := func() error {
 				s.AgentName.Reset()
@@ -2508,77 +2363,15 @@ func (s *CreateSandboxBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"agentName\"")
 			}
-		case "cpuVcpus":
+		case "config":
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
-				s.CpuVcpus.Reset()
-				if err := s.CpuVcpus.Decode(d); err != nil {
+				if err := s.Config.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"cpuVcpus\"")
-			}
-		case "description":
-			if err := func() error {
-				s.Description.Reset()
-				if err := s.Description.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"description\"")
-			}
-		case "env":
-			if err := func() error {
-				s.Env.Reset()
-				if err := s.Env.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"env\"")
-			}
-		case "image":
-			if err := func() error {
-				s.Image.Reset()
-				if err := s.Image.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"image\"")
-			}
-		case "memoryBytes":
-			if err := func() error {
-				s.MemoryBytes.Reset()
-				if err := s.MemoryBytes.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"memoryBytes\"")
-			}
-		case "name":
-			requiredBitSet[1] |= 1 << 3
-			if err := func() error {
-				v, err := d.Str()
-				s.Name = string(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"name\"")
-			}
-		case "prompt":
-			if err := func() error {
-				s.Prompt.Reset()
-				if err := s.Prompt.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"prompt\"")
+				return errors.Wrap(err, "decode field \"config\"")
 			}
 		case "providerInstanceId":
 			if err := func() error {
@@ -2590,57 +2383,6 @@ func (s *CreateSandboxBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"providerInstanceId\"")
 			}
-		case "runtimeState":
-			if err := func() error {
-				v, err := d.RawAppend(nil)
-				s.RuntimeState = jx.Raw(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"runtimeState\"")
-			}
-		case "source":
-			if err := func() error {
-				s.Source.Reset()
-				if err := s.Source.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"source\"")
-			}
-		case "sourceCodeReferences":
-			if err := func() error {
-				s.SourceCodeReferences.Reset()
-				if err := s.SourceCodeReferences.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"sourceCodeReferences\"")
-			}
-		case "storageBytes":
-			if err := func() error {
-				s.StorageBytes.Reset()
-				if err := s.StorageBytes.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"storageBytes\"")
-			}
-		case "user":
-			if err := func() error {
-				s.User.Reset()
-				if err := s.User.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"user\"")
-			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -2650,10 +2392,8 @@ func (s *CreateSandboxBody) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [3]uint8{
-		0b00000000,
-		0b00001000,
-		0b00000000,
+	for i, mask := range [1]uint8{
+		0b00000100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -2695,116 +2435,6 @@ func (s *CreateSandboxBody) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *CreateSandboxBody) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode implements json.Marshaler.
-func (s CreateSandboxBodyEnv) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields implements json.Marshaler.
-func (s CreateSandboxBodyEnv) encodeFields(e *jx.Encoder) {
-	for k, elem := range s {
-		e.FieldStart(k)
-
-		e.Str(elem)
-	}
-}
-
-// Decode decodes CreateSandboxBodyEnv from json.
-func (s *CreateSandboxBodyEnv) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode CreateSandboxBodyEnv to nil")
-	}
-	m := s.init()
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		var elem string
-		if err := func() error {
-			v, err := d.Str()
-			elem = string(v)
-			if err != nil {
-				return err
-			}
-			return nil
-		}(); err != nil {
-			return errors.Wrapf(err, "decode field %q", k)
-		}
-		m[string(k)] = elem
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "decode CreateSandboxBodyEnv")
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s CreateSandboxBodyEnv) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *CreateSandboxBodyEnv) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode implements json.Marshaler.
-func (s CreateSandboxBodySourceCodeReferences) Encode(e *jx.Encoder) {
-	e.ObjStart()
-	s.encodeFields(e)
-	e.ObjEnd()
-}
-
-// encodeFields implements json.Marshaler.
-func (s CreateSandboxBodySourceCodeReferences) encodeFields(e *jx.Encoder) {
-	for k, elem := range s {
-		e.FieldStart(k)
-
-		elem.Encode(e)
-	}
-}
-
-// Decode decodes CreateSandboxBodySourceCodeReferences from json.
-func (s *CreateSandboxBodySourceCodeReferences) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode CreateSandboxBodySourceCodeReferences to nil")
-	}
-	m := s.init()
-	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		var elem GitSource
-		if err := func() error {
-			if err := elem.Decode(d); err != nil {
-				return err
-			}
-			return nil
-		}(); err != nil {
-			return errors.Wrapf(err, "decode field %q", k)
-		}
-		m[string(k)] = elem
-		return nil
-	}); err != nil {
-		return errors.Wrap(err, "decode CreateSandboxBodySourceCodeReferences")
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s CreateSandboxBodySourceCodeReferences) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *CreateSandboxBodySourceCodeReferences) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -5930,74 +5560,6 @@ func (s *OptCreateAgentTerminalRequestMetadata) UnmarshalJSON(data []byte) error
 	return s.Decode(d)
 }
 
-// Encode encodes CreateSandboxBodyEnv as json.
-func (o OptCreateSandboxBodyEnv) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	o.Value.Encode(e)
-}
-
-// Decode decodes CreateSandboxBodyEnv from json.
-func (o *OptCreateSandboxBodyEnv) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptCreateSandboxBodyEnv to nil")
-	}
-	o.Set = true
-	o.Value = make(CreateSandboxBodyEnv)
-	if err := o.Value.Decode(d); err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptCreateSandboxBodyEnv) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptCreateSandboxBodyEnv) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes CreateSandboxBodySourceCodeReferences as json.
-func (o OptCreateSandboxBodySourceCodeReferences) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	o.Value.Encode(e)
-}
-
-// Decode decodes CreateSandboxBodySourceCodeReferences from json.
-func (o *OptCreateSandboxBodySourceCodeReferences) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptCreateSandboxBodySourceCodeReferences to nil")
-	}
-	o.Set = true
-	o.Value = make(CreateSandboxBodySourceCodeReferences)
-	if err := o.Value.Decode(d); err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptCreateSandboxBodySourceCodeReferences) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptCreateSandboxBodySourceCodeReferences) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
 // Encode encodes CreateSandboxExecRequestEnv as json.
 func (o OptCreateSandboxExecRequestEnv) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -6859,54 +6421,21 @@ func (s *OptNilWorkerArray) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes SandboxActiveOperation as json.
-func (o OptSandboxActiveOperation) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	e.Str(string(o.Value))
-}
-
-// Decode decodes SandboxActiveOperation from json.
-func (o *OptSandboxActiveOperation) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptSandboxActiveOperation to nil")
-	}
-	o.Set = true
-	if err := o.Value.Decode(d); err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptSandboxActiveOperation) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptSandboxActiveOperation) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes SandboxEnv as json.
-func (o OptSandboxEnv) Encode(e *jx.Encoder) {
+// Encode encodes SandboxConfigEnv as json.
+func (o OptSandboxConfigEnv) Encode(e *jx.Encoder) {
 	if !o.Set {
 		return
 	}
 	o.Value.Encode(e)
 }
 
-// Decode decodes SandboxEnv from json.
-func (o *OptSandboxEnv) Decode(d *jx.Decoder) error {
+// Decode decodes SandboxConfigEnv from json.
+func (o *OptSandboxConfigEnv) Decode(d *jx.Decoder) error {
 	if o == nil {
-		return errors.New("invalid: unable to decode OptSandboxEnv to nil")
+		return errors.New("invalid: unable to decode OptSandboxConfigEnv to nil")
 	}
 	o.Set = true
-	o.Value = make(SandboxEnv)
+	o.Value = make(SandboxConfigEnv)
 	if err := o.Value.Decode(d); err != nil {
 		return err
 	}
@@ -6914,14 +6443,116 @@ func (o *OptSandboxEnv) Decode(d *jx.Decoder) error {
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s OptSandboxEnv) MarshalJSON() ([]byte, error) {
+func (s OptSandboxConfigEnv) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptSandboxEnv) UnmarshalJSON(data []byte) error {
+func (s *OptSandboxConfigEnv) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxConfigSourceCodeReferences as json.
+func (o OptSandboxConfigSourceCodeReferences) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SandboxConfigSourceCodeReferences from json.
+func (o *OptSandboxConfigSourceCodeReferences) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxConfigSourceCodeReferences to nil")
+	}
+	o.Set = true
+	o.Value = make(SandboxConfigSourceCodeReferences)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxConfigSourceCodeReferences) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxConfigSourceCodeReferences) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxCreateConfigEnv as json.
+func (o OptSandboxCreateConfigEnv) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SandboxCreateConfigEnv from json.
+func (o *OptSandboxCreateConfigEnv) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxCreateConfigEnv to nil")
+	}
+	o.Set = true
+	o.Value = make(SandboxCreateConfigEnv)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxCreateConfigEnv) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxCreateConfigEnv) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxCreateConfigSourceCodeReferences as json.
+func (o OptSandboxCreateConfigSourceCodeReferences) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SandboxCreateConfigSourceCodeReferences from json.
+func (o *OptSandboxCreateConfigSourceCodeReferences) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxCreateConfigSourceCodeReferences to nil")
+	}
+	o.Set = true
+	o.Value = make(SandboxCreateConfigSourceCodeReferences)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxCreateConfigSourceCodeReferences) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxCreateConfigSourceCodeReferences) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -7060,21 +6691,20 @@ func (s *OptSandboxProviderInstanceStatus) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes SandboxSourceCodeReferences as json.
-func (o OptSandboxSourceCodeReferences) Encode(e *jx.Encoder) {
+// Encode encodes SandboxRuntimeActiveOperation as json.
+func (o OptSandboxRuntimeActiveOperation) Encode(e *jx.Encoder) {
 	if !o.Set {
 		return
 	}
-	o.Value.Encode(e)
+	e.Str(string(o.Value))
 }
 
-// Decode decodes SandboxSourceCodeReferences from json.
-func (o *OptSandboxSourceCodeReferences) Decode(d *jx.Decoder) error {
+// Decode decodes SandboxRuntimeActiveOperation from json.
+func (o *OptSandboxRuntimeActiveOperation) Decode(d *jx.Decoder) error {
 	if o == nil {
-		return errors.New("invalid: unable to decode OptSandboxSourceCodeReferences to nil")
+		return errors.New("invalid: unable to decode OptSandboxRuntimeActiveOperation to nil")
 	}
 	o.Set = true
-	o.Value = make(SandboxSourceCodeReferences)
 	if err := o.Value.Decode(d); err != nil {
 		return err
 	}
@@ -7082,14 +6712,47 @@ func (o *OptSandboxSourceCodeReferences) Decode(d *jx.Decoder) error {
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s OptSandboxSourceCodeReferences) MarshalJSON() ([]byte, error) {
+func (s OptSandboxRuntimeActiveOperation) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptSandboxSourceCodeReferences) UnmarshalJSON(data []byte) error {
+func (s *OptSandboxRuntimeActiveOperation) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxUpdateConfig as json.
+func (o OptSandboxUpdateConfig) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SandboxUpdateConfig from json.
+func (o *OptSandboxUpdateConfig) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxUpdateConfig to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxUpdateConfig) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxUpdateConfig) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -9175,44 +8838,14 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.ActiveOperation.Set {
-			e.FieldStart("activeOperation")
-			s.ActiveOperation.Encode(e)
-		}
-	}
-	{
 		if s.AgentConfig.Set {
 			e.FieldStart("agentConfig")
 			s.AgentConfig.Encode(e)
 		}
 	}
 	{
-		if s.AgentConfigId.Set {
-			e.FieldStart("agentConfigId")
-			s.AgentConfigId.Encode(e)
-		}
-	}
-	{
-		if s.AgentModel.Set {
-			e.FieldStart("agentModel")
-			s.AgentModel.Encode(e)
-		}
-	}
-	{
-		if s.AgentModelReasoningLevel.Set {
-			e.FieldStart("agentModelReasoningLevel")
-			s.AgentModelReasoningLevel.Encode(e)
-		}
-	}
-	{
-		if s.AgentModelServiceTier.Set {
-			e.FieldStart("agentModelServiceTier")
-			s.AgentModelServiceTier.Encode(e)
-		}
-	}
-	{
-		e.FieldStart("cpuVcpus")
-		e.Float64(s.CpuVcpus)
+		e.FieldStart("config")
+		s.Config.Encode(e)
 	}
 	{
 		e.FieldStart("createdAt")
@@ -9229,82 +8862,12 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 		e.Str(s.CreatedByUserId)
 	}
 	{
-		if s.Description.Set {
-			e.FieldStart("description")
-			s.Description.Encode(e)
-		}
-	}
-	{
-		e.FieldStart("desiredState")
-		s.DesiredState.Encode(e)
-	}
-	{
-		if s.ErrorMessage.Set {
-			e.FieldStart("errorMessage")
-			s.ErrorMessage.Encode(e)
-		}
-	}
-	{
-		if s.Env.Set {
-			e.FieldStart("env")
-			s.Env.Encode(e)
-		}
-	}
-	{
-		e.FieldStart("generation")
-		e.Int64(s.Generation)
-	}
-	{
 		e.FieldStart("id")
 		e.Str(s.ID)
 	}
 	{
-		if s.Image.Set {
-			e.FieldStart("image")
-			s.Image.Encode(e)
-		}
-	}
-	{
-		if s.LastActiveAt.Set {
-			e.FieldStart("lastActiveAt")
-			s.LastActiveAt.Encode(e, json.EncodeDateTime)
-		}
-	}
-	{
-		if s.LastJobId.Set {
-			e.FieldStart("lastJobId")
-			s.LastJobId.Encode(e)
-		}
-	}
-	{
-		e.FieldStart("lastOperationStatus")
-		s.LastOperationStatus.Encode(e)
-	}
-	{
-		e.FieldStart("memoryBytes")
-		e.Int64(s.MemoryBytes)
-	}
-	{
-		e.FieldStart("name")
-		e.Str(s.Name)
-	}
-	{
-		e.FieldStart("observedGeneration")
-		e.Int64(s.ObservedGeneration)
-	}
-	{
-		e.FieldStart("phase")
-		s.Phase.Encode(e)
-	}
-	{
 		e.FieldStart("projectId")
 		e.Str(s.ProjectId)
-	}
-	{
-		if s.Prompt.Set {
-			e.FieldStart("prompt")
-			s.Prompt.Encode(e)
-		}
 	}
 	{
 		if s.ProviderInstance.Set {
@@ -9319,99 +8882,28 @@ func (s *Sandbox) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("restartGeneration")
-		e.Int64(s.RestartGeneration)
-	}
-	{
-		e.FieldStart("restartedGeneration")
-		e.Int64(s.RestartedGeneration)
-	}
-	{
-		if len(s.RuntimeState) != 0 {
-			e.FieldStart("runtimeState")
-			e.Raw(s.RuntimeState)
-		}
-	}
-	{
-		if s.Source.Set {
-			e.FieldStart("source")
-			s.Source.Encode(e)
-		}
-	}
-	{
-		if s.SourceCodeReferences.Set {
-			e.FieldStart("sourceCodeReferences")
-			s.SourceCodeReferences.Encode(e)
-		}
-	}
-	{
-		if s.StatusMessage.Set {
-			e.FieldStart("statusMessage")
-			s.StatusMessage.Encode(e)
-		}
-	}
-	{
-		e.FieldStart("storageBytes")
-		e.Int64(s.StorageBytes)
+		e.FieldStart("runtime")
+		s.Runtime.Encode(e)
 	}
 	{
 		e.FieldStart("updatedAt")
 		json.EncodeDateTime(e, s.UpdatedAt)
 	}
-	{
-		if s.User.Set {
-			e.FieldStart("user")
-			s.User.Encode(e)
-		}
-	}
-	{
-		if s.WorkerId.Set {
-			e.FieldStart("workerId")
-			s.WorkerId.Encode(e)
-		}
-	}
 }
 
-var jsonFieldsNameOfSandbox = [39]string{
+var jsonFieldsNameOfSandbox = [12]string{
 	0:  "$schema",
-	1:  "activeOperation",
-	2:  "agentConfig",
-	3:  "agentConfigId",
-	4:  "agentModel",
-	5:  "agentModelReasoningLevel",
-	6:  "agentModelServiceTier",
-	7:  "cpuVcpus",
-	8:  "createdAt",
-	9:  "createdBy",
-	10: "createdByUserId",
-	11: "description",
-	12: "desiredState",
-	13: "errorMessage",
-	14: "env",
-	15: "generation",
-	16: "id",
-	17: "image",
-	18: "lastActiveAt",
-	19: "lastJobId",
-	20: "lastOperationStatus",
-	21: "memoryBytes",
-	22: "name",
-	23: "observedGeneration",
-	24: "phase",
-	25: "projectId",
-	26: "prompt",
-	27: "providerInstance",
-	28: "providerInstanceId",
-	29: "restartGeneration",
-	30: "restartedGeneration",
-	31: "runtimeState",
-	32: "source",
-	33: "sourceCodeReferences",
-	34: "statusMessage",
-	35: "storageBytes",
-	36: "updatedAt",
-	37: "user",
-	38: "workerId",
+	1:  "agentConfig",
+	2:  "config",
+	3:  "createdAt",
+	4:  "createdBy",
+	5:  "createdByUserId",
+	6:  "id",
+	7:  "projectId",
+	8:  "providerInstance",
+	9:  "providerInstanceId",
+	10: "runtime",
+	11: "updatedAt",
 }
 
 // Decode decodes Sandbox from json.
@@ -9419,7 +8911,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode Sandbox to nil")
 	}
-	var requiredBitSet [5]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -9433,16 +8925,6 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
 			}
-		case "activeOperation":
-			if err := func() error {
-				s.ActiveOperation.Reset()
-				if err := s.ActiveOperation.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"activeOperation\"")
-			}
 		case "agentConfig":
 			if err := func() error {
 				s.AgentConfig.Reset()
@@ -9453,60 +8935,18 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"agentConfig\"")
 			}
-		case "agentConfigId":
+		case "config":
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
-				s.AgentConfigId.Reset()
-				if err := s.AgentConfigId.Decode(d); err != nil {
+				if err := s.Config.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"agentConfigId\"")
-			}
-		case "agentModel":
-			if err := func() error {
-				s.AgentModel.Reset()
-				if err := s.AgentModel.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"agentModel\"")
-			}
-		case "agentModelReasoningLevel":
-			if err := func() error {
-				s.AgentModelReasoningLevel.Reset()
-				if err := s.AgentModelReasoningLevel.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"agentModelReasoningLevel\"")
-			}
-		case "agentModelServiceTier":
-			if err := func() error {
-				s.AgentModelServiceTier.Reset()
-				if err := s.AgentModelServiceTier.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"agentModelServiceTier\"")
-			}
-		case "cpuVcpus":
-			requiredBitSet[0] |= 1 << 7
-			if err := func() error {
-				v, err := d.Float64()
-				s.CpuVcpus = float64(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"cpuVcpus\"")
+				return errors.Wrap(err, "decode field \"config\"")
 			}
 		case "createdAt":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -9528,7 +8968,7 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"createdBy\"")
 			}
 		case "createdByUserId":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.CreatedByUserId = string(v)
@@ -9539,60 +8979,8 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"createdByUserId\"")
 			}
-		case "description":
-			if err := func() error {
-				s.Description.Reset()
-				if err := s.Description.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"description\"")
-			}
-		case "desiredState":
-			requiredBitSet[1] |= 1 << 4
-			if err := func() error {
-				if err := s.DesiredState.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"desiredState\"")
-			}
-		case "errorMessage":
-			if err := func() error {
-				s.ErrorMessage.Reset()
-				if err := s.ErrorMessage.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"errorMessage\"")
-			}
-		case "env":
-			if err := func() error {
-				s.Env.Reset()
-				if err := s.Env.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"env\"")
-			}
-		case "generation":
-			requiredBitSet[1] |= 1 << 7
-			if err := func() error {
-				v, err := d.Int64()
-				s.Generation = int64(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"generation\"")
-			}
 		case "id":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -9603,94 +8991,8 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"id\"")
 			}
-		case "image":
-			if err := func() error {
-				s.Image.Reset()
-				if err := s.Image.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"image\"")
-			}
-		case "lastActiveAt":
-			if err := func() error {
-				s.LastActiveAt.Reset()
-				if err := s.LastActiveAt.Decode(d, json.DecodeDateTime); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"lastActiveAt\"")
-			}
-		case "lastJobId":
-			if err := func() error {
-				s.LastJobId.Reset()
-				if err := s.LastJobId.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"lastJobId\"")
-			}
-		case "lastOperationStatus":
-			requiredBitSet[2] |= 1 << 4
-			if err := func() error {
-				if err := s.LastOperationStatus.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"lastOperationStatus\"")
-			}
-		case "memoryBytes":
-			requiredBitSet[2] |= 1 << 5
-			if err := func() error {
-				v, err := d.Int64()
-				s.MemoryBytes = int64(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"memoryBytes\"")
-			}
-		case "name":
-			requiredBitSet[2] |= 1 << 6
-			if err := func() error {
-				v, err := d.Str()
-				s.Name = string(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"name\"")
-			}
-		case "observedGeneration":
-			requiredBitSet[2] |= 1 << 7
-			if err := func() error {
-				v, err := d.Int64()
-				s.ObservedGeneration = int64(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"observedGeneration\"")
-			}
-		case "phase":
-			requiredBitSet[3] |= 1 << 0
-			if err := func() error {
-				if err := s.Phase.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"phase\"")
-			}
 		case "projectId":
-			requiredBitSet[3] |= 1 << 1
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -9700,16 +9002,6 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"projectId\"")
-			}
-		case "prompt":
-			if err := func() error {
-				s.Prompt.Reset()
-				if err := s.Prompt.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"prompt\"")
 			}
 		case "providerInstance":
 			if err := func() error {
@@ -9731,85 +9023,18 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"providerInstanceId\"")
 			}
-		case "restartGeneration":
-			requiredBitSet[3] |= 1 << 5
+		case "runtime":
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
-				v, err := d.Int64()
-				s.RestartGeneration = int64(v)
-				if err != nil {
+				if err := s.Runtime.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"restartGeneration\"")
-			}
-		case "restartedGeneration":
-			requiredBitSet[3] |= 1 << 6
-			if err := func() error {
-				v, err := d.Int64()
-				s.RestartedGeneration = int64(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"restartedGeneration\"")
-			}
-		case "runtimeState":
-			if err := func() error {
-				v, err := d.RawAppend(nil)
-				s.RuntimeState = jx.Raw(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"runtimeState\"")
-			}
-		case "source":
-			if err := func() error {
-				s.Source.Reset()
-				if err := s.Source.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"source\"")
-			}
-		case "sourceCodeReferences":
-			if err := func() error {
-				s.SourceCodeReferences.Reset()
-				if err := s.SourceCodeReferences.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"sourceCodeReferences\"")
-			}
-		case "statusMessage":
-			if err := func() error {
-				s.StatusMessage.Reset()
-				if err := s.StatusMessage.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"statusMessage\"")
-			}
-		case "storageBytes":
-			requiredBitSet[4] |= 1 << 3
-			if err := func() error {
-				v, err := d.Int64()
-				s.StorageBytes = int64(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"storageBytes\"")
+				return errors.Wrap(err, "decode field \"runtime\"")
 			}
 		case "updatedAt":
-			requiredBitSet[4] |= 1 << 4
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -9820,26 +9045,6 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"updatedAt\"")
 			}
-		case "user":
-			if err := func() error {
-				s.User.Reset()
-				if err := s.User.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"user\"")
-			}
-		case "workerId":
-			if err := func() error {
-				s.WorkerId.Reset()
-				if err := s.WorkerId.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"workerId\"")
-			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -9849,12 +9054,9 @@ func (s *Sandbox) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [5]uint8{
-		0b10000000,
-		0b10010101,
-		0b11110001,
-		0b01100011,
-		0b00011000,
+	for i, mask := range [2]uint8{
+		0b11101100,
+		0b00001100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -9900,103 +9102,350 @@ func (s *Sandbox) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes SandboxActiveOperation as json.
-func (s SandboxActiveOperation) Encode(e *jx.Encoder) {
-	e.Str(string(s))
+// Encode implements json.Marshaler.
+func (s *SandboxConfig) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
 }
 
-// Decode decodes SandboxActiveOperation from json.
-func (s *SandboxActiveOperation) Decode(d *jx.Decoder) error {
+// encodeFields encodes fields.
+func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
+	{
+		if s.AgentConfigId.Set {
+			e.FieldStart("agentConfigId")
+			s.AgentConfigId.Encode(e)
+		}
+	}
+	{
+		if s.AgentModel.Set {
+			e.FieldStart("agentModel")
+			s.AgentModel.Encode(e)
+		}
+	}
+	{
+		if s.AgentModelReasoningLevel.Set {
+			e.FieldStart("agentModelReasoningLevel")
+			s.AgentModelReasoningLevel.Encode(e)
+		}
+	}
+	{
+		if s.AgentModelServiceTier.Set {
+			e.FieldStart("agentModelServiceTier")
+			s.AgentModelServiceTier.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("cpuVcpus")
+		e.Float64(s.CpuVcpus)
+	}
+	{
+		if s.Description.Set {
+			e.FieldStart("description")
+			s.Description.Encode(e)
+		}
+	}
+	{
+		if s.Env.Set {
+			e.FieldStart("env")
+			s.Env.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("image")
+		e.Str(s.Image)
+	}
+	{
+		e.FieldStart("memoryBytes")
+		e.Int64(s.MemoryBytes)
+	}
+	{
+		e.FieldStart("name")
+		e.Str(s.Name)
+	}
+	{
+		if s.Prompt.Set {
+			e.FieldStart("prompt")
+			s.Prompt.Encode(e)
+		}
+	}
+	{
+		if s.Source.Set {
+			e.FieldStart("source")
+			s.Source.Encode(e)
+		}
+	}
+	{
+		if s.SourceCodeReferences.Set {
+			e.FieldStart("sourceCodeReferences")
+			s.SourceCodeReferences.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("storageBytes")
+		e.Int64(s.StorageBytes)
+	}
+	{
+		if s.User.Set {
+			e.FieldStart("user")
+			s.User.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSandboxConfig = [15]string{
+	0:  "agentConfigId",
+	1:  "agentModel",
+	2:  "agentModelReasoningLevel",
+	3:  "agentModelServiceTier",
+	4:  "cpuVcpus",
+	5:  "description",
+	6:  "env",
+	7:  "image",
+	8:  "memoryBytes",
+	9:  "name",
+	10: "prompt",
+	11: "source",
+	12: "sourceCodeReferences",
+	13: "storageBytes",
+	14: "user",
+}
+
+// Decode decodes SandboxConfig from json.
+func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode SandboxActiveOperation to nil")
+		return errors.New("invalid: unable to decode SandboxConfig to nil")
 	}
-	v, err := d.StrBytes()
-	if err != nil {
-		return err
+	var requiredBitSet [2]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "agentConfigId":
+			if err := func() error {
+				s.AgentConfigId.Reset()
+				if err := s.AgentConfigId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"agentConfigId\"")
+			}
+		case "agentModel":
+			if err := func() error {
+				s.AgentModel.Reset()
+				if err := s.AgentModel.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"agentModel\"")
+			}
+		case "agentModelReasoningLevel":
+			if err := func() error {
+				s.AgentModelReasoningLevel.Reset()
+				if err := s.AgentModelReasoningLevel.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"agentModelReasoningLevel\"")
+			}
+		case "agentModelServiceTier":
+			if err := func() error {
+				s.AgentModelServiceTier.Reset()
+				if err := s.AgentModelServiceTier.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"agentModelServiceTier\"")
+			}
+		case "cpuVcpus":
+			requiredBitSet[0] |= 1 << 4
+			if err := func() error {
+				v, err := d.Float64()
+				s.CpuVcpus = float64(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cpuVcpus\"")
+			}
+		case "description":
+			if err := func() error {
+				s.Description.Reset()
+				if err := s.Description.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"description\"")
+			}
+		case "env":
+			if err := func() error {
+				s.Env.Reset()
+				if err := s.Env.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"env\"")
+			}
+		case "image":
+			requiredBitSet[0] |= 1 << 7
+			if err := func() error {
+				v, err := d.Str()
+				s.Image = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"image\"")
+			}
+		case "memoryBytes":
+			requiredBitSet[1] |= 1 << 0
+			if err := func() error {
+				v, err := d.Int64()
+				s.MemoryBytes = int64(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"memoryBytes\"")
+			}
+		case "name":
+			requiredBitSet[1] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Name = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"name\"")
+			}
+		case "prompt":
+			if err := func() error {
+				s.Prompt.Reset()
+				if err := s.Prompt.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"prompt\"")
+			}
+		case "source":
+			if err := func() error {
+				s.Source.Reset()
+				if err := s.Source.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"source\"")
+			}
+		case "sourceCodeReferences":
+			if err := func() error {
+				s.SourceCodeReferences.Reset()
+				if err := s.SourceCodeReferences.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sourceCodeReferences\"")
+			}
+		case "storageBytes":
+			requiredBitSet[1] |= 1 << 5
+			if err := func() error {
+				v, err := d.Int64()
+				s.StorageBytes = int64(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"storageBytes\"")
+			}
+		case "user":
+			if err := func() error {
+				s.User.Reset()
+				if err := s.User.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"user\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxConfig")
 	}
-	// Try to use constant string.
-	switch SandboxActiveOperation(v) {
-	case SandboxActiveOperationCreate:
-		*s = SandboxActiveOperationCreate
-	case SandboxActiveOperationStart:
-		*s = SandboxActiveOperationStart
-	case SandboxActiveOperationStop:
-		*s = SandboxActiveOperationStop
-	case SandboxActiveOperationRestart:
-		*s = SandboxActiveOperationRestart
-	case SandboxActiveOperationDelete:
-		*s = SandboxActiveOperationDelete
-	default:
-		*s = SandboxActiveOperation(v)
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [2]uint8{
+		0b10010000,
+		0b00100011,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSandboxConfig) {
+					name = jsonFieldsNameOfSandboxConfig[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
 	}
 
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s SandboxActiveOperation) MarshalJSON() ([]byte, error) {
+func (s *SandboxConfig) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *SandboxActiveOperation) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes SandboxDesiredState as json.
-func (s SandboxDesiredState) Encode(e *jx.Encoder) {
-	e.Str(string(s))
-}
-
-// Decode decodes SandboxDesiredState from json.
-func (s *SandboxDesiredState) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode SandboxDesiredState to nil")
-	}
-	v, err := d.StrBytes()
-	if err != nil {
-		return err
-	}
-	// Try to use constant string.
-	switch SandboxDesiredState(v) {
-	case SandboxDesiredStateRunning:
-		*s = SandboxDesiredStateRunning
-	case SandboxDesiredStateStopped:
-		*s = SandboxDesiredStateStopped
-	case SandboxDesiredStateDeleted:
-		*s = SandboxDesiredStateDeleted
-	default:
-		*s = SandboxDesiredState(v)
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s SandboxDesiredState) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *SandboxDesiredState) UnmarshalJSON(data []byte) error {
+func (s *SandboxConfig) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
 
 // Encode implements json.Marshaler.
-func (s SandboxEnv) Encode(e *jx.Encoder) {
+func (s SandboxConfigEnv) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
 	e.ObjEnd()
 }
 
 // encodeFields implements json.Marshaler.
-func (s SandboxEnv) encodeFields(e *jx.Encoder) {
+func (s SandboxConfigEnv) encodeFields(e *jx.Encoder) {
 	for k, elem := range s {
 		e.FieldStart(k)
 
@@ -10004,10 +9453,10 @@ func (s SandboxEnv) encodeFields(e *jx.Encoder) {
 	}
 }
 
-// Decode decodes SandboxEnv from json.
-func (s *SandboxEnv) Decode(d *jx.Decoder) error {
+// Decode decodes SandboxConfigEnv from json.
+func (s *SandboxConfigEnv) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode SandboxEnv to nil")
+		return errors.New("invalid: unable to decode SandboxConfigEnv to nil")
 	}
 	m := s.init()
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
@@ -10025,21 +9474,520 @@ func (s *SandboxEnv) Decode(d *jx.Decoder) error {
 		m[string(k)] = elem
 		return nil
 	}); err != nil {
-		return errors.Wrap(err, "decode SandboxEnv")
+		return errors.Wrap(err, "decode SandboxConfigEnv")
 	}
 
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s SandboxEnv) MarshalJSON() ([]byte, error) {
+func (s SandboxConfigEnv) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *SandboxEnv) UnmarshalJSON(data []byte) error {
+func (s *SandboxConfigEnv) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s SandboxConfigSourceCodeReferences) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s SandboxConfigSourceCodeReferences) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		elem.Encode(e)
+	}
+}
+
+// Decode decodes SandboxConfigSourceCodeReferences from json.
+func (s *SandboxConfigSourceCodeReferences) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxConfigSourceCodeReferences to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem GitSource
+		if err := func() error {
+			if err := elem.Decode(d); err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxConfigSourceCodeReferences")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxConfigSourceCodeReferences) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxConfigSourceCodeReferences) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SandboxCreateConfig) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxCreateConfig) encodeFields(e *jx.Encoder) {
+	{
+		if s.AgentConfigId.Set {
+			e.FieldStart("agentConfigId")
+			s.AgentConfigId.Encode(e)
+		}
+	}
+	{
+		if s.AgentModel.Set {
+			e.FieldStart("agentModel")
+			s.AgentModel.Encode(e)
+		}
+	}
+	{
+		if s.AgentModelReasoningLevel.Set {
+			e.FieldStart("agentModelReasoningLevel")
+			s.AgentModelReasoningLevel.Encode(e)
+		}
+	}
+	{
+		if s.AgentModelServiceTier.Set {
+			e.FieldStart("agentModelServiceTier")
+			s.AgentModelServiceTier.Encode(e)
+		}
+	}
+	{
+		if s.CpuVcpus.Set {
+			e.FieldStart("cpuVcpus")
+			s.CpuVcpus.Encode(e)
+		}
+	}
+	{
+		if s.Description.Set {
+			e.FieldStart("description")
+			s.Description.Encode(e)
+		}
+	}
+	{
+		if s.Env.Set {
+			e.FieldStart("env")
+			s.Env.Encode(e)
+		}
+	}
+	{
+		if s.Image.Set {
+			e.FieldStart("image")
+			s.Image.Encode(e)
+		}
+	}
+	{
+		if s.MemoryBytes.Set {
+			e.FieldStart("memoryBytes")
+			s.MemoryBytes.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("name")
+		e.Str(s.Name)
+	}
+	{
+		if s.Prompt.Set {
+			e.FieldStart("prompt")
+			s.Prompt.Encode(e)
+		}
+	}
+	{
+		if s.Source.Set {
+			e.FieldStart("source")
+			s.Source.Encode(e)
+		}
+	}
+	{
+		if s.SourceCodeReferences.Set {
+			e.FieldStart("sourceCodeReferences")
+			s.SourceCodeReferences.Encode(e)
+		}
+	}
+	{
+		if s.StorageBytes.Set {
+			e.FieldStart("storageBytes")
+			s.StorageBytes.Encode(e)
+		}
+	}
+	{
+		if s.User.Set {
+			e.FieldStart("user")
+			s.User.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSandboxCreateConfig = [15]string{
+	0:  "agentConfigId",
+	1:  "agentModel",
+	2:  "agentModelReasoningLevel",
+	3:  "agentModelServiceTier",
+	4:  "cpuVcpus",
+	5:  "description",
+	6:  "env",
+	7:  "image",
+	8:  "memoryBytes",
+	9:  "name",
+	10: "prompt",
+	11: "source",
+	12: "sourceCodeReferences",
+	13: "storageBytes",
+	14: "user",
+}
+
+// Decode decodes SandboxCreateConfig from json.
+func (s *SandboxCreateConfig) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxCreateConfig to nil")
+	}
+	var requiredBitSet [2]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "agentConfigId":
+			if err := func() error {
+				s.AgentConfigId.Reset()
+				if err := s.AgentConfigId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"agentConfigId\"")
+			}
+		case "agentModel":
+			if err := func() error {
+				s.AgentModel.Reset()
+				if err := s.AgentModel.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"agentModel\"")
+			}
+		case "agentModelReasoningLevel":
+			if err := func() error {
+				s.AgentModelReasoningLevel.Reset()
+				if err := s.AgentModelReasoningLevel.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"agentModelReasoningLevel\"")
+			}
+		case "agentModelServiceTier":
+			if err := func() error {
+				s.AgentModelServiceTier.Reset()
+				if err := s.AgentModelServiceTier.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"agentModelServiceTier\"")
+			}
+		case "cpuVcpus":
+			if err := func() error {
+				s.CpuVcpus.Reset()
+				if err := s.CpuVcpus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cpuVcpus\"")
+			}
+		case "description":
+			if err := func() error {
+				s.Description.Reset()
+				if err := s.Description.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"description\"")
+			}
+		case "env":
+			if err := func() error {
+				s.Env.Reset()
+				if err := s.Env.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"env\"")
+			}
+		case "image":
+			if err := func() error {
+				s.Image.Reset()
+				if err := s.Image.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"image\"")
+			}
+		case "memoryBytes":
+			if err := func() error {
+				s.MemoryBytes.Reset()
+				if err := s.MemoryBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"memoryBytes\"")
+			}
+		case "name":
+			requiredBitSet[1] |= 1 << 1
+			if err := func() error {
+				v, err := d.Str()
+				s.Name = string(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"name\"")
+			}
+		case "prompt":
+			if err := func() error {
+				s.Prompt.Reset()
+				if err := s.Prompt.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"prompt\"")
+			}
+		case "source":
+			if err := func() error {
+				s.Source.Reset()
+				if err := s.Source.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"source\"")
+			}
+		case "sourceCodeReferences":
+			if err := func() error {
+				s.SourceCodeReferences.Reset()
+				if err := s.SourceCodeReferences.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sourceCodeReferences\"")
+			}
+		case "storageBytes":
+			if err := func() error {
+				s.StorageBytes.Reset()
+				if err := s.StorageBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"storageBytes\"")
+			}
+		case "user":
+			if err := func() error {
+				s.User.Reset()
+				if err := s.User.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"user\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxCreateConfig")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [2]uint8{
+		0b00000000,
+		0b00000010,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSandboxCreateConfig) {
+					name = jsonFieldsNameOfSandboxCreateConfig[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxCreateConfig) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxCreateConfig) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s SandboxCreateConfigEnv) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s SandboxCreateConfigEnv) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes SandboxCreateConfigEnv from json.
+func (s *SandboxCreateConfigEnv) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxCreateConfigEnv to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxCreateConfigEnv")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxCreateConfigEnv) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxCreateConfigEnv) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s SandboxCreateConfigSourceCodeReferences) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s SandboxCreateConfigSourceCodeReferences) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		elem.Encode(e)
+	}
+}
+
+// Decode decodes SandboxCreateConfigSourceCodeReferences from json.
+func (s *SandboxCreateConfigSourceCodeReferences) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxCreateConfigSourceCodeReferences to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem GitSource
+		if err := func() error {
+			if err := elem.Decode(d); err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxCreateConfigSourceCodeReferences")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxCreateConfigSourceCodeReferences) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxCreateConfigSourceCodeReferences) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -10948,104 +10896,6 @@ func (s *SandboxExecsResponse) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
-// Encode encodes SandboxLastOperationStatus as json.
-func (s SandboxLastOperationStatus) Encode(e *jx.Encoder) {
-	e.Str(string(s))
-}
-
-// Decode decodes SandboxLastOperationStatus from json.
-func (s *SandboxLastOperationStatus) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode SandboxLastOperationStatus to nil")
-	}
-	v, err := d.StrBytes()
-	if err != nil {
-		return err
-	}
-	// Try to use constant string.
-	switch SandboxLastOperationStatus(v) {
-	case SandboxLastOperationStatusPending:
-		*s = SandboxLastOperationStatusPending
-	case SandboxLastOperationStatusRunning:
-		*s = SandboxLastOperationStatusRunning
-	case SandboxLastOperationStatusSuccess:
-		*s = SandboxLastOperationStatusSuccess
-	case SandboxLastOperationStatusFailed:
-		*s = SandboxLastOperationStatusFailed
-	default:
-		*s = SandboxLastOperationStatus(v)
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s SandboxLastOperationStatus) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *SandboxLastOperationStatus) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes SandboxPhase as json.
-func (s SandboxPhase) Encode(e *jx.Encoder) {
-	e.Str(string(s))
-}
-
-// Decode decodes SandboxPhase from json.
-func (s *SandboxPhase) Decode(d *jx.Decoder) error {
-	if s == nil {
-		return errors.New("invalid: unable to decode SandboxPhase to nil")
-	}
-	v, err := d.StrBytes()
-	if err != nil {
-		return err
-	}
-	// Try to use constant string.
-	switch SandboxPhase(v) {
-	case SandboxPhasePending:
-		*s = SandboxPhasePending
-	case SandboxPhaseProvisioning:
-		*s = SandboxPhaseProvisioning
-	case SandboxPhaseStarting:
-		*s = SandboxPhaseStarting
-	case SandboxPhaseRunning:
-		*s = SandboxPhaseRunning
-	case SandboxPhaseStopping:
-		*s = SandboxPhaseStopping
-	case SandboxPhaseStopped:
-		*s = SandboxPhaseStopped
-	case SandboxPhaseDeleting:
-		*s = SandboxPhaseDeleting
-	case SandboxPhaseDeleted:
-		*s = SandboxPhaseDeleted
-	case SandboxPhaseFailed:
-		*s = SandboxPhaseFailed
-	default:
-		*s = SandboxPhase(v)
-	}
-
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s SandboxPhase) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *SandboxPhase) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
 // Encode implements json.Marshaler.
 func (s *SandboxProviderCatalogItem) Encode(e *jx.Encoder) {
 	e.ObjStart()
@@ -11777,55 +11627,545 @@ func (s *SandboxProviderInstanceStatus) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
-func (s SandboxSourceCodeReferences) Encode(e *jx.Encoder) {
+func (s *SandboxRuntime) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
 	e.ObjEnd()
 }
 
-// encodeFields implements json.Marshaler.
-func (s SandboxSourceCodeReferences) encodeFields(e *jx.Encoder) {
-	for k, elem := range s {
-		e.FieldStart(k)
-
-		elem.Encode(e)
+// encodeFields encodes fields.
+func (s *SandboxRuntime) encodeFields(e *jx.Encoder) {
+	{
+		if s.ActiveOperation.Set {
+			e.FieldStart("activeOperation")
+			s.ActiveOperation.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("desiredState")
+		s.DesiredState.Encode(e)
+	}
+	{
+		if s.ErrorMessage.Set {
+			e.FieldStart("errorMessage")
+			s.ErrorMessage.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("generation")
+		e.Int64(s.Generation)
+	}
+	{
+		if s.LastActiveAt.Set {
+			e.FieldStart("lastActiveAt")
+			s.LastActiveAt.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
+		if s.LastJobId.Set {
+			e.FieldStart("lastJobId")
+			s.LastJobId.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("lastOperationStatus")
+		s.LastOperationStatus.Encode(e)
+	}
+	{
+		e.FieldStart("observedGeneration")
+		e.Int64(s.ObservedGeneration)
+	}
+	{
+		e.FieldStart("phase")
+		s.Phase.Encode(e)
+	}
+	{
+		e.FieldStart("restartGeneration")
+		e.Int64(s.RestartGeneration)
+	}
+	{
+		e.FieldStart("restartedGeneration")
+		e.Int64(s.RestartedGeneration)
+	}
+	{
+		if s.StatusMessage.Set {
+			e.FieldStart("statusMessage")
+			s.StatusMessage.Encode(e)
+		}
+	}
+	{
+		if s.WorkerId.Set {
+			e.FieldStart("workerId")
+			s.WorkerId.Encode(e)
+		}
 	}
 }
 
-// Decode decodes SandboxSourceCodeReferences from json.
-func (s *SandboxSourceCodeReferences) Decode(d *jx.Decoder) error {
+var jsonFieldsNameOfSandboxRuntime = [13]string{
+	0:  "activeOperation",
+	1:  "desiredState",
+	2:  "errorMessage",
+	3:  "generation",
+	4:  "lastActiveAt",
+	5:  "lastJobId",
+	6:  "lastOperationStatus",
+	7:  "observedGeneration",
+	8:  "phase",
+	9:  "restartGeneration",
+	10: "restartedGeneration",
+	11: "statusMessage",
+	12: "workerId",
+}
+
+// Decode decodes SandboxRuntime from json.
+func (s *SandboxRuntime) Decode(d *jx.Decoder) error {
 	if s == nil {
-		return errors.New("invalid: unable to decode SandboxSourceCodeReferences to nil")
+		return errors.New("invalid: unable to decode SandboxRuntime to nil")
 	}
-	m := s.init()
+	var requiredBitSet [2]uint8
+
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
-		var elem GitSource
-		if err := func() error {
-			if err := elem.Decode(d); err != nil {
-				return err
+		switch string(k) {
+		case "activeOperation":
+			if err := func() error {
+				s.ActiveOperation.Reset()
+				if err := s.ActiveOperation.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"activeOperation\"")
 			}
-			return nil
-		}(); err != nil {
-			return errors.Wrapf(err, "decode field %q", k)
+		case "desiredState":
+			requiredBitSet[0] |= 1 << 1
+			if err := func() error {
+				if err := s.DesiredState.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"desiredState\"")
+			}
+		case "errorMessage":
+			if err := func() error {
+				s.ErrorMessage.Reset()
+				if err := s.ErrorMessage.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"errorMessage\"")
+			}
+		case "generation":
+			requiredBitSet[0] |= 1 << 3
+			if err := func() error {
+				v, err := d.Int64()
+				s.Generation = int64(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"generation\"")
+			}
+		case "lastActiveAt":
+			if err := func() error {
+				s.LastActiveAt.Reset()
+				if err := s.LastActiveAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"lastActiveAt\"")
+			}
+		case "lastJobId":
+			if err := func() error {
+				s.LastJobId.Reset()
+				if err := s.LastJobId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"lastJobId\"")
+			}
+		case "lastOperationStatus":
+			requiredBitSet[0] |= 1 << 6
+			if err := func() error {
+				if err := s.LastOperationStatus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"lastOperationStatus\"")
+			}
+		case "observedGeneration":
+			requiredBitSet[0] |= 1 << 7
+			if err := func() error {
+				v, err := d.Int64()
+				s.ObservedGeneration = int64(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"observedGeneration\"")
+			}
+		case "phase":
+			requiredBitSet[1] |= 1 << 0
+			if err := func() error {
+				if err := s.Phase.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"phase\"")
+			}
+		case "restartGeneration":
+			requiredBitSet[1] |= 1 << 1
+			if err := func() error {
+				v, err := d.Int64()
+				s.RestartGeneration = int64(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"restartGeneration\"")
+			}
+		case "restartedGeneration":
+			requiredBitSet[1] |= 1 << 2
+			if err := func() error {
+				v, err := d.Int64()
+				s.RestartedGeneration = int64(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"restartedGeneration\"")
+			}
+		case "statusMessage":
+			if err := func() error {
+				s.StatusMessage.Reset()
+				if err := s.StatusMessage.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"statusMessage\"")
+			}
+		case "workerId":
+			if err := func() error {
+				s.WorkerId.Reset()
+				if err := s.WorkerId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"workerId\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
 		}
-		m[string(k)] = elem
 		return nil
 	}); err != nil {
-		return errors.Wrap(err, "decode SandboxSourceCodeReferences")
+		return errors.Wrap(err, "decode SandboxRuntime")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [2]uint8{
+		0b11001010,
+		0b00000111,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfSandboxRuntime) {
+					name = jsonFieldsNameOfSandboxRuntime[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
 	}
 
 	return nil
 }
 
 // MarshalJSON implements stdjson.Marshaler.
-func (s SandboxSourceCodeReferences) MarshalJSON() ([]byte, error) {
+func (s *SandboxRuntime) MarshalJSON() ([]byte, error) {
 	e := jx.Encoder{}
 	s.Encode(&e)
 	return e.Bytes(), nil
 }
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *SandboxSourceCodeReferences) UnmarshalJSON(data []byte) error {
+func (s *SandboxRuntime) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxRuntimeActiveOperation as json.
+func (s SandboxRuntimeActiveOperation) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SandboxRuntimeActiveOperation from json.
+func (s *SandboxRuntimeActiveOperation) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxRuntimeActiveOperation to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SandboxRuntimeActiveOperation(v) {
+	case SandboxRuntimeActiveOperationCreate:
+		*s = SandboxRuntimeActiveOperationCreate
+	case SandboxRuntimeActiveOperationStart:
+		*s = SandboxRuntimeActiveOperationStart
+	case SandboxRuntimeActiveOperationStop:
+		*s = SandboxRuntimeActiveOperationStop
+	case SandboxRuntimeActiveOperationRestart:
+		*s = SandboxRuntimeActiveOperationRestart
+	case SandboxRuntimeActiveOperationDelete:
+		*s = SandboxRuntimeActiveOperationDelete
+	default:
+		*s = SandboxRuntimeActiveOperation(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxRuntimeActiveOperation) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxRuntimeActiveOperation) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxRuntimeDesiredState as json.
+func (s SandboxRuntimeDesiredState) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SandboxRuntimeDesiredState from json.
+func (s *SandboxRuntimeDesiredState) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxRuntimeDesiredState to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SandboxRuntimeDesiredState(v) {
+	case SandboxRuntimeDesiredStateRunning:
+		*s = SandboxRuntimeDesiredStateRunning
+	case SandboxRuntimeDesiredStateStopped:
+		*s = SandboxRuntimeDesiredStateStopped
+	case SandboxRuntimeDesiredStateDeleted:
+		*s = SandboxRuntimeDesiredStateDeleted
+	default:
+		*s = SandboxRuntimeDesiredState(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxRuntimeDesiredState) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxRuntimeDesiredState) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxRuntimeLastOperationStatus as json.
+func (s SandboxRuntimeLastOperationStatus) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SandboxRuntimeLastOperationStatus from json.
+func (s *SandboxRuntimeLastOperationStatus) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxRuntimeLastOperationStatus to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SandboxRuntimeLastOperationStatus(v) {
+	case SandboxRuntimeLastOperationStatusPending:
+		*s = SandboxRuntimeLastOperationStatusPending
+	case SandboxRuntimeLastOperationStatusRunning:
+		*s = SandboxRuntimeLastOperationStatusRunning
+	case SandboxRuntimeLastOperationStatusSuccess:
+		*s = SandboxRuntimeLastOperationStatusSuccess
+	case SandboxRuntimeLastOperationStatusFailed:
+		*s = SandboxRuntimeLastOperationStatusFailed
+	default:
+		*s = SandboxRuntimeLastOperationStatus(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxRuntimeLastOperationStatus) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxRuntimeLastOperationStatus) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes SandboxRuntimePhase as json.
+func (s SandboxRuntimePhase) Encode(e *jx.Encoder) {
+	e.Str(string(s))
+}
+
+// Decode decodes SandboxRuntimePhase from json.
+func (s *SandboxRuntimePhase) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxRuntimePhase to nil")
+	}
+	v, err := d.StrBytes()
+	if err != nil {
+		return err
+	}
+	// Try to use constant string.
+	switch SandboxRuntimePhase(v) {
+	case SandboxRuntimePhasePending:
+		*s = SandboxRuntimePhasePending
+	case SandboxRuntimePhaseProvisioning:
+		*s = SandboxRuntimePhaseProvisioning
+	case SandboxRuntimePhaseStarting:
+		*s = SandboxRuntimePhaseStarting
+	case SandboxRuntimePhaseRunning:
+		*s = SandboxRuntimePhaseRunning
+	case SandboxRuntimePhaseStopping:
+		*s = SandboxRuntimePhaseStopping
+	case SandboxRuntimePhaseStopped:
+		*s = SandboxRuntimePhaseStopped
+	case SandboxRuntimePhaseDeleting:
+		*s = SandboxRuntimePhaseDeleting
+	case SandboxRuntimePhaseDeleted:
+		*s = SandboxRuntimePhaseDeleted
+	case SandboxRuntimePhaseFailed:
+		*s = SandboxRuntimePhaseFailed
+	default:
+		*s = SandboxRuntimePhase(v)
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s SandboxRuntimePhase) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxRuntimePhase) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SandboxUpdateConfig) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxUpdateConfig) encodeFields(e *jx.Encoder) {
+	{
+		if s.Name.Set {
+			e.FieldStart("name")
+			s.Name.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSandboxUpdateConfig = [1]string{
+	0: "name",
+}
+
+// Decode decodes SandboxUpdateConfig from json.
+func (s *SandboxUpdateConfig) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxUpdateConfig to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "name":
+			if err := func() error {
+				s.Name.Reset()
+				if err := s.Name.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"name\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxUpdateConfig")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxUpdateConfig) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxUpdateConfig) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -12234,16 +12574,16 @@ func (s *UpdateSandboxBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.Name.Set {
-			e.FieldStart("name")
-			s.Name.Encode(e)
+		if s.Config.Set {
+			e.FieldStart("config")
+			s.Config.Encode(e)
 		}
 	}
 }
 
 var jsonFieldsNameOfUpdateSandboxBody = [2]string{
 	0: "$schema",
-	1: "name",
+	1: "config",
 }
 
 // Decode decodes UpdateSandboxBody from json.
@@ -12264,15 +12604,15 @@ func (s *UpdateSandboxBody) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
 			}
-		case "name":
+		case "config":
 			if err := func() error {
-				s.Name.Reset()
-				if err := s.Name.Decode(d); err != nil {
+				s.Config.Reset()
+				if err := s.Config.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"name\"")
+				return errors.Wrap(err, "decode field \"config\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)

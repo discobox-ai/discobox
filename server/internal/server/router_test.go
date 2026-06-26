@@ -15,6 +15,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"github.com/go-chi/chi/v5"
+	serverapi "github.com/obot-platform/discobox/api/gen"
 	"github.com/obot-platform/discobox/gormdb"
 	"github.com/obot-platform/discobox/server/internal/auth"
 	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
@@ -143,24 +144,26 @@ func TestNewRouterCreateSandboxResolvesAgentName(t *testing.T) {
 
 	createSandboxResp := httptest.NewRecorder()
 	router.ServeHTTP(createSandboxResp, jsonRequest(http.MethodPost, "/projects/"+service.DefaultProjectID+"/sandboxes", `{
-		"name": "sandbox",
 		"agentName": "Codex",
-		"user": {
-			"name": "darren",
-			"uid": 1002,
-			"gid": 1002,
-			"homeDirectory": "/home/darren"
+		"config": {
+			"name": "sandbox",
+			"user": {
+				"name": "darren",
+				"uid": 1002,
+				"gid": 1002,
+				"homeDirectory": "/home/darren"
+			}
 		}
 	}`))
 	if createSandboxResp.Code != http.StatusAccepted {
 		t.Fatalf("POST /sandboxes status = %d, body = %s", createSandboxResp.Code, createSandboxResp.Body.String())
 	}
-	var sandbox model.Sandbox
+	var sandbox serverapi.Sandbox
 	if err := json.Unmarshal(createSandboxResp.Body.Bytes(), &sandbox); err != nil {
 		t.Fatalf("decode sandbox: %v", err)
 	}
-	if sandbox.AgentConfigID == nil || *sandbox.AgentConfigID != agent.ID {
-		t.Fatalf("agentConfigId = %v, want %q", sandbox.AgentConfigID, agent.ID)
+	if got := sandbox.Config.AgentConfigId.Or(""); got != agent.ID {
+		t.Fatalf("agentConfigId = %q, want %q", got, agent.ID)
 	}
 }
 
@@ -731,7 +734,7 @@ func TestProjectStreamReceivesSandboxMutation(t *testing.T) {
 	readProjectStreamMessage(wsCtx, t, conn, "subscribed", "")
 	readProjectStreamMessage(wsCtx, t, conn, "event", "connected")
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/projects/default/sandboxes", strings.NewReader(`{"name":"live","description":"test sandbox"}`))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, server.URL+"/projects/default/sandboxes", strings.NewReader(`{"config":{"name":"live","description":"test sandbox"}}`))
 	if err != nil {
 		t.Fatalf("new request: %v", err)
 	}

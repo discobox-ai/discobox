@@ -13,7 +13,7 @@ type Handler interface {
 	// Create worker sandbox.
 	//
 	// POST /api/project/{projectId}/worker/{workerId}/sandboxes
-	WorkerCreateSandbox(ctx context.Context, req *WorkerSandboxCreateRequest, params WorkerCreateSandboxParams) (*Sandbox, error)
+	WorkerCreateSandbox(ctx context.Context, req *WorkerSandboxCreateRequest, params WorkerCreateSandboxParams) (*WorkerSandboxInstance, error)
 	// WorkerDeleteSandbox implements worker-delete-sandbox operation.
 	//
 	// Delete worker sandbox.
@@ -25,7 +25,7 @@ type Handler interface {
 	// Get worker sandbox.
 	//
 	// GET /api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}
-	WorkerGetSandbox(ctx context.Context, params WorkerGetSandboxParams) (*Sandbox, error)
+	WorkerGetSandbox(ctx context.Context, params WorkerGetSandboxParams) (*WorkerSandboxInstance, error)
 	// WorkerListSandboxes implements worker-list-sandboxes operation.
 	//
 	// List worker sandboxes.
@@ -37,19 +37,19 @@ type Handler interface {
 	// Start worker sandbox.
 	//
 	// POST /api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/start
-	WorkerStartSandbox(ctx context.Context, req *WorkerSandboxOperationRequest, params WorkerStartSandboxParams) (*Sandbox, error)
+	WorkerStartSandbox(ctx context.Context, req *WorkerSandboxOperationRequest, params WorkerStartSandboxParams) (*WorkerSandboxInstance, error)
 	// WorkerStopSandbox implements worker-stop-sandbox operation.
 	//
 	// Stop worker sandbox.
 	//
 	// POST /api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/stop
-	WorkerStopSandbox(ctx context.Context, req *WorkerSandboxOperationRequest, params WorkerStopSandboxParams) (*Sandbox, error)
+	WorkerStopSandbox(ctx context.Context, req *WorkerSandboxOperationRequest, params WorkerStopSandboxParams) (*WorkerSandboxInstance, error)
 	// WorkerUpdateSandbox implements worker-update-sandbox operation.
 	//
 	// Update worker sandbox.
 	//
 	// PATCH /api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}
-	WorkerUpdateSandbox(ctx context.Context, req *WorkerSandboxUpdateRequest, params WorkerUpdateSandboxParams) (*Sandbox, error)
+	WorkerUpdateSandbox(ctx context.Context, req *WorkerSandboxUpdateRequest, params WorkerUpdateSandboxParams) (*WorkerSandboxInstance, error)
 	// NewError creates *ErrorModelStatusCode from error returned by handler.
 	//
 	// Used for common default response.

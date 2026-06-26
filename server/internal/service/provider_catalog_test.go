@@ -41,15 +41,17 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 
 	sourceURL := mustParseURL(t, "https://example.com/repo.git")
 	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
-		Name:               "sandbox-1",
 		ProviderInstanceId: serverapi.NewOptString(providerInstance.ID),
-		Source: serverapi.NewOptGitSource(serverapi.GitSource{
-			Kind: serverapi.GitSourceKindGit,
-			URL:  serverapi.NewOptURI(sourceURL),
-			Checkout: serverapi.NewOptGitSourceCheckout(serverapi.GitSourceCheckout{
-				RefName: serverapi.NewOptString("main"),
+		Config: serverapi.SandboxCreateConfig{
+			Name: "sandbox-1",
+			Source: serverapi.NewOptGitSource(serverapi.GitSource{
+				Kind: serverapi.GitSourceKindGit,
+				URL:  serverapi.NewOptURI(sourceURL),
+				Checkout: serverapi.NewOptGitSourceCheckout(serverapi.GitSourceCheckout{
+					RefName: serverapi.NewOptString("main"),
+				}),
 			}),
-		}),
+		},
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -141,8 +143,8 @@ func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
 	executor := svc.NewSandboxReconcileExecutor()
 
 	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
-		Name:               "sandbox-default-image",
 		ProviderInstanceId: serverapi.NewOptString(providerInstance.ID),
+		Config:             serverapi.SandboxCreateConfig{Name: "sandbox-default-image"},
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -174,9 +176,11 @@ func TestCreateSandboxExplicitImageOverridesDefault(t *testing.T) {
 	executor := svc.NewSandboxReconcileExecutor()
 
 	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
-		Name:               "sandbox-explicit-image",
 		ProviderInstanceId: serverapi.NewOptString(providerInstance.ID),
-		Image:              serverapi.NewOptString("custom:sandbox"),
+		Config: serverapi.SandboxCreateConfig{
+			Name:  "sandbox-explicit-image",
+			Image: serverapi.NewOptString("custom:sandbox"),
+		},
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)

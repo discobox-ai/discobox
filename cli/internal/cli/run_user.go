@@ -70,5 +70,5 @@ func (u runUserIdentity) setCreateSandboxUser(body *apimodel.CreateSandboxBody) 
 		sandboxUser.SetUID(apiclientgen.NewOptInt64(u.UID))
 		sandboxUser.SetGid(apiclientgen.NewOptInt64(u.GID))
 	}
-	body.SetUser(apiclientgen.NewOptSandboxUser(sandboxUser))
+	body.Config.SetUser(apiclientgen.NewOptSandboxUser(sandboxUser))
 }

@@ -15,113 +15,6 @@ func (s *ErrorModelStatusCode) Error() string {
 	return fmt.Sprintf("code %d: %+v", s.StatusCode, s.Response)
 }
 
-// Ref: #/components/schemas/AgentConfig
-type AgentConfig struct {
-	ID             string    `json:"id"`
-	InstallCommand OptString `json:"installCommand"`
-	IsDefault      bool      `json:"isDefault"`
-	Name           string    `json:"name"`
-	RunCommand     string    `json:"runCommand"`
-}
-
-// GetID returns the value of ID.
-func (s *AgentConfig) GetID() string {
-	return s.ID
-}
-
-// GetInstallCommand returns the value of InstallCommand.
-func (s *AgentConfig) GetInstallCommand() OptString {
-	return s.InstallCommand
-}
-
-// GetIsDefault returns the value of IsDefault.
-func (s *AgentConfig) GetIsDefault() bool {
-	return s.IsDefault
-}
-
-// GetName returns the value of Name.
-func (s *AgentConfig) GetName() string {
-	return s.Name
-}
-
-// GetRunCommand returns the value of RunCommand.
-func (s *AgentConfig) GetRunCommand() string {
-	return s.RunCommand
-}
-
-// SetID sets the value of ID.
-func (s *AgentConfig) SetID(val string) {
-	s.ID = val
-}
-
-// SetInstallCommand sets the value of InstallCommand.
-func (s *AgentConfig) SetInstallCommand(val OptString) {
-	s.InstallCommand = val
-}
-
-// SetIsDefault sets the value of IsDefault.
-func (s *AgentConfig) SetIsDefault(val bool) {
-	s.IsDefault = val
-}
-
-// SetName sets the value of Name.
-func (s *AgentConfig) SetName(val string) {
-	s.Name = val
-}
-
-// SetRunCommand sets the value of RunCommand.
-func (s *AgentConfig) SetRunCommand(val string) {
-	s.RunCommand = val
-}
-
-// Ref: #/components/schemas/AssignedPort
-type AssignedPort struct {
-	ContainerPort int64  `json:"ContainerPort"`
-	HostIP        string `json:"HostIP"`
-	HostPort      int64  `json:"HostPort"`
-	Protocol      string `json:"Protocol"`
-}
-
-// GetContainerPort returns the value of ContainerPort.
-func (s *AssignedPort) GetContainerPort() int64 {
-	return s.ContainerPort
-}
-
-// GetHostIP returns the value of HostIP.
-func (s *AssignedPort) GetHostIP() string {
-	return s.HostIP
-}
-
-// GetHostPort returns the value of HostPort.
-func (s *AssignedPort) GetHostPort() int64 {
-	return s.HostPort
-}
-
-// GetProtocol returns the value of Protocol.
-func (s *AssignedPort) GetProtocol() string {
-	return s.Protocol
-}
-
-// SetContainerPort sets the value of ContainerPort.
-func (s *AssignedPort) SetContainerPort(val int64) {
-	s.ContainerPort = val
-}
-
-// SetHostIP sets the value of HostIP.
-func (s *AssignedPort) SetHostIP(val string) {
-	s.HostIP = val
-}
-
-// SetHostPort sets the value of HostPort.
-func (s *AssignedPort) SetHostPort(val int64) {
-	s.HostPort = val
-}
-
-// SetProtocol sets the value of Protocol.
-func (s *AssignedPort) SetProtocol(val string) {
-	s.Protocol = val
-}
-
 // Ref: #/components/schemas/ErrorDetail
 type ErrorDetail struct {
 	// Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'.
@@ -947,69 +840,6 @@ func (o OptInt64) Or(d int64) int64 {
 	return d
 }
 
-// NewOptNilAgentConfigArray returns new OptNilAgentConfigArray with value set to v.
-func NewOptNilAgentConfigArray(v []AgentConfig) OptNilAgentConfigArray {
-	return OptNilAgentConfigArray{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptNilAgentConfigArray is optional nullable []AgentConfig.
-type OptNilAgentConfigArray struct {
-	Value []AgentConfig
-	Set   bool
-	Null  bool
-}
-
-// IsSet returns true if OptNilAgentConfigArray was set.
-func (o OptNilAgentConfigArray) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptNilAgentConfigArray) Reset() {
-	var v []AgentConfig
-	o.Value = v
-	o.Set = false
-	o.Null = false
-}
-
-// SetTo sets value to v.
-func (o *OptNilAgentConfigArray) SetTo(v []AgentConfig) {
-	o.Set = true
-	o.Null = false
-	o.Value = v
-}
-
-// IsNull returns true if value is Null.
-func (o OptNilAgentConfigArray) IsNull() bool { return o.Null }
-
-// SetToNull sets value to null.
-func (o *OptNilAgentConfigArray) SetToNull() {
-	o.Set = true
-	o.Null = true
-	var v []AgentConfig
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptNilAgentConfigArray) Get() (v []AgentConfig, ok bool) {
-	if o.Null {
-		return v, false
-	}
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptNilAgentConfigArray) Or(d []AgentConfig) []AgentConfig {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptNilErrorDetailArray returns new OptNilErrorDetailArray with value set to v.
 func NewOptNilErrorDetailArray(v []ErrorDetail) OptNilErrorDetailArray {
 	return OptNilErrorDetailArray{
@@ -1073,6 +903,69 @@ func (o OptNilErrorDetailArray) Or(d []ErrorDetail) []ErrorDetail {
 	return d
 }
 
+// NewOptNilSandboxAgentConfigArray returns new OptNilSandboxAgentConfigArray with value set to v.
+func NewOptNilSandboxAgentConfigArray(v []SandboxAgentConfig) OptNilSandboxAgentConfigArray {
+	return OptNilSandboxAgentConfigArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilSandboxAgentConfigArray is optional nullable []SandboxAgentConfig.
+type OptNilSandboxAgentConfigArray struct {
+	Value []SandboxAgentConfig
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilSandboxAgentConfigArray was set.
+func (o OptNilSandboxAgentConfigArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilSandboxAgentConfigArray) Reset() {
+	var v []SandboxAgentConfig
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilSandboxAgentConfigArray) SetTo(v []SandboxAgentConfig) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilSandboxAgentConfigArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilSandboxAgentConfigArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []SandboxAgentConfig
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilSandboxAgentConfigArray) Get() (v []SandboxAgentConfig, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilSandboxAgentConfigArray) Or(d []SandboxAgentConfig) []SandboxAgentConfig {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptResolvedAgentConfig returns new OptResolvedAgentConfig with value set to v.
 func NewOptResolvedAgentConfig(v ResolvedAgentConfig) OptResolvedAgentConfig {
 	return OptResolvedAgentConfig{
@@ -1119,38 +1012,38 @@ func (o OptResolvedAgentConfig) Or(d ResolvedAgentConfig) ResolvedAgentConfig {
 	return d
 }
 
-// NewOptResourceConfig returns new OptResourceConfig with value set to v.
-func NewOptResourceConfig(v ResourceConfig) OptResourceConfig {
-	return OptResourceConfig{
+// NewOptSandboxConfigEnv returns new OptSandboxConfigEnv with value set to v.
+func NewOptSandboxConfigEnv(v SandboxConfigEnv) OptSandboxConfigEnv {
+	return OptSandboxConfigEnv{
 		Value: v,
 		Set:   true,
 	}
 }
 
-// OptResourceConfig is optional ResourceConfig.
-type OptResourceConfig struct {
-	Value ResourceConfig
+// OptSandboxConfigEnv is optional SandboxConfigEnv.
+type OptSandboxConfigEnv struct {
+	Value SandboxConfigEnv
 	Set   bool
 }
 
-// IsSet returns true if OptResourceConfig was set.
-func (o OptResourceConfig) IsSet() bool { return o.Set }
+// IsSet returns true if OptSandboxConfigEnv was set.
+func (o OptSandboxConfigEnv) IsSet() bool { return o.Set }
 
 // Reset unsets value.
-func (o *OptResourceConfig) Reset() {
-	var v ResourceConfig
+func (o *OptSandboxConfigEnv) Reset() {
+	var v SandboxConfigEnv
 	o.Value = v
 	o.Set = false
 }
 
 // SetTo sets value to v.
-func (o *OptResourceConfig) SetTo(v ResourceConfig) {
+func (o *OptSandboxConfigEnv) SetTo(v SandboxConfigEnv) {
 	o.Set = true
 	o.Value = v
 }
 
 // Get returns value and boolean that denotes whether value was set.
-func (o OptResourceConfig) Get() (v ResourceConfig, ok bool) {
+func (o OptSandboxConfigEnv) Get() (v SandboxConfigEnv, ok bool) {
 	if !o.Set {
 		return v, false
 	}
@@ -1158,7 +1051,191 @@ func (o OptResourceConfig) Get() (v ResourceConfig, ok bool) {
 }
 
 // Or returns value if set, or given parameter if does not.
-func (o OptResourceConfig) Or(d ResourceConfig) ResourceConfig {
+func (o OptSandboxConfigEnv) Or(d SandboxConfigEnv) SandboxConfigEnv {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxConfigSourceCodeReferences returns new OptSandboxConfigSourceCodeReferences with value set to v.
+func NewOptSandboxConfigSourceCodeReferences(v SandboxConfigSourceCodeReferences) OptSandboxConfigSourceCodeReferences {
+	return OptSandboxConfigSourceCodeReferences{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxConfigSourceCodeReferences is optional SandboxConfigSourceCodeReferences.
+type OptSandboxConfigSourceCodeReferences struct {
+	Value SandboxConfigSourceCodeReferences
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxConfigSourceCodeReferences was set.
+func (o OptSandboxConfigSourceCodeReferences) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxConfigSourceCodeReferences) Reset() {
+	var v SandboxConfigSourceCodeReferences
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxConfigSourceCodeReferences) SetTo(v SandboxConfigSourceCodeReferences) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxConfigSourceCodeReferences) Get() (v SandboxConfigSourceCodeReferences, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxConfigSourceCodeReferences) Or(d SandboxConfigSourceCodeReferences) SandboxConfigSourceCodeReferences {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxUpdateConfig returns new OptSandboxUpdateConfig with value set to v.
+func NewOptSandboxUpdateConfig(v SandboxUpdateConfig) OptSandboxUpdateConfig {
+	return OptSandboxUpdateConfig{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxUpdateConfig is optional SandboxUpdateConfig.
+type OptSandboxUpdateConfig struct {
+	Value SandboxUpdateConfig
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxUpdateConfig was set.
+func (o OptSandboxUpdateConfig) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxUpdateConfig) Reset() {
+	var v SandboxUpdateConfig
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxUpdateConfig) SetTo(v SandboxUpdateConfig) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxUpdateConfig) Get() (v SandboxUpdateConfig, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxUpdateConfig) Or(d SandboxUpdateConfig) SandboxUpdateConfig {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxUpdateConfigEnv returns new OptSandboxUpdateConfigEnv with value set to v.
+func NewOptSandboxUpdateConfigEnv(v SandboxUpdateConfigEnv) OptSandboxUpdateConfigEnv {
+	return OptSandboxUpdateConfigEnv{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxUpdateConfigEnv is optional SandboxUpdateConfigEnv.
+type OptSandboxUpdateConfigEnv struct {
+	Value SandboxUpdateConfigEnv
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxUpdateConfigEnv was set.
+func (o OptSandboxUpdateConfigEnv) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxUpdateConfigEnv) Reset() {
+	var v SandboxUpdateConfigEnv
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxUpdateConfigEnv) SetTo(v SandboxUpdateConfigEnv) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxUpdateConfigEnv) Get() (v SandboxUpdateConfigEnv, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxUpdateConfigEnv) Or(d SandboxUpdateConfigEnv) SandboxUpdateConfigEnv {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxUser returns new OptSandboxUser with value set to v.
+func NewOptSandboxUser(v SandboxUser) OptSandboxUser {
+	return OptSandboxUser{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxUser is optional SandboxUser.
+type OptSandboxUser struct {
+	Value SandboxUser
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxUser was set.
+func (o OptSandboxUser) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxUser) Reset() {
+	var v SandboxUser
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxUser) SetTo(v SandboxUser) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxUser) Get() (v SandboxUser, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxUser) Or(d SandboxUser) SandboxUser {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -1257,38 +1334,38 @@ func (o OptURI) Or(d url.URL) url.URL {
 	return d
 }
 
-// NewOptWorkerSandboxCreateRequestEnv returns new OptWorkerSandboxCreateRequestEnv with value set to v.
-func NewOptWorkerSandboxCreateRequestEnv(v WorkerSandboxCreateRequestEnv) OptWorkerSandboxCreateRequestEnv {
-	return OptWorkerSandboxCreateRequestEnv{
+// NewOptWorkerSandboxResources returns new OptWorkerSandboxResources with value set to v.
+func NewOptWorkerSandboxResources(v WorkerSandboxResources) OptWorkerSandboxResources {
+	return OptWorkerSandboxResources{
 		Value: v,
 		Set:   true,
 	}
 }
 
-// OptWorkerSandboxCreateRequestEnv is optional WorkerSandboxCreateRequestEnv.
-type OptWorkerSandboxCreateRequestEnv struct {
-	Value WorkerSandboxCreateRequestEnv
+// OptWorkerSandboxResources is optional WorkerSandboxResources.
+type OptWorkerSandboxResources struct {
+	Value WorkerSandboxResources
 	Set   bool
 }
 
-// IsSet returns true if OptWorkerSandboxCreateRequestEnv was set.
-func (o OptWorkerSandboxCreateRequestEnv) IsSet() bool { return o.Set }
+// IsSet returns true if OptWorkerSandboxResources was set.
+func (o OptWorkerSandboxResources) IsSet() bool { return o.Set }
 
 // Reset unsets value.
-func (o *OptWorkerSandboxCreateRequestEnv) Reset() {
-	var v WorkerSandboxCreateRequestEnv
+func (o *OptWorkerSandboxResources) Reset() {
+	var v WorkerSandboxResources
 	o.Value = v
 	o.Set = false
 }
 
 // SetTo sets value to v.
-func (o *OptWorkerSandboxCreateRequestEnv) SetTo(v WorkerSandboxCreateRequestEnv) {
+func (o *OptWorkerSandboxResources) SetTo(v WorkerSandboxResources) {
 	o.Set = true
 	o.Value = v
 }
 
 // Get returns value and boolean that denotes whether value was set.
-func (o OptWorkerSandboxCreateRequestEnv) Get() (v WorkerSandboxCreateRequestEnv, ok bool) {
+func (o OptWorkerSandboxResources) Get() (v WorkerSandboxResources, ok bool) {
 	if !o.Set {
 		return v, false
 	}
@@ -1296,145 +1373,7 @@ func (o OptWorkerSandboxCreateRequestEnv) Get() (v WorkerSandboxCreateRequestEnv
 }
 
 // Or returns value if set, or given parameter if does not.
-func (o OptWorkerSandboxCreateRequestEnv) Or(d WorkerSandboxCreateRequestEnv) WorkerSandboxCreateRequestEnv {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptWorkerSandboxCreateRequestSourceCodeReferences returns new OptWorkerSandboxCreateRequestSourceCodeReferences with value set to v.
-func NewOptWorkerSandboxCreateRequestSourceCodeReferences(v WorkerSandboxCreateRequestSourceCodeReferences) OptWorkerSandboxCreateRequestSourceCodeReferences {
-	return OptWorkerSandboxCreateRequestSourceCodeReferences{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptWorkerSandboxCreateRequestSourceCodeReferences is optional WorkerSandboxCreateRequestSourceCodeReferences.
-type OptWorkerSandboxCreateRequestSourceCodeReferences struct {
-	Value WorkerSandboxCreateRequestSourceCodeReferences
-	Set   bool
-}
-
-// IsSet returns true if OptWorkerSandboxCreateRequestSourceCodeReferences was set.
-func (o OptWorkerSandboxCreateRequestSourceCodeReferences) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptWorkerSandboxCreateRequestSourceCodeReferences) Reset() {
-	var v WorkerSandboxCreateRequestSourceCodeReferences
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptWorkerSandboxCreateRequestSourceCodeReferences) SetTo(v WorkerSandboxCreateRequestSourceCodeReferences) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptWorkerSandboxCreateRequestSourceCodeReferences) Get() (v WorkerSandboxCreateRequestSourceCodeReferences, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptWorkerSandboxCreateRequestSourceCodeReferences) Or(d WorkerSandboxCreateRequestSourceCodeReferences) WorkerSandboxCreateRequestSourceCodeReferences {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptWorkerSandboxUpdateRequestEnv returns new OptWorkerSandboxUpdateRequestEnv with value set to v.
-func NewOptWorkerSandboxUpdateRequestEnv(v WorkerSandboxUpdateRequestEnv) OptWorkerSandboxUpdateRequestEnv {
-	return OptWorkerSandboxUpdateRequestEnv{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptWorkerSandboxUpdateRequestEnv is optional WorkerSandboxUpdateRequestEnv.
-type OptWorkerSandboxUpdateRequestEnv struct {
-	Value WorkerSandboxUpdateRequestEnv
-	Set   bool
-}
-
-// IsSet returns true if OptWorkerSandboxUpdateRequestEnv was set.
-func (o OptWorkerSandboxUpdateRequestEnv) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptWorkerSandboxUpdateRequestEnv) Reset() {
-	var v WorkerSandboxUpdateRequestEnv
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptWorkerSandboxUpdateRequestEnv) SetTo(v WorkerSandboxUpdateRequestEnv) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptWorkerSandboxUpdateRequestEnv) Get() (v WorkerSandboxUpdateRequestEnv, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptWorkerSandboxUpdateRequestEnv) Or(d WorkerSandboxUpdateRequestEnv) WorkerSandboxUpdateRequestEnv {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptWorkerSandboxUser returns new OptWorkerSandboxUser with value set to v.
-func NewOptWorkerSandboxUser(v WorkerSandboxUser) OptWorkerSandboxUser {
-	return OptWorkerSandboxUser{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptWorkerSandboxUser is optional WorkerSandboxUser.
-type OptWorkerSandboxUser struct {
-	Value WorkerSandboxUser
-	Set   bool
-}
-
-// IsSet returns true if OptWorkerSandboxUser was set.
-func (o OptWorkerSandboxUser) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptWorkerSandboxUser) Reset() {
-	var v WorkerSandboxUser
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptWorkerSandboxUser) SetTo(v WorkerSandboxUser) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptWorkerSandboxUser) Get() (v WorkerSandboxUser, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptWorkerSandboxUser) Or(d WorkerSandboxUser) WorkerSandboxUser {
+func (o OptWorkerSandboxResources) Or(d WorkerSandboxResources) WorkerSandboxResources {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -1489,194 +1428,237 @@ func (s *ResolvedAgentConfig) SetRunCommand(val string) {
 	s.RunCommand = val
 }
 
-// Ref: #/components/schemas/ResourceConfig
-type ResourceConfig struct {
-	CPUCores float64 `json:"CPUCores"`
-	DiskMB   int64   `json:"DiskMB"`
-	MemoryMB int64   `json:"MemoryMB"`
-	Timeout  int64   `json:"Timeout"`
-}
-
-// GetCPUCores returns the value of CPUCores.
-func (s *ResourceConfig) GetCPUCores() float64 {
-	return s.CPUCores
-}
-
-// GetDiskMB returns the value of DiskMB.
-func (s *ResourceConfig) GetDiskMB() int64 {
-	return s.DiskMB
-}
-
-// GetMemoryMB returns the value of MemoryMB.
-func (s *ResourceConfig) GetMemoryMB() int64 {
-	return s.MemoryMB
-}
-
-// GetTimeout returns the value of Timeout.
-func (s *ResourceConfig) GetTimeout() int64 {
-	return s.Timeout
-}
-
-// SetCPUCores sets the value of CPUCores.
-func (s *ResourceConfig) SetCPUCores(val float64) {
-	s.CPUCores = val
-}
-
-// SetDiskMB sets the value of DiskMB.
-func (s *ResourceConfig) SetDiskMB(val int64) {
-	s.DiskMB = val
-}
-
-// SetMemoryMB sets the value of MemoryMB.
-func (s *ResourceConfig) SetMemoryMB(val int64) {
-	s.MemoryMB = val
-}
-
-// SetTimeout sets the value of Timeout.
-func (s *ResourceConfig) SetTimeout(val int64) {
-	s.Timeout = val
-}
-
-// Ref: #/components/schemas/Sandbox
-type Sandbox struct {
-	// A URL to the JSON Schema for this object.
-	Schema    OptURI          `json:"$schema"`
-	CreatedAt time.Time       `json:"CreatedAt"`
-	Env       SandboxEnv      `json:"Env"`
-	Error     string          `json:"Error"`
-	ID        string          `json:"ID"`
-	Image     string          `json:"Image"`
-	Metadata  SandboxMetadata `json:"Metadata"`
-	Ports     []AssignedPort  `json:"Ports"`
-	SandboxID string          `json:"SandboxID"`
-	StartedAt NilDateTime     `json:"StartedAt"`
-	Status    string          `json:"Status"`
-	StoppedAt NilDateTime     `json:"StoppedAt"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *Sandbox) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetCreatedAt returns the value of CreatedAt.
-func (s *Sandbox) GetCreatedAt() time.Time {
-	return s.CreatedAt
-}
-
-// GetEnv returns the value of Env.
-func (s *Sandbox) GetEnv() SandboxEnv {
-	return s.Env
-}
-
-// GetError returns the value of Error.
-func (s *Sandbox) GetError() string {
-	return s.Error
+// Ref: #/components/schemas/SandboxAgentConfig
+type SandboxAgentConfig struct {
+	ID             string    `json:"id"`
+	InstallCommand OptString `json:"installCommand"`
+	IsDefault      bool      `json:"isDefault"`
+	Name           string    `json:"name"`
+	RunCommand     string    `json:"runCommand"`
 }
 
 // GetID returns the value of ID.
-func (s *Sandbox) GetID() string {
+func (s *SandboxAgentConfig) GetID() string {
 	return s.ID
 }
 
-// GetImage returns the value of Image.
-func (s *Sandbox) GetImage() string {
-	return s.Image
+// GetInstallCommand returns the value of InstallCommand.
+func (s *SandboxAgentConfig) GetInstallCommand() OptString {
+	return s.InstallCommand
 }
 
-// GetMetadata returns the value of Metadata.
-func (s *Sandbox) GetMetadata() SandboxMetadata {
-	return s.Metadata
+// GetIsDefault returns the value of IsDefault.
+func (s *SandboxAgentConfig) GetIsDefault() bool {
+	return s.IsDefault
 }
 
-// GetPorts returns the value of Ports.
-func (s *Sandbox) GetPorts() []AssignedPort {
-	return s.Ports
+// GetName returns the value of Name.
+func (s *SandboxAgentConfig) GetName() string {
+	return s.Name
 }
 
-// GetSandboxID returns the value of SandboxID.
-func (s *Sandbox) GetSandboxID() string {
-	return s.SandboxID
-}
-
-// GetStartedAt returns the value of StartedAt.
-func (s *Sandbox) GetStartedAt() NilDateTime {
-	return s.StartedAt
-}
-
-// GetStatus returns the value of Status.
-func (s *Sandbox) GetStatus() string {
-	return s.Status
-}
-
-// GetStoppedAt returns the value of StoppedAt.
-func (s *Sandbox) GetStoppedAt() NilDateTime {
-	return s.StoppedAt
-}
-
-// SetSchema sets the value of Schema.
-func (s *Sandbox) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetCreatedAt sets the value of CreatedAt.
-func (s *Sandbox) SetCreatedAt(val time.Time) {
-	s.CreatedAt = val
-}
-
-// SetEnv sets the value of Env.
-func (s *Sandbox) SetEnv(val SandboxEnv) {
-	s.Env = val
-}
-
-// SetError sets the value of Error.
-func (s *Sandbox) SetError(val string) {
-	s.Error = val
+// GetRunCommand returns the value of RunCommand.
+func (s *SandboxAgentConfig) GetRunCommand() string {
+	return s.RunCommand
 }
 
 // SetID sets the value of ID.
-func (s *Sandbox) SetID(val string) {
+func (s *SandboxAgentConfig) SetID(val string) {
 	s.ID = val
 }
 
+// SetInstallCommand sets the value of InstallCommand.
+func (s *SandboxAgentConfig) SetInstallCommand(val OptString) {
+	s.InstallCommand = val
+}
+
+// SetIsDefault sets the value of IsDefault.
+func (s *SandboxAgentConfig) SetIsDefault(val bool) {
+	s.IsDefault = val
+}
+
+// SetName sets the value of Name.
+func (s *SandboxAgentConfig) SetName(val string) {
+	s.Name = val
+}
+
+// SetRunCommand sets the value of RunCommand.
+func (s *SandboxAgentConfig) SetRunCommand(val string) {
+	s.RunCommand = val
+}
+
+// Ref: #/components/schemas/SandboxConfig
+type SandboxConfig struct {
+	AgentConfigId            OptString                            `json:"agentConfigId"`
+	AgentModel               OptString                            `json:"agentModel"`
+	AgentModelReasoningLevel OptString                            `json:"agentModelReasoningLevel"`
+	AgentModelServiceTier    OptString                            `json:"agentModelServiceTier"`
+	CpuVcpus                 OptFloat64                           `json:"cpuVcpus"`
+	Description              OptString                            `json:"description"`
+	Env                      OptSandboxConfigEnv                  `json:"env"`
+	Image                    OptString                            `json:"image"`
+	MemoryBytes              OptInt64                             `json:"memoryBytes"`
+	Name                     OptString                            `json:"name"`
+	Prompt                   OptString                            `json:"prompt"`
+	Source                   OptGitSource                         `json:"source"`
+	SourceCodeReferences     OptSandboxConfigSourceCodeReferences `json:"sourceCodeReferences"`
+	StorageBytes             OptInt64                             `json:"storageBytes"`
+	User                     OptSandboxUser                       `json:"user"`
+}
+
+// GetAgentConfigId returns the value of AgentConfigId.
+func (s *SandboxConfig) GetAgentConfigId() OptString {
+	return s.AgentConfigId
+}
+
+// GetAgentModel returns the value of AgentModel.
+func (s *SandboxConfig) GetAgentModel() OptString {
+	return s.AgentModel
+}
+
+// GetAgentModelReasoningLevel returns the value of AgentModelReasoningLevel.
+func (s *SandboxConfig) GetAgentModelReasoningLevel() OptString {
+	return s.AgentModelReasoningLevel
+}
+
+// GetAgentModelServiceTier returns the value of AgentModelServiceTier.
+func (s *SandboxConfig) GetAgentModelServiceTier() OptString {
+	return s.AgentModelServiceTier
+}
+
+// GetCpuVcpus returns the value of CpuVcpus.
+func (s *SandboxConfig) GetCpuVcpus() OptFloat64 {
+	return s.CpuVcpus
+}
+
+// GetDescription returns the value of Description.
+func (s *SandboxConfig) GetDescription() OptString {
+	return s.Description
+}
+
+// GetEnv returns the value of Env.
+func (s *SandboxConfig) GetEnv() OptSandboxConfigEnv {
+	return s.Env
+}
+
+// GetImage returns the value of Image.
+func (s *SandboxConfig) GetImage() OptString {
+	return s.Image
+}
+
+// GetMemoryBytes returns the value of MemoryBytes.
+func (s *SandboxConfig) GetMemoryBytes() OptInt64 {
+	return s.MemoryBytes
+}
+
+// GetName returns the value of Name.
+func (s *SandboxConfig) GetName() OptString {
+	return s.Name
+}
+
+// GetPrompt returns the value of Prompt.
+func (s *SandboxConfig) GetPrompt() OptString {
+	return s.Prompt
+}
+
+// GetSource returns the value of Source.
+func (s *SandboxConfig) GetSource() OptGitSource {
+	return s.Source
+}
+
+// GetSourceCodeReferences returns the value of SourceCodeReferences.
+func (s *SandboxConfig) GetSourceCodeReferences() OptSandboxConfigSourceCodeReferences {
+	return s.SourceCodeReferences
+}
+
+// GetStorageBytes returns the value of StorageBytes.
+func (s *SandboxConfig) GetStorageBytes() OptInt64 {
+	return s.StorageBytes
+}
+
+// GetUser returns the value of User.
+func (s *SandboxConfig) GetUser() OptSandboxUser {
+	return s.User
+}
+
+// SetAgentConfigId sets the value of AgentConfigId.
+func (s *SandboxConfig) SetAgentConfigId(val OptString) {
+	s.AgentConfigId = val
+}
+
+// SetAgentModel sets the value of AgentModel.
+func (s *SandboxConfig) SetAgentModel(val OptString) {
+	s.AgentModel = val
+}
+
+// SetAgentModelReasoningLevel sets the value of AgentModelReasoningLevel.
+func (s *SandboxConfig) SetAgentModelReasoningLevel(val OptString) {
+	s.AgentModelReasoningLevel = val
+}
+
+// SetAgentModelServiceTier sets the value of AgentModelServiceTier.
+func (s *SandboxConfig) SetAgentModelServiceTier(val OptString) {
+	s.AgentModelServiceTier = val
+}
+
+// SetCpuVcpus sets the value of CpuVcpus.
+func (s *SandboxConfig) SetCpuVcpus(val OptFloat64) {
+	s.CpuVcpus = val
+}
+
+// SetDescription sets the value of Description.
+func (s *SandboxConfig) SetDescription(val OptString) {
+	s.Description = val
+}
+
+// SetEnv sets the value of Env.
+func (s *SandboxConfig) SetEnv(val OptSandboxConfigEnv) {
+	s.Env = val
+}
+
 // SetImage sets the value of Image.
-func (s *Sandbox) SetImage(val string) {
+func (s *SandboxConfig) SetImage(val OptString) {
 	s.Image = val
 }
 
-// SetMetadata sets the value of Metadata.
-func (s *Sandbox) SetMetadata(val SandboxMetadata) {
-	s.Metadata = val
+// SetMemoryBytes sets the value of MemoryBytes.
+func (s *SandboxConfig) SetMemoryBytes(val OptInt64) {
+	s.MemoryBytes = val
 }
 
-// SetPorts sets the value of Ports.
-func (s *Sandbox) SetPorts(val []AssignedPort) {
-	s.Ports = val
+// SetName sets the value of Name.
+func (s *SandboxConfig) SetName(val OptString) {
+	s.Name = val
 }
 
-// SetSandboxID sets the value of SandboxID.
-func (s *Sandbox) SetSandboxID(val string) {
-	s.SandboxID = val
+// SetPrompt sets the value of Prompt.
+func (s *SandboxConfig) SetPrompt(val OptString) {
+	s.Prompt = val
 }
 
-// SetStartedAt sets the value of StartedAt.
-func (s *Sandbox) SetStartedAt(val NilDateTime) {
-	s.StartedAt = val
+// SetSource sets the value of Source.
+func (s *SandboxConfig) SetSource(val OptGitSource) {
+	s.Source = val
 }
 
-// SetStatus sets the value of Status.
-func (s *Sandbox) SetStatus(val string) {
-	s.Status = val
+// SetSourceCodeReferences sets the value of SourceCodeReferences.
+func (s *SandboxConfig) SetSourceCodeReferences(val OptSandboxConfigSourceCodeReferences) {
+	s.SourceCodeReferences = val
 }
 
-// SetStoppedAt sets the value of StoppedAt.
-func (s *Sandbox) SetStoppedAt(val NilDateTime) {
-	s.StoppedAt = val
+// SetStorageBytes sets the value of StorageBytes.
+func (s *SandboxConfig) SetStorageBytes(val OptInt64) {
+	s.StorageBytes = val
 }
 
-type SandboxEnv map[string]string
+// SetUser sets the value of User.
+func (s *SandboxConfig) SetUser(val OptSandboxUser) {
+	s.User = val
+}
 
-func (s *SandboxEnv) init() SandboxEnv {
+type SandboxConfigEnv map[string]string
+
+func (s *SandboxConfigEnv) init() SandboxConfigEnv {
 	m := *s
 	if m == nil {
 		m = map[string]string{}
@@ -1685,15 +1667,144 @@ func (s *SandboxEnv) init() SandboxEnv {
 	return m
 }
 
-type SandboxMetadata map[string]string
+type SandboxConfigSourceCodeReferences map[string]GitSource
 
-func (s *SandboxMetadata) init() SandboxMetadata {
+func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeReferences {
+	m := *s
+	if m == nil {
+		m = map[string]GitSource{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/SandboxUpdateConfig
+type SandboxUpdateConfig struct {
+	CpuVcpus         OptFloat64                `json:"cpuVcpus"`
+	Env              OptSandboxUpdateConfigEnv `json:"env"`
+	Image            OptString                 `json:"image"`
+	MemoryBytes      OptInt64                  `json:"memoryBytes"`
+	StorageBytes     OptInt64                  `json:"storageBytes"`
+	WorkingDirectory OptString                 `json:"workingDirectory"`
+}
+
+// GetCpuVcpus returns the value of CpuVcpus.
+func (s *SandboxUpdateConfig) GetCpuVcpus() OptFloat64 {
+	return s.CpuVcpus
+}
+
+// GetEnv returns the value of Env.
+func (s *SandboxUpdateConfig) GetEnv() OptSandboxUpdateConfigEnv {
+	return s.Env
+}
+
+// GetImage returns the value of Image.
+func (s *SandboxUpdateConfig) GetImage() OptString {
+	return s.Image
+}
+
+// GetMemoryBytes returns the value of MemoryBytes.
+func (s *SandboxUpdateConfig) GetMemoryBytes() OptInt64 {
+	return s.MemoryBytes
+}
+
+// GetStorageBytes returns the value of StorageBytes.
+func (s *SandboxUpdateConfig) GetStorageBytes() OptInt64 {
+	return s.StorageBytes
+}
+
+// GetWorkingDirectory returns the value of WorkingDirectory.
+func (s *SandboxUpdateConfig) GetWorkingDirectory() OptString {
+	return s.WorkingDirectory
+}
+
+// SetCpuVcpus sets the value of CpuVcpus.
+func (s *SandboxUpdateConfig) SetCpuVcpus(val OptFloat64) {
+	s.CpuVcpus = val
+}
+
+// SetEnv sets the value of Env.
+func (s *SandboxUpdateConfig) SetEnv(val OptSandboxUpdateConfigEnv) {
+	s.Env = val
+}
+
+// SetImage sets the value of Image.
+func (s *SandboxUpdateConfig) SetImage(val OptString) {
+	s.Image = val
+}
+
+// SetMemoryBytes sets the value of MemoryBytes.
+func (s *SandboxUpdateConfig) SetMemoryBytes(val OptInt64) {
+	s.MemoryBytes = val
+}
+
+// SetStorageBytes sets the value of StorageBytes.
+func (s *SandboxUpdateConfig) SetStorageBytes(val OptInt64) {
+	s.StorageBytes = val
+}
+
+// SetWorkingDirectory sets the value of WorkingDirectory.
+func (s *SandboxUpdateConfig) SetWorkingDirectory(val OptString) {
+	s.WorkingDirectory = val
+}
+
+type SandboxUpdateConfigEnv map[string]string
+
+func (s *SandboxUpdateConfigEnv) init() SandboxUpdateConfigEnv {
 	m := *s
 	if m == nil {
 		m = map[string]string{}
 		*s = m
 	}
 	return m
+}
+
+// Ref: #/components/schemas/SandboxUser
+type SandboxUser struct {
+	Gid           OptInt64  `json:"gid"`
+	HomeDirectory OptString `json:"homeDirectory"`
+	Name          OptString `json:"name"`
+	UID           OptInt64  `json:"uid"`
+}
+
+// GetGid returns the value of Gid.
+func (s *SandboxUser) GetGid() OptInt64 {
+	return s.Gid
+}
+
+// GetHomeDirectory returns the value of HomeDirectory.
+func (s *SandboxUser) GetHomeDirectory() OptString {
+	return s.HomeDirectory
+}
+
+// GetName returns the value of Name.
+func (s *SandboxUser) GetName() OptString {
+	return s.Name
+}
+
+// GetUID returns the value of UID.
+func (s *SandboxUser) GetUID() OptInt64 {
+	return s.UID
+}
+
+// SetGid sets the value of Gid.
+func (s *SandboxUser) SetGid(val OptInt64) {
+	s.Gid = val
+}
+
+// SetHomeDirectory sets the value of HomeDirectory.
+func (s *SandboxUser) SetHomeDirectory(val OptString) {
+	s.HomeDirectory = val
+}
+
+// SetName sets the value of Name.
+func (s *SandboxUser) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetUID sets the value of UID.
+func (s *SandboxUser) SetUID(val OptInt64) {
+	s.UID = val
 }
 
 type WorkerBearerAuth struct {
@@ -1727,27 +1838,12 @@ type WorkerDeleteSandboxNoContent struct{}
 // Ref: #/components/schemas/WorkerSandboxCreateRequest
 type WorkerSandboxCreateRequest struct {
 	// A URL to the JSON Schema for this object.
-	Schema                   OptURI                                            `json:"$schema"`
-	AgentConfigId            OptString                                         `json:"agentConfigId"`
-	AgentModel               OptString                                         `json:"agentModel"`
-	AgentModelReasoningLevel OptString                                         `json:"agentModelReasoningLevel"`
-	AgentModelServiceTier    OptString                                         `json:"agentModelServiceTier"`
-	CpuVcpus                 OptFloat64                                        `json:"cpuVcpus"`
-	Description              OptString                                         `json:"description"`
-	Env                      OptWorkerSandboxCreateRequestEnv                  `json:"env"`
-	Image                    OptString                                         `json:"image"`
-	MemoryBytes              OptInt64                                          `json:"memoryBytes"`
-	Name                     OptString                                         `json:"name"`
-	Prompt                   OptString                                         `json:"prompt"`
-	ProviderInstanceId       OptString                                         `json:"providerInstanceId"`
-	ResolvedAgentConfig      OptResolvedAgentConfig                            `json:"resolvedAgentConfig"`
-	AgentConfigs             OptNilAgentConfigArray                            `json:"agentConfigs"`
-	Resources                OptResourceConfig                                 `json:"resources"`
-	SandboxId                string                                            `json:"sandboxId"`
-	Source                   OptGitSource                                      `json:"source"`
-	SourceCodeReferences     OptWorkerSandboxCreateRequestSourceCodeReferences `json:"sourceCodeReferences"`
-	StorageBytes             OptInt64                                          `json:"storageBytes"`
-	User                     OptWorkerSandboxUser                              `json:"user"`
+	Schema              OptURI                        `json:"$schema"`
+	AgentConfigs        OptNilSandboxAgentConfigArray `json:"agentConfigs"`
+	Config              SandboxConfig                 `json:"config"`
+	ResolvedAgentConfig OptResolvedAgentConfig        `json:"resolvedAgentConfig"`
+	Resources           OptWorkerSandboxResources     `json:"resources"`
+	SandboxId           string                        `json:"sandboxId"`
 }
 
 // GetSchema returns the value of Schema.
@@ -1755,64 +1851,14 @@ func (s *WorkerSandboxCreateRequest) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetAgentConfigId returns the value of AgentConfigId.
-func (s *WorkerSandboxCreateRequest) GetAgentConfigId() OptString {
-	return s.AgentConfigId
+// GetAgentConfigs returns the value of AgentConfigs.
+func (s *WorkerSandboxCreateRequest) GetAgentConfigs() OptNilSandboxAgentConfigArray {
+	return s.AgentConfigs
 }
 
-// GetAgentModel returns the value of AgentModel.
-func (s *WorkerSandboxCreateRequest) GetAgentModel() OptString {
-	return s.AgentModel
-}
-
-// GetAgentModelReasoningLevel returns the value of AgentModelReasoningLevel.
-func (s *WorkerSandboxCreateRequest) GetAgentModelReasoningLevel() OptString {
-	return s.AgentModelReasoningLevel
-}
-
-// GetAgentModelServiceTier returns the value of AgentModelServiceTier.
-func (s *WorkerSandboxCreateRequest) GetAgentModelServiceTier() OptString {
-	return s.AgentModelServiceTier
-}
-
-// GetCpuVcpus returns the value of CpuVcpus.
-func (s *WorkerSandboxCreateRequest) GetCpuVcpus() OptFloat64 {
-	return s.CpuVcpus
-}
-
-// GetDescription returns the value of Description.
-func (s *WorkerSandboxCreateRequest) GetDescription() OptString {
-	return s.Description
-}
-
-// GetEnv returns the value of Env.
-func (s *WorkerSandboxCreateRequest) GetEnv() OptWorkerSandboxCreateRequestEnv {
-	return s.Env
-}
-
-// GetImage returns the value of Image.
-func (s *WorkerSandboxCreateRequest) GetImage() OptString {
-	return s.Image
-}
-
-// GetMemoryBytes returns the value of MemoryBytes.
-func (s *WorkerSandboxCreateRequest) GetMemoryBytes() OptInt64 {
-	return s.MemoryBytes
-}
-
-// GetName returns the value of Name.
-func (s *WorkerSandboxCreateRequest) GetName() OptString {
-	return s.Name
-}
-
-// GetPrompt returns the value of Prompt.
-func (s *WorkerSandboxCreateRequest) GetPrompt() OptString {
-	return s.Prompt
-}
-
-// GetProviderInstanceId returns the value of ProviderInstanceId.
-func (s *WorkerSandboxCreateRequest) GetProviderInstanceId() OptString {
-	return s.ProviderInstanceId
+// GetConfig returns the value of Config.
+func (s *WorkerSandboxCreateRequest) GetConfig() SandboxConfig {
+	return s.Config
 }
 
 // GetResolvedAgentConfig returns the value of ResolvedAgentConfig.
@@ -1820,13 +1866,8 @@ func (s *WorkerSandboxCreateRequest) GetResolvedAgentConfig() OptResolvedAgentCo
 	return s.ResolvedAgentConfig
 }
 
-// GetAgentConfigs returns the value of AgentConfigs.
-func (s *WorkerSandboxCreateRequest) GetAgentConfigs() OptNilAgentConfigArray {
-	return s.AgentConfigs
-}
-
 // GetResources returns the value of Resources.
-func (s *WorkerSandboxCreateRequest) GetResources() OptResourceConfig {
+func (s *WorkerSandboxCreateRequest) GetResources() OptWorkerSandboxResources {
 	return s.Resources
 }
 
@@ -1835,89 +1876,19 @@ func (s *WorkerSandboxCreateRequest) GetSandboxId() string {
 	return s.SandboxId
 }
 
-// GetSource returns the value of Source.
-func (s *WorkerSandboxCreateRequest) GetSource() OptGitSource {
-	return s.Source
-}
-
-// GetSourceCodeReferences returns the value of SourceCodeReferences.
-func (s *WorkerSandboxCreateRequest) GetSourceCodeReferences() OptWorkerSandboxCreateRequestSourceCodeReferences {
-	return s.SourceCodeReferences
-}
-
-// GetStorageBytes returns the value of StorageBytes.
-func (s *WorkerSandboxCreateRequest) GetStorageBytes() OptInt64 {
-	return s.StorageBytes
-}
-
-// GetUser returns the value of User.
-func (s *WorkerSandboxCreateRequest) GetUser() OptWorkerSandboxUser {
-	return s.User
-}
-
 // SetSchema sets the value of Schema.
 func (s *WorkerSandboxCreateRequest) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetAgentConfigId sets the value of AgentConfigId.
-func (s *WorkerSandboxCreateRequest) SetAgentConfigId(val OptString) {
-	s.AgentConfigId = val
+// SetAgentConfigs sets the value of AgentConfigs.
+func (s *WorkerSandboxCreateRequest) SetAgentConfigs(val OptNilSandboxAgentConfigArray) {
+	s.AgentConfigs = val
 }
 
-// SetAgentModel sets the value of AgentModel.
-func (s *WorkerSandboxCreateRequest) SetAgentModel(val OptString) {
-	s.AgentModel = val
-}
-
-// SetAgentModelReasoningLevel sets the value of AgentModelReasoningLevel.
-func (s *WorkerSandboxCreateRequest) SetAgentModelReasoningLevel(val OptString) {
-	s.AgentModelReasoningLevel = val
-}
-
-// SetAgentModelServiceTier sets the value of AgentModelServiceTier.
-func (s *WorkerSandboxCreateRequest) SetAgentModelServiceTier(val OptString) {
-	s.AgentModelServiceTier = val
-}
-
-// SetCpuVcpus sets the value of CpuVcpus.
-func (s *WorkerSandboxCreateRequest) SetCpuVcpus(val OptFloat64) {
-	s.CpuVcpus = val
-}
-
-// SetDescription sets the value of Description.
-func (s *WorkerSandboxCreateRequest) SetDescription(val OptString) {
-	s.Description = val
-}
-
-// SetEnv sets the value of Env.
-func (s *WorkerSandboxCreateRequest) SetEnv(val OptWorkerSandboxCreateRequestEnv) {
-	s.Env = val
-}
-
-// SetImage sets the value of Image.
-func (s *WorkerSandboxCreateRequest) SetImage(val OptString) {
-	s.Image = val
-}
-
-// SetMemoryBytes sets the value of MemoryBytes.
-func (s *WorkerSandboxCreateRequest) SetMemoryBytes(val OptInt64) {
-	s.MemoryBytes = val
-}
-
-// SetName sets the value of Name.
-func (s *WorkerSandboxCreateRequest) SetName(val OptString) {
-	s.Name = val
-}
-
-// SetPrompt sets the value of Prompt.
-func (s *WorkerSandboxCreateRequest) SetPrompt(val OptString) {
-	s.Prompt = val
-}
-
-// SetProviderInstanceId sets the value of ProviderInstanceId.
-func (s *WorkerSandboxCreateRequest) SetProviderInstanceId(val OptString) {
-	s.ProviderInstanceId = val
+// SetConfig sets the value of Config.
+func (s *WorkerSandboxCreateRequest) SetConfig(val SandboxConfig) {
+	s.Config = val
 }
 
 // SetResolvedAgentConfig sets the value of ResolvedAgentConfig.
@@ -1925,13 +1896,8 @@ func (s *WorkerSandboxCreateRequest) SetResolvedAgentConfig(val OptResolvedAgent
 	s.ResolvedAgentConfig = val
 }
 
-// SetAgentConfigs sets the value of AgentConfigs.
-func (s *WorkerSandboxCreateRequest) SetAgentConfigs(val OptNilAgentConfigArray) {
-	s.AgentConfigs = val
-}
-
 // SetResources sets the value of Resources.
-func (s *WorkerSandboxCreateRequest) SetResources(val OptResourceConfig) {
+func (s *WorkerSandboxCreateRequest) SetResources(val OptWorkerSandboxResources) {
 	s.Resources = val
 }
 
@@ -1940,53 +1906,93 @@ func (s *WorkerSandboxCreateRequest) SetSandboxId(val string) {
 	s.SandboxId = val
 }
 
-// SetSource sets the value of Source.
-func (s *WorkerSandboxCreateRequest) SetSource(val OptGitSource) {
-	s.Source = val
+// Ref: #/components/schemas/WorkerSandboxInstance
+type WorkerSandboxInstance struct {
+	// A URL to the JSON Schema for this object.
+	Schema              OptURI                        `json:"$schema"`
+	AgentConfigs        OptNilSandboxAgentConfigArray `json:"agentConfigs"`
+	Config              SandboxConfig                 `json:"config"`
+	ResolvedAgentConfig OptResolvedAgentConfig        `json:"resolvedAgentConfig"`
+	Resources           OptWorkerSandboxResources     `json:"resources"`
+	Runtime             WorkerSandboxRuntime          `json:"runtime"`
+	SandboxId           string                        `json:"sandboxId"`
 }
 
-// SetSourceCodeReferences sets the value of SourceCodeReferences.
-func (s *WorkerSandboxCreateRequest) SetSourceCodeReferences(val OptWorkerSandboxCreateRequestSourceCodeReferences) {
-	s.SourceCodeReferences = val
+// GetSchema returns the value of Schema.
+func (s *WorkerSandboxInstance) GetSchema() OptURI {
+	return s.Schema
 }
 
-// SetStorageBytes sets the value of StorageBytes.
-func (s *WorkerSandboxCreateRequest) SetStorageBytes(val OptInt64) {
-	s.StorageBytes = val
+// GetAgentConfigs returns the value of AgentConfigs.
+func (s *WorkerSandboxInstance) GetAgentConfigs() OptNilSandboxAgentConfigArray {
+	return s.AgentConfigs
 }
 
-// SetUser sets the value of User.
-func (s *WorkerSandboxCreateRequest) SetUser(val OptWorkerSandboxUser) {
-	s.User = val
+// GetConfig returns the value of Config.
+func (s *WorkerSandboxInstance) GetConfig() SandboxConfig {
+	return s.Config
 }
 
-type WorkerSandboxCreateRequestEnv map[string]string
-
-func (s *WorkerSandboxCreateRequestEnv) init() WorkerSandboxCreateRequestEnv {
-	m := *s
-	if m == nil {
-		m = map[string]string{}
-		*s = m
-	}
-	return m
+// GetResolvedAgentConfig returns the value of ResolvedAgentConfig.
+func (s *WorkerSandboxInstance) GetResolvedAgentConfig() OptResolvedAgentConfig {
+	return s.ResolvedAgentConfig
 }
 
-type WorkerSandboxCreateRequestSourceCodeReferences map[string]GitSource
+// GetResources returns the value of Resources.
+func (s *WorkerSandboxInstance) GetResources() OptWorkerSandboxResources {
+	return s.Resources
+}
 
-func (s *WorkerSandboxCreateRequestSourceCodeReferences) init() WorkerSandboxCreateRequestSourceCodeReferences {
-	m := *s
-	if m == nil {
-		m = map[string]GitSource{}
-		*s = m
-	}
-	return m
+// GetRuntime returns the value of Runtime.
+func (s *WorkerSandboxInstance) GetRuntime() WorkerSandboxRuntime {
+	return s.Runtime
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *WorkerSandboxInstance) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// SetSchema sets the value of Schema.
+func (s *WorkerSandboxInstance) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetAgentConfigs sets the value of AgentConfigs.
+func (s *WorkerSandboxInstance) SetAgentConfigs(val OptNilSandboxAgentConfigArray) {
+	s.AgentConfigs = val
+}
+
+// SetConfig sets the value of Config.
+func (s *WorkerSandboxInstance) SetConfig(val SandboxConfig) {
+	s.Config = val
+}
+
+// SetResolvedAgentConfig sets the value of ResolvedAgentConfig.
+func (s *WorkerSandboxInstance) SetResolvedAgentConfig(val OptResolvedAgentConfig) {
+	s.ResolvedAgentConfig = val
+}
+
+// SetResources sets the value of Resources.
+func (s *WorkerSandboxInstance) SetResources(val OptWorkerSandboxResources) {
+	s.Resources = val
+}
+
+// SetRuntime sets the value of Runtime.
+func (s *WorkerSandboxInstance) SetRuntime(val WorkerSandboxRuntime) {
+	s.Runtime = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *WorkerSandboxInstance) SetSandboxId(val string) {
+	s.SandboxId = val
 }
 
 // Ref: #/components/schemas/WorkerSandboxListResponse
 type WorkerSandboxListResponse struct {
 	// A URL to the JSON Schema for this object.
-	Schema    OptURI    `json:"$schema"`
-	Sandboxes []Sandbox `json:"sandboxes"`
+	Schema    OptURI                  `json:"$schema"`
+	Sandboxes []WorkerSandboxInstance `json:"sandboxes"`
 }
 
 // GetSchema returns the value of Schema.
@@ -1995,7 +2001,7 @@ func (s *WorkerSandboxListResponse) GetSchema() OptURI {
 }
 
 // GetSandboxes returns the value of Sandboxes.
-func (s *WorkerSandboxListResponse) GetSandboxes() []Sandbox {
+func (s *WorkerSandboxListResponse) GetSandboxes() []WorkerSandboxInstance {
 	return s.Sandboxes
 }
 
@@ -2005,7 +2011,7 @@ func (s *WorkerSandboxListResponse) SetSchema(val OptURI) {
 }
 
 // SetSandboxes sets the value of Sandboxes.
-func (s *WorkerSandboxListResponse) SetSandboxes(val []Sandbox) {
+func (s *WorkerSandboxListResponse) SetSandboxes(val []WorkerSandboxInstance) {
 	s.Sandboxes = val
 }
 
@@ -2036,102 +2042,219 @@ func (s *WorkerSandboxOperationRequest) SetForce(val OptBool) {
 	s.Force = val
 }
 
-// Ref: #/components/schemas/WorkerSandboxUpdateRequest
-type WorkerSandboxUpdateRequest struct {
-	// A URL to the JSON Schema for this object.
-	Schema           OptURI                           `json:"$schema"`
-	CpuVcpus         OptFloat64                       `json:"cpuVcpus"`
-	Env              OptWorkerSandboxUpdateRequestEnv `json:"env"`
-	Image            OptString                        `json:"image"`
-	MemoryBytes      OptInt64                         `json:"memoryBytes"`
-	Resources        OptResourceConfig                `json:"resources"`
-	StorageBytes     OptInt64                         `json:"storageBytes"`
-	WorkingDirectory OptString                        `json:"workingDirectory"`
+// Ref: #/components/schemas/WorkerSandboxPort
+type WorkerSandboxPort struct {
+	ContainerPort int64  `json:"containerPort"`
+	HostIp        string `json:"hostIp"`
+	HostPort      int64  `json:"hostPort"`
+	Protocol      string `json:"protocol"`
 }
 
-// GetSchema returns the value of Schema.
-func (s *WorkerSandboxUpdateRequest) GetSchema() OptURI {
-	return s.Schema
+// GetContainerPort returns the value of ContainerPort.
+func (s *WorkerSandboxPort) GetContainerPort() int64 {
+	return s.ContainerPort
 }
 
-// GetCpuVcpus returns the value of CpuVcpus.
-func (s *WorkerSandboxUpdateRequest) GetCpuVcpus() OptFloat64 {
-	return s.CpuVcpus
+// GetHostIp returns the value of HostIp.
+func (s *WorkerSandboxPort) GetHostIp() string {
+	return s.HostIp
+}
+
+// GetHostPort returns the value of HostPort.
+func (s *WorkerSandboxPort) GetHostPort() int64 {
+	return s.HostPort
+}
+
+// GetProtocol returns the value of Protocol.
+func (s *WorkerSandboxPort) GetProtocol() string {
+	return s.Protocol
+}
+
+// SetContainerPort sets the value of ContainerPort.
+func (s *WorkerSandboxPort) SetContainerPort(val int64) {
+	s.ContainerPort = val
+}
+
+// SetHostIp sets the value of HostIp.
+func (s *WorkerSandboxPort) SetHostIp(val string) {
+	s.HostIp = val
+}
+
+// SetHostPort sets the value of HostPort.
+func (s *WorkerSandboxPort) SetHostPort(val int64) {
+	s.HostPort = val
+}
+
+// SetProtocol sets the value of Protocol.
+func (s *WorkerSandboxPort) SetProtocol(val string) {
+	s.Protocol = val
+}
+
+// Ref: #/components/schemas/WorkerSandboxResources
+type WorkerSandboxResources struct {
+	CpuCores       float64 `json:"cpuCores"`
+	DiskMb         int64   `json:"diskMb"`
+	MemoryMb       int64   `json:"memoryMb"`
+	TimeoutSeconds int64   `json:"timeoutSeconds"`
+}
+
+// GetCpuCores returns the value of CpuCores.
+func (s *WorkerSandboxResources) GetCpuCores() float64 {
+	return s.CpuCores
+}
+
+// GetDiskMb returns the value of DiskMb.
+func (s *WorkerSandboxResources) GetDiskMb() int64 {
+	return s.DiskMb
+}
+
+// GetMemoryMb returns the value of MemoryMb.
+func (s *WorkerSandboxResources) GetMemoryMb() int64 {
+	return s.MemoryMb
+}
+
+// GetTimeoutSeconds returns the value of TimeoutSeconds.
+func (s *WorkerSandboxResources) GetTimeoutSeconds() int64 {
+	return s.TimeoutSeconds
+}
+
+// SetCpuCores sets the value of CpuCores.
+func (s *WorkerSandboxResources) SetCpuCores(val float64) {
+	s.CpuCores = val
+}
+
+// SetDiskMb sets the value of DiskMb.
+func (s *WorkerSandboxResources) SetDiskMb(val int64) {
+	s.DiskMb = val
+}
+
+// SetMemoryMb sets the value of MemoryMb.
+func (s *WorkerSandboxResources) SetMemoryMb(val int64) {
+	s.MemoryMb = val
+}
+
+// SetTimeoutSeconds sets the value of TimeoutSeconds.
+func (s *WorkerSandboxResources) SetTimeoutSeconds(val int64) {
+	s.TimeoutSeconds = val
+}
+
+// Ref: #/components/schemas/WorkerSandboxRuntime
+type WorkerSandboxRuntime struct {
+	CreatedAt  time.Time                    `json:"createdAt"`
+	Env        WorkerSandboxRuntimeEnv      `json:"env"`
+	Error      string                       `json:"error"`
+	Image      string                       `json:"image"`
+	InstanceId string                       `json:"instanceId"`
+	Metadata   WorkerSandboxRuntimeMetadata `json:"metadata"`
+	Ports      []WorkerSandboxPort          `json:"ports"`
+	StartedAt  NilDateTime                  `json:"startedAt"`
+	Status     string                       `json:"status"`
+	StoppedAt  NilDateTime                  `json:"stoppedAt"`
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *WorkerSandboxRuntime) GetCreatedAt() time.Time {
+	return s.CreatedAt
 }
 
 // GetEnv returns the value of Env.
-func (s *WorkerSandboxUpdateRequest) GetEnv() OptWorkerSandboxUpdateRequestEnv {
+func (s *WorkerSandboxRuntime) GetEnv() WorkerSandboxRuntimeEnv {
 	return s.Env
 }
 
+// GetError returns the value of Error.
+func (s *WorkerSandboxRuntime) GetError() string {
+	return s.Error
+}
+
 // GetImage returns the value of Image.
-func (s *WorkerSandboxUpdateRequest) GetImage() OptString {
+func (s *WorkerSandboxRuntime) GetImage() string {
 	return s.Image
 }
 
-// GetMemoryBytes returns the value of MemoryBytes.
-func (s *WorkerSandboxUpdateRequest) GetMemoryBytes() OptInt64 {
-	return s.MemoryBytes
+// GetInstanceId returns the value of InstanceId.
+func (s *WorkerSandboxRuntime) GetInstanceId() string {
+	return s.InstanceId
 }
 
-// GetResources returns the value of Resources.
-func (s *WorkerSandboxUpdateRequest) GetResources() OptResourceConfig {
-	return s.Resources
+// GetMetadata returns the value of Metadata.
+func (s *WorkerSandboxRuntime) GetMetadata() WorkerSandboxRuntimeMetadata {
+	return s.Metadata
 }
 
-// GetStorageBytes returns the value of StorageBytes.
-func (s *WorkerSandboxUpdateRequest) GetStorageBytes() OptInt64 {
-	return s.StorageBytes
+// GetPorts returns the value of Ports.
+func (s *WorkerSandboxRuntime) GetPorts() []WorkerSandboxPort {
+	return s.Ports
 }
 
-// GetWorkingDirectory returns the value of WorkingDirectory.
-func (s *WorkerSandboxUpdateRequest) GetWorkingDirectory() OptString {
-	return s.WorkingDirectory
+// GetStartedAt returns the value of StartedAt.
+func (s *WorkerSandboxRuntime) GetStartedAt() NilDateTime {
+	return s.StartedAt
 }
 
-// SetSchema sets the value of Schema.
-func (s *WorkerSandboxUpdateRequest) SetSchema(val OptURI) {
-	s.Schema = val
+// GetStatus returns the value of Status.
+func (s *WorkerSandboxRuntime) GetStatus() string {
+	return s.Status
 }
 
-// SetCpuVcpus sets the value of CpuVcpus.
-func (s *WorkerSandboxUpdateRequest) SetCpuVcpus(val OptFloat64) {
-	s.CpuVcpus = val
+// GetStoppedAt returns the value of StoppedAt.
+func (s *WorkerSandboxRuntime) GetStoppedAt() NilDateTime {
+	return s.StoppedAt
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *WorkerSandboxRuntime) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
 }
 
 // SetEnv sets the value of Env.
-func (s *WorkerSandboxUpdateRequest) SetEnv(val OptWorkerSandboxUpdateRequestEnv) {
+func (s *WorkerSandboxRuntime) SetEnv(val WorkerSandboxRuntimeEnv) {
 	s.Env = val
 }
 
+// SetError sets the value of Error.
+func (s *WorkerSandboxRuntime) SetError(val string) {
+	s.Error = val
+}
+
 // SetImage sets the value of Image.
-func (s *WorkerSandboxUpdateRequest) SetImage(val OptString) {
+func (s *WorkerSandboxRuntime) SetImage(val string) {
 	s.Image = val
 }
 
-// SetMemoryBytes sets the value of MemoryBytes.
-func (s *WorkerSandboxUpdateRequest) SetMemoryBytes(val OptInt64) {
-	s.MemoryBytes = val
+// SetInstanceId sets the value of InstanceId.
+func (s *WorkerSandboxRuntime) SetInstanceId(val string) {
+	s.InstanceId = val
 }
 
-// SetResources sets the value of Resources.
-func (s *WorkerSandboxUpdateRequest) SetResources(val OptResourceConfig) {
-	s.Resources = val
+// SetMetadata sets the value of Metadata.
+func (s *WorkerSandboxRuntime) SetMetadata(val WorkerSandboxRuntimeMetadata) {
+	s.Metadata = val
 }
 
-// SetStorageBytes sets the value of StorageBytes.
-func (s *WorkerSandboxUpdateRequest) SetStorageBytes(val OptInt64) {
-	s.StorageBytes = val
+// SetPorts sets the value of Ports.
+func (s *WorkerSandboxRuntime) SetPorts(val []WorkerSandboxPort) {
+	s.Ports = val
 }
 
-// SetWorkingDirectory sets the value of WorkingDirectory.
-func (s *WorkerSandboxUpdateRequest) SetWorkingDirectory(val OptString) {
-	s.WorkingDirectory = val
+// SetStartedAt sets the value of StartedAt.
+func (s *WorkerSandboxRuntime) SetStartedAt(val NilDateTime) {
+	s.StartedAt = val
 }
 
-type WorkerSandboxUpdateRequestEnv map[string]string
+// SetStatus sets the value of Status.
+func (s *WorkerSandboxRuntime) SetStatus(val string) {
+	s.Status = val
+}
 
-func (s *WorkerSandboxUpdateRequestEnv) init() WorkerSandboxUpdateRequestEnv {
+// SetStoppedAt sets the value of StoppedAt.
+func (s *WorkerSandboxRuntime) SetStoppedAt(val NilDateTime) {
+	s.StoppedAt = val
+}
+
+type WorkerSandboxRuntimeEnv map[string]string
+
+func (s *WorkerSandboxRuntimeEnv) init() WorkerSandboxRuntimeEnv {
 	m := *s
 	if m == nil {
 		m = map[string]string{}
@@ -2140,50 +2263,51 @@ func (s *WorkerSandboxUpdateRequestEnv) init() WorkerSandboxUpdateRequestEnv {
 	return m
 }
 
-// Ref: #/components/schemas/WorkerSandboxUser
-type WorkerSandboxUser struct {
-	Gid           OptInt64  `json:"gid"`
-	HomeDirectory OptString `json:"homeDirectory"`
-	Name          OptString `json:"name"`
-	UID           OptInt64  `json:"uid"`
+type WorkerSandboxRuntimeMetadata map[string]string
+
+func (s *WorkerSandboxRuntimeMetadata) init() WorkerSandboxRuntimeMetadata {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
-// GetGid returns the value of Gid.
-func (s *WorkerSandboxUser) GetGid() OptInt64 {
-	return s.Gid
+// Ref: #/components/schemas/WorkerSandboxUpdateRequest
+type WorkerSandboxUpdateRequest struct {
+	// A URL to the JSON Schema for this object.
+	Schema    OptURI                    `json:"$schema"`
+	Config    OptSandboxUpdateConfig    `json:"config"`
+	Resources OptWorkerSandboxResources `json:"resources"`
 }
 
-// GetHomeDirectory returns the value of HomeDirectory.
-func (s *WorkerSandboxUser) GetHomeDirectory() OptString {
-	return s.HomeDirectory
+// GetSchema returns the value of Schema.
+func (s *WorkerSandboxUpdateRequest) GetSchema() OptURI {
+	return s.Schema
 }
 
-// GetName returns the value of Name.
-func (s *WorkerSandboxUser) GetName() OptString {
-	return s.Name
+// GetConfig returns the value of Config.
+func (s *WorkerSandboxUpdateRequest) GetConfig() OptSandboxUpdateConfig {
+	return s.Config
 }
 
-// GetUID returns the value of UID.
-func (s *WorkerSandboxUser) GetUID() OptInt64 {
-	return s.UID
+// GetResources returns the value of Resources.
+func (s *WorkerSandboxUpdateRequest) GetResources() OptWorkerSandboxResources {
+	return s.Resources
 }
 
-// SetGid sets the value of Gid.
-func (s *WorkerSandboxUser) SetGid(val OptInt64) {
-	s.Gid = val
+// SetSchema sets the value of Schema.
+func (s *WorkerSandboxUpdateRequest) SetSchema(val OptURI) {
+	s.Schema = val
 }
 
-// SetHomeDirectory sets the value of HomeDirectory.
-func (s *WorkerSandboxUser) SetHomeDirectory(val OptString) {
-	s.HomeDirectory = val
+// SetConfig sets the value of Config.
+func (s *WorkerSandboxUpdateRequest) SetConfig(val OptSandboxUpdateConfig) {
+	s.Config = val
 }
 
-// SetName sets the value of Name.
-func (s *WorkerSandboxUser) SetName(val OptString) {
-	s.Name = val
-}
-
-// SetUID sets the value of UID.
-func (s *WorkerSandboxUser) SetUID(val OptInt64) {
-	s.UID = val
+// SetResources sets the value of Resources.
+func (s *WorkerSandboxUpdateRequest) SetResources(val OptWorkerSandboxResources) {
+	s.Resources = val
 }

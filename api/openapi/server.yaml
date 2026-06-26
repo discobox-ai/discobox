@@ -121,69 +121,17 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                agentConfigId:
-                    description: Agent config ID
-                    type: string
-                agentModel:
-                    description: Model the agent should use
-                    type: string
-                agentModelReasoningLevel:
-                    description: Model reasoning level the agent should use
-                    type: string
-                agentModelServiceTier:
-                    description: Model service tier the agent should use
-                    type: string
                 agentName:
                     description: Agent config name to resolve at create time
                     type: string
-                cpuVcpus:
-                    description: Requested CPU capacity in vCPUs
-                    format: double
-                    type: number
-                description:
-                    description: Sandbox description
-                    type: string
-                env:
-                    additionalProperties:
-                        type: string
-                    description: Environment variables available to sandbox-agent terminals and execs by default.
-                    type: object
-                image:
-                    description: Sandbox base image. Defaults to the server configured sandbox image when omitted.
-                    type: string
-                memoryBytes:
-                    description: Requested memory capacity in bytes
-                    format: int64
-                    type: integer
-                name:
-                    description: Sandbox name
-                    maxLength: 200
-                    type: string
-                prompt:
-                    description: Prompt the agent should run
-                    type: string
+                config:
+                    $ref: '#/components/schemas/SandboxCreateConfig'
+                    description: Desired sandbox configuration.
                 providerInstanceId:
                     description: Sandbox provider instance ID
                     type: string
-                runtimeState:
-                    description: Initial non-secret provider runtime state
-                source:
-                    $ref: '#/components/schemas/GitSource'
-                    description: Primary Git source to materialize in the sandbox
-                sourceCodeReferences:
-                    additionalProperties:
-                        $ref: '#/components/schemas/GitSource'
-                    description: Additional Git sources to materialize in the sandbox
-                    type: object
-                storageBytes:
-                    description: Requested storage capacity in bytes
-                    format: int64
-                    type: integer
-                user:
-                    $ref: '#/components/schemas/SandboxUser'
-                    description: User identity and home directory to use inside the sandbox
             required:
-                - name
+                - config
             type: object
         CreateSandboxProviderInstanceBody:
             additionalProperties: false
@@ -1315,27 +1263,9 @@ components:
                     description: Force restart if the provider supports it
                     type: boolean
             type: object
-        Sandbox:
+        SandboxConfig:
             additionalProperties: false
             properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/Sandbox.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                activeOperation:
-                    description: Current queued or running operation
-                    enum:
-                        - create
-                        - start
-                        - stop
-                        - restart
-                        - delete
-                    type: string
-                agentConfig:
-                    $ref: '#/components/schemas/AgentConfig'
-                    description: Agent config
                 agentConfigId:
                     description: Agent config ID
                     type: string
@@ -1352,18 +1282,120 @@ components:
                     description: Requested CPU capacity in vCPUs
                     format: double
                     type: number
-                createdAt:
-                    description: Creation timestamp
-                    format: date-time
-                    type: string
-                createdBy:
-                    $ref: '#/components/schemas/User'
-                    description: Creating user
-                createdByUserId:
-                    description: Creating user ID
-                    type: string
                 description:
                     description: Sandbox description
+                    type: string
+                env:
+                    additionalProperties:
+                        type: string
+                    description: Environment variables available to sandbox-agent terminals and execs by default.
+                    type: object
+                image:
+                    description: Sandbox base image
+                    type: string
+                memoryBytes:
+                    description: Requested memory capacity in bytes
+                    format: int64
+                    type: integer
+                name:
+                    description: Sandbox name
+                    maxLength: 200
+                    type: string
+                prompt:
+                    description: Prompt the agent should run
+                    type: string
+                source:
+                    $ref: '#/components/schemas/GitSource'
+                    description: Primary Git source to materialize in the sandbox
+                sourceCodeReferences:
+                    additionalProperties:
+                        $ref: '#/components/schemas/GitSource'
+                    description: Additional Git sources to materialize in the sandbox
+                    type: object
+                storageBytes:
+                    description: Requested storage capacity in bytes
+                    format: int64
+                    type: integer
+                user:
+                    $ref: '#/components/schemas/SandboxUser'
+                    description: User identity and home directory to use inside the sandbox
+            required:
+                - name
+                - image
+                - cpuVcpus
+                - memoryBytes
+                - storageBytes
+            type: object
+        SandboxCreateConfig:
+            additionalProperties: false
+            properties:
+                agentConfigId:
+                    description: Agent config ID
+                    type: string
+                agentModel:
+                    description: Model the agent should use
+                    type: string
+                agentModelReasoningLevel:
+                    description: Model reasoning level the agent should use
+                    type: string
+                agentModelServiceTier:
+                    description: Model service tier the agent should use
+                    type: string
+                cpuVcpus:
+                    description: Requested CPU capacity in vCPUs
+                    format: double
+                    type: number
+                description:
+                    description: Sandbox description
+                    type: string
+                env:
+                    additionalProperties:
+                        type: string
+                    description: Environment variables available to sandbox-agent terminals and execs by default.
+                    type: object
+                image:
+                    description: Sandbox base image. Defaults to the server configured sandbox image when omitted.
+                    type: string
+                memoryBytes:
+                    description: Requested memory capacity in bytes
+                    format: int64
+                    type: integer
+                name:
+                    description: Sandbox name
+                    maxLength: 200
+                    type: string
+                prompt:
+                    description: Prompt the agent should run
+                    type: string
+                source:
+                    $ref: '#/components/schemas/GitSource'
+                    description: Primary Git source to materialize in the sandbox
+                sourceCodeReferences:
+                    additionalProperties:
+                        $ref: '#/components/schemas/GitSource'
+                    description: Additional Git sources to materialize in the sandbox
+                    type: object
+                storageBytes:
+                    description: Requested storage capacity in bytes
+                    format: int64
+                    type: integer
+                user:
+                    $ref: '#/components/schemas/SandboxUser'
+                    description: User identity and home directory to use inside the sandbox
+            required:
+                - name
+            type: object
+        SandboxRuntime:
+            additionalProperties: false
+            properties:
+                activeOperation:
+                    description: Current queued or running operation
+                    enum:
+                        - create
+                        - start
+                        - stop
+                        - restart
+                        - delete
                     type: string
                 desiredState:
                     description: Requested steady state for reconciliation
@@ -1375,21 +1407,10 @@ components:
                 errorMessage:
                     description: Latest error message
                     type: string
-                env:
-                    additionalProperties:
-                        type: string
-                    description: Environment variables available to sandbox-agent terminals and execs by default.
-                    type: object
                 generation:
                     description: Latest desired-state generation
                     format: int64
                     type: integer
-                id:
-                    description: Stable sandbox ID
-                    type: string
-                image:
-                    description: Sandbox base image
-                    type: string
                 lastActiveAt:
                     description: Last observed activity timestamp
                     format: date-time
@@ -1404,14 +1425,6 @@ components:
                         - running
                         - success
                         - failed
-                    type: string
-                memoryBytes:
-                    description: Requested memory capacity in bytes
-                    format: int64
-                    type: integer
-                name:
-                    description: Sandbox name
-                    maxLength: 200
                     type: string
                 observedGeneration:
                     description: Latest generation fully observed by reconciliation
@@ -1430,18 +1443,6 @@ components:
                         - deleted
                         - failed
                     type: string
-                projectId:
-                    description: Project ID
-                    type: string
-                prompt:
-                    description: Prompt the agent should run
-                    type: string
-                providerInstance:
-                    $ref: '#/components/schemas/SandboxProviderInstance'
-                    description: Sandbox provider instance
-                providerInstanceId:
-                    description: Sandbox provider instance ID
-                    type: string
                 restartGeneration:
                     description: Requested restart generation
                     format: int64
@@ -1450,50 +1451,73 @@ components:
                     description: Last restart generation completed by reconciliation
                     format: int64
                     type: integer
-                runtimeState:
-                    description: Non-secret provider runtime state
-                source:
-                    $ref: '#/components/schemas/GitSource'
-                    description: Primary Git source to materialize in the sandbox
-                sourceCodeReferences:
-                    additionalProperties:
-                        $ref: '#/components/schemas/GitSource'
-                    description: Additional Git sources to materialize in the sandbox
-                    type: object
                 statusMessage:
                     description: Human-readable status detail
                     type: string
-                storageBytes:
-                    description: Requested storage capacity in bytes
-                    format: int64
-                    type: integer
-                updatedAt:
-                    description: Last update timestamp
-                    format: date-time
-                    type: string
-                user:
-                    $ref: '#/components/schemas/SandboxUser'
-                    description: User identity and home directory to use inside the sandbox
                 workerId:
                     description: Assigned worker ID, when scheduled through a worker-backed provider
                     type: string
             required:
-                - id
-                - projectId
-                - createdByUserId
-                - name
-                - restartGeneration
-                - restartedGeneration
-                - cpuVcpus
-                - memoryBytes
-                - storageBytes
-                - createdAt
-                - updatedAt
                 - desiredState
                 - phase
                 - lastOperationStatus
                 - generation
                 - observedGeneration
+                - restartGeneration
+                - restartedGeneration
+            type: object
+        Sandbox:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/Sandbox.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                agentConfig:
+                    $ref: '#/components/schemas/AgentConfig'
+                    description: Agent config
+                config:
+                    $ref: '#/components/schemas/SandboxConfig'
+                    description: Desired sandbox configuration.
+                createdAt:
+                    description: Creation timestamp
+                    format: date-time
+                    type: string
+                createdBy:
+                    $ref: '#/components/schemas/User'
+                    description: Creating user
+                createdByUserId:
+                    description: Creating user ID
+                    type: string
+                id:
+                    description: Stable sandbox ID
+                    type: string
+                projectId:
+                    description: Project ID
+                    type: string
+                providerInstance:
+                    $ref: '#/components/schemas/SandboxProviderInstance'
+                    description: Sandbox provider instance
+                providerInstanceId:
+                    description: Sandbox provider instance ID
+                    type: string
+                runtime:
+                    $ref: '#/components/schemas/SandboxRuntime'
+                    description: Observed sandbox runtime state.
+                updatedAt:
+                    description: Last update timestamp
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - projectId
+                - createdByUserId
+                - config
+                - runtime
+                - createdAt
+                - updatedAt
             type: object
         SandboxUser:
             additionalProperties: false
@@ -1795,6 +1819,13 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                config:
+                    $ref: '#/components/schemas/SandboxUpdateConfig'
+                    description: Desired sandbox configuration changes.
+            type: object
+        SandboxUpdateConfig:
+            additionalProperties: false
+            properties:
                 name:
                     description: Sandbox name
                     maxLength: 200

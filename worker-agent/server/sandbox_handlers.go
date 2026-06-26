@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"time"
 
 	workerapi "github.com/obot-platform/discobox/worker-agent/api/gen"
 	workerapimodel "github.com/obot-platform/discobox/worker-agent/api/model"
@@ -50,19 +51,14 @@ func (s *sandboxService) WorkerListSandboxes(ctx context.Context, params workera
 	if err != nil {
 		return nil, mapRuntimeError(err)
 	}
-	out := make([]workerapimodel.Sandbox, 0, len(sandboxes))
+	out := make([]workerapimodel.WorkerSandboxInstance, 0, len(sandboxes))
 	for _, sb := range sandboxes {
-		normalizeSandboxResponse(sb)
-		converted, err := convert[workerapimodel.Sandbox](sb)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, converted)
+		out = append(out, sandboxInstanceFromRuntime(sb, nil))
 	}
 	return &workerapimodel.WorkerSandboxListResponse{Sandboxes: out}, nil
 }
 
-func (s *sandboxService) WorkerCreateSandbox(ctx context.Context, req *workerapimodel.WorkerSandboxCreateRequest, params workerapi.WorkerCreateSandboxParams) (*workerapimodel.Sandbox, error) {
+func (s *sandboxService) WorkerCreateSandbox(ctx context.Context, req *workerapimodel.WorkerSandboxCreateRequest, params workerapi.WorkerCreateSandboxParams) (*workerapimodel.WorkerSandboxInstance, error) {
 	if err := s.authorize(params.ProjectId, params.WorkerId); err != nil {
 		return nil, err
 	}
@@ -71,18 +67,18 @@ func (s *sandboxService) WorkerCreateSandbox(ctx context.Context, req *workerapi
 		return nil, err
 	}
 	sb, err := s.runtime.CreateSandbox(ctx, &converted)
-	return sandboxOutput(sb, err)
+	return sandboxOutput(sb, err, &converted.Config)
 }
 
-func (s *sandboxService) WorkerGetSandbox(ctx context.Context, params workerapi.WorkerGetSandboxParams) (*workerapimodel.Sandbox, error) {
+func (s *sandboxService) WorkerGetSandbox(ctx context.Context, params workerapi.WorkerGetSandboxParams) (*workerapimodel.WorkerSandboxInstance, error) {
 	if err := s.authorize(params.ProjectId, params.WorkerId); err != nil {
 		return nil, err
 	}
 	sb, err := s.runtime.GetSandbox(ctx, params.SandboxId)
-	return sandboxOutput(sb, err)
+	return sandboxOutput(sb, err, nil)
 }
 
-func (s *sandboxService) WorkerUpdateSandbox(ctx context.Context, req *workerapimodel.WorkerSandboxUpdateRequest, params workerapi.WorkerUpdateSandboxParams) (*workerapimodel.Sandbox, error) {
+func (s *sandboxService) WorkerUpdateSandbox(ctx context.Context, req *workerapimodel.WorkerSandboxUpdateRequest, params workerapi.WorkerUpdateSandboxParams) (*workerapimodel.WorkerSandboxInstance, error) {
 	if err := s.authorize(params.ProjectId, params.WorkerId); err != nil {
 		return nil, err
 	}
@@ -91,7 +87,7 @@ func (s *sandboxService) WorkerUpdateSandbox(ctx context.Context, req *workerapi
 		return nil, err
 	}
 	sb, err := s.runtime.UpdateSandbox(ctx, params.SandboxId, &converted)
-	return sandboxOutput(sb, err)
+	return sandboxOutput(sb, err, nil)
 }
 
 func (s *sandboxService) WorkerDeleteSandbox(ctx context.Context, params workerapi.WorkerDeleteSandboxParams) error {
@@ -104,7 +100,7 @@ func (s *sandboxService) WorkerDeleteSandbox(ctx context.Context, params workera
 	return nil
 }
 
-func (s *sandboxService) WorkerStartSandbox(ctx context.Context, req *workerapimodel.WorkerSandboxOperationRequest, params workerapi.WorkerStartSandboxParams) (*workerapimodel.Sandbox, error) {
+func (s *sandboxService) WorkerStartSandbox(ctx context.Context, req *workerapimodel.WorkerSandboxOperationRequest, params workerapi.WorkerStartSandboxParams) (*workerapimodel.WorkerSandboxInstance, error) {
 	if err := s.authorize(params.ProjectId, params.WorkerId); err != nil {
 		return nil, err
 	}
@@ -113,10 +109,10 @@ func (s *sandboxService) WorkerStartSandbox(ctx context.Context, req *workerapim
 		return nil, err
 	}
 	sb, err := s.runtime.StartSandbox(ctx, params.SandboxId, &converted)
-	return sandboxOutput(sb, err)
+	return sandboxOutput(sb, err, nil)
 }
 
-func (s *sandboxService) WorkerStopSandbox(ctx context.Context, req *workerapimodel.WorkerSandboxOperationRequest, params workerapi.WorkerStopSandboxParams) (*workerapimodel.Sandbox, error) {
+func (s *sandboxService) WorkerStopSandbox(ctx context.Context, req *workerapimodel.WorkerSandboxOperationRequest, params workerapi.WorkerStopSandboxParams) (*workerapimodel.WorkerSandboxInstance, error) {
 	if err := s.authorize(params.ProjectId, params.WorkerId); err != nil {
 		return nil, err
 	}
@@ -125,7 +121,7 @@ func (s *sandboxService) WorkerStopSandbox(ctx context.Context, req *workerapimo
 		return nil, err
 	}
 	sb, err := s.runtime.StopSandbox(ctx, params.SandboxId, &converted)
-	return sandboxOutput(sb, err)
+	return sandboxOutput(sb, err, nil)
 }
 
 func (s *sandboxService) NewError(_ context.Context, err error) *workerapi.ErrorModelStatusCode {
@@ -161,19 +157,61 @@ func (s *sandboxService) authorize(projectID, workerID string) error {
 	return nil
 }
 
-func sandboxOutput(sb *sandboxruntime.Sandbox, err error) (*workerapimodel.Sandbox, error) {
+func sandboxOutput(sb *sandboxruntime.Sandbox, err error, config *workerapimodel.SandboxConfig) (*workerapimodel.WorkerSandboxInstance, error) {
 	if err != nil {
 		return nil, mapRuntimeError(err)
 	}
 	if sb == nil {
 		return nil, newStatusError(http.StatusNotFound, http.StatusText(http.StatusNotFound))
 	}
-	normalizeSandboxResponse(sb)
-	out, err := convert[workerapimodel.Sandbox](sb)
-	if err != nil {
-		return nil, err
-	}
+	out := sandboxInstanceFromRuntime(sb, config)
 	return &out, nil
+}
+
+func sandboxInstanceFromRuntime(sb *sandboxruntime.Sandbox, config *workerapimodel.SandboxConfig) workerapimodel.WorkerSandboxInstance {
+	normalizeSandboxResponse(sb)
+	if config == nil {
+		config = &workerapimodel.SandboxConfig{
+			Image: workerapi.NewOptString(sb.Image),
+			Env:   workerapi.NewOptSandboxConfigEnv(workerapi.SandboxConfigEnv(sb.Env)),
+		}
+	}
+	return workerapimodel.WorkerSandboxInstance{
+		SandboxId: sb.SandboxID,
+		Config:    *config,
+		Runtime: workerapimodel.WorkerSandboxRuntime{
+			InstanceId: sb.ID,
+			Status:     string(sb.Status),
+			Image:      sb.Image,
+			CreatedAt:  sb.CreatedAt,
+			StartedAt:  nilDateTime(sb.StartedAt),
+			StoppedAt:  nilDateTime(sb.StoppedAt),
+			Error:      sb.Error,
+			Metadata:   workerapi.WorkerSandboxRuntimeMetadata(sb.Metadata),
+			Ports:      workerSandboxPorts(sb.Ports),
+			Env:        workerapi.WorkerSandboxRuntimeEnv(sb.Env),
+		},
+	}
+}
+
+func nilDateTime(value *time.Time) workerapi.NilDateTime {
+	if value == nil {
+		return workerapi.NilDateTime{Null: true}
+	}
+	return workerapi.NewNilDateTime(*value)
+}
+
+func workerSandboxPorts(in []sandboxruntime.AssignedPort) []workerapimodel.WorkerSandboxPort {
+	out := make([]workerapimodel.WorkerSandboxPort, 0, len(in))
+	for _, port := range in {
+		out = append(out, workerapimodel.WorkerSandboxPort{
+			ContainerPort: int64(port.ContainerPort),
+			HostIp:        port.HostIP,
+			HostPort:      int64(port.HostPort),
+			Protocol:      port.Protocol,
+		})
+	}
+	return out
 }
 
 func normalizeSandboxResponse(sb *sandboxruntime.Sandbox) {

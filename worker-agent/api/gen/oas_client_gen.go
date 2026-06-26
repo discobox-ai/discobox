@@ -33,7 +33,7 @@ type Invoker interface {
 	// Create worker sandbox.
 	//
 	// POST /api/project/{projectId}/worker/{workerId}/sandboxes
-	WorkerCreateSandbox(ctx context.Context, request *WorkerSandboxCreateRequest, params WorkerCreateSandboxParams) (*Sandbox, error)
+	WorkerCreateSandbox(ctx context.Context, request *WorkerSandboxCreateRequest, params WorkerCreateSandboxParams) (*WorkerSandboxInstance, error)
 	// WorkerDeleteSandbox invokes worker-delete-sandbox operation.
 	//
 	// Delete worker sandbox.
@@ -45,7 +45,7 @@ type Invoker interface {
 	// Get worker sandbox.
 	//
 	// GET /api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}
-	WorkerGetSandbox(ctx context.Context, params WorkerGetSandboxParams) (*Sandbox, error)
+	WorkerGetSandbox(ctx context.Context, params WorkerGetSandboxParams) (*WorkerSandboxInstance, error)
 	// WorkerListSandboxes invokes worker-list-sandboxes operation.
 	//
 	// List worker sandboxes.
@@ -57,19 +57,19 @@ type Invoker interface {
 	// Start worker sandbox.
 	//
 	// POST /api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/start
-	WorkerStartSandbox(ctx context.Context, request *WorkerSandboxOperationRequest, params WorkerStartSandboxParams) (*Sandbox, error)
+	WorkerStartSandbox(ctx context.Context, request *WorkerSandboxOperationRequest, params WorkerStartSandboxParams) (*WorkerSandboxInstance, error)
 	// WorkerStopSandbox invokes worker-stop-sandbox operation.
 	//
 	// Stop worker sandbox.
 	//
 	// POST /api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/stop
-	WorkerStopSandbox(ctx context.Context, request *WorkerSandboxOperationRequest, params WorkerStopSandboxParams) (*Sandbox, error)
+	WorkerStopSandbox(ctx context.Context, request *WorkerSandboxOperationRequest, params WorkerStopSandboxParams) (*WorkerSandboxInstance, error)
 	// WorkerUpdateSandbox invokes worker-update-sandbox operation.
 	//
 	// Update worker sandbox.
 	//
 	// PATCH /api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}
-	WorkerUpdateSandbox(ctx context.Context, request *WorkerSandboxUpdateRequest, params WorkerUpdateSandboxParams) (*Sandbox, error)
+	WorkerUpdateSandbox(ctx context.Context, request *WorkerSandboxUpdateRequest, params WorkerUpdateSandboxParams) (*WorkerSandboxInstance, error)
 }
 
 // Client implements OAS client.
@@ -118,12 +118,12 @@ func (c *Client) requestURL(ctx context.Context) *url.URL {
 // Create worker sandbox.
 //
 // POST /api/project/{projectId}/worker/{workerId}/sandboxes
-func (c *Client) WorkerCreateSandbox(ctx context.Context, request *WorkerSandboxCreateRequest, params WorkerCreateSandboxParams) (*Sandbox, error) {
+func (c *Client) WorkerCreateSandbox(ctx context.Context, request *WorkerSandboxCreateRequest, params WorkerCreateSandboxParams) (*WorkerSandboxInstance, error) {
 	res, err := c.sendWorkerCreateSandbox(ctx, request, params)
 	return res, err
 }
 
-func (c *Client) sendWorkerCreateSandbox(ctx context.Context, request *WorkerSandboxCreateRequest, params WorkerCreateSandboxParams) (res *Sandbox, err error) {
+func (c *Client) sendWorkerCreateSandbox(ctx context.Context, request *WorkerSandboxCreateRequest, params WorkerCreateSandboxParams) (res *WorkerSandboxInstance, err error) {
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("worker-create-sandbox"),
 		semconv.HTTPRequestMethodKey.String("POST"),
@@ -429,12 +429,12 @@ func (c *Client) sendWorkerDeleteSandbox(ctx context.Context, params WorkerDelet
 // Get worker sandbox.
 //
 // GET /api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}
-func (c *Client) WorkerGetSandbox(ctx context.Context, params WorkerGetSandboxParams) (*Sandbox, error) {
+func (c *Client) WorkerGetSandbox(ctx context.Context, params WorkerGetSandboxParams) (*WorkerSandboxInstance, error) {
 	res, err := c.sendWorkerGetSandbox(ctx, params)
 	return res, err
 }
 
-func (c *Client) sendWorkerGetSandbox(ctx context.Context, params WorkerGetSandboxParams) (res *Sandbox, err error) {
+func (c *Client) sendWorkerGetSandbox(ctx context.Context, params WorkerGetSandboxParams) (res *WorkerSandboxInstance, err error) {
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("worker-get-sandbox"),
 		semconv.HTTPRequestMethodKey.String("GET"),
@@ -737,12 +737,12 @@ func (c *Client) sendWorkerListSandboxes(ctx context.Context, params WorkerListS
 // Start worker sandbox.
 //
 // POST /api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/start
-func (c *Client) WorkerStartSandbox(ctx context.Context, request *WorkerSandboxOperationRequest, params WorkerStartSandboxParams) (*Sandbox, error) {
+func (c *Client) WorkerStartSandbox(ctx context.Context, request *WorkerSandboxOperationRequest, params WorkerStartSandboxParams) (*WorkerSandboxInstance, error) {
 	res, err := c.sendWorkerStartSandbox(ctx, request, params)
 	return res, err
 }
 
-func (c *Client) sendWorkerStartSandbox(ctx context.Context, request *WorkerSandboxOperationRequest, params WorkerStartSandboxParams) (res *Sandbox, err error) {
+func (c *Client) sendWorkerStartSandbox(ctx context.Context, request *WorkerSandboxOperationRequest, params WorkerStartSandboxParams) (res *WorkerSandboxInstance, err error) {
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("worker-start-sandbox"),
 		semconv.HTTPRequestMethodKey.String("POST"),
@@ -904,12 +904,12 @@ func (c *Client) sendWorkerStartSandbox(ctx context.Context, request *WorkerSand
 // Stop worker sandbox.
 //
 // POST /api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/stop
-func (c *Client) WorkerStopSandbox(ctx context.Context, request *WorkerSandboxOperationRequest, params WorkerStopSandboxParams) (*Sandbox, error) {
+func (c *Client) WorkerStopSandbox(ctx context.Context, request *WorkerSandboxOperationRequest, params WorkerStopSandboxParams) (*WorkerSandboxInstance, error) {
 	res, err := c.sendWorkerStopSandbox(ctx, request, params)
 	return res, err
 }
 
-func (c *Client) sendWorkerStopSandbox(ctx context.Context, request *WorkerSandboxOperationRequest, params WorkerStopSandboxParams) (res *Sandbox, err error) {
+func (c *Client) sendWorkerStopSandbox(ctx context.Context, request *WorkerSandboxOperationRequest, params WorkerStopSandboxParams) (res *WorkerSandboxInstance, err error) {
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("worker-stop-sandbox"),
 		semconv.HTTPRequestMethodKey.String("POST"),
@@ -1071,12 +1071,12 @@ func (c *Client) sendWorkerStopSandbox(ctx context.Context, request *WorkerSandb
 // Update worker sandbox.
 //
 // PATCH /api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}
-func (c *Client) WorkerUpdateSandbox(ctx context.Context, request *WorkerSandboxUpdateRequest, params WorkerUpdateSandboxParams) (*Sandbox, error) {
+func (c *Client) WorkerUpdateSandbox(ctx context.Context, request *WorkerSandboxUpdateRequest, params WorkerUpdateSandboxParams) (*WorkerSandboxInstance, error) {
 	res, err := c.sendWorkerUpdateSandbox(ctx, request, params)
 	return res, err
 }
 
-func (c *Client) sendWorkerUpdateSandbox(ctx context.Context, request *WorkerSandboxUpdateRequest, params WorkerUpdateSandboxParams) (res *Sandbox, err error) {
+func (c *Client) sendWorkerUpdateSandbox(ctx context.Context, request *WorkerSandboxUpdateRequest, params WorkerUpdateSandboxParams) (res *WorkerSandboxInstance, err error) {
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("worker-update-sandbox"),
 		semconv.HTTPRequestMethodKey.String("PATCH"),

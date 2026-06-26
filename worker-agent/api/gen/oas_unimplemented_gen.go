@@ -18,7 +18,7 @@ var _ Handler = UnimplementedHandler{}
 // Create worker sandbox.
 //
 // POST /api/project/{projectId}/worker/{workerId}/sandboxes
-func (UnimplementedHandler) WorkerCreateSandbox(ctx context.Context, req *WorkerSandboxCreateRequest, params WorkerCreateSandboxParams) (r *Sandbox, _ error) {
+func (UnimplementedHandler) WorkerCreateSandbox(ctx context.Context, req *WorkerSandboxCreateRequest, params WorkerCreateSandboxParams) (r *WorkerSandboxInstance, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -36,7 +36,7 @@ func (UnimplementedHandler) WorkerDeleteSandbox(ctx context.Context, params Work
 // Get worker sandbox.
 //
 // GET /api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}
-func (UnimplementedHandler) WorkerGetSandbox(ctx context.Context, params WorkerGetSandboxParams) (r *Sandbox, _ error) {
+func (UnimplementedHandler) WorkerGetSandbox(ctx context.Context, params WorkerGetSandboxParams) (r *WorkerSandboxInstance, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -54,7 +54,7 @@ func (UnimplementedHandler) WorkerListSandboxes(ctx context.Context, params Work
 // Start worker sandbox.
 //
 // POST /api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/start
-func (UnimplementedHandler) WorkerStartSandbox(ctx context.Context, req *WorkerSandboxOperationRequest, params WorkerStartSandboxParams) (r *Sandbox, _ error) {
+func (UnimplementedHandler) WorkerStartSandbox(ctx context.Context, req *WorkerSandboxOperationRequest, params WorkerStartSandboxParams) (r *WorkerSandboxInstance, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -63,7 +63,7 @@ func (UnimplementedHandler) WorkerStartSandbox(ctx context.Context, req *WorkerS
 // Stop worker sandbox.
 //
 // POST /api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/stop
-func (UnimplementedHandler) WorkerStopSandbox(ctx context.Context, req *WorkerSandboxOperationRequest, params WorkerStopSandboxParams) (r *Sandbox, _ error) {
+func (UnimplementedHandler) WorkerStopSandbox(ctx context.Context, req *WorkerSandboxOperationRequest, params WorkerStopSandboxParams) (r *WorkerSandboxInstance, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -72,7 +72,7 @@ func (UnimplementedHandler) WorkerStopSandbox(ctx context.Context, req *WorkerSa
 // Update worker sandbox.
 //
 // PATCH /api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}
-func (UnimplementedHandler) WorkerUpdateSandbox(ctx context.Context, req *WorkerSandboxUpdateRequest, params WorkerUpdateSandboxParams) (r *Sandbox, _ error) {
+func (UnimplementedHandler) WorkerUpdateSandbox(ctx context.Context, req *WorkerSandboxUpdateRequest, params WorkerUpdateSandboxParams) (r *WorkerSandboxInstance, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

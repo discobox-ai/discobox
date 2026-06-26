@@ -31,7 +31,7 @@ type OptURI = serverapi.OptURI
 type OptInt64 = serverapi.OptInt64
 type OptSandboxUser = serverapi.OptSandboxUser
 type OptNilProviderConfigFieldArray = serverapi.OptNilProviderConfigFieldArray
-type OptCreateSandboxBodySourceCodeReferences = serverapi.OptCreateSandboxBodySourceCodeReferences
+type OptSandboxCreateConfigSourceCodeReferences = serverapi.OptSandboxCreateConfigSourceCodeReferences
 type HTTPClientLease = transport.HTTPClientLease
 
 // ProjectService provides read-only access to projects.

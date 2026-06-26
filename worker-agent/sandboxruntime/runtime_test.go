@@ -15,11 +15,13 @@ import (
 
 func TestSandboxUserResolvesUIDGIDAndDefaults(t *testing.T) {
 	req := &workerapimodel.WorkerSandboxCreateRequest{
-		User: workerclient.NewOptWorkerSandboxUser(workerapimodel.WorkerSandboxUser{
-			Name: workerclient.NewOptString("sandbox"),
-			UID:  workerclient.NewOptInt64(1000),
-			Gid:  workerclient.NewOptInt64(1001),
-		}),
+		Config: workerapimodel.SandboxConfig{
+			User: workerclient.NewOptSandboxUser(workerapimodel.SandboxUser{
+				Name: workerclient.NewOptString("sandbox"),
+				UID:  workerclient.NewOptInt64(1000),
+				Gid:  workerclient.NewOptInt64(1001),
+			}),
+		},
 	}
 	user := resolveSandboxUser(req)
 	if user.uid != 1000 || user.gid != 1001 || user.name != "sandbox" || user.homeDirectory != "/home/sandbox" {
@@ -33,8 +35,12 @@ func TestSandboxUserResolvesUIDGIDAndDefaults(t *testing.T) {
 
 func TestSandboxUserUsesReasonableDefaults(t *testing.T) {
 	for name, req := range map[string]*workerapimodel.WorkerSandboxCreateRequest{
-		"nil":        nil,
-		"empty user": {User: workerclient.NewOptWorkerSandboxUser(workerapimodel.WorkerSandboxUser{})},
+		"nil": nil,
+		"empty user": {
+			Config: workerapimodel.SandboxConfig{
+				User: workerclient.NewOptSandboxUser(workerapimodel.SandboxUser{}),
+			},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			user := resolveSandboxUser(req)
@@ -66,25 +72,27 @@ func TestSandboxSourcesUseConfiguredAndDefaultTargets(t *testing.T) {
 	uiURL := mustURL(t, "https://example.com/ui.git")
 	req := &workerapimodel.WorkerSandboxCreateRequest{
 		SandboxId: "sandbox-1",
-		Source: workerclient.NewOptGitSource(workerapimodel.GitSource{
-			Kind: workerclient.GitSourceKindGit,
-			Slug: workerclient.NewOptString("Primary Source"),
-			URL:  workerclient.NewOptURI(primaryURL),
-			Destination: workerclient.NewOptGitSourceDestination(workerapimodel.GitSourceDestination{
-				Directory: workerclient.NewOptString("work/project"),
+		Config: workerapimodel.SandboxConfig{
+			Source: workerclient.NewOptGitSource(workerapimodel.GitSource{
+				Kind: workerclient.GitSourceKindGit,
+				Slug: workerclient.NewOptString("Primary Source"),
+				URL:  workerclient.NewOptURI(primaryURL),
+				Destination: workerclient.NewOptGitSourceDestination(workerapimodel.GitSourceDestination{
+					Directory: workerclient.NewOptString("work/project"),
+				}),
 			}),
-		}),
-		SourceCodeReferences: workerclient.NewOptWorkerSandboxCreateRequestSourceCodeReferences(workerclient.WorkerSandboxCreateRequestSourceCodeReferences{
-			"tools": {
-				Kind: workerclient.GitSourceKindGit,
-				URL:  workerclient.NewOptURI(toolsURL),
-			},
-			"workspace ui": {
-				Kind: workerclient.GitSourceKindGit,
-				Slug: workerclient.NewOptString("UI"),
-				URL:  workerclient.NewOptURI(uiURL),
-			},
-		}),
+			SourceCodeReferences: workerclient.NewOptSandboxConfigSourceCodeReferences(workerclient.SandboxConfigSourceCodeReferences{
+				"tools": {
+					Kind: workerclient.GitSourceKindGit,
+					URL:  workerclient.NewOptURI(toolsURL),
+				},
+				"workspace ui": {
+					Kind: workerclient.GitSourceKindGit,
+					Slug: workerclient.NewOptString("UI"),
+					URL:  workerclient.NewOptURI(uiURL),
+				},
+			}),
+		},
 	}
 	sources := sandboxSources(req)
 	if len(sources) != 3 {
@@ -207,17 +215,19 @@ func TestSandboxAgentTerminalStateErrorAllowsRunningSandbox(t *testing.T) {
 
 func TestBuildSandboxAgentConfigIncludesProjectAgentConfigs(t *testing.T) {
 	req := &workerapimodel.WorkerSandboxCreateRequest{
-		Env: workerclient.NewOptWorkerSandboxCreateRequestEnv(workerclient.WorkerSandboxCreateRequestEnv{
-			"BASE":     "sandbox",
-			"OVERRIDE": "sandbox",
-		}),
+		Config: workerapimodel.SandboxConfig{
+			Env: workerclient.NewOptSandboxConfigEnv(workerclient.SandboxConfigEnv{
+				"BASE":     "sandbox",
+				"OVERRIDE": "sandbox",
+			}),
+		},
 		ResolvedAgentConfig: workerclient.NewOptResolvedAgentConfig(workerapimodel.ResolvedAgentConfig{
 			ID:             "claude",
 			Name:           "Claude",
 			InstallCommand: workerclient.NewOptString("npm install -g @anthropic-ai/claude-code"),
 			RunCommand:     "claude",
 		}),
-		AgentConfigs: workerclient.NewOptNilAgentConfigArray([]workerapimodel.AgentConfig{
+		AgentConfigs: workerclient.NewOptNilSandboxAgentConfigArray([]workerapimodel.SandboxAgentConfig{
 			{
 				ID:             "codex",
 				Name:           "Codex",

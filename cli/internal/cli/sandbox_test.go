@@ -30,17 +30,17 @@ func TestCreateSandboxBodyIncludesAgentLaunchFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createSandboxBody: %v", err)
 	}
-	if body.AgentName.Value != "Codex" || body.AgentModel.Value != "gpt-5.1-codex-max" || body.Prompt.Value != "implement this" {
+	if body.AgentName.Value != "Codex" || body.Config.AgentModel.Value != "gpt-5.1-codex-max" || body.Config.Prompt.Value != "implement this" {
 		t.Fatalf("agent fields = %#v", body)
 	}
-	env, ok := body.Env.Get()
+	env, ok := body.Config.Env.Get()
 	if !ok {
 		t.Fatal("expected env")
 	}
 	if env["EXPLICIT"] != "value" || env["SANDBOX_ENV_FROM_SHELL"] != "from-shell" {
 		t.Fatalf("env = %#v, want explicit and shell values", env)
 	}
-	source, ok := body.Source.Get()
+	source, ok := body.Config.Source.Get()
 	if !ok {
 		t.Fatal("expected source")
 	}
@@ -54,14 +54,14 @@ func TestCreateSandboxBodyIncludesAgentLaunchFields(t *testing.T) {
 	if destination.Directory.Value != "/workspace/repo" || destination.WorkingDirectory.Value != "/workspace/repo" {
 		t.Fatalf("directories = source %q working %q", destination.Directory.Value, destination.WorkingDirectory.Value)
 	}
-	sandboxUser, ok := body.User.Get()
+	sandboxUser, ok := body.Config.User.Get()
 	if !ok {
 		t.Fatal("expected user")
 	}
 	if sandboxUser.Name.Value != "darren" || sandboxUser.UID.Value != 1000 || sandboxUser.Gid.Value != 1000 || sandboxUser.HomeDirectory.Value != "/home/darren" {
 		t.Fatalf("user = %s %d/%d home %s, want darren 1000/1000 /home/darren", sandboxUser.Name.Value, sandboxUser.UID.Value, sandboxUser.Gid.Value, sandboxUser.HomeDirectory.Value)
 	}
-	ref, ok := body.SourceCodeReferences.Value["lib"]
+	ref, ok := body.Config.SourceCodeReferences.Value["lib"]
 	if !ok {
 		t.Fatal("expected lib source reference")
 	}

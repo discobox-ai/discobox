@@ -149,7 +149,8 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	} else if !errors.Is(err, ErrNotFound) {
 		return nil, err
 	}
-	imageName := strings.TrimSpace(optString(req.Image))
+	config := req.Config
+	imageName := strings.TrimSpace(optString(config.Image))
 	if imageName == "" {
 		imageName = defaultSandboxImage
 	}
@@ -168,19 +169,19 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	cfg := &container.Config{
 		Image:      imageName,
 		Labels:     r.labels(sandboxID),
-		Env:        envList(envWithSandboxUser(map[string]string(optCreateEnv(req.Env)), user)),
+		Env:        envList(envWithSandboxUser(map[string]string(optSandboxConfigEnv(config.Env)), user)),
 		WorkingDir: sourceWorkingDirectory(req),
 	}
 	hostCfg := &container.HostConfig{Mounts: mounts, Privileged: true}
-	if memoryBytes := optInt64(req.MemoryBytes); memoryBytes > 0 {
+	if memoryBytes := optInt64(config.MemoryBytes); memoryBytes > 0 {
 		hostCfg.Memory = memoryBytes
-	} else if resources, ok := req.Resources.Get(); ok && resources.MemoryMB > 0 {
-		hostCfg.Memory = resources.MemoryMB * 1024 * 1024
+	} else if resources, ok := req.Resources.Get(); ok && resources.MemoryMb > 0 {
+		hostCfg.Memory = resources.MemoryMb * 1024 * 1024
 	}
-	if cpuVCPUs := optFloat64(req.CpuVcpus); cpuVCPUs > 0 {
+	if cpuVCPUs := optFloat64(config.CpuVcpus); cpuVCPUs > 0 {
 		hostCfg.NanoCPUs = int64(cpuVCPUs * 1_000_000_000)
-	} else if resources, ok := req.Resources.Get(); ok && resources.CPUCores > 0 {
-		hostCfg.NanoCPUs = int64(resources.CPUCores * 1_000_000_000)
+	} else if resources, ok := req.Resources.Get(); ok && resources.CpuCores > 0 {
+		hostCfg.NanoCPUs = int64(resources.CpuCores * 1_000_000_000)
 	}
 	created, err := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{Config: cfg, HostConfig: hostCfg, Name: name})
 	if err != nil {
@@ -289,7 +290,7 @@ func buildSandboxAgentConfig(projectID, sandboxID, workerID, controlPlanePublicK
 		},
 	}
 	if req != nil {
-		cfg.Env = map[string]string(optCreateEnv(req.Env))
+		cfg.Env = map[string]string(optSandboxConfigEnv(req.Config.Env))
 		if resolved, ok := req.ResolvedAgentConfig.Get(); ok {
 			resolvedConfig := sandboxAgentConfigAgentConfig{
 				ID:      resolved.ID,
@@ -573,7 +574,7 @@ func (r *MemorySandboxRuntime) CreateSandbox(_ context.Context, req *workerapimo
 		return nil, fmt.Errorf("sandbox create request is required")
 	}
 	now := time.Now().UTC()
-	sb := &Sandbox{ID: req.SandboxId, SandboxID: req.SandboxId, Status: StatusRunning, Image: optString(req.Image), CreatedAt: now, StartedAt: &now, Env: copyMap(map[string]string(optCreateEnv(req.Env)))}
+	sb := &Sandbox{ID: req.SandboxId, SandboxID: req.SandboxId, Status: StatusRunning, Image: optString(req.Config.Image), CreatedAt: now, StartedAt: &now, Env: copyMap(map[string]string(optSandboxConfigEnv(req.Config.Env)))}
 	r.sandboxes[req.SandboxId] = sb
 	return cloneSandbox(sb), nil
 }
@@ -596,8 +597,10 @@ func (r *MemorySandboxRuntime) UpdateSandbox(_ context.Context, sandboxID string
 		return nil, ErrNotFound
 	}
 	if req != nil {
-		if image := optString(req.Image); image != "" {
-			sb.Image = image
+		if config, ok := req.Config.Get(); ok {
+			if image := optString(config.Image); image != "" {
+				sb.Image = image
+			}
 		}
 	}
 	return cloneSandbox(sb), nil
@@ -783,7 +786,7 @@ func resolveSandboxUser(req *workerapimodel.WorkerSandboxCreateRequest) sandboxU
 	if req == nil {
 		return out
 	}
-	user, ok := req.User.Get()
+	user, ok := req.Config.User.Get()
 	if !ok {
 		return out
 	}
@@ -810,7 +813,7 @@ func sourceWorkingDirectory(req *workerapimodel.WorkerSandboxCreateRequest) stri
 	if req == nil {
 		return ""
 	}
-	source, ok := req.Source.Get()
+	source, ok := req.Config.Source.Get()
 	if !ok {
 		return ""
 	}
@@ -833,10 +836,10 @@ func sandboxSources(req *workerapimodel.WorkerSandboxCreateRequest) []sandboxSou
 	}
 	var out []sandboxSource
 	used := map[string]struct{}{}
-	if source, ok := req.Source.Get(); ok {
+	if source, ok := req.Config.Source.Get(); ok {
 		out = append(out, sandboxSourceFor("primary", source, "/workspace", used))
 	}
-	if refs, ok := req.SourceCodeReferences.Get(); ok {
+	if refs, ok := req.Config.SourceCodeReferences.Get(); ok {
 		keys := make([]string, 0, len(refs))
 		for key := range refs {
 			keys = append(keys, key)
@@ -1130,7 +1133,7 @@ func runChown(ctx context.Context, root string, uid, gid int) error {
 	return nil
 }
 
-func optCreateEnv(opt workerclient.OptWorkerSandboxCreateRequestEnv) workerclient.WorkerSandboxCreateRequestEnv {
+func optSandboxConfigEnv(opt workerclient.OptSandboxConfigEnv) workerclient.SandboxConfigEnv {
 	v, _ := opt.Get()
 	return v
 }

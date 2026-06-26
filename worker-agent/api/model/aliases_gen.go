@@ -5,8 +5,6 @@ package model
 
 import workeragentapi "github.com/obot-platform/discobox/worker-agent/api/gen"
 
-type AgentConfig = workeragentapi.AgentConfig
-type AssignedPort = workeragentapi.AssignedPort
 type ErrorDetail = workeragentapi.ErrorDetail
 type ErrorModel = workeragentapi.ErrorModel
 type GitSource = workeragentapi.GitSource
@@ -14,10 +12,15 @@ type GitSourceCheckout = workeragentapi.GitSourceCheckout
 type GitSourceDestination = workeragentapi.GitSourceDestination
 type GitSourceWorkspace = workeragentapi.GitSourceWorkspace
 type ResolvedAgentConfig = workeragentapi.ResolvedAgentConfig
-type ResourceConfig = workeragentapi.ResourceConfig
-type Sandbox = workeragentapi.Sandbox
+type SandboxAgentConfig = workeragentapi.SandboxAgentConfig
+type SandboxConfig = workeragentapi.SandboxConfig
+type SandboxUpdateConfig = workeragentapi.SandboxUpdateConfig
+type SandboxUser = workeragentapi.SandboxUser
 type WorkerSandboxCreateRequest = workeragentapi.WorkerSandboxCreateRequest
+type WorkerSandboxInstance = workeragentapi.WorkerSandboxInstance
 type WorkerSandboxListResponse = workeragentapi.WorkerSandboxListResponse
 type WorkerSandboxOperationRequest = workeragentapi.WorkerSandboxOperationRequest
+type WorkerSandboxPort = workeragentapi.WorkerSandboxPort
+type WorkerSandboxResources = workeragentapi.WorkerSandboxResources
+type WorkerSandboxRuntime = workeragentapi.WorkerSandboxRuntime
 type WorkerSandboxUpdateRequest = workeragentapi.WorkerSandboxUpdateRequest
-type WorkerSandboxUser = workeragentapi.WorkerSandboxUser

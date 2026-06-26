@@ -59,10 +59,10 @@ func TestParseRunUserIdentityUsesHomeDirectoryWhenUsernameIsInvalid(t *testing.T
 }
 
 func TestRunUserIdentitySetsSandboxCreateUserFields(t *testing.T) {
-	body := &apimodel.CreateSandboxBody{Name: "run"}
+	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: "run"}}
 	runUserIdentity{Name: "darren", UID: 1000, GID: 1001, HomeDirectory: "/home/darren", IDsUsable: true}.setCreateSandboxUser(body)
 
-	sandboxUser, ok := body.User.Get()
+	sandboxUser, ok := body.Config.User.Get()
 	if !ok {
 		t.Fatal("sandbox user was not set")
 	}
@@ -75,10 +75,10 @@ func TestRunUserIdentitySetsSandboxCreateUserFields(t *testing.T) {
 }
 
 func TestRunUserIdentitySetsUsernameWithoutIDs(t *testing.T) {
-	body := &apimodel.CreateSandboxBody{Name: "run"}
+	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: "run"}}
 	runUserIdentity{Name: "darren"}.setCreateSandboxUser(body)
 
-	sandboxUser, ok := body.User.Get()
+	sandboxUser, ok := body.Config.User.Get()
 	if !ok {
 		t.Fatal("sandbox user was not set")
 	}

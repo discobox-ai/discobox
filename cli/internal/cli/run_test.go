@@ -60,7 +60,7 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"id":"` + sandboxID + `","projectId":"project-1","createdByUserId":"user-1","name":"run-test","phase":"pending","desiredState":"stopped","lastOperationStatus":"pending","generation":1,"observedGeneration":0,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		_, _ = w.Write([]byte(`{"id":"` + sandboxID + `","projectId":"project-1","createdByUserId":"user-1","config":{"name":"run-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"pending","desiredState":"stopped","lastOperationStatus":"pending","generation":1,"observedGeneration":0,"restartGeneration":0,"restartedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 	}))
 	t.Cleanup(server.Close)
 
@@ -72,22 +72,23 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute run: %v", err)
 	}
-	if !strings.HasPrefix(posted["name"].(string), "run-") {
-		t.Fatalf("name = %q, want run-*", posted["name"])
+	config := posted["config"].(map[string]any)
+	if !strings.HasPrefix(config["name"].(string), "run-") {
+		t.Fatalf("name = %q, want run-*", config["name"])
 	}
-	if posted["prompt"] != "fix tests" {
-		t.Fatalf("prompt = %q, want fix tests", posted["prompt"])
+	if config["prompt"] != "fix tests" {
+		t.Fatalf("prompt = %q, want fix tests", config["prompt"])
 	}
-	env, ok := posted["env"].(map[string]any)
+	env, ok := config["env"].(map[string]any)
 	if !ok {
-		t.Fatalf("env = %#v, want object", posted["env"])
+		t.Fatalf("env = %#v, want object", config["env"])
 	}
 	if env["EXPLICIT"] != "value" || env["RUN_ENV_FROM_SHELL"] != "from-shell" {
 		t.Fatalf("env = %#v, want explicit and shell values", env)
 	}
-	source, ok := posted["source"].(map[string]any)
+	source, ok := config["source"].(map[string]any)
 	if !ok {
-		t.Fatalf("source = %#v, want object", posted["source"])
+		t.Fatalf("source = %#v, want object", config["source"])
 	}
 	if source["localDirectory"] != repo {
 		t.Fatalf("localDirectory = %q, want %s", source["localDirectory"], repo)
@@ -119,7 +120,7 @@ func TestRunCommandStillAcceptsDashDashSeparator(t *testing.T) {
 		sawCreate = true
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"id":"01kv9w440bpa9qk5n25t2hh2rv","projectId":"project-1","createdByUserId":"user-1","name":"run-test","phase":"pending","desiredState":"stopped","lastOperationStatus":"pending","generation":1,"observedGeneration":0,"restartGeneration":0,"restartedGeneration":0,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		_, _ = w.Write([]byte(`{"id":"01kv9w440bpa9qk5n25t2hh2rv","projectId":"project-1","createdByUserId":"user-1","config":{"name":"run-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"pending","desiredState":"stopped","lastOperationStatus":"pending","generation":1,"observedGeneration":0,"restartGeneration":0,"restartedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 	}))
 	t.Cleanup(server.Close)
 
@@ -148,14 +149,14 @@ func TestCreateRunSandboxBodyUsesSplitSourceRef(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createRunSandboxBody: %v", err)
 	}
-	if body.Prompt.Value != "hello world" {
-		t.Fatalf("prompt = %q, want hello world", body.Prompt.Value)
+	if body.Config.Prompt.Value != "hello world" {
+		t.Fatalf("prompt = %q, want hello world", body.Config.Prompt.Value)
 	}
-	env, ok := body.Env.Get()
+	env, ok := body.Config.Env.Get()
 	if !ok || env["RUN_BODY_ENV"] != "value" {
 		t.Fatalf("env = %#v ok=%t, want RUN_BODY_ENV", env, ok)
 	}
-	source, ok := body.Source.Get()
+	source, ok := body.Config.Source.Get()
 	if !ok {
 		t.Fatal("expected source")
 	}
