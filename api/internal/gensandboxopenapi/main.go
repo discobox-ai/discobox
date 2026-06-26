@@ -12,6 +12,7 @@ import (
 )
 
 const sandboxAgentMarker = "x-sandbox-agent"
+const sandboxAgentComponentMarker = "x-sandbox-agent-component"
 
 func main() {
 	if err := run(); err != nil {
@@ -130,6 +131,19 @@ func referencedComponents(source map[string]any, roots ...any) map[string]any {
 	components, _ := asMap(source["components"])
 	out := map[string]any{}
 	needed := map[string]map[string]bool{}
+	for category, value := range components {
+		sourceCategory, _ := asMap(value)
+		for name, component := range sourceCategory {
+			componentMap, ok := asMap(component)
+			if !ok || componentMap[sandboxAgentComponentMarker] != true {
+				continue
+			}
+			if needed[category] == nil {
+				needed[category] = map[string]bool{}
+			}
+			needed[category][name] = true
+		}
+	}
 	var scan func(any)
 	scan = func(value any) {
 		switch value := value.(type) {
@@ -176,8 +190,9 @@ func referencedComponents(source map[string]any, roots ...any) map[string]any {
 				if !exists {
 					continue
 				}
-				outCategory[name] = component
-				scan(component)
+				outComponent := cloneWithoutSandboxAgentComponentMarker(component)
+				outCategory[name] = outComponent
+				scan(outComponent)
 				changed = true
 			}
 		}
@@ -186,6 +201,28 @@ func referencedComponents(source map[string]any, roots ...any) map[string]any {
 		}
 	}
 	return out
+}
+
+func cloneWithoutSandboxAgentComponentMarker(value any) any {
+	switch value := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(value))
+		for key, child := range value {
+			if key == sandboxAgentComponentMarker {
+				continue
+			}
+			out[key] = cloneWithoutSandboxAgentComponentMarker(child)
+		}
+		return out
+	case []any:
+		out := make([]any, len(value))
+		for i, child := range value {
+			out[i] = cloneWithoutSandboxAgentComponentMarker(child)
+		}
+		return out
+	default:
+		return value
+	}
 }
 
 func parseComponentRef(ref string) (string, string, bool) {
