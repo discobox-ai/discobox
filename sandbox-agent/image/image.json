@@ -1,0 +1,9 @@
+{
+  "env": {
+    "NIX_CONFIG": "experimental-features = nix-command flakes",
+    "NIX_REMOTE": "daemon",
+    "NPM_CONFIG_PREFIX": "%HOME%/.npm-global",
+    "PATH": "%HOME%/.npm-global/bin:%HOME%/.cargo/bin:%HOME%/.nix-profile/bin:%HOME%/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "PNPM_HOME": "/var/lib/discobox/pnpm"
+  }
+}

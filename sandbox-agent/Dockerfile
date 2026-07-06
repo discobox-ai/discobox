@@ -26,9 +26,8 @@ ENV container=docker
 ENV DEBIAN_FRONTEND=noninteractive
 ENV NIX_CONFIG="experimental-features = nix-command flakes"
 ENV NIX_REMOTE=daemon
-ENV NPM_CONFIG_PREFIX=/root/.npm-global
 ENV PNPM_HOME=/var/lib/discobox/pnpm
-ENV PATH=/root/.cargo/bin:/root/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/root/.local/bin:/root/.npm-global/bin:/usr/local/bin:${PATH}
+ENV PATH=/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/bin:${PATH}
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
@@ -122,7 +121,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && curl -fsSL "https://go.dev/dl/${GO_VERSION}.linux-$(dpkg --print-architecture).tar.gz" | tar -C /usr/local -xz \
     && curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh \
     && curl -fsSL https://bun.sh/install | BUN_INSTALL=/usr/local bash \
-    && mkdir -p /root/.npm-global/bin /root/.local/bin \
     && rm -rf /var/lib/apt/lists/* /root/.npm \
     && rm -f /etc/apt/apt.conf.d/docker-clean \
     && systemctl mask \
@@ -151,6 +149,7 @@ RUN rustup --version >/dev/null 2>&1 \
     || curl --proto "=https" --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
 
 COPY sandbox-agent/image/profile.d/sandbox-dev-tools.sh /etc/profile.d/sandbox-dev-tools.sh
+COPY sandbox-agent/image/image.json /usr/share/discobox/image.json
 COPY sandbox-agent/image/systemd/discobox-sandbox-agent.service /etc/systemd/system/discobox-sandbox-agent.service
 COPY sandbox-agent/image/systemd/x11-display.socket /etc/systemd/system/x11-display.socket
 COPY sandbox-agent/image/systemd/x11-display.service /etc/systemd/system/x11-display.service

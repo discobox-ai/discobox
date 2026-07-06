@@ -7,7 +7,7 @@ ConditionPathExists=/etc/discobox/sandbox.json
 
 [Service]
 Type=simple
-Environment=PATH=/root/.cargo/bin:/root/.nix-profile/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/root/.local/bin:/root/.npm-global/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Environment=PATH=/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 Environment=NIX_REMOTE=daemon
 ExecStartPre=/usr/bin/install -d -m 0700 /run/discobox/agent-terminals
 ExecStartPre=/usr/bin/install -d -m 0755 /var/lib/discobox /workspace
