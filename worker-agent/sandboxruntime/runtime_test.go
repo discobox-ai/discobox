@@ -213,7 +213,7 @@ func TestSandboxAgentTerminalStateErrorAllowsRunningSandbox(t *testing.T) {
 	}
 }
 
-func TestBuildSandboxAgentConfigIncludesProjectAgentConfigs(t *testing.T) {
+func TestBuildSandboxManifestIncludesProjectAgentConfigs(t *testing.T) {
 	req := &workerapimodel.WorkerSandboxCreateRequest{
 		Config: workerapimodel.SandboxConfig{
 			Env: workerclient.NewOptSandboxConfigEnv(workerclient.SandboxConfigEnv{
@@ -243,21 +243,28 @@ func TestBuildSandboxAgentConfigIncludesProjectAgentConfigs(t *testing.T) {
 		}),
 	}
 
-	cfg := buildSandboxAgentConfig("project-1", "sandbox-1", "worker-1", "public-key", req)
-	if cfg.Env["BASE"] != "sandbox" || cfg.Env["OVERRIDE"] != "sandbox" {
-		t.Fatalf("env = %#v, want sandbox env in agent config", cfg.Env)
+	manifest := buildSandboxManifest("project-1", "sandbox-1", "worker-1", "public-key", req)
+	if manifest.APIVersion != "discobox.dev/sandbox/v1" || manifest.SandboxID != "sandbox-1" {
+		t.Fatalf("manifest identity = %#v, want v1 sandbox-1", manifest)
 	}
-	if cfg.ResolvedAgentConfig == nil || cfg.ResolvedAgentConfig.ID != "claude" {
-		t.Fatalf("resolved agent config = %#v, want claude", cfg.ResolvedAgentConfig)
+	if manifest.Provider == nil || manifest.Provider.Kind != "discobox-worker" || manifest.Provider.ProjectID != "project-1" || manifest.Provider.WorkerID != "worker-1" {
+		t.Fatalf("provider = %#v, want worker provider identity", manifest.Provider)
 	}
-	if len(cfg.AgentConfigs) != 2 {
-		t.Fatalf("agent configs = %#v, want 2", cfg.AgentConfigs)
+	if manifest.Provider.PublicKeys["controlPlane"] != "public-key" {
+		t.Fatalf("public keys = %#v, want control plane key", manifest.Provider.PublicKeys)
 	}
-	if !cfg.AgentConfigs[0].IsDefault || cfg.AgentConfigs[0].InstallCommand == "" {
-		t.Fatalf("default agent config = %#v, want default with install command", cfg.AgentConfigs[0])
+	env, ok := manifest.Config.Env.Get()
+	if !ok || env["BASE"] != "sandbox" || env["OVERRIDE"] != "sandbox" {
+		t.Fatalf("env = %#v, want sandbox env in manifest config", env)
 	}
-	if len(cfg.Agents) != 2 || cfg.Agents[0].ID != "codex" || cfg.Agents[1].ID != "claude" {
-		t.Fatalf("launchable agents = %#v, want codex and claude", cfg.Agents)
+	if manifest.ResolvedAgentConfig == nil || manifest.ResolvedAgentConfig.ID != "claude" || manifest.ResolvedAgentConfig.RunCommand != "claude" {
+		t.Fatalf("resolved agent config = %#v, want claude", manifest.ResolvedAgentConfig)
+	}
+	if len(manifest.AgentConfigs) != 2 {
+		t.Fatalf("agent configs = %#v, want 2", manifest.AgentConfigs)
+	}
+	if !manifest.AgentConfigs[0].IsDefault || manifest.AgentConfigs[0].InstallCommand == "" || manifest.AgentConfigs[0].RunCommand != "codex" {
+		t.Fatalf("default agent config = %#v, want default with install and run command", manifest.AgentConfigs[0])
 	}
 }
 

@@ -554,7 +554,7 @@ func (m *Manager) localAgentConfig(workdir string) (config.Agent, bool, error) {
 }
 
 func localAgentConfigPath(repoRoot string) (string, bool) {
-	for _, name := range []string{"agent.json", "agent-config.json", "sandbox-agent.json"} {
+	for _, name := range []string{"agent.json", "agent-config.json", "sandbox.json"} {
 		path := filepath.Join(repoRoot, ".discobox", name)
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
 			return path, true

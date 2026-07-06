@@ -7687,33 +7687,13 @@ func (s *ProviderStatus) encodeFields(e *jx.Encoder) {
 		e.FieldStart("state")
 		e.Str(s.State)
 	}
-	{
-		e.FieldStart("supportsClearCache")
-		e.Bool(s.SupportsClearCache)
-	}
-	{
-		e.FieldStart("supportsImages")
-		e.Bool(s.SupportsImages)
-	}
-	{
-		e.FieldStart("supportsInspection")
-		e.Bool(s.SupportsInspection)
-	}
-	{
-		e.FieldStart("supportsResources")
-		e.Bool(s.SupportsResources)
-	}
 }
 
-var jsonFieldsNameOfProviderStatus = [8]string{
+var jsonFieldsNameOfProviderStatus = [4]string{
 	0: "available",
 	1: "details",
 	2: "message",
 	3: "state",
-	4: "supportsClearCache",
-	5: "supportsImages",
-	6: "supportsInspection",
-	7: "supportsResources",
 }
 
 // Decode decodes ProviderStatus from json.
@@ -7770,54 +7750,6 @@ func (s *ProviderStatus) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"state\"")
 			}
-		case "supportsClearCache":
-			requiredBitSet[0] |= 1 << 4
-			if err := func() error {
-				v, err := d.Bool()
-				s.SupportsClearCache = bool(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"supportsClearCache\"")
-			}
-		case "supportsImages":
-			requiredBitSet[0] |= 1 << 5
-			if err := func() error {
-				v, err := d.Bool()
-				s.SupportsImages = bool(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"supportsImages\"")
-			}
-		case "supportsInspection":
-			requiredBitSet[0] |= 1 << 6
-			if err := func() error {
-				v, err := d.Bool()
-				s.SupportsInspection = bool(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"supportsInspection\"")
-			}
-		case "supportsResources":
-			requiredBitSet[0] |= 1 << 7
-			if err := func() error {
-				v, err := d.Bool()
-				s.SupportsResources = bool(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"supportsResources\"")
-			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -7828,7 +7760,7 @@ func (s *ProviderStatus) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b11111001,
+		0b00001001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

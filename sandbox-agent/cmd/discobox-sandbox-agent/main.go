@@ -40,7 +40,7 @@ func run(args []string) int {
 	}
 	var configPath string
 	flags := flag.NewFlagSet("discobox-sandbox-agent", flag.ContinueOnError)
-	flags.StringVar(&configPath, "config", "", "path to sandbox-agent config")
+	flags.StringVar(&configPath, "config", "", "path to sandbox manifest")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}

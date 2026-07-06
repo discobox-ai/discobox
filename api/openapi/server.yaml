@@ -1058,21 +1058,9 @@ components:
                     type: string
                 state:
                     type: string
-                supportsClearCache:
-                    type: boolean
-                supportsImages:
-                    type: boolean
-                supportsInspection:
-                    type: boolean
-                supportsResources:
-                    type: boolean
             required:
                 - available
                 - state
-                - supportsResources
-                - supportsInspection
-                - supportsClearCache
-                - supportsImages
             type: object
         RegisterWorkerBody:
             additionalProperties: false

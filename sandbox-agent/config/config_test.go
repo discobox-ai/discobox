@@ -8,14 +8,25 @@ import (
 )
 
 func TestLoadAppliesEnvironmentOverrides(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sandbox-agent.json")
+	path := filepath.Join(t.TempDir(), "sandbox.json")
 	if err := os.WriteFile(path, []byte(`{
-		"identity": {
-			"projectId": "project-file",
-			"sandboxId": "sandbox-file",
-			"workerId": "worker-file"
+		"apiVersion": "discobox.dev/sandbox/v1",
+		"sandboxId": "sandbox-file",
+		"config": {
+			"name": "test",
+			"image": "image",
+			"cpuVcpus": 1,
+			"memoryBytes": 1024,
+			"storageBytes": 2048
 		},
-		"controlPlanePublicKey": "file-key"
+		"provider": {
+			"kind": "discobox-worker",
+			"projectId": "project-file",
+			"workerId": "worker-file",
+			"publicKeys": {
+				"controlPlane": "file-key"
+			}
+		}
 	}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -38,31 +49,45 @@ func TestLoadAppliesEnvironmentOverrides(t *testing.T) {
 }
 
 func TestLoadUsesAgentConfigsAsLaunchableAgents(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "sandbox-agent.json")
+	path := filepath.Join(t.TempDir(), "sandbox.json")
 	if err := os.WriteFile(path, []byte(`{
-		"identity": {
-			"projectId": "project-1",
-			"sandboxId": "sandbox-1",
-			"workerId": "worker-1"
+		"apiVersion": "discobox.dev/sandbox/v1",
+		"sandboxId": "sandbox-1",
+		"config": {
+			"name": "test",
+			"image": "image",
+			"cpuVcpus": 1,
+			"memoryBytes": 1024,
+			"storageBytes": 2048,
+			"env": {
+				"BASE": "sandbox"
+			}
 		},
-		"controlPlanePublicKey": "`+base64.StdEncoding.EncodeToString(make([]byte, 32))+`",
+		"provider": {
+			"kind": "discobox-worker",
+			"projectId": "project-1",
+			"workerId": "worker-1",
+			"publicKeys": {
+				"controlPlane": "`+base64.StdEncoding.EncodeToString(make([]byte, 32))+`"
+			}
+		},
 		"resolvedAgentConfig": {
 			"id": "claude",
 			"name": "Claude",
-			"command": ["/bin/bash", "-lc", "claude"]
+			"runCommand": "claude"
 		},
 		"agentConfigs": [
 			{
 				"id": "codex",
 				"name": "Codex",
 				"installCommand": "npm install -g @openai/codex",
-				"command": ["/bin/bash", "-lc", "codex"],
+				"runCommand": "codex",
 				"isDefault": true
 			},
 			{
 				"id": "claude",
 				"name": "Claude",
-				"command": ["/bin/bash", "-lc", "claude"]
+				"runCommand": "claude"
 			}
 		]
 	}`), 0o644); err != nil {
@@ -81,5 +106,8 @@ func TestLoadUsesAgentConfigsAsLaunchableAgents(t *testing.T) {
 	}
 	if cfg.Agents[1].ID != "claude" {
 		t.Fatalf("second agent = %#v, want claude", cfg.Agents[1])
+	}
+	if cfg.Env["BASE"] != "sandbox" {
+		t.Fatalf("env = %#v, want sandbox config env", cfg.Env)
 	}
 }

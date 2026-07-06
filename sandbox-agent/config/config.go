@@ -7,9 +7,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/obot-platform/discobox/api/model"
 )
 
-const DefaultPath = "/etc/discobox/sandbox-agent.json"
+const (
+	DefaultPath               = "/etc/discobox/sandbox.json"
+	ControlPlanePublicKeyName = "controlPlane"
+)
 
 type Config struct {
 	Identity              Identity          `json:"identity"`
@@ -46,15 +51,15 @@ type ResourceConfig struct {
 
 func Load(path string) (Config, error) {
 	if strings.TrimSpace(path) == "" {
-		path = getenv("DISCOBOX_SANDBOX_AGENT_CONFIG", DefaultPath)
+		path = getenv("DISCOBOX_SANDBOX_CONFIG", DefaultPath)
 	}
 	var cfg Config
 	if data, err := os.ReadFile(path); err == nil {
-		if err := json.Unmarshal(data, &cfg); err != nil {
-			return Config{}, fmt.Errorf("parse sandbox-agent config %s: %w", path, err)
+		if err := unmarshalManifest(data, &cfg); err != nil {
+			return Config{}, fmt.Errorf("parse sandbox config %s: %w", path, err)
 		}
 	} else if !os.IsNotExist(err) {
-		return Config{}, fmt.Errorf("read sandbox-agent config %s: %w", path, err)
+		return Config{}, fmt.Errorf("read sandbox config %s: %w", path, err)
 	}
 	applyEnv(&cfg)
 	applyDefaults(&cfg)
@@ -63,6 +68,92 @@ func Load(path string) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func unmarshalManifest(data []byte, cfg *Config) error {
+	var manifest model.SandboxManifest
+	if err := json.Unmarshal(data, &manifest); err != nil {
+		return err
+	}
+	if strings.TrimSpace(manifest.APIVersion) != model.SandboxManifestAPIVersion {
+		return fmt.Errorf("apiVersion = %q, want %q", manifest.APIVersion, model.SandboxManifestAPIVersion)
+	}
+	*cfg = configFromManifest(manifest)
+	return nil
+}
+
+func configFromManifest(manifest model.SandboxManifest) Config {
+	cfg := Config{
+		Identity: Identity{
+			SandboxID: manifest.SandboxID,
+		},
+	}
+	if manifest.Provider != nil {
+		cfg.Identity.ProjectID = manifest.Provider.ProjectID
+		cfg.Identity.WorkerID = manifest.Provider.WorkerID
+		cfg.ControlPlanePublicKey = publicKey(manifest.Provider.PublicKeys)
+	}
+	if env, ok := manifest.Config.Env.Get(); ok {
+		cfg.Env = map[string]string(env)
+	}
+	if manifest.AgentRuntime != nil {
+		cfg.ListenAddress = manifest.AgentRuntime.ListenAddress
+		cfg.WorkingRoot = manifest.AgentRuntime.WorkingRoot
+		cfg.RuntimeDir = manifest.AgentRuntime.RuntimeDir
+		cfg.DatabasePath = manifest.AgentRuntime.DatabasePath
+		if manifest.AgentRuntime.ResourceCollection != nil {
+			if sampleInterval := strings.TrimSpace(manifest.AgentRuntime.ResourceCollection.SampleInterval); sampleInterval != "" {
+				if parsed, err := time.ParseDuration(sampleInterval); err == nil {
+					cfg.Resources.SampleInterval = parsed
+				}
+			}
+			cfg.Resources.RetentionCount = int(manifest.AgentRuntime.ResourceCollection.RetentionCount)
+		}
+	}
+	if manifest.ResolvedAgentConfig != nil {
+		resolved := agentFromResolvedManifest(*manifest.ResolvedAgentConfig)
+		cfg.ResolvedAgentConfig = &resolved
+	}
+	if len(manifest.AgentConfigs) > 0 {
+		cfg.AgentConfigs = make([]Agent, 0, len(manifest.AgentConfigs))
+		for _, agentConfig := range manifest.AgentConfigs {
+			cfg.AgentConfigs = append(cfg.AgentConfigs, agentFromManifest(agentConfig))
+		}
+	}
+	return cfg
+}
+
+func publicKey(values map[string]string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(values[ControlPlanePublicKeyName])
+}
+
+func agentFromManifest(in model.SandboxManifestAgentConfig) Agent {
+	return Agent{
+		ID:             in.ID,
+		Name:           in.Name,
+		InstallCommand: in.InstallCommand,
+		Command:        runCommand(in.RunCommand),
+		IsDefault:      in.IsDefault,
+	}
+}
+
+func agentFromResolvedManifest(in model.SandboxManifestResolvedAgentConfig) Agent {
+	return Agent{
+		ID:             in.ID,
+		Name:           in.Name,
+		InstallCommand: in.InstallCommand,
+		Command:        runCommand(in.RunCommand),
+	}
+}
+
+func runCommand(command string) []string {
+	if strings.TrimSpace(command) == "" {
+		return nil
+	}
+	return []string{"/bin/bash", "-lc", command}
 }
 
 func launchableAgents(agents []Agent, resolved *Agent, configs []Agent) []Agent {
@@ -103,11 +194,8 @@ func (c Config) Validate() error {
 	if strings.TrimSpace(c.Identity.SandboxID) == "" {
 		return fmt.Errorf("sandboxId is required")
 	}
-	if strings.TrimSpace(c.Identity.WorkerID) == "" {
-		return fmt.Errorf("workerId is required")
-	}
 	if strings.TrimSpace(c.ControlPlanePublicKey) == "" {
-		return fmt.Errorf("controlPlanePublicKey is required")
+		return fmt.Errorf("provider.publicKeys.%s is required", ControlPlanePublicKeyName)
 	}
 	for _, agent := range c.Agents {
 		if strings.TrimSpace(agent.ID) == "" {

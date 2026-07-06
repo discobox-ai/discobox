@@ -63,7 +63,8 @@ surface:
   Schema-only sandbox-agent contracts, such as `/etc/discobox/sandbox.json`,
   live in `api/openapi/server.yaml` and use `x-sandbox-agent-component: true`
   so the subset generator includes them in `api/openapi/sandbox.yaml` even when
-  no REST operation references them.
+  no REST operation references them. `api/internal/genmanifestmodels` generates
+  stable Go model types for those schema-only contracts into `api/model`.
 
 ## Target Module Boundaries
 

@@ -4585,14 +4585,10 @@ func (s *ProviderConfigField) SetType(val string) {
 
 // Ref: #/components/schemas/ProviderStatus
 type ProviderStatus struct {
-	Available          bool      `json:"available"`
-	Details            jx.Raw    `json:"details"`
-	Message            OptString `json:"message"`
-	State              string    `json:"state"`
-	SupportsClearCache bool      `json:"supportsClearCache"`
-	SupportsImages     bool      `json:"supportsImages"`
-	SupportsInspection bool      `json:"supportsInspection"`
-	SupportsResources  bool      `json:"supportsResources"`
+	Available bool      `json:"available"`
+	Details   jx.Raw    `json:"details"`
+	Message   OptString `json:"message"`
+	State     string    `json:"state"`
 }
 
 // GetAvailable returns the value of Available.
@@ -4615,26 +4611,6 @@ func (s *ProviderStatus) GetState() string {
 	return s.State
 }
 
-// GetSupportsClearCache returns the value of SupportsClearCache.
-func (s *ProviderStatus) GetSupportsClearCache() bool {
-	return s.SupportsClearCache
-}
-
-// GetSupportsImages returns the value of SupportsImages.
-func (s *ProviderStatus) GetSupportsImages() bool {
-	return s.SupportsImages
-}
-
-// GetSupportsInspection returns the value of SupportsInspection.
-func (s *ProviderStatus) GetSupportsInspection() bool {
-	return s.SupportsInspection
-}
-
-// GetSupportsResources returns the value of SupportsResources.
-func (s *ProviderStatus) GetSupportsResources() bool {
-	return s.SupportsResources
-}
-
 // SetAvailable sets the value of Available.
 func (s *ProviderStatus) SetAvailable(val bool) {
 	s.Available = val
@@ -4653,26 +4629,6 @@ func (s *ProviderStatus) SetMessage(val OptString) {
 // SetState sets the value of State.
 func (s *ProviderStatus) SetState(val string) {
 	s.State = val
-}
-
-// SetSupportsClearCache sets the value of SupportsClearCache.
-func (s *ProviderStatus) SetSupportsClearCache(val bool) {
-	s.SupportsClearCache = val
-}
-
-// SetSupportsImages sets the value of SupportsImages.
-func (s *ProviderStatus) SetSupportsImages(val bool) {
-	s.SupportsImages = val
-}
-
-// SetSupportsInspection sets the value of SupportsInspection.
-func (s *ProviderStatus) SetSupportsInspection(val bool) {
-	s.SupportsInspection = val
-}
-
-// SetSupportsResources sets the value of SupportsResources.
-func (s *ProviderStatus) SetSupportsResources(val bool) {
-	s.SupportsResources = val
 }
 
 // Ref: #/components/schemas/ProviderWorkerStatus

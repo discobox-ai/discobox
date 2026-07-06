@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
+
+	"github.com/obot-platform/discobox/api/internal/genyaml"
 )
 
 const sandboxAgentMarker = "x-sandbox-agent"
@@ -24,24 +25,24 @@ func main() {
 func run() error {
 	sourcePath := "api/openapi/server.yaml"
 	targetPath := "api/openapi/sandbox.yaml"
-	source, err := readYAML(sourcePath)
+	source, err := genyaml.ReadYAML(sourcePath)
 	if err != nil {
 		return err
 	}
-	paths, ok := asMap(source["paths"])
+	paths, ok := genyaml.AsMap(source["paths"])
 	if !ok {
 		return fmt.Errorf("%s has no paths object", sourcePath)
 	}
 
 	outPaths := map[string]any{}
 	for path, value := range paths {
-		pathItem, ok := asMap(value)
+		pathItem, ok := genyaml.AsMap(value)
 		if !ok {
 			continue
 		}
 		nextPathItem := map[string]any{}
 		for _, method := range []string{"get", "put", "post", "delete", "patch", "options", "head", "trace"} {
-			operation, ok := asMap(pathItem[method])
+			operation, ok := genyaml.AsMap(pathItem[method])
 			if !ok || operation[sandboxAgentMarker] != true {
 				continue
 			}
@@ -86,55 +87,14 @@ func run() error {
 	return os.WriteFile(targetPath, buf.Bytes(), 0o600)
 }
 
-func readYAML(path string) (map[string]any, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, err
-	}
-	var raw any
-	if err := yaml.Unmarshal(data, &raw); err != nil {
-		return nil, err
-	}
-	out, ok := normalizeYAML(raw).(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("%s did not decode to an object", path)
-	}
-	return out, nil
-}
-
-func normalizeYAML(value any) any {
-	switch value := value.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(value))
-		for key, child := range value {
-			out[key] = normalizeYAML(child)
-		}
-		return out
-	case map[any]any:
-		out := make(map[string]any, len(value))
-		for key, child := range value {
-			out[fmt.Sprint(key)] = normalizeYAML(child)
-		}
-		return out
-	case []any:
-		out := make([]any, len(value))
-		for i, child := range value {
-			out[i] = normalizeYAML(child)
-		}
-		return out
-	default:
-		return value
-	}
-}
-
 func referencedComponents(source map[string]any, roots ...any) map[string]any {
-	components, _ := asMap(source["components"])
+	components, _ := genyaml.AsMap(source["components"])
 	out := map[string]any{}
 	needed := map[string]map[string]bool{}
 	for category, value := range components {
-		sourceCategory, _ := asMap(value)
+		sourceCategory, _ := genyaml.AsMap(value)
 		for name, component := range sourceCategory {
-			componentMap, ok := asMap(component)
+			componentMap, ok := genyaml.AsMap(component)
 			if !ok || componentMap[sandboxAgentComponentMarker] != true {
 				continue
 			}
@@ -172,17 +132,17 @@ func referencedComponents(source map[string]any, roots ...any) map[string]any {
 
 	for {
 		changed := false
-		for _, category := range sortedKeys(needed) {
-			sourceCategory, _ := asMap(components[category])
+		for _, category := range genyaml.SortedKeys(needed) {
+			sourceCategory, _ := genyaml.AsMap(components[category])
 			if len(sourceCategory) == 0 {
 				continue
 			}
-			outCategory, _ := asMap(out[category])
+			outCategory, _ := genyaml.AsMap(out[category])
 			if outCategory == nil {
 				outCategory = map[string]any{}
 				out[category] = outCategory
 			}
-			for _, name := range sortedBoolKeys(needed[category]) {
+			for _, name := range genyaml.SortedKeys(needed[category]) {
 				if _, exists := outCategory[name]; exists {
 					continue
 				}
@@ -238,7 +198,7 @@ func parseComponentRef(ref string) (string, string, bool) {
 func nestedString(root map[string]any, keys ...string) string {
 	var current any = root
 	for _, key := range keys {
-		m, ok := asMap(current)
+		m, ok := genyaml.AsMap(current)
 		if !ok {
 			return ""
 		}
@@ -248,33 +208,10 @@ func nestedString(root map[string]any, keys ...string) string {
 	return value
 }
 
-func asMap(value any) (map[string]any, bool) {
-	m, ok := value.(map[string]any)
-	return m, ok
-}
-
 func cloneMap(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
 	for key, value := range in {
 		out[key] = value
 	}
 	return out
-}
-
-func sortedKeys[M ~map[string]V, V any](m M) []string {
-	keys := make([]string, 0, len(m))
-	for key := range m {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
-}
-
-func sortedBoolKeys(m map[string]bool) []string {
-	keys := make([]string, 0, len(m))
-	for key := range m {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	return keys
 }

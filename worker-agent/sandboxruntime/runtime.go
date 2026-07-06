@@ -21,6 +21,8 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
+	apigen "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 
 	workerclient "github.com/obot-platform/discobox/worker-agent/api/gen"
 	workerapimodel "github.com/obot-platform/discobox/worker-agent/api/model"
@@ -36,6 +38,7 @@ const (
 	sandboxLabelProject      = "discobox.project_id"
 	sandboxLabelWorker       = "discobox.worker_id"
 	sandboxLabelSandbox      = "discobox.sandbox_id"
+	sandboxManifestPublicKey = "controlPlane"
 )
 
 var (
@@ -260,66 +263,179 @@ func (r *DockerSandboxRuntime) writeSandboxAgentConfig(ctx context.Context, sand
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return err
 	}
-	cfg := buildSandboxAgentConfig(r.projectID, sandboxID, r.workerID, r.controlPlanePublicKey, req)
+	cfg := buildSandboxManifest(r.projectID, sandboxID, r.workerID, r.controlPlanePublicKey, req)
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(configDir, "sandbox-agent.json")
+	path := filepath.Join(configDir, "sandbox.json")
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		return err
 	}
 	return chownRecursive(ctx, configDir, 0, 0)
 }
 
-func buildSandboxAgentConfig(projectID, sandboxID, workerID, controlPlanePublicKey string, req *workerapimodel.WorkerSandboxCreateRequest) sandboxAgentConfig {
-	cfg := sandboxAgentConfig{
-		Identity: sandboxAgentIdentity{
+func buildSandboxManifest(projectID, sandboxID, workerID, controlPlanePublicKey string, req *workerapimodel.WorkerSandboxCreateRequest) apimodel.SandboxManifest {
+	manifest := apimodel.SandboxManifest{
+		APIVersion: apimodel.SandboxManifestAPIVersion,
+		SandboxID:  sandboxID,
+		Provider: &apimodel.SandboxManifestProvider{
+			Kind:      "discobox-worker",
 			ProjectID: projectID,
-			SandboxID: sandboxID,
-			WorkerID:  workerID,
+			PublicKeys: map[string]string{
+				sandboxManifestPublicKey: controlPlanePublicKey,
+			},
+			WorkerID: workerID,
 		},
-		ControlPlanePublicKey: controlPlanePublicKey,
-		ListenAddress:         fmt.Sprintf(":%d", sandboxAgentPort),
-		WorkingRoot:           "/workspace",
-		RuntimeDir:            "/run/discobox/agent-terminals",
-		DatabasePath:          "/var/lib/discobox/sandbox-agent.db",
-		Resources: sandboxAgentResourceConfig{
-			SampleInterval: int64(time.Second),
-			RetentionCount: 300,
+		AgentRuntime: &apimodel.SandboxManifestAgentRuntime{
+			ListenAddress: fmt.Sprintf(":%d", sandboxAgentPort),
+			WorkingRoot:   "/workspace",
+			RuntimeDir:    "/run/discobox/agent-terminals",
+			DatabasePath:  "/var/lib/discobox/sandbox-agent.db",
+			ResourceCollection: &apimodel.SandboxManifestResourceCollection{
+				SampleInterval: time.Second.String(),
+				RetentionCount: 300,
+			},
 		},
 	}
 	if req != nil {
-		cfg.Env = map[string]string(optSandboxConfigEnv(req.Config.Env))
+		manifest.Config = publicSandboxConfig(req.Config)
+		if resources, ok := req.Resources.Get(); ok {
+			manifest.Resources = &apimodel.SandboxResources{
+				CPUCores:       resources.CpuCores,
+				DiskMB:         resources.DiskMb,
+				MemoryMB:       resources.MemoryMb,
+				TimeoutSeconds: resources.TimeoutSeconds,
+			}
+		}
 		if resolved, ok := req.ResolvedAgentConfig.Get(); ok {
-			resolvedConfig := sandboxAgentConfigAgentConfig{
-				ID:      resolved.ID,
-				Name:    resolved.Name,
-				Command: []string{"/bin/bash", "-lc", resolved.RunCommand},
+			resolvedConfig := apimodel.SandboxManifestResolvedAgentConfig{
+				ID:         resolved.ID,
+				Name:       resolved.Name,
+				RunCommand: resolved.RunCommand,
 			}
 			if installCommand, ok := resolved.InstallCommand.Get(); ok {
 				resolvedConfig.InstallCommand = installCommand
 			}
-			cfg.ResolvedAgentConfig = &resolvedConfig
+			manifest.ResolvedAgentConfig = &resolvedConfig
 		}
 		if configs, ok := req.AgentConfigs.Get(); ok {
-			cfg.AgentConfigs = make([]sandboxAgentConfigAgentConfig, 0, len(configs))
+			manifest.AgentConfigs = make([]apimodel.SandboxManifestAgentConfig, 0, len(configs))
 			for _, config := range configs {
-				agentConfig := sandboxAgentConfigAgentConfig{
-					ID:        config.ID,
-					Name:      config.Name,
-					Command:   []string{"/bin/bash", "-lc", config.RunCommand},
-					IsDefault: config.IsDefault,
+				agentConfig := apimodel.SandboxManifestAgentConfig{
+					ID:         config.ID,
+					Name:       config.Name,
+					RunCommand: config.RunCommand,
+					IsDefault:  config.IsDefault,
 				}
 				if installCommand, ok := config.InstallCommand.Get(); ok {
 					agentConfig.InstallCommand = installCommand
 				}
-				cfg.AgentConfigs = append(cfg.AgentConfigs, agentConfig)
+				manifest.AgentConfigs = append(manifest.AgentConfigs, agentConfig)
 			}
 		}
 	}
-	cfg.Agents = launchableSandboxAgentConfigs(cfg.ResolvedAgentConfig, cfg.AgentConfigs)
-	return cfg
+	return manifest
+}
+
+func publicSandboxConfig(config workerapimodel.SandboxConfig) apimodel.SandboxConfig {
+	out := apimodel.SandboxConfig{
+		AgentConfigId:            publicOptString(config.AgentConfigId),
+		AgentModel:               publicOptString(config.AgentModel),
+		AgentModelReasoningLevel: publicOptString(config.AgentModelReasoningLevel),
+		AgentModelServiceTier:    publicOptString(config.AgentModelServiceTier),
+		Description:              publicOptString(config.Description),
+		Image:                    optString(config.Image),
+		Name:                     optString(config.Name),
+		Prompt:                   publicOptString(config.Prompt),
+		CpuVcpus:                 optFloat64(config.CpuVcpus),
+		MemoryBytes:              optInt64(config.MemoryBytes),
+		StorageBytes:             optInt64(config.StorageBytes),
+	}
+	if env, ok := config.Env.Get(); ok {
+		out.Env = apigen.NewOptSandboxConfigEnv(apigen.SandboxConfigEnv(env))
+	}
+	if source, ok := config.Source.Get(); ok {
+		out.Source = apigen.NewOptGitSource(publicGitSource(source))
+	}
+	if refs, ok := config.SourceCodeReferences.Get(); ok {
+		outRefs := make(apigen.SandboxConfigSourceCodeReferences, len(refs))
+		for key, ref := range refs {
+			outRefs[key] = publicGitSource(ref)
+		}
+		out.SourceCodeReferences = apigen.NewOptSandboxConfigSourceCodeReferences(outRefs)
+	}
+	if user, ok := config.User.Get(); ok {
+		out.User = apigen.NewOptSandboxUser(publicSandboxUser(user))
+	}
+	return out
+}
+
+func publicGitSource(source workerapimodel.GitSource) apigen.GitSource {
+	out := apigen.GitSource{
+		Kind: apigen.GitSourceKind(source.Kind),
+	}
+	if checkout, ok := source.Checkout.Get(); ok {
+		out.Checkout = apigen.NewOptGitSourceCheckout(apigen.GitSourceCheckout{
+			Commit:  publicOptString(checkout.Commit),
+			RefName: publicOptString(checkout.RefName),
+			RefType: publicOptString(checkout.RefType),
+		})
+	}
+	if destination, ok := source.Destination.Get(); ok {
+		out.Destination = apigen.NewOptGitSourceDestination(apigen.GitSourceDestination{
+			Directory:        publicOptString(destination.Directory),
+			WorkingDirectory: publicOptString(destination.WorkingDirectory),
+		})
+	}
+	out.LocalDirectory = publicOptString(source.LocalDirectory)
+	out.Slug = publicOptString(source.Slug)
+	out.URL = publicOptURI(source.URL)
+	if workspace, ok := source.Workspace.Get(); ok {
+		out.Workspace = apigen.NewOptGitSourceWorkspace(apigen.GitSourceWorkspace{
+			BaseCommit:  publicOptString(workspace.BaseCommit),
+			Mode:        publicOptGitSourceWorkspaceMode(workspace.Mode),
+			SnapshotRef: publicOptString(workspace.SnapshotRef),
+		})
+	}
+	return out
+}
+
+func publicSandboxUser(user workerapimodel.SandboxUser) apigen.SandboxUser {
+	return apigen.SandboxUser{
+		Gid:           publicOptInt64(user.Gid),
+		HomeDirectory: publicOptString(user.HomeDirectory),
+		Name:          publicOptString(user.Name),
+		UID:           publicOptInt64(user.UID),
+	}
+}
+
+func publicOptString(opt workerclient.OptString) apigen.OptString {
+	if value, ok := opt.Get(); ok {
+		return apigen.NewOptString(value)
+	}
+	return apigen.OptString{}
+}
+
+func publicOptInt64(opt workerclient.OptInt64) apigen.OptInt64 {
+	if value, ok := opt.Get(); ok {
+		return apigen.NewOptInt64(value)
+	}
+	return apigen.OptInt64{}
+}
+
+func publicOptURI(opt workerclient.OptURI) apigen.OptURI {
+	if value, ok := opt.Get(); ok {
+		return apigen.NewOptURI(value)
+	}
+	return apigen.OptURI{}
+}
+
+func publicOptGitSourceWorkspaceMode(opt workerclient.OptGitSourceWorkspaceMode) apigen.OptGitSourceWorkspaceMode {
+	if value, ok := opt.Get(); ok {
+		return apigen.NewOptGitSourceWorkspaceMode(apigen.GitSourceWorkspaceMode(value))
+	}
+	return apigen.OptGitSourceWorkspaceMode{}
 }
 
 func prepareOwnedDirectory(ctx context.Context, dir string, uid, gid int) error {
@@ -698,60 +814,6 @@ func containerIPAddress(inspect container.InspectResponse) string {
 		}
 	}
 	return ""
-}
-
-type sandboxAgentConfig struct {
-	Identity              sandboxAgentIdentity            `json:"identity"`
-	ControlPlanePublicKey string                          `json:"controlPlanePublicKey"`
-	ListenAddress         string                          `json:"listenAddress"`
-	WorkingRoot           string                          `json:"workingRoot"`
-	RuntimeDir            string                          `json:"runtimeDir"`
-	DatabasePath          string                          `json:"databasePath"`
-	Env                   map[string]string               `json:"env,omitempty"`
-	ResolvedAgentConfig   *sandboxAgentConfigAgentConfig  `json:"resolvedAgentConfig,omitempty"`
-	AgentConfigs          []sandboxAgentConfigAgentConfig `json:"agentConfigs,omitempty"`
-	Agents                []sandboxAgentConfigAgentConfig `json:"agents,omitempty"`
-	Resources             sandboxAgentResourceConfig      `json:"resources"`
-}
-
-type sandboxAgentIdentity struct {
-	ProjectID string `json:"projectId"`
-	SandboxID string `json:"sandboxId"`
-	WorkerID  string `json:"workerId"`
-}
-
-type sandboxAgentConfigAgentConfig struct {
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	InstallCommand string   `json:"installCommand,omitempty"`
-	Command        []string `json:"command"`
-	IsDefault      bool     `json:"isDefault,omitempty"`
-}
-
-type sandboxAgentResourceConfig struct {
-	SampleInterval int64 `json:"sampleInterval"`
-	RetentionCount int   `json:"retentionCount"`
-}
-
-func launchableSandboxAgentConfigs(resolved *sandboxAgentConfigAgentConfig, configs []sandboxAgentConfigAgentConfig) []sandboxAgentConfigAgentConfig {
-	if len(configs) == 0 && resolved == nil {
-		return nil
-	}
-	seen := map[string]struct{}{}
-	out := make([]sandboxAgentConfigAgentConfig, 0, len(configs)+1)
-	for _, config := range configs {
-		if config.ID == "" {
-			continue
-		}
-		seen[config.ID] = struct{}{}
-		out = append(out, config)
-	}
-	if resolved != nil {
-		if _, ok := seen[resolved.ID]; !ok && resolved.ID != "" {
-			out = append(out, *resolved)
-		}
-	}
-	return out
 }
 
 func optString(opt workerclient.OptString) string {

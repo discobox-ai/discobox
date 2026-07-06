@@ -74,7 +74,8 @@ this module.
   `worker-agent/api/openapi/worker.yaml` contract into
   `worker-agent/api/gen`, with schema aliases in `worker-agent/api/model`. Do
   not generate these worker-local routes from the root `api/openapi/sandbox.yaml`;
-  that YAML is reserved for the future in-sandbox agent API seed.
+  that YAML is itself generated from `api/openapi/server.yaml` for the
+  in-sandbox agent API.
 - Build the worker-agent image from the repository root with
   `docker build -f worker-agent/Dockerfile ... .` so the Dockerfile can copy
   root support packages without vendoring them.
