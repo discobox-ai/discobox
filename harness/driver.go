@@ -12,8 +12,9 @@ import (
 )
 
 const (
-	TerminalIDEnv = "DISCOBOX_TERMINAL_ID"
-	SocketEnv     = "DISCOBOX_HOOK_SOCKET"
+	TerminalIDEnv   = "DISCOBOX_TERMINAL_ID"
+	SocketEnv       = "DISCOBOX_HOOK_SOCKET"
+	ManagedFileMode = 0o644
 )
 
 type Agent struct {
@@ -80,7 +81,10 @@ func WriteJSONFile(path string, value any) error {
 		return err
 	}
 	data = append(data, '\n')
-	return os.WriteFile(path, data, 0o600)
+	if err := os.WriteFile(path, data, ManagedFileMode); err != nil {
+		return err
+	}
+	return os.Chmod(path, ManagedFileMode)
 }
 
 func JSONMap(value any) map[string]any {

@@ -93,7 +93,7 @@ func runHookPublish(args []string) int {
 
 func runExecShim(args []string) int {
 	var cfg execs.ShimConfig
-	var commandBase64, envBase64 string
+	var commandBase64, envBase64, userBase64 string
 	var rows, cols int
 	flags := flag.NewFlagSet("discobox-sandbox-agent exec-shim", flag.ContinueOnError)
 	flags.StringVar(&cfg.ExecID, "exec-id", "", "sandbox exec id")
@@ -107,6 +107,7 @@ func runExecShim(args []string) int {
 	flags.BoolVar(&cfg.TTY, "tty", false, "allocate a PTY")
 	flags.StringVar(&commandBase64, "command", "", "base64 encoded JSON command argv")
 	flags.StringVar(&envBase64, "env", "", "base64 encoded JSON environment")
+	flags.StringVar(&userBase64, "user", "", "base64 encoded JSON exec user")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -134,6 +135,17 @@ func runExecShim(args []string) int {
 			return 2
 		}
 	}
+	if userBase64 != "" {
+		userJSON, err := base64.StdEncoding.DecodeString(userBase64)
+		if err != nil {
+			slog.Error("decode exec shim user", "error", err)
+			return 2
+		}
+		if err := json.Unmarshal(userJSON, &cfg.User); err != nil {
+			slog.Error("parse exec shim user", "error", err)
+			return 2
+		}
+	}
 	cfg.Rows = uint16Dimension(rows)
 	cfg.Cols = uint16Dimension(cols)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -147,7 +159,7 @@ func runExecShim(args []string) int {
 
 func runShim(args []string) int {
 	var cfg shim.Config
-	var commandBase64 string
+	var commandBase64, userBase64 string
 	var rows, cols int
 	flags := flag.NewFlagSet("discobox-sandbox-agent shim", flag.ContinueOnError)
 	flags.StringVar(&cfg.TerminalID, "terminal-id", "", "agent terminal id")
@@ -160,6 +172,7 @@ func runShim(args []string) int {
 	flags.IntVar(&rows, "rows", 0, "initial PTY rows")
 	flags.IntVar(&cols, "cols", 0, "initial PTY cols")
 	flags.StringVar(&commandBase64, "command", "", "base64 encoded JSON command argv")
+	flags.StringVar(&userBase64, "user", "", "base64 encoded JSON terminal user")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -175,6 +188,17 @@ func runShim(args []string) int {
 	if err := json.Unmarshal(commandJSON, &cfg.Command); err != nil {
 		slog.Error("parse shim command", "error", err)
 		return 2
+	}
+	if userBase64 != "" {
+		userJSON, err := base64.StdEncoding.DecodeString(userBase64)
+		if err != nil {
+			slog.Error("decode shim user", "error", err)
+			return 2
+		}
+		if err := json.Unmarshal(userJSON, &cfg.User); err != nil {
+			slog.Error("parse shim user", "error", err)
+			return 2
+		}
 	}
 	cfg.Rows = uint16Dimension(rows)
 	cfg.Cols = uint16Dimension(cols)

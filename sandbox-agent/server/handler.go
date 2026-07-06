@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-faster/jx"
@@ -119,8 +120,7 @@ func (h *handler) CreateSandboxExec(ctx context.Context, req *sandboxapi.CreateS
 		Command:  append([]string{}, req.Command...),
 		Workdir:  req.Workdir.Or(""),
 		Env:      stringMap(req.Env.Or(nil)),
-		UID:      optInt64Ptr(req.UID),
-		GID:      optInt64Ptr(req.Gid),
+		User:     execUserFromAPI(req.User),
 		TTY:      req.Tty.Or(false),
 		Rows:     uint16(req.Rows.Or(0)),
 		Cols:     uint16(req.Cols.Or(0)),
@@ -360,11 +360,8 @@ func sandboxExec(in execs.Exec) sandboxapi.SandboxExec {
 	if len(in.Env) > 0 {
 		out.Env = sandboxapi.NewOptSandboxExecEnv(sandboxapi.SandboxExecEnv(stringMap(in.Env)))
 	}
-	if in.UID != nil {
-		out.UID = sandboxapi.NewOptInt64(*in.UID)
-	}
-	if in.GID != nil {
-		out.Gid = sandboxapi.NewOptInt64(*in.GID)
+	if user := execUserToAPI(in.User); user != nil {
+		out.User = sandboxapi.NewOptSandboxUser(*user)
 	}
 	if in.Unit != "" {
 		out.Unit = sandboxapi.NewOptString(in.Unit)
@@ -388,6 +385,51 @@ func sandboxExec(in execs.Exec) sandboxapi.SandboxExec {
 		out.Metadata = sandboxapi.NewOptSandboxExecMetadata(sandboxapi.SandboxExecMetadata(stringMap(in.Metadata)))
 	}
 	return out
+}
+
+func execUserFromAPI(opt sandboxapi.OptSandboxUser) *execs.User {
+	in, ok := opt.Get()
+	if !ok {
+		return nil
+	}
+	user := &execs.User{
+		Name:          strings.TrimSpace(in.Name.Or("")),
+		HomeDirectory: strings.TrimSpace(in.HomeDirectory.Or("")),
+	}
+	if uid, ok := in.UID.Get(); ok {
+		user.UID = int64ValuePtr(uid)
+	}
+	if gid, ok := in.Gid.Get(); ok {
+		user.GID = int64ValuePtr(gid)
+	}
+	return user
+}
+
+func int64ValuePtr(value int64) *int64 {
+	return &value
+}
+
+func execUserToAPI(in *execs.User) *sandboxapi.SandboxUser {
+	if in == nil {
+		return nil
+	}
+	out := sandboxapi.SandboxUser{}
+	if strings.TrimSpace(in.Name) != "" {
+		out.Name = sandboxapi.NewOptString(strings.TrimSpace(in.Name))
+	}
+	if strings.TrimSpace(in.HomeDirectory) != "" {
+		out.HomeDirectory = sandboxapi.NewOptString(strings.TrimSpace(in.HomeDirectory))
+	}
+	if in.UID != nil {
+		out.UID = sandboxapi.NewOptInt64(*in.UID)
+	}
+	if in.GID != nil {
+		out.Gid = sandboxapi.NewOptInt64(*in.GID)
+	}
+	if !out.Name.Set && !out.HomeDirectory.Set && !out.UID.Set && !out.Gid.Set {
+		return nil
+	}
+	return &out
 }
 
 func sandboxExecLogEntry(in execs.LogEntry) sandboxapi.SandboxExecLogEntry {

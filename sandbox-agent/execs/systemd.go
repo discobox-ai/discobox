@@ -31,17 +31,15 @@ func (SystemdRunner) Start(ctx context.Context, req StartRequest) (StartResult, 
 	if err != nil {
 		return StartResult{}, err
 	}
+	userJSON, err := json.Marshal(req.User)
+	if err != nil {
+		return StartResult{}, err
+	}
 	args := []string{
 		"--unit=" + req.Unit,
 		"--collect",
 		"--property=KillMode=control-group",
 		"--property=WorkingDirectory=" + req.Workdir,
-	}
-	if req.UID != nil {
-		args = append(args, "--uid="+strconv.FormatInt(*req.UID, 10))
-	}
-	if req.GID != nil {
-		args = append(args, "--gid="+strconv.FormatInt(*req.GID, 10))
 	}
 	for key, value := range req.Env {
 		if strings.TrimSpace(key) != "" {
@@ -62,6 +60,7 @@ func (SystemdRunner) Start(ctx context.Context, req StartRequest) (StartResult, 
 		"--cols", strconv.Itoa(int(req.Cols)),
 		"--command", base64.StdEncoding.EncodeToString(commandJSON),
 		"--env", base64.StdEncoding.EncodeToString(envJSON),
+		"--user", base64.StdEncoding.EncodeToString(userJSON),
 	)
 	if req.TTY {
 		args = append(args, "--tty")

@@ -7,10 +7,6 @@ import (
 	"syscall"
 )
 
-func agentSysProcAttr() *syscall.SysProcAttr {
-	return &syscall.SysProcAttr{Setsid: true}
-}
-
 func terminateProcessGroup(process *os.Process) error {
 	if process == nil || process.Pid <= 0 {
 		return nil

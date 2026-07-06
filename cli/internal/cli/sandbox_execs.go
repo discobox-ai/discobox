@@ -25,6 +25,7 @@ import (
 type sandboxExecCreateOptions struct {
 	workdir     string
 	env         []string
+	user        string
 	uid         string
 	gid         string
 	tty         bool
@@ -81,6 +82,7 @@ func (a *App) newSandboxExecCreateCommand(sandboxID *string) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&opts.workdir, "workdir", "", "Working directory inside the sandbox")
 	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables")
+	cmd.Flags().StringVar(&opts.user, "user", "", "User name or UID[:GID] to run as inside the sandbox")
 	cmd.Flags().StringVar(&opts.uid, "uid", "", "User ID to run as inside the sandbox")
 	cmd.Flags().StringVar(&opts.gid, "gid", "", "Group ID to run as inside the sandbox")
 	cmd.Flags().BoolVarP(&opts.tty, "tty", "t", false, "Allocate a PTY")
@@ -166,19 +168,12 @@ func createSandboxExecBody(opts sandboxExecCreateOptions, command []string) (*ap
 	if len(env) > 0 {
 		body.SetEnv(apiclientgen.NewOptCreateSandboxExecRequestEnv(apiclientgen.CreateSandboxExecRequestEnv(env)))
 	}
-	uid, err := parseOptionalInt64(opts.uid, "uid")
+	user, err := sandboxExecUserFromOptions(opts)
 	if err != nil {
 		return nil, err
 	}
-	if uid != nil {
-		body.SetUID(apiclientgen.NewOptInt64(*uid))
-	}
-	gid, err := parseOptionalInt64(opts.gid, "gid")
-	if err != nil {
-		return nil, err
-	}
-	if gid != nil {
-		body.SetGid(apiclientgen.NewOptInt64(*gid))
+	if user != nil {
+		body.SetUser(apiclientgen.NewOptSandboxUser(*user))
 	}
 	body.SetTty(apiclientgen.NewOptBool(opts.tty))
 	if opts.tty {
@@ -188,6 +183,63 @@ func createSandboxExecBody(opts sandboxExecCreateOptions, command []string) (*ap
 		}
 	}
 	return body, nil
+}
+
+func sandboxExecUserFromOptions(opts sandboxExecCreateOptions) (*apimodel.SandboxUser, error) {
+	user := &apimodel.SandboxUser{}
+	if value := strings.TrimSpace(opts.user); value != "" {
+		if err := applySandboxExecUserFlag(user, value); err != nil {
+			return nil, err
+		}
+	}
+	uid, err := parseOptionalInt64(opts.uid, "uid")
+	if err != nil {
+		return nil, err
+	}
+	if uid != nil {
+		user.SetUID(apiclientgen.NewOptInt64(*uid))
+	}
+	gid, err := parseOptionalInt64(opts.gid, "gid")
+	if err != nil {
+		return nil, err
+	}
+	if gid != nil {
+		user.SetGid(apiclientgen.NewOptInt64(*gid))
+	}
+	if !user.Name.Set && !user.UID.Set && !user.Gid.Set && !user.HomeDirectory.Set {
+		return nil, nil
+	}
+	return user, nil
+}
+
+func applySandboxExecUserFlag(user *apimodel.SandboxUser, value string) error {
+	nameOrUID, group, hasGroup := strings.Cut(value, ":")
+	nameOrUID = strings.TrimSpace(nameOrUID)
+	if nameOrUID == "" {
+		return fmt.Errorf("user must include a username or UID")
+	}
+	if parsed, ok := parseOptionalUserID(nameOrUID); ok {
+		user.SetUID(apiclientgen.NewOptInt64(parsed))
+	} else {
+		user.SetName(apiclientgen.NewOptString(nameOrUID))
+	}
+	if hasGroup {
+		group = strings.TrimSpace(group)
+		if group == "" {
+			return fmt.Errorf("user group must include a GID")
+		}
+		parsed, ok := parseOptionalUserID(group)
+		if !ok {
+			return fmt.Errorf("user group must be a numeric GID")
+		}
+		user.SetGid(apiclientgen.NewOptInt64(parsed))
+	}
+	return nil
+}
+
+func parseOptionalUserID(value string) (int64, bool) {
+	parsed, err := strconv.ParseInt(value, 10, 64)
+	return parsed, err == nil
 }
 
 func keyValueMapFromShell(values []string) (map[string]string, error) {
@@ -361,8 +413,7 @@ type sandboxExecRecord struct {
 	Command   []string                       `json:"command"`
 	Workdir   string                         `json:"workdir"`
 	Env       map[string]string              `json:"env"`
-	UID       *int64                         `json:"uid"`
-	Gid       *int64                         `json:"gid"`
+	User      *sandboxExecUser               `json:"user"`
 	Tty       bool                           `json:"tty"`
 	Unit      *string                        `json:"unit"`
 	Pid       *int64                         `json:"pid"`
@@ -372,6 +423,13 @@ type sandboxExecRecord struct {
 	StartedAt *time.Time                     `json:"startedAt"`
 	ExitedAt  *time.Time                     `json:"exitedAt"`
 	Metadata  map[string]string              `json:"metadata"`
+}
+
+type sandboxExecUser struct {
+	Name          *string `json:"name"`
+	UID           *int64  `json:"uid"`
+	Gid           *int64  `json:"gid"`
+	HomeDirectory *string `json:"homeDirectory"`
 }
 
 func (a *App) createSandboxExec(ctx context.Context, projectID, sandboxID string, body *apimodel.CreateSandboxExecRequest) (apimodel.SandboxExec, error) {
@@ -473,11 +531,8 @@ func (r sandboxExecRecord) model() apimodel.SandboxExec {
 	if r.Env != nil {
 		exec.SetEnv(apiclientgen.NewOptSandboxExecEnv(apiclientgen.SandboxExecEnv(r.Env)))
 	}
-	if r.UID != nil {
-		exec.SetUID(apiclientgen.NewOptInt64(*r.UID))
-	}
-	if r.Gid != nil {
-		exec.SetGid(apiclientgen.NewOptInt64(*r.Gid))
+	if r.User != nil {
+		exec.SetUser(apiclientgen.NewOptSandboxUser(r.User.model()))
 	}
 	if r.Unit != nil {
 		exec.SetUnit(apiclientgen.NewOptString(*r.Unit))
@@ -501,6 +556,23 @@ func (r sandboxExecRecord) model() apimodel.SandboxExec {
 		exec.SetMetadata(apiclientgen.NewOptSandboxExecMetadata(apiclientgen.SandboxExecMetadata(r.Metadata)))
 	}
 	return exec
+}
+
+func (u sandboxExecUser) model() apimodel.SandboxUser {
+	out := apimodel.SandboxUser{}
+	if u.Name != nil {
+		out.SetName(apiclientgen.NewOptString(*u.Name))
+	}
+	if u.UID != nil {
+		out.SetUID(apiclientgen.NewOptInt64(*u.UID))
+	}
+	if u.Gid != nil {
+		out.SetGid(apiclientgen.NewOptInt64(*u.Gid))
+	}
+	if u.HomeDirectory != nil {
+		out.SetHomeDirectory(apiclientgen.NewOptString(*u.HomeDirectory))
+	}
+	return out
 }
 
 func copySandboxExecInput(ctx context.Context, s *framedAttachSession, interactive bool) error {

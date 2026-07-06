@@ -31,12 +31,17 @@ func TestInstallerWritesManagedHarnessFiles(t *testing.T) {
 	assertJSONPath(t, filepath.Join(root, "etc/claude-code/managed-settings.json"), "hooks")
 	assertJSONPath(t, filepath.Join(root, ".codex/hooks.json"), "hooks")
 	assertJSONPath(t, filepath.Join(root, "etc/opencode/opencode.json"), "$schema")
+	assertMode(t, filepath.Join(root, "etc/claude-code/managed-settings.json"), 0o644)
+	assertMode(t, filepath.Join(root, ".codex/hooks.json"), 0o644)
+	assertMode(t, filepath.Join(root, "etc/opencode/opencode.json"), 0o644)
 	if env["OPENCODE_CONFIG_DIR"] != filepath.Join(root, "etc/opencode") {
 		t.Fatalf("OPENCODE_CONFIG_DIR = %q", env["OPENCODE_CONFIG_DIR"])
 	}
-	if _, err := os.Stat(filepath.Join(root, "etc/opencode/plugins/discobox-hook-publish.js")); err != nil {
+	pluginPath := filepath.Join(root, "etc/opencode/plugins/discobox-hook-publish.js")
+	if _, err := os.Stat(pluginPath); err != nil {
 		t.Fatalf("opencode plugin missing: %v", err)
 	}
+	assertMode(t, pluginPath, 0o644)
 }
 
 func TestInstallerPreservesExistingConfigAndIsIdempotent(t *testing.T) {
@@ -88,6 +93,9 @@ func TestInstallerPreservesExistingConfigAndIsIdempotent(t *testing.T) {
 	if !reflect.DeepEqual(first, second) {
 		t.Fatalf("install is not idempotent\nfirst: %#v\nsecond: %#v", first, second)
 	}
+	assertMode(t, filepath.Join(root, "etc/claude-code/managed-settings.json"), 0o644)
+	assertMode(t, filepath.Join(root, ".codex/hooks.json"), 0o644)
+	assertMode(t, filepath.Join(root, "etc/opencode/opencode.json"), 0o644)
 
 	claude := first["etc/claude-code/managed-settings.json"]
 	if _, ok := claude["permissions"].(map[string]any); !ok {
@@ -138,6 +146,17 @@ func assertJSONPath(t *testing.T, path, key string) {
 	}
 	if _, ok := decoded[key]; !ok {
 		t.Fatalf("%s missing key %q: %s", path, key, data)
+	}
+}
+
+func assertMode(t *testing.T, path string, want os.FileMode) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("stat %s: %v", path, err)
+	}
+	if got := info.Mode().Perm(); got != want {
+		t.Fatalf("mode %s = %o, want %o", path, got, want)
 	}
 }
 

@@ -4,12 +4,7 @@ package shim
 
 import (
 	"os"
-	"syscall"
 )
-
-func agentSysProcAttr() *syscall.SysProcAttr {
-	return &syscall.SysProcAttr{}
-}
 
 func terminateProcessGroup(process *os.Process) error {
 	if process == nil {

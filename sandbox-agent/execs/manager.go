@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/obot-platform/discobox/sandbox-agent/config"
 	"github.com/obot-platform/discobox/sandbox-agent/shimproxy"
 )
 
@@ -27,14 +27,15 @@ const (
 	StatusLost     Status = "lost"
 )
 
+const defaultTerm = "xterm-256color"
+
 type Exec struct {
 	ID          string            `json:"id"`
 	Status      Status            `json:"status"`
 	Command     []string          `json:"command"`
 	Workdir     string            `json:"workdir"`
 	Env         map[string]string `json:"env,omitempty"`
-	UID         *int64            `json:"uid,omitempty"`
-	GID         *int64            `json:"gid,omitempty"`
+	User        *User             `json:"user,omitempty"`
 	TTY         bool              `json:"tty"`
 	Unit        string            `json:"unit,omitempty"`
 	PID         int64             `json:"pid,omitempty"`
@@ -52,8 +53,7 @@ type CreateRequest struct {
 	Command  []string
 	Workdir  string
 	Env      map[string]string
-	UID      *int64
-	GID      *int64
+	User     *User
 	TTY      bool
 	Rows     uint16
 	Cols     uint16
@@ -72,8 +72,7 @@ type StartRequest struct {
 	Command     []string
 	Workdir     string
 	Env         map[string]string
-	UID         *int64
-	GID         *int64
+	User        *User
 	TTY         bool
 	SocketPath  string
 	RuntimePath string
@@ -104,20 +103,27 @@ type AuditRecorder interface {
 }
 
 type Manager struct {
-	workingRoot string
-	runtimeDir  string
-	logDir      string
-	env         map[string]string
-	units       UnitManager
-	audit       AuditRecorder
+	workingRoot    string
+	defaultWorkdir string
+	defaultUser    *User
+	runtimeDir     string
+	logDir         string
+	env            map[string]string
+	imageConfig    config.ImageConfig
+	units          UnitManager
+	audit          AuditRecorder
 }
 
 type ManagerConfig struct {
-	WorkingRoot string
-	RuntimeDir  string
-	Env         map[string]string
-	Units       UnitManager
-	Audit       AuditRecorder
+	WorkingRoot     string
+	DefaultWorkdir  string
+	DefaultUser     *User
+	RuntimeDir      string
+	Env             map[string]string
+	ImageConfig     config.ImageConfig
+	ImageConfigPath string
+	Units           UnitManager
+	Audit           AuditRecorder
 }
 
 func NewManager(workingRoot, runtimeDir string, units UnitManager, audit AuditRecorder) (*Manager, error) {
@@ -142,14 +148,25 @@ func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
 	if units == nil {
 		units = SystemdRunner{}
 	}
+	imageConfig := cfg.ImageConfig
+	if len(imageConfig.Env) == 0 {
+		var err error
+		imageConfig, err = config.LoadImage(cfg.ImageConfigPath)
+		if err != nil {
+			return nil, err
+		}
+	}
 	runtimeDir = filepath.Clean(runtimeDir)
 	return &Manager{
-		workingRoot: filepath.Clean(workingRoot),
-		runtimeDir:  runtimeDir,
-		logDir:      filepath.Join(runtimeDir, "logs"),
-		env:         cloneMap(cfg.Env),
-		units:       units,
-		audit:       cfg.Audit,
+		workingRoot:    filepath.Clean(workingRoot),
+		defaultWorkdir: strings.TrimSpace(cfg.DefaultWorkdir),
+		defaultUser:    cloneUser(cfg.DefaultUser),
+		runtimeDir:     runtimeDir,
+		logDir:         filepath.Join(runtimeDir, "logs"),
+		env:            cloneMap(cfg.Env),
+		imageConfig:    imageConfig,
+		units:          units,
+		audit:          cfg.Audit,
 	}, nil
 }
 
@@ -167,6 +184,31 @@ func mergeEnv(base, override map[string]string) map[string]string {
 	return out
 }
 
+func envWithRuntimeDefaults(env map[string]string, user *User, imageConfig config.ImageConfig) map[string]string {
+	if env == nil {
+		env = map[string]string{}
+	}
+	if _, ok := env["TERM"]; !ok {
+		env["TERM"] = defaultTerm
+	}
+	if user != nil {
+		if name := strings.TrimSpace(user.Name); name != "" {
+			if _, ok := env["USER"]; !ok {
+				env["USER"] = name
+			}
+			if _, ok := env["LOGNAME"]; !ok {
+				env["LOGNAME"] = name
+			}
+		}
+		if home := strings.TrimSpace(user.HomeDirectory); home != "" {
+			if _, ok := env["HOME"]; !ok {
+				env["HOME"] = home
+			}
+		}
+	}
+	return config.ApplyImageEnvDefaults(env, imageConfig)
+}
+
 func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 	if len(req.Command) == 0 || strings.TrimSpace(req.Command[0]) == "" {
 		return Exec{}, errors.New("exec command is required")
@@ -175,7 +217,8 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 	if err != nil {
 		return Exec{}, err
 	}
-	env := mergeEnv(m.env, req.Env)
+	user := m.resolveUser(req)
+	env := envWithRuntimeDefaults(mergeEnv(m.env, req.Env), user, m.imageConfig)
 	id, err := newID()
 	if err != nil {
 		return Exec{}, err
@@ -190,8 +233,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		Command:     append([]string{}, req.Command...),
 		Workdir:     workdir,
 		Env:         cloneMap(env),
-		UID:         cloneInt64(req.UID),
-		GID:         cloneInt64(req.GID),
+		User:        cloneUser(user),
 		TTY:         req.TTY,
 		Unit:        unit,
 		CreatedAt:   now,
@@ -207,8 +249,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		"workdir": workdir,
 		"command": exec.Command,
 		"tty":     req.TTY,
-		"uid":     req.UID,
-		"gid":     req.GID,
+		"user":    user,
 	})
 	result, err := m.units.Start(ctx, StartRequest{
 		ID:          id,
@@ -216,8 +257,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		Command:     exec.Command,
 		Workdir:     workdir,
 		Env:         cloneMap(env),
-		UID:         cloneInt64(req.UID),
-		GID:         cloneInt64(req.GID),
+		User:        cloneUser(user),
 		TTY:         req.TTY,
 		SocketPath:  socketPath,
 		RuntimePath: runtimePath,
@@ -334,20 +374,22 @@ var ErrNotFound = errors.New("sandbox exec not found")
 
 func (m *Manager) resolveWorkdir(requested string) (string, error) {
 	if strings.TrimSpace(requested) == "" {
+		requested = m.defaultWorkdir
+	}
+	if strings.TrimSpace(requested) == "" {
 		return m.workingRoot, nil
 	}
 	if !filepath.IsAbs(requested) {
 		requested = filepath.Join(m.workingRoot, requested)
 	}
-	cleaned := filepath.Clean(requested)
-	rel, err := filepath.Rel(m.workingRoot, cleaned)
-	if err != nil {
-		return "", err
+	return filepath.Clean(requested), nil
+}
+
+func (m *Manager) resolveUser(req CreateRequest) *User {
+	if !emptyUser(req.User) {
+		return normalizeUser(cloneUser(req.User))
 	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("workdir %q is outside working root %q", cleaned, m.workingRoot)
-	}
-	return cleaned, nil
+	return normalizeUser(cloneUser(m.defaultUser))
 }
 
 func (m *Manager) runtimePath(id string) string {
@@ -528,9 +570,41 @@ func cloneExec(in Exec) Exec {
 	out.Env = cloneMap(in.Env)
 	out.Metadata = cloneMap(in.Metadata)
 	out.SocketPath = in.SocketPath
+	out.User = cloneUser(in.User)
+	return out
+}
+
+type User struct {
+	Name          string `json:"name,omitempty"`
+	UID           *int64 `json:"uid,omitempty"`
+	GID           *int64 `json:"gid,omitempty"`
+	HomeDirectory string `json:"homeDirectory,omitempty"`
+}
+
+func emptyUser(user *User) bool {
+	return user == nil || strings.TrimSpace(user.Name) == "" && user.UID == nil && user.GID == nil && strings.TrimSpace(user.HomeDirectory) == ""
+}
+
+func cloneUser(in *User) *User {
+	if emptyUser(in) {
+		return nil
+	}
+	out := *in
+	out.Name = strings.TrimSpace(out.Name)
+	out.HomeDirectory = strings.TrimSpace(out.HomeDirectory)
 	out.UID = cloneInt64(in.UID)
 	out.GID = cloneInt64(in.GID)
-	return out
+	return &out
+}
+
+func normalizeUser(user *User) *User {
+	if user == nil {
+		return nil
+	}
+	if user.UID != nil && user.GID == nil {
+		user.GID = cloneInt64(user.UID)
+	}
+	return user
 }
 
 func safeName(value string) string {

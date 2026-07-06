@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/obot-platform/discobox/sandbox-agent/execs"
 	"github.com/obot-platform/discobox/sandbox-agent/shimruntime"
 	"github.com/obot-platform/discobox/sandbox-agent/terminal"
 	"github.com/obot-platform/discobox/sandbox-agent/terminal/frame"
@@ -32,6 +33,7 @@ type Config struct {
 	Rows        uint16
 	Cols        uint16
 	Env         map[string]string
+	User        *execs.User
 }
 
 type Runtime struct {
@@ -166,12 +168,27 @@ func (r *Runtime) startCommand() error {
 	cmd := exec.Command(r.cfg.Command[0], r.cfg.Command[1:]...) //nolint:gosec // command is injected sandbox agent config.
 	cmd.Dir = r.cfg.Workdir
 	cmd.Env = append(os.Environ(), "DISCOBOX_AGENT_TERMINAL_ID="+r.cfg.TerminalID)
+	userEnv, err := execs.UserEnvDefaults(r.cfg.User)
+	if err != nil {
+		r.markStartFailed(err)
+		return err
+	}
+	for key, value := range userEnv {
+		if strings.TrimSpace(key) != "" {
+			cmd.Env = append(cmd.Env, key+"="+value)
+		}
+	}
 	for key, value := range r.cfg.Env {
 		if strings.TrimSpace(key) != "" {
 			cmd.Env = append(cmd.Env, key+"="+value)
 		}
 	}
-	cmd.SysProcAttr = agentSysProcAttr()
+	sysProcAttr, err := execs.AgentSysProcAttr(r.cfg.User)
+	if err != nil {
+		r.markStartFailed(err)
+		return err
+	}
+	cmd.SysProcAttr = sysProcAttr
 	if r.stream.HasAttachers() {
 		resizeCtx, cancelResize := context.WithTimeout(context.Background(), 100*time.Millisecond)
 		r.stream.WaitForResize(resizeCtx)

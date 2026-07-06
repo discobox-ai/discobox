@@ -37,7 +37,10 @@ func (Driver) Install(_ context.Context, req harness.InstallRequest) error {
 	if err := os.MkdirAll(filepath.Dir(pluginPath), 0o755); err != nil {
 		return err
 	}
-	return os.WriteFile(pluginPath, []byte(pluginSource(harness.PublisherCommand(req))), 0o600)
+	if err := os.WriteFile(pluginPath, []byte(pluginSource(harness.PublisherCommand(req))), harness.ManagedFileMode); err != nil {
+		return err
+	}
+	return os.Chmod(pluginPath, harness.ManagedFileMode)
 }
 
 func pluginSource(publisher string) string {

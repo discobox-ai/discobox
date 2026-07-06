@@ -1,28 +1,52 @@
 package cli
 
-import (
-	"errors"
-	"io"
-	"net"
-	"os"
-	"testing"
-)
+import "testing"
 
-func TestAttachDoneErrors(t *testing.T) {
-	for _, err := range []error{
-		nil,
-		io.EOF,
-		net.ErrClosed,
-		os.ErrClosed,
-		errors.New("write: broken pipe"),
-		errors.New("read tcp: use of closed network connection"),
-		errors.New("connection reset by peer"),
-	} {
-		if !isAttachDone(err) {
-			t.Fatalf("isAttachDone(%v) = false, want true", err)
-		}
+func TestCreateSandboxExecBodyParsesUserObject(t *testing.T) {
+	body, err := createSandboxExecBody(sandboxExecCreateOptions{
+		user: "darren:1001",
+	}, []string{"id"})
+	if err != nil {
+		t.Fatalf("create body: %v", err)
 	}
-	if isAttachDone(errors.New("permission denied")) {
-		t.Fatal("permission denied was classified as attach done")
+	user, ok := body.User.Get()
+	if !ok {
+		t.Fatal("user was not set")
+	}
+	if user.Name.Or("") != "darren" || user.Gid.Or(0) != 1001 || user.UID.Set {
+		t.Fatalf("user = %#v, want name darren and gid 1001", user)
+	}
+}
+
+func TestCreateSandboxExecBodyParsesNumericUserObject(t *testing.T) {
+	body, err := createSandboxExecBody(sandboxExecCreateOptions{
+		user: "1000:1001",
+	}, []string{"id"})
+	if err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+	user, ok := body.User.Get()
+	if !ok {
+		t.Fatal("user was not set")
+	}
+	if user.UID.Or(0) != 1000 || user.Gid.Or(0) != 1001 || user.Name.Set {
+		t.Fatalf("user = %#v, want uid 1000 and gid 1001", user)
+	}
+}
+
+func TestCreateSandboxExecBodyUIDGIDFlagsPopulateUserObject(t *testing.T) {
+	body, err := createSandboxExecBody(sandboxExecCreateOptions{
+		uid: "2000",
+		gid: "2001",
+	}, []string{"id"})
+	if err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+	user, ok := body.User.Get()
+	if !ok {
+		t.Fatal("user was not set")
+	}
+	if user.UID.Or(0) != 2000 || user.Gid.Or(0) != 2001 {
+		t.Fatalf("user = %#v, want uid 2000 and gid 2001", user)
 	}
 }

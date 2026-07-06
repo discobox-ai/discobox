@@ -31,6 +31,7 @@ type ShimConfig struct {
 	Cols        uint16
 	TTY         bool
 	Env         map[string]string
+	User        *User
 }
 
 type shimRuntime struct {
@@ -91,6 +92,7 @@ func (r *shimRuntime) start(ctx context.Context) error {
 		Command:     append([]string{}, r.cfg.Command...),
 		Workdir:     r.cfg.Workdir,
 		Env:         cloneMap(r.cfg.Env),
+		User:        cloneUser(r.cfg.User),
 		TTY:         r.cfg.TTY,
 		Unit:        r.cfg.Unit,
 		CreatedAt:   now,
@@ -203,12 +205,27 @@ func (r *shimRuntime) startCommand() error {
 	cmd := exec.Command(r.cfg.Command[0], r.cfg.Command[1:]...) //nolint:gosec // command is caller-supplied for sandbox exec.
 	cmd.Dir = r.cfg.Workdir
 	cmd.Env = append(os.Environ(), "DISCOBOX_EXEC_ID="+r.cfg.ExecID)
+	userEnv, err := userEnvDefaults(r.cfg.User)
+	if err != nil {
+		r.markStartFailed(err)
+		return err
+	}
+	for key, value := range userEnv {
+		if strings.TrimSpace(key) != "" {
+			cmd.Env = append(cmd.Env, key+"="+value)
+		}
+	}
 	for key, value := range r.cfg.Env {
 		if strings.TrimSpace(key) != "" {
 			cmd.Env = append(cmd.Env, key+"="+value)
 		}
 	}
-	cmd.SysProcAttr = agentSysProcAttr()
+	sysProcAttr, err := agentSysProcAttr(r.cfg.User)
+	if err != nil {
+		r.markStartFailed(err)
+		return err
+	}
+	cmd.SysProcAttr = sysProcAttr
 
 	if r.cfg.TTY {
 		if err := r.startPTY(cmd); err != nil {
