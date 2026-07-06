@@ -1,18 +1,6 @@
-min_version = "2026.6.3"
-
-[settings]
-node.corepack = true
-
 [tools]
-go = "1.26"
-node = { version = "24", postinstall = "corepack prepare pnpm@11.4.0 --activate" }
-task = "latest"
-make = "latest"
-sqlite = "latest"
-"go:github.com/go-delve/delve/cmd/dlv" = "latest"
-"go:golang.org/x/tools/gopls" = "latest"
-"go:golang.org/x/tools/cmd/goimports" = "latest"
-"go:golang.org/x/tools/cmd/godoc" = "latest"
+go = "{{ exec(command='./scripts/mise-version go') }}"
+task = "{{ exec(command='./scripts/mise-version task') }}"
 
 [env]
 DISCOBOX_ROOT = "{{config_root}}"
@@ -38,6 +26,6 @@ mkdir -p "$DISCOBOX_COMPLETION_DIR"
 "$DISCOBOX_ROOT/build/discobox" completion zsh > "$DISCOBOX_ZSH_COMPLETION"
 "$DISCOBOX_ROOT/build/discobox" completion fish > "$DISCOBOX_FISH_COMPLETION"
 
-mkdir -p "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions"
-cp "$DISCOBOX_BASH_COMPLETION" "${XDG_DATA_HOME:-$HOME/.local/share}/bash-completion/completions/discobox"
+mkdir -p "$DISCOBOX_BASH_COMPLETION_USER_DIR"
+cp "$DISCOBOX_BASH_COMPLETION" "$DISCOBOX_BASH_COMPLETION_USER_DIR/discobox"
 '''
