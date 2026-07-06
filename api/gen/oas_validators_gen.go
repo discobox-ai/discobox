@@ -16,6 +16,42 @@ func (s *AgentConfig) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if value, ok := s.Files.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "files",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.InstallCommand.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "installCommand",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if err := (validate.String{
 			MinLength:     0,
 			MinLengthSet:  false,
@@ -38,6 +74,17 @@ func (s *AgentConfig) Validate() error {
 			Error: err,
 		})
 	}
+	if err := func() error {
+		if s.RunCommand == nil {
+			return errors.New("nil is invalid value")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "runCommand",
+			Error: err,
+		})
+	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
@@ -50,6 +97,42 @@ func (s *AgentConfigDefinition) Validate() error {
 	}
 
 	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Files.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "files",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.InstallCommand.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "installCommand",
+			Error: err,
+		})
+	}
 	if err := func() error {
 		if err := (validate.String{
 			MinLength:     0,
@@ -70,6 +153,17 @@ func (s *AgentConfigDefinition) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "name",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if s.RunCommand == nil {
+			return errors.New("nil is invalid value")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "runCommand",
 			Error: err,
 		})
 	}
@@ -297,6 +391,42 @@ func (s *CreateAgentConfigBody) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if value, ok := s.Files.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "files",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.InstallCommand.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "installCommand",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.Name.Get(); ok {
 			if err := func() error {
 				if err := (validate.String{
@@ -323,6 +453,24 @@ func (s *CreateAgentConfigBody) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "name",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.RunCommand.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "runCommand",
 			Error: err,
 		})
 	}
@@ -2197,6 +2345,42 @@ func (s *UpdateAgentConfigBody) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
+		if value, ok := s.Files.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "files",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.InstallCommand.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "installCommand",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.Name.Get(); ok {
 			if err := func() error {
 				if err := (validate.String{
@@ -2223,6 +2407,24 @@ func (s *UpdateAgentConfigBody) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "name",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.RunCommand.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "runCommand",
 			Error: err,
 		})
 	}

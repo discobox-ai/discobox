@@ -26,16 +26,18 @@ type SandboxManifest struct {
 
 // SandboxManifestAgentConfig Non-secret coding-agent configuration available inside a sandbox.
 type SandboxManifestAgentConfig struct {
+	// Files Files to write into the agent's home directory when the agent is installed. This content must not contain credentials, tokens, private keys, or other secret material.
+	Files []AgentConfigFile `json:"files,omitempty"`
 	// ID Stable agent config ID.
 	ID string `json:"id"`
-	// InstallCommand Command used to install the agent. This command must not contain credentials, tokens, private keys, or other secret material.
-	InstallCommand string `json:"installCommand,omitempty"`
+	// InstallCommand Argv used to install the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+	InstallCommand []string `json:"installCommand,omitempty"`
 	// IsDefault Whether this is the default agent configuration.
 	IsDefault bool `json:"isDefault,omitempty"`
 	// Name Agent config display name.
 	Name string `json:"name"`
-	// RunCommand Command used to run the agent. This command must not contain credentials, tokens, private keys, or other secret material.
-	RunCommand string `json:"runCommand"`
+	// RunCommand Argv used to run the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+	RunCommand []string `json:"runCommand"`
 }
 
 // SandboxManifestAgentRuntime Sandbox-agent daemon-local runtime settings. This object must not contain credentials, tokens, private keys, or other secret material.
@@ -70,14 +72,16 @@ type SandboxManifestProvider struct {
 
 // SandboxManifestResolvedAgentConfig Non-secret resolved coding-agent configuration selected for a sandbox.
 type SandboxManifestResolvedAgentConfig struct {
+	// Files Files to write into the agent's home directory when the agent is installed. This content must not contain credentials, tokens, private keys, or other secret material.
+	Files []AgentConfigFile `json:"files,omitempty"`
 	// ID Stable agent config ID.
 	ID string `json:"id"`
-	// InstallCommand Command used to install the agent. This command must not contain credentials, tokens, private keys, or other secret material.
-	InstallCommand string `json:"installCommand,omitempty"`
+	// InstallCommand Argv used to install the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+	InstallCommand []string `json:"installCommand,omitempty"`
 	// Name Agent config display name.
 	Name string `json:"name"`
-	// RunCommand Command used to run the agent. This command must not contain credentials, tokens, private keys, or other secret material.
-	RunCommand string `json:"runCommand"`
+	// RunCommand Argv used to run the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+	RunCommand []string `json:"runCommand"`
 }
 
 // SandboxManifestResourceCollection Sandbox-agent resource collection settings.

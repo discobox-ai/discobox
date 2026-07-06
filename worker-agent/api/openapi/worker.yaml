@@ -1,5 +1,16 @@
 components:
     schemas:
+        AgentConfigFile:
+            additionalProperties: false
+            properties:
+                content:
+                    type: string
+                path:
+                    type: string
+            required:
+            - path
+            - content
+            type: object
         ErrorDetail:
             additionalProperties: false
             properties:
@@ -113,14 +124,24 @@ components:
         ResolvedAgentConfig:
             additionalProperties: false
             properties:
+                files:
+                    items:
+                        "$ref": "#/components/schemas/AgentConfigFile"
+                    nullable: true
+                    type: array
                 id:
                     type: string
                 installCommand:
-                    type: string
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 name:
                     type: string
                 runCommand:
-                    type: string
+                    items:
+                        type: string
+                    type: array
             required:
             - id
             - name
@@ -129,16 +150,26 @@ components:
         SandboxAgentConfig:
             additionalProperties: false
             properties:
+                files:
+                    items:
+                        "$ref": "#/components/schemas/AgentConfigFile"
+                    nullable: true
+                    type: array
                 id:
                     type: string
                 installCommand:
-                    type: string
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 isDefault:
                     type: boolean
                 name:
                     type: string
                 runCommand:
-                    type: string
+                    items:
+                        type: string
+                    type: array
             required:
             - id
             - name

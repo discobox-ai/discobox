@@ -7,6 +7,7 @@ import apigen "github.com/obot-platform/discobox/api/gen"
 
 type AgentConfig = apigen.AgentConfig
 type AgentConfigDefinition = apigen.AgentConfigDefinition
+type AgentConfigFile = apigen.AgentConfigFile
 type AgentHookLog = apigen.AgentHookLog
 type AgentHookLogsResponse = apigen.AgentHookLogsResponse
 type AgentTerminal = apigen.AgentTerminal

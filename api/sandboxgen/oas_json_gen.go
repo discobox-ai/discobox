@@ -1797,12 +1797,6 @@ func (s *CreateSandboxExecRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.Gid.Set {
-			e.FieldStart("gid")
-			s.Gid.Encode(e)
-		}
-	}
-	{
 		if s.Metadata.Set {
 			e.FieldStart("metadata")
 			s.Metadata.Encode(e)
@@ -1821,9 +1815,9 @@ func (s *CreateSandboxExecRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.UID.Set {
-			e.FieldStart("uid")
-			s.UID.Encode(e)
+		if s.User.Set {
+			e.FieldStart("user")
+			s.User.Encode(e)
 		}
 	}
 	{
@@ -1834,16 +1828,15 @@ func (s *CreateSandboxExecRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCreateSandboxExecRequest = [9]string{
+var jsonFieldsNameOfCreateSandboxExecRequest = [8]string{
 	0: "cols",
 	1: "command",
 	2: "env",
-	3: "gid",
-	4: "metadata",
-	5: "rows",
-	6: "tty",
-	7: "uid",
-	8: "workdir",
+	3: "metadata",
+	4: "rows",
+	5: "tty",
+	6: "user",
+	7: "workdir",
 }
 
 // Decode decodes CreateSandboxExecRequest from json.
@@ -1851,7 +1844,7 @@ func (s *CreateSandboxExecRequest) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode CreateSandboxExecRequest to nil")
 	}
-	var requiredBitSet [2]uint8
+	var requiredBitSet [1]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -1895,16 +1888,6 @@ func (s *CreateSandboxExecRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"env\"")
 			}
-		case "gid":
-			if err := func() error {
-				s.Gid.Reset()
-				if err := s.Gid.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"gid\"")
-			}
 		case "metadata":
 			if err := func() error {
 				s.Metadata.Reset()
@@ -1935,15 +1918,15 @@ func (s *CreateSandboxExecRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"tty\"")
 			}
-		case "uid":
+		case "user":
 			if err := func() error {
-				s.UID.Reset()
-				if err := s.UID.Decode(d); err != nil {
+				s.User.Reset()
+				if err := s.User.Decode(d); err != nil {
 					return err
 				}
 				return nil
 			}(); err != nil {
-				return errors.Wrap(err, "decode field \"uid\"")
+				return errors.Wrap(err, "decode field \"user\"")
 			}
 		case "workdir":
 			if err := func() error {
@@ -1964,9 +1947,8 @@ func (s *CreateSandboxExecRequest) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [2]uint8{
+	for i, mask := range [1]uint8{
 		0b00000010,
-		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -2692,6 +2674,39 @@ func (s *OptSandboxExecMetadata) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes SandboxUser as json.
+func (o OptSandboxUser) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes SandboxUser from json.
+func (o *OptSandboxUser) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptSandboxUser to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptSandboxUser) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptSandboxUser) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes string as json.
 func (o OptString) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -3028,12 +3043,6 @@ func (s *SandboxExec) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.Gid.Set {
-			e.FieldStart("gid")
-			s.Gid.Encode(e)
-		}
-	}
-	{
 		e.FieldStart("id")
 		e.Str(s.ID)
 	}
@@ -3064,15 +3073,15 @@ func (s *SandboxExec) encodeFields(e *jx.Encoder) {
 		e.Bool(s.Tty)
 	}
 	{
-		if s.UID.Set {
-			e.FieldStart("uid")
-			s.UID.Encode(e)
-		}
-	}
-	{
 		if s.Unit.Set {
 			e.FieldStart("unit")
 			s.Unit.Encode(e)
+		}
+	}
+	{
+		if s.User.Set {
+			e.FieldStart("user")
+			s.User.Encode(e)
 		}
 	}
 	{
@@ -3081,23 +3090,22 @@ func (s *SandboxExec) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxExec = [16]string{
+var jsonFieldsNameOfSandboxExec = [15]string{
 	0:  "command",
 	1:  "createdAt",
 	2:  "env",
 	3:  "error",
 	4:  "exitCode",
 	5:  "exitedAt",
-	6:  "gid",
-	7:  "id",
-	8:  "metadata",
-	9:  "pid",
-	10: "startedAt",
-	11: "status",
-	12: "tty",
-	13: "uid",
-	14: "unit",
-	15: "workdir",
+	6:  "id",
+	7:  "metadata",
+	8:  "pid",
+	9:  "startedAt",
+	10: "status",
+	11: "tty",
+	12: "unit",
+	13: "user",
+	14: "workdir",
 }
 
 // Decode decodes SandboxExec from json.
@@ -3181,18 +3189,8 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"exitedAt\"")
 			}
-		case "gid":
-			if err := func() error {
-				s.Gid.Reset()
-				if err := s.Gid.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"gid\"")
-			}
 		case "id":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -3234,7 +3232,7 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"startedAt\"")
 			}
 		case "status":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				if err := s.Status.Decode(d); err != nil {
 					return err
@@ -3244,7 +3242,7 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"status\"")
 			}
 		case "tty":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Bool()
 				s.Tty = bool(v)
@@ -3254,16 +3252,6 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"tty\"")
-			}
-		case "uid":
-			if err := func() error {
-				s.UID.Reset()
-				if err := s.UID.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"uid\"")
 			}
 		case "unit":
 			if err := func() error {
@@ -3275,8 +3263,18 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"unit\"")
 			}
+		case "user":
+			if err := func() error {
+				s.User.Reset()
+				if err := s.User.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"user\"")
+			}
 		case "workdir":
-			requiredBitSet[1] |= 1 << 7
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.Workdir = string(v)
@@ -3297,8 +3295,8 @@ func (s *SandboxExec) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b10000011,
-		0b10011000,
+		0b01000011,
+		0b01001100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -3882,6 +3880,120 @@ func (s *SandboxExecsResponse) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *SandboxExecsResponse) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s *SandboxUser) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *SandboxUser) encodeFields(e *jx.Encoder) {
+	{
+		if s.Gid.Set {
+			e.FieldStart("gid")
+			s.Gid.Encode(e)
+		}
+	}
+	{
+		if s.HomeDirectory.Set {
+			e.FieldStart("homeDirectory")
+			s.HomeDirectory.Encode(e)
+		}
+	}
+	{
+		if s.Name.Set {
+			e.FieldStart("name")
+			s.Name.Encode(e)
+		}
+	}
+	{
+		if s.UID.Set {
+			e.FieldStart("uid")
+			s.UID.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfSandboxUser = [4]string{
+	0: "gid",
+	1: "homeDirectory",
+	2: "name",
+	3: "uid",
+}
+
+// Decode decodes SandboxUser from json.
+func (s *SandboxUser) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode SandboxUser to nil")
+	}
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "gid":
+			if err := func() error {
+				s.Gid.Reset()
+				if err := s.Gid.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"gid\"")
+			}
+		case "homeDirectory":
+			if err := func() error {
+				s.HomeDirectory.Reset()
+				if err := s.HomeDirectory.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"homeDirectory\"")
+			}
+		case "name":
+			if err := func() error {
+				s.Name.Reset()
+				if err := s.Name.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"name\"")
+			}
+		case "uid":
+			if err := func() error {
+				s.UID.Reset()
+				if err := s.UID.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"uid\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode SandboxUser")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *SandboxUser) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *SandboxUser) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

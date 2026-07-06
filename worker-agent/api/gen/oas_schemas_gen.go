@@ -15,6 +15,32 @@ func (s *ErrorModelStatusCode) Error() string {
 	return fmt.Sprintf("code %d: %+v", s.StatusCode, s.Response)
 }
 
+// Ref: #/components/schemas/AgentConfigFile
+type AgentConfigFile struct {
+	Content string `json:"content"`
+	Path    string `json:"path"`
+}
+
+// GetContent returns the value of Content.
+func (s *AgentConfigFile) GetContent() string {
+	return s.Content
+}
+
+// GetPath returns the value of Path.
+func (s *AgentConfigFile) GetPath() string {
+	return s.Path
+}
+
+// SetContent sets the value of Content.
+func (s *AgentConfigFile) SetContent(val string) {
+	s.Content = val
+}
+
+// SetPath sets the value of Path.
+func (s *AgentConfigFile) SetPath(val string) {
+	s.Path = val
+}
+
 // Ref: #/components/schemas/ErrorDetail
 type ErrorDetail struct {
 	// Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'.
@@ -840,6 +866,69 @@ func (o OptInt64) Or(d int64) int64 {
 	return d
 }
 
+// NewOptNilAgentConfigFileArray returns new OptNilAgentConfigFileArray with value set to v.
+func NewOptNilAgentConfigFileArray(v []AgentConfigFile) OptNilAgentConfigFileArray {
+	return OptNilAgentConfigFileArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilAgentConfigFileArray is optional nullable []AgentConfigFile.
+type OptNilAgentConfigFileArray struct {
+	Value []AgentConfigFile
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilAgentConfigFileArray was set.
+func (o OptNilAgentConfigFileArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilAgentConfigFileArray) Reset() {
+	var v []AgentConfigFile
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilAgentConfigFileArray) SetTo(v []AgentConfigFile) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilAgentConfigFileArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilAgentConfigFileArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []AgentConfigFile
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilAgentConfigFileArray) Get() (v []AgentConfigFile, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilAgentConfigFileArray) Or(d []AgentConfigFile) []AgentConfigFile {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptNilErrorDetailArray returns new OptNilErrorDetailArray with value set to v.
 func NewOptNilErrorDetailArray(v []ErrorDetail) OptNilErrorDetailArray {
 	return OptNilErrorDetailArray{
@@ -960,6 +1049,69 @@ func (o OptNilSandboxAgentConfigArray) Get() (v []SandboxAgentConfig, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilSandboxAgentConfigArray) Or(d []SandboxAgentConfig) []SandboxAgentConfig {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilStringArray returns new OptNilStringArray with value set to v.
+func NewOptNilStringArray(v []string) OptNilStringArray {
+	return OptNilStringArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilStringArray is optional nullable []string.
+type OptNilStringArray struct {
+	Value []string
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilStringArray was set.
+func (o OptNilStringArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilStringArray) Reset() {
+	var v []string
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilStringArray) SetTo(v []string) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilStringArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilStringArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []string
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilStringArray) Get() (v []string, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilStringArray) Or(d []string) []string {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -1382,10 +1534,16 @@ func (o OptWorkerSandboxResources) Or(d WorkerSandboxResources) WorkerSandboxRes
 
 // Ref: #/components/schemas/ResolvedAgentConfig
 type ResolvedAgentConfig struct {
-	ID             string    `json:"id"`
-	InstallCommand OptString `json:"installCommand"`
-	Name           string    `json:"name"`
-	RunCommand     string    `json:"runCommand"`
+	Files          OptNilAgentConfigFileArray `json:"files"`
+	ID             string                     `json:"id"`
+	InstallCommand OptNilStringArray          `json:"installCommand"`
+	Name           string                     `json:"name"`
+	RunCommand     []string                   `json:"runCommand"`
+}
+
+// GetFiles returns the value of Files.
+func (s *ResolvedAgentConfig) GetFiles() OptNilAgentConfigFileArray {
+	return s.Files
 }
 
 // GetID returns the value of ID.
@@ -1394,7 +1552,7 @@ func (s *ResolvedAgentConfig) GetID() string {
 }
 
 // GetInstallCommand returns the value of InstallCommand.
-func (s *ResolvedAgentConfig) GetInstallCommand() OptString {
+func (s *ResolvedAgentConfig) GetInstallCommand() OptNilStringArray {
 	return s.InstallCommand
 }
 
@@ -1404,8 +1562,13 @@ func (s *ResolvedAgentConfig) GetName() string {
 }
 
 // GetRunCommand returns the value of RunCommand.
-func (s *ResolvedAgentConfig) GetRunCommand() string {
+func (s *ResolvedAgentConfig) GetRunCommand() []string {
 	return s.RunCommand
+}
+
+// SetFiles sets the value of Files.
+func (s *ResolvedAgentConfig) SetFiles(val OptNilAgentConfigFileArray) {
+	s.Files = val
 }
 
 // SetID sets the value of ID.
@@ -1414,7 +1577,7 @@ func (s *ResolvedAgentConfig) SetID(val string) {
 }
 
 // SetInstallCommand sets the value of InstallCommand.
-func (s *ResolvedAgentConfig) SetInstallCommand(val OptString) {
+func (s *ResolvedAgentConfig) SetInstallCommand(val OptNilStringArray) {
 	s.InstallCommand = val
 }
 
@@ -1424,17 +1587,23 @@ func (s *ResolvedAgentConfig) SetName(val string) {
 }
 
 // SetRunCommand sets the value of RunCommand.
-func (s *ResolvedAgentConfig) SetRunCommand(val string) {
+func (s *ResolvedAgentConfig) SetRunCommand(val []string) {
 	s.RunCommand = val
 }
 
 // Ref: #/components/schemas/SandboxAgentConfig
 type SandboxAgentConfig struct {
-	ID             string    `json:"id"`
-	InstallCommand OptString `json:"installCommand"`
-	IsDefault      bool      `json:"isDefault"`
-	Name           string    `json:"name"`
-	RunCommand     string    `json:"runCommand"`
+	Files          OptNilAgentConfigFileArray `json:"files"`
+	ID             string                     `json:"id"`
+	InstallCommand OptNilStringArray          `json:"installCommand"`
+	IsDefault      bool                       `json:"isDefault"`
+	Name           string                     `json:"name"`
+	RunCommand     []string                   `json:"runCommand"`
+}
+
+// GetFiles returns the value of Files.
+func (s *SandboxAgentConfig) GetFiles() OptNilAgentConfigFileArray {
+	return s.Files
 }
 
 // GetID returns the value of ID.
@@ -1443,7 +1612,7 @@ func (s *SandboxAgentConfig) GetID() string {
 }
 
 // GetInstallCommand returns the value of InstallCommand.
-func (s *SandboxAgentConfig) GetInstallCommand() OptString {
+func (s *SandboxAgentConfig) GetInstallCommand() OptNilStringArray {
 	return s.InstallCommand
 }
 
@@ -1458,8 +1627,13 @@ func (s *SandboxAgentConfig) GetName() string {
 }
 
 // GetRunCommand returns the value of RunCommand.
-func (s *SandboxAgentConfig) GetRunCommand() string {
+func (s *SandboxAgentConfig) GetRunCommand() []string {
 	return s.RunCommand
+}
+
+// SetFiles sets the value of Files.
+func (s *SandboxAgentConfig) SetFiles(val OptNilAgentConfigFileArray) {
+	s.Files = val
 }
 
 // SetID sets the value of ID.
@@ -1468,7 +1642,7 @@ func (s *SandboxAgentConfig) SetID(val string) {
 }
 
 // SetInstallCommand sets the value of InstallCommand.
-func (s *SandboxAgentConfig) SetInstallCommand(val OptString) {
+func (s *SandboxAgentConfig) SetInstallCommand(val OptNilStringArray) {
 	s.InstallCommand = val
 }
 
@@ -1483,7 +1657,7 @@ func (s *SandboxAgentConfig) SetName(val string) {
 }
 
 // SetRunCommand sets the value of RunCommand.
-func (s *SandboxAgentConfig) SetRunCommand(val string) {
+func (s *SandboxAgentConfig) SetRunCommand(val []string) {
 	s.RunCommand = val
 }
 

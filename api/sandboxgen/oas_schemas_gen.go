@@ -756,16 +756,14 @@ type CreateSandboxExecRequest struct {
 	Command []string `json:"command"`
 	// Additional environment variables for the exec process.
 	Env OptCreateSandboxExecRequestEnv `json:"env"`
-	// Group ID used to run the exec process.
-	Gid OptInt64 `json:"gid"`
 	// Caller-supplied metadata to associate with the exec.
 	Metadata OptCreateSandboxExecRequestMetadata `json:"metadata"`
 	// Initial PTY rows when a PTY is allocated.
 	Rows OptInt `json:"rows"`
 	// Allocate a PTY for the exec process.
 	Tty OptBool `json:"tty"`
-	// User ID used to run the exec process.
-	UID OptInt64 `json:"uid"`
+	// User identity used to run the exec process.
+	User OptSandboxUser `json:"user"`
 	// Working directory for the exec process.
 	Workdir OptString `json:"workdir"`
 }
@@ -785,11 +783,6 @@ func (s *CreateSandboxExecRequest) GetEnv() OptCreateSandboxExecRequestEnv {
 	return s.Env
 }
 
-// GetGid returns the value of Gid.
-func (s *CreateSandboxExecRequest) GetGid() OptInt64 {
-	return s.Gid
-}
-
 // GetMetadata returns the value of Metadata.
 func (s *CreateSandboxExecRequest) GetMetadata() OptCreateSandboxExecRequestMetadata {
 	return s.Metadata
@@ -805,9 +798,9 @@ func (s *CreateSandboxExecRequest) GetTty() OptBool {
 	return s.Tty
 }
 
-// GetUID returns the value of UID.
-func (s *CreateSandboxExecRequest) GetUID() OptInt64 {
-	return s.UID
+// GetUser returns the value of User.
+func (s *CreateSandboxExecRequest) GetUser() OptSandboxUser {
+	return s.User
 }
 
 // GetWorkdir returns the value of Workdir.
@@ -830,11 +823,6 @@ func (s *CreateSandboxExecRequest) SetEnv(val OptCreateSandboxExecRequestEnv) {
 	s.Env = val
 }
 
-// SetGid sets the value of Gid.
-func (s *CreateSandboxExecRequest) SetGid(val OptInt64) {
-	s.Gid = val
-}
-
 // SetMetadata sets the value of Metadata.
 func (s *CreateSandboxExecRequest) SetMetadata(val OptCreateSandboxExecRequestMetadata) {
 	s.Metadata = val
@@ -850,9 +838,9 @@ func (s *CreateSandboxExecRequest) SetTty(val OptBool) {
 	s.Tty = val
 }
 
-// SetUID sets the value of UID.
-func (s *CreateSandboxExecRequest) SetUID(val OptInt64) {
-	s.UID = val
+// SetUser sets the value of User.
+func (s *CreateSandboxExecRequest) SetUser(val OptSandboxUser) {
+	s.User = val
 }
 
 // SetWorkdir sets the value of Workdir.
@@ -1450,6 +1438,52 @@ func (o OptSandboxExecMetadata) Or(d SandboxExecMetadata) SandboxExecMetadata {
 	return d
 }
 
+// NewOptSandboxUser returns new OptSandboxUser with value set to v.
+func NewOptSandboxUser(v SandboxUser) OptSandboxUser {
+	return OptSandboxUser{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxUser is optional SandboxUser.
+type OptSandboxUser struct {
+	Value SandboxUser
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxUser was set.
+func (o OptSandboxUser) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxUser) Reset() {
+	var v SandboxUser
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxUser) SetTo(v SandboxUser) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxUser) Get() (v SandboxUser, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxUser) Or(d SandboxUser) SandboxUser {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptString returns new OptString with value set to v.
 func NewOptString(v string) OptString {
 	return OptString{
@@ -1575,8 +1609,6 @@ type SandboxExec struct {
 	// Process exit code when the exec has exited.
 	ExitCode OptInt64    `json:"exitCode"`
 	ExitedAt OptDateTime `json:"exitedAt"`
-	// Group ID used to run the exec process.
-	Gid OptInt64 `json:"gid"`
 	// Sandbox exec runtime ID.
 	ID string `json:"id"`
 	// Caller-supplied exec metadata.
@@ -1588,10 +1620,10 @@ type SandboxExec struct {
 	Status SandboxExecStatus `json:"status"`
 	// Whether the exec process was started with a PTY.
 	Tty bool `json:"tty"`
-	// User ID used to run the exec process.
-	UID OptInt64 `json:"uid"`
 	// Systemd unit or scope name when known.
 	Unit OptString `json:"unit"`
+	// User identity used to run the exec process.
+	User OptSandboxUser `json:"user"`
 	// Working directory for the exec process.
 	Workdir string `json:"workdir"`
 }
@@ -1626,11 +1658,6 @@ func (s *SandboxExec) GetExitedAt() OptDateTime {
 	return s.ExitedAt
 }
 
-// GetGid returns the value of Gid.
-func (s *SandboxExec) GetGid() OptInt64 {
-	return s.Gid
-}
-
 // GetID returns the value of ID.
 func (s *SandboxExec) GetID() string {
 	return s.ID
@@ -1661,14 +1688,14 @@ func (s *SandboxExec) GetTty() bool {
 	return s.Tty
 }
 
-// GetUID returns the value of UID.
-func (s *SandboxExec) GetUID() OptInt64 {
-	return s.UID
-}
-
 // GetUnit returns the value of Unit.
 func (s *SandboxExec) GetUnit() OptString {
 	return s.Unit
+}
+
+// GetUser returns the value of User.
+func (s *SandboxExec) GetUser() OptSandboxUser {
+	return s.User
 }
 
 // GetWorkdir returns the value of Workdir.
@@ -1706,11 +1733,6 @@ func (s *SandboxExec) SetExitedAt(val OptDateTime) {
 	s.ExitedAt = val
 }
 
-// SetGid sets the value of Gid.
-func (s *SandboxExec) SetGid(val OptInt64) {
-	s.Gid = val
-}
-
 // SetID sets the value of ID.
 func (s *SandboxExec) SetID(val string) {
 	s.ID = val
@@ -1741,14 +1763,14 @@ func (s *SandboxExec) SetTty(val bool) {
 	s.Tty = val
 }
 
-// SetUID sets the value of UID.
-func (s *SandboxExec) SetUID(val OptInt64) {
-	s.UID = val
-}
-
 // SetUnit sets the value of Unit.
 func (s *SandboxExec) SetUnit(val OptString) {
 	s.Unit = val
+}
+
+// SetUser sets the value of User.
+func (s *SandboxExec) SetUser(val OptSandboxUser) {
+	s.User = val
 }
 
 // SetWorkdir sets the value of Workdir.
@@ -1967,6 +1989,58 @@ func (s *SandboxExecsResponse) GetExecs() []SandboxExec {
 // SetExecs sets the value of Execs.
 func (s *SandboxExecsResponse) SetExecs(val []SandboxExec) {
 	s.Execs = val
+}
+
+// Ref: #/components/schemas/SandboxUser
+type SandboxUser struct {
+	// GID to use inside the sandbox.
+	Gid OptInt64 `json:"gid"`
+	// User home directory to use inside the sandbox.
+	HomeDirectory OptString `json:"homeDirectory"`
+	// Username to use inside the sandbox.
+	Name OptString `json:"name"`
+	// UID to use inside the sandbox.
+	UID OptInt64 `json:"uid"`
+}
+
+// GetGid returns the value of Gid.
+func (s *SandboxUser) GetGid() OptInt64 {
+	return s.Gid
+}
+
+// GetHomeDirectory returns the value of HomeDirectory.
+func (s *SandboxUser) GetHomeDirectory() OptString {
+	return s.HomeDirectory
+}
+
+// GetName returns the value of Name.
+func (s *SandboxUser) GetName() OptString {
+	return s.Name
+}
+
+// GetUID returns the value of UID.
+func (s *SandboxUser) GetUID() OptInt64 {
+	return s.UID
+}
+
+// SetGid sets the value of Gid.
+func (s *SandboxUser) SetGid(val OptInt64) {
+	s.Gid = val
+}
+
+// SetHomeDirectory sets the value of HomeDirectory.
+func (s *SandboxUser) SetHomeDirectory(val OptString) {
+	s.HomeDirectory = val
+}
+
+// SetName sets the value of Name.
+func (s *SandboxUser) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetUID sets the value of UID.
+func (s *SandboxUser) SetUID(val OptInt64) {
+	s.UID = val
 }
 
 type StreamAgentTerminalResourcesOK struct {

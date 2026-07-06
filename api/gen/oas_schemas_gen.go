@@ -17,16 +17,19 @@ type AgentConfig struct {
 	Schema OptURI `json:"$schema"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
+	// Files to write into the agent's home directory when the agent is installed.
+	Files OptNilAgentConfigFileArray `json:"files"`
 	// Stable agent config ID.
 	ID string `json:"id"`
-	// Command used to install the agent.
-	InstallCommand OptString `json:"installCommand"`
+	// Argv used to install the agent. Not run through a shell; use ["sh", "-c", "..."] for shell
+	// semantics.
+	InstallCommand OptNilStringArray `json:"installCommand"`
 	// Agent config name.
 	Name string `json:"name"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
-	// Command used to run the agent.
-	RunCommand string `json:"runCommand"`
+	// Argv used to run the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+	RunCommand []string `json:"runCommand"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -41,13 +44,18 @@ func (s *AgentConfig) GetCreatedAt() time.Time {
 	return s.CreatedAt
 }
 
+// GetFiles returns the value of Files.
+func (s *AgentConfig) GetFiles() OptNilAgentConfigFileArray {
+	return s.Files
+}
+
 // GetID returns the value of ID.
 func (s *AgentConfig) GetID() string {
 	return s.ID
 }
 
 // GetInstallCommand returns the value of InstallCommand.
-func (s *AgentConfig) GetInstallCommand() OptString {
+func (s *AgentConfig) GetInstallCommand() OptNilStringArray {
 	return s.InstallCommand
 }
 
@@ -62,7 +70,7 @@ func (s *AgentConfig) GetProjectId() string {
 }
 
 // GetRunCommand returns the value of RunCommand.
-func (s *AgentConfig) GetRunCommand() string {
+func (s *AgentConfig) GetRunCommand() []string {
 	return s.RunCommand
 }
 
@@ -81,13 +89,18 @@ func (s *AgentConfig) SetCreatedAt(val time.Time) {
 	s.CreatedAt = val
 }
 
+// SetFiles sets the value of Files.
+func (s *AgentConfig) SetFiles(val OptNilAgentConfigFileArray) {
+	s.Files = val
+}
+
 // SetID sets the value of ID.
 func (s *AgentConfig) SetID(val string) {
 	s.ID = val
 }
 
 // SetInstallCommand sets the value of InstallCommand.
-func (s *AgentConfig) SetInstallCommand(val OptString) {
+func (s *AgentConfig) SetInstallCommand(val OptNilStringArray) {
 	s.InstallCommand = val
 }
 
@@ -102,7 +115,7 @@ func (s *AgentConfig) SetProjectId(val string) {
 }
 
 // SetRunCommand sets the value of RunCommand.
-func (s *AgentConfig) SetRunCommand(val string) {
+func (s *AgentConfig) SetRunCommand(val []string) {
 	s.RunCommand = val
 }
 
@@ -121,14 +134,17 @@ type AgentConfigDefinition struct {
 	Schema OptURI `json:"$schema"`
 	// Agent config definition description.
 	Description OptString `json:"description"`
+	// Files to write into the agent's home directory when the agent is installed.
+	Files OptNilAgentConfigFileArray `json:"files"`
 	// Stable definition ID.
 	ID string `json:"id"`
-	// Command used to install the agent.
-	InstallCommand OptString `json:"installCommand"`
+	// Argv used to install the agent. Not run through a shell; use ["sh", "-c", "..."] for shell
+	// semantics.
+	InstallCommand OptNilStringArray `json:"installCommand"`
 	// Agent config definition name.
 	Name string `json:"name"`
-	// Command used to run the agent.
-	RunCommand string `json:"runCommand"`
+	// Argv used to run the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+	RunCommand []string `json:"runCommand"`
 }
 
 // GetSchema returns the value of Schema.
@@ -141,13 +157,18 @@ func (s *AgentConfigDefinition) GetDescription() OptString {
 	return s.Description
 }
 
+// GetFiles returns the value of Files.
+func (s *AgentConfigDefinition) GetFiles() OptNilAgentConfigFileArray {
+	return s.Files
+}
+
 // GetID returns the value of ID.
 func (s *AgentConfigDefinition) GetID() string {
 	return s.ID
 }
 
 // GetInstallCommand returns the value of InstallCommand.
-func (s *AgentConfigDefinition) GetInstallCommand() OptString {
+func (s *AgentConfigDefinition) GetInstallCommand() OptNilStringArray {
 	return s.InstallCommand
 }
 
@@ -157,7 +178,7 @@ func (s *AgentConfigDefinition) GetName() string {
 }
 
 // GetRunCommand returns the value of RunCommand.
-func (s *AgentConfigDefinition) GetRunCommand() string {
+func (s *AgentConfigDefinition) GetRunCommand() []string {
 	return s.RunCommand
 }
 
@@ -171,13 +192,18 @@ func (s *AgentConfigDefinition) SetDescription(val OptString) {
 	s.Description = val
 }
 
+// SetFiles sets the value of Files.
+func (s *AgentConfigDefinition) SetFiles(val OptNilAgentConfigFileArray) {
+	s.Files = val
+}
+
 // SetID sets the value of ID.
 func (s *AgentConfigDefinition) SetID(val string) {
 	s.ID = val
 }
 
 // SetInstallCommand sets the value of InstallCommand.
-func (s *AgentConfigDefinition) SetInstallCommand(val OptString) {
+func (s *AgentConfigDefinition) SetInstallCommand(val OptNilStringArray) {
 	s.InstallCommand = val
 }
 
@@ -187,11 +213,40 @@ func (s *AgentConfigDefinition) SetName(val string) {
 }
 
 // SetRunCommand sets the value of RunCommand.
-func (s *AgentConfigDefinition) SetRunCommand(val string) {
+func (s *AgentConfigDefinition) SetRunCommand(val []string) {
 	s.RunCommand = val
 }
 
 func (*AgentConfigDefinition) getAgentConfigDefinitionRes() {}
+
+// A file to write into an agent's home directory when the agent is installed.
+// Ref: #/components/schemas/AgentConfigFile
+type AgentConfigFile struct {
+	// File content to write.
+	Content string `json:"content"`
+	// File path relative to the agent's home directory.
+	Path string `json:"path"`
+}
+
+// GetContent returns the value of Content.
+func (s *AgentConfigFile) GetContent() string {
+	return s.Content
+}
+
+// GetPath returns the value of Path.
+func (s *AgentConfigFile) GetPath() string {
+	return s.Path
+}
+
+// SetContent sets the value of Content.
+func (s *AgentConfigFile) SetContent(val string) {
+	s.Content = val
+}
+
+// SetPath sets the value of Path.
+func (s *AgentConfigFile) SetPath(val string) {
+	s.Path = val
+}
 
 // Ref: #/components/schemas/AgentHookLog
 type AgentHookLog struct {
@@ -789,13 +844,17 @@ type CreateAgentConfigBody struct {
 	Schema OptURI `json:"$schema"`
 	// Agent config definition ID to use as defaults.
 	DefinitionId OptString `json:"definitionId"`
-	// Command used to install the agent.
-	InstallCommand OptString `json:"installCommand"`
+	// Files to write into the agent's home directory when the agent is installed. Defaults to the
+	// definition files when definitionId is provided.
+	Files OptNilAgentConfigFileArray `json:"files"`
+	// Argv used to install the agent. Not run through a shell; use ["sh", "-c", "..."] for shell
+	// semantics.
+	InstallCommand OptNilStringArray `json:"installCommand"`
 	// Agent config name. Defaults to the definition name when definitionId is provided.
 	Name OptString `json:"name"`
-	// Command used to run the agent. Defaults to the definition run command when definitionId is
-	// provided.
-	RunCommand OptString `json:"runCommand"`
+	// Argv used to run the agent. Defaults to the definition run command when definitionId is provided.
+	// Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+	RunCommand OptNilStringArray `json:"runCommand"`
 }
 
 // GetSchema returns the value of Schema.
@@ -808,8 +867,13 @@ func (s *CreateAgentConfigBody) GetDefinitionId() OptString {
 	return s.DefinitionId
 }
 
+// GetFiles returns the value of Files.
+func (s *CreateAgentConfigBody) GetFiles() OptNilAgentConfigFileArray {
+	return s.Files
+}
+
 // GetInstallCommand returns the value of InstallCommand.
-func (s *CreateAgentConfigBody) GetInstallCommand() OptString {
+func (s *CreateAgentConfigBody) GetInstallCommand() OptNilStringArray {
 	return s.InstallCommand
 }
 
@@ -819,7 +883,7 @@ func (s *CreateAgentConfigBody) GetName() OptString {
 }
 
 // GetRunCommand returns the value of RunCommand.
-func (s *CreateAgentConfigBody) GetRunCommand() OptString {
+func (s *CreateAgentConfigBody) GetRunCommand() OptNilStringArray {
 	return s.RunCommand
 }
 
@@ -833,8 +897,13 @@ func (s *CreateAgentConfigBody) SetDefinitionId(val OptString) {
 	s.DefinitionId = val
 }
 
+// SetFiles sets the value of Files.
+func (s *CreateAgentConfigBody) SetFiles(val OptNilAgentConfigFileArray) {
+	s.Files = val
+}
+
 // SetInstallCommand sets the value of InstallCommand.
-func (s *CreateAgentConfigBody) SetInstallCommand(val OptString) {
+func (s *CreateAgentConfigBody) SetInstallCommand(val OptNilStringArray) {
 	s.InstallCommand = val
 }
 
@@ -844,7 +913,7 @@ func (s *CreateAgentConfigBody) SetName(val OptString) {
 }
 
 // SetRunCommand sets the value of RunCommand.
-func (s *CreateAgentConfigBody) SetRunCommand(val OptString) {
+func (s *CreateAgentConfigBody) SetRunCommand(val OptNilStringArray) {
 	s.RunCommand = val
 }
 
@@ -1065,10 +1134,8 @@ type CreateSandboxExecRequest struct {
 	Workdir OptString `json:"workdir"`
 	// Additional environment variables for the exec process.
 	Env OptCreateSandboxExecRequestEnv `json:"env"`
-	// User ID used to run the exec process.
-	UID OptInt64 `json:"uid"`
-	// Group ID used to run the exec process.
-	Gid OptInt64 `json:"gid"`
+	// User identity used to run the exec process.
+	User OptSandboxUser `json:"user"`
 	// Allocate a PTY for the exec process.
 	Tty OptBool `json:"tty"`
 	// Initial PTY columns when a PTY is allocated.
@@ -1094,14 +1161,9 @@ func (s *CreateSandboxExecRequest) GetEnv() OptCreateSandboxExecRequestEnv {
 	return s.Env
 }
 
-// GetUID returns the value of UID.
-func (s *CreateSandboxExecRequest) GetUID() OptInt64 {
-	return s.UID
-}
-
-// GetGid returns the value of Gid.
-func (s *CreateSandboxExecRequest) GetGid() OptInt64 {
-	return s.Gid
+// GetUser returns the value of User.
+func (s *CreateSandboxExecRequest) GetUser() OptSandboxUser {
+	return s.User
 }
 
 // GetTty returns the value of Tty.
@@ -1139,14 +1201,9 @@ func (s *CreateSandboxExecRequest) SetEnv(val OptCreateSandboxExecRequestEnv) {
 	s.Env = val
 }
 
-// SetUID sets the value of UID.
-func (s *CreateSandboxExecRequest) SetUID(val OptInt64) {
-	s.UID = val
-}
-
-// SetGid sets the value of Gid.
-func (s *CreateSandboxExecRequest) SetGid(val OptInt64) {
-	s.Gid = val
+// SetUser sets the value of User.
+func (s *CreateSandboxExecRequest) SetUser(val OptSandboxUser) {
+	s.User = val
 }
 
 // SetTty sets the value of Tty.
@@ -3098,6 +3155,69 @@ func (o OptNilAgentConfigArray) Or(d []AgentConfig) []AgentConfig {
 	return d
 }
 
+// NewOptNilAgentConfigFileArray returns new OptNilAgentConfigFileArray with value set to v.
+func NewOptNilAgentConfigFileArray(v []AgentConfigFile) OptNilAgentConfigFileArray {
+	return OptNilAgentConfigFileArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilAgentConfigFileArray is optional nullable []AgentConfigFile.
+type OptNilAgentConfigFileArray struct {
+	Value []AgentConfigFile
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilAgentConfigFileArray was set.
+func (o OptNilAgentConfigFileArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilAgentConfigFileArray) Reset() {
+	var v []AgentConfigFile
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilAgentConfigFileArray) SetTo(v []AgentConfigFile) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilAgentConfigFileArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilAgentConfigFileArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []AgentConfigFile
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilAgentConfigFileArray) Get() (v []AgentConfigFile, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilAgentConfigFileArray) Or(d []AgentConfigFile) []AgentConfigFile {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptNilErrorDetailArray returns new OptNilErrorDetailArray with value set to v.
 func NewOptNilErrorDetailArray(v []ErrorDetail) OptNilErrorDetailArray {
 	return OptNilErrorDetailArray{
@@ -3470,6 +3590,69 @@ func (o OptNilSandboxProviderInstanceArray) Get() (v []SandboxProviderInstance, 
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilSandboxProviderInstanceArray) Or(d []SandboxProviderInstance) []SandboxProviderInstance {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilStringArray returns new OptNilStringArray with value set to v.
+func NewOptNilStringArray(v []string) OptNilStringArray {
+	return OptNilStringArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilStringArray is optional nullable []string.
+type OptNilStringArray struct {
+	Value []string
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilStringArray was set.
+func (o OptNilStringArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilStringArray) Reset() {
+	var v []string
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilStringArray) SetTo(v []string) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilStringArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilStringArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []string
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilStringArray) Get() (v []string, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilStringArray) Or(d []string) []string {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -5610,10 +5793,8 @@ type SandboxExec struct {
 	Workdir string `json:"workdir"`
 	// Additional environment variables for the exec process.
 	Env OptSandboxExecEnv `json:"env"`
-	// User ID used to run the exec process.
-	UID OptInt64 `json:"uid"`
-	// Group ID used to run the exec process.
-	Gid OptInt64 `json:"gid"`
+	// User identity used to run the exec process.
+	User OptSandboxUser `json:"user"`
 	// Whether the exec process was started with a PTY.
 	Tty bool `json:"tty"`
 	// Systemd unit or scope name when known.
@@ -5656,14 +5837,9 @@ func (s *SandboxExec) GetEnv() OptSandboxExecEnv {
 	return s.Env
 }
 
-// GetUID returns the value of UID.
-func (s *SandboxExec) GetUID() OptInt64 {
-	return s.UID
-}
-
-// GetGid returns the value of Gid.
-func (s *SandboxExec) GetGid() OptInt64 {
-	return s.Gid
+// GetUser returns the value of User.
+func (s *SandboxExec) GetUser() OptSandboxUser {
+	return s.User
 }
 
 // GetTty returns the value of Tty.
@@ -5736,14 +5912,9 @@ func (s *SandboxExec) SetEnv(val OptSandboxExecEnv) {
 	s.Env = val
 }
 
-// SetUID sets the value of UID.
-func (s *SandboxExec) SetUID(val OptInt64) {
-	s.UID = val
-}
-
-// SetGid sets the value of Gid.
-func (s *SandboxExec) SetGid(val OptInt64) {
-	s.Gid = val
+// SetUser sets the value of User.
+func (s *SandboxExec) SetUser(val OptSandboxUser) {
+	s.User = val
 }
 
 // SetTty sets the value of Tty.
@@ -6938,12 +7109,15 @@ func (*StreamAgentTerminalResourcesOK) streamAgentTerminalResourcesRes() {}
 type UpdateAgentConfigBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Command used to install the agent.
-	InstallCommand OptString `json:"installCommand"`
+	// Files to write into the agent's home directory when the agent is installed.
+	Files OptNilAgentConfigFileArray `json:"files"`
+	// Argv used to install the agent. Not run through a shell; use ["sh", "-c", "..."] for shell
+	// semantics.
+	InstallCommand OptNilStringArray `json:"installCommand"`
 	// Agent config name.
 	Name OptString `json:"name"`
-	// Command used to run the agent.
-	RunCommand OptString `json:"runCommand"`
+	// Argv used to run the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+	RunCommand OptNilStringArray `json:"runCommand"`
 }
 
 // GetSchema returns the value of Schema.
@@ -6951,8 +7125,13 @@ func (s *UpdateAgentConfigBody) GetSchema() OptURI {
 	return s.Schema
 }
 
+// GetFiles returns the value of Files.
+func (s *UpdateAgentConfigBody) GetFiles() OptNilAgentConfigFileArray {
+	return s.Files
+}
+
 // GetInstallCommand returns the value of InstallCommand.
-func (s *UpdateAgentConfigBody) GetInstallCommand() OptString {
+func (s *UpdateAgentConfigBody) GetInstallCommand() OptNilStringArray {
 	return s.InstallCommand
 }
 
@@ -6962,7 +7141,7 @@ func (s *UpdateAgentConfigBody) GetName() OptString {
 }
 
 // GetRunCommand returns the value of RunCommand.
-func (s *UpdateAgentConfigBody) GetRunCommand() OptString {
+func (s *UpdateAgentConfigBody) GetRunCommand() OptNilStringArray {
 	return s.RunCommand
 }
 
@@ -6971,8 +7150,13 @@ func (s *UpdateAgentConfigBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
+// SetFiles sets the value of Files.
+func (s *UpdateAgentConfigBody) SetFiles(val OptNilAgentConfigFileArray) {
+	s.Files = val
+}
+
 // SetInstallCommand sets the value of InstallCommand.
-func (s *UpdateAgentConfigBody) SetInstallCommand(val OptString) {
+func (s *UpdateAgentConfigBody) SetInstallCommand(val OptNilStringArray) {
 	s.InstallCommand = val
 }
 
@@ -6982,7 +7166,7 @@ func (s *UpdateAgentConfigBody) SetName(val OptString) {
 }
 
 // SetRunCommand sets the value of RunCommand.
-func (s *UpdateAgentConfigBody) SetRunCommand(val OptString) {
+func (s *UpdateAgentConfigBody) SetRunCommand(val OptNilStringArray) {
 	s.RunCommand = val
 }
 

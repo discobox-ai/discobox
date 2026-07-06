@@ -183,6 +183,124 @@ func (s GitSourceWorkspaceMode) Validate() error {
 	}
 }
 
+func (s *ResolvedAgentConfig) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Files.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "files",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.InstallCommand.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "installCommand",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if s.RunCommand == nil {
+			return errors.New("nil is invalid value")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "runCommand",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *SandboxAgentConfig) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Files.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "files",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.InstallCommand.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "installCommand",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if s.RunCommand == nil {
+			return errors.New("nil is invalid value")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "runCommand",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *SandboxConfig) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -313,6 +431,23 @@ func (s *WorkerSandboxCreateRequest) Validate() error {
 				if value == nil {
 					return errors.New("nil is invalid value")
 				}
+				var failures []validate.FieldError
+				for i, elem := range value {
+					if err := func() error {
+						if err := elem.Validate(); err != nil {
+							return err
+						}
+						return nil
+					}(); err != nil {
+						failures = append(failures, validate.FieldError{
+							Name:  fmt.Sprintf("[%d]", i),
+							Error: err,
+						})
+					}
+				}
+				if len(failures) > 0 {
+					return &validate.Error{Fields: failures}
+				}
 				return nil
 			}(); err != nil {
 				return err
@@ -333,6 +468,24 @@ func (s *WorkerSandboxCreateRequest) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "config",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.ResolvedAgentConfig.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "resolvedAgentConfig",
 			Error: err,
 		})
 	}
@@ -372,6 +525,23 @@ func (s *WorkerSandboxInstance) Validate() error {
 				if value == nil {
 					return errors.New("nil is invalid value")
 				}
+				var failures []validate.FieldError
+				for i, elem := range value {
+					if err := func() error {
+						if err := elem.Validate(); err != nil {
+							return err
+						}
+						return nil
+					}(); err != nil {
+						failures = append(failures, validate.FieldError{
+							Name:  fmt.Sprintf("[%d]", i),
+							Error: err,
+						})
+					}
+				}
+				if len(failures) > 0 {
+					return &validate.Error{Fields: failures}
+				}
 				return nil
 			}(); err != nil {
 				return err
@@ -392,6 +562,24 @@ func (s *WorkerSandboxInstance) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "config",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.ResolvedAgentConfig.Get(); ok {
+			if err := func() error {
+				if err := value.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "resolvedAgentConfig",
 			Error: err,
 		})
 	}

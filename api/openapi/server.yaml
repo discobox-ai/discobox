@@ -13,12 +13,21 @@ components:
                     description: Creation timestamp
                     format: date-time
                     type: string
+                files:
+                    description: Files to write into the agent's home directory when the agent is installed
+                    items:
+                        $ref: '#/components/schemas/AgentConfigFile'
+                    nullable: true
+                    type: array
                 id:
                     description: Stable agent config ID
                     type: string
                 installCommand:
-                    description: Command used to install the agent
-                    type: string
+                    description: Argv used to install the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 name:
                     description: Agent config name
                     maxLength: 200
@@ -27,8 +36,10 @@ components:
                     description: Project ID
                     type: string
                 runCommand:
-                    description: Command used to run the agent
-                    type: string
+                    description: Argv used to run the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    items:
+                        type: string
+                    type: array
                 updatedAt:
                     description: Last update timestamp
                     format: date-time
@@ -53,23 +64,48 @@ components:
                 description:
                     description: Agent config definition description
                     type: string
+                files:
+                    description: Files to write into the agent's home directory when the agent is installed
+                    items:
+                        $ref: '#/components/schemas/AgentConfigFile'
+                    nullable: true
+                    type: array
                 id:
                     description: Stable definition ID
                     type: string
                 installCommand:
-                    description: Command used to install the agent
-                    type: string
+                    description: Argv used to install the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 name:
                     description: Agent config definition name
                     maxLength: 200
                     type: string
                 runCommand:
-                    description: Command used to run the agent
-                    type: string
+                    description: Argv used to run the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    items:
+                        type: string
+                    type: array
             required:
                 - id
                 - name
                 - runCommand
+            type: object
+        AgentConfigFile:
+            additionalProperties: false
+            description: A file to write into an agent's home directory when the agent is installed.
+            properties:
+                content:
+                    description: File content to write
+                    type: string
+                path:
+                    description: File path relative to the agent's home directory
+                    type: string
+            required:
+                - path
+                - content
             type: object
         CompleteEvent:
             additionalProperties: false
@@ -101,16 +137,28 @@ components:
                 definitionId:
                     description: Agent config definition ID to use as defaults
                     type: string
+                files:
+                    description: Files to write into the agent's home directory when the agent is installed. Defaults to the definition files when definitionId is provided.
+                    items:
+                        $ref: '#/components/schemas/AgentConfigFile'
+                    nullable: true
+                    type: array
                 installCommand:
-                    description: Command used to install the agent
-                    type: string
+                    description: Argv used to install the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 name:
                     description: Agent config name. Defaults to the definition name when definitionId is provided.
                     maxLength: 200
                     type: string
                 runCommand:
-                    description: Command used to run the agent. Defaults to the definition run command when definitionId is provided.
-                    type: string
+                    description: Argv used to run the agent. Defaults to the definition run command when definitionId is provided. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
             type: object
         CreateSandboxBody:
             additionalProperties: false
@@ -410,14 +458,9 @@ components:
                         type: string
                     description: Additional environment variables for the exec process.
                     type: object
-                uid:
-                    description: User ID used to run the exec process.
-                    format: int64
-                    type: integer
-                gid:
-                    description: Group ID used to run the exec process.
-                    format: int64
-                    type: integer
+                user:
+                    $ref: '#/components/schemas/SandboxUser'
+                    description: User identity used to run the exec process.
                 tty:
                     description: Whether the exec process was started with a PTY.
                     type: boolean
@@ -517,14 +560,9 @@ components:
                         type: string
                     description: Additional environment variables for the exec process.
                     type: object
-                uid:
-                    description: User ID used to run the exec process.
-                    format: int64
-                    type: integer
-                gid:
-                    description: Group ID used to run the exec process.
-                    format: int64
-                    type: integer
+                user:
+                    $ref: '#/components/schemas/SandboxUser'
+                    description: User identity used to run the exec process.
                 tty:
                     description: Allocate a PTY for the exec process.
                     type: boolean
@@ -1363,12 +1401,21 @@ components:
             additionalProperties: false
             description: Non-secret coding-agent configuration available inside a sandbox.
             properties:
+                files:
+                    description: Files to write into the agent's home directory when the agent is installed. This content must not contain credentials, tokens, private keys, or other secret material.
+                    items:
+                        $ref: '#/components/schemas/AgentConfigFile'
+                    nullable: true
+                    type: array
                 id:
                     description: Stable agent config ID.
                     type: string
                 installCommand:
-                    description: Command used to install the agent. This command must not contain credentials, tokens, private keys, or other secret material.
-                    type: string
+                    description: Argv used to install the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 isDefault:
                     description: Whether this is the default agent configuration.
                     type: boolean
@@ -1376,8 +1423,10 @@ components:
                     description: Agent config display name.
                     type: string
                 runCommand:
-                    description: Command used to run the agent. This command must not contain credentials, tokens, private keys, or other secret material.
-                    type: string
+                    description: Argv used to run the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+                    items:
+                        type: string
+                    type: array
             required:
                 - id
                 - name
@@ -1438,18 +1487,29 @@ components:
             additionalProperties: false
             description: Non-secret resolved coding-agent configuration selected for a sandbox.
             properties:
+                files:
+                    description: Files to write into the agent's home directory when the agent is installed. This content must not contain credentials, tokens, private keys, or other secret material.
+                    items:
+                        $ref: '#/components/schemas/AgentConfigFile'
+                    nullable: true
+                    type: array
                 id:
                     description: Stable agent config ID.
                     type: string
                 installCommand:
-                    description: Command used to install the agent. This command must not contain credentials, tokens, private keys, or other secret material.
-                    type: string
+                    description: Argv used to install the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 name:
                     description: Agent config display name.
                     type: string
                 runCommand:
-                    description: Command used to run the agent. This command must not contain credentials, tokens, private keys, or other secret material.
-                    type: string
+                    description: Argv used to run the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+                    items:
+                        type: string
+                    type: array
             required:
                 - id
                 - name
@@ -1966,16 +2026,28 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                files:
+                    description: Files to write into the agent's home directory when the agent is installed
+                    items:
+                        $ref: '#/components/schemas/AgentConfigFile'
+                    nullable: true
+                    type: array
                 installCommand:
-                    description: Command used to install the agent
-                    type: string
+                    description: Argv used to install the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 name:
                     description: Agent config name
                     maxLength: 200
                     type: string
                 runCommand:
-                    description: Command used to run the agent
-                    type: string
+                    description: Argv used to run the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
             type: object
         UpdateSandboxBody:
             additionalProperties: false
