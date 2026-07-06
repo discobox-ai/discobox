@@ -169,7 +169,14 @@ func waitForProviderWorker(ctx context.Context, t *testing.T, appStore *store.St
 
 func buildDockerWorkerFlowImage(ctx context.Context, t *testing.T, dockerClient *client.Client, tag string) {
 	t.Helper()
-	dockerfile := []byte("FROM debian:13-slim\nRUN apt-get update \\\n    && apt-get install -y --no-install-recommends ca-certificates \\\n    && apt-get clean \\\n    && rm -rf /var/lib/apt/lists/*\nCMD [\"sleep\", \"300\"]\n")
+	// HEALTHCHECK matters here: without one, docker.Driver's inspectHealthy
+	// waits out its full noHealthWaitTimeout grace period (30s) hoping a
+	// health status will eventually appear, since it can't distinguish
+	// "never will" from "not yet". Real worker-agent/sandbox-agent images
+	// always define a HEALTHCHECK; mirror that so this test reflects
+	// realistic container readiness timing instead of always paying the
+	// worst-case wait.
+	dockerfile := []byte("FROM debian:13-slim\nRUN apt-get update \\\n    && apt-get install -y --no-install-recommends ca-certificates \\\n    && apt-get clean \\\n    && rm -rf /var/lib/apt/lists/*\nHEALTHCHECK --interval=1s --timeout=1s --start-period=1s --retries=1 CMD [\"true\"]\nCMD [\"sleep\", \"300\"]\n")
 	var buf bytes.Buffer
 	writer := tar.NewWriter(&buf)
 	if err := writer.WriteHeader(&tar.Header{Name: "Dockerfile", Mode: 0o644, Size: int64(len(dockerfile))}); err != nil {
