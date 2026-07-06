@@ -264,7 +264,7 @@ func (r *DockerSandboxRuntime) writeSandboxAgentConfig(ctx context.Context, sand
 		return err
 	}
 	cfg := buildSandboxManifest(r.projectID, sandboxID, r.workerID, r.controlPlanePublicKey, req)
-	data, err := json.MarshalIndent(cfg, "", "  ")
+	data, err := json.MarshalIndent(&cfg, "", "  ")
 	if err != nil {
 		return err
 	}
