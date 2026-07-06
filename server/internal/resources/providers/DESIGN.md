@@ -33,3 +33,6 @@ flowchart LR
 - Provider-instance reconciliation sizes the worker pool. Runtime drift
   detection is owned by provider drivers and should enqueue affected worker
   reconcile jobs directly when it detects mismatches.
+- Provider status reports availability only. Do not infer or expose sandbox
+  "capabilities" from optional interface assertions; callers that need a
+  feature-specific provider operation should depend on that operation directly.

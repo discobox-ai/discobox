@@ -62,6 +62,7 @@ type JobManager interface {
 	DeleteWorkerForExpiredRegistration(context.Context, string, int64, time.Time, string) (bool, error)
 	SubmitWorkerReconcile(context.Context, string) (*orchestration.Job, error)
 	SubmitWorkerProviderReconcile(context.Context, string, string) (*orchestration.Job, error)
+	SubmitWorkerProviderReconcileAt(context.Context, string, string, time.Time) (*orchestration.Job, error)
 	OnWorkerReconcileTerminal(context.Context, *orchestration.Job, workers.WorkerReconcilePayload) error
 }
 

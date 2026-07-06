@@ -250,6 +250,24 @@ func (d *recordingDriver) InspectWorkerVM(context.Context, string) (*vm.Instance
 	return d.workerInstance, nil
 }
 
+func (d *recordingDriver) RemoveWorkerVM(ctx context.Context, workerID string, currentInstanceID string, removeVolumes bool) error {
+	instanceID := currentInstanceID
+	if instanceID == "" {
+		inst, err := d.InspectWorkerVM(ctx, workerID)
+		if errors.Is(err, sandbox.ErrNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		instanceID = inst.ID
+	}
+	if instanceID == "" {
+		return nil
+	}
+	return d.DeleteVM(ctx, instanceID, removeVolumes)
+}
+
 func (d *recordingDriver) RepairWorkerVM(ctx context.Context, workerID string, currentInstanceID string, spec vm.InstanceSpec, _ string) (*vm.Instance, error) {
 	d.repairWorkerIDs = append(d.repairWorkerIDs, workerID)
 	d.repairSpec = spec

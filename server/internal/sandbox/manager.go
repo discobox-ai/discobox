@@ -32,11 +32,6 @@ type ProviderFactory func(ctx context.Context, instance *model.SandboxProviderIn
 // ProviderConfigValidator validates persisted provider-instance configuration.
 type ProviderConfigValidator func(config json.RawMessage) error
 
-// ProviderConfigValidatorProvider can validate provider-instance configuration.
-type ProviderConfigValidatorProvider interface {
-	ValidateConfig(config json.RawMessage) error
-}
-
 // ProviderManager manages registered providers, definitions, and factories.
 type ProviderManager struct {
 	mu         sync.RWMutex
@@ -74,12 +69,7 @@ func (m *ProviderManager) RegisterProvider(id string, provider Provider) {
 		return
 	}
 	m.providers[id] = provider
-	if dp, ok := provider.(DefinitionProvider); ok {
-		m.defs[id] = dp.Definition()
-	}
-	if validator, ok := provider.(ProviderConfigValidatorProvider); ok {
-		m.validators[id] = validator.ValidateConfig
-	}
+	m.defs[id] = provider.Definition()
 }
 
 // RegisterFactory registers a provider-instance factory for a provider type.
@@ -180,10 +170,7 @@ func (m *ProviderManager) GetProviderDefinition(id string) (ProviderDefinition, 
 		return def, true
 	}
 	if provider, ok := m.providers[id]; ok {
-		if dp, ok := provider.(DefinitionProvider); ok {
-			return dp.Definition(), true
-		}
-		return ProviderDefinition{Name: id, Description: "Built-in " + id + " sandbox driver"}, true
+		return provider.Definition(), true
 	}
 	return ProviderDefinition{}, false
 }
@@ -198,16 +185,12 @@ func (m *ProviderManager) ListProviderDefinitions() map[string]ProviderDefinitio
 		if _, ok := defs[id]; ok {
 			continue
 		}
-		if dp, ok := provider.(DefinitionProvider); ok {
-			defs[id] = dp.Definition()
-			continue
-		}
-		defs[id] = ProviderDefinition{Name: id, Description: "Built-in " + id + " sandbox driver"}
+		defs[id] = provider.Definition()
 	}
 	return defs
 }
 
-// GetProviderStatus returns a provider's status and capability flags.
+// GetProviderStatus returns a provider's availability status.
 func (m *ProviderManager) GetProviderStatus(id string) (ProviderStatus, bool) {
 	m.mu.RLock()
 	provider, ok := m.providers[id]
@@ -290,11 +273,7 @@ func (m *ProviderManager) ListRuntimeSandboxes(ctx context.Context) ([]*Sandbox,
 func (m *ProviderManager) ReconcileProviders(ctx context.Context) error {
 	var errs []error
 	for id, provider := range m.snapshotProviders() {
-		reconciler, ok := provider.(ReconcileProvider)
-		if !ok {
-			continue
-		}
-		if err := reconciler.Reconcile(ctx); err != nil {
+		if err := provider.Reconcile(ctx); err != nil {
 			errs = append(errs, fmt.Errorf("reconcile sandbox provider %q: %w", id, err))
 		}
 	}
@@ -306,11 +285,7 @@ func (m *ProviderManager) ReconcileProviders(ctx context.Context) error {
 func (m *ProviderManager) RemoveProjectResources(ctx context.Context, projectID string) error {
 	var errs []error
 	for id, provider := range m.snapshotProviders() {
-		remover, ok := provider.(ProjectRemover)
-		if !ok {
-			continue
-		}
-		if err := remover.RemoveProject(ctx, projectID); err != nil {
+		if err := provider.RemoveProject(ctx, projectID); err != nil {
 			errs = append(errs, fmt.Errorf("remove project resources from sandbox provider %q: %w", id, err))
 		}
 	}
@@ -320,9 +295,7 @@ func (m *ProviderManager) RemoveProjectResources(ctx context.Context, projectID 
 // Shutdown closes registered providers that implement Close.
 func (m *ProviderManager) Shutdown() {
 	for _, provider := range m.snapshotAllProviders() {
-		if closer, ok := provider.(interface{ Close() error }); ok {
-			_ = closer.Close()
-		}
+		_ = provider.Close()
 	}
 }
 
@@ -378,19 +351,9 @@ func (m *ProviderManager) snapshotAllProviders() map[string]Provider {
 }
 
 func closeProvider(provider Provider) {
-	if closer, ok := provider.(interface{ Close() error }); ok {
-		_ = closer.Close()
-	}
+	_ = provider.Close()
 }
 
 func statusFor(provider Provider) ProviderStatus {
-	status := ProviderStatus{Available: true, State: "ready"}
-	if sp, ok := provider.(StatusProvider); ok {
-		status = sp.Status()
-	}
-	_, status.SupportsResources = provider.(ProviderResourceManager)
-	_, status.SupportsInspection = provider.(ProjectInspectionManager)
-	_, status.SupportsClearCache = provider.(ProjectCacheManager)
-	_, status.SupportsImages = provider.(ImageProvider)
-	return status
+	return provider.Status()
 }

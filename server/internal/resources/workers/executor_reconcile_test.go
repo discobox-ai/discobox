@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/model"
@@ -322,7 +323,7 @@ func TestReconcileWorkerRepairsAssignedWorkerAfterActiveReconcileFailure(t *test
 }
 
 type failingWorkerProvider struct {
-	sandboxes.Provider
+	noopWorkerSandboxProvider
 	err error
 }
 
@@ -339,7 +340,7 @@ func (p failingWorkerProvider) RemoveWorker(context.Context, any, *model.Project
 }
 
 type countingWorkerProvider struct {
-	sandboxes.Provider
+	noopWorkerSandboxProvider
 	calls       int
 	removeCalls int
 	repairCalls int
@@ -362,7 +363,7 @@ func (p *countingWorkerProvider) RemoveWorker(_ context.Context, _ any, _ *model
 }
 
 type registeringWorkerProvider struct {
-	sandboxes.Provider
+	noopWorkerSandboxProvider
 	store *store.Store
 }
 
@@ -381,7 +382,7 @@ func (p *registeringWorkerProvider) RemoveWorker(context.Context, any, *model.Pr
 }
 
 type repairingWorkerProvider struct {
-	sandboxes.Provider
+	noopWorkerSandboxProvider
 	reconcileErr error
 	repairCalls  int
 }
@@ -401,6 +402,60 @@ func (p *repairingWorkerProvider) RepairWorker(_ context.Context, _ any, _ *mode
 
 func (p *repairingWorkerProvider) RemoveWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
 	return nil
+}
+
+type noopWorkerSandboxProvider struct{}
+
+func (noopWorkerSandboxProvider) Initialize(context.Context, *model.SandboxProviderInstance) error {
+	return nil
+}
+
+func (noopWorkerSandboxProvider) Close() error {
+	return nil
+}
+
+func (noopWorkerSandboxProvider) Definition() sandboxes.ProviderDefinition {
+	return sandboxes.ProviderDefinition{Name: "test"}
+}
+
+func (noopWorkerSandboxProvider) Status() sandboxes.ProviderStatus {
+	return sandboxes.ProviderStatus{Available: true, State: "ready"}
+}
+
+func (noopWorkerSandboxProvider) Reconcile(context.Context) error {
+	return nil
+}
+
+func (noopWorkerSandboxProvider) RemoveProject(context.Context, string) error {
+	return nil
+}
+
+func (noopWorkerSandboxProvider) List(context.Context) ([]*sandboxes.Sandbox, error) {
+	return nil, nil
+}
+
+func (noopWorkerSandboxProvider) Create(context.Context, sandboxes.SandboxRef, []byte, sandboxes.CreateOptions) (*sandboxes.Sandbox, []byte, error) {
+	return nil, nil, nil
+}
+
+func (noopWorkerSandboxProvider) Start(context.Context, sandboxes.SandboxRef, []byte) (*sandboxes.Sandbox, []byte, error) {
+	return nil, nil, nil
+}
+
+func (noopWorkerSandboxProvider) Stop(context.Context, sandboxes.SandboxRef, []byte, time.Duration) (*sandboxes.Sandbox, []byte, error) {
+	return nil, nil, nil
+}
+
+func (noopWorkerSandboxProvider) Remove(context.Context, sandboxes.SandboxRef, []byte, ...sandboxes.RemoveOption) ([]byte, error) {
+	return nil, nil
+}
+
+func (noopWorkerSandboxProvider) Get(context.Context, sandboxes.SandboxRef, []byte) (*sandboxes.Sandbox, error) {
+	return nil, nil
+}
+
+func (noopWorkerSandboxProvider) AcquireHTTPClient(context.Context, sandboxes.SandboxRef, []byte, []string) (*sandboxes.HTTPClientLease, error) {
+	return nil, nil
 }
 
 func newExecutorTestStore(t *testing.T) *store.Store {

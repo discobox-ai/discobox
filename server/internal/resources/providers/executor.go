@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/model"
@@ -15,8 +16,9 @@ import (
 const WorkerProviderReconcileType orchestration.Type = "workerprovider.reconcile"
 
 type WorkerProviderReconcilePayload struct {
-	ProjectID  string `json:"projectId"`
-	ProviderID string `json:"providerId"`
+	ProjectID     string     `json:"projectId"`
+	ProviderID    string     `json:"providerId"`
+	ScheduledTime *time.Time `json:"scheduledAt,omitempty"`
 }
 
 func (p WorkerProviderReconcilePayload) JobType() orchestration.Type {
@@ -25,6 +27,13 @@ func (p WorkerProviderReconcilePayload) JobType() orchestration.Type {
 
 func (p WorkerProviderReconcilePayload) Resource() orchestration.Resource {
 	return orchestration.Resource{Type: "workerprovider", ID: p.ProviderID}
+}
+
+func (p WorkerProviderReconcilePayload) ScheduledAt() time.Time {
+	if p.ScheduledTime == nil {
+		return time.Time{}
+	}
+	return *p.ScheduledTime
 }
 
 type WorkerProviderReconcileExecutor struct {

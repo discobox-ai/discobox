@@ -34,15 +34,15 @@ type WorkerManager interface {
 	CreateSandboxAgentToken(ctx context.Context, claims workeragentauth.TokenClaims) (string, error)
 	FindSchedulableWorker(ctx context.Context, sandbox *model.Sandbox) (*model.Worker, error)
 	GetJob(ctx context.Context, id string) (*orchestration.Job, error)
+	GetProject(ctx context.Context, projectID string) (*model.Project, error)
+	GetSandboxProviderInstance(ctx context.Context, projectID, providerID string) (*model.SandboxProviderInstance, error)
 	CountSandboxesForWorker(ctx context.Context, workerID string) (int64, error)
-	ScheduleWorkerReconciliation(ctx context.Context, workerID string) error
-	ScheduleWorkerProviderReconciliation(ctx context.Context, projectID, providerID string) error
-}
-
-type workerLifecycleRepairManager interface {
-	GetJob(ctx context.Context, id string) (*orchestration.Job, error)
+	CountSandboxesForWorkers(ctx context.Context, workerIDs []string) (map[string]int64, error)
 	MarkWorkerFailedForJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error)
 	DeleteWorkerForExpiredRegistration(ctx context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error)
+	ScheduleWorkerReconciliation(ctx context.Context, workerID string) error
+	ScheduleWorkerProviderReconciliation(ctx context.Context, projectID, providerID string) error
+	ScheduleWorkerProviderReconciliationAt(ctx context.Context, projectID, providerID string, scheduledAt time.Time) error
 }
 
 // WorkerPoolConfig describes VM worker pool bounds.
@@ -175,14 +175,18 @@ func deleteExcessWorkers(ctx context.Context, manager WorkerManager, workers []m
 	if excess <= 0 {
 		return workers, nil
 	}
+	candidateIDs := make([]string, len(candidates))
+	for i, worker := range candidates {
+		candidateIDs[i] = worker.ID
+	}
+	assignedCounts, err := manager.CountSandboxesForWorkers(ctx, candidateIDs)
+	if err != nil {
+		return nil, err
+	}
 	deleteIDs := make(map[string]struct{}, excess)
 	for i := 0; i < len(candidates) && len(deleteIDs) < excess; i++ {
 		worker := candidates[len(candidates)-1-i]
-		assigned, err := manager.CountSandboxesForWorker(ctx, worker.ID)
-		if err != nil {
-			return nil, err
-		}
-		if assigned > 0 {
+		if assignedCounts[worker.ID] > 0 {
 			continue
 		}
 		if _, err := manager.DeleteWorker(ctx, worker.ID); err != nil {
@@ -249,16 +253,12 @@ func retainWorkerBefore(left, right model.Worker) bool {
 }
 
 func repairWorkersWithFailedJobs(ctx context.Context, manager WorkerManager, workers []model.Worker) ([]model.Worker, error) {
-	repairManager, ok := manager.(workerLifecycleRepairManager)
-	if !ok {
-		return workers, nil
-	}
 	for i := range workers {
 		worker := &workers[i]
 		if worker.LastJobID == nil || worker.LastOperationStatus == model.OperationStatusFailed || worker.LastOperationStatus == model.OperationStatusSuccess {
 			continue
 		}
-		job, err := repairManager.GetJob(ctx, *worker.LastJobID)
+		job, err := manager.GetJob(ctx, *worker.LastJobID)
 		if err != nil {
 			if errors.Is(err, orchestration.ErrJobNotFound) {
 				continue
@@ -272,7 +272,7 @@ func repairWorkersWithFailedJobs(ctx context.Context, manager WorkerManager, wor
 		if job.Error != nil && *job.Error != "" {
 			message = *job.Error
 		}
-		updated, err := repairManager.MarkWorkerFailedForJob(ctx, worker.ID, worker.Generation, *worker.LastJobID, message)
+		updated, err := manager.MarkWorkerFailedForJob(ctx, worker.ID, worker.Generation, *worker.LastJobID, message)
 		if err != nil {
 			return nil, err
 		}
@@ -288,8 +288,7 @@ func repairWorkersWithFailedJobs(ctx context.Context, manager WorkerManager, wor
 }
 
 func repairExpiredRegisteringWorkers(ctx context.Context, manager WorkerManager, workers []model.Worker, now time.Time) ([]model.Worker, error) {
-	repairManager, ok := manager.(workerLifecycleRepairManager)
-	if !ok || workerRegistrationTimeout <= 0 {
+	if workerRegistrationTimeout <= 0 {
 		return workers, nil
 	}
 	cutoff := now.Add(-workerRegistrationTimeout)
@@ -303,7 +302,7 @@ func repairExpiredRegisteringWorkers(ctx context.Context, manager WorkerManager,
 			continue
 		}
 		message := "worker did not register before timeout"
-		updated, err := repairManager.DeleteWorkerForExpiredRegistration(ctx, worker.ID, worker.Generation, cutoff, message)
+		updated, err := manager.DeleteWorkerForExpiredRegistration(ctx, worker.ID, worker.Generation, cutoff, message)
 		if err != nil {
 			return nil, err
 		}

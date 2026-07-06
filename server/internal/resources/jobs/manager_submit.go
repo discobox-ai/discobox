@@ -146,6 +146,14 @@ func workerProviderReconcilePayload(provider *model.SandboxProviderInstance) orc
 	}
 }
 
+func scheduledWorkerProviderReconcilePayload(provider *model.SandboxProviderInstance, scheduledAt time.Time) orchestration.Payload {
+	return providers.WorkerProviderReconcilePayload{
+		ProjectID:     provider.ProjectID,
+		ProviderID:    provider.ID,
+		ScheduledTime: &scheduledAt,
+	}
+}
+
 func (m *Manager) CreateSandbox(ctx context.Context, sandbox *model.Sandbox) (*model.Sandbox, error) {
 	dispatcher, err := m.dispatcherForSubmit()
 	if err != nil {
@@ -420,6 +428,51 @@ func (m *Manager) SubmitWorkerProviderReconcile(ctx context.Context, projectID, 
 					return nil
 				}
 				job, err = appendJob(ctx, txStore, workerProviderReconcilePayload(provider))
+				if errors.Is(err, orchestration.ErrJobAlreadyExists) {
+					job = nil
+					return nil
+				}
+				return err
+			})
+			return job, err
+		}),
+	)
+}
+
+func (m *Manager) SubmitWorkerProviderReconcileAt(ctx context.Context, projectID, providerID string, scheduledAt time.Time) (*orchestration.Job, error) {
+	if scheduledAt.IsZero() || !scheduledAt.After(time.Now()) {
+		return m.SubmitWorkerProviderReconcile(ctx, projectID, providerID)
+	}
+	dispatcher, err := m.dispatcherForSubmit()
+	if err != nil {
+		return nil, err
+	}
+	providerStore := m.store.SandboxProviderInstances()
+	return dispatcher.Submit(ctx, nil,
+		orchestration.WithQueueConfig(m.cfg.QueueConfig),
+		orchestration.WithCreateJobOptions(orchestration.WithUniqueResource()),
+		orchestration.WithSubmitTransaction(func(ctx context.Context, appendJob orchestration.SubmitAppendFunc) (*orchestration.Job, error) {
+			var job *orchestration.Job
+			err := providerStore.Transaction(ctx, func(ctx context.Context, txStore *store.SandboxProviderInstanceStore) error {
+				provider, err := txStore.Get(ctx, store.SandboxProviderInstanceID{ProjectID: projectID, ProviderID: providerID})
+				if errors.Is(err, store.ErrNotFound) {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				if provider.Disabled {
+					return nil
+				}
+				resource := orchestration.Resource{Type: "workerprovider", ID: provider.ID}
+				active, err := txStore.HasActiveJobForResource(ctx, resource)
+				if err != nil {
+					return err
+				}
+				if active {
+					return nil
+				}
+				job, err = appendJob(ctx, txStore, scheduledWorkerProviderReconcilePayload(provider, scheduledAt))
 				if errors.Is(err, orchestration.ErrJobAlreadyExists) {
 					job = nil
 					return nil

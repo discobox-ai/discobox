@@ -25,6 +25,7 @@ type WorkerJobManager interface {
 	MarkWorkerFailedForJob(context.Context, string, int64, string, string) (bool, error)
 	DeleteWorkerForExpiredRegistration(context.Context, string, int64, time.Time, string) (bool, error)
 	SubmitWorkerProviderReconcile(context.Context, string, string) (*orchestration.Job, error)
+	SubmitWorkerProviderReconcileAt(context.Context, string, string, time.Time) (*orchestration.Job, error)
 }
 
 type JobRegistrar interface {
@@ -110,6 +111,10 @@ func (s *Manager) CountSandboxesForWorker(ctx context.Context, workerID string) 
 	return s.store.CountSandboxesForWorker(ctx, workerID)
 }
 
+func (s *Manager) CountSandboxesForWorkers(ctx context.Context, workerIDs []string) (map[string]int64, error) {
+	return s.store.CountSandboxesForWorkers(ctx, workerIDs)
+}
+
 func (s *Manager) GetJob(ctx context.Context, id string) (*orchestration.Job, error) {
 	return s.store.GetJob(ctx, id)
 }
@@ -135,5 +140,10 @@ func (s *Manager) ScheduleWorkerReconciliation(ctx context.Context, workerID str
 
 func (s *Manager) ScheduleWorkerProviderReconciliation(ctx context.Context, projectID, providerID string) error {
 	_, err := s.jobs.SubmitWorkerProviderReconcile(ctx, projectID, providerID)
+	return err
+}
+
+func (s *Manager) ScheduleWorkerProviderReconciliationAt(ctx context.Context, projectID, providerID string, scheduledAt time.Time) error {
+	_, err := s.jobs.SubmitWorkerProviderReconcileAt(ctx, projectID, providerID, scheduledAt)
 	return err
 }

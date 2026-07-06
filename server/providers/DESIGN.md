@@ -70,13 +70,21 @@ creates, starts, stops, deletes, and inspects VM-like instances:
 
 - create a VM from an `InstanceSpec`,
 - start/stop/delete/inspect a VM by instance ID,
-- optionally provide an HTTP client lease to reach the sandbox agent.
+- remove or repair a worker VM by worker ID plus current runtime state,
+- provide HTTP client leases to reach worker and sandbox agents.
 
 Driver implementations live with their provider package, such as
 `server/providers/docker` and `server/providers/digitalocean`. Drivers should be
 thin platform integrations for Docker, DigitalOcean, KVM, HCS, Apple
 Virtualization, AWS, Azure, GCP, or similar VM/container backends. They should
 not own worker-pool scheduling or control-plane persistence.
+
+`server/internal/sandbox.Provider` has a required lifecycle and metadata
+surface: close, definition, status, startup reconcile, and project cleanup are
+normal provider responsibilities. Do not reintroduce provider status capability
+flags such as "supports images" or "supports inspection"; feature-specific
+interfaces may still exist only where the caller needs a distinct runtime
+operation and handles absence as a real product behavior.
 
 ## Worker Runtime Drift
 

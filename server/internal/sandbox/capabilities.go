@@ -2,7 +2,6 @@ package sandbox
 
 import (
 	"context"
-	"net/http"
 	"time"
 )
 
@@ -61,65 +60,6 @@ type ImageProvider interface {
 	PullImage(ctx context.Context, ref ImageRef) (<-chan ImageEvent, error)
 }
 
-// CurrentImageIDProvider can report the immutable ID of an image.
-type CurrentImageIDProvider interface {
-	CurrentImageID(ctx context.Context, ref ImageRef) (string, error)
-}
-
-// CleanupUnusedImagesProvider can remove unused provider images.
-type CleanupUnusedImagesProvider interface {
-	CleanupUnusedImages(ctx context.Context) error
-}
-
-// LocalityProvider reports whether sandboxes run on the same host.
-type LocalityProvider interface {
-	IsLocal() bool
-}
-
-// ProviderResourceInfo describes effective provider resources for a project.
-type ProviderResourceInfo struct {
-	Provider   string `json:"provider"`
-	CPUCount   int    `json:"cpuCount"`
-	MemoryMB   int    `json:"memoryMB"`
-	DataDiskGB int    `json:"dataDiskGB"`
-}
-
-// UpdateProviderResourcesRequest describes provider resource changes.
-type UpdateProviderResourcesRequest struct {
-	MemoryMB   *int `json:"memoryMB,omitempty"`
-	DataDiskGB *int `json:"dataDiskGB,omitempty"`
-}
-
-// ProviderResourceManager is an optional resource-management capability.
-type ProviderResourceManager interface {
-	GetProviderResourceInfo(ctx context.Context, projectID string) (*ProviderResourceInfo, error)
-	ApplyProviderResourceUpdate(ctx context.Context, projectID string, req UpdateProviderResourcesRequest) error
-}
-
-// ProjectInspectionInfo describes provider inspection access.
-type ProjectInspectionInfo struct {
-	Provider      string `json:"provider"`
-	Available     bool   `json:"available"`
-	ContainerName string `json:"containerName"`
-	Scope         string `json:"scope"`
-}
-
-// ProjectInspectionManager is an optional inspection-shell capability.
-type ProjectInspectionManager interface {
-	GetProjectInspectionInfo(ctx context.Context, projectID string) (*ProjectInspectionInfo, error)
-	AttachProjectInspection(ctx context.Context, projectID string, opts AttachOptions) (PTY, error)
-}
-
-// ProjectCacheManager is an optional cache-management capability.
-type ProjectCacheManager interface {
-	ClearCache(ctx context.Context, projectID string) error
-}
-
-// DockerProxyProvider is an optional debug proxy capability.
-type DockerProxyProvider interface {
-	DockerTransport(projectID string) (http.RoundTripper, error)
-}
-
 // ProviderConfigField describes one provider instance configuration field.
 type ProviderConfigField struct {
 	Key                string `json:"key"`
@@ -141,24 +81,10 @@ type ProviderDefinition struct {
 	ConfigFields []ProviderConfigField `json:"configFields,omitempty"`
 }
 
-// DefinitionProvider reports provider metadata.
-type DefinitionProvider interface {
-	Definition() ProviderDefinition
-}
-
-// ProviderStatus describes runtime provider availability and capabilities.
+// ProviderStatus describes runtime provider availability.
 type ProviderStatus struct {
-	Available          bool   `json:"available"`
-	State              string `json:"state"`
-	Message            string `json:"message,omitempty"`
-	SupportsResources  bool   `json:"supportsResources"`
-	SupportsInspection bool   `json:"supportsInspection"`
-	SupportsClearCache bool   `json:"supportsClearCache"`
-	SupportsImages     bool   `json:"supportsImages"`
-	Details            any    `json:"details,omitempty"`
-}
-
-// StatusProvider reports provider status.
-type StatusProvider interface {
-	Status() ProviderStatus
+	Available bool   `json:"available"`
+	State     string `json:"state"`
+	Message   string `json:"message,omitempty"`
+	Details   any    `json:"details,omitempty"`
 }

@@ -39,7 +39,7 @@ func TestProviderManagerRegisterStatusAndDefinitions(t *testing.T) {
 	if !ok {
 		t.Fatal("expected fake status")
 	}
-	if !status.Available || status.State != "ready" || !status.SupportsClearCache {
+	if !status.Available || status.State != "ready" {
 		t.Fatalf("status = %#v", status)
 	}
 	definition, ok := manager.GetProviderDefinition("fake")
@@ -163,6 +163,10 @@ type fakeProvider struct {
 	removeProjectID string
 }
 
+func (p *fakeProvider) Close() error {
+	return nil
+}
+
 func (p *fakeProvider) List(context.Context) ([]*sandbox.Sandbox, error) {
 	if p.listErr != nil {
 		return nil, p.listErr
@@ -172,11 +176,6 @@ func (p *fakeProvider) List(context.Context) ([]*sandbox.Sandbox, error) {
 func (p *fakeProvider) Initialize(context.Context, *model.SandboxProviderInstance) error {
 	return nil
 }
-func (p *fakeProvider) Watch(context.Context) (<-chan sandbox.StateEvent, error) {
-	ch := make(chan sandbox.StateEvent)
-	close(ch)
-	return ch, nil
-}
 func (p *fakeProvider) Reconcile(context.Context) error {
 	p.reconcileCalls++
 	return p.reconcileErr
@@ -184,9 +183,6 @@ func (p *fakeProvider) Reconcile(context.Context) error {
 func (p *fakeProvider) RemoveProject(_ context.Context, projectID string) error {
 	p.removeProjectID = projectID
 	return p.removeErr
-}
-func (p *fakeProvider) PrepareState(context.Context, sandbox.SandboxRef, sandbox.CreateOptions) ([]byte, error) {
-	return nil, nil
 }
 func (p *fakeProvider) Create(context.Context, sandbox.SandboxRef, []byte, sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {
 	return nil, nil, nil
@@ -211,7 +207,4 @@ func (p *fakeProvider) Status() sandbox.ProviderStatus {
 }
 func (p *fakeProvider) Definition() sandbox.ProviderDefinition {
 	return p.definition
-}
-func (p *fakeProvider) ClearCache(context.Context, string) error {
-	return nil
 }

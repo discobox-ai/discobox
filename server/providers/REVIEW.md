@@ -19,3 +19,7 @@
   VM. `vm.Driver.RepairWorkerVM` is required; pass the worker ID, current
   instance ID, desired `InstanceSpec`, and reason to the driver and let it
   choose the platform-specific repair action.
+- Do not add optional provider metadata, status, or lifecycle interfaces.
+  `sandbox.Provider`, `workerpool.WorkerProvider`, and `vm.Driver` should state
+  required behavior directly. Optional feature interfaces need a runtime product
+  reason, not a smaller diff.

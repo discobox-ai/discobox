@@ -15,6 +15,11 @@ import (
 // orchestration, authorization, and API shape.
 type Provider interface {
 	Initialize(ctx context.Context, instance *model.SandboxProviderInstance) error
+	Close() error
+	Definition() ProviderDefinition
+	Status() ProviderStatus
+	Reconcile(ctx context.Context) error
+	RemoveProject(ctx context.Context, projectID string) error
 
 	List(ctx context.Context) ([]*Sandbox, error)
 
@@ -129,21 +134,6 @@ type AgentConfig struct {
 	IsDefault      bool
 }
 
-// PrepareStateProvider can precompute provider-owned state before creation.
-type PrepareStateProvider interface {
-	PrepareState(ctx context.Context, ref SandboxRef, opts CreateOptions) ([]byte, error)
-}
-
-// WatchProvider can report provider runtime state changes.
-type WatchProvider interface {
-	Watch(ctx context.Context) (<-chan StateEvent, error)
-}
-
-// ReconcileProvider can repair provider runtime state after process startup.
-type ReconcileProvider interface {
-	Reconcile(ctx context.Context) error
-}
-
 // WorkerProviderReconciler reconciles worker-provider state for a provider
 // instance, such as maintaining a worker pool.
 type WorkerProviderReconciler interface {
@@ -158,11 +148,6 @@ type WorkerRuntimeReconciler interface {
 	ReconcileWorker(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error
 	RepairWorker(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, reason string) error
 	RemoveWorker(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error
-}
-
-// ProjectRemover can remove all provider-managed resources for a project.
-type ProjectRemover interface {
-	RemoveProject(ctx context.Context, projectID string) error
 }
 
 // ResourceConfig defines runtime resource limits.

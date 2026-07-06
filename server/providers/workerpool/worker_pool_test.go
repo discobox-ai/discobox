@@ -315,6 +315,32 @@ func TestWorkerPoolProviderReconcileRunsCapacity(t *testing.T) {
 	}
 }
 
+func TestWorkerPoolProviderReconcileWorkerSchedulesRegistrationTimeout(t *testing.T) {
+	oldTimeout := workerRegistrationTimeout
+	workerRegistrationTimeout = time.Minute
+	t.Cleanup(func() { workerRegistrationTimeout = oldTimeout })
+
+	workerManager := &recordingWorkerManager{}
+	workerProvider := &testWorkerProvider{}
+	pool := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{}, workerManager, false)
+	project := &model.Project{ID: "project-1"}
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
+	worker := &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1"}
+
+	before := time.Now().UTC().Add(workerRegistrationTimeout)
+	if err := pool.ReconcileWorker(context.Background(), workerManager, project, provider, worker); err != nil {
+		t.Fatalf("reconcile worker: %v", err)
+	}
+	after := time.Now().UTC().Add(workerRegistrationTimeout)
+
+	if workerManager.scheduledProviderProjectID != "project-1" || workerManager.scheduledProviderID != "provider-1" {
+		t.Fatalf("scheduled provider reconcile = %q/%q, want project-1/provider-1", workerManager.scheduledProviderProjectID, workerManager.scheduledProviderID)
+	}
+	if workerManager.scheduledProviderAt.Before(before) || workerManager.scheduledProviderAt.After(after) {
+		t.Fatalf("scheduled provider reconcile at = %s, want between %s and %s", workerManager.scheduledProviderAt, before, after)
+	}
+}
+
 func TestWorkerProviderCreateClaimsWorkerAndReturnsWorkerID(t *testing.T) {
 	createdAt := time.Now().UTC()
 	registeredAt := createdAt.Add(time.Second)
@@ -635,15 +661,20 @@ func TestWorkerProviderGetUsesWorkerAPIState(t *testing.T) {
 			t.Fatalf("authorization = %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(&sandbox.Sandbox{
-			ID:        "runtime-1",
-			SandboxID: "sandbox-1",
-			Status:    sandbox.StatusRunning,
-			Image:     "image-1",
-			CreatedAt: time.Now().UTC(),
-			Metadata:  map[string]string{},
-			Env:       map[string]string{},
-			Ports:     []sandbox.AssignedPort{},
+		if err := json.NewEncoder(w).Encode(&workerclient.WorkerSandboxInstance{
+			SandboxId: "sandbox-1",
+			Config:    workerclient.SandboxConfig{},
+			Runtime: workerclient.WorkerSandboxRuntime{
+				InstanceId: "runtime-1",
+				Status:     string(sandbox.StatusRunning),
+				Image:      "image-1",
+				CreatedAt:  time.Now().UTC(),
+				StartedAt:  workerclient.NilDateTime{Null: true},
+				StoppedAt:  workerclient.NilDateTime{Null: true},
+				Metadata:   map[string]string{},
+				Env:        map[string]string{},
+				Ports:      []workerclient.WorkerSandboxPort{},
+			},
 		}); err != nil {
 			t.Fatalf("encode response: %v", err)
 		}
@@ -827,6 +858,10 @@ func (d *existingInstanceDriver) DeleteVM(context.Context, string, bool) error {
 	return errors.New("DeleteVM should not be called")
 }
 
+func (d *existingInstanceDriver) RemoveWorkerVM(context.Context, string, string, bool) error {
+	return errors.New("RemoveWorkerVM should not be called")
+}
+
 func (d *existingInstanceDriver) RepairWorkerVM(context.Context, string, string, vm.InstanceSpec, string) (*vm.Instance, error) {
 	return nil, errors.New("RepairWorkerVM should not be called")
 }
@@ -869,6 +904,10 @@ func (d *workerHTTPOnlyDriver) StopVM(context.Context, string, time.Duration) (*
 
 func (d *workerHTTPOnlyDriver) DeleteVM(context.Context, string, bool) error {
 	return errors.New("DeleteVM should not be called")
+}
+
+func (d *workerHTTPOnlyDriver) RemoveWorkerVM(context.Context, string, string, bool) error {
+	return errors.New("RemoveWorkerVM should not be called")
 }
 
 func (d *workerHTTPOnlyDriver) RepairWorkerVM(context.Context, string, string, vm.InstanceSpec, string) (*vm.Instance, error) {
@@ -924,6 +963,26 @@ type testWorkerProvider struct {
 	token   string
 }
 
+func (p *testWorkerProvider) Close() error {
+	return nil
+}
+
+func (p *testWorkerProvider) Definition() sandbox.ProviderDefinition {
+	return sandbox.ProviderDefinition{Name: "test"}
+}
+
+func (p *testWorkerProvider) Status() sandbox.ProviderStatus {
+	return sandbox.ProviderStatus{Available: true, State: "ready"}
+}
+
+func (p *testWorkerProvider) Reconcile(context.Context) error {
+	return nil
+}
+
+func (p *testWorkerProvider) RemoveProject(context.Context, string) error {
+	return nil
+}
+
 func (p *testWorkerProvider) InitializeWorkerProvider(context.Context, *model.SandboxProviderInstance, any) error {
 	return nil
 }
@@ -947,17 +1006,20 @@ func (p *testWorkerProvider) AcquireWorkerHTTPClient(context.Context, *model.Wor
 }
 
 type recordingWorkerManager struct {
-	worker                  *model.Worker
-	workersByID             map[string]*model.Worker
-	err                     error
-	sandbox                 *model.Sandbox
-	findCalls               int
-	listCalls               int
-	scheduleWorkerCalls     int
-	workerAgentTokenClaims  []workeragentauth.TokenClaims
-	sandboxAgentTokenClaims []workeragentauth.TokenClaims
-	jobs                    map[string]*orchestration.Job
-	scheduledWorkerJobID    string
+	worker                     *model.Worker
+	workersByID                map[string]*model.Worker
+	err                        error
+	sandbox                    *model.Sandbox
+	findCalls                  int
+	listCalls                  int
+	scheduleWorkerCalls        int
+	workerAgentTokenClaims     []workeragentauth.TokenClaims
+	sandboxAgentTokenClaims    []workeragentauth.TokenClaims
+	jobs                       map[string]*orchestration.Job
+	scheduledWorkerJobID       string
+	scheduledProviderProjectID string
+	scheduledProviderID        string
+	scheduledProviderAt        time.Time
 }
 
 func (s *recordingWorkerManager) ListWorkers(context.Context, string, string) ([]model.Worker, error) {
@@ -1019,6 +1081,13 @@ func (s *recordingWorkerManager) ScheduleWorkerProviderReconciliation(context.Co
 	return nil
 }
 
+func (s *recordingWorkerManager) ScheduleWorkerProviderReconciliationAt(_ context.Context, projectID, providerID string, scheduledAt time.Time) error {
+	s.scheduledProviderProjectID = projectID
+	s.scheduledProviderID = providerID
+	s.scheduledProviderAt = scheduledAt
+	return nil
+}
+
 func (s *recordingWorkerManager) ScheduleWorkerReconciliation(context.Context, string) error {
 	s.scheduleWorkerCalls++
 	if s.worker != nil && s.scheduledWorkerJobID != "" {
@@ -1038,8 +1107,28 @@ func (s *recordingWorkerManager) GetJob(_ context.Context, id string) (*orchestr
 	return job, nil
 }
 
+func (s *recordingWorkerManager) CountSandboxesForWorkers(_ context.Context, workerIDs []string) (map[string]int64, error) {
+	return make(map[string]int64, len(workerIDs)), nil
+}
+
 func (s *recordingWorkerManager) CountSandboxesForWorker(context.Context, string) (int64, error) {
 	return 0, nil
+}
+
+func (s *recordingWorkerManager) GetProject(context.Context, string) (*model.Project, error) {
+	return &model.Project{ID: "project-1"}, nil
+}
+
+func (s *recordingWorkerManager) GetSandboxProviderInstance(context.Context, string, string) (*model.SandboxProviderInstance, error) {
+	return &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}, nil
+}
+
+func (s *recordingWorkerManager) MarkWorkerFailedForJob(context.Context, string, int64, string, string) (bool, error) {
+	return false, nil
+}
+
+func (s *recordingWorkerManager) DeleteWorkerForExpiredRegistration(context.Context, string, int64, time.Time, string) (bool, error) {
+	return false, nil
 }
 
 type capacityWaitWorkerManager struct {
@@ -1104,6 +1193,10 @@ func (s *capacityWaitWorkerManager) ScheduleWorkerProviderReconciliation(context
 	return nil
 }
 
+func (s *capacityWaitWorkerManager) ScheduleWorkerProviderReconciliationAt(context.Context, string, string, time.Time) error {
+	return nil
+}
+
 func (s *capacityWaitWorkerManager) ScheduleWorkerReconciliation(context.Context, string) error {
 	return nil
 }
@@ -1112,8 +1205,20 @@ func (s *capacityWaitWorkerManager) GetJob(context.Context, string) (*orchestrat
 	return nil, orchestration.ErrJobNotFound
 }
 
+func (s *capacityWaitWorkerManager) CountSandboxesForWorkers(_ context.Context, workerIDs []string) (map[string]int64, error) {
+	return make(map[string]int64, len(workerIDs)), nil
+}
+
 func (s *capacityWaitWorkerManager) CountSandboxesForWorker(context.Context, string) (int64, error) {
 	return 0, nil
+}
+
+func (s *capacityWaitWorkerManager) MarkWorkerFailedForJob(context.Context, string, int64, string, string) (bool, error) {
+	return false, nil
+}
+
+func (s *capacityWaitWorkerManager) DeleteWorkerForExpiredRegistration(context.Context, string, int64, time.Time, string) (bool, error) {
+	return false, nil
 }
 
 type repairingWorkerManager struct {
@@ -1164,6 +1269,24 @@ func (s *repairingWorkerManager) CountSandboxesForWorker(_ context.Context, work
 	return s.assignedSandboxes[workerID], nil
 }
 
+func (s *repairingWorkerManager) CountSandboxesForWorkers(_ context.Context, workerIDs []string) (map[string]int64, error) {
+	counts := make(map[string]int64, len(workerIDs))
+	for _, workerID := range workerIDs {
+		if s.assignedSandboxes != nil {
+			counts[workerID] = s.assignedSandboxes[workerID]
+		}
+	}
+	return counts, nil
+}
+
+func (s *repairingWorkerManager) GetProject(context.Context, string) (*model.Project, error) {
+	return &model.Project{ID: "project-1"}, nil
+}
+
+func (s *repairingWorkerManager) GetSandboxProviderInstance(context.Context, string, string) (*model.SandboxProviderInstance, error) {
+	return &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}, nil
+}
+
 func (s *repairingWorkerManager) CreateWorkerBootstrapToken(context.Context, *model.WorkerBootstrapToken) error {
 	return nil
 }
@@ -1185,6 +1308,10 @@ func (s *repairingWorkerManager) FindSchedulableWorker(context.Context, *model.S
 }
 
 func (s *repairingWorkerManager) ScheduleWorkerProviderReconciliation(context.Context, string, string) error {
+	return nil
+}
+
+func (s *repairingWorkerManager) ScheduleWorkerProviderReconciliationAt(context.Context, string, string, time.Time) error {
 	return nil
 }
 

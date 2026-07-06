@@ -19,10 +19,6 @@ func (p *Provider) InitializeWorkerProvider(ctx context.Context, provider *model
 	return p.driver.InitializeWorkerProvider(ctx, provider, manager)
 }
 
-type workerVMInspector interface {
-	InspectWorkerVM(ctx context.Context, workerID string) (*Instance, error)
-}
-
 func (p *Provider) CreateWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string, controlPlanePublicKey string) error {
 	if p == nil {
 		return errors.New("vm provider is required")
@@ -151,6 +147,11 @@ func (p *Provider) RemoveWorker(ctx context.Context, project *model.Project, _ *
 func (p *Provider) removeWorkerRuntime(ctx context.Context, project *model.Project, worker *model.Worker, removeVolumes bool) error {
 	ref := sandbox.SandboxRef{ProjectID: project.ID, SandboxID: "worker-" + worker.ID}
 	removed := false
+	currentInstanceID, err := workerRuntimeInstanceID(worker.RuntimeState)
+	if err != nil {
+		return err
+	}
+	fallbackInstanceID := currentInstanceID
 	if len(worker.RuntimeState) > 0 {
 		removeOptions := []sandbox.RemoveOption(nil)
 		if removeVolumes {
@@ -158,22 +159,15 @@ func (p *Provider) removeWorkerRuntime(ctx context.Context, project *model.Proje
 		}
 		if _, err := p.Remove(ctx, ref, worker.RuntimeState, removeOptions...); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 			return err
+		} else if errors.Is(err, sandbox.ErrNotFound) {
+			fallbackInstanceID = ""
 		} else if err == nil {
 			removed = true
 		}
 	}
 	if !removed {
-		inspector, ok := p.driver.(workerVMInspector)
-		if ok {
-			inst, err := inspector.InspectWorkerVM(ctx, worker.ID)
-			if err != nil && !errors.Is(err, sandbox.ErrNotFound) {
-				return err
-			}
-			if err == nil {
-				if err := p.driver.DeleteVM(ctx, inst.ID, removeVolumes); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
-					return err
-				}
-			}
+		if err := p.driver.RemoveWorkerVM(ctx, worker.ID, fallbackInstanceID, removeVolumes); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+			return err
 		}
 	}
 	return nil

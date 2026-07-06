@@ -490,11 +490,7 @@ func TestServiceResolvesDigitalOceanProviderInstance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolve digitalocean provider: %v", err)
 	}
-	definitionProvider, ok := provider.(sandboxes.DefinitionProvider)
-	if !ok {
-		t.Fatalf("provider does not expose definition")
-	}
-	if got := definitionProvider.Definition().Name; got != "DigitalOcean" {
+	if got := provider.Definition().Name; got != "DigitalOcean" {
 		t.Fatalf("definition name = %q", got)
 	}
 }
@@ -528,19 +524,23 @@ func (p *recordingSandboxProvider) Initialize(context.Context, *model.SandboxPro
 	return nil
 }
 
+func (p *recordingSandboxProvider) Close() error {
+	return nil
+}
+
+func (p *recordingSandboxProvider) Definition() sandboxes.ProviderDefinition {
+	return sandboxes.ProviderDefinition{Name: "recording"}
+}
+
+func (p *recordingSandboxProvider) Status() sandboxes.ProviderStatus {
+	return sandboxes.ProviderStatus{Available: true, State: "ready"}
+}
+
 func (p *recordingSandboxProvider) List(context.Context) ([]*sandboxes.Sandbox, error) {
 	return nil, nil
 }
-func (p *recordingSandboxProvider) Watch(context.Context) (<-chan sandboxes.StateEvent, error) {
-	ch := make(chan sandboxes.StateEvent)
-	close(ch)
-	return ch, nil
-}
 func (p *recordingSandboxProvider) Reconcile(context.Context) error             { return nil }
 func (p *recordingSandboxProvider) RemoveProject(context.Context, string) error { return nil }
-func (p *recordingSandboxProvider) PrepareState(context.Context, sandboxes.SandboxRef, sandboxes.CreateOptions) ([]byte, error) {
-	return nil, nil
-}
 func (p *recordingSandboxProvider) Create(_ context.Context, ref sandboxes.SandboxRef, _ []byte, opts sandboxes.CreateOptions) (*sandboxes.Sandbox, []byte, error) {
 	p.createCalls++
 	p.createRef = ref

@@ -30,6 +30,7 @@ type Driver interface {
 	StopVM(ctx context.Context, id string, timeout time.Duration) (*Instance, error)
 	DeleteVM(ctx context.Context, id string, removeVolumes bool) error
 	InspectVM(ctx context.Context, id string) (*Instance, error)
+	RemoveWorkerVM(ctx context.Context, workerID string, currentInstanceID string, removeVolumes bool) error
 	RepairWorkerVM(ctx context.Context, workerID string, currentInstanceID string, spec InstanceSpec, reason string) (*Instance, error)
 	AcquireHTTPClient(ctx context.Context, instance *Instance) (*transport.HTTPClientLease, error)
 	AcquireWorkerHTTPClient(ctx context.Context, workerID string) (*transport.HTTPClientLease, error)
@@ -109,6 +110,14 @@ func (p *Provider) Close() error {
 		return nil
 	}
 	return p.driver.Close()
+}
+
+func (p *Provider) Reconcile(context.Context) error {
+	return nil
+}
+
+func (p *Provider) RemoveProject(context.Context, string) error {
+	return nil
 }
 
 func (p *Provider) Create(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {
@@ -248,7 +257,7 @@ func (p *Provider) Definition() sandbox.ProviderDefinition {
 }
 
 func (p *Provider) Status() sandbox.ProviderStatus {
-	return sandbox.ProviderStatus{Available: true, State: "ready", SupportsImages: true}
+	return sandbox.ProviderStatus{Available: true, State: "ready"}
 }
 
 func (p *Provider) workerBootstrap(ctx context.Context, ref sandbox.SandboxRef, opts sandbox.CreateOptions) (WorkerBootstrap, error) {

@@ -653,6 +653,27 @@ func (d *Driver) InspectWorkerVM(ctx context.Context, workerID string) (*vm.Inst
 	return d.instanceFromInspect(inspect.Container), nil
 }
 
+func (d *Driver) RemoveWorkerVM(ctx context.Context, workerID string, currentInstanceID string, removeVolumes bool) error {
+	instanceID := strings.TrimSpace(currentInstanceID)
+	if instanceID == "" {
+		inst, err := d.InspectWorkerVM(ctx, workerID)
+		if err != nil {
+			if errors.Is(err, sandbox.ErrNotFound) {
+				return nil
+			}
+			return err
+		}
+		instanceID = inst.ID
+	}
+	if instanceID == "" {
+		return nil
+	}
+	if err := d.DeleteVM(ctx, instanceID, removeVolumes); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+		return err
+	}
+	return nil
+}
+
 func (d *Driver) RepairWorkerVM(ctx context.Context, workerID string, currentInstanceID string, spec vm.InstanceSpec, _ string) (*vm.Instance, error) {
 	instanceID := strings.TrimSpace(currentInstanceID)
 	if instanceID == "" {

@@ -18,7 +18,6 @@ type AgentConfig = contract.AgentConfig
 type ProviderStatus = contract.ProviderStatus
 type ProviderConfigField = contract.ProviderConfigField
 type ProviderDefinition = contract.ProviderDefinition
-type DefinitionProvider = contract.DefinitionProvider
 type StateEvent = contract.StateEvent
 type HTTPClientLease = transport.HTTPClientLease
 type WorkerRuntimeReconciler = contract.WorkerRuntimeReconciler

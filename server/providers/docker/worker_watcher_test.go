@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/moby/moby/api/types/events"
 
@@ -173,6 +174,26 @@ func (m *recordingWorkerReconcileManager) CountSandboxesForWorker(context.Contex
 	return 0, nil
 }
 
+func (m *recordingWorkerReconcileManager) CountSandboxesForWorkers(_ context.Context, workerIDs []string) (map[string]int64, error) {
+	return make(map[string]int64, len(workerIDs)), nil
+}
+
+func (m *recordingWorkerReconcileManager) GetProject(context.Context, string) (*model.Project, error) {
+	return &model.Project{ID: "project-1"}, nil
+}
+
+func (m *recordingWorkerReconcileManager) GetSandboxProviderInstance(context.Context, string, string) (*model.SandboxProviderInstance, error) {
+	return &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}, nil
+}
+
+func (m *recordingWorkerReconcileManager) MarkWorkerFailedForJob(context.Context, string, int64, string, string) (bool, error) {
+	return false, nil
+}
+
+func (m *recordingWorkerReconcileManager) DeleteWorkerForExpiredRegistration(context.Context, string, int64, time.Time, string) (bool, error) {
+	return false, nil
+}
+
 func (m *recordingWorkerReconcileManager) ScheduleWorkerReconciliation(_ context.Context, workerID string) error {
 	m.reconcileWorkerID = workerID
 	return nil
@@ -181,5 +202,9 @@ func (m *recordingWorkerReconcileManager) ScheduleWorkerReconciliation(_ context
 func (m *recordingWorkerReconcileManager) ScheduleWorkerProviderReconciliation(_ context.Context, projectID, providerID string) error {
 	m.reconcileProjectID = projectID
 	m.reconcileProviderID = providerID
+	return nil
+}
+
+func (m *recordingWorkerReconcileManager) ScheduleWorkerProviderReconciliationAt(context.Context, string, string, time.Time) error {
 	return nil
 }

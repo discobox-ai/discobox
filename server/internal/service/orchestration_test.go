@@ -392,6 +392,26 @@ func (noopSandboxProvider) Initialize(context.Context, *model.SandboxProviderIns
 	return nil
 }
 
+func (noopSandboxProvider) Close() error {
+	return nil
+}
+
+func (noopSandboxProvider) Definition() sandboxes.ProviderDefinition {
+	return sandboxes.ProviderDefinition{Name: "noop"}
+}
+
+func (noopSandboxProvider) Status() sandboxes.ProviderStatus {
+	return sandboxes.ProviderStatus{Available: true, State: "ready"}
+}
+
+func (noopSandboxProvider) Reconcile(context.Context) error {
+	return nil
+}
+
+func (noopSandboxProvider) RemoveProject(context.Context, string) error {
+	return nil
+}
+
 func (noopSandboxProvider) List(context.Context) ([]*sandboxes.Sandbox, error) {
 	return nil, nil
 }

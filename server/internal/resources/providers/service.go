@@ -117,12 +117,8 @@ func providerConfigFieldToService(field sandboxesvc.ProviderConfigField) service
 
 func providerStatusToService(status sandboxesvc.ProviderStatus) services.ProviderStatus {
 	out := services.ProviderStatus{
-		Available:          status.Available,
-		State:              status.State,
-		SupportsResources:  status.SupportsResources,
-		SupportsInspection: status.SupportsInspection,
-		SupportsClearCache: status.SupportsClearCache,
-		SupportsImages:     status.SupportsImages,
+		Available: status.Available,
+		State:     status.State,
 	}
 	if status.Message != "" {
 		out.Message = services.OptString{Value: status.Message, Set: true}
@@ -333,17 +329,17 @@ func (s *Service) DeleteSandboxProviderInstance(ctx context.Context, projectID, 
 	if err != nil {
 		return err
 	}
-	if len(workers) > 0 {
-		return apperrors.NewStatusError(http.StatusConflict, "provider instance has workers")
+	for i := range workers {
+		if workers[i].RevokedAt == nil {
+			return apperrors.NewStatusError(http.StatusConflict, "provider instance has workers")
+		}
 	}
-	sandboxes, err := s.store.ListSandboxes(ctx, projectID)
+	sandboxCount, err := s.store.CountSandboxesForProvider(ctx, projectID, providerID)
 	if err != nil {
 		return err
 	}
-	for i := range sandboxes {
-		if sandboxes[i].ProviderInstanceID != nil && strings.TrimSpace(*sandboxes[i].ProviderInstanceID) == providerID {
-			return apperrors.NewStatusError(http.StatusConflict, "provider instance has sandboxes")
-		}
+	if sandboxCount > 0 {
+		return apperrors.NewStatusError(http.StatusConflict, "provider instance has sandboxes")
 	}
 	return mapAPIError(s.store.DeleteSandboxProviderInstance(ctx, projectID, providerID), "provider instance not found")
 }

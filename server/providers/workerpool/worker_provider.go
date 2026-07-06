@@ -32,6 +32,11 @@ var (
 
 // WorkerProvider owns worker runtime lifecycle and worker-local sandbox access.
 type WorkerProvider interface {
+	Close() error
+	Definition() sandbox.ProviderDefinition
+	Status() sandbox.ProviderStatus
+	Reconcile(ctx context.Context) error
+	RemoveProject(ctx context.Context, projectID string) error
 	InitializeWorkerProvider(ctx context.Context, provider *model.SandboxProviderInstance, manager any) error
 	CreateWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string, controlPlanePublicKey string) error
 	RepairWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, token string, controlPlanePublicKey string, reason string) error
@@ -50,11 +55,6 @@ type WorkerPoolProvider struct {
 	ensureRunningWorkers bool
 }
 
-type providerInstanceManager interface {
-	GetProject(ctx context.Context, projectID string) (*model.Project, error)
-	GetSandboxProviderInstance(ctx context.Context, projectID, providerID string) (*model.SandboxProviderInstance, error)
-}
-
 func NewWorkerPoolProvider(provider WorkerProvider, poolConfig WorkerPoolConfig, manager WorkerManager, ensureRunningWorkers bool) *WorkerPoolProvider {
 	return &WorkerPoolProvider{workerProvider: provider, poolConfig: poolConfig, manager: manager, ensureRunningWorkers: ensureRunningWorkers}
 }
@@ -70,18 +70,24 @@ func (p *WorkerPoolProvider) List(context.Context) ([]*sandbox.Sandbox, error) {
 	return nil, nil
 }
 
+func (p *WorkerPoolProvider) Close() error {
+	return p.workerProvider.Close()
+}
+
 func (p *WorkerPoolProvider) Definition() sandbox.ProviderDefinition {
-	if provider, ok := p.workerProvider.(sandbox.DefinitionProvider); ok {
-		return provider.Definition()
-	}
-	return sandbox.ProviderDefinition{}
+	return p.workerProvider.Definition()
 }
 
 func (p *WorkerPoolProvider) Status() sandbox.ProviderStatus {
-	if provider, ok := p.workerProvider.(sandbox.StatusProvider); ok {
-		return provider.Status()
-	}
-	return sandbox.ProviderStatus{Available: true, State: "ready"}
+	return p.workerProvider.Status()
+}
+
+func (p *WorkerPoolProvider) Reconcile(ctx context.Context) error {
+	return p.workerProvider.Reconcile(ctx)
+}
+
+func (p *WorkerPoolProvider) RemoveProject(ctx context.Context, projectID string) error {
+	return p.workerProvider.RemoveProject(ctx, projectID)
 }
 
 func (p *WorkerPoolProvider) ensureWorkerPool(ctx context.Context, manager WorkerManager, project *model.Project, provider *model.SandboxProviderInstance) error {
@@ -118,7 +124,13 @@ func (p *WorkerPoolProvider) ReconcileWorker(ctx context.Context, manager any, p
 	if err != nil {
 		return err
 	}
-	return p.workerProvider.CreateWorker(ctx, project, provider, worker, token, controlPlanePublicKey)
+	if err := p.workerProvider.CreateWorker(ctx, project, provider, worker, token, controlPlanePublicKey); err != nil {
+		return err
+	}
+	if workerRegistrationTimeout <= 0 {
+		return nil
+	}
+	return workerManager.ScheduleWorkerProviderReconciliationAt(ctx, provider.ProjectID, provider.ID, time.Now().UTC().Add(workerRegistrationTimeout))
 }
 
 func (p *WorkerPoolProvider) RepairWorker(ctx context.Context, manager any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, reason string) error {
@@ -137,7 +149,13 @@ func (p *WorkerPoolProvider) RepairWorker(ctx context.Context, manager any, proj
 	if err != nil {
 		return err
 	}
-	return p.workerProvider.RepairWorker(ctx, project, provider, worker, token, controlPlanePublicKey, reason)
+	if err := p.workerProvider.RepairWorker(ctx, project, provider, worker, token, controlPlanePublicKey, reason); err != nil {
+		return err
+	}
+	if workerRegistrationTimeout <= 0 {
+		return nil
+	}
+	return workerManager.ScheduleWorkerProviderReconciliationAt(ctx, provider.ProjectID, provider.ID, time.Now().UTC().Add(workerRegistrationTimeout))
 }
 
 func (p *WorkerPoolProvider) RemoveWorker(ctx context.Context, _ any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error {
@@ -258,15 +276,11 @@ func (p *WorkerPoolProvider) ensureWorkerCapacity(ctx context.Context, sb *model
 	if sb == nil || sb.ProviderInstanceID == nil || *sb.ProviderInstanceID == "" {
 		return sandbox.ErrNoSandboxCapacity
 	}
-	providerManager, ok := p.manager.(providerInstanceManager)
-	if !ok {
-		return sandbox.ErrNoSandboxCapacity
-	}
-	project, err := providerManager.GetProject(ctx, sb.ProjectID)
+	project, err := p.manager.GetProject(ctx, sb.ProjectID)
 	if err != nil {
 		return err
 	}
-	provider, err := providerManager.GetSandboxProviderInstance(ctx, sb.ProjectID, *sb.ProviderInstanceID)
+	provider, err := p.manager.GetSandboxProviderInstance(ctx, sb.ProjectID, *sb.ProviderInstanceID)
 	if err != nil {
 		return err
 	}
@@ -476,6 +490,29 @@ type workerAgentTokenIssuer interface {
 }
 
 func (p *workerAgentSandboxProvider) Initialize(context.Context, *model.SandboxProviderInstance) error {
+	return nil
+}
+
+func (p *workerAgentSandboxProvider) Close() error {
+	if p.lease != nil {
+		p.lease.Release()
+	}
+	return nil
+}
+
+func (p *workerAgentSandboxProvider) Definition() sandbox.ProviderDefinition {
+	return sandbox.ProviderDefinition{Name: "Worker Agent"}
+}
+
+func (p *workerAgentSandboxProvider) Status() sandbox.ProviderStatus {
+	return sandbox.ProviderStatus{Available: true, State: "ready"}
+}
+
+func (p *workerAgentSandboxProvider) Reconcile(context.Context) error {
+	return nil
+}
+
+func (p *workerAgentSandboxProvider) RemoveProject(context.Context, string) error {
 	return nil
 }
 

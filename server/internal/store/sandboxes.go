@@ -98,6 +98,44 @@ func (s *Store) CountSandboxesForWorker(ctx context.Context, workerID string) (i
 	return count, err
 }
 
+func (s *Store) CountSandboxesForWorkers(ctx context.Context, workerIDs []string) (map[string]int64, error) {
+	counts := make(map[string]int64, len(workerIDs))
+	if len(workerIDs) == 0 {
+		return counts, nil
+	}
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var rows []struct {
+		WorkerID string
+		Count    int64
+	}
+	if err := read.Model(&model.Sandbox{}).
+		Select("worker_id, count(*) as count").
+		Where("worker_id IN ?", workerIDs).
+		Group("worker_id").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		counts[row.WorkerID] = row.Count
+	}
+	return counts, nil
+}
+
+func (s *Store) CountSandboxesForProvider(ctx context.Context, projectID, providerID string) (int64, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return 0, err
+	}
+	var count int64
+	err = read.Model(&model.Sandbox{}).
+		Where("project_id = ? AND provider_instance_id = ?", projectID, providerID).
+		Count(&count).Error
+	return count, err
+}
+
 func (s *Store) CreateSandbox(ctx context.Context, sandbox *model.Sandbox) error {
 	_, err := withResourceEvent(ctx, s, model.EventActionCreated, func(tx *gorm.DB) (*model.Sandbox, error) {
 		persisted, err := s.sealSandboxForWrite(ctx, sandbox)

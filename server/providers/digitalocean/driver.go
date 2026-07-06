@@ -231,9 +231,54 @@ func (d *Driver) InspectVM(ctx context.Context, id string) (*vm.Instance, error)
 	return instanceFromDroplet(out.Droplet, d.agentPort), nil
 }
 
-func (d *Driver) RepairWorkerVM(ctx context.Context, _ string, currentInstanceID string, spec vm.InstanceSpec, _ string) (*vm.Instance, error) {
-	if strings.TrimSpace(currentInstanceID) != "" {
-		if err := d.DeleteVM(ctx, currentInstanceID, true); err != nil {
+func (d *Driver) InspectWorkerVM(ctx context.Context, workerID string) (*vm.Instance, error) {
+	if strings.TrimSpace(workerID) == "" {
+		return nil, sandbox.ErrNotFound
+	}
+	var out dropletsResponse
+	if err := d.do(ctx, http.MethodGet, "/v2/droplets?tag_name="+url.QueryEscape(workerTag(workerID)), nil, &out); err != nil {
+		return nil, err
+	}
+	if len(out.Droplets) == 0 {
+		return nil, sandbox.ErrNotFound
+	}
+	return instanceFromDroplet(out.Droplets[0], d.agentPort), nil
+}
+
+func (d *Driver) RemoveWorkerVM(ctx context.Context, workerID string, currentInstanceID string, removeVolumes bool) error {
+	instanceID := strings.TrimSpace(currentInstanceID)
+	if instanceID == "" {
+		inst, err := d.InspectWorkerVM(ctx, workerID)
+		if err != nil {
+			if errors.Is(err, sandbox.ErrNotFound) {
+				return nil
+			}
+			return err
+		}
+		instanceID = inst.ID
+	}
+	if instanceID == "" {
+		return nil
+	}
+	if err := d.DeleteVM(ctx, instanceID, removeVolumes); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+		return err
+	}
+	return nil
+}
+
+func (d *Driver) RepairWorkerVM(ctx context.Context, workerID string, currentInstanceID string, spec vm.InstanceSpec, _ string) (*vm.Instance, error) {
+	instanceID := strings.TrimSpace(currentInstanceID)
+	if instanceID == "" {
+		inst, err := d.InspectWorkerVM(ctx, workerID)
+		if err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+			return nil, err
+		}
+		if inst != nil {
+			instanceID = inst.ID
+		}
+	}
+	if instanceID != "" {
+		if err := d.DeleteVM(ctx, instanceID, true); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 			return nil, err
 		}
 	}
@@ -274,6 +319,9 @@ func (d *Driver) do(ctx context.Context, method, path string, in, out any) error
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return sandbox.ErrNotFound
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 		return fmt.Errorf("digitalocean %s %s failed: status %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(data)))
@@ -343,11 +391,15 @@ func effectiveSize(defaultSize string, _ sandbox.ResourceConfig) string {
 
 func dropletTags(defaultTags []string, spec vm.InstanceSpec) []string {
 	tags := append([]string(nil), defaultTags...)
-	for _, tag := range []string{
+	candidates := []string{
 		"discobox",
 		"discobox-project-" + safeTag(spec.Ref.ProjectID),
 		"discobox-sandbox-" + safeTag(spec.Ref.SandboxID),
-	} {
+	}
+	if workerID := spec.Metadata["discobox.worker_id"]; workerID != "" {
+		candidates = append(candidates, workerTag(workerID))
+	}
+	for _, tag := range candidates {
 		if strings.TrimRight(tag, "-") != tag || strings.HasSuffix(tag, "-") {
 			continue
 		}
@@ -356,6 +408,10 @@ func dropletTags(defaultTags []string, spec vm.InstanceSpec) []string {
 		}
 	}
 	return tags
+}
+
+func workerTag(workerID string) string {
+	return "discobox-worker-" + safeTag(workerID)
 }
 
 func safeTag(value string) string {
@@ -396,6 +452,10 @@ type createDropletRequest struct {
 
 type dropletResponse struct {
 	Droplet droplet `json:"droplet"`
+}
+
+type dropletsResponse struct {
+	Droplets []droplet `json:"droplets"`
 }
 
 type droplet struct {
