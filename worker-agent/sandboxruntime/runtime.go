@@ -275,6 +275,17 @@ func (r *DockerSandboxRuntime) writeSandboxAgentConfig(ctx context.Context, sand
 	return chownRecursive(ctx, configDir, 0, 0)
 }
 
+func manifestAgentConfigFiles(files []workerapimodel.AgentConfigFile) []apimodel.AgentConfigFile {
+	if len(files) == 0 {
+		return nil
+	}
+	out := make([]apimodel.AgentConfigFile, 0, len(files))
+	for _, file := range files {
+		out = append(out, apimodel.AgentConfigFile{Path: file.Path, Content: file.Content})
+	}
+	return out
+}
+
 func buildSandboxManifest(projectID, sandboxID, workerID, controlPlanePublicKey string, req *workerapimodel.WorkerSandboxCreateRequest) apimodel.SandboxManifest {
 	manifest := apimodel.SandboxManifest{
 		APIVersion: apimodel.SandboxManifestAPIVersion,
@@ -317,6 +328,9 @@ func buildSandboxManifest(projectID, sandboxID, workerID, controlPlanePublicKey 
 			if installCommand, ok := resolved.InstallCommand.Get(); ok {
 				resolvedConfig.InstallCommand = installCommand
 			}
+			if files, ok := resolved.Files.Get(); ok {
+				resolvedConfig.Files = manifestAgentConfigFiles(files)
+			}
 			manifest.ResolvedAgentConfig = &resolvedConfig
 		}
 		if configs, ok := req.AgentConfigs.Get(); ok {
@@ -330,6 +344,9 @@ func buildSandboxManifest(projectID, sandboxID, workerID, controlPlanePublicKey 
 				}
 				if installCommand, ok := config.InstallCommand.Get(); ok {
 					agentConfig.InstallCommand = installCommand
+				}
+				if files, ok := config.Files.Get(); ok {
+					agentConfig.Files = manifestAgentConfigFiles(files)
 				}
 				manifest.AgentConfigs = append(manifest.AgentConfigs, agentConfig)
 			}

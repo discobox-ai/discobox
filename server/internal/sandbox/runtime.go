@@ -120,8 +120,9 @@ type CreateOptions struct {
 type ResolvedAgentConfig struct {
 	ID             string
 	Name           string
-	InstallCommand string
-	RunCommand     string
+	InstallCommand []string
+	RunCommand     []string
+	Files          []model.AgentConfigFile
 }
 
 // AgentConfig is a project-scoped coding agent configuration made available to
@@ -129,9 +130,10 @@ type ResolvedAgentConfig struct {
 type AgentConfig struct {
 	ID             string
 	Name           string
-	InstallCommand string
-	RunCommand     string
+	InstallCommand []string
+	RunCommand     []string
 	IsDefault      bool
+	Files          []model.AgentConfigFile
 }
 
 // WorkerProviderReconciler reconciles worker-provider state for a provider

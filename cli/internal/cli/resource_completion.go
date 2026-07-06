@@ -163,7 +163,7 @@ func (a *App) listAgentConfigCompletions(ctx context.Context, client *apiclientg
 	}
 	completions := make([]string, 0, len(body.GetAgentConfigs()))
 	for _, agent := range body.GetAgentConfigs() {
-		completions = append(completions, completionItem(agent.ID, completionDescription(agent.Name, agent.RunCommand)))
+		completions = append(completions, completionItem(agent.ID, completionDescription(agent.Name, strings.Join(agent.RunCommand, " "))))
 	}
 	return completions, nil
 }
@@ -179,7 +179,7 @@ func (a *App) listAgentConfigNameCompletions(ctx context.Context, client *apicli
 	}
 	completions := make([]string, 0, len(body.GetAgentConfigs()))
 	for _, agent := range body.GetAgentConfigs() {
-		completions = append(completions, completionItem(agent.Name, completionDescription(agent.ID, agent.RunCommand)))
+		completions = append(completions, completionItem(agent.Name, completionDescription(agent.ID, strings.Join(agent.RunCommand, " "))))
 	}
 	return completions, nil
 }

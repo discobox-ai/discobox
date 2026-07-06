@@ -5,10 +5,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/obot-platform/discobox/sandbox-agent/config"
+	"github.com/obot-platform/discobox/sandbox-agent/execs"
 )
 
 func TestManagerCreateListDelete(t *testing.T) {
@@ -68,7 +69,8 @@ func TestManagerCreateListDelete(t *testing.T) {
 	}
 }
 
-func TestManagerRejectsWorkdirOutsideRoot(t *testing.T) {
+func TestManagerAllowsWorkdirOutsideRoot(t *testing.T) {
+	runner := &fakeRunner{}
 	manager, err := NewManager(ManagerConfig{
 		Agents: []config.Agent{{
 			ID:      "codex",
@@ -76,15 +78,22 @@ func TestManagerRejectsWorkdirOutsideRoot(t *testing.T) {
 		}},
 		WorkingRoot: "/workspace",
 		RuntimeDir:  t.TempDir(),
-		Units:       &fakeRunner{},
+		Units:       runner,
 		Installer:   &fakeInstaller{},
 	})
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
 
-	if _, err := manager.Create(context.Background(), CreateRequest{Workdir: "../etc"}); err == nil {
-		t.Fatalf("expected workdir error")
+	created, err := manager.Create(context.Background(), CreateRequest{Workdir: "/tmp/../etc"})
+	if err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+	if created.Workdir != "/etc" {
+		t.Fatalf("workdir = %q, want /etc", created.Workdir)
+	}
+	if runner.starts[0].Workdir != "/etc" {
+		t.Fatalf("start workdir = %q, want /etc", runner.starts[0].Workdir)
 	}
 }
 
@@ -115,6 +124,213 @@ func TestManagerMergesConfigEnvWithRequestOverrides(t *testing.T) {
 	if env["BASE"] != "sandbox" || env["OVERRIDE"] != "terminal" || env["LOCAL"] != "terminal" {
 		t.Fatalf("env = %#v, want config env with request override", env)
 	}
+	if env["TERM"] != defaultTerm {
+		t.Fatalf("TERM = %q, want %q", env["TERM"], defaultTerm)
+	}
+}
+
+func TestManagerPreservesTerminalTermOverrides(t *testing.T) {
+	runner := &fakeRunner{}
+	manager, err := NewManager(ManagerConfig{
+		Agents: []config.Agent{{
+			ID:      "codex",
+			Command: []string{"codex"},
+		}},
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Env:         map[string]string{"TERM": "screen-256color"},
+		Units:       runner,
+		Installer:   &fakeInstaller{},
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	if _, err := manager.Create(context.Background(), CreateRequest{
+		Env: map[string]string{"TERM": "vt100"},
+	}); err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+
+	if got := runner.starts[0].Env["TERM"]; got != "vt100" {
+		t.Fatalf("TERM = %q, want terminal override", got)
+	}
+}
+
+func TestManagerDefaultsTerminalNPMPrefixFromHome(t *testing.T) {
+	runner := &fakeRunner{}
+	manager, err := NewManager(ManagerConfig{
+		Agents: []config.Agent{{
+			ID:      "codex",
+			Command: []string{"codex"},
+		}},
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Env:         map[string]string{"HOME": "/home/darren"},
+		ImageConfig: testImageConfig(),
+		Units:       runner,
+		Installer:   &fakeInstaller{},
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	if _, err := manager.Create(context.Background(), CreateRequest{}); err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+
+	if got := runner.starts[0].Env["NPM_CONFIG_PREFIX"]; got != "/home/darren/.npm-global" {
+		t.Fatalf("NPM_CONFIG_PREFIX = %q, want user prefix", got)
+	}
+	if got := runner.starts[0].Env["PATH"]; !strings.HasPrefix(got, "/home/darren/.npm-global/bin"+string(os.PathListSeparator)) {
+		t.Fatalf("PATH = %q, want npm prefix bin first", got)
+	}
+	if strings.Contains(runner.starts[0].Env["PATH"], "/root/") {
+		t.Fatalf("PATH = %q, should not include root home paths", runner.starts[0].Env["PATH"])
+	}
+}
+
+func TestManagerDefaultsTerminalUserFromSandboxConfig(t *testing.T) {
+	runner := &fakeRunner{}
+	uid := int64(1000)
+	gid := int64(1001)
+	manager, err := NewManager(ManagerConfig{
+		Agents: []config.Agent{{
+			ID:      "claude-code",
+			Command: []string{"claude"},
+		}},
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		ExecDefaults: config.ExecDefaults{
+			Username:      "darren",
+			UID:           &uid,
+			GID:           &gid,
+			HomeDirectory: "/home/darren",
+		},
+		ImageConfig: testImageConfig(),
+		Units:       runner,
+		Installer:   &fakeInstaller{},
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	if _, err := manager.Create(context.Background(), CreateRequest{}); err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+
+	start := runner.starts[0]
+	if start.User == nil || start.User.Name != "darren" || start.User.UID == nil || *start.User.UID != uid || start.User.GID == nil || *start.User.GID != gid {
+		t.Fatalf("start user = %#v, want sandbox default user", start.User)
+	}
+	if start.Env["HOME"] != "/home/darren" || start.Env["USER"] != "darren" || start.Env["LOGNAME"] != "darren" {
+		t.Fatalf("start env = %#v, want default user env", start.Env)
+	}
+	if got := start.Env["PATH"]; !strings.HasPrefix(got, "/home/darren/.npm-global/bin"+string(os.PathListSeparator)) {
+		t.Fatalf("PATH = %q, want user-home path from image config", got)
+	}
+}
+
+func TestManagerDefaultsTerminalWorkdirFromSandboxConfig(t *testing.T) {
+	runner := &fakeRunner{}
+	manager, err := NewManager(ManagerConfig{
+		Agents: []config.Agent{{
+			ID:      "claude-code",
+			Command: []string{"claude"},
+		}},
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		ExecDefaults: config.ExecDefaults{
+			Workdir: "/home/darren/src/disco2",
+		},
+		Units:     runner,
+		Installer: &fakeInstaller{},
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	created, err := manager.Create(context.Background(), CreateRequest{})
+	if err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+
+	if created.Workdir != "/home/darren/src/disco2" {
+		t.Fatalf("workdir = %q, want sandbox source working directory", created.Workdir)
+	}
+	if runner.starts[0].Workdir != "/home/darren/src/disco2" {
+		t.Fatalf("start workdir = %q, want sandbox source working directory", runner.starts[0].Workdir)
+	}
+}
+
+func TestManagerDefaultsRelativeTerminalWorkdirFromWorkingRoot(t *testing.T) {
+	runner := &fakeRunner{}
+	manager, err := NewManager(ManagerConfig{
+		Agents: []config.Agent{{
+			ID:      "claude-code",
+			Command: []string{"claude"},
+		}},
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		ExecDefaults: config.ExecDefaults{
+			Workdir: "project",
+		},
+		Units:     runner,
+		Installer: &fakeInstaller{},
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	created, err := manager.Create(context.Background(), CreateRequest{})
+	if err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+
+	if created.Workdir != "/workspace/project" {
+		t.Fatalf("workdir = %q, want relative sandbox source working directory under working root", created.Workdir)
+	}
+}
+
+func TestManagerPreservesTerminalNPMAndPathOverrides(t *testing.T) {
+	runner := &fakeRunner{}
+	manager, err := NewManager(ManagerConfig{
+		Agents: []config.Agent{{
+			ID:      "codex",
+			Command: []string{"codex"},
+		}},
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Env: map[string]string{
+			"HOME":              "/home/darren",
+			"NPM_CONFIG_PREFIX": "/custom/npm",
+			"PATH":              "/custom/bin",
+		},
+		ImageConfig: testImageConfig(),
+		Units:       runner,
+		Installer:   &fakeInstaller{},
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	if _, err := manager.Create(context.Background(), CreateRequest{}); err != nil {
+		t.Fatalf("create terminal: %v", err)
+	}
+
+	if got := runner.starts[0].Env["NPM_CONFIG_PREFIX"]; got != "/custom/npm" {
+		t.Fatalf("NPM_CONFIG_PREFIX = %q, want override", got)
+	}
+	if got := runner.starts[0].Env["PATH"]; got != "/custom/bin" {
+		t.Fatalf("PATH = %q, want override", got)
+	}
+}
+
+func testImageConfig() config.ImageConfig {
+	return config.ImageConfig{Env: map[string]string{
+		"NPM_CONFIG_PREFIX": "%HOME%/.npm-global",
+		"PATH":              "%HOME%/.npm-global/bin:%HOME%/.cargo/bin:%HOME%/.nix-profile/bin:%HOME%/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+	}}
 }
 
 func TestManagerUsesMarkedDefaultAgent(t *testing.T) {
@@ -219,8 +435,8 @@ func TestManagerUsesRepoLocalAgentConfig(t *testing.T) {
 	}
 	if err := os.WriteFile(filepath.Join(repo, ".discobox", "agent.json"), []byte(`{
 		"agent": "claude-code",
-		"installCommand": "npm install local-claude",
-		"runCommand": "claude --dangerously-skip-permissions"
+		"installCommand": ["npm", "install", "local-claude"],
+		"runCommand": ["claude", "--dangerously-skip-permissions"]
 	}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -230,14 +446,14 @@ func TestManagerUsesRepoLocalAgentConfig(t *testing.T) {
 			{
 				ID:             "codex",
 				Command:        []string{"codex"},
-				InstallCommand: "npm install -g @openai/codex",
+				InstallCommand: []string{"npm", "install", "-g", "@openai/codex"},
 				IsDefault:      true,
 			},
 			{
 				ID:             "claude-code",
 				Name:           "Claude Code",
 				Command:        []string{"claude"},
-				InstallCommand: "npm install -g @anthropic-ai/claude-code",
+				InstallCommand: []string{"npm", "install", "-g", "@anthropic-ai/claude-code"},
 			},
 		},
 		WorkingRoot: root,
@@ -252,21 +468,32 @@ func TestManagerUsesRepoLocalAgentConfig(t *testing.T) {
 	if _, err := manager.Create(context.Background(), CreateRequest{Workdir: workdir}); err != nil {
 		t.Fatalf("create terminal: %v", err)
 	}
-	if got := runner.starts[0].Command; len(got) != 3 || got[0] != "/bin/bash" || got[2] != "claude --dangerously-skip-permissions" {
+	if got := runner.starts[0].Command; len(got) != 2 || got[0] != "claude" || got[1] != "--dangerously-skip-permissions" {
 		t.Fatalf("command = %#v, want local claude run command", got)
 	}
-	if len(installer.installs) != 1 || installer.installs[0].InstallCommand != "npm install local-claude" {
+	if got := installer.installs[0].InstallCommand; len(installer.installs) != 1 || len(got) != 3 || got[0] != "npm" || got[1] != "install" || got[2] != "local-claude" {
 		t.Fatalf("installs = %#v, want local install command", installer.installs)
 	}
 }
 
 func TestCommandInstallerCachesSuccessfulInstallCommand(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "installs.log")
-	installer := CommandInstaller{}
+	runner := &fakeRunner{}
+	installer := CommandInstaller{
+		Units:      runner,
+		RuntimeDir: t.TempDir(),
+		LogDir:     t.TempDir(),
+		startFromSocket: func(context.Context, string) (Terminal, error) {
+			return Terminal{Status: StatusRunning}, nil
+		},
+		statusFromSocket: func(context.Context, string) (Terminal, error) {
+			code := int64(0)
+			return Terminal{Status: StatusExited, ExitCode: &code}, nil
+		},
+	}
 	agent := config.Agent{
 		ID:             "test-agent",
 		Command:        []string{"test-agent"},
-		InstallCommand: "printf 'one\\n' >> " + strconv.Quote(path),
+		InstallCommand: []string{"echo", "one"},
 	}
 
 	if err := installer.EnsureInstalled(context.Background(), agent, t.TempDir(), nil); err != nil {
@@ -275,34 +502,40 @@ func TestCommandInstallerCachesSuccessfulInstallCommand(t *testing.T) {
 	if err := installer.EnsureInstalled(context.Background(), agent, t.TempDir(), nil); err != nil {
 		t.Fatalf("second install: %v", err)
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read install log: %v", err)
+	if len(runner.starts) != 1 {
+		t.Fatalf("starts = %d, want one successful run", len(runner.starts))
 	}
-	if string(data) != "one\n" {
-		t.Fatalf("install log = %q, want one successful run", string(data))
+	if got := runner.starts[0].Command; len(got) != 2 || got[0] != "echo" || got[1] != "one" {
+		t.Fatalf("command = %#v, want install command argv", got)
 	}
 
-	agent.InstallCommand = "printf 'two\\n' >> " + strconv.Quote(path)
+	agent.InstallCommand = []string{"echo", "two"}
 	if err := installer.EnsureInstalled(context.Background(), agent, t.TempDir(), nil); err != nil {
 		t.Fatalf("changed install: %v", err)
 	}
-	data, err = os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read install log: %v", err)
-	}
-	if string(data) != "one\ntwo\n" {
-		t.Fatalf("install log = %q, want changed command to run", string(data))
+	if len(runner.starts) != 2 {
+		t.Fatalf("starts = %d, want changed command to run", len(runner.starts))
 	}
 }
 
 func TestCommandInstallerDoesNotCacheFailedInstallCommand(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "installs.log")
-	installer := CommandInstaller{}
+	runner := &fakeRunner{}
+	installer := CommandInstaller{
+		Units:      runner,
+		RuntimeDir: t.TempDir(),
+		LogDir:     t.TempDir(),
+		startFromSocket: func(context.Context, string) (Terminal, error) {
+			return Terminal{Status: StatusRunning}, nil
+		},
+		statusFromSocket: func(context.Context, string) (Terminal, error) {
+			code := int64(7)
+			return Terminal{Status: StatusFailed, ExitCode: &code, Error: "exit status 7"}, nil
+		},
+	}
 	agent := config.Agent{
 		ID:             "test-agent",
 		Command:        []string{"test-agent"},
-		InstallCommand: "printf 'fail\\n' >> " + strconv.Quote(path) + "; exit 7",
+		InstallCommand: []string{"sh", "-c", "printf 'fail\\n'; exit 7"},
 	}
 
 	if err := installer.EnsureInstalled(context.Background(), agent, t.TempDir(), nil); err == nil {
@@ -311,12 +544,129 @@ func TestCommandInstallerDoesNotCacheFailedInstallCommand(t *testing.T) {
 	if err := installer.EnsureInstalled(context.Background(), agent, t.TempDir(), nil); err == nil {
 		t.Fatalf("second install should fail")
 	}
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("read install log: %v", err)
+	if len(runner.starts) != 2 {
+		t.Fatalf("starts = %d, want failed command retried", len(runner.starts))
 	}
-	if string(data) != "fail\nfail\n" {
-		t.Fatalf("install log = %q, want failed command retried", string(data))
+}
+
+func TestCommandInstallerPassesEnvironmentToTerminalRunner(t *testing.T) {
+	runner := &fakeRunner{}
+	uid := int64(1000)
+	installer := CommandInstaller{
+		Units:      runner,
+		RuntimeDir: t.TempDir(),
+		LogDir:     t.TempDir(),
+		User: &execs.User{
+			Name: "darren",
+			UID:  &uid,
+		},
+		startFromSocket: func(context.Context, string) (Terminal, error) {
+			return Terminal{Status: StatusRunning}, nil
+		},
+		statusFromSocket: func(context.Context, string) (Terminal, error) {
+			code := int64(0)
+			return Terminal{Status: StatusExited, ExitCode: &code}, nil
+		},
+	}
+	agent := config.Agent{
+		ID:             "test-agent",
+		Command:        []string{"test-agent"},
+		InstallCommand: []string{"npm", "install", "-g", "test-agent"},
+	}
+
+	if err := installer.EnsureInstalled(context.Background(), agent, "/workspace/project", map[string]string{
+		"HOME":              "/home/darren",
+		"NPM_CONFIG_PREFIX": "/home/darren/.npm-global",
+		"PATH":              "/home/darren/.npm-global/bin:/usr/bin",
+	}); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	if len(runner.starts) != 1 {
+		t.Fatalf("starts = %d, want one", len(runner.starts))
+	}
+	start := runner.starts[0]
+	if start.Workdir != "/workspace/project" {
+		t.Fatalf("workdir = %q, want request workdir", start.Workdir)
+	}
+	if start.User == nil || start.User.Name != "darren" || start.User.UID == nil || *start.User.UID != uid {
+		t.Fatalf("user = %#v, want installer user", start.User)
+	}
+	if start.Env["NPM_CONFIG_PREFIX"] != "/home/darren/.npm-global" || start.Env["PATH"] != "/home/darren/.npm-global/bin:/usr/bin" {
+		t.Fatalf("env = %#v, want terminal env passed to installer", start.Env)
+	}
+}
+
+func TestFileInstallerWritesFilesUnderHomeDirectory(t *testing.T) {
+	home := t.TempDir()
+	installer := FileInstaller{HomeDirectory: home}
+	agent := config.Agent{
+		ID: "claude-code",
+		Files: []config.AgentFile{
+			{Path: ".claude/settings.json", Content: `{"theme":"dark"}`},
+		},
+	}
+
+	if err := installer.EnsureInstalled(context.Background(), agent, "/workspace/project", nil); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	data, err := os.ReadFile(filepath.Join(home, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatalf("read installed file: %v", err)
+	}
+	if string(data) != `{"theme":"dark"}` {
+		t.Fatalf("content = %q, want agent file content", string(data))
+	}
+	info, err := os.Stat(filepath.Join(home, ".claude", "settings.json"))
+	if err != nil {
+		t.Fatalf("stat installed file: %v", err)
+	}
+	if got := info.Mode().Perm(); got != 0o644 {
+		t.Fatalf("mode = %o, want world-readable 0644", got)
+	}
+}
+
+func TestFileInstallerNoopsWithoutFiles(t *testing.T) {
+	installer := FileInstaller{}
+	agent := config.Agent{ID: "claude-code"}
+	if err := installer.EnsureInstalled(context.Background(), agent, "/workspace/project", nil); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+}
+
+func TestFileInstallerRequiresHomeDirectoryWhenFilesConfigured(t *testing.T) {
+	installer := FileInstaller{}
+	agent := config.Agent{
+		ID:    "claude-code",
+		Files: []config.AgentFile{{Path: ".claude/settings.json", Content: "{}"}},
+	}
+	if err := installer.EnsureInstalled(context.Background(), agent, "/workspace/project", nil); err == nil {
+		t.Fatalf("expected error when no home directory is configured")
+	}
+}
+
+func TestFileInstallerRejectsPathEscapingHomeDirectory(t *testing.T) {
+	home := t.TempDir()
+	installer := FileInstaller{HomeDirectory: home}
+	agent := config.Agent{
+		ID:    "claude-code",
+		Files: []config.AgentFile{{Path: "../outside.txt", Content: "nope"}},
+	}
+	if err := installer.EnsureInstalled(context.Background(), agent, "/workspace/project", nil); err == nil {
+		t.Fatalf("expected error for path escaping home directory")
+	}
+}
+
+func TestFileInstallerRejectsAbsolutePath(t *testing.T) {
+	home := t.TempDir()
+	installer := FileInstaller{HomeDirectory: home}
+	agent := config.Agent{
+		ID:    "claude-code",
+		Files: []config.AgentFile{{Path: "/etc/passwd", Content: "nope"}},
+	}
+	if err := installer.EnsureInstalled(context.Background(), agent, "/workspace/project", nil); err == nil {
+		t.Fatalf("expected error for absolute path")
 	}
 }
 

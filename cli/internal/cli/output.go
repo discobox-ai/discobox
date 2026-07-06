@@ -198,7 +198,7 @@ func (a *App) writeAgentDefinition(cmd *cobra.Command, definition *apimodel.Agen
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tDESCRIPTION")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(definition.ID), definition.Name, definition.RunCommand, definition.Description.Or(""))
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(definition.ID), definition.Name, strings.Join(definition.RunCommand, " "), definition.Description.Or(""))
 	return tw.Flush()
 }
 
@@ -212,7 +212,7 @@ func (a *App) writeAgentDefinitions(cmd *cobra.Command, definitions []apimodel.A
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tDESCRIPTION")
 	for _, definition := range definitions {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(definition.ID), definition.Name, definition.RunCommand, definition.Description.Or(""))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(definition.ID), definition.Name, strings.Join(definition.RunCommand, " "), definition.Description.Or(""))
 	}
 	return tw.Flush()
 }
@@ -226,7 +226,7 @@ func (a *App) writeAgent(cmd *cobra.Command, agent *apimodel.AgentConfig) error 
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tUPDATED")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(agent.ID), agent.Name, agent.RunCommand, formatTime(agent.UpdatedAt))
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(agent.ID), agent.Name, strings.Join(agent.RunCommand, " "), formatTime(agent.UpdatedAt))
 	return tw.Flush()
 }
 
@@ -246,7 +246,7 @@ func (a *App) writeAgents(cmd *cobra.Command, agents []apimodel.AgentConfig, def
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tDEFAULT\tRUN COMMAND\tUPDATED")
 	for _, agent := range agents {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", shortID(agent.ID), agent.Name, formatDefaultMarker(agent.ID == defaultID), agent.RunCommand, formatTime(agent.UpdatedAt))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", shortID(agent.ID), agent.Name, formatDefaultMarker(agent.ID == defaultID), strings.Join(agent.RunCommand, " "), formatTime(agent.UpdatedAt))
 	}
 	return tw.Flush()
 }

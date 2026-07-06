@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	apimodel "github.com/obot-platform/discobox/api/model"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 
 	"github.com/obot-platform/discobox/server/internal/model"
@@ -49,22 +50,29 @@ func (s *Service) CreateAgentConfig(ctx context.Context, projectID string, input
 	if name == "" {
 		return nil, apiError(fmt.Errorf("agent config name is required"), "")
 	}
-	installCommand := input.InstallCommand.Or("")
-	if installCommand == "" && definition != nil {
+	installCommand, hasInstallCommand := input.InstallCommand.Get()
+	if !hasInstallCommand && definition != nil {
 		installCommand = definition.InstallCommand
 	}
-	runCommand := input.RunCommand.Or("")
-	if strings.TrimSpace(runCommand) == "" && definition != nil {
+	runCommand, hasRunCommand := input.RunCommand.Get()
+	if !hasRunCommand && definition != nil {
 		runCommand = definition.RunCommand
 	}
-	if strings.TrimSpace(runCommand) == "" {
+	if len(runCommand) == 0 {
 		return nil, apiError(fmt.Errorf("agent config run command is required"), "")
+	}
+	var files []model.AgentConfigFile
+	if apiFiles, ok := input.Files.Get(); ok {
+		files = agentConfigFilesFromAPI(apiFiles)
+	} else if definition != nil {
+		files = definition.Files
 	}
 	config := &model.AgentConfig{
 		ProjectID:      projectID,
 		Name:           name,
 		InstallCommand: installCommand,
 		RunCommand:     runCommand,
+		Files:          files,
 	}
 	if err := s.store.CreateAgentConfig(ctx, config); err != nil {
 		return nil, err
@@ -102,15 +110,29 @@ func (s *Service) UpdateAgentConfig(ctx context.Context, projectID, configID str
 		config.InstallCommand = installCommand
 	}
 	if runCommand, ok := input.RunCommand.Get(); ok {
-		if strings.TrimSpace(runCommand) == "" {
+		if len(runCommand) == 0 {
 			return nil, apiError(fmt.Errorf("agent config run command is required"), "")
 		}
 		config.RunCommand = runCommand
+	}
+	if apiFiles, ok := input.Files.Get(); ok {
+		config.Files = agentConfigFilesFromAPI(apiFiles)
 	}
 	if err := s.store.UpdateAgentConfig(ctx, config); err != nil {
 		return nil, err
 	}
 	return s.store.GetAgentConfig(ctx, projectID, configID)
+}
+
+func agentConfigFilesFromAPI(files []apimodel.AgentConfigFile) []model.AgentConfigFile {
+	if len(files) == 0 {
+		return nil
+	}
+	out := make([]model.AgentConfigFile, 0, len(files))
+	for _, file := range files {
+		out = append(out, model.AgentConfigFile{Path: file.Path, Content: file.Content})
+	}
+	return out
 }
 
 func (s *Service) SetDefaultAgentConfig(ctx context.Context, projectID, configID string) (*model.Project, error) {

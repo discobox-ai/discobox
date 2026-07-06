@@ -21,6 +21,7 @@ type Config struct {
 	ControlPlanePublicKey string            `json:"controlPlanePublicKey"`
 	ListenAddress         string            `json:"listenAddress"`
 	WorkingRoot           string            `json:"workingRoot"`
+	ExecDefaults          ExecDefaults      `json:"execDefaults,omitempty"`
 	RuntimeDir            string            `json:"runtimeDir"`
 	DatabasePath          string            `json:"databasePath"`
 	Env                   map[string]string `json:"env,omitempty"`
@@ -36,12 +37,28 @@ type Identity struct {
 	WorkerID  string `json:"workerId"`
 }
 
+type ExecDefaults struct {
+	Workdir       string `json:"workdir,omitempty"`
+	Username      string `json:"username,omitempty"`
+	UID           *int64 `json:"uid,omitempty"`
+	GID           *int64 `json:"gid,omitempty"`
+	HomeDirectory string `json:"homeDirectory,omitempty"`
+}
+
 type Agent struct {
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	InstallCommand string   `json:"installCommand,omitempty"`
-	Command        []string `json:"command"`
-	IsDefault      bool     `json:"isDefault,omitempty"`
+	ID             string      `json:"id"`
+	Name           string      `json:"name"`
+	InstallCommand []string    `json:"installCommand,omitempty"`
+	Command        []string    `json:"command"`
+	IsDefault      bool        `json:"isDefault,omitempty"`
+	Files          []AgentFile `json:"files,omitempty"`
+}
+
+// AgentFile is a file to write into the agent's home directory when the agent
+// is installed.
+type AgentFile struct {
+	Path    string `json:"path"`
+	Content string `json:"content"`
 }
 
 type ResourceConfig struct {
@@ -96,6 +113,7 @@ func configFromManifest(manifest model.SandboxManifest) Config {
 	if env, ok := manifest.Config.Env.Get(); ok {
 		cfg.Env = map[string]string(env)
 	}
+	cfg.ExecDefaults = execDefaultsFromManifestConfig(manifest.Config)
 	if manifest.AgentRuntime != nil {
 		cfg.ListenAddress = manifest.AgentRuntime.ListenAddress
 		cfg.WorkingRoot = manifest.AgentRuntime.WorkingRoot
@@ -123,6 +141,32 @@ func configFromManifest(manifest model.SandboxManifest) Config {
 	return cfg
 }
 
+func execDefaultsFromManifestConfig(config model.SandboxConfig) ExecDefaults {
+	var out ExecDefaults
+	if source, ok := config.Source.Get(); ok {
+		if destination, ok := source.Destination.Get(); ok {
+			out.Workdir = strings.TrimSpace(destination.WorkingDirectory.Or(""))
+		}
+	}
+	if user, ok := config.User.Get(); ok {
+		out.Username = strings.TrimSpace(user.Name.Or(""))
+		out.HomeDirectory = strings.TrimSpace(user.HomeDirectory.Or(""))
+		if uid, ok := user.UID.Get(); ok {
+			out.UID = int64Ptr(uid)
+		}
+		if gid, ok := user.Gid.Get(); ok {
+			out.GID = int64Ptr(gid)
+		} else if user.UID.Set {
+			out.GID = int64Ptr(user.UID.Value)
+		}
+	}
+	return out
+}
+
+func int64Ptr(value int64) *int64 {
+	return &value
+}
+
 func publicKey(values map[string]string) string {
 	if len(values) == 0 {
 		return ""
@@ -134,9 +178,10 @@ func agentFromManifest(in model.SandboxManifestAgentConfig) Agent {
 	return Agent{
 		ID:             in.ID,
 		Name:           in.Name,
-		InstallCommand: in.InstallCommand,
-		Command:        runCommand(in.RunCommand),
+		InstallCommand: cloneCommand(in.InstallCommand),
+		Command:        cloneCommand(in.RunCommand),
 		IsDefault:      in.IsDefault,
+		Files:          agentFilesFromManifest(in.Files),
 	}
 }
 
@@ -144,16 +189,28 @@ func agentFromResolvedManifest(in model.SandboxManifestResolvedAgentConfig) Agen
 	return Agent{
 		ID:             in.ID,
 		Name:           in.Name,
-		InstallCommand: in.InstallCommand,
-		Command:        runCommand(in.RunCommand),
+		InstallCommand: cloneCommand(in.InstallCommand),
+		Command:        cloneCommand(in.RunCommand),
+		Files:          agentFilesFromManifest(in.Files),
 	}
 }
 
-func runCommand(command string) []string {
-	if strings.TrimSpace(command) == "" {
+func agentFilesFromManifest(in []model.AgentConfigFile) []AgentFile {
+	if len(in) == 0 {
 		return nil
 	}
-	return []string{"/bin/bash", "-lc", command}
+	out := make([]AgentFile, 0, len(in))
+	for _, file := range in {
+		out = append(out, AgentFile{Path: file.Path, Content: file.Content})
+	}
+	return out
+}
+
+func cloneCommand(command []string) []string {
+	if len(command) == 0 {
+		return nil
+	}
+	return append([]string{}, command...)
 }
 
 func launchableAgents(agents []Agent, resolved *Agent, configs []Agent) []Agent {

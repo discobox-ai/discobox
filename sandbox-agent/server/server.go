@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -32,6 +33,7 @@ type Config struct {
 	ControlPlanePublicKey string
 	ListenAddress         string
 	WorkingRoot           string
+	ExecDefaults          config.ExecDefaults
 	RuntimeDir            string
 	DatabasePath          string
 	Env                   map[string]string
@@ -58,6 +60,7 @@ func ConfigFromAgentConfig(cfg config.Config) Config {
 		ControlPlanePublicKey: cfg.ControlPlanePublicKey,
 		ListenAddress:         cfg.ListenAddress,
 		WorkingRoot:           cfg.WorkingRoot,
+		ExecDefaults:          cfg.ExecDefaults,
 		RuntimeDir:            cfg.RuntimeDir,
 		DatabasePath:          cfg.DatabasePath,
 		Env:                   cfg.Env,
@@ -115,6 +118,7 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Manager, *execs.Manage
 		WorkingRoot:         cfg.WorkingRoot,
 		RuntimeDir:          cfg.RuntimeDir,
 		Env:                 cfg.Env,
+		ExecDefaults:        cfg.ExecDefaults,
 		Units:               cfg.UnitManager,
 		Installer:           cfg.Installer,
 		Audit:               audit,
@@ -124,11 +128,13 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Manager, *execs.Manage
 	}
 	manager.SetHookSocketPath(agenthooks.SocketPath(cfg.RuntimeDir))
 	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
-		WorkingRoot: cfg.WorkingRoot,
-		RuntimeDir:  filepath.Join(cfg.RuntimeDir, "execs"),
-		Env:         cfg.Env,
-		Units:       cfg.ExecUnitManager,
-		Audit:       execAudit,
+		WorkingRoot:    cfg.WorkingRoot,
+		DefaultWorkdir: cfg.ExecDefaults.Workdir,
+		DefaultUser:    execDefaultUser(cfg.ExecDefaults),
+		RuntimeDir:     filepath.Join(cfg.RuntimeDir, "execs"),
+		Env:            cfg.Env,
+		Units:          cfg.ExecUnitManager,
+		Audit:          execAudit,
 	})
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -178,6 +184,26 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Manager, *execs.Manage
 		protected.Mount("/", generated)
 	})
 	return router, manager, execManager, localStore, nil
+}
+
+func execDefaultUser(defaults config.ExecDefaults) *execs.User {
+	if strings.TrimSpace(defaults.Username) == "" && defaults.UID == nil && defaults.GID == nil {
+		return nil
+	}
+	return &execs.User{
+		Name:          defaults.Username,
+		UID:           cloneInt64(defaults.UID),
+		GID:           cloneInt64(defaults.GID),
+		HomeDirectory: defaults.HomeDirectory,
+	}
+}
+
+func cloneInt64(in *int64) *int64 {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	return &out
 }
 
 func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {

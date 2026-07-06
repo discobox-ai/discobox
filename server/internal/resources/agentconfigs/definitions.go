@@ -14,15 +14,18 @@ var agentConfigDefinitions = []model.AgentConfigDefinition{
 		ID:             "codex",
 		Name:           "Codex",
 		Description:    "OpenAI Codex coding agent.",
-		InstallCommand: "npm install -g @openai/codex",
-		RunCommand:     "codex",
+		InstallCommand: []string{"npm", "install", "-g", "@openai/codex"},
+		RunCommand:     []string{"codex"},
 	},
 	{
 		ID:             "claude-code",
 		Name:           "Claude Code",
 		Description:    "Anthropic Claude Code coding agent.",
-		InstallCommand: "npm install -g @anthropic-ai/claude-code",
-		RunCommand:     "claude",
+		InstallCommand: []string{"npm", "install", "-g", "@anthropic-ai/claude-code"},
+		RunCommand:     []string{"claude"},
+		Files: []model.AgentConfigFile{
+			{Path: ".claude/settings.json", Content: `{"theme":"dark"}`},
+		},
 	},
 }
 

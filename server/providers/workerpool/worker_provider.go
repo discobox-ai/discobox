@@ -693,6 +693,27 @@ func newWorkerAgentClient(lease *transport.HTTPClientLease) (*workerclient.Clien
 	return workerclient.NewClient(strings.TrimRight(baseURL, "/"), workerSecuritySource{lease: lease}, workerclient.WithClient(httpClient))
 }
 
+func workerOptStringArray(values []string) workerclient.OptNilStringArray {
+	if len(values) == 0 {
+		return workerclient.OptNilStringArray{}
+	}
+	return workerclient.NewOptNilStringArray(values)
+}
+
+func workerAgentConfigFiles(files []model.AgentConfigFile) workerclient.OptNilAgentConfigFileArray {
+	if len(files) == 0 {
+		return workerclient.OptNilAgentConfigFileArray{}
+	}
+	out := make([]workerapimodel.AgentConfigFile, 0, len(files))
+	for _, file := range files {
+		out = append(out, workerapimodel.AgentConfigFile{
+			Path:    file.Path,
+			Content: file.Content,
+		})
+	}
+	return workerclient.NewOptNilAgentConfigFileArray(out)
+}
+
 func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) *workerapimodel.WorkerSandboxCreateRequest {
 	out := &workerapimodel.WorkerSandboxCreateRequest{SandboxId: sandboxID}
 	config := &out.Config
@@ -715,8 +736,9 @@ func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions
 		resolved := workerapimodel.ResolvedAgentConfig{
 			ID:             opts.ResolvedAgentConfig.ID,
 			Name:           opts.ResolvedAgentConfig.Name,
-			InstallCommand: workerclient.NewOptString(opts.ResolvedAgentConfig.InstallCommand),
+			InstallCommand: workerOptStringArray(opts.ResolvedAgentConfig.InstallCommand),
 			RunCommand:     opts.ResolvedAgentConfig.RunCommand,
+			Files:          workerAgentConfigFiles(opts.ResolvedAgentConfig.Files),
 		}
 		out.ResolvedAgentConfig = workerclient.NewOptResolvedAgentConfig(resolved)
 	}
@@ -726,9 +748,10 @@ func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions
 			configs = append(configs, workerapimodel.SandboxAgentConfig{
 				ID:             config.ID,
 				Name:           config.Name,
-				InstallCommand: workerclient.NewOptString(config.InstallCommand),
+				InstallCommand: workerOptStringArray(config.InstallCommand),
 				RunCommand:     config.RunCommand,
 				IsDefault:      config.IsDefault,
+				Files:          workerAgentConfigFiles(config.Files),
 			})
 		}
 		out.AgentConfigs = workerclient.NewOptNilSandboxAgentConfigArray(configs)

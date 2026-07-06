@@ -152,7 +152,7 @@ func TestCreateSandboxDoesNotSelectDefaultAgentConfig(t *testing.T) {
 
 	agent, err := svc.CreateAgentConfig(ctx, service.DefaultProjectID, services.CreateAgentConfigBody{
 		Name:       serverapi.NewOptString("Codex"),
-		RunCommand: serverapi.NewOptString("codex exec"),
+		RunCommand: serverapi.NewOptNilStringArray([]string{"codex", "exec"}),
 	})
 	if err != nil {
 		t.Fatalf("create agent config: %v", err)

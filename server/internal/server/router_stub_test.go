@@ -338,12 +338,12 @@ func (s *routerTestServices) CreateAgentConfig(_ context.Context, projectID stri
 	if name == "" && definition != nil {
 		name = definition.Name
 	}
-	installCommand := input.InstallCommand.Or("")
-	if installCommand == "" && definition != nil {
+	installCommand, hasInstallCommand := input.InstallCommand.Get()
+	if !hasInstallCommand && definition != nil {
 		installCommand = definition.InstallCommand
 	}
-	runCommand := input.RunCommand.Or("")
-	if strings.TrimSpace(runCommand) == "" && definition != nil {
+	runCommand, hasRunCommand := input.RunCommand.Get()
+	if !hasRunCommand && definition != nil {
 		runCommand = definition.RunCommand
 	}
 	now := time.Now().UTC()

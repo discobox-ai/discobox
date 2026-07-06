@@ -27,6 +27,10 @@ func (SystemdRunner) Start(ctx context.Context, req StartRequest) (StartResult, 
 	if err != nil {
 		return StartResult{}, err
 	}
+	userJSON, err := json.Marshal(req.User)
+	if err != nil {
+		return StartResult{}, err
+	}
 	args := []string{
 		"--unit=" + req.Unit,
 		"--collect",
@@ -53,6 +57,7 @@ func (SystemdRunner) Start(ctx context.Context, req StartRequest) (StartResult, 
 		"--rows", strconv.Itoa(int(req.Rows)),
 		"--cols", strconv.Itoa(int(req.Cols)),
 		"--command", base64.StdEncoding.EncodeToString(commandJSON),
+		"--user", base64.StdEncoding.EncodeToString(userJSON),
 	)
 	cmd := exec.CommandContext(ctx, "systemd-run", args...)
 	output, err := cmd.CombinedOutput()

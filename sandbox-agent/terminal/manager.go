@@ -20,6 +20,7 @@ import (
 	"github.com/obot-platform/discobox/harness"
 	"github.com/obot-platform/discobox/harness/registry"
 	"github.com/obot-platform/discobox/sandbox-agent/config"
+	"github.com/obot-platform/discobox/sandbox-agent/execs"
 	"github.com/obot-platform/discobox/sandbox-agent/shimproxy"
 )
 
@@ -32,6 +33,8 @@ const (
 	StatusFailed   Status = "failed"
 	StatusLost     Status = "lost"
 )
+
+const defaultTerm = "xterm-256color"
 
 type Terminal struct {
 	ID          string            `json:"id"`
@@ -75,6 +78,7 @@ type StartRequest struct {
 	Command     []string
 	Workdir     string
 	Env         map[string]string
+	User        *execs.User
 	SocketPath  string
 	RuntimePath string
 	LogDir      string
@@ -115,6 +119,10 @@ type ManagerConfig struct {
 	WorkingRoot         string
 	RuntimeDir          string
 	Env                 map[string]string
+	ImageConfig         config.ImageConfig
+	ImageConfigPath     string
+	ExecDefaults        config.ExecDefaults
+	DefaultUser         *execs.User
 	Units               UnitManager
 	Installer           Installer
 	Audit               AuditRecorder
@@ -126,9 +134,12 @@ type Manager struct {
 	agents         map[string]config.Agent
 	defaultID      string
 	workingRoot    string
+	defaultWorkdir string
 	runtimeDir     string
 	logDir         string
 	env            map[string]string
+	imageConfig    config.ImageConfig
+	defaultUser    *execs.User
 	hookSocketPath string
 	units          UnitManager
 	installer      Installer
@@ -148,21 +159,43 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 	if units == nil {
 		units = SystemdRunner{}
 	}
+	imageConfig := cfg.ImageConfig
+	if len(imageConfig.Env) == 0 {
+		var err error
+		imageConfig, err = config.LoadImage(cfg.ImageConfigPath)
+		if err != nil {
+			return nil, err
+		}
+	}
 	m := &Manager{
-		agentConfigs: map[string]config.Agent{},
-		agents:       map[string]config.Agent{},
-		workingRoot:  filepath.Clean(workingRoot),
-		runtimeDir:   filepath.Clean(runtimeDir),
-		logDir:       filepath.Join(filepath.Clean(runtimeDir), "logs"),
-		env:          cloneMap(cfg.Env),
-		units:        units,
-		installer:    cfg.Installer,
-		audit:        cfg.Audit,
+		agentConfigs:   map[string]config.Agent{},
+		agents:         map[string]config.Agent{},
+		workingRoot:    filepath.Clean(workingRoot),
+		defaultWorkdir: strings.TrimSpace(cfg.ExecDefaults.Workdir),
+		runtimeDir:     filepath.Clean(runtimeDir),
+		logDir:         filepath.Join(filepath.Clean(runtimeDir), "logs"),
+		env:            cloneMap(cfg.Env),
+		imageConfig:    imageConfig,
+		defaultUser:    terminalDefaultUser(cfg),
+		units:          units,
+		installer:      cfg.Installer,
+		audit:          cfg.Audit,
 	}
 	if m.installer == nil {
+		installRuntimeDir := filepath.Join(m.runtimeDir, "installs")
 		m.installer = CompositeInstaller{Installers: []Installer{
-			CommandInstaller{},
+			CommandInstaller{
+				Units:      m.units,
+				RuntimeDir: installRuntimeDir,
+				LogDir:     m.logDir,
+				User:       cloneUser(m.defaultUser),
+			},
 			HarnessInstaller{},
+			FileInstaller{
+				HomeDirectory: cfg.ExecDefaults.HomeDirectory,
+				UID:           cfg.ExecDefaults.UID,
+				GID:           cfg.ExecDefaults.GID,
+			},
 		}}
 	}
 	if cfg.ResolvedAgentConfig != nil && strings.TrimSpace(cfg.ResolvedAgentConfig.ID) != "" {
@@ -205,7 +238,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Terminal, erro
 	if err != nil {
 		return Terminal{}, err
 	}
-	env := mergeEnv(m.env, req.Env)
+	env := envWithRuntimeDefaults(mergeEnv(m.env, req.Env), m.defaultUser, m.imageConfig)
 	if env == nil {
 		env = map[string]string{}
 	}
@@ -260,6 +293,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Terminal, erro
 		Command:     command,
 		Workdir:     workdir,
 		Env:         env,
+		User:        cloneUser(m.defaultUser),
 		SocketPath:  socketPath,
 		RuntimePath: runtimePath,
 		LogDir:      m.logDir,
@@ -390,7 +424,16 @@ func (m *Manager) Logs(ctx context.Context, id string) ([]LogEntry, error) {
 
 var ErrNotFound = errors.New("agent terminal not found")
 
-type CommandInstaller struct{}
+type CommandInstaller struct {
+	Units            UnitManager
+	RuntimeDir       string
+	LogDir           string
+	StatusTimeout    time.Duration
+	PollInterval     time.Duration
+	User             *execs.User
+	startFromSocket  func(context.Context, string) (Terminal, error)
+	statusFromSocket func(context.Context, string) (Terminal, error)
+}
 
 var (
 	installedCommandsMu sync.Mutex
@@ -433,6 +476,102 @@ func (i HarnessInstaller) EnsureInstalled(ctx context.Context, agent config.Agen
 	})
 }
 
+// FileInstaller writes an agent's configured files into its home directory.
+type FileInstaller struct {
+	HomeDirectory string
+	UID           *int64
+	GID           *int64
+}
+
+func (i FileInstaller) EnsureInstalled(_ context.Context, agent config.Agent, _ string, _ map[string]string) error {
+	if len(agent.Files) == 0 {
+		return nil
+	}
+	home := strings.TrimSpace(i.HomeDirectory)
+	if home == "" {
+		return fmt.Errorf("agent %q has files to install but no home directory is configured", agent.ID)
+	}
+	home = filepath.Clean(home)
+	for _, file := range agent.Files {
+		path, err := homeRelativePath(home, file.Path)
+		if err != nil {
+			return fmt.Errorf("agent %q file %q: %w", agent.ID, file.Path, err)
+		}
+		if err := writeAgentFile(path, file.Content, i.UID, i.GID); err != nil {
+			return fmt.Errorf("agent %q file %q: %w", agent.ID, file.Path, err)
+		}
+	}
+	return nil
+}
+
+func homeRelativePath(home, requested string) (string, error) {
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		return "", errors.New("path is required")
+	}
+	if filepath.IsAbs(requested) {
+		return "", fmt.Errorf("path %q must be relative to the home directory", requested)
+	}
+	cleaned := filepath.Clean(filepath.Join(home, requested))
+	rel, err := filepath.Rel(home, cleaned)
+	if err != nil {
+		return "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path %q escapes home directory", requested)
+	}
+	return cleaned, nil
+}
+
+func writeAgentFile(path, content string, uid, gid *int64) error {
+	createdDirs, err := mkdirAllTracked(filepath.Dir(path), 0o755)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return err
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		return err
+	}
+	if uid == nil || gid == nil {
+		return nil
+	}
+	for _, created := range createdDirs {
+		if err := os.Chown(created, int(*uid), int(*gid)); err != nil {
+			return err
+		}
+	}
+	return os.Chown(path, int(*uid), int(*gid))
+}
+
+// mkdirAllTracked behaves like os.MkdirAll but returns the directories it
+// actually created, so callers can chown only new paths and leave
+// pre-existing directory ownership untouched.
+func mkdirAllTracked(path string, perm os.FileMode) ([]string, error) {
+	path = filepath.Clean(path)
+	if info, err := os.Stat(path); err == nil {
+		if !info.IsDir() {
+			return nil, fmt.Errorf("%s exists and is not a directory", path)
+		}
+		return nil, nil
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+	var created []string
+	if parent := filepath.Dir(path); parent != path {
+		parentCreated, err := mkdirAllTracked(parent, perm)
+		if err != nil {
+			return nil, err
+		}
+		created = append(created, parentCreated...)
+	}
+	if err := os.Mkdir(path, perm); err != nil && !os.IsExist(err) {
+		return nil, err
+	}
+	return append(created, path), nil
+}
+
 func harnessAgent(agent config.Agent) harness.Agent {
 	return harness.Agent{
 		ID:      agent.ID,
@@ -441,36 +580,99 @@ func harnessAgent(agent config.Agent) harness.Agent {
 	}
 }
 
-func (CommandInstaller) EnsureInstalled(ctx context.Context, agent config.Agent, workdir string, env map[string]string) error {
-	installCommand := strings.TrimSpace(agent.InstallCommand)
-	if installCommand == "" {
+func (i CommandInstaller) EnsureInstalled(ctx context.Context, agent config.Agent, workdir string, env map[string]string) error {
+	if len(agent.InstallCommand) == 0 {
 		return nil
 	}
+	installKey := strings.Join(agent.InstallCommand, "\x00")
 	installedCommandsMu.Lock()
 	defer installedCommandsMu.Unlock()
-	if _, ok := installedCommands[installCommand]; ok {
+	if _, ok := installedCommands[installKey]; ok {
 		return nil
 	}
-	cmd := exec.CommandContext(ctx, "/bin/bash", "-lc", installCommand)
-	cmd.Dir = workdir
-	cmd.Env = mergedEnv(env)
-	output, err := cmd.CombinedOutput()
+	status, err := i.run(ctx, agent, workdir, env, agent.InstallCommand)
 	if err != nil {
-		return fmt.Errorf("install agent %q: %w: %s", agent.ID, err, strings.TrimSpace(string(output)))
+		return err
 	}
-	installedCommands[installCommand] = struct{}{}
+	if status.ExitCode == nil || *status.ExitCode != 0 || status.Status == StatusFailed {
+		detail := strings.TrimSpace(status.Error)
+		if detail == "" && status.ExitCode != nil {
+			detail = fmt.Sprintf("exit code %d", *status.ExitCode)
+		}
+		if detail == "" {
+			detail = "missing successful exit status"
+		}
+		return fmt.Errorf("install agent %q failed: %s", agent.ID, detail)
+	}
+	installedCommands[installKey] = struct{}{}
 	return nil
 }
 
-func mergedEnv(env map[string]string) []string {
-	out := os.Environ()
-	for key, value := range env {
-		if strings.TrimSpace(key) == "" {
-			continue
-		}
-		out = append(out, key+"="+value)
+func (i CommandInstaller) run(ctx context.Context, agent config.Agent, workdir string, env map[string]string, installCommand []string) (Terminal, error) {
+	units := i.Units
+	if units == nil {
+		units = SystemdRunner{}
 	}
-	return out
+	runtimeDir := strings.TrimSpace(i.RuntimeDir)
+	if runtimeDir == "" {
+		runtimeDir = filepath.Join("/run/discobox/agent-terminals", "installs")
+	}
+	logDir := strings.TrimSpace(i.LogDir)
+	if logDir == "" {
+		logDir = filepath.Join(filepath.Dir(runtimeDir), "logs")
+	}
+	timeout := i.StatusTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Minute
+	}
+	pollInterval := i.PollInterval
+	if pollInterval <= 0 {
+		pollInterval = 100 * time.Millisecond
+	}
+	startFromSocket := i.startFromSocket
+	if startFromSocket == nil {
+		startFromSocket = shimproxy.StartJSON[Terminal]
+	}
+	socketStatus := i.statusFromSocket
+	if socketStatus == nil {
+		socketStatus = statusFromSocket
+	}
+
+	id, err := newID()
+	if err != nil {
+		return Terminal{}, err
+	}
+	id = "install_" + strings.TrimPrefix(id, "agt_")
+	unit := "discobox-agent-install-" + safeName(id)
+	socketPath := filepath.Join(runtimeDir, safeName(id)+".sock")
+	runtimePath := filepath.Join(runtimeDir, safeName(id)+".json")
+	if _, err := units.Start(ctx, StartRequest{
+		ID:          id,
+		AgentID:     agent.ID,
+		Unit:        unit,
+		Command:     append([]string{}, installCommand...),
+		Workdir:     workdir,
+		Env:         cloneMap(env),
+		User:        cloneUser(i.User),
+		SocketPath:  socketPath,
+		RuntimePath: runtimePath,
+		LogDir:      logDir,
+	}); err != nil {
+		return Terminal{}, fmt.Errorf("start install agent %q: %w", agent.ID, err)
+	}
+	if _, err := waitForStatusFunc(ctx, socketStatus, socketPath, 10*time.Second); err != nil {
+		return Terminal{}, fmt.Errorf("wait for install agent %q shim: %w", agent.ID, err)
+	}
+	if _, err := startFromSocket(ctx, socketPath); err != nil {
+		return Terminal{}, fmt.Errorf("start install agent %q command: %w", agent.ID, err)
+	}
+	status, err := waitForTerminalExit(ctx, socketStatus, socketPath, runtimePath, timeout, pollInterval)
+	if err != nil {
+		return Terminal{}, fmt.Errorf("wait for install agent %q command: %w", agent.ID, err)
+	}
+	_ = os.Remove(runtimePath)
+	_ = os.Remove(socketPath)
+	return status, nil
 }
 
 func mergeEnv(base, override map[string]string) map[string]string {
@@ -485,6 +687,47 @@ func mergeEnv(base, override map[string]string) map[string]string {
 		out[key] = value
 	}
 	return out
+}
+
+func envWithRuntimeDefaults(env map[string]string, user *execs.User, imageConfig config.ImageConfig) map[string]string {
+	if env == nil {
+		env = map[string]string{}
+	}
+	if _, ok := env["TERM"]; !ok {
+		env["TERM"] = defaultTerm
+	}
+	if user != nil {
+		if name := strings.TrimSpace(user.Name); name != "" {
+			if _, ok := env["USER"]; !ok {
+				env["USER"] = name
+			}
+			if _, ok := env["LOGNAME"]; !ok {
+				env["LOGNAME"] = name
+			}
+		}
+		if home := strings.TrimSpace(user.HomeDirectory); home != "" {
+			if _, ok := env["HOME"]; !ok {
+				env["HOME"] = home
+			}
+		}
+	}
+	return config.ApplyImageEnvDefaults(env, imageConfig)
+}
+
+func terminalDefaultUser(cfg ManagerConfig) *execs.User {
+	if cfg.DefaultUser != nil {
+		return cloneUser(cfg.DefaultUser)
+	}
+	defaults := cfg.ExecDefaults
+	if strings.TrimSpace(defaults.Username) == "" && defaults.UID == nil && defaults.GID == nil && strings.TrimSpace(defaults.HomeDirectory) == "" {
+		return nil
+	}
+	return cloneUser(&execs.User{
+		Name:          defaults.Username,
+		UID:           cloneInt64(defaults.UID),
+		GID:           cloneInt64(defaults.GID),
+		HomeDirectory: defaults.HomeDirectory,
+	})
 }
 
 func (m *Manager) resolveAgent(requested string, workdir string) (config.Agent, string, error) {
@@ -517,9 +760,9 @@ type localAgentConfig struct {
 	Agent          string    `json:"agent,omitempty"`
 	ID             string    `json:"id,omitempty"`
 	Name           string    `json:"name,omitempty"`
-	InstallCommand *string   `json:"installCommand,omitempty"`
+	InstallCommand *[]string `json:"installCommand,omitempty"`
 	Command        *[]string `json:"command,omitempty"`
-	RunCommand     *string   `json:"runCommand,omitempty"`
+	RunCommand     *[]string `json:"runCommand,omitempty"`
 }
 
 func (m *Manager) localAgentConfig(workdir string) (config.Agent, bool, error) {
@@ -602,13 +845,13 @@ func applyLocalAgentConfig(agent config.Agent, local localAgentConfig) config.Ag
 		agent.Name = strings.TrimSpace(local.Name)
 	}
 	if local.InstallCommand != nil {
-		agent.InstallCommand = *local.InstallCommand
+		agent.InstallCommand = append([]string{}, (*local.InstallCommand)...)
 	}
 	if local.Command != nil {
 		agent.Command = append([]string{}, (*local.Command)...)
 	}
 	if local.RunCommand != nil {
-		agent.Command = []string{"/bin/bash", "-lc", *local.RunCommand}
+		agent.Command = append([]string{}, (*local.RunCommand)...)
 	}
 	return agent
 }
@@ -651,20 +894,15 @@ func firstNonEmpty(values ...string) string {
 
 func (m *Manager) resolveWorkdir(requested string) (string, error) {
 	if strings.TrimSpace(requested) == "" {
+		requested = m.defaultWorkdir
+	}
+	if strings.TrimSpace(requested) == "" {
 		return m.workingRoot, nil
 	}
 	if !filepath.IsAbs(requested) {
 		requested = filepath.Join(m.workingRoot, requested)
 	}
-	cleaned := filepath.Clean(requested)
-	rel, err := filepath.Rel(m.workingRoot, cleaned)
-	if err != nil {
-		return "", err
-	}
-	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("workdir %q is outside working root %q", cleaned, m.workingRoot)
-	}
-	return cleaned, nil
+	return filepath.Clean(requested), nil
 }
 
 func (m *Manager) socketPath(id string) string {
@@ -736,6 +974,26 @@ func cloneMap(in map[string]string) map[string]string {
 	return out
 }
 
+func cloneUser(in *execs.User) *execs.User {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.Name = strings.TrimSpace(out.Name)
+	out.HomeDirectory = strings.TrimSpace(out.HomeDirectory)
+	out.UID = cloneInt64(in.UID)
+	out.GID = cloneInt64(in.GID)
+	return &out
+}
+
+func cloneInt64(in *int64) *int64 {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	return &out
+}
+
 func cloneTerminal(in Terminal) Terminal {
 	out := in
 	out.Command = append([]string{}, in.Command...)
@@ -746,6 +1004,8 @@ func cloneTerminal(in Terminal) Terminal {
 func cloneAgent(in config.Agent) config.Agent {
 	out := in
 	out.Command = append([]string{}, in.Command...)
+	out.InstallCommand = append([]string{}, in.InstallCommand...)
+	out.Files = append([]config.AgentFile{}, in.Files...)
 	return out
 }
 
@@ -848,12 +1108,16 @@ func statusFromSocket(ctx context.Context, socketPath string) (Terminal, error) 
 }
 
 func waitForStatus(ctx context.Context, socketPath string, timeout time.Duration) (Terminal, error) {
+	return waitForStatusFunc(ctx, statusFromSocket, socketPath, timeout)
+}
+
+func waitForStatusFunc(ctx context.Context, status func(context.Context, string) (Terminal, error), socketPath string, timeout time.Duration) (Terminal, error) {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for time.Now().Before(deadline) {
-		status, err := statusFromSocket(ctx, socketPath)
+		current, err := status(ctx, socketPath)
 		if err == nil {
-			return status, nil
+			return current, nil
 		}
 		lastErr = err
 		select {
@@ -866,6 +1130,34 @@ func waitForStatus(ctx context.Context, socketPath string, timeout time.Duration
 		lastErr = fmt.Errorf("timed out waiting for shim status")
 	}
 	return Terminal{}, lastErr
+}
+
+func waitForTerminalExit(ctx context.Context, status func(context.Context, string) (Terminal, error), socketPath, runtimePath string, timeout, pollInterval time.Duration) (Terminal, error) {
+	deadline := time.Now().Add(timeout)
+	var last Terminal
+	var lastErr error
+	for time.Now().Before(deadline) {
+		if current, err := status(ctx, socketPath); err == nil {
+			last = current
+		} else {
+			lastErr = err
+			if current, readErr := readRuntime(runtimePath); readErr == nil {
+				last = current
+			}
+		}
+		if last.Status == StatusExited || last.Status == StatusFailed {
+			return last, nil
+		}
+		select {
+		case <-ctx.Done():
+			return Terminal{}, ctx.Err()
+		case <-time.After(pollInterval):
+		}
+	}
+	if lastErr != nil {
+		return Terminal{}, lastErr
+	}
+	return Terminal{}, fmt.Errorf("timed out waiting for terminal exit")
 }
 
 func mergeStatus(base, live Terminal) Terminal {

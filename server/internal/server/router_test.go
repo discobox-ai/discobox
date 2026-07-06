@@ -132,7 +132,7 @@ func TestNewRouterCreateSandboxResolvesAgentName(t *testing.T) {
 	createAgentResp := httptest.NewRecorder()
 	router.ServeHTTP(createAgentResp, jsonRequest(http.MethodPost, "/projects/"+service.DefaultProjectID+"/agent-configs", `{
 		"name": "Codex",
-		"runCommand": "codex exec"
+		"runCommand": ["codex", "exec"]
 	}`))
 	if createAgentResp.Code != http.StatusOK {
 		t.Fatalf("POST /agent-configs status = %d, body = %s", createAgentResp.Code, createAgentResp.Body.String())

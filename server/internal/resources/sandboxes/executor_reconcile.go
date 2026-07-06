@@ -456,6 +456,7 @@ func (r *SandboxReconcileExecutor) createOptionsFromSandbox(ctx context.Context,
 				Name:           cfg.Name,
 				InstallCommand: cfg.InstallCommand,
 				RunCommand:     cfg.RunCommand,
+				Files:          cfg.Files,
 			}
 		}
 	}
@@ -473,6 +474,7 @@ func (r *SandboxReconcileExecutor) createOptionsFromSandbox(ctx context.Context,
 					InstallCommand: cfg.InstallCommand,
 					RunCommand:     cfg.RunCommand,
 					IsDefault:      cfg.ID == defaultAgentConfigID,
+					Files:          cfg.Files,
 				})
 			}
 		}

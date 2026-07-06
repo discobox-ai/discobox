@@ -74,20 +74,20 @@ func TestLoadUsesAgentConfigsAsLaunchableAgents(t *testing.T) {
 		"resolvedAgentConfig": {
 			"id": "claude",
 			"name": "Claude",
-			"runCommand": "claude"
+			"runCommand": ["claude"]
 		},
 		"agentConfigs": [
 			{
 				"id": "codex",
 				"name": "Codex",
-				"installCommand": "npm install -g @openai/codex",
-				"runCommand": "codex",
+				"installCommand": ["npm", "install", "-g", "@openai/codex"],
+				"runCommand": ["codex"],
 				"isDefault": true
 			},
 			{
 				"id": "claude",
 				"name": "Claude",
-				"runCommand": "claude"
+				"runCommand": ["claude"]
 			}
 		]
 	}`), 0o644); err != nil {
@@ -101,7 +101,7 @@ func TestLoadUsesAgentConfigsAsLaunchableAgents(t *testing.T) {
 	if len(cfg.Agents) != 2 {
 		t.Fatalf("agents = %#v, want 2", cfg.Agents)
 	}
-	if cfg.Agents[0].ID != "codex" || !cfg.Agents[0].IsDefault || cfg.Agents[0].InstallCommand == "" {
+	if cfg.Agents[0].ID != "codex" || !cfg.Agents[0].IsDefault || len(cfg.Agents[0].InstallCommand) == 0 {
 		t.Fatalf("first agent = %#v, want default codex with install command", cfg.Agents[0])
 	}
 	if cfg.Agents[1].ID != "claude" {
@@ -109,5 +109,53 @@ func TestLoadUsesAgentConfigsAsLaunchableAgents(t *testing.T) {
 	}
 	if cfg.Env["BASE"] != "sandbox" {
 		t.Fatalf("env = %#v, want sandbox config env", cfg.Env)
+	}
+}
+
+func TestLoadDerivesExecDefaultsFromSandboxManifest(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sandbox.json")
+	if err := os.WriteFile(path, []byte(`{
+		"apiVersion": "discobox.dev/sandbox/v1",
+		"sandboxId": "sandbox-1",
+		"config": {
+			"name": "test",
+			"image": "image",
+			"cpuVcpus": 1,
+			"memoryBytes": 1024,
+			"storageBytes": 2048,
+			"source": {
+				"kind": "git",
+				"destination": {
+					"workingDirectory": "/workspace/project"
+				}
+			},
+			"user": {
+				"name": "darren",
+				"uid": 1000,
+				"gid": 1001,
+				"homeDirectory": "/home/darren"
+			}
+		},
+		"provider": {
+			"kind": "discobox-worker",
+			"projectId": "project-1",
+			"workerId": "worker-1",
+			"publicKeys": {
+				"controlPlane": "`+base64.StdEncoding.EncodeToString(make([]byte, 32))+`"
+			}
+		}
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.ExecDefaults.Workdir != "/workspace/project" {
+		t.Fatalf("exec default workdir = %q", cfg.ExecDefaults.Workdir)
+	}
+	if cfg.ExecDefaults.Username != "darren" || cfg.ExecDefaults.HomeDirectory != "/home/darren" || cfg.ExecDefaults.UID == nil || *cfg.ExecDefaults.UID != 1000 || cfg.ExecDefaults.GID == nil || *cfg.ExecDefaults.GID != 1001 {
+		t.Fatalf("exec default user = %#v", cfg.ExecDefaults)
 	}
 }

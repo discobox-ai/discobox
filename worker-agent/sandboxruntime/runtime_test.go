@@ -224,21 +224,21 @@ func TestBuildSandboxManifestIncludesProjectAgentConfigs(t *testing.T) {
 		ResolvedAgentConfig: workerclient.NewOptResolvedAgentConfig(workerapimodel.ResolvedAgentConfig{
 			ID:             "claude",
 			Name:           "Claude",
-			InstallCommand: workerclient.NewOptString("npm install -g @anthropic-ai/claude-code"),
-			RunCommand:     "claude",
+			InstallCommand: workerclient.NewOptNilStringArray([]string{"npm", "install", "-g", "@anthropic-ai/claude-code"}),
+			RunCommand:     []string{"claude"},
 		}),
 		AgentConfigs: workerclient.NewOptNilSandboxAgentConfigArray([]workerapimodel.SandboxAgentConfig{
 			{
 				ID:             "codex",
 				Name:           "Codex",
-				InstallCommand: workerclient.NewOptString("npm install -g @openai/codex"),
-				RunCommand:     "codex",
+				InstallCommand: workerclient.NewOptNilStringArray([]string{"npm", "install", "-g", "@openai/codex"}),
+				RunCommand:     []string{"codex"},
 				IsDefault:      true,
 			},
 			{
 				ID:         "claude",
 				Name:       "Claude",
-				RunCommand: "claude",
+				RunCommand: []string{"claude"},
 			},
 		}),
 	}
@@ -257,13 +257,13 @@ func TestBuildSandboxManifestIncludesProjectAgentConfigs(t *testing.T) {
 	if !ok || env["BASE"] != "sandbox" || env["OVERRIDE"] != "sandbox" {
 		t.Fatalf("env = %#v, want sandbox env in manifest config", env)
 	}
-	if manifest.ResolvedAgentConfig == nil || manifest.ResolvedAgentConfig.ID != "claude" || manifest.ResolvedAgentConfig.RunCommand != "claude" {
+	if manifest.ResolvedAgentConfig == nil || manifest.ResolvedAgentConfig.ID != "claude" || len(manifest.ResolvedAgentConfig.RunCommand) != 1 || manifest.ResolvedAgentConfig.RunCommand[0] != "claude" {
 		t.Fatalf("resolved agent config = %#v, want claude", manifest.ResolvedAgentConfig)
 	}
 	if len(manifest.AgentConfigs) != 2 {
 		t.Fatalf("agent configs = %#v, want 2", manifest.AgentConfigs)
 	}
-	if !manifest.AgentConfigs[0].IsDefault || manifest.AgentConfigs[0].InstallCommand == "" || manifest.AgentConfigs[0].RunCommand != "codex" {
+	if !manifest.AgentConfigs[0].IsDefault || len(manifest.AgentConfigs[0].InstallCommand) == 0 || len(manifest.AgentConfigs[0].RunCommand) != 1 || manifest.AgentConfigs[0].RunCommand[0] != "codex" {
 		t.Fatalf("default agent config = %#v, want default with install and run command", manifest.AgentConfigs[0])
 	}
 }

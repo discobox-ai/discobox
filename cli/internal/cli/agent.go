@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -14,14 +15,16 @@ import (
 type agentCreateOptions struct {
 	name           string
 	definitionID   string
-	installCommand string
-	runCommand     string
+	installCommand []string
+	runCommand     []string
+	files          []string
 }
 
 type agentUpdateOptions struct {
 	name           string
-	installCommand string
-	runCommand     string
+	installCommand []string
+	runCommand     []string
+	files          []string
 }
 
 func (a *App) newAgentCommand() *cobra.Command {
@@ -152,8 +155,9 @@ func (a *App) newAgentCreateCommand() *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&opts.name, "name", "", "Agent config name")
 	cmd.Flags().StringVar(&opts.definitionID, "definition", "", "Agent config definition ID to use as defaults")
-	cmd.Flags().StringVar(&opts.installCommand, "install-command", "", "Command used to install the agent")
-	cmd.Flags().StringVar(&opts.runCommand, "run-command", "", "Command used to run the agent")
+	cmd.Flags().StringArrayVar(&opts.installCommand, "install-command", nil, "Argv element used to install the agent (repeatable, e.g. --install-command npm --install-command install). Not run through a shell; pass sh -c yourself for shell semantics.")
+	cmd.Flags().StringArrayVar(&opts.runCommand, "run-command", nil, "Argv element used to run the agent (repeatable, e.g. --run-command claude --run-command --dangerously-skip-permissions). Not run through a shell; pass sh -c yourself for shell semantics.")
+	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the agent's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
 	_ = cmd.RegisterFlagCompletionFunc("definition", a.completeAgentDefinitions)
 	return cmd
 }
@@ -262,8 +266,9 @@ func (a *App) newAgentUpdateCommand() *cobra.Command {
 		return a.writeAgent(cmd, agent)
 	}}
 	cmd.Flags().StringVar(&opts.name, "name", "", "Agent config name")
-	cmd.Flags().StringVar(&opts.installCommand, "install-command", "", "Command used to install the agent")
-	cmd.Flags().StringVar(&opts.runCommand, "run-command", "", "Command used to run the agent")
+	cmd.Flags().StringArrayVar(&opts.installCommand, "install-command", nil, "Argv element used to install the agent (repeatable, e.g. --install-command npm --install-command install). Not run through a shell; pass sh -c yourself for shell semantics.")
+	cmd.Flags().StringArrayVar(&opts.runCommand, "run-command", nil, "Argv element used to run the agent (repeatable, e.g. --run-command claude --run-command --dangerously-skip-permissions). Not run through a shell; pass sh -c yourself for shell semantics.")
+	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the agent's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
 	return cmd
 }
 
@@ -429,8 +434,19 @@ func createAgentBody(opts agentCreateOptions) (*apimodel.CreateAgentConfigBody, 
 	body := &apimodel.CreateAgentConfigBody{}
 	body.SetName(optString(opts.name))
 	body.SetDefinitionId(optString(opts.definitionID))
-	body.SetInstallCommand(optString(opts.installCommand))
-	body.SetRunCommand(optString(opts.runCommand))
+	if len(opts.installCommand) > 0 {
+		body.SetInstallCommand(apiclientgen.NewOptNilStringArray(opts.installCommand))
+	}
+	if len(opts.runCommand) > 0 {
+		body.SetRunCommand(apiclientgen.NewOptNilStringArray(opts.runCommand))
+	}
+	if len(opts.files) > 0 {
+		files, err := parseAgentFileFlags(opts.files)
+		if err != nil {
+			return nil, err
+		}
+		body.SetFiles(apiclientgen.NewOptNilAgentConfigFileArray(files))
+	}
 	return body, nil
 }
 
@@ -440,10 +456,37 @@ func updateAgentBody(cmd *cobra.Command, opts agentUpdateOptions) (*apimodel.Upd
 		body.SetName(apiclientgen.NewOptString(opts.name))
 	}
 	if cmd.Flags().Changed("install-command") {
-		body.SetInstallCommand(apiclientgen.NewOptString(opts.installCommand))
+		body.SetInstallCommand(apiclientgen.NewOptNilStringArray(opts.installCommand))
 	}
 	if cmd.Flags().Changed("run-command") {
-		body.SetRunCommand(apiclientgen.NewOptString(opts.runCommand))
+		body.SetRunCommand(apiclientgen.NewOptNilStringArray(opts.runCommand))
+	}
+	if cmd.Flags().Changed("file") {
+		files, err := parseAgentFileFlags(opts.files)
+		if err != nil {
+			return nil, err
+		}
+		body.SetFiles(apiclientgen.NewOptNilAgentConfigFileArray(files))
 	}
 	return body, nil
+}
+
+func parseAgentFileFlags(values []string) ([]apimodel.AgentConfigFile, error) {
+	files := make([]apimodel.AgentConfigFile, 0, len(values))
+	for _, value := range values {
+		path, content, ok := strings.Cut(value, "=")
+		path = strings.TrimSpace(path)
+		if !ok || path == "" {
+			return nil, fmt.Errorf("--file must be PATH=CONTENT or PATH=@LOCALFILE, got %q", value)
+		}
+		if localPath, isLocalFile := strings.CutPrefix(content, "@"); isLocalFile {
+			data, err := os.ReadFile(localPath)
+			if err != nil {
+				return nil, fmt.Errorf("read --file content %q: %w", localPath, err)
+			}
+			content = string(data)
+		}
+		files = append(files, apimodel.AgentConfigFile{Path: path, Content: content})
+	}
+	return files, nil
 }

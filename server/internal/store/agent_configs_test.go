@@ -15,8 +15,8 @@ func TestAgentConfigResourceEvents(t *testing.T) {
 	config := &model.AgentConfig{
 		ProjectID:      "project-1",
 		Name:           "Codex",
-		InstallCommand: "npm install -g @openai/codex",
-		RunCommand:     "codex exec",
+		InstallCommand: []string{"npm", "install", "-g", "@openai/codex"},
+		RunCommand:     []string{"codex", "exec"},
 	}
 	if err := s.CreateAgentConfig(ctx, config); err != nil {
 		t.Fatalf("create agent config: %v", err)
@@ -60,6 +60,31 @@ func TestAgentConfigResourceEvents(t *testing.T) {
 	}
 }
 
+func TestAgentConfigFilesRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newTestStoreWithDB(t, nil)
+
+	config := &model.AgentConfig{
+		ProjectID:  "project-1",
+		Name:       "Claude Code",
+		RunCommand: []string{"claude"},
+		Files: []model.AgentConfigFile{
+			{Path: ".claude/settings.json", Content: `{"theme":"dark"}`},
+		},
+	}
+	if err := s.CreateAgentConfig(ctx, config); err != nil {
+		t.Fatalf("create agent config: %v", err)
+	}
+
+	got, err := s.GetAgentConfig(ctx, config.ProjectID, config.ID)
+	if err != nil {
+		t.Fatalf("get agent config: %v", err)
+	}
+	if len(got.Files) != 1 || got.Files[0].Path != ".claude/settings.json" || got.Files[0].Content != `{"theme":"dark"}` {
+		t.Fatalf("files = %#v, want round-tripped files", got.Files)
+	}
+}
+
 func TestDeleteAgentConfigClearsProjectDefault(t *testing.T) {
 	ctx := context.Background()
 	s, _ := newTestStoreWithDB(t, nil)
@@ -77,7 +102,7 @@ func TestDeleteAgentConfigClearsProjectDefault(t *testing.T) {
 	defaultConfig := &model.AgentConfig{
 		ProjectID:  project.ID,
 		Name:       "Default",
-		RunCommand: "default-agent",
+		RunCommand: []string{"default-agent"},
 	}
 	if err := s.CreateAgentConfig(ctx, defaultConfig); err != nil {
 		t.Fatalf("create default agent config: %v", err)
@@ -85,7 +110,7 @@ func TestDeleteAgentConfigClearsProjectDefault(t *testing.T) {
 	otherConfig := &model.AgentConfig{
 		ProjectID:  project.ID,
 		Name:       "Other",
-		RunCommand: "other-agent",
+		RunCommand: []string{"other-agent"},
 	}
 	if err := s.CreateAgentConfig(ctx, otherConfig); err != nil {
 		t.Fatalf("create other agent config: %v", err)
@@ -126,7 +151,7 @@ func TestDeleteAgentConfigHardDeletes(t *testing.T) {
 	config := &model.AgentConfig{
 		ProjectID:  "project-1",
 		Name:       "Codex",
-		RunCommand: "codex exec",
+		RunCommand: []string{"codex", "exec"},
 	}
 	if err := s.CreateAgentConfig(ctx, config); err != nil {
 		t.Fatalf("create agent config: %v", err)
