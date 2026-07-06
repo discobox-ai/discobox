@@ -140,7 +140,7 @@ func (a *App) resolveProviderID(ctx context.Context, client *apiclientgen.Client
 
 func (a *App) resolveSecretID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
 	id, err := parseIDArg(value, "secret ID")
-	if err != nil || len(id) != shortIDLength {
+	if err != nil || !isResolvableShortID(id) {
 		return id, err
 	}
 	res, err := client.ListSecrets(ctx, apiclientgen.ListSecretsParams{ProjectId: projectID})
@@ -160,7 +160,7 @@ func (a *App) resolveSecretID(ctx context.Context, client *apiclientgen.Client, 
 
 func (a *App) resolveSecretRequestID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
 	id, err := parseIDArg(value, "secret request ID")
-	if err != nil || len(id) != shortIDLength {
+	if err != nil || !isResolvableShortID(id) {
 		return id, err
 	}
 	res, err := client.ListSecretRequests(ctx, apiclientgen.ListSecretRequestsParams{ProjectId: projectID})
