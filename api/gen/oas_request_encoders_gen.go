@@ -10,6 +10,20 @@ import (
 	ht "github.com/ogen-go/ogen/http"
 )
 
+func encodeApproveSecretRequestRequest(
+	req *ApproveSecretRequestBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeCreateAgentConfigRequest(
 	req *CreateAgentConfigBody,
 	r *http.Request,
@@ -54,6 +68,34 @@ func encodeCreateSandboxRequest(
 
 func encodeCreateSandboxProviderInstanceRequest(
 	req *CreateSandboxProviderInstanceBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeCreateSecretRequest(
+	req *CreateSecretBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeCreateSecretRequestRequest(
+	req *CreateSecretRequestBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"
@@ -152,6 +194,20 @@ func encodeUpdateSandboxRequest(
 
 func encodeUpdateSandboxProviderInstanceRequest(
 	req *UpdateSandboxProviderInstanceBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeUpdateSecretRequest(
+	req *UpdateSecretBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

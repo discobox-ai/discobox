@@ -11,41 +11,53 @@ import (
 )
 
 var (
-	rn12AllowedHeaders = map[string]string{
+	rn16AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn44AllowedHeaders = map[string]string{
+	rn55AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn56AllowedHeaders = map[string]string{
+	rn67AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
-	}
-	rn11AllowedHeaders = map[string]string{
-		"POST": "Content-Type",
-	}
-	rn17AllowedHeaders = map[string]string{
-		"PATCH": "Content-Type",
 	}
 	rn15AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn21AllowedHeaders = map[string]string{
+	rn24AllowedHeaders = map[string]string{
 		"PATCH": "Content-Type",
-	}
-	rn14AllowedHeaders = map[string]string{
-		"POST": "Content-Type",
 	}
 	rn19AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn28AllowedHeaders = map[string]string{
 		"PATCH": "Content-Type",
 	}
-	rn46AllowedHeaders = map[string]string{
+	rn18AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn49AllowedHeaders = map[string]string{
+	rn26AllowedHeaders = map[string]string{
+		"PATCH": "Content-Type",
+	}
+	rn57AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn51AllowedHeaders = map[string]string{
+	rn60AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
+	}
+	rn62AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn22AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn5AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn21AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn30AllowedHeaders = map[string]string{
+		"PUT": "Content-Type",
 	}
 )
 
@@ -251,7 +263,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "GET,POST",
-											allowedHeaders: rn12AllowedHeaders,
+											allowedHeaders: rn16AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
 										})
@@ -536,7 +548,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 								default:
 									s.notAllowed(w, r, notAllowedParams{
 										allowedMethods: "POST",
-										allowedHeaders: rn44AllowedHeaders,
+										allowedHeaders: rn55AllowedHeaders,
 										acceptPost:     "application/json",
 										acceptPatch:    "",
 									})
@@ -578,7 +590,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 								default:
 									s.notAllowed(w, r, notAllowedParams{
 										allowedMethods: "POST",
-										allowedHeaders: rn56AllowedHeaders,
+										allowedHeaders: rn67AllowedHeaders,
 										acceptPost:     "application/json",
 										acceptPatch:    "",
 									})
@@ -697,7 +709,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "GET,POST",
-											allowedHeaders: rn11AllowedHeaders,
+											allowedHeaders: rn15AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
 										})
@@ -743,7 +755,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 										default:
 											s.notAllowed(w, r, notAllowedParams{
 												allowedMethods: "DELETE,GET,PATCH",
-												allowedHeaders: rn17AllowedHeaders,
+												allowedHeaders: rn24AllowedHeaders,
 												acceptPost:     "",
 												acceptPatch:    "application/json",
 											})
@@ -899,7 +911,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "GET,POST",
-											allowedHeaders: rn15AllowedHeaders,
+											allowedHeaders: rn19AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
 										})
@@ -946,7 +958,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 										default:
 											s.notAllowed(w, r, notAllowedParams{
 												allowedMethods: "DELETE,GET,PATCH",
-												allowedHeaders: rn21AllowedHeaders,
+												allowedHeaders: rn28AllowedHeaders,
 												acceptPost:     "",
 												acceptPatch:    "application/json",
 											})
@@ -957,76 +969,42 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 								}
 
-							case 's': // Prefix: "sandboxes"
+							case 's': // Prefix: "s"
 
-								if l := len("sandboxes"); len(elem) >= l && elem[0:l] == "sandboxes" {
+								if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
 									elem = elem[l:]
 								} else {
 									break
 								}
 
 								if len(elem) == 0 {
-									switch r.Method {
-									case "GET":
-										s.handleListSandboxesRequest([1]string{
-											args[0],
-										}, elemIsEscaped, w, r)
-									case "POST":
-										s.handleCreateSandboxRequest([1]string{
-											args[0],
-										}, elemIsEscaped, w, r)
-									default:
-										s.notAllowed(w, r, notAllowedParams{
-											allowedMethods: "GET,POST",
-											allowedHeaders: rn14AllowedHeaders,
-											acceptPost:     "application/json",
-											acceptPatch:    "",
-										})
-									}
-
-									return
+									break
 								}
 								switch elem[0] {
-								case '/': // Prefix: "/"
+								case 'a': // Prefix: "andboxes"
 
-									if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+									if l := len("andboxes"); len(elem) >= l && elem[0:l] == "andboxes" {
 										elem = elem[l:]
 									} else {
 										break
 									}
 
-									// Param: "sandboxId"
-									// Match until "/"
-									idx := strings.IndexByte(elem, '/')
-									if idx < 0 {
-										idx = len(elem)
-									}
-									args[1] = elem[:idx]
-									elem = elem[idx:]
-
 									if len(elem) == 0 {
 										switch r.Method {
-										case "DELETE":
-											s.handleDeleteSandboxRequest([2]string{
-												args[0],
-												args[1],
-											}, elemIsEscaped, w, r)
 										case "GET":
-											s.handleGetSandboxRequest([2]string{
+											s.handleListSandboxesRequest([1]string{
 												args[0],
-												args[1],
 											}, elemIsEscaped, w, r)
-										case "PATCH":
-											s.handleUpdateSandboxRequest([2]string{
+										case "POST":
+											s.handleCreateSandboxRequest([1]string{
 												args[0],
-												args[1],
 											}, elemIsEscaped, w, r)
 										default:
 											s.notAllowed(w, r, notAllowedParams{
-												allowedMethods: "DELETE,GET,PATCH",
-												allowedHeaders: rn19AllowedHeaders,
-												acceptPost:     "",
-												acceptPatch:    "application/json",
+												allowedMethods: "GET,POST",
+												allowedHeaders: rn18AllowedHeaders,
+												acceptPost:     "application/json",
+												acceptPatch:    "",
 											})
 										}
 
@@ -1041,13 +1019,47 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											break
 										}
 
+										// Param: "sandboxId"
+										// Match until "/"
+										idx := strings.IndexByte(elem, '/')
+										if idx < 0 {
+											idx = len(elem)
+										}
+										args[1] = elem[:idx]
+										elem = elem[idx:]
+
 										if len(elem) == 0 {
-											break
+											switch r.Method {
+											case "DELETE":
+												s.handleDeleteSandboxRequest([2]string{
+													args[0],
+													args[1],
+												}, elemIsEscaped, w, r)
+											case "GET":
+												s.handleGetSandboxRequest([2]string{
+													args[0],
+													args[1],
+												}, elemIsEscaped, w, r)
+											case "PATCH":
+												s.handleUpdateSandboxRequest([2]string{
+													args[0],
+													args[1],
+												}, elemIsEscaped, w, r)
+											default:
+												s.notAllowed(w, r, notAllowedParams{
+													allowedMethods: "DELETE,GET,PATCH",
+													allowedHeaders: rn26AllowedHeaders,
+													acceptPost:     "",
+													acceptPatch:    "application/json",
+												})
+											}
+
+											return
 										}
 										switch elem[0] {
-										case 'r': // Prefix: "re"
+										case '/': // Prefix: "/"
 
-											if l := len("re"); len(elem) >= l && elem[0:l] == "re" {
+											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 												elem = elem[l:]
 											} else {
 												break
@@ -1057,132 +1069,379 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 												break
 											}
 											switch elem[0] {
-											case 'c': // Prefix: "concile"
+											case 'r': // Prefix: "re"
 
-												if l := len("concile"); len(elem) >= l && elem[0:l] == "concile" {
+												if l := len("re"); len(elem) >= l && elem[0:l] == "re" {
 													elem = elem[l:]
 												} else {
 													break
 												}
 
 												if len(elem) == 0 {
-													// Leaf node.
-													switch r.Method {
-													case "POST":
-														s.handleReconcileSandboxRequest([2]string{
-															args[0],
-															args[1],
-														}, elemIsEscaped, w, r)
-													default:
-														s.notAllowed(w, r, notAllowedParams{
-															allowedMethods: "POST",
-															allowedHeaders: nil,
-															acceptPost:     "",
-															acceptPatch:    "",
-														})
+													break
+												}
+												switch elem[0] {
+												case 'c': // Prefix: "concile"
+
+													if l := len("concile"); len(elem) >= l && elem[0:l] == "concile" {
+														elem = elem[l:]
+													} else {
+														break
 													}
 
-													return
+													if len(elem) == 0 {
+														// Leaf node.
+														switch r.Method {
+														case "POST":
+															s.handleReconcileSandboxRequest([2]string{
+																args[0],
+																args[1],
+															}, elemIsEscaped, w, r)
+														default:
+															s.notAllowed(w, r, notAllowedParams{
+																allowedMethods: "POST",
+																allowedHeaders: nil,
+																acceptPost:     "",
+																acceptPatch:    "",
+															})
+														}
+
+														return
+													}
+
+												case 's': // Prefix: "start"
+
+													if l := len("start"); len(elem) >= l && elem[0:l] == "start" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch r.Method {
+														case "POST":
+															s.handleRestartSandboxRequest([2]string{
+																args[0],
+																args[1],
+															}, elemIsEscaped, w, r)
+														default:
+															s.notAllowed(w, r, notAllowedParams{
+																allowedMethods: "POST",
+																allowedHeaders: rn57AllowedHeaders,
+																acceptPost:     "application/json",
+																acceptPatch:    "",
+															})
+														}
+
+														return
+													}
+
 												}
 
-											case 's': // Prefix: "start"
+											case 's': // Prefix: "st"
 
-												if l := len("start"); len(elem) >= l && elem[0:l] == "start" {
+												if l := len("st"); len(elem) >= l && elem[0:l] == "st" {
 													elem = elem[l:]
 												} else {
 													break
 												}
 
 												if len(elem) == 0 {
-													// Leaf node.
-													switch r.Method {
-													case "POST":
-														s.handleRestartSandboxRequest([2]string{
-															args[0],
-															args[1],
-														}, elemIsEscaped, w, r)
-													default:
-														s.notAllowed(w, r, notAllowedParams{
-															allowedMethods: "POST",
-															allowedHeaders: rn46AllowedHeaders,
-															acceptPost:     "application/json",
-															acceptPatch:    "",
-														})
+													break
+												}
+												switch elem[0] {
+												case 'a': // Prefix: "art"
+
+													if l := len("art"); len(elem) >= l && elem[0:l] == "art" {
+														elem = elem[l:]
+													} else {
+														break
 													}
 
-													return
+													if len(elem) == 0 {
+														// Leaf node.
+														switch r.Method {
+														case "POST":
+															s.handleStartSandboxRequest([2]string{
+																args[0],
+																args[1],
+															}, elemIsEscaped, w, r)
+														default:
+															s.notAllowed(w, r, notAllowedParams{
+																allowedMethods: "POST",
+																allowedHeaders: rn60AllowedHeaders,
+																acceptPost:     "application/json",
+																acceptPatch:    "",
+															})
+														}
+
+														return
+													}
+
+												case 'o': // Prefix: "op"
+
+													if l := len("op"); len(elem) >= l && elem[0:l] == "op" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch r.Method {
+														case "POST":
+															s.handleStopSandboxRequest([2]string{
+																args[0],
+																args[1],
+															}, elemIsEscaped, w, r)
+														default:
+															s.notAllowed(w, r, notAllowedParams{
+																allowedMethods: "POST",
+																allowedHeaders: rn62AllowedHeaders,
+																acceptPost:     "application/json",
+																acceptPatch:    "",
+															})
+														}
+
+														return
+													}
+
 												}
 
 											}
 
-										case 's': // Prefix: "st"
+										}
 
-											if l := len("st"); len(elem) >= l && elem[0:l] == "st" {
+									}
+
+								case 'e': // Prefix: "ecret"
+
+									if l := len("ecret"); len(elem) >= l && elem[0:l] == "ecret" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										break
+									}
+									switch elem[0] {
+									case '-': // Prefix: "-requests"
+
+										if l := len("-requests"); len(elem) >= l && elem[0:l] == "-requests" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											switch r.Method {
+											case "GET":
+												s.handleListSecretRequestsRequest([1]string{
+													args[0],
+												}, elemIsEscaped, w, r)
+											case "POST":
+												s.handleCreateSecretRequestRequest([1]string{
+													args[0],
+												}, elemIsEscaped, w, r)
+											default:
+												s.notAllowed(w, r, notAllowedParams{
+													allowedMethods: "GET,POST",
+													allowedHeaders: rn22AllowedHeaders,
+													acceptPost:     "application/json",
+													acceptPatch:    "",
+												})
+											}
+
+											return
+										}
+										switch elem[0] {
+										case '/': // Prefix: "/"
+
+											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 												elem = elem[l:]
 											} else {
 												break
 											}
 
+											// Param: "requestId"
+											// Match until "/"
+											idx := strings.IndexByte(elem, '/')
+											if idx < 0 {
+												idx = len(elem)
+											}
+											args[1] = elem[:idx]
+											elem = elem[idx:]
+
 											if len(elem) == 0 {
-												break
+												switch r.Method {
+												case "GET":
+													s.handleGetSecretRequestRequest([2]string{
+														args[0],
+														args[1],
+													}, elemIsEscaped, w, r)
+												default:
+													s.notAllowed(w, r, notAllowedParams{
+														allowedMethods: "GET",
+														allowedHeaders: nil,
+														acceptPost:     "",
+														acceptPatch:    "",
+													})
+												}
+
+												return
 											}
 											switch elem[0] {
-											case 'a': // Prefix: "art"
+											case '/': // Prefix: "/"
 
-												if l := len("art"); len(elem) >= l && elem[0:l] == "art" {
+												if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 													elem = elem[l:]
 												} else {
 													break
 												}
 
 												if len(elem) == 0 {
-													// Leaf node.
-													switch r.Method {
-													case "POST":
-														s.handleStartSandboxRequest([2]string{
-															args[0],
-															args[1],
-														}, elemIsEscaped, w, r)
-													default:
-														s.notAllowed(w, r, notAllowedParams{
-															allowedMethods: "POST",
-															allowedHeaders: rn49AllowedHeaders,
-															acceptPost:     "application/json",
-															acceptPatch:    "",
-														})
-													}
-
-													return
-												}
-
-											case 'o': // Prefix: "op"
-
-												if l := len("op"); len(elem) >= l && elem[0:l] == "op" {
-													elem = elem[l:]
-												} else {
 													break
 												}
+												switch elem[0] {
+												case 'a': // Prefix: "approve"
 
-												if len(elem) == 0 {
-													// Leaf node.
-													switch r.Method {
-													case "POST":
-														s.handleStopSandboxRequest([2]string{
-															args[0],
-															args[1],
-														}, elemIsEscaped, w, r)
-													default:
-														s.notAllowed(w, r, notAllowedParams{
-															allowedMethods: "POST",
-															allowedHeaders: rn51AllowedHeaders,
-															acceptPost:     "application/json",
-															acceptPatch:    "",
-														})
+													if l := len("approve"); len(elem) >= l && elem[0:l] == "approve" {
+														elem = elem[l:]
+													} else {
+														break
 													}
 
-													return
+													if len(elem) == 0 {
+														// Leaf node.
+														switch r.Method {
+														case "POST":
+															s.handleApproveSecretRequestRequest([2]string{
+																args[0],
+																args[1],
+															}, elemIsEscaped, w, r)
+														default:
+															s.notAllowed(w, r, notAllowedParams{
+																allowedMethods: "POST",
+																allowedHeaders: rn5AllowedHeaders,
+																acceptPost:     "application/json",
+																acceptPatch:    "",
+															})
+														}
+
+														return
+													}
+
+												case 'd': // Prefix: "deny"
+
+													if l := len("deny"); len(elem) >= l && elem[0:l] == "deny" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch r.Method {
+														case "POST":
+															s.handleDenySecretRequestRequest([2]string{
+																args[0],
+																args[1],
+															}, elemIsEscaped, w, r)
+														default:
+															s.notAllowed(w, r, notAllowedParams{
+																allowedMethods: "POST",
+																allowedHeaders: nil,
+																acceptPost:     "",
+																acceptPatch:    "",
+															})
+														}
+
+														return
+													}
+
 												}
 
+											}
+
+										}
+
+									case 's': // Prefix: "s"
+
+										if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											switch r.Method {
+											case "GET":
+												s.handleListSecretsRequest([1]string{
+													args[0],
+												}, elemIsEscaped, w, r)
+											case "POST":
+												s.handleCreateSecretRequest([1]string{
+													args[0],
+												}, elemIsEscaped, w, r)
+											default:
+												s.notAllowed(w, r, notAllowedParams{
+													allowedMethods: "GET,POST",
+													allowedHeaders: rn21AllowedHeaders,
+													acceptPost:     "application/json",
+													acceptPatch:    "",
+												})
+											}
+
+											return
+										}
+										switch elem[0] {
+										case '/': // Prefix: "/"
+
+											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											// Param: "secretId"
+											// Leaf parameter, slashes are prohibited
+											idx := strings.IndexByte(elem, '/')
+											if idx >= 0 {
+												break
+											}
+											args[1] = elem
+											elem = ""
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch r.Method {
+												case "DELETE":
+													s.handleDeleteSecretRequest([2]string{
+														args[0],
+														args[1],
+													}, elemIsEscaped, w, r)
+												case "GET":
+													s.handleGetSecretRequest([2]string{
+														args[0],
+														args[1],
+													}, elemIsEscaped, w, r)
+												case "PUT":
+													s.handleUpdateSecretRequest([2]string{
+														args[0],
+														args[1],
+													}, elemIsEscaped, w, r)
+												default:
+													s.notAllowed(w, r, notAllowedParams{
+														allowedMethods: "DELETE,GET,PUT",
+														allowedHeaders: rn30AllowedHeaders,
+														acceptPost:     "",
+														acceptPatch:    "",
+													})
+												}
+
+												return
 											}
 
 										}
@@ -2232,84 +2491,45 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 
 								}
 
-							case 's': // Prefix: "sandboxes"
+							case 's': // Prefix: "s"
 
-								if l := len("sandboxes"); len(elem) >= l && elem[0:l] == "sandboxes" {
+								if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
 									elem = elem[l:]
 								} else {
 									break
 								}
 
 								if len(elem) == 0 {
-									switch method {
-									case "GET":
-										r.name = ListSandboxesOperation
-										r.summary = "List sandboxes"
-										r.operationID = "list-sandboxes"
-										r.operationGroup = ""
-										r.pathPattern = "/projects/{projectId}/sandboxes"
-										r.args = args
-										r.count = 1
-										return r, true
-									case "POST":
-										r.name = CreateSandboxOperation
-										r.summary = "Create a sandbox"
-										r.operationID = "create-sandbox"
-										r.operationGroup = ""
-										r.pathPattern = "/projects/{projectId}/sandboxes"
-										r.args = args
-										r.count = 1
-										return r, true
-									default:
-										return
-									}
+									break
 								}
 								switch elem[0] {
-								case '/': // Prefix: "/"
+								case 'a': // Prefix: "andboxes"
 
-									if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+									if l := len("andboxes"); len(elem) >= l && elem[0:l] == "andboxes" {
 										elem = elem[l:]
 									} else {
 										break
 									}
 
-									// Param: "sandboxId"
-									// Match until "/"
-									idx := strings.IndexByte(elem, '/')
-									if idx < 0 {
-										idx = len(elem)
-									}
-									args[1] = elem[:idx]
-									elem = elem[idx:]
-
 									if len(elem) == 0 {
 										switch method {
-										case "DELETE":
-											r.name = DeleteSandboxOperation
-											r.summary = "Delete a sandbox"
-											r.operationID = "delete-sandbox"
-											r.operationGroup = ""
-											r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}"
-											r.args = args
-											r.count = 2
-											return r, true
 										case "GET":
-											r.name = GetSandboxOperation
-											r.summary = "Get a sandbox"
-											r.operationID = "get-sandbox"
+											r.name = ListSandboxesOperation
+											r.summary = "List sandboxes"
+											r.operationID = "list-sandboxes"
 											r.operationGroup = ""
-											r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}"
+											r.pathPattern = "/projects/{projectId}/sandboxes"
 											r.args = args
-											r.count = 2
+											r.count = 1
 											return r, true
-										case "PATCH":
-											r.name = UpdateSandboxOperation
-											r.summary = "Update a sandbox"
-											r.operationID = "update-sandbox"
+										case "POST":
+											r.name = CreateSandboxOperation
+											r.summary = "Create a sandbox"
+											r.operationID = "create-sandbox"
 											r.operationGroup = ""
-											r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}"
+											r.pathPattern = "/projects/{projectId}/sandboxes"
 											r.args = args
-											r.count = 2
+											r.count = 1
 											return r, true
 										default:
 											return
@@ -2324,13 +2544,52 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 											break
 										}
 
+										// Param: "sandboxId"
+										// Match until "/"
+										idx := strings.IndexByte(elem, '/')
+										if idx < 0 {
+											idx = len(elem)
+										}
+										args[1] = elem[:idx]
+										elem = elem[idx:]
+
 										if len(elem) == 0 {
-											break
+											switch method {
+											case "DELETE":
+												r.name = DeleteSandboxOperation
+												r.summary = "Delete a sandbox"
+												r.operationID = "delete-sandbox"
+												r.operationGroup = ""
+												r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}"
+												r.args = args
+												r.count = 2
+												return r, true
+											case "GET":
+												r.name = GetSandboxOperation
+												r.summary = "Get a sandbox"
+												r.operationID = "get-sandbox"
+												r.operationGroup = ""
+												r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}"
+												r.args = args
+												r.count = 2
+												return r, true
+											case "PATCH":
+												r.name = UpdateSandboxOperation
+												r.summary = "Update a sandbox"
+												r.operationID = "update-sandbox"
+												r.operationGroup = ""
+												r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}"
+												r.args = args
+												r.count = 2
+												return r, true
+											default:
+												return
+											}
 										}
 										switch elem[0] {
-										case 'r': // Prefix: "re"
+										case '/': // Prefix: "/"
 
-											if l := len("re"); len(elem) >= l && elem[0:l] == "re" {
+											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 												elem = elem[l:]
 											} else {
 												break
@@ -2340,120 +2599,369 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 												break
 											}
 											switch elem[0] {
-											case 'c': // Prefix: "concile"
+											case 'r': // Prefix: "re"
 
-												if l := len("concile"); len(elem) >= l && elem[0:l] == "concile" {
+												if l := len("re"); len(elem) >= l && elem[0:l] == "re" {
 													elem = elem[l:]
 												} else {
 													break
 												}
 
 												if len(elem) == 0 {
-													// Leaf node.
-													switch method {
-													case "POST":
-														r.name = ReconcileSandboxOperation
-														r.summary = "Reconcile a sandbox"
-														r.operationID = "reconcile-sandbox"
-														r.operationGroup = ""
-														r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/reconcile"
-														r.args = args
-														r.count = 2
-														return r, true
-													default:
-														return
+													break
+												}
+												switch elem[0] {
+												case 'c': // Prefix: "concile"
+
+													if l := len("concile"); len(elem) >= l && elem[0:l] == "concile" {
+														elem = elem[l:]
+													} else {
+														break
 													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch method {
+														case "POST":
+															r.name = ReconcileSandboxOperation
+															r.summary = "Reconcile a sandbox"
+															r.operationID = "reconcile-sandbox"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/reconcile"
+															r.args = args
+															r.count = 2
+															return r, true
+														default:
+															return
+														}
+													}
+
+												case 's': // Prefix: "start"
+
+													if l := len("start"); len(elem) >= l && elem[0:l] == "start" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch method {
+														case "POST":
+															r.name = RestartSandboxOperation
+															r.summary = "Restart a sandbox"
+															r.operationID = "restart-sandbox"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/restart"
+															r.args = args
+															r.count = 2
+															return r, true
+														default:
+															return
+														}
+													}
+
 												}
 
-											case 's': // Prefix: "start"
+											case 's': // Prefix: "st"
 
-												if l := len("start"); len(elem) >= l && elem[0:l] == "start" {
+												if l := len("st"); len(elem) >= l && elem[0:l] == "st" {
 													elem = elem[l:]
 												} else {
 													break
 												}
 
 												if len(elem) == 0 {
-													// Leaf node.
-													switch method {
-													case "POST":
-														r.name = RestartSandboxOperation
-														r.summary = "Restart a sandbox"
-														r.operationID = "restart-sandbox"
-														r.operationGroup = ""
-														r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/restart"
-														r.args = args
-														r.count = 2
-														return r, true
-													default:
-														return
+													break
+												}
+												switch elem[0] {
+												case 'a': // Prefix: "art"
+
+													if l := len("art"); len(elem) >= l && elem[0:l] == "art" {
+														elem = elem[l:]
+													} else {
+														break
 													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch method {
+														case "POST":
+															r.name = StartSandboxOperation
+															r.summary = "Start a sandbox"
+															r.operationID = "start-sandbox"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/start"
+															r.args = args
+															r.count = 2
+															return r, true
+														default:
+															return
+														}
+													}
+
+												case 'o': // Prefix: "op"
+
+													if l := len("op"); len(elem) >= l && elem[0:l] == "op" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch method {
+														case "POST":
+															r.name = StopSandboxOperation
+															r.summary = "Stop a sandbox"
+															r.operationID = "stop-sandbox"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/stop"
+															r.args = args
+															r.count = 2
+															return r, true
+														default:
+															return
+														}
+													}
+
 												}
 
 											}
 
-										case 's': // Prefix: "st"
+										}
 
-											if l := len("st"); len(elem) >= l && elem[0:l] == "st" {
+									}
+
+								case 'e': // Prefix: "ecret"
+
+									if l := len("ecret"); len(elem) >= l && elem[0:l] == "ecret" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										break
+									}
+									switch elem[0] {
+									case '-': // Prefix: "-requests"
+
+										if l := len("-requests"); len(elem) >= l && elem[0:l] == "-requests" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											switch method {
+											case "GET":
+												r.name = ListSecretRequestsOperation
+												r.summary = "List secret requests"
+												r.operationID = "list-secret-requests"
+												r.operationGroup = ""
+												r.pathPattern = "/projects/{projectId}/secret-requests"
+												r.args = args
+												r.count = 1
+												return r, true
+											case "POST":
+												r.name = CreateSecretRequestOperation
+												r.summary = "Request access to a secret"
+												r.operationID = "create-secret-request"
+												r.operationGroup = ""
+												r.pathPattern = "/projects/{projectId}/secret-requests"
+												r.args = args
+												r.count = 1
+												return r, true
+											default:
+												return
+											}
+										}
+										switch elem[0] {
+										case '/': // Prefix: "/"
+
+											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 												elem = elem[l:]
 											} else {
 												break
 											}
 
+											// Param: "requestId"
+											// Match until "/"
+											idx := strings.IndexByte(elem, '/')
+											if idx < 0 {
+												idx = len(elem)
+											}
+											args[1] = elem[:idx]
+											elem = elem[idx:]
+
 											if len(elem) == 0 {
-												break
+												switch method {
+												case "GET":
+													r.name = GetSecretRequestOperation
+													r.summary = "Get a secret request; includes decrypted value when approved and not expired"
+													r.operationID = "get-secret-request"
+													r.operationGroup = ""
+													r.pathPattern = "/projects/{projectId}/secret-requests/{requestId}"
+													r.args = args
+													r.count = 2
+													return r, true
+												default:
+													return
+												}
 											}
 											switch elem[0] {
-											case 'a': // Prefix: "art"
+											case '/': // Prefix: "/"
 
-												if l := len("art"); len(elem) >= l && elem[0:l] == "art" {
+												if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 													elem = elem[l:]
 												} else {
 													break
 												}
 
 												if len(elem) == 0 {
-													// Leaf node.
-													switch method {
-													case "POST":
-														r.name = StartSandboxOperation
-														r.summary = "Start a sandbox"
-														r.operationID = "start-sandbox"
-														r.operationGroup = ""
-														r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/start"
-														r.args = args
-														r.count = 2
-														return r, true
-													default:
-														return
-													}
-												}
-
-											case 'o': // Prefix: "op"
-
-												if l := len("op"); len(elem) >= l && elem[0:l] == "op" {
-													elem = elem[l:]
-												} else {
 													break
 												}
+												switch elem[0] {
+												case 'a': // Prefix: "approve"
 
-												if len(elem) == 0 {
-													// Leaf node.
-													switch method {
-													case "POST":
-														r.name = StopSandboxOperation
-														r.summary = "Stop a sandbox"
-														r.operationID = "stop-sandbox"
-														r.operationGroup = ""
-														r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/stop"
-														r.args = args
-														r.count = 2
-														return r, true
-													default:
-														return
+													if l := len("approve"); len(elem) >= l && elem[0:l] == "approve" {
+														elem = elem[l:]
+													} else {
+														break
 													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch method {
+														case "POST":
+															r.name = ApproveSecretRequestOperation
+															r.summary = "Approve a secret request"
+															r.operationID = "approve-secret-request"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/secret-requests/{requestId}/approve"
+															r.args = args
+															r.count = 2
+															return r, true
+														default:
+															return
+														}
+													}
+
+												case 'd': // Prefix: "deny"
+
+													if l := len("deny"); len(elem) >= l && elem[0:l] == "deny" {
+														elem = elem[l:]
+													} else {
+														break
+													}
+
+													if len(elem) == 0 {
+														// Leaf node.
+														switch method {
+														case "POST":
+															r.name = DenySecretRequestOperation
+															r.summary = "Deny a secret request"
+															r.operationID = "deny-secret-request"
+															r.operationGroup = ""
+															r.pathPattern = "/projects/{projectId}/secret-requests/{requestId}/deny"
+															r.args = args
+															r.count = 2
+															return r, true
+														default:
+															return
+														}
+													}
+
 												}
 
+											}
+
+										}
+
+									case 's': // Prefix: "s"
+
+										if l := len("s"); len(elem) >= l && elem[0:l] == "s" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											switch method {
+											case "GET":
+												r.name = ListSecretsOperation
+												r.summary = "List secrets"
+												r.operationID = "list-secrets"
+												r.operationGroup = ""
+												r.pathPattern = "/projects/{projectId}/secrets"
+												r.args = args
+												r.count = 1
+												return r, true
+											case "POST":
+												r.name = CreateSecretOperation
+												r.summary = "Create a secret"
+												r.operationID = "create-secret"
+												r.operationGroup = ""
+												r.pathPattern = "/projects/{projectId}/secrets"
+												r.args = args
+												r.count = 1
+												return r, true
+											default:
+												return
+											}
+										}
+										switch elem[0] {
+										case '/': // Prefix: "/"
+
+											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											// Param: "secretId"
+											// Leaf parameter, slashes are prohibited
+											idx := strings.IndexByte(elem, '/')
+											if idx >= 0 {
+												break
+											}
+											args[1] = elem
+											elem = ""
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch method {
+												case "DELETE":
+													r.name = DeleteSecretOperation
+													r.summary = "Delete a secret"
+													r.operationID = "delete-secret"
+													r.operationGroup = ""
+													r.pathPattern = "/projects/{projectId}/secrets/{secretId}"
+													r.args = args
+													r.count = 2
+													return r, true
+												case "GET":
+													r.name = GetSecretOperation
+													r.summary = "Get a secret"
+													r.operationID = "get-secret"
+													r.operationGroup = ""
+													r.pathPattern = "/projects/{projectId}/secrets/{secretId}"
+													r.args = args
+													r.count = 2
+													return r, true
+												case "PUT":
+													r.name = UpdateSecretOperation
+													r.summary = "Update a secret"
+													r.operationID = "update-secret"
+													r.operationGroup = ""
+													r.pathPattern = "/projects/{projectId}/secrets/{secretId}"
+													r.args = args
+													r.count = 2
+													return r, true
+												default:
+													return
+												}
 											}
 
 										}

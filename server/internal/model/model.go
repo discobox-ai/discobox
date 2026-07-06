@@ -578,6 +578,103 @@ const (
 	EventActionListed  = "listed"
 )
 
+const (
+	SecretTypeGit    = "git"
+	SecretTypeSSH    = "ssh"
+	SecretTypeBearer = "bearer"
+
+	SecretRequestStatusPending  = "pending"
+	SecretRequestStatusApproved = "approved"
+	SecretRequestStatusDenied   = "denied"
+)
+
+// Secret is a project-scoped encrypted credential that can be requested by sandboxes.
+type Secret struct {
+	ID              string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable secret ID"`
+	ProjectID       string         `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_secret_project_type_host,priority:1" json:"projectId" doc:"Project ID"`
+	Name            string         `gorm:"column:name;not null;type:text" json:"name" doc:"Secret name"`
+	Type            string         `gorm:"column:type;not null;type:text;uniqueIndex:idx_secret_project_type_host,priority:2" json:"type" doc:"Secret type" enum:"git,ssh,bearer"`
+	Host            string         `gorm:"column:host;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:3" json:"host,omitempty" doc:"Optional host used to match requests"`
+	AutoApprove     bool           `gorm:"column:auto_approve;not null;default:false" json:"autoApprove" doc:"Automatically approve requests"`
+	DefaultGrantTTL int64          `gorm:"column:default_grant_ttl_seconds;not null;default:3600" json:"defaultGrantTTLSeconds" doc:"Default grant duration in seconds"`
+	EncryptedValue  []byte         `gorm:"column:encrypted_value" json:"-"`
+	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
+	CreatedAt       time.Time      `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt       time.Time      `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+
+	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
+}
+
+func (Secret) TableName() string { return "secrets" }
+
+func (s *Secret) EventProjectID() string    { return s.ProjectID }
+func (s *Secret) EventResourceType() string { return "secret" }
+func (s *Secret) EventResourceID() string   { return s.ID }
+
+func (s *Secret) BeforeCreate(_ *gorm.DB) error {
+	if s.ID == "" {
+		var err error
+		s.ID, err = id.New()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SecretValue holds the type-specific plaintext credential fields.
+// Only fields relevant to the secret type will be populated.
+type SecretValue struct {
+	// git
+	Username string `json:"username,omitempty"`
+	Password string `json:"password,omitempty"`
+	// ssh
+	PrivateKey string `json:"privateKey,omitempty"`
+	Passphrase string `json:"passphrase,omitempty"`
+	// bearer
+	Token string `json:"token,omitempty"`
+}
+
+// SecretRequest tracks a request for access to a secret.
+type SecretRequest struct {
+	ID          string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable request ID"`
+	ProjectID   string         `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	RequestedBy string         `gorm:"column:requested_by;not null;type:text" json:"requestedBy" doc:"Principal ID of the requestor"`
+	Type        string         `gorm:"column:type;not null;type:text" json:"type" doc:"Secret type requested" enum:"git,ssh,bearer"`
+	Host        string         `gorm:"column:host;not null;type:text;default:''" json:"host,omitempty" doc:"Host hint provided at request time"`
+	SecretID    string         `gorm:"column:secret_id;not null;type:text;default:''" json:"secretId,omitempty" doc:"Matched secret ID; set when approved"`
+	Status      string         `gorm:"column:status;not null;type:text;default:'pending'" json:"status" doc:"Request status" enum:"pending,approved,denied"`
+	ApprovedBy  string         `gorm:"column:approved_by;not null;type:text;default:''" json:"approvedBy,omitempty" doc:"User ID or \"auto\" if auto-approved"`
+	GrantedAt   *time.Time     `gorm:"column:granted_at" json:"grantedAt,omitempty" doc:"Approval timestamp" format:"date-time"`
+	ExpiresAt   *time.Time     `gorm:"column:expires_at" json:"expiresAt,omitempty" doc:"Grant expiry time" format:"date-time"`
+	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
+	CreatedAt   time.Time      `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt   time.Time      `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+
+	// Value is populated at read time when status=approved and the grant has not expired.
+	// It is never persisted.
+	Value *SecretValue `gorm:"-" json:"value,omitempty" doc:"Decrypted secret value; present when approved and not expired"`
+
+	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
+}
+
+func (SecretRequest) TableName() string { return "secret_requests" }
+
+func (r *SecretRequest) EventProjectID() string    { return r.ProjectID }
+func (r *SecretRequest) EventResourceType() string { return "secretRequest" }
+func (r *SecretRequest) EventResourceID() string   { return r.ID }
+
+func (r *SecretRequest) BeforeCreate(_ *gorm.DB) error {
+	if r.ID == "" {
+		var err error
+		r.ID, err = id.New()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ProjectEvent is a persisted project-scoped resource change event.
 type ProjectEvent struct {
 	ID           string          `gorm:"primaryKey;type:text" json:"id" doc:"Event record ID"`
@@ -621,5 +718,7 @@ func AllModels() []any {
 		&WorkerBootstrapToken{},
 		&WorkerAuthToken{},
 		&ProjectEvent{},
+		&Secret{},
+		&SecretRequest{},
 	}
 }

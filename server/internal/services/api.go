@@ -10,8 +10,12 @@ import (
 	"github.com/obot-platform/discobox/server/internal/transport"
 )
 
+type ApproveSecretRequestBody = apimodel.ApproveSecretRequestBody
 type CreateAgentConfigBody = apimodel.CreateAgentConfigBody
+type CreateSecretBody = apimodel.CreateSecretBody
+type CreateSecretRequestBody = apimodel.CreateSecretRequestBody
 type UpdateAgentConfigBody = apimodel.UpdateAgentConfigBody
+type UpdateSecretBody = apimodel.UpdateSecretBody
 type CreateSandboxBody = apimodel.CreateSandboxBody
 type UpdateSandboxBody = apimodel.UpdateSandboxBody
 type StartSandboxBody = apimodel.StartSandboxBody
@@ -89,6 +93,21 @@ type JobService interface {
 	ListJobs(ctx context.Context, projectID string) ([]model.Job, error)
 }
 
+// SecretService manages project-scoped secrets and their request/approval lifecycle.
+type SecretService interface {
+	ListSecrets(ctx context.Context, projectID string) ([]model.Secret, error)
+	CreateSecret(ctx context.Context, projectID string, input CreateSecretBody) (*model.Secret, error)
+	GetSecret(ctx context.Context, projectID, secretID string) (*model.Secret, error)
+	UpdateSecret(ctx context.Context, projectID, secretID string, input UpdateSecretBody) (*model.Secret, error)
+	DeleteSecret(ctx context.Context, projectID, secretID string) error
+
+	ListSecretRequests(ctx context.Context, projectID string) ([]model.SecretRequest, error)
+	CreateSecretRequest(ctx context.Context, projectID string, input CreateSecretRequestBody) (*model.SecretRequest, error)
+	GetSecretRequest(ctx context.Context, projectID, requestID string) (*model.SecretRequest, error)
+	ApproveSecretRequest(ctx context.Context, projectID, requestID string, input ApproveSecretRequestBody) (*model.SecretRequest, error)
+	DenySecretRequest(ctx context.Context, projectID, requestID string) error
+}
+
 // ProjectEventService provides project-scoped resource snapshots and live subscription.
 type ProjectEventService interface {
 	MaxProjectEventSeq(ctx context.Context, projectID string) (int64, error)
@@ -106,4 +125,5 @@ type Services struct {
 	Workers      WorkerService
 	Jobs         JobService
 	Events       ProjectEventService
+	Secrets      SecretService
 }

@@ -150,6 +150,110 @@ func (a *App) writeProviders(cmd *cobra.Command, providers []apimodel.SandboxPro
 	return tw.Flush()
 }
 
+func (a *App) writeSecret(cmd *cobra.Command, secret *apimodel.Secret) error {
+	if secret == nil {
+		return nil
+	}
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), secret)
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "FIELD\tVALUE")
+	fmt.Fprintf(tw, "ID\t%s\n", shortID(secret.ID))
+	fmt.Fprintf(tw, "NAME\t%s\n", secret.Name)
+	fmt.Fprintf(tw, "TYPE\t%s\n", secret.Type)
+	fmt.Fprintf(tw, "HOST\t%s\n", secret.Host.Or(""))
+	fmt.Fprintf(tw, "AUTO APPROVE\t%t\n", secret.AutoApprove)
+	fmt.Fprintf(tw, "GRANT TTL\t%s\n", formatSeconds(secret.DefaultGrantTTLSeconds))
+	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(secret.CreatedAt))
+	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(secret.UpdatedAt))
+	return tw.Flush()
+}
+
+func (a *App) writeSecrets(cmd *cobra.Command, secrets []apimodel.Secret) error {
+	if a.quiet {
+		secrets = sortedByCreatedAt(secrets, func(secret apimodel.Secret) time.Time { return secret.CreatedAt })
+		return writeResourceIDs(cmd.OutOrStdout(), secrets, func(secret apimodel.Secret) string { return secret.ID })
+	}
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"secrets": secrets})
+	}
+	secrets = sortedByCreatedAt(secrets, func(secret apimodel.Secret) time.Time { return secret.CreatedAt })
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tHOST\tAUTO\tGRANT TTL\tUPDATED")
+	for _, secret := range secrets {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%t\t%s\t%s\n",
+			shortID(secret.ID),
+			secret.Name,
+			secret.Type,
+			secret.Host.Or(""),
+			secret.AutoApprove,
+			formatSeconds(secret.DefaultGrantTTLSeconds),
+			formatTime(secret.UpdatedAt),
+		)
+	}
+	return tw.Flush()
+}
+
+func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretRequest) error {
+	if request == nil {
+		return nil
+	}
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), request)
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "FIELD\tVALUE")
+	fmt.Fprintf(tw, "ID\t%s\n", shortID(request.ID))
+	fmt.Fprintf(tw, "REQUESTED BY\t%s\n", request.RequestedBy)
+	fmt.Fprintf(tw, "TYPE\t%s\n", request.Type)
+	fmt.Fprintf(tw, "HOST\t%s\n", request.Host.Or(""))
+	fmt.Fprintf(tw, "STATUS\t%s\n", request.Status)
+	if secretID, ok := request.SecretId.Get(); ok && secretID != "" {
+		fmt.Fprintf(tw, "SECRET\t%s\n", shortID(secretID))
+	}
+	if approvedBy, ok := request.ApprovedBy.Get(); ok && approvedBy != "" {
+		fmt.Fprintf(tw, "APPROVED BY\t%s\n", approvedBy)
+	}
+	if grantedAt, ok := request.GrantedAt.Get(); ok && !grantedAt.IsZero() {
+		fmt.Fprintf(tw, "GRANTED\t%s\n", formatTime(grantedAt))
+	}
+	if expiresAt, ok := request.ExpiresAt.Get(); ok && !expiresAt.IsZero() {
+		fmt.Fprintf(tw, "EXPIRES\t%s\n", formatTime(expiresAt))
+	}
+	if _, ok := request.Value.Get(); ok {
+		fmt.Fprintln(tw, "VALUE\tavailable in json output")
+	}
+	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(request.CreatedAt))
+	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(request.UpdatedAt))
+	return tw.Flush()
+}
+
+func (a *App) writeSecretRequests(cmd *cobra.Command, requests []apimodel.SecretRequest) error {
+	if a.quiet {
+		requests = sortedByCreatedAt(requests, func(request apimodel.SecretRequest) time.Time { return request.CreatedAt })
+		return writeResourceIDs(cmd.OutOrStdout(), requests, func(request apimodel.SecretRequest) string { return request.ID })
+	}
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"secretRequests": requests})
+	}
+	requests = sortedByCreatedAt(requests, func(request apimodel.SecretRequest) time.Time { return request.CreatedAt })
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tTYPE\tHOST\tSTATUS\tSECRET\tREQUESTED BY\tUPDATED")
+	for _, request := range requests {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+			shortID(request.ID),
+			request.Type,
+			request.Host.Or(""),
+			request.Status,
+			shortID(request.SecretId.Or("")),
+			request.RequestedBy,
+			formatTime(request.UpdatedAt),
+		)
+	}
+	return tw.Flush()
+}
+
 func (a *App) writeWorkers(cmd *cobra.Command, workers []apimodel.Worker) error {
 	if a.quiet {
 		workers = sortedByCreatedAt(workers, func(worker apimodel.Worker) time.Time { return worker.CreatedAt })
@@ -369,6 +473,13 @@ func formatBytes(value int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f%ciB", float64(value)/float64(div), "KMGTPE"[exp])
+}
+
+func formatSeconds(value int64) string {
+	if value <= 0 {
+		return ""
+	}
+	return (time.Duration(value) * time.Second).String()
 }
 
 func formatRelativeTime(now, value time.Time) string {

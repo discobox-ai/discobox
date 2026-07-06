@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -418,6 +419,78 @@ func TestAgentSetDefaultCommand(t *testing.T) {
 	}
 	if got, want := out.String(), "default agent config set to "+shortID(agentID)+"\n"; got != want {
 		t.Fatalf("output = %q, want %q", got, want)
+	}
+}
+
+func TestSecretCreateCommandSendsSecretValue(t *testing.T) {
+	var posted map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/secrets" {
+			t.Fatalf("request = %s %s, want POST create secret path", r.Method, r.URL.Path)
+		}
+		if err := json.NewDecoder(r.Body).Decode(&posted); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"secret-1","projectId":"project-1","name":"github","type":"bearer","host":"github.com","autoApprove":true,"defaultGrantTTLSeconds":7200,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "create", "--name", "github", "--type", "bearer", "--host", "github.com", "--auto-approve", "--grant-ttl", "7200", "--token", "token-value"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute secret create: %v", err)
+	}
+	if posted["name"] != "github" || posted["type"] != "bearer" || posted["host"] != "github.com" || posted["autoApprove"] != true {
+		t.Fatalf("posted body = %#v", posted)
+	}
+	value, ok := posted["value"].(map[string]any)
+	if !ok || value["token"] != "token-value" {
+		t.Fatalf("posted value = %#v, want token", posted["value"])
+	}
+	if output := out.String(); !strings.Contains(output, "github") || strings.Contains(output, "token-value") {
+		t.Fatalf("secret output = %q, want metadata without secret value", output)
+	}
+}
+
+func TestSecretRequestApproveCommandSendsSelectedSecretID(t *testing.T) {
+	const (
+		requestID = "request-1"
+		secretID  = "secret-1"
+	)
+	var approved map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/secret-requests/"+requestID+"/approve":
+			if err := json.NewDecoder(r.Body).Decode(&approved); err != nil {
+				t.Fatalf("decode approve body: %v", err)
+			}
+			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"user-1","type":"git","status":"approved","secretId":"` + secretID + `","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
+			_, _ = w.Write([]byte(`{"secrets":[{"id":"` + secretID + `","projectId":"project-1","name":"selected","type":"bearer","autoApprove":false,"defaultGrantTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+		default:
+			t.Fatalf("unexpected request = %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "request", "approve", requestID, "--secret-id", secretID, "--grant-ttl", "600"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute secret request approve: %v", err)
+	}
+	if approved["secretId"] != secretID || approved["grantTTLSeconds"] != float64(600) {
+		t.Fatalf("approve body = %#v", approved)
+	}
+	if output := out.String(); !strings.Contains(output, shortID(requestID)) || !strings.Contains(output, "approved") {
+		t.Fatalf("approve output = %q, want approved request", output)
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/resources/projects"
 	"github.com/obot-platform/discobox/server/internal/resources/providers"
 	sandboxes "github.com/obot-platform/discobox/server/internal/resources/sandboxes"
+	"github.com/obot-platform/discobox/server/internal/resources/secrets"
 	workers "github.com/obot-platform/discobox/server/internal/resources/workers"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	services "github.com/obot-platform/discobox/server/internal/services"
@@ -36,6 +37,7 @@ type Service struct {
 	services.WorkerService
 	services.JobService
 	services.ProjectEventService
+	services.SecretService
 
 	store             *store.Store
 	jobManager        JobManager
@@ -88,6 +90,7 @@ func New(store *store.Store, jobManager JobManager, jobManagerOptions JobManager
 		WorkerService:                  workers.NewService(store, jobManager),
 		JobService:                     jobsService,
 		ProjectEventService:            resourceevents.NewService(store, b),
+		SecretService:                  secrets.NewService(store),
 
 		jobs:            jobsService,
 		providerService: providerService,
