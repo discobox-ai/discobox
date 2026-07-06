@@ -27,6 +27,12 @@ func trimTrailingSlashes(u *url.URL) {
 
 // Invoker invokes operations described by OpenAPI v3 specification.
 type Invoker interface {
+	// ApproveSecretRequest invokes approve-secret-request operation.
+	//
+	// Approve a secret request.
+	//
+	// POST /projects/{projectId}/secret-requests/{requestId}/approve
+	ApproveSecretRequest(ctx context.Context, request *ApproveSecretRequestBody, params ApproveSecretRequestParams) (ApproveSecretRequestRes, error)
 	// AttachAgentTerminal invokes attach-agent-terminal operation.
 	//
 	// Upgrades to a framed bidirectional stream for a running agent terminal. Closing the stream
@@ -74,6 +80,18 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/providers
 	CreateSandboxProviderInstance(ctx context.Context, request *CreateSandboxProviderInstanceBody, params CreateSandboxProviderInstanceParams) (CreateSandboxProviderInstanceRes, error)
+	// CreateSecret invokes create-secret operation.
+	//
+	// Create a secret.
+	//
+	// POST /projects/{projectId}/secrets
+	CreateSecret(ctx context.Context, request *CreateSecretBody, params CreateSecretParams) (CreateSecretRes, error)
+	// CreateSecretRequest invokes create-secret-request operation.
+	//
+	// Request access to a secret.
+	//
+	// POST /projects/{projectId}/secret-requests
+	CreateSecretRequest(ctx context.Context, request *CreateSecretRequestBody, params CreateSecretRequestParams) (CreateSecretRequestRes, error)
 	// DeleteAgentConfig invokes delete-agent-config operation.
 	//
 	// Delete an agent config.
@@ -98,6 +116,18 @@ type Invoker interface {
 	//
 	// DELETE /projects/{projectId}/providers/{providerId}
 	DeleteSandboxProviderInstance(ctx context.Context, params DeleteSandboxProviderInstanceParams) (DeleteSandboxProviderInstanceRes, error)
+	// DeleteSecret invokes delete-secret operation.
+	//
+	// Delete a secret.
+	//
+	// DELETE /projects/{projectId}/secrets/{secretId}
+	DeleteSecret(ctx context.Context, params DeleteSecretParams) (DeleteSecretRes, error)
+	// DenySecretRequest invokes deny-secret-request operation.
+	//
+	// Deny a secret request.
+	//
+	// POST /projects/{projectId}/secret-requests/{requestId}/deny
+	DenySecretRequest(ctx context.Context, params DenySecretRequestParams) (DenySecretRequestRes, error)
 	// ForceJob invokes force-job operation.
 	//
 	// Force a pending or backoff job to run immediately.
@@ -152,6 +182,18 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/providers/{providerId}
 	GetSandboxProviderInstance(ctx context.Context, params GetSandboxProviderInstanceParams) (GetSandboxProviderInstanceRes, error)
+	// GetSecret invokes get-secret operation.
+	//
+	// Get a secret.
+	//
+	// GET /projects/{projectId}/secrets/{secretId}
+	GetSecret(ctx context.Context, params GetSecretParams) (GetSecretRes, error)
+	// GetSecretRequest invokes get-secret-request operation.
+	//
+	// Get a secret request; includes decrypted value when approved and not expired.
+	//
+	// GET /projects/{projectId}/secret-requests/{requestId}
+	GetSecretRequest(ctx context.Context, params GetSecretRequestParams) (GetSecretRequestRes, error)
 	// ListAgentConfigDefinitions invokes list-agent-config-definitions operation.
 	//
 	// List agent config definitions.
@@ -236,6 +278,18 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/sandboxes
 	ListSandboxes(ctx context.Context, params ListSandboxesParams) (ListSandboxesRes, error)
+	// ListSecretRequests invokes list-secret-requests operation.
+	//
+	// List secret requests.
+	//
+	// GET /projects/{projectId}/secret-requests
+	ListSecretRequests(ctx context.Context, params ListSecretRequestsParams) (ListSecretRequestsRes, error)
+	// ListSecrets invokes list-secrets operation.
+	//
+	// List secrets.
+	//
+	// GET /projects/{projectId}/secrets
+	ListSecrets(ctx context.Context, params ListSecretsParams) (ListSecretsRes, error)
 	// ListWorkers invokes list-workers operation.
 	//
 	// List workers.
@@ -320,6 +374,12 @@ type Invoker interface {
 	//
 	// PATCH /projects/{projectId}/providers/{providerId}
 	UpdateSandboxProviderInstance(ctx context.Context, request *UpdateSandboxProviderInstanceBody, params UpdateSandboxProviderInstanceParams) (UpdateSandboxProviderInstanceRes, error)
+	// UpdateSecret invokes update-secret operation.
+	//
+	// Update a secret.
+	//
+	// PUT /projects/{projectId}/secrets/{secretId}
+	UpdateSecret(ctx context.Context, request *UpdateSecretBody, params UpdateSecretParams) (UpdateSecretRes, error)
 	// UpdateWorkerStatus invokes update-worker-status operation.
 	//
 	// Update worker status.
@@ -365,6 +425,121 @@ func (c *Client) requestURL(ctx context.Context) *url.URL {
 		return c.serverURL
 	}
 	return u
+}
+
+// ApproveSecretRequest invokes approve-secret-request operation.
+//
+// Approve a secret request.
+//
+// POST /projects/{projectId}/secret-requests/{requestId}/approve
+func (c *Client) ApproveSecretRequest(ctx context.Context, request *ApproveSecretRequestBody, params ApproveSecretRequestParams) (ApproveSecretRequestRes, error) {
+	res, err := c.sendApproveSecretRequest(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendApproveSecretRequest(ctx context.Context, request *ApproveSecretRequestBody, params ApproveSecretRequestParams) (res ApproveSecretRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("approve-secret-request"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/secret-requests/{requestId}/approve"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ApproveSecretRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/secret-requests/"
+	{
+		// Encode "requestId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "requestId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.RequestId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/approve"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeApproveSecretRequestRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeApproveSecretRequestResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
 }
 
 // AttachAgentTerminal invokes attach-agent-terminal operation.
@@ -1152,6 +1327,198 @@ func (c *Client) sendCreateSandboxProviderInstance(ctx context.Context, request 
 	return result, nil
 }
 
+// CreateSecret invokes create-secret operation.
+//
+// Create a secret.
+//
+// POST /projects/{projectId}/secrets
+func (c *Client) CreateSecret(ctx context.Context, request *CreateSecretBody, params CreateSecretParams) (CreateSecretRes, error) {
+	res, err := c.sendCreateSecret(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendCreateSecret(ctx context.Context, request *CreateSecretBody, params CreateSecretParams) (res CreateSecretRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("create-secret"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/secrets"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CreateSecretOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/secrets"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeCreateSecretRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCreateSecretResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// CreateSecretRequest invokes create-secret-request operation.
+//
+// Request access to a secret.
+//
+// POST /projects/{projectId}/secret-requests
+func (c *Client) CreateSecretRequest(ctx context.Context, request *CreateSecretRequestBody, params CreateSecretRequestParams) (CreateSecretRequestRes, error) {
+	res, err := c.sendCreateSecretRequest(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendCreateSecretRequest(ctx context.Context, request *CreateSecretRequestBody, params CreateSecretRequestParams) (res CreateSecretRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("create-secret-request"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/secret-requests"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CreateSecretRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/secret-requests"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeCreateSecretRequestRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCreateSecretRequestResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // DeleteAgentConfig invokes delete-agent-config operation.
 //
 // Delete an agent config.
@@ -1608,6 +1975,229 @@ func (c *Client) sendDeleteSandboxProviderInstance(ctx context.Context, params D
 
 	stage = "DecodeResponse"
 	result, err := decodeDeleteSandboxProviderInstanceResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// DeleteSecret invokes delete-secret operation.
+//
+// Delete a secret.
+//
+// DELETE /projects/{projectId}/secrets/{secretId}
+func (c *Client) DeleteSecret(ctx context.Context, params DeleteSecretParams) (DeleteSecretRes, error) {
+	res, err := c.sendDeleteSecret(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendDeleteSecret(ctx context.Context, params DeleteSecretParams) (res DeleteSecretRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("delete-secret"),
+		semconv.HTTPRequestMethodKey.String("DELETE"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/secrets/{secretId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DeleteSecretOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/secrets/"
+	{
+		// Encode "secretId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "secretId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SecretId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "DELETE", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDeleteSecretResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// DenySecretRequest invokes deny-secret-request operation.
+//
+// Deny a secret request.
+//
+// POST /projects/{projectId}/secret-requests/{requestId}/deny
+func (c *Client) DenySecretRequest(ctx context.Context, params DenySecretRequestParams) (DenySecretRequestRes, error) {
+	res, err := c.sendDenySecretRequest(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendDenySecretRequest(ctx context.Context, params DenySecretRequestParams) (res DenySecretRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("deny-secret-request"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/secret-requests/{requestId}/deny"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DenySecretRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/secret-requests/"
+	{
+		// Encode "requestId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "requestId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.RequestId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/deny"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDenySecretRequestResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -2609,6 +3199,228 @@ func (c *Client) sendGetSandboxProviderInstance(ctx context.Context, params GetS
 
 	stage = "DecodeResponse"
 	result, err := decodeGetSandboxProviderInstanceResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetSecret invokes get-secret operation.
+//
+// Get a secret.
+//
+// GET /projects/{projectId}/secrets/{secretId}
+func (c *Client) GetSecret(ctx context.Context, params GetSecretParams) (GetSecretRes, error) {
+	res, err := c.sendGetSecret(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetSecret(ctx context.Context, params GetSecretParams) (res GetSecretRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-secret"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/secrets/{secretId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetSecretOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/secrets/"
+	{
+		// Encode "secretId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "secretId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SecretId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetSecretResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetSecretRequest invokes get-secret-request operation.
+//
+// Get a secret request; includes decrypted value when approved and not expired.
+//
+// GET /projects/{projectId}/secret-requests/{requestId}
+func (c *Client) GetSecretRequest(ctx context.Context, params GetSecretRequestParams) (GetSecretRequestRes, error) {
+	res, err := c.sendGetSecretRequest(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetSecretRequest(ctx context.Context, params GetSecretRequestParams) (res GetSecretRequestRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-secret-request"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/secret-requests/{requestId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetSecretRequestOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/secret-requests/"
+	{
+		// Encode "requestId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "requestId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.RequestId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetSecretRequestResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -4143,6 +4955,192 @@ func (c *Client) sendListSandboxes(ctx context.Context, params ListSandboxesPara
 
 	stage = "DecodeResponse"
 	result, err := decodeListSandboxesResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListSecretRequests invokes list-secret-requests operation.
+//
+// List secret requests.
+//
+// GET /projects/{projectId}/secret-requests
+func (c *Client) ListSecretRequests(ctx context.Context, params ListSecretRequestsParams) (ListSecretRequestsRes, error) {
+	res, err := c.sendListSecretRequests(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListSecretRequests(ctx context.Context, params ListSecretRequestsParams) (res ListSecretRequestsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-secret-requests"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/secret-requests"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListSecretRequestsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/secret-requests"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListSecretRequestsResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListSecrets invokes list-secrets operation.
+//
+// List secrets.
+//
+// GET /projects/{projectId}/secrets
+func (c *Client) ListSecrets(ctx context.Context, params ListSecretsParams) (ListSecretsRes, error) {
+	res, err := c.sendListSecrets(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListSecrets(ctx context.Context, params ListSecretsParams) (res ListSecretsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-secrets"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/secrets"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListSecretsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/secrets"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListSecretsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -5750,6 +6748,120 @@ func (c *Client) sendUpdateSandboxProviderInstance(ctx context.Context, request 
 
 	stage = "DecodeResponse"
 	result, err := decodeUpdateSandboxProviderInstanceResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// UpdateSecret invokes update-secret operation.
+//
+// Update a secret.
+//
+// PUT /projects/{projectId}/secrets/{secretId}
+func (c *Client) UpdateSecret(ctx context.Context, request *UpdateSecretBody, params UpdateSecretParams) (UpdateSecretRes, error) {
+	res, err := c.sendUpdateSecret(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendUpdateSecret(ctx context.Context, request *UpdateSecretBody, params UpdateSecretParams) (res UpdateSecretRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("update-secret"),
+		semconv.HTTPRequestMethodKey.String("PUT"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/secrets/{secretId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, UpdateSecretOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/secrets/"
+	{
+		// Encode "secretId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "secretId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SecretId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PUT", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeUpdateSecretRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeUpdateSecretResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

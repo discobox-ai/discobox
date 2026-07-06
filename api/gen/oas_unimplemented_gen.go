@@ -13,6 +13,15 @@ type UnimplementedHandler struct{}
 
 var _ Handler = UnimplementedHandler{}
 
+// ApproveSecretRequest implements approve-secret-request operation.
+//
+// Approve a secret request.
+//
+// POST /projects/{projectId}/secret-requests/{requestId}/approve
+func (UnimplementedHandler) ApproveSecretRequest(ctx context.Context, req *ApproveSecretRequestBody, params ApproveSecretRequestParams) (r ApproveSecretRequestRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // AttachAgentTerminal implements attach-agent-terminal operation.
 //
 // Upgrades to a framed bidirectional stream for a running agent terminal. Closing the stream
@@ -81,6 +90,24 @@ func (UnimplementedHandler) CreateSandboxProviderInstance(ctx context.Context, r
 	return r, ht.ErrNotImplemented
 }
 
+// CreateSecret implements create-secret operation.
+//
+// Create a secret.
+//
+// POST /projects/{projectId}/secrets
+func (UnimplementedHandler) CreateSecret(ctx context.Context, req *CreateSecretBody, params CreateSecretParams) (r CreateSecretRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// CreateSecretRequest implements create-secret-request operation.
+//
+// Request access to a secret.
+//
+// POST /projects/{projectId}/secret-requests
+func (UnimplementedHandler) CreateSecretRequest(ctx context.Context, req *CreateSecretRequestBody, params CreateSecretRequestParams) (r CreateSecretRequestRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // DeleteAgentConfig implements delete-agent-config operation.
 //
 // Delete an agent config.
@@ -114,6 +141,24 @@ func (UnimplementedHandler) DeleteSandbox(ctx context.Context, params DeleteSand
 //
 // DELETE /projects/{projectId}/providers/{providerId}
 func (UnimplementedHandler) DeleteSandboxProviderInstance(ctx context.Context, params DeleteSandboxProviderInstanceParams) (r DeleteSandboxProviderInstanceRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// DeleteSecret implements delete-secret operation.
+//
+// Delete a secret.
+//
+// DELETE /projects/{projectId}/secrets/{secretId}
+func (UnimplementedHandler) DeleteSecret(ctx context.Context, params DeleteSecretParams) (r DeleteSecretRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// DenySecretRequest implements deny-secret-request operation.
+//
+// Deny a secret request.
+//
+// POST /projects/{projectId}/secret-requests/{requestId}/deny
+func (UnimplementedHandler) DenySecretRequest(ctx context.Context, params DenySecretRequestParams) (r DenySecretRequestRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -195,6 +240,24 @@ func (UnimplementedHandler) GetSandboxExec(ctx context.Context, params GetSandbo
 //
 // GET /projects/{projectId}/providers/{providerId}
 func (UnimplementedHandler) GetSandboxProviderInstance(ctx context.Context, params GetSandboxProviderInstanceParams) (r GetSandboxProviderInstanceRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetSecret implements get-secret operation.
+//
+// Get a secret.
+//
+// GET /projects/{projectId}/secrets/{secretId}
+func (UnimplementedHandler) GetSecret(ctx context.Context, params GetSecretParams) (r GetSecretRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetSecretRequest implements get-secret-request operation.
+//
+// Get a secret request; includes decrypted value when approved and not expired.
+//
+// GET /projects/{projectId}/secret-requests/{requestId}
+func (UnimplementedHandler) GetSecretRequest(ctx context.Context, params GetSecretRequestParams) (r GetSecretRequestRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -324,6 +387,24 @@ func (UnimplementedHandler) ListSandboxes(ctx context.Context, params ListSandbo
 	return r, ht.ErrNotImplemented
 }
 
+// ListSecretRequests implements list-secret-requests operation.
+//
+// List secret requests.
+//
+// GET /projects/{projectId}/secret-requests
+func (UnimplementedHandler) ListSecretRequests(ctx context.Context, params ListSecretRequestsParams) (r ListSecretRequestsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ListSecrets implements list-secrets operation.
+//
+// List secrets.
+//
+// GET /projects/{projectId}/secrets
+func (UnimplementedHandler) ListSecrets(ctx context.Context, params ListSecretsParams) (r ListSecretsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListWorkers implements list-workers operation.
 //
 // List workers.
@@ -447,6 +528,15 @@ func (UnimplementedHandler) UpdateSandbox(ctx context.Context, req *UpdateSandbo
 //
 // PATCH /projects/{projectId}/providers/{providerId}
 func (UnimplementedHandler) UpdateSandboxProviderInstance(ctx context.Context, req *UpdateSandboxProviderInstanceBody, params UpdateSandboxProviderInstanceParams) (r UpdateSandboxProviderInstanceRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// UpdateSecret implements update-secret operation.
+//
+// Update a secret.
+//
+// PUT /projects/{projectId}/secrets/{secretId}
+func (UnimplementedHandler) UpdateSecret(ctx context.Context, req *UpdateSecretBody, params UpdateSecretParams) (r UpdateSecretRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

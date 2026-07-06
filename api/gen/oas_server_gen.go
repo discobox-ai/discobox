@@ -8,6 +8,12 @@ import (
 
 // Handler handles operations described by OpenAPI v3 specification.
 type Handler interface {
+	// ApproveSecretRequest implements approve-secret-request operation.
+	//
+	// Approve a secret request.
+	//
+	// POST /projects/{projectId}/secret-requests/{requestId}/approve
+	ApproveSecretRequest(ctx context.Context, req *ApproveSecretRequestBody, params ApproveSecretRequestParams) (ApproveSecretRequestRes, error)
 	// AttachAgentTerminal implements attach-agent-terminal operation.
 	//
 	// Upgrades to a framed bidirectional stream for a running agent terminal. Closing the stream
@@ -55,6 +61,18 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/providers
 	CreateSandboxProviderInstance(ctx context.Context, req *CreateSandboxProviderInstanceBody, params CreateSandboxProviderInstanceParams) (CreateSandboxProviderInstanceRes, error)
+	// CreateSecret implements create-secret operation.
+	//
+	// Create a secret.
+	//
+	// POST /projects/{projectId}/secrets
+	CreateSecret(ctx context.Context, req *CreateSecretBody, params CreateSecretParams) (CreateSecretRes, error)
+	// CreateSecretRequest implements create-secret-request operation.
+	//
+	// Request access to a secret.
+	//
+	// POST /projects/{projectId}/secret-requests
+	CreateSecretRequest(ctx context.Context, req *CreateSecretRequestBody, params CreateSecretRequestParams) (CreateSecretRequestRes, error)
 	// DeleteAgentConfig implements delete-agent-config operation.
 	//
 	// Delete an agent config.
@@ -79,6 +97,18 @@ type Handler interface {
 	//
 	// DELETE /projects/{projectId}/providers/{providerId}
 	DeleteSandboxProviderInstance(ctx context.Context, params DeleteSandboxProviderInstanceParams) (DeleteSandboxProviderInstanceRes, error)
+	// DeleteSecret implements delete-secret operation.
+	//
+	// Delete a secret.
+	//
+	// DELETE /projects/{projectId}/secrets/{secretId}
+	DeleteSecret(ctx context.Context, params DeleteSecretParams) (DeleteSecretRes, error)
+	// DenySecretRequest implements deny-secret-request operation.
+	//
+	// Deny a secret request.
+	//
+	// POST /projects/{projectId}/secret-requests/{requestId}/deny
+	DenySecretRequest(ctx context.Context, params DenySecretRequestParams) (DenySecretRequestRes, error)
 	// ForceJob implements force-job operation.
 	//
 	// Force a pending or backoff job to run immediately.
@@ -133,6 +163,18 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/providers/{providerId}
 	GetSandboxProviderInstance(ctx context.Context, params GetSandboxProviderInstanceParams) (GetSandboxProviderInstanceRes, error)
+	// GetSecret implements get-secret operation.
+	//
+	// Get a secret.
+	//
+	// GET /projects/{projectId}/secrets/{secretId}
+	GetSecret(ctx context.Context, params GetSecretParams) (GetSecretRes, error)
+	// GetSecretRequest implements get-secret-request operation.
+	//
+	// Get a secret request; includes decrypted value when approved and not expired.
+	//
+	// GET /projects/{projectId}/secret-requests/{requestId}
+	GetSecretRequest(ctx context.Context, params GetSecretRequestParams) (GetSecretRequestRes, error)
 	// ListAgentConfigDefinitions implements list-agent-config-definitions operation.
 	//
 	// List agent config definitions.
@@ -217,6 +259,18 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/sandboxes
 	ListSandboxes(ctx context.Context, params ListSandboxesParams) (ListSandboxesRes, error)
+	// ListSecretRequests implements list-secret-requests operation.
+	//
+	// List secret requests.
+	//
+	// GET /projects/{projectId}/secret-requests
+	ListSecretRequests(ctx context.Context, params ListSecretRequestsParams) (ListSecretRequestsRes, error)
+	// ListSecrets implements list-secrets operation.
+	//
+	// List secrets.
+	//
+	// GET /projects/{projectId}/secrets
+	ListSecrets(ctx context.Context, params ListSecretsParams) (ListSecretsRes, error)
 	// ListWorkers implements list-workers operation.
 	//
 	// List workers.
@@ -301,6 +355,12 @@ type Handler interface {
 	//
 	// PATCH /projects/{projectId}/providers/{providerId}
 	UpdateSandboxProviderInstance(ctx context.Context, req *UpdateSandboxProviderInstanceBody, params UpdateSandboxProviderInstanceParams) (UpdateSandboxProviderInstanceRes, error)
+	// UpdateSecret implements update-secret operation.
+	//
+	// Update a secret.
+	//
+	// PUT /projects/{projectId}/secrets/{secretId}
+	UpdateSecret(ctx context.Context, req *UpdateSecretBody, params UpdateSecretParams) (UpdateSecretRes, error)
 	// UpdateWorkerStatus implements update-worker-status operation.
 	//
 	// Update worker status.

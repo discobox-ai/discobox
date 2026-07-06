@@ -782,6 +782,46 @@ func (s *AgentTerminalsResponse) SetTerminals(val []AgentTerminal) {
 
 func (*AgentTerminalsResponse) listAgentTerminalsRes() {}
 
+// Ref: #/components/schemas/ApproveSecretRequestBody
+type ApproveSecretRequestBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Grant duration in seconds; overrides the secret's default.
+	GrantTTLSeconds OptInt64 `json:"grantTTLSeconds"`
+	// Secret ID selected by the approver.
+	SecretId string `json:"secretId"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ApproveSecretRequestBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetGrantTTLSeconds returns the value of GrantTTLSeconds.
+func (s *ApproveSecretRequestBody) GetGrantTTLSeconds() OptInt64 {
+	return s.GrantTTLSeconds
+}
+
+// GetSecretId returns the value of SecretId.
+func (s *ApproveSecretRequestBody) GetSecretId() string {
+	return s.SecretId
+}
+
+// SetSchema sets the value of Schema.
+func (s *ApproveSecretRequestBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetGrantTTLSeconds sets the value of GrantTTLSeconds.
+func (s *ApproveSecretRequestBody) SetGrantTTLSeconds(val OptInt64) {
+	s.GrantTTLSeconds = val
+}
+
+// SetSecretId sets the value of SecretId.
+func (s *ApproveSecretRequestBody) SetSecretId(val string) {
+	s.SecretId = val
+}
+
 // AttachAgentTerminalSwitchingProtocols is response for AttachAgentTerminal operation.
 type AttachAgentTerminalSwitchingProtocols struct {
 	Connection OptString
@@ -1319,6 +1359,231 @@ func (s *CreateSandboxProviderInstanceBody) SetType(val string) {
 	s.Type = val
 }
 
+// Ref: #/components/schemas/CreateSecretBody
+type CreateSecretBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Automatically approve requests for this secret.
+	AutoApprove OptBool `json:"autoApprove"`
+	// Default grant duration in seconds.
+	DefaultGrantTTLSeconds OptInt64 `json:"defaultGrantTTLSeconds"`
+	// Optional host used to match requests (e.g. github.com).
+	Host OptString `json:"host"`
+	// Secret name.
+	Name string `json:"name"`
+	// Secret type.
+	Type  CreateSecretBodyType `json:"type"`
+	Value SecretValue          `json:"value"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *CreateSecretBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetAutoApprove returns the value of AutoApprove.
+func (s *CreateSecretBody) GetAutoApprove() OptBool {
+	return s.AutoApprove
+}
+
+// GetDefaultGrantTTLSeconds returns the value of DefaultGrantTTLSeconds.
+func (s *CreateSecretBody) GetDefaultGrantTTLSeconds() OptInt64 {
+	return s.DefaultGrantTTLSeconds
+}
+
+// GetHost returns the value of Host.
+func (s *CreateSecretBody) GetHost() OptString {
+	return s.Host
+}
+
+// GetName returns the value of Name.
+func (s *CreateSecretBody) GetName() string {
+	return s.Name
+}
+
+// GetType returns the value of Type.
+func (s *CreateSecretBody) GetType() CreateSecretBodyType {
+	return s.Type
+}
+
+// GetValue returns the value of Value.
+func (s *CreateSecretBody) GetValue() SecretValue {
+	return s.Value
+}
+
+// SetSchema sets the value of Schema.
+func (s *CreateSecretBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetAutoApprove sets the value of AutoApprove.
+func (s *CreateSecretBody) SetAutoApprove(val OptBool) {
+	s.AutoApprove = val
+}
+
+// SetDefaultGrantTTLSeconds sets the value of DefaultGrantTTLSeconds.
+func (s *CreateSecretBody) SetDefaultGrantTTLSeconds(val OptInt64) {
+	s.DefaultGrantTTLSeconds = val
+}
+
+// SetHost sets the value of Host.
+func (s *CreateSecretBody) SetHost(val OptString) {
+	s.Host = val
+}
+
+// SetName sets the value of Name.
+func (s *CreateSecretBody) SetName(val string) {
+	s.Name = val
+}
+
+// SetType sets the value of Type.
+func (s *CreateSecretBody) SetType(val CreateSecretBodyType) {
+	s.Type = val
+}
+
+// SetValue sets the value of Value.
+func (s *CreateSecretBody) SetValue(val SecretValue) {
+	s.Value = val
+}
+
+// Secret type.
+type CreateSecretBodyType string
+
+const (
+	CreateSecretBodyTypeGit    CreateSecretBodyType = "git"
+	CreateSecretBodyTypeSSH    CreateSecretBodyType = "ssh"
+	CreateSecretBodyTypeBearer CreateSecretBodyType = "bearer"
+)
+
+// AllValues returns all CreateSecretBodyType values.
+func (CreateSecretBodyType) AllValues() []CreateSecretBodyType {
+	return []CreateSecretBodyType{
+		CreateSecretBodyTypeGit,
+		CreateSecretBodyTypeSSH,
+		CreateSecretBodyTypeBearer,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s CreateSecretBodyType) MarshalText() ([]byte, error) {
+	switch s {
+	case CreateSecretBodyTypeGit:
+		return []byte(s), nil
+	case CreateSecretBodyTypeSSH:
+		return []byte(s), nil
+	case CreateSecretBodyTypeBearer:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *CreateSecretBodyType) UnmarshalText(data []byte) error {
+	switch CreateSecretBodyType(data) {
+	case CreateSecretBodyTypeGit:
+		*s = CreateSecretBodyTypeGit
+		return nil
+	case CreateSecretBodyTypeSSH:
+		*s = CreateSecretBodyTypeSSH
+		return nil
+	case CreateSecretBodyTypeBearer:
+		*s = CreateSecretBodyTypeBearer
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Ref: #/components/schemas/CreateSecretRequestBody
+type CreateSecretRequestBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Optional host hint used to match a secret (e.g. github.com).
+	Host OptString `json:"host"`
+	// Secret type being requested.
+	Type CreateSecretRequestBodyType `json:"type"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *CreateSecretRequestBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetHost returns the value of Host.
+func (s *CreateSecretRequestBody) GetHost() OptString {
+	return s.Host
+}
+
+// GetType returns the value of Type.
+func (s *CreateSecretRequestBody) GetType() CreateSecretRequestBodyType {
+	return s.Type
+}
+
+// SetSchema sets the value of Schema.
+func (s *CreateSecretRequestBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetHost sets the value of Host.
+func (s *CreateSecretRequestBody) SetHost(val OptString) {
+	s.Host = val
+}
+
+// SetType sets the value of Type.
+func (s *CreateSecretRequestBody) SetType(val CreateSecretRequestBodyType) {
+	s.Type = val
+}
+
+// Secret type being requested.
+type CreateSecretRequestBodyType string
+
+const (
+	CreateSecretRequestBodyTypeGit    CreateSecretRequestBodyType = "git"
+	CreateSecretRequestBodyTypeSSH    CreateSecretRequestBodyType = "ssh"
+	CreateSecretRequestBodyTypeBearer CreateSecretRequestBodyType = "bearer"
+)
+
+// AllValues returns all CreateSecretRequestBodyType values.
+func (CreateSecretRequestBodyType) AllValues() []CreateSecretRequestBodyType {
+	return []CreateSecretRequestBodyType{
+		CreateSecretRequestBodyTypeGit,
+		CreateSecretRequestBodyTypeSSH,
+		CreateSecretRequestBodyTypeBearer,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s CreateSecretRequestBodyType) MarshalText() ([]byte, error) {
+	switch s {
+	case CreateSecretRequestBodyTypeGit:
+		return []byte(s), nil
+	case CreateSecretRequestBodyTypeSSH:
+		return []byte(s), nil
+	case CreateSecretRequestBodyTypeBearer:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *CreateSecretRequestBodyType) UnmarshalText(data []byte) error {
+	switch CreateSecretRequestBodyType(data) {
+	case CreateSecretRequestBodyTypeGit:
+		*s = CreateSecretRequestBodyTypeGit
+		return nil
+	case CreateSecretRequestBodyTypeSSH:
+		*s = CreateSecretRequestBodyTypeSSH
+		return nil
+	case CreateSecretRequestBodyTypeBearer:
+		*s = CreateSecretRequestBodyTypeBearer
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // DeleteAgentConfigNoContent is response for DeleteAgentConfig operation.
 type DeleteAgentConfigNoContent struct{}
 
@@ -1338,6 +1603,16 @@ func (*DeleteSandboxAccepted) deleteSandboxRes() {}
 type DeleteSandboxProviderInstanceNoContent struct{}
 
 func (*DeleteSandboxProviderInstanceNoContent) deleteSandboxProviderInstanceRes() {}
+
+// DeleteSecretNoContent is response for DeleteSecret operation.
+type DeleteSecretNoContent struct{}
+
+func (*DeleteSecretNoContent) deleteSecretRes() {}
+
+// DenySecretRequestNoContent is response for DenySecretRequest operation.
+type DenySecretRequestNoContent struct{}
+
+func (*DenySecretRequestNoContent) denySecretRequestRes() {}
 
 // Ref: #/components/schemas/ErrorDetail
 type ErrorDetail struct {
@@ -1494,12 +1769,17 @@ func (s *ErrorModelStatusCode) SetResponse(val ErrorModel) {
 	s.Response = val
 }
 
+func (*ErrorModelStatusCode) approveSecretRequestRes()          {}
 func (*ErrorModelStatusCode) createAgentConfigRes()             {}
 func (*ErrorModelStatusCode) createSandboxProviderInstanceRes() {}
 func (*ErrorModelStatusCode) createSandboxRes()                 {}
+func (*ErrorModelStatusCode) createSecretRequestRes()           {}
+func (*ErrorModelStatusCode) createSecretRes()                  {}
 func (*ErrorModelStatusCode) deleteAgentConfigRes()             {}
 func (*ErrorModelStatusCode) deleteSandboxProviderInstanceRes() {}
 func (*ErrorModelStatusCode) deleteSandboxRes()                 {}
+func (*ErrorModelStatusCode) deleteSecretRes()                  {}
+func (*ErrorModelStatusCode) denySecretRequestRes()             {}
 func (*ErrorModelStatusCode) forceJobRes()                      {}
 func (*ErrorModelStatusCode) getAgentConfigDefinitionRes()      {}
 func (*ErrorModelStatusCode) getAgentConfigRes()                {}
@@ -1507,6 +1787,8 @@ func (*ErrorModelStatusCode) getJobRes()                        {}
 func (*ErrorModelStatusCode) getProjectRes()                    {}
 func (*ErrorModelStatusCode) getSandboxProviderInstanceRes()    {}
 func (*ErrorModelStatusCode) getSandboxRes()                    {}
+func (*ErrorModelStatusCode) getSecretRequestRes()              {}
+func (*ErrorModelStatusCode) getSecretRes()                     {}
 func (*ErrorModelStatusCode) listAgentConfigDefinitionsRes()    {}
 func (*ErrorModelStatusCode) listAgentConfigsRes()              {}
 func (*ErrorModelStatusCode) listJobsRes()                      {}
@@ -1514,6 +1796,8 @@ func (*ErrorModelStatusCode) listProjectsRes()                  {}
 func (*ErrorModelStatusCode) listSandboxProviderCatalogRes()    {}
 func (*ErrorModelStatusCode) listSandboxProviderInstancesRes()  {}
 func (*ErrorModelStatusCode) listSandboxesRes()                 {}
+func (*ErrorModelStatusCode) listSecretRequestsRes()            {}
+func (*ErrorModelStatusCode) listSecretsRes()                   {}
 func (*ErrorModelStatusCode) listWorkersRes()                   {}
 func (*ErrorModelStatusCode) reconcileSandboxRes()              {}
 func (*ErrorModelStatusCode) reconcileWorkerRes()               {}
@@ -1525,6 +1809,7 @@ func (*ErrorModelStatusCode) stopSandboxRes()                   {}
 func (*ErrorModelStatusCode) updateAgentConfigRes()             {}
 func (*ErrorModelStatusCode) updateSandboxProviderInstanceRes() {}
 func (*ErrorModelStatusCode) updateSandboxRes()                 {}
+func (*ErrorModelStatusCode) updateSecretRes()                  {}
 func (*ErrorModelStatusCode) updateWorkerStatusRes()            {}
 
 // Ref: #/components/schemas/ErrorResponse
@@ -2325,6 +2610,64 @@ func (s *ListSandboxesBody) SetSandboxes(val []Sandbox) {
 }
 
 func (*ListSandboxesBody) listSandboxesRes() {}
+
+// Ref: #/components/schemas/ListSecretRequestsBody
+type ListSecretRequestsBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema         OptURI          `json:"$schema"`
+	SecretRequests []SecretRequest `json:"secretRequests"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListSecretRequestsBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSecretRequests returns the value of SecretRequests.
+func (s *ListSecretRequestsBody) GetSecretRequests() []SecretRequest {
+	return s.SecretRequests
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListSecretRequestsBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSecretRequests sets the value of SecretRequests.
+func (s *ListSecretRequestsBody) SetSecretRequests(val []SecretRequest) {
+	s.SecretRequests = val
+}
+
+func (*ListSecretRequestsBody) listSecretRequestsRes() {}
+
+// Ref: #/components/schemas/ListSecretsBody
+type ListSecretsBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema  OptURI   `json:"$schema"`
+	Secrets []Secret `json:"secrets"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListSecretsBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSecrets returns the value of Secrets.
+func (s *ListSecretsBody) GetSecrets() []Secret {
+	return s.Secrets
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListSecretsBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSecrets sets the value of Secrets.
+func (s *ListSecretsBody) SetSecrets(val []Secret) {
+	s.Secrets = val
+}
+
+func (*ListSecretsBody) listSecretsRes() {}
 
 // Ref: #/components/schemas/ListWorkersBody
 type ListWorkersBody struct {
@@ -4222,6 +4565,52 @@ func (o OptSandboxUser) Get() (v SandboxUser, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxUser) Or(d SandboxUser) SandboxUser {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSecretValue returns new OptSecretValue with value set to v.
+func NewOptSecretValue(v SecretValue) OptSecretValue {
+	return OptSecretValue{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSecretValue is optional SecretValue.
+type OptSecretValue struct {
+	Value SecretValue
+	Set   bool
+}
+
+// IsSet returns true if OptSecretValue was set.
+func (o OptSecretValue) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSecretValue) Reset() {
+	var v SecretValue
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSecretValue) SetTo(v SecretValue) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSecretValue) Get() (v SecretValue, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSecretValue) Or(d SecretValue) SecretValue {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -7033,6 +7422,521 @@ func (s *SandboxUser) SetUID(val OptInt64) {
 	s.UID = val
 }
 
+// Ref: #/components/schemas/Secret
+type Secret struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Automatically approve requests for this secret.
+	AutoApprove bool `json:"autoApprove"`
+	// Creation timestamp.
+	CreatedAt time.Time `json:"createdAt"`
+	// Default grant duration in seconds.
+	DefaultGrantTTLSeconds int64 `json:"defaultGrantTTLSeconds"`
+	// Optional host used to match requests (e.g. github.com).
+	Host OptString `json:"host"`
+	// Stable secret ID.
+	ID string `json:"id"`
+	// Secret name.
+	Name string `json:"name"`
+	// Project ID.
+	ProjectId string `json:"projectId"`
+	// Secret type.
+	Type SecretType `json:"type"`
+	// Last update timestamp.
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *Secret) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetAutoApprove returns the value of AutoApprove.
+func (s *Secret) GetAutoApprove() bool {
+	return s.AutoApprove
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *Secret) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetDefaultGrantTTLSeconds returns the value of DefaultGrantTTLSeconds.
+func (s *Secret) GetDefaultGrantTTLSeconds() int64 {
+	return s.DefaultGrantTTLSeconds
+}
+
+// GetHost returns the value of Host.
+func (s *Secret) GetHost() OptString {
+	return s.Host
+}
+
+// GetID returns the value of ID.
+func (s *Secret) GetID() string {
+	return s.ID
+}
+
+// GetName returns the value of Name.
+func (s *Secret) GetName() string {
+	return s.Name
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *Secret) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetType returns the value of Type.
+func (s *Secret) GetType() SecretType {
+	return s.Type
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *Secret) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// SetSchema sets the value of Schema.
+func (s *Secret) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetAutoApprove sets the value of AutoApprove.
+func (s *Secret) SetAutoApprove(val bool) {
+	s.AutoApprove = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *Secret) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetDefaultGrantTTLSeconds sets the value of DefaultGrantTTLSeconds.
+func (s *Secret) SetDefaultGrantTTLSeconds(val int64) {
+	s.DefaultGrantTTLSeconds = val
+}
+
+// SetHost sets the value of Host.
+func (s *Secret) SetHost(val OptString) {
+	s.Host = val
+}
+
+// SetID sets the value of ID.
+func (s *Secret) SetID(val string) {
+	s.ID = val
+}
+
+// SetName sets the value of Name.
+func (s *Secret) SetName(val string) {
+	s.Name = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *Secret) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetType sets the value of Type.
+func (s *Secret) SetType(val SecretType) {
+	s.Type = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *Secret) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+func (*Secret) createSecretRes() {}
+func (*Secret) getSecretRes()    {}
+func (*Secret) updateSecretRes() {}
+
+// Ref: #/components/schemas/SecretRequest
+type SecretRequest struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// ID of the user or "auto" if auto-approved.
+	ApprovedBy OptString `json:"approvedBy"`
+	// Creation timestamp.
+	CreatedAt time.Time `json:"createdAt"`
+	// Grant expiry time; set when approved.
+	ExpiresAt OptDateTime `json:"expiresAt"`
+	// Approval timestamp.
+	GrantedAt OptDateTime `json:"grantedAt"`
+	// Host hint provided at request time.
+	Host OptString `json:"host"`
+	// Stable request ID.
+	ID string `json:"id"`
+	// Project ID.
+	ProjectId string `json:"projectId"`
+	// Principal ID of the requestor.
+	RequestedBy string `json:"requestedBy"`
+	// Matched secret ID; set when approved.
+	SecretId OptString `json:"secretId"`
+	// Request status.
+	Status SecretRequestStatus `json:"status"`
+	// Secret type requested.
+	Type SecretRequestType `json:"type"`
+	// Last update timestamp.
+	UpdatedAt time.Time      `json:"updatedAt"`
+	Value     OptSecretValue `json:"value"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *SecretRequest) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetApprovedBy returns the value of ApprovedBy.
+func (s *SecretRequest) GetApprovedBy() OptString {
+	return s.ApprovedBy
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *SecretRequest) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *SecretRequest) GetExpiresAt() OptDateTime {
+	return s.ExpiresAt
+}
+
+// GetGrantedAt returns the value of GrantedAt.
+func (s *SecretRequest) GetGrantedAt() OptDateTime {
+	return s.GrantedAt
+}
+
+// GetHost returns the value of Host.
+func (s *SecretRequest) GetHost() OptString {
+	return s.Host
+}
+
+// GetID returns the value of ID.
+func (s *SecretRequest) GetID() string {
+	return s.ID
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *SecretRequest) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetRequestedBy returns the value of RequestedBy.
+func (s *SecretRequest) GetRequestedBy() string {
+	return s.RequestedBy
+}
+
+// GetSecretId returns the value of SecretId.
+func (s *SecretRequest) GetSecretId() OptString {
+	return s.SecretId
+}
+
+// GetStatus returns the value of Status.
+func (s *SecretRequest) GetStatus() SecretRequestStatus {
+	return s.Status
+}
+
+// GetType returns the value of Type.
+func (s *SecretRequest) GetType() SecretRequestType {
+	return s.Type
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *SecretRequest) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// GetValue returns the value of Value.
+func (s *SecretRequest) GetValue() OptSecretValue {
+	return s.Value
+}
+
+// SetSchema sets the value of Schema.
+func (s *SecretRequest) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetApprovedBy sets the value of ApprovedBy.
+func (s *SecretRequest) SetApprovedBy(val OptString) {
+	s.ApprovedBy = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *SecretRequest) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *SecretRequest) SetExpiresAt(val OptDateTime) {
+	s.ExpiresAt = val
+}
+
+// SetGrantedAt sets the value of GrantedAt.
+func (s *SecretRequest) SetGrantedAt(val OptDateTime) {
+	s.GrantedAt = val
+}
+
+// SetHost sets the value of Host.
+func (s *SecretRequest) SetHost(val OptString) {
+	s.Host = val
+}
+
+// SetID sets the value of ID.
+func (s *SecretRequest) SetID(val string) {
+	s.ID = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *SecretRequest) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetRequestedBy sets the value of RequestedBy.
+func (s *SecretRequest) SetRequestedBy(val string) {
+	s.RequestedBy = val
+}
+
+// SetSecretId sets the value of SecretId.
+func (s *SecretRequest) SetSecretId(val OptString) {
+	s.SecretId = val
+}
+
+// SetStatus sets the value of Status.
+func (s *SecretRequest) SetStatus(val SecretRequestStatus) {
+	s.Status = val
+}
+
+// SetType sets the value of Type.
+func (s *SecretRequest) SetType(val SecretRequestType) {
+	s.Type = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *SecretRequest) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+// SetValue sets the value of Value.
+func (s *SecretRequest) SetValue(val OptSecretValue) {
+	s.Value = val
+}
+
+func (*SecretRequest) approveSecretRequestRes() {}
+func (*SecretRequest) createSecretRequestRes()  {}
+func (*SecretRequest) getSecretRequestRes()     {}
+
+// Request status.
+type SecretRequestStatus string
+
+const (
+	SecretRequestStatusPending  SecretRequestStatus = "pending"
+	SecretRequestStatusApproved SecretRequestStatus = "approved"
+	SecretRequestStatusDenied   SecretRequestStatus = "denied"
+)
+
+// AllValues returns all SecretRequestStatus values.
+func (SecretRequestStatus) AllValues() []SecretRequestStatus {
+	return []SecretRequestStatus{
+		SecretRequestStatusPending,
+		SecretRequestStatusApproved,
+		SecretRequestStatusDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretRequestStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretRequestStatusPending:
+		return []byte(s), nil
+	case SecretRequestStatusApproved:
+		return []byte(s), nil
+	case SecretRequestStatusDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretRequestStatus) UnmarshalText(data []byte) error {
+	switch SecretRequestStatus(data) {
+	case SecretRequestStatusPending:
+		*s = SecretRequestStatusPending
+		return nil
+	case SecretRequestStatusApproved:
+		*s = SecretRequestStatusApproved
+		return nil
+	case SecretRequestStatusDenied:
+		*s = SecretRequestStatusDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Secret type requested.
+type SecretRequestType string
+
+const (
+	SecretRequestTypeGit    SecretRequestType = "git"
+	SecretRequestTypeSSH    SecretRequestType = "ssh"
+	SecretRequestTypeBearer SecretRequestType = "bearer"
+)
+
+// AllValues returns all SecretRequestType values.
+func (SecretRequestType) AllValues() []SecretRequestType {
+	return []SecretRequestType{
+		SecretRequestTypeGit,
+		SecretRequestTypeSSH,
+		SecretRequestTypeBearer,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretRequestType) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretRequestTypeGit:
+		return []byte(s), nil
+	case SecretRequestTypeSSH:
+		return []byte(s), nil
+	case SecretRequestTypeBearer:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretRequestType) UnmarshalText(data []byte) error {
+	switch SecretRequestType(data) {
+	case SecretRequestTypeGit:
+		*s = SecretRequestTypeGit
+		return nil
+	case SecretRequestTypeSSH:
+		*s = SecretRequestTypeSSH
+		return nil
+	case SecretRequestTypeBearer:
+		*s = SecretRequestTypeBearer
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Secret type.
+type SecretType string
+
+const (
+	SecretTypeGit    SecretType = "git"
+	SecretTypeSSH    SecretType = "ssh"
+	SecretTypeBearer SecretType = "bearer"
+)
+
+// AllValues returns all SecretType values.
+func (SecretType) AllValues() []SecretType {
+	return []SecretType{
+		SecretTypeGit,
+		SecretTypeSSH,
+		SecretTypeBearer,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SecretType) MarshalText() ([]byte, error) {
+	switch s {
+	case SecretTypeGit:
+		return []byte(s), nil
+	case SecretTypeSSH:
+		return []byte(s), nil
+	case SecretTypeBearer:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SecretType) UnmarshalText(data []byte) error {
+	switch SecretType(data) {
+	case SecretTypeGit:
+		*s = SecretTypeGit
+		return nil
+	case SecretTypeSSH:
+		*s = SecretTypeSSH
+		return nil
+	case SecretTypeBearer:
+		*s = SecretTypeBearer
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Type-specific secret value. Fields populated depend on the secret type.
+// Ref: #/components/schemas/SecretValue
+type SecretValue struct {
+	// SSH key passphrase (type=ssh).
+	Passphrase OptString `json:"passphrase"`
+	// Git credential password (type=git).
+	Password OptString `json:"password"`
+	// SSH private key PEM (type=ssh).
+	PrivateKey OptString `json:"privateKey"`
+	// Bearer token (type=bearer).
+	Token OptString `json:"token"`
+	// Git credential username (type=git).
+	Username OptString `json:"username"`
+}
+
+// GetPassphrase returns the value of Passphrase.
+func (s *SecretValue) GetPassphrase() OptString {
+	return s.Passphrase
+}
+
+// GetPassword returns the value of Password.
+func (s *SecretValue) GetPassword() OptString {
+	return s.Password
+}
+
+// GetPrivateKey returns the value of PrivateKey.
+func (s *SecretValue) GetPrivateKey() OptString {
+	return s.PrivateKey
+}
+
+// GetToken returns the value of Token.
+func (s *SecretValue) GetToken() OptString {
+	return s.Token
+}
+
+// GetUsername returns the value of Username.
+func (s *SecretValue) GetUsername() OptString {
+	return s.Username
+}
+
+// SetPassphrase sets the value of Passphrase.
+func (s *SecretValue) SetPassphrase(val OptString) {
+	s.Passphrase = val
+}
+
+// SetPassword sets the value of Password.
+func (s *SecretValue) SetPassword(val OptString) {
+	s.Password = val
+}
+
+// SetPrivateKey sets the value of PrivateKey.
+func (s *SecretValue) SetPrivateKey(val OptString) {
+	s.PrivateKey = val
+}
+
+// SetToken sets the value of Token.
+func (s *SecretValue) SetToken(val OptString) {
+	s.Token = val
+}
+
+// SetUsername sets the value of Username.
+func (s *SecretValue) SetUsername(val OptString) {
+	s.Username = val
+}
+
 // Ref: #/components/schemas/StartSandboxBody
 type StartSandboxBody struct {
 	// A URL to the JSON Schema for this object.
@@ -7248,6 +8152,81 @@ func (s *UpdateSandboxProviderInstanceBody) SetDisabled(val OptBool) {
 // SetName sets the value of Name.
 func (s *UpdateSandboxProviderInstanceBody) SetName(val OptString) {
 	s.Name = val
+}
+
+// Ref: #/components/schemas/UpdateSecretBody
+type UpdateSecretBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Automatically approve requests for this secret.
+	AutoApprove OptBool `json:"autoApprove"`
+	// Default grant duration in seconds.
+	DefaultGrantTTLSeconds OptInt64 `json:"defaultGrantTTLSeconds"`
+	// Optional host used to match requests (e.g. github.com).
+	Host OptString `json:"host"`
+	// Secret name.
+	Name  OptString      `json:"name"`
+	Value OptSecretValue `json:"value"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *UpdateSecretBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetAutoApprove returns the value of AutoApprove.
+func (s *UpdateSecretBody) GetAutoApprove() OptBool {
+	return s.AutoApprove
+}
+
+// GetDefaultGrantTTLSeconds returns the value of DefaultGrantTTLSeconds.
+func (s *UpdateSecretBody) GetDefaultGrantTTLSeconds() OptInt64 {
+	return s.DefaultGrantTTLSeconds
+}
+
+// GetHost returns the value of Host.
+func (s *UpdateSecretBody) GetHost() OptString {
+	return s.Host
+}
+
+// GetName returns the value of Name.
+func (s *UpdateSecretBody) GetName() OptString {
+	return s.Name
+}
+
+// GetValue returns the value of Value.
+func (s *UpdateSecretBody) GetValue() OptSecretValue {
+	return s.Value
+}
+
+// SetSchema sets the value of Schema.
+func (s *UpdateSecretBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetAutoApprove sets the value of AutoApprove.
+func (s *UpdateSecretBody) SetAutoApprove(val OptBool) {
+	s.AutoApprove = val
+}
+
+// SetDefaultGrantTTLSeconds sets the value of DefaultGrantTTLSeconds.
+func (s *UpdateSecretBody) SetDefaultGrantTTLSeconds(val OptInt64) {
+	s.DefaultGrantTTLSeconds = val
+}
+
+// SetHost sets the value of Host.
+func (s *UpdateSecretBody) SetHost(val OptString) {
+	s.Host = val
+}
+
+// SetName sets the value of Name.
+func (s *UpdateSecretBody) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetValue sets the value of Value.
+func (s *UpdateSecretBody) SetValue(val OptSecretValue) {
+	s.Value = val
 }
 
 // Ref: #/components/schemas/UpdateWorkerStatusBody

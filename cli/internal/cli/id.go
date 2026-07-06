@@ -138,6 +138,46 @@ func (a *App) resolveProviderID(ctx context.Context, client *apiclientgen.Client
 	return resolveShortID(id, "provider ID", ids)
 }
 
+func (a *App) resolveSecretID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
+	id, err := parseIDArg(value, "secret ID")
+	if err != nil || len(id) != shortIDLength {
+		return id, err
+	}
+	res, err := client.ListSecrets(ctx, apiclientgen.ListSecretsParams{ProjectId: projectID})
+	if err != nil {
+		return "", err
+	}
+	body, err := expectResponse[apimodel.ListSecretsBody](res)
+	if err != nil {
+		return "", err
+	}
+	ids := make([]string, 0, len(body.GetSecrets()))
+	for _, secret := range body.GetSecrets() {
+		ids = append(ids, secret.ID)
+	}
+	return resolveShortID(id, "secret ID", ids)
+}
+
+func (a *App) resolveSecretRequestID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
+	id, err := parseIDArg(value, "secret request ID")
+	if err != nil || len(id) != shortIDLength {
+		return id, err
+	}
+	res, err := client.ListSecretRequests(ctx, apiclientgen.ListSecretRequestsParams{ProjectId: projectID})
+	if err != nil {
+		return "", err
+	}
+	body, err := expectResponse[apimodel.ListSecretRequestsBody](res)
+	if err != nil {
+		return "", err
+	}
+	ids := make([]string, 0, len(body.GetSecretRequests()))
+	for _, request := range body.GetSecretRequests() {
+		ids = append(ids, request.ID)
+	}
+	return resolveShortID(id, "secret request ID", ids)
+}
+
 func (a *App) resolveJobID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
 	id, err := parseIDArg(value, "job ID")
 	if err != nil || !isResolvableShortID(id) {

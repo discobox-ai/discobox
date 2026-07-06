@@ -1978,6 +1978,283 @@ components:
                 - availableMemoryBytes
                 - availableStorageBytes
             type: object
+        ApproveSecretRequestBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ApproveSecretRequestBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                grantTTLSeconds:
+                    description: Grant duration in seconds; overrides the secret's default
+                    format: int64
+                    type: integer
+                secretId:
+                    description: Secret ID selected by the approver
+                    type: string
+            required:
+                - secretId
+            type: object
+        CreateSecretBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/CreateSecretBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                autoApprove:
+                    description: Automatically approve requests for this secret
+                    type: boolean
+                defaultGrantTTLSeconds:
+                    description: Default grant duration in seconds
+                    format: int64
+                    type: integer
+                host:
+                    description: Optional host used to match requests (e.g. github.com)
+                    type: string
+                name:
+                    description: Secret name
+                    maxLength: 200
+                    type: string
+                type:
+                    description: Secret type
+                    enum:
+                        - git
+                        - ssh
+                        - bearer
+                    type: string
+                value:
+                    $ref: '#/components/schemas/SecretValue'
+            required:
+                - name
+                - type
+                - value
+            type: object
+        CreateSecretRequestBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/CreateSecretRequestBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                host:
+                    description: Optional host hint used to match a secret (e.g. github.com)
+                    type: string
+                type:
+                    description: Secret type being requested
+                    enum:
+                        - git
+                        - ssh
+                        - bearer
+                    type: string
+            required:
+                - type
+            type: object
+        ListSecretRequestsBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListSecretRequestsBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                secretRequests:
+                    items:
+                        $ref: '#/components/schemas/SecretRequest'
+                    type: array
+            required:
+                - secretRequests
+            type: object
+        ListSecretsBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListSecretsBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                secrets:
+                    items:
+                        $ref: '#/components/schemas/Secret'
+                    type: array
+            required:
+                - secrets
+            type: object
+        Secret:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/Secret.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                autoApprove:
+                    description: Automatically approve requests for this secret
+                    type: boolean
+                createdAt:
+                    description: Creation timestamp
+                    format: date-time
+                    type: string
+                defaultGrantTTLSeconds:
+                    description: Default grant duration in seconds
+                    format: int64
+                    type: integer
+                host:
+                    description: Optional host used to match requests (e.g. github.com)
+                    type: string
+                id:
+                    description: Stable secret ID
+                    type: string
+                name:
+                    description: Secret name
+                    type: string
+                projectId:
+                    description: Project ID
+                    type: string
+                type:
+                    description: Secret type
+                    enum:
+                        - git
+                        - ssh
+                        - bearer
+                    type: string
+                updatedAt:
+                    description: Last update timestamp
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - projectId
+                - name
+                - type
+                - autoApprove
+                - defaultGrantTTLSeconds
+                - createdAt
+                - updatedAt
+            type: object
+        SecretRequest:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/SecretRequest.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                approvedBy:
+                    description: ID of the user or "auto" if auto-approved
+                    type: string
+                createdAt:
+                    description: Creation timestamp
+                    format: date-time
+                    type: string
+                expiresAt:
+                    description: Grant expiry time; set when approved
+                    format: date-time
+                    type: string
+                grantedAt:
+                    description: Approval timestamp
+                    format: date-time
+                    type: string
+                host:
+                    description: Host hint provided at request time
+                    type: string
+                id:
+                    description: Stable request ID
+                    type: string
+                projectId:
+                    description: Project ID
+                    type: string
+                requestedBy:
+                    description: Principal ID of the requestor
+                    type: string
+                secretId:
+                    description: Matched secret ID; set when approved
+                    type: string
+                status:
+                    description: Request status
+                    enum:
+                        - pending
+                        - approved
+                        - denied
+                    type: string
+                type:
+                    description: Secret type requested
+                    enum:
+                        - git
+                        - ssh
+                        - bearer
+                    type: string
+                updatedAt:
+                    description: Last update timestamp
+                    format: date-time
+                    type: string
+                value:
+                    $ref: '#/components/schemas/SecretValue'
+            required:
+                - id
+                - projectId
+                - requestedBy
+                - type
+                - status
+                - createdAt
+                - updatedAt
+            type: object
+        SecretValue:
+            additionalProperties: false
+            description: Type-specific secret value. Fields populated depend on the secret type.
+            properties:
+                passphrase:
+                    description: SSH key passphrase (type=ssh)
+                    type: string
+                password:
+                    description: Git credential password (type=git)
+                    type: string
+                privateKey:
+                    description: SSH private key PEM (type=ssh)
+                    type: string
+                token:
+                    description: Bearer token (type=bearer)
+                    type: string
+                username:
+                    description: Git credential username (type=git)
+                    type: string
+            type: object
+        UpdateSecretBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/UpdateSecretBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                autoApprove:
+                    description: Automatically approve requests for this secret
+                    type: boolean
+                defaultGrantTTLSeconds:
+                    description: Default grant duration in seconds
+                    format: int64
+                    type: integer
+                host:
+                    description: Optional host used to match requests (e.g. github.com)
+                    type: string
+                name:
+                    description: Secret name
+                    maxLength: 200
+                    type: string
+                value:
+                    $ref: '#/components/schemas/SecretValue'
+            type: object
         StartSandboxBody:
             additionalProperties: false
             properties:
@@ -4174,6 +4451,340 @@ paths:
             summary: Subscribe to a static project event stream using SSE
             tags:
                 - Project Streams
+    /projects/{projectId}/secrets:
+        get:
+            operationId: list-secrets
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListSecretsBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List secrets
+            tags:
+                - Secrets
+        post:
+            operationId: create-secret
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateSecretBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Secret'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Create a secret
+            tags:
+                - Secrets
+    /projects/{projectId}/secrets/{secretId}:
+        delete:
+            operationId: delete-secret
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Secret ID
+                  in: path
+                  name: secretId
+                  required: true
+                  schema:
+                    description: Secret ID
+                    type: string
+            responses:
+                204:
+                    description: No Content
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Delete a secret
+            tags:
+                - Secrets
+        get:
+            operationId: get-secret
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Secret ID
+                  in: path
+                  name: secretId
+                  required: true
+                  schema:
+                    description: Secret ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Secret'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Get a secret
+            tags:
+                - Secrets
+        put:
+            operationId: update-secret
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Secret ID
+                  in: path
+                  name: secretId
+                  required: true
+                  schema:
+                    description: Secret ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UpdateSecretBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Secret'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Update a secret
+            tags:
+                - Secrets
+    /projects/{projectId}/secret-requests:
+        get:
+            operationId: list-secret-requests
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListSecretRequestsBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List secret requests
+            tags:
+                - Secrets
+        post:
+            operationId: create-secret-request
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateSecretRequestBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SecretRequest'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Request access to a secret
+            tags:
+                - Secrets
+    /projects/{projectId}/secret-requests/{requestId}:
+        get:
+            operationId: get-secret-request
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Secret request ID
+                  in: path
+                  name: requestId
+                  required: true
+                  schema:
+                    description: Secret request ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SecretRequest'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Get a secret request; includes decrypted value when approved and not expired
+            tags:
+                - Secrets
+    /projects/{projectId}/secret-requests/{requestId}/approve:
+        post:
+            operationId: approve-secret-request
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Secret request ID
+                  in: path
+                  name: requestId
+                  required: true
+                  schema:
+                    description: Secret request ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ApproveSecretRequestBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SecretRequest'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Approve a secret request
+            tags:
+                - Secrets
+    /projects/{projectId}/secret-requests/{requestId}/deny:
+        post:
+            operationId: deny-secret-request
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Secret request ID
+                  in: path
+                  name: requestId
+                  required: true
+                  schema:
+                    description: Secret request ID
+                    type: string
+            responses:
+                204:
+                    description: No Content
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Deny a secret request
+            tags:
+                - Secrets
     /providers/catalog:
         get:
             operationId: list-sandbox-provider-catalog

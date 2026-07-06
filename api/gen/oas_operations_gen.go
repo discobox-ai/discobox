@@ -6,6 +6,7 @@ package apigen
 type OperationName = string
 
 const (
+	ApproveSecretRequestOperation             OperationName = "ApproveSecretRequest"
 	AttachAgentTerminalOperation              OperationName = "AttachAgentTerminal"
 	AttachSandboxExecOperation                OperationName = "AttachSandboxExec"
 	CreateAgentConfigOperation                OperationName = "CreateAgentConfig"
@@ -13,10 +14,14 @@ const (
 	CreateSandboxOperation                    OperationName = "CreateSandbox"
 	CreateSandboxExecOperation                OperationName = "CreateSandboxExec"
 	CreateSandboxProviderInstanceOperation    OperationName = "CreateSandboxProviderInstance"
+	CreateSecretOperation                     OperationName = "CreateSecret"
+	CreateSecretRequestOperation              OperationName = "CreateSecretRequest"
 	DeleteAgentConfigOperation                OperationName = "DeleteAgentConfig"
 	DeleteAgentTerminalOperation              OperationName = "DeleteAgentTerminal"
 	DeleteSandboxOperation                    OperationName = "DeleteSandbox"
 	DeleteSandboxProviderInstanceOperation    OperationName = "DeleteSandboxProviderInstance"
+	DeleteSecretOperation                     OperationName = "DeleteSecret"
+	DenySecretRequestOperation                OperationName = "DenySecretRequest"
 	ForceJobOperation                         OperationName = "ForceJob"
 	GetAgentConfigOperation                   OperationName = "GetAgentConfig"
 	GetAgentConfigDefinitionOperation         OperationName = "GetAgentConfigDefinition"
@@ -26,6 +31,8 @@ const (
 	GetSandboxOperation                       OperationName = "GetSandbox"
 	GetSandboxExecOperation                   OperationName = "GetSandboxExec"
 	GetSandboxProviderInstanceOperation       OperationName = "GetSandboxProviderInstance"
+	GetSecretOperation                        OperationName = "GetSecret"
+	GetSecretRequestOperation                 OperationName = "GetSecretRequest"
 	ListAgentConfigDefinitionsOperation       OperationName = "ListAgentConfigDefinitions"
 	ListAgentConfigsOperation                 OperationName = "ListAgentConfigs"
 	ListAgentHooksOperation                   OperationName = "ListAgentHooks"
@@ -40,6 +47,8 @@ const (
 	ListSandboxProviderCatalogOperation       OperationName = "ListSandboxProviderCatalog"
 	ListSandboxProviderInstancesOperation     OperationName = "ListSandboxProviderInstances"
 	ListSandboxesOperation                    OperationName = "ListSandboxes"
+	ListSecretRequestsOperation               OperationName = "ListSecretRequests"
+	ListSecretsOperation                      OperationName = "ListSecrets"
 	ListWorkersOperation                      OperationName = "ListWorkers"
 	ReconcileSandboxOperation                 OperationName = "ReconcileSandbox"
 	ReconcileWorkerOperation                  OperationName = "ReconcileWorker"
@@ -54,5 +63,6 @@ const (
 	UpdateAgentConfigOperation                OperationName = "UpdateAgentConfig"
 	UpdateSandboxOperation                    OperationName = "UpdateSandbox"
 	UpdateSandboxProviderInstanceOperation    OperationName = "UpdateSandboxProviderInstance"
+	UpdateSecretOperation                     OperationName = "UpdateSecret"
 	UpdateWorkerStatusOperation               OperationName = "UpdateWorkerStatus"
 )
