@@ -4,6 +4,7 @@ FROM golang:1.26-trixie AS build
 
 WORKDIR /src
 COPY go.mod go.sum ./
+COPY api ./api
 COPY controlplane ./controlplane
 COPY id ./id
 COPY worker-agent/go.mod worker-agent/go.sum ./worker-agent/
