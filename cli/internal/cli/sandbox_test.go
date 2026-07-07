@@ -14,7 +14,7 @@ func TestCreateSandboxBodyIncludesAgentLaunchFields(t *testing.T) {
 		agentModel:               "gpt-5.1-codex-max",
 		agentModelServiceTier:    "priority",
 		agentModelReasoningLevel: "high",
-		prompt:                   "implement this",
+		prompt:                   []string{"implement this"},
 		env:                      []string{"EXPLICIT=value", "SANDBOX_ENV_FROM_SHELL"},
 		sourceURL:                "https://example.com/repo.git",
 		sourceRef:                "main",
@@ -30,7 +30,8 @@ func TestCreateSandboxBodyIncludesAgentLaunchFields(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createSandboxBody: %v", err)
 	}
-	if body.AgentName.Value != "Codex" || body.Config.AgentModel.Value != "gpt-5.1-codex-max" || body.Config.Prompt.Value != "implement this" {
+	if body.AgentName.Value != "Codex" || body.Config.AgentModel.Value != "gpt-5.1-codex-max" ||
+		len(body.Config.Prompt) != 1 || body.Config.Prompt[0] != "implement this" {
 		t.Fatalf("agent fields = %#v", body)
 	}
 	env, ok := body.Config.Env.Get()

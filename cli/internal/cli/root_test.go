@@ -611,8 +611,8 @@ func TestAgentListShowsProjectDefault(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/agent-configs":
 			_, _ = w.Write([]byte(`{"agentConfigs":[` +
-				`{"id":"agent-other-full-id","projectId":"project-1","name":"Other","runCommand":["other"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"},` +
-				`{"id":"` + defaultAgentID + `","projectId":"project-1","name":"Codex","runCommand":["codex"],"createdAt":"2026-01-01T00:01:00Z","updatedAt":"2026-01-01T00:01:00Z"}` +
+				`{"id":"agent-other-full-id","projectId":"project-1","slug":"other","name":"Other","runCommand":["other"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"},` +
+				`{"id":"` + defaultAgentID + `","projectId":"project-1","slug":"codex","name":"Codex","runCommand":["codex"],"createdAt":"2026-01-01T00:01:00Z","updatedAt":"2026-01-01T00:01:00Z"}` +
 				`]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1":
 			_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","slug":"project-1","default":true,"defaultAgentConfigId":"` + defaultAgentID + `","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
@@ -638,7 +638,7 @@ func TestAgentListShowsProjectDefault(t *testing.T) {
 	if !strings.Contains(output, "DEFAULT") {
 		t.Fatalf("output = %q, want DEFAULT column", output)
 	}
-	if !strings.Contains(output, shortID(defaultAgentID)+"  Codex  yes") {
+	if !strings.Contains(output, shortID(defaultAgentID)+"  codex  Codex  yes") {
 		t.Fatalf("output = %q, want default agent marked yes", output)
 	}
 	if strings.Contains(output, "Other  yes") {
@@ -667,7 +667,7 @@ func TestAgentEnableCreatesDefinitionWhenMissing(t *testing.T) {
 			if body.DefinitionID != "codex" {
 				t.Fatalf("definitionId = %q, want codex", body.DefinitionID)
 			}
-			_, _ = w.Write([]byte(`{"id":"` + agentID + `","projectId":"project-1","name":"Codex","runCommand":["codex"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+			_, _ = w.Write([]byte(`{"id":"` + agentID + `","projectId":"project-1","slug":"codex","name":"Codex","runCommand":["codex"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 		case r.Method == http.MethodPut && r.URL.Path == "/projects/project-1/agent-configs/"+agentID+"/default":
 			_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","slug":"project-1","default":true,"defaultAgentConfigId":"` + agentID + `","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 		default:
@@ -706,7 +706,7 @@ func TestAgentEnableDoesNothingWhenDefinitionAlreadyEnabled(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/agent-config-definitions":
 			_, _ = w.Write([]byte(`{"agentConfigDefinitions":[{"id":"codex","name":"Codex","description":"OpenAI Codex coding agent.","installCommand":["npm","install","-g","@openai/codex"],"runCommand":["codex"]}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/agent-configs":
-			_, _ = w.Write([]byte(`{"agentConfigs":[{"id":"` + agentID + `","projectId":"project-1","name":"Codex","runCommand":["codex"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`))
+			_, _ = w.Write([]byte(`{"agentConfigs":[{"id":"` + agentID + `","projectId":"project-1","slug":"codex","name":"Codex","runCommand":["codex"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`))
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -743,7 +743,7 @@ func TestAgentEnableDefaultFlagSetsExistingDefinitionAgentDefault(t *testing.T) 
 		case r.Method == http.MethodGet && r.URL.Path == "/agent-config-definitions":
 			_, _ = w.Write([]byte(`{"agentConfigDefinitions":[{"id":"codex","name":"Codex","description":"OpenAI Codex coding agent.","installCommand":["npm","install","-g","@openai/codex"],"runCommand":["codex"]}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/agent-configs":
-			_, _ = w.Write([]byte(`{"agentConfigs":[{"id":"` + agentID + `","projectId":"project-1","name":"Codex","runCommand":["codex"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`))
+			_, _ = w.Write([]byte(`{"agentConfigs":[{"id":"` + agentID + `","projectId":"project-1","slug":"codex","name":"Codex","runCommand":["codex"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`))
 		case r.Method == http.MethodPut && r.URL.Path == "/projects/project-1/agent-configs/"+agentID+"/default":
 			_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","slug":"project-1","default":true,"defaultAgentConfigId":"` + agentID + `","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 		default:
@@ -782,7 +782,7 @@ func TestAgentDisableDeletesDefinitionAgentWhenPresent(t *testing.T) {
 		case r.Method == http.MethodGet && r.URL.Path == "/agent-config-definitions":
 			_, _ = w.Write([]byte(`{"agentConfigDefinitions":[{"id":"codex","name":"Codex","description":"OpenAI Codex coding agent.","installCommand":["npm","install","-g","@openai/codex"],"runCommand":["codex"]}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/agent-configs":
-			_, _ = w.Write([]byte(`{"agentConfigs":[{"id":"` + agentID + `","projectId":"project-1","name":"Codex","runCommand":["codex"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`))
+			_, _ = w.Write([]byte(`{"agentConfigs":[{"id":"` + agentID + `","projectId":"project-1","slug":"codex","name":"Codex","runCommand":["codex"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`))
 		case r.Method == http.MethodDelete && r.URL.Path == "/projects/project-1/agent-configs/"+agentID:
 			w.WriteHeader(http.StatusNoContent)
 		default:
@@ -913,7 +913,7 @@ func TestAgentCreateSendsCreateOnlyFileFlag(t *testing.T) {
 		}
 		gotFiles = body.Files
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"` + agentID + `","projectId":"project-1","name":"Custom","runCommand":["claude"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+		_, _ = w.Write([]byte(`{"id":"` + agentID + `","projectId":"project-1","slug":"custom","name":"Custom","runCommand":["claude"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	}))
 	t.Cleanup(server.Close)
 
@@ -966,7 +966,7 @@ func TestAgentCreateSendsFilesFlag(t *testing.T) {
 		}
 		gotFiles = body.Files
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"` + agentID + `","projectId":"project-1","name":"Custom","runCommand":["claude"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+		_, _ = w.Write([]byte(`{"id":"` + agentID + `","projectId":"project-1","slug":"custom","name":"Custom","runCommand":["claude"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	}))
 	t.Cleanup(server.Close)
 

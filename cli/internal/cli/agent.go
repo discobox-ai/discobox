@@ -13,20 +13,23 @@ import (
 )
 
 type agentCreateOptions struct {
-	name           string
-	definitionID   string
-	installCommand []string
-	runCommand     []string
-	files          []string
-	createOnlyFile []string
+	name            string
+	slug            string
+	definitionID    string
+	installCommand  []string
+	runCommand      []string
+	relaunchCommand []string
+	files           []string
+	createOnlyFile  []string
 }
 
 type agentUpdateOptions struct {
-	name           string
-	installCommand []string
-	runCommand     []string
-	files          []string
-	createOnlyFile []string
+	name            string
+	installCommand  []string
+	runCommand      []string
+	relaunchCommand []string
+	files           []string
+	createOnlyFile  []string
 }
 
 func (a *App) newAgentCommand() *cobra.Command {
@@ -156,9 +159,11 @@ func (a *App) newAgentCreateCommand() *cobra.Command {
 		return a.writeAgent(cmd, agent)
 	}}
 	cmd.Flags().StringVar(&opts.name, "name", "", "Agent config name")
-	cmd.Flags().StringVar(&opts.definitionID, "definition", "", "Agent config definition ID to use as defaults")
+	cmd.Flags().StringVar(&opts.slug, "slug", "", "Stable, URL-safe identifier used to select this agent (e.g. codex); defaults to the definition ID or a slug derived from the name")
+	cmd.Flags().StringVar(&opts.definitionID, "definition", "", "Built-in agent definition to extend; unset fields are inherited and pick up definition upgrades")
 	cmd.Flags().StringArrayVar(&opts.installCommand, "install-command", nil, "Argv element used to install the agent (repeatable, e.g. --install-command npm --install-command install). Not run through a shell; pass sh -c yourself for shell semantics.")
 	cmd.Flags().StringArrayVar(&opts.runCommand, "run-command", nil, "Argv element used to run the agent (repeatable, e.g. --run-command claude --run-command --dangerously-skip-permissions). Not run through a shell; pass sh -c yourself for shell semantics.")
+	cmd.Flags().StringArrayVar(&opts.relaunchCommand, "relaunch-command", nil, "Argv element used to resume the previous agent session on subsequent sandbox starts (repeatable, e.g. --relaunch-command claude --relaunch-command --continue). Replaces the run command for non-first launches. Not run through a shell.")
 	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the agent's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
 	_ = cmd.RegisterFlagCompletionFunc("definition", a.completeAgentDefinitions)
@@ -184,7 +189,7 @@ func (a *App) newAgentEnableCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		existing := agentConfigByName(agents, definition.Name)
+		existing := agentConfigBySlug(agents, definition.ID)
 		if existing != nil {
 			if setDefault {
 				if err := a.setDefaultAgentConfig(cmd.Context(), client, projectID, existing.ID); err != nil {
@@ -228,7 +233,7 @@ func (a *App) newAgentDisableCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		existing, err := a.agentConfigByName(cmd.Context(), client, projectID, definition.Name)
+		existing, err := a.agentConfigBySlug(cmd.Context(), client, projectID, definition.ID)
 		if err != nil {
 			return err
 		}
@@ -271,6 +276,7 @@ func (a *App) newAgentUpdateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Agent config name")
 	cmd.Flags().StringArrayVar(&opts.installCommand, "install-command", nil, "Argv element used to install the agent (repeatable, e.g. --install-command npm --install-command install). Not run through a shell; pass sh -c yourself for shell semantics.")
 	cmd.Flags().StringArrayVar(&opts.runCommand, "run-command", nil, "Argv element used to run the agent (repeatable, e.g. --run-command claude --run-command --dangerously-skip-permissions). Not run through a shell; pass sh -c yourself for shell semantics.")
+	cmd.Flags().StringArrayVar(&opts.relaunchCommand, "relaunch-command", nil, "Argv element used to resume the previous agent session on subsequent sandbox starts (repeatable, e.g. --relaunch-command claude --relaunch-command --continue). Replaces the run command for non-first launches. Not run through a shell.")
 	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the agent's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
 	return cmd
@@ -383,12 +389,12 @@ func (a *App) resolveAgentDefinition(ctx context.Context, client *apiclientgen.C
 	return nil, fmt.Errorf("agent definition %q not found", value)
 }
 
-func (a *App) agentConfigByName(ctx context.Context, client *apiclientgen.Client, projectID, name string) (*apimodel.AgentConfig, error) {
+func (a *App) agentConfigBySlug(ctx context.Context, client *apiclientgen.Client, projectID, slug string) (*apimodel.AgentConfig, error) {
 	agents, err := a.listAgentConfigs(ctx, client, projectID)
 	if err != nil {
 		return nil, err
 	}
-	return agentConfigByName(agents, name), nil
+	return agentConfigBySlug(agents, slug), nil
 }
 
 func (a *App) listAgentConfigs(ctx context.Context, client *apiclientgen.Client, projectID string) ([]apimodel.AgentConfig, error) {
@@ -415,9 +421,9 @@ func (a *App) defaultAgentConfigID(ctx context.Context, client *apiclientgen.Cli
 	return project.DefaultAgentConfigId.Or(""), nil
 }
 
-func agentConfigByName(agents []apimodel.AgentConfig, name string) *apimodel.AgentConfig {
+func agentConfigBySlug(agents []apimodel.AgentConfig, slug string) *apimodel.AgentConfig {
 	for _, agent := range agents {
-		if agent.Name == name {
+		if agent.Slug == slug {
 			matched := agent
 			return &matched
 		}
@@ -437,12 +443,16 @@ func (a *App) setDefaultAgentConfig(ctx context.Context, client *apiclientgen.Cl
 func createAgentBody(opts agentCreateOptions) (*apimodel.CreateAgentConfigBody, error) {
 	body := &apimodel.CreateAgentConfigBody{}
 	body.SetName(optString(opts.name))
+	body.SetSlug(optString(opts.slug))
 	body.SetDefinitionId(optString(opts.definitionID))
 	if len(opts.installCommand) > 0 {
 		body.SetInstallCommand(apiclientgen.NewOptNilStringArray(opts.installCommand))
 	}
 	if len(opts.runCommand) > 0 {
 		body.SetRunCommand(apiclientgen.NewOptNilStringArray(opts.runCommand))
+	}
+	if len(opts.relaunchCommand) > 0 {
+		body.SetRelaunchCommand(apiclientgen.NewOptNilStringArray(opts.relaunchCommand))
 	}
 	if len(opts.files) > 0 {
 		files, err := parseAgentFileFlags(opts.files, opts.createOnlyFile)
@@ -464,6 +474,9 @@ func updateAgentBody(cmd *cobra.Command, opts agentUpdateOptions) (*apimodel.Upd
 	}
 	if cmd.Flags().Changed("run-command") {
 		body.SetRunCommand(apiclientgen.NewOptNilStringArray(opts.runCommand))
+	}
+	if cmd.Flags().Changed("relaunch-command") {
+		body.SetRelaunchCommand(apiclientgen.NewOptNilStringArray(opts.relaunchCommand))
 	}
 	if cmd.Flags().Changed("file") {
 		files, err := parseAgentFileFlags(opts.files, opts.createOnlyFile)

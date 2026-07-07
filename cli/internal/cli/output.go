@@ -329,8 +329,8 @@ func (a *App) writeAgent(cmd *cobra.Command, agent *apimodel.AgentConfig) error 
 		return writeJSON(cmd.OutOrStdout(), agent)
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tUPDATED")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(agent.ID), agent.Name, strings.Join(agent.RunCommand, " "), formatTime(agent.UpdatedAt))
+	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tRUN COMMAND\tUPDATED")
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", shortID(agent.ID), agent.Slug, agent.Name, strings.Join(agent.RunCommand, " "), formatTime(agent.UpdatedAt))
 	return tw.Flush()
 }
 
@@ -348,9 +348,9 @@ func (a *App) writeAgents(cmd *cobra.Command, agents []apimodel.AgentConfig, def
 	}
 	agents = sortedByCreatedAt(agents, func(agent apimodel.AgentConfig) time.Time { return agent.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tDEFAULT\tRUN COMMAND\tUPDATED")
+	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tDEFAULT\tRUN COMMAND\tUPDATED")
 	for _, agent := range agents {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", shortID(agent.ID), agent.Name, formatDefaultMarker(agent.ID == defaultID), strings.Join(agent.RunCommand, " "), formatTime(agent.UpdatedAt))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", shortID(agent.ID), agent.Slug, agent.Name, formatDefaultMarker(agent.ID == defaultID), strings.Join(agent.RunCommand, " "), formatTime(agent.UpdatedAt))
 	}
 	return tw.Flush()
 }

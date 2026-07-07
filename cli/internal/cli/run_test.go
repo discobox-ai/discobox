@@ -67,7 +67,7 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-e", "EXPLICIT=value", "-e", "RUN_ENV_FROM_SHELL", repo + "@HEAD", "fix", "tests"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "-e", "EXPLICIT=value", "-e", "RUN_ENV_FROM_SHELL", repo + "@HEAD", "fix", "tests"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute run: %v", err)
@@ -76,8 +76,9 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	if !strings.HasPrefix(config["name"].(string), "run-") {
 		t.Fatalf("name = %q, want run-*", config["name"])
 	}
-	if config["prompt"] != "fix tests" {
-		t.Fatalf("prompt = %q, want fix tests", config["prompt"])
+	prompt, ok := config["prompt"].([]any)
+	if !ok || len(prompt) != 2 || prompt[0] != "fix" || prompt[1] != "tests" {
+		t.Fatalf("prompt = %#v, want [fix tests]", config["prompt"])
 	}
 	env, ok := config["env"].(map[string]any)
 	if !ok {
@@ -125,7 +126,7 @@ func TestRunCommandStillAcceptsDashDashSeparator(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	cmd := NewRootCommand()
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "--", repo + "@HEAD", "hello"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "--", repo + "@HEAD", "hello"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute run: %v", err)
@@ -149,8 +150,8 @@ func TestCreateRunSandboxBodyUsesSplitSourceRef(t *testing.T) {
 	if err != nil {
 		t.Fatalf("createRunSandboxBody: %v", err)
 	}
-	if body.Config.Prompt.Value != "hello world" {
-		t.Fatalf("prompt = %q, want hello world", body.Config.Prompt.Value)
+	if len(body.Config.Prompt) != 2 || body.Config.Prompt[0] != "hello" || body.Config.Prompt[1] != "world" {
+		t.Fatalf("prompt = %#v, want [hello world]", body.Config.Prompt)
 	}
 	env, ok := body.Config.Env.Get()
 	if !ok || env["RUN_BODY_ENV"] != "value" {
