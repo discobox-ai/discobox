@@ -17,13 +17,19 @@ func (s *ErrorModelStatusCode) Error() string {
 
 // Ref: #/components/schemas/AgentConfigFile
 type AgentConfigFile struct {
-	Content string `json:"content"`
-	Path    string `json:"path"`
+	Content    string `json:"content"`
+	CreateOnly bool   `json:"createOnly"`
+	Path       string `json:"path"`
 }
 
 // GetContent returns the value of Content.
 func (s *AgentConfigFile) GetContent() string {
 	return s.Content
+}
+
+// GetCreateOnly returns the value of CreateOnly.
+func (s *AgentConfigFile) GetCreateOnly() bool {
+	return s.CreateOnly
 }
 
 // GetPath returns the value of Path.
@@ -34,6 +40,11 @@ func (s *AgentConfigFile) GetPath() string {
 // SetContent sets the value of Content.
 func (s *AgentConfigFile) SetContent(val string) {
 	s.Content = val
+}
+
+// SetCreateOnly sets the value of CreateOnly.
+func (s *AgentConfigFile) SetCreateOnly(val bool) {
+	s.CreateOnly = val
 }
 
 // SetPath sets the value of Path.

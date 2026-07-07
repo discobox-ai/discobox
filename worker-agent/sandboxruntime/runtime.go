@@ -1,6 +1,7 @@
 package sandboxruntime
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
@@ -134,7 +136,7 @@ func (r *DockerSandboxRuntime) ListSandboxes(ctx context.Context) ([]*Sandbox, e
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, r.sandboxFromInspect(inspect.Container))
+		out = append(out, r.sandboxFromInspect(ctx, inspect.Container))
 	}
 	return out, nil
 }
@@ -170,10 +172,13 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	}
 	name := sandboxContainerName(r.workerID, sandboxID)
 	cfg := &container.Config{
-		Image:      imageName,
-		Labels:     r.labels(sandboxID),
-		Env:        envList(envWithSandboxUser(map[string]string(optSandboxConfigEnv(config.Env)), user)),
-		WorkingDir: sourceWorkingDirectory(req),
+		Image:        imageName,
+		Labels:       r.labels(sandboxID),
+		Env:          envList(envWithSandboxUser(map[string]string(optSandboxConfigEnv(config.Env)), user)),
+		WorkingDir:   sourceWorkingDirectory(req),
+		AttachStdout: true,
+		AttachStderr: true,
+		Tty:          true,
 	}
 	hostCfg := &container.HostConfig{Mounts: mounts, Privileged: true}
 	if memoryBytes := optInt64(config.MemoryBytes); memoryBytes > 0 {
@@ -281,7 +286,11 @@ func manifestAgentConfigFiles(files []workerapimodel.AgentConfigFile) []apimodel
 	}
 	out := make([]apimodel.AgentConfigFile, 0, len(files))
 	for _, file := range files {
-		out = append(out, apimodel.AgentConfigFile{Path: file.Path, Content: file.Content})
+		out = append(out, apimodel.AgentConfigFile{
+			Path:       file.Path,
+			Content:    file.Content,
+			CreateOnly: apigen.NewOptBool(file.CreateOnly),
+		})
 	}
 	return out
 }
@@ -477,7 +486,7 @@ func (r *DockerSandboxRuntime) GetSandbox(ctx context.Context, sandboxID string)
 	if err != nil {
 		return nil, err
 	}
-	return r.sandboxFromInspect(inspect.Container), nil
+	return r.sandboxFromInspect(ctx, inspect.Container), nil
 }
 
 func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.WorkerSandboxUpdateRequest) (*Sandbox, error) {
@@ -640,7 +649,7 @@ func (r *DockerSandboxRuntime) labels(sandboxID string) map[string]string {
 	}
 }
 
-func (r *DockerSandboxRuntime) sandboxFromInspect(inspect container.InspectResponse) *Sandbox {
+func (r *DockerSandboxRuntime) sandboxFromInspect(ctx context.Context, inspect container.InspectResponse) *Sandbox {
 	createdAt, _ := time.Parse(time.RFC3339Nano, inspect.Created)
 	sandboxID := inspect.Config.Labels[sandboxLabelSandbox]
 	sb := &Sandbox{
@@ -672,8 +681,68 @@ func (r *DockerSandboxRuntime) sandboxFromInspect(inspect container.InspectRespo
 		default:
 			sb.Status = StatusStopped
 		}
+		if sb.Status == StatusFailed || sb.Status == StatusStopped {
+			sb.Error = dockerSandboxExitError(inspect, r.containerLogTail(ctx, inspect))
+		}
 	}
 	return sb
+}
+
+func (r *DockerSandboxRuntime) containerLogTail(ctx context.Context, inspect container.InspectResponse) string {
+	logs, err := r.client.ContainerLogs(ctx, inspect.ID, client.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Tail:       "20",
+	})
+	if err != nil {
+		return ""
+	}
+	defer logs.Close()
+
+	var buf bytes.Buffer
+	if inspect.Config != nil && inspect.Config.Tty {
+		_, _ = io.Copy(&buf, io.LimitReader(logs, 64*1024))
+	} else {
+		_, _ = stdcopy.StdCopy(&buf, &buf, io.LimitReader(logs, 64*1024))
+	}
+	return compactLogTail(buf.String())
+}
+
+func dockerSandboxExitError(inspect container.InspectResponse, logTail string) string {
+	if inspect.State == nil {
+		return ""
+	}
+	var parts []string
+	parts = append(parts, fmt.Sprintf("container exited with status %q and exit code %d", inspect.State.Status, inspect.State.ExitCode))
+	if inspect.State.OOMKilled {
+		parts = append(parts, "oom killed")
+	}
+	if stateErr := strings.TrimSpace(inspect.State.Error); stateErr != "" {
+		parts = append(parts, "state error: "+stateErr)
+	}
+	if logTail != "" {
+		parts = append(parts, "last logs: "+logTail)
+	}
+	return strings.Join(parts, "; ")
+}
+
+func compactLogTail(logs string) string {
+	lines := strings.Split(strings.TrimSpace(logs), "\n")
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			out = append(out, line)
+		}
+	}
+	if len(out) == 0 {
+		return ""
+	}
+	text := strings.Join(out, " | ")
+	if len(text) > 2048 {
+		return text[:2048] + "..."
+	}
+	return text
 }
 
 // MemorySandboxRuntime is a lightweight runtime for tests and non-Docker embeds.

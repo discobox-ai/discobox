@@ -103,6 +103,9 @@ components:
                 path:
                     description: File path relative to the agent's home directory
                     type: string
+                createOnly:
+                    description: Do not overwrite this file if it already exists
+                    type: boolean
             required:
                 - path
                 - content
@@ -1881,6 +1884,8 @@ components:
                     description: Workers whose last lifecycle operation failed
                     format: int64
                     type: integer
+                details:
+                    description: Provider-specific observed status details
                 lastError:
                     description: Most recent worker error message, if any
                     type: string

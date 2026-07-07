@@ -130,7 +130,7 @@ func agentConfigFilesFromAPI(files []apimodel.AgentConfigFile) []model.AgentConf
 	}
 	out := make([]model.AgentConfigFile, 0, len(files))
 	for _, file := range files {
-		out = append(out, model.AgentConfigFile{Path: file.Path, Content: file.Content})
+		out = append(out, model.AgentConfigFile{Path: file.Path, Content: file.Content, CreateOnly: file.CreateOnly.Or(false)})
 	}
 	return out
 }

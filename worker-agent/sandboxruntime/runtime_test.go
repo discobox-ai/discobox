@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/moby/moby/api/types/container"
 	workerclient "github.com/obot-platform/discobox/worker-agent/api/gen"
 	workerapimodel "github.com/obot-platform/discobox/worker-agent/api/model"
 )
@@ -198,6 +199,7 @@ func TestSandboxAgentTerminalStateErrorStopsOnExitedSandbox(t *testing.T) {
 	err := sandboxAgentTerminalStateError(&Sandbox{
 		SandboxID: "sandbox-1",
 		Status:    StatusStopped,
+		Error:     "container exited with status \"exited\" and exit code 127; last logs: /bin/sh: bad: not found",
 	})
 	if err == nil {
 		t.Fatal("terminal state error = nil, want error")
@@ -205,11 +207,42 @@ func TestSandboxAgentTerminalStateErrorStopsOnExitedSandbox(t *testing.T) {
 	if !strings.Contains(err.Error(), "before sandbox-agent became healthy") {
 		t.Fatalf("terminal state error = %q, want sandbox-agent context", err)
 	}
+	if !strings.Contains(err.Error(), "exit code 127") || !strings.Contains(err.Error(), "/bin/sh: bad: not found") {
+		t.Fatalf("terminal state error = %q, want container failure detail", err)
+	}
 }
 
 func TestSandboxAgentTerminalStateErrorAllowsRunningSandbox(t *testing.T) {
 	if err := sandboxAgentTerminalStateError(&Sandbox{SandboxID: "sandbox-1", Status: StatusRunning}); err != nil {
 		t.Fatalf("terminal state error = %v, want nil", err)
+	}
+}
+
+func TestDockerSandboxExitErrorIncludesExitCodeStateErrorAndLogs(t *testing.T) {
+	message := dockerSandboxExitError(container.InspectResponse{
+		State: &container.State{
+			Status:   "exited",
+			ExitCode: 127,
+			Error:    "exec failed",
+		},
+	}, "line one | line two")
+
+	for _, want := range []string{
+		`status "exited"`,
+		"exit code 127",
+		"state error: exec failed",
+		"last logs: line one | line two",
+	} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("exit error = %q, want %q", message, want)
+		}
+	}
+}
+
+func TestCompactLogTailTrimsBlankLinesAndJoins(t *testing.T) {
+	got := compactLogTail("\n first line \n\nsecond line\n")
+	if got != "first line | second line" {
+		t.Fatalf("compact log tail = %q", got)
 	}
 }
 

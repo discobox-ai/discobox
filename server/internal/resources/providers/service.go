@@ -16,6 +16,7 @@ import (
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
+	providerdocker "github.com/obot-platform/discobox/server/providers/docker"
 )
 
 type Service struct {
@@ -141,6 +142,7 @@ func (s *Service) ListSandboxProviderInstances(ctx context.Context, projectID st
 	}
 	for i := range providers {
 		providers[i].Status = providerStatusFromWorkers(providers[i].Workers)
+		attachProviderStatusDetails(&providers[i])
 	}
 	return providers, nil
 }
@@ -190,7 +192,36 @@ func (s *Service) attachProviderStatus(ctx context.Context, projectID string, pr
 		return err
 	}
 	provider.Status = providerStatusFromWorkers(workers)
+	attachProviderStatusDetails(provider)
 	return nil
+}
+
+func attachProviderStatusDetails(provider *model.SandboxProviderInstance) {
+	if provider == nil || provider.Status == nil {
+		return
+	}
+	switch provider.Type {
+	case providerdocker.ProviderType:
+		details, err := dockerProviderStatusDetails(provider.Config)
+		if err == nil && len(details) > 0 {
+			provider.Status.Details = details
+		}
+	}
+}
+
+func dockerProviderStatusDetails(config json.RawMessage) (json.RawMessage, error) {
+	cfg, err := providerdocker.Decode(config)
+	if err != nil {
+		return nil, err
+	}
+	image := strings.TrimSpace(cfg.Image)
+	return json.Marshal(map[string]any{
+		"image": map[string]any{
+			"configured": image,
+			"effective":  providerdocker.EffectiveWorkerImage(image),
+			"source":     providerdocker.WorkerImageSource(image),
+		},
+	})
 }
 
 func providerStatusFromWorkers(workers []model.Worker) *model.SandboxProviderInstanceStatus {

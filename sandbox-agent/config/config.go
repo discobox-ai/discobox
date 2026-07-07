@@ -57,8 +57,9 @@ type Agent struct {
 // AgentFile is a file to write into the agent's home directory when the agent
 // is installed.
 type AgentFile struct {
-	Path    string `json:"path"`
-	Content string `json:"content"`
+	Path       string `json:"path"`
+	Content    string `json:"content"`
+	CreateOnly bool   `json:"createOnly,omitempty"`
 }
 
 type ResourceConfig struct {
@@ -201,7 +202,11 @@ func agentFilesFromManifest(in []model.AgentConfigFile) []AgentFile {
 	}
 	out := make([]AgentFile, 0, len(in))
 	for _, file := range in {
-		out = append(out, AgentFile{Path: file.Path, Content: file.Content})
+		out = append(out, AgentFile{
+			Path:       file.Path,
+			Content:    file.Content,
+			CreateOnly: file.CreateOnly.Or(false),
+		})
 	}
 	return out
 }

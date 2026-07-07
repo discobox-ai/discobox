@@ -321,7 +321,7 @@ func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
 		if providers[0].Type != "docker" || providers[0].Disabled {
 			t.Fatalf("linux provider = %#v, want enabled docker", providers[0])
 		}
-		assertDefaultDockerProviderConfig(t, providers[0].Config, providerdocker.DefaultWorkerImage())
+		assertDefaultDockerProviderConfig(t, providers[0].Config, "")
 	}
 	if _, err := appStore.GetServerState(ctx, "defaults.default_sandbox_provider.installed"); err != nil {
 		t.Fatalf("get install state: %v", err)
@@ -384,10 +384,10 @@ func TestInitializeDefaultsRepairsEmptyBuiltInDockerProviderConfig(t *testing.T)
 	if err != nil {
 		t.Fatalf("get repaired default provider: %v", err)
 	}
-	assertDefaultDockerProviderConfig(t, provider.Config, providerdocker.DefaultWorkerImage())
+	assertDefaultDockerProviderConfig(t, provider.Config, "")
 }
 
-func TestInitializeDefaultsRepairsBuiltInDockerProviderConfigImageFromEnv(t *testing.T) {
+func TestInitializeDefaultsDoesNotPersistBuiltInDockerProviderImageFromEnv(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("default docker provider is installed on linux")
 	}
@@ -404,7 +404,7 @@ func TestInitializeDefaultsRepairsBuiltInDockerProviderConfigImageFromEnv(t *tes
 	if err != nil {
 		t.Fatalf("get default provider: %v", err)
 	}
-	assertDefaultDockerProviderConfig(t, provider.Config, "discobox-worker-agent:test")
+	assertDefaultDockerProviderConfig(t, provider.Config, "")
 
 	provider.Config = []byte(`{"image":"ghcr.io/obot-platform/discobox-systemd:latest","agentPort":3002,"systemd":true,"minWorkers":1,"minHealthyWorkers":1}`)
 	if err := appStore.UpdateSandboxProviderInstance(ctx, provider); err != nil {
@@ -417,7 +417,20 @@ func TestInitializeDefaultsRepairsBuiltInDockerProviderConfigImageFromEnv(t *tes
 	if err != nil {
 		t.Fatalf("get repaired default provider: %v", err)
 	}
-	assertDefaultDockerProviderConfig(t, provider.Config, "discobox-worker-agent:test")
+	assertDefaultDockerProviderConfig(t, provider.Config, "")
+
+	provider.Config = []byte(`{"image":"discobox-worker-agent:dev-old","agentPort":3002,"systemd":true,"minWorkers":1,"minHealthyWorkers":1}`)
+	if err := appStore.UpdateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("reset default provider config to legacy dev image: %v", err)
+	}
+	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
+		t.Fatalf("initialize defaults after legacy dev image reset: %v", err)
+	}
+	provider, err = appStore.GetSandboxProviderInstance(ctx, service.DefaultProjectID, service.DefaultProviderInstanceID)
+	if err != nil {
+		t.Fatalf("get repaired default provider: %v", err)
+	}
+	assertDefaultDockerProviderConfig(t, provider.Config, "")
 }
 
 func assertDefaultDockerProviderConfig(t *testing.T, data []byte, expectedImage string) {

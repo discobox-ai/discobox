@@ -707,8 +707,9 @@ func workerAgentConfigFiles(files []model.AgentConfigFile) workerclient.OptNilAg
 	out := make([]workerapimodel.AgentConfigFile, 0, len(files))
 	for _, file := range files {
 		out = append(out, workerapimodel.AgentConfigFile{
-			Path:    file.Path,
-			Content: file.Content,
+			Path:       file.Path,
+			Content:    file.Content,
+			CreateOnly: file.CreateOnly,
 		})
 	}
 	return workerclient.NewOptNilAgentConfigFileArray(out)

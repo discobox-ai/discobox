@@ -24,7 +24,8 @@ var agentConfigDefinitions = []model.AgentConfigDefinition{
 		InstallCommand: []string{"npm", "install", "-g", "@anthropic-ai/claude-code"},
 		RunCommand:     []string{"claude"},
 		Files: []model.AgentConfigFile{
-			{Path: ".claude/settings.json", Content: `{"theme":"dark"}`},
+			{Path: ".claude.json", Content: `{"hasCompletedOnboarding": true}`, CreateOnly: true},
+			{Path: ".claude/settings.json", Content: `{"theme":"dark","skipDangerousModePermissionPrompt":true}`},
 		},
 	},
 }

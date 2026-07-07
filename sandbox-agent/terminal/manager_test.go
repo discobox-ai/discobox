@@ -635,6 +635,37 @@ func TestFileInstallerNoopsWithoutFiles(t *testing.T) {
 	}
 }
 
+func TestFileInstallerSkipsCreateOnlyFileIfExists(t *testing.T) {
+	home := t.TempDir()
+	existingPath := filepath.Join(home, ".claude.json")
+	if err := os.MkdirAll(filepath.Dir(existingPath), 0o755); err != nil {
+		t.Fatalf("mkdir existing file parent: %v", err)
+	}
+	if err := os.WriteFile(existingPath, []byte(`{"hasCompletedOnboarding": true}`), 0o644); err != nil {
+		t.Fatalf("write existing file: %v", err)
+	}
+
+	installer := FileInstaller{HomeDirectory: home}
+	agent := config.Agent{
+		ID: "claude-code",
+		Files: []config.AgentFile{
+			{Path: ".claude.json", Content: `{"hasCompletedOnboarding": false}`, CreateOnly: true},
+		},
+	}
+
+	if err := installer.EnsureInstalled(context.Background(), agent, "/workspace/project", nil); err != nil {
+		t.Fatalf("install: %v", err)
+	}
+
+	data, err := os.ReadFile(existingPath)
+	if err != nil {
+		t.Fatalf("read existing file: %v", err)
+	}
+	if string(data) != `{"hasCompletedOnboarding": true}` {
+		t.Fatalf("content = %q, want existing content to be preserved", string(data))
+	}
+}
+
 func TestFileInstallerRequiresHomeDirectoryWhenFilesConfigured(t *testing.T) {
 	installer := FileInstaller{}
 	agent := config.Agent{

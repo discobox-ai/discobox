@@ -124,6 +124,22 @@ func TestDockerWorkerWatcherSchedulesDeletedWorkerWhenContainerRemains(t *testin
 	}
 }
 
+func TestDockerWorkerWatcherSchedulesRunningWorkerWithStaleConfig(t *testing.T) {
+	current := &vm.Instance{
+		ID:       "container-1",
+		Status:   sandbox.StatusRunning,
+		Image:    "worker:old",
+		Metadata: map[string]string{labelWorkerConfig: "old"},
+	}
+
+	if !shouldReconcileWorkerContainer(current, "worker:new", map[string]string{labelWorkerConfig: "new"}) {
+		t.Fatalf("shouldReconcileWorkerContainer = false, want true for stale image/config")
+	}
+	if shouldReconcileWorkerContainer(current, "worker:old", map[string]string{labelWorkerConfig: "old"}) {
+		t.Fatalf("shouldReconcileWorkerContainer = true, want false for current image/config")
+	}
+}
+
 type recordingWorkerReconcileManager struct {
 	reconcileWorkerID   string
 	reconcileProjectID  string

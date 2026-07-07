@@ -8,6 +8,9 @@ components:
                 content:
                     description: File content to write
                     type: string
+                createOnly:
+                    description: Do not overwrite this file if it already exists
+                    type: boolean
                 path:
                     description: File path relative to the agent's home directory
                     type: string

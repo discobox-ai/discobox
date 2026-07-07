@@ -485,11 +485,18 @@ func (s *AgentConfigFile) encodeFields(e *jx.Encoder) {
 		e.FieldStart("path")
 		e.Str(s.Path)
 	}
+	{
+		if s.CreateOnly.Set {
+			e.FieldStart("createOnly")
+			s.CreateOnly.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfAgentConfigFile = [2]string{
+var jsonFieldsNameOfAgentConfigFile = [3]string{
 	0: "content",
 	1: "path",
+	2: "createOnly",
 }
 
 // Decode decodes AgentConfigFile from json.
@@ -524,6 +531,16 @@ func (s *AgentConfigFile) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"path\"")
+			}
+		case "createOnly":
+			if err := func() error {
+				s.CreateOnly.Reset()
+				if err := s.CreateOnly.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"createOnly\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
@@ -12460,6 +12477,12 @@ func (s *SandboxProviderInstanceStatus) encodeFields(e *jx.Encoder) {
 		e.Int64(s.FailedWorkers)
 	}
 	{
+		if len(s.Details) != 0 {
+			e.FieldStart("details")
+			e.Raw(s.Details)
+		}
+	}
+	{
 		if s.LastError.Set {
 			e.FieldStart("lastError")
 			s.LastError.Encode(e)
@@ -12485,15 +12508,16 @@ func (s *SandboxProviderInstanceStatus) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxProviderInstanceStatus = [8]string{
+var jsonFieldsNameOfSandboxProviderInstanceStatus = [9]string{
 	0: "$schema",
 	1: "degradedWorkers",
 	2: "failedWorkers",
-	3: "lastError",
-	4: "readyWorkers",
-	5: "schedulableWorkers",
-	6: "workerCount",
-	7: "workers",
+	3: "details",
+	4: "lastError",
+	5: "readyWorkers",
+	6: "schedulableWorkers",
+	7: "workerCount",
+	8: "workers",
 }
 
 // Decode decodes SandboxProviderInstanceStatus from json.
@@ -12501,7 +12525,7 @@ func (s *SandboxProviderInstanceStatus) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode SandboxProviderInstanceStatus to nil")
 	}
-	var requiredBitSet [1]uint8
+	var requiredBitSet [2]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -12539,6 +12563,17 @@ func (s *SandboxProviderInstanceStatus) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"failedWorkers\"")
 			}
+		case "details":
+			if err := func() error {
+				v, err := d.RawAppend(nil)
+				s.Details = jx.Raw(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"details\"")
+			}
 		case "lastError":
 			if err := func() error {
 				s.LastError.Reset()
@@ -12550,7 +12585,7 @@ func (s *SandboxProviderInstanceStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"lastError\"")
 			}
 		case "readyWorkers":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Int64()
 				s.ReadyWorkers = int64(v)
@@ -12562,7 +12597,7 @@ func (s *SandboxProviderInstanceStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"readyWorkers\"")
 			}
 		case "schedulableWorkers":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Int64()
 				s.SchedulableWorkers = int64(v)
@@ -12574,7 +12609,7 @@ func (s *SandboxProviderInstanceStatus) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"schedulableWorkers\"")
 			}
 		case "workerCount":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Int64()
 				s.WorkerCount = int64(v)
@@ -12604,8 +12639,9 @@ func (s *SandboxProviderInstanceStatus) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [1]uint8{
-		0b01110110,
+	for i, mask := range [2]uint8{
+		0b11100110,
+		0b00000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

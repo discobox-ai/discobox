@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"runtime"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -155,10 +156,16 @@ func ensureDefaultSandboxProviderConfig(ctx context.Context, appStore *store.Sto
 	}
 	config := defaultProvider.Config
 	if len(provider.Config) > 0 {
-		if !shouldUpdateDefaultProviderConfig(provider.Config, defaultProvider.Config) {
-			return nil
+		config = provider.Config
+		if shouldUpdateDefaultProviderConfig(provider.Config, defaultProvider.Config) {
+			config = mergeDefaultProviderConfig(provider.Config, defaultProvider.Config)
 		}
-		config = mergeDefaultProviderConfig(provider.Config, defaultProvider.Config)
+	}
+	if provider.Type == "docker" {
+		config = removeLegacyDefaultDockerProviderImage(config)
+	}
+	if string(config) == string(provider.Config) {
+		return nil
 	}
 	provider.Config = config
 	return appStore.UpdateSandboxProviderInstance(ctx, provider)
@@ -195,7 +202,6 @@ func defaultDockerProviderConfig() json.RawMessage {
 	systemd := true
 	config := map[string]any{
 		"bindDockerSocket":  "/var/run/docker.sock",
-		"image":             providerdocker.DefaultWorkerImage(),
 		"agentPort":         providerdocker.DefaultAgentPort(),
 		"systemd":           systemd,
 		"minWorkers":        1,
@@ -233,12 +239,9 @@ func shouldUpdateDefaultProviderConfig(current, defaults json.RawMessage) bool {
 	if err := json.Unmarshal(defaults, &defaultValue); err != nil {
 		return false
 	}
-	for key, defaultField := range defaultValue {
-		currentField, ok := currentValue[key]
+	for key := range defaultValue {
+		_, ok := currentValue[key]
 		if !ok {
-			return true
-		}
-		if key == "image" && currentField == providerdocker.DefaultImage() && defaultField != providerdocker.DefaultImage() {
 			return true
 		}
 	}
@@ -254,8 +257,8 @@ func mergeDefaultProviderConfig(current, defaults json.RawMessage) json.RawMessa
 		return current
 	}
 	for key, defaultField := range defaultValue {
-		currentField, ok := currentValue[key]
-		if !ok || key == "image" && currentField == providerdocker.DefaultImage() && defaultField != providerdocker.DefaultImage() {
+		_, ok := currentValue[key]
+		if !ok {
 			currentValue[key] = defaultField
 		}
 	}
@@ -264,4 +267,28 @@ func mergeDefaultProviderConfig(current, defaults json.RawMessage) json.RawMessa
 		return current
 	}
 	return data
+}
+
+func removeLegacyDefaultDockerProviderImage(config json.RawMessage) json.RawMessage {
+	var value map[string]any
+	if err := json.Unmarshal(config, &value); err != nil {
+		return config
+	}
+	image, _ := value["image"].(string)
+	if !legacyDefaultDockerProviderImage(image) {
+		return config
+	}
+	delete(value, "image")
+	data, err := json.Marshal(value)
+	if err != nil {
+		return config
+	}
+	return data
+}
+
+func legacyDefaultDockerProviderImage(image string) bool {
+	image = strings.TrimSpace(image)
+	return image == providerdocker.DefaultImage() ||
+		image == "discobox-worker-agent:local" ||
+		strings.HasPrefix(image, "discobox-worker-agent:dev-")
 }

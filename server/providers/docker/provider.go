@@ -52,7 +52,7 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 	if err != nil {
 		return nil, err
 	}
-	cfg.Image = configuredWorkerImage(cfg.Image)
+	cfg.Image = effectiveWorkerImage(cfg.Image)
 	return workerpool.NewVMWorkerPoolProvider(ctx, workerpool.VMWorkerPoolProviderConfig{
 		ControlPlaneURL: cfg.ControlPlaneURL,
 		DefaultImage:    cfg.Image,
@@ -70,14 +70,31 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 }
 
 func DefaultWorkerImage() string {
-	return configuredWorkerImage(DefaultImage())
+	return effectiveWorkerImage("")
 }
 
-func configuredWorkerImage(image string) string {
+func EffectiveWorkerImage(image string) string {
+	return effectiveWorkerImage(image)
+}
+
+func WorkerImageSource(image string) string {
+	if strings.TrimSpace(image) != "" {
+		return "provider"
+	}
+	if strings.TrimSpace(os.Getenv(workerImageEnv)) != "" {
+		return "global"
+	}
+	return "default"
+}
+
+func effectiveWorkerImage(image string) string {
+	if image = strings.TrimSpace(image); image != "" {
+		return image
+	}
 	if value := strings.TrimSpace(os.Getenv(workerImageEnv)); value != "" {
 		return value
 	}
-	return image
+	return DefaultImage()
 }
 
 func newProvider(ctx context.Context, cfg Config, vmConfig vm.Config) (*vm.Provider, error) {

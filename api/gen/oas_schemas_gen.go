@@ -226,6 +226,8 @@ type AgentConfigFile struct {
 	Content string `json:"content"`
 	// File path relative to the agent's home directory.
 	Path string `json:"path"`
+	// Do not overwrite this file if it already exists.
+	CreateOnly OptBool `json:"createOnly"`
 }
 
 // GetContent returns the value of Content.
@@ -238,6 +240,11 @@ func (s *AgentConfigFile) GetPath() string {
 	return s.Path
 }
 
+// GetCreateOnly returns the value of CreateOnly.
+func (s *AgentConfigFile) GetCreateOnly() OptBool {
+	return s.CreateOnly
+}
+
 // SetContent sets the value of Content.
 func (s *AgentConfigFile) SetContent(val string) {
 	s.Content = val
@@ -246,6 +253,11 @@ func (s *AgentConfigFile) SetContent(val string) {
 // SetPath sets the value of Path.
 func (s *AgentConfigFile) SetPath(val string) {
 	s.Path = val
+}
+
+// SetCreateOnly sets the value of CreateOnly.
+func (s *AgentConfigFile) SetCreateOnly(val OptBool) {
+	s.CreateOnly = val
 }
 
 // Ref: #/components/schemas/AgentHookLog
@@ -6843,6 +6855,8 @@ type SandboxProviderInstanceStatus struct {
 	DegradedWorkers int64 `json:"degradedWorkers"`
 	// Workers whose last lifecycle operation failed.
 	FailedWorkers int64 `json:"failedWorkers"`
+	// Provider-specific observed status details.
+	Details jx.Raw `json:"details"`
 	// Most recent worker error message, if any.
 	LastError OptString `json:"lastError"`
 	// Workers currently reporting ready.
@@ -6868,6 +6882,11 @@ func (s *SandboxProviderInstanceStatus) GetDegradedWorkers() int64 {
 // GetFailedWorkers returns the value of FailedWorkers.
 func (s *SandboxProviderInstanceStatus) GetFailedWorkers() int64 {
 	return s.FailedWorkers
+}
+
+// GetDetails returns the value of Details.
+func (s *SandboxProviderInstanceStatus) GetDetails() jx.Raw {
+	return s.Details
 }
 
 // GetLastError returns the value of LastError.
@@ -6908,6 +6927,11 @@ func (s *SandboxProviderInstanceStatus) SetDegradedWorkers(val int64) {
 // SetFailedWorkers sets the value of FailedWorkers.
 func (s *SandboxProviderInstanceStatus) SetFailedWorkers(val int64) {
 	s.FailedWorkers = val
+}
+
+// SetDetails sets the value of Details.
+func (s *SandboxProviderInstanceStatus) SetDetails(val jx.Raw) {
+	s.Details = val
 }
 
 // SetLastError sets the value of LastError.

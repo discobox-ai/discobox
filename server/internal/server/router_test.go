@@ -432,6 +432,50 @@ func TestSandboxAgentTerminalListRouteProxiesToSandboxAgent(t *testing.T) {
 	}
 }
 
+func TestSandboxAgentTerminalProxyErrorUsesJSON(t *testing.T) {
+	ctx := context.Background()
+	stubs := newRouterTestServices()
+	workerID := "worker-1"
+	stubs.sandboxes["sandbox-1"] = model.Sandbox{
+		ID:              "sandbox-1",
+		ProjectID:       service.DefaultProjectID,
+		CreatedByUserID: service.DefaultUserID,
+		Name:            "sandbox",
+		WorkerID:        &workerID,
+	}
+	projectID := service.DefaultProjectID
+
+	router, err := NewRouter(services.Services{
+		Projects:     stubs,
+		AgentConfigs: stubs,
+		Sandboxes:    stubs,
+		Providers:    stubs,
+		Workers:      stubs,
+		Jobs:         stubs,
+		Events:       stubs,
+	})
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+	resp := httptest.NewRecorder()
+	req := scopedUserRequest(ctx, http.MethodPost, "/api/projects/"+projectID+"/sandboxes/sandbox-1/agent-terminals", nil, workeragentauth.ScopeTerminalWrite)
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("POST sandbox agent terminal status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	if got := resp.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
+		t.Fatalf("Content-Type = %q, want application/json; charset=utf-8", got)
+	}
+	var body serverapi.ErrorResponse
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if body.Error != "sandbox HTTP client is not available" {
+		t.Fatalf("error = %q", body.Error)
+	}
+}
+
 func TestSandboxAgentTerminalAttachRouteUsesWriteScope(t *testing.T) {
 	ctx := context.Background()
 	stubs := newRouterTestServices()

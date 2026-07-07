@@ -38,10 +38,12 @@ func (d *Driver) InitializeWorkerProvider(ctx context.Context, provider *model.S
 	d.watcherMu.Unlock()
 
 	watcher := dockerWorkerWatcher{
-		driver:     d,
-		manager:    workerManager,
-		projectID:  provider.ProjectID,
-		providerID: provider.ID,
+		driver:          d,
+		manager:         workerManager,
+		projectID:       provider.ProjectID,
+		providerID:      provider.ID,
+		desiredImage:    d.image,
+		desiredMetadata: d.labels,
 	}
 	if _, err := watcher.scan(ctx); err != nil {
 		cancel()
@@ -55,10 +57,12 @@ func (d *Driver) InitializeWorkerProvider(ctx context.Context, provider *model.S
 }
 
 type dockerWorkerWatcher struct {
-	driver     *Driver
-	manager    workerpool.WorkerManager
-	projectID  string
-	providerID string
+	driver          *Driver
+	manager         workerpool.WorkerManager
+	projectID       string
+	providerID      string
+	desiredImage    string
+	desiredMetadata map[string]string
 }
 
 type dockerWorkerRuntimeState struct {
@@ -144,9 +148,30 @@ func (w dockerWorkerWatcher) checkWorker(ctx context.Context, worker *model.Work
 		if current != nil && current.ID != inst.ID {
 			return w.scheduleWorkerReconciliation(ctx, worker.ID)
 		}
+		if shouldReconcileWorkerContainer(inst, w.desiredImage, w.desiredMetadata) {
+			return w.scheduleWorkerReconciliation(ctx, worker.ID)
+		}
 		return false, nil
 	}
 	return w.scheduleWorkerReconciliation(ctx, worker.ID)
+}
+
+func shouldReconcileWorkerContainer(inst *vm.Instance, desiredImage string, desiredMetadata map[string]string) bool {
+	if inst == nil {
+		return true
+	}
+	if strings.TrimSpace(desiredImage) != "" && inst.Image != desiredImage {
+		return true
+	}
+	for key, value := range desiredMetadata {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		if inst.Metadata[key] != value {
+			return true
+		}
+	}
+	return false
 }
 
 func (w dockerWorkerWatcher) watch(ctx context.Context) {

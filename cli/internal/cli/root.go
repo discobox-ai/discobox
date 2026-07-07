@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"strings"
@@ -122,6 +123,9 @@ func (a *App) httpClientWithAutoStart(autoStart bool) (string, *http.Client, err
 			out:  a.errOut,
 			base: transport,
 		}
+	}
+	transport = textPlainErrorTransport{
+		base: transport,
 	}
 	if strings.TrimSpace(a.token) != "" {
 		transport = requestHeaderTransport{
@@ -305,6 +309,34 @@ func (t requestHeaderTransport) RoundTrip(req *http.Request) (*http.Response, er
 		base = http.DefaultTransport
 	}
 	return base.RoundTrip(cloned)
+}
+
+type textPlainErrorTransport struct {
+	base http.RoundTripper
+}
+
+func (t textPlainErrorTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	base := t.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	resp, err := base.RoundTrip(req)
+	if err != nil || resp == nil || resp.StatusCode < 400 {
+		return resp, err
+	}
+	ct, _, parseErr := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if parseErr != nil || ct != "text/plain" || resp.Body == nil {
+		return resp, err
+	}
+	body, readErr := io.ReadAll(resp.Body)
+	closeErr := resp.Body.Close()
+	if readErr != nil {
+		return resp, readErr
+	}
+	if closeErr != nil {
+		return resp, closeErr
+	}
+	return nil, fmt.Errorf("request failed: %s: %s", resp.Status, strings.TrimSpace(string(body)))
 }
 
 type debugTransport struct {

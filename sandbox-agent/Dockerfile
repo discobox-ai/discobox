@@ -151,6 +151,7 @@ RUN rustup --version >/dev/null 2>&1 \
 COPY sandbox-agent/image/profile.d/sandbox-dev-tools.sh /etc/profile.d/sandbox-dev-tools.sh
 COPY sandbox-agent/image/image.json /usr/share/discobox/image.json
 COPY sandbox-agent/image/systemd/discobox-sandbox-agent.service /etc/systemd/system/discobox-sandbox-agent.service
+COPY sandbox-agent/image/systemd/journald-console.conf /etc/systemd/journald.conf.d/discobox-console.conf
 COPY sandbox-agent/image/systemd/x11-display.socket /etc/systemd/system/x11-display.socket
 COPY sandbox-agent/image/systemd/x11-display.service /etc/systemd/system/x11-display.service
 COPY sandbox-agent/image/systemd/x11vnc.socket /etc/systemd/system/x11vnc.socket

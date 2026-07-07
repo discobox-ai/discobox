@@ -27,14 +27,19 @@ func (s *AgentConfigFile) encodeFields(e *jx.Encoder) {
 		e.Str(s.Content)
 	}
 	{
+		e.FieldStart("createOnly")
+		e.Bool(s.CreateOnly)
+	}
+	{
 		e.FieldStart("path")
 		e.Str(s.Path)
 	}
 }
 
-var jsonFieldsNameOfAgentConfigFile = [2]string{
+var jsonFieldsNameOfAgentConfigFile = [3]string{
 	0: "content",
 	1: "path",
+	2: "createOnly",
 }
 
 // Decode decodes AgentConfigFile from json.
@@ -69,6 +74,18 @@ func (s *AgentConfigFile) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"path\"")
+			}
+		case "createOnly":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				v, err := d.Bool()
+				s.CreateOnly = bool(v)
+				if err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"createOnly\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)

@@ -497,7 +497,7 @@ func (i FileInstaller) EnsureInstalled(_ context.Context, agent config.Agent, _ 
 		if err != nil {
 			return fmt.Errorf("agent %q file %q: %w", agent.ID, file.Path, err)
 		}
-		if err := writeAgentFile(path, file.Content, i.UID, i.GID); err != nil {
+		if err := writeAgentFile(path, file.Content, file.CreateOnly, i.UID, i.GID); err != nil {
 			return fmt.Errorf("agent %q file %q: %w", agent.ID, file.Path, err)
 		}
 	}
@@ -523,10 +523,20 @@ func homeRelativePath(home, requested string) (string, error) {
 	return cleaned, nil
 }
 
-func writeAgentFile(path, content string, uid, gid *int64) error {
+func writeAgentFile(path, content string, createOnly bool, uid, gid *int64) error {
 	createdDirs, err := mkdirAllTracked(filepath.Dir(path), 0o755)
 	if err != nil {
 		return err
+	}
+	if createOnly {
+		if info, err := os.Stat(path); err == nil {
+			if info.IsDir() {
+				return fmt.Errorf("%s is a directory", path)
+			}
+			return nil
+		} else if !os.IsNotExist(err) {
+			return err
+		}
 	}
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		return err

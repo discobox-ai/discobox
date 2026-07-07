@@ -266,8 +266,9 @@ type AgentConfigDefinition struct {
 // AgentConfigFile is a file to write into an agent's home directory when the
 // agent is installed.
 type AgentConfigFile struct {
-	Path    string `json:"path" doc:"File path relative to the agent's home directory"`
-	Content string `json:"content" doc:"File content to write"`
+	Path       string `json:"path" doc:"File path relative to the agent's home directory"`
+	Content    string `json:"content" doc:"File content to write"`
+	CreateOnly bool   `json:"createOnly,omitempty" doc:"Only create this file if it does not already exist"`
 }
 
 // GitSource describes a Git source to materialize into a sandbox.
@@ -420,6 +421,7 @@ type SandboxProviderInstanceStatus struct {
 	DegradedWorkers    int                    `json:"degradedWorkers" doc:"Workers reporting degraded health"`
 	FailedWorkers      int                    `json:"failedWorkers" doc:"Workers whose last lifecycle operation failed"`
 	LastError          *string                `json:"lastError,omitempty" doc:"Most recent worker error message, if any"`
+	Details            json.RawMessage        `json:"details,omitempty" doc:"Provider-specific observed status details"`
 	Workers            []ProviderWorkerStatus `json:"workers,omitempty" doc:"Observed worker details"`
 }
 

@@ -12,6 +12,8 @@ Environment=NIX_REMOTE=daemon
 ExecStartPre=/usr/bin/install -d -m 0700 /run/discobox/agent-terminals
 ExecStartPre=/usr/bin/install -d -m 0755 /var/lib/discobox /workspace
 ExecStart=/usr/local/bin/discobox-sandbox-agent --config /etc/discobox/sandbox.json
+StandardOutput=journal+console
+StandardError=journal+console
 Restart=on-failure
 RestartSec=2s
 KillMode=mixed

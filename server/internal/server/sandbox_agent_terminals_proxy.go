@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -38,40 +39,53 @@ func registerSandboxAgentTerminalRoutes(router chi.Router, service services.Sand
 func sandboxAgentTerminalProxyHandler(service services.SandboxService) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if service == nil {
-			http.Error(w, "sandbox service is not configured", http.StatusServiceUnavailable)
+			writeSandboxAgentProxyError(w, http.StatusServiceUnavailable, "sandbox service is not configured")
 			return
 		}
 		projectID := chi.URLParam(r, "projectId")
 		sandboxID := chi.URLParam(r, "sandboxId")
 		scopes := sandboxAgentTerminalProxyScopes(r)
 		if len(scopes) == 0 {
-			http.Error(w, "unsupported sandbox agent-terminal operation", http.StatusMethodNotAllowed)
+			writeSandboxAgentProxyError(w, http.StatusMethodNotAllowed, "unsupported sandbox agent-terminal operation")
 			return
 		}
 
 		lease, sandboxModel, err := service.AcquireSandboxHTTPClient(r.Context(), projectID, sandboxID, scopes)
 		if err != nil {
-			http.Error(w, err.Error(), statusCodeForProxyError(err))
+			writeSandboxAgentProxyError(w, statusCodeForProxyError(err), err.Error())
 			return
 		}
 		if lease == nil {
-			http.Error(w, "sandbox HTTP client is not available", http.StatusServiceUnavailable)
+			writeSandboxAgentProxyError(w, http.StatusServiceUnavailable, "sandbox HTTP client is not available")
 			return
 		}
 		defer lease.Release()
 		if sandboxModel == nil || sandboxModel.WorkerID == nil || strings.TrimSpace(*sandboxModel.WorkerID) == "" {
-			http.Error(w, "sandbox worker is not assigned", http.StatusConflict)
+			writeSandboxAgentProxyError(w, http.StatusConflict, "sandbox worker is not assigned")
 			return
 		}
 
 		target, err := sandboxAgentTerminalProxyTargetURL(lease.BaseURL, projectID, sandboxModel.ProjectID, strings.TrimSpace(*sandboxModel.WorkerID), sandboxID, sandboxModel.ID, r.URL.Path)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			writeSandboxAgentProxyError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		proxy := sandboxWorkerReverseProxy(target, lease)
 		proxy.ServeHTTP(w, r)
 	})
+}
+
+func writeSandboxAgentProxyError(w http.ResponseWriter, status int, message string) {
+	body, err := json.Marshal(map[string]string{"error": message})
+	if err != nil {
+		http.Error(w, message, status)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	if _, err := w.Write(append(body, '\n')); err != nil {
+		return
+	}
 }
 
 func sandboxAgentTerminalProxyScopes(r *http.Request) []string {

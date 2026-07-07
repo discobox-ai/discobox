@@ -18,6 +18,7 @@ type agentCreateOptions struct {
 	installCommand []string
 	runCommand     []string
 	files          []string
+	createOnlyFile []string
 }
 
 type agentUpdateOptions struct {
@@ -25,6 +26,7 @@ type agentUpdateOptions struct {
 	installCommand []string
 	runCommand     []string
 	files          []string
+	createOnlyFile []string
 }
 
 func (a *App) newAgentCommand() *cobra.Command {
@@ -158,6 +160,7 @@ func (a *App) newAgentCreateCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&opts.installCommand, "install-command", nil, "Argv element used to install the agent (repeatable, e.g. --install-command npm --install-command install). Not run through a shell; pass sh -c yourself for shell semantics.")
 	cmd.Flags().StringArrayVar(&opts.runCommand, "run-command", nil, "Argv element used to run the agent (repeatable, e.g. --run-command claude --run-command --dangerously-skip-permissions). Not run through a shell; pass sh -c yourself for shell semantics.")
 	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the agent's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
+	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
 	_ = cmd.RegisterFlagCompletionFunc("definition", a.completeAgentDefinitions)
 	return cmd
 }
@@ -269,6 +272,7 @@ func (a *App) newAgentUpdateCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&opts.installCommand, "install-command", nil, "Argv element used to install the agent (repeatable, e.g. --install-command npm --install-command install). Not run through a shell; pass sh -c yourself for shell semantics.")
 	cmd.Flags().StringArrayVar(&opts.runCommand, "run-command", nil, "Argv element used to run the agent (repeatable, e.g. --run-command claude --run-command --dangerously-skip-permissions). Not run through a shell; pass sh -c yourself for shell semantics.")
 	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the agent's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
+	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
 	return cmd
 }
 
@@ -441,7 +445,7 @@ func createAgentBody(opts agentCreateOptions) (*apimodel.CreateAgentConfigBody, 
 		body.SetRunCommand(apiclientgen.NewOptNilStringArray(opts.runCommand))
 	}
 	if len(opts.files) > 0 {
-		files, err := parseAgentFileFlags(opts.files)
+		files, err := parseAgentFileFlags(opts.files, opts.createOnlyFile)
 		if err != nil {
 			return nil, err
 		}
@@ -462,7 +466,7 @@ func updateAgentBody(cmd *cobra.Command, opts agentUpdateOptions) (*apimodel.Upd
 		body.SetRunCommand(apiclientgen.NewOptNilStringArray(opts.runCommand))
 	}
 	if cmd.Flags().Changed("file") {
-		files, err := parseAgentFileFlags(opts.files)
+		files, err := parseAgentFileFlags(opts.files, opts.createOnlyFile)
 		if err != nil {
 			return nil, err
 		}
@@ -471,7 +475,15 @@ func updateAgentBody(cmd *cobra.Command, opts agentUpdateOptions) (*apimodel.Upd
 	return body, nil
 }
 
-func parseAgentFileFlags(values []string) ([]apimodel.AgentConfigFile, error) {
+func parseAgentFileFlags(values []string, createOnlyFiles []string) ([]apimodel.AgentConfigFile, error) {
+	createOnly := map[string]struct{}{}
+	for _, path := range createOnlyFiles {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		createOnly[path] = struct{}{}
+	}
 	files := make([]apimodel.AgentConfigFile, 0, len(values))
 	for _, value := range values {
 		path, content, ok := strings.Cut(value, "=")
@@ -487,6 +499,24 @@ func parseAgentFileFlags(values []string) ([]apimodel.AgentConfigFile, error) {
 			content = string(data)
 		}
 		files = append(files, apimodel.AgentConfigFile{Path: path, Content: content})
+	}
+	for filePath := range createOnly {
+		found := false
+		for _, file := range files {
+			if file.Path == filePath {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("--create-only-file path %q has no matching --file entry", filePath)
+		}
+	}
+	for i := range files {
+		_, isCreateOnly := createOnly[files[i].Path]
+		if isCreateOnly {
+			files[i].CreateOnly = apiclientgen.NewOptBool(true)
+		}
 	}
 	return files, nil
 }

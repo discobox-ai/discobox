@@ -438,6 +438,32 @@ func TestTerminalCreateFallsBackWhenStartResponseIsTruncated(t *testing.T) {
 	}
 }
 
+func TestTerminalCreateTextPlainErrorIncludesBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals" {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte("sandbox worker is not assigned\n"))
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "terminal", "--sandbox-id", "sandbox-1", "create"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatalf("execute terminal create error = nil")
+	}
+	if got := err.Error(); !strings.Contains(got, "409 Conflict") || !strings.Contains(got, "sandbox worker is not assigned") {
+		t.Fatalf("execute terminal create error = %q", got)
+	}
+}
+
 func TestTerminalCreateEnvSupportsShortFlagAndShellLookup(t *testing.T) {
 	const terminalID = "terminal-full-id"
 	t.Setenv("SHELL_ENV_VALUE", "from-shell")
@@ -816,7 +842,7 @@ func TestAgentDisableDoesNothingWhenDefinitionAgentMissing(t *testing.T) {
 }
 
 func TestParseAgentFileFlagsInlineContent(t *testing.T) {
-	files, err := parseAgentFileFlags([]string{`.claude/settings.json={"theme":"dark"}`})
+	files, err := parseAgentFileFlags([]string{`.claude/settings.json={"theme":"dark"}`}, nil)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -832,7 +858,7 @@ func TestParseAgentFileFlagsLocalFileContent(t *testing.T) {
 		t.Fatalf("write local file: %v", err)
 	}
 
-	files, err := parseAgentFileFlags([]string{".claude/settings.json=@" + path})
+	files, err := parseAgentFileFlags([]string{".claude/settings.json=@" + path}, nil)
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -842,8 +868,86 @@ func TestParseAgentFileFlagsLocalFileContent(t *testing.T) {
 }
 
 func TestParseAgentFileFlagsRejectsMissingEquals(t *testing.T) {
-	if _, err := parseAgentFileFlags([]string{"no-equals-sign"}); err == nil {
+	if _, err := parseAgentFileFlags([]string{"no-equals-sign"}, nil); err == nil {
 		t.Fatalf("expected error for missing '='")
+	}
+}
+
+func TestParseAgentFileFlagsWithCreateOnlyPaths(t *testing.T) {
+	files, err := parseAgentFileFlags(
+		[]string{`.claude/settings.json={"theme":"dark"}`, ".github/config=ok"},
+		[]string{".claude/settings.json"},
+	)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("files = %#v", files)
+	}
+	if files[0].Path != ".claude/settings.json" || !files[0].CreateOnly.Or(false) {
+		t.Fatalf("files = %#v", files)
+	}
+	if files[1].Path != ".github/config" || files[1].CreateOnly.Or(false) {
+		t.Fatalf("files = %#v", files)
+	}
+}
+
+func TestParseAgentFileFlagsRejectsMissingCreateOnlyMatch(t *testing.T) {
+	if _, err := parseAgentFileFlags([]string{".claude/settings.json={\"theme\":\"dark\"}"}, []string{".does-not-exist"}); err == nil {
+		t.Fatalf("expected error for missing --file match")
+	}
+}
+
+func TestAgentCreateSendsCreateOnlyFileFlag(t *testing.T) {
+	const agentID = "agent-full-id"
+	var gotFiles []apimodel.AgentConfigFile
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/agent-configs" {
+			t.Fatalf("request = %s %s, want create agent config path", r.Method, r.URL.Path)
+		}
+		var body struct {
+			Files []apimodel.AgentConfigFile `json:"files"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode create body: %v", err)
+		}
+		gotFiles = body.Files
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"` + agentID + `","projectId":"project-1","name":"Custom","runCommand":["claude"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{
+		"--server", server.URL, "--project", "project-1", "agents", "create",
+		"--name", "Custom", "--run-command", "claude",
+		"--file", `.claude/settings.json={"theme":"dark"}`,
+		"--create-only-file", ".claude/settings.json",
+		"--file", ".github/config=ok",
+	})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute agents create: %v", err)
+	}
+
+	claudeIndex := -1
+	githubIndex := -1
+	for i, file := range gotFiles {
+		switch file.Path {
+		case ".claude/settings.json":
+			claudeIndex = i
+		case ".github/config":
+			githubIndex = i
+		}
+	}
+	if claudeIndex < 0 || githubIndex < 0 {
+		t.Fatalf("files sent to server = %#v", gotFiles)
+	}
+	if !gotFiles[claudeIndex].CreateOnly.Or(false) || gotFiles[githubIndex].CreateOnly.Or(false) {
+		t.Fatalf("files sent to server = %#v", gotFiles)
 	}
 }
 
