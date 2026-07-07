@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	serverapi "github.com/obot-platform/discobox/api/gen"
+	"github.com/obot-platform/discobox/server/internal/agentdefs"
 	"github.com/obot-platform/discobox/server/internal/model"
 )
 
@@ -103,8 +104,8 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 	if sandbox.Env != nil {
 		config["env"] = sandbox.Env
 	}
-	if sandbox.Prompt != nil {
-		config["prompt"] = *sandbox.Prompt
+	if len(sandbox.Prompt) > 0 {
+		config["prompt"] = sandbox.Prompt
 	}
 	if sandbox.Source != nil {
 		config["source"] = sandbox.Source
@@ -161,7 +162,9 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 		fields["providerInstance"] = sandbox.ProviderInstance
 	}
 	if sandbox.AgentConfig != nil {
-		fields["agentConfig"] = sandbox.AgentConfig
+		// Resolve the sparse stored config against its definition so the embedded
+		// agent config carries its effective commands (runCommand is required).
+		fields["agentConfig"] = agentdefs.Resolve(sandbox.AgentConfig)
 	}
 	return Convert[serverapi.Sandbox](fields)
 }

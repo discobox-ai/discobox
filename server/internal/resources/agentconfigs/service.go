@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	apimodel "github.com/obot-platform/discobox/api/model"
+	"github.com/obot-platform/discobox/server/internal/agentdefs"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 
 	"github.com/obot-platform/discobox/server/internal/model"
@@ -27,7 +28,14 @@ func (s *Service) ListAgentConfigs(ctx context.Context, projectID string) ([]mod
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apiError(err, "project not found")
 	}
-	return s.store.ListAgentConfigs(ctx, projectID)
+	configs, err := s.store.ListAgentConfigs(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	for i := range configs {
+		configs[i] = *agentdefs.Resolve(&configs[i])
+	}
+	return configs, nil
 }
 
 func (s *Service) CreateAgentConfig(ctx context.Context, projectID string, input services.CreateAgentConfigBody) (*model.AgentConfig, error) {
@@ -35,45 +43,86 @@ func (s *Service) CreateAgentConfig(ctx context.Context, projectID string, input
 	if err != nil {
 		return nil, apiError(err, "project not found")
 	}
+	definitionID := ""
 	var definition *model.AgentConfigDefinition
-	if definitionID, isSet := input.DefinitionId.Get(); isSet {
-		var found bool
-		definition, found = agentConfigDefinitionByID(definitionID)
-		if !found {
+	if rawDefinitionID, isSet := input.DefinitionId.Get(); isSet && strings.TrimSpace(rawDefinitionID) != "" {
+		found, ok := agentdefs.DefinitionByID(strings.TrimSpace(rawDefinitionID))
+		if !ok {
 			return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config definition not found")
 		}
+		definition = found
+		definitionID = found.ID
 	}
+
 	name := strings.TrimSpace(input.Name.Or(""))
-	if name == "" && definition != nil {
-		name = definition.Name
+	slug := strings.TrimSpace(input.Slug.Or(""))
+	explicitSlug := slug != ""
+
+	// Default the slug: an explicit slug wins, then the definition id, then a slug
+	// derived from the name.
+	if slug == "" {
+		if definitionID != "" {
+			slug = definitionID
+		} else if name != "" {
+			slug = agentdefs.Slugify(name)
+		}
 	}
+	// Default the name: an explicit slug names the config so multiple configs can
+	// extend one definition without colliding on the definition's display name;
+	// otherwise fall back to the definition name, then the slug.
 	if name == "" {
-		return nil, apiError(fmt.Errorf("agent config name is required"), "")
+		switch {
+		case explicitSlug:
+			name = slug
+		case definition != nil:
+			name = definition.Name
+		default:
+			name = slug
+		}
 	}
-	installCommand, hasInstallCommand := input.InstallCommand.Get()
-	if !hasInstallCommand && definition != nil {
-		installCommand = definition.InstallCommand
+	if slug == "" || name == "" {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "agent config name or slug is required")
 	}
-	runCommand, hasRunCommand := input.RunCommand.Get()
-	if !hasRunCommand && definition != nil {
-		runCommand = definition.RunCommand
+	if err := agentdefs.ValidateSlug(slug); err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
-	if len(runCommand) == 0 {
-		return nil, apiError(fmt.Errorf("agent config run command is required"), "")
+	if _, err := s.store.GetAgentConfigBySlug(ctx, projectID, slug); err == nil {
+		return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("agent config slug %q already in use", slug))
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return nil, err
 	}
+	if _, err := s.store.GetAgentConfigByName(ctx, projectID, name); err == nil {
+		return nil, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("agent config name %q already in use", name))
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+
+	// Store only the fields the caller explicitly set as overrides; unset fields
+	// (nil) are inherited from the definition at resolve time.
+	installCommand, _ := input.InstallCommand.Get()
+	runCommand, _ := input.RunCommand.Get()
+	relaunchCommand, _ := input.RelaunchCommand.Get()
 	var files []model.AgentConfigFile
 	if apiFiles, ok := input.Files.Get(); ok {
 		files = agentConfigFilesFromAPI(apiFiles)
-	} else if definition != nil {
-		files = definition.Files
 	}
+	if definitionID == "" && len(runCommand) == 0 {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "agent config run command is required when no definition is provided")
+	}
+
 	config := &model.AgentConfig{
-		ProjectID:      projectID,
-		Name:           name,
-		InstallCommand: installCommand,
-		RunCommand:     runCommand,
-		Files:          files,
+		ProjectID:       projectID,
+		Slug:            slug,
+		DefinitionID:    definitionID,
+		Name:            name,
+		InstallCommand:  installCommand,
+		RunCommand:      runCommand,
+		RelaunchCommand: relaunchCommand,
+		Files:           files,
 	}
+	// Store only fields that differ from the definition so inherited fields keep
+	// tracking definition upgrades.
+	agentdefs.Sparsify(config)
 	if err := s.store.CreateAgentConfig(ctx, config); err != nil {
 		return nil, err
 	}
@@ -83,7 +132,11 @@ func (s *Service) CreateAgentConfig(ctx context.Context, projectID string, input
 			return nil, err
 		}
 	}
-	return s.store.GetAgentConfig(ctx, projectID, config.ID)
+	stored, err := s.store.GetAgentConfig(ctx, projectID, config.ID)
+	if err != nil {
+		return nil, err
+	}
+	return agentdefs.Resolve(stored), nil
 }
 
 func (s *Service) GetAgentConfig(ctx context.Context, projectID, configID string) (*model.AgentConfig, error) {
@@ -91,7 +144,7 @@ func (s *Service) GetAgentConfig(ctx context.Context, projectID, configID string
 	if err != nil {
 		return nil, apiError(err, "agent config not found")
 	}
-	return config, nil
+	return agentdefs.Resolve(config), nil
 }
 
 func (s *Service) UpdateAgentConfig(ctx context.Context, projectID, configID string, input services.UpdateAgentConfigBody) (*model.AgentConfig, error) {
@@ -102,7 +155,7 @@ func (s *Service) UpdateAgentConfig(ctx context.Context, projectID, configID str
 	if nameValue, ok := input.Name.Get(); ok {
 		name := strings.TrimSpace(nameValue)
 		if name == "" {
-			return nil, apiError(fmt.Errorf("agent config name is required"), "")
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, "agent config name is required")
 		}
 		config.Name = name
 	}
@@ -110,18 +163,29 @@ func (s *Service) UpdateAgentConfig(ctx context.Context, projectID, configID str
 		config.InstallCommand = installCommand
 	}
 	if runCommand, ok := input.RunCommand.Get(); ok {
-		if len(runCommand) == 0 {
-			return nil, apiError(fmt.Errorf("agent config run command is required"), "")
-		}
 		config.RunCommand = runCommand
+	}
+	if relaunchCommand, ok := input.RelaunchCommand.Get(); ok {
+		config.RelaunchCommand = relaunchCommand
 	}
 	if apiFiles, ok := input.Files.Get(); ok {
 		config.Files = agentConfigFilesFromAPI(apiFiles)
 	}
+	// A fully custom config (no definition to inherit from) must keep a run command.
+	if config.DefinitionID == "" && len(config.RunCommand) == 0 {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "agent config run command is required when no definition is provided")
+	}
+	// Re-sparsify so a client that writes back the whole resolved object only
+	// pins fields it actually changed away from the definition.
+	agentdefs.Sparsify(config)
 	if err := s.store.UpdateAgentConfig(ctx, config); err != nil {
 		return nil, err
 	}
-	return s.store.GetAgentConfig(ctx, projectID, configID)
+	stored, err := s.store.GetAgentConfig(ctx, projectID, configID)
+	if err != nil {
+		return nil, err
+	}
+	return agentdefs.Resolve(stored), nil
 }
 
 func agentConfigFilesFromAPI(files []apimodel.AgentConfigFile) []model.AgentConfigFile {

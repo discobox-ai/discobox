@@ -51,6 +51,18 @@ func (s *Store) GetAgentConfigByName(ctx context.Context, projectID, name string
 	return &config, nil
 }
 
+func (s *Store) GetAgentConfigBySlug(ctx context.Context, projectID, slug string) (*model.AgentConfig, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var config model.AgentConfig
+	if err := read.Where("project_id = ? AND slug = ?", projectID, slug).First(&config).Error; err != nil {
+		return nil, mapNotFound(err)
+	}
+	return &config, nil
+}
+
 func (s *Store) UpdateAgentConfig(ctx context.Context, config *model.AgentConfig) error {
 	_, err := withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.AgentConfig, error) {
 		if err := tx.Save(config).Error; err != nil {

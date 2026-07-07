@@ -8,6 +8,35 @@ import (
 	"github.com/obot-platform/discobox/server/internal/model"
 )
 
+func TestGetAgentConfigBySlug(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newTestStoreWithDB(t, nil)
+
+	config := &model.AgentConfig{
+		ProjectID:    "project-1",
+		Slug:         "codex",
+		DefinitionID: "codex",
+		Name:         "Codex",
+	}
+	if err := s.CreateAgentConfig(ctx, config); err != nil {
+		t.Fatalf("create agent config: %v", err)
+	}
+	got, err := s.GetAgentConfigBySlug(ctx, "project-1", "codex")
+	if err != nil {
+		t.Fatalf("get by slug: %v", err)
+	}
+	if got.ID != config.ID || got.DefinitionID != "codex" {
+		t.Fatalf("get by slug = %#v", got)
+	}
+	if _, err := s.GetAgentConfigBySlug(ctx, "project-1", "missing"); err == nil {
+		t.Fatalf("expected not-found for missing slug")
+	}
+	// Slug lookup is project-scoped.
+	if _, err := s.GetAgentConfigBySlug(ctx, "project-2", "codex"); err == nil {
+		t.Fatalf("expected not-found for slug in another project")
+	}
+}
+
 func TestAgentConfigResourceEvents(t *testing.T) {
 	ctx := context.Background()
 	s, db := newTestStoreWithDB(t, nil)

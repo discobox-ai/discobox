@@ -4,63 +4,29 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/obot-platform/discobox/server/internal/agentdefs"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
-
 	"github.com/obot-platform/discobox/server/internal/model"
 )
 
-var agentConfigDefinitions = []model.AgentConfigDefinition{
-	{
-		ID:             "codex",
-		Name:           "Codex",
-		Description:    "OpenAI Codex coding agent.",
-		InstallCommand: []string{"npm", "install", "-g", "@openai/codex"},
-		RunCommand:     []string{"codex"},
-	},
-	{
-		ID:             "claude-code",
-		Name:           "Claude Code",
-		Description:    "Anthropic Claude Code coding agent.",
-		InstallCommand: []string{"npm", "install", "-g", "@anthropic-ai/claude-code"},
-		RunCommand:     []string{"claude"},
-		Files: []model.AgentConfigFile{
-			{Path: ".claude.json", Content: `{"hasCompletedOnboarding": true}`, CreateOnly: true},
-			{Path: ".claude/settings.json", Content: `{"theme":"dark","skipDangerousModePermissionPrompt":true}`},
-		},
-	},
-}
-
+// Definitions returns the built-in agent-config templates, owned by the harness
+// packages and exposed through agentdefs.
 func Definitions() []model.AgentConfigDefinition {
-	return cloneAgentConfigDefinitions(agentConfigDefinitions)
+	return agentdefs.Definitions()
 }
 
 func DefinitionByID(definitionID string) (*model.AgentConfigDefinition, bool) {
-	return agentConfigDefinitionByID(definitionID)
+	return agentdefs.DefinitionByID(definitionID)
 }
 
 func (s *Service) ListAgentConfigDefinitions(context.Context) ([]model.AgentConfigDefinition, error) {
-	return Definitions(), nil
+	return agentdefs.Definitions(), nil
 }
 
 func (s *Service) GetAgentConfigDefinition(_ context.Context, definitionID string) (*model.AgentConfigDefinition, error) {
-	definition, ok := agentConfigDefinitionByID(definitionID)
+	definition, ok := agentdefs.DefinitionByID(definitionID)
 	if !ok {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config definition not found")
 	}
 	return definition, nil
-}
-
-func agentConfigDefinitionByID(definitionID string) (*model.AgentConfigDefinition, bool) {
-	for _, definition := range agentConfigDefinitions {
-		if definition.ID == definitionID {
-			return &definition, true
-		}
-	}
-	return nil, false
-}
-
-func cloneAgentConfigDefinitions(definitions []model.AgentConfigDefinition) []model.AgentConfigDefinition {
-	out := make([]model.AgentConfigDefinition, len(definitions))
-	copy(out, definitions)
-	return out
 }
