@@ -24,7 +24,11 @@ func TestListenAllFailsWhenAnyEndpointCannotBind(t *testing.T) {
 	defer occupied.Close()
 
 	socketPath := filepath.Join(t.TempDir(), "server.sock")
-	listeners, err := listenAll([]string{
+	// Bound the reclaim so the test doesn't wait the full reclaimTimeout while
+	// the occupied (non-HTTP) port refuses to release.
+	reclaimCtx, cancel := context.WithTimeout(ctx, 500*time.Millisecond)
+	defer cancel()
+	listeners, err := listenAll(reclaimCtx, []string{
 		"unix://" + socketPath,
 		"http://" + occupied.Addr().String(),
 	})
@@ -65,9 +69,7 @@ func TestShutdownExistingLocalServerUsesLocalEndpoint(t *testing.T) {
 		_ = httpServer.Serve(listener)
 	}()
 
-	if err := shutdownExistingLocalServer(context.Background(), []string{endpoint, "http://127.0.0.1:1"}, 0); err != nil {
-		t.Fatalf("shutdownExistingLocalServer() error = %v", err)
-	}
+	shutdownExistingLocalServer(context.Background(), []string{endpoint, "http://127.0.0.1:1"})
 	if shutdowns.Load() != 1 {
 		t.Fatalf("shutdown requests = %d, want 1", shutdowns.Load())
 	}
@@ -75,9 +77,7 @@ func TestShutdownExistingLocalServerUsesLocalEndpoint(t *testing.T) {
 
 func TestShutdownExistingLocalServerIgnoresUnavailableSocket(t *testing.T) {
 	endpoint := "unix://" + filepath.Join(t.TempDir(), "missing.sock")
-	if err := shutdownExistingLocalServer(context.Background(), []string{endpoint}, 0); err != nil {
-		t.Fatalf("shutdownExistingLocalServer() error = %v", err)
-	}
+	shutdownExistingLocalServer(context.Background(), []string{endpoint})
 }
 
 func TestShutdownExistingLocalServerFallsBackToHTTP(t *testing.T) {
@@ -104,12 +104,10 @@ func TestShutdownExistingLocalServerFallsBackToHTTP(t *testing.T) {
 		_ = httpServer.Serve(listener)
 	}()
 
-	if err := shutdownExistingLocalServer(ctx, []string{
+	shutdownExistingLocalServer(ctx, []string{
 		"unix://" + filepath.Join(t.TempDir(), "missing.sock"),
 		"http://" + listener.Addr().String(),
-	}, 0); err != nil {
-		t.Fatalf("shutdownExistingLocalServer() error = %v", err)
-	}
+	})
 	if shutdowns.Load() != 1 {
 		t.Fatalf("shutdown requests = %d, want 1", shutdowns.Load())
 	}

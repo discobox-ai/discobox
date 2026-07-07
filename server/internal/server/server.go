@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -30,9 +31,10 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	if err := shutdownExistingLocalServer(ctx, cfg.Listen, time.Second); err != nil {
-		return fmt.Errorf("shutdown existing local server: %w", err)
-	}
+	// Best-effort: ask any server currently holding our endpoints to shut down.
+	// This is our only chance to reach it over the unix socket before listenAll
+	// rebinds that path; the remaining reclaim happens in listenAll.
+	shutdownExistingLocalServer(ctx, cfg.Listen)
 	shutdownTelemetry, err := initTelemetry(ctx, TelemetryOptions{
 		MetricsEnabled:       cfg.OTelMetricsEnabled,
 		MetricExportInterval: cfg.OTelMetricExportInterval,
@@ -84,7 +86,7 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("initialize app: %w", err)
 	}
 
-	listeners, err := listenAll(cfg.Listen)
+	listeners, err := listenAll(ctx, cfg.Listen)
 	if err != nil {
 		return fmt.Errorf("listen: %w", err)
 	}
@@ -120,6 +122,18 @@ func Run(ctx context.Context) error {
 	if cfg.AutoShutdownTimeout > 0 {
 		go activity.ShutdownWhenIdle(ctx, httpServer, cfg.AutoShutdownTimeout)
 	}
+	// Gracefully shut down on context cancellation (e.g. SIGINT/SIGTERM) so the
+	// listeners are released promptly instead of dying with the process.
+	// ctx is already canceled by the time this fires, so the drain deadline is
+	// derived from a fresh context; using ctx would abort the shutdown at once.
+	go func() { //nolint:gosec // G118: intentional detached context for post-cancellation drain.
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			log.Printf("graceful shutdown: %v", err)
+		}
+	}()
 	return serveAll(httpServer, listeners)
 }
 
@@ -129,17 +143,50 @@ type serverListener struct {
 	cleanup func()
 }
 
-func listenAll(endpoints []string) ([]serverListener, error) {
+const (
+	// reclaimTimeout bounds how long listenWithReclaim waits for a previous
+	// server to release an endpoint before giving up.
+	reclaimTimeout = 5 * time.Second
+	// reclaimRetryInterval is the backoff between bind attempts while waiting
+	// for an endpoint to be released.
+	reclaimRetryInterval = 100 * time.Millisecond
+)
+
+func listenAll(ctx context.Context, endpoints []string) ([]serverListener, error) {
 	listeners := make([]serverListener, 0, len(endpoints))
 	for _, endpoint := range endpoints {
-		listener, display, cleanup, err := localipc.Listen(endpoint)
+		listener, err := listenWithReclaim(ctx, endpoint)
 		if err != nil {
 			cleanupListeners(listeners)
 			return nil, err
 		}
-		listeners = append(listeners, serverListener{Listener: listener, display: display, cleanup: cleanup})
+		listeners = append(listeners, listener)
 	}
 	return listeners, nil
+}
+
+// listenWithReclaim binds a single endpoint, retrying while the address is still
+// held by a previous server. On each in-use failure it re-requests shutdown of
+// whoever holds the endpoint, then retries until reclaimTimeout elapses. This
+// replaces a fixed post-shutdown sleep with a verified reclaim: we bind as soon
+// as the address is actually free rather than guessing a drain time.
+func listenWithReclaim(ctx context.Context, endpoint string) (serverListener, error) {
+	deadline := time.Now().Add(reclaimTimeout)
+	for {
+		listener, display, cleanup, err := localipc.Listen(endpoint)
+		if err == nil {
+			return serverListener{Listener: listener, display: display, cleanup: cleanup}, nil
+		}
+		if !errors.Is(err, syscall.EADDRINUSE) || !time.Now().Before(deadline) {
+			return serverListener{}, err
+		}
+		requestEndpointShutdown(ctx, endpoint)
+		select {
+		case <-ctx.Done():
+			return serverListener{}, ctx.Err()
+		case <-time.After(reclaimRetryInterval):
+		}
+	}
 }
 
 func cleanupListeners(listeners []serverListener) {
@@ -150,71 +197,38 @@ func cleanupListeners(listeners []serverListener) {
 	}
 }
 
-func shutdownExistingLocalServer(ctx context.Context, endpoints []string, wait time.Duration) error {
-	for _, endpoint := range shutdownEndpoints(endpoints) {
-		shutdownCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-		baseURL, client, err := localipc.HTTPClient(endpoint, nil)
-		if err != nil {
-			cancel()
-			return err
-		}
-		req, err := http.NewRequestWithContext(shutdownCtx, http.MethodPost, baseURL+"/shutdown", nil)
-		if err != nil {
-			cancel()
-			return err
-		}
-		resp := doShutdownRequest(client, req)
-		if resp == nil {
-			err := shutdownCtx.Err()
-			cancel()
-			if err != nil {
-				return err
-			}
-			continue
-		}
-		defer resp.Body.Close()
-		cancel()
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return fmt.Errorf("%s returned %s", endpoint, resp.Status)
-		}
-		log.Printf("requested shutdown of existing server at %s", endpoint)
-		if wait > 0 {
-			time.Sleep(wait)
-		}
-		return nil
+// shutdownExistingLocalServer asks any server currently listening on the given
+// endpoints to shut down. It is best-effort: unreachable endpoints are ignored.
+// Every endpoint is contacted (not just the first per scheme) so a stray server
+// holding only one of them is still told to leave.
+func shutdownExistingLocalServer(ctx context.Context, endpoints []string) {
+	for _, endpoint := range endpoints {
+		requestEndpointShutdown(ctx, endpoint)
 	}
-	return nil
 }
 
-func doShutdownRequest(client *http.Client, req *http.Request) *http.Response {
+// requestEndpointShutdown POSTs /shutdown to a single endpoint, ignoring any
+// error (including an unreachable endpoint).
+func requestEndpointShutdown(ctx context.Context, endpoint string) {
+	shutdownCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	baseURL, client, err := localipc.HTTPClient(endpoint, nil)
+	if err != nil {
+		return
+	}
+	req, err := http.NewRequestWithContext(shutdownCtx, http.MethodPost, baseURL+"/shutdown", nil)
+	if err != nil {
+		return
+	}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil
+		return
 	}
-	return resp
-}
-
-func shutdownEndpoints(endpoints []string) []string {
-	var result []string
-	for _, scheme := range []string{"unix", "npipe", "http"} {
-		if endpoint := firstListenEndpoint(endpoints, scheme); endpoint != "" {
-			result = append(result, endpoint)
-		}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return
 	}
-	return result
-}
-
-func firstListenEndpoint(endpoints []string, scheme string) string {
-	for _, endpoint := range endpoints {
-		parsed, err := localipc.Parse(endpoint)
-		if err != nil {
-			continue
-		}
-		if parsed.Scheme == scheme {
-			return endpoint
-		}
-	}
-	return ""
+	log.Printf("requested shutdown of existing server at %s", endpoint)
 }
 
 func serveAll(server *http.Server, listeners []serverListener) error {
