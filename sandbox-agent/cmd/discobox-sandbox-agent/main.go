@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/obot-platform/discobox/proxy/bridge"
 	"github.com/obot-platform/discobox/sandbox-agent/config"
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
 	agenthooks "github.com/obot-platform/discobox/sandbox-agent/hooks"
@@ -37,6 +38,9 @@ func run(args []string) int {
 	}
 	if len(args) > 0 && args[0] == "exec-shim" {
 		return runExecShim(args[1:])
+	}
+	if len(args) > 0 && args[0] == "proxy-bridge" {
+		return runProxyBridge(args[1:])
 	}
 	var configPath string
 	flags := flag.NewFlagSet("discobox-sandbox-agent", flag.ContinueOnError)
@@ -89,6 +93,67 @@ func runHookPublish(args []string) int {
 		return 0
 	}
 	return 0
+}
+
+// bridgeConfig mirrors the on-disk config written by the worker agent into the
+// sandbox proxy material directory.
+type bridgeConfig struct {
+	ListenAddress  string `json:"listenAddress"`
+	WorkerProxyURL string `json:"workerProxyUrl"`
+	MTLSCAPath     string `json:"mtlsCaPath"`
+	ClientCertPath string `json:"clientCertPath"`
+	ClientKeyPath  string `json:"clientKeyPath"`
+}
+
+// runProxyBridge runs the sandbox-local forwarder that routes sandbox proxy
+// traffic to the worker proxy over mTLS.
+func runProxyBridge(args []string) int {
+	var configPath string
+	flags := flag.NewFlagSet("discobox-sandbox-agent proxy-bridge", flag.ContinueOnError)
+	flags.StringVar(&configPath, "config", "/etc/discobox/proxy/bridge.json", "path to proxy bridge config")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		slog.Error("read proxy bridge config", "error", err)
+		return 1
+	}
+	var cfg bridgeConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		slog.Error("parse proxy bridge config", "error", err)
+		return 1
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	forwarder, err := bridge.New(ctx, bridge.Config{
+		ListenAddress:  cfg.ListenAddress,
+		WorkerProxyURL: cfg.WorkerProxyURL,
+		MTLSCAPath:     cfg.MTLSCAPath,
+		ClientCertPath: cfg.ClientCertPath,
+		ClientKeyPath:  cfg.ClientKeyPath,
+	})
+	if err != nil {
+		slog.Error("create proxy bridge", "error", err)
+		return 1
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		slog.Info("sandbox proxy bridge serving", "addr", cfg.ListenAddress, "worker", cfg.WorkerProxyURL)
+		errCh <- forwarder.ListenAndServe()
+	}()
+	select {
+	case <-ctx.Done():
+		_ = forwarder.Close()
+		return 0
+	case err := <-errCh:
+		_ = forwarder.Close()
+		if err != nil {
+			slog.Error("proxy bridge failed", "error", err)
+			return 1
+		}
+		return 0
+	}
 }
 
 func runExecShim(args []string) int {

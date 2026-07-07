@@ -7,6 +7,8 @@ COPY go.mod go.sum ./
 COPY api ./api
 COPY controlplane ./controlplane
 COPY id ./id
+COPY proxy ./proxy
+COPY gormdb ./gormdb
 COPY worker-agent/go.mod worker-agent/go.sum ./worker-agent/
 COPY worker-agent/cmd ./worker-agent/cmd
 COPY worker-agent ./worker-agent
@@ -39,9 +41,10 @@ RUN apt-get update \
         console-getty.service
 
 COPY --from=build /out/discobox-worker-agent /usr/local/bin/discobox-worker-agent
+COPY worker-agent/image/systemd/discobox-proxy.service /etc/systemd/system/discobox-proxy.service
 
-RUN mkdir -p /var/lib/docker /var/lib/discobox \
-    && systemctl enable docker.service
+RUN mkdir -p /var/lib/docker /var/lib/discobox /var/lib/discobox/proxy /etc/discobox \
+    && systemctl enable docker.service discobox-proxy.service
 
 EXPOSE 3002
 VOLUME ["/var/lib/docker", "/var/lib/discobox"]

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -21,10 +22,13 @@ import (
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	apigen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
+
+	"github.com/obot-platform/discobox/worker-agent/proxyagent"
 
 	workerclient "github.com/obot-platform/discobox/worker-agent/api/gen"
 	workerapimodel "github.com/obot-platform/discobox/worker-agent/api/model"
@@ -167,20 +171,42 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	if err != nil {
 		return nil, err
 	}
-	if err := r.writeSandboxAgentConfig(ctx, sandboxID, req); err != nil {
+	proxyMaterial, err := proxyagent.EnsureSandboxMaterial(sandboxID, r.workerHostPath)
+	if err != nil {
 		return nil, err
 	}
+	sentinels, _ := req.Sentinels.Get()
+	if err := proxyagent.UpsertSandboxSentinels(r.workerHostPath, sandboxID, sentinels); err != nil {
+		return nil, err
+	}
+	mounts = append(mounts, mount.Mount{
+		Type:     mount.TypeBind,
+		Source:   proxyMaterial.MountSource,
+		Target:   proxyagent.SandboxProxyMount,
+		ReadOnly: true,
+	})
+	if err := r.writeSandboxAgentConfig(ctx, sandboxID, req, proxyMaterial.Env); err != nil {
+		return nil, err
+	}
+	baseEnv := mergeEnv(map[string]string(optSandboxConfigEnv(config.Env)), proxyMaterial.Env)
 	name := sandboxContainerName(r.workerID, sandboxID)
 	cfg := &container.Config{
 		Image:        imageName,
 		Labels:       r.labels(sandboxID),
-		Env:          envList(envWithSandboxUser(map[string]string(optSandboxConfigEnv(config.Env)), user)),
+		Env:          envList(envWithSandboxUser(baseEnv, user)),
 		WorkingDir:   sourceWorkingDirectory(req),
 		AttachStdout: true,
 		AttachStderr: true,
 		Tty:          true,
 	}
-	hostCfg := &container.HostConfig{Mounts: mounts, Privileged: true}
+	hostCfg := &container.HostConfig{
+		Mounts:     mounts,
+		Privileged: true,
+		// Let the sandbox reach the worker proxy listener through the Docker
+		// host gateway under the stable name presented on the proxy server
+		// certificate.
+		ExtraHosts: []string{proxyagent.ServerName + ":host-gateway"},
+	}
 	if memoryBytes := optInt64(config.MemoryBytes); memoryBytes > 0 {
 		hostCfg.Memory = memoryBytes
 	} else if resources, ok := req.Resources.Get(); ok && resources.MemoryMb > 0 {
@@ -263,12 +289,12 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 	return mounts, nil
 }
 
-func (r *DockerSandboxRuntime) writeSandboxAgentConfig(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxCreateRequest) error {
+func (r *DockerSandboxRuntime) writeSandboxAgentConfig(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxCreateRequest, proxyEnv map[string]string) error {
 	configDir := r.workerHostPath(sandboxConfigRoot(r.projectID, sandboxID))
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return err
 	}
-	cfg := buildSandboxManifest(r.projectID, sandboxID, r.workerID, r.controlPlanePublicKey, req)
+	cfg := buildSandboxManifest(r.projectID, sandboxID, r.workerID, r.controlPlanePublicKey, req, proxyEnv)
 	data, err := json.MarshalIndent(&cfg, "", "  ")
 	if err != nil {
 		return err
@@ -289,13 +315,13 @@ func manifestAgentConfigFiles(files []workerapimodel.AgentConfigFile) []apimodel
 		out = append(out, apimodel.AgentConfigFile{
 			Path:       file.Path,
 			Content:    file.Content,
-			CreateOnly: apigen.NewOptBool(file.CreateOnly),
+			CreateOnly: publicOptBool(file.CreateOnly),
 		})
 	}
 	return out
 }
 
-func buildSandboxManifest(projectID, sandboxID, workerID, controlPlanePublicKey string, req *workerapimodel.WorkerSandboxCreateRequest) apimodel.SandboxManifest {
+func buildSandboxManifest(projectID, sandboxID, workerID, controlPlanePublicKey string, req *workerapimodel.WorkerSandboxCreateRequest, proxyEnv map[string]string) apimodel.SandboxManifest {
 	manifest := apimodel.SandboxManifest{
 		APIVersion: apimodel.SandboxManifestAPIVersion,
 		SandboxID:  sandboxID,
@@ -337,6 +363,9 @@ func buildSandboxManifest(projectID, sandboxID, workerID, controlPlanePublicKey 
 			if installCommand, ok := resolved.InstallCommand.Get(); ok {
 				resolvedConfig.InstallCommand = installCommand
 			}
+			if relaunchCommand, ok := resolved.RelaunchCommand.Get(); ok {
+				resolvedConfig.RelaunchCommand = relaunchCommand
+			}
 			if files, ok := resolved.Files.Get(); ok {
 				resolvedConfig.Files = manifestAgentConfigFiles(files)
 			}
@@ -354,12 +383,30 @@ func buildSandboxManifest(projectID, sandboxID, workerID, controlPlanePublicKey 
 				if installCommand, ok := config.InstallCommand.Get(); ok {
 					agentConfig.InstallCommand = installCommand
 				}
+				if relaunchCommand, ok := config.RelaunchCommand.Get(); ok {
+					agentConfig.RelaunchCommand = relaunchCommand
+				}
 				if files, ok := config.Files.Get(); ok {
 					agentConfig.Files = manifestAgentConfigFiles(files)
 				}
 				manifest.AgentConfigs = append(manifest.AgentConfigs, agentConfig)
 			}
 		}
+	}
+	// Inject the worker-proxy environment so sandbox-agent-spawned terminals and
+	// execs route outbound traffic through the local forwarder and trust the
+	// MITM CA.
+	if len(proxyEnv) > 0 {
+		env := map[string]string{}
+		if existing, ok := manifest.Config.Env.Get(); ok {
+			for key, value := range existing {
+				env[key] = value
+			}
+		}
+		for key, value := range proxyEnv {
+			env[key] = value
+		}
+		manifest.Config.Env = apigen.NewOptSandboxConfigEnv(apigen.SandboxConfigEnv(env))
 	}
 	return manifest
 }
@@ -373,7 +420,7 @@ func publicSandboxConfig(config workerapimodel.SandboxConfig) apimodel.SandboxCo
 		Description:              publicOptString(config.Description),
 		Image:                    optString(config.Image),
 		Name:                     optString(config.Name),
-		Prompt:                   publicOptString(config.Prompt),
+		Prompt:                   config.Prompt,
 		CpuVcpus:                 optFloat64(config.CpuVcpus),
 		MemoryBytes:              optInt64(config.MemoryBytes),
 		StorageBytes:             optInt64(config.StorageBytes),
@@ -443,6 +490,13 @@ func publicOptString(opt workerclient.OptString) apigen.OptString {
 	return apigen.OptString{}
 }
 
+func publicOptBool(opt workerclient.OptBool) apigen.OptBool {
+	if value, ok := opt.Get(); ok {
+		return apigen.NewOptBool(value)
+	}
+	return apigen.OptBool{}
+}
+
 func publicOptInt64(opt workerclient.OptInt64) apigen.OptInt64 {
 	if value, ok := opt.Get(); ok {
 		return apigen.NewOptInt64(value)
@@ -495,14 +549,128 @@ func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID stri
 
 func (r *DockerSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID string) error {
 	sb, err := r.GetSandbox(ctx, sandboxID)
-	if errors.Is(err, ErrNotFound) {
-		return nil
+	if err != nil && !errors.Is(err, ErrNotFound) {
+		return err
 	}
+	if err == nil {
+		if _, err := r.client.ContainerRemove(ctx, sb.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
+			return err
+		}
+	}
+	// Clean up proxy material even if the container was already gone, so a
+	// repeated delete still reclaims the client certificate and staged files.
+	if err := proxyagent.RemoveSandboxSentinels(r.workerHostPath, sandboxID); err != nil {
+		return err
+	}
+	return proxyagent.RemoveSandboxMaterial(sandboxID, r.workerHostPath)
+}
+
+const (
+	// proxyMaterialGracePeriod protects freshly staged material from being
+	// pruned while its sandbox container is still being created.
+	proxyMaterialGracePeriod = 15 * time.Minute
+	// proxyMaterialEventDebounce coalesces a burst of container-destroy events
+	// into a single reconcile pass.
+	proxyMaterialEventDebounce = 5 * time.Second
+	// proxyMaterialWatchBackoff paces reconnection to the Docker event stream.
+	proxyMaterialWatchBackoff = 5 * time.Second
+)
+
+// ReconcileProxyMaterial prunes proxy material for sandboxes whose containers no
+// longer exist. It is the recovery path for containers deleted out of band or
+// while the worker was down, which never run through DeleteSandbox.
+func (r *DockerSandboxRuntime) ReconcileProxyMaterial(ctx context.Context, minAge time.Duration) error {
+	sandboxes, err := r.ListSandboxes(ctx)
 	if err != nil {
 		return err
 	}
-	_, err = r.client.ContainerRemove(ctx, sb.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true})
-	return err
+	live := make([]string, 0, len(sandboxes))
+	for _, sb := range sandboxes {
+		if sb.SandboxID != "" {
+			live = append(live, sb.SandboxID)
+		}
+	}
+	return proxyagent.PruneOrphanedMaterial(live, r.workerHostPath, minAge)
+}
+
+// WatchProxyMaterial reconciles orphaned proxy material after establishing a
+// Docker event subscription, and thereafter only when the event stream reports
+// a managed sandbox container being destroyed. It does not poll on a timer.
+func (r *DockerSandboxRuntime) WatchProxyMaterial(ctx context.Context, logger *slog.Logger) {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	for ctx.Err() == nil {
+		if err := r.watchProxyMaterialEvents(ctx, logger); err != nil && ctx.Err() == nil {
+			logger.Warn("watch sandbox container events", "error", err)
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(proxyMaterialWatchBackoff):
+		}
+	}
+}
+
+func (r *DockerSandboxRuntime) reconcileProxyMaterial(ctx context.Context, logger *slog.Logger) {
+	if err := r.ReconcileProxyMaterial(ctx, proxyMaterialGracePeriod); err != nil {
+		logger.Warn("reconcile proxy material", "error", err)
+	}
+}
+
+// watchProxyMaterialEvents subscribes to the Docker event stream for managed
+// sandbox container destroy events, then reconciles, then blocks kicking a
+// debounced reconcile for each burst. It returns when the stream ends or errors
+// so the caller can reconnect.
+//
+// The reconcile runs after the subscription is opened, and the subscription uses
+// a Since timestamp captured before opening it, so the daemon replays any
+// destroy that occurs in the window between opening the stream and the reconcile
+// completing. This closes the race where a container deleted just after a
+// startup reconcile would otherwise be missed until the next reconnect.
+func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, logger *slog.Logger) error {
+	since := time.Now()
+	filters := client.Filters{}
+	filters = filters.Add("type", string(events.ContainerEventType))
+	filters = filters.Add("event", string(events.ActionDestroy))
+	filters = filters.Add("label", sandboxLabelManaged+"=true")
+	filters = filters.Add("label", sandboxLabelProject+"="+r.projectID)
+	filters = filters.Add("label", sandboxLabelWorker+"="+r.workerID)
+	result := r.client.Events(ctx, client.EventsListOptions{
+		Since:   fmt.Sprintf("%d.%09d", since.Unix(), since.Nanosecond()),
+		Filters: filters,
+	})
+
+	// Reconcile once the subscription is established. Destroys from `since`
+	// onward are buffered by the daemon and delivered on the stream below, so the
+	// reconcile and the replayed events together cover every deletion.
+	r.reconcileProxyMaterial(ctx, logger)
+
+	debounce := time.NewTimer(0)
+	if !debounce.Stop() {
+		<-debounce.C
+	}
+	defer debounce.Stop()
+	pending := false
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case err := <-result.Err:
+			return err
+		case <-result.Messages:
+			if !pending {
+				pending = true
+				debounce.Reset(proxyMaterialEventDebounce)
+			}
+		case <-debounce.C:
+			pending = false
+			r.reconcileProxyMaterial(ctx, logger)
+		}
+	}
 }
 
 func (r *DockerSandboxRuntime) StartSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.WorkerSandboxOperationRequest) (*Sandbox, error) {
@@ -1316,6 +1484,15 @@ func envMap(values []string) map[string]string {
 		if ok {
 			out[key] = val
 		}
+	}
+	return out
+}
+
+// mergeEnv returns a new map containing base overlaid with overlay.
+func mergeEnv(base, overlay map[string]string) map[string]string {
+	out := copyMap(base)
+	for key, value := range overlay {
+		out[key] = value
 	}
 	return out
 }

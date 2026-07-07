@@ -1,0 +1,16 @@
+[Unit]
+Description=Discobox Trust Proxy MITM CA
+Documentation=https://github.com/obot-platform/discobox
+DefaultDependencies=no
+After=local-fs.target
+Before=discobox-sandbox-agent.service discobox-proxy-bridge.service sysinit.target
+ConditionPathExists=/etc/discobox/proxy/mitm-ca.crt
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/install -D -m 0644 /etc/discobox/proxy/mitm-ca.crt /usr/local/share/ca-certificates/discobox-mitm-ca.crt
+ExecStart=/usr/sbin/update-ca-certificates
+
+[Install]
+WantedBy=sysinit.target

@@ -11,6 +11,7 @@ COPY go.mod go.sum ./
 COPY api ./api
 COPY gormdb ./gormdb
 COPY harness ./harness
+COPY proxy ./proxy
 COPY sandbox-agent ./sandbox-agent
 
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
@@ -151,6 +152,8 @@ RUN rustup --version >/dev/null 2>&1 \
 COPY sandbox-agent/image/profile.d/sandbox-dev-tools.sh /etc/profile.d/sandbox-dev-tools.sh
 COPY sandbox-agent/image/image.json /usr/share/discobox/image.json
 COPY sandbox-agent/image/systemd/discobox-sandbox-agent.service /etc/systemd/system/discobox-sandbox-agent.service
+COPY sandbox-agent/image/systemd/discobox-proxy-bridge.service /etc/systemd/system/discobox-proxy-bridge.service
+COPY sandbox-agent/image/systemd/discobox-trust-ca.service /etc/systemd/system/discobox-trust-ca.service
 COPY sandbox-agent/image/systemd/journald-console.conf /etc/systemd/journald.conf.d/discobox-console.conf
 COPY sandbox-agent/image/systemd/x11-display.socket /etc/systemd/system/x11-display.socket
 COPY sandbox-agent/image/systemd/x11-display.service /etc/systemd/system/x11-display.service
@@ -171,6 +174,8 @@ RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
     && mkdir -p /etc/discobox /run/discobox/agent-terminals /var/lib/docker /var/lib/discobox /workspace \
     && systemctl enable \
         discobox-sandbox-agent.service \
+        discobox-proxy-bridge.service \
+        discobox-trust-ca.service \
         x11-display.socket \
         x11vnc.socket \
         websockify-proxy.socket

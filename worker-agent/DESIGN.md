@@ -19,6 +19,7 @@ from the future in-sandbox `sandbox-agent` API.
 | `.` | Root `workeragent` Go package: boot contract, registration flow, status reporting, and high-level command orchestration. |
 | `server` | Worker-local HTTP server, health/metadata endpoints, and generated sandbox API route/auth adapter. |
 | `sandboxruntime` | Local sandbox runtime implementations used by the worker server. |
+| `proxyagent` | Worker-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, and per-sandbox client material staging. |
 | `systemd` | Linux/systemd namespace startup and child reaping helpers, with non-Linux stubs. |
 
 ## Startup Flow
@@ -65,6 +66,51 @@ API operations must authorize against those scopes. Sandbox operation handlers
 under this route own only local runtime work; control-plane persistence, user
 authorization, project events, and desired-state orchestration remain outside
 this module.
+
+## Worker Proxy Integration
+
+The worker runs the worker-scoped proxy (root `proxy` package) so all sandbox
+egress is intercepted, recorded, and policy-controlled.
+
+```mermaid
+flowchart LR
+    subgraph worker["worker container"]
+        agent["worker-agent (pid 1)"] -->|"forks child pid ns"| sysd["systemd"]
+        sysd -->|"discobox-proxy.service"| wproxy["worker proxy :17080 (mTLS)"]
+        agent -->|"reads/writes"| certs["/var/lib/discobox/proxy/certs"]
+        wproxy -->|"reads"| certs
+    end
+    subgraph sandbox["sandbox container"]
+        bridge["discobox-proxy-bridge.service"] -->|"HTTP/SOCKS"| tools["agent + user workloads"]
+    end
+    tools -->|"HTTP_PROXY=127.0.0.1:17008"| bridge
+    bridge -->|"mTLS client cert, host-gateway"| wproxy
+```
+
+- `proxyagent` prepares the CA bundle and worker server certificate before
+  systemd boots, so the `discobox-proxy.service` unit and per-sandbox client
+  certificates share one CA without a first-generation race. Both processes see
+  the same `/var/lib/discobox/proxy` files because the child systemd namespace
+  shares the container filesystem content.
+- The proxy binds `0.0.0.0:17080`; sandboxes reach it through a
+  `discobox-worker-proxy:host-gateway` entry so the mTLS `ServerName` check stays
+  valid regardless of the runtime gateway IP.
+- `sandboxruntime.CreateSandbox` issues a per-sandbox client certificate
+  (client ID = sandbox ID, the proxy tenant boundary), bind-mounts only the
+  public CAs and that sandbox's keypair at `/etc/discobox/proxy` (read-only), and
+  injects the `HTTP(S)_PROXY`/CA environment into both the container and the
+  sandbox manifest so `sandbox-agent`-spawned terminals and execs are proxied.
+- MITM CA trust is split by how tools find roots: the sandbox
+  `discobox-trust-ca.service` runs `update-ca-certificates` early in boot so the
+  system bundle (curl, git, wget, OpenSSL, and the `SSL_CERT_FILE` /
+  `REQUESTS_CA_BUNDLE` env for Python) trusts the MITM CA alongside real roots;
+  Node.js and Claude Code use `NODE_EXTRA_CA_CERTS` pointed at the mounted MITM
+  CA because they ship their own root store.
+- The in-sandbox forwarder is the dependency-light `proxy/bridge` package, run by
+  the `sandbox-agent proxy-bridge` subcommand as `discobox-proxy-bridge.service`.
+  It forwards local plaintext proxy traffic to the worker proxy over mTLS.
+- Sentinel secret swapping is not yet wired: the proxy runs with a nil resolver,
+  so it records and forwards traffic but does not substitute secrets.
 
 ## Boundary Rules
 

@@ -276,7 +276,7 @@ func TestBuildSandboxManifestIncludesProjectAgentConfigs(t *testing.T) {
 		}),
 	}
 
-	manifest := buildSandboxManifest("project-1", "sandbox-1", "worker-1", "public-key", req)
+	manifest := buildSandboxManifest("project-1", "sandbox-1", "worker-1", "public-key", req, nil)
 	if manifest.APIVersion != "discobox.dev/sandbox/v1" || manifest.SandboxID != "sandbox-1" {
 		t.Fatalf("manifest identity = %#v, want v1 sandbox-1", manifest)
 	}

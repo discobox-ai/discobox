@@ -22,8 +22,22 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/gormdb"
+	"github.com/obot-platform/discobox/proxy/bridge"
 	"github.com/obot-platform/discobox/proxy/internal/audit"
+	"github.com/obot-platform/discobox/proxy/internal/secrets"
 )
+
+type stubResolver struct {
+	value string
+	host  string
+}
+
+func (r stubResolver) Resolve(_ context.Context, req secrets.ResolveRequest) (secrets.ResolveResult, error) {
+	if r.host != "" && req.Host != r.host {
+		return secrets.ResolveResult{}, secrets.ErrDenied
+	}
+	return secrets.ResolveResult{Value: r.value, ExpiresAt: time.Now().Add(time.Hour)}, nil
+}
 
 func TestHTTPProxyMTLSIdentityHeaderRewriteAndAudit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -73,7 +87,7 @@ func TestHTTPProxyMTLSIdentityHeaderRewriteAndAudit(t *testing.T) {
 				"X-Injected-Nonsecret": "non-secret",
 			},
 		}},
-	}, prepared.Bundle)
+	}, prepared.Bundle, nil)
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
@@ -176,6 +190,175 @@ func TestHTTPProxyMTLSIdentityHeaderRewriteAndAudit(t *testing.T) {
 	}
 }
 
+func TestHTTPProxySecretSentinelSwapAndAudit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const sentinel = "sk-ant-oat01-SENTINELVALUE00000000000000000000"
+	const realValue = "sk-ant-oat01-REALSECRETVALUE1234567890abcdefgh"
+
+	var sawAuthorization string
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawAuthorization = r.Header.Get("Authorization")
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer origin.Close()
+
+	originURL, err := url.Parse(origin.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originHost := originURL.Hostname()
+
+	dir := t.TempDir()
+	prepared, err := PrepareCertificates(PrepareOptions{
+		Dir:         filepath.Join(dir, "certs"),
+		ProxyURL:    "https://127.0.0.1:0",
+		ServerHosts: []string{"127.0.0.1", "localhost"},
+		ClientIDs:   []string{"sandbox-1"},
+	})
+	if err != nil {
+		t.Fatalf("PrepareCertificates() error = %v", err)
+	}
+
+	dbPath := filepath.Join(dir, "audit.db")
+	server, err := NewServer(ctx, Config{
+		ListenAddress: "127.0.0.1:0",
+		CertDir:       prepared.Bundle.Dir,
+		DatabaseDSN:   dbPath,
+		Recording: RecordingConfig{
+			Enabled:   true,
+			QueueSize: 16,
+		},
+		Secrets: SecretsConfig{
+			Clients: []SecretClient{{
+				ClientID:  "sandbox-1",
+				Sentinels: []string{sentinel},
+			}},
+		},
+	}, prepared.Bundle, stubResolver{value: realValue, host: originHost})
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.ListenAndServe() }()
+	var closeOnce sync.Once
+	closeServer := func() {
+		closeOnce.Do(func() {
+			if err := server.Close(); err != nil {
+				t.Fatalf("Close() error = %v", err)
+			}
+			select {
+			case err := <-errCh:
+				if err != nil {
+					t.Fatalf("ListenAndServe() error = %v", err)
+				}
+			case <-time.After(5 * time.Second):
+				t.Fatal("timed out waiting for proxy shutdown")
+			}
+		})
+	}
+	t.Cleanup(closeServer)
+	addr := waitForAddr(t, server)
+
+	client := mtlsHTTPClient(t, addr.String(), prepared.Clients["sandbox-1"])
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+sentinel)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() error = %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	if sawAuthorization != "Bearer "+realValue {
+		t.Fatalf("upstream Authorization = %q, want swapped real value", sawAuthorization)
+	}
+
+	closeServer()
+
+	pools, err := gormdb.Open(gormdb.Config{DSN: dbPath})
+	if err != nil {
+		t.Fatalf("open audit db: %v", err)
+	}
+	var exchange audit.HTTPExchange
+	if err := pools.Read.Where("client_id = ?", "sandbox-1").First(&exchange).Error; err != nil {
+		t.Fatalf("read audit exchange: %v", err)
+	}
+	if strings.Contains(exchange.RequestHeaders, realValue) {
+		t.Fatalf("audit leaked real secret value: %s", exchange.RequestHeaders)
+	}
+	var headers map[string][]string
+	if err := json.Unmarshal([]byte(exchange.RequestHeaders), &headers); err != nil {
+		t.Fatalf("unmarshal request headers: %v", err)
+	}
+	if values := headers["Authorization"]; len(values) != 1 || values[0] != "[REDACTED]" {
+		t.Fatalf("Authorization audit values = %#v, want [REDACTED]", values)
+	}
+}
+
+func TestHTTPProxySecretSentinelDeniedForOtherHost(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const sentinel = "sk-ant-oat01-SENTINELVALUE00000000000000000000"
+	const realValue = "sk-ant-oat01-REALSECRETVALUE1234567890abcdefgh"
+
+	var sawAuthorization string
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawAuthorization = r.Header.Get("Authorization")
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer origin.Close()
+
+	dir := t.TempDir()
+	prepared, err := PrepareCertificates(PrepareOptions{
+		Dir:         filepath.Join(dir, "certs"),
+		ProxyURL:    "https://127.0.0.1:0",
+		ServerHosts: []string{"127.0.0.1", "localhost"},
+		ClientIDs:   []string{"sandbox-1"},
+	})
+	if err != nil {
+		t.Fatalf("PrepareCertificates() error = %v", err)
+	}
+
+	server, err := NewServer(ctx, Config{
+		ListenAddress: "127.0.0.1:0",
+		CertDir:       prepared.Bundle.Dir,
+		DatabaseDSN:   filepath.Join(dir, "audit.db"),
+		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
+		Secrets: SecretsConfig{
+			Clients: []SecretClient{{ClientID: "sandbox-1", Sentinels: []string{sentinel}}},
+		},
+	}, prepared.Bundle, stubResolver{value: realValue, host: "only.allowed.example.com"})
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.ListenAndServe() }()
+	t.Cleanup(func() { _ = server.Close(); <-errCh })
+	addr := waitForAddr(t, server)
+
+	client := mtlsHTTPClient(t, addr.String(), prepared.Clients["sandbox-1"])
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+sentinel)
+	resp, err := client.Do(req)
+	if err != nil {
+		t.Fatalf("client.Do() error = %v", err)
+	}
+	defer resp.Body.Close()
+	if sawAuthorization != "Bearer "+sentinel {
+		t.Fatalf("upstream Authorization = %q, want unswapped sentinel (host denied)", sawAuthorization)
+	}
+}
+
 func TestHTTPProxyCapturesFullBodies(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -218,7 +401,7 @@ func TestHTTPProxyCapturesFullBodies(t *testing.T) {
 			QueueSize: 16,
 			BodyDir:   bodyDir,
 		},
-	}, prepared.Bundle)
+	}, prepared.Bundle, nil)
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
@@ -326,7 +509,7 @@ func TestHTTPProxyCapturesCachedResponseBody(t *testing.T) {
 			QueueSize: 16,
 			BodyDir:   bodyDir,
 		},
-	}, prepared.Bundle)
+	}, prepared.Bundle, nil)
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
@@ -429,7 +612,7 @@ func TestHTTPProxyUpgradeAudit(t *testing.T) {
 		CertDir:       prepared.Bundle.Dir,
 		DatabaseDSN:   dbPath,
 		Recording:     RecordingConfig{Enabled: true, QueueSize: 16, StreamDir: filepath.Join(dir, "streams")},
-	}, prepared.Bundle)
+	}, prepared.Bundle, nil)
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
@@ -536,7 +719,7 @@ func TestLocalForwarderHTTPToWorkerProxy(t *testing.T) {
 			Enabled:   true,
 			QueueSize: 16,
 		},
-	}, prepared.Bundle)
+	}, prepared.Bundle, nil)
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}
@@ -549,7 +732,7 @@ func TestLocalForwarderHTTPToWorkerProxy(t *testing.T) {
 	workerAddr := waitForAddr(t, worker)
 
 	clientMaterial := prepared.Clients["sandbox-1"]
-	local, err := NewLocalForwarder(ctx, LocalForwarderConfig{
+	local, err := bridge.New(ctx, bridge.Config{
 		ListenAddress:  "127.0.0.1:0",
 		WorkerProxyURL: "https://" + workerAddr.String(),
 		MTLSCAPath:     clientMaterial.MTLSCAPath,
@@ -557,7 +740,7 @@ func TestLocalForwarderHTTPToWorkerProxy(t *testing.T) {
 		ClientKeyPath:  clientMaterial.ClientKeyPath,
 	})
 	if err != nil {
-		t.Fatalf("NewLocalForwarder() error = %v", err)
+		t.Fatalf("bridge.New() error = %v", err)
 	}
 	localErrCh := make(chan error, 1)
 	go func() {
@@ -614,7 +797,7 @@ func waitForAddr(t *testing.T, server *Server) net.Addr {
 	return nil
 }
 
-func waitForLocalForwarderAddr(t *testing.T, forwarder *LocalForwarder) net.Addr {
+func waitForLocalForwarderAddr(t *testing.T, forwarder *bridge.Forwarder) net.Addr {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -647,7 +830,7 @@ func closeProxyServer(t *testing.T, server *Server, errCh <-chan error) func() {
 	}
 }
 
-func closeLocalForwarder(t *testing.T, forwarder *LocalForwarder, errCh <-chan error) func() {
+func closeLocalForwarder(t *testing.T, forwarder *bridge.Forwarder, errCh <-chan error) func() {
 	t.Helper()
 	var closeOnce sync.Once
 	return func() {

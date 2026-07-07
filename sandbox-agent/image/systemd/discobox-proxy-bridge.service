@@ -1,0 +1,19 @@
+[Unit]
+Description=Discobox Sandbox Proxy Bridge
+Documentation=https://github.com/obot-platform/discobox
+After=network-online.target
+Wants=network-online.target
+Before=discobox-sandbox-agent.service
+ConditionPathExists=/etc/discobox/proxy/bridge.json
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/discobox-sandbox-agent proxy-bridge --config /etc/discobox/proxy/bridge.json
+StandardOutput=journal+console
+StandardError=journal+console
+Restart=on-failure
+RestartSec=2s
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

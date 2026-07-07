@@ -1,4 +1,8 @@
-package proxy
+// Package bridge implements the sandbox-local forwarding proxy that accepts
+// plaintext proxy traffic inside a sandbox and forwards it to the worker proxy
+// over mTLS. It is intentionally dependency-light so the sandbox-agent binary
+// can embed it without importing the full worker proxy stack.
+package bridge
 
 import (
 	"context"
@@ -12,14 +16,18 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 )
 
-// LocalForwarder forwards sandbox-local plaintext proxy traffic to the worker
-// proxy over mTLS. It is protocol agnostic, so HTTP and SOCKS traffic both flow
+const tracerName = "github.com/obot-platform/discobox/proxy/bridge"
+
+// Forwarder forwards sandbox-local plaintext proxy traffic to the worker proxy
+// over mTLS. It is protocol agnostic, so HTTP and SOCKS traffic both flow
 // through the worker proxy's protocol detector.
-type LocalForwarder struct {
+type Forwarder struct {
 	ctx           context.Context
 	listenAddress string
 	workerAddress string
@@ -32,8 +40,8 @@ type LocalForwarder struct {
 	closed   chan struct{}
 }
 
-// LocalForwarderConfig controls a sandbox-local forwarding proxy.
-type LocalForwarderConfig struct {
+// Config controls a sandbox-local forwarder.
+type Config struct {
 	ListenAddress  string
 	WorkerProxyURL string
 	MTLSCAPath     string
@@ -41,8 +49,8 @@ type LocalForwarderConfig struct {
 	ClientKeyPath  string
 }
 
-// NewLocalForwarder creates a sandbox-local forwarder.
-func NewLocalForwarder(ctx context.Context, cfg LocalForwarderConfig) (*LocalForwarder, error) {
+// New creates a sandbox-local forwarder.
+func New(ctx context.Context, cfg Config) (*Forwarder, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -65,7 +73,7 @@ func NewLocalForwarder(ctx context.Context, cfg LocalForwarderConfig) (*LocalFor
 	if err != nil {
 		return nil, fmt.Errorf("load client certificate: %w", err)
 	}
-	return &LocalForwarder{
+	return &Forwarder{
 		ctx:           ctx,
 		listenAddress: cfg.ListenAddress,
 		workerAddress: workerAddress,
@@ -81,7 +89,7 @@ func NewLocalForwarder(ctx context.Context, cfg LocalForwarderConfig) (*LocalFor
 }
 
 // ListenAndServe starts the local forwarding listener.
-func (f *LocalForwarder) ListenAndServe() error {
+func (f *Forwarder) ListenAndServe() error {
 	var listenConfig net.ListenConfig
 	listener, err := listenConfig.Listen(f.ctx, "tcp", f.listenAddress)
 	if err != nil {
@@ -104,7 +112,7 @@ func (f *LocalForwarder) ListenAndServe() error {
 }
 
 // Close stops the forwarder and closes active connections.
-func (f *LocalForwarder) Close() error {
+func (f *Forwarder) Close() error {
 	select {
 	case <-f.closed:
 	default:
@@ -131,15 +139,15 @@ func (f *LocalForwarder) Close() error {
 }
 
 // Addr returns the listener address after ListenAndServe starts.
-func (f *LocalForwarder) Addr() net.Addr {
+func (f *Forwarder) Addr() net.Addr {
 	if f == nil || f.listener == nil {
 		return nil
 	}
 	return f.listener.Addr()
 }
 
-func (f *LocalForwarder) forward(local net.Conn) {
-	ctx, span := proxyTracer().Start(f.ctx, "proxy.local_forwarder.connection",
+func (f *Forwarder) forward(local net.Conn) {
+	ctx, span := otel.Tracer(tracerName).Start(f.ctx, "proxy.bridge.connection",
 		trace.WithAttributes(attribute.String("proxy.worker.address", f.workerAddress)),
 	)
 	defer span.End()
@@ -150,7 +158,8 @@ func (f *LocalForwarder) forward(local net.Conn) {
 	dialer := tls.Dialer{NetDialer: &net.Dialer{}, Config: f.tlsConfig}
 	worker, err := dialer.DialContext(ctx, "tcp", f.workerAddress)
 	if err != nil {
-		recordSpanError(span, err)
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		_ = local.Close()
 		return
 	}
@@ -172,13 +181,13 @@ func (f *LocalForwarder) forward(local net.Conn) {
 	copyWg.Wait()
 }
 
-func (f *LocalForwarder) trackConn(conn net.Conn) {
+func (f *Forwarder) trackConn(conn net.Conn) {
 	f.connMu.Lock()
 	defer f.connMu.Unlock()
 	f.conns[conn] = struct{}{}
 }
 
-func (f *LocalForwarder) untrackConn(conn net.Conn) {
+func (f *Forwarder) untrackConn(conn net.Conn) {
 	_ = conn.Close()
 	f.connMu.Lock()
 	defer f.connMu.Unlock()

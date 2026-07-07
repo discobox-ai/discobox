@@ -21,6 +21,14 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	if len(os.Args) > 1 && os.Args[1] == "proxy" {
+		if err := workeragent.RunProxy(ctx, logger); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("worker proxy failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := workeragent.RunAgent(ctx, logger); err != nil && !errors.Is(err, context.Canceled) {
 		logger.Error("worker agent failed", "error", err)
 		os.Exit(1)

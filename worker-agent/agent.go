@@ -7,16 +7,36 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/obot-platform/discobox/worker-agent/proxyagent"
 	"github.com/obot-platform/discobox/worker-agent/sandboxruntime"
 	workerserver "github.com/obot-platform/discobox/worker-agent/server"
 	agentsystemd "github.com/obot-platform/discobox/worker-agent/systemd"
+	"github.com/obot-platform/discobox/worker-agent/workerauth"
 )
+
+// RunProxy runs the worker-scoped proxy server. It is the entrypoint for the
+// proxy systemd unit inside the worker container.
+func RunProxy(ctx context.Context, logger *slog.Logger) error {
+	return proxyagent.RunProxy(ctx, logger)
+}
 
 // RunAgent registers the worker, marks it ready, and serves the worker-agent HTTP endpoints.
 func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
+	}
+	bootstrap := FromEnv()
+	// Publish the host-mount prefix for the proxy systemd unit, then prepare the
+	// proxy certificate bundle before booting systemd so the proxy unit and
+	// per-sandbox client certificates share a consistent CA without racing on
+	// first-time generation.
+	if err := proxyagent.WriteUnitEnvironment(bootstrap.HostMountPrefix); err != nil {
+		return err
+	}
+	if _, err := proxyagent.PrepareBundle(proxyagent.Resolver(bootstrap.HostMountPrefix)); err != nil {
+		return err
 	}
 	systemd, err := agentsystemd.StartNamespace(ctx, logger)
 	if err != nil {
@@ -26,7 +46,6 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	defer stopReaper()
 	defer agentsystemd.Stop(systemd)
 
-	bootstrap := FromEnv()
 	registration, err := Run(ctx, Config{Bootstrap: bootstrap})
 	if err != nil {
 		return err
@@ -57,7 +76,49 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	}
 	logger.Info("worker marked ready", "workerID", bootstrap.WorkerID)
 
+	startResolveTokenRefresher(ctx, logger, bootstrap, registration)
+
 	return Serve(ctx, logger, bootstrap, registration)
+}
+
+const (
+	resolveTokenTTL     = 30 * time.Minute
+	resolveTokenRefresh = 20 * time.Minute
+)
+
+// startResolveTokenRefresher mints the scoped secret:resolve token the proxy
+// unit uses and writes it (with the control-plane URL and worker ID) to the
+// shared resolve-context file, refreshing it before expiry.
+func startResolveTokenRefresher(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration) {
+	hostDirFor := proxyagent.Resolver(bootstrap.HostMountPrefix)
+	write := func() error {
+		token, err := workerauth.CreateTokenWithTTL(registration.PrivateKey, workerauth.Claims{
+			ProjectID: bootstrap.ProjectID,
+			WorkerID:  bootstrap.WorkerID,
+			Scopes:    []string{workerauth.ScopeSecretResolve},
+		}, resolveTokenTTL)
+		if err != nil {
+			return err
+		}
+		return proxyagent.WriteResolveContext(hostDirFor, bootstrap.ControlPlaneURL, bootstrap.WorkerID, token)
+	}
+	if err := write(); err != nil {
+		logger.Warn("write proxy resolve token", "error", err)
+	}
+	go func() {
+		ticker := time.NewTicker(resolveTokenRefresh)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := write(); err != nil {
+					logger.Warn("refresh proxy resolve token", "error", err)
+				}
+			}
+		}
+	}()
 }
 
 // ExecSystemdChildIfRequested starts the child systemd process when requested by the systemd helper.
@@ -76,6 +137,10 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 	if err != nil {
 		return err
 	}
+	// Reclaim proxy material for sandboxes deleted out of band or while the
+	// worker was down; DeleteSandbox only covers the in-process delete path.
+	// This reconciles at startup and then only on Docker destroy events.
+	go runtime.WatchProxyMaterial(ctx, logger)
 	return ServeWithRuntime(ctx, logger, bootstrap, registration, runtime)
 }
 

@@ -1,7 +1,22 @@
 # Proxy Implementation Backlog
 
 Track proxy-component work here until the worker-agent/sandbox-agent integration
-phase starts. This list intentionally excludes container/image wiring.
+phase starts.
+
+## Worker Integration (done)
+
+- Worker proxy runs as the `discobox-proxy.service` systemd unit inside the
+  worker container (`discobox-worker-agent proxy`); `worker-agent/proxyagent`
+  prepares the CA bundle before systemd boots.
+- The sandbox-local forwarder lives in the dependency-light `proxy/bridge`
+  package and runs as `discobox-proxy-bridge.service`
+  (`discobox-sandbox-agent proxy-bridge`).
+- `sandboxruntime.CreateSandbox` issues per-sandbox client certificates (client
+  ID = sandbox ID), bind-mounts the public CAs + client keypair at
+  `/etc/discobox/proxy`, injects proxy/CA env into the container and manifest,
+  and adds `discobox-worker-proxy:host-gateway`.
+- Remaining: the proxy runs with a nil resolver, so sentinel secret swapping is
+  inactive until Phase 3 wiring below lands.
 
 ## Work Items
 
@@ -30,3 +45,31 @@ phase starts. This list intentionally excludes container/image wiring.
 - [x] Expand header rewrite matching with path, method, and client identity
   conditions for secret injection.
 - [x] Add explicit config, rule, and certificate option validation.
+
+## Sentinel Secret Swapping
+
+Give sandboxes fake sentinel credentials and swap them for real values at the
+proxy, authorized per destination host. See `DESIGN.md` → Sentinel Secret
+Swapping.
+
+- [x] Phase 1 — proxy core: `internal/secrets` sentinel matcher (headers +
+  query), `Resolver` interface, TTL positive/negative cache; `Config.Secrets`
+  with `ApplyConfig` hot-swap; swap stage in the HTTP request path; audit
+  redaction of swapped headers and pre-swap URL for query swaps; unit and
+  end-to-end tests (swap reaches upstream, real value never audited, host-denied
+  sentinel left in place).
+- [x] Phase 2 — server: `Secret.Format` field + `secretformat` generative-template
+  package (generate sentinel, validate inline value, reverse-infer format without
+  leaking entropy); seed provider table (format + default host); anonymous-secret
+  creation for inline values (`Anonymous`/`UniqueKey` columns exclude them from
+  the type+host uniqueness domain and from list/match); `SandboxSecret` assignment
+  table + store; `CreateSandboxBody.secrets[]` with create-time assignment,
+  sentinel minting, and env injection; `ResolveSandboxSecret` resolve-by-sentinel
+  entry point building on the `SecretRequest` approval flow; CLI `--secret/-s`
+  (`KEY=VALUE` inline, `KEY=<ID>` reference) plus fuzzy `--env` secret detection
+  (`KEY`/`TOKEN`/`PASS`/`SECRET`) with `KEY!=VALUE` override.
+- [ ] Phase 3 — remaining wiring: HTTP endpoint exposing `ResolveSandboxSecret`
+  to the worker; worker-agent `secrets.Resolver` implementation calling it; build
+  the proxy `Config.Secrets` sentinel sets from `SandboxSecret` rows and push them
+  at sandbox launch/reconcile; GC anonymous secrets and assignments on sandbox
+  delete; extend `run` to the same `--secret`/fuzzy `--env` handling.
