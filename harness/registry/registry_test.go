@@ -14,6 +14,36 @@ import (
 	"github.com/obot-platform/discobox/harness/opencode"
 )
 
+func TestDefinitionsCoverKnownHarnesses(t *testing.T) {
+	definitions := Definitions()
+	if len(definitions) != len(DefaultDrivers()) {
+		t.Fatalf("definitions = %d, want one per default driver (%d)", len(definitions), len(DefaultDrivers()))
+	}
+	byID := map[string]harness.Definition{}
+	for _, definition := range definitions {
+		if definition.ID == "" || definition.Name == "" || len(definition.RunCommand) == 0 {
+			t.Fatalf("definition %#v must set id, name, and run command", definition)
+		}
+		byID[definition.ID] = definition
+	}
+	for _, want := range []struct {
+		id       string
+		relaunch []string
+	}{
+		{id: "claude-code", relaunch: []string{"claude", "--continue"}},
+		{id: "codex", relaunch: []string{"codex", "resume", "--last"}},
+		{id: "opencode", relaunch: []string{"opencode", "--continue"}},
+	} {
+		got, ok := byID[want.id]
+		if !ok {
+			t.Fatalf("missing definition %q", want.id)
+		}
+		if !reflect.DeepEqual(got.RelaunchCommand, want.relaunch) {
+			t.Fatalf("%s relaunch = %#v, want %#v", want.id, got.RelaunchCommand, want.relaunch)
+		}
+	}
+}
+
 func TestInstallerWritesManagedHarnessFiles(t *testing.T) {
 	root := t.TempDir()
 	env := map[string]string{}
@@ -21,7 +51,7 @@ func TestInstallerWritesManagedHarnessFiles(t *testing.T) {
 		Drivers:     DefaultDrivers(),
 		ManagedRoot: root,
 	}
-	err := installer.Install(context.Background(), harness.InstallRequest{
+	err := installer.InstallHooks(context.Background(), harness.HookInstallRequest{
 		Env: env,
 	})
 	if err != nil {
@@ -81,12 +111,12 @@ func TestInstallerPreservesExistingConfigAndIsIdempotent(t *testing.T) {
 		Drivers:     DefaultDrivers(),
 		ManagedRoot: root,
 	}
-	req := harness.InstallRequest{Env: map[string]string{}}
-	if err := installer.Install(context.Background(), req); err != nil {
+	req := harness.HookInstallRequest{Env: map[string]string{}}
+	if err := installer.InstallHooks(context.Background(), req); err != nil {
 		t.Fatalf("first install: %v", err)
 	}
 	first := readJSONFiles(t, root)
-	if err := installer.Install(context.Background(), req); err != nil {
+	if err := installer.InstallHooks(context.Background(), req); err != nil {
 		t.Fatalf("second install: %v", err)
 	}
 	second := readJSONFiles(t, root)
@@ -117,19 +147,33 @@ func TestInstallerPreservesExistingConfigAndIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestDriverForAgentSelectsKnownAgents(t *testing.T) {
+func TestDriverForAgentSelectsByRunBinary(t *testing.T) {
 	cases := []struct {
 		agent harness.Agent
 		want  string
 	}{
-		{agent: harness.Agent{ID: "claude-code"}, want: claudecode.Driver{}.ID()},
-		{agent: harness.Agent{ID: "codex"}, want: codexcli.Driver{}.ID()},
+		{agent: harness.Agent{Command: []string{"claude", "--dangerously-skip-permissions"}}, want: claudecode.Driver{}.ID()},
+		{agent: harness.Agent{Command: []string{"codex"}}, want: codexcli.Driver{}.ID()},
 		{agent: harness.Agent{Command: []string{"opencode"}}, want: opencode.Driver{}.ID()},
+		// A custom config ID does not affect selection; the run binary does.
+		{agent: harness.Agent{ID: "my-custom-agent", Command: []string{"/usr/local/bin/Claude"}}, want: claudecode.Driver{}.ID()},
 	}
 	for _, tc := range cases {
 		got := DriverForAgent(tc.agent)
 		if len(got) != 1 || got[0].ID() != tc.want {
 			t.Fatalf("DriverForAgent(%#v) = %#v, want %s", tc.agent, got, tc.want)
+		}
+	}
+}
+
+func TestDriverForAgentFallsBackForUnknownBinary(t *testing.T) {
+	for _, agent := range []harness.Agent{
+		{},
+		{Command: []string{"sh", "-c", "claude"}},
+		{ID: "claude-code"},
+	} {
+		if got := DriverForAgent(agent); len(got) != len(DefaultDrivers()) {
+			t.Fatalf("DriverForAgent(%#v) = %#v, want all default drivers", agent, got)
 		}
 	}
 }

@@ -24,7 +24,18 @@ type Driver struct{}
 
 func (Driver) ID() string { return "codex-cli" }
 
-func (Driver) Install(_ context.Context, req harness.InstallRequest) error {
+func (Driver) Definition() harness.Definition {
+	return harness.Definition{
+		ID:              "codex",
+		Name:            "Codex",
+		Description:     "OpenAI Codex coding agent.",
+		InstallCommand:  []string{"npm", "install", "-g", "@openai/codex"},
+		RunCommand:      []string{"codex"},
+		RelaunchCommand: []string{"codex", "resume", "--last"},
+	}
+}
+
+func (Driver) InstallHooks(_ context.Context, req harness.HookInstallRequest) error {
 	path := harness.ManagedPath(req.ManagedRoot, SystemHooksPath)
 	return harness.MergeJSONFile(path, func(config map[string]any) {
 		hooks := harness.SetJSONMap(config, "hooks")

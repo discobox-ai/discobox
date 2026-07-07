@@ -23,7 +23,33 @@ type Agent struct {
 	Command []string
 }
 
-type InstallRequest struct {
+// Definition is a harness's built-in agent-config template: how to install and
+// run the coding agent, how to resume its previous session on a restart, and any
+// files to seed into the agent's home directory. It is the single source of
+// truth for an agent's harness-specific defaults; the control plane converts it
+// into a project-scoped agent config.
+type Definition struct {
+	ID              string
+	Name            string
+	Description     string
+	InstallCommand  []string
+	RunCommand      []string
+	RelaunchCommand []string
+	Files           []File
+}
+
+// File is a file to write into the agent's home directory when the agent is
+// installed.
+type File struct {
+	Path       string
+	Content    string
+	CreateOnly bool
+}
+
+// HookInstallRequest is the input to installing a harness's hook integration.
+// It is unrelated to Definition.InstallCommand, which installs the agent CLI
+// itself.
+type HookInstallRequest struct {
 	Agent            Agent
 	Workdir          string
 	Env              map[string]string
@@ -33,7 +59,11 @@ type InstallRequest struct {
 
 type Driver interface {
 	ID() string
-	Install(context.Context, InstallRequest) error
+	// Definition returns the harness's built-in agent-config template.
+	Definition() Definition
+	// InstallHooks wires the agent's lifecycle hook integration into its managed
+	// config. It does not install the agent CLI (see Definition.InstallCommand).
+	InstallHooks(context.Context, HookInstallRequest) error
 }
 
 // Converser is implemented by drivers that support automated multi-turn conversations.
@@ -44,7 +74,7 @@ type Converser interface {
 	Prompt(ctx context.Context, prompt string, state []byte) (result string, newState []byte, err error)
 }
 
-func PublisherCommand(req InstallRequest) string {
+func PublisherCommand(req HookInstallRequest) string {
 	if strings.TrimSpace(req.PublisherCommand) != "" {
 		return strings.TrimSpace(req.PublisherCommand)
 	}

@@ -27,7 +27,22 @@ type Driver struct{}
 
 func (Driver) ID() string { return "claude-code" }
 
-func (Driver) Install(_ context.Context, req harness.InstallRequest) error {
+func (Driver) Definition() harness.Definition {
+	return harness.Definition{
+		ID:              "claude-code",
+		Name:            "Claude Code",
+		Description:     "Anthropic Claude Code coding agent.",
+		InstallCommand:  []string{"npm", "install", "-g", "@anthropic-ai/claude-code"},
+		RunCommand:      []string{"claude"},
+		RelaunchCommand: []string{"claude", "--continue"},
+		Files: []harness.File{
+			{Path: ".claude.json", Content: `{"hasCompletedOnboarding": true}`, CreateOnly: true},
+			{Path: ".claude/settings.json", Content: `{"theme":"dark","skipDangerousModePermissionPrompt":true}`},
+		},
+	}
+}
+
+func (Driver) InstallHooks(_ context.Context, req harness.HookInstallRequest) error {
 	path := harness.ManagedPath(req.ManagedRoot, ManagedSettingsPath)
 	publisher := harness.PublisherCommand(req)
 	return harness.MergeJSONFile(path, func(settings map[string]any) {

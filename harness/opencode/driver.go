@@ -23,7 +23,18 @@ type Driver struct{}
 
 func (Driver) ID() string { return "opencode" }
 
-func (Driver) Install(_ context.Context, req harness.InstallRequest) error {
+func (Driver) Definition() harness.Definition {
+	return harness.Definition{
+		ID:              "opencode",
+		Name:            "opencode",
+		Description:     "opencode terminal coding agent.",
+		InstallCommand:  []string{"npm", "install", "-g", "opencode-ai"},
+		RunCommand:      []string{"opencode"},
+		RelaunchCommand: []string{"opencode", "--continue"},
+	}
+}
+
+func (Driver) InstallHooks(_ context.Context, req harness.HookInstallRequest) error {
 	configDir := harness.ManagedPath(req.ManagedRoot, ManagedConfigDir)
 	harness.SetEnv(req.Env, "OPENCODE_CONFIG_DIR", configDir)
 	if err := harness.MergeJSONFile(harness.ManagedPath(req.ManagedRoot, ManagedConfigPath), func(config map[string]any) {
