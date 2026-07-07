@@ -45,12 +45,16 @@ go tool task test       # root module tests
 go tool task test:all   # root and nested module tests
 go tool task check      # static checks
 go tool task check-hooks # validate hook definitions and hook-related code
+go tool task rerun-hooks # re-run failed or never-run hooks
 go tool task generate   # regenerate generated files
 go tool task build      # build server, CLI, UI, and Electron shell
 ```
 
 At the end of a code-changing task, run `go tool task check-hooks` to validate
-the code and hook definitions before handing work back.
+the code and hook definitions before handing work back. If you suspect the
+check-hooks output is stale (for example, a reported failure refers to code you
+have already fixed), run `go tool task rerun-hooks` to re-run failed hooks,
+then run `go tool task check-hooks` again.
 
 Prefer adding or updating `Taskfile.yml` targets instead of documenting ad hoc
 commands here.
