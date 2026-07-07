@@ -96,5 +96,6 @@ func (h Hook) IsLSP() bool { return h.Engine == HookEngineLSP }
 // AppliesToFiles reports whether h is triggered by changed files.
 func (h Hook) AppliesToFiles() bool { return h.Type == HookTypeFile }
 
-// NormalizedPhase returns the phase with surrounding whitespace removed.
-func (h Hook) NormalizedPhase() string { return strings.TrimSpace(h.Phase) }
+// NormalizedPhase returns the phase lowercased with surrounding whitespace
+// removed.
+func (h Hook) NormalizedPhase() string { return strings.ToLower(strings.TrimSpace(h.Phase)) }

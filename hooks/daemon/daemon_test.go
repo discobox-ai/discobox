@@ -360,7 +360,7 @@ exit 1
 	if err := st.Enqueue(ctx, []string{"review"}, []models.ChangedFile{{Path: "first.go", Kind: watcher.Modified}}); err != nil {
 		t.Fatal(err)
 	}
-	mgr.ActivatePhase("review")
+	mgr.ActivateHook("review")
 	if r.drainOne() {
 		t.Fatal("expected failing review hook to stop drain")
 	}
@@ -368,8 +368,8 @@ exit 1
 	if st1.Status != models.StatusFailure || st1.RunCount != 1 || st1.FailCount != 1 {
 		t.Fatalf("expected first review run to fail, got %#v", st1)
 	}
-	if active := mgr.ActivePhases(); len(active) != 0 {
-		t.Fatalf("failed phase run left active phases enabled: %v", active)
+	if active := mgr.ActiveHookIDs(); len(active) != 0 {
+		t.Fatalf("failed phase run left active hooks enabled: %v", active)
 	}
 
 	if err := st.Enqueue(ctx, []string{"review"}, []models.ChangedFile{{Path: "later.go", Kind: watcher.Created}}); err != nil {
@@ -383,7 +383,7 @@ exit 1
 		t.Fatalf("expected later review change to remain queued, got %#v", st2)
 	}
 
-	mgr.ActivatePhase("review")
+	mgr.ActivateHook("review")
 	if r.drainOne() {
 		t.Fatal("expected explicitly activated failing review hook to stop drain")
 	}

@@ -171,7 +171,7 @@ func TestWriteHooksJSON(t *testing.T) {
 	}
 }
 
-func TestFilterRunTargetsOnlyIncludesPendingUnphasedAndRequestedPhase(t *testing.T) {
+func TestFilterRunTargetsSelectsPhaseScope(t *testing.T) {
 	statuses := []client.HookStatus{
 		{Hook: hooks.Hook{ID: "lint"}, Status: models.StatusQueued},
 		{Hook: hooks.Hook{ID: "review", Phase: "review"}, Status: models.StatusQueued},
@@ -179,24 +179,46 @@ func TestFilterRunTargetsOnlyIncludesPendingUnphasedAndRequestedPhase(t *testing
 		{Hook: hooks.Hook{ID: "success"}, Status: models.StatusSuccess},
 		{Hook: hooks.Hook{ID: "failed"}, Status: models.StatusFailure},
 	}
-	got := filterRunTargets(statuses, runTargetOptions{Phase: "review"})
-	if strings.Join(got, ",") != "lint,review,failed" {
-		t.Fatalf("unexpected review targets: %v", got)
-	}
-
-	got = filterRunTargets(statuses, runTargetOptions{})
-	if strings.Join(got, ",") != "lint,failed" {
+	got := filterRunTargets(statuses, runTargetOptions{})
+	if strings.Join(got, ",") != "lint,success,failed" {
 		t.Fatalf("unexpected unphased targets: %v", got)
 	}
 
-	got = filterRunTargets(statuses, runTargetOptions{Phase: "review", Force: true})
-	if strings.Join(got, ",") != "lint,review,success,failed" {
-		t.Fatalf("unexpected forced review targets: %v", got)
+	got = filterRunTargets(statuses, runTargetOptions{Phases: []string{"review"}})
+	if strings.Join(got, ",") != "review" {
+		t.Fatalf("unexpected review targets: %v", got)
 	}
 
-	got = filterRunTargets(statuses, runTargetOptions{Force: true, AllPhases: true})
+	got = filterRunTargets(statuses, runTargetOptions{Phases: []string{"review", "deploy"}})
+	if strings.Join(got, ",") != "review,deploy" {
+		t.Fatalf("unexpected multi-phase targets: %v", got)
+	}
+
+	got = filterRunTargets(statuses, runTargetOptions{AllPhases: true})
 	if strings.Join(got, ",") != "lint,review,deploy,success,failed" {
-		t.Fatalf("unexpected forced all-phase targets: %v", got)
+		t.Fatalf("unexpected all-phase targets: %v", got)
+	}
+}
+
+func TestNormalizePhaseSelector(t *testing.T) {
+	phases, all := normalizePhaseSelector([]string{" Review ", "deploy", "review", ""})
+	if all || strings.Join(phases, ",") != "review,deploy" {
+		t.Fatalf("unexpected selector: phases=%v all=%t", phases, all)
+	}
+	phases, all = normalizePhaseSelector([]string{"ALL", "review"})
+	if !all || strings.Join(phases, ",") != "review" {
+		t.Fatalf("unexpected all selector: phases=%v all=%t", phases, all)
+	}
+}
+
+func TestSplitRunArgs(t *testing.T) {
+	ids, all := splitRunArgs([]string{"lint", "All", "lint", "review"})
+	if !all || strings.Join(ids, ",") != "lint,review" {
+		t.Fatalf("unexpected split: ids=%v all=%t", ids, all)
+	}
+	ids, all = splitRunArgs(nil)
+	if all || len(ids) != 0 {
+		t.Fatalf("unexpected empty split: ids=%v all=%t", ids, all)
 	}
 }
 

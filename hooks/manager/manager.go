@@ -29,7 +29,7 @@ type Manager struct {
 	hooksByID   map[string]hooks.Hook
 	runningHook int
 	runningByID map[string]int
-	activePhase map[string]struct{}
+	activeHooks map[string]struct{}
 }
 
 // Config controls New.
@@ -63,7 +63,7 @@ func New(cfg Config) (*Manager, error) {
 		signalRun:   cfg.SignalRun,
 		hooksByID:   map[string]hooks.Hook{},
 		runningByID: map[string]int{},
-		activePhase: map[string]struct{}{},
+		activeHooks: map[string]struct{}{},
 	}
 	for _, h := range cfg.Hooks {
 		m.hooksByID[h.ID] = h
@@ -238,19 +238,23 @@ func (m *Manager) RunHook(ctx context.Context, hookID string, req model.RunReque
 	if err != nil {
 		return model.RunResponse{}, err
 	}
+	phase := ""
+	if h, ok := m.HookByID(hookID); ok {
+		phase = h.NormalizedPhase()
+	}
 	if resp.Skipped {
 		if resp.Reason == "already_queued" {
-			if req.Phase != "" {
-				m.ActivatePhase(req.Phase)
+			if phase != "" {
+				m.ActivateHook(hookID)
 			}
 			m.SignalRun()
 		}
-		_ = m.RecordEvent(ctx, "hook.run.skipped", hookID, "", "hook run skipped", map[string]any{"reason": resp.Reason, "force": req.Force, "phase": req.Phase, "enqueued": resp.Enqueued})
+		_ = m.RecordEvent(ctx, "hook.run.skipped", hookID, "", "hook run skipped", map[string]any{"reason": resp.Reason, "force": req.Force, "phase": phase, "enqueued": resp.Enqueued})
 	} else {
-		if req.Phase != "" {
-			m.ActivatePhase(req.Phase)
+		if phase != "" {
+			m.ActivateHook(hookID)
 		}
-		_ = m.RecordEvent(ctx, "hook.run.requested", hookID, "", "hook run requested", map[string]any{"force": req.Force, "phase": req.Phase, "enqueued": resp.Enqueued})
+		_ = m.RecordEvent(ctx, "hook.run.requested", hookID, "", "hook run requested", map[string]any{"force": req.Force, "phase": phase, "enqueued": resp.Enqueued})
 		m.SignalRun()
 	}
 	return resp, nil
@@ -275,34 +279,35 @@ func (m *Manager) GlobalPaused(ctx context.Context) (bool, error) {
 	return m.service.GlobalPaused(ctx)
 }
 
-// ActivatePhase allows queued hooks in phase to run until no eligible pending
+// ActivateHook allows a queued phased hook to run until no eligible pending
 // work remains.
-func (m *Manager) ActivatePhase(phase string) {
-	phase = strings.TrimSpace(strings.ToLower(phase))
-	if phase == "" {
+func (m *Manager) ActivateHook(hookID string) {
+	hookID = strings.TrimSpace(hookID)
+	if hookID == "" {
 		return
 	}
 	m.mu.Lock()
-	m.activePhase[phase] = struct{}{}
+	m.activeHooks[hookID] = struct{}{}
 	m.mu.Unlock()
 }
 
-// ActivePhases returns the currently allowed phase set for queue draining.
-func (m *Manager) ActivePhases() []string {
+// ActiveHookIDs returns the phased hook IDs currently allowed to drain from the
+// queue.
+func (m *Manager) ActiveHookIDs() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	out := make([]string, 0, len(m.activePhase))
-	for phase := range m.activePhase {
-		out = append(out, phase)
+	out := make([]string, 0, len(m.activeHooks))
+	for id := range m.activeHooks {
+		out = append(out, id)
 	}
 	sort.Strings(out)
 	return out
 }
 
-// ClearActivePhases clears temporary phase run permissions.
-func (m *Manager) ClearActivePhases() {
+// ClearActiveHooks clears temporary phased hook run permissions.
+func (m *Manager) ClearActiveHooks() {
 	m.mu.Lock()
-	m.activePhase = map[string]struct{}{}
+	m.activeHooks = map[string]struct{}{}
 	m.mu.Unlock()
 }
 

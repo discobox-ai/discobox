@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -261,42 +262,34 @@ func (a *app) newEventsCommand() *cobra.Command {
 func (a *app) newRunCommand() *cobra.Command {
 	var force bool
 	var sessionHooks bool
-	var phase string
+	var phases []string
 	cmd := &cobra.Command{
-		Use:   "run [HOOK_ID ...]",
+		Use:   "run [--phase PHASE[,PHASE...]] [HOOK_ID ...|all]",
 		Short: "Request hook runs",
 		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			phaseSet, allPhases := normalizePhaseSelector(phases)
+			explicitIDs, expandAll := splitRunArgs(args)
+			if len(args) == 0 && len(phaseSet) == 0 && !allPhases {
+				return fmt.Errorf("specify hook IDs, %q, or --phase", "all")
+			}
 			c, _, err := a.client(cmd.Context())
 			if err != nil {
 				return err
 			}
-			phase = strings.TrimSpace(strings.ToLower(phase))
-			allPhases := phase == "" && force && isAllArg(args)
-			if phase == "" && !allPhases && (len(args) == 0 || isAllArg(args)) {
-				phase = "review"
-			}
-			ids, all, err := targetRunHookIDs(cmd.Context(), c, args, runTargetOptions{SessionHooks: sessionHooks, Phase: phase, Force: force, AllPhases: allPhases})
-			if err != nil {
-				return err
-			}
-			phaseByID := map[string]string{}
-			if allPhases {
+			ids := explicitIDs
+			expand := expandAll || len(explicitIDs) == 0
+			if expand {
 				hooksList, err := c.ListHooks(cmd.Context())
 				if err != nil {
 					return err
 				}
-				for _, h := range hooksList {
-					phaseByID[h.Hook.ID] = strings.TrimSpace(strings.ToLower(h.Hook.Phase))
-				}
+				matched := filterRunTargets(hooksList, runTargetOptions{SessionHooks: sessionHooks, Phases: phaseSet, AllPhases: allPhases})
+				ids = uniqueStrings(append(matched, explicitIDs...))
 			}
 			responses := make([]*client.RunResponse, 0, len(ids))
 			for _, id := range ids {
-				runPhase := phase
-				if allPhases {
-					runPhase = phaseByID[id]
-				}
-				resp, err := c.RunHook(cmd.Context(), id, client.RunOptions{Force: force, Phase: runPhase})
+				resp, err := c.RunHook(cmd.Context(), id, client.RunOptions{Force: force})
 				if err != nil {
 					return err
 				}
@@ -306,7 +299,7 @@ func (a *app) newRunCommand() *cobra.Command {
 				responses = append(responses, resp)
 			}
 			if a.opts.output == "json" {
-				return writeJSON(cmd.OutOrStdout(), map[string]any{"all": all, "all_phases": allPhases, "session": sessionHooks, "phase": phase, "force": force, "runs": responses})
+				return writeJSON(cmd.OutOrStdout(), map[string]any{"all": expand, "all_phases": allPhases, "session": sessionHooks, "phases": phaseSet, "force": force, "runs": responses})
 			}
 			for _, resp := range responses {
 				if resp.Skipped {
@@ -320,7 +313,7 @@ func (a *app) newRunCommand() *cobra.Command {
 	}
 	cmd.Flags().BoolVarP(&force, "force", "f", false, "force hooks to run even if they already succeeded")
 	cmd.Flags().BoolVar(&sessionHooks, "session", false, "target session hooks")
-	cmd.Flags().StringVar(&phase, "phase", "", "allow queued hooks in phase after unphased queued hooks")
+	cmd.Flags().StringSliceVar(&phases, "phase", nil, "phase selector for aggregate targeting; repeat or comma-separate, \"all\" selects every phase")
 	return cmd
 }
 
@@ -1599,22 +1592,51 @@ func targetHookIDs(ctx context.Context, c *client.Client, args []string) ([]stri
 
 type runTargetOptions struct {
 	SessionHooks bool
-	Phase        string
-	Force        bool
+	Phases       []string
 	AllPhases    bool
 }
 
-func targetRunHookIDs(ctx context.Context, c *client.Client, args []string, opts runTargetOptions) ([]string, bool, error) {
-	if len(args) != 0 && !isAllArg(args) {
-		return uniqueStrings(args), false, nil
+// normalizePhaseSelector lowercases, trims, and dedupes the --phase values and
+// reports whether the selector includes every phase.
+func normalizePhaseSelector(values []string) ([]string, bool) {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	all := false
+	for _, value := range values {
+		value = strings.TrimSpace(strings.ToLower(value))
+		if value == "" {
+			continue
+		}
+		if value == "all" {
+			all = true
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
 	}
-	hooks, err := c.ListHooks(ctx)
-	if err != nil {
-		return nil, false, err
-	}
-	return filterRunTargets(hooks, opts), true, nil
+	return out, all
 }
 
+// splitRunArgs separates explicit hook IDs from the "all" ID selector.
+func splitRunArgs(args []string) ([]string, bool) {
+	ids := make([]string, 0, len(args))
+	all := false
+	for _, arg := range args {
+		if strings.EqualFold(strings.TrimSpace(arg), "all") {
+			all = true
+			continue
+		}
+		ids = append(ids, arg)
+	}
+	return uniqueStrings(ids), all
+}
+
+// filterRunTargets selects hook IDs in the phase scope: unphased hooks when no
+// phases are selected, hooks in the selected phases otherwise, and every hook
+// when AllPhases is set. Run eligibility is decided by the daemon per hook.
 func filterRunTargets(hooks []client.HookStatus, opts runTargetOptions) []string {
 	ids := make([]string, 0, len(hooks))
 	for _, h := range hooks {
@@ -1626,29 +1648,17 @@ func filterRunTargets(hooks []client.HookStatus, opts runTargetOptions) []string
 		}
 		hookPhase := strings.TrimSpace(strings.ToLower(h.Hook.Phase))
 		if !opts.AllPhases {
-			if opts.Phase == "" {
+			if len(opts.Phases) == 0 {
 				if hookPhase != "" {
 					continue
 				}
-			} else if hookPhase != "" && hookPhase != opts.Phase {
+			} else if !slices.Contains(opts.Phases, hookPhase) {
 				continue
 			}
-		}
-		if !opts.Force && !runAllStatusEligible(h) {
-			continue
 		}
 		ids = append(ids, h.Hook.ID)
 	}
 	return ids
-}
-
-func runAllStatusEligible(h client.HookStatus) bool {
-	switch h.Status {
-	case models.StatusQueued, models.StatusFailure:
-		return true
-	default:
-		return false
-	}
 }
 
 func failedHooks(hooks []client.HookStatus) []client.HookStatus {

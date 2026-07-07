@@ -32,6 +32,7 @@ var commonHookExts = map[string]struct{}{
 
 var hookIDNonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
 var hookIDOrderPrefix = regexp.MustCompile(`^[0-9]+-+`)
+var phaseNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
 // Discovery is the result of discovering a repository's hook directory.
 type Discovery struct {
@@ -314,7 +315,7 @@ func decodeMetadata(data []byte) (metadata, error) {
 		case "ignore", "exclude":
 			m.Ignore = append(m.Ignore, asStringSlice(v)...)
 		case "phase":
-			m.Phase = strings.ToLower(asString(v))
+			m.Phase = strings.ToLower(strings.TrimSpace(asString(v)))
 		case "subagent":
 			m.Subagent = asString(v)
 		case "language_id", "language":
@@ -455,8 +456,13 @@ func validateHook(h hooks.Hook, data []byte) error {
 	if h.Type == hooks.HookTypeFile && strings.TrimSpace(h.Pattern) == "" {
 		return fieldError(h.RelPath, "pattern", "file hooks require pattern")
 	}
-	if h.Phase != "" && h.Phase != "review" {
-		return fieldError(h.RelPath, "phase", "unsupported phase %q", h.Phase)
+	if h.Phase != "" {
+		if h.Phase == "all" {
+			return fieldError(h.RelPath, "phase", "phase %q is reserved", h.Phase)
+		}
+		if !phaseNamePattern.MatchString(h.Phase) {
+			return fieldError(h.RelPath, "phase", "invalid phase %q: use lowercase letters, digits, hyphens, and underscores", h.Phase)
+		}
 	}
 	if h.Engine == hooks.HookEngineScript {
 		if !hasFirstLineShebang(data) {

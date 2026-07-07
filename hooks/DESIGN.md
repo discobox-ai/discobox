@@ -127,13 +127,18 @@ Hooks run with daemon-configured bounded parallelism. The default limit is three
 in-flight script hooks per session; additional eligible hooks remain in queued
 state until a slot opens. The hook queue is deterministic, and the daemon never
 starts two concurrent runs for the same hook ID. Hooks with a non-empty `phase`
-may be enqueued by file changes, but the daemon does not auto-run them until
-that phase is explicitly activated by a run request. Manual aggregate `run`
-requests target queued or failed hooks only; `--force` expands the target set to
-every matching hook. `run` with no hook IDs targets unphased hooks plus the
-default `review` phase, while `run --phase <name>` targets unphased hooks plus
-hooks in that phase. Explicit hook-ID runs for phase hooks must include the
-matching `--phase`. Session hooks do not run during daemon startup; use the
+may be enqueued by file changes, but the daemon does not auto-run them until a
+run request explicitly targets them. Phase names are free-form lowercase
+identifiers declared in hook files; `all` is reserved for selectors. The CLI
+resolves `run` selectors to hook IDs and requests each run individually:
+explicit hook IDs always target their hook regardless of phase, while the `all`
+ID selector (or an omitted ID list) expands within the phase scope — no
+`--phase` selects unphased hooks, `--phase <p1>,<p2>` selects hooks in those
+phases, and `--phase all` selects every hook. `run` without at least one phase
+or ID selector is an error. The daemon decides per hook whether a requested run
+executes: without `--force` it skips hooks that already succeeded, already ran,
+or are currently running; `--force` re-runs them with their last run's inputs.
+Session hooks do not run during daemon startup; use the
 CLI's session-hook run mode to trigger session hooks for the current session.
 Failed hooks block future queued hook launches until the failure is resolved by
 a later matching change, a manual run, pausing/skipping that hook, or clearing

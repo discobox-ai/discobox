@@ -149,7 +149,6 @@ func (h *generatedHandler) HooksRunHook(ctx context.Context, req hookapigen.OptR
 	body := model.RunRequest{}
 	if value, ok := req.Get(); ok {
 		body.Force = value.Force.Or(false)
-		body.Phase = value.Phase.Or("")
 	}
 	resp, err := h.manager.RunHook(ctx, params.HookId, body)
 	if errors.Is(err, service.ErrNotFound) {

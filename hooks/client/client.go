@@ -499,9 +499,6 @@ func (c *Client) RunHook(ctx context.Context, id string, opts RunOptions) (*RunR
 	}
 	req := hookapigen.RunRequest{}
 	req.Force = hookapigen.NewOptBool(opts.Force)
-	if opts.Phase != "" {
-		req.Phase = hookapigen.NewOptString(opts.Phase)
-	}
 	res, err := generated.HooksRunHook(ctx, hookapigen.NewOptRunRequest(req), hookapigen.HooksRunHookParams{HookId: id})
 	if err != nil {
 		return nil, classifyError(c.socketPath, err)
@@ -689,7 +686,6 @@ type Diagnostic = model.Diagnostic
 
 type RunOptions struct {
 	Force bool
-	Phase string
 }
 
 type RunResponse = model.RunResponse

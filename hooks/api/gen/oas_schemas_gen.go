@@ -1658,8 +1658,7 @@ func (s *RunAs) UnmarshalText(data []byte) error {
 
 // Ref: #/RunRequest
 type RunRequest struct {
-	Force OptBool   `json:"force"`
-	Phase OptString `json:"phase"`
+	Force OptBool `json:"force"`
 }
 
 // GetForce returns the value of Force.
@@ -1667,19 +1666,9 @@ func (s *RunRequest) GetForce() OptBool {
 	return s.Force
 }
 
-// GetPhase returns the value of Phase.
-func (s *RunRequest) GetPhase() OptString {
-	return s.Phase
-}
-
 // SetForce sets the value of Force.
 func (s *RunRequest) SetForce(val OptBool) {
 	s.Force = val
-}
-
-// SetPhase sets the value of Phase.
-func (s *RunRequest) SetPhase(val OptString) {
-	s.Phase = val
 }
 
 // Ref: #/RunResponse

@@ -90,7 +90,7 @@ func TestOutputAssemblesLatestRunLogs(t *testing.T) {
 	}
 }
 
-func TestRunHookRequiresMatchingPhaseForPhaseHooks(t *testing.T) {
+func TestRunHookEnqueuesPhaseHooksDirectly(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, store.Options{Path: filepath.Join(t.TempDir(), "hooks.db")})
 	if err != nil {
@@ -108,18 +108,10 @@ func TestRunHookRequiresMatchingPhaseForPhaseHooks(t *testing.T) {
 
 	resp, err := svc.RunHook(ctx, "review", model.RunRequest{})
 	if err != nil {
-		t.Fatalf("run without phase: %v", err)
-	}
-	if !resp.Skipped || resp.Reason != "phase_required" {
-		t.Fatalf("expected phase_required skip, got %#v", resp)
-	}
-
-	resp, err = svc.RunHook(ctx, "review", model.RunRequest{Phase: "Review"})
-	if err != nil {
-		t.Fatalf("run with phase: %v", err)
+		t.Fatalf("run: %v", err)
 	}
 	if resp.Skipped || !resp.Enqueued {
-		t.Fatalf("expected phase-targeted enqueue, got %#v", resp)
+		t.Fatalf("expected enqueue, got %#v", resp)
 	}
 }
 

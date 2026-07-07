@@ -3535,17 +3535,10 @@ func (s *RunRequest) encodeFields(e *jx.Encoder) {
 			s.Force.Encode(e)
 		}
 	}
-	{
-		if s.Phase.Set {
-			e.FieldStart("phase")
-			s.Phase.Encode(e)
-		}
-	}
 }
 
-var jsonFieldsNameOfRunRequest = [2]string{
+var jsonFieldsNameOfRunRequest = [1]string{
 	0: "force",
-	1: "phase",
 }
 
 // Decode decodes RunRequest from json.
@@ -3565,16 +3558,6 @@ func (s *RunRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"force\"")
-			}
-		case "phase":
-			if err := func() error {
-				s.Phase.Reset()
-				if err := s.Phase.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"phase\"")
 			}
 		default:
 			return d.Skip()

@@ -12,7 +12,7 @@ import (
 	"github.com/obot-platform/discobox/hooks/watcher"
 )
 
-func TestRunHookActivatesPhaseWhenHookAlreadyQueued(t *testing.T) {
+func TestRunHookActivatesHookWhenAlreadyQueued(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.Open(ctx, store.Options{Path: filepath.Join(t.TempDir(), "hooks.db")})
 	if err != nil {
@@ -33,7 +33,7 @@ func TestRunHookActivatesPhaseWhenHookAlreadyQueued(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
 	}
-	resp, err := mgr.RunHook(ctx, "review", model.RunRequest{Phase: "review"})
+	resp, err := mgr.RunHook(ctx, "review", model.RunRequest{})
 	if err != nil {
 		t.Fatalf("run hook: %v", err)
 	}
@@ -43,8 +43,8 @@ func TestRunHookActivatesPhaseWhenHookAlreadyQueued(t *testing.T) {
 	if !signaled {
 		t.Fatal("expected drain signal")
 	}
-	phases := mgr.ActivePhases()
-	if len(phases) != 1 || phases[0] != "review" {
-		t.Fatalf("expected active review phase, got %v", phases)
+	active := mgr.ActiveHookIDs()
+	if len(active) != 1 || active[0] != "review" {
+		t.Fatalf("expected active review hook, got %v", active)
 	}
 }

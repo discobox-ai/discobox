@@ -267,14 +267,6 @@ func (s *Service) RunHook(ctx context.Context, hookID string, req model.RunReque
 	if !ok {
 		return model.RunResponse{}, ErrNotFound
 	}
-	req.Phase = strings.TrimSpace(strings.ToLower(req.Phase))
-	if phase := strings.ToLower(h.NormalizedPhase()); phase != "" && req.Phase != phase {
-		reason := "phase_required"
-		if req.Phase != "" {
-			reason = "phase_mismatch"
-		}
-		return model.RunResponse{HookID: hookID, Skipped: true, Reason: reason}, nil
-	}
 	if h.IsLSP() {
 		return model.RunResponse{HookID: hookID, Skipped: true, Reason: "lsp_hooks_run_continuously"}, nil
 	}

@@ -387,9 +387,9 @@ func (s *Store) EnqueueChanges(ctx context.Context, hookIDs []string, changes []
 	return s.Enqueue(ctx, hookIDs, ChangedFilesFromWatcher(changes))
 }
 
-// NextPending returns the first unblocked queued hook.
+// NextPending returns the first unblocked queued unphased hook.
 func (s *Store) NextPending(ctx context.Context) (*PendingRow, error) {
-	return s.NextPendingForPhases(ctx, nil)
+	return s.NextPendingExcluding(ctx, nil, nil)
 }
 
 // ListPending returns all queued hook rows in queue order.
@@ -413,17 +413,11 @@ func (s *Store) ListPending(ctx context.Context, limit int) ([]PendingRow, error
 	return out, nil
 }
 
-// NextPendingForPhases returns the first unblocked queued hook allowed by the
-// active phase set. Unphased hooks are always allowed and are preferred before
-// phased hooks. If phases is empty, only unphased hooks are eligible.
-func (s *Store) NextPendingForPhases(ctx context.Context, phases []string) (*PendingRow, error) {
-	return s.NextPendingForPhasesExcluding(ctx, phases, nil)
-}
-
-// NextPendingForPhasesExcluding returns the first eligible queued hook whose ID
-// is not in excludeHookIDs.
-func (s *Store) NextPendingForPhasesExcluding(ctx context.Context, phases []string, excludeHookIDs []string) (*PendingRow, error) {
-	phases = normalizePhaseList(phases)
+// NextPendingExcluding returns the first unblocked queued hook that is either
+// unphased or explicitly allowed by ID, skipping hook IDs in excludeHookIDs.
+// Unphased hooks are preferred before phased hooks.
+func (s *Store) NextPendingExcluding(ctx context.Context, allowedHookIDs []string, excludeHookIDs []string) (*PendingRow, error) {
+	allowedHookIDs = normalizeIDs(allowedHookIDs)
 	excludeHookIDs = normalizeIDs(excludeHookIDs)
 	var row models.PendingHook
 	query := s.read.WithContext(ctx).
@@ -432,10 +426,10 @@ func (s *Store) NextPendingForPhasesExcluding(ctx context.Context, phases []stri
 	if len(excludeHookIDs) > 0 {
 		query = query.Where("pending_hooks.hook_id NOT IN ?", excludeHookIDs)
 	}
-	if len(phases) == 0 {
+	if len(allowedHookIDs) == 0 {
 		query = query.Where("hook_definitions.phase = ?", "")
 	} else {
-		query = query.Where("hook_definitions.phase = ? OR hook_definitions.phase IN ?", "", phases)
+		query = query.Where("hook_definitions.phase = ? OR pending_hooks.hook_id IN ?", "", allowedHookIDs)
 	}
 	err := query.
 		Order("CASE WHEN hook_definitions.phase = '' THEN 0 ELSE 1 END").
@@ -452,24 +446,6 @@ func (s *Store) NextPendingForPhasesExcluding(ctx context.Context, phases []stri
 		return nil, err
 	}
 	return &out, nil
-}
-
-func normalizePhaseList(phases []string) []string {
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(phases))
-	for _, phase := range phases {
-		phase = strings.TrimSpace(strings.ToLower(phase))
-		if phase == "" {
-			continue
-		}
-		if _, ok := seen[phase]; ok {
-			continue
-		}
-		seen[phase] = struct{}{}
-		out = append(out, phase)
-	}
-	sort.Strings(out)
-	return out
 }
 
 // MarkRunning marks a hook running and appends a run-history row.

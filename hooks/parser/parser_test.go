@@ -257,13 +257,27 @@ func TestValidationErrors(t *testing.T) {
 			field: "pattern",
 		},
 		{
+			name: "reserved phase",
+			file: "reserved-phase.sh",
+			content: `#!/bin/sh
+#---
+# type: file
+# pattern: "**/*.go"
+# phase: all
+#---
+:
+`,
+			mode:  0o755,
+			field: "phase",
+		},
+		{
 			name: "bad phase",
 			file: "bad-phase.sh",
 			content: `#!/bin/sh
 #---
 # type: file
 # pattern: "**/*.go"
-# phase: build
+# phase: bad/phase
 #---
 :
 `,

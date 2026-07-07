@@ -290,8 +290,6 @@ RunRequest:
   properties:
     force:
       type: boolean
-    phase:
-      type: string
 RunResponse:
   type: object
   required: [enqueued, hook_id]

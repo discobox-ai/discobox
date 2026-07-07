@@ -350,7 +350,7 @@ func TestEnqueueMergesAndRunningFinishTransitions(t *testing.T) {
 	}
 }
 
-func TestNextPendingForPhasesSkipsPhaseHooksUntilActivated(t *testing.T) {
+func TestNextPendingSkipsPhaseHooksUntilActivated(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(ctx, t)
 	if err := s.RefreshDefinitions(ctx, []hooks.Hook{
@@ -362,13 +362,13 @@ func TestNextPendingForPhasesSkipsPhaseHooksUntilActivated(t *testing.T) {
 	if err := s.Enqueue(ctx, []string{"review"}, []models.ChangedFile{{Path: "review.go", Kind: watcher.Modified}}); err != nil {
 		t.Fatalf("enqueue review: %v", err)
 	}
-	if pending, err := s.NextPendingForPhases(ctx, nil); err != nil || pending != nil {
+	if pending, err := s.NextPending(ctx); err != nil || pending != nil {
 		t.Fatalf("expected gated review hook to stay pending, pending=%#v err=%v", pending, err)
 	}
 	if err := s.Enqueue(ctx, []string{"lint"}, []models.ChangedFile{{Path: "lint.go", Kind: watcher.Modified}}); err != nil {
 		t.Fatalf("enqueue lint: %v", err)
 	}
-	pending, err := s.NextPendingForPhases(ctx, nil)
+	pending, err := s.NextPending(ctx)
 	if err != nil {
 		t.Fatalf("next unphased pending: %v", err)
 	}
@@ -382,7 +382,7 @@ func TestNextPendingForPhasesSkipsPhaseHooksUntilActivated(t *testing.T) {
 	if err := s.FinishRun(ctx, run.ID, models.RunResult{Status: models.StatusSuccess}); err != nil {
 		t.Fatalf("finish lint: %v", err)
 	}
-	pending, err = s.NextPendingForPhases(ctx, []string{"review"})
+	pending, err = s.NextPendingExcluding(ctx, []string{"review"}, nil)
 	if err != nil {
 		t.Fatalf("next review pending: %v", err)
 	}
@@ -391,7 +391,7 @@ func TestNextPendingForPhasesSkipsPhaseHooksUntilActivated(t *testing.T) {
 	}
 }
 
-func TestNextPendingForPhasesExcludingSkipsRunningHookIDs(t *testing.T) {
+func TestNextPendingExcludingSkipsRunningHookIDs(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(ctx, t)
 	if err := s.RefreshDefinitions(ctx, []hooks.Hook{
@@ -404,14 +404,14 @@ func TestNextPendingForPhasesExcludingSkipsRunningHookIDs(t *testing.T) {
 	if err := s.Enqueue(ctx, []string{"a", "b", "review"}, []models.ChangedFile{{Path: "changed.go", Kind: watcher.Modified}}); err != nil {
 		t.Fatalf("enqueue: %v", err)
 	}
-	pending, err := s.NextPendingForPhasesExcluding(ctx, []string{"review"}, []string{"a"})
+	pending, err := s.NextPendingExcluding(ctx, []string{"review"}, []string{"a"})
 	if err != nil {
 		t.Fatalf("next excluding a: %v", err)
 	}
 	if pending == nil || pending.HookID != "b" {
 		t.Fatalf("expected b after excluding a, got %#v", pending)
 	}
-	pending, err = s.NextPendingForPhasesExcluding(ctx, []string{"review"}, []string{"a", "b"})
+	pending, err = s.NextPendingExcluding(ctx, []string{"review"}, []string{"a", "b"})
 	if err != nil {
 		t.Fatalf("next excluding a and b: %v", err)
 	}

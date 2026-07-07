@@ -214,8 +214,7 @@ type ExecutionResponse struct {
 
 // RunRequest is accepted by POST /hooks/{id}/run.
 type RunRequest struct {
-	Force bool   `json:"force"`
-	Phase string `json:"phase,omitempty"`
+	Force bool `json:"force"`
 }
 
 // RunResponse is returned by POST /hooks/{id}/run.

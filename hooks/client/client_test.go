@@ -79,7 +79,7 @@ func TestUnixTransportAndRequestShapes(t *testing.T) {
 			writeTestJSON(t, w, model.ExecutionResponse{Paused: true})
 		case "/hooks/hook%20one/run":
 			var body model.RunRequest
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Force || body.Phase != "review" {
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !body.Force {
 				t.Fatalf("unexpected run body: %#v err=%v", body, err)
 			}
 			writeTestJSON(t, w, RunResponse{HookID: "hook one", Enqueued: true})
@@ -209,7 +209,7 @@ func TestUnixTransportAndRequestShapes(t *testing.T) {
 	if got := <-seen; got != "PATCH /execution" {
 		t.Fatalf("pause request = %q", got)
 	}
-	if resp, err := c.RunHook(context.Background(), "hook one", RunOptions{Force: true, Phase: "review"}); err != nil || !resp.Enqueued {
+	if resp, err := c.RunHook(context.Background(), "hook one", RunOptions{Force: true}); err != nil || !resp.Enqueued {
 		t.Fatalf("run: resp=%#v err=%v", resp, err)
 	}
 	if got := <-seen; got != "POST /hooks/hook%20one/run" {

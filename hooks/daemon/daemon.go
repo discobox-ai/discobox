@@ -1003,8 +1003,8 @@ func (r *runtimeState) drainOne() bool {
 	if res.Success {
 		return true
 	}
-	if len(r.manager.ActivePhases()) > 0 {
-		r.manager.ClearActivePhases()
+	if len(r.manager.ActiveHookIDs()) > 0 {
+		r.manager.ClearActiveHooks()
 	}
 	return false
 }
@@ -1014,15 +1014,15 @@ func (r *runtimeState) nextRunnable() (*store.PendingRow, hooks.Hook, bool) {
 	if paused {
 		return nil, hooks.Hook{}, false
 	}
-	activePhases := r.manager.ActivePhases()
-	pending, err := r.store.NextPendingForPhasesExcluding(r.ctx, activePhases, r.manager.RunningHookIDs())
+	activeHookIDs := r.manager.ActiveHookIDs()
+	pending, err := r.store.NextPendingExcluding(r.ctx, activeHookIDs, r.manager.RunningHookIDs())
 	if err != nil {
 		return nil, hooks.Hook{}, false
 	}
 	if pending == nil {
-		if len(activePhases) > 0 {
+		if len(activeHookIDs) > 0 {
 			if r.manager.RunningCount() == 0 {
-				r.manager.ClearActivePhases()
+				r.manager.ClearActiveHooks()
 			}
 		}
 		return nil, hooks.Hook{}, false
@@ -1231,7 +1231,7 @@ func (r *runtimeState) waitSnapshot(ctx context.Context) (model.WaitResponse, er
 	}
 	eligiblePending := false
 	if !paused {
-		pending, err := r.store.NextPendingForPhases(ctx, r.manager.ActivePhases())
+		pending, err := r.store.NextPendingExcluding(ctx, r.manager.ActiveHookIDs(), nil)
 		if err != nil {
 			return model.WaitResponse{}, err
 		}
