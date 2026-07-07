@@ -58,10 +58,41 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{write: pools.Write, read: pools.Read}
-	if err := s.write.WithContext(ctx).AutoMigrate(&TerminalState{}, &TerminalEvent{}, &ResourceSnapshot{}, &AgentHookLog{}, &ExecState{}, &ExecEvent{}); err != nil {
+	if err := s.write.WithContext(ctx).AutoMigrate(&AgentState{}, &TerminalState{}, &TerminalEvent{}, &ResourceSnapshot{}, &AgentHookLog{}, &ExecState{}, &ExecEvent{}); err != nil {
 		return nil, fmt.Errorf("migrate sandbox-agent store: %w", err)
 	}
 	return s, nil
+}
+
+const primaryTerminalLaunchedKey = "primary_terminal_launched"
+
+// PrimaryTerminalLaunched reports whether the sandbox-agent has launched the
+// primary terminal in a previous sandbox start. It is used to decide between
+// running the agent with the initial prompt (first start) and resuming the
+// previous session with the relaunch command (subsequent starts).
+func (s *Store) PrimaryTerminalLaunched(ctx context.Context) (bool, error) {
+	if s == nil {
+		return false, nil
+	}
+	var count int64
+	if err := s.read.WithContext(ctx).Model(&AgentState{}).
+		Where("key = ? AND value = ?", primaryTerminalLaunchedKey, "true").
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// MarkPrimaryTerminalLaunched durably records that the primary terminal has been
+// launched so later starts use the relaunch command.
+func (s *Store) MarkPrimaryTerminalLaunched(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	return s.write.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "key"}},
+		UpdateAll: true,
+	}).Create(&AgentState{Key: primaryTerminalLaunchedKey, Value: "true", UpdatedAt: time.Now().UTC()}).Error
 }
 
 func (s *Store) RecordEvent(ctx context.Context, terminalID, typ, message string, details map[string]any) error {

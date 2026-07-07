@@ -28,6 +28,42 @@ func TestRecordAndListEvents(t *testing.T) {
 	}
 }
 
+func TestPrimaryTerminalLaunchedMarker(t *testing.T) {
+	ctx := context.Background()
+	dbPath := filepath.Join(t.TempDir(), "agent.db")
+	st, err := Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	launched, err := st.PrimaryTerminalLaunched(ctx)
+	if err != nil {
+		t.Fatalf("primary launched: %v", err)
+	}
+	if launched {
+		t.Fatalf("expected primary not launched initially")
+	}
+	if err := st.MarkPrimaryTerminalLaunched(ctx); err != nil {
+		t.Fatalf("mark primary launched: %v", err)
+	}
+	// Marking twice must be idempotent (upsert).
+	if err := st.MarkPrimaryTerminalLaunched(ctx); err != nil {
+		t.Fatalf("mark primary launched again: %v", err)
+	}
+	// A freshly reopened store (simulating a sandbox restart) must observe the
+	// durable marker.
+	reopened, err := Open(ctx, dbPath)
+	if err != nil {
+		t.Fatalf("reopen store: %v", err)
+	}
+	launched, err = reopened.PrimaryTerminalLaunched(ctx)
+	if err != nil {
+		t.Fatalf("primary launched after reopen: %v", err)
+	}
+	if !launched {
+		t.Fatalf("expected primary launched after mark")
+	}
+}
+
 func TestRecordAndListAgentHooks(t *testing.T) {
 	ctx := context.Background()
 	st, err := Open(ctx, filepath.Join(t.TempDir(), "agent.db"))

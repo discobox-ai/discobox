@@ -2,6 +2,17 @@ package store
 
 import "time"
 
+// AgentState is a small key/value table for durable sandbox-agent state that
+// must survive sandbox restarts, such as whether the primary terminal has been
+// launched before.
+type AgentState struct {
+	Key       string    `gorm:"primaryKey" json:"key"`
+	Value     string    `json:"value"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+func (AgentState) TableName() string { return "agent_state" }
+
 type TerminalState struct {
 	TerminalID string     `gorm:"primaryKey" json:"terminalId"`
 	Unit       string     `gorm:"index" json:"unit,omitempty"`

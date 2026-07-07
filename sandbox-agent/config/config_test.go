@@ -61,7 +61,8 @@ func TestLoadUsesAgentConfigsAsLaunchableAgents(t *testing.T) {
 			"storageBytes": 2048,
 			"env": {
 				"BASE": "sandbox"
-			}
+			},
+			"prompt": ["fix", "the bug"]
 		},
 		"provider": {
 			"kind": "discobox-worker",
@@ -82,6 +83,7 @@ func TestLoadUsesAgentConfigsAsLaunchableAgents(t *testing.T) {
 				"name": "Codex",
 				"installCommand": ["npm", "install", "-g", "@openai/codex"],
 				"runCommand": ["codex"],
+				"relaunchCommand": ["codex", "resume", "--last"],
 				"isDefault": true
 			},
 			{
@@ -104,11 +106,17 @@ func TestLoadUsesAgentConfigsAsLaunchableAgents(t *testing.T) {
 	if cfg.Agents[0].ID != "codex" || !cfg.Agents[0].IsDefault || len(cfg.Agents[0].InstallCommand) == 0 {
 		t.Fatalf("first agent = %#v, want default codex with install command", cfg.Agents[0])
 	}
+	if got := cfg.Agents[0].RelaunchCommand; len(got) != 3 || got[0] != "codex" || got[1] != "resume" || got[2] != "--last" {
+		t.Fatalf("codex relaunch command = %#v, want [codex, resume, --last]", got)
+	}
 	if cfg.Agents[1].ID != "claude" {
 		t.Fatalf("second agent = %#v, want claude", cfg.Agents[1])
 	}
 	if cfg.Env["BASE"] != "sandbox" {
 		t.Fatalf("env = %#v, want sandbox config env", cfg.Env)
+	}
+	if len(cfg.Prompt) != 2 || cfg.Prompt[0] != "fix" || cfg.Prompt[1] != "the bug" {
+		t.Fatalf("prompt = %#v, want [fix, the bug]", cfg.Prompt)
 	}
 }
 

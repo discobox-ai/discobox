@@ -43,6 +43,14 @@ runtime operations.
   lifecycle events, latest observed runtime state, and retained opaque resource
   samples, but REST runtime state should be derived from runtime/systemd/shim
   observations instead of an in-memory cache.
+- On sandbox start the agent launches one primary terminal from the manifest
+  prompt (`EnsurePrimary`). The first start runs the resolved agent with the
+  prompt as arguments; later starts run the agent's `relaunchCommand` to resume
+  the previous session instead of replaying the prompt. First-vs-subsequent is
+  decided by a durable marker in the SQLite store (`AgentState`), so it survives
+  restarts. The launched terminal carries the `primary` flag; that flag is
+  owned by the sandbox-agent and cannot be requested through the terminal
+  create API.
 - Terminal and exec shims share the same framed attach mechanics. Keep Unix
   socket setup, HTTP upgrade, attacher tracking, frame writes, output broadcast,
   exit frame emission, and pending resize handling in `shimruntime`; keep

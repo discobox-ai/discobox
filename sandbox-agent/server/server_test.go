@@ -295,7 +295,6 @@ func TestAgentTerminalResourceStreamReplaysHistory(t *testing.T) {
 	}
 	created, err := terminal.NewManager(terminal.ManagerConfig{
 		ResolvedAgentConfig: cfg.ResolvedAgentConfig,
-		AgentConfigs:        cfg.AgentConfigs,
 		Agents:              cfg.Agents,
 		WorkingRoot:         cfg.WorkingRoot,
 		RuntimeDir:          cfg.RuntimeDir,

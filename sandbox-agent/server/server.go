@@ -37,9 +37,9 @@ type Config struct {
 	RuntimeDir            string
 	DatabasePath          string
 	Env                   map[string]string
+	Prompt                []string
 	Resources             config.ResourceConfig
 	ResolvedAgentConfig   *config.Agent
-	AgentConfigs          []config.Agent
 	Agents                []config.Agent
 	UnitManager           terminal.UnitManager
 	Installer             terminal.Installer
@@ -64,9 +64,9 @@ func ConfigFromAgentConfig(cfg config.Config) Config {
 		RuntimeDir:            cfg.RuntimeDir,
 		DatabasePath:          cfg.DatabasePath,
 		Env:                   cfg.Env,
+		Prompt:                cfg.Prompt,
 		Resources:             cfg.Resources,
 		ResolvedAgentConfig:   cfg.ResolvedAgentConfig,
-		AgentConfigs:          cfg.AgentConfigs,
 		Agents:                cfg.Agents,
 	}
 }
@@ -113,7 +113,6 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Manager, *execs.Manage
 	}
 	manager, err := terminal.NewManager(terminal.ManagerConfig{
 		ResolvedAgentConfig: cfg.ResolvedAgentConfig,
-		AgentConfigs:        cfg.AgentConfigs,
 		Agents:              cfg.Agents,
 		WorkingRoot:         cfg.WorkingRoot,
 		RuntimeDir:          cfg.RuntimeDir,
@@ -122,6 +121,7 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Manager, *execs.Manage
 		Units:               cfg.UnitManager,
 		Installer:           cfg.Installer,
 		Audit:               audit,
+		PrimaryState:        localStore,
 	})
 	if err != nil {
 		return nil, nil, nil, nil, err
@@ -218,6 +218,11 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	if err != nil {
 		return err
 	}
+	go func() {
+		if err := manager.EnsurePrimary(ctx, cfg.Prompt); err != nil && !errors.Is(err, context.Canceled) {
+			logger.Error("launch primary terminal", "error", err)
+		}
+	}()
 	go reconcileLoop(ctx, logger, manager)
 	go execReconcileLoop(ctx, logger, execManager)
 	go func() {

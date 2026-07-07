@@ -25,6 +25,7 @@ type Config struct {
 	RuntimeDir            string            `json:"runtimeDir"`
 	DatabasePath          string            `json:"databasePath"`
 	Env                   map[string]string `json:"env,omitempty"`
+	Prompt                []string          `json:"prompt,omitempty"`
 	ResolvedAgentConfig   *Agent            `json:"resolvedAgentConfig,omitempty"`
 	AgentConfigs          []Agent           `json:"agentConfigs,omitempty"`
 	Agents                []Agent           `json:"agents"`
@@ -46,12 +47,13 @@ type ExecDefaults struct {
 }
 
 type Agent struct {
-	ID             string      `json:"id"`
-	Name           string      `json:"name"`
-	InstallCommand []string    `json:"installCommand,omitempty"`
-	Command        []string    `json:"command"`
-	IsDefault      bool        `json:"isDefault,omitempty"`
-	Files          []AgentFile `json:"files,omitempty"`
+	ID              string      `json:"id"`
+	Name            string      `json:"name"`
+	InstallCommand  []string    `json:"installCommand,omitempty"`
+	Command         []string    `json:"command"`
+	RelaunchCommand []string    `json:"relaunchCommand,omitempty"`
+	IsDefault       bool        `json:"isDefault,omitempty"`
+	Files           []AgentFile `json:"files,omitempty"`
 }
 
 // AgentFile is a file to write into the agent's home directory when the agent
@@ -114,6 +116,7 @@ func configFromManifest(manifest model.SandboxManifest) Config {
 	if env, ok := manifest.Config.Env.Get(); ok {
 		cfg.Env = map[string]string(env)
 	}
+	cfg.Prompt = cloneCommand(manifest.Config.Prompt)
 	cfg.ExecDefaults = execDefaultsFromManifestConfig(manifest.Config)
 	if manifest.AgentRuntime != nil {
 		cfg.ListenAddress = manifest.AgentRuntime.ListenAddress
@@ -177,22 +180,24 @@ func publicKey(values map[string]string) string {
 
 func agentFromManifest(in model.SandboxManifestAgentConfig) Agent {
 	return Agent{
-		ID:             in.ID,
-		Name:           in.Name,
-		InstallCommand: cloneCommand(in.InstallCommand),
-		Command:        cloneCommand(in.RunCommand),
-		IsDefault:      in.IsDefault,
-		Files:          agentFilesFromManifest(in.Files),
+		ID:              in.ID,
+		Name:            in.Name,
+		InstallCommand:  cloneCommand(in.InstallCommand),
+		Command:         cloneCommand(in.RunCommand),
+		RelaunchCommand: cloneCommand(in.RelaunchCommand),
+		IsDefault:       in.IsDefault,
+		Files:           agentFilesFromManifest(in.Files),
 	}
 }
 
 func agentFromResolvedManifest(in model.SandboxManifestResolvedAgentConfig) Agent {
 	return Agent{
-		ID:             in.ID,
-		Name:           in.Name,
-		InstallCommand: cloneCommand(in.InstallCommand),
-		Command:        cloneCommand(in.RunCommand),
-		Files:          agentFilesFromManifest(in.Files),
+		ID:              in.ID,
+		Name:            in.Name,
+		InstallCommand:  cloneCommand(in.InstallCommand),
+		Command:         cloneCommand(in.RunCommand),
+		RelaunchCommand: cloneCommand(in.RelaunchCommand),
+		Files:           agentFilesFromManifest(in.Files),
 	}
 }
 

@@ -50,6 +50,7 @@ type Terminal struct {
 	StartedAt   *time.Time        `json:"startedAt,omitempty"`
 	ExitedAt    *time.Time        `json:"exitedAt,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
+	Primary     bool              `json:"primary,omitempty"`
 	SocketPath  string            `json:"socketPath,omitempty"`
 	RuntimePath string            `json:"runtimePath,omitempty"`
 }
@@ -62,6 +63,13 @@ type CreateRequest struct {
 	Metadata map[string]string
 	Rows     uint16
 	Cols     uint16
+
+	// primary and command are set only by the sandbox-agent's own primary
+	// terminal launch, never from the terminal create API. command, when set,
+	// replaces the resolved agent command and args entirely (used for the
+	// relaunch/resume command on subsequent sandbox starts).
+	primary bool
+	command []string
 }
 
 type UnitManager interface {
@@ -112,9 +120,16 @@ type Installer interface {
 	EnsureInstalled(context.Context, config.Agent, string, map[string]string) error
 }
 
+// PrimaryStateStore records, durably across sandbox restarts, whether the
+// primary terminal has already been launched. It lets EnsurePrimary decide
+// between the initial prompt and the relaunch (resume) command.
+type PrimaryStateStore interface {
+	PrimaryTerminalLaunched(context.Context) (bool, error)
+	MarkPrimaryTerminalLaunched(context.Context) error
+}
+
 type ManagerConfig struct {
 	ResolvedAgentConfig *config.Agent
-	AgentConfigs        []config.Agent
 	Agents              []config.Agent
 	WorkingRoot         string
 	RuntimeDir          string
@@ -126,12 +141,12 @@ type ManagerConfig struct {
 	Units               UnitManager
 	Installer           Installer
 	Audit               AuditRecorder
+	PrimaryState        PrimaryStateStore
 }
 
 type Manager struct {
-	forcedAgent    *config.Agent
-	agentConfigs   map[string]config.Agent
 	agents         map[string]config.Agent
+	resolvedID     string
 	defaultID      string
 	workingRoot    string
 	defaultWorkdir string
@@ -144,6 +159,7 @@ type Manager struct {
 	units          UnitManager
 	installer      Installer
 	audit          AuditRecorder
+	primaryState   PrimaryStateStore
 }
 
 func NewManager(cfg ManagerConfig) (*Manager, error) {
@@ -168,7 +184,6 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 		}
 	}
 	m := &Manager{
-		agentConfigs:   map[string]config.Agent{},
 		agents:         map[string]config.Agent{},
 		workingRoot:    filepath.Clean(workingRoot),
 		defaultWorkdir: strings.TrimSpace(cfg.ExecDefaults.Workdir),
@@ -180,6 +195,7 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 		units:          units,
 		installer:      cfg.Installer,
 		audit:          cfg.Audit,
+		primaryState:   cfg.PrimaryState,
 	}
 	if m.installer == nil {
 		installRuntimeDir := filepath.Join(m.runtimeDir, "installs")
@@ -190,29 +206,13 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 				LogDir:     m.logDir,
 				User:       cloneUser(m.defaultUser),
 			},
-			HarnessInstaller{},
+			HookInstaller{},
 			FileInstaller{
 				HomeDirectory: cfg.ExecDefaults.HomeDirectory,
 				UID:           cfg.ExecDefaults.UID,
 				GID:           cfg.ExecDefaults.GID,
 			},
 		}}
-	}
-	if cfg.ResolvedAgentConfig != nil && strings.TrimSpace(cfg.ResolvedAgentConfig.ID) != "" {
-		agent := cloneAgent(*cfg.ResolvedAgentConfig)
-		m.forcedAgent = &agent
-	}
-	for _, agent := range cfg.AgentConfigs {
-		if strings.TrimSpace(agent.ID) == "" {
-			continue
-		}
-		if _, exists := m.agentConfigs[agent.ID]; exists {
-			return nil, fmt.Errorf("duplicate agent config %q", agent.ID)
-		}
-		m.agentConfigs[agent.ID] = cloneAgent(agent)
-		if m.defaultID == "" || agent.IsDefault {
-			m.defaultID = agent.ID
-		}
 	}
 	for _, agent := range cfg.Agents {
 		if strings.TrimSpace(agent.ID) == "" {
@@ -224,6 +224,15 @@ func NewManager(cfg ManagerConfig) (*Manager, error) {
 		m.agents[agent.ID] = cloneAgent(agent)
 		if m.defaultID == "" || agent.IsDefault {
 			m.defaultID = agent.ID
+		}
+	}
+	// The sandbox's resolved agent config is the default terminals use when no
+	// agent is explicitly requested. It is registered like any other agent so an
+	// explicit request can still select a different one.
+	if cfg.ResolvedAgentConfig != nil && strings.TrimSpace(cfg.ResolvedAgentConfig.ID) != "" {
+		m.resolvedID = strings.TrimSpace(cfg.ResolvedAgentConfig.ID)
+		if _, exists := m.agents[m.resolvedID]; !exists {
+			m.agents[m.resolvedID] = cloneAgent(*cfg.ResolvedAgentConfig)
 		}
 	}
 	return m, nil
@@ -257,8 +266,13 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Terminal, erro
 	if err := m.installer.EnsureInstalled(ctx, agent, workdir, env); err != nil {
 		return Terminal{}, err
 	}
-	command := append([]string{}, agent.Command...)
-	command = append(command, req.Args...)
+	var command []string
+	if len(req.command) > 0 {
+		command = append([]string{}, req.command...)
+	} else {
+		command = append([]string{}, agent.Command...)
+		command = append(command, req.Args...)
+	}
 	unit := "discobox-agent-terminal-" + id
 	socketPath := m.socketPath(id)
 	runtimePath := m.runtimePath(id)
@@ -272,6 +286,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Terminal, erro
 		Unit:        unit,
 		CreatedAt:   now,
 		Metadata:    cloneMap(req.Metadata),
+		Primary:     req.primary,
 		SocketPath:  socketPath,
 		RuntimePath: runtimePath,
 	}
@@ -318,6 +333,65 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Terminal, erro
 	_ = m.observe(ctx, current)
 	_ = m.recordEvent(ctx, id, "terminal.prepared", "terminal prepared", map[string]any{"unit": current.Unit})
 	return current, nil
+}
+
+// EnsurePrimary launches the sandbox's primary terminal on sandbox start. On the
+// first start it runs the resolved agent with the sandbox prompt as arguments,
+// mirroring a normal terminal create. On subsequent starts it runs the agent's
+// relaunch command to resume the previous session instead of replaying the
+// prompt. The launched terminal is flagged Primary; that flag cannot be set
+// through the terminal create API. It is a no-op when a live primary terminal
+// already exists or when no agent is configured.
+func (m *Manager) EnsurePrimary(ctx context.Context, prompt []string) error {
+	for _, existing := range m.List() {
+		if existing.Primary && (existing.Status == StatusStarting || existing.Status == StatusRunning) {
+			return nil
+		}
+	}
+	workdir, err := m.resolveWorkdir("")
+	if err != nil {
+		return err
+	}
+	agent, _, err := m.resolveAgent("", workdir)
+	if err != nil {
+		// No agent is configured for this sandbox; there is nothing to launch.
+		return nil
+	}
+	launched := false
+	if m.primaryState != nil {
+		if launched, err = m.primaryState.PrimaryTerminalLaunched(ctx); err != nil {
+			return err
+		}
+	}
+	created, err := m.Create(ctx, primaryCreateRequest(agent, prompt, launched))
+	if err != nil {
+		return err
+	}
+	if _, err := m.Start(ctx, created.ID); err != nil {
+		return err
+	}
+	if m.primaryState != nil {
+		return m.primaryState.MarkPrimaryTerminalLaunched(ctx)
+	}
+	return nil
+}
+
+// primaryCreateRequest builds the create request for the primary terminal. On
+// the first start (launched == false) it runs the agent with the prompt as
+// arguments. On subsequent starts it resumes the previous session using the
+// agent's relaunch command, which replaces the run command entirely; when no
+// relaunch command is configured it starts the agent without replaying the
+// prompt.
+func primaryCreateRequest(agent config.Agent, prompt []string, launched bool) CreateRequest {
+	req := CreateRequest{primary: true}
+	switch {
+	case launched && len(agent.RelaunchCommand) > 0:
+		req.command = append([]string{}, agent.RelaunchCommand...)
+	case launched:
+	default:
+		req.Args = append([]string{}, prompt...)
+	}
+	return req
 }
 
 func (m *Manager) List() []Terminal {
@@ -456,18 +530,18 @@ func (i CompositeInstaller) EnsureInstalled(ctx context.Context, agent config.Ag
 	return nil
 }
 
-type HarnessInstaller struct {
+type HookInstaller struct {
 	ManagedRoot      string
 	PublisherCommand string
 }
 
-func (i HarnessInstaller) EnsureInstalled(ctx context.Context, agent config.Agent, workdir string, env map[string]string) error {
+func (i HookInstaller) EnsureInstalled(ctx context.Context, agent config.Agent, workdir string, env map[string]string) error {
 	installer := registry.Installer{
 		Drivers:          registry.DriverForAgent(harnessAgent(agent)),
 		ManagedRoot:      i.ManagedRoot,
 		PublisherCommand: i.PublisherCommand,
 	}
-	return installer.Install(ctx, harness.InstallRequest{
+	return installer.InstallHooks(ctx, harness.HookInstallRequest{
 		Agent:            harnessAgent(agent),
 		Workdir:          workdir,
 		Env:              env,
@@ -740,30 +814,36 @@ func terminalDefaultUser(cfg ManagerConfig) *execs.User {
 	})
 }
 
+// resolveAgent selects the agent for a terminal in precedence order: an explicit
+// request, then the sandbox's resolved agent, then a local repo agent config,
+// then the configured default.
 func (m *Manager) resolveAgent(requested string, workdir string) (config.Agent, string, error) {
-	if m.forcedAgent != nil {
-		agent := cloneAgent(*m.forcedAgent)
-		return agent, agent.ID, nil
-	}
 	requested = strings.TrimSpace(requested)
-	if requested == "" {
-		if local, ok, err := m.localAgentConfig(workdir); err != nil {
-			return config.Agent{}, "", err
-		} else if ok {
-			return local, local.ID, nil
+	if requested != "" {
+		agent, ok := m.agents[requested]
+		if !ok {
+			return config.Agent{}, "", fmt.Errorf("agent %q is not configured", requested)
+		}
+		return agent, requested, nil
+	}
+	if m.resolvedID != "" {
+		if agent, ok := m.agents[m.resolvedID]; ok {
+			return agent, m.resolvedID, nil
 		}
 	}
-	if requested == "" {
-		requested = m.defaultID
+	if local, ok, err := m.localAgentConfig(workdir); err != nil {
+		return config.Agent{}, "", err
+	} else if ok {
+		return local, local.ID, nil
 	}
-	if requested == "" {
+	if m.defaultID == "" {
 		return config.Agent{}, "", errors.New("no agent terminals are configured")
 	}
-	agent, ok := m.agents[requested]
+	agent, ok := m.agents[m.defaultID]
 	if !ok {
-		return config.Agent{}, "", fmt.Errorf("agent %q is not configured", requested)
+		return config.Agent{}, "", fmt.Errorf("default agent %q is not configured", m.defaultID)
 	}
-	return agent, requested, nil
+	return agent, m.defaultID, nil
 }
 
 type localAgentConfig struct {
@@ -834,14 +914,12 @@ func readLocalAgentConfig(path string) (localAgentConfig, error) {
 
 func (m *Manager) matchAgent(selector string) (config.Agent, bool) {
 	selector = strings.TrimSpace(selector)
-	for _, agents := range []map[string]config.Agent{m.agentConfigs, m.agents} {
-		if agent, ok := agents[selector]; ok {
+	if agent, ok := m.agents[selector]; ok {
+		return cloneAgent(agent), true
+	}
+	for _, agent := range m.agents {
+		if strings.EqualFold(agent.Name, selector) {
 			return cloneAgent(agent), true
-		}
-		for _, agent := range agents {
-			if strings.EqualFold(agent.Name, selector) {
-				return cloneAgent(agent), true
-			}
 		}
 	}
 	return config.Agent{}, false
@@ -1015,6 +1093,7 @@ func cloneAgent(in config.Agent) config.Agent {
 	out := in
 	out.Command = append([]string{}, in.Command...)
 	out.InstallCommand = append([]string{}, in.InstallCommand...)
+	out.RelaunchCommand = append([]string{}, in.RelaunchCommand...)
 	out.Files = append([]config.AgentFile{}, in.Files...)
 	return out
 }
@@ -1174,6 +1253,7 @@ func mergeStatus(base, live Terminal) Terminal {
 	live.Unit = base.Unit
 	live.SocketPath = base.SocketPath
 	live.RuntimePath = base.RuntimePath
+	live.Primary = base.Primary
 	if live.CreatedAt.IsZero() {
 		live.CreatedAt = base.CreatedAt
 	}

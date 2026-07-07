@@ -69,6 +69,70 @@ func TestManagerCreateListDelete(t *testing.T) {
 	}
 }
 
+func TestPrimaryCreateRequest(t *testing.T) {
+	agent := config.Agent{
+		ID:              "claude-code",
+		Command:         []string{"claude"},
+		RelaunchCommand: []string{"claude", "--continue"},
+	}
+
+	first := primaryCreateRequest(agent, []string{"fix", "the bug"}, false)
+	if !first.primary {
+		t.Fatalf("first launch should be primary")
+	}
+	if len(first.command) != 0 {
+		t.Fatalf("first launch should not override command, got %#v", first.command)
+	}
+	if len(first.Args) != 2 || first.Args[0] != "fix" || first.Args[1] != "the bug" {
+		t.Fatalf("first launch args = %#v, want [fix, the bug]", first.Args)
+	}
+
+	next := primaryCreateRequest(agent, []string{"fix", "the bug"}, true)
+	if len(next.Args) != 0 {
+		t.Fatalf("subsequent launch should not replay prompt, got %#v", next.Args)
+	}
+	if len(next.command) != 2 || next.command[0] != "claude" || next.command[1] != "--continue" {
+		t.Fatalf("subsequent launch command = %#v, want [claude, --continue]", next.command)
+	}
+
+	noRelaunch := primaryCreateRequest(config.Agent{ID: "x", Command: []string{"x"}}, []string{"prompt"}, true)
+	if len(noRelaunch.Args) != 0 || len(noRelaunch.command) != 0 {
+		t.Fatalf("subsequent launch without relaunch command should be bare, got args=%#v command=%#v", noRelaunch.Args, noRelaunch.command)
+	}
+}
+
+func TestManagerCreatePrimaryTerminal(t *testing.T) {
+	runner := &fakeRunner{}
+	root := t.TempDir()
+	manager, err := NewManager(ManagerConfig{
+		Agents:      []config.Agent{{ID: "claude-code", Command: []string{"claude"}}},
+		WorkingRoot: root,
+		RuntimeDir:  t.TempDir(),
+		Units:       runner,
+		Installer:   &fakeInstaller{},
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+
+	created, err := manager.Create(context.Background(), primaryCreateRequest(
+		config.Agent{ID: "claude-code", Command: []string{"claude"}, RelaunchCommand: []string{"claude", "--continue"}},
+		nil, true,
+	))
+	if err != nil {
+		t.Fatalf("create primary terminal: %v", err)
+	}
+	if !created.Primary {
+		t.Fatalf("created terminal should be primary")
+	}
+	if got := runner.starts[0].Command; len(got) != 2 || got[0] != "claude" || got[1] != "--continue" {
+		t.Fatalf("relaunch command override = %#v, want [claude, --continue]", got)
+	}
+	if listed := manager.List(); len(listed) != 1 || !listed[0].Primary {
+		t.Fatalf("primary flag not persisted: %#v", listed)
+	}
+}
+
 func TestManagerAllowsWorkdirOutsideRoot(t *testing.T) {
 	runner := &fakeRunner{}
 	manager, err := NewManager(ManagerConfig{
@@ -392,12 +456,12 @@ func TestManagerMarksFailedWhenRunnerFails(t *testing.T) {
 	}
 }
 
-func TestManagerUsesForcedResolvedAgent(t *testing.T) {
+func TestManagerResolvedAgentIsDefaultButRequestOverrides(t *testing.T) {
 	runner := &fakeRunner{}
-	forced := config.Agent{ID: "forced", Command: []string{"forced"}}
+	resolved := config.Agent{ID: "forced", Command: []string{"forced"}}
 	manager, err := NewManager(ManagerConfig{
-		ResolvedAgentConfig: &forced,
-		AgentConfigs: []config.Agent{{
+		ResolvedAgentConfig: &resolved,
+		Agents: []config.Agent{{
 			ID:        "claude-code",
 			Command:   []string{"claude"},
 			IsDefault: true,
@@ -411,11 +475,19 @@ func TestManagerUsesForcedResolvedAgent(t *testing.T) {
 		t.Fatalf("new manager: %v", err)
 	}
 
+	// No agent requested → the sandbox's resolved agent is the default.
 	if _, err := manager.Create(context.Background(), CreateRequest{}); err != nil {
-		t.Fatalf("create terminal: %v", err)
+		t.Fatalf("create default terminal: %v", err)
 	}
 	if got := runner.starts[0].Command; len(got) != 1 || got[0] != "forced" {
-		t.Fatalf("command = %#v, want forced", got)
+		t.Fatalf("default command = %#v, want forced", got)
+	}
+	// An explicit request overrides the resolved default.
+	if _, err := manager.Create(context.Background(), CreateRequest{AgentID: "claude-code"}); err != nil {
+		t.Fatalf("create requested terminal: %v", err)
+	}
+	if got := runner.starts[1].Command; len(got) != 1 || got[0] != "claude" {
+		t.Fatalf("requested command = %#v, want claude", got)
 	}
 }
 
@@ -442,7 +514,7 @@ func TestManagerUsesRepoLocalAgentConfig(t *testing.T) {
 	}
 	installer := &fakeInstaller{}
 	manager, err := NewManager(ManagerConfig{
-		AgentConfigs: []config.Agent{
+		Agents: []config.Agent{
 			{
 				ID:             "codex",
 				Command:        []string{"codex"},

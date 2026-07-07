@@ -337,6 +337,9 @@ func agentTerminal(in terminal.Terminal) sandboxapi.AgentTerminal {
 	if len(in.Metadata) > 0 {
 		out.Metadata = sandboxapi.NewOptAgentTerminalMetadata(sandboxapi.AgentTerminalMetadata(stringMap(in.Metadata)))
 	}
+	if in.Primary {
+		out.Primary = sandboxapi.NewOptBool(true)
+	}
 	return out
 }
 
