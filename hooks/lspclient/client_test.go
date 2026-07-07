@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -114,6 +115,66 @@ func TestDidChangeWatchedFilesSendsWorkspaceNotification(t *testing.T) {
 	}
 	if got.Params.Changes[1].URI != FileURI(filepath.Join(dir, "old.go")) || got.Params.Changes[1].Type != int(FileDeleted) {
 		t.Fatalf("unexpected second change: %#v", got.Params.Changes[1])
+	}
+}
+
+func TestRegisterCapabilityTracksWatchers(t *testing.T) {
+	dir := t.TempDir()
+	client := &Client{repoRoot: dir, watchers: map[string][]watchGlob{}}
+
+	if client.HasWatchers() {
+		t.Fatal("expected no watchers before registration")
+	}
+	regParams := fmt.Appendf(nil, `{"registrations":[{"id":"watch-1","method":"workspace/didChangeWatchedFiles","registerOptions":{"watchers":[{"globPattern":"**/*.go"},{"globPattern":{"baseUri":%q,"pattern":"**/*.{mod,sum}"}}]}}]}`, FileURI(dir))
+	client.applyRegistrations(regParams)
+
+	if !client.HasWatchers() {
+		t.Fatal("expected watchers after registration")
+	}
+	for _, rel := range []string{"proxy/http.go", "go.mod", "cli/go.sum"} {
+		if !client.WatchesPath(rel) {
+			t.Fatalf("expected %q to be watched", rel)
+		}
+	}
+	if client.WatchesPath("README.md") {
+		t.Fatal("did not expect README.md to be watched")
+	}
+
+	client.applyUnregistrations([]byte(`{"unregisterations":[{"id":"watch-1"}]}`))
+	if client.HasWatchers() {
+		t.Fatal("expected watchers cleared after unregistration")
+	}
+}
+
+func TestServerRequestReceivesResponse(t *testing.T) {
+	read, write, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer read.Close()
+	defer write.Close()
+	client := &Client{stdin: write, watchers: map[string][]watchGlob{}}
+
+	client.handleServerRequest(7, "workspace/configuration", []byte(`{"items":[{"section":"gopls"},{"section":"other"}]}`))
+
+	reader := bufio.NewReader(read)
+	body, err := readMessage(reader)
+	if err != nil {
+		t.Fatalf("read response: %v", err)
+	}
+	var got struct {
+		JSONRPC string            `json:"jsonrpc"`
+		ID      int               `json:"id"`
+		Result  []json.RawMessage `json:"result"`
+	}
+	if err := json.Unmarshal(body, &got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got.JSONRPC != "2.0" || got.ID != 7 {
+		t.Fatalf("unexpected response envelope: %#v", got)
+	}
+	if len(got.Result) != 2 {
+		t.Fatalf("result = %#v, want 2 null entries", got.Result)
 	}
 }
 

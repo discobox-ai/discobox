@@ -100,9 +100,11 @@ script hooks that call tools such as Claude Code or Codex and exit non-zero when
 feedback should block progress.
 
 LSP hooks are file hooks whose script starts a language server over stdio. The
-daemon owns the LSP client lifecycle, sends matching file changes to the server,
-stores published diagnostics as first-class current state, and updates the hook
-status from diagnostics. LSP hooks do not run through the serial script queue.
+daemon owns the LSP client lifecycle: it starts the server lazily on the first
+change matching the hook pattern, forwards file changes the server asks to watch
+(falling back to all changes when the server registers no watchers), stores
+published diagnostics as first-class current state, and updates the hook status
+from diagnostics. LSP hooks do not run through the serial script queue.
 
 ## File Watching and Batching
 

@@ -234,7 +234,7 @@ func TestWaitSnapshotExpiresStalePendingLSP(t *testing.T) {
 
 func TestLSPFileChangesIncludeWorkspaceMetadata(t *testing.T) {
 	repo := t.TempDir()
-	changes := lspFileChanges(repo, []watcher.Change{
+	changes := lspFileChanges(repo, nil, []watcher.Change{
 		{Path: "go.work", Kind: watcher.Modified},
 		{Path: "cli/go.mod", Kind: watcher.Created},
 		{Path: "old.go", Kind: watcher.Deleted},

@@ -17,13 +17,14 @@ import (
 // Manager coordinates hook-domain operations that are shared by the daemon's
 // runtime loops and local socket API adapter.
 type Manager struct {
-	store     *store.Store
-	service   *service.Service
-	sessionID string
-	repoRoot  string
-	version   int64
-	cancel    context.CancelFunc
-	signalRun func()
+	store       *store.Store
+	service     *service.Service
+	sessionID   string
+	repoRoot    string
+	version     int64
+	cancel      context.CancelFunc
+	signalRun   func()
+	activateLSP func(hookID string, force bool) (bool, error)
 
 	mu          sync.Mutex
 	hooksByID   map[string]hooks.Hook
@@ -41,6 +42,11 @@ type Config struct {
 	Version   int64
 	Cancel    context.CancelFunc
 	SignalRun func()
+	// ActivateLSP starts (or refreshes) the language server for an LSP hook in
+	// response to an explicit run request. It reports whether the server was
+	// activated. The server outlives the request, so it takes no request
+	// context. Nil disables run-driven LSP activation.
+	ActivateLSP func(hookID string, force bool) (bool, error)
 }
 
 // New creates a hook manager.
@@ -61,6 +67,7 @@ func New(cfg Config) (*Manager, error) {
 		version:     cfg.Version,
 		cancel:      cfg.Cancel,
 		signalRun:   cfg.SignalRun,
+		activateLSP: cfg.ActivateLSP,
 		hooksByID:   map[string]hooks.Hook{},
 		runningByID: map[string]int{},
 		activeHooks: map[string]struct{}{},
@@ -234,6 +241,9 @@ func (m *Manager) SetHookExecution(ctx context.Context, hookID string, req model
 
 // RunHook enqueues a hook run when API-level skip/force semantics allow it.
 func (m *Manager) RunHook(ctx context.Context, hookID string, req model.RunRequest) (model.RunResponse, error) {
+	if h, ok := m.HookByID(hookID); ok && h.IsLSP() {
+		return m.runLSPHook(ctx, hookID, req)
+	}
 	resp, err := m.service.RunHook(ctx, hookID, req)
 	if err != nil {
 		return model.RunResponse{}, err
@@ -258,6 +268,28 @@ func (m *Manager) RunHook(ctx context.Context, hookID string, req model.RunReque
 		m.SignalRun()
 	}
 	return resp, nil
+}
+
+// runLSPHook handles an explicit run request for an LSP hook. LSP hooks do not
+// enqueue script work; a run instead starts the language server when it is idle
+// (or refreshes it when already running) so diagnostics are produced on demand.
+func (m *Manager) runLSPHook(ctx context.Context, hookID string, req model.RunRequest) (model.RunResponse, error) {
+	if m.activateLSP == nil {
+		resp := model.RunResponse{HookID: hookID, Skipped: true, Reason: "lsp_hooks_run_continuously"}
+		_ = m.RecordEvent(ctx, "hook.run.skipped", hookID, "", "hook run skipped", map[string]any{"reason": resp.Reason, "force": req.Force, "enqueued": false})
+		return resp, nil
+	}
+	activated, err := m.activateLSP(hookID, req.Force)
+	if err != nil {
+		return model.RunResponse{}, err
+	}
+	if !activated {
+		resp := model.RunResponse{HookID: hookID, Skipped: true, Reason: "lsp_not_ready"}
+		_ = m.RecordEvent(ctx, "hook.run.skipped", hookID, "", "hook run skipped", map[string]any{"reason": resp.Reason, "force": req.Force, "enqueued": false})
+		return resp, nil
+	}
+	_ = m.RecordEvent(ctx, "hook.run.requested", hookID, "", "lsp hook run requested", map[string]any{"force": req.Force, "enqueued": true})
+	return model.RunResponse{HookID: hookID, Enqueued: true}, nil
 }
 
 // Output returns the latest captured hook output.

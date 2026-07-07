@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/bmatcuk/doublestar/v4"
 	"github.com/obot-platform/discobox/hooks/processhelper"
 )
 
@@ -72,6 +73,16 @@ type Client struct {
 	nextID    int
 	done      chan struct{}
 	stderrBuf bytes.Buffer
+	watchMu   sync.Mutex
+	watchers  map[string][]watchGlob
+}
+
+// watchGlob is one file-watcher glob the server registered via
+// client/registerCapability. base is an absolute directory the pattern is
+// relative to; an empty base means the repository root.
+type watchGlob struct {
+	base    string
+	pattern string
 }
 
 // Options configures a language server process.
@@ -144,6 +155,7 @@ func Start(ctx context.Context, opts Options) (*Client, error) {
 		versions: map[string]int{},
 		pending:  map[int]chan response{},
 		done:     make(chan struct{}),
+		watchers: map[string][]watchGlob{},
 	}
 	go c.readLoop()
 	go c.stderrLoop()
@@ -271,7 +283,14 @@ func (c *Client) initialize(ctx context.Context) error {
 				"synchronization":    map[string]any{"didSave": true, "dynamicRegistration": false},
 				"publishDiagnostics": map[string]any{"relatedInformation": true, "versionSupport": false},
 			},
-			"workspace": map[string]any{"workspaceFolders": true},
+			"workspace": map[string]any{
+				"workspaceFolders": true,
+				"configuration":    true,
+				"didChangeWatchedFiles": map[string]any{
+					"dynamicRegistration":    true,
+					"relativePatternSupport": true,
+				},
+			},
 		},
 	}
 	if _, err := c.call(ctx, "initialize", params); err != nil {
@@ -355,7 +374,7 @@ func (c *Client) readLoop() {
 		if err := json.Unmarshal(body, &envelope); err != nil {
 			continue
 		}
-		if envelope.ID != nil {
+		if envelope.ID != nil && envelope.Method == "" {
 			c.pendingMu.Lock()
 			ch := c.pending[*envelope.ID]
 			delete(c.pending, *envelope.ID)
@@ -365,10 +384,177 @@ func (c *Client) readLoop() {
 			}
 			continue
 		}
+		if envelope.ID != nil {
+			c.handleServerRequest(*envelope.ID, envelope.Method, envelope.Params)
+			continue
+		}
 		if envelope.Method == "textDocument/publishDiagnostics" {
 			c.handleDiagnostics(envelope.Params)
 		}
 	}
+}
+
+// handleServerRequest answers server-to-client requests. Ignoring these leaves
+// the server waiting and degrades features such as watched-file reloads, so
+// every request receives a reply even when we take no other action.
+func (c *Client) handleServerRequest(id int, method string, params json.RawMessage) {
+	switch method {
+	case "client/registerCapability":
+		c.applyRegistrations(params)
+		c.respond(id, nil)
+	case "client/unregisterCapability":
+		c.applyUnregistrations(params)
+		c.respond(id, nil)
+	case "workspace/configuration":
+		var p struct {
+			Items []json.RawMessage `json:"items"`
+		}
+		_ = json.Unmarshal(params, &p)
+		c.respond(id, make([]any, len(p.Items)))
+	default:
+		c.respond(id, nil)
+	}
+}
+
+func (c *Client) respond(id int, result any) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	_ = c.write(ctx, serverResponse{JSONRPC: "2.0", ID: id, Result: result})
+}
+
+func (c *Client) applyRegistrations(raw json.RawMessage) {
+	var p struct {
+		Registrations []struct {
+			ID              string `json:"id"`
+			Method          string `json:"method"`
+			RegisterOptions struct {
+				Watchers []struct {
+					GlobPattern json.RawMessage `json:"globPattern"`
+				} `json:"watchers"`
+			} `json:"registerOptions"`
+		} `json:"registrations"`
+	}
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return
+	}
+	c.watchMu.Lock()
+	defer c.watchMu.Unlock()
+	for _, reg := range p.Registrations {
+		if reg.Method != "workspace/didChangeWatchedFiles" {
+			continue
+		}
+		globs := make([]watchGlob, 0, len(reg.RegisterOptions.Watchers))
+		for _, w := range reg.RegisterOptions.Watchers {
+			if base, pattern, ok := parseGlobPattern(w.GlobPattern); ok {
+				globs = append(globs, watchGlob{base: base, pattern: pattern})
+			}
+		}
+		if len(globs) > 0 {
+			c.watchers[reg.ID] = globs
+		}
+	}
+}
+
+func (c *Client) applyUnregistrations(raw json.RawMessage) {
+	var p struct {
+		Unregisterations []struct {
+			ID string `json:"id"`
+		} `json:"unregisterations"`
+	}
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return
+	}
+	c.watchMu.Lock()
+	defer c.watchMu.Unlock()
+	for _, reg := range p.Unregisterations {
+		delete(c.watchers, reg.ID)
+	}
+}
+
+// HasWatchers reports whether the server has registered any file watchers.
+func (c *Client) HasWatchers() bool {
+	c.watchMu.Lock()
+	defer c.watchMu.Unlock()
+	return len(c.watchers) > 0
+}
+
+// WatchesPath reports whether the repository-relative slash path matches a
+// server-registered watcher glob.
+func (c *Client) WatchesPath(rel string) bool {
+	rel = filepath.ToSlash(strings.TrimSpace(rel))
+	if rel == "" {
+		return false
+	}
+	abs := c.abs(rel)
+	c.watchMu.Lock()
+	defer c.watchMu.Unlock()
+	for _, globs := range c.watchers {
+		for _, g := range globs {
+			target := rel
+			if g.base != "" {
+				r, err := filepath.Rel(g.base, abs)
+				if err != nil {
+					continue
+				}
+				r = filepath.ToSlash(r)
+				if r == ".." || strings.HasPrefix(r, "../") {
+					continue
+				}
+				target = r
+			}
+			if matched, err := doublestar.Match(g.pattern, target); err == nil && matched {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// parseGlobPattern decodes an LSP GlobPattern, which is either a bare string
+// pattern or a RelativePattern with a base URI.
+func parseGlobPattern(raw json.RawMessage) (base, pattern string, ok bool) {
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		if strings.TrimSpace(s) == "" {
+			return "", "", false
+		}
+		return "", s, true
+	}
+	var rel struct {
+		BaseURI json.RawMessage `json:"baseUri"`
+		Pattern string          `json:"pattern"`
+	}
+	if err := json.Unmarshal(raw, &rel); err != nil || strings.TrimSpace(rel.Pattern) == "" {
+		return "", "", false
+	}
+	return parseBaseURI(rel.BaseURI), rel.Pattern, true
+}
+
+// parseBaseURI resolves a RelativePattern base, which is either a URI string or
+// a WorkspaceFolder object carrying a uri field.
+func parseBaseURI(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var s string
+	if err := json.Unmarshal(raw, &s); err == nil {
+		return uriToAbsPath(s)
+	}
+	var folder struct {
+		URI string `json:"uri"`
+	}
+	if err := json.Unmarshal(raw, &folder); err == nil {
+		return uriToAbsPath(folder.URI)
+	}
+	return ""
+}
+
+func uriToAbsPath(uri string) string {
+	parsed, err := url.Parse(strings.TrimSpace(uri))
+	if err != nil || parsed.Scheme != "file" {
+		return ""
+	}
+	return filepath.FromSlash(parsed.Path)
 }
 
 func (c *Client) stderrLoop() {
@@ -540,6 +726,12 @@ type notification struct {
 	JSONRPC string `json:"jsonrpc"`
 	Method  string `json:"method"`
 	Params  any    `json:"params,omitempty"`
+}
+
+type serverResponse struct {
+	JSONRPC string `json:"jsonrpc"`
+	ID      int    `json:"id"`
+	Result  any    `json:"result"`
 }
 
 type response struct {

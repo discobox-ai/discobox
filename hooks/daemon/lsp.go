@@ -16,11 +16,12 @@ import (
 )
 
 type lspRuntime struct {
-	hook    hooks.Hook
-	client  *lspclient.Client
-	mu      sync.Mutex
-	open    map[string]struct{}
-	pending []watcher.Change
+	hook     hooks.Hook
+	client   *lspclient.Client
+	mu       sync.Mutex
+	starting bool
+	open     map[string]struct{}
+	pending  []watcher.Change
 }
 
 func (r *runtimeState) syncLSPHooks() {
@@ -46,9 +47,10 @@ func (r *runtimeState) syncLSPHooks() {
 			existing.hook = hook
 			continue
 		}
+		// The language server starts lazily on the first change that matches
+		// the hook's pattern; see handleLSPHookChanges.
 		rt := &lspRuntime{hook: hook, open: map[string]struct{}{}}
 		r.lspClients[id] = rt
-		go r.startLSPHook(hook, rt)
 	}
 	r.mu.Unlock()
 }
@@ -119,6 +121,56 @@ func (r *runtimeState) startLSPHook(hook hooks.Hook, rt *lspRuntime) {
 	}
 }
 
+// requestLSPRun activates an LSP hook in response to an explicit run request.
+// An idle server is started (seeded with the working-tree files matching the
+// hook pattern so it produces diagnostics immediately); a running server is
+// refreshed against those same files. It reports whether a runtime was found.
+// The server outlives the request, so all work uses the daemon context.
+func (r *runtimeState) requestLSPRun(hookID string, _ bool) (bool, error) {
+	r.mu.Lock()
+	rt := r.lspClients[hookID]
+	r.mu.Unlock()
+	if rt == nil {
+		return false, nil
+	}
+	rt.mu.Lock()
+	hook := rt.hook
+	rt.mu.Unlock()
+
+	seed := r.lspSeedChanges(r.ctx, hook)
+
+	rt.mu.Lock()
+	if rt.client == nil {
+		launch := !rt.starting
+		rt.starting = true
+		rt.pending = append(rt.pending, seed...)
+		rt.mu.Unlock()
+		if launch {
+			go r.startLSPHook(hook, rt)
+		}
+		_ = r.store.SetLSPHookRunning(r.ctx, hookID)
+		return true, nil
+	}
+	rt.mu.Unlock()
+	if len(seed) > 0 {
+		go r.handleLSPHookChanges(hook, seed)
+	}
+	return true, nil
+}
+
+// lspSeedChanges returns the current working-tree changes matching the hook
+// pattern, used to prime a language server started by an explicit run request.
+func (r *runtimeState) lspSeedChanges(ctx context.Context, hook hooks.Hook) []watcher.Change {
+	all := initialWorkingTreeChanges(ctx, r.cfg.RepoRoot)
+	seed := make([]watcher.Change, 0, len(all))
+	for _, change := range all {
+		if matched, err := lspDiagnosticPathMatchesHook(hook, change.Path); err == nil && matched {
+			seed = append(seed, change)
+		}
+	}
+	return seed
+}
+
 func (r *runtimeState) handleLSPChanges(changes []watcher.Change) {
 	if len(changes) == 0 {
 		return
@@ -154,19 +206,33 @@ func closeLSPRuntime(rt *lspRuntime) {
 func (r *runtimeState) handleLSPHookChanges(hook hooks.Hook, changes []watcher.Change) {
 	rt := r.lspRuntimeForHook(hook)
 	if rt == nil {
-		_ = r.store.SetLSPHookRunning(r.ctx, hook.ID)
 		return
 	}
 	rt.mu.Lock()
 	client := rt.client
 	if client == nil {
+		if !rt.starting {
+			// Lazy activation: only start the language server once a change
+			// matches the hook's own pattern. Changes to other files begin
+			// flowing to the server through its watchers after it is running.
+			if !lspChangesMatchHookPattern(hook, changes) {
+				rt.mu.Unlock()
+				return
+			}
+			rt.starting = true
+			rt.pending = append(rt.pending, changes...)
+			rt.mu.Unlock()
+			go r.startLSPHook(hook, rt)
+			_ = r.store.SetLSPHookRunning(r.ctx, hook.ID)
+			return
+		}
 		rt.pending = append(rt.pending, changes...)
 		rt.mu.Unlock()
 		_ = r.store.SetLSPHookRunning(r.ctx, hook.ID)
 		return
 	}
 	rt.mu.Unlock()
-	watchChanges := lspFileChanges(r.cfg.RepoRoot, changes)
+	watchChanges := lspFileChanges(r.cfg.RepoRoot, client, changes)
 	if len(watchChanges) > 0 {
 		ctx, cancel := context.WithTimeout(r.ctx, 10*time.Second)
 		err := client.DidChangeWatchedFiles(ctx, watchChanges)
@@ -315,11 +381,18 @@ func lspDiagnosticPathMatchesHook(hook hooks.Hook, path string) (bool, error) {
 	return true, nil
 }
 
-func lspFileChanges(repoRoot string, changes []watcher.Change) []lspclient.FileChange {
+// lspFileChanges builds the workspace/didChangeWatchedFiles payload. When the
+// server has registered watchers it declares which files it cares about, so we
+// forward only matching changes; otherwise we forward every change.
+func lspFileChanges(repoRoot string, client *lspclient.Client, changes []watcher.Change) []lspclient.FileChange {
+	filter := client != nil && client.HasWatchers()
 	out := make([]lspclient.FileChange, 0, len(changes))
 	for _, change := range changes {
 		path := filepath.ToSlash(strings.TrimSpace(change.Path))
 		if path == "" {
+			continue
+		}
+		if filter && !client.WatchesPath(path) {
 			continue
 		}
 		out = append(out, lspclient.FileChange{
@@ -328,6 +401,21 @@ func lspFileChanges(repoRoot string, changes []watcher.Change) []lspclient.FileC
 		})
 	}
 	return out
+}
+
+// lspChangesMatchHookPattern reports whether any change matches the hook's own
+// document pattern, which gates lazy activation of the language server.
+func lspChangesMatchHookPattern(hook hooks.Hook, changes []watcher.Change) bool {
+	for _, change := range changes {
+		path := filepath.ToSlash(strings.TrimSpace(change.Path))
+		if path == "" {
+			continue
+		}
+		if matched, err := lspDiagnosticPathMatchesHook(hook, path); err == nil && matched {
+			return true
+		}
+	}
+	return false
 }
 
 func lspFileChangeType(kind watcher.ChangeKind) lspclient.FileChangeType {

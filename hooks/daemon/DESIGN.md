@@ -78,11 +78,20 @@ files plus any newer changed files. Once a hook succeeds, later file-triggered
 runs start from only newly observed changes. Forced manual runs intentionally
 copy the latest run inputs even after success.
 
-LSP hooks are exempt from the serial queue. Matching file changes are sent to the
-hook's long-lived language server process, and published diagnostics are stored
-as current diagnostic rows. Current diagnostics at or above the hook's configured
-minimum severity set the hook status to `failure`; no retained diagnostics set
-the hook status to `success`.
+LSP hooks are exempt from the serial queue. The language server starts lazily on
+the first change matching the hook pattern; until then the hook stays `idle`. An
+explicit run request (`run <lsp-id>`) also activates an idle server, seeding it
+with the working-tree files matching the hook pattern, and refreshes a running
+one instead of enqueuing script work.
+Once running, the daemon opens pattern-matching documents (`didOpen`/`didChange`/
+`didSave`) so the server publishes diagnostics for them, and forwards
+`workspace/didChangeWatchedFiles` for the files the server registered watchers
+for via `client/registerCapability` (all changes when it registered none). This
+is what lets an edit to `go.mod` reload the module graph and clear stale
+diagnostics on unrelated `.go` files. Published diagnostics are stored as current
+diagnostic rows. Current diagnostics at or above the hook's configured minimum
+severity set the hook status to `failure`; no retained diagnostics set the hook
+status to `success`.
 
 ## Daemon Session Lifecycle
 

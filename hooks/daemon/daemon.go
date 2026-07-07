@@ -174,7 +174,7 @@ func newRuntime(ctx context.Context, cfg Config) (*runtimeState, error) {
 		_ = st.Close()
 		return nil, err
 	}
-	mgr, err := manager.New(manager.Config{Store: st, Hooks: disc.Hooks, SessionID: cfg.SessionID, RepoRoot: cfg.RepoRoot, Version: cfg.Version, Cancel: cancel, SignalRun: r.signalDrain})
+	mgr, err := manager.New(manager.Config{Store: st, Hooks: disc.Hooks, SessionID: cfg.SessionID, RepoRoot: cfg.RepoRoot, Version: cfg.Version, Cancel: cancel, SignalRun: r.signalDrain, ActivateLSP: r.requestLSPRun})
 	if err != nil {
 		_ = st.Close()
 		return nil, err
