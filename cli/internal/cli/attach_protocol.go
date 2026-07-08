@@ -19,6 +19,10 @@ const (
 	attachFrameError      byte = 5
 	attachFrameExit       byte = 6
 	attachFrameCloseInput byte = 7
+	// attachFrameReady tells the shim the client is attached and reading, so it
+	// may start streaming replay history without risking loss in the upgrade
+	// handshake window. See frame.Ready in the sandbox-agent.
+	attachFrameReady byte = 8
 
 	attachFrameMaxPayload = 16 * 1024 * 1024
 )

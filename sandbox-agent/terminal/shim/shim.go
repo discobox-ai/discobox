@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -138,8 +139,25 @@ func (r *Runtime) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	_ = json.NewEncoder(w).Encode(status)
 }
 
-func (r *Runtime) handleAttach(w http.ResponseWriter, _ *http.Request) {
-	r.stream.HandleAttach(w)
+func (r *Runtime) handleAttach(w http.ResponseWriter, req *http.Request) {
+	var replay shimruntime.ReplayFunc
+	if wantsReplay(req) {
+		replay = r.replayHistory
+	}
+	r.stream.HandleAttach(w, replay)
+}
+
+func wantsReplay(req *http.Request) bool {
+	replay, _ := strconv.ParseBool(req.URL.Query().Get("replay"))
+	return replay
+}
+
+// replayHistory streams the recorded output up to the cutover offset the shim
+// captured when the attacher registered. It first waits for the async logger to
+// persist the cutover bytes, then reads them back from disk in broadcast order.
+func (r *Runtime) replayHistory(ctx context.Context, cutover int64, writeOutput func([]byte) error) error {
+	r.logger.WaitForFlush(ctx, cutover)
+	return terminal.StreamOutput(ctx, r.cfg.LogDir, r.cfg.TerminalID, cutover, writeOutput)
 }
 
 func (r *Runtime) handleStart(w http.ResponseWriter, _ *http.Request) {

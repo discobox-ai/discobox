@@ -176,7 +176,7 @@ func (r *shimRuntime) serve() {
 }
 
 func (r *shimRuntime) handleAttach(w http.ResponseWriter, _ *http.Request) {
-	r.stream.HandleAttach(w)
+	r.stream.HandleAttach(w, nil)
 }
 
 func (r *shimRuntime) handleStart(w http.ResponseWriter, _ *http.Request) {

@@ -100,7 +100,7 @@ func (a *App) newSandboxTerminalCreateCommand(sandboxID *string) *cobra.Command 
 			}
 			terminal := created.GetTerminal()
 			if opts.attach {
-				return a.attachAgentTerminal(cmd.Context(), projectID, resolvedSandboxID, terminal.ID, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+				return a.attachAgentTerminal(cmd.Context(), projectID, resolvedSandboxID, terminal.ID, false, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 			}
 			started, err := a.startAgentTerminal(cmd.Context(), projectID, resolvedSandboxID, terminal.ID)
 			if err != nil {
@@ -118,7 +118,8 @@ func (a *App) newSandboxTerminalCreateCommand(sandboxID *string) *cobra.Command 
 }
 
 func (a *App) newSandboxTerminalAttachCommand(sandboxID *string) *cobra.Command {
-	return &cobra.Command{
+	var replay bool
+	cmd := &cobra.Command{
 		Use:               "attach TERMINAL_ID",
 		Short:             "Attach to a sandbox terminal",
 		Args:              cobra.ExactArgs(1),
@@ -132,9 +133,11 @@ func (a *App) newSandboxTerminalAttachCommand(sandboxID *string) *cobra.Command 
 			if err != nil {
 				return err
 			}
-			return a.attachAgentTerminal(cmd.Context(), projectID, resolvedSandboxID, terminalID, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+			return a.attachAgentTerminal(cmd.Context(), projectID, resolvedSandboxID, terminalID, replay, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}
+	cmd.Flags().BoolVar(&replay, "replay", false, "Replay the saved session history before live streaming")
+	return cmd
 }
 
 func (a *App) newSandboxTerminalLogsCommand(sandboxID *string) *cobra.Command {
@@ -332,24 +335,25 @@ func writeAgentTerminalLogs(w io.Writer, entries []apimodel.AgentTerminalLogEntr
 	return nil
 }
 
-func (a *App) attachAgentTerminal(ctx context.Context, projectID, sandboxID, terminalID string, stdin io.Reader, stdout, stderr io.Writer) error {
-	conn, err := a.openAgentTerminalAttach(ctx, projectID, sandboxID, terminalID)
+func (a *App) attachAgentTerminal(ctx context.Context, projectID, sandboxID, terminalID string, replay bool, stdin io.Reader, stdout, stderr io.Writer) error {
+	conn, err := a.openAgentTerminalAttach(ctx, projectID, sandboxID, terminalID, replay)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
 
 	session := &framedAttachSession{
-		conn:       conn,
-		stdin:      stdin,
-		stdout:     stdout,
-		stderr:     stderr,
-		kind:       "agent terminal",
-		action:     "attach terminal",
-		rawMode:    true,
-		resize:     true,
-		copyInput:  copyAgentTerminalInput,
-		errorFrame: printAttachErrorFrame(stderr),
+		conn:        conn,
+		stdin:       stdin,
+		stdout:      stdout,
+		stderr:      stderr,
+		kind:        "agent terminal",
+		action:      "attach terminal",
+		rawMode:     true,
+		resize:      true,
+		signalReady: replay,
+		copyInput:   copyAgentTerminalInput,
+		errorFrame:  printAttachErrorFrame(stderr),
 		otherErr: func(err error) (bool, error) {
 			if isAttachDone(err) {
 				return true, nil
@@ -400,7 +404,7 @@ func isAgentTerminalStartDecodeEOF(err error) bool {
 	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || strings.Contains(err.Error(), "unexpected EOF")
 }
 
-func (a *App) openAgentTerminalAttach(ctx context.Context, projectID, sandboxID, terminalID string) (io.ReadWriteCloser, error) {
+func (a *App) openAgentTerminalAttach(ctx context.Context, projectID, sandboxID, terminalID string, replay bool) (io.ReadWriteCloser, error) {
 	baseURL, httpClient, err := a.httpClient()
 	if err != nil {
 		return nil, err
@@ -410,6 +414,9 @@ func (a *App) openAgentTerminalAttach(ctx context.Context, projectID, sandboxID,
 		return nil, err
 	}
 	u.Path = strings.TrimRight(u.Path, "/") + "/api/projects/" + url.PathEscape(projectID) + "/sandboxes/" + url.PathEscape(sandboxID) + "/agent-terminals/" + url.PathEscape(terminalID) + "/attach"
+	if replay {
+		u.RawQuery = url.Values{"replay": {"true"}}.Encode()
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u.String(), nil)
 	if err != nil {
 		return nil, err

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -44,7 +45,8 @@ func (h *handler) AttachSandboxExec(ctx context.Context, params sandboxapi.Attac
 }
 
 func (h *handler) attachHTTP(w http.ResponseWriter, r *http.Request, terminalID string) {
-	if err := h.terminals.Attach(r.Context(), w, terminalID); err != nil {
+	replay, _ := strconv.ParseBool(r.URL.Query().Get("replay"))
+	if err := h.terminals.Attach(r.Context(), w, terminalID, replay); err != nil {
 		if errors.Is(err, terminal.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, sandboxapi.ErrorResponse{Error: "agent terminal not found"})
 			return

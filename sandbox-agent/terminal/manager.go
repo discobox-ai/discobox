@@ -451,16 +451,16 @@ func (m *Manager) Get(id string) (Terminal, bool) {
 	return cloneTerminal(terminal), true
 }
 
-func (m *Manager) Attach(ctx context.Context, w http.ResponseWriter, id string) error {
+func (m *Manager) Attach(ctx context.Context, w http.ResponseWriter, id string, replay bool) error {
 	terminal, ok := m.Get(id)
 	if !ok {
 		return ErrNotFound
 	}
-	_ = m.recordEvent(ctx, id, "terminal.attach.opened", "terminal attach opened", map[string]any{"unit": terminal.Unit})
+	_ = m.recordEvent(ctx, id, "terminal.attach.opened", "terminal attach opened", map[string]any{"unit": terminal.Unit, "replay": replay})
 	defer func() {
 		_ = m.recordEvent(context.Background(), id, "terminal.attach.closed", "terminal attach closed", map[string]any{"unit": terminal.Unit})
 	}()
-	return shimproxy.AttachHTTPUpgrade(ctx, w, terminal.SocketPath, "discobox-agent-terminal")
+	return shimproxy.AttachHTTPUpgrade(ctx, w, terminal.SocketPath, "discobox-agent-terminal", replay)
 }
 
 func (m *Manager) Start(ctx context.Context, id string) (Terminal, error) {

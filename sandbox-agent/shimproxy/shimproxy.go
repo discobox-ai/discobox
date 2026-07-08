@@ -47,8 +47,8 @@ func StartJSON[T any](ctx context.Context, socketPath string) (T, error) {
 	return out, nil
 }
 
-func AttachHTTPUpgrade(ctx context.Context, w http.ResponseWriter, socketPath, protocol string) error {
-	shimConn, shimReader, err := attachShim(ctx, socketPath, protocol)
+func AttachHTTPUpgrade(ctx context.Context, w http.ResponseWriter, socketPath, protocol string, replay bool) error {
+	shimConn, shimReader, err := attachShim(ctx, socketPath, protocol, replay)
 	if err != nil {
 		return err
 	}
@@ -81,7 +81,7 @@ func AttachHTTPUpgrade(ctx context.Context, w http.ResponseWriter, socketPath, p
 }
 
 func AttachWebSocket(ctx context.Context, w http.ResponseWriter, r *http.Request, socketPath, protocol string) error {
-	shimConn, shimReader, err := attachShim(ctx, socketPath, protocol)
+	shimConn, shimReader, err := attachShim(ctx, socketPath, protocol, false)
 	if err != nil {
 		return err
 	}
@@ -111,12 +111,16 @@ func AttachWebSocket(ctx context.Context, w http.ResponseWriter, r *http.Request
 	return nil
 }
 
-func attachShim(ctx context.Context, socketPath, protocol string) (net.Conn, *bufio.Reader, error) {
+func attachShim(ctx context.Context, socketPath, protocol string, replay bool) (net.Conn, *bufio.Reader, error) {
 	shimConn, err := Dial(ctx, socketPath, defaultDialTimeout)
 	if err != nil {
 		return nil, nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://unix/attach", nil)
+	attachURL := "http://unix/attach"
+	if replay {
+		attachURL += "?replay=true"
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, attachURL, nil)
 	if err != nil {
 		_ = shimConn.Close()
 		return nil, nil, err

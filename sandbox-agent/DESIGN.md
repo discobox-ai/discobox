@@ -59,3 +59,19 @@ runtime operations.
 - Do not duplicate attach-loop or resize-handling logic between terminal and
   exec shims. Extend `shimruntime` when a new behavior is stream plumbing, and
   leave only semantic differences in the terminal or exec package.
+- Terminal attach supports `?replay=true`, which streams the recorded session
+  history before live output. The disk log (`AsyncLogger`) is the authoritative
+  history; the shim never buffers the whole transcript in memory. Race-free
+  cutover: `shimruntime.Broadcast` advances an output-byte offset and snapshots
+  the attacher set under one lock, so a replay attacher registers atomically
+  with the offset it captures. Every output chunk falls on exactly one side of
+  the cutover — replayed from disk (below) or buffered live from registration
+  (at/above) — so nothing is lost or duplicated. The shim waits for the async
+  logger to persist the cutover bytes (`WaitForFlush`) before reading history
+  back with `terminal.StreamOutput` (output entries only; the PTY already echoes
+  input into output). The shim withholds the history stream until the client
+  sends a `frame.Ready` (the CLI sends it once its output reader is running):
+  writing history during the HTTP upgrade handshake risks losing the leading
+  bytes at an intermediate proxy hop that buffers them before its tunnel is
+  wired up. `frame.Ready` proves the tunnel is established end to end; a bounded
+  timeout still replays (best effort) for clients that never send it.

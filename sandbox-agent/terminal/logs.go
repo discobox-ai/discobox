@@ -41,9 +41,14 @@ type AsyncLogger struct {
 	dir        string
 	mu         sync.Mutex
 	cond       *sync.Cond
+	flushCond  *sync.Cond
 	queue      []LogEntry
 	closed     bool
-	wg         sync.WaitGroup
+	// flushedOutput is the number of output-stream bytes durably written to the
+	// log files. Replay attachers wait on it via WaitForFlush so they can read a
+	// cutover offset off disk without racing the async writer.
+	flushedOutput int64
+	wg            sync.WaitGroup
 }
 
 func NewAsyncLogger(dir, terminalID string) (*AsyncLogger, error) {
@@ -57,6 +62,7 @@ func NewAsyncLogger(dir, terminalID string) (*AsyncLogger, error) {
 		dir:        filepath.Join(dir, safeName(terminalID)),
 	}
 	l.cond = sync.NewCond(&l.mu)
+	l.flushCond = sync.NewCond(&l.mu)
 	if err := os.MkdirAll(l.dir, 0o700); err != nil {
 		return nil, err
 	}
@@ -90,6 +96,7 @@ func (l *AsyncLogger) Close() {
 	if !l.closed {
 		l.closed = true
 		l.cond.Signal()
+		l.flushCond.Broadcast()
 	}
 	l.mu.Unlock()
 	l.wg.Wait()
@@ -129,9 +136,38 @@ func (l *AsyncLogger) run() {
 				Data:      base64.StdEncoding.EncodeToString(entry.Data),
 			}
 			if data, err := json.Marshal(row); err == nil {
-				_, _ = currentFile.Write(append(data, '\n'))
+				if _, werr := currentFile.Write(append(data, '\n')); werr == nil && entry.Stream == LogStreamOutput {
+					l.mu.Lock()
+					l.flushedOutput += int64(len(entry.Data))
+					l.flushCond.Broadcast()
+					l.mu.Unlock()
+				}
 			}
 		}
+	}
+}
+
+// WaitForFlush blocks until at least n output-stream bytes have been written to
+// the log files, the logger is closed, or ctx is cancelled. It lets a replay
+// attacher read the historical output up to a cutover offset without racing the
+// async writer that may not yet have persisted the tail of the stream.
+func (l *AsyncLogger) WaitForFlush(ctx context.Context, n int64) {
+	if l == nil || n <= 0 {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.flushedOutput >= n {
+		return
+	}
+	stop := context.AfterFunc(ctx, func() {
+		l.mu.Lock()
+		l.flushCond.Broadcast()
+		l.mu.Unlock()
+	})
+	defer stop()
+	for l.flushedOutput < n && !l.closed && ctx.Err() == nil {
+		l.flushCond.Wait()
 	}
 }
 
@@ -170,6 +206,66 @@ func ReadLogs(ctx context.Context, logRoot, terminalID string) ([]LogEntry, erro
 		return out[i].Timestamp.Before(out[j].Timestamp)
 	})
 	return out, nil
+}
+
+// StreamOutput replays saved output-stream payloads in the order they were
+// produced, invoking fn for each chunk, until limit output bytes have been
+// emitted. A limit <= 0 streams the entire recorded output. The chunk that
+// straddles the limit boundary is truncated so exactly limit bytes are emitted.
+// Input entries are skipped: the PTY echoes input into the output stream, so the
+// output alone reconstructs the terminal screen.
+//
+// Files are read in bucket (chronological) order without re-sorting by
+// timestamp, preserving the exact broadcast order so a replay lines up byte for
+// byte with the live cutover offset captured by the shim.
+func StreamOutput(ctx context.Context, logRoot, terminalID string, limit int64, fn func([]byte) error) error {
+	if strings.TrimSpace(logRoot) == "" || strings.TrimSpace(terminalID) == "" {
+		return nil
+	}
+	if limit == 0 {
+		return nil
+	}
+	matches, err := filepath.Glob(filepath.Join(logRoot, safeName(terminalID), "*.jsonl"))
+	if err != nil {
+		return err
+	}
+	sort.Strings(matches)
+	var emitted int64
+	for _, path := range matches {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		entries, err := readLogFile(path)
+		if err != nil {
+			return err
+		}
+		for _, entry := range entries {
+			if entry.Stream != LogStreamOutput {
+				continue
+			}
+			data := entry.Data
+			if limit > 0 {
+				remaining := limit - emitted
+				if remaining <= 0 {
+					return nil
+				}
+				if int64(len(data)) > remaining {
+					data = data[:remaining]
+				}
+			}
+			if len(data) == 0 {
+				continue
+			}
+			if err := fn(data); err != nil {
+				return err
+			}
+			emitted += int64(len(data))
+			if limit > 0 && emitted >= limit {
+				return nil
+			}
+		}
+	}
+	return nil
 }
 
 func readLogFile(path string) ([]LogEntry, error) {

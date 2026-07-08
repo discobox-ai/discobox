@@ -15,6 +15,12 @@ const (
 	Error      byte = 5
 	Exit       byte = 6
 	CloseInput byte = 7
+	// Ready is sent by an attaching client once its output read loop is active,
+	// signalling the shim that the full attach tunnel is established end to end.
+	// The shim withholds replay history until it arrives so no history bytes are
+	// written into the upgrade-handshake window, where an intermediate proxy hop
+	// can drop bytes buffered before its tunnel is wired up.
+	Ready byte = 8
 )
 
 const maxPayload = 16 * 1024 * 1024

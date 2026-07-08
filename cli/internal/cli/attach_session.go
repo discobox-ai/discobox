@@ -29,7 +29,10 @@ type framedAttachSession struct {
 	copyInput  func(context.Context, *framedAttachSession) error
 	errorFrame func([]byte) error
 	otherErr   func(error) (bool, error)
-	mu         sync.Mutex
+	// signalReady sends a Ready frame once the output reader is running, telling
+	// the shim it is safe to stream replay history. Set for replay attaches.
+	signalReady bool
+	mu          sync.Mutex
 }
 
 func (s *framedAttachSession) run(ctx context.Context) error {
@@ -48,6 +51,13 @@ func (s *framedAttachSession) run(ctx context.Context) error {
 	outputErr := make(chan error, 1)
 	otherErr := make(chan error, 3)
 	go func() { outputErr <- s.copyOutput() }()
+	if s.signalReady {
+		// The output reader is running; tell the shim the tunnel is established so
+		// it can stream replay history without losing bytes to the handshake.
+		if err := s.writeFrame(attachFrameReady, nil); err != nil {
+			return err
+		}
+	}
 	go func() {
 		if s.copyInput != nil {
 			if err := s.copyInput(ctx, s); err != nil {
