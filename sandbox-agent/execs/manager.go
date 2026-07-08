@@ -176,7 +176,10 @@ func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
 	}, nil
 }
 
-func mergeEnv(base, override map[string]string) map[string]string {
+// MergeEnv overlays override on base, returning nil when both are empty. It is
+// exported so the terminal layer can compute the same effective environment the
+// exec will run with (e.g. to pass to the agent installer) before creation.
+func MergeEnv(base, override map[string]string) map[string]string {
 	if len(base) == 0 && len(override) == 0 {
 		return nil
 	}
@@ -190,7 +193,9 @@ func mergeEnv(base, override map[string]string) map[string]string {
 	return out
 }
 
-func envWithRuntimeDefaults(env map[string]string, user *User, imageConfig config.ImageConfig) map[string]string {
+// EnvWithRuntimeDefaults fills TERM, USER/LOGNAME/HOME, and image env defaults
+// into env without overriding existing entries. Exported for the terminal layer.
+func EnvWithRuntimeDefaults(env map[string]string, user *User, imageConfig config.ImageConfig) map[string]string {
 	if env == nil {
 		env = map[string]string{}
 	}
@@ -224,11 +229,11 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		return Exec{}, err
 	}
 	user := m.resolveUser(req)
-	env := envWithRuntimeDefaults(mergeEnv(m.env, req.Env), user, m.imageConfig)
+	env := EnvWithRuntimeDefaults(MergeEnv(m.env, req.Env), user, m.imageConfig)
 	id := strings.TrimSpace(req.ID)
 	if id == "" {
 		var err error
-		if id, err = newID(); err != nil {
+		if id, err = NewID(); err != nil {
 			return Exec{}, err
 		}
 	}
@@ -399,6 +404,55 @@ func (m *Manager) Attach(ctx context.Context, w http.ResponseWriter, r *http.Req
 
 var ErrNotFound = errors.New("sandbox exec not found")
 
+// WaitForExit polls an exec until it reaches a terminal status (exited or
+// failed) or the timeout elapses. It is used to run ephemeral execs, such as
+// agent install commands, to completion.
+func (m *Manager) WaitForExit(ctx context.Context, id string, timeout, poll time.Duration) (Exec, error) {
+	if poll <= 0 {
+		poll = 100 * time.Millisecond
+	}
+	deadline := time.Now().Add(timeout)
+	for {
+		exec, ok := m.Get(id)
+		if !ok {
+			return Exec{}, ErrNotFound
+		}
+		if exec.Status == StatusExited || exec.Status == StatusFailed {
+			return exec, nil
+		}
+		if !time.Now().Before(deadline) {
+			return exec, errors.New("timed out waiting for exec exit")
+		}
+		select {
+		case <-ctx.Done():
+			return Exec{}, ctx.Err()
+		case <-time.After(poll):
+		}
+	}
+}
+
+// ResolveWorkdir resolves a requested workdir against the manager's working
+// root and default, exported so the terminal layer resolves workdirs
+// identically before agent resolution and install.
+func (m *Manager) ResolveWorkdir(requested string) (string, error) {
+	return m.resolveWorkdir(requested)
+}
+
+// AttachUpgrade attaches to an exec over a raw HTTP Upgrade using the given
+// protocol, replaying buffered output when replay is set. The terminal layer
+// uses this for its Upgrade-based attach; plain execs use the WebSocket Attach.
+func (m *Manager) AttachUpgrade(ctx context.Context, w http.ResponseWriter, id, protocol string, replay bool) error {
+	exec, ok := m.Get(id)
+	if !ok {
+		return ErrNotFound
+	}
+	_ = m.recordEvent(ctx, id, "exec.attach.opened", "exec attach opened", map[string]any{"unit": exec.Unit})
+	defer func() {
+		_ = m.recordEvent(context.Background(), id, "exec.attach.closed", "exec attach closed", map[string]any{"unit": exec.Unit})
+	}()
+	return shimproxy.AttachHTTPUpgrade(ctx, w, exec.SocketPath, protocol, replay)
+}
+
 func (m *Manager) resolveWorkdir(requested string) (string, error) {
 	if strings.TrimSpace(requested) == "" {
 		requested = m.defaultWorkdir
@@ -564,7 +618,9 @@ func readRuntime(path string) (Exec, error) {
 	return exec, nil
 }
 
-func newID() (string, error) {
+// NewID mints an exec ID. Exported so the terminal layer can pre-generate an ID
+// and correlate installed state with the exec before creating it.
+func NewID() (string, error) {
 	var data [16]byte
 	if _, err := rand.Read(data[:]); err != nil {
 		return "", err

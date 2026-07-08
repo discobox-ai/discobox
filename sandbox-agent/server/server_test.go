@@ -15,6 +15,7 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 	"github.com/obot-platform/discobox/sandbox-agent/config"
+	"github.com/obot-platform/discobox/sandbox-agent/execs"
 	agentstore "github.com/obot-platform/discobox/sandbox-agent/store"
 	"github.com/obot-platform/discobox/sandbox-agent/terminal"
 )
@@ -220,7 +221,7 @@ func TestAgentTerminalEventsAndResources(t *testing.T) {
 	runner := &sandboxAgentFakeRunner{}
 	cfg := testConfigWithRunner(publicKey, runner)
 	cfg.Store = st
-	cfg.AuditRecorder = nil
+	cfg.ExecAuditRecorder = nil
 	cfg.Resources.RetentionCount = 2
 	router, err := NewRouter(cfg)
 	if err != nil {
@@ -251,7 +252,7 @@ func TestAgentTerminalEventsAndResources(t *testing.T) {
 	if eventsResp.Code != http.StatusOK {
 		t.Fatalf("GET events status = %d, body = %s", eventsResp.Code, eventsResp.Body.String())
 	}
-	if body := eventsResp.Body.String(); !strings.Contains(body, `"type":"terminal.created"`) || !strings.Contains(body, `"events"`) {
+	if body := eventsResp.Body.String(); !strings.Contains(body, `"type":"exec.created"`) || !strings.Contains(body, `"events"`) {
 		t.Fatalf("events body = %s", body)
 	}
 
@@ -287,13 +288,13 @@ func TestAgentTerminalResourceStreamReplaysHistory(t *testing.T) {
 	runner := &sandboxAgentFakeRunner{}
 	cfg := testConfigWithRunner(publicKey, runner)
 	cfg.Store = st
-	cfg.AuditRecorder = nil
+	cfg.ExecAuditRecorder = nil
 	cfg.Resources.SampleInterval = time.Hour
 	router, err := NewRouter(cfg)
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
-	created, err := terminal.NewManager(terminal.ManagerConfig{
+	created, err := terminal.NewService(terminal.ServiceConfig{
 		ResolvedAgentConfig: cfg.ResolvedAgentConfig,
 		Agents:              cfg.Agents,
 		WorkingRoot:         cfg.WorkingRoot,
@@ -349,15 +350,15 @@ func testConfig(publicKey string) Config {
 			ID:      "codex",
 			Command: []string{"codex"},
 		}},
-		UnitManager:   &sandboxAgentFakeRunner{},
-		Installer:     sandboxAgentNoopInstaller{},
-		AuditRecorder: sandboxAgentNoopAudit{},
+		ExecUnitManager:   &sandboxAgentFakeRunner{},
+		Installer:         sandboxAgentNoopInstaller{},
+		ExecAuditRecorder: sandboxAgentNoopAudit{},
 	}
 }
 
-func testConfigWithRunner(publicKey string, runner terminal.UnitManager) Config {
+func testConfigWithRunner(publicKey string, runner execs.UnitManager) Config {
 	cfg := testConfig(publicKey)
-	cfg.UnitManager = runner
+	cfg.ExecUnitManager = runner
 	return cfg
 }
 
@@ -391,13 +392,13 @@ func sandboxAgentTestSigner(t *testing.T) (string, func(projectID, sandboxID, wo
 }
 
 type sandboxAgentFakeRunner struct {
-	starts []terminal.StartRequest
+	starts []execs.StartRequest
 	stops  []string
 }
 
-func (r *sandboxAgentFakeRunner) Start(_ context.Context, req terminal.StartRequest) (terminal.StartResult, error) {
+func (r *sandboxAgentFakeRunner) Start(_ context.Context, req execs.StartRequest) (execs.StartResult, error) {
 	r.starts = append(r.starts, req)
-	return terminal.StartResult{Unit: req.Unit, PID: 1234, SkipStatusWait: true}, nil
+	return execs.StartResult{Unit: req.Unit, PID: 1234}, nil
 }
 
 func (r *sandboxAgentFakeRunner) Stop(_ context.Context, unit string) error {
@@ -405,11 +406,11 @@ func (r *sandboxAgentFakeRunner) Stop(_ context.Context, unit string) error {
 	return nil
 }
 
-func (r *sandboxAgentFakeRunner) Status(context.Context, string) (terminal.UnitStatus, error) {
-	return terminal.UnitStatus{}, os.ErrNotExist
+func (r *sandboxAgentFakeRunner) Status(context.Context, string) (execs.UnitStatus, error) {
+	return execs.UnitStatus{}, os.ErrNotExist
 }
 
-func (r *sandboxAgentFakeRunner) List(context.Context) ([]terminal.UnitStatus, error) {
+func (r *sandboxAgentFakeRunner) List(context.Context) ([]execs.UnitStatus, error) {
 	return nil, nil
 }
 
@@ -421,10 +422,10 @@ func (sandboxAgentNoopInstaller) EnsureInstalled(context.Context, config.Agent, 
 	return nil
 }
 
-func (sandboxAgentNoopAudit) RecordEvent(context.Context, string, string, string, map[string]any) error {
+func (sandboxAgentNoopAudit) RecordExecEvent(context.Context, string, string, string, map[string]any) error {
 	return nil
 }
 
-func (sandboxAgentNoopAudit) ObserveTerminal(context.Context, terminal.Terminal) error {
+func (sandboxAgentNoopAudit) ObserveExec(context.Context, execs.Exec) error {
 	return nil
 }

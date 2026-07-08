@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/sandbox-agent/terminal"
+	"github.com/obot-platform/discobox/sandbox-agent/execs"
 )
 
 func TestRecordAndListEvents(t *testing.T) {
@@ -16,14 +16,14 @@ func TestRecordAndListEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	if err := st.RecordEvent(ctx, "agt_1", "terminal.created", "created", map[string]any{"agentId": "codex"}); err != nil {
+	if err := st.RecordExecEvent(ctx, "ex_1", "exec.created", "created", map[string]any{"agentId": "codex"}); err != nil {
 		t.Fatalf("record event: %v", err)
 	}
-	events, err := st.ListEvents(ctx, "agt_1", 10)
+	events, err := st.ListEvents(ctx, "ex_1", 10)
 	if err != nil {
 		t.Fatalf("list events: %v", err)
 	}
-	if len(events) != 1 || events[0].Type != "terminal.created" || events[0].Details["agentId"] != "codex" {
+	if len(events) != 1 || events[0].Type != "exec.created" || events[0].Details["agentId"] != "codex" {
 		t.Fatalf("events = %#v", events)
 	}
 }
@@ -91,26 +91,26 @@ func TestRecordAndListAgentHooks(t *testing.T) {
 	}
 }
 
-func TestObserveTerminalRecordsTransitions(t *testing.T) {
+func TestObserveExecRecordsTransitions(t *testing.T) {
 	ctx := context.Background()
 	st, err := Open(ctx, filepath.Join(t.TempDir(), "agent.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	createdAt := time.Now().UTC()
-	status := terminal.Terminal{ID: "agt_1", Status: terminal.StatusRunning, CreatedAt: createdAt}
-	if err := st.ObserveTerminal(ctx, status); err != nil {
+	status := execs.Exec{ID: "ex_1", Status: execs.StatusRunning, CreatedAt: createdAt}
+	if err := st.ObserveExec(ctx, status); err != nil {
 		t.Fatalf("observe running: %v", err)
 	}
 	exitedAt := time.Now().UTC()
 	code := int64(7)
-	status.Status = terminal.StatusFailed
+	status.Status = execs.StatusFailed
 	status.ExitedAt = &exitedAt
 	status.ExitCode = &code
-	if err := st.ObserveTerminal(ctx, status); err != nil {
+	if err := st.ObserveExec(ctx, status); err != nil {
 		t.Fatalf("observe failed: %v", err)
 	}
-	events, err := st.ListEvents(ctx, "agt_1", 10)
+	events, err := st.ListEvents(ctx, "ex_1", 10)
 	if err != nil {
 		t.Fatalf("list events: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestObserveTerminalRecordsTransitions(t *testing.T) {
 	for _, event := range events {
 		seen[event.Type] = true
 	}
-	for _, typ := range []string{"terminal.observed", "terminal.status.changed", "terminal.exited"} {
+	for _, typ := range []string{"exec.observed", "exec.status.changed", "exec.exited"} {
 		if !seen[typ] {
 			t.Fatalf("missing event %s in %#v", typ, events)
 		}

@@ -41,10 +41,8 @@ type Config struct {
 	Resources             config.ResourceConfig
 	ResolvedAgentConfig   *config.Agent
 	Agents                []config.Agent
-	UnitManager           terminal.UnitManager
 	Installer             terminal.Installer
 	ExecUnitManager       execs.UnitManager
-	AuditRecorder         terminal.AuditRecorder
 	ExecAuditRecorder     execs.AuditRecorder
 	Store                 *agentstore.Store
 	ResourceCollector     resources.Collector
@@ -76,7 +74,7 @@ func NewRouter(cfg Config) (*chi.Mux, error) {
 	return router, err
 }
 
-func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Manager, *execs.Manager, *agentstore.Store, error) {
+func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manager, *agentstore.Store, error) {
 	if cfg.WorkingRoot == "" {
 		cfg.WorkingRoot = "/workspace"
 	}
@@ -90,19 +88,14 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Manager, *execs.Manage
 		cfg.Resources.RetentionCount = 300
 	}
 	localStore := cfg.Store
-	audit := cfg.AuditRecorder
 	execAudit := cfg.ExecAuditRecorder
-	if localStore == nil && audit == nil {
+	if localStore == nil && execAudit == nil {
 		st, err := agentstore.Open(context.Background(), cfg.DatabasePath)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
 		localStore = st
-		audit = st
 		execAudit = st
-	}
-	if audit == nil && localStore != nil {
-		audit = localStore
 	}
 	if execAudit == nil && localStore != nil {
 		execAudit = localStore
@@ -111,16 +104,16 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Manager, *execs.Manage
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-	manager, err := terminal.NewManager(terminal.ManagerConfig{
+	manager, err := terminal.NewService(terminal.ServiceConfig{
 		ResolvedAgentConfig: cfg.ResolvedAgentConfig,
 		Agents:              cfg.Agents,
 		WorkingRoot:         cfg.WorkingRoot,
 		RuntimeDir:          cfg.RuntimeDir,
 		Env:                 cfg.Env,
 		ExecDefaults:        cfg.ExecDefaults,
-		Units:               cfg.UnitManager,
+		Units:               cfg.ExecUnitManager,
 		Installer:           cfg.Installer,
-		Audit:               audit,
+		Audit:               execAudit,
 		PrimaryState:        localStore,
 	})
 	if err != nil {
@@ -273,7 +266,7 @@ func execReconcileLoop(ctx context.Context, logger *slog.Logger, manager *execs.
 	}
 }
 
-func reconcileLoop(ctx context.Context, logger *slog.Logger, manager *terminal.Manager) {
+func reconcileLoop(ctx context.Context, logger *slog.Logger, manager *terminal.Service) {
 	ticker := time.NewTicker(2 * time.Second)
 	defer ticker.Stop()
 	for {

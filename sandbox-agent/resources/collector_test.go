@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/obot-platform/discobox/sandbox-agent/terminal"
+	"github.com/obot-platform/discobox/sandbox-agent/execs"
 )
 
 func TestCollectorCollectsProcAndCgroupData(t *testing.T) {
@@ -26,11 +26,11 @@ func TestCollectorCollectsProcAndCgroupData(t *testing.T) {
 	writeFile(t, filepath.Join(cgroupDir, "memory.current"), "4096\n")
 	writeFile(t, filepath.Join(cgroupDir, "cpu.stat"), "usage_usec 100\nuser_usec 70\nsystem_usec 30\n")
 
-	sample, err := (Collector{ProcRoot: procRoot, CgroupRoot: cgroupRoot}).Collect(context.Background(), terminal.Terminal{
-		ID:     "agt_1",
-		Status: terminal.StatusRunning,
+	sample, err := (Collector{ProcRoot: procRoot, CgroupRoot: cgroupRoot}).Collect(context.Background(), execs.Exec{
+		ID:     "ex_1",
+		Status: execs.StatusRunning,
 		PID:    123,
-		Unit:   "discobox-agent-terminal-agt_1",
+		Unit:   "discobox-exec-ex_1",
 	})
 	if err != nil {
 		t.Fatalf("collect: %v", err)

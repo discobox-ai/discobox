@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/obot-platform/discobox/sandbox-agent/execs"
 	"github.com/obot-platform/discobox/sandbox-agent/store"
 	"github.com/obot-platform/discobox/sandbox-agent/terminal"
 )
@@ -26,7 +27,7 @@ func NewCollector() Collector {
 	}
 }
 
-func (c Collector) Collect(ctx context.Context, term terminal.Terminal) (store.ResourceSample, error) {
+func (c Collector) Collect(ctx context.Context, ex execs.Exec) (store.ResourceSample, error) {
 	if c.ProcRoot == "" {
 		c.ProcRoot = "/proc"
 	}
@@ -36,13 +37,13 @@ func (c Collector) Collect(ctx context.Context, term terminal.Terminal) (store.R
 	sampledAt := time.Now().UTC()
 	data := map[string]any{
 		"terminal": map[string]any{
-			"id":       term.ID,
-			"agentId":  term.AgentID,
-			"status":   term.Status,
-			"unit":     term.Unit,
-			"pid":      term.PID,
-			"workdir":  term.Workdir,
-			"metadata": term.Metadata,
+			"id":       ex.ID,
+			"agentId":  terminal.AgentID(ex),
+			"status":   ex.Status,
+			"unit":     ex.Unit,
+			"pid":      ex.PID,
+			"workdir":  ex.Workdir,
+			"metadata": ex.Metadata,
 		},
 		"host": map[string]any{
 			"goos":   runtime.GOOS,
@@ -52,8 +53,8 @@ func (c Collector) Collect(ctx context.Context, term terminal.Terminal) (store.R
 	if hostname, err := os.Hostname(); err == nil {
 		data["host"].(map[string]any)["hostname"] = hostname
 	}
-	if term.PID > 0 {
-		pid := int(term.PID)
+	if ex.PID > 0 {
+		pid := int(ex.PID)
 		cgroupPath := c.cgroupPath(pid)
 		data["cgroup"] = map[string]any{
 			"path":  cgroupPath,
@@ -74,7 +75,7 @@ func (c Collector) Collect(ctx context.Context, term terminal.Terminal) (store.R
 		return store.ResourceSample{}, err
 	}
 	return store.ResourceSample{
-		TerminalID: term.ID,
+		TerminalID: ex.ID,
 		SampledAt:  sampledAt,
 		Source:     "linux-procfs-cgroup",
 		Data:       raw,

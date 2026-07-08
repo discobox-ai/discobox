@@ -21,7 +21,7 @@ import (
 
 type handler struct {
 	identity          Identity
-	terminals         *terminal.Manager
+	terminals         *terminal.Service
 	execs             *execs.Manager
 	store             terminalStore
 	resourceCollector resources.Collector
@@ -94,7 +94,7 @@ func (h *handler) CreateAgentTerminal(ctx context.Context, req *sandboxapi.Creat
 		Cols:     uint16(req.Cols.Or(0)),
 	})
 	if err != nil {
-		if created.ID != "" && created.Status == terminal.StatusFailed {
+		if created.ID != "" && created.Status == execs.StatusFailed {
 			return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
 		}
 		return nil, statusError{status: http.StatusBadRequest, message: err.Error()}
@@ -307,7 +307,7 @@ func (h *handler) NewError(_ context.Context, err error) *sandboxapi.ErrorRespon
 	return errorStatus(status, err.Error())
 }
 
-func agentTerminal(in terminal.Terminal) sandboxapi.AgentTerminal {
+func agentTerminal(in execs.Exec) sandboxapi.AgentTerminal {
 	out := sandboxapi.AgentTerminal{
 		ID:        in.ID,
 		Status:    sandboxapi.AgentTerminalStatus(in.Status),
@@ -315,8 +315,8 @@ func agentTerminal(in terminal.Terminal) sandboxapi.AgentTerminal {
 		Workdir:   in.Workdir,
 		CreatedAt: in.CreatedAt,
 	}
-	if in.AgentID != "" {
-		out.AgentId = sandboxapi.NewOptString(in.AgentID)
+	if agentID := terminal.AgentID(in); agentID != "" {
+		out.AgentId = sandboxapi.NewOptString(agentID)
 	}
 	if in.Unit != "" {
 		out.Unit = sandboxapi.NewOptString(in.Unit)
@@ -339,13 +339,13 @@ func agentTerminal(in terminal.Terminal) sandboxapi.AgentTerminal {
 	if len(in.Metadata) > 0 {
 		out.Metadata = sandboxapi.NewOptAgentTerminalMetadata(sandboxapi.AgentTerminalMetadata(stringMap(in.Metadata)))
 	}
-	if in.Primary {
+	if terminal.IsPrimary(in) {
 		out.Primary = sandboxapi.NewOptBool(true)
 	}
 	return out
 }
 
-func agentTerminalLogEntry(in terminal.LogEntry) sandboxapi.AgentTerminalLogEntry {
+func agentTerminalLogEntry(in execs.LogEntry) sandboxapi.AgentTerminalLogEntry {
 	return sandboxapi.AgentTerminalLogEntry{
 		Timestamp: in.Timestamp,
 		Stream:    sandboxapi.AgentTerminalLogEntryStream(in.Stream),

@@ -16,13 +16,13 @@ runtime operations.
 | `cmd/discobox-sandbox-agent` | Binary entrypoint, config loading, signal handling, and server startup. |
 | `config` | Local boot/config file parsing, environment overrides, defaults, and validation. |
 | `server` | HTTP router, generated OpenAPI handler adapter, PASETO auth middleware, and identity/scope validation. |
-| `terminal` | Agent terminal lifecycle, runtime metadata, systemd unit abstraction, and attach proxying. |
-| `terminal/shim` | Per-terminal child process that owns the PTY and local Unix socket attach/status API. |
-| `terminal/frame` | Docker-exec-style binary stream framing shared by terminal attach endpoints. |
-| `execs` | Ephemeral sandbox exec lifecycle, runtime metadata, systemd unit abstraction, stdout/stderr or PTY logging, and shim launch. |
+| `execs` | The sandbox runtime primitive: exec lifecycle, runtime metadata, systemd unit abstraction, stdout/stderr or PTY logging, shim launch, status socket, and attach. Agent terminals are execs. |
+| `execs` (`shim.go`) | Per-exec child process that owns the PTY/pipes and local Unix socket attach/status/start API, used by both plain execs and terminals. |
+| `terminal` | Agent-terminal layer built on top of `execs`: agent resolution, install (run as ephemeral execs), and primary-terminal lifecycle. A terminal is an exec created in agent mode, tagged `agentId`/`primary` in exec metadata; all runtime mechanics belong to `execs`. |
+| `terminal/frame` | Docker-exec-style binary stream framing shared by exec attach endpoints. |
 | `shimruntime` | Shared local shim attach runtime for Unix socket setup, HTTP upgrade handling, framed stream attachers, broadcast, exit frames, and pending resize state. |
 | `hooks` | Local Unix-socket collector and publisher protocol for coding-agent lifecycle hook payloads. |
-| `resources` | Opaque cgroup/procfs/systemd-style resource snapshot collection for terminal runtimes. |
+| `resources` | Opaque cgroup/procfs/systemd-style resource snapshot collection for exec runtimes. |
 | `store` | Sandbox-local SQLite/GORM audit log, observed terminal state snapshots, and retained resource blobs. |
 | `Dockerfile` | Debian-based systemd sandbox runtime image with Docker, development tools, Chromium, socket-activated desktop access, code-server, and Nix tooling. |
 
@@ -43,22 +43,28 @@ runtime operations.
   lifecycle events, latest observed runtime state, and retained opaque resource
   samples, but REST runtime state should be derived from runtime/systemd/shim
   observations instead of an in-memory cache.
+- A terminal is one primitive: an exec created in agent mode. The `terminal`
+  layer resolves the agent (explicit request, sandbox resolved config, local
+  repo `.discobox` config, or default), runs the agent's install command as an
+  ephemeral exec, injects the hook/terminal env, then calls `execs.Manager` with
+  the resolved command, `TTY`, and `agentId`/`primary` metadata. `execs.Manager`
+  never learns what an agent is. Plain execs and terminals currently use
+  separate `execs.Manager` instances (distinct runtime dirs); the API-level merge
+  to a single `/execs` surface is pending.
 - On sandbox start the agent launches one primary terminal from the manifest
-  prompt (`EnsurePrimary`). The first start runs the resolved agent with the
-  prompt as arguments; later starts run the agent's `relaunchCommand` to resume
-  the previous session instead of replaying the prompt. First-vs-subsequent is
-  decided by a durable marker in the SQLite store (`AgentState`), so it survives
-  restarts. The launched terminal carries the `primary` flag; that flag is
-  owned by the sandbox-agent and cannot be requested through the terminal
-  create API.
-- Terminal and exec shims share the same framed attach mechanics. Keep Unix
+  prompt (`terminal.Service.EnsurePrimary`). The first start runs the resolved
+  agent with the prompt as arguments; later starts run the agent's
+  `relaunchCommand` to resume the previous session instead of replaying the
+  prompt. First-vs-subsequent is decided by a durable marker in the SQLite store
+  (`AgentState`), so it survives restarts. The launched exec is tagged
+  `primary` in metadata by the sandbox-agent; that tag cannot be requested
+  through the terminal create API.
+- There is one shim (`execs/shim.go`) and one framed attach mechanism. Keep Unix
   socket setup, HTTP upgrade, attacher tracking, frame writes, output broadcast,
   exit frame emission, and pending resize handling in `shimruntime`; keep
-  resource-specific process startup, status persistence, stream logging, stdin
-  close behavior, and signal targeting in `terminal/shim` or `execs`.
-- Do not duplicate attach-loop or resize-handling logic between terminal and
-  exec shims. Extend `shimruntime` when a new behavior is stream plumbing, and
-  leave only semantic differences in the terminal or exec package.
+  process startup, status persistence, stream logging, and stdin-close behavior
+  in `execs`. The exec shim serves both TTY (terminal, `exec -t`) and
+  stdout/stderr-pipe (plain exec) modes.
 - Terminal attach supports `?replay=true`, which streams the recorded session
   history before live output. The disk log (`AsyncLogger`) is the authoritative
   history; the shim never buffers the whole transcript in memory. Race-free

@@ -11,7 +11,6 @@ import (
 
 	"github.com/obot-platform/discobox/gormdb"
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
-	"github.com/obot-platform/discobox/sandbox-agent/terminal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -58,7 +57,7 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{write: pools.Write, read: pools.Read}
-	if err := s.write.WithContext(ctx).AutoMigrate(&AgentState{}, &TerminalState{}, &TerminalEvent{}, &ResourceSnapshot{}, &AgentHookLog{}, &ExecState{}, &ExecEvent{}); err != nil {
+	if err := s.write.WithContext(ctx).AutoMigrate(&AgentState{}, &ResourceSnapshot{}, &AgentHookLog{}, &ExecState{}, &ExecEvent{}); err != nil {
 		return nil, fmt.Errorf("migrate sandbox-agent store: %w", err)
 	}
 	return s, nil
@@ -93,77 +92,6 @@ func (s *Store) MarkPrimaryTerminalLaunched(ctx context.Context) error {
 		Columns:   []clause.Column{{Name: "key"}},
 		UpdateAll: true,
 	}).Create(&AgentState{Key: primaryTerminalLaunchedKey, Value: "true", UpdatedAt: time.Now().UTC()}).Error
-}
-
-func (s *Store) RecordEvent(ctx context.Context, terminalID, typ, message string, details map[string]any) error {
-	if s == nil {
-		return nil
-	}
-	typ = strings.TrimSpace(typ)
-	if typ == "" {
-		return fmt.Errorf("event type is required")
-	}
-	detailsJSON, err := json.Marshal(details)
-	if err != nil {
-		return err
-	}
-	id, err := newID()
-	if err != nil {
-		return err
-	}
-	return s.write.WithContext(ctx).Create(&TerminalEvent{
-		ID:         id,
-		TerminalID: strings.TrimSpace(terminalID),
-		Type:       typ,
-		Message:    strings.TrimSpace(message),
-		Details:    detailsJSON,
-		CreatedAt:  time.Now().UTC(),
-	}).Error
-}
-
-func (s *Store) ObserveTerminal(ctx context.Context, current terminal.Terminal) error {
-	if s == nil || current.ID == "" {
-		return nil
-	}
-	now := time.Now().UTC()
-	next := TerminalState{
-		TerminalID: current.ID,
-		Unit:       current.Unit,
-		Status:     string(current.Status),
-		PID:        current.PID,
-		ExitCode:   current.ExitCode,
-		Error:      current.Error,
-		CreatedAt:  current.CreatedAt,
-		StartedAt:  current.StartedAt,
-		ExitedAt:   current.ExitedAt,
-		ObservedAt: now,
-		UpdatedAt:  now,
-	}
-	return s.write.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var previous TerminalState
-		hadPrevious := tx.First(&previous, "terminal_id = ?", current.ID).Error == nil
-		if err := tx.Clauses(clause.OnConflict{
-			Columns:   []clause.Column{{Name: "terminal_id"}},
-			UpdateAll: true,
-		}).Create(&next).Error; err != nil {
-			return err
-		}
-		if !hadPrevious {
-			return createEventTx(tx, current.ID, "terminal.observed", "terminal observed", terminalDetails(current))
-		}
-		if previous.Status != next.Status {
-			if err := createEventTx(tx, current.ID, "terminal.status.changed", "terminal status changed", map[string]any{
-				"from": previous.Status,
-				"to":   next.Status,
-			}); err != nil {
-				return err
-			}
-		}
-		if previous.ExitedAt == nil && next.ExitedAt != nil {
-			return createEventTx(tx, current.ID, "terminal.exited", "terminal exited", terminalDetails(current))
-		}
-		return nil
-	})
 }
 
 func (s *Store) RecordExecEvent(ctx context.Context, execID, typ, message string, details map[string]any) error {
@@ -246,9 +174,9 @@ func (s *Store) ListEvents(ctx context.Context, terminalID string, limit int) ([
 	}
 	query := s.read.WithContext(ctx).Order("created_at DESC").Limit(limit)
 	if strings.TrimSpace(terminalID) != "" {
-		query = query.Where("terminal_id = ?", terminalID)
+		query = query.Where("exec_id = ?", terminalID)
 	}
-	var rows []TerminalEvent
+	var rows []ExecEvent
 	if err := query.Find(&rows).Error; err != nil {
 		return nil, err
 	}
@@ -260,7 +188,7 @@ func (s *Store) ListEvents(ctx context.Context, terminalID string, limit int) ([
 		}
 		out = append(out, Event{
 			ID:         row.ID,
-			TerminalID: row.TerminalID,
+			TerminalID: row.ExecID,
 			Type:       row.Type,
 			Message:    row.Message,
 			Details:    details,
@@ -423,25 +351,6 @@ func (s *Store) ListAgentHooks(ctx context.Context, terminalID string, limit int
 	return out, nil
 }
 
-func createEventTx(tx *gorm.DB, terminalID, typ, message string, details map[string]any) error {
-	detailsJSON, err := json.Marshal(details)
-	if err != nil {
-		return err
-	}
-	id, err := newID()
-	if err != nil {
-		return err
-	}
-	return tx.Create(&TerminalEvent{
-		ID:         id,
-		TerminalID: terminalID,
-		Type:       typ,
-		Message:    message,
-		Details:    detailsJSON,
-		CreatedAt:  time.Now().UTC(),
-	}).Error
-}
-
 func createExecEventTx(tx *gorm.DB, execID, typ, message string, details map[string]any) error {
 	detailsJSON, err := json.Marshal(details)
 	if err != nil {
@@ -459,16 +368,6 @@ func createExecEventTx(tx *gorm.DB, execID, typ, message string, details map[str
 		Details:   detailsJSON,
 		CreatedAt: time.Now().UTC(),
 	}).Error
-}
-
-func terminalDetails(t terminal.Terminal) map[string]any {
-	return map[string]any{
-		"status":   t.Status,
-		"unit":     t.Unit,
-		"pid":      t.PID,
-		"exitCode": t.ExitCode,
-		"error":    t.Error,
-	}
 }
 
 func execDetails(e execs.Exec) map[string]any {

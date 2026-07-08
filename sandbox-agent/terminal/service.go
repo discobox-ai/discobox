@@ -1,0 +1,756 @@
+// Package terminal is the agent-terminal layer built on top of the exec
+// primitive. A terminal is an exec whose command is resolved from an agent
+// config, whose environment is prepared by an installer before start, and which
+// is tagged (agentId, primary) in exec metadata. The Service owns agent
+// resolution, install, and primary-terminal lifecycle; all runtime mechanics
+// (systemd unit, shim, PTY, attach, status) belong to execs.Manager.
+package terminal
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/obot-platform/discobox/harness"
+	"github.com/obot-platform/discobox/harness/registry"
+	"github.com/obot-platform/discobox/sandbox-agent/config"
+	"github.com/obot-platform/discobox/sandbox-agent/execs"
+)
+
+const (
+	agentTerminalProtocol = "discobox-agent-terminal"
+	installStatusTimeout  = 5 * time.Minute
+)
+
+// ErrNotFound is returned when a terminal (exec) is not found. It aliases the
+// exec primitive's error so callers can match either.
+var ErrNotFound = execs.ErrNotFound
+
+type CreateRequest struct {
+	AgentID  string
+	Args     []string
+	Workdir  string
+	Env      map[string]string
+	Metadata map[string]string
+	Rows     uint16
+	Cols     uint16
+
+	// primary and command are set only by the sandbox-agent's own primary
+	// terminal launch, never from the terminal create API. command, when set,
+	// replaces the resolved agent command and args entirely (used for the
+	// relaunch/resume command on subsequent sandbox starts).
+	primary bool
+	command []string
+}
+
+type Installer interface {
+	EnsureInstalled(context.Context, config.Agent, string, map[string]string) error
+}
+
+// PrimaryStateStore records, durably across sandbox restarts, whether the
+// primary terminal has already been launched. It lets EnsurePrimary decide
+// between the initial prompt and the relaunch (resume) command.
+type PrimaryStateStore interface {
+	PrimaryTerminalLaunched(context.Context) (bool, error)
+	MarkPrimaryTerminalLaunched(context.Context) error
+}
+
+type ServiceConfig struct {
+	ResolvedAgentConfig *config.Agent
+	Agents              []config.Agent
+	WorkingRoot         string
+	RuntimeDir          string
+	Env                 map[string]string
+	ImageConfig         config.ImageConfig
+	ImageConfigPath     string
+	ExecDefaults        config.ExecDefaults
+	DefaultUser         *execs.User
+	Units               execs.UnitManager
+	Installer           Installer
+	Audit               execs.AuditRecorder
+	PrimaryState        PrimaryStateStore
+}
+
+// Service is the agent-terminal layer over execs.Manager.
+type Service struct {
+	execs          *execs.Manager
+	installs       *execs.Manager
+	agents         map[string]config.Agent
+	resolvedID     string
+	defaultID      string
+	workingRoot    string
+	env            map[string]string
+	imageConfig    config.ImageConfig
+	defaultUser    *execs.User
+	hookSocketPath string
+	installer      Installer
+	primaryState   PrimaryStateStore
+}
+
+func NewService(cfg ServiceConfig) (*Service, error) {
+	if strings.TrimSpace(cfg.WorkingRoot) == "" {
+		return nil, errors.New("working root is required")
+	}
+	runtimeDir := strings.TrimSpace(cfg.RuntimeDir)
+	if runtimeDir == "" {
+		runtimeDir = "/run/discobox/agent-terminals"
+	}
+	imageConfig := cfg.ImageConfig
+	if len(imageConfig.Env) == 0 {
+		var err error
+		if imageConfig, err = config.LoadImage(cfg.ImageConfigPath); err != nil {
+			return nil, err
+		}
+	}
+	defaultUser := terminalDefaultUser(cfg)
+
+	terminals, err := execs.NewManagerWithConfig(execs.ManagerConfig{
+		WorkingRoot:    cfg.WorkingRoot,
+		DefaultWorkdir: cfg.ExecDefaults.Workdir,
+		DefaultUser:    defaultUser,
+		RuntimeDir:     runtimeDir,
+		Env:            cfg.Env,
+		ImageConfig:    imageConfig,
+		Units:          cfg.Units,
+		Audit:          cfg.Audit,
+	})
+	if err != nil {
+		return nil, err
+	}
+	installs, err := execs.NewManagerWithConfig(execs.ManagerConfig{
+		WorkingRoot:    cfg.WorkingRoot,
+		DefaultWorkdir: cfg.ExecDefaults.Workdir,
+		DefaultUser:    defaultUser,
+		RuntimeDir:     filepath.Join(runtimeDir, "installs"),
+		Env:            cfg.Env,
+		ImageConfig:    imageConfig,
+		Units:          cfg.Units,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	s := &Service{
+		execs:        terminals,
+		installs:     installs,
+		agents:       map[string]config.Agent{},
+		workingRoot:  filepath.Clean(cfg.WorkingRoot),
+		env:          cloneMap(cfg.Env),
+		imageConfig:  imageConfig,
+		defaultUser:  defaultUser,
+		installer:    cfg.Installer,
+		primaryState: cfg.PrimaryState,
+	}
+	if s.installer == nil {
+		s.installer = CompositeInstaller{Installers: []Installer{
+			CommandInstaller{Execs: installs, User: defaultUser},
+			HookInstaller{},
+			FileInstaller{
+				HomeDirectory: cfg.ExecDefaults.HomeDirectory,
+				UID:           cfg.ExecDefaults.UID,
+				GID:           cfg.ExecDefaults.GID,
+			},
+		}}
+	}
+	for _, agent := range cfg.Agents {
+		if strings.TrimSpace(agent.ID) == "" {
+			continue
+		}
+		if _, exists := s.agents[agent.ID]; exists {
+			return nil, fmt.Errorf("duplicate agent %q", agent.ID)
+		}
+		s.agents[agent.ID] = cloneAgent(agent)
+		if s.defaultID == "" || agent.IsDefault {
+			s.defaultID = agent.ID
+		}
+	}
+	if cfg.ResolvedAgentConfig != nil && strings.TrimSpace(cfg.ResolvedAgentConfig.ID) != "" {
+		s.resolvedID = strings.TrimSpace(cfg.ResolvedAgentConfig.ID)
+		if _, exists := s.agents[s.resolvedID]; !exists {
+			s.agents[s.resolvedID] = cloneAgent(*cfg.ResolvedAgentConfig)
+		}
+	}
+	return s, nil
+}
+
+func (s *Service) SetHookSocketPath(path string) {
+	s.hookSocketPath = strings.TrimSpace(path)
+}
+
+// Delegations to the underlying exec primitive.
+
+func (s *Service) List() []execs.Exec                  { return s.execs.List() }
+func (s *Service) Get(id string) (execs.Exec, bool)    { return s.execs.Get(id) }
+func (s *Service) Reconcile(ctx context.Context) error { return s.execs.Reconcile(ctx) }
+func (s *Service) Start(ctx context.Context, id string) (execs.Exec, error) {
+	return s.execs.Start(ctx, id)
+}
+func (s *Service) Delete(ctx context.Context, id string) error { return s.execs.Delete(ctx, id) }
+func (s *Service) Logs(ctx context.Context, id string) ([]execs.LogEntry, error) {
+	return s.execs.Logs(ctx, id)
+}
+
+// Attach proxies to the terminal's shim over a raw HTTP Upgrade using the agent
+// terminal protocol, replaying buffered output when replay is set.
+func (s *Service) Attach(ctx context.Context, w http.ResponseWriter, id string, replay bool) error {
+	return s.execs.AttachUpgrade(ctx, w, id, agentTerminalProtocol, replay)
+}
+
+// Create resolves the agent, installs it, and creates a terminal-mode exec: an
+// always-TTY exec running the resolved agent command, tagged agentId (and
+// primary) in metadata.
+func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, error) {
+	workdir, err := s.execs.ResolveWorkdir(req.Workdir)
+	if err != nil {
+		return execs.Exec{}, err
+	}
+	agent, agentID, err := s.resolveAgent(req.AgentID, workdir)
+	if err != nil {
+		return execs.Exec{}, err
+	}
+	id, err := execs.NewID()
+	if err != nil {
+		return execs.Exec{}, err
+	}
+	env := execs.EnvWithRuntimeDefaults(execs.MergeEnv(s.env, req.Env), s.defaultUser, s.imageConfig)
+	env["DISCOBOX_TERMINAL_ID"] = id
+	if s.hookSocketPath != "" {
+		env["DISCOBOX_HOOK_SOCKET"] = s.hookSocketPath
+	}
+	if err := s.installer.EnsureInstalled(ctx, agent, workdir, env); err != nil {
+		return execs.Exec{}, err
+	}
+	var command []string
+	if len(req.command) > 0 {
+		command = append([]string{}, req.command...)
+	} else {
+		command = append([]string{}, agent.Command...)
+		command = append(command, req.Args...)
+	}
+	metadata := cloneMap(req.Metadata)
+	if metadata == nil {
+		metadata = map[string]string{}
+	}
+	metadata[metadataAgentID] = agentID
+	if req.primary {
+		metadata[metadataPrimary] = "true"
+	}
+	return s.execs.Create(ctx, execs.CreateRequest{
+		ID:       id,
+		Command:  command,
+		Workdir:  workdir,
+		Env:      env,
+		User:     cloneUser(s.defaultUser),
+		TTY:      true,
+		Rows:     req.Rows,
+		Cols:     req.Cols,
+		Metadata: metadata,
+	})
+}
+
+// Metadata keys the terminal layer sets on its execs to express terminal-ness.
+const (
+	metadataAgentID = "agentId"
+	metadataPrimary = "primary"
+)
+
+// AgentID returns the agent an exec was created for, if it is a terminal-mode
+// exec, reading the value the terminal layer stored in metadata.
+func AgentID(e execs.Exec) string { return e.Metadata[metadataAgentID] }
+
+// IsPrimary reports whether an exec is the sandbox's primary terminal.
+func IsPrimary(e execs.Exec) bool { return e.Metadata[metadataPrimary] == "true" }
+
+// EnsurePrimary launches the sandbox's primary terminal on sandbox start. On the
+// first start it runs the resolved agent with the sandbox prompt as arguments;
+// on subsequent starts it runs the agent's relaunch command to resume the
+// previous session. It is a no-op when a live primary terminal already exists or
+// when no agent is configured.
+func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
+	for _, existing := range s.List() {
+		if IsPrimary(existing) && (existing.Status == execs.StatusStarting || existing.Status == execs.StatusRunning) {
+			return nil
+		}
+	}
+	workdir, err := s.execs.ResolveWorkdir("")
+	if err != nil {
+		return err
+	}
+	agent, _, err := s.resolveAgent("", workdir)
+	if err != nil {
+		// No agent is configured for this sandbox; nothing to launch.
+		return nil
+	}
+	launched := false
+	if s.primaryState != nil {
+		if launched, err = s.primaryState.PrimaryTerminalLaunched(ctx); err != nil {
+			return err
+		}
+	}
+	created, err := s.Create(ctx, primaryCreateRequest(agent, prompt, launched))
+	if err != nil {
+		return err
+	}
+	if _, err := s.Start(ctx, created.ID); err != nil {
+		return err
+	}
+	if s.primaryState != nil {
+		return s.primaryState.MarkPrimaryTerminalLaunched(ctx)
+	}
+	return nil
+}
+
+func primaryCreateRequest(agent config.Agent, prompt []string, launched bool) CreateRequest {
+	req := CreateRequest{primary: true}
+	switch {
+	case launched && len(agent.RelaunchCommand) > 0:
+		req.command = append([]string{}, agent.RelaunchCommand...)
+	case launched:
+	default:
+		req.Args = append([]string{}, prompt...)
+	}
+	return req
+}
+
+// resolveAgent selects the agent for a terminal in precedence order: an explicit
+// request, then the sandbox's resolved agent, then a local repo agent config,
+// then the configured default.
+func (s *Service) resolveAgent(requested string, workdir string) (config.Agent, string, error) {
+	requested = strings.TrimSpace(requested)
+	if requested != "" {
+		agent, ok := s.agents[requested]
+		if !ok {
+			return config.Agent{}, "", fmt.Errorf("agent %q is not configured", requested)
+		}
+		return agent, requested, nil
+	}
+	if s.resolvedID != "" {
+		if agent, ok := s.agents[s.resolvedID]; ok {
+			return agent, s.resolvedID, nil
+		}
+	}
+	if local, ok, err := s.localAgentConfig(workdir); err != nil {
+		return config.Agent{}, "", err
+	} else if ok {
+		return local, local.ID, nil
+	}
+	if s.defaultID == "" {
+		return config.Agent{}, "", errors.New("no agent terminals are configured")
+	}
+	agent, ok := s.agents[s.defaultID]
+	if !ok {
+		return config.Agent{}, "", fmt.Errorf("default agent %q is not configured", s.defaultID)
+	}
+	return agent, s.defaultID, nil
+}
+
+type localAgentConfig struct {
+	Agent          string    `json:"agent,omitempty"`
+	ID             string    `json:"id,omitempty"`
+	Name           string    `json:"name,omitempty"`
+	InstallCommand *[]string `json:"installCommand,omitempty"`
+	Command        *[]string `json:"command,omitempty"`
+	RunCommand     *[]string `json:"runCommand,omitempty"`
+}
+
+func (s *Service) localAgentConfig(workdir string) (config.Agent, bool, error) {
+	repoRoot, ok := gitRoot(workdir, s.workingRoot)
+	if !ok {
+		return config.Agent{}, false, nil
+	}
+	path, ok := localAgentConfigPath(repoRoot)
+	if !ok {
+		return config.Agent{}, false, nil
+	}
+	local, err := readLocalAgentConfig(path)
+	if err != nil {
+		return config.Agent{}, false, err
+	}
+	selector := firstNonEmpty(local.Agent, local.ID, local.Name)
+	if selector == "" {
+		return config.Agent{}, false, fmt.Errorf("local agent config %s must set agent, id, or name", path)
+	}
+	agent, ok := s.matchAgent(selector)
+	if !ok {
+		agent = config.Agent{ID: selector, Name: selector}
+	}
+	agent = applyLocalAgentConfig(agent, local)
+	if strings.TrimSpace(agent.ID) == "" {
+		return config.Agent{}, false, fmt.Errorf("local agent config %s resolved empty agent id", path)
+	}
+	if len(agent.Command) == 0 || strings.TrimSpace(agent.Command[0]) == "" {
+		return config.Agent{}, false, fmt.Errorf("local agent config %s resolved agent %q without command", path, agent.ID)
+	}
+	return agent, true, nil
+}
+
+func localAgentConfigPath(repoRoot string) (string, bool) {
+	for _, name := range []string{"agent.json", "agent-config.json", "sandbox.json"} {
+		path := filepath.Join(repoRoot, ".discobox", name)
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			return path, true
+		}
+	}
+	return "", false
+}
+
+func readLocalAgentConfig(path string) (localAgentConfig, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return localAgentConfig{}, err
+	}
+	var name string
+	if err := json.Unmarshal(data, &name); err == nil {
+		return localAgentConfig{Agent: name}, nil
+	}
+	var out localAgentConfig
+	if err := json.Unmarshal(data, &out); err != nil {
+		return localAgentConfig{}, fmt.Errorf("parse local agent config %s: %w", path, err)
+	}
+	return out, nil
+}
+
+func (s *Service) matchAgent(selector string) (config.Agent, bool) {
+	selector = strings.TrimSpace(selector)
+	if agent, ok := s.agents[selector]; ok {
+		return cloneAgent(agent), true
+	}
+	for _, agent := range s.agents {
+		if strings.EqualFold(agent.Name, selector) {
+			return cloneAgent(agent), true
+		}
+	}
+	return config.Agent{}, false
+}
+
+func applyLocalAgentConfig(agent config.Agent, local localAgentConfig) config.Agent {
+	if strings.TrimSpace(local.ID) != "" {
+		agent.ID = strings.TrimSpace(local.ID)
+	}
+	if strings.TrimSpace(local.Name) != "" {
+		agent.Name = strings.TrimSpace(local.Name)
+	}
+	if local.InstallCommand != nil {
+		agent.InstallCommand = append([]string{}, (*local.InstallCommand)...)
+	}
+	if local.Command != nil {
+		agent.Command = append([]string{}, (*local.Command)...)
+	}
+	if local.RunCommand != nil {
+		agent.Command = append([]string{}, (*local.RunCommand)...)
+	}
+	return agent
+}
+
+func gitRoot(workdir, workingRoot string) (string, bool) {
+	workdir = filepath.Clean(workdir)
+	if output, err := exec.Command("git", "-C", workdir, "rev-parse", "--show-toplevel").Output(); err == nil {
+		root := filepath.Clean(strings.TrimSpace(string(output)))
+		if insideRoot(root, workingRoot) {
+			return root, true
+		}
+	}
+	for dir := workdir; insideRoot(dir, workingRoot); dir = filepath.Dir(dir) {
+		if info, err := os.Stat(filepath.Join(dir, ".git")); err == nil && info.IsDir() {
+			return dir, true
+		}
+		if dir == filepath.Clean(workingRoot) || dir == filepath.Dir(dir) {
+			break
+		}
+	}
+	return "", false
+}
+
+func insideRoot(path, root string) bool {
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+// --- Installers ---
+
+type CompositeInstaller struct {
+	Installers []Installer
+}
+
+func (i CompositeInstaller) EnsureInstalled(ctx context.Context, agent config.Agent, workdir string, env map[string]string) error {
+	for _, installer := range i.Installers {
+		if installer == nil {
+			continue
+		}
+		if err := installer.EnsureInstalled(ctx, agent, workdir, env); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// CommandInstaller runs an agent's install command to completion as an ephemeral
+// exec, once per distinct command.
+type CommandInstaller struct {
+	Execs         *execs.Manager
+	StatusTimeout time.Duration
+	PollInterval  time.Duration
+	User          *execs.User
+}
+
+var (
+	installedCommandsMu sync.Mutex
+	installedCommands   = map[string]struct{}{}
+)
+
+func (i CommandInstaller) EnsureInstalled(ctx context.Context, agent config.Agent, workdir string, env map[string]string) error {
+	if len(agent.InstallCommand) == 0 {
+		return nil
+	}
+	installKey := strings.Join(agent.InstallCommand, "\x00")
+	installedCommandsMu.Lock()
+	defer installedCommandsMu.Unlock()
+	if _, ok := installedCommands[installKey]; ok {
+		return nil
+	}
+	timeout := i.StatusTimeout
+	if timeout <= 0 {
+		timeout = installStatusTimeout
+	}
+	created, err := i.Execs.Create(ctx, execs.CreateRequest{
+		Command: append([]string{}, agent.InstallCommand...),
+		Workdir: workdir,
+		Env:     env,
+		User:    cloneUser(i.User),
+	})
+	if err != nil {
+		return fmt.Errorf("start install agent %q: %w", agent.ID, err)
+	}
+	defer func() { _ = i.Execs.Delete(context.Background(), created.ID) }()
+	if _, err := i.Execs.Start(ctx, created.ID); err != nil {
+		return fmt.Errorf("start install agent %q command: %w", agent.ID, err)
+	}
+	status, err := i.Execs.WaitForExit(ctx, created.ID, timeout, i.PollInterval)
+	if err != nil {
+		return fmt.Errorf("wait for install agent %q command: %w", agent.ID, err)
+	}
+	if status.ExitCode == nil || *status.ExitCode != 0 || status.Status == execs.StatusFailed {
+		detail := strings.TrimSpace(status.Error)
+		if detail == "" && status.ExitCode != nil {
+			detail = fmt.Sprintf("exit code %d", *status.ExitCode)
+		}
+		if detail == "" {
+			detail = "missing successful exit status"
+		}
+		return fmt.Errorf("install agent %q failed: %s", agent.ID, detail)
+	}
+	installedCommands[installKey] = struct{}{}
+	return nil
+}
+
+type HookInstaller struct {
+	ManagedRoot      string
+	PublisherCommand string
+}
+
+func (i HookInstaller) EnsureInstalled(ctx context.Context, agent config.Agent, workdir string, env map[string]string) error {
+	installer := registry.Installer{
+		Drivers:          registry.DriverForAgent(harnessAgent(agent)),
+		ManagedRoot:      i.ManagedRoot,
+		PublisherCommand: i.PublisherCommand,
+	}
+	return installer.InstallHooks(ctx, harness.HookInstallRequest{
+		Agent:            harnessAgent(agent),
+		Workdir:          workdir,
+		Env:              env,
+		ManagedRoot:      i.ManagedRoot,
+		PublisherCommand: i.PublisherCommand,
+	})
+}
+
+func harnessAgent(agent config.Agent) harness.Agent {
+	return harness.Agent{
+		ID:      agent.ID,
+		Name:    agent.Name,
+		Command: append([]string{}, agent.Command...),
+	}
+}
+
+// FileInstaller writes an agent's configured files into its home directory.
+type FileInstaller struct {
+	HomeDirectory string
+	UID           *int64
+	GID           *int64
+}
+
+func (i FileInstaller) EnsureInstalled(_ context.Context, agent config.Agent, _ string, _ map[string]string) error {
+	if len(agent.Files) == 0 {
+		return nil
+	}
+	home := strings.TrimSpace(i.HomeDirectory)
+	if home == "" {
+		return fmt.Errorf("agent %q has files to install but no home directory is configured", agent.ID)
+	}
+	home = filepath.Clean(home)
+	for _, file := range agent.Files {
+		path, err := homeRelativePath(home, file.Path)
+		if err != nil {
+			return fmt.Errorf("agent %q file %q: %w", agent.ID, file.Path, err)
+		}
+		if err := writeAgentFile(path, file.Content, file.CreateOnly, i.UID, i.GID); err != nil {
+			return fmt.Errorf("agent %q file %q: %w", agent.ID, file.Path, err)
+		}
+	}
+	return nil
+}
+
+func homeRelativePath(home, requested string) (string, error) {
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		return "", errors.New("path is required")
+	}
+	if filepath.IsAbs(requested) {
+		return "", fmt.Errorf("path %q must be relative to the home directory", requested)
+	}
+	cleaned := filepath.Clean(filepath.Join(home, requested))
+	rel, err := filepath.Rel(home, cleaned)
+	if err != nil {
+		return "", err
+	}
+	if rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", fmt.Errorf("path %q escapes home directory", requested)
+	}
+	return cleaned, nil
+}
+
+func writeAgentFile(path, content string, createOnly bool, uid, gid *int64) error {
+	createdDirs, err := mkdirAllTracked(filepath.Dir(path), 0o755)
+	if err != nil {
+		return err
+	}
+	if createOnly {
+		if info, err := os.Stat(path); err == nil {
+			if info.IsDir() {
+				return fmt.Errorf("%s is a directory", path)
+			}
+			return nil
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		return err
+	}
+	if err := os.Chmod(path, 0o644); err != nil {
+		return err
+	}
+	if uid == nil || gid == nil {
+		return nil
+	}
+	for _, created := range createdDirs {
+		if err := os.Chown(created, int(*uid), int(*gid)); err != nil {
+			return err
+		}
+	}
+	return os.Chown(path, int(*uid), int(*gid))
+}
+
+// mkdirAllTracked behaves like os.MkdirAll but returns the directories it
+// actually created, so callers can chown only new paths and leave pre-existing
+// directory ownership untouched.
+func mkdirAllTracked(path string, perm os.FileMode) ([]string, error) {
+	path = filepath.Clean(path)
+	if info, err := os.Stat(path); err == nil {
+		if !info.IsDir() {
+			return nil, fmt.Errorf("%s exists and is not a directory", path)
+		}
+		return nil, nil
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+	var created []string
+	if parent := filepath.Dir(path); parent != path {
+		parentCreated, err := mkdirAllTracked(parent, perm)
+		if err != nil {
+			return nil, err
+		}
+		created = append(created, parentCreated...)
+	}
+	if err := os.Mkdir(path, perm); err != nil && !os.IsExist(err) {
+		return nil, err
+	}
+	return append(created, path), nil
+}
+
+// --- shared helpers ---
+
+func terminalDefaultUser(cfg ServiceConfig) *execs.User {
+	if cfg.DefaultUser != nil {
+		return cloneUser(cfg.DefaultUser)
+	}
+	defaults := cfg.ExecDefaults
+	if strings.TrimSpace(defaults.Username) == "" && defaults.UID == nil && defaults.GID == nil && strings.TrimSpace(defaults.HomeDirectory) == "" {
+		return nil
+	}
+	return cloneUser(&execs.User{
+		Name:          defaults.Username,
+		UID:           cloneInt64(defaults.UID),
+		GID:           cloneInt64(defaults.GID),
+		HomeDirectory: defaults.HomeDirectory,
+	})
+}
+
+func cloneAgent(in config.Agent) config.Agent {
+	out := in
+	out.Command = append([]string{}, in.Command...)
+	out.InstallCommand = append([]string{}, in.InstallCommand...)
+	out.RelaunchCommand = append([]string{}, in.RelaunchCommand...)
+	out.Files = append([]config.AgentFile{}, in.Files...)
+	return out
+}
+
+func cloneMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func cloneUser(in *execs.User) *execs.User {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	out.Name = strings.TrimSpace(out.Name)
+	out.HomeDirectory = strings.TrimSpace(out.HomeDirectory)
+	out.UID = cloneInt64(in.UID)
+	out.GID = cloneInt64(in.GID)
+	return &out
+}
+
+func cloneInt64(in *int64) *int64 {
+	if in == nil {
+		return nil
+	}
+	out := *in
+	return &out
+}
