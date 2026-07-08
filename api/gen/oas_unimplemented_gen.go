@@ -441,6 +441,15 @@ func (UnimplementedHandler) RegisterWorker(ctx context.Context, req *RegisterWor
 	return r, ht.ErrNotImplemented
 }
 
+// ResolveSandboxSecret implements resolve-sandbox-secret operation.
+//
+// Resolve a sandbox sentinel secret.
+//
+// POST /api/workers/{workerId}/resolve-sandbox-secret
+func (UnimplementedHandler) ResolveSandboxSecret(ctx context.Context, req *ResolveSandboxSecretBody, params ResolveSandboxSecretParams) (r ResolveSandboxSecretRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // RestartSandbox implements restart-sandbox operation.
 //
 // Restart a sandbox.

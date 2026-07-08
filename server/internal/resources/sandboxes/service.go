@@ -172,7 +172,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		AgentModel:               services.OptStringPtr(config.AgentModel),
 		AgentModelServiceTier:    services.OptStringPtr(config.AgentModelServiceTier),
 		AgentModelReasoningLevel: services.OptStringPtr(config.AgentModelReasoningLevel),
-		Prompt:                   services.OptStringPtr(config.Prompt),
+		Prompt:                   config.Prompt,
 		Image:                    image,
 		Env:                      map[string]string(config.Env.Or(nil)),
 		Source:                   source,
@@ -188,7 +188,20 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if s.jobs == nil {
 		return nil, fmt.Errorf("job manager is required")
 	}
-	return s.jobs.CreateSandbox(ctx, sandbox)
+	assignments, err := s.prepareSandboxSecrets(ctx, projectID, sandbox, config.Secrets)
+	if err != nil {
+		return nil, err
+	}
+	created, err := s.jobs.CreateSandbox(ctx, sandbox)
+	if err != nil {
+		return nil, err
+	}
+	for _, assignment := range assignments {
+		if err := s.store.CreateSandboxSecret(ctx, assignment); err != nil {
+			return nil, fmt.Errorf("persist sandbox secret assignment: %w", err)
+		}
+	}
+	return created, nil
 }
 
 func (s *Service) resolveAgentConfigID(ctx context.Context, project *model.Project, agentConfigID, agentName services.OptString) (*string, error) {
@@ -204,7 +217,14 @@ func (s *Service) resolveAgentConfigID(ctx context.Context, project *model.Proje
 	}
 	name, ok := agentName.Get()
 	if ok && strings.TrimSpace(name) != "" {
-		config, err := s.store.GetAgentConfigByName(ctx, project.ID, strings.TrimSpace(name))
+		selector := strings.TrimSpace(name)
+		// Prefer the stable slug (e.g. "codex"), then fall back to the display name.
+		if config, err := s.store.GetAgentConfigBySlug(ctx, project.ID, selector); err == nil {
+			return &config.ID, nil
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return nil, mapAPIError(err, "agent config not found")
+		}
+		config, err := s.store.GetAgentConfigByName(ctx, project.ID, selector)
 		if err != nil {
 			return nil, mapAPIError(err, "agent config not found")
 		}

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -91,7 +92,7 @@ func (s *Store) ListSecrets(ctx context.Context, projectID string) ([]model.Secr
 		return nil, err
 	}
 	var out []model.Secret
-	err = read.Where("project_id = ?", projectID).Order("created_at ASC").Find(&out).Error
+	err = read.Where("project_id = ? AND anonymous = ?", projectID, false).Order("created_at ASC").Find(&out).Error
 	return out, err
 }
 
@@ -142,7 +143,7 @@ func (s *Store) MatchSecret(ctx context.Context, projectID, secretType, host str
 	}
 	var candidates []model.Secret
 	err = read.
-		Where("project_id = ? AND type = ? AND (host = ? OR host = '')", projectID, secretType, host).
+		Where("project_id = ? AND anonymous = ? AND type = ? AND (host = ? OR host = '')", projectID, false, secretType, host).
 		Order("CASE WHEN host = '' THEN 1 ELSE 0 END ASC").
 		Find(&candidates).Error
 	if err != nil {
@@ -178,6 +179,28 @@ func (s *Store) CreateSecretRequest(ctx context.Context, req *model.SecretReques
 		return req, nil
 	})
 	return err
+}
+
+// FindLatestSecretRequest returns the most recent non-denied secret request for
+// a specific secret, host, and requesting principal. It powers on-demand
+// sentinel resolution so repeated proxy lookups reuse a grant or pending request
+// instead of creating duplicates.
+func (s *Store) FindLatestSecretRequest(ctx context.Context, projectID, secretID, host, requestedBy string) (*model.SecretRequest, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var req model.SecretRequest
+	err = read.Where("project_id = ? AND secret_id = ? AND host = ? AND requested_by = ? AND status <> ?",
+		projectID, secretID, host, requestedBy, model.SecretRequestStatusDenied).
+		Order("created_at DESC").First(&req).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &req, nil
 }
 
 func (s *Store) GetSecretRequest(ctx context.Context, projectID, requestID string) (*model.SecretRequest, error) {

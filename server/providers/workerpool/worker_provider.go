@@ -709,7 +709,7 @@ func workerAgentConfigFiles(files []model.AgentConfigFile) workerclient.OptNilAg
 		out = append(out, workerapimodel.AgentConfigFile{
 			Path:       file.Path,
 			Content:    file.Content,
-			CreateOnly: file.CreateOnly,
+			CreateOnly: workerclient.NewOptBool(file.CreateOnly),
 		})
 	}
 	return workerclient.NewOptNilAgentConfigFileArray(out)
@@ -724,6 +724,9 @@ func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions
 	if opts.Env != nil {
 		config.Env = workerclient.NewOptSandboxConfigEnv(workerclient.SandboxConfigEnv(opts.Env))
 	}
+	if len(opts.Sentinels) > 0 {
+		out.Sentinels = workerclient.NewOptNilStringArray(opts.Sentinels)
+	}
 	if opts.Name != "" {
 		config.Name = workerclient.NewOptString(opts.Name)
 	}
@@ -735,11 +738,12 @@ func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions
 	}
 	if opts.ResolvedAgentConfig != nil {
 		resolved := workerapimodel.ResolvedAgentConfig{
-			ID:             opts.ResolvedAgentConfig.ID,
-			Name:           opts.ResolvedAgentConfig.Name,
-			InstallCommand: workerOptStringArray(opts.ResolvedAgentConfig.InstallCommand),
-			RunCommand:     opts.ResolvedAgentConfig.RunCommand,
-			Files:          workerAgentConfigFiles(opts.ResolvedAgentConfig.Files),
+			ID:              opts.ResolvedAgentConfig.ID,
+			Name:            opts.ResolvedAgentConfig.Name,
+			InstallCommand:  workerOptStringArray(opts.ResolvedAgentConfig.InstallCommand),
+			RunCommand:      opts.ResolvedAgentConfig.RunCommand,
+			RelaunchCommand: workerOptStringArray(opts.ResolvedAgentConfig.RelaunchCommand),
+			Files:           workerAgentConfigFiles(opts.ResolvedAgentConfig.Files),
 		}
 		out.ResolvedAgentConfig = workerclient.NewOptResolvedAgentConfig(resolved)
 	}
@@ -747,12 +751,13 @@ func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions
 		configs := make([]workerapimodel.SandboxAgentConfig, 0, len(opts.AgentConfigs))
 		for _, config := range opts.AgentConfigs {
 			configs = append(configs, workerapimodel.SandboxAgentConfig{
-				ID:             config.ID,
-				Name:           config.Name,
-				InstallCommand: workerOptStringArray(config.InstallCommand),
-				RunCommand:     config.RunCommand,
-				IsDefault:      config.IsDefault,
-				Files:          workerAgentConfigFiles(config.Files),
+				ID:              config.ID,
+				Name:            config.Name,
+				InstallCommand:  workerOptStringArray(config.InstallCommand),
+				RunCommand:      config.RunCommand,
+				RelaunchCommand: workerOptStringArray(config.RelaunchCommand),
+				IsDefault:       config.IsDefault,
+				Files:           workerAgentConfigFiles(config.Files),
 			})
 		}
 		out.AgentConfigs = workerclient.NewOptNilSandboxAgentConfigArray(configs)
@@ -766,8 +771,8 @@ func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions
 	if opts.AgentModelReasoningLevel != nil {
 		config.AgentModelReasoningLevel = workerclient.NewOptString(*opts.AgentModelReasoningLevel)
 	}
-	if opts.Prompt != nil {
-		config.Prompt = workerclient.NewOptString(*opts.Prompt)
+	if len(opts.Prompt) > 0 {
+		config.Prompt = opts.Prompt
 	}
 	if opts.Source != nil {
 		workerSource, err := workerGitSource(*opts.Source)

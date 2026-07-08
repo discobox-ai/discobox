@@ -189,6 +189,10 @@ type RegisterWorkerRes interface {
 	registerWorkerRes()
 }
 
+type ResolveSandboxSecretRes interface {
+	resolveSandboxSecretRes()
+}
+
 type RestartSandboxRes interface {
 	restartSandboxRes()
 }

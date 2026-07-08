@@ -53,6 +53,7 @@ const (
 	ReconcileSandboxOperation                 OperationName = "ReconcileSandbox"
 	ReconcileWorkerOperation                  OperationName = "ReconcileWorker"
 	RegisterWorkerOperation                   OperationName = "RegisterWorker"
+	ResolveSandboxSecretOperation             OperationName = "ResolveSandboxSecret"
 	RestartSandboxOperation                   OperationName = "RestartSandbox"
 	SetDefaultAgentConfigOperation            OperationName = "SetDefaultAgentConfig"
 	StartAgentTerminalOperation               OperationName = "StartAgentTerminal"

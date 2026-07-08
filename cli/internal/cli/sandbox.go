@@ -23,8 +23,9 @@ type sandboxCreateOptions struct {
 	agentModel               string
 	agentModelServiceTier    string
 	agentModelReasoningLevel string
-	prompt                   string
+	prompt                   []string
 	env                      []string
+	secret                   []string
 	sourceURL                string
 	sourceRef                string
 	sourceRefType            string
@@ -350,8 +351,9 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.agentModel, "agent-model", "", "Model the agent should use")
 	cmd.Flags().StringVar(&opts.agentModelServiceTier, "agent-model-service-tier", "", "Model service tier the agent should use")
 	cmd.Flags().StringVar(&opts.agentModelReasoningLevel, "agent-model-reasoning-level", "", "Model reasoning level the agent should use")
-	cmd.Flags().StringVar(&opts.prompt, "prompt", "", "Prompt the agent should run")
-	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables")
+	cmd.Flags().StringArrayVar(&opts.prompt, "prompt", nil, "Prompt argument the agent should run; repeat to pass multiple argv tokens, preserving the caller's exact tokens")
+	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
+	cmd.Flags().StringArrayVarP(&opts.secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
 	cmd.Flags().StringVar(&opts.sourceURL, "source-url", "", "Source repository or archive URL")
 	cmd.Flags().StringVar(&opts.sourceRef, "source-ref", "", "Source branch, tag, or commit")
 	cmd.Flags().StringVar(&opts.sourceRefType, "source-ref-type", "", "Source ref type, such as branch, tag, or commit")
@@ -384,13 +386,18 @@ func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, 
 	config.SetAgentModel(optString(opts.agentModel))
 	config.SetAgentModelServiceTier(optString(opts.agentModelServiceTier))
 	config.SetAgentModelReasoningLevel(optString(opts.agentModelReasoningLevel))
-	config.SetPrompt(optString(opts.prompt))
-	env, err := keyValueMapFromShell(opts.env)
+	if len(opts.prompt) > 0 {
+		config.SetPrompt(append([]string(nil), opts.prompt...))
+	}
+	env, secrets, err := envAndSecretsFromOptions(opts.env, opts.secret)
 	if err != nil {
 		return nil, err
 	}
 	if len(env) > 0 {
 		config.SetEnv(apiclientgen.NewOptSandboxCreateConfigEnv(apiclientgen.SandboxCreateConfigEnv(env)))
+	}
+	if len(secrets) > 0 {
+		config.SetSecrets(secrets)
 	}
 	source, err := gitSourceFromCreateOptions(opts)
 	if err != nil {

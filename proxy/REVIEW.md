@@ -29,3 +29,18 @@
 - Header rewrite rule evaluation must remain deterministic across process runs.
 - Avoid importing server internals; this package is consumed by worker-agent
   and launch wiring through root-module contracts.
+- Never persist a swapped secret value. Any header whose value was
+  secret-swapped must be added to the audit redaction set, and a query-param
+  swap must record the pre-swap URL. Real values must never reach an audit row,
+  spool, or cache key.
+- Sentinel detection is exact-set matching over a client's configured sentinel
+  strings; do not add prefix/format heuristics that could misclassify real
+  tokens. Sentinels are non-secret; the real value comes only from the injected
+  `secrets.Resolver`.
+- The resolver is a stable construction dependency, not reloadable config. It
+  must be preserved across `ApplyConfig`; only the sentinel set and swap tuning
+  come from `Config.Secrets`.
+- On resolver denial, pending approval, or error, leave the sentinel in place
+  (fail-closed on the secret). Do not swap partially or block the request.
+- Do not scan or swap request bodies while the request-body audit spool would
+  capture the swapped value.

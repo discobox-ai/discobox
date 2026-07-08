@@ -13,6 +13,7 @@ import (
 	"github.com/obot-platform/discobox/proxy/internal/cache"
 	"github.com/obot-platform/discobox/proxy/internal/filter"
 	"github.com/obot-platform/discobox/proxy/internal/rules"
+	"github.com/obot-platform/discobox/proxy/internal/secrets"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -26,6 +27,8 @@ type Server struct {
 	cache       *cache.Cache
 	filter      *filter.Filter
 	rewriter    *rules.Rewriter
+	resolver    secrets.Resolver
+	swapper     *secrets.Swapper
 	http        *httpProxy
 	socks       *socksProxy
 	controlAuth *controlAuthenticator
@@ -37,8 +40,10 @@ type Server struct {
 	closed   chan struct{}
 }
 
-// NewServer creates a worker-scoped proxy server.
-func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle) (*Server, error) {
+// NewServer creates a worker-scoped proxy server. A nil resolver disables
+// sentinel secret swapping; the resolver is a stable dependency preserved across
+// ApplyConfig reloads.
+func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle, resolver secrets.Resolver) (*Server, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -74,6 +79,7 @@ func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle) (*Serv
 		return nil, fmt.Errorf("control auth: %w", err)
 	}
 	flt, rewriter := buildPolicy(cfg)
+	swapper := buildSwapper(cfg, resolver)
 	s := &Server{
 		ctx:         ctx,
 		cfg:         cfg,
@@ -82,11 +88,13 @@ func NewServer(ctx context.Context, cfg Config, certs *CertificateBundle) (*Serv
 		cache:       c,
 		filter:      flt,
 		rewriter:    rewriter,
+		resolver:    resolver,
+		swapper:     swapper,
 		controlAuth: controlAuth,
 		conns:       map[net.Conn]struct{}{},
 		closed:      make(chan struct{}),
 	}
-	s.http = newHTTPProxy(certs, s.filter, s.rewriter, c, recorder)
+	s.http = newHTTPProxy(certs, s.filter, s.rewriter, swapper, c, recorder)
 	s.socks = newSOCKSProxy(s.filter, recorder)
 	return s, nil
 }
@@ -116,11 +124,15 @@ func (s *Server) ApplyConfig(cfg Config) error {
 		return err
 	}
 	flt, rewriter := buildPolicy(cfg)
+	swapper := buildSwapper(cfg, s.resolver)
 	s.filter = flt
 	s.rewriter = rewriter
+	s.swapper = swapper
 	s.cfg.Allowlist = cfg.Allowlist
 	s.cfg.Headers = cfg.Headers
+	s.cfg.Secrets = cfg.Secrets
 	s.http.setPolicy(flt, rewriter)
+	s.http.setSwapper(swapper)
 	s.socks.setFilter(flt)
 	return nil
 }
@@ -132,6 +144,22 @@ func buildPolicy(cfg Config) (*filter.Filter, *rules.Rewriter) {
 		IPs:     cfg.Allowlist.IPs,
 		Rules:   convertAllowlistRules(cfg.Allowlist.Rules),
 	}), rules.NewRewriter(convertHeaderRules(cfg.Headers))
+}
+
+func buildSwapper(cfg Config, resolver secrets.Resolver) *secrets.Swapper {
+	if resolver == nil {
+		return nil
+	}
+	sentinels := make(map[string][]string, len(cfg.Secrets.Clients))
+	for _, client := range cfg.Secrets.Clients {
+		sentinels[client.ClientID] = client.Sentinels
+	}
+	return secrets.New(resolver, secrets.Config{
+		Sentinels:   sentinels,
+		ScanQuery:   cfg.Secrets.ScanQuery,
+		PositiveTTL: time.Duration(cfg.Secrets.PositiveTTLSeconds) * time.Second,
+		NegativeTTL: time.Duration(cfg.Secrets.NegativeTTLSeconds) * time.Second,
+	})
 }
 
 func convertAllowlistRules(rules []AllowlistRule) []filter.Rule {

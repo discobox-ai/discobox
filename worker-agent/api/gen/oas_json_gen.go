@@ -27,12 +27,14 @@ func (s *AgentConfigFile) encodeFields(e *jx.Encoder) {
 		e.Str(s.Content)
 	}
 	{
-		e.FieldStart("createOnly")
-		e.Bool(s.CreateOnly)
-	}
-	{
 		e.FieldStart("path")
 		e.Str(s.Path)
+	}
+	{
+		if s.CreateOnly.Set {
+			e.FieldStart("createOnly")
+			s.CreateOnly.Encode(e)
+		}
 	}
 }
 
@@ -76,11 +78,9 @@ func (s *AgentConfigFile) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"path\"")
 			}
 		case "createOnly":
-			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
-				v, err := d.Bool()
-				s.CreateOnly = bool(v)
-				if err != nil {
+				s.CreateOnly.Reset()
+				if err := s.CreateOnly.Decode(d); err != nil {
 					return err
 				}
 				return nil
@@ -1852,6 +1852,12 @@ func (s *ResolvedAgentConfig) encodeFields(e *jx.Encoder) {
 		e.Str(s.Name)
 	}
 	{
+		if s.RelaunchCommand.Set {
+			e.FieldStart("relaunchCommand")
+			s.RelaunchCommand.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("runCommand")
 		e.ArrStart()
 		for _, elem := range s.RunCommand {
@@ -1861,12 +1867,13 @@ func (s *ResolvedAgentConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfResolvedAgentConfig = [5]string{
+var jsonFieldsNameOfResolvedAgentConfig = [6]string{
 	0: "files",
 	1: "id",
 	2: "installCommand",
 	3: "name",
-	4: "runCommand",
+	4: "relaunchCommand",
+	5: "runCommand",
 }
 
 // Decode decodes ResolvedAgentConfig from json.
@@ -1922,8 +1929,18 @@ func (s *ResolvedAgentConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
+		case "relaunchCommand":
+			if err := func() error {
+				s.RelaunchCommand.Reset()
+				if err := s.RelaunchCommand.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"relaunchCommand\"")
+			}
 		case "runCommand":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				s.RunCommand = make([]string, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
@@ -1952,7 +1969,7 @@ func (s *ResolvedAgentConfig) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00011010,
+		0b00101010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -2032,6 +2049,12 @@ func (s *SandboxAgentConfig) encodeFields(e *jx.Encoder) {
 		e.Str(s.Name)
 	}
 	{
+		if s.RelaunchCommand.Set {
+			e.FieldStart("relaunchCommand")
+			s.RelaunchCommand.Encode(e)
+		}
+	}
+	{
 		e.FieldStart("runCommand")
 		e.ArrStart()
 		for _, elem := range s.RunCommand {
@@ -2041,13 +2064,14 @@ func (s *SandboxAgentConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxAgentConfig = [6]string{
+var jsonFieldsNameOfSandboxAgentConfig = [7]string{
 	0: "files",
 	1: "id",
 	2: "installCommand",
 	3: "isDefault",
 	4: "name",
-	5: "runCommand",
+	5: "relaunchCommand",
+	6: "runCommand",
 }
 
 // Decode decodes SandboxAgentConfig from json.
@@ -2115,8 +2139,18 @@ func (s *SandboxAgentConfig) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
+		case "relaunchCommand":
+			if err := func() error {
+				s.RelaunchCommand.Reset()
+				if err := s.RelaunchCommand.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"relaunchCommand\"")
+			}
 		case "runCommand":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				s.RunCommand = make([]string, 0)
 				if err := d.Arr(func(d *jx.Decoder) error {
@@ -2145,7 +2179,7 @@ func (s *SandboxAgentConfig) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00111010,
+		0b01011010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -2261,9 +2295,13 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.Prompt.Set {
+		if s.Prompt != nil {
 			e.FieldStart("prompt")
-			s.Prompt.Encode(e)
+			e.ArrStart()
+			for _, elem := range s.Prompt {
+				e.Str(elem)
+			}
+			e.ArrEnd()
 		}
 	}
 	{
@@ -2420,8 +2458,17 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 			}
 		case "prompt":
 			if err := func() error {
-				s.Prompt.Reset()
-				if err := s.Prompt.Decode(d); err != nil {
+				s.Prompt = make([]string, 0)
+				if err := d.Arr(func(d *jx.Decoder) error {
+					var elem string
+					v, err := d.Str()
+					elem = string(v)
+					if err != nil {
+						return err
+					}
+					s.Prompt = append(s.Prompt, elem)
+					return nil
+				}); err != nil {
 					return err
 				}
 				return nil
@@ -2961,15 +3008,22 @@ func (s *WorkerSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 		e.FieldStart("sandboxId")
 		e.Str(s.SandboxId)
 	}
+	{
+		if s.Sentinels.Set {
+			e.FieldStart("sentinels")
+			s.Sentinels.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfWorkerSandboxCreateRequest = [6]string{
+var jsonFieldsNameOfWorkerSandboxCreateRequest = [7]string{
 	0: "$schema",
 	1: "agentConfigs",
 	2: "config",
 	3: "resolvedAgentConfig",
 	4: "resources",
 	5: "sandboxId",
+	6: "sentinels",
 }
 
 // Decode decodes WorkerSandboxCreateRequest from json.
@@ -3042,6 +3096,16 @@ func (s *WorkerSandboxCreateRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"sandboxId\"")
+			}
+		case "sentinels":
+			if err := func() error {
+				s.Sentinels.Reset()
+				if err := s.Sentinels.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sentinels\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)

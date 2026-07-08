@@ -314,6 +314,12 @@ type Invoker interface {
 	//
 	// POST /api/workers/register
 	RegisterWorker(ctx context.Context, request *RegisterWorkerBody) (RegisterWorkerRes, error)
+	// ResolveSandboxSecret invokes resolve-sandbox-secret operation.
+	//
+	// Resolve a sandbox sentinel secret.
+	//
+	// POST /api/workers/{workerId}/resolve-sandbox-secret
+	ResolveSandboxSecret(ctx context.Context, request *ResolveSandboxSecretBody, params ResolveSandboxSecretParams) (ResolveSandboxSecretRes, error)
 	// RestartSandbox invokes restart-sandbox operation.
 	//
 	// Restart a sandbox.
@@ -5556,6 +5562,102 @@ func (c *Client) sendRegisterWorker(ctx context.Context, request *RegisterWorker
 
 	stage = "DecodeResponse"
 	result, err := decodeRegisterWorkerResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ResolveSandboxSecret invokes resolve-sandbox-secret operation.
+//
+// Resolve a sandbox sentinel secret.
+//
+// POST /api/workers/{workerId}/resolve-sandbox-secret
+func (c *Client) ResolveSandboxSecret(ctx context.Context, request *ResolveSandboxSecretBody, params ResolveSandboxSecretParams) (ResolveSandboxSecretRes, error) {
+	res, err := c.sendResolveSandboxSecret(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendResolveSandboxSecret(ctx context.Context, request *ResolveSandboxSecretBody, params ResolveSandboxSecretParams) (res ResolveSandboxSecretRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("resolve-sandbox-secret"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/workers/{workerId}/resolve-sandbox-secret"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ResolveSandboxSecretOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/workers/"
+	{
+		// Encode "workerId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "workerId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.WorkerId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/resolve-sandbox-secret"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeResolveSandboxSecretRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeResolveSandboxSecretResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

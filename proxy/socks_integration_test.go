@@ -44,7 +44,7 @@ func TestSOCKSProxyMTLSIdentityDeniedAudit(t *testing.T) {
 			Enabled: true,
 			Domains: []string{"example.com"},
 		},
-	}, prepared.Bundle)
+	}, prepared.Bundle, nil)
 	if err != nil {
 		t.Fatalf("NewServer() error = %v", err)
 	}

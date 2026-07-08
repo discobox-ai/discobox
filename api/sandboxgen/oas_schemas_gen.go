@@ -122,7 +122,10 @@ type AgentTerminal struct {
 	// Sandbox-agent-owned terminal metadata.
 	Metadata OptAgentTerminalMetadata `json:"metadata"`
 	// Sandbox-local process ID when known.
-	Pid       OptInt64    `json:"pid"`
+	Pid OptInt64 `json:"pid"`
+	// Whether this is the sandbox's primary terminal, launched by the sandbox-agent from the sandbox
+	// prompt. Set only by the sandbox-agent; it cannot be requested through terminal create.
+	Primary   OptBool     `json:"primary"`
 	StartedAt OptDateTime `json:"startedAt"`
 	// Current observed terminal runtime status.
 	Status AgentTerminalStatus `json:"status"`
@@ -175,6 +178,11 @@ func (s *AgentTerminal) GetMetadata() OptAgentTerminalMetadata {
 // GetPid returns the value of Pid.
 func (s *AgentTerminal) GetPid() OptInt64 {
 	return s.Pid
+}
+
+// GetPrimary returns the value of Primary.
+func (s *AgentTerminal) GetPrimary() OptBool {
+	return s.Primary
 }
 
 // GetStartedAt returns the value of StartedAt.
@@ -240,6 +248,11 @@ func (s *AgentTerminal) SetMetadata(val OptAgentTerminalMetadata) {
 // SetPid sets the value of Pid.
 func (s *AgentTerminal) SetPid(val OptInt64) {
 	s.Pid = val
+}
+
+// SetPrimary sets the value of Primary.
+func (s *AgentTerminal) SetPrimary(val OptBool) {
+	s.Primary = val
 }
 
 // SetStartedAt sets the value of StartedAt.

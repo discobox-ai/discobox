@@ -36,6 +36,8 @@ type SandboxManifestAgentConfig struct {
 	IsDefault bool `json:"isDefault,omitempty"`
 	// Name Agent config display name.
 	Name string `json:"name"`
+	// RelaunchCommand Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+	RelaunchCommand []string `json:"relaunchCommand,omitempty"`
 	// RunCommand Argv used to run the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
 	RunCommand []string `json:"runCommand"`
 }
@@ -80,6 +82,8 @@ type SandboxManifestResolvedAgentConfig struct {
 	InstallCommand []string `json:"installCommand,omitempty"`
 	// Name Agent config display name.
 	Name string `json:"name"`
+	// RelaunchCommand Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+	RelaunchCommand []string `json:"relaunchCommand,omitempty"`
 	// RunCommand Argv used to run the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
 	RunCommand []string `json:"runCommand"`
 }

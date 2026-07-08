@@ -89,6 +89,9 @@ type CreateOptions struct {
 
 	Labels map[string]string
 	Env    map[string]string
+	// Sentinels are the placeholder secret values injected into the sandbox that
+	// the worker registers with the proxy for runtime swapping.
+	Sentinels []string
 
 	Name                     string
 	Description              *string
@@ -96,7 +99,7 @@ type CreateOptions struct {
 	AgentModel               *string
 	AgentModelServiceTier    *string
 	AgentModelReasoningLevel *string
-	Prompt                   *string
+	Prompt                   []string
 	Source                   *model.GitSource
 	SourceCodeReferences     model.SourceCodeReferences
 	UserName                 *string
@@ -118,22 +121,24 @@ type CreateOptions struct {
 // ResolvedAgentConfig is the sandbox-local coding agent configuration captured
 // at sandbox create time.
 type ResolvedAgentConfig struct {
-	ID             string
-	Name           string
-	InstallCommand []string
-	RunCommand     []string
-	Files          []model.AgentConfigFile
+	ID              string
+	Name            string
+	InstallCommand  []string
+	RunCommand      []string
+	RelaunchCommand []string
+	Files           []model.AgentConfigFile
 }
 
 // AgentConfig is a project-scoped coding agent configuration made available to
 // the sandbox runtime.
 type AgentConfig struct {
-	ID             string
-	Name           string
-	InstallCommand []string
-	RunCommand     []string
-	IsDefault      bool
-	Files          []model.AgentConfigFile
+	ID              string
+	Name            string
+	InstallCommand  []string
+	RunCommand      []string
+	RelaunchCommand []string
+	IsDefault       bool
+	Files           []model.AgentConfigFile
 }
 
 // WorkerProviderReconciler reconciles worker-provider state for a provider

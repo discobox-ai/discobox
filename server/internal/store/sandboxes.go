@@ -221,12 +221,56 @@ func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string) 
 		if err != nil {
 			return nil, err
 		}
+		if err := deleteSandboxSecretsTx(tx, projectID, sandboxID); err != nil {
+			return nil, err
+		}
 		if err := tx.Delete(sandbox).Error; err != nil {
 			return nil, err
 		}
 		return sandbox, nil
 	})
 	return err
+}
+
+// PurgeSandboxSecrets removes a sandbox's secret assignments and the anonymous
+// secrets created for them, independent of the sandbox row lifecycle. It is
+// called when a sandbox delete is finalized (the row is retained with phase
+// deleted). Safe to call more than once.
+func (s *Store) PurgeSandboxSecrets(ctx context.Context, projectID, sandboxID string) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	return deleteSandboxSecretsTx(write, projectID, sandboxID)
+}
+
+// deleteSandboxSecretsTx removes a sandbox's secret assignments and the anonymous
+// secrets that were created for them. Referenced (non-anonymous) secrets are left
+// untouched.
+func deleteSandboxSecretsTx(tx *gorm.DB, projectID, sandboxID string) error {
+	var assignments []model.SandboxSecret
+	if err := tx.Where("sandbox_id = ?", sandboxID).Find(&assignments).Error; err != nil {
+		return err
+	}
+	if len(assignments) == 0 {
+		return nil
+	}
+	secretIDs := make([]string, 0, len(assignments))
+	for _, assignment := range assignments {
+		secretIDs = append(secretIDs, assignment.SecretID)
+	}
+	if err := tx.Where("sandbox_id = ?", sandboxID).Delete(&model.SandboxSecret{}).Error; err != nil {
+		return err
+	}
+	// Nullify ciphertext before soft-deleting anonymous secrets so no secret
+	// value is retained even in a soft-deleted row.
+	if err := tx.Model(&model.Secret{}).
+		Where("project_id = ? AND anonymous = ? AND id IN ?", projectID, true, secretIDs).
+		Update("encrypted_value", nil).Error; err != nil {
+		return err
+	}
+	return tx.Where("project_id = ? AND anonymous = ? AND id IN ?", projectID, true, secretIDs).
+		Delete(&model.Secret{}).Error
 }
 
 func (s *Store) ListSandboxSnapshots(ctx context.Context, projectID string) ([]model.Sandbox, error) {

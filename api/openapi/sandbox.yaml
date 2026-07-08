@@ -91,6 +91,10 @@ components:
                     description: Sandbox-local process ID when known.
                     format: int64
                     type: integer
+                primary:
+                    description: Whether this is the sandbox's primary terminal, launched by the sandbox-agent from the sandbox prompt. Set only by the sandbox-agent; it cannot be requested through terminal create.
+                    readOnly: true
+                    type: boolean
                 startedAt:
                     format: date-time
                     type: string
@@ -435,8 +439,10 @@ components:
                     maxLength: 200
                     type: string
                 prompt:
-                    description: Prompt the agent should run
-                    type: string
+                    description: Prompt the agent should run, passed as argv to preserve the caller's exact tokens.
+                    items:
+                        type: string
+                    type: array
                 source:
                     $ref: '#/components/schemas/GitSource'
                     description: Primary Git source to materialize in the sandbox
@@ -642,6 +648,12 @@ components:
                 name:
                     description: Agent config display name.
                     type: string
+                relaunchCommand:
+                    description: Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 runCommand:
                     description: Argv used to run the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
                     items:
@@ -725,6 +737,12 @@ components:
                 name:
                     description: Agent config display name.
                     type: string
+                relaunchCommand:
+                    description: Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 runCommand:
                     description: Argv used to run the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
                     items:

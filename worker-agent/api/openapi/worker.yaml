@@ -140,6 +140,11 @@ components:
                     type: array
                 name:
                     type: string
+                relaunchCommand:
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 runCommand:
                     items:
                         type: string
@@ -168,6 +173,11 @@ components:
                     type: boolean
                 name:
                     type: string
+                relaunchCommand:
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 runCommand:
                     items:
                         type: string
@@ -206,7 +216,9 @@ components:
                 name:
                     type: string
                 prompt:
-                    type: string
+                    items:
+                        type: string
+                    type: array
                 source:
                     "$ref": "#/components/schemas/GitSource"
                 sourceCodeReferences:
@@ -276,6 +288,12 @@ components:
                     "$ref": "#/components/schemas/WorkerSandboxResources"
                 sandboxId:
                     type: string
+                sentinels:
+                    description: Sentinel placeholder values injected into this sandbox. The worker registers them with the proxy so their real secret values are swapped at runtime.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
             required:
             - sandboxId
             - config

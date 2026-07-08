@@ -17,19 +17,31 @@ type AgentConfig struct {
 	Schema OptURI `json:"$schema"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
-	// Files to write into the agent's home directory when the agent is installed.
+	// Built-in agent definition this config extends. Unset fields are inherited from the definition at
+	// runtime, so definition upgrades propagate unless overridden. Empty for fully custom configs.
+	DefinitionId OptString `json:"definitionId"`
+	// Override for files to write into the agent's home directory when the agent is installed. Unset
+	// inherits from the definition.
 	Files OptNilAgentConfigFileArray `json:"files"`
 	// Stable agent config ID.
 	ID string `json:"id"`
-	// Argv used to install the agent. Not run through a shell; use ["sh", "-c", "..."] for shell
-	// semantics.
+	// Override for the argv used to install the agent. Unset inherits from the definition. Not run
+	// through a shell; use ["sh", "-c", "..."] for shell semantics.
 	InstallCommand OptNilStringArray `json:"installCommand"`
 	// Agent config name.
 	Name string `json:"name"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
-	// Argv used to run the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+	// Override for the argv used to resume the previous agent session on subsequent sandbox starts.
+	// Replaces runCommand for non-first launches. Unset inherits from the definition. Not run through a
+	// shell; use ["sh", "-c", "..."] for shell semantics.
+	RelaunchCommand OptNilStringArray `json:"relaunchCommand"`
+	// Effective argv used to run the agent, resolved from the definition and any overrides. Not run
+	// through a shell; use ["sh", "-c", "..."] for shell semantics.
 	RunCommand []string `json:"runCommand"`
+	// Stable, URL-safe identifier used to select the agent config (e.g. codex). Unique within the
+	// project.
+	Slug string `json:"slug"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -42,6 +54,11 @@ func (s *AgentConfig) GetSchema() OptURI {
 // GetCreatedAt returns the value of CreatedAt.
 func (s *AgentConfig) GetCreatedAt() time.Time {
 	return s.CreatedAt
+}
+
+// GetDefinitionId returns the value of DefinitionId.
+func (s *AgentConfig) GetDefinitionId() OptString {
+	return s.DefinitionId
 }
 
 // GetFiles returns the value of Files.
@@ -69,9 +86,19 @@ func (s *AgentConfig) GetProjectId() string {
 	return s.ProjectId
 }
 
+// GetRelaunchCommand returns the value of RelaunchCommand.
+func (s *AgentConfig) GetRelaunchCommand() OptNilStringArray {
+	return s.RelaunchCommand
+}
+
 // GetRunCommand returns the value of RunCommand.
 func (s *AgentConfig) GetRunCommand() []string {
 	return s.RunCommand
+}
+
+// GetSlug returns the value of Slug.
+func (s *AgentConfig) GetSlug() string {
+	return s.Slug
 }
 
 // GetUpdatedAt returns the value of UpdatedAt.
@@ -87,6 +114,11 @@ func (s *AgentConfig) SetSchema(val OptURI) {
 // SetCreatedAt sets the value of CreatedAt.
 func (s *AgentConfig) SetCreatedAt(val time.Time) {
 	s.CreatedAt = val
+}
+
+// SetDefinitionId sets the value of DefinitionId.
+func (s *AgentConfig) SetDefinitionId(val OptString) {
+	s.DefinitionId = val
 }
 
 // SetFiles sets the value of Files.
@@ -114,9 +146,19 @@ func (s *AgentConfig) SetProjectId(val string) {
 	s.ProjectId = val
 }
 
+// SetRelaunchCommand sets the value of RelaunchCommand.
+func (s *AgentConfig) SetRelaunchCommand(val OptNilStringArray) {
+	s.RelaunchCommand = val
+}
+
 // SetRunCommand sets the value of RunCommand.
 func (s *AgentConfig) SetRunCommand(val []string) {
 	s.RunCommand = val
+}
+
+// SetSlug sets the value of Slug.
+func (s *AgentConfig) SetSlug(val string) {
+	s.Slug = val
 }
 
 // SetUpdatedAt sets the value of UpdatedAt.
@@ -143,6 +185,9 @@ type AgentConfigDefinition struct {
 	InstallCommand OptNilStringArray `json:"installCommand"`
 	// Agent config definition name.
 	Name string `json:"name"`
+	// Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand
+	// for non-first launches. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+	RelaunchCommand OptNilStringArray `json:"relaunchCommand"`
 	// Argv used to run the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
 	RunCommand []string `json:"runCommand"`
 }
@@ -175,6 +220,11 @@ func (s *AgentConfigDefinition) GetInstallCommand() OptNilStringArray {
 // GetName returns the value of Name.
 func (s *AgentConfigDefinition) GetName() string {
 	return s.Name
+}
+
+// GetRelaunchCommand returns the value of RelaunchCommand.
+func (s *AgentConfigDefinition) GetRelaunchCommand() OptNilStringArray {
+	return s.RelaunchCommand
 }
 
 // GetRunCommand returns the value of RunCommand.
@@ -210,6 +260,11 @@ func (s *AgentConfigDefinition) SetInstallCommand(val OptNilStringArray) {
 // SetName sets the value of Name.
 func (s *AgentConfigDefinition) SetName(val string) {
 	s.Name = val
+}
+
+// SetRelaunchCommand sets the value of RelaunchCommand.
+func (s *AgentConfigDefinition) SetRelaunchCommand(val OptNilStringArray) {
+	s.RelaunchCommand = val
 }
 
 // SetRunCommand sets the value of RunCommand.
@@ -377,6 +432,9 @@ type AgentTerminal struct {
 	ExitedAt  OptDateTime `json:"exitedAt"`
 	// Sandbox-agent-owned terminal metadata.
 	Metadata OptAgentTerminalMetadata `json:"metadata"`
+	// Whether this is the sandbox's primary terminal, launched by the sandbox-agent from the sandbox
+	// prompt. Set only by the sandbox-agent; it cannot be requested through terminal create.
+	Primary OptBool `json:"primary"`
 }
 
 // GetID returns the value of ID.
@@ -444,6 +502,11 @@ func (s *AgentTerminal) GetMetadata() OptAgentTerminalMetadata {
 	return s.Metadata
 }
 
+// GetPrimary returns the value of Primary.
+func (s *AgentTerminal) GetPrimary() OptBool {
+	return s.Primary
+}
+
 // SetID sets the value of ID.
 func (s *AgentTerminal) SetID(val string) {
 	s.ID = val
@@ -507,6 +570,11 @@ func (s *AgentTerminal) SetExitedAt(val OptDateTime) {
 // SetMetadata sets the value of Metadata.
 func (s *AgentTerminal) SetMetadata(val OptAgentTerminalMetadata) {
 	s.Metadata = val
+}
+
+// SetPrimary sets the value of Primary.
+func (s *AgentTerminal) SetPrimary(val OptBool) {
+	s.Primary = val
 }
 
 func (*AgentTerminal) startAgentTerminalRes() {}
@@ -894,19 +962,29 @@ func (*AttachSandboxExecSwitchingProtocols) attachSandboxExecRes() {}
 type CreateAgentConfigBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Agent config definition ID to use as defaults.
+	// Built-in agent definition to extend. Unset command/file fields are inherited from the definition
+	// at runtime, so definition upgrades propagate unless overridden. Omit for a fully custom config, in
+	// which case runCommand is required.
 	DefinitionId OptString `json:"definitionId"`
-	// Files to write into the agent's home directory when the agent is installed. Defaults to the
-	// definition files when definitionId is provided.
+	// Override for files to write into the agent's home directory. Unset inherits from the definition
+	// when definitionId is provided.
 	Files OptNilAgentConfigFileArray `json:"files"`
-	// Argv used to install the agent. Not run through a shell; use ["sh", "-c", "..."] for shell
-	// semantics.
+	// Override for the argv used to install the agent. Unset inherits from the definition when
+	// definitionId is provided. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
 	InstallCommand OptNilStringArray `json:"installCommand"`
 	// Agent config name. Defaults to the definition name when definitionId is provided.
 	Name OptString `json:"name"`
-	// Argv used to run the agent. Defaults to the definition run command when definitionId is provided.
-	// Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+	// Override for the argv used to resume the previous agent session on subsequent sandbox starts.
+	// Replaces runCommand for non-first launches. Unset inherits from the definition when definitionId
+	// is provided. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+	RelaunchCommand OptNilStringArray `json:"relaunchCommand"`
+	// Override for the argv used to run the agent. Unset inherits from the definition when definitionId
+	// is provided; required for a fully custom config. Not run through a shell; use ["sh", "-c", "..."]
+	// for shell semantics.
 	RunCommand OptNilStringArray `json:"runCommand"`
+	// Stable, URL-safe identifier used to select the agent config (e.g. codex). Defaults to definitionId,
+	//  or a slug derived from name. Unique within the project.
+	Slug OptString `json:"slug"`
 }
 
 // GetSchema returns the value of Schema.
@@ -934,9 +1012,19 @@ func (s *CreateAgentConfigBody) GetName() OptString {
 	return s.Name
 }
 
+// GetRelaunchCommand returns the value of RelaunchCommand.
+func (s *CreateAgentConfigBody) GetRelaunchCommand() OptNilStringArray {
+	return s.RelaunchCommand
+}
+
 // GetRunCommand returns the value of RunCommand.
 func (s *CreateAgentConfigBody) GetRunCommand() OptNilStringArray {
 	return s.RunCommand
+}
+
+// GetSlug returns the value of Slug.
+func (s *CreateAgentConfigBody) GetSlug() OptString {
+	return s.Slug
 }
 
 // SetSchema sets the value of Schema.
@@ -964,9 +1052,19 @@ func (s *CreateAgentConfigBody) SetName(val OptString) {
 	s.Name = val
 }
 
+// SetRelaunchCommand sets the value of RelaunchCommand.
+func (s *CreateAgentConfigBody) SetRelaunchCommand(val OptNilStringArray) {
+	s.RelaunchCommand = val
+}
+
 // SetRunCommand sets the value of RunCommand.
 func (s *CreateAgentConfigBody) SetRunCommand(val OptNilStringArray) {
 	s.RunCommand = val
+}
+
+// SetSlug sets the value of Slug.
+func (s *CreateAgentConfigBody) SetSlug(val OptString) {
+	s.Slug = val
 }
 
 // Ref: #/components/schemas/CreateAgentTerminalRequest
@@ -1814,6 +1912,7 @@ func (*ErrorModelStatusCode) listWorkersRes()                   {}
 func (*ErrorModelStatusCode) reconcileSandboxRes()              {}
 func (*ErrorModelStatusCode) reconcileWorkerRes()               {}
 func (*ErrorModelStatusCode) registerWorkerRes()                {}
+func (*ErrorModelStatusCode) resolveSandboxSecretRes()          {}
 func (*ErrorModelStatusCode) restartSandboxRes()                {}
 func (*ErrorModelStatusCode) setDefaultAgentConfigRes()         {}
 func (*ErrorModelStatusCode) startSandboxRes()                  {}
@@ -5511,6 +5610,164 @@ func (s *RegisterWorkerResponseBody) SetSchema(val OptURI) {
 
 func (*RegisterWorkerResponseBody) registerWorkerRes() {}
 
+// Worker request to resolve a sentinel placeholder observed by the proxy to its real secret value
+// for a destination host.
+// Ref: #/components/schemas/ResolveSandboxSecretBody
+type ResolveSandboxSecretBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Sandbox that owns the sentinel.
+	SandboxId string `json:"sandboxId"`
+	// Sentinel placeholder value observed in the request.
+	Sentinel string `json:"sentinel"`
+	// Destination host of the outbound request.
+	Host string `json:"host"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ResolveSandboxSecretBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *ResolveSandboxSecretBody) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetSentinel returns the value of Sentinel.
+func (s *ResolveSandboxSecretBody) GetSentinel() string {
+	return s.Sentinel
+}
+
+// GetHost returns the value of Host.
+func (s *ResolveSandboxSecretBody) GetHost() string {
+	return s.Host
+}
+
+// SetSchema sets the value of Schema.
+func (s *ResolveSandboxSecretBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *ResolveSandboxSecretBody) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetSentinel sets the value of Sentinel.
+func (s *ResolveSandboxSecretBody) SetSentinel(val string) {
+	s.Sentinel = val
+}
+
+// SetHost sets the value of Host.
+func (s *ResolveSandboxSecretBody) SetHost(val string) {
+	s.Host = val
+}
+
+// Result of resolving a sentinel. The value is present only when status is approved.
+// Ref: #/components/schemas/ResolveSandboxSecretResponse
+type ResolveSandboxSecretResponse struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Resolution status.
+	Status ResolveSandboxSecretResponseStatus `json:"status"`
+	// Real secret value; present only when status is approved.
+	Value OptString `json:"value"`
+	// Grant expiry time when approved.
+	ExpiresAt OptDateTime `json:"expiresAt"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ResolveSandboxSecretResponse) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetStatus returns the value of Status.
+func (s *ResolveSandboxSecretResponse) GetStatus() ResolveSandboxSecretResponseStatus {
+	return s.Status
+}
+
+// GetValue returns the value of Value.
+func (s *ResolveSandboxSecretResponse) GetValue() OptString {
+	return s.Value
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *ResolveSandboxSecretResponse) GetExpiresAt() OptDateTime {
+	return s.ExpiresAt
+}
+
+// SetSchema sets the value of Schema.
+func (s *ResolveSandboxSecretResponse) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetStatus sets the value of Status.
+func (s *ResolveSandboxSecretResponse) SetStatus(val ResolveSandboxSecretResponseStatus) {
+	s.Status = val
+}
+
+// SetValue sets the value of Value.
+func (s *ResolveSandboxSecretResponse) SetValue(val OptString) {
+	s.Value = val
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *ResolveSandboxSecretResponse) SetExpiresAt(val OptDateTime) {
+	s.ExpiresAt = val
+}
+
+func (*ResolveSandboxSecretResponse) resolveSandboxSecretRes() {}
+
+// Resolution status.
+type ResolveSandboxSecretResponseStatus string
+
+const (
+	ResolveSandboxSecretResponseStatusApproved ResolveSandboxSecretResponseStatus = "approved"
+	ResolveSandboxSecretResponseStatusPending  ResolveSandboxSecretResponseStatus = "pending"
+	ResolveSandboxSecretResponseStatusDenied   ResolveSandboxSecretResponseStatus = "denied"
+)
+
+// AllValues returns all ResolveSandboxSecretResponseStatus values.
+func (ResolveSandboxSecretResponseStatus) AllValues() []ResolveSandboxSecretResponseStatus {
+	return []ResolveSandboxSecretResponseStatus{
+		ResolveSandboxSecretResponseStatusApproved,
+		ResolveSandboxSecretResponseStatusPending,
+		ResolveSandboxSecretResponseStatusDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ResolveSandboxSecretResponseStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case ResolveSandboxSecretResponseStatusApproved:
+		return []byte(s), nil
+	case ResolveSandboxSecretResponseStatusPending:
+		return []byte(s), nil
+	case ResolveSandboxSecretResponseStatusDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ResolveSandboxSecretResponseStatus) UnmarshalText(data []byte) error {
+	switch ResolveSandboxSecretResponseStatus(data) {
+	case ResolveSandboxSecretResponseStatusApproved:
+		*s = ResolveSandboxSecretResponseStatusApproved
+		return nil
+	case ResolveSandboxSecretResponseStatusPending:
+		*s = ResolveSandboxSecretResponseStatusPending
+		return nil
+	case ResolveSandboxSecretResponseStatusDenied:
+		*s = ResolveSandboxSecretResponseStatusDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/ResourceHistoryResponse
 type ResourceHistoryResponse struct {
 	Snapshots []ResourceSnapshot `json:"snapshots"`
@@ -5788,8 +6045,8 @@ type SandboxConfig struct {
 	MemoryBytes int64 `json:"memoryBytes"`
 	// Sandbox name.
 	Name string `json:"name"`
-	// Prompt the agent should run.
-	Prompt OptString `json:"prompt"`
+	// Prompt the agent should run, passed as argv to preserve the caller's exact tokens.
+	Prompt []string `json:"prompt"`
 	// Primary Git source to materialize in the sandbox.
 	Source OptGitSource `json:"source"`
 	// Additional Git sources to materialize in the sandbox.
@@ -5851,7 +6108,7 @@ func (s *SandboxConfig) GetName() string {
 }
 
 // GetPrompt returns the value of Prompt.
-func (s *SandboxConfig) GetPrompt() OptString {
+func (s *SandboxConfig) GetPrompt() []string {
 	return s.Prompt
 }
 
@@ -5926,7 +6183,7 @@ func (s *SandboxConfig) SetName(val string) {
 }
 
 // SetPrompt sets the value of Prompt.
-func (s *SandboxConfig) SetPrompt(val OptString) {
+func (s *SandboxConfig) SetPrompt(val []string) {
 	s.Prompt = val
 }
 
@@ -5996,8 +6253,11 @@ type SandboxCreateConfig struct {
 	MemoryBytes OptInt64 `json:"memoryBytes"`
 	// Sandbox name.
 	Name string `json:"name"`
-	// Prompt the agent should run.
-	Prompt OptString `json:"prompt"`
+	// Prompt the agent should run, passed as argv to preserve the caller's exact tokens.
+	Prompt []string `json:"prompt"`
+	// Secrets to inject into the sandbox as sentinel placeholders that the proxy resolves to real values
+	// at runtime.
+	Secrets []SandboxSecretInput `json:"secrets"`
 	// Primary Git source to materialize in the sandbox.
 	Source OptGitSource `json:"source"`
 	// Additional Git sources to materialize in the sandbox.
@@ -6059,8 +6319,13 @@ func (s *SandboxCreateConfig) GetName() string {
 }
 
 // GetPrompt returns the value of Prompt.
-func (s *SandboxCreateConfig) GetPrompt() OptString {
+func (s *SandboxCreateConfig) GetPrompt() []string {
 	return s.Prompt
+}
+
+// GetSecrets returns the value of Secrets.
+func (s *SandboxCreateConfig) GetSecrets() []SandboxSecretInput {
+	return s.Secrets
 }
 
 // GetSource returns the value of Source.
@@ -6134,8 +6399,13 @@ func (s *SandboxCreateConfig) SetName(val string) {
 }
 
 // SetPrompt sets the value of Prompt.
-func (s *SandboxCreateConfig) SetPrompt(val OptString) {
+func (s *SandboxCreateConfig) SetPrompt(val []string) {
 	s.Prompt = val
+}
+
+// SetSecrets sets the value of Secrets.
+func (s *SandboxCreateConfig) SetSecrets(val []SandboxSecretInput) {
+	s.Secrets = val
 }
 
 // SetSource sets the value of Source.
@@ -7378,6 +7648,60 @@ func (s *SandboxRuntimePhase) UnmarshalText(data []byte) error {
 	}
 }
 
+// Binds an environment variable to a secret injected into the sandbox as a sentinel placeholder.
+// Provide exactly one of secretId or value.
+// Ref: #/components/schemas/SandboxSecretInput
+type SandboxSecretInput struct {
+	// Environment variable name to inject with the secret's sentinel placeholder value.
+	Env string `json:"env"`
+	// Optional host binding hint used when creating an anonymous secret from an inline value.
+	Host OptString `json:"host"`
+	// ID of an existing project secret to assign.
+	SecretId OptString `json:"secretId"`
+	// Inline secret value. A project-managed anonymous secret is created from it.
+	Value OptString `json:"value"`
+}
+
+// GetEnv returns the value of Env.
+func (s *SandboxSecretInput) GetEnv() string {
+	return s.Env
+}
+
+// GetHost returns the value of Host.
+func (s *SandboxSecretInput) GetHost() OptString {
+	return s.Host
+}
+
+// GetSecretId returns the value of SecretId.
+func (s *SandboxSecretInput) GetSecretId() OptString {
+	return s.SecretId
+}
+
+// GetValue returns the value of Value.
+func (s *SandboxSecretInput) GetValue() OptString {
+	return s.Value
+}
+
+// SetEnv sets the value of Env.
+func (s *SandboxSecretInput) SetEnv(val string) {
+	s.Env = val
+}
+
+// SetHost sets the value of Host.
+func (s *SandboxSecretInput) SetHost(val OptString) {
+	s.Host = val
+}
+
+// SetSecretId sets the value of SecretId.
+func (s *SandboxSecretInput) SetSecretId(val OptString) {
+	s.SecretId = val
+}
+
+// SetValue sets the value of Value.
+func (s *SandboxSecretInput) SetValue(val OptString) {
+	s.Value = val
+}
+
 // Ref: #/components/schemas/SandboxUpdateConfig
 type SandboxUpdateConfig struct {
 	// Sandbox name.
@@ -7450,12 +7774,16 @@ func (s *SandboxUser) SetUID(val OptInt64) {
 type Secret struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// Sandbox-managed secret created from an inline value; referenced only by ID.
+	Anonymous OptBool `json:"anonymous"`
 	// Automatically approve requests for this secret.
 	AutoApprove bool `json:"autoApprove"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
 	// Default grant duration in seconds.
 	DefaultGrantTTLSeconds int64 `json:"defaultGrantTTLSeconds"`
+	// Generative format template describing the credential shape; used to mint sentinel placeholders.
+	Format OptString `json:"format"`
 	// Optional host used to match requests (e.g. github.com).
 	Host OptString `json:"host"`
 	// Stable secret ID.
@@ -7475,6 +7803,11 @@ func (s *Secret) GetSchema() OptURI {
 	return s.Schema
 }
 
+// GetAnonymous returns the value of Anonymous.
+func (s *Secret) GetAnonymous() OptBool {
+	return s.Anonymous
+}
+
 // GetAutoApprove returns the value of AutoApprove.
 func (s *Secret) GetAutoApprove() bool {
 	return s.AutoApprove
@@ -7488,6 +7821,11 @@ func (s *Secret) GetCreatedAt() time.Time {
 // GetDefaultGrantTTLSeconds returns the value of DefaultGrantTTLSeconds.
 func (s *Secret) GetDefaultGrantTTLSeconds() int64 {
 	return s.DefaultGrantTTLSeconds
+}
+
+// GetFormat returns the value of Format.
+func (s *Secret) GetFormat() OptString {
+	return s.Format
 }
 
 // GetHost returns the value of Host.
@@ -7525,6 +7863,11 @@ func (s *Secret) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
+// SetAnonymous sets the value of Anonymous.
+func (s *Secret) SetAnonymous(val OptBool) {
+	s.Anonymous = val
+}
+
 // SetAutoApprove sets the value of AutoApprove.
 func (s *Secret) SetAutoApprove(val bool) {
 	s.AutoApprove = val
@@ -7538,6 +7881,11 @@ func (s *Secret) SetCreatedAt(val time.Time) {
 // SetDefaultGrantTTLSeconds sets the value of DefaultGrantTTLSeconds.
 func (s *Secret) SetDefaultGrantTTLSeconds(val int64) {
 	s.DefaultGrantTTLSeconds = val
+}
+
+// SetFormat sets the value of Format.
+func (s *Secret) SetFormat(val OptString) {
+	s.Format = val
 }
 
 // SetHost sets the value of Host.
@@ -8044,6 +8392,9 @@ type UpdateAgentConfigBody struct {
 	InstallCommand OptNilStringArray `json:"installCommand"`
 	// Agent config name.
 	Name OptString `json:"name"`
+	// Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand
+	// for non-first launches. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+	RelaunchCommand OptNilStringArray `json:"relaunchCommand"`
 	// Argv used to run the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
 	RunCommand OptNilStringArray `json:"runCommand"`
 }
@@ -8066,6 +8417,11 @@ func (s *UpdateAgentConfigBody) GetInstallCommand() OptNilStringArray {
 // GetName returns the value of Name.
 func (s *UpdateAgentConfigBody) GetName() OptString {
 	return s.Name
+}
+
+// GetRelaunchCommand returns the value of RelaunchCommand.
+func (s *UpdateAgentConfigBody) GetRelaunchCommand() OptNilStringArray {
+	return s.RelaunchCommand
 }
 
 // GetRunCommand returns the value of RunCommand.
@@ -8091,6 +8447,11 @@ func (s *UpdateAgentConfigBody) SetInstallCommand(val OptNilStringArray) {
 // SetName sets the value of Name.
 func (s *UpdateAgentConfigBody) SetName(val OptString) {
 	s.Name = val
+}
+
+// SetRelaunchCommand sets the value of RelaunchCommand.
+func (s *UpdateAgentConfigBody) SetRelaunchCommand(val OptNilStringArray) {
+	s.RelaunchCommand = val
 }
 
 // SetRunCommand sets the value of RunCommand.

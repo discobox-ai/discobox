@@ -17,6 +17,7 @@ type CreateSecretRequestBody = apimodel.CreateSecretRequestBody
 type UpdateAgentConfigBody = apimodel.UpdateAgentConfigBody
 type UpdateSecretBody = apimodel.UpdateSecretBody
 type CreateSandboxBody = apimodel.CreateSandboxBody
+type SandboxSecretInput = apimodel.SandboxSecretInput
 type UpdateSandboxBody = apimodel.UpdateSandboxBody
 type StartSandboxBody = apimodel.StartSandboxBody
 type StopSandboxBody = apimodel.StopSandboxBody
@@ -106,6 +107,8 @@ type SecretService interface {
 	GetSecretRequest(ctx context.Context, projectID, requestID string) (*model.SecretRequest, error)
 	ApproveSecretRequest(ctx context.Context, projectID, requestID string, input ApproveSecretRequestBody) (*model.SecretRequest, error)
 	DenySecretRequest(ctx context.Context, projectID, requestID string) error
+
+	ResolveSandboxSecret(ctx context.Context, workerID, sandboxID, sentinel, host string) (*model.SecretRequest, error)
 }
 
 // ProjectEventService provides project-scoped resource snapshots and live subscription.

@@ -17,9 +17,9 @@ func (s *ErrorModelStatusCode) Error() string {
 
 // Ref: #/components/schemas/AgentConfigFile
 type AgentConfigFile struct {
-	Content    string `json:"content"`
-	CreateOnly bool   `json:"createOnly"`
-	Path       string `json:"path"`
+	Content    string  `json:"content"`
+	Path       string  `json:"path"`
+	CreateOnly OptBool `json:"createOnly"`
 }
 
 // GetContent returns the value of Content.
@@ -27,14 +27,14 @@ func (s *AgentConfigFile) GetContent() string {
 	return s.Content
 }
 
-// GetCreateOnly returns the value of CreateOnly.
-func (s *AgentConfigFile) GetCreateOnly() bool {
-	return s.CreateOnly
-}
-
 // GetPath returns the value of Path.
 func (s *AgentConfigFile) GetPath() string {
 	return s.Path
+}
+
+// GetCreateOnly returns the value of CreateOnly.
+func (s *AgentConfigFile) GetCreateOnly() OptBool {
+	return s.CreateOnly
 }
 
 // SetContent sets the value of Content.
@@ -42,14 +42,14 @@ func (s *AgentConfigFile) SetContent(val string) {
 	s.Content = val
 }
 
-// SetCreateOnly sets the value of CreateOnly.
-func (s *AgentConfigFile) SetCreateOnly(val bool) {
-	s.CreateOnly = val
-}
-
 // SetPath sets the value of Path.
 func (s *AgentConfigFile) SetPath(val string) {
 	s.Path = val
+}
+
+// SetCreateOnly sets the value of CreateOnly.
+func (s *AgentConfigFile) SetCreateOnly(val OptBool) {
+	s.CreateOnly = val
 }
 
 // Ref: #/components/schemas/ErrorDetail
@@ -1545,11 +1545,12 @@ func (o OptWorkerSandboxResources) Or(d WorkerSandboxResources) WorkerSandboxRes
 
 // Ref: #/components/schemas/ResolvedAgentConfig
 type ResolvedAgentConfig struct {
-	Files          OptNilAgentConfigFileArray `json:"files"`
-	ID             string                     `json:"id"`
-	InstallCommand OptNilStringArray          `json:"installCommand"`
-	Name           string                     `json:"name"`
-	RunCommand     []string                   `json:"runCommand"`
+	Files           OptNilAgentConfigFileArray `json:"files"`
+	ID              string                     `json:"id"`
+	InstallCommand  OptNilStringArray          `json:"installCommand"`
+	Name            string                     `json:"name"`
+	RelaunchCommand OptNilStringArray          `json:"relaunchCommand"`
+	RunCommand      []string                   `json:"runCommand"`
 }
 
 // GetFiles returns the value of Files.
@@ -1570,6 +1571,11 @@ func (s *ResolvedAgentConfig) GetInstallCommand() OptNilStringArray {
 // GetName returns the value of Name.
 func (s *ResolvedAgentConfig) GetName() string {
 	return s.Name
+}
+
+// GetRelaunchCommand returns the value of RelaunchCommand.
+func (s *ResolvedAgentConfig) GetRelaunchCommand() OptNilStringArray {
+	return s.RelaunchCommand
 }
 
 // GetRunCommand returns the value of RunCommand.
@@ -1597,6 +1603,11 @@ func (s *ResolvedAgentConfig) SetName(val string) {
 	s.Name = val
 }
 
+// SetRelaunchCommand sets the value of RelaunchCommand.
+func (s *ResolvedAgentConfig) SetRelaunchCommand(val OptNilStringArray) {
+	s.RelaunchCommand = val
+}
+
 // SetRunCommand sets the value of RunCommand.
 func (s *ResolvedAgentConfig) SetRunCommand(val []string) {
 	s.RunCommand = val
@@ -1604,12 +1615,13 @@ func (s *ResolvedAgentConfig) SetRunCommand(val []string) {
 
 // Ref: #/components/schemas/SandboxAgentConfig
 type SandboxAgentConfig struct {
-	Files          OptNilAgentConfigFileArray `json:"files"`
-	ID             string                     `json:"id"`
-	InstallCommand OptNilStringArray          `json:"installCommand"`
-	IsDefault      bool                       `json:"isDefault"`
-	Name           string                     `json:"name"`
-	RunCommand     []string                   `json:"runCommand"`
+	Files           OptNilAgentConfigFileArray `json:"files"`
+	ID              string                     `json:"id"`
+	InstallCommand  OptNilStringArray          `json:"installCommand"`
+	IsDefault       bool                       `json:"isDefault"`
+	Name            string                     `json:"name"`
+	RelaunchCommand OptNilStringArray          `json:"relaunchCommand"`
+	RunCommand      []string                   `json:"runCommand"`
 }
 
 // GetFiles returns the value of Files.
@@ -1635,6 +1647,11 @@ func (s *SandboxAgentConfig) GetIsDefault() bool {
 // GetName returns the value of Name.
 func (s *SandboxAgentConfig) GetName() string {
 	return s.Name
+}
+
+// GetRelaunchCommand returns the value of RelaunchCommand.
+func (s *SandboxAgentConfig) GetRelaunchCommand() OptNilStringArray {
+	return s.RelaunchCommand
 }
 
 // GetRunCommand returns the value of RunCommand.
@@ -1667,6 +1684,11 @@ func (s *SandboxAgentConfig) SetName(val string) {
 	s.Name = val
 }
 
+// SetRelaunchCommand sets the value of RelaunchCommand.
+func (s *SandboxAgentConfig) SetRelaunchCommand(val OptNilStringArray) {
+	s.RelaunchCommand = val
+}
+
 // SetRunCommand sets the value of RunCommand.
 func (s *SandboxAgentConfig) SetRunCommand(val []string) {
 	s.RunCommand = val
@@ -1684,7 +1706,7 @@ type SandboxConfig struct {
 	Image                    OptString                            `json:"image"`
 	MemoryBytes              OptInt64                             `json:"memoryBytes"`
 	Name                     OptString                            `json:"name"`
-	Prompt                   OptString                            `json:"prompt"`
+	Prompt                   []string                             `json:"prompt"`
 	Source                   OptGitSource                         `json:"source"`
 	SourceCodeReferences     OptSandboxConfigSourceCodeReferences `json:"sourceCodeReferences"`
 	StorageBytes             OptInt64                             `json:"storageBytes"`
@@ -1742,7 +1764,7 @@ func (s *SandboxConfig) GetName() OptString {
 }
 
 // GetPrompt returns the value of Prompt.
-func (s *SandboxConfig) GetPrompt() OptString {
+func (s *SandboxConfig) GetPrompt() []string {
 	return s.Prompt
 }
 
@@ -1817,7 +1839,7 @@ func (s *SandboxConfig) SetName(val OptString) {
 }
 
 // SetPrompt sets the value of Prompt.
-func (s *SandboxConfig) SetPrompt(val OptString) {
+func (s *SandboxConfig) SetPrompt(val []string) {
 	s.Prompt = val
 }
 
@@ -2029,6 +2051,9 @@ type WorkerSandboxCreateRequest struct {
 	ResolvedAgentConfig OptResolvedAgentConfig        `json:"resolvedAgentConfig"`
 	Resources           OptWorkerSandboxResources     `json:"resources"`
 	SandboxId           string                        `json:"sandboxId"`
+	// Sentinel placeholder values injected into this sandbox. The worker registers them with the proxy
+	// so their real secret values are swapped at runtime.
+	Sentinels OptNilStringArray `json:"sentinels"`
 }
 
 // GetSchema returns the value of Schema.
@@ -2061,6 +2086,11 @@ func (s *WorkerSandboxCreateRequest) GetSandboxId() string {
 	return s.SandboxId
 }
 
+// GetSentinels returns the value of Sentinels.
+func (s *WorkerSandboxCreateRequest) GetSentinels() OptNilStringArray {
+	return s.Sentinels
+}
+
 // SetSchema sets the value of Schema.
 func (s *WorkerSandboxCreateRequest) SetSchema(val OptURI) {
 	s.Schema = val
@@ -2089,6 +2119,11 @@ func (s *WorkerSandboxCreateRequest) SetResources(val OptWorkerSandboxResources)
 // SetSandboxId sets the value of SandboxId.
 func (s *WorkerSandboxCreateRequest) SetSandboxId(val string) {
 	s.SandboxId = val
+}
+
+// SetSentinels sets the value of Sentinels.
+func (s *WorkerSandboxCreateRequest) SetSentinels(val OptNilStringArray) {
+	s.Sentinels = val
 }
 
 // Ref: #/components/schemas/WorkerSandboxInstance

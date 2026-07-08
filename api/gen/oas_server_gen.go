@@ -295,6 +295,12 @@ type Handler interface {
 	//
 	// POST /api/workers/register
 	RegisterWorker(ctx context.Context, req *RegisterWorkerBody) (RegisterWorkerRes, error)
+	// ResolveSandboxSecret implements resolve-sandbox-secret operation.
+	//
+	// Resolve a sandbox sentinel secret.
+	//
+	// POST /api/workers/{workerId}/resolve-sandbox-secret
+	ResolveSandboxSecret(ctx context.Context, req *ResolveSandboxSecretBody, params ResolveSandboxSecretParams) (ResolveSandboxSecretRes, error)
 	// RestartSandbox implements restart-sandbox operation.
 	//
 	// Restart a sandbox.

@@ -105,6 +105,10 @@ func (fakeSecretService) DenySecretRequest(context.Context, string, string) erro
 	return nil
 }
 
+func (fakeSecretService) ResolveSandboxSecret(context.Context, string, string, string, string) (*model.SecretRequest, error) {
+	return &model.SecretRequest{Status: model.SecretRequestStatusPending}, nil
+}
+
 func fakeSecret() model.Secret {
 	now := time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC)
 	return model.Secret{

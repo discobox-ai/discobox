@@ -75,6 +75,24 @@ func (s *AgentConfig) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.RelaunchCommand.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "relaunchCommand",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if s.RunCommand == nil {
 			return errors.New("nil is invalid value")
 		}
@@ -82,6 +100,29 @@ func (s *AgentConfig) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "runCommand",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := (validate.String{
+			MinLength:     0,
+			MinLengthSet:  false,
+			MaxLength:     0,
+			MaxLengthSet:  false,
+			Email:         false,
+			Hostname:      false,
+			Regex:         regexMap["^[a-z0-9][a-z0-9-]*$"],
+			MinNumeric:    0,
+			MinNumericSet: false,
+			MaxNumeric:    0,
+			MaxNumericSet: false,
+		}).Validate(string(s.Slug)); err != nil {
+			return errors.Wrap(err, "string")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "slug",
 			Error: err,
 		})
 	}
@@ -153,6 +194,24 @@ func (s *AgentConfigDefinition) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "name",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.RelaunchCommand.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "relaunchCommand",
 			Error: err,
 		})
 	}
@@ -457,6 +516,24 @@ func (s *CreateAgentConfigBody) Validate() error {
 		})
 	}
 	if err := func() error {
+		if value, ok := s.RelaunchCommand.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "relaunchCommand",
+			Error: err,
+		})
+	}
+	if err := func() error {
 		if value, ok := s.RunCommand.Get(); ok {
 			if err := func() error {
 				if value == nil {
@@ -471,6 +548,36 @@ func (s *CreateAgentConfigBody) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "runCommand",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Slug.Get(); ok {
+			if err := func() error {
+				if err := (validate.String{
+					MinLength:     0,
+					MinLengthSet:  false,
+					MaxLength:     0,
+					MaxLengthSet:  false,
+					Email:         false,
+					Hostname:      false,
+					Regex:         regexMap["^[a-z0-9][a-z0-9-]*$"],
+					MinNumeric:    0,
+					MinNumericSet: false,
+					MaxNumeric:    0,
+					MaxNumericSet: false,
+				}).Validate(string(value)); err != nil {
+					return errors.Wrap(err, "string")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "slug",
 			Error: err,
 		})
 	}
@@ -1643,6 +1750,42 @@ func (s *ProviderWorkerStatus) Validate() error {
 	return nil
 }
 
+func (s *ResolveSandboxSecretResponse) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := s.Status.Validate(); err != nil {
+			return err
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "status",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s ResolveSandboxSecretResponseStatus) Validate() error {
+	switch s {
+	case "approved":
+		return nil
+	case "pending":
+		return nil
+	case "denied":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *ResourceHistoryResponse) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -2678,6 +2821,24 @@ func (s *UpdateAgentConfigBody) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "name",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.RelaunchCommand.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "relaunchCommand",
 			Error: err,
 		})
 	}

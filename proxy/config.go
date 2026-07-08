@@ -22,6 +22,24 @@ type Config struct {
 	Recording     RecordingConfig
 	Allowlist     AllowlistConfig
 	Headers       []HeaderRule
+	Secrets       SecretsConfig
+}
+
+// SecretsConfig controls runtime sentinel secret swapping. The real values are
+// resolved on demand through an injected resolver; this config carries only the
+// non-secret sentinel strings and swap tuning.
+type SecretsConfig struct {
+	ScanQuery          bool
+	PositiveTTLSeconds int64
+	NegativeTTLSeconds int64
+	Clients            []SecretClient
+}
+
+// SecretClient binds a client (sandbox) ID to the sentinel strings whose values
+// the proxy swaps in that client's requests.
+type SecretClient struct {
+	ClientID  string
+	Sentinels []string
 }
 
 // ControlConfig controls the optional read-only control API.
@@ -149,6 +167,26 @@ func (c Config) Validate() error {
 	for _, rule := range c.Headers {
 		if err := validateHeaderRule(rule); err != nil {
 			return err
+		}
+	}
+	for _, client := range c.Secrets.Clients {
+		if err := validateSecretClient(client); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateSecretClient(client SecretClient) error {
+	if strings.TrimSpace(client.ClientID) == "" {
+		return errors.New("secret client ID is required")
+	}
+	if len(client.Sentinels) == 0 {
+		return fmt.Errorf("secret client %q must include at least one sentinel", client.ClientID)
+	}
+	for _, sentinel := range client.Sentinels {
+		if strings.TrimSpace(sentinel) == "" {
+			return fmt.Errorf("secret client %q has empty sentinel", client.ClientID)
 		}
 	}
 	return nil

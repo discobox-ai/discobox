@@ -13,6 +13,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/auth"
 	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/obot-platform/discobox/server/internal/secretformat"
 	"github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
@@ -58,11 +59,22 @@ func (s *Service) CreateSecret(ctx context.Context, projectID string, input serv
 	if v, ok := input.Host.Get(); ok {
 		host = strings.TrimSpace(v)
 	}
+	format := ""
+	if secretType == model.SecretTypeBearer {
+		if token := strings.TrimSpace(input.Value.Token.Or("")); token != "" {
+			inferredFormat, inferredHost := secretformat.Describe(token)
+			format = inferredFormat
+			if host == "" {
+				host = inferredHost
+			}
+		}
+	}
 	sec := &model.Secret{
 		ProjectID:       projectID,
 		Name:            name,
 		Type:            secretType,
 		Host:            host,
+		Format:          format,
 		AutoApprove:     input.AutoApprove.Or(false),
 		DefaultGrantTTL: ttl,
 		EncryptedValue:  valueBytes,
@@ -108,6 +120,11 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 			return nil, apperrors.NewStatusError(http.StatusBadRequest, "invalid secret value")
 		}
 		sec.EncryptedValue = valueBytes
+		if sec.Type == model.SecretTypeBearer {
+			if token := strings.TrimSpace(valueVal.Token.Or("")); token != "" {
+				sec.Format, _ = secretformat.Describe(token)
+			}
+		}
 	}
 	if err := s.store.UpdateSecret(ctx, sec); err != nil {
 		return nil, err
@@ -254,6 +271,73 @@ func (s *Service) DenySecretRequest(ctx context.Context, projectID, requestID st
 		return err
 	}
 	return nil
+}
+
+// ResolveSandboxSecret resolves a sentinel injected into a sandbox to its secret
+// grant for a destination host. It maps the sentinel to its assignment and reuses
+// the secret-request approval flow: an auto-approved or previously-approved,
+// unexpired grant returns a request carrying the decrypted value; otherwise a
+// pending request is created (or an existing one reused) and the returned request
+// has no value, so the proxy leaves the sentinel in place until approval.
+//
+// requestedBy is scoped to the sandbox so grants and pending requests do not
+// leak across sandboxes.
+func (s *Service) ResolveSandboxSecret(ctx context.Context, workerID, sandboxID, sentinel, host string) (*model.SecretRequest, error) {
+	assignment, err := s.store.GetSandboxSecretBySentinel(ctx, sandboxID, sentinel)
+	if err != nil {
+		return nil, apiError(err, "sandbox secret not found")
+	}
+	// The calling worker must own the sandbox the sentinel belongs to.
+	sandbox, err := s.store.GetSandbox(ctx, assignment.ProjectID, assignment.SandboxID)
+	if err != nil {
+		return nil, apiError(err, "sandbox not found")
+	}
+	if sandbox.WorkerID == nil || strings.TrimSpace(*sandbox.WorkerID) != strings.TrimSpace(workerID) {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "sandbox secret not found")
+	}
+	secret, err := s.store.GetSecret(ctx, assignment.ProjectID, assignment.SecretID)
+	if err != nil {
+		return nil, apiError(err, "secret not found")
+	}
+	requestedBy := "sandbox:" + sandboxID
+	host = strings.TrimSpace(host)
+
+	existing, err := s.store.FindLatestSecretRequest(ctx, assignment.ProjectID, assignment.SecretID, host, requestedBy)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return nil, err
+	}
+	if existing != nil {
+		switch existing.Status {
+		case model.SecretRequestStatusApproved:
+			if existing.ExpiresAt == nil || time.Now().UTC().Before(*existing.ExpiresAt) {
+				return s.populateValue(ctx, existing)
+			}
+			// Grant expired; fall through to create a fresh request.
+		case model.SecretRequestStatusPending:
+			return existing, nil
+		}
+	}
+
+	req := &model.SecretRequest{
+		ProjectID:   assignment.ProjectID,
+		RequestedBy: requestedBy,
+		Type:        secret.Type,
+		Host:        host,
+		SecretID:    secret.ID,
+		Status:      model.SecretRequestStatusPending,
+	}
+	if secret.AutoApprove {
+		now := time.Now().UTC()
+		exp := now.Add(time.Duration(secret.DefaultGrantTTL) * time.Second)
+		req.Status = model.SecretRequestStatusApproved
+		req.ApprovedBy = "auto"
+		req.GrantedAt = &now
+		req.ExpiresAt = &exp
+	}
+	if err := s.store.CreateSecretRequest(ctx, req); err != nil {
+		return nil, err
+	}
+	return s.populateValue(ctx, req)
 }
 
 // populateValue decrypts and attaches the secret value when the request is

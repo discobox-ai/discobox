@@ -17,20 +17,44 @@ const (
 	KeyType   = "ed25519"
 	TokenTTL  = 5 * time.Minute
 	ClockSkew = 5 * time.Minute
+
+	// ScopeSecretResolve authorizes sentinel secret resolution. It is carried by
+	// the long-lived token the worker mints for the isolated proxy unit.
+	ScopeSecretResolve = "secret:resolve"
 )
 
 type Claims struct {
 	ProjectID string
 	WorkerID  string
 	ID        string
+	Scopes    []string
+}
+
+// HasScope reports whether the claims include scope.
+func (c Claims) HasScope(scope string) bool {
+	for _, s := range c.Scopes {
+		if s == scope {
+			return true
+		}
+	}
+	return false
 }
 
 func CreateToken(privateKey ed25519.PrivateKey, claims Claims) (string, error) {
+	return CreateTokenWithTTL(privateKey, claims, TokenTTL)
+}
+
+// CreateTokenWithTTL signs a worker assertion with an explicit lifetime. It is
+// used for the longer-lived scoped resolve token distributed to the proxy unit.
+func CreateTokenWithTTL(privateKey ed25519.PrivateKey, claims Claims, ttl time.Duration) (string, error) {
 	if len(privateKey) != ed25519.PrivateKeySize {
 		return "", fmt.Errorf("worker private key length = %d, want %d", len(privateKey), ed25519.PrivateKeySize)
 	}
 	if claims.ProjectID == "" || claims.WorkerID == "" {
 		return "", errors.New("project_id and worker_id claims are required")
+	}
+	if ttl <= 0 {
+		ttl = TokenTTL
 	}
 	jti := claims.ID
 	if jti == "" {
@@ -45,10 +69,15 @@ func CreateToken(privateKey ed25519.PrivateKey, claims Claims) (string, error) {
 	token.SetAudience(Audience)
 	token.SetIssuedAt(now)
 	token.SetNotBefore(now.Add(-ClockSkew))
-	token.SetExpiration(now.Add(TokenTTL))
+	token.SetExpiration(now.Add(ttl))
 	token.SetJti(jti)
 	token.SetString("project_id", claims.ProjectID)
 	token.SetString("worker_id", claims.WorkerID)
+	if len(claims.Scopes) > 0 {
+		if err := token.Set("scopes", claims.Scopes); err != nil {
+			return "", fmt.Errorf("set worker assertion scopes: %w", err)
+		}
+	}
 
 	secretKey, err := paseto.NewV4AsymmetricSecretKeyFromEd25519(privateKey)
 	if err != nil {
@@ -77,7 +106,9 @@ func VerifyToken(publicKeyText, tokenText string) (Claims, error) {
 		return Claims{}, fmt.Errorf("read worker_id claim: %w", err)
 	}
 	jti, _ := token.GetJti()
-	return Claims{ProjectID: projectID, WorkerID: workerID, ID: jti}, nil
+	var scopes []string
+	_ = token.Get("scopes", &scopes)
+	return Claims{ProjectID: projectID, WorkerID: workerID, ID: jti, Scopes: scopes}, nil
 }
 
 func EncodePublicKey(publicKey ed25519.PublicKey) (string, error) {

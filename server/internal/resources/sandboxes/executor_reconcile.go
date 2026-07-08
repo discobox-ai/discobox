@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/orchestration"
+	"github.com/obot-platform/discobox/server/internal/agentdefs"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/store"
@@ -203,6 +204,12 @@ func (r *SandboxReconcileExecutor) delete(ctx context.Context, sandbox *model.Sa
 		if updateErr := r.update(ctx, sandbox, generation); updateErr != nil {
 			return updateErr
 		}
+		return err
+	}
+	// Garbage-collect the sandbox's secret assignments and anonymous secrets now
+	// that the delete is finalized; the sandbox row itself is retained with phase
+	// deleted, so store.DeleteSandbox is not on this path.
+	if err := r.store.PurgeSandboxSecrets(ctx, sandbox.ProjectID, sandbox.ID); err != nil {
 		return err
 	}
 	sandbox.ObservedGeneration = generation
@@ -440,6 +447,13 @@ func (r *SandboxReconcileExecutor) createOptionsFromSandbox(ctx context.Context,
 			opts.Env[key] = value
 		}
 	}
+	if r.store != nil {
+		if assignments, err := r.store.ListSandboxSecrets(ctx, sb.ProjectID, sb.ID); err == nil {
+			for _, assignment := range assignments {
+				opts.Sentinels = append(opts.Sentinels, assignment.Sentinel)
+			}
+		}
+	}
 	opts.CPUVCPUs = sb.CPUVCPUs
 	opts.MemoryBytes = sb.MemoryBytes
 	opts.StorageBytes = sb.StorageBytes
@@ -451,12 +465,16 @@ func (r *SandboxReconcileExecutor) createOptionsFromSandbox(ctx context.Context,
 	opts.HomeDirectory = sb.HomeDirectory
 	if sb.AgentConfigID != nil && r.store != nil {
 		if cfg, err := r.store.GetAgentConfig(ctx, sb.ProjectID, *sb.AgentConfigID); err == nil {
+			// Resolve the sparse config against its built-in definition so the
+			// sandbox runs the effective (upgrade-propagated) commands and files.
+			cfg = agentdefs.Resolve(cfg)
 			opts.ResolvedAgentConfig = &ResolvedAgentConfig{
-				ID:             cfg.ID,
-				Name:           cfg.Name,
-				InstallCommand: cfg.InstallCommand,
-				RunCommand:     cfg.RunCommand,
-				Files:          cfg.Files,
+				ID:              cfg.ID,
+				Name:            cfg.Name,
+				InstallCommand:  cfg.InstallCommand,
+				RunCommand:      cfg.RunCommand,
+				RelaunchCommand: cfg.RelaunchCommand,
+				Files:           cfg.Files,
 			}
 		}
 	}
@@ -467,14 +485,16 @@ func (r *SandboxReconcileExecutor) createOptionsFromSandbox(ctx context.Context,
 			if sb.Project != nil {
 				defaultAgentConfigID = sb.Project.DefaultAgentConfigID
 			}
-			for _, cfg := range configs {
+			for i := range configs {
+				cfg := agentdefs.Resolve(&configs[i])
 				opts.AgentConfigs = append(opts.AgentConfigs, AgentConfig{
-					ID:             cfg.ID,
-					Name:           cfg.Name,
-					InstallCommand: cfg.InstallCommand,
-					RunCommand:     cfg.RunCommand,
-					IsDefault:      cfg.ID == defaultAgentConfigID,
-					Files:          cfg.Files,
+					ID:              cfg.ID,
+					Name:            cfg.Name,
+					InstallCommand:  cfg.InstallCommand,
+					RunCommand:      cfg.RunCommand,
+					RelaunchCommand: cfg.RelaunchCommand,
+					IsDefault:       cfg.ID == defaultAgentConfigID,
+					Files:           cfg.Files,
 				})
 			}
 		}

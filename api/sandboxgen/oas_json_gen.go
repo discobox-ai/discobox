@@ -364,6 +364,12 @@ func (s *AgentTerminal) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Primary.Set {
+			e.FieldStart("primary")
+			s.Primary.Encode(e)
+		}
+	}
+	{
 		if s.StartedAt.Set {
 			e.FieldStart("startedAt")
 			s.StartedAt.Encode(e, json.EncodeDateTime)
@@ -385,7 +391,7 @@ func (s *AgentTerminal) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfAgentTerminal = [13]string{
+var jsonFieldsNameOfAgentTerminal = [14]string{
 	0:  "agentId",
 	1:  "command",
 	2:  "createdAt",
@@ -395,10 +401,11 @@ var jsonFieldsNameOfAgentTerminal = [13]string{
 	6:  "id",
 	7:  "metadata",
 	8:  "pid",
-	9:  "startedAt",
-	10: "status",
-	11: "unit",
-	12: "workdir",
+	9:  "primary",
+	10: "startedAt",
+	11: "status",
+	12: "unit",
+	13: "workdir",
 }
 
 // Decode decodes AgentTerminal from json.
@@ -514,6 +521,16 @@ func (s *AgentTerminal) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"pid\"")
 			}
+		case "primary":
+			if err := func() error {
+				s.Primary.Reset()
+				if err := s.Primary.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"primary\"")
+			}
 		case "startedAt":
 			if err := func() error {
 				s.StartedAt.Reset()
@@ -525,7 +542,7 @@ func (s *AgentTerminal) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"startedAt\"")
 			}
 		case "status":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				if err := s.Status.Decode(d); err != nil {
 					return err
@@ -545,7 +562,7 @@ func (s *AgentTerminal) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"unit\"")
 			}
 		case "workdir":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.Workdir = string(v)
@@ -567,7 +584,7 @@ func (s *AgentTerminal) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b01000110,
-		0b00010100,
+		0b00101000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

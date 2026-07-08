@@ -917,3 +917,126 @@ func dialProxyMTLS(ctx context.Context, t *testing.T, addr string, material Clie
 	}
 	return conn
 }
+
+func TestHTTPProxySecretSwapOverMITM(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	const sentinel = "sk-proj-SENTINEL0000000000000000000000000000000000"
+	const realValue = "sk-proj-REALVALUE1111111111111111111111111111111111"
+
+	var sawAuth string
+	origin := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sawAuth = r.Header.Get("Authorization")
+		_, _ = io.WriteString(w, "ok")
+	}))
+	origin.EnableHTTP2 = false
+	origin.StartTLS()
+	defer origin.Close()
+	originURL, err := url.Parse(origin.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	originHost := originURL.Hostname()
+
+	dir := t.TempDir()
+	prepared, err := PrepareCertificates(PrepareOptions{
+		Dir:         filepath.Join(dir, "certs"),
+		ProxyURL:    "https://127.0.0.1:0",
+		ServerHosts: []string{"127.0.0.1", "localhost"},
+		ClientIDs:   []string{"sandbox-1"},
+	})
+	if err != nil {
+		t.Fatalf("PrepareCertificates() error = %v", err)
+	}
+	server, err := NewServer(ctx, Config{
+		ListenAddress: "127.0.0.1:0",
+		CertDir:       prepared.Bundle.Dir,
+		DatabaseDSN:   filepath.Join(dir, "audit.db"),
+		Recording:     RecordingConfig{Enabled: true, QueueSize: 16},
+		Secrets: SecretsConfig{
+			Clients: []SecretClient{{ClientID: "sandbox-1", Sentinels: []string{sentinel}}},
+		},
+	}, prepared.Bundle, stubResolver{value: realValue, host: originHost})
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	// The self-signed test origin would be rejected by the proxy's verifying
+	// upstream transport; trust it so the round-trip completes and the swap is
+	// observable at the origin and in the audit trail.
+	server.http.proxy.Tr = &http.Transport{TLSClientConfig: &tls.Config{InsecureSkipVerify: true}} //nolint:gosec // test origin is self-signed
+	errCh := make(chan error, 1)
+	go func() { errCh <- server.ListenAndServe() }()
+	var closeOnce sync.Once
+	closeServer := func() { closeOnce.Do(func() { _ = server.Close(); <-errCh }) }
+	t.Cleanup(closeServer)
+	addr := waitForAddr(t, server)
+
+	// Client trusts both the mTLS CA (proxy) and the MITM CA (intercepted origin),
+	// and presents the sandbox client certificate.
+	material := prepared.Clients["sandbox-1"]
+	clientCert, err := tls.LoadX509KeyPair(material.ClientCertPath, material.ClientKeyPath)
+	if err != nil {
+		t.Fatalf("load client cert: %v", err)
+	}
+	pool := x509.NewCertPool()
+	for _, p := range []string{material.MTLSCAPath, material.MITMCAPath} {
+		pem, err := os.ReadFile(p)
+		if err != nil {
+			t.Fatalf("read CA %s: %v", p, err)
+		}
+		if !pool.AppendCertsFromPEM(pem) {
+			t.Fatalf("parse CA %s", p)
+		}
+	}
+	proxyURL, _ := url.Parse("https://" + addr.String())
+	client := &http.Client{Transport: &http.Transport{
+		Proxy: http.ProxyURL(proxyURL),
+		TLSClientConfig: &tls.Config{
+			RootCAs:      pool,
+			Certificates: []tls.Certificate{clientCert},
+			MinVersion:   tls.VersionTLS12,
+			NextProtos:   []string{"http/1.1"},
+		},
+	}}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, origin.URL, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+sentinel)
+	// The swap runs in the request handler before the upstream send, so it is
+	// verified through the audit trail even if goproxy's verifying MITM transport
+	// rejects the self-signed test origin. If the request does complete, the
+	// origin must have received the swapped real value.
+	if resp, doErr := client.Do(req); doErr == nil {
+		_ = resp.Body.Close()
+		if sawAuth != "Bearer "+realValue {
+			t.Fatalf("origin saw %q, want swapped real value", sawAuth)
+		}
+	}
+
+	closeServer()
+
+	pools, err := gormdb.Open(gormdb.Config{DSN: filepath.Join(dir, "audit.db")})
+	if err != nil {
+		t.Fatalf("open audit db: %v", err)
+	}
+	var exchange audit.HTTPExchange
+	if err := pools.Read.Where("method = ?", http.MethodGet).Order("id DESC").First(&exchange).Error; err != nil {
+		t.Fatalf("read audit exchange for MITM'd request: %v", err)
+	}
+	if exchange.ClientID != "sandbox-1" {
+		t.Fatalf("MITM'd request client_id = %q, want sandbox-1 (identity must reach MITM'd requests)", exchange.ClientID)
+	}
+	var headers map[string][]string
+	if err := json.Unmarshal([]byte(exchange.RequestHeaders), &headers); err != nil {
+		t.Fatalf("unmarshal request headers: %v", err)
+	}
+	if v := headers["Authorization"]; len(v) != 1 || v[0] != "[REDACTED]" {
+		t.Fatalf("Authorization audit = %#v, want [REDACTED] (swap engaged)", v)
+	}
+	if strings.Contains(exchange.RequestHeaders, sentinel) || strings.Contains(exchange.RequestHeaders, realValue) {
+		t.Fatalf("audit leaked secret material: %s", exchange.RequestHeaders)
+	}
+}

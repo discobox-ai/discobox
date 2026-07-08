@@ -13,8 +13,11 @@ components:
                     description: Creation timestamp
                     format: date-time
                     type: string
+                definitionId:
+                    description: Built-in agent definition this config extends. Unset fields are inherited from the definition at runtime, so definition upgrades propagate unless overridden. Empty for fully custom configs.
+                    type: string
                 files:
-                    description: Files to write into the agent's home directory when the agent is installed
+                    description: Override for files to write into the agent's home directory when the agent is installed. Unset inherits from the definition.
                     items:
                         $ref: '#/components/schemas/AgentConfigFile'
                     nullable: true
@@ -23,7 +26,7 @@ components:
                     description: Stable agent config ID
                     type: string
                 installCommand:
-                    description: Argv used to install the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    description: Override for the argv used to install the agent. Unset inherits from the definition. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
                         type: string
                     nullable: true
@@ -35,11 +38,21 @@ components:
                 projectId:
                     description: Project ID
                     type: string
+                relaunchCommand:
+                    description: Override for the argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. Unset inherits from the definition. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 runCommand:
-                    description: Argv used to run the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    description: Effective argv used to run the agent, resolved from the definition and any overrides. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
                         type: string
                     type: array
+                slug:
+                    description: Stable, URL-safe identifier used to select the agent config (e.g. codex). Unique within the project.
+                    pattern: ^[a-z0-9][a-z0-9-]*$
+                    type: string
                 updatedAt:
                     description: Last update timestamp
                     format: date-time
@@ -47,6 +60,7 @@ components:
             required:
                 - id
                 - projectId
+                - slug
                 - name
                 - runCommand
                 - createdAt
@@ -83,6 +97,12 @@ components:
                     description: Agent config definition name
                     maxLength: 200
                     type: string
+                relaunchCommand:
+                    description: Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 runCommand:
                     description: Argv used to run the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
@@ -138,16 +158,16 @@ components:
                     readOnly: true
                     type: string
                 definitionId:
-                    description: Agent config definition ID to use as defaults
+                    description: Built-in agent definition to extend. Unset command/file fields are inherited from the definition at runtime, so definition upgrades propagate unless overridden. Omit for a fully custom config, in which case runCommand is required.
                     type: string
                 files:
-                    description: Files to write into the agent's home directory when the agent is installed. Defaults to the definition files when definitionId is provided.
+                    description: Override for files to write into the agent's home directory. Unset inherits from the definition when definitionId is provided.
                     items:
                         $ref: '#/components/schemas/AgentConfigFile'
                     nullable: true
                     type: array
                 installCommand:
-                    description: Argv used to install the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    description: Override for the argv used to install the agent. Unset inherits from the definition when definitionId is provided. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
                         type: string
                     nullable: true
@@ -156,12 +176,22 @@ components:
                     description: Agent config name. Defaults to the definition name when definitionId is provided.
                     maxLength: 200
                     type: string
-                runCommand:
-                    description: Argv used to run the agent. Defaults to the definition run command when definitionId is provided. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                relaunchCommand:
+                    description: Override for the argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. Unset inherits from the definition when definitionId is provided. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
                         type: string
                     nullable: true
                     type: array
+                runCommand:
+                    description: Override for the argv used to run the agent. Unset inherits from the definition when definitionId is provided; required for a fully custom config. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                slug:
+                    description: Stable, URL-safe identifier used to select the agent config (e.g. codex). Defaults to definitionId, or a slug derived from name. Unique within the project.
+                    pattern: ^[a-z0-9][a-z0-9-]*$
+                    type: string
             type: object
         CreateSandboxBody:
             additionalProperties: false
@@ -312,6 +342,10 @@ components:
                         type: string
                     description: Sandbox-agent-owned terminal metadata.
                     type: object
+                primary:
+                    description: Whether this is the sandbox's primary terminal, launched by the sandbox-agent from the sandbox prompt. Set only by the sandbox-agent; it cannot be requested through terminal create.
+                    readOnly: true
+                    type: boolean
             required:
                 - id
                 - status
@@ -1331,8 +1365,10 @@ components:
                     maxLength: 200
                     type: string
                 prompt:
-                    description: Prompt the agent should run
-                    type: string
+                    description: Prompt the agent should run, passed as argv to preserve the caller's exact tokens.
+                    items:
+                        type: string
+                    type: array
                 source:
                     $ref: '#/components/schemas/GitSource'
                     description: Primary Git source to materialize in the sandbox
@@ -1425,6 +1461,12 @@ components:
                 name:
                     description: Agent config display name.
                     type: string
+                relaunchCommand:
+                    description: Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 runCommand:
                     description: Argv used to run the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
                     items:
@@ -1508,6 +1550,12 @@ components:
                 name:
                     description: Agent config display name.
                     type: string
+                relaunchCommand:
+                    description: Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 runCommand:
                     description: Argv used to run the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
                     items:
@@ -1595,8 +1643,15 @@ components:
                     maxLength: 200
                     type: string
                 prompt:
-                    description: Prompt the agent should run
-                    type: string
+                    description: Prompt the agent should run, passed as argv to preserve the caller's exact tokens.
+                    items:
+                        type: string
+                    type: array
+                secrets:
+                    description: Secrets to inject into the sandbox as sentinel placeholders that the proxy resolves to real values at runtime.
+                    items:
+                        $ref: '#/components/schemas/SandboxSecretInput'
+                    type: array
                 source:
                     $ref: '#/components/schemas/GitSource'
                     description: Primary Git source to materialize in the sandbox
@@ -1614,6 +1669,76 @@ components:
                     description: User identity and home directory to use inside the sandbox
             required:
                 - name
+            type: object
+        SandboxSecretInput:
+            additionalProperties: false
+            description: Binds an environment variable to a secret injected into the sandbox as a sentinel placeholder. Provide exactly one of secretId or value.
+            properties:
+                env:
+                    description: Environment variable name to inject with the secret's sentinel placeholder value.
+                    type: string
+                host:
+                    description: Optional host binding hint used when creating an anonymous secret from an inline value.
+                    type: string
+                secretId:
+                    description: ID of an existing project secret to assign.
+                    type: string
+                value:
+                    description: Inline secret value. A project-managed anonymous secret is created from it.
+                    type: string
+            required:
+                - env
+            type: object
+        ResolveSandboxSecretBody:
+            additionalProperties: false
+            description: Worker request to resolve a sentinel placeholder observed by the proxy to its real secret value for a destination host.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ResolveSandboxSecretBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                sandboxId:
+                    description: Sandbox that owns the sentinel.
+                    type: string
+                sentinel:
+                    description: Sentinel placeholder value observed in the request.
+                    type: string
+                host:
+                    description: Destination host of the outbound request.
+                    type: string
+            required:
+                - sandboxId
+                - sentinel
+                - host
+            type: object
+        ResolveSandboxSecretResponse:
+            additionalProperties: false
+            description: Result of resolving a sentinel. The value is present only when status is approved.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ResolveSandboxSecretResponse.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                status:
+                    description: Resolution status.
+                    enum:
+                        - approved
+                        - pending
+                        - denied
+                    type: string
+                value:
+                    description: Real secret value; present only when status is approved.
+                    type: string
+                expiresAt:
+                    description: Grant expiry time when approved.
+                    format: date-time
+                    type: string
+            required:
+                - status
             type: object
         SandboxRuntime:
             additionalProperties: false
@@ -2102,6 +2227,9 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                anonymous:
+                    description: Sandbox-managed secret created from an inline value; referenced only by ID
+                    type: boolean
                 autoApprove:
                     description: Automatically approve requests for this secret
                     type: boolean
@@ -2113,6 +2241,9 @@ components:
                     description: Default grant duration in seconds
                     format: int64
                     type: integer
+                format:
+                    description: Generative format template describing the credential shape; used to mint sentinel placeholders
+                    type: string
                 host:
                     description: Optional host used to match requests (e.g. github.com)
                     type: string
@@ -2324,6 +2455,12 @@ components:
                     description: Agent config name
                     maxLength: 200
                     type: string
+                relaunchCommand:
+                    description: Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 runCommand:
                     description: Argv used to run the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
@@ -2791,6 +2928,45 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Update worker status
+            tags:
+                - Workers
+    /api/workers/{workerId}/resolve-sandbox-secret:
+        post:
+            operationId: resolve-sandbox-secret
+            parameters:
+                - description: Worker ID
+                  in: path
+                  name: workerId
+                  required: true
+                  schema:
+                    description: Worker ID
+                    type: string
+                - description: Bearer worker assertion with the secret:resolve scope
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer worker assertion with the secret:resolve scope
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ResolveSandboxSecretBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ResolveSandboxSecretResponse'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Resolve a sandbox sentinel secret
             tags:
                 - Workers
     /projects:

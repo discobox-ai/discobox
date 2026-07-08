@@ -217,14 +217,17 @@ type ProjectUserKey = SandboxAccessIssuerKey
 
 // AgentConfig stores a project-scoped agent runtime configuration.
 type AgentConfig struct {
-	ID             string            `gorm:"primaryKey;type:text" json:"id" doc:"Stable agent config ID"`
-	ProjectID      string            `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_agent_config_project_name,priority:1" json:"projectId" doc:"Project ID"`
-	Name           string            `gorm:"column:name;not null;type:text;uniqueIndex:idx_agent_config_project_name,priority:2" json:"name" doc:"Agent config name" maxLength:"200"`
-	InstallCommand []string          `gorm:"column:install_command;type:text;serializer:json" json:"installCommand,omitempty" doc:"Argv used to install the agent. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	RunCommand     []string          `gorm:"column:run_command;not null;type:text;serializer:json" json:"runCommand" doc:"Argv used to run the agent. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	Files          []AgentConfigFile `gorm:"column:files;type:text;serializer:json" json:"files,omitempty" doc:"Files to write into the agent's home directory when the agent is installed"`
-	CreatedAt      time.Time         `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt      time.Time         `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	ID              string            `gorm:"primaryKey;type:text" json:"id" doc:"Stable agent config ID"`
+	ProjectID       string            `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_agent_config_project_name,priority:1" json:"projectId" doc:"Project ID"`
+	Slug            string            `gorm:"column:slug;not null;type:text;default:'';index" json:"slug" doc:"Stable, URL-safe identifier used to select the agent config (e.g. codex). Unique within the project." pattern:"^[a-z0-9][a-z0-9-]*$"`
+	DefinitionID    string            `gorm:"column:definition_id;type:text;default:''" json:"definitionId,omitempty" doc:"Built-in agent definition this config extends. Unset fields are inherited from the definition at runtime, so definition upgrades propagate unless overridden. Empty for fully custom configs."`
+	Name            string            `gorm:"column:name;not null;type:text;uniqueIndex:idx_agent_config_project_name,priority:2" json:"name" doc:"Agent config name" maxLength:"200"`
+	InstallCommand  []string          `gorm:"column:install_command;type:text;serializer:json" json:"installCommand,omitempty" doc:"Override for the argv used to install the agent. Unset inherits from the definition. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
+	RunCommand      []string          `gorm:"column:run_command;type:text;serializer:json" json:"runCommand,omitempty" doc:"Override for the argv used to run the agent. Unset inherits from the definition. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
+	RelaunchCommand []string          `gorm:"column:relaunch_command;type:text;serializer:json" json:"relaunchCommand,omitempty" doc:"Override for the argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. Unset inherits from the definition. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
+	Files           []AgentConfigFile `gorm:"column:files;type:text;serializer:json" json:"files,omitempty" doc:"Override for files to write into the agent's home directory when the agent is installed. Unset inherits from the definition."`
+	CreatedAt       time.Time         `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt       time.Time         `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project   *Project  `gorm:"foreignKey:ProjectID" json:"-"`
 	Sandboxes []Sandbox `gorm:"foreignKey:AgentConfigID" json:"-"`
@@ -255,12 +258,13 @@ func (a *AgentConfig) BeforeCreate(_ *gorm.DB) error {
 // selected by sandboxes directly. They provide UI-visible defaults for creating
 // real AgentConfig records.
 type AgentConfigDefinition struct {
-	ID             string            `json:"id" doc:"Stable definition ID"`
-	Name           string            `json:"name" doc:"Agent config definition name" maxLength:"200"`
-	Description    string            `json:"description,omitempty" doc:"Agent config definition description"`
-	InstallCommand []string          `json:"installCommand,omitempty" doc:"Argv used to install the agent. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	RunCommand     []string          `json:"runCommand" doc:"Argv used to run the agent. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	Files          []AgentConfigFile `json:"files,omitempty" doc:"Files to write into the agent's home directory when the agent is installed"`
+	ID              string            `json:"id" doc:"Stable definition ID"`
+	Name            string            `json:"name" doc:"Agent config definition name" maxLength:"200"`
+	Description     string            `json:"description,omitempty" doc:"Agent config definition description"`
+	InstallCommand  []string          `json:"installCommand,omitempty" doc:"Argv used to install the agent. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
+	RunCommand      []string          `json:"runCommand" doc:"Argv used to run the agent. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
+	RelaunchCommand []string          `json:"relaunchCommand,omitempty" doc:"Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
+	Files           []AgentConfigFile `json:"files,omitempty" doc:"Files to write into the agent's home directory when the agent is installed"`
 }
 
 // AgentConfigFile is a file to write into an agent's home directory when the
@@ -320,7 +324,7 @@ type Sandbox struct {
 	AgentModel               *string              `gorm:"column:agent_model;type:text" json:"agentModel,omitempty" doc:"Model the agent should use"`
 	AgentModelServiceTier    *string              `gorm:"column:agent_model_service_tier;type:text" json:"agentModelServiceTier,omitempty" doc:"Model service tier the agent should use"`
 	AgentModelReasoningLevel *string              `gorm:"column:agent_model_reasoning_level;type:text" json:"agentModelReasoningLevel,omitempty" doc:"Model reasoning level the agent should use"`
-	Prompt                   *string              `gorm:"column:prompt;type:text" json:"prompt,omitempty" doc:"Prompt the agent should run"`
+	Prompt                   []string             `gorm:"column:prompt;type:text;serializer:json" json:"prompt,omitempty" doc:"Prompt the agent should run, passed as argv to preserve the caller's exact tokens"`
 	Image                    string               `gorm:"column:image;type:text" json:"image,omitempty" doc:"Sandbox base image"`
 	Env                      map[string]string    `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Environment variables available to sandbox-agent terminals and execs by default"`
 	Source                   *GitSource           `gorm:"column:source;type:text;serializer:json" json:"source,omitempty" doc:"Primary Git source to materialize in the sandbox"`
@@ -607,6 +611,9 @@ type Secret struct {
 	Name            string         `gorm:"column:name;not null;type:text" json:"name" doc:"Secret name"`
 	Type            string         `gorm:"column:type;not null;type:text;uniqueIndex:idx_secret_project_type_host,priority:2" json:"type" doc:"Secret type" enum:"git,ssh,bearer"`
 	Host            string         `gorm:"column:host;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:3" json:"host,omitempty" doc:"Optional host used to match requests"`
+	UniqueKey       string         `gorm:"column:unique_key;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:4" json:"-"`
+	Anonymous       bool           `gorm:"column:anonymous;not null;default:false;index" json:"anonymous,omitempty" doc:"Sandbox-managed secret created from an inline value; referenced only by ID"`
+	Format          string         `gorm:"column:format;not null;type:text;default:''" json:"format,omitempty" doc:"Generative format template describing the credential shape; used to mint sentinel placeholders"`
 	AutoApprove     bool           `gorm:"column:auto_approve;not null;default:false" json:"autoApprove" doc:"Automatically approve requests"`
 	DefaultGrantTTL int64          `gorm:"column:default_grant_ttl_seconds;not null;default:3600" json:"defaultGrantTTLSeconds" doc:"Default grant duration in seconds"`
 	EncryptedValue  []byte         `gorm:"column:encrypted_value" json:"-"`
@@ -687,6 +694,34 @@ func (r *SecretRequest) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
+// SandboxSecret binds a sandbox environment variable to a project secret via a
+// sentinel placeholder. The sandbox is provisioned with the sentinel value; the
+// proxy swaps it for the real value resolved from the referenced secret. The
+// sentinel is non-secret but is not exposed through the API.
+type SandboxSecret struct {
+	ID        string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable assignment ID"`
+	ProjectID string         `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	SandboxID string         `gorm:"column:sandbox_id;not null;type:text;index;uniqueIndex:idx_sandbox_secret_env,priority:1" json:"sandboxId" doc:"Sandbox ID"`
+	SecretID  string         `gorm:"column:secret_id;not null;type:text;index" json:"secretId" doc:"Assigned secret ID"`
+	EnvName   string         `gorm:"column:env_name;not null;type:text;uniqueIndex:idx_sandbox_secret_env,priority:2" json:"envName" doc:"Environment variable name injected into the sandbox"`
+	Sentinel  string         `gorm:"column:sentinel;not null;type:text;uniqueIndex" json:"-"`
+	CreatedAt time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+}
+
+func (SandboxSecret) TableName() string { return "sandbox_secrets" }
+
+func (s *SandboxSecret) BeforeCreate(_ *gorm.DB) error {
+	if s.ID == "" {
+		var err error
+		s.ID, err = id.New()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ProjectEvent is a persisted project-scoped resource change event.
 type ProjectEvent struct {
 	ID           string          `gorm:"primaryKey;type:text" json:"id" doc:"Event record ID"`
@@ -732,5 +767,6 @@ func AllModels() []any {
 		&ProjectEvent{},
 		&Secret{},
 		&SecretRequest{},
+		&SandboxSecret{},
 	}
 }

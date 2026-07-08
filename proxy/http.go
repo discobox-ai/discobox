@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -17,6 +18,7 @@ import (
 	"github.com/obot-platform/discobox/proxy/internal/cache"
 	"github.com/obot-platform/discobox/proxy/internal/filter"
 	"github.com/obot-platform/discobox/proxy/internal/rules"
+	"github.com/obot-platform/discobox/proxy/internal/secrets"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -26,6 +28,7 @@ type httpProxy struct {
 	certs         *CertificateBundle
 	filter        *filter.Filter
 	rewriter      *rules.Rewriter
+	swapper       *secrets.Swapper
 	cache         *cache.Cache
 	audit         *audit.Recorder
 	mitmConnect   *goproxy.ConnectAction
@@ -50,6 +53,8 @@ type requestMeta struct {
 	requestBodyError     string
 	requestBodyCloseOnce sync.Once
 	requestBodyBytes     int64
+	swappedHeaders       []string
+	auditURL             string
 }
 
 type responseStream struct {
@@ -89,10 +94,10 @@ type requestBodyStream struct {
 	meta   *requestMeta
 }
 
-func newHTTPProxy(certs *CertificateBundle, flt *filter.Filter, rewriter *rules.Rewriter, c *cache.Cache, recorder *audit.Recorder) *httpProxy {
+func newHTTPProxy(certs *CertificateBundle, flt *filter.Filter, rewriter *rules.Rewriter, swapper *secrets.Swapper, c *cache.Cache, recorder *audit.Recorder) *httpProxy {
 	p := goproxy.NewProxyHttpServer()
 	p.Verbose = false
-	h := &httpProxy{proxy: p, certs: certs, filter: flt, rewriter: rewriter, cache: c, audit: recorder, ids: map[string]clientIdentity{}}
+	h := &httpProxy{proxy: p, certs: certs, filter: flt, rewriter: rewriter, swapper: swapper, cache: c, audit: recorder, ids: map[string]clientIdentity{}}
 	h.setupMITM()
 	h.setupHandlers()
 	return h
@@ -105,10 +110,22 @@ func (h *httpProxy) setPolicy(flt *filter.Filter, rewriter *rules.Rewriter) {
 	h.rewriter = rewriter
 }
 
+func (h *httpProxy) setSwapper(swapper *secrets.Swapper) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.swapper = swapper
+}
+
 func (h *httpProxy) policy() (*filter.Filter, *rules.Rewriter) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return h.filter, h.rewriter
+}
+
+func (h *httpProxy) secretSwapper() *secrets.Swapper {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	return h.swapper
 }
 
 func (h *httpProxy) setupMITM() {
@@ -257,6 +274,7 @@ func (h *httpProxy) setupHandlers() {
 			rewriteSpan.SetAttributes(attribute.Bool("proxy.header_rewrite.matched", false))
 		}
 		rewriteSpan.End()
+		h.swapSecrets(req, meta, client)
 		h.captureRequestBody(req, meta)
 		return req, nil
 	})
@@ -366,7 +384,7 @@ func (h *httpProxy) auditEvent(req *http.Request, resp *http.Response, meta *req
 		ClientSubject:        meta.client.Subject,
 		ClientSerial:         meta.client.Serial,
 		Method:               req.Method,
-		URL:                  requestURL(req),
+		URL:                  meta.url(req),
 		Host:                 req.Host,
 		Status:               status,
 		Duration:             duration,
@@ -377,7 +395,7 @@ func (h *httpProxy) auditEvent(req *http.Request, resp *http.Response, meta *req
 		AppliedRuleID:        meta.appliedRuleID,
 		AppliedPattern:       meta.appliedPattern,
 		AppliedHeaders:       meta.appliedHeaders,
-		RedactRequestHeaders: meta.appliedHeaders,
+		RedactRequestHeaders: meta.redactRequestHeaders(),
 		RequestHeaders:       req.Header,
 		ResponseHeaders:      headers,
 		ResponseBytes:        responseBytes,
@@ -386,6 +404,38 @@ func (h *httpProxy) auditEvent(req *http.Request, resp *http.Response, meta *req
 		RequestBodyBytes:     requestBodyBytes,
 		RequestBodyError:     requestBodyError,
 	}
+}
+
+// swapSecrets substitutes sentinel placeholder credentials in req for their
+// resolved real values and records which header names and URL were affected so
+// the audit trail redacts them. The real value is never written to audit.
+func (h *httpProxy) swapSecrets(req *http.Request, meta *requestMeta, client clientIdentity) {
+	swapper := h.secretSwapper()
+	if !swapper.Active(client.ID) {
+		return
+	}
+	preURL := requestURL(req)
+	_, span := proxyTracer().Start(meta.ctx, "proxy.secret_swap")
+	defer span.End()
+	result := swapper.Apply(meta.ctx, req, client.ID)
+	if !result.Swapped() {
+		span.SetAttributes(attribute.Bool("proxy.secret_swap.swapped", false))
+		if len(result.Errors) > 0 {
+			span.SetAttributes(attribute.Int("proxy.secret_swap.errors", len(result.Errors)))
+		}
+		return
+	}
+	meta.swappedHeaders = result.Headers
+	if len(result.QueryParams) > 0 {
+		// A swapped value now lives in the outbound URL; audit the pre-swap URL
+		// so the real value is never persisted.
+		meta.auditURL = preURL
+	}
+	span.SetAttributes(
+		attribute.Bool("proxy.secret_swap.swapped", true),
+		attribute.Int("proxy.secret_swap.headers", len(result.Headers)),
+		attribute.Int("proxy.secret_swap.query_params", len(result.QueryParams)),
+	)
 }
 
 func (h *httpProxy) captureRequestBody(req *http.Request, meta *requestMeta) {
@@ -474,14 +524,14 @@ func (s *upgradedResponseStream) auditEvent(duration time.Duration) audit.HTTPEv
 		ClientSubject:        s.meta.client.Subject,
 		ClientSerial:         s.meta.client.Serial,
 		Method:               s.req.Method,
-		URL:                  requestURL(s.req),
+		URL:                  s.meta.url(s.req),
 		Host:                 s.req.Host,
 		Status:               s.status,
 		Duration:             duration,
 		AppliedRuleID:        s.meta.appliedRuleID,
 		AppliedPattern:       s.meta.appliedPattern,
 		AppliedHeaders:       s.meta.appliedHeaders,
-		RedactRequestHeaders: s.meta.appliedHeaders,
+		RedactRequestHeaders: s.meta.redactRequestHeaders(),
 		RequestHeaders:       s.req.Header,
 		ResponseHeaders:      s.headers,
 		RequestBodyFile:      requestBodyFile,
@@ -568,7 +618,7 @@ func (s *responseStream) finish(aborted bool, readErr error) {
 			ClientSubject:        s.meta.client.Subject,
 			ClientSerial:         s.meta.client.Serial,
 			Method:               s.req.Method,
-			URL:                  requestURL(s.req),
+			URL:                  s.meta.url(s.req),
 			Host:                 s.req.Host,
 			Status:               s.status,
 			Duration:             time.Since(s.meta.start),
@@ -579,7 +629,7 @@ func (s *responseStream) finish(aborted bool, readErr error) {
 			AppliedRuleID:        s.meta.appliedRuleID,
 			AppliedPattern:       s.meta.appliedPattern,
 			AppliedHeaders:       s.meta.appliedHeaders,
-			RedactRequestHeaders: s.meta.appliedHeaders,
+			RedactRequestHeaders: s.meta.redactRequestHeaders(),
 			RequestHeaders:       s.req.Header,
 			ResponseHeaders:      s.headers,
 			ResponseBytes:        s.bytesRead,
@@ -635,6 +685,26 @@ func (s *requestBodyStream) Close() error {
 		s.meta.closeRequestBodySpool()
 	}
 	return err
+}
+
+// redactRequestHeaders returns the header names to redact in audit: rewrite-rule
+// headers plus any header whose value was secret-swapped.
+func (m *requestMeta) redactRequestHeaders() []string {
+	if len(m.swappedHeaders) == 0 {
+		return m.appliedHeaders
+	}
+	out := append(slices.Clone(m.appliedHeaders), m.swappedHeaders...)
+	slices.Sort(out)
+	return slices.Compact(out)
+}
+
+// url returns the URL to record in audit, preferring the pre-swap URL when a
+// secret was swapped into a query parameter.
+func (m *requestMeta) url(req *http.Request) string {
+	if m.auditURL != "" {
+		return m.auditURL
+	}
+	return requestURL(req)
 }
 
 func (m *requestMeta) requestBodyMetadata() (file string, format string, bytes int64, errText string) {
@@ -696,19 +766,24 @@ func headerContainsToken(header http.Header, key, token string) bool {
 }
 
 func (h *httpProxy) serveConn(ctx context.Context, conn *peekedConn, identity clientIdentity) bool {
-	key := ""
+	// Bind the client identity to the connection's RemoteAddr for the lifetime of
+	// the connection. The entry is removed when the connection closes rather than
+	// when serveConn returns, because goproxy hijacks the connection for HTTPS
+	// MITM and keeps dispatching requests after serveConn has returned; deleting
+	// on return would leave those MITM'd requests without a client identity.
+	var served net.Conn = conn
 	if conn.RemoteAddr() != nil {
-		key = conn.RemoteAddr().String()
+		key := conn.RemoteAddr().String()
 		h.mu.Lock()
 		h.ids[key] = identity
 		h.mu.Unlock()
-		defer func() {
+		served = &identityConn{Conn: conn, onClose: func() {
 			h.mu.Lock()
 			delete(h.ids, key)
 			h.mu.Unlock()
-		}()
+		}}
 	}
-	listener := &singleConnListener{conn: conn, done: make(chan struct{})}
+	listener := &singleConnListener{conn: served, done: make(chan struct{})}
 	var hijacked atomic.Bool
 	server := &http.Server{
 		Handler:           h.proxy,
@@ -742,6 +817,21 @@ func (h *httpProxy) clientIdentity(req *http.Request) clientIdentity {
 		}
 	}
 	return clientIdentityFromRequest(req)
+}
+
+// identityConn removes the connection's stored client identity when the
+// connection is closed, so the identity outlives serveConn (which returns early
+// once goproxy hijacks the connection for MITM) but does not leak.
+type identityConn struct {
+	net.Conn
+	onClose func()
+	once    sync.Once
+}
+
+func (c *identityConn) Close() error {
+	err := c.Conn.Close()
+	c.once.Do(c.onClose)
+	return err
 }
 
 type singleConnListener struct {
