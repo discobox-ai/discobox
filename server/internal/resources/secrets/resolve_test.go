@@ -126,6 +126,9 @@ func TestResolveSandboxSecretPendingWithoutAutoApprove(t *testing.T) {
 	if req.SecretID != sec.ID {
 		t.Fatalf("secret id = %q, want %q", req.SecretID, sec.ID)
 	}
+	if req.SandboxID != "sb-1" {
+		t.Fatalf("sandbox id = %q, want sb-1", req.SandboxID)
+	}
 
 	// A second resolve for the same host reuses the pending request.
 	again, err := svc.ResolveSandboxSecret(ctx, "worker-1", "sb-1", "SENTINEL-B", "api.example.com")

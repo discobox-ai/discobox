@@ -102,7 +102,7 @@ type SecretService interface {
 	UpdateSecret(ctx context.Context, projectID, secretID string, input UpdateSecretBody) (*model.Secret, error)
 	DeleteSecret(ctx context.Context, projectID, secretID string) error
 
-	ListSecretRequests(ctx context.Context, projectID string) ([]model.SecretRequest, error)
+	ListSecretRequests(ctx context.Context, projectID, status string) ([]model.SecretRequest, error)
 	CreateSecretRequest(ctx context.Context, projectID string, input CreateSecretRequestBody) (*model.SecretRequest, error)
 	GetSecretRequest(ctx context.Context, projectID, requestID string) (*model.SecretRequest, error)
 	ApproveSecretRequest(ctx context.Context, projectID, requestID string, input ApproveSecretRequestBody) (*model.SecretRequest, error)

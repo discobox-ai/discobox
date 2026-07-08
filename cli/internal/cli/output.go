@@ -239,14 +239,15 @@ func (a *App) writeSecretRequests(cmd *cobra.Command, requests []apimodel.Secret
 	}
 	requests = sortedByCreatedAt(requests, func(request apimodel.SecretRequest) time.Time { return request.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tTYPE\tHOST\tSTATUS\tSECRET\tREQUESTED BY\tUPDATED")
+	fmt.Fprintln(tw, "ID\tTYPE\tHOST\tSTATUS\tSECRET\tSANDBOX\tREQUESTED BY\tUPDATED")
 	for _, request := range requests {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			shortID(request.ID),
 			request.Type,
 			request.Host.Or(""),
 			request.Status,
 			shortID(request.SecretId.Or("")),
+			shortID(request.SandboxId.Or("")),
 			request.RequestedBy,
 			formatTime(request.UpdatedAt),
 		)

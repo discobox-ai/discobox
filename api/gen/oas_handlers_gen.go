@@ -6227,6 +6227,10 @@ func (s *Server) handleListSecretRequestsRequest(args [1]string, argsEscaped boo
 					Name: "projectId",
 					In:   "path",
 				}: params.ProjectId,
+				{
+					Name: "status",
+					In:   "query",
+				}: params.Status,
 			},
 			Raw: r,
 		}

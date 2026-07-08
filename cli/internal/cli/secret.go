@@ -198,6 +198,7 @@ func (a *App) newSecretRequestCommand() *cobra.Command {
 }
 
 func (a *App) newSecretRequestListCommand() *cobra.Command {
+	var status string
 	cmd := &cobra.Command{Use: "list", Short: "List secret requests", RunE: func(cmd *cobra.Command, _ []string) error {
 		client, err := a.apiClient()
 		if err != nil {
@@ -207,7 +208,11 @@ func (a *App) newSecretRequestListCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		res, err := client.ListSecretRequests(cmd.Context(), apiclientgen.ListSecretRequestsParams{ProjectId: projectID})
+		params := apiclientgen.ListSecretRequestsParams{ProjectId: projectID}
+		if s := strings.TrimSpace(status); s != "" {
+			params.Status = apiclientgen.NewOptListSecretRequestsStatus(apiclientgen.ListSecretRequestsStatus(s))
+		}
+		res, err := client.ListSecretRequests(cmd.Context(), params)
 		if err != nil {
 			return err
 		}
@@ -217,6 +222,7 @@ func (a *App) newSecretRequestListCommand() *cobra.Command {
 		}
 		return a.writeSecretRequests(cmd, body.GetSecretRequests())
 	}}
+	cmd.Flags().StringVar(&status, "status", "", "Filter by status: pending, approved, or denied")
 	a.addQuietFlag(cmd)
 	return cmd
 }

@@ -1451,6 +1451,19 @@ func (s *ListSecretRequestsBody) Validate() error {
 	return nil
 }
 
+func (s ListSecretRequestsStatus) Validate() error {
+	switch s {
+	case "pending":
+		return nil
+	case "approved":
+		return nil
+	case "denied":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s *ListSecretsBody) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer

@@ -2751,6 +2751,55 @@ func (s *ListSecretRequestsBody) SetSecretRequests(val []SecretRequest) {
 
 func (*ListSecretRequestsBody) listSecretRequestsRes() {}
 
+// Filter by request status.
+type ListSecretRequestsStatus string
+
+const (
+	ListSecretRequestsStatusPending  ListSecretRequestsStatus = "pending"
+	ListSecretRequestsStatusApproved ListSecretRequestsStatus = "approved"
+	ListSecretRequestsStatusDenied   ListSecretRequestsStatus = "denied"
+)
+
+// AllValues returns all ListSecretRequestsStatus values.
+func (ListSecretRequestsStatus) AllValues() []ListSecretRequestsStatus {
+	return []ListSecretRequestsStatus{
+		ListSecretRequestsStatusPending,
+		ListSecretRequestsStatusApproved,
+		ListSecretRequestsStatusDenied,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s ListSecretRequestsStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case ListSecretRequestsStatusPending:
+		return []byte(s), nil
+	case ListSecretRequestsStatusApproved:
+		return []byte(s), nil
+	case ListSecretRequestsStatusDenied:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *ListSecretRequestsStatus) UnmarshalText(data []byte) error {
+	switch ListSecretRequestsStatus(data) {
+	case ListSecretRequestsStatusPending:
+		*s = ListSecretRequestsStatusPending
+		return nil
+	case ListSecretRequestsStatusApproved:
+		*s = ListSecretRequestsStatusApproved
+		return nil
+	case ListSecretRequestsStatusDenied:
+		*s = ListSecretRequestsStatusDenied
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/ListSecretsBody
 type ListSecretsBody struct {
 	// A URL to the JSON Schema for this object.
@@ -3540,6 +3589,52 @@ func (o OptInt64) Get() (v int64, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptInt64) Or(d int64) int64 {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptListSecretRequestsStatus returns new OptListSecretRequestsStatus with value set to v.
+func NewOptListSecretRequestsStatus(v ListSecretRequestsStatus) OptListSecretRequestsStatus {
+	return OptListSecretRequestsStatus{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptListSecretRequestsStatus is optional ListSecretRequestsStatus.
+type OptListSecretRequestsStatus struct {
+	Value ListSecretRequestsStatus
+	Set   bool
+}
+
+// IsSet returns true if OptListSecretRequestsStatus was set.
+func (o OptListSecretRequestsStatus) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptListSecretRequestsStatus) Reset() {
+	var v ListSecretRequestsStatus
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptListSecretRequestsStatus) SetTo(v ListSecretRequestsStatus) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptListSecretRequestsStatus) Get() (v ListSecretRequestsStatus, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptListSecretRequestsStatus) Or(d ListSecretRequestsStatus) ListSecretRequestsStatus {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -7942,6 +8037,8 @@ type SecretRequest struct {
 	ProjectId string `json:"projectId"`
 	// Principal ID of the requestor.
 	RequestedBy string `json:"requestedBy"`
+	// Sandbox that owns the sentinel, for sandbox-originated requests.
+	SandboxId OptString `json:"sandboxId"`
 	// Matched secret ID; set when approved.
 	SecretId OptString `json:"secretId"`
 	// Request status.
@@ -7996,6 +8093,11 @@ func (s *SecretRequest) GetProjectId() string {
 // GetRequestedBy returns the value of RequestedBy.
 func (s *SecretRequest) GetRequestedBy() string {
 	return s.RequestedBy
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *SecretRequest) GetSandboxId() OptString {
+	return s.SandboxId
 }
 
 // GetSecretId returns the value of SecretId.
@@ -8066,6 +8168,11 @@ func (s *SecretRequest) SetProjectId(val string) {
 // SetRequestedBy sets the value of RequestedBy.
 func (s *SecretRequest) SetRequestedBy(val string) {
 	s.RequestedBy = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *SecretRequest) SetSandboxId(val OptString) {
+	s.SandboxId = val
 }
 
 // SetSecretId sets the value of SecretId.

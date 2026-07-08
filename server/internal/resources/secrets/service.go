@@ -139,11 +139,11 @@ func (s *Service) DeleteSecret(ctx context.Context, projectID, secretID string) 
 	return nil
 }
 
-func (s *Service) ListSecretRequests(ctx context.Context, projectID string) ([]model.SecretRequest, error) {
+func (s *Service) ListSecretRequests(ctx context.Context, projectID, status string) ([]model.SecretRequest, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, apiError(err, "project not found")
 	}
-	return s.store.ListSecretRequests(ctx, projectID)
+	return s.store.ListSecretRequests(ctx, projectID, status)
 }
 
 func (s *Service) CreateSecretRequest(ctx context.Context, projectID string, input services.CreateSecretRequestBody) (*model.SecretRequest, error) {
@@ -321,6 +321,7 @@ func (s *Service) ResolveSandboxSecret(ctx context.Context, workerID, sandboxID,
 	req := &model.SecretRequest{
 		ProjectID:   assignment.ProjectID,
 		RequestedBy: requestedBy,
+		SandboxID:   assignment.SandboxID,
 		Type:        secret.Type,
 		Host:        host,
 		SecretID:    secret.ID,

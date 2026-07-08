@@ -14337,6 +14337,12 @@ func (s *SecretRequest) encodeFields(e *jx.Encoder) {
 		e.Str(s.RequestedBy)
 	}
 	{
+		if s.SandboxId.Set {
+			e.FieldStart("sandboxId")
+			s.SandboxId.Encode(e)
+		}
+	}
+	{
 		if s.SecretId.Set {
 			e.FieldStart("secretId")
 			s.SecretId.Encode(e)
@@ -14362,7 +14368,7 @@ func (s *SecretRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSecretRequest = [14]string{
+var jsonFieldsNameOfSecretRequest = [15]string{
 	0:  "$schema",
 	1:  "approvedBy",
 	2:  "createdAt",
@@ -14372,11 +14378,12 @@ var jsonFieldsNameOfSecretRequest = [14]string{
 	6:  "id",
 	7:  "projectId",
 	8:  "requestedBy",
-	9:  "secretId",
-	10: "status",
-	11: "type",
-	12: "updatedAt",
-	13: "value",
+	9:  "sandboxId",
+	10: "secretId",
+	11: "status",
+	12: "type",
+	13: "updatedAt",
+	14: "value",
 }
 
 // Decode decodes SecretRequest from json.
@@ -14486,6 +14493,16 @@ func (s *SecretRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"requestedBy\"")
 			}
+		case "sandboxId":
+			if err := func() error {
+				s.SandboxId.Reset()
+				if err := s.SandboxId.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sandboxId\"")
+			}
 		case "secretId":
 			if err := func() error {
 				s.SecretId.Reset()
@@ -14497,7 +14514,7 @@ func (s *SecretRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"secretId\"")
 			}
 		case "status":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				if err := s.Status.Decode(d); err != nil {
 					return err
@@ -14507,7 +14524,7 @@ func (s *SecretRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"status\"")
 			}
 		case "type":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				if err := s.Type.Decode(d); err != nil {
 					return err
@@ -14517,7 +14534,7 @@ func (s *SecretRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"type\"")
 			}
 		case "updatedAt":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -14549,7 +14566,7 @@ func (s *SecretRequest) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
 		0b11000100,
-		0b00011101,
+		0b00111001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

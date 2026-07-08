@@ -659,6 +659,7 @@ type SecretRequest struct {
 	ID          string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable request ID"`
 	ProjectID   string         `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
 	RequestedBy string         `gorm:"column:requested_by;not null;type:text" json:"requestedBy" doc:"Principal ID of the requestor"`
+	SandboxID   string         `gorm:"column:sandbox_id;not null;type:text;default:'';index" json:"sandboxId,omitempty" doc:"Sandbox that owns the sentinel, for sandbox-originated requests"`
 	Type        string         `gorm:"column:type;not null;type:text" json:"type" doc:"Secret type requested" enum:"git,ssh,bearer"`
 	Host        string         `gorm:"column:host;not null;type:text;default:''" json:"host,omitempty" doc:"Host hint provided at request time"`
 	SecretID    string         `gorm:"column:secret_id;not null;type:text;default:''" json:"secretId,omitempty" doc:"Matched secret ID; set when approved"`

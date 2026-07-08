@@ -2313,6 +2313,9 @@ components:
                 requestedBy:
                     description: Principal ID of the requestor
                     type: string
+                sandboxId:
+                    description: Sandbox that owns the sentinel, for sandbox-originated requests
+                    type: string
                 secretId:
                     description: Matched secret ID; set when approved
                     type: string
@@ -4809,6 +4812,16 @@ paths:
                   schema:
                     default: default
                     description: Project ID
+                    type: string
+                - description: Filter by request status
+                  in: query
+                  name: status
+                  schema:
+                    description: Filter by request status
+                    enum:
+                        - pending
+                        - approved
+                        - denied
                     type: string
             responses:
                 200:

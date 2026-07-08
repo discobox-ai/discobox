@@ -4856,6 +4856,8 @@ func decodeListSandboxesParams(args [1]string, argsEscaped bool, r *http.Request
 type ListSecretRequestsParams struct {
 	// Project ID.
 	ProjectId string
+	// Filter by request status.
+	Status OptListSecretRequestsStatus `json:",omitempty,omitzero"`
 }
 
 func unpackListSecretRequestsParams(packed middleware.Parameters) (params ListSecretRequestsParams) {
@@ -4866,10 +4868,20 @@ func unpackListSecretRequestsParams(packed middleware.Parameters) (params ListSe
 		}
 		params.ProjectId = packed[key].(string)
 	}
+	{
+		key := middleware.ParameterKey{
+			Name: "status",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Status = v.(OptListSecretRequestsStatus)
+		}
+	}
 	return params
 }
 
 func decodeListSecretRequestsParams(args [1]string, argsEscaped bool, r *http.Request) (params ListSecretRequestsParams, _ error) {
+	q := uri.NewQueryDecoder(r.URL.Query())
 	// Set default value for path: projectId.
 	{
 		val := string("default")
@@ -4917,6 +4929,62 @@ func decodeListSecretRequestsParams(args [1]string, argsEscaped bool, r *http.Re
 		return params, &ogenerrors.DecodeParamError{
 			Name: "projectId",
 			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode query: status.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "status",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotStatusVal ListSecretRequestsStatus
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotStatusVal = ListSecretRequestsStatus(c)
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Status.SetTo(paramsDotStatusVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if value, ok := params.Status.Get(); ok {
+					if err := func() error {
+						if err := value.Validate(); err != nil {
+							return err
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "status",
+			In:   "query",
 			Err:  err,
 		}
 	}

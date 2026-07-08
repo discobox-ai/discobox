@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"gorm.io/gorm"
 
@@ -211,13 +212,19 @@ func (s *Store) GetSecretRequest(ctx context.Context, projectID, requestID strin
 	return firstByID[model.SecretRequest](read.Where("project_id = ?", projectID), "id", requestID)
 }
 
-func (s *Store) ListSecretRequests(ctx context.Context, projectID string) ([]model.SecretRequest, error) {
+// ListSecretRequests returns a project's secret requests, optionally filtered to
+// a single status.
+func (s *Store) ListSecretRequests(ctx context.Context, projectID, status string) ([]model.SecretRequest, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
 	}
+	query := read.Where("project_id = ?", projectID)
+	if status = strings.TrimSpace(status); status != "" {
+		query = query.Where("status = ?", status)
+	}
 	var out []model.SecretRequest
-	err = read.Where("project_id = ?", projectID).Order("created_at ASC").Find(&out).Error
+	err = query.Order("created_at ASC").Find(&out).Error
 	return out, err
 }
 

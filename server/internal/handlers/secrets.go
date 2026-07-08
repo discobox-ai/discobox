@@ -71,7 +71,11 @@ func (h *Handler) DeleteSecret(ctx context.Context, params serverapi.DeleteSecre
 }
 
 func (h *Handler) ListSecretRequests(ctx context.Context, params serverapi.ListSecretRequestsParams) (serverapi.ListSecretRequestsRes, error) {
-	reqs, err := h.services.Secrets.ListSecretRequests(ctx, params.ProjectId)
+	status := ""
+	if v, ok := params.Status.Get(); ok {
+		status = string(v)
+	}
+	reqs, err := h.services.Secrets.ListSecretRequests(ctx, params.ProjectId, status)
 	if err != nil {
 		return apiError(err), nil
 	}

@@ -81,7 +81,7 @@ func (fakeSecretService) DeleteSecret(context.Context, string, string) error {
 	return nil
 }
 
-func (fakeSecretService) ListSecretRequests(context.Context, string) ([]model.SecretRequest, error) {
+func (fakeSecretService) ListSecretRequests(context.Context, string, string) ([]model.SecretRequest, error) {
 	request := fakeSecretRequest()
 	return []model.SecretRequest{request}, nil
 }
