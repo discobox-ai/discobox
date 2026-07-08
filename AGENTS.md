@@ -79,6 +79,10 @@ Prefer proper structural changes over compatibility shims or narrow patches.
   unnecessary wrappers become maintenance cruft.
 - Backwards compatibility is not a priority during this phase. Prefer coherent
   internal APIs over preserving old call shapes.
+- This is a new alpha application still in the POC phase. Do not build upgrade
+  paths or data migrations. The database and any local state are disposable: it
+  is fine to drop, delete, and reinstall from scratch. Prefer schema changes that
+  rely on a fresh install (e.g. AutoMigrate) over migration/backfill code.
 - Avoid tiny tactical patches when the correct fix crosses package boundaries.
   Follow the ownership path through the codebase and update the model,
   interfaces, implementations, tests, and call sites together.
