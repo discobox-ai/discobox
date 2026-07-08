@@ -1126,6 +1126,26 @@ func (s *Store) SetLSPHookRunning(ctx context.Context, hookID string) error {
 	})
 }
 
+// LSPHookInFailure reports whether an LSP hook is currently recorded as failed,
+// i.e. it carries diagnostics or a lifecycle error from before. The daemon uses
+// this at startup to decide whether to eagerly restart the server and re-verify
+// rather than trusting persisted state from a dead session.
+func (s *Store) LSPHookInFailure(ctx context.Context, hookID string) (bool, error) {
+	hookID = strings.TrimSpace(hookID)
+	if hookID == "" {
+		return false, nil
+	}
+	var row models.HookStatus
+	err := s.read.WithContext(ctx).Where("hook_id = ?", hookID).First(&row).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return row.Status == string(models.StatusFailure), nil
+}
+
 // SetLSPHookReady records that an LSP hook has no pending lifecycle work. The
 // terminal status is derived from its current diagnostics.
 func (s *Store) SetLSPHookReady(ctx context.Context, hookID string) error {

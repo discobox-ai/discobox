@@ -33,6 +33,7 @@ func (r *runtimeState) syncLSPHooks() {
 		}
 	}
 
+	var registered []string
 	r.mu.Lock()
 	for id, rt := range r.lspClients {
 		if _, ok := wanted[id]; ok {
@@ -51,8 +52,30 @@ func (r *runtimeState) syncLSPHooks() {
 		// the hook's pattern; see handleLSPHookChanges.
 		rt := &lspRuntime{hook: hook, open: map[string]struct{}{}}
 		r.lspClients[id] = rt
+		registered = append(registered, id)
 	}
 	r.mu.Unlock()
+
+	// A newly registered hook has no server running yet, so its persisted state
+	// belongs to a previous daemon session. If that state was a failure, eagerly
+	// start the server to re-verify it and hopefully clear stale errors; a clean
+	// hook stays lazy and starts on the first matching change.
+	for _, id := range registered {
+		failing, err := r.store.LSPHookInFailure(r.ctx, id)
+		if err != nil || !failing {
+			continue
+		}
+		r.mu.Lock()
+		rt := r.lspClients[id]
+		r.mu.Unlock()
+		if rt == nil {
+			continue
+		}
+		rt.mu.Lock()
+		hook := rt.hook
+		rt.mu.Unlock()
+		r.activateLSPHook(hook, rt, r.lspSeedChanges(r.ctx, hook))
+	}
 }
 
 func (r *runtimeState) startLSPHook(hook hooks.Hook, rt *lspRuntime) {
@@ -136,9 +159,15 @@ func (r *runtimeState) requestLSPRun(hookID string, _ bool) (bool, error) {
 	rt.mu.Lock()
 	hook := rt.hook
 	rt.mu.Unlock()
+	r.activateLSPHook(hook, rt, r.lspSeedChanges(r.ctx, hook))
+	return true, nil
+}
 
-	seed := r.lspSeedChanges(r.ctx, hook)
-
+// activateLSPHook starts an idle language server (seeding it with the given
+// changes so it publishes diagnostics) or refreshes a running one against those
+// changes. Starting clears any diagnostics via SetLSPHookRunning, so a restart-
+// triggered re-verify replaces stale rows with the server's fresh evaluation.
+func (r *runtimeState) activateLSPHook(hook hooks.Hook, rt *lspRuntime, seed []watcher.Change) {
 	rt.mu.Lock()
 	if rt.client == nil {
 		launch := !rt.starting
@@ -148,14 +177,13 @@ func (r *runtimeState) requestLSPRun(hookID string, _ bool) (bool, error) {
 		if launch {
 			go r.startLSPHook(hook, rt)
 		}
-		_ = r.store.SetLSPHookRunning(r.ctx, hookID)
-		return true, nil
+		_ = r.store.SetLSPHookRunning(r.ctx, hook.ID)
+		return
 	}
 	rt.mu.Unlock()
 	if len(seed) > 0 {
 		go r.handleLSPHookChanges(hook, seed)
 	}
-	return true, nil
 }
 
 // lspSeedChanges returns the current working-tree changes matching the hook
