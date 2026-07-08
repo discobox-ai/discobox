@@ -81,8 +81,8 @@ func HTTPClient(endpoint string, base http.RoundTripper) (baseURL string, client
 		}
 		return LogicalHTTPBaseURL, &http.Client{Transport: transport}, nil
 	case "npipe":
-		transport, err := npipeRoundTripper(parsed.Value, base)
-		if err != nil {
+		transport, err := npipeRoundTripper(parsed.Value, base) //nolint:staticcheck // SA4023: npipeRoundTripper is a stub that always errors on non-Windows; the check is meaningful on Windows.
+		if err != nil {                                         //nolint:staticcheck // SA4023: see above; comparison is only tautological on non-Windows builds.
 			return "", nil, err
 		}
 		return LogicalHTTPBaseURL, &http.Client{Transport: transport}, nil
