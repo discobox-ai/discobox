@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	apimodel "github.com/obot-platform/discobox/api/model"
@@ -106,6 +107,13 @@ func (s *Service) CreateAgentConfig(ctx context.Context, projectID string, input
 	if apiFiles, ok := input.Files.Get(); ok {
 		files = agentConfigFilesFromAPI(apiFiles)
 	}
+	var secrets []model.AgentConfigSecret
+	if apiSecrets, ok := input.Secrets.Get(); ok {
+		secrets, err = agentConfigSecretsFromAPI(apiSecrets)
+		if err != nil {
+			return nil, err
+		}
+	}
 	if definitionID == "" && len(runCommand) == 0 {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "agent config run command is required when no definition is provided")
 	}
@@ -119,6 +127,7 @@ func (s *Service) CreateAgentConfig(ctx context.Context, projectID string, input
 		RunCommand:      runCommand,
 		RelaunchCommand: relaunchCommand,
 		Files:           files,
+		Secrets:         secrets,
 	}
 	// Store only fields that differ from the definition so inherited fields keep
 	// tracking definition upgrades.
@@ -171,6 +180,13 @@ func (s *Service) UpdateAgentConfig(ctx context.Context, projectID, configID str
 	if apiFiles, ok := input.Files.Get(); ok {
 		config.Files = agentConfigFilesFromAPI(apiFiles)
 	}
+	if apiSecrets, ok := input.Secrets.Get(); ok {
+		secrets, err := agentConfigSecretsFromAPI(apiSecrets)
+		if err != nil {
+			return nil, err
+		}
+		config.Secrets = secrets
+	}
 	// A fully custom config (no definition to inherit from) must keep a run command.
 	if config.DefinitionID == "" && len(config.RunCommand) == 0 {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "agent config run command is required when no definition is provided")
@@ -199,6 +215,28 @@ func agentConfigFilesFromAPI(files []apimodel.AgentConfigFile) []model.AgentConf
 	return out
 }
 
+var envVarNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+func agentConfigSecretsFromAPI(secrets []apimodel.AgentConfigSecret) ([]model.AgentConfigSecret, error) {
+	if len(secrets) == 0 {
+		return nil, nil
+	}
+	out := make([]model.AgentConfigSecret, 0, len(secrets))
+	seen := make(map[string]struct{}, len(secrets))
+	for _, secret := range secrets {
+		name := strings.TrimSpace(secret.Name)
+		if !envVarNamePattern.MatchString(name) {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("agent config secret name %q must be a valid environment variable name", secret.Name))
+		}
+		if _, dup := seen[name]; dup {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("agent config secret %q is declared more than once", name))
+		}
+		seen[name] = struct{}{}
+		out = append(out, model.AgentConfigSecret{Name: name, Required: secret.Required.Or(false)})
+	}
+	return out, nil
+}
+
 func (s *Service) SetDefaultAgentConfig(ctx context.Context, projectID, configID string) (*model.Project, error) {
 	project, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
@@ -221,6 +259,56 @@ func (s *Service) DeleteAgentConfig(ctx context.Context, projectID, configID str
 	}
 	if err := s.store.DeleteAgentConfig(ctx, projectID, configID); err != nil {
 		return apiError(err, "agent config not found")
+	}
+	return nil
+}
+
+// ListAgentConfigSecretBindings returns the env→secret bindings for an agent config.
+func (s *Service) ListAgentConfigSecretBindings(ctx context.Context, projectID, configID string) ([]model.AgentConfigSecretBinding, error) {
+	if _, err := s.store.GetAgentConfig(ctx, projectID, configID); err != nil {
+		return nil, apiError(err, "agent config not found")
+	}
+	return s.store.ListAgentConfigSecretBindings(ctx, projectID, configID)
+}
+
+// SetAgentConfigSecretBinding binds (or rebinds) one of an agent config's
+// environment variables to a project secret.
+func (s *Service) SetAgentConfigSecretBinding(ctx context.Context, projectID, configID, envName, secretID string) (*model.AgentConfigSecretBinding, error) {
+	config, err := s.store.GetAgentConfig(ctx, projectID, configID)
+	if err != nil {
+		return nil, apiError(err, "agent config not found")
+	}
+	envName = strings.TrimSpace(envName)
+	if !envVarNamePattern.MatchString(envName) {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("environment variable name %q is invalid", envName))
+	}
+	secretID = strings.TrimSpace(secretID)
+	if secretID == "" {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "secret ID is required")
+	}
+	if _, err := s.store.GetSecret(ctx, projectID, secretID); err != nil {
+		return nil, apiError(err, "secret not found")
+	}
+	binding := &model.AgentConfigSecretBinding{
+		ProjectID:     projectID,
+		AgentConfigID: config.ID,
+		EnvName:       envName,
+		SecretID:      secretID,
+	}
+	if err := s.store.UpsertAgentConfigSecretBinding(ctx, binding); err != nil {
+		return nil, err
+	}
+	return binding, nil
+}
+
+// DeleteAgentConfigSecretBinding removes an agent config's binding for an
+// environment variable.
+func (s *Service) DeleteAgentConfigSecretBinding(ctx context.Context, projectID, configID, envName string) error {
+	if _, err := s.store.GetAgentConfig(ctx, projectID, configID); err != nil {
+		return apiError(err, "agent config not found")
+	}
+	if err := s.store.DeleteAgentConfigSecretBinding(ctx, projectID, configID, strings.TrimSpace(envName)); err != nil {
+		return apiError(err, "agent config secret binding not found")
 	}
 	return nil
 }

@@ -422,6 +422,42 @@ func (s *routerTestServices) DeleteAgentConfig(_ context.Context, projectID, con
 	return nil
 }
 
+func (s *routerTestServices) ListAgentConfigSecretBindings(_ context.Context, projectID, configID string) ([]model.AgentConfigSecretBinding, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	if _, ok := s.agentConfigs[configID]; !ok {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
+	}
+	return nil, nil
+}
+
+func (s *routerTestServices) SetAgentConfigSecretBinding(_ context.Context, projectID, configID, envName, secretID string) (*model.AgentConfigSecretBinding, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	if _, ok := s.agentConfigs[configID]; !ok {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
+	}
+	return &model.AgentConfigSecretBinding{ID: "binding-1", ProjectID: projectID, AgentConfigID: configID, EnvName: envName, SecretID: secretID}, nil
+}
+
+func (s *routerTestServices) DeleteAgentConfigSecretBinding(_ context.Context, projectID, configID, _ string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	if _, ok := s.agentConfigs[configID]; !ok {
+		return apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
+	}
+	return nil
+}
+
 func (s *routerTestServices) ListSandboxProviderCatalogItems(context.Context) ([]services.SandboxProviderCatalogItem, error) {
 	return []services.SandboxProviderCatalogItem{{ID: "digitalocean", Name: "DigitalOcean", Available: true, BuiltIn: true}}, nil
 }

@@ -108,6 +108,20 @@ func encodeCreateSecretRequest(
 	return nil
 }
 
+func encodeCreateSecretGrantRequest(
+	req *CreateSecretGrantBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeCreateSecretRequestRequest(
 	req *CreateSecretRequestBody,
 	r *http.Request,
@@ -152,6 +166,20 @@ func encodeResolveSandboxSecretRequest(
 
 func encodeRestartSandboxRequest(
 	req *RestartSandboxBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeSetAgentConfigSecretBindingRequest(
+	req *SetAgentConfigSecretBindingBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

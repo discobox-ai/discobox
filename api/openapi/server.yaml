@@ -49,6 +49,12 @@ components:
                     items:
                         type: string
                     type: array
+                secrets:
+                    description: Override for the environment-variable secrets the agent expects. Unset inherits from the definition.
+                    items:
+                        $ref: '#/components/schemas/AgentConfigSecret'
+                    nullable: true
+                    type: array
                 slug:
                     description: Stable, URL-safe identifier used to select the agent config (e.g. codex). Unique within the project.
                     pattern: ^[a-z0-9][a-z0-9-]*$
@@ -108,6 +114,12 @@ components:
                     items:
                         type: string
                     type: array
+                secrets:
+                    description: Environment-variable secrets the agent expects.
+                    items:
+                        $ref: '#/components/schemas/AgentConfigSecret'
+                    nullable: true
+                    type: array
             required:
                 - id
                 - name
@@ -129,6 +141,93 @@ components:
             required:
                 - path
                 - content
+            type: object
+        AgentConfigSecret:
+            additionalProperties: false
+            description: Declares an environment variable the agent expects, and whether it is required.
+            properties:
+                name:
+                    description: Environment variable name the agent expects to be set.
+                    pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                    type: string
+                required:
+                    description: Whether the secret must be set for the agent to run. Optional secrets are used when present but do not block the agent.
+                    type: boolean
+            required:
+                - name
+            type: object
+        AgentConfigSecretBinding:
+            additionalProperties: false
+            description: Binds one of an agent config's environment variables to a project secret.
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/AgentConfigSecretBinding.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                agentConfigId:
+                    description: Agent config the binding belongs to
+                    type: string
+                createdAt:
+                    description: Creation timestamp
+                    format: date-time
+                    type: string
+                envName:
+                    description: Environment variable filled by the secret
+                    type: string
+                id:
+                    description: Stable binding ID
+                    type: string
+                projectId:
+                    description: Project ID
+                    type: string
+                secretId:
+                    description: Bound secret ID
+                    type: string
+                updatedAt:
+                    description: Last update timestamp
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - projectId
+                - agentConfigId
+                - envName
+                - secretId
+                - createdAt
+                - updatedAt
+            type: object
+        ListAgentConfigSecretBindingsBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListAgentConfigSecretBindingsBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                secretBindings:
+                    items:
+                        $ref: '#/components/schemas/AgentConfigSecretBinding'
+                    type: array
+            required:
+                - secretBindings
+            type: object
+        SetAgentConfigSecretBindingBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/SetAgentConfigSecretBindingBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                secretId:
+                    description: Secret ID to bind to the environment variable
+                    type: string
+            required:
+                - secretId
             type: object
         CompleteEvent:
             additionalProperties: false
@@ -186,6 +285,12 @@ components:
                     description: Override for the argv used to run the agent. Unset inherits from the definition when definitionId is provided; required for a fully custom config. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
                         type: string
+                    nullable: true
+                    type: array
+                secrets:
+                    description: Override for the environment-variable secrets the agent expects. Unset inherits from the definition when definitionId is provided.
+                    items:
+                        $ref: '#/components/schemas/AgentConfigSecret'
                     nullable: true
                     type: array
                 slug:
@@ -2121,6 +2226,13 @@ components:
                     description: Grant duration in seconds; overrides the secret's default
                     format: int64
                     type: integer
+                scope:
+                    description: How widely the minted grant applies. Defaults to sandbox for sandbox-originated requests, otherwise project.
+                    enum:
+                        - sandbox
+                        - agentConfig
+                        - project
+                    type: string
                 secretId:
                     description: Secret ID selected by the approver
                     type: string
@@ -2136,9 +2248,6 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                autoApprove:
-                    description: Automatically approve requests for this secret
-                    type: boolean
                 defaultGrantTTLSeconds:
                     description: Default grant duration in seconds
                     format: int64
@@ -2163,6 +2272,39 @@ components:
                 - name
                 - type
                 - value
+            type: object
+        CreateSecretGrantBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/CreateSecretGrantBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                grantTTLSeconds:
+                    description: Grant duration in seconds; defaults to the secret's default. 0 never expires.
+                    format: int64
+                    type: integer
+                host:
+                    description: Host the grant is limited to; empty matches any host and defaults to the secret's host
+                    type: string
+                scope:
+                    description: How widely the grant applies
+                    enum:
+                        - sandbox
+                        - agentConfig
+                        - project
+                    type: string
+                scopeKey:
+                    description: Identifier the scope resolves against (sandbox ID or agent config ID). Defaults to the project ID for project scope.
+                    type: string
+                secretId:
+                    description: Secret ID to grant
+                    type: string
+            required:
+                - secretId
+                - scope
             type: object
         CreateSecretRequestBody:
             additionalProperties: false
@@ -2230,9 +2372,6 @@ components:
                 anonymous:
                     description: Sandbox-managed secret created from an inline value; referenced only by ID
                     type: boolean
-                autoApprove:
-                    description: Automatically approve requests for this secret
-                    type: boolean
                 createdAt:
                     description: Creation timestamp
                     format: date-time
@@ -2272,10 +2411,85 @@ components:
                 - projectId
                 - name
                 - type
-                - autoApprove
                 - defaultGrantTTLSeconds
                 - createdAt
                 - updatedAt
+            type: object
+        SecretGrant:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/SecretGrant.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                createdAt:
+                    description: Creation timestamp
+                    format: date-time
+                    type: string
+                expiresAt:
+                    description: Expiry time; empty never expires
+                    format: date-time
+                    type: string
+                grantedAt:
+                    description: When the grant was created
+                    format: date-time
+                    type: string
+                grantedBy:
+                    description: Principal ID that created the grant
+                    type: string
+                host:
+                    description: Host the grant is limited to; empty matches any host
+                    type: string
+                id:
+                    description: Stable grant ID
+                    type: string
+                projectId:
+                    description: Project ID
+                    type: string
+                scope:
+                    description: How widely the grant applies
+                    enum:
+                        - sandbox
+                        - agentConfig
+                        - project
+                    type: string
+                scopeKey:
+                    description: Identifier the scope resolves against
+                    type: string
+                secretId:
+                    description: Granted secret ID
+                    type: string
+                updatedAt:
+                    description: Last update timestamp
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - projectId
+                - secretId
+                - scope
+                - scopeKey
+                - grantedAt
+                - createdAt
+                - updatedAt
+            type: object
+        ListSecretGrantsBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListSecretGrantsBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                secretGrants:
+                    items:
+                        $ref: '#/components/schemas/SecretGrant'
+                    type: array
+            required:
+                - secretGrants
             type: object
         SecretRequest:
             additionalProperties: false
@@ -2286,20 +2500,12 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                approvedBy:
-                    description: ID of the user or "auto" if auto-approved
-                    type: string
                 createdAt:
                     description: Creation timestamp
                     format: date-time
                     type: string
-                expiresAt:
-                    description: Grant expiry time; set when approved
-                    format: date-time
-                    type: string
-                grantedAt:
-                    description: Approval timestamp
-                    format: date-time
+                grantId:
+                    description: Grant that satisfied this request; set when approved
                     type: string
                 host:
                     description: Host hint provided at request time
@@ -2337,8 +2543,6 @@ components:
                     description: Last update timestamp
                     format: date-time
                     type: string
-                value:
-                    $ref: '#/components/schemas/SecretValue'
             required:
                 - id
                 - projectId
@@ -2377,9 +2581,6 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                autoApprove:
-                    description: Automatically approve requests for this secret
-                    type: boolean
                 defaultGrantTTLSeconds:
                     description: Default grant duration in seconds
                     format: int64
@@ -2468,6 +2669,12 @@ components:
                     description: Argv used to run the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
                         type: string
+                    nullable: true
+                    type: array
+                secrets:
+                    description: Environment-variable secrets the agent expects.
+                    items:
+                        $ref: '#/components/schemas/AgentConfigSecret'
                     nullable: true
                     type: array
             type: object
@@ -3218,6 +3425,126 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Set the project default agent config
+            tags:
+                - Agent Configs
+    /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings:
+        get:
+            operationId: list-agent-config-secret-bindings
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Agent config ID
+                  in: path
+                  name: agentConfigId
+                  required: true
+                  schema:
+                    description: Agent config ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListAgentConfigSecretBindingsBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List agent config secret bindings
+            tags:
+                - Agent Configs
+    /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}:
+        put:
+            operationId: set-agent-config-secret-binding
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Agent config ID
+                  in: path
+                  name: agentConfigId
+                  required: true
+                  schema:
+                    description: Agent config ID
+                    type: string
+                - description: Environment variable name
+                  in: path
+                  name: envName
+                  required: true
+                  schema:
+                    description: Environment variable name
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/SetAgentConfigSecretBindingBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/AgentConfigSecretBinding'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Bind an agent config environment variable to a secret
+            tags:
+                - Agent Configs
+        delete:
+            operationId: delete-agent-config-secret-binding
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Agent config ID
+                  in: path
+                  name: agentConfigId
+                  required: true
+                  schema:
+                    description: Agent config ID
+                    type: string
+                - description: Environment variable name
+                  in: path
+                  name: envName
+                  required: true
+                  schema:
+                    description: Environment variable name
+                    type: string
+            responses:
+                204:
+                    description: No Content
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Remove an agent config secret binding
             tags:
                 - Agent Configs
     /projects/{projectId}/providers:
@@ -4977,6 +5304,104 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Deny a secret request
+            tags:
+                - Secrets
+    /projects/{projectId}/secret-grants:
+        get:
+            operationId: list-secret-grants
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Filter by granted secret ID
+                  in: query
+                  name: secretId
+                  schema:
+                    description: Filter by granted secret ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ListSecretGrantsBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: List secret grants
+            tags:
+                - Secrets
+        post:
+            operationId: create-secret-grant
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreateSecretGrantBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SecretGrant'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Create a secret grant (pre-approval)
+            tags:
+                - Secrets
+    /projects/{projectId}/secret-grants/{grantId}:
+        delete:
+            operationId: revoke-secret-grant
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Secret grant ID
+                  in: path
+                  name: grantId
+                  required: true
+                  schema:
+                    description: Secret grant ID
+                    type: string
+            responses:
+                204:
+                    description: No Content
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Revoke a secret grant
             tags:
                 - Secrets
     /providers/catalog:

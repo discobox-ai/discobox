@@ -36,6 +36,7 @@ type Definition struct {
 	RunCommand      []string
 	RelaunchCommand []string
 	Files           []File
+	Secrets         []Secret
 }
 
 // File is a file to write into the agent's home directory when the agent is
@@ -44,6 +45,14 @@ type File struct {
 	Path       string
 	Content    string
 	CreateOnly bool
+}
+
+// Secret declares an environment variable the agent expects, and whether it is
+// required for the agent to run. Optional secrets are used when present but do
+// not block the agent from launching.
+type Secret struct {
+	Name     string
+	Required bool
 }
 
 // HookInstallRequest is the input to installing a harness's hook integration.

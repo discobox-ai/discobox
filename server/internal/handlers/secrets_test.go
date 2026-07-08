@@ -32,28 +32,24 @@ func TestSecretHandlersDoNotReturnSecretValues(t *testing.T) {
 	assertResponseDoesNotContain(t, getRes, "value")
 }
 
-func TestSecretRequestHandlerCanReturnSecretValue(t *testing.T) {
+func TestSecretRequestHandlersDoNotReturnSecretValues(t *testing.T) {
 	h := New(svcapi.Services{Secrets: fakeSecretService{}})
 
-	res, err := h.GetSecretRequest(context.Background(), serverapi.GetSecretRequestParams{ProjectId: "project-1", RequestId: "request-1"})
+	getRes, err := h.GetSecretRequest(context.Background(), serverapi.GetSecretRequestParams{ProjectId: "project-1", RequestId: "request-1"})
 	if err != nil {
 		t.Fatalf("get secret request: %v", err)
 	}
-	assertResponseContains(t, res, "clear-token")
-	assertResponseContains(t, res, "value")
-}
+	assertResponseDoesNotContain(t, getRes, "clear-token")
+	assertResponseDoesNotContain(t, getRes, "value")
 
-func TestCreateSecretRequestHandlerCanReturnAutoApprovedSecretValue(t *testing.T) {
-	h := New(svcapi.Services{Secrets: fakeSecretService{}})
-
-	res, err := h.CreateSecretRequest(context.Background(), &serverapi.CreateSecretRequestBody{
+	createRes, err := h.CreateSecretRequest(context.Background(), &serverapi.CreateSecretRequestBody{
 		Type: serverapi.CreateSecretRequestBodyTypeBearer,
 	}, serverapi.CreateSecretRequestParams{ProjectId: "project-1"})
 	if err != nil {
 		t.Fatalf("create secret request: %v", err)
 	}
-	assertResponseContains(t, res, "clear-token")
-	assertResponseContains(t, res, "value")
+	assertResponseDoesNotContain(t, createRes, "clear-token")
+	assertResponseDoesNotContain(t, createRes, "value")
 }
 
 type fakeSecretService struct{}
@@ -105,8 +101,21 @@ func (fakeSecretService) DenySecretRequest(context.Context, string, string) erro
 	return nil
 }
 
-func (fakeSecretService) ResolveSandboxSecret(context.Context, string, string, string, string) (*model.SecretRequest, error) {
-	return &model.SecretRequest{Status: model.SecretRequestStatusPending}, nil
+func (fakeSecretService) ListSecretGrants(context.Context, string, string) ([]model.SecretGrant, error) {
+	return []model.SecretGrant{fakeSecretGrant()}, nil
+}
+
+func (fakeSecretService) CreateSecretGrant(context.Context, string, svcapi.CreateSecretGrantBody) (*model.SecretGrant, error) {
+	grant := fakeSecretGrant()
+	return &grant, nil
+}
+
+func (fakeSecretService) RevokeSecretGrant(context.Context, string, string) error {
+	return nil
+}
+
+func (fakeSecretService) ResolveSandboxSecret(context.Context, string, string, string, string) (*model.SandboxSecretResolution, error) {
+	return &model.SandboxSecretResolution{Status: model.SecretRequestStatusPending}, nil
 }
 
 func fakeSecret() model.Secret {
@@ -117,7 +126,6 @@ func fakeSecret() model.Secret {
 		Name:            "github",
 		Type:            model.SecretTypeBearer,
 		Host:            "github.com",
-		AutoApprove:     true,
 		DefaultGrantTTL: 3600,
 		EncryptedValue:  []byte(`{"token":"encrypted-token"}`),
 		CreatedAt:       now,
@@ -135,20 +143,24 @@ func fakeSecretRequest() model.SecretRequest {
 		Host:        "github.com",
 		SecretID:    "secret-1",
 		Status:      model.SecretRequestStatusApproved,
+		GrantID:     "grant-1",
 		CreatedAt:   now,
 		UpdatedAt:   now,
-		Value:       &model.SecretValue{Token: "clear-token"},
 	}
 }
 
-func assertResponseContains(t *testing.T, res any, needle string) {
-	t.Helper()
-	data, err := json.Marshal(res)
-	if err != nil {
-		t.Fatalf("marshal response: %v", err)
-	}
-	if !strings.Contains(string(data), needle) {
-		t.Fatalf("response = %s, want %q", data, needle)
+func fakeSecretGrant() model.SecretGrant {
+	now := time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC)
+	return model.SecretGrant{
+		ID:        "grant-1",
+		ProjectID: "project-1",
+		SecretID:  "secret-1",
+		Scope:     model.SecretGrantScopeProject,
+		ScopeKey:  "project-1",
+		Host:      "github.com",
+		GrantedAt: now,
+		CreatedAt: now,
+		UpdatedAt: now,
 	}
 }
 

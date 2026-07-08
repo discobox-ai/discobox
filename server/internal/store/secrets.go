@@ -126,6 +126,14 @@ func (s *Store) DeleteSecret(ctx context.Context, projectID, secretID string) er
 		if err := tx.Model(sec).Update("encrypted_value", nil).Error; err != nil {
 			return nil, err
 		}
+		// Drop agent-config bindings and standing grants that reference this secret
+		// so nothing dangles.
+		if err := s.deleteAgentConfigSecretBindingsBySecret(tx, secretID); err != nil {
+			return nil, err
+		}
+		if err := s.deleteSecretGrantsBySecret(tx, secretID); err != nil {
+			return nil, err
+		}
 		if err := tx.Delete(sec).Error; err != nil {
 			return nil, err
 		}
@@ -182,18 +190,18 @@ func (s *Store) CreateSecretRequest(ctx context.Context, req *model.SecretReques
 	return err
 }
 
-// FindLatestSecretRequest returns the most recent non-denied secret request for
-// a specific secret, host, and requesting principal. It powers on-demand
-// sentinel resolution so repeated proxy lookups reuse a grant or pending request
-// instead of creating duplicates.
-func (s *Store) FindLatestSecretRequest(ctx context.Context, projectID, secretID, host, requestedBy string) (*model.SecretRequest, error) {
+// FindPendingSecretRequest returns the most recent pending secret request for a
+// specific secret, host, and requesting principal. It powers on-demand sentinel
+// resolution so repeated proxy lookups reuse an open request instead of piling
+// up duplicates while it waits for approval.
+func (s *Store) FindPendingSecretRequest(ctx context.Context, projectID, secretID, host, requestedBy string) (*model.SecretRequest, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
 	}
 	var req model.SecretRequest
-	err = read.Where("project_id = ? AND secret_id = ? AND host = ? AND requested_by = ? AND status <> ?",
-		projectID, secretID, host, requestedBy, model.SecretRequestStatusDenied).
+	err = read.Where("project_id = ? AND secret_id = ? AND host = ? AND requested_by = ? AND status = ?",
+		projectID, secretID, host, requestedBy, model.SecretRequestStatusPending).
 		Order("created_at DESC").First(&req).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, ErrNotFound
@@ -226,16 +234,6 @@ func (s *Store) ListSecretRequests(ctx context.Context, projectID, status string
 	var out []model.SecretRequest
 	err = query.Order("created_at ASC").Find(&out).Error
 	return out, err
-}
-
-func (s *Store) UpdateSecretRequest(ctx context.Context, req *model.SecretRequest) error {
-	_, err := withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.SecretRequest, error) {
-		if err := tx.Save(req).Error; err != nil {
-			return nil, err
-		}
-		return req, nil
-	})
-	return err
 }
 
 // UpdateSecretRequestIfPending atomically transitions a SecretRequest out of

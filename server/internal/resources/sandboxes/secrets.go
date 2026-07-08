@@ -3,15 +3,19 @@ package sandboxes
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 
 	"github.com/obot-platform/discobox/id"
+	"github.com/obot-platform/discobox/server/internal/agentdefs"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/secretformat"
 	services "github.com/obot-platform/discobox/server/internal/services"
+	"github.com/obot-platform/discobox/server/internal/store"
 )
 
 const defaultSentinelFormat = "{alnum:48}"
@@ -53,6 +57,81 @@ func (s *Service) prepareSandboxSecrets(ctx context.Context, projectID string, s
 			SandboxID: sandbox.ID,
 			SecretID:  secretID,
 			EnvName:   env,
+			Sentinel:  sentinel,
+		})
+	}
+	return assignments, nil
+}
+
+// applyAgentConfigSecrets materializes an agent config's secret bindings into
+// sandbox sentinels and enforces that every declared required secret is
+// satisfied. inlineEnvs are env vars already bound per-sandbox by the create
+// request; an inline secret wins over a binding for the same env. It mutates
+// sandbox.Env and returns the assignment rows to persist.
+func (s *Service) applyAgentConfigSecrets(ctx context.Context, projectID string, sandbox *model.Sandbox, agentConfigID string, inlineEnvs map[string]struct{}) ([]*model.SandboxSecret, error) {
+	config, err := s.store.GetAgentConfig(ctx, projectID, agentConfigID)
+	if err != nil {
+		return nil, mapAPIError(err, "agent config not found")
+	}
+	resolved := agentdefs.Resolve(config)
+	bindings, err := s.store.ListAgentConfigSecretBindings(ctx, projectID, agentConfigID)
+	if err != nil {
+		return nil, err
+	}
+	boundByEnv := make(map[string]struct{}, len(bindings))
+	for _, b := range bindings {
+		boundByEnv[b.EnvName] = struct{}{}
+	}
+	if sandbox.Env == nil {
+		sandbox.Env = map[string]string{}
+	}
+
+	// A required declared secret must be satisfied by an inline secret, an
+	// agent-config binding, or a literal sandbox env var.
+	var missing []string
+	for _, decl := range resolved.Secrets {
+		if !decl.Required {
+			continue
+		}
+		if _, ok := inlineEnvs[decl.Name]; ok {
+			continue
+		}
+		if _, ok := boundByEnv[decl.Name]; ok {
+			continue
+		}
+		if _, ok := sandbox.Env[decl.Name]; ok {
+			continue
+		}
+		missing = append(missing, decl.Name)
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			fmt.Sprintf("agent config %q requires secrets with no bound value: %s", config.Slug, strings.Join(missing, ", ")))
+	}
+
+	assignments := make([]*model.SandboxSecret, 0, len(bindings))
+	for _, b := range bindings {
+		if _, ok := inlineEnvs[b.EnvName]; ok {
+			continue // an explicit per-sandbox secret wins over the binding
+		}
+		secret, err := s.store.GetSecret(ctx, projectID, b.SecretID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				continue // secret deleted out from under the binding; skip
+			}
+			return nil, err
+		}
+		sentinel, err := mintSentinel(s.secretFormat(ctx, secret))
+		if err != nil {
+			return nil, err
+		}
+		sandbox.Env[b.EnvName] = sentinel
+		assignments = append(assignments, &model.SandboxSecret{
+			ProjectID: projectID,
+			SandboxID: sandbox.ID,
+			SecretID:  secret.ID,
+			EnvName:   b.EnvName,
 			Sentinel:  sentinel,
 		})
 	}

@@ -67,8 +67,23 @@ func TestApproveSecretRequestUsesSelectedSecretID(t *testing.T) {
 	if approved.SecretID != selected.ID {
 		t.Fatalf("secret id = %q, want %q", approved.SecretID, selected.ID)
 	}
-	if approved.Value == nil || approved.Value.Token != "selected-token" {
-		t.Fatalf("approved value = %#v, want selected token", approved.Value)
+	if approved.GrantID == "" {
+		t.Fatal("approved request should reference the minted grant")
+	}
+
+	// Approval mints a standing grant. A non-sandbox request defaults to project scope.
+	grants, err := svc.ListSecretGrants(ctx, "project-1", selected.ID)
+	if err != nil {
+		t.Fatalf("list grants: %v", err)
+	}
+	if len(grants) != 1 {
+		t.Fatalf("grants = %d, want 1", len(grants))
+	}
+	if grants[0].ID != approved.GrantID {
+		t.Fatalf("grant id = %q, want %q", grants[0].ID, approved.GrantID)
+	}
+	if grants[0].Scope != model.SecretGrantScopeProject || grants[0].ScopeKey != "project-1" {
+		t.Fatalf("grant scope = %q/%q, want project/project-1", grants[0].Scope, grants[0].ScopeKey)
 	}
 }
 

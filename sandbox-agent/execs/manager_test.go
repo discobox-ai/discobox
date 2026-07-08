@@ -284,6 +284,10 @@ func (m *fakeUnitManager) Start(_ context.Context, req StartRequest) (StartResul
 	return StartResult{Unit: req.Unit, PID: 1234}, nil
 }
 
+func (m *fakeUnitManager) Stop(context.Context, string) error {
+	return nil
+}
+
 func (m *fakeUnitManager) Status(context.Context, string) (UnitStatus, error) {
 	return UnitStatus{}, errors.New("not found")
 }

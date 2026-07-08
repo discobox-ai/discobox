@@ -21,6 +21,8 @@ type agentCreateOptions struct {
 	relaunchCommand []string
 	files           []string
 	createOnlyFile  []string
+	requiredSecrets []string
+	optionalSecrets []string
 }
 
 type agentUpdateOptions struct {
@@ -30,6 +32,8 @@ type agentUpdateOptions struct {
 	relaunchCommand []string
 	files           []string
 	createOnlyFile  []string
+	requiredSecrets []string
+	optionalSecrets []string
 }
 
 func (a *App) newAgentCommand() *cobra.Command {
@@ -43,7 +47,95 @@ func (a *App) newAgentCommand() *cobra.Command {
 	cmd.AddCommand(a.newAgentUpdateCommand())
 	cmd.AddCommand(a.newAgentSetDefaultCommand())
 	cmd.AddCommand(a.newAgentDeleteCommand())
+	cmd.AddCommand(a.newAgentSecretsCommand())
 	return cmd
+}
+
+func (a *App) newAgentSecretsCommand() *cobra.Command {
+	cmd := &cobra.Command{Use: "secrets", Aliases: []string{"secret"}, Short: "Manage an agent config's secret bindings"}
+	cmd.AddCommand(a.newAgentSecretsListCommand())
+	cmd.AddCommand(a.newAgentSecretsBindCommand())
+	cmd.AddCommand(a.newAgentSecretsUnbindCommand())
+	return cmd
+}
+
+func (a *App) newAgentSecretsListCommand() *cobra.Command {
+	return &cobra.Command{Use: "list AGENT_CONFIG_ID", Short: "List an agent config's declared secrets and their bindings", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeAgentConfigs, RunE: func(cmd *cobra.Command, args []string) error {
+		projectID, agentID, client, err := a.agentRequest(cmd.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		agentRes, err := client.GetAgentConfig(cmd.Context(), apiclientgen.GetAgentConfigParams{ProjectId: projectID, AgentConfigId: agentID})
+		if err != nil {
+			return err
+		}
+		agent, err := expectResponse[apimodel.AgentConfig](agentRes)
+		if err != nil {
+			return err
+		}
+		bindings, err := a.listAgentSecretBindings(cmd.Context(), client, projectID, agentID)
+		if err != nil {
+			return err
+		}
+		return a.writeAgentSecretBindings(cmd, agent.Secrets.Or(nil), bindings)
+	}}
+}
+
+func (a *App) newAgentSecretsBindCommand() *cobra.Command {
+	return &cobra.Command{Use: "bind AGENT_CONFIG_ID ENV_NAME SECRET_ID", Short: "Bind an agent config environment variable to a secret", Args: cobra.ExactArgs(3), ValidArgsFunction: a.completeAgentConfigs, RunE: func(cmd *cobra.Command, args []string) error {
+		projectID, agentID, client, err := a.agentRequest(cmd.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		secretID, err := a.resolveSecretID(cmd.Context(), client, projectID, args[2])
+		if err != nil {
+			return err
+		}
+		body := &apimodel.SetAgentConfigSecretBindingBody{SecretId: secretID}
+		res, err := client.SetAgentConfigSecretBinding(cmd.Context(), body, apiclientgen.SetAgentConfigSecretBindingParams{ProjectId: projectID, AgentConfigId: agentID, EnvName: args[1]})
+		if err != nil {
+			return err
+		}
+		binding, err := expectResponse[apimodel.AgentConfigSecretBinding](res)
+		if err != nil {
+			return err
+		}
+		if a.output == "json" {
+			return writeJSON(cmd.OutOrStdout(), binding)
+		}
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "bound %s to secret %s\n", binding.EnvName, shortID(binding.SecretId))
+		return err
+	}}
+}
+
+func (a *App) newAgentSecretsUnbindCommand() *cobra.Command {
+	return &cobra.Command{Use: "unbind AGENT_CONFIG_ID ENV_NAME", Short: "Remove an agent config secret binding", Args: cobra.ExactArgs(2), ValidArgsFunction: a.completeAgentConfigs, RunE: func(cmd *cobra.Command, args []string) error {
+		projectID, agentID, client, err := a.agentRequest(cmd.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		res, err := client.DeleteAgentConfigSecretBinding(cmd.Context(), apiclientgen.DeleteAgentConfigSecretBindingParams{ProjectId: projectID, AgentConfigId: agentID, EnvName: args[1]})
+		if err != nil {
+			return err
+		}
+		if err := expectNoContent[apiclientgen.DeleteAgentConfigSecretBindingNoContent](res); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s unbound\n", args[1])
+		return err
+	}}
+}
+
+func (a *App) listAgentSecretBindings(ctx context.Context, client *apiclientgen.Client, projectID, agentID string) ([]apimodel.AgentConfigSecretBinding, error) {
+	res, err := client.ListAgentConfigSecretBindings(ctx, apiclientgen.ListAgentConfigSecretBindingsParams{ProjectId: projectID, AgentConfigId: agentID})
+	if err != nil {
+		return nil, err
+	}
+	body, err := expectResponse[apimodel.ListAgentConfigSecretBindingsBody](res)
+	if err != nil {
+		return nil, err
+	}
+	return body.GetSecretBindings(), nil
 }
 
 func (a *App) newAgentDefinitionsCommand() *cobra.Command {
@@ -166,6 +258,8 @@ func (a *App) newAgentCreateCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&opts.relaunchCommand, "relaunch-command", nil, "Argv element used to resume the previous agent session on subsequent sandbox starts (repeatable, e.g. --relaunch-command claude --relaunch-command --continue). Replaces the run command for non-first launches. Not run through a shell.")
 	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the agent's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
+	cmd.Flags().StringArrayVar(&opts.requiredSecrets, "required-secret", nil, "Environment variable name of a required secret the agent expects (repeatable, e.g. --required-secret ANTHROPIC_API_KEY)")
+	cmd.Flags().StringArrayVar(&opts.optionalSecrets, "optional-secret", nil, "Environment variable name of an optional secret the agent uses when present (repeatable)")
 	_ = cmd.RegisterFlagCompletionFunc("definition", a.completeAgentDefinitions)
 	return cmd
 }
@@ -279,6 +373,8 @@ func (a *App) newAgentUpdateCommand() *cobra.Command {
 	cmd.Flags().StringArrayVar(&opts.relaunchCommand, "relaunch-command", nil, "Argv element used to resume the previous agent session on subsequent sandbox starts (repeatable, e.g. --relaunch-command claude --relaunch-command --continue). Replaces the run command for non-first launches. Not run through a shell.")
 	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the agent's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
+	cmd.Flags().StringArrayVar(&opts.requiredSecrets, "required-secret", nil, "Environment variable name of a required secret the agent expects (repeatable). Replaces the existing secret set together with --optional-secret.")
+	cmd.Flags().StringArrayVar(&opts.optionalSecrets, "optional-secret", nil, "Environment variable name of an optional secret the agent uses when present (repeatable). Replaces the existing secret set together with --required-secret.")
 	return cmd
 }
 
@@ -461,6 +557,9 @@ func createAgentBody(opts agentCreateOptions) (*apimodel.CreateAgentConfigBody, 
 		}
 		body.SetFiles(apiclientgen.NewOptNilAgentConfigFileArray(files))
 	}
+	if len(opts.requiredSecrets) > 0 || len(opts.optionalSecrets) > 0 {
+		body.SetSecrets(apiclientgen.NewOptNilAgentConfigSecretArray(parseAgentSecretFlags(opts.requiredSecrets, opts.optionalSecrets)))
+	}
 	return body, nil
 }
 
@@ -485,7 +584,27 @@ func updateAgentBody(cmd *cobra.Command, opts agentUpdateOptions) (*apimodel.Upd
 		}
 		body.SetFiles(apiclientgen.NewOptNilAgentConfigFileArray(files))
 	}
+	if cmd.Flags().Changed("required-secret") || cmd.Flags().Changed("optional-secret") {
+		body.SetSecrets(apiclientgen.NewOptNilAgentConfigSecretArray(parseAgentSecretFlags(opts.requiredSecrets, opts.optionalSecrets)))
+	}
 	return body, nil
+}
+
+func parseAgentSecretFlags(required, optional []string) []apimodel.AgentConfigSecret {
+	secrets := make([]apimodel.AgentConfigSecret, 0, len(required)+len(optional))
+	for _, name := range required {
+		if name = strings.TrimSpace(name); name == "" {
+			continue
+		}
+		secrets = append(secrets, apimodel.AgentConfigSecret{Name: name, Required: apiclientgen.NewOptBool(true)})
+	}
+	for _, name := range optional {
+		if name = strings.TrimSpace(name); name == "" {
+			continue
+		}
+		secrets = append(secrets, apimodel.AgentConfigSecret{Name: name})
+	}
+	return secrets
 }
 
 func parseAgentFileFlags(values []string, createOnlyFiles []string) ([]apimodel.AgentConfigFile, error) {

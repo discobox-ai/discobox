@@ -35,6 +35,11 @@ func newResolveFixture(t *testing.T) (*resourcesecrets.Service, *store.Store) {
 
 func createSandbox(t *testing.T, st *store.Store, sandboxID, workerID string) {
 	t.Helper()
+	createSandboxWithAgent(t, st, sandboxID, workerID, "")
+}
+
+func createSandboxWithAgent(t *testing.T, st *store.Store, sandboxID, workerID, agentConfigID string) {
+	t.Helper()
 	sb := &model.Sandbox{
 		ID:              sandboxID,
 		ProjectID:       "project-1",
@@ -42,8 +47,41 @@ func createSandbox(t *testing.T, st *store.Store, sandboxID, workerID string) {
 		Name:            sandboxID,
 		WorkerID:        &workerID,
 	}
+	if agentConfigID != "" {
+		sb.AgentConfigID = &agentConfigID
+	}
 	if err := st.CreateSandbox(context.Background(), sb); err != nil {
 		t.Fatalf("create sandbox: %v", err)
+	}
+}
+
+func mustSecret(t *testing.T, st *store.Store, name, token string) *model.Secret {
+	t.Helper()
+	sec := &model.Secret{
+		ProjectID: "project-1", Name: name, Type: model.SecretTypeBearer,
+		DefaultGrantTTL: 3600, EncryptedValue: mustTokenValue(t, token),
+	}
+	if err := st.CreateSecret(context.Background(), sec); err != nil {
+		t.Fatalf("create secret: %v", err)
+	}
+	return sec
+}
+
+func mustGrant(t *testing.T, st *store.Store, secretID, scope, scopeKey string) {
+	t.Helper()
+	if err := st.CreateSecretGrant(context.Background(), &model.SecretGrant{
+		ProjectID: "project-1", SecretID: secretID, Scope: scope, ScopeKey: scopeKey,
+	}); err != nil {
+		t.Fatalf("create grant: %v", err)
+	}
+}
+
+func mustAssign(t *testing.T, st *store.Store, sandboxID, secretID, sentinel string) {
+	t.Helper()
+	if err := st.CreateSandboxSecret(context.Background(), &model.SandboxSecret{
+		ProjectID: "project-1", SandboxID: sandboxID, SecretID: secretID, EnvName: "FOO", Sentinel: sentinel,
+	}); err != nil {
+		t.Fatalf("create assignment: %v", err)
 	}
 }
 
@@ -57,86 +95,110 @@ func mustTokenValue(t *testing.T, token string) []byte {
 	return b
 }
 
-func TestResolveSandboxSecretAutoApproveReturnsValueAndReusesGrant(t *testing.T) {
+func TestResolveSandboxSecretProjectGrantReturnsValue(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newResolveFixture(t)
 
-	sec := &model.Secret{
-		ProjectID: "project-1", Name: "auto", Type: model.SecretTypeBearer,
-		AutoApprove: true, DefaultGrantTTL: 3600, EncryptedValue: mustTokenValue(t, "real-token"),
-	}
-	if err := st.CreateSecret(ctx, sec); err != nil {
-		t.Fatalf("create secret: %v", err)
-	}
+	sec := mustSecret(t, st, "prj", "real-token")
+	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
 	createSandbox(t, st, "sb-1", "worker-1")
-	if err := st.CreateSandboxSecret(ctx, &model.SandboxSecret{
-		ProjectID: "project-1", SandboxID: "sb-1", SecretID: sec.ID, EnvName: "FOO", Sentinel: "SENTINEL-A",
-	}); err != nil {
-		t.Fatalf("create assignment: %v", err)
-	}
+	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
-	req, err := svc.ResolveSandboxSecret(ctx, "worker-1", "sb-1", "SENTINEL-A", "api.example.com")
+	res, err := svc.ResolveSandboxSecret(ctx, "worker-1", "sb-1", "SENTINEL-A", "api.example.com")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if req.Status != model.SecretRequestStatusApproved {
-		t.Fatalf("status = %q, want approved", req.Status)
+	if res.Status != model.SecretRequestStatusApproved {
+		t.Fatalf("status = %q, want approved", res.Status)
 	}
-	if req.Value == nil || req.Value.Token != "real-token" {
-		t.Fatalf("value = %#v, want real-token", req.Value)
+	if res.Value == nil || res.Value.Token != "real-token" {
+		t.Fatalf("value = %#v, want real-token", res.Value)
 	}
 
-	again, err := svc.ResolveSandboxSecret(ctx, "worker-1", "sb-1", "SENTINEL-A", "api.example.com")
+	// A covering grant means no pending request is ever created.
+	pending, err := st.ListSecretRequests(ctx, "project-1", model.SecretRequestStatusPending)
 	if err != nil {
-		t.Fatalf("resolve again: %v", err)
+		t.Fatalf("list requests: %v", err)
 	}
-	if again.ID != req.ID {
-		t.Fatalf("expected grant reuse, got new request %s vs %s", again.ID, req.ID)
+	if len(pending) != 0 {
+		t.Fatalf("pending requests = %d, want 0", len(pending))
 	}
 }
 
-func TestResolveSandboxSecretPendingWithoutAutoApprove(t *testing.T) {
+func TestResolveSandboxSecretAgentConfigGrantReturnsValue(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newResolveFixture(t)
 
-	sec := &model.Secret{
-		ProjectID: "project-1", Name: "manual", Type: model.SecretTypeBearer,
-		DefaultGrantTTL: 3600, EncryptedValue: mustTokenValue(t, "real-token"),
-	}
-	if err := st.CreateSecret(ctx, sec); err != nil {
-		t.Fatalf("create secret: %v", err)
-	}
-	createSandbox(t, st, "sb-1", "worker-1")
-	if err := st.CreateSandboxSecret(ctx, &model.SandboxSecret{
-		ProjectID: "project-1", SandboxID: "sb-1", SecretID: sec.ID, EnvName: "FOO", Sentinel: "SENTINEL-B",
+	sec := mustSecret(t, st, "ac", "real-token")
+	if err := st.CreateAgentConfig(ctx, &model.AgentConfig{
+		ID: "ac-1", ProjectID: "project-1", Slug: "codex", Name: "Codex", RunCommand: []string{"codex"},
 	}); err != nil {
-		t.Fatalf("create assignment: %v", err)
+		t.Fatalf("create agent config: %v", err)
 	}
+	mustGrant(t, st, sec.ID, model.SecretGrantScopeAgentConfig, "ac-1")
+	createSandboxWithAgent(t, st, "sb-1", "worker-1", "ac-1")
+	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-C")
 
-	req, err := svc.ResolveSandboxSecret(ctx, "worker-1", "sb-1", "SENTINEL-B", "api.example.com")
+	res, err := svc.ResolveSandboxSecret(ctx, "worker-1", "sb-1", "SENTINEL-C", "api.example.com")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
-	if req.Status != model.SecretRequestStatusPending {
-		t.Fatalf("status = %q, want pending", req.Status)
+	if res.Status != model.SecretRequestStatusApproved || res.Value == nil || res.Value.Token != "real-token" {
+		t.Fatalf("resolution = %#v, want approved real-token", res)
 	}
-	if req.Value != nil {
-		t.Fatal("pending request must not carry a value")
+}
+
+func TestResolveSandboxSecretPendingWithoutGrant(t *testing.T) {
+	ctx := context.Background()
+	svc, st := newResolveFixture(t)
+
+	sec := mustSecret(t, st, "manual", "real-token")
+	createSandbox(t, st, "sb-1", "worker-1")
+	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-B")
+
+	res, err := svc.ResolveSandboxSecret(ctx, "worker-1", "sb-1", "SENTINEL-B", "api.example.com")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
 	}
-	if req.SecretID != sec.ID {
-		t.Fatalf("secret id = %q, want %q", req.SecretID, sec.ID)
+	if res.Status != model.SecretRequestStatusPending {
+		t.Fatalf("status = %q, want pending", res.Status)
 	}
-	if req.SandboxID != "sb-1" {
-		t.Fatalf("sandbox id = %q, want sb-1", req.SandboxID)
+	if res.Value != nil {
+		t.Fatal("pending resolution must not carry a value")
 	}
 
-	// A second resolve for the same host reuses the pending request.
-	again, err := svc.ResolveSandboxSecret(ctx, "worker-1", "sb-1", "SENTINEL-B", "api.example.com")
-	if err != nil {
+	// A second resolve for the same host reuses the pending request rather than
+	// piling up duplicates.
+	if _, err := svc.ResolveSandboxSecret(ctx, "worker-1", "sb-1", "SENTINEL-B", "api.example.com"); err != nil {
 		t.Fatalf("resolve again: %v", err)
 	}
-	if again.ID != req.ID {
-		t.Fatalf("expected pending reuse, got %s vs %s", again.ID, req.ID)
+	pending, err := st.ListSecretRequests(ctx, "project-1", model.SecretRequestStatusPending)
+	if err != nil {
+		t.Fatalf("list requests: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Fatalf("pending requests = %d, want 1", len(pending))
+	}
+	if pending[0].SecretID != sec.ID || pending[0].SandboxID != "sb-1" {
+		t.Fatalf("pending request = %#v, want secret %s sandbox sb-1", pending[0], sec.ID)
+	}
+}
+
+func TestResolveSandboxSecretSandboxGrantDoesNotLeakToOtherSandbox(t *testing.T) {
+	ctx := context.Background()
+	svc, st := newResolveFixture(t)
+
+	sec := mustSecret(t, st, "iso", "real-token")
+	mustGrant(t, st, sec.ID, model.SecretGrantScopeSandbox, "sb-1")
+	createSandbox(t, st, "sb-2", "worker-1")
+	mustAssign(t, st, "sb-2", sec.ID, "SENTINEL-D")
+
+	res, err := svc.ResolveSandboxSecret(ctx, "worker-1", "sb-2", "SENTINEL-D", "api.example.com")
+	if err != nil {
+		t.Fatalf("resolve: %v", err)
+	}
+	if res.Status != model.SecretRequestStatusPending {
+		t.Fatalf("status = %q, want pending (grant is scoped to sb-1)", res.Status)
 	}
 }
 

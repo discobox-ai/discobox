@@ -75,7 +75,6 @@ func (s *Service) CreateSecret(ctx context.Context, projectID string, input serv
 		Type:            secretType,
 		Host:            host,
 		Format:          format,
-		AutoApprove:     input.AutoApprove.Or(false),
 		DefaultGrantTTL: ttl,
 		EncryptedValue:  valueBytes,
 	}
@@ -107,9 +106,6 @@ func (s *Service) UpdateSecret(ctx context.Context, projectID, secretID string, 
 	}
 	if hostVal, ok := input.Host.Get(); ok {
 		sec.Host = strings.TrimSpace(hostVal)
-	}
-	if autoApprove, ok := input.AutoApprove.Get(); ok {
-		sec.AutoApprove = autoApprove
 	}
 	if ttl, ok := input.DefaultGrantTTLSeconds.Get(); ok && ttl > 0 {
 		sec.DefaultGrantTTL = ttl
@@ -179,25 +175,28 @@ func (s *Service) CreateSecretRequest(ctx context.Context, projectID string, inp
 		Status:      model.SecretRequestStatusPending,
 	}
 
+	// A non-sandbox request is satisfied immediately only by a project-wide grant
+	// on a matching secret; otherwise it waits for approval.
 	matched, err := s.store.MatchSecret(ctx, projectID, secretType, host)
 	if err != nil && !isAdvisoryMatchError(err) {
 		return nil, err
 	}
-	if err == nil && matched.AutoApprove {
-		now := time.Now().UTC()
-		exp := now.Add(time.Duration(matched.DefaultGrantTTL) * time.Second)
-		req.SecretID = matched.ID
-		req.Status = model.SecretRequestStatusApproved
-		req.ApprovedBy = "auto"
-		req.GrantedAt = &now
-		req.ExpiresAt = &exp
+	if err == nil {
+		grant, gerr := s.store.FindLiveGrant(ctx, projectID, matched.ID, host, []store.GrantScope{{Scope: model.SecretGrantScopeProject, ScopeKey: projectID}})
+		if gerr != nil && !errors.Is(gerr, store.ErrNotFound) {
+			return nil, gerr
+		}
+		if grant != nil {
+			req.SecretID = matched.ID
+			req.Status = model.SecretRequestStatusApproved
+			req.GrantID = grant.ID
+		}
 	}
 
 	if err := s.store.CreateSecretRequest(ctx, req); err != nil {
 		return nil, err
 	}
-
-	return s.populateValue(ctx, req)
+	return req, nil
 }
 
 func (s *Service) GetSecretRequest(ctx context.Context, projectID, requestID string) (*model.SecretRequest, error) {
@@ -205,9 +204,13 @@ func (s *Service) GetSecretRequest(ctx context.Context, projectID, requestID str
 	if err != nil {
 		return nil, apiError(err, "secret request not found")
 	}
-	return s.populateValue(ctx, req)
+	return req, nil
 }
 
+// ApproveSecretRequest approves a pending request by minting a SecretGrant at the
+// chosen scope and linking it to the request. The grant is the durable
+// authorization future resolutions match against; the request is only marked
+// approved for audit.
 func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID string, input services.ApproveSecretRequestBody) (*model.SecretRequest, error) {
 	req, err := s.store.GetSecretRequest(ctx, projectID, requestID)
 	if err != nil {
@@ -226,33 +229,42 @@ func (s *Service) ApproveSecretRequest(ctx context.Context, projectID, requestID
 		return nil, apiError(err, "secret not found")
 	}
 
+	scope := strings.TrimSpace(string(input.Scope.Or("")))
+	if scope == "" {
+		// Default to the narrowest scope the request can support.
+		if req.SandboxID != "" {
+			scope = model.SecretGrantScopeSandbox
+		} else {
+			scope = model.SecretGrantScopeProject
+		}
+	}
+	scopeKey, err := s.grantScopeKey(ctx, projectID, req.SandboxID, scope)
+	if err != nil {
+		return nil, err
+	}
+
 	ttl := secret.DefaultGrantTTL
 	if v, ok := input.GrantTTLSeconds.Get(); ok && v > 0 {
 		ttl = v
 	}
-
-	principal, _ := auth.PrincipalFromContext(ctx)
-	approvedBy := principal.UserID
-	if approvedBy == "" {
-		approvedBy = principal.WorkerID
+	grant, err := s.mintGrant(ctx, projectID, secret.ID, scope, scopeKey, req.Host, ttl)
+	if err != nil {
+		return nil, err
 	}
 
-	now := time.Now().UTC()
-	exp := now.Add(time.Duration(ttl) * time.Second)
 	req.SecretID = secret.ID
 	req.Status = model.SecretRequestStatusApproved
-	req.ApprovedBy = approvedBy
-	req.GrantedAt = &now
-	req.ExpiresAt = &exp
-
+	req.GrantID = grant.ID
 	if err := s.store.UpdateSecretRequestIfPending(ctx, req); err != nil {
+		// Avoid leaving a live authorization behind if the request was denied or
+		// approved concurrently.
+		_ = s.store.DeleteSecretGrant(ctx, projectID, grant.ID)
 		if errors.Is(err, store.ErrGenerationConflict) {
 			return nil, apperrors.NewStatusError(http.StatusConflict, "secret request status changed concurrently; refresh and try again")
 		}
 		return nil, err
 	}
-
-	return s.populateValue(ctx, req)
+	return req, nil
 }
 
 func (s *Service) DenySecretRequest(ctx context.Context, projectID, requestID string) error {
@@ -273,16 +285,12 @@ func (s *Service) DenySecretRequest(ctx context.Context, projectID, requestID st
 	return nil
 }
 
-// ResolveSandboxSecret resolves a sentinel injected into a sandbox to its secret
-// grant for a destination host. It maps the sentinel to its assignment and reuses
-// the secret-request approval flow: an auto-approved or previously-approved,
-// unexpired grant returns a request carrying the decrypted value; otherwise a
-// pending request is created (or an existing one reused) and the returned request
-// has no value, so the proxy leaves the sentinel in place until approval.
-//
-// requestedBy is scoped to the sandbox so grants and pending requests do not
-// leak across sandboxes.
-func (s *Service) ResolveSandboxSecret(ctx context.Context, workerID, sandboxID, sentinel, host string) (*model.SecretRequest, error) {
+// ResolveSandboxSecret resolves a sentinel injected into a sandbox. It maps the
+// sentinel to its assignment and looks for a live grant covering the sandbox at
+// any scope (its own ID, its agent config, or the project). A match returns the
+// decrypted value; otherwise a single pending request is created (or reused) and
+// the proxy leaves the sentinel in place until a grant exists.
+func (s *Service) ResolveSandboxSecret(ctx context.Context, workerID, sandboxID, sentinel, host string) (*model.SandboxSecretResolution, error) {
 	assignment, err := s.store.GetSandboxSecretBySentinel(ctx, sandboxID, sentinel)
 	if err != nil {
 		return nil, apiError(err, "sandbox secret not found")
@@ -299,71 +307,164 @@ func (s *Service) ResolveSandboxSecret(ctx context.Context, workerID, sandboxID,
 	if err != nil {
 		return nil, apiError(err, "secret not found")
 	}
-	requestedBy := "sandbox:" + sandboxID
 	host = strings.TrimSpace(host)
 
-	existing, err := s.store.FindLatestSecretRequest(ctx, assignment.ProjectID, assignment.SecretID, host, requestedBy)
+	scopes := []store.GrantScope{
+		{Scope: model.SecretGrantScopeSandbox, ScopeKey: sandbox.ID},
+		{Scope: model.SecretGrantScopeProject, ScopeKey: assignment.ProjectID},
+	}
+	if sandbox.AgentConfigID != nil && strings.TrimSpace(*sandbox.AgentConfigID) != "" {
+		scopes = append(scopes, store.GrantScope{Scope: model.SecretGrantScopeAgentConfig, ScopeKey: strings.TrimSpace(*sandbox.AgentConfigID)})
+	}
+	grant, err := s.store.FindLiveGrant(ctx, assignment.ProjectID, assignment.SecretID, host, scopes)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, err
 	}
-	if existing != nil {
-		switch existing.Status {
-		case model.SecretRequestStatusApproved:
-			if existing.ExpiresAt == nil || time.Now().UTC().Before(*existing.ExpiresAt) {
-				return s.populateValue(ctx, existing)
-			}
-			// Grant expired; fall through to create a fresh request.
-		case model.SecretRequestStatusPending:
-			return existing, nil
+	if grant != nil {
+		val, err := s.store.OpenSecretValue(ctx, secret)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt secret: %w", err)
 		}
+		return &model.SandboxSecretResolution{Status: model.SecretRequestStatusApproved, Value: val, ExpiresAt: grant.ExpiresAt}, nil
 	}
 
-	req := &model.SecretRequest{
-		ProjectID:   assignment.ProjectID,
-		RequestedBy: requestedBy,
-		SandboxID:   assignment.SandboxID,
-		Type:        secret.Type,
-		Host:        host,
-		SecretID:    secret.ID,
-		Status:      model.SecretRequestStatusPending,
-	}
-	if secret.AutoApprove {
-		now := time.Now().UTC()
-		exp := now.Add(time.Duration(secret.DefaultGrantTTL) * time.Second)
-		req.Status = model.SecretRequestStatusApproved
-		req.ApprovedBy = "auto"
-		req.GrantedAt = &now
-		req.ExpiresAt = &exp
-	}
-	if err := s.store.CreateSecretRequest(ctx, req); err != nil {
+	// No grant: ensure exactly one pending request exists for this sandbox+secret+host.
+	requestedBy := "sandbox:" + sandboxID
+	existing, err := s.store.FindPendingSecretRequest(ctx, assignment.ProjectID, assignment.SecretID, host, requestedBy)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, err
 	}
-	return s.populateValue(ctx, req)
+	if existing == nil {
+		req := &model.SecretRequest{
+			ProjectID:   assignment.ProjectID,
+			RequestedBy: requestedBy,
+			SandboxID:   assignment.SandboxID,
+			Type:        secret.Type,
+			Host:        host,
+			SecretID:    secret.ID,
+			Status:      model.SecretRequestStatusPending,
+		}
+		if err := s.store.CreateSecretRequest(ctx, req); err != nil {
+			return nil, err
+		}
+	}
+	return &model.SandboxSecretResolution{Status: model.SecretRequestStatusPending}, nil
 }
 
-// populateValue decrypts and attaches the secret value when the request is
-// approved and the grant has not expired.
-func (s *Service) populateValue(ctx context.Context, req *model.SecretRequest) (*model.SecretRequest, error) {
-	if req.Status != model.SecretRequestStatusApproved || req.SecretID == "" {
-		return req, nil
+// ListSecretGrants returns a project's grants, optionally filtered to one secret.
+func (s *Service) ListSecretGrants(ctx context.Context, projectID, secretID string) ([]model.SecretGrant, error) {
+	if _, err := s.store.GetProject(ctx, projectID); err != nil {
+		return nil, apiError(err, "project not found")
 	}
-	if req.ExpiresAt != nil && time.Now().UTC().After(*req.ExpiresAt) {
-		return req, nil
-	}
-	sec, err := s.store.GetSecret(ctx, req.ProjectID, req.SecretID)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			// Secret was deleted after approval; return the request without a value.
-			return req, nil
+	secretID = strings.TrimSpace(secretID)
+	if secretID != "" {
+		if _, err := s.store.GetSecret(ctx, projectID, secretID); err != nil {
+			return nil, apiError(err, "secret not found")
 		}
-		return nil, fmt.Errorf("load secret for grant: %w", err)
 	}
-	val, err := s.store.OpenSecretValue(ctx, sec)
+	return s.store.ListSecretGrants(ctx, projectID, secretID)
+}
+
+// CreateSecretGrant mints a standing grant directly (pre-approval), without a
+// prior request.
+func (s *Service) CreateSecretGrant(ctx context.Context, projectID string, input services.CreateSecretGrantBody) (*model.SecretGrant, error) {
+	if _, err := s.store.GetProject(ctx, projectID); err != nil {
+		return nil, apiError(err, "project not found")
+	}
+	secretID := strings.TrimSpace(input.SecretId)
+	if secretID == "" {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "secret ID is required")
+	}
+	secret, err := s.store.GetSecret(ctx, projectID, secretID)
 	if err != nil {
-		return nil, fmt.Errorf("decrypt secret: %w", err)
+		return nil, apiError(err, "secret not found")
 	}
-	req.Value = val
-	return req, nil
+	scope := strings.TrimSpace(string(input.Scope))
+	scopeKey := strings.TrimSpace(input.ScopeKey.Or(""))
+	if scope == model.SecretGrantScopeProject && scopeKey == "" {
+		scopeKey = projectID
+	}
+	if err := validateGrantScope(scope, scopeKey); err != nil {
+		return nil, err
+	}
+	host := strings.TrimSpace(input.Host.Or(secret.Host))
+	// Default to the secret's TTL; an explicit value (including 0 = never expires) wins.
+	ttl := secret.DefaultGrantTTL
+	if v, ok := input.GrantTTLSeconds.Get(); ok {
+		ttl = v
+	}
+	return s.mintGrant(ctx, projectID, secret.ID, scope, scopeKey, host, ttl)
+}
+
+// RevokeSecretGrant deletes a standing grant.
+func (s *Service) RevokeSecretGrant(ctx context.Context, projectID, grantID string) error {
+	if err := s.store.DeleteSecretGrant(ctx, projectID, grantID); err != nil {
+		return apiError(err, "secret grant not found")
+	}
+	return nil
+}
+
+// grantScopeKey resolves the identifier a grant scope binds to for a request.
+func (s *Service) grantScopeKey(ctx context.Context, projectID, sandboxID, scope string) (string, error) {
+	switch scope {
+	case model.SecretGrantScopeProject:
+		return projectID, nil
+	case model.SecretGrantScopeSandbox:
+		if sandboxID == "" {
+			return "", apperrors.NewStatusError(http.StatusBadRequest, "sandbox scope requires a sandbox-originated request")
+		}
+		return sandboxID, nil
+	case model.SecretGrantScopeAgentConfig:
+		if sandboxID == "" {
+			return "", apperrors.NewStatusError(http.StatusBadRequest, "agentConfig scope requires a sandbox-originated request")
+		}
+		sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
+		if err != nil {
+			return "", apiError(err, "sandbox not found")
+		}
+		if sandbox.AgentConfigID == nil || strings.TrimSpace(*sandbox.AgentConfigID) == "" {
+			return "", apperrors.NewStatusError(http.StatusBadRequest, "sandbox has no agent config to scope the grant to")
+		}
+		return strings.TrimSpace(*sandbox.AgentConfigID), nil
+	default:
+		return "", apperrors.NewStatusError(http.StatusBadRequest, "grant scope must be sandbox, agentConfig, or project")
+	}
+}
+
+func (s *Service) mintGrant(ctx context.Context, projectID, secretID, scope, scopeKey, host string, ttlSeconds int64) (*model.SecretGrant, error) {
+	principal, _ := auth.PrincipalFromContext(ctx)
+	grantedBy := principal.UserID
+	if grantedBy == "" {
+		grantedBy = principal.WorkerID
+	}
+	grant := &model.SecretGrant{
+		ProjectID: projectID,
+		SecretID:  secretID,
+		Scope:     scope,
+		ScopeKey:  scopeKey,
+		Host:      host,
+		GrantedBy: grantedBy,
+	}
+	if ttlSeconds > 0 {
+		exp := time.Now().UTC().Add(time.Duration(ttlSeconds) * time.Second)
+		grant.ExpiresAt = &exp
+	}
+	if err := s.store.CreateSecretGrant(ctx, grant); err != nil {
+		return nil, err
+	}
+	return grant, nil
+}
+
+func validateGrantScope(scope, scopeKey string) error {
+	switch scope {
+	case model.SecretGrantScopeSandbox, model.SecretGrantScopeAgentConfig, model.SecretGrantScopeProject:
+	default:
+		return apperrors.NewStatusError(http.StatusBadRequest, "grant scope must be sandbox, agentConfig, or project")
+	}
+	if scopeKey == "" {
+		return apperrors.NewStatusError(http.StatusBadRequest, "grant scopeKey is required")
+	}
+	return nil
 }
 
 // marshalSecretValue converts a generated SecretValue to JSON plaintext for encryption.

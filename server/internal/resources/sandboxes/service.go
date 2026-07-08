@@ -192,6 +192,19 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if err != nil {
 		return nil, err
 	}
+	// Materialize the agent config's secret bindings and enforce its required
+	// secrets. Inline per-sandbox secrets take precedence over bindings.
+	if agentConfigID != nil && strings.TrimSpace(*agentConfigID) != "" {
+		inlineEnvs := make(map[string]struct{}, len(config.Secrets))
+		for _, in := range config.Secrets {
+			inlineEnvs[strings.TrimSpace(in.Env)] = struct{}{}
+		}
+		agentAssignments, err := s.applyAgentConfigSecrets(ctx, projectID, sandbox, strings.TrimSpace(*agentConfigID), inlineEnvs)
+		if err != nil {
+			return nil, err
+		}
+		assignments = append(assignments, agentAssignments...)
+	}
 	created, err := s.jobs.CreateSandbox(ctx, sandbox)
 	if err != nil {
 		return nil, err

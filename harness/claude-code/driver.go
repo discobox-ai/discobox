@@ -39,6 +39,9 @@ func (Driver) Definition() harness.Definition {
 			{Path: ".claude.json", Content: `{"hasCompletedOnboarding": true}`, CreateOnly: true},
 			{Path: ".claude/settings.json", Content: `{"theme":"dark","skipDangerousModePermissionPrompt":true}`},
 		},
+		Secrets: []harness.Secret{
+			{Name: "ANTHROPIC_API_KEY", Required: true},
+		},
 	}
 }
 

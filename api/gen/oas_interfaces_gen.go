@@ -33,6 +33,10 @@ type CreateSandboxRes interface {
 	createSandboxRes()
 }
 
+type CreateSecretGrantRes interface {
+	createSecretGrantRes()
+}
+
 type CreateSecretRequestRes interface {
 	createSecretRequestRes()
 }
@@ -43,6 +47,10 @@ type CreateSecretRes interface {
 
 type DeleteAgentConfigRes interface {
 	deleteAgentConfigRes()
+}
+
+type DeleteAgentConfigSecretBindingRes interface {
+	deleteAgentConfigSecretBindingRes()
 }
 
 type DeleteAgentTerminalRes interface {
@@ -113,6 +121,10 @@ type ListAgentConfigDefinitionsRes interface {
 	listAgentConfigDefinitionsRes()
 }
 
+type ListAgentConfigSecretBindingsRes interface {
+	listAgentConfigSecretBindingsRes()
+}
+
 type ListAgentConfigsRes interface {
 	listAgentConfigsRes()
 }
@@ -165,6 +177,10 @@ type ListSandboxesRes interface {
 	listSandboxesRes()
 }
 
+type ListSecretGrantsRes interface {
+	listSecretGrantsRes()
+}
+
 type ListSecretRequestsRes interface {
 	listSecretRequestsRes()
 }
@@ -195,6 +211,14 @@ type ResolveSandboxSecretRes interface {
 
 type RestartSandboxRes interface {
 	restartSandboxRes()
+}
+
+type RevokeSecretGrantRes interface {
+	revokeSecretGrantRes()
+}
+
+type SetAgentConfigSecretBindingRes interface {
+	setAgentConfigSecretBindingRes()
 }
 
 type SetDefaultAgentConfigRes interface {

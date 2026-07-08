@@ -31,6 +31,10 @@ func (Driver) Definition() harness.Definition {
 		InstallCommand:  []string{"npm", "install", "-g", "opencode-ai"},
 		RunCommand:      []string{"opencode"},
 		RelaunchCommand: []string{"opencode", "--continue"},
+		Secrets: []harness.Secret{
+			{Name: "ANTHROPIC_API_KEY", Required: false},
+			{Name: "OPENAI_API_KEY", Required: false},
+		},
 	}
 }
 

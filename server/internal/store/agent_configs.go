@@ -84,6 +84,9 @@ func (s *Store) DeleteAgentConfig(ctx context.Context, projectID, configID strin
 			Update("default_agent_config_id", "").Error; err != nil {
 			return nil, err
 		}
+		if err := s.deleteAgentConfigSecretBindingsByAgentConfig(tx, configID); err != nil {
+			return nil, err
+		}
 		if err := tx.Delete(config).Error; err != nil {
 			return nil, err
 		}

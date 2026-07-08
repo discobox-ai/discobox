@@ -139,22 +139,50 @@ func (h *Handler) ResolveSandboxSecret(ctx context.Context, req *apimodel.Resolv
 	if !principal.HasScope(workerauth.ScopeSecretResolve) {
 		return apiError(apperrors.NewStatusError(http.StatusForbidden, "secret:resolve scope required")), nil
 	}
-	request, err := h.services.Secrets.ResolveSandboxSecret(ctx, principal.WorkerID, req.SandboxId, req.Sentinel, req.Host)
+	resolution, err := h.services.Secrets.ResolveSandboxSecret(ctx, principal.WorkerID, req.SandboxId, req.Sentinel, req.Host)
 	if err != nil {
 		return apiError(err), nil
 	}
 	resp := apimodel.ResolveSandboxSecretResponse{Status: serverapi.ResolveSandboxSecretResponseStatusPending}
-	switch request.Status {
-	case model.SecretRequestStatusApproved:
-		if request.Value != nil && request.Value.Token != "" {
-			resp.Status = serverapi.ResolveSandboxSecretResponseStatusApproved
-			resp.SetValue(serverapi.NewOptString(request.Value.Token))
-			if request.ExpiresAt != nil {
-				resp.SetExpiresAt(serverapi.NewOptDateTime(*request.ExpiresAt))
-			}
+	if resolution.Status == model.SecretRequestStatusApproved && resolution.Value != nil && resolution.Value.Token != "" {
+		resp.Status = serverapi.ResolveSandboxSecretResponseStatusApproved
+		resp.SetValue(serverapi.NewOptString(resolution.Value.Token))
+		if resolution.ExpiresAt != nil {
+			resp.SetExpiresAt(serverapi.NewOptDateTime(*resolution.ExpiresAt))
 		}
-	case model.SecretRequestStatusDenied:
-		resp.Status = serverapi.ResolveSandboxSecretResponseStatusDenied
 	}
 	return &resp, nil
+}
+
+func (h *Handler) ListSecretGrants(ctx context.Context, params serverapi.ListSecretGrantsParams) (serverapi.ListSecretGrantsRes, error) {
+	grants, err := h.services.Secrets.ListSecretGrants(ctx, params.ProjectId, params.SecretId.Or(""))
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[apimodel.ListSecretGrantsBody](struct {
+		SecretGrants any `json:"secretGrants"`
+	}{SecretGrants: grants})
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+func (h *Handler) CreateSecretGrant(ctx context.Context, req *apimodel.CreateSecretGrantBody, params serverapi.CreateSecretGrantParams) (serverapi.CreateSecretGrantRes, error) {
+	grant, err := h.services.Secrets.CreateSecretGrant(ctx, params.ProjectId, *req)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[apimodel.SecretGrant](grant)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+func (h *Handler) RevokeSecretGrant(ctx context.Context, params serverapi.RevokeSecretGrantParams) (serverapi.RevokeSecretGrantRes, error) {
+	if err := h.services.Secrets.RevokeSecretGrant(ctx, params.ProjectId, params.GrantId); err != nil {
+		return apiError(err), nil
+	}
+	return &serverapi.RevokeSecretGrantNoContent{}, nil
 }

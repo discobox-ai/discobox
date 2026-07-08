@@ -164,9 +164,18 @@ func (r *shimRuntime) startPipes(cmd *exec.Cmd) error {
 
 func (r *shimRuntime) handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("GET /status", r.handleStatus)
 	mux.HandleFunc("POST /attach", r.handleAttach)
 	mux.HandleFunc("POST /start", r.handleStart)
 	return mux
+}
+
+func (r *shimRuntime) handleStatus(w http.ResponseWriter, _ *http.Request) {
+	r.mu.Lock()
+	status := r.status
+	r.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(status)
 }
 
 func (r *shimRuntime) serve() {

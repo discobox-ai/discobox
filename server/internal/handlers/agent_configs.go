@@ -102,3 +102,36 @@ func (h *Handler) DeleteAgentConfig(ctx context.Context, params serverapi.Delete
 	}
 	return &serverapi.DeleteAgentConfigNoContent{}, nil
 }
+
+func (h *Handler) ListAgentConfigSecretBindings(ctx context.Context, params serverapi.ListAgentConfigSecretBindingsParams) (serverapi.ListAgentConfigSecretBindingsRes, error) {
+	bindings, err := h.services.AgentConfigs.ListAgentConfigSecretBindings(ctx, params.ProjectId, params.AgentConfigId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[apimodel.ListAgentConfigSecretBindingsBody](struct {
+		SecretBindings any `json:"secretBindings"`
+	}{SecretBindings: bindings})
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+func (h *Handler) SetAgentConfigSecretBinding(ctx context.Context, req *apimodel.SetAgentConfigSecretBindingBody, params serverapi.SetAgentConfigSecretBindingParams) (serverapi.SetAgentConfigSecretBindingRes, error) {
+	binding, err := h.services.AgentConfigs.SetAgentConfigSecretBinding(ctx, params.ProjectId, params.AgentConfigId, params.EnvName, req.SecretId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[apimodel.AgentConfigSecretBinding](binding)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+func (h *Handler) DeleteAgentConfigSecretBinding(ctx context.Context, params serverapi.DeleteAgentConfigSecretBindingParams) (serverapi.DeleteAgentConfigSecretBindingRes, error) {
+	if err := h.services.AgentConfigs.DeleteAgentConfigSecretBinding(ctx, params.ProjectId, params.AgentConfigId, params.EnvName); err != nil {
+		return apiError(err), nil
+	}
+	return &serverapi.DeleteAgentConfigSecretBindingNoContent{}, nil
+}

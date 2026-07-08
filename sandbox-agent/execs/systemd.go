@@ -73,6 +73,26 @@ func (SystemdRunner) Start(ctx context.Context, req StartRequest) (StartResult, 
 	return StartResult{Unit: req.Unit}, nil
 }
 
+func (SystemdRunner) Stop(ctx context.Context, unit string) error {
+	if strings.TrimSpace(unit) == "" {
+		return nil
+	}
+	cmd := exec.CommandContext(ctx, "systemctl", "stop", unit)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		if isMissingUnitOutput(output) {
+			return nil
+		}
+		return fmt.Errorf("systemctl stop %s: %w: %s", unit, err, strings.TrimSpace(string(output)))
+	}
+	return nil
+}
+
+func isMissingUnitOutput(output []byte) bool {
+	text := strings.ToLower(string(output))
+	return strings.Contains(text, "not loaded") || strings.Contains(text, "could not be found") || strings.Contains(text, "not found")
+}
+
 func (SystemdRunner) Status(ctx context.Context, unit string) (UnitStatus, error) {
 	if strings.TrimSpace(unit) == "" {
 		return UnitStatus{}, fmt.Errorf("unit is required")

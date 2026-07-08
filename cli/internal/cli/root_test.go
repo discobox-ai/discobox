@@ -508,11 +508,17 @@ func TestTerminalCreateEnvSupportsShortFlagAndShellLookup(t *testing.T) {
 func TestAgentSetDefaultCommand(t *testing.T) {
 	const agentID = "agent-full-id"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPut || r.URL.Path != "/projects/project-1/agent-configs/"+agentID+"/default" {
-			t.Fatalf("request = %s %s, want PUT set-default path", r.Method, r.URL.Path)
-		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","slug":"project-1","default":true,"defaultAgentConfigId":"` + agentID + `","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/agent-configs":
+			// Selector resolution lists configs to match a slug or name first; an
+			// unrecognized value like a full ID falls through unchanged.
+			_, _ = w.Write([]byte(`{"agentConfigs":[]}`))
+		case r.Method == http.MethodPut && r.URL.Path == "/projects/project-1/agent-configs/"+agentID+"/default":
+			_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","slug":"project-1","default":true,"defaultAgentConfigId":"` + agentID + `","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+		default:
+			t.Fatalf("request = %s %s, want list then PUT set-default path", r.Method, r.URL.Path)
+		}
 	}))
 	t.Cleanup(server.Close)
 
@@ -540,19 +546,19 @@ func TestSecretCreateCommandSendsSecretValue(t *testing.T) {
 			t.Fatalf("decode body: %v", err)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"secret-1","projectId":"project-1","name":"github","type":"bearer","host":"github.com","autoApprove":true,"defaultGrantTTLSeconds":7200,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		_, _ = w.Write([]byte(`{"id":"secret-1","projectId":"project-1","name":"github","type":"bearer","host":"github.com","defaultGrantTTLSeconds":7200,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 	}))
 	t.Cleanup(server.Close)
 
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "create", "--name", "github", "--type", "bearer", "--host", "github.com", "--auto-approve", "--grant-ttl", "7200", "--token", "token-value"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "secret", "create", "--name", "github", "--type", "bearer", "--host", "github.com", "--grant-ttl", "7200", "--token", "token-value"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute secret create: %v", err)
 	}
-	if posted["name"] != "github" || posted["type"] != "bearer" || posted["host"] != "github.com" || posted["autoApprove"] != true {
+	if posted["name"] != "github" || posted["type"] != "bearer" || posted["host"] != "github.com" {
 		t.Fatalf("posted body = %#v", posted)
 	}
 	value, ok := posted["value"].(map[string]any)
@@ -579,7 +585,7 @@ func TestSecretRequestApproveCommandSendsSelectedSecretID(t *testing.T) {
 			}
 			_, _ = w.Write([]byte(`{"id":"` + requestID + `","projectId":"project-1","requestedBy":"user-1","type":"git","status":"approved","secretId":"` + secretID + `","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/secrets":
-			_, _ = w.Write([]byte(`{"secrets":[{"id":"` + secretID + `","projectId":"project-1","name":"selected","type":"bearer","autoApprove":false,"defaultGrantTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
+			_, _ = w.Write([]byte(`{"secrets":[{"id":"` + secretID + `","projectId":"project-1","name":"selected","type":"bearer","defaultGrantTTLSeconds":3600,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
 		default:
 			t.Fatalf("unexpected request = %s %s", r.Method, r.URL.Path)
 		}

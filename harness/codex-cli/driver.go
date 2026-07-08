@@ -32,6 +32,9 @@ func (Driver) Definition() harness.Definition {
 		InstallCommand:  []string{"npm", "install", "-g", "@openai/codex"},
 		RunCommand:      []string{"codex"},
 		RelaunchCommand: []string{"codex", "resume", "--last"},
+		Secrets: []harness.Secret{
+			{Name: "OPENAI_API_KEY", Required: true},
+		},
 	}
 }
 

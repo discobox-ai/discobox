@@ -163,7 +163,6 @@ func (a *App) writeSecret(cmd *cobra.Command, secret *apimodel.Secret) error {
 	fmt.Fprintf(tw, "NAME\t%s\n", secret.Name)
 	fmt.Fprintf(tw, "TYPE\t%s\n", secret.Type)
 	fmt.Fprintf(tw, "HOST\t%s\n", secret.Host.Or(""))
-	fmt.Fprintf(tw, "AUTO APPROVE\t%t\n", secret.AutoApprove)
 	fmt.Fprintf(tw, "GRANT TTL\t%s\n", formatSeconds(secret.DefaultGrantTTLSeconds))
 	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(secret.CreatedAt))
 	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(secret.UpdatedAt))
@@ -180,19 +179,66 @@ func (a *App) writeSecrets(cmd *cobra.Command, secrets []apimodel.Secret) error 
 	}
 	secrets = sortedByCreatedAt(secrets, func(secret apimodel.Secret) time.Time { return secret.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tHOST\tAUTO\tGRANT TTL\tUPDATED")
+	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tHOST\tGRANT TTL\tUPDATED")
 	for _, secret := range secrets {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%t\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
 			shortID(secret.ID),
 			secret.Name,
 			secret.Type,
 			secret.Host.Or(""),
-			secret.AutoApprove,
 			formatSeconds(secret.DefaultGrantTTLSeconds),
 			formatTime(secret.UpdatedAt),
 		)
 	}
 	return tw.Flush()
+}
+
+func (a *App) writeSecretGrant(cmd *cobra.Command, grant *apimodel.SecretGrant) error {
+	if grant == nil {
+		return nil
+	}
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), grant)
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "FIELD\tVALUE")
+	fmt.Fprintf(tw, "ID\t%s\n", shortID(grant.ID))
+	fmt.Fprintf(tw, "SECRET\t%s\n", shortID(grant.SecretId))
+	fmt.Fprintf(tw, "SCOPE\t%s\n", grant.Scope)
+	fmt.Fprintf(tw, "SCOPE KEY\t%s\n", shortID(grant.ScopeKey))
+	fmt.Fprintf(tw, "HOST\t%s\n", grant.Host.Or("(any)"))
+	fmt.Fprintf(tw, "EXPIRES\t%s\n", formatGrantExpiry(grant))
+	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(grant.CreatedAt))
+	return tw.Flush()
+}
+
+func (a *App) writeSecretGrants(cmd *cobra.Command, grants []apimodel.SecretGrant) error {
+	if a.quiet {
+		return writeResourceIDs(cmd.OutOrStdout(), grants, func(grant apimodel.SecretGrant) string { return grant.ID })
+	}
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"secretGrants": grants})
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tSECRET\tSCOPE\tSCOPE KEY\tHOST\tEXPIRES")
+	for _, grant := range grants {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			shortID(grant.ID),
+			shortID(grant.SecretId),
+			grant.Scope,
+			shortID(grant.ScopeKey),
+			grant.Host.Or("(any)"),
+			formatGrantExpiry(&grant),
+		)
+	}
+	return tw.Flush()
+}
+
+func formatGrantExpiry(grant *apimodel.SecretGrant) string {
+	if expiresAt, ok := grant.ExpiresAt.Get(); ok && !expiresAt.IsZero() {
+		return formatTime(expiresAt)
+	}
+	return "never"
 }
 
 func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretRequest) error {
@@ -212,17 +258,8 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 	if secretID, ok := request.SecretId.Get(); ok && secretID != "" {
 		fmt.Fprintf(tw, "SECRET\t%s\n", shortID(secretID))
 	}
-	if approvedBy, ok := request.ApprovedBy.Get(); ok && approvedBy != "" {
-		fmt.Fprintf(tw, "APPROVED BY\t%s\n", approvedBy)
-	}
-	if grantedAt, ok := request.GrantedAt.Get(); ok && !grantedAt.IsZero() {
-		fmt.Fprintf(tw, "GRANTED\t%s\n", formatTime(grantedAt))
-	}
-	if expiresAt, ok := request.ExpiresAt.Get(); ok && !expiresAt.IsZero() {
-		fmt.Fprintf(tw, "EXPIRES\t%s\n", formatTime(expiresAt))
-	}
-	if _, ok := request.Value.Get(); ok {
-		fmt.Fprintln(tw, "VALUE\tavailable in json output")
+	if grantID, ok := request.GrantId.Get(); ok && grantID != "" {
+		fmt.Fprintf(tw, "GRANT\t%s\n", shortID(grantID))
 	}
 	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(request.CreatedAt))
 	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(request.UpdatedAt))
@@ -302,8 +339,8 @@ func (a *App) writeAgentDefinition(cmd *cobra.Command, definition *apimodel.Agen
 		return writeJSON(cmd.OutOrStdout(), definition)
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tDESCRIPTION")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(definition.ID), definition.Name, strings.Join(definition.RunCommand, " "), definition.Description.Or(""))
+	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tSECRETS\tDESCRIPTION")
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", shortID(definition.ID), definition.Name, strings.Join(definition.RunCommand, " "), formatAgentSecrets(definition.Secrets.Or(nil)), definition.Description.Or(""))
 	return tw.Flush()
 }
 
@@ -330,8 +367,8 @@ func (a *App) writeAgent(cmd *cobra.Command, agent *apimodel.AgentConfig) error 
 		return writeJSON(cmd.OutOrStdout(), agent)
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tRUN COMMAND\tUPDATED")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", shortID(agent.ID), agent.Slug, agent.Name, strings.Join(agent.RunCommand, " "), formatTime(agent.UpdatedAt))
+	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tRUN COMMAND\tSECRETS\tUPDATED")
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", shortID(agent.ID), agent.Slug, agent.Name, strings.Join(agent.RunCommand, " "), formatAgentSecrets(agent.Secrets.Or(nil)), formatTime(agent.UpdatedAt))
 	return tw.Flush()
 }
 
@@ -354,6 +391,61 @@ func (a *App) writeAgents(cmd *cobra.Command, agents []apimodel.AgentConfig, def
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", shortID(agent.ID), agent.Slug, agent.Name, formatDefaultMarker(agent.ID == defaultID), strings.Join(agent.RunCommand, " "), formatTime(agent.UpdatedAt))
 	}
 	return tw.Flush()
+}
+
+func (a *App) writeAgentSecretBindings(cmd *cobra.Command, declarations []apimodel.AgentConfigSecret, bindings []apimodel.AgentConfigSecretBinding) error {
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"secrets": declarations, "secretBindings": bindings})
+	}
+	boundByEnv := make(map[string]string, len(bindings))
+	for _, b := range bindings {
+		boundByEnv[b.EnvName] = b.SecretId
+	}
+	// Show every declared env var, then any binding for an env the definition
+	// didn't declare (e.g. a custom secret the user added).
+	seen := map[string]struct{}{}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ENV\tREQUIRED\tBOUND SECRET")
+	for _, decl := range declarations {
+		seen[decl.Name] = struct{}{}
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", decl.Name, formatRequired(decl.Required.Or(false)), formatBoundSecret(boundByEnv[decl.Name]))
+	}
+	for _, b := range bindings {
+		if _, ok := seen[b.EnvName]; ok {
+			continue
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", b.EnvName, "-", formatBoundSecret(b.SecretId))
+	}
+	return tw.Flush()
+}
+
+func formatRequired(required bool) string {
+	if required {
+		return "yes"
+	}
+	return "no"
+}
+
+func formatBoundSecret(secretID string) string {
+	if secretID == "" {
+		return "—"
+	}
+	return shortID(secretID)
+}
+
+func formatAgentSecrets(secrets []apimodel.AgentConfigSecret) string {
+	if len(secrets) == 0 {
+		return "-"
+	}
+	parts := make([]string, 0, len(secrets))
+	for _, secret := range secrets {
+		if secret.Required.Or(false) {
+			parts = append(parts, secret.Name+" (required)")
+		} else {
+			parts = append(parts, secret.Name+" (optional)")
+		}
+	}
+	return strings.Join(parts, ", ")
 }
 
 func formatDefaultMarker(isDefault bool) string {

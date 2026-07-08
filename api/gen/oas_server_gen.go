@@ -67,6 +67,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/secrets
 	CreateSecret(ctx context.Context, req *CreateSecretBody, params CreateSecretParams) (CreateSecretRes, error)
+	// CreateSecretGrant implements create-secret-grant operation.
+	//
+	// Create a secret grant (pre-approval).
+	//
+	// POST /projects/{projectId}/secret-grants
+	CreateSecretGrant(ctx context.Context, req *CreateSecretGrantBody, params CreateSecretGrantParams) (CreateSecretGrantRes, error)
 	// CreateSecretRequest implements create-secret-request operation.
 	//
 	// Request access to a secret.
@@ -79,6 +85,12 @@ type Handler interface {
 	//
 	// DELETE /projects/{projectId}/agent-configs/{agentConfigId}
 	DeleteAgentConfig(ctx context.Context, params DeleteAgentConfigParams) (DeleteAgentConfigRes, error)
+	// DeleteAgentConfigSecretBinding implements delete-agent-config-secret-binding operation.
+	//
+	// Remove an agent config secret binding.
+	//
+	// DELETE /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}
+	DeleteAgentConfigSecretBinding(ctx context.Context, params DeleteAgentConfigSecretBindingParams) (DeleteAgentConfigSecretBindingRes, error)
 	// DeleteAgentTerminal implements delete-agent-terminal operation.
 	//
 	// Destroy an agent terminal runtime in a sandbox.
@@ -181,6 +193,12 @@ type Handler interface {
 	//
 	// GET /agent-config-definitions
 	ListAgentConfigDefinitions(ctx context.Context) (ListAgentConfigDefinitionsRes, error)
+	// ListAgentConfigSecretBindings implements list-agent-config-secret-bindings operation.
+	//
+	// List agent config secret bindings.
+	//
+	// GET /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings
+	ListAgentConfigSecretBindings(ctx context.Context, params ListAgentConfigSecretBindingsParams) (ListAgentConfigSecretBindingsRes, error)
 	// ListAgentConfigs implements list-agent-configs operation.
 	//
 	// List agent configs.
@@ -259,6 +277,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/sandboxes
 	ListSandboxes(ctx context.Context, params ListSandboxesParams) (ListSandboxesRes, error)
+	// ListSecretGrants implements list-secret-grants operation.
+	//
+	// List secret grants.
+	//
+	// GET /projects/{projectId}/secret-grants
+	ListSecretGrants(ctx context.Context, params ListSecretGrantsParams) (ListSecretGrantsRes, error)
 	// ListSecretRequests implements list-secret-requests operation.
 	//
 	// List secret requests.
@@ -307,6 +331,18 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/restart
 	RestartSandbox(ctx context.Context, req *RestartSandboxBody, params RestartSandboxParams) (RestartSandboxRes, error)
+	// RevokeSecretGrant implements revoke-secret-grant operation.
+	//
+	// Revoke a secret grant.
+	//
+	// DELETE /projects/{projectId}/secret-grants/{grantId}
+	RevokeSecretGrant(ctx context.Context, params RevokeSecretGrantParams) (RevokeSecretGrantRes, error)
+	// SetAgentConfigSecretBinding implements set-agent-config-secret-binding operation.
+	//
+	// Bind an agent config environment variable to a secret.
+	//
+	// PUT /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}
+	SetAgentConfigSecretBinding(ctx context.Context, req *SetAgentConfigSecretBindingBody, params SetAgentConfigSecretBindingParams) (SetAgentConfigSecretBindingRes, error)
 	// SetDefaultAgentConfig implements set-default-agent-config operation.
 	//
 	// Set the project default agent config.

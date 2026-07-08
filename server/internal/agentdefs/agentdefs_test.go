@@ -99,6 +99,31 @@ func TestResolveThenSparsifyRoundTrip(t *testing.T) {
 	}
 }
 
+func TestResolveInheritsAndSparsifyDropsSecrets(t *testing.T) {
+	definitionSecrets := []model.AgentConfigSecret{{Name: "OPENAI_API_KEY", Required: true}}
+
+	// Unset secrets inherit the definition's declared secrets.
+	inherit := &model.AgentConfig{ID: "ac_1", Slug: "codex", DefinitionID: "codex", Name: "Codex"}
+	if got := Resolve(inherit).Secrets; !reflect.DeepEqual(got, definitionSecrets) {
+		t.Fatalf("secrets = %#v, want inherited %#v", got, definitionSecrets)
+	}
+
+	// An override that equals the definition is dropped back to nil (inherit).
+	equal := &model.AgentConfig{ID: "ac_2", Slug: "codex", DefinitionID: "codex", Name: "Codex", Secrets: definitionSecrets}
+	Sparsify(equal)
+	if equal.Secrets != nil {
+		t.Fatalf("secrets equal to definition were not dropped: %#v", equal.Secrets)
+	}
+
+	// A differing override is kept.
+	override := []model.AgentConfigSecret{{Name: "OPENAI_API_KEY", Required: true}, {Name: "OPENAI_BASE_URL"}}
+	custom := &model.AgentConfig{ID: "ac_3", Slug: "codex", DefinitionID: "codex", Name: "Codex", Secrets: override}
+	Sparsify(custom)
+	if !reflect.DeepEqual(custom.Secrets, override) {
+		t.Fatalf("secret override was dropped: %#v", custom.Secrets)
+	}
+}
+
 func TestSparsifyLeavesCustomConfig(t *testing.T) {
 	config := &model.AgentConfig{ID: "ac_3", Slug: "mine", Name: "Mine", RunCommand: []string{"my-agent"}}
 	Sparsify(config)

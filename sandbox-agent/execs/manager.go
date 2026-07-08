@@ -50,6 +50,11 @@ type Exec struct {
 }
 
 type CreateRequest struct {
+	// ID, when set, is used as the exec ID instead of generating a new one. It
+	// lets a caller (such as the terminal layer) correlate the exec with state
+	// it prepared before creation, e.g. env baked into the systemd unit. When
+	// empty a fresh ID is generated.
+	ID       string
 	Command  []string
 	Workdir  string
 	Env      map[string]string
@@ -62,6 +67,7 @@ type CreateRequest struct {
 
 type UnitManager interface {
 	Start(context.Context, StartRequest) (StartResult, error)
+	Stop(context.Context, string) error
 	Status(context.Context, string) (UnitStatus, error)
 	List(context.Context) ([]UnitStatus, error)
 }
@@ -219,9 +225,12 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 	}
 	user := m.resolveUser(req)
 	env := envWithRuntimeDefaults(mergeEnv(m.env, req.Env), user, m.imageConfig)
-	id, err := newID()
-	if err != nil {
-		return Exec{}, err
+	id := strings.TrimSpace(req.ID)
+	if id == "" {
+		var err error
+		if id, err = newID(); err != nil {
+			return Exec{}, err
+		}
 	}
 	unit := "discobox-exec-" + id
 	socketPath := m.socketPath(id)
@@ -330,6 +339,24 @@ func (m *Manager) Logs(ctx context.Context, id string) ([]LogEntry, error) {
 		return nil, ErrNotFound
 	}
 	return ReadLogs(ctx, m.logDir, id)
+}
+
+// Delete stops the exec's unit and removes its runtime and socket files. It is
+// used for long-lived execs (such as agent terminals) that outlive a single
+// command and must be explicitly torn down.
+func (m *Manager) Delete(ctx context.Context, id string) error {
+	exec, ok := m.Get(id)
+	if !ok {
+		return ErrNotFound
+	}
+	if err := m.units.Stop(ctx, exec.Unit); err != nil {
+		return err
+	}
+	_ = m.recordEvent(ctx, id, "exec.stop.requested", "exec stop requested", map[string]any{"unit": exec.Unit})
+	_ = os.Remove(exec.RuntimePath)
+	_ = os.Remove(exec.SocketPath)
+	_ = m.recordEvent(ctx, id, "exec.deleted", "exec deleted", map[string]any{"unit": exec.Unit})
+	return nil
 }
 
 func (m *Manager) Start(ctx context.Context, id string) (Exec, error) {

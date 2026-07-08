@@ -80,7 +80,7 @@ func (a *App) resolveSandboxID(ctx context.Context, client *apiclientgen.Client,
 
 func (a *App) resolveAgentConfigID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
 	id, err := parseIDArg(value, "agent config ID")
-	if err != nil || !isResolvableShortID(id) {
+	if err != nil {
 		return id, err
 	}
 	res, err := client.ListAgentConfigs(ctx, apiclientgen.ListAgentConfigsParams{ProjectId: projectID})
@@ -91,8 +91,24 @@ func (a *App) resolveAgentConfigID(ctx context.Context, client *apiclientgen.Cli
 	if err != nil {
 		return "", err
 	}
-	ids := make([]string, 0, len(body.GetAgentConfigs()))
-	for _, agent := range body.GetAgentConfigs() {
+	agents := body.GetAgentConfigs()
+	// Prefer the stable slug (e.g. "codex"), then the display name, so the agent
+	// subcommands accept the same selectors as `sandbox create --agent` and `run -a`.
+	for _, agent := range agents {
+		if agent.Slug == value {
+			return agent.ID, nil
+		}
+	}
+	for _, agent := range agents {
+		if agent.Name == value {
+			return agent.ID, nil
+		}
+	}
+	if !isResolvableShortID(id) {
+		return id, nil
+	}
+	ids := make([]string, 0, len(agents))
+	for _, agent := range agents {
 		ids = append(ids, agent.ID)
 	}
 	return resolveShortID(id, "agent config ID", ids)

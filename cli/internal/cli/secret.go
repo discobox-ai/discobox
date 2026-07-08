@@ -29,7 +29,134 @@ func (a *App) newSecretCommand() *cobra.Command {
 	cmd.AddCommand(a.newSecretUpdateCommand())
 	cmd.AddCommand(a.newSecretDeleteCommand())
 	cmd.AddCommand(a.newSecretRequestCommand())
+	cmd.AddCommand(a.newSecretGrantCommand())
 	return cmd
+}
+
+func (a *App) newSecretGrantCommand() *cobra.Command {
+	cmd := &cobra.Command{Use: "grant", Aliases: []string{"grants"}, Short: "Manage standing secret grants (pre-approvals)"}
+	cmd.AddCommand(a.newSecretGrantListCommand())
+	cmd.AddCommand(a.newSecretGrantCreateCommand())
+	cmd.AddCommand(a.newSecretGrantRevokeCommand())
+	return cmd
+}
+
+func (a *App) newSecretGrantListCommand() *cobra.Command {
+	var secretRef string
+	cmd := &cobra.Command{Use: "list", Short: "List secret grants", RunE: func(cmd *cobra.Command, _ []string) error {
+		client, err := a.apiClient()
+		if err != nil {
+			return err
+		}
+		projectID, err := a.projectIDValue()
+		if err != nil {
+			return err
+		}
+		params := apiclientgen.ListSecretGrantsParams{ProjectId: projectID}
+		if strings.TrimSpace(secretRef) != "" {
+			secretID, err := a.resolveSecretID(cmd.Context(), client, projectID, secretRef)
+			if err != nil {
+				return err
+			}
+			params.SecretId = apiclientgen.NewOptString(secretID)
+		}
+		res, err := client.ListSecretGrants(cmd.Context(), params)
+		if err != nil {
+			return err
+		}
+		body, err := expectResponse[apimodel.ListSecretGrantsBody](res)
+		if err != nil {
+			return err
+		}
+		return a.writeSecretGrants(cmd, body.GetSecretGrants())
+	}}
+	cmd.Flags().StringVar(&secretRef, "secret", "", "Filter by granted secret ID")
+	a.addQuietFlag(cmd)
+	return cmd
+}
+
+func (a *App) newSecretGrantCreateCommand() *cobra.Command {
+	var secretRef, scope, scopeKey, host string
+	var ttl int64
+	cmd := &cobra.Command{Use: "create --secret SECRET_ID --scope SCOPE", Short: "Create a standing grant (pre-approval)", RunE: func(cmd *cobra.Command, _ []string) error {
+		client, err := a.apiClient()
+		if err != nil {
+			return err
+		}
+		projectID, err := a.projectIDValue()
+		if err != nil {
+			return err
+		}
+		secretID, err := a.resolveSecretID(cmd.Context(), client, projectID, secretRef)
+		if err != nil {
+			return err
+		}
+		typedScope, err := createSecretGrantBodyScope(scope)
+		if err != nil {
+			return err
+		}
+		body := &apimodel.CreateSecretGrantBody{SecretId: secretID, Scope: typedScope}
+		if strings.TrimSpace(scopeKey) != "" {
+			body.SetScopeKey(apiclientgen.NewOptString(strings.TrimSpace(scopeKey)))
+		}
+		if strings.TrimSpace(host) != "" {
+			body.SetHost(apiclientgen.NewOptString(strings.TrimSpace(host)))
+		}
+		if cmd.Flags().Changed("grant-ttl") {
+			body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(ttl))
+		}
+		res, err := client.CreateSecretGrant(cmd.Context(), body, apiclientgen.CreateSecretGrantParams{ProjectId: projectID})
+		if err != nil {
+			return err
+		}
+		grant, err := expectResponse[apimodel.SecretGrant](res)
+		if err != nil {
+			return err
+		}
+		return a.writeSecretGrant(cmd, grant)
+	}}
+	cmd.Flags().StringVar(&secretRef, "secret", "", "Secret ID to grant")
+	cmd.Flags().StringVar(&scope, "scope", "", "Grant scope: sandbox, agentConfig, or project")
+	cmd.Flags().StringVar(&scopeKey, "scope-key", "", "Sandbox ID or agent config ID the scope resolves against (defaults to project ID for project scope)")
+	cmd.Flags().StringVar(&host, "host", "", "Limit the grant to a host; defaults to the secret's host")
+	cmd.Flags().Int64Var(&ttl, "grant-ttl", 0, "Grant duration in seconds; 0 never expires")
+	return cmd
+}
+
+func (a *App) newSecretGrantRevokeCommand() *cobra.Command {
+	return &cobra.Command{Use: "revoke GRANT_ID...", Short: "Revoke secret grants", Args: cobra.MinimumNArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
+		client, err := a.apiClient()
+		if err != nil {
+			return err
+		}
+		projectID, err := a.projectIDValue()
+		if err != nil {
+			return err
+		}
+		return runDeleteMany(cmd, args, "secret grant", func(arg string) (string, error) {
+			res, err := client.RevokeSecretGrant(cmd.Context(), apiclientgen.RevokeSecretGrantParams{ProjectId: projectID, GrantId: arg})
+			if err != nil {
+				return "", err
+			}
+			if err := expectNoContent[apiclientgen.RevokeSecretGrantNoContent](res); err != nil {
+				return "", err
+			}
+			return arg, nil
+		})
+	}}
+}
+
+func createSecretGrantBodyScope(value string) (apiclientgen.CreateSecretGrantBodyScope, error) {
+	switch strings.TrimSpace(value) {
+	case "sandbox":
+		return apiclientgen.CreateSecretGrantBodyScopeSandbox, nil
+	case "agentConfig", "agent-config":
+		return apiclientgen.CreateSecretGrantBodyScopeAgentConfig, nil
+	case "project":
+		return apiclientgen.CreateSecretGrantBodyScopeProject, nil
+	default:
+		return "", fmt.Errorf("grant scope must be sandbox, agentConfig, or project")
+	}
 }
 
 func (a *App) newSecretListCommand() *cobra.Command {
@@ -84,7 +211,6 @@ func (a *App) newSecretGetCommand() *cobra.Command {
 
 func (a *App) newSecretCreateCommand() *cobra.Command {
 	var name, secretType, host string
-	var autoApprove bool
 	var ttl int64
 	var value secretValueOptions
 	cmd := &cobra.Command{Use: "create --name NAME --type TYPE", Short: "Create a secret", RunE: func(cmd *cobra.Command, _ []string) error {
@@ -96,7 +222,7 @@ func (a *App) newSecretCreateCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		body, err := createSecretBody(cmd.Flags(), name, secretType, host, autoApprove, ttl, value)
+		body, err := createSecretBody(cmd.Flags(), name, secretType, host, ttl, value)
 		if err != nil {
 			return err
 		}
@@ -113,7 +239,6 @@ func (a *App) newSecretCreateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "Secret name")
 	cmd.Flags().StringVar(&secretType, "type", "", "Secret type: git, ssh, or bearer")
 	cmd.Flags().StringVar(&host, "host", "", "Optional host hint, such as github.com")
-	cmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "Automatically approve matching requests")
 	cmd.Flags().Int64Var(&ttl, "grant-ttl", 0, "Default grant duration in seconds")
 	addSecretValueFlags(cmd.Flags(), &value)
 	return cmd
@@ -121,7 +246,6 @@ func (a *App) newSecretCreateCommand() *cobra.Command {
 
 func (a *App) newSecretUpdateCommand() *cobra.Command {
 	var name, host string
-	var autoApprove bool
 	var ttl int64
 	var value secretValueOptions
 	cmd := &cobra.Command{Use: "update SECRET_ID", Short: "Update a secret", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
@@ -137,7 +261,7 @@ func (a *App) newSecretUpdateCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		body, err := updateSecretBody(cmd.Flags(), name, host, autoApprove, ttl, value)
+		body, err := updateSecretBody(cmd.Flags(), name, host, ttl, value)
 		if err != nil {
 			return err
 		}
@@ -153,8 +277,6 @@ func (a *App) newSecretUpdateCommand() *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&name, "name", "", "Secret name")
 	cmd.Flags().StringVar(&host, "host", "", "Optional host hint, such as github.com")
-	cmd.Flags().BoolVar(&autoApprove, "auto-approve", false, "Automatically approve matching requests")
-	cmd.Flags().Lookup("auto-approve").NoOptDefVal = "true"
 	cmd.Flags().Int64Var(&ttl, "grant-ttl", 0, "Default grant duration in seconds")
 	addSecretValueFlags(cmd.Flags(), &value)
 	return cmd
@@ -284,7 +406,7 @@ func (a *App) newSecretRequestCreateCommand() *cobra.Command {
 }
 
 func (a *App) newSecretRequestApproveCommand() *cobra.Command {
-	var secretID string
+	var secretID, scope string
 	var ttl int64
 	cmd := &cobra.Command{Use: "approve REQUEST_ID --secret-id SECRET_ID", Short: "Approve a secret request", Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Command, args []string) error {
 		client, err := a.apiClient()
@@ -307,6 +429,13 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 		if ttl > 0 {
 			body.SetGrantTTLSeconds(apiclientgen.NewOptInt64(ttl))
 		}
+		if strings.TrimSpace(scope) != "" {
+			typedScope, err := approveSecretRequestBodyScope(scope)
+			if err != nil {
+				return err
+			}
+			body.SetScope(apiclientgen.NewOptApproveSecretRequestBodyScope(typedScope))
+		}
 		res, err := client.ApproveSecretRequest(cmd.Context(), body, apiclientgen.ApproveSecretRequestParams{ProjectId: projectID, RequestId: requestID})
 		if err != nil {
 			return err
@@ -318,8 +447,22 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 		return a.writeSecretRequest(cmd, request)
 	}}
 	cmd.Flags().StringVar(&secretID, "secret-id", "", "Secret ID to grant")
+	cmd.Flags().StringVar(&scope, "scope", "", "Grant scope: sandbox, agentConfig, or project (defaults to sandbox for sandbox requests, else project)")
 	cmd.Flags().Int64Var(&ttl, "grant-ttl", 0, "Grant duration in seconds")
 	return cmd
+}
+
+func approveSecretRequestBodyScope(value string) (apiclientgen.ApproveSecretRequestBodyScope, error) {
+	switch strings.TrimSpace(value) {
+	case "sandbox":
+		return apiclientgen.ApproveSecretRequestBodyScopeSandbox, nil
+	case "agentConfig", "agent-config":
+		return apiclientgen.ApproveSecretRequestBodyScopeAgentConfig, nil
+	case "project":
+		return apiclientgen.ApproveSecretRequestBodyScopeProject, nil
+	default:
+		return "", fmt.Errorf("grant scope must be sandbox, agentConfig, or project")
+	}
 }
 
 func (a *App) newSecretRequestDenyCommand() *cobra.Command {
@@ -357,7 +500,7 @@ func addSecretValueFlags(flags *pflag.FlagSet, opts *secretValueOptions) {
 	flags.StringVar(&opts.token, "token", "", "Bearer token")
 }
 
-func createSecretBody(flags *pflag.FlagSet, name, secretType, host string, autoApprove bool, ttl int64, valueOpts secretValueOptions) (*apimodel.CreateSecretBody, error) {
+func createSecretBody(flags *pflag.FlagSet, name, secretType, host string, ttl int64, valueOpts secretValueOptions) (*apimodel.CreateSecretBody, error) {
 	secretType = strings.TrimSpace(secretType)
 	if strings.TrimSpace(name) == "" {
 		return nil, fmt.Errorf("secret name is required")
@@ -378,25 +521,19 @@ func createSecretBody(flags *pflag.FlagSet, name, secretType, host string, autoA
 	if strings.TrimSpace(host) != "" {
 		body.SetHost(apiclientgen.NewOptString(strings.TrimSpace(host)))
 	}
-	if flags.Changed("auto-approve") {
-		body.SetAutoApprove(apiclientgen.NewOptBool(autoApprove))
-	}
 	if ttl > 0 {
 		body.SetDefaultGrantTTLSeconds(apiclientgen.NewOptInt64(ttl))
 	}
 	return body, nil
 }
 
-func updateSecretBody(flags *pflag.FlagSet, name, host string, autoApprove bool, ttl int64, valueOpts secretValueOptions) (*apimodel.UpdateSecretBody, error) {
+func updateSecretBody(flags *pflag.FlagSet, name, host string, ttl int64, valueOpts secretValueOptions) (*apimodel.UpdateSecretBody, error) {
 	body := &apimodel.UpdateSecretBody{}
 	if flags.Changed("name") {
 		body.SetName(apiclientgen.NewOptString(strings.TrimSpace(name)))
 	}
 	if flags.Changed("host") {
 		body.SetHost(apiclientgen.NewOptString(strings.TrimSpace(host)))
-	}
-	if flags.Changed("auto-approve") {
-		body.SetAutoApprove(apiclientgen.NewOptBool(autoApprove))
 	}
 	if flags.Changed("grant-ttl") && ttl > 0 {
 		body.SetDefaultGrantTTLSeconds(apiclientgen.NewOptInt64(ttl))

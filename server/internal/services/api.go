@@ -12,8 +12,10 @@ import (
 
 type ApproveSecretRequestBody = apimodel.ApproveSecretRequestBody
 type CreateAgentConfigBody = apimodel.CreateAgentConfigBody
+type SetAgentConfigSecretBindingBody = apimodel.SetAgentConfigSecretBindingBody
 type CreateSecretBody = apimodel.CreateSecretBody
 type CreateSecretRequestBody = apimodel.CreateSecretRequestBody
+type CreateSecretGrantBody = apimodel.CreateSecretGrantBody
 type UpdateAgentConfigBody = apimodel.UpdateAgentConfigBody
 type UpdateSecretBody = apimodel.UpdateSecretBody
 type CreateSandboxBody = apimodel.CreateSandboxBody
@@ -55,6 +57,10 @@ type AgentConfigService interface {
 	UpdateAgentConfig(ctx context.Context, projectID, configID string, input UpdateAgentConfigBody) (*model.AgentConfig, error)
 	SetDefaultAgentConfig(ctx context.Context, projectID, configID string) (*model.Project, error)
 	DeleteAgentConfig(ctx context.Context, projectID, configID string) error
+
+	ListAgentConfigSecretBindings(ctx context.Context, projectID, configID string) ([]model.AgentConfigSecretBinding, error)
+	SetAgentConfigSecretBinding(ctx context.Context, projectID, configID, envName, secretID string) (*model.AgentConfigSecretBinding, error)
+	DeleteAgentConfigSecretBinding(ctx context.Context, projectID, configID, envName string) error
 }
 
 // SandboxService manages sandboxes within a project.
@@ -108,7 +114,11 @@ type SecretService interface {
 	ApproveSecretRequest(ctx context.Context, projectID, requestID string, input ApproveSecretRequestBody) (*model.SecretRequest, error)
 	DenySecretRequest(ctx context.Context, projectID, requestID string) error
 
-	ResolveSandboxSecret(ctx context.Context, workerID, sandboxID, sentinel, host string) (*model.SecretRequest, error)
+	ListSecretGrants(ctx context.Context, projectID, secretID string) ([]model.SecretGrant, error)
+	CreateSecretGrant(ctx context.Context, projectID string, input CreateSecretGrantBody) (*model.SecretGrant, error)
+	RevokeSecretGrant(ctx context.Context, projectID, grantID string) error
+
+	ResolveSandboxSecret(ctx context.Context, workerID, sandboxID, sentinel, host string) (*model.SandboxSecretResolution, error)
 }
 
 // ProjectEventService provides project-scoped resource snapshots and live subscription.

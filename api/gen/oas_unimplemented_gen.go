@@ -99,6 +99,15 @@ func (UnimplementedHandler) CreateSecret(ctx context.Context, req *CreateSecretB
 	return r, ht.ErrNotImplemented
 }
 
+// CreateSecretGrant implements create-secret-grant operation.
+//
+// Create a secret grant (pre-approval).
+//
+// POST /projects/{projectId}/secret-grants
+func (UnimplementedHandler) CreateSecretGrant(ctx context.Context, req *CreateSecretGrantBody, params CreateSecretGrantParams) (r CreateSecretGrantRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // CreateSecretRequest implements create-secret-request operation.
 //
 // Request access to a secret.
@@ -114,6 +123,15 @@ func (UnimplementedHandler) CreateSecretRequest(ctx context.Context, req *Create
 //
 // DELETE /projects/{projectId}/agent-configs/{agentConfigId}
 func (UnimplementedHandler) DeleteAgentConfig(ctx context.Context, params DeleteAgentConfigParams) (r DeleteAgentConfigRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// DeleteAgentConfigSecretBinding implements delete-agent-config-secret-binding operation.
+//
+// Remove an agent config secret binding.
+//
+// DELETE /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}
+func (UnimplementedHandler) DeleteAgentConfigSecretBinding(ctx context.Context, params DeleteAgentConfigSecretBindingParams) (r DeleteAgentConfigSecretBindingRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -270,6 +288,15 @@ func (UnimplementedHandler) ListAgentConfigDefinitions(ctx context.Context) (r L
 	return r, ht.ErrNotImplemented
 }
 
+// ListAgentConfigSecretBindings implements list-agent-config-secret-bindings operation.
+//
+// List agent config secret bindings.
+//
+// GET /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings
+func (UnimplementedHandler) ListAgentConfigSecretBindings(ctx context.Context, params ListAgentConfigSecretBindingsParams) (r ListAgentConfigSecretBindingsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListAgentConfigs implements list-agent-configs operation.
 //
 // List agent configs.
@@ -387,6 +414,15 @@ func (UnimplementedHandler) ListSandboxes(ctx context.Context, params ListSandbo
 	return r, ht.ErrNotImplemented
 }
 
+// ListSecretGrants implements list-secret-grants operation.
+//
+// List secret grants.
+//
+// GET /projects/{projectId}/secret-grants
+func (UnimplementedHandler) ListSecretGrants(ctx context.Context, params ListSecretGrantsParams) (r ListSecretGrantsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListSecretRequests implements list-secret-requests operation.
 //
 // List secret requests.
@@ -456,6 +492,24 @@ func (UnimplementedHandler) ResolveSandboxSecret(ctx context.Context, req *Resol
 //
 // POST /projects/{projectId}/sandboxes/{sandboxId}/restart
 func (UnimplementedHandler) RestartSandbox(ctx context.Context, req *RestartSandboxBody, params RestartSandboxParams) (r RestartSandboxRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// RevokeSecretGrant implements revoke-secret-grant operation.
+//
+// Revoke a secret grant.
+//
+// DELETE /projects/{projectId}/secret-grants/{grantId}
+func (UnimplementedHandler) RevokeSecretGrant(ctx context.Context, params RevokeSecretGrantParams) (r RevokeSecretGrantRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// SetAgentConfigSecretBinding implements set-agent-config-secret-binding operation.
+//
+// Bind an agent config environment variable to a secret.
+//
+// PUT /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}
+func (UnimplementedHandler) SetAgentConfigSecretBinding(ctx context.Context, req *SetAgentConfigSecretBindingBody, params SetAgentConfigSecretBindingParams) (r SetAgentConfigSecretBindingRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

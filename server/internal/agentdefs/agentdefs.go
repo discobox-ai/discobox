@@ -75,6 +75,9 @@ func Resolve(config *model.AgentConfig) *model.AgentConfig {
 	if resolved.Files == nil {
 		resolved.Files = definition.Files
 	}
+	if resolved.Secrets == nil {
+		resolved.Secrets = definition.Secrets
+	}
 	return &resolved
 }
 
@@ -104,6 +107,9 @@ func Sparsify(config *model.AgentConfig) {
 	}
 	if reflect.DeepEqual(config.Files, definition.Files) {
 		config.Files = nil
+	}
+	if reflect.DeepEqual(config.Secrets, definition.Secrets) {
+		config.Secrets = nil
 	}
 }
 
@@ -145,7 +151,22 @@ func fromHarness(definition harness.Definition) model.AgentConfigDefinition {
 		RunCommand:      definition.RunCommand,
 		RelaunchCommand: definition.RelaunchCommand,
 		Files:           filesFromHarness(definition.Files),
+		Secrets:         secretsFromHarness(definition.Secrets),
 	}
+}
+
+func secretsFromHarness(secrets []harness.Secret) []model.AgentConfigSecret {
+	if len(secrets) == 0 {
+		return nil
+	}
+	out := make([]model.AgentConfigSecret, 0, len(secrets))
+	for _, secret := range secrets {
+		out = append(out, model.AgentConfigSecret{
+			Name:     secret.Name,
+			Required: secret.Required,
+		})
+	}
+	return out
 }
 
 func filesFromHarness(files []harness.File) []model.AgentConfigFile {
