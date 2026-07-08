@@ -48,9 +48,9 @@ const (
 	ListenAddress = "0.0.0.0:17080"
 
 	// ServerName is the stable DNS name presented on the worker proxy server
-	// certificate. Sandbox containers resolve it to the worker via a
-	// host-gateway entry, so the mTLS ServerName check stays valid regardless of
-	// the runtime gateway IP.
+	// certificate. Sandbox containers resolve it to the worker over the
+	// per-worker internal network (Docker embedded DNS + worker network alias),
+	// so the mTLS ServerName check stays valid regardless of the worker IP.
 	ServerName = "discobox-worker-proxy"
 
 	// WorkerProxyURL is the address sandbox forwarders dial.
@@ -73,6 +73,15 @@ const (
 	// environment, sees the same host-mount prefix.
 	UnitEnvironmentFile = "/etc/discobox/proxy.env"
 )
+
+// SandboxNetworkName is the per-worker internal Docker network that carries
+// sandbox egress to the worker proxy. Sandboxes join it (and only it) and
+// resolve ServerName via Docker's embedded DNS; the worker joins it aliased as
+// ServerName, in addition to its egress network. Being internal, the network
+// has no route off-box, so a sandbox can reach only the proxy and DNS.
+func SandboxNetworkName(workerID string) string {
+	return "discobox-sbnet-" + workerID
+}
 
 // WriteUnitEnvironment writes the environment file consumed by the proxy
 // systemd unit. It is written to the worker container's own /etc, which is

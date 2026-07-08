@@ -24,6 +24,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	apigen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
@@ -202,10 +203,6 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	hostCfg := &container.HostConfig{
 		Mounts:     mounts,
 		Privileged: true,
-		// Let the sandbox reach the worker proxy listener through the Docker
-		// host gateway under the stable name presented on the proxy server
-		// certificate.
-		ExtraHosts: []string{proxyagent.ServerName + ":host-gateway"},
 	}
 	if memoryBytes := optInt64(config.MemoryBytes); memoryBytes > 0 {
 		hostCfg.Memory = memoryBytes
@@ -217,7 +214,15 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	} else if resources, ok := req.Resources.Get(); ok && resources.CpuCores > 0 {
 		hostCfg.NanoCPUs = int64(resources.CpuCores * 1_000_000_000)
 	}
-	created, err := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{Config: cfg, HostConfig: hostCfg, Name: name})
+	// Attach the sandbox to the per-worker internal network only: it reaches the
+	// worker proxy (resolved as discobox-worker-proxy via Docker embedded DNS)
+	// and DNS, but has no route off-box, so all egress is forced through the proxy.
+	netCfg := &network.NetworkingConfig{
+		EndpointsConfig: map[string]*network.EndpointSettings{
+			proxyagent.SandboxNetworkName(r.workerID): {},
+		},
+	}
+	created, err := r.client.ContainerCreate(ctx, client.ContainerCreateOptions{Config: cfg, HostConfig: hostCfg, NetworkingConfig: netCfg, Name: name})
 	if err != nil {
 		return nil, err
 	}
@@ -292,6 +297,12 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 func (r *DockerSandboxRuntime) writeSandboxAgentConfig(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxCreateRequest, proxyEnv map[string]string) error {
 	configDir := r.workerHostPath(sandboxConfigRoot(r.projectID, sandboxID))
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
+		return err
+	}
+	// The proxy material is bind-mounted at /etc/discobox/proxy, nested under the
+	// read-only /etc/discobox config mount. Pre-create the mountpoint here so the
+	// container runtime does not have to create it inside the read-only parent.
+	if err := os.MkdirAll(filepath.Join(configDir, "proxy"), 0o755); err != nil {
 		return err
 	}
 	cfg := buildSandboxManifest(r.projectID, sandboxID, r.workerID, r.controlPlanePublicKey, req, proxyEnv)

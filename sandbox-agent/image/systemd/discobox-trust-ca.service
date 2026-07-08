@@ -9,6 +9,11 @@ ConditionPathExists=/etc/discobox/proxy/mitm-ca.crt
 [Service]
 Type=oneshot
 RemainAfterExit=yes
+# This unit runs before sysinit.target, concurrently with systemd-tmpfiles-setup
+# cleaning the shared /tmp, so scratch files update-ca-certificates creates there
+# can vanish mid-run (it exits 2). A private, ephemeral /tmp is isolated from that
+# cleanup.
+PrivateTmp=yes
 ExecStart=/usr/bin/install -D -m 0644 /etc/discobox/proxy/mitm-ca.crt /usr/local/share/ca-certificates/discobox-mitm-ca.crt
 ExecStart=/usr/sbin/update-ca-certificates
 

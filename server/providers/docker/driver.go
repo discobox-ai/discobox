@@ -32,18 +32,23 @@ import (
 	"github.com/obot-platform/discobox/server/internal/transport"
 	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
 	workeragent "github.com/obot-platform/discobox/worker-agent"
+	"github.com/obot-platform/discobox/worker-agent/proxyagent"
 )
 
 const (
-	ProviderType            = "docker"
-	defaultImage            = "ghcr.io/obot-platform/discobox-systemd:latest"
-	defaultAgentPort        = 3002
-	noHealthWaitTimeout     = 30 * time.Second
-	healthPollDelay         = 500 * time.Millisecond
-	dockerHostGateway       = "host.docker.internal"
-	dockerSocketPath        = "/var/run/docker.sock"
-	hostMountTargetRoot     = "/host"
-	workerHostSandboxRoot   = "/var/lib/discobox/projects"
+	ProviderType          = "docker"
+	defaultImage          = "ghcr.io/obot-platform/discobox-systemd:latest"
+	defaultAgentPort      = 3002
+	noHealthWaitTimeout   = 30 * time.Second
+	healthPollDelay       = 500 * time.Millisecond
+	dockerHostGateway     = "host.docker.internal"
+	dockerSocketPath      = "/var/run/docker.sock"
+	hostMountTargetRoot   = "/host"
+	workerHostSandboxRoot = "/var/lib/discobox/projects"
+	// workerHostProxyRoot mirrors proxyagent.Root. The worker writes per-sandbox
+	// proxy material here through the host-mount prefix; it must reach the host so
+	// the daemon can bind-mount that material into sandbox containers.
+	workerHostProxyRoot     = "/var/lib/discobox/proxy"
 	labelManaged            = "discobox.vm.managed"
 	labelInstanceID         = "discobox.vm.instance_id"
 	labelProjectID          = "discobox.project_id"
@@ -357,6 +362,13 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 	hostConfig.ExtraHosts = append(hostConfig.ExtraHosts, controlPlaneExtraHosts(derivedControlPlaneURL, boot.Env[workeragent.EnvControlPlaneURL])...)
 	if d.cgroupNSMode != "" {
 		hostConfig.CgroupnsMode = container.CgroupnsMode(d.cgroupNSMode)
+	} else if d.systemd {
+		// systemd (PID 1 in the worker) must create its own cgroup subtree. A
+		// private cgroup namespace makes Docker mount a writable cgroup2 hierarchy
+		// delegated to the container; bind-mounting the host /sys/fs/cgroup instead
+		// drops the container onto the read-only host cgroup root and systemd exits
+		// 255 before it can even log.
+		hostConfig.CgroupnsMode = container.CgroupnsMode("private")
 	}
 	hostConfig.Mounts = d.containerMounts(workerAgent, workerID, projectID)
 	if d.systemd {
@@ -372,9 +384,25 @@ func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instan
 	if d.network != "" {
 		networkConfig.EndpointsConfig = map[string]*network.EndpointSettings{d.network: {}}
 	}
+	// Worker-agent VMs run the shared proxy that their sandboxes route through.
+	// Create the per-worker internal network so the worker can be aliased as the
+	// proxy server name on it and sandboxes can reach only the proxy.
+	if workerAgent && d.dockerSocket != "" {
+		if err := d.ensureSandboxNetwork(ctx, workerID); err != nil {
+			return nil, err
+		}
+	}
 	created, err := d.client.ContainerCreate(ctx, client.ContainerCreateOptions{Config: config, HostConfig: hostConfig, NetworkingConfig: networkConfig, Name: name})
 	if err != nil {
 		return nil, err
+	}
+	if workerAgent && d.dockerSocket != "" {
+		if _, err := d.client.NetworkConnect(ctx, proxyagent.SandboxNetworkName(workerID), client.NetworkConnectOptions{
+			Container:      created.ID,
+			EndpointConfig: &network.EndpointSettings{Aliases: []string{proxyagent.ServerName}},
+		}); err != nil {
+			return nil, fmt.Errorf("connect worker to sandbox network: %w", err)
+		}
 	}
 	if _, err := d.client.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		return nil, err
@@ -483,6 +511,14 @@ func (d *Driver) containerMounts(workerAgent bool, workerID, projectID string) [
 					BindOptions: &mount.BindOptions{CreateMountpoint: true},
 				})
 			}
+			if !hasHostMountSource(d.hostMounts, workerHostProxyRoot) {
+				mounts = append(mounts, mount.Mount{
+					Type:        mount.TypeBind,
+					Source:      workerHostProxyRoot,
+					Target:      hostMountTarget(workerHostProxyRoot),
+					BindOptions: &mount.BindOptions{CreateMountpoint: true},
+				})
+			}
 		}
 		for _, hostMount := range d.hostMounts {
 			mounts = append(mounts, mount.Mount{
@@ -494,8 +530,11 @@ func (d *Driver) containerMounts(workerAgent bool, workerID, projectID string) [
 		}
 	}
 	if d.systemd {
+		// Do not bind-mount the host /sys/fs/cgroup here: with a private cgroup
+		// namespace Docker mounts a writable cgroup2 hierarchy for the container,
+		// which systemd requires. The host bind mount would shadow it with the
+		// read-only host cgroup root.
 		mounts = append(mounts,
-			mount.Mount{Type: mount.TypeBind, Source: "/sys/fs/cgroup", Target: "/sys/fs/cgroup", ReadOnly: false},
 			mount.Mount{Type: mount.TypeVolume, Source: workerScopedVolumeName(workerID, "docker"), Target: "/var/lib/docker"},
 			mount.Mount{Type: mount.TypeVolume, Source: projectScopedVolumeName(projectID, "discobox"), Target: "/var/lib/discobox"},
 		)
@@ -669,6 +708,30 @@ func (d *Driver) RemoveWorkerVM(ctx context.Context, workerID string, currentIns
 		return nil
 	}
 	if err := d.DeleteVM(ctx, instanceID, removeVolumes); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+		return err
+	}
+	// Best-effort remove the per-worker sandbox network once the worker (and its
+	// sandboxes) are gone. It fails harmlessly if sandboxes are still attached.
+	if d.dockerSocket != "" {
+		_, _ = d.client.NetworkRemove(ctx, proxyagent.SandboxNetworkName(workerID), client.NetworkRemoveOptions{})
+	}
+	return nil
+}
+
+// ensureSandboxNetwork creates the per-worker internal bridge network if absent.
+func (d *Driver) ensureSandboxNetwork(ctx context.Context, workerID string) error {
+	name := proxyagent.SandboxNetworkName(workerID)
+	if _, err := d.client.NetworkInspect(ctx, name, client.NetworkInspectOptions{}); err == nil {
+		return nil
+	} else if !cerrdefs.IsNotFound(err) {
+		return err
+	}
+	_, err := d.client.NetworkCreate(ctx, name, client.NetworkCreateOptions{
+		Driver:   "bridge",
+		Internal: true,
+		Labels:   map[string]string{labelManaged: "true", labelWorkerID: workerID},
+	})
+	if err != nil && !cerrdefs.IsConflict(err) && !cerrdefs.IsAlreadyExists(err) {
 		return err
 	}
 	return nil
