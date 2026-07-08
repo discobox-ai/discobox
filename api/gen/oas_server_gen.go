@@ -14,13 +14,6 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/secret-requests/{requestId}/approve
 	ApproveSecretRequest(ctx context.Context, req *ApproveSecretRequestBody, params ApproveSecretRequestParams) (ApproveSecretRequestRes, error)
-	// AttachAgentTerminal implements attach-agent-terminal operation.
-	//
-	// Upgrades to a framed bidirectional stream for a running agent terminal. Closing the stream
-	// detaches from the terminal and does not stop the underlying agent process.
-	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/attach
-	AttachAgentTerminal(ctx context.Context, params AttachAgentTerminalParams) (AttachAgentTerminalRes, error)
 	// AttachSandboxExec implements attach-sandbox-exec operation.
 	//
 	// Opens a websocket carrying the framed bidirectional stream for a running sandbox exec. Input
@@ -35,14 +28,6 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/agent-configs
 	CreateAgentConfig(ctx context.Context, req *CreateAgentConfigBody, params CreateAgentConfigParams) (CreateAgentConfigRes, error)
-	// CreateAgentTerminal implements create-agent-terminal operation.
-	//
-	// Creates an ephemeral terminal/TUI runtime for a coding-agent CLI. When the request is an upgrade
-	// request, the sandbox agent creates the terminal and switches protocols to the framed bidirectional
-	// attach stream instead of returning JSON.
-	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals
-	CreateAgentTerminal(ctx context.Context, req *CreateAgentTerminalRequest, params CreateAgentTerminalParams) (CreateAgentTerminalRes, error)
 	// CreateSandbox implements create-sandbox operation.
 	//
 	// Create a sandbox.
@@ -91,18 +76,18 @@ type Handler interface {
 	//
 	// DELETE /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}
 	DeleteAgentConfigSecretBinding(ctx context.Context, params DeleteAgentConfigSecretBindingParams) (DeleteAgentConfigSecretBindingRes, error)
-	// DeleteAgentTerminal implements delete-agent-terminal operation.
-	//
-	// Destroy an agent terminal runtime in a sandbox.
-	//
-	// DELETE /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}
-	DeleteAgentTerminal(ctx context.Context, params DeleteAgentTerminalParams) (DeleteAgentTerminalRes, error)
 	// DeleteSandbox implements delete-sandbox operation.
 	//
 	// Delete a sandbox.
 	//
 	// DELETE /projects/{projectId}/sandboxes/{sandboxId}
 	DeleteSandbox(ctx context.Context, params DeleteSandboxParams) (DeleteSandboxRes, error)
+	// DeleteSandboxExec implements delete-sandbox-exec operation.
+	//
+	// Destroy an exec runtime in a sandbox.
+	//
+	// DELETE /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
+	DeleteSandboxExec(ctx context.Context, params DeleteSandboxExecParams) (DeleteSandboxExecRes, error)
 	// DeleteSandboxProviderInstance implements delete-sandbox-provider-instance operation.
 	//
 	// Delete a sandbox provider instance.
@@ -139,12 +124,6 @@ type Handler interface {
 	//
 	// GET /agent-config-definitions/{definitionId}
 	GetAgentConfigDefinition(ctx context.Context, params GetAgentConfigDefinitionParams) (GetAgentConfigDefinitionRes, error)
-	// GetAgentTerminalResources implements get-agent-terminal-resources operation.
-	//
-	// Get the latest opaque resource snapshot for an agent terminal.
-	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources
-	GetAgentTerminalResources(ctx context.Context, params GetAgentTerminalResourcesParams) (GetAgentTerminalResourcesRes, error)
 	// GetJob implements get-job operation.
 	//
 	// Get a job.
@@ -169,6 +148,12 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
 	GetSandboxExec(ctx context.Context, params GetSandboxExecParams) (GetSandboxExecRes, error)
+	// GetSandboxExecResources implements get-sandbox-exec-resources operation.
+	//
+	// Get the latest opaque resource snapshot for a sandbox exec.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources
+	GetSandboxExecResources(ctx context.Context, params GetSandboxExecResourcesParams) (GetSandboxExecResourcesRes, error)
 	// GetSandboxProviderInstance implements get-sandbox-provider-instance operation.
 	//
 	// Get a sandbox provider instance.
@@ -211,30 +196,6 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks
 	ListAgentHooks(ctx context.Context, params ListAgentHooksParams) (ListAgentHooksRes, error)
-	// ListAgentTerminalEvents implements list-agent-terminal-events operation.
-	//
-	// List recent audit events for an agent terminal.
-	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/events
-	ListAgentTerminalEvents(ctx context.Context, params ListAgentTerminalEventsParams) (ListAgentTerminalEventsRes, error)
-	// ListAgentTerminalLogs implements list-agent-terminal-logs operation.
-	//
-	// List PTY logs for an agent terminal.
-	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/logs
-	ListAgentTerminalLogs(ctx context.Context, params ListAgentTerminalLogsParams) (ListAgentTerminalLogsRes, error)
-	// ListAgentTerminalResourceHistory implements list-agent-terminal-resource-history operation.
-	//
-	// List recent opaque resource snapshots for an agent terminal.
-	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/history
-	ListAgentTerminalResourceHistory(ctx context.Context, params ListAgentTerminalResourceHistoryParams) (ListAgentTerminalResourceHistoryRes, error)
-	// ListAgentTerminals implements list-agent-terminals operation.
-	//
-	// List agent terminal runtimes in a sandbox.
-	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals
-	ListAgentTerminals(ctx context.Context, params ListAgentTerminalsParams) (ListAgentTerminalsRes, error)
 	// ListJobs implements list-jobs operation.
 	//
 	// List jobs for a project.
@@ -247,12 +208,24 @@ type Handler interface {
 	//
 	// GET /projects
 	ListProjects(ctx context.Context) (ListProjectsRes, error)
+	// ListSandboxExecEvents implements list-sandbox-exec-events operation.
+	//
+	// List recent audit events for a sandbox exec.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/events
+	ListSandboxExecEvents(ctx context.Context, params ListSandboxExecEventsParams) (ListSandboxExecEventsRes, error)
 	// ListSandboxExecLogs implements list-sandbox-exec-logs operation.
 	//
 	// List logs for a sandbox exec.
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/logs
 	ListSandboxExecLogs(ctx context.Context, params ListSandboxExecLogsParams) (ListSandboxExecLogsRes, error)
+	// ListSandboxExecResourceHistory implements list-sandbox-exec-resource-history operation.
+	//
+	// List recent opaque resource snapshots for a sandbox exec.
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/history
+	ListSandboxExecResourceHistory(ctx context.Context, params ListSandboxExecResourceHistoryParams) (ListSandboxExecResourceHistoryRes, error)
 	// ListSandboxExecs implements list-sandbox-execs operation.
 	//
 	// List exec runtimes in a sandbox.
@@ -349,12 +322,6 @@ type Handler interface {
 	//
 	// PUT /projects/{projectId}/agent-configs/{agentConfigId}/default
 	SetDefaultAgentConfig(ctx context.Context, params SetDefaultAgentConfigParams) (SetDefaultAgentConfigRes, error)
-	// StartAgentTerminal implements start-agent-terminal operation.
-	//
-	// Starts a prepared agent terminal after any desired attach stream has connected.
-	//
-	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/start
-	StartAgentTerminal(ctx context.Context, params StartAgentTerminalParams) (StartAgentTerminalRes, error)
 	// StartSandbox implements start-sandbox operation.
 	//
 	// Start a sandbox.
@@ -373,12 +340,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/stop
 	StopSandbox(ctx context.Context, req *StopSandboxBody, params StopSandboxParams) (StopSandboxRes, error)
-	// StreamAgentTerminalResources implements stream-agent-terminal-resources operation.
+	// StreamSandboxExecResources implements stream-sandbox-exec-resources operation.
 	//
-	// Stream opaque resource snapshots for an agent terminal.
+	// Stream opaque resource snapshots for a sandbox exec.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/stream
-	StreamAgentTerminalResources(ctx context.Context, params StreamAgentTerminalResourcesParams) (StreamAgentTerminalResourcesRes, error)
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream
+	StreamSandboxExecResources(ctx context.Context, params StreamSandboxExecResourcesParams) (StreamSandboxExecResourcesRes, error)
 	// UpdateAgentConfig implements update-agent-config operation.
 	//
 	// Update an agent config.

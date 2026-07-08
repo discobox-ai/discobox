@@ -37,11 +37,7 @@ func (a *App) newHooksLogsCommand() *cobra.Command {
 				return err
 			}
 			if strings.TrimSpace(terminalID) != "" {
-				client, err := a.apiClient()
-				if err != nil {
-					return err
-				}
-				terminalID, err = a.resolveAgentTerminalID(cmd.Context(), client, projectID, resolvedSandboxID, terminalID)
+				terminalID, err = a.resolveSandboxExecID(cmd.Context(), projectID, resolvedSandboxID, terminalID)
 				if err != nil {
 					return err
 				}

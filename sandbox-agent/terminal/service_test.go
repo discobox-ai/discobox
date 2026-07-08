@@ -36,10 +36,21 @@ func newTestService(t *testing.T, installer Installer) (*Service, *fakeUnits) {
 	t.Helper()
 	dir := t.TempDir()
 	units := &fakeUnits{}
-	svc, err := NewService(ServiceConfig{
+	image := config.ImageConfig{Env: map[string]string{"PATH": "/usr/bin"}}
+	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
 		WorkingRoot: dir,
 		RuntimeDir:  filepath.Join(dir, "rt"),
-		ImageConfig: config.ImageConfig{Env: map[string]string{"PATH": "/usr/bin"}},
+		ImageConfig: image,
+		Units:       units,
+	})
+	if err != nil {
+		t.Fatalf("new exec manager: %v", err)
+	}
+	svc, err := NewService(ServiceConfig{
+		Execs:       execManager,
+		WorkingRoot: dir,
+		RuntimeDir:  filepath.Join(dir, "rt"),
+		ImageConfig: image,
 		Agents:      []config.Agent{{ID: "codex", Command: []string{"codex"}, IsDefault: true}},
 		Units:       units,
 		Installer:   installer,

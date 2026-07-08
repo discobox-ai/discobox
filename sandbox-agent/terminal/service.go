@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,10 +24,7 @@ import (
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
 )
 
-const (
-	agentTerminalProtocol = "discobox-agent-terminal"
-	installStatusTimeout  = 5 * time.Minute
-)
+const installStatusTimeout = 5 * time.Minute
 
 // ErrNotFound is returned when a terminal (exec) is not found. It aliases the
 // exec primitive's error so callers can match either.
@@ -64,6 +60,10 @@ type PrimaryStateStore interface {
 }
 
 type ServiceConfig struct {
+	// Execs is the shared runtime primitive that backs both plain execs and
+	// terminals. The service creates terminal-mode execs on it and never owns a
+	// runtime of its own.
+	Execs               *execs.Manager
 	ResolvedAgentConfig *config.Agent
 	Agents              []config.Agent
 	WorkingRoot         string
@@ -75,7 +75,6 @@ type ServiceConfig struct {
 	DefaultUser         *execs.User
 	Units               execs.UnitManager
 	Installer           Installer
-	Audit               execs.AuditRecorder
 	PrimaryState        PrimaryStateStore
 }
 
@@ -99,9 +98,12 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	if strings.TrimSpace(cfg.WorkingRoot) == "" {
 		return nil, errors.New("working root is required")
 	}
+	if cfg.Execs == nil {
+		return nil, errors.New("shared exec manager is required")
+	}
 	runtimeDir := strings.TrimSpace(cfg.RuntimeDir)
 	if runtimeDir == "" {
-		runtimeDir = "/run/discobox/agent-terminals"
+		runtimeDir = "/run/discobox/execs"
 	}
 	imageConfig := cfg.ImageConfig
 	if len(imageConfig.Env) == 0 {
@@ -112,19 +114,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	}
 	defaultUser := terminalDefaultUser(cfg)
 
-	terminals, err := execs.NewManagerWithConfig(execs.ManagerConfig{
-		WorkingRoot:    cfg.WorkingRoot,
-		DefaultWorkdir: cfg.ExecDefaults.Workdir,
-		DefaultUser:    defaultUser,
-		RuntimeDir:     runtimeDir,
-		Env:            cfg.Env,
-		ImageConfig:    imageConfig,
-		Units:          cfg.Units,
-		Audit:          cfg.Audit,
-	})
-	if err != nil {
-		return nil, err
-	}
+	terminals := cfg.Execs
 	installs, err := execs.NewManagerWithConfig(execs.ManagerConfig{
 		WorkingRoot:    cfg.WorkingRoot,
 		DefaultWorkdir: cfg.ExecDefaults.Workdir,
@@ -196,12 +186,6 @@ func (s *Service) Start(ctx context.Context, id string) (execs.Exec, error) {
 func (s *Service) Delete(ctx context.Context, id string) error { return s.execs.Delete(ctx, id) }
 func (s *Service) Logs(ctx context.Context, id string) ([]execs.LogEntry, error) {
 	return s.execs.Logs(ctx, id)
-}
-
-// Attach proxies to the terminal's shim over a raw HTTP Upgrade using the agent
-// terminal protocol, replaying buffered output when replay is set.
-func (s *Service) Attach(ctx context.Context, w http.ResponseWriter, id string, replay bool) error {
-	return s.execs.AttachUpgrade(ctx, w, id, agentTerminalProtocol, replay)
 }
 
 // Create resolves the agent, installs it, and creates a terminal-mode exec: an

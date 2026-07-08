@@ -367,7 +367,7 @@ func TestSandboxHTTPRouteProxiesPortToWorker(t *testing.T) {
 	}
 }
 
-func TestSandboxAgentTerminalListRouteProxiesToSandboxAgent(t *testing.T) {
+func TestSandboxExecListRouteProxiesToSandboxAgent(t *testing.T) {
 	ctx := context.Background()
 	stubs := newRouterTestServices()
 	workerID := "worker-1"
@@ -381,7 +381,7 @@ func TestSandboxAgentTerminalListRouteProxiesToSandboxAgent(t *testing.T) {
 	var released bool
 	projectID := service.DefaultProjectID
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wantPath := "/api/project/" + projectID + "/worker/worker-1/sandboxes/sandbox-1/agent-terminals"
+		wantPath := "/api/project/" + projectID + "/worker/worker-1/sandboxes/sandbox-1/execs"
 		if r.URL.Path != wantPath {
 			t.Fatalf("upstream path = %q", r.URL.Path)
 		}
@@ -392,7 +392,7 @@ func TestSandboxAgentTerminalListRouteProxiesToSandboxAgent(t *testing.T) {
 			t.Fatalf("upstream sandbox-agent auth = %q", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"terminals":[]}`))
+		_, _ = w.Write([]byte(`{"execs":[]}`))
 	}))
 	t.Cleanup(upstream.Close)
 	stubs.sandboxLease = transport.NewHTTPClientLeaseWithBaseURLAndAuth(upstream.Client(), upstream.URL, "worker-token", func() {
@@ -415,24 +415,24 @@ func TestSandboxAgentTerminalListRouteProxiesToSandboxAgent(t *testing.T) {
 		t.Fatalf("new router: %v", err)
 	}
 	resp := httptest.NewRecorder()
-	req := scopedUserRequest(ctx, http.MethodGet, "/api/projects/"+projectID+"/sandboxes/sandbox-1/agent-terminals", nil, workeragentauth.ScopeTerminalRead)
+	req := scopedUserRequest(ctx, http.MethodGet, "/api/projects/"+projectID+"/sandboxes/sandbox-1/execs", nil, workeragentauth.ScopeExecRead)
 	router.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusOK {
 		t.Fatalf("GET sandbox agent terminals status = %d, body = %s", resp.Code, resp.Body.String())
 	}
-	if body := resp.Body.String(); body != `{"terminals":[]}` {
+	if body := resp.Body.String(); body != `{"execs":[]}` {
 		t.Fatalf("body = %q, want proxied response", body)
 	}
 	if !released {
 		t.Fatal("expected sandbox HTTP lease to be released")
 	}
-	if !slices.Equal(stubs.sandboxScopes, []string{workeragentauth.ScopeTerminalRead}) {
+	if !slices.Equal(stubs.sandboxScopes, []string{workeragentauth.ScopeExecRead}) {
 		t.Fatalf("sandbox HTTP scopes = %#v", stubs.sandboxScopes)
 	}
 }
 
-func TestSandboxAgentTerminalProxyErrorUsesJSON(t *testing.T) {
+func TestSandboxExecProxyErrorUsesJSON(t *testing.T) {
 	ctx := context.Background()
 	stubs := newRouterTestServices()
 	workerID := "worker-1"
@@ -458,7 +458,7 @@ func TestSandboxAgentTerminalProxyErrorUsesJSON(t *testing.T) {
 		t.Fatalf("new router: %v", err)
 	}
 	resp := httptest.NewRecorder()
-	req := scopedUserRequest(ctx, http.MethodPost, "/api/projects/"+projectID+"/sandboxes/sandbox-1/agent-terminals", nil, workeragentauth.ScopeTerminalWrite)
+	req := scopedUserRequest(ctx, http.MethodPost, "/api/projects/"+projectID+"/sandboxes/sandbox-1/execs", nil, workeragentauth.ScopeExecWrite)
 	router.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusServiceUnavailable {
@@ -476,7 +476,7 @@ func TestSandboxAgentTerminalProxyErrorUsesJSON(t *testing.T) {
 	}
 }
 
-func TestSandboxAgentTerminalAttachRouteUsesWriteScope(t *testing.T) {
+func TestSandboxExecAttachRouteUsesWriteScope(t *testing.T) {
 	ctx := context.Background()
 	stubs := newRouterTestServices()
 	workerID := "worker-1"
@@ -489,7 +489,7 @@ func TestSandboxAgentTerminalAttachRouteUsesWriteScope(t *testing.T) {
 	}
 	projectID := service.DefaultProjectID
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wantPath := "/api/project/" + projectID + "/worker/worker-1/sandboxes/sandbox-1/agent-terminals/terminal-1/attach"
+		wantPath := "/api/project/" + projectID + "/worker/worker-1/sandboxes/sandbox-1/execs/exec-1/attach"
 		if r.URL.Path != wantPath {
 			t.Fatalf("upstream path = %q", r.URL.Path)
 		}
@@ -520,18 +520,18 @@ func TestSandboxAgentTerminalAttachRouteUsesWriteScope(t *testing.T) {
 		t.Fatalf("new router: %v", err)
 	}
 	resp := httptest.NewRecorder()
-	req := scopedUserRequest(ctx, http.MethodPost, "/api/projects/"+projectID+"/sandboxes/sandbox-1/agent-terminals/terminal-1/attach", nil, workeragentauth.ScopeTerminalWrite)
+	req := scopedUserRequest(ctx, http.MethodPost, "/api/projects/"+projectID+"/sandboxes/sandbox-1/execs/exec-1/attach", nil, workeragentauth.ScopeExecWrite)
 	router.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusNoContent {
 		t.Fatalf("POST sandbox agent terminal attach status = %d, body = %s", resp.Code, resp.Body.String())
 	}
-	if !slices.Equal(stubs.sandboxScopes, []string{workeragentauth.ScopeTerminalWrite}) {
+	if !slices.Equal(stubs.sandboxScopes, []string{workeragentauth.ScopeExecWrite, workeragentauth.ScopeExecRead}) {
 		t.Fatalf("sandbox HTTP scopes = %#v", stubs.sandboxScopes)
 	}
 }
 
-func TestSandboxAgentHookRouteUsesTerminalReadScope(t *testing.T) {
+func TestSandboxAgentHookRouteUsesExecReadScope(t *testing.T) {
 	ctx := context.Background()
 	stubs := newRouterTestServices()
 	workerID := "worker-1"
@@ -569,13 +569,13 @@ func TestSandboxAgentHookRouteUsesTerminalReadScope(t *testing.T) {
 		t.Fatalf("new router: %v", err)
 	}
 	resp := httptest.NewRecorder()
-	req := scopedUserRequest(ctx, http.MethodGet, "/api/projects/"+projectID+"/sandboxes/sandbox-1/agent-hooks", nil, workeragentauth.ScopeTerminalRead)
+	req := scopedUserRequest(ctx, http.MethodGet, "/api/projects/"+projectID+"/sandboxes/sandbox-1/agent-hooks", nil, workeragentauth.ScopeExecRead)
 	router.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusOK {
 		t.Fatalf("GET agent hooks status = %d, body = %s", resp.Code, resp.Body.String())
 	}
-	if !slices.Equal(stubs.sandboxScopes, []string{workeragentauth.ScopeTerminalRead}) {
+	if !slices.Equal(stubs.sandboxScopes, []string{workeragentauth.ScopeExecRead}) {
 		t.Fatalf("sandbox HTTP scopes = %#v", stubs.sandboxScopes)
 	}
 }

@@ -100,12 +100,12 @@ func (a *App) attachRunSandbox(cmd *cobra.Command, client *apiclientgen.Client, 
 	// Replay the primary terminal's saved history first: the sandbox-agent
 	// launches and drives it before run connects, so replay shows the session
 	// from the start rather than only output produced after the attach.
-	return a.attachAgentTerminal(ctx, projectID, sandbox.ID, terminal.ID, true, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+	return a.attachSandboxTerminal(ctx, projectID, sandbox.ID, terminal.ID, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 // waitForPrimaryTerminal polls the sandbox terminals until the primary
 // (default) terminal launched by the sandbox-agent appears.
-func (a *App) waitForPrimaryTerminal(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID string, timeout time.Duration) (apimodel.AgentTerminal, error) {
+func (a *App) waitForPrimaryTerminal(ctx context.Context, _ *apiclientgen.Client, projectID, sandboxID string, timeout time.Duration) (apimodel.SandboxExec, error) {
 	if timeout > 0 {
 		var cancel func()
 		ctx, cancel = context.WithTimeout(ctx, timeout)
@@ -115,12 +115,9 @@ func (a *App) waitForPrimaryTerminal(ctx context.Context, client *apiclientgen.C
 	defer ticker.Stop()
 	var lastErr error
 	for {
-		res, err := client.ListAgentTerminals(ctx, apiclientgen.ListAgentTerminalsParams{ProjectId: projectID, SandboxId: sandboxID})
-		if err != nil {
+		if terminals, err := a.listSandboxTerminals(ctx, projectID, sandboxID); err != nil {
 			lastErr = err
-		} else if body, err := expectResponse[apimodel.AgentTerminalsResponse](res); err != nil {
-			lastErr = err
-		} else if terminal, ok := primaryTerminal(body.GetTerminals()); ok {
+		} else if terminal, ok := primaryTerminal(terminals); ok {
 			return terminal, nil
 		} else {
 			lastErr = nil
@@ -128,9 +125,9 @@ func (a *App) waitForPrimaryTerminal(ctx context.Context, client *apiclientgen.C
 		select {
 		case <-ctx.Done():
 			if lastErr != nil {
-				return apimodel.AgentTerminal{}, fmt.Errorf("waiting for sandbox terminal: %w", lastErr)
+				return apimodel.SandboxExec{}, fmt.Errorf("waiting for sandbox terminal: %w", lastErr)
 			}
-			return apimodel.AgentTerminal{}, fmt.Errorf("waiting for sandbox terminal: %w", ctx.Err())
+			return apimodel.SandboxExec{}, fmt.Errorf("waiting for sandbox terminal: %w", ctx.Err())
 		case <-ticker.C:
 		}
 	}
@@ -138,8 +135,8 @@ func (a *App) waitForPrimaryTerminal(ctx context.Context, client *apiclientgen.C
 
 // primaryTerminal selects the sandbox's default terminal: the one flagged
 // primary by the sandbox-agent, falling back to the oldest terminal.
-func primaryTerminal(terminals []apimodel.AgentTerminal) (apimodel.AgentTerminal, bool) {
-	var oldest *apimodel.AgentTerminal
+func primaryTerminal(terminals []apimodel.SandboxExec) (apimodel.SandboxExec, bool) {
+	var oldest *apimodel.SandboxExec
 	for i := range terminals {
 		if terminals[i].Primary.Or(false) {
 			return terminals[i], true
@@ -151,7 +148,7 @@ func primaryTerminal(terminals []apimodel.AgentTerminal) (apimodel.AgentTerminal
 	if oldest != nil {
 		return *oldest, true
 	}
-	return apimodel.AgentTerminal{}, false
+	return apimodel.SandboxExec{}, false
 }
 
 func parseRunArgs(args []string) (runOptions, error) {

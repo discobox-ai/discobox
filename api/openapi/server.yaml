@@ -393,138 +393,6 @@ components:
                     format: uri
                     type: string
             type: object
-        AgentTerminal:
-            additionalProperties: false
-            properties:
-                id:
-                    description: Agent terminal runtime ID.
-                    type: string
-                agentId:
-                    description: Coding agent CLI selected for the terminal.
-                    type: string
-                status:
-                    description: Current observed terminal runtime status.
-                    enum:
-                        - starting
-                        - running
-                        - exited
-                        - failed
-                        - lost
-                    type: string
-                command:
-                    description: Command used to launch the coding-agent CLI.
-                    items:
-                        type: string
-                    type: array
-                workdir:
-                    description: Working directory for the terminal process.
-                    type: string
-                unit:
-                    description: Systemd unit or scope name when known.
-                    type: string
-                pid:
-                    description: Sandbox-local process ID when known.
-                    format: int64
-                    type: integer
-                exitCode:
-                    description: Process exit code when the terminal has exited.
-                    format: int64
-                    type: integer
-                error:
-                    description: Runtime error detail when the terminal failed.
-                    type: string
-                createdAt:
-                    format: date-time
-                    type: string
-                startedAt:
-                    format: date-time
-                    type: string
-                exitedAt:
-                    format: date-time
-                    type: string
-                metadata:
-                    additionalProperties:
-                        type: string
-                    description: Sandbox-agent-owned terminal metadata.
-                    type: object
-                primary:
-                    description: Whether this is the sandbox's primary terminal, launched by the sandbox-agent from the sandbox prompt. Set only by the sandbox-agent; it cannot be requested through terminal create.
-                    readOnly: true
-                    type: boolean
-            required:
-                - id
-                - status
-                - command
-                - workdir
-                - createdAt
-            type: object
-        AgentTerminalEvent:
-            additionalProperties: false
-            properties:
-                id:
-                    description: Event ID.
-                    type: string
-                terminalId:
-                    description: Agent terminal runtime ID.
-                    type: string
-                type:
-                    description: Event type.
-                    type: string
-                message:
-                    description: Human-readable event message.
-                    type: string
-                details:
-                    description: Opaque event details.
-                createdAt:
-                    format: date-time
-                    type: string
-            required:
-                - id
-                - type
-                - createdAt
-            type: object
-        AgentTerminalEventsResponse:
-            additionalProperties: false
-            properties:
-                events:
-                    items:
-                        $ref: '#/components/schemas/AgentTerminalEvent'
-                    type: array
-            required:
-                - events
-            type: object
-        AgentTerminalLogEntry:
-            additionalProperties: false
-            properties:
-                timestamp:
-                    description: Time this PTY input or output chunk was observed.
-                    format: date-time
-                    type: string
-                stream:
-                    description: PTY direction for this chunk.
-                    enum:
-                        - input
-                        - output
-                    type: string
-                data:
-                    description: Base64-encoded raw PTY bytes.
-                    format: byte
-                    type: string
-            required:
-                - timestamp
-                - stream
-                - data
-            type: object
-        AgentTerminalLogsResponse:
-            additionalProperties: false
-            properties:
-                entries:
-                    items:
-                        $ref: '#/components/schemas/AgentTerminalLogEntry'
-                    type: array
-            required:
-                - entries
-            type: object
         AgentHookLog:
             additionalProperties: false
             properties:
@@ -561,16 +429,6 @@ components:
                     type: array
             required:
                 - hooks
-            type: object
-        AgentTerminalsResponse:
-            additionalProperties: false
-            properties:
-                terminals:
-                    items:
-                        $ref: '#/components/schemas/AgentTerminal'
-                    type: array
-            required:
-                - terminals
             type: object
         SandboxExec:
             additionalProperties: false
@@ -634,6 +492,12 @@ components:
                         type: string
                     description: Caller-supplied exec metadata.
                     type: object
+                agentId:
+                    description: Coding agent this exec runs, when created in agent (terminal) mode.
+                    type: string
+                primary:
+                    description: Whether this is the sandbox's primary agent terminal.
+                    type: boolean
             required:
                 - id
                 - status
@@ -641,6 +505,37 @@ components:
                 - workdir
                 - tty
                 - createdAt
+            type: object
+        SandboxExecEvent:
+            additionalProperties: false
+            properties:
+                id:
+                    type: string
+                execId:
+                    type: string
+                type:
+                    type: string
+                message:
+                    type: string
+                details:
+                    description: Structured event detail payload.
+                createdAt:
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - type
+                - createdAt
+            type: object
+        SandboxExecEventsResponse:
+            additionalProperties: false
+            properties:
+                events:
+                    items:
+                        $ref: '#/components/schemas/SandboxExecEvent'
+                    type: array
+            required:
+                - events
             type: object
         SandboxExecLogEntry:
             additionalProperties: false
@@ -688,9 +583,18 @@ components:
             type: object
         CreateSandboxExecRequest:
             additionalProperties: false
+            description: Create an exec. Provide command for a plain exec, or agentId (with optional args) to run a coding agent in terminal mode.
             properties:
                 command:
-                    description: Command argv to execute in the sandbox.
+                    description: Command argv to execute in the sandbox. Mutually exclusive with agentId.
+                    items:
+                        type: string
+                    type: array
+                agentId:
+                    description: Coding agent CLI to start in terminal mode. Defaults to the sandbox configured agent when omitted. Mutually exclusive with command.
+                    type: string
+                args:
+                    description: Additional command arguments appended to the resolved agent command in terminal mode.
                     items:
                         type: string
                     type: array
@@ -723,8 +627,6 @@ components:
                         type: string
                     description: Caller-supplied metadata to associate with the exec.
                     type: object
-            required:
-                - command
             type: object
         CreateSandboxExecResponse:
             additionalProperties: false
@@ -733,49 +635,6 @@ components:
                     $ref: '#/components/schemas/SandboxExec'
             required:
                 - exec
-            type: object
-        CreateAgentTerminalRequest:
-            additionalProperties: false
-            properties:
-                agentId:
-                    description: Coding agent CLI to start. Defaults to the sandbox configured agent when omitted.
-                    type: string
-                args:
-                    description: Additional command arguments for the coding-agent CLI.
-                    items:
-                        type: string
-                    type: array
-                workdir:
-                    description: Working directory for the terminal process.
-                    type: string
-                env:
-                    additionalProperties:
-                        type: string
-                    description: Additional environment variables for the terminal process.
-                    type: object
-                cols:
-                    description: Initial PTY columns when a PTY is allocated.
-                    maximum: 65535
-                    minimum: 0
-                    type: integer
-                rows:
-                    description: Initial PTY rows when a PTY is allocated.
-                    maximum: 65535
-                    minimum: 0
-                    type: integer
-                metadata:
-                    additionalProperties:
-                        type: string
-                    description: Caller-supplied metadata to associate with the terminal.
-                    type: object
-            type: object
-        CreateAgentTerminalResponse:
-            additionalProperties: false
-            properties:
-                terminal:
-                    $ref: '#/components/schemas/AgentTerminal'
-            required:
-                - terminal
             type: object
         ErrorResponse:
             additionalProperties: false
@@ -4106,256 +3965,6 @@ paths:
             summary: Stop a sandbox
             tags:
                 - Sandboxes
-    /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals:
-        get:
-            operationId: list-agent-terminals
-            parameters:
-                - description: Project that owns the sandbox.
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    type: string
-                - description: Sandbox resource ID.
-                  in: path
-                  name: sandboxId
-                  required: true
-                  schema:
-                    type: string
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/AgentTerminalsResponse'
-                    description: Agent terminal list.
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Error response.
-            summary: List agent terminal runtimes in a sandbox.
-            tags:
-                - Agent Terminals
-            x-sandbox-agent: true
-        post:
-            description: Creates an ephemeral terminal/TUI runtime for a coding-agent CLI. When the request is an upgrade request, the sandbox agent creates the terminal and switches protocols to the framed bidirectional attach stream instead of returning JSON.
-            operationId: create-agent-terminal
-            parameters:
-                - description: Project that owns the sandbox.
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    type: string
-                - description: Sandbox resource ID.
-                  in: path
-                  name: sandboxId
-                  required: true
-                  schema:
-                    type: string
-            requestBody:
-                content:
-                    application/json:
-                        schema:
-                            $ref: '#/components/schemas/CreateAgentTerminalRequest'
-                required: true
-            responses:
-                101:
-                    description: Switching protocols to the framed agent terminal attach stream.
-                    headers:
-                        Connection:
-                            description: HTTP connection upgrade marker.
-                            schema:
-                                type: string
-                        Upgrade:
-                            description: Upgrade protocol selected by the sandbox agent.
-                            schema:
-                                type: string
-                201:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/CreateAgentTerminalResponse'
-                    description: Created agent terminal.
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Error response.
-            summary: Create an agent terminal runtime in a sandbox.
-            tags:
-                - Agent Terminals
-            x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}:
-        delete:
-            operationId: delete-agent-terminal
-            parameters:
-                - description: Project that owns the sandbox.
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    type: string
-                - description: Sandbox resource ID.
-                  in: path
-                  name: sandboxId
-                  required: true
-                  schema:
-                    type: string
-                - description: Agent terminal runtime ID.
-                  in: path
-                  name: terminalId
-                  required: true
-                  schema:
-                    type: string
-            responses:
-                204:
-                    description: Agent terminal destroyed.
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Error response.
-            summary: Destroy an agent terminal runtime in a sandbox.
-            tags:
-                - Agent Terminals
-            x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/attach:
-        post:
-            description: Upgrades to a framed bidirectional stream for a running agent terminal. Closing the stream detaches from the terminal and does not stop the underlying agent process.
-            operationId: attach-agent-terminal
-            parameters:
-                - description: Project that owns the sandbox.
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    type: string
-                - description: Sandbox resource ID.
-                  in: path
-                  name: sandboxId
-                  required: true
-                  schema:
-                    type: string
-                - description: Agent terminal runtime ID.
-                  in: path
-                  name: terminalId
-                  required: true
-                  schema:
-                    type: string
-            responses:
-                101:
-                    description: Switching protocols to the framed agent terminal attach stream.
-                    headers:
-                        Connection:
-                            description: HTTP connection upgrade marker.
-                            schema:
-                                type: string
-                        Upgrade:
-                            description: Upgrade protocol selected by the sandbox agent.
-                            schema:
-                                type: string
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Error response.
-            summary: Attach to an agent terminal stream.
-            tags:
-                - Agent Terminals
-            x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/start:
-        post:
-            description: Starts a prepared agent terminal after any desired attach stream has connected.
-            operationId: start-agent-terminal
-            parameters:
-                - description: Project that owns the sandbox.
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    type: string
-                - description: Sandbox resource ID.
-                  in: path
-                  name: sandboxId
-                  required: true
-                  schema:
-                    type: string
-                - description: Agent terminal runtime ID.
-                  in: path
-                  name: terminalId
-                  required: true
-                  schema:
-                    type: string
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/AgentTerminal'
-                    description: Started agent terminal.
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Error response.
-            summary: Start a prepared agent terminal.
-            tags:
-                - Agent Terminals
-            x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/events:
-        get:
-            operationId: list-agent-terminal-events
-            parameters:
-                - description: Project that owns the sandbox.
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    type: string
-                - description: Sandbox resource ID.
-                  in: path
-                  name: sandboxId
-                  required: true
-                  schema:
-                    type: string
-                - description: Agent terminal runtime ID.
-                  in: path
-                  name: terminalId
-                  required: true
-                  schema:
-                    type: string
-                - description: Maximum number of history items to return.
-                  in: query
-                  name: limit
-                  required: false
-                  schema:
-                    maximum: 1000
-                    minimum: 1
-                    type: integer
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/AgentTerminalEventsResponse'
-                    description: Recent terminal audit events.
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Error response.
-            summary: List recent audit events for an agent terminal.
-            tags:
-                - Agent Terminals
-            x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks:
         get:
             operationId: list-agent-hooks
@@ -4402,170 +4011,6 @@ paths:
             summary: List recent sandbox agent hook payload logs.
             tags:
                 - Agent Hooks
-            x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/logs:
-        get:
-            operationId: list-agent-terminal-logs
-            parameters:
-                - description: Project that owns the sandbox.
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    type: string
-                - description: Sandbox resource ID.
-                  in: path
-                  name: sandboxId
-                  required: true
-                  schema:
-                    type: string
-                - description: Agent terminal runtime ID.
-                  in: path
-                  name: terminalId
-                  required: true
-                  schema:
-                    type: string
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/AgentTerminalLogsResponse'
-                    description: Terminal PTY input and output log entries.
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Error response.
-            summary: List PTY logs for an agent terminal.
-            tags:
-                - Agent Terminals
-            x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources:
-        get:
-            operationId: get-agent-terminal-resources
-            parameters:
-                - description: Project that owns the sandbox.
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    type: string
-                - description: Sandbox resource ID.
-                  in: path
-                  name: sandboxId
-                  required: true
-                  schema:
-                    type: string
-                - description: Agent terminal runtime ID.
-                  in: path
-                  name: terminalId
-                  required: true
-                  schema:
-                    type: string
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ResourceSnapshot'
-                    description: Latest resource snapshot.
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Error response.
-            summary: Get the latest opaque resource snapshot for an agent terminal.
-            tags:
-                - Agent Terminals
-            x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/history:
-        get:
-            operationId: list-agent-terminal-resource-history
-            parameters:
-                - description: Project that owns the sandbox.
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    type: string
-                - description: Sandbox resource ID.
-                  in: path
-                  name: sandboxId
-                  required: true
-                  schema:
-                    type: string
-                - description: Agent terminal runtime ID.
-                  in: path
-                  name: terminalId
-                  required: true
-                  schema:
-                    type: string
-                - description: Maximum number of history items to return.
-                  in: query
-                  name: limit
-                  required: false
-                  schema:
-                    maximum: 1000
-                    minimum: 1
-                    type: integer
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ResourceHistoryResponse'
-                    description: Recent resource snapshots.
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Error response.
-            summary: List recent opaque resource snapshots for an agent terminal.
-            tags:
-                - Agent Terminals
-            x-sandbox-agent: true
-    /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/stream:
-        get:
-            operationId: stream-agent-terminal-resources
-            parameters:
-                - description: Project that owns the sandbox.
-                  in: path
-                  name: projectId
-                  required: true
-                  schema:
-                    type: string
-                - description: Sandbox resource ID.
-                  in: path
-                  name: sandboxId
-                  required: true
-                  schema:
-                    type: string
-                - description: Agent terminal runtime ID.
-                  in: path
-                  name: terminalId
-                  required: true
-                  schema:
-                    type: string
-            responses:
-                200:
-                    content:
-                        text/event-stream:
-                            schema:
-                                type: string
-                    description: Server-sent resource snapshot stream.
-                default:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorResponse'
-                    description: Error response.
-            summary: Stream opaque resource snapshots for an agent terminal.
-            tags:
-                - Agent Terminals
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/execs:
         get:
@@ -4674,6 +4119,40 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Error response.
             summary: Get an exec runtime in a sandbox.
+            tags:
+                - Sandbox Execs
+            x-sandbox-agent: true
+        delete:
+            operationId: delete-sandbox-exec
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox exec runtime ID.
+                  in: path
+                  name: execId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                204:
+                    description: Exec destroyed.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Destroy an exec runtime in a sandbox.
             tags:
                 - Sandbox Execs
             x-sandbox-agent: true
@@ -4798,6 +4277,178 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Error response.
             summary: Start a prepared sandbox exec.
+            tags:
+                - Sandbox Execs
+            x-sandbox-agent: true
+    /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/events:
+        get:
+            operationId: list-sandbox-exec-events
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox exec runtime ID.
+                  in: path
+                  name: execId
+                  required: true
+                  schema:
+                    type: string
+                - description: Maximum number of history items to return.
+                  in: query
+                  name: limit
+                  required: false
+                  schema:
+                    maximum: 1000
+                    minimum: 1
+                    type: integer
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxExecEventsResponse'
+                    description: Recent exec audit events.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: List recent audit events for a sandbox exec.
+            tags:
+                - Sandbox Execs
+            x-sandbox-agent: true
+    /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources:
+        get:
+            operationId: get-sandbox-exec-resources
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox exec runtime ID.
+                  in: path
+                  name: execId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ResourceSnapshot'
+                    description: Latest resource snapshot.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Get the latest opaque resource snapshot for a sandbox exec.
+            tags:
+                - Sandbox Execs
+            x-sandbox-agent: true
+    /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/history:
+        get:
+            operationId: list-sandbox-exec-resource-history
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox exec runtime ID.
+                  in: path
+                  name: execId
+                  required: true
+                  schema:
+                    type: string
+                - description: Maximum number of history items to return.
+                  in: query
+                  name: limit
+                  required: false
+                  schema:
+                    maximum: 1000
+                    minimum: 1
+                    type: integer
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ResourceHistoryResponse'
+                    description: Recent resource snapshots.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: List recent opaque resource snapshots for a sandbox exec.
+            tags:
+                - Sandbox Execs
+            x-sandbox-agent: true
+    /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream:
+        get:
+            operationId: stream-sandbox-exec-resources
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox exec runtime ID.
+                  in: path
+                  name: execId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    content:
+                        text/event-stream:
+                            schema:
+                                type: string
+                    description: Server-sent resource snapshot stream.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Stream opaque resource snapshots for a sandbox exec.
             tags:
                 - Sandbox Execs
             x-sandbox-agent: true

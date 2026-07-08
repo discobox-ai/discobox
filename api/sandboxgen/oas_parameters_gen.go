@@ -14,180 +14,6 @@ import (
 	"github.com/ogen-go/ogen/validate"
 )
 
-// AttachAgentTerminalParams is parameters of attach-agent-terminal operation.
-type AttachAgentTerminalParams struct {
-	// Project that owns the sandbox.
-	ProjectId string
-	// Sandbox resource ID.
-	SandboxId string
-	// Agent terminal runtime ID.
-	TerminalId string
-}
-
-func unpackAttachAgentTerminalParams(packed middleware.Parameters) (params AttachAgentTerminalParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "projectId",
-			In:   "path",
-		}
-		params.ProjectId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "sandboxId",
-			In:   "path",
-		}
-		params.SandboxId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "terminalId",
-			In:   "path",
-		}
-		params.TerminalId = packed[key].(string)
-	}
-	return params
-}
-
-func decodeAttachAgentTerminalParams(args [3]string, argsEscaped bool, r *http.Request) (params AttachAgentTerminalParams, _ error) {
-	// Decode path: projectId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "projectId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.ProjectId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: sandboxId.
-	if err := func() error {
-		param := args[1]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[1])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "sandboxId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.SandboxId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "sandboxId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: terminalId.
-	if err := func() error {
-		param := args[2]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[2])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "terminalId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.TerminalId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "terminalId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
 // AttachSandboxExecParams is parameters of attach-sandbox-exec operation.
 type AttachSandboxExecParams struct {
 	// Project that owns the sandbox.
@@ -362,126 +188,6 @@ func decodeAttachSandboxExecParams(args [3]string, argsEscaped bool, r *http.Req
 	return params, nil
 }
 
-// CreateAgentTerminalParams is parameters of create-agent-terminal operation.
-type CreateAgentTerminalParams struct {
-	// Project that owns the sandbox.
-	ProjectId string
-	// Sandbox resource ID.
-	SandboxId string
-}
-
-func unpackCreateAgentTerminalParams(packed middleware.Parameters) (params CreateAgentTerminalParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "projectId",
-			In:   "path",
-		}
-		params.ProjectId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "sandboxId",
-			In:   "path",
-		}
-		params.SandboxId = packed[key].(string)
-	}
-	return params
-}
-
-func decodeCreateAgentTerminalParams(args [2]string, argsEscaped bool, r *http.Request) (params CreateAgentTerminalParams, _ error) {
-	// Decode path: projectId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "projectId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.ProjectId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: sandboxId.
-	if err := func() error {
-		param := args[1]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[1])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "sandboxId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.SandboxId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "sandboxId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
 // CreateSandboxExecParams is parameters of create-sandbox-exec operation.
 type CreateSandboxExecParams struct {
 	// Project that owns the sandbox.
@@ -602,17 +308,17 @@ func decodeCreateSandboxExecParams(args [2]string, argsEscaped bool, r *http.Req
 	return params, nil
 }
 
-// DeleteAgentTerminalParams is parameters of delete-agent-terminal operation.
-type DeleteAgentTerminalParams struct {
+// DeleteSandboxExecParams is parameters of delete-sandbox-exec operation.
+type DeleteSandboxExecParams struct {
 	// Project that owns the sandbox.
 	ProjectId string
 	// Sandbox resource ID.
 	SandboxId string
-	// Agent terminal runtime ID.
-	TerminalId string
+	// Sandbox exec runtime ID.
+	ExecId string
 }
 
-func unpackDeleteAgentTerminalParams(packed middleware.Parameters) (params DeleteAgentTerminalParams) {
+func unpackDeleteSandboxExecParams(packed middleware.Parameters) (params DeleteSandboxExecParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "projectId",
@@ -629,15 +335,15 @@ func unpackDeleteAgentTerminalParams(packed middleware.Parameters) (params Delet
 	}
 	{
 		key := middleware.ParameterKey{
-			Name: "terminalId",
+			Name: "execId",
 			In:   "path",
 		}
-		params.TerminalId = packed[key].(string)
+		params.ExecId = packed[key].(string)
 	}
 	return params
 }
 
-func decodeDeleteAgentTerminalParams(args [3]string, argsEscaped bool, r *http.Request) (params DeleteAgentTerminalParams, _ error) {
+func decodeDeleteSandboxExecParams(args [3]string, argsEscaped bool, r *http.Request) (params DeleteSandboxExecParams, _ error) {
 	// Decode path: projectId.
 	if err := func() error {
 		param := args[0]
@@ -728,7 +434,7 @@ func decodeDeleteAgentTerminalParams(args [3]string, argsEscaped bool, r *http.R
 			Err:  err,
 		}
 	}
-	// Decode path: terminalId.
+	// Decode path: execId.
 	if err := func() error {
 		param := args[2]
 		if argsEscaped {
@@ -740,7 +446,7 @@ func decodeDeleteAgentTerminalParams(args [3]string, argsEscaped bool, r *http.R
 		}
 		if len(param) > 0 {
 			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "terminalId",
+				Param:   "execId",
 				Value:   param,
 				Style:   uri.PathStyleSimple,
 				Explode: false,
@@ -757,7 +463,7 @@ func decodeDeleteAgentTerminalParams(args [3]string, argsEscaped bool, r *http.R
 					return err
 				}
 
-				params.TerminalId = c
+				params.ExecId = c
 				return nil
 			}(); err != nil {
 				return err
@@ -768,181 +474,7 @@ func decodeDeleteAgentTerminalParams(args [3]string, argsEscaped bool, r *http.R
 		return nil
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
-			Name: "terminalId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
-// GetAgentTerminalResourcesParams is parameters of get-agent-terminal-resources operation.
-type GetAgentTerminalResourcesParams struct {
-	// Project that owns the sandbox.
-	ProjectId string
-	// Sandbox resource ID.
-	SandboxId string
-	// Agent terminal runtime ID.
-	TerminalId string
-}
-
-func unpackGetAgentTerminalResourcesParams(packed middleware.Parameters) (params GetAgentTerminalResourcesParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "projectId",
-			In:   "path",
-		}
-		params.ProjectId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "sandboxId",
-			In:   "path",
-		}
-		params.SandboxId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "terminalId",
-			In:   "path",
-		}
-		params.TerminalId = packed[key].(string)
-	}
-	return params
-}
-
-func decodeGetAgentTerminalResourcesParams(args [3]string, argsEscaped bool, r *http.Request) (params GetAgentTerminalResourcesParams, _ error) {
-	// Decode path: projectId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "projectId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.ProjectId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: sandboxId.
-	if err := func() error {
-		param := args[1]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[1])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "sandboxId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.SandboxId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "sandboxId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: terminalId.
-	if err := func() error {
-		param := args[2]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[2])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "terminalId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.TerminalId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "terminalId",
+			Name: "execId",
 			In:   "path",
 			Err:  err,
 		}
@@ -986,6 +518,180 @@ func unpackGetSandboxExecParams(packed middleware.Parameters) (params GetSandbox
 }
 
 func decodeGetSandboxExecParams(args [3]string, argsEscaped bool, r *http.Request) (params GetSandboxExecParams, _ error) {
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: sandboxId.
+	if err := func() error {
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "sandboxId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.SandboxId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "sandboxId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: execId.
+	if err := func() error {
+		param := args[2]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[2])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "execId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ExecId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "execId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// GetSandboxExecResourcesParams is parameters of get-sandbox-exec-resources operation.
+type GetSandboxExecResourcesParams struct {
+	// Project that owns the sandbox.
+	ProjectId string
+	// Sandbox resource ID.
+	SandboxId string
+	// Sandbox exec runtime ID.
+	ExecId string
+}
+
+func unpackGetSandboxExecResourcesParams(packed middleware.Parameters) (params GetSandboxExecResourcesParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "sandboxId",
+			In:   "path",
+		}
+		params.SandboxId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "execId",
+			In:   "path",
+		}
+		params.ExecId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeGetSandboxExecResourcesParams(args [3]string, argsEscaped bool, r *http.Request) (params GetSandboxExecResourcesParams, _ error) {
 	// Decode path: projectId.
 	if err := func() error {
 		param := args[0]
@@ -1374,19 +1080,19 @@ func decodeListAgentHooksParams(args [2]string, argsEscaped bool, r *http.Reques
 	return params, nil
 }
 
-// ListAgentTerminalEventsParams is parameters of list-agent-terminal-events operation.
-type ListAgentTerminalEventsParams struct {
+// ListSandboxExecEventsParams is parameters of list-sandbox-exec-events operation.
+type ListSandboxExecEventsParams struct {
 	// Project that owns the sandbox.
 	ProjectId string
 	// Sandbox resource ID.
 	SandboxId string
-	// Agent terminal runtime ID.
-	TerminalId string
+	// Sandbox exec runtime ID.
+	ExecId string
 	// Maximum number of history items to return.
 	Limit OptInt `json:",omitempty,omitzero"`
 }
 
-func unpackListAgentTerminalEventsParams(packed middleware.Parameters) (params ListAgentTerminalEventsParams) {
+func unpackListSandboxExecEventsParams(packed middleware.Parameters) (params ListSandboxExecEventsParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "projectId",
@@ -1403,10 +1109,10 @@ func unpackListAgentTerminalEventsParams(packed middleware.Parameters) (params L
 	}
 	{
 		key := middleware.ParameterKey{
-			Name: "terminalId",
+			Name: "execId",
 			In:   "path",
 		}
-		params.TerminalId = packed[key].(string)
+		params.ExecId = packed[key].(string)
 	}
 	{
 		key := middleware.ParameterKey{
@@ -1420,7 +1126,7 @@ func unpackListAgentTerminalEventsParams(packed middleware.Parameters) (params L
 	return params
 }
 
-func decodeListAgentTerminalEventsParams(args [3]string, argsEscaped bool, r *http.Request) (params ListAgentTerminalEventsParams, _ error) {
+func decodeListSandboxExecEventsParams(args [3]string, argsEscaped bool, r *http.Request) (params ListSandboxExecEventsParams, _ error) {
 	q := uri.NewQueryDecoder(r.URL.Query())
 	// Decode path: projectId.
 	if err := func() error {
@@ -1512,7 +1218,7 @@ func decodeListAgentTerminalEventsParams(args [3]string, argsEscaped bool, r *ht
 			Err:  err,
 		}
 	}
-	// Decode path: terminalId.
+	// Decode path: execId.
 	if err := func() error {
 		param := args[2]
 		if argsEscaped {
@@ -1524,7 +1230,7 @@ func decodeListAgentTerminalEventsParams(args [3]string, argsEscaped bool, r *ht
 		}
 		if len(param) > 0 {
 			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "terminalId",
+				Param:   "execId",
 				Value:   param,
 				Style:   uri.PathStyleSimple,
 				Explode: false,
@@ -1541,7 +1247,7 @@ func decodeListAgentTerminalEventsParams(args [3]string, argsEscaped bool, r *ht
 					return err
 				}
 
-				params.TerminalId = c
+				params.ExecId = c
 				return nil
 			}(); err != nil {
 				return err
@@ -1552,7 +1258,7 @@ func decodeListAgentTerminalEventsParams(args [3]string, argsEscaped bool, r *ht
 		return nil
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
-			Name: "terminalId",
+			Name: "execId",
 			In:   "path",
 			Err:  err,
 		}
@@ -1620,552 +1326,6 @@ func decodeListAgentTerminalEventsParams(args [3]string, argsEscaped bool, r *ht
 		return params, &ogenerrors.DecodeParamError{
 			Name: "limit",
 			In:   "query",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
-// ListAgentTerminalLogsParams is parameters of list-agent-terminal-logs operation.
-type ListAgentTerminalLogsParams struct {
-	// Project that owns the sandbox.
-	ProjectId string
-	// Sandbox resource ID.
-	SandboxId string
-	// Agent terminal runtime ID.
-	TerminalId string
-}
-
-func unpackListAgentTerminalLogsParams(packed middleware.Parameters) (params ListAgentTerminalLogsParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "projectId",
-			In:   "path",
-		}
-		params.ProjectId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "sandboxId",
-			In:   "path",
-		}
-		params.SandboxId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "terminalId",
-			In:   "path",
-		}
-		params.TerminalId = packed[key].(string)
-	}
-	return params
-}
-
-func decodeListAgentTerminalLogsParams(args [3]string, argsEscaped bool, r *http.Request) (params ListAgentTerminalLogsParams, _ error) {
-	// Decode path: projectId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "projectId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.ProjectId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: sandboxId.
-	if err := func() error {
-		param := args[1]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[1])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "sandboxId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.SandboxId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "sandboxId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: terminalId.
-	if err := func() error {
-		param := args[2]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[2])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "terminalId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.TerminalId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "terminalId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
-// ListAgentTerminalResourceHistoryParams is parameters of list-agent-terminal-resource-history operation.
-type ListAgentTerminalResourceHistoryParams struct {
-	// Project that owns the sandbox.
-	ProjectId string
-	// Sandbox resource ID.
-	SandboxId string
-	// Agent terminal runtime ID.
-	TerminalId string
-	// Maximum number of history items to return.
-	Limit OptInt `json:",omitempty,omitzero"`
-}
-
-func unpackListAgentTerminalResourceHistoryParams(packed middleware.Parameters) (params ListAgentTerminalResourceHistoryParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "projectId",
-			In:   "path",
-		}
-		params.ProjectId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "sandboxId",
-			In:   "path",
-		}
-		params.SandboxId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "terminalId",
-			In:   "path",
-		}
-		params.TerminalId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "limit",
-			In:   "query",
-		}
-		if v, ok := packed[key]; ok {
-			params.Limit = v.(OptInt)
-		}
-	}
-	return params
-}
-
-func decodeListAgentTerminalResourceHistoryParams(args [3]string, argsEscaped bool, r *http.Request) (params ListAgentTerminalResourceHistoryParams, _ error) {
-	q := uri.NewQueryDecoder(r.URL.Query())
-	// Decode path: projectId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "projectId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.ProjectId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: sandboxId.
-	if err := func() error {
-		param := args[1]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[1])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "sandboxId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.SandboxId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "sandboxId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: terminalId.
-	if err := func() error {
-		param := args[2]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[2])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "terminalId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.TerminalId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "terminalId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode query: limit.
-	if err := func() error {
-		cfg := uri.QueryParameterDecodingConfig{
-			Name:    "limit",
-			Style:   uri.QueryStyleForm,
-			Explode: true,
-		}
-
-		if err := q.HasParam(cfg); err == nil {
-			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
-				var paramsDotLimitVal int
-				if err := func() error {
-					val, err := d.DecodeValue()
-					if err != nil {
-						return err
-					}
-
-					c, err := conv.ToInt(val)
-					if err != nil {
-						return err
-					}
-
-					paramsDotLimitVal = c
-					return nil
-				}(); err != nil {
-					return err
-				}
-				params.Limit.SetTo(paramsDotLimitVal)
-				return nil
-			}); err != nil {
-				return err
-			}
-			if err := func() error {
-				if value, ok := params.Limit.Get(); ok {
-					if err := func() error {
-						if err := (validate.Int{
-							MinSet:        true,
-							Min:           1,
-							MaxSet:        true,
-							Max:           1000,
-							MinExclusive:  false,
-							MaxExclusive:  false,
-							MultipleOfSet: false,
-							MultipleOf:    0,
-							Pattern:       nil,
-						}).Validate(int64(value)); err != nil {
-							return errors.Wrap(err, "int")
-						}
-						return nil
-					}(); err != nil {
-						return err
-					}
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "limit",
-			In:   "query",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
-// ListAgentTerminalsParams is parameters of list-agent-terminals operation.
-type ListAgentTerminalsParams struct {
-	// Project that owns the sandbox.
-	ProjectId string
-	// Sandbox resource ID.
-	SandboxId string
-}
-
-func unpackListAgentTerminalsParams(packed middleware.Parameters) (params ListAgentTerminalsParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "projectId",
-			In:   "path",
-		}
-		params.ProjectId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "sandboxId",
-			In:   "path",
-		}
-		params.SandboxId = packed[key].(string)
-	}
-	return params
-}
-
-func decodeListAgentTerminalsParams(args [2]string, argsEscaped bool, r *http.Request) (params ListAgentTerminalsParams, _ error) {
-	// Decode path: projectId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "projectId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.ProjectId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: sandboxId.
-	if err := func() error {
-		param := args[1]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[1])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "sandboxId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.SandboxId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "sandboxId",
-			In:   "path",
 			Err:  err,
 		}
 	}
@@ -2346,6 +1506,258 @@ func decodeListSandboxExecLogsParams(args [3]string, argsEscaped bool, r *http.R
 	return params, nil
 }
 
+// ListSandboxExecResourceHistoryParams is parameters of list-sandbox-exec-resource-history operation.
+type ListSandboxExecResourceHistoryParams struct {
+	// Project that owns the sandbox.
+	ProjectId string
+	// Sandbox resource ID.
+	SandboxId string
+	// Sandbox exec runtime ID.
+	ExecId string
+	// Maximum number of history items to return.
+	Limit OptInt `json:",omitempty,omitzero"`
+}
+
+func unpackListSandboxExecResourceHistoryParams(packed middleware.Parameters) (params ListSandboxExecResourceHistoryParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "sandboxId",
+			In:   "path",
+		}
+		params.SandboxId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "execId",
+			In:   "path",
+		}
+		params.ExecId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "limit",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.Limit = v.(OptInt)
+		}
+	}
+	return params
+}
+
+func decodeListSandboxExecResourceHistoryParams(args [3]string, argsEscaped bool, r *http.Request) (params ListSandboxExecResourceHistoryParams, _ error) {
+	q := uri.NewQueryDecoder(r.URL.Query())
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: sandboxId.
+	if err := func() error {
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "sandboxId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.SandboxId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "sandboxId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: execId.
+	if err := func() error {
+		param := args[2]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[2])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "execId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ExecId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "execId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode query: limit.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "limit",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotLimitVal int
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToInt(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotLimitVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.Limit.SetTo(paramsDotLimitVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+			if err := func() error {
+				if value, ok := params.Limit.Get(); ok {
+					if err := func() error {
+						if err := (validate.Int{
+							MinSet:        true,
+							Min:           1,
+							MaxSet:        true,
+							Max:           1000,
+							MinExclusive:  false,
+							MaxExclusive:  false,
+							MultipleOfSet: false,
+							MultipleOf:    0,
+							Pattern:       nil,
+						}).Validate(int64(value)); err != nil {
+							return errors.Wrap(err, "int")
+						}
+						return nil
+					}(); err != nil {
+						return err
+					}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "limit",
+			In:   "query",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // ListSandboxExecsParams is parameters of list-sandbox-execs operation.
 type ListSandboxExecsParams struct {
 	// Project that owns the sandbox.
@@ -2459,180 +1871,6 @@ func decodeListSandboxExecsParams(args [2]string, argsEscaped bool, r *http.Requ
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "sandboxId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
-// StartAgentTerminalParams is parameters of start-agent-terminal operation.
-type StartAgentTerminalParams struct {
-	// Project that owns the sandbox.
-	ProjectId string
-	// Sandbox resource ID.
-	SandboxId string
-	// Agent terminal runtime ID.
-	TerminalId string
-}
-
-func unpackStartAgentTerminalParams(packed middleware.Parameters) (params StartAgentTerminalParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "projectId",
-			In:   "path",
-		}
-		params.ProjectId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "sandboxId",
-			In:   "path",
-		}
-		params.SandboxId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "terminalId",
-			In:   "path",
-		}
-		params.TerminalId = packed[key].(string)
-	}
-	return params
-}
-
-func decodeStartAgentTerminalParams(args [3]string, argsEscaped bool, r *http.Request) (params StartAgentTerminalParams, _ error) {
-	// Decode path: projectId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "projectId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.ProjectId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: sandboxId.
-	if err := func() error {
-		param := args[1]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[1])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "sandboxId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.SandboxId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "sandboxId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: terminalId.
-	if err := func() error {
-		param := args[2]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[2])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "terminalId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.TerminalId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "terminalId",
 			In:   "path",
 			Err:  err,
 		}
@@ -2814,17 +2052,17 @@ func decodeStartSandboxExecParams(args [3]string, argsEscaped bool, r *http.Requ
 	return params, nil
 }
 
-// StreamAgentTerminalResourcesParams is parameters of stream-agent-terminal-resources operation.
-type StreamAgentTerminalResourcesParams struct {
+// StreamSandboxExecResourcesParams is parameters of stream-sandbox-exec-resources operation.
+type StreamSandboxExecResourcesParams struct {
 	// Project that owns the sandbox.
 	ProjectId string
 	// Sandbox resource ID.
 	SandboxId string
-	// Agent terminal runtime ID.
-	TerminalId string
+	// Sandbox exec runtime ID.
+	ExecId string
 }
 
-func unpackStreamAgentTerminalResourcesParams(packed middleware.Parameters) (params StreamAgentTerminalResourcesParams) {
+func unpackStreamSandboxExecResourcesParams(packed middleware.Parameters) (params StreamSandboxExecResourcesParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "projectId",
@@ -2841,15 +2079,15 @@ func unpackStreamAgentTerminalResourcesParams(packed middleware.Parameters) (par
 	}
 	{
 		key := middleware.ParameterKey{
-			Name: "terminalId",
+			Name: "execId",
 			In:   "path",
 		}
-		params.TerminalId = packed[key].(string)
+		params.ExecId = packed[key].(string)
 	}
 	return params
 }
 
-func decodeStreamAgentTerminalResourcesParams(args [3]string, argsEscaped bool, r *http.Request) (params StreamAgentTerminalResourcesParams, _ error) {
+func decodeStreamSandboxExecResourcesParams(args [3]string, argsEscaped bool, r *http.Request) (params StreamSandboxExecResourcesParams, _ error) {
 	// Decode path: projectId.
 	if err := func() error {
 		param := args[0]
@@ -2940,7 +2178,7 @@ func decodeStreamAgentTerminalResourcesParams(args [3]string, argsEscaped bool, 
 			Err:  err,
 		}
 	}
-	// Decode path: terminalId.
+	// Decode path: execId.
 	if err := func() error {
 		param := args[2]
 		if argsEscaped {
@@ -2952,7 +2190,7 @@ func decodeStreamAgentTerminalResourcesParams(args [3]string, argsEscaped bool, 
 		}
 		if len(param) > 0 {
 			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "terminalId",
+				Param:   "execId",
 				Value:   param,
 				Style:   uri.PathStyleSimple,
 				Explode: false,
@@ -2969,7 +2207,7 @@ func decodeStreamAgentTerminalResourcesParams(args [3]string, argsEscaped bool, 
 					return err
 				}
 
-				params.TerminalId = c
+				params.ExecId = c
 				return nil
 			}(); err != nil {
 				return err
@@ -2980,7 +2218,7 @@ func decodeStreamAgentTerminalResourcesParams(args [3]string, argsEscaped bool, 
 		return nil
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
-			Name: "terminalId",
+			Name: "execId",
 			In:   "path",
 			Err:  err,
 		}

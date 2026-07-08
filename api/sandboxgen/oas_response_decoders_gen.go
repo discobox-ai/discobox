@@ -16,133 +16,6 @@ import (
 	"github.com/ogen-go/ogen/validate"
 )
 
-func decodeAttachAgentTerminalResponse(resp *http.Response) (res *AttachAgentTerminalSwitchingProtocols, _ error) {
-	switch resp.StatusCode {
-	case 101:
-		// Code 101.
-		var wrapper AttachAgentTerminalSwitchingProtocols
-		h := uri.NewHeaderDecoder(resp.Header)
-		// Parse "Connection" header.
-		{
-			cfg := uri.HeaderParameterDecodingConfig{
-				Name:    "Connection",
-				Explode: false,
-			}
-			if err := func() error {
-				if err := h.HasParam(cfg); err == nil {
-					if err := h.DecodeParam(cfg, func(d uri.Decoder) error {
-						var wrapperDotConnectionVal string
-						if err := func() error {
-							val, err := d.DecodeValue()
-							if err != nil {
-								return err
-							}
-
-							c, err := conv.ToString(val)
-							if err != nil {
-								return err
-							}
-
-							wrapperDotConnectionVal = c
-							return nil
-						}(); err != nil {
-							return err
-						}
-						wrapper.Connection.SetTo(wrapperDotConnectionVal)
-						return nil
-					}); err != nil {
-						return err
-					}
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "parse Connection header")
-			}
-		}
-		// Parse "Upgrade" header.
-		{
-			cfg := uri.HeaderParameterDecodingConfig{
-				Name:    "Upgrade",
-				Explode: false,
-			}
-			if err := func() error {
-				if err := h.HasParam(cfg); err == nil {
-					if err := h.DecodeParam(cfg, func(d uri.Decoder) error {
-						var wrapperDotUpgradeVal string
-						if err := func() error {
-							val, err := d.DecodeValue()
-							if err != nil {
-								return err
-							}
-
-							c, err := conv.ToString(val)
-							if err != nil {
-								return err
-							}
-
-							wrapperDotUpgradeVal = c
-							return nil
-						}(); err != nil {
-							return err
-						}
-						wrapper.Upgrade.SetTo(wrapperDotUpgradeVal)
-						return nil
-					}); err != nil {
-						return err
-					}
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "parse Upgrade header")
-			}
-		}
-		return &wrapper, nil
-	}
-	// Convenient error response.
-	defRes, err := func() (res *ErrorResponseStatusCode, err error) {
-		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-		if err != nil {
-			return res, errors.Wrap(err, "parse media type")
-		}
-		switch {
-		case ct == "application/json":
-			buf, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return res, err
-			}
-			d := jx.DecodeBytes(buf)
-
-			var response ErrorResponse
-			if err := func() error {
-				if err := response.Decode(d); err != nil {
-					return err
-				}
-				if err := d.Skip(); err != io.EOF {
-					return errors.New("unexpected trailing data")
-				}
-				return nil
-			}(); err != nil {
-				err = &ogenerrors.DecodeBodyError{
-					ContentType: ct,
-					Body:        buf,
-					Err:         err,
-				}
-				return res, err
-			}
-			return &ErrorResponseStatusCode{
-				StatusCode: resp.StatusCode,
-				Response:   response,
-			}, nil
-		default:
-			return res, validate.InvalidContentType(ct)
-		}
-	}()
-	if err != nil {
-		return res, errors.Wrapf(err, "default (code %d)", resp.StatusCode)
-	}
-	return res, errors.Wrap(defRes, "error")
-}
-
 func decodeAttachSandboxExecResponse(resp *http.Response) (res *AttachSandboxExecSwitchingProtocols, _ error) {
 	switch resp.StatusCode {
 	case 101:
@@ -224,177 +97,6 @@ func decodeAttachSandboxExecResponse(resp *http.Response) (res *AttachSandboxExe
 			}
 		}
 		return &wrapper, nil
-	}
-	// Convenient error response.
-	defRes, err := func() (res *ErrorResponseStatusCode, err error) {
-		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-		if err != nil {
-			return res, errors.Wrap(err, "parse media type")
-		}
-		switch {
-		case ct == "application/json":
-			buf, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return res, err
-			}
-			d := jx.DecodeBytes(buf)
-
-			var response ErrorResponse
-			if err := func() error {
-				if err := response.Decode(d); err != nil {
-					return err
-				}
-				if err := d.Skip(); err != io.EOF {
-					return errors.New("unexpected trailing data")
-				}
-				return nil
-			}(); err != nil {
-				err = &ogenerrors.DecodeBodyError{
-					ContentType: ct,
-					Body:        buf,
-					Err:         err,
-				}
-				return res, err
-			}
-			return &ErrorResponseStatusCode{
-				StatusCode: resp.StatusCode,
-				Response:   response,
-			}, nil
-		default:
-			return res, validate.InvalidContentType(ct)
-		}
-	}()
-	if err != nil {
-		return res, errors.Wrapf(err, "default (code %d)", resp.StatusCode)
-	}
-	return res, errors.Wrap(defRes, "error")
-}
-
-func decodeCreateAgentTerminalResponse(resp *http.Response) (res CreateAgentTerminalRes, _ error) {
-	switch resp.StatusCode {
-	case 101:
-		// Code 101.
-		var wrapper CreateAgentTerminalSwitchingProtocols
-		h := uri.NewHeaderDecoder(resp.Header)
-		// Parse "Connection" header.
-		{
-			cfg := uri.HeaderParameterDecodingConfig{
-				Name:    "Connection",
-				Explode: false,
-			}
-			if err := func() error {
-				if err := h.HasParam(cfg); err == nil {
-					if err := h.DecodeParam(cfg, func(d uri.Decoder) error {
-						var wrapperDotConnectionVal string
-						if err := func() error {
-							val, err := d.DecodeValue()
-							if err != nil {
-								return err
-							}
-
-							c, err := conv.ToString(val)
-							if err != nil {
-								return err
-							}
-
-							wrapperDotConnectionVal = c
-							return nil
-						}(); err != nil {
-							return err
-						}
-						wrapper.Connection.SetTo(wrapperDotConnectionVal)
-						return nil
-					}); err != nil {
-						return err
-					}
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "parse Connection header")
-			}
-		}
-		// Parse "Upgrade" header.
-		{
-			cfg := uri.HeaderParameterDecodingConfig{
-				Name:    "Upgrade",
-				Explode: false,
-			}
-			if err := func() error {
-				if err := h.HasParam(cfg); err == nil {
-					if err := h.DecodeParam(cfg, func(d uri.Decoder) error {
-						var wrapperDotUpgradeVal string
-						if err := func() error {
-							val, err := d.DecodeValue()
-							if err != nil {
-								return err
-							}
-
-							c, err := conv.ToString(val)
-							if err != nil {
-								return err
-							}
-
-							wrapperDotUpgradeVal = c
-							return nil
-						}(); err != nil {
-							return err
-						}
-						wrapper.Upgrade.SetTo(wrapperDotUpgradeVal)
-						return nil
-					}); err != nil {
-						return err
-					}
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "parse Upgrade header")
-			}
-		}
-		return &wrapper, nil
-	case 201:
-		// Code 201.
-		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-		if err != nil {
-			return res, errors.Wrap(err, "parse media type")
-		}
-		switch {
-		case ct == "application/json":
-			buf, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return res, err
-			}
-			d := jx.DecodeBytes(buf)
-
-			var response CreateAgentTerminalResponse
-			if err := func() error {
-				if err := response.Decode(d); err != nil {
-					return err
-				}
-				if err := d.Skip(); err != io.EOF {
-					return errors.New("unexpected trailing data")
-				}
-				return nil
-			}(); err != nil {
-				err = &ogenerrors.DecodeBodyError{
-					ContentType: ct,
-					Body:        buf,
-					Err:         err,
-				}
-				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
-			return &response, nil
-		default:
-			return res, validate.InvalidContentType(ct)
-		}
 	}
 	// Convenient error response.
 	defRes, err := func() (res *ErrorResponseStatusCode, err error) {
@@ -533,94 +235,11 @@ func decodeCreateSandboxExecResponse(resp *http.Response) (res *CreateSandboxExe
 	return res, errors.Wrap(defRes, "error")
 }
 
-func decodeDeleteAgentTerminalResponse(resp *http.Response) (res *DeleteAgentTerminalNoContent, _ error) {
+func decodeDeleteSandboxExecResponse(resp *http.Response) (res *DeleteSandboxExecNoContent, _ error) {
 	switch resp.StatusCode {
 	case 204:
 		// Code 204.
-		return &DeleteAgentTerminalNoContent{}, nil
-	}
-	// Convenient error response.
-	defRes, err := func() (res *ErrorResponseStatusCode, err error) {
-		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-		if err != nil {
-			return res, errors.Wrap(err, "parse media type")
-		}
-		switch {
-		case ct == "application/json":
-			buf, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return res, err
-			}
-			d := jx.DecodeBytes(buf)
-
-			var response ErrorResponse
-			if err := func() error {
-				if err := response.Decode(d); err != nil {
-					return err
-				}
-				if err := d.Skip(); err != io.EOF {
-					return errors.New("unexpected trailing data")
-				}
-				return nil
-			}(); err != nil {
-				err = &ogenerrors.DecodeBodyError{
-					ContentType: ct,
-					Body:        buf,
-					Err:         err,
-				}
-				return res, err
-			}
-			return &ErrorResponseStatusCode{
-				StatusCode: resp.StatusCode,
-				Response:   response,
-			}, nil
-		default:
-			return res, validate.InvalidContentType(ct)
-		}
-	}()
-	if err != nil {
-		return res, errors.Wrapf(err, "default (code %d)", resp.StatusCode)
-	}
-	return res, errors.Wrap(defRes, "error")
-}
-
-func decodeGetAgentTerminalResourcesResponse(resp *http.Response) (res *ResourceSnapshot, _ error) {
-	switch resp.StatusCode {
-	case 200:
-		// Code 200.
-		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-		if err != nil {
-			return res, errors.Wrap(err, "parse media type")
-		}
-		switch {
-		case ct == "application/json":
-			buf, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return res, err
-			}
-			d := jx.DecodeBytes(buf)
-
-			var response ResourceSnapshot
-			if err := func() error {
-				if err := response.Decode(d); err != nil {
-					return err
-				}
-				if err := d.Skip(); err != io.EOF {
-					return errors.New("unexpected trailing data")
-				}
-				return nil
-			}(); err != nil {
-				err = &ogenerrors.DecodeBodyError{
-					ContentType: ct,
-					Body:        buf,
-					Err:         err,
-				}
-				return res, err
-			}
-			return &response, nil
-		default:
-			return res, validate.InvalidContentType(ct)
-		}
+		return &DeleteSandboxExecNoContent{}, nil
 	}
 	// Convenient error response.
 	defRes, err := func() (res *ErrorResponseStatusCode, err error) {
@@ -708,6 +327,89 @@ func decodeGetSandboxExecResponse(resp *http.Response) (res *SandboxExec, _ erro
 				return nil
 			}(); err != nil {
 				return res, errors.Wrap(err, "validate")
+			}
+			return &response, nil
+		default:
+			return res, validate.InvalidContentType(ct)
+		}
+	}
+	// Convenient error response.
+	defRes, err := func() (res *ErrorResponseStatusCode, err error) {
+		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+		if err != nil {
+			return res, errors.Wrap(err, "parse media type")
+		}
+		switch {
+		case ct == "application/json":
+			buf, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return res, err
+			}
+			d := jx.DecodeBytes(buf)
+
+			var response ErrorResponse
+			if err := func() error {
+				if err := response.Decode(d); err != nil {
+					return err
+				}
+				if err := d.Skip(); err != io.EOF {
+					return errors.New("unexpected trailing data")
+				}
+				return nil
+			}(); err != nil {
+				err = &ogenerrors.DecodeBodyError{
+					ContentType: ct,
+					Body:        buf,
+					Err:         err,
+				}
+				return res, err
+			}
+			return &ErrorResponseStatusCode{
+				StatusCode: resp.StatusCode,
+				Response:   response,
+			}, nil
+		default:
+			return res, validate.InvalidContentType(ct)
+		}
+	}()
+	if err != nil {
+		return res, errors.Wrapf(err, "default (code %d)", resp.StatusCode)
+	}
+	return res, errors.Wrap(defRes, "error")
+}
+
+func decodeGetSandboxExecResourcesResponse(resp *http.Response) (res *ResourceSnapshot, _ error) {
+	switch resp.StatusCode {
+	case 200:
+		// Code 200.
+		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+		if err != nil {
+			return res, errors.Wrap(err, "parse media type")
+		}
+		switch {
+		case ct == "application/json":
+			buf, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return res, err
+			}
+			d := jx.DecodeBytes(buf)
+
+			var response ResourceSnapshot
+			if err := func() error {
+				if err := response.Decode(d); err != nil {
+					return err
+				}
+				if err := d.Skip(); err != io.EOF {
+					return errors.New("unexpected trailing data")
+				}
+				return nil
+			}(); err != nil {
+				err = &ogenerrors.DecodeBodyError{
+					ContentType: ct,
+					Body:        buf,
+					Err:         err,
+				}
+				return res, err
 			}
 			return &response, nil
 		default:
@@ -851,7 +553,7 @@ func decodeListAgentHooksResponse(resp *http.Response) (res *AgentHookLogsRespon
 	return res, errors.Wrap(defRes, "error")
 }
 
-func decodeListAgentTerminalEventsResponse(resp *http.Response) (res *AgentTerminalEventsResponse, _ error) {
+func decodeListSandboxExecEventsResponse(resp *http.Response) (res *SandboxExecEventsResponse, _ error) {
 	switch resp.StatusCode {
 	case 200:
 		// Code 200.
@@ -867,283 +569,7 @@ func decodeListAgentTerminalEventsResponse(resp *http.Response) (res *AgentTermi
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response AgentTerminalEventsResponse
-			if err := func() error {
-				if err := response.Decode(d); err != nil {
-					return err
-				}
-				if err := d.Skip(); err != io.EOF {
-					return errors.New("unexpected trailing data")
-				}
-				return nil
-			}(); err != nil {
-				err = &ogenerrors.DecodeBodyError{
-					ContentType: ct,
-					Body:        buf,
-					Err:         err,
-				}
-				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
-			return &response, nil
-		default:
-			return res, validate.InvalidContentType(ct)
-		}
-	}
-	// Convenient error response.
-	defRes, err := func() (res *ErrorResponseStatusCode, err error) {
-		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-		if err != nil {
-			return res, errors.Wrap(err, "parse media type")
-		}
-		switch {
-		case ct == "application/json":
-			buf, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return res, err
-			}
-			d := jx.DecodeBytes(buf)
-
-			var response ErrorResponse
-			if err := func() error {
-				if err := response.Decode(d); err != nil {
-					return err
-				}
-				if err := d.Skip(); err != io.EOF {
-					return errors.New("unexpected trailing data")
-				}
-				return nil
-			}(); err != nil {
-				err = &ogenerrors.DecodeBodyError{
-					ContentType: ct,
-					Body:        buf,
-					Err:         err,
-				}
-				return res, err
-			}
-			return &ErrorResponseStatusCode{
-				StatusCode: resp.StatusCode,
-				Response:   response,
-			}, nil
-		default:
-			return res, validate.InvalidContentType(ct)
-		}
-	}()
-	if err != nil {
-		return res, errors.Wrapf(err, "default (code %d)", resp.StatusCode)
-	}
-	return res, errors.Wrap(defRes, "error")
-}
-
-func decodeListAgentTerminalLogsResponse(resp *http.Response) (res *AgentTerminalLogsResponse, _ error) {
-	switch resp.StatusCode {
-	case 200:
-		// Code 200.
-		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-		if err != nil {
-			return res, errors.Wrap(err, "parse media type")
-		}
-		switch {
-		case ct == "application/json":
-			buf, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return res, err
-			}
-			d := jx.DecodeBytes(buf)
-
-			var response AgentTerminalLogsResponse
-			if err := func() error {
-				if err := response.Decode(d); err != nil {
-					return err
-				}
-				if err := d.Skip(); err != io.EOF {
-					return errors.New("unexpected trailing data")
-				}
-				return nil
-			}(); err != nil {
-				err = &ogenerrors.DecodeBodyError{
-					ContentType: ct,
-					Body:        buf,
-					Err:         err,
-				}
-				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
-			return &response, nil
-		default:
-			return res, validate.InvalidContentType(ct)
-		}
-	}
-	// Convenient error response.
-	defRes, err := func() (res *ErrorResponseStatusCode, err error) {
-		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-		if err != nil {
-			return res, errors.Wrap(err, "parse media type")
-		}
-		switch {
-		case ct == "application/json":
-			buf, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return res, err
-			}
-			d := jx.DecodeBytes(buf)
-
-			var response ErrorResponse
-			if err := func() error {
-				if err := response.Decode(d); err != nil {
-					return err
-				}
-				if err := d.Skip(); err != io.EOF {
-					return errors.New("unexpected trailing data")
-				}
-				return nil
-			}(); err != nil {
-				err = &ogenerrors.DecodeBodyError{
-					ContentType: ct,
-					Body:        buf,
-					Err:         err,
-				}
-				return res, err
-			}
-			return &ErrorResponseStatusCode{
-				StatusCode: resp.StatusCode,
-				Response:   response,
-			}, nil
-		default:
-			return res, validate.InvalidContentType(ct)
-		}
-	}()
-	if err != nil {
-		return res, errors.Wrapf(err, "default (code %d)", resp.StatusCode)
-	}
-	return res, errors.Wrap(defRes, "error")
-}
-
-func decodeListAgentTerminalResourceHistoryResponse(resp *http.Response) (res *ResourceHistoryResponse, _ error) {
-	switch resp.StatusCode {
-	case 200:
-		// Code 200.
-		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-		if err != nil {
-			return res, errors.Wrap(err, "parse media type")
-		}
-		switch {
-		case ct == "application/json":
-			buf, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return res, err
-			}
-			d := jx.DecodeBytes(buf)
-
-			var response ResourceHistoryResponse
-			if err := func() error {
-				if err := response.Decode(d); err != nil {
-					return err
-				}
-				if err := d.Skip(); err != io.EOF {
-					return errors.New("unexpected trailing data")
-				}
-				return nil
-			}(); err != nil {
-				err = &ogenerrors.DecodeBodyError{
-					ContentType: ct,
-					Body:        buf,
-					Err:         err,
-				}
-				return res, err
-			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
-			return &response, nil
-		default:
-			return res, validate.InvalidContentType(ct)
-		}
-	}
-	// Convenient error response.
-	defRes, err := func() (res *ErrorResponseStatusCode, err error) {
-		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-		if err != nil {
-			return res, errors.Wrap(err, "parse media type")
-		}
-		switch {
-		case ct == "application/json":
-			buf, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return res, err
-			}
-			d := jx.DecodeBytes(buf)
-
-			var response ErrorResponse
-			if err := func() error {
-				if err := response.Decode(d); err != nil {
-					return err
-				}
-				if err := d.Skip(); err != io.EOF {
-					return errors.New("unexpected trailing data")
-				}
-				return nil
-			}(); err != nil {
-				err = &ogenerrors.DecodeBodyError{
-					ContentType: ct,
-					Body:        buf,
-					Err:         err,
-				}
-				return res, err
-			}
-			return &ErrorResponseStatusCode{
-				StatusCode: resp.StatusCode,
-				Response:   response,
-			}, nil
-		default:
-			return res, validate.InvalidContentType(ct)
-		}
-	}()
-	if err != nil {
-		return res, errors.Wrapf(err, "default (code %d)", resp.StatusCode)
-	}
-	return res, errors.Wrap(defRes, "error")
-}
-
-func decodeListAgentTerminalsResponse(resp *http.Response) (res *AgentTerminalsResponse, _ error) {
-	switch resp.StatusCode {
-	case 200:
-		// Code 200.
-		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
-		if err != nil {
-			return res, errors.Wrap(err, "parse media type")
-		}
-		switch {
-		case ct == "application/json":
-			buf, err := io.ReadAll(resp.Body)
-			if err != nil {
-				return res, err
-			}
-			d := jx.DecodeBytes(buf)
-
-			var response AgentTerminalsResponse
+			var response SandboxExecEventsResponse
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -1311,7 +737,7 @@ func decodeListSandboxExecLogsResponse(resp *http.Response) (res *SandboxExecLog
 	return res, errors.Wrap(defRes, "error")
 }
 
-func decodeListSandboxExecsResponse(resp *http.Response) (res *SandboxExecsResponse, _ error) {
+func decodeListSandboxExecResourceHistoryResponse(resp *http.Response) (res *ResourceHistoryResponse, _ error) {
 	switch resp.StatusCode {
 	case 200:
 		// Code 200.
@@ -1327,7 +753,7 @@ func decodeListSandboxExecsResponse(resp *http.Response) (res *SandboxExecsRespo
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response SandboxExecsResponse
+			var response ResourceHistoryResponse
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -1403,7 +829,7 @@ func decodeListSandboxExecsResponse(resp *http.Response) (res *SandboxExecsRespo
 	return res, errors.Wrap(defRes, "error")
 }
 
-func decodeStartAgentTerminalResponse(resp *http.Response) (res *AgentTerminal, _ error) {
+func decodeListSandboxExecsResponse(resp *http.Response) (res *SandboxExecsResponse, _ error) {
 	switch resp.StatusCode {
 	case 200:
 		// Code 200.
@@ -1419,7 +845,7 @@ func decodeStartAgentTerminalResponse(resp *http.Response) (res *AgentTerminal, 
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response AgentTerminal
+			var response SandboxExecsResponse
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -1587,7 +1013,7 @@ func decodeStartSandboxExecResponse(resp *http.Response) (res *SandboxExec, _ er
 	return res, errors.Wrap(defRes, "error")
 }
 
-func decodeStreamAgentTerminalResourcesResponse(resp *http.Response) (res StreamAgentTerminalResourcesOK, _ error) {
+func decodeStreamSandboxExecResourcesResponse(resp *http.Response) (res StreamSandboxExecResourcesOK, _ error) {
 	switch resp.StatusCode {
 	case 200:
 		// Code 200.
@@ -1603,7 +1029,7 @@ func decodeStreamAgentTerminalResourcesResponse(resp *http.Response) (res Stream
 				return res, err
 			}
 
-			response := StreamAgentTerminalResourcesOK{Data: bytes.NewReader(b)}
+			response := StreamSandboxExecResourcesOK{Data: bytes.NewReader(b)}
 			return response, nil
 		default:
 			return res, validate.InvalidContentType(ct)

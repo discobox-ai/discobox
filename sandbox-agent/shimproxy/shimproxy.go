@@ -80,8 +80,8 @@ func AttachHTTPUpgrade(ctx context.Context, w http.ResponseWriter, socketPath, p
 	return nil
 }
 
-func AttachWebSocket(ctx context.Context, w http.ResponseWriter, r *http.Request, socketPath, protocol string) error {
-	shimConn, shimReader, err := attachShim(ctx, socketPath, protocol, false)
+func AttachWebSocket(ctx context.Context, w http.ResponseWriter, r *http.Request, socketPath, protocol string, replay bool) error {
+	shimConn, shimReader, err := attachShim(ctx, socketPath, protocol, replay)
 	if err != nil {
 		return err
 	}

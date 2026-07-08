@@ -21,8 +21,8 @@ import (
 
 type handler struct {
 	identity          Identity
-	terminals         *terminal.Service
 	execs             *execs.Manager
+	terminals         *terminal.Service
 	store             terminalStore
 	resourceCollector resources.Collector
 	resourceInterval  time.Duration
@@ -36,41 +36,15 @@ type terminalStore interface {
 	ListAgentHooks(context.Context, string, int) ([]store.AgentHookRecord, error)
 }
 
-func (h *handler) AttachAgentTerminal(ctx context.Context, params sandboxapi.AttachAgentTerminalParams) (*sandboxapi.AttachAgentTerminalSwitchingProtocols, error) {
-	return nil, statusError{status: http.StatusNotImplemented, message: "agent terminal attach is not implemented by generated handler"}
-}
-
-func (h *handler) AttachSandboxExec(ctx context.Context, params sandboxapi.AttachSandboxExecParams) (*sandboxapi.AttachSandboxExecSwitchingProtocols, error) {
+func (h *handler) AttachSandboxExec(context.Context, sandboxapi.AttachSandboxExecParams) (*sandboxapi.AttachSandboxExecSwitchingProtocols, error) {
 	return nil, statusError{status: http.StatusNotImplemented, message: "sandbox exec attach is not implemented by generated handler"}
 }
 
-func (h *handler) attachHTTP(w http.ResponseWriter, r *http.Request, terminalID string) {
-	replay, _ := strconv.ParseBool(r.URL.Query().Get("replay"))
-	if err := h.terminals.Attach(r.Context(), w, terminalID, replay); err != nil {
-		if errors.Is(err, terminal.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, sandboxapi.ErrorResponse{Error: "agent terminal not found"})
-			return
-		}
-		writeJSON(w, http.StatusInternalServerError, sandboxapi.ErrorResponse{Error: err.Error()})
-		return
-	}
-}
-
-func (h *handler) startTerminalHTTP(w http.ResponseWriter, r *http.Request, terminalID string) {
-	started, err := h.terminals.Start(r.Context(), terminalID)
-	if err != nil {
-		if errors.Is(err, terminal.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, sandboxapi.ErrorResponse{Error: "agent terminal not found"})
-			return
-		}
-		writeJSON(w, http.StatusInternalServerError, sandboxapi.ErrorResponse{Error: err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, agentTerminal(started))
-}
-
+// attachExecHTTP proxies a websocket attach to the exec shim. replay=true (used
+// by terminal clients) replays the shim's buffered output on connect.
 func (h *handler) attachExecHTTP(w http.ResponseWriter, r *http.Request, execID string) {
-	if err := h.execs.Attach(r.Context(), w, r, execID); err != nil {
+	replay, _ := strconv.ParseBool(r.URL.Query().Get("replay"))
+	if err := h.execs.Attach(r.Context(), w, r, execID, replay); err != nil {
 		if errors.Is(err, execs.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, sandboxapi.ErrorResponse{Error: "sandbox exec not found"})
 			return
@@ -80,43 +54,43 @@ func (h *handler) attachExecHTTP(w http.ResponseWriter, r *http.Request, execID 
 	}
 }
 
-func (h *handler) CreateAgentTerminal(ctx context.Context, req *sandboxapi.CreateAgentTerminalRequest, _ sandboxapi.CreateAgentTerminalParams) (sandboxapi.CreateAgentTerminalRes, error) {
-	if req == nil {
-		req = &sandboxapi.CreateAgentTerminalRequest{}
-	}
-	created, err := h.terminals.Create(ctx, terminal.CreateRequest{
-		AgentID:  req.AgentId.Or(""),
-		Args:     append([]string{}, req.Args...),
-		Workdir:  req.Workdir.Or(""),
-		Env:      stringMap(req.Env.Or(nil)),
-		Metadata: stringMap(req.Metadata.Or(nil)),
-		Rows:     uint16(req.Rows.Or(0)),
-		Cols:     uint16(req.Cols.Or(0)),
-	})
+func (h *handler) startExecHTTP(w http.ResponseWriter, r *http.Request, execID string) {
+	exec, err := h.execs.Start(r.Context(), execID)
 	if err != nil {
-		if created.ID != "" && created.Status == execs.StatusFailed {
-			return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
+		if errors.Is(err, execs.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, sandboxapi.ErrorResponse{Error: "sandbox exec not found"})
+			return
 		}
-		return nil, statusError{status: http.StatusBadRequest, message: err.Error()}
+		writeJSON(w, http.StatusInternalServerError, sandboxapi.ErrorResponse{Error: err.Error()})
+		return
 	}
-	return &sandboxapi.CreateAgentTerminalResponse{Terminal: agentTerminal(created)}, nil
+	writeJSON(w, http.StatusOK, sandboxExec(exec))
 }
 
-func (h *handler) StartAgentTerminal(ctx context.Context, params sandboxapi.StartAgentTerminalParams) (*sandboxapi.AgentTerminal, error) {
-	started, err := h.terminals.Start(ctx, params.TerminalId)
-	if err != nil {
-		if errors.Is(err, terminal.ErrNotFound) {
-			return nil, statusError{status: http.StatusNotFound, message: "agent terminal not found"}
-		}
-		return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
-	}
-	out := agentTerminal(started)
-	return &out, nil
-}
-
+// CreateSandboxExec creates a plain exec (command) or, when agentId is set, an
+// agent terminal (an exec created in agent mode via the terminal layer).
 func (h *handler) CreateSandboxExec(ctx context.Context, req *sandboxapi.CreateSandboxExecRequest, _ sandboxapi.CreateSandboxExecParams) (*sandboxapi.CreateSandboxExecResponse, error) {
 	if req == nil {
 		req = &sandboxapi.CreateSandboxExecRequest{}
+	}
+	agentID := strings.TrimSpace(req.AgentId.Or(""))
+	if agentID != "" || len(req.Command) == 0 {
+		created, err := h.terminals.Create(ctx, terminal.CreateRequest{
+			AgentID:  agentID,
+			Args:     append([]string{}, req.Args...),
+			Workdir:  req.Workdir.Or(""),
+			Env:      stringMap(req.Env.Or(nil)),
+			Metadata: stringMap(req.Metadata.Or(nil)),
+			Rows:     uint16(req.Rows.Or(0)),
+			Cols:     uint16(req.Cols.Or(0)),
+		})
+		if err != nil {
+			if created.ID != "" && created.Status == execs.StatusFailed {
+				return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
+			}
+			return nil, statusError{status: http.StatusBadRequest, message: err.Error()}
+		}
+		return &sandboxapi.CreateSandboxExecResponse{Exec: sandboxExec(created)}, nil
 	}
 	created, err := h.execs.Create(ctx, execs.CreateRequest{
 		Command:  append([]string{}, req.Command...),
@@ -137,36 +111,23 @@ func (h *handler) CreateSandboxExec(ctx context.Context, req *sandboxapi.CreateS
 	return &sandboxapi.CreateSandboxExecResponse{Exec: sandboxExec(created)}, nil
 }
 
-func (h *handler) DeleteAgentTerminal(ctx context.Context, params sandboxapi.DeleteAgentTerminalParams) error {
-	if err := h.terminals.Delete(ctx, params.TerminalId); err != nil {
-		if errors.Is(err, terminal.ErrNotFound) {
-			return statusError{status: http.StatusNotFound, message: "agent terminal not found"}
+func (h *handler) DeleteSandboxExec(ctx context.Context, params sandboxapi.DeleteSandboxExecParams) error {
+	if err := h.execs.Delete(ctx, params.ExecId); err != nil {
+		if errors.Is(err, execs.ErrNotFound) {
+			return statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
 		}
 		return statusError{status: http.StatusInternalServerError, message: err.Error()}
 	}
 	return nil
 }
 
-func (h *handler) GetSandboxExec(ctx context.Context, params sandboxapi.GetSandboxExecParams) (*sandboxapi.SandboxExec, error) {
+func (h *handler) GetSandboxExec(_ context.Context, params sandboxapi.GetSandboxExecParams) (*sandboxapi.SandboxExec, error) {
 	exec, ok := h.execs.Get(params.ExecId)
 	if !ok {
 		return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
 	}
 	out := sandboxExec(exec)
 	return &out, nil
-}
-
-func (h *handler) startExecHTTP(w http.ResponseWriter, r *http.Request, execID string) {
-	exec, err := h.execs.Start(r.Context(), execID)
-	if err != nil {
-		if errors.Is(err, execs.ErrNotFound) {
-			writeJSON(w, http.StatusNotFound, sandboxapi.ErrorResponse{Error: "sandbox exec not found"})
-			return
-		}
-		writeJSON(w, http.StatusInternalServerError, sandboxapi.ErrorResponse{Error: err.Error()})
-		return
-	}
-	writeJSON(w, http.StatusOK, sandboxExec(exec))
 }
 
 func (h *handler) StartSandboxExec(ctx context.Context, params sandboxapi.StartSandboxExecParams) (*sandboxapi.SandboxExec, error) {
@@ -181,58 +142,13 @@ func (h *handler) StartSandboxExec(ctx context.Context, params sandboxapi.StartS
 	return &out, nil
 }
 
-func (h *handler) GetAgentTerminalResources(ctx context.Context, params sandboxapi.GetAgentTerminalResourcesParams) (*sandboxapi.ResourceSnapshot, error) {
-	sample, err := h.collectResourceSample(ctx, params.TerminalId)
-	if err != nil {
-		if errors.Is(err, terminal.ErrNotFound) {
-			return nil, statusError{status: http.StatusNotFound, message: "agent terminal not found"}
-		}
-		return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
+func (h *handler) ListSandboxExecs(context.Context, sandboxapi.ListSandboxExecsParams) (*sandboxapi.SandboxExecsResponse, error) {
+	items := h.execs.List()
+	response := sandboxapi.SandboxExecsResponse{
+		Execs: make([]sandboxapi.SandboxExec, 0, len(items)),
 	}
-	return resourceSnapshot(sample), nil
-}
-
-func (h *handler) ListAgentTerminalEvents(ctx context.Context, params sandboxapi.ListAgentTerminalEventsParams) (*sandboxapi.AgentTerminalEventsResponse, error) {
-	if _, ok := h.terminals.Get(params.TerminalId); !ok {
-		return nil, statusError{status: http.StatusNotFound, message: "agent terminal not found"}
-	}
-	events, err := h.listEvents(ctx, params.TerminalId, params.Limit.Or(100))
-	if err != nil {
-		return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
-	}
-	response := sandboxapi.AgentTerminalEventsResponse{Events: make([]sandboxapi.AgentTerminalEvent, 0, len(events))}
-	for _, event := range events {
-		response.Events = append(response.Events, agentTerminalEvent(event))
-	}
-	return &response, nil
-}
-
-func (h *handler) ListAgentHooks(ctx context.Context, params sandboxapi.ListAgentHooksParams) (*sandboxapi.AgentHookLogsResponse, error) {
-	if h.store == nil {
-		return &sandboxapi.AgentHookLogsResponse{}, nil
-	}
-	records, err := h.store.ListAgentHooks(ctx, params.TerminalId.Or(""), params.Limit.Or(100))
-	if err != nil {
-		return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
-	}
-	response := sandboxapi.AgentHookLogsResponse{Hooks: make([]sandboxapi.AgentHookLog, 0, len(records))}
-	for _, record := range records {
-		response.Hooks = append(response.Hooks, agentHookLog(record))
-	}
-	return &response, nil
-}
-
-func (h *handler) ListAgentTerminalLogs(ctx context.Context, params sandboxapi.ListAgentTerminalLogsParams) (*sandboxapi.AgentTerminalLogsResponse, error) {
-	entries, err := h.terminals.Logs(ctx, params.TerminalId)
-	if err != nil {
-		if errors.Is(err, terminal.ErrNotFound) {
-			return nil, statusError{status: http.StatusNotFound, message: "agent terminal not found"}
-		}
-		return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
-	}
-	response := sandboxapi.AgentTerminalLogsResponse{Entries: make([]sandboxapi.AgentTerminalLogEntry, 0, len(entries))}
-	for _, entry := range entries {
-		response.Entries = append(response.Entries, agentTerminalLogEntry(entry))
+	for _, item := range items {
+		response.Execs = append(response.Execs, sandboxExec(item))
 	}
 	return &response, nil
 }
@@ -252,11 +168,37 @@ func (h *handler) ListSandboxExecLogs(ctx context.Context, params sandboxapi.Lis
 	return &response, nil
 }
 
-func (h *handler) ListAgentTerminalResourceHistory(ctx context.Context, params sandboxapi.ListAgentTerminalResourceHistoryParams) (*sandboxapi.ResourceHistoryResponse, error) {
-	if _, ok := h.terminals.Get(params.TerminalId); !ok {
-		return nil, statusError{status: http.StatusNotFound, message: "agent terminal not found"}
+func (h *handler) ListSandboxExecEvents(ctx context.Context, params sandboxapi.ListSandboxExecEventsParams) (*sandboxapi.SandboxExecEventsResponse, error) {
+	if _, ok := h.execs.Get(params.ExecId); !ok {
+		return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
 	}
-	samples, err := h.listResourceSamples(ctx, params.TerminalId, params.Limit.Or(100))
+	events, err := h.listEvents(ctx, params.ExecId, params.Limit.Or(100))
+	if err != nil {
+		return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
+	}
+	response := sandboxapi.SandboxExecEventsResponse{Events: make([]sandboxapi.SandboxExecEvent, 0, len(events))}
+	for _, event := range events {
+		response.Events = append(response.Events, sandboxExecEvent(event))
+	}
+	return &response, nil
+}
+
+func (h *handler) GetSandboxExecResources(ctx context.Context, params sandboxapi.GetSandboxExecResourcesParams) (*sandboxapi.ResourceSnapshot, error) {
+	sample, err := h.collectResourceSample(ctx, params.ExecId)
+	if err != nil {
+		if errors.Is(err, execs.ErrNotFound) {
+			return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
+		}
+		return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
+	}
+	return resourceSnapshot(sample), nil
+}
+
+func (h *handler) ListSandboxExecResourceHistory(ctx context.Context, params sandboxapi.ListSandboxExecResourceHistoryParams) (*sandboxapi.ResourceHistoryResponse, error) {
+	if _, ok := h.execs.Get(params.ExecId); !ok {
+		return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
+	}
+	samples, err := h.listResourceSamples(ctx, params.ExecId, params.Limit.Or(100))
 	if err != nil {
 		return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
 	}
@@ -267,35 +209,28 @@ func (h *handler) ListAgentTerminalResourceHistory(ctx context.Context, params s
 	return &response, nil
 }
 
-func (h *handler) ListAgentTerminals(context.Context, sandboxapi.ListAgentTerminalsParams) (*sandboxapi.AgentTerminalsResponse, error) {
-	terminals := h.terminals.List()
-	response := sandboxapi.AgentTerminalsResponse{
-		Terminals: make([]sandboxapi.AgentTerminal, 0, len(terminals)),
-	}
-	for _, item := range terminals {
-		response.Terminals = append(response.Terminals, agentTerminal(item))
-	}
-	return &response, nil
-}
-
-func (h *handler) ListSandboxExecs(context.Context, sandboxapi.ListSandboxExecsParams) (*sandboxapi.SandboxExecsResponse, error) {
-	execs := h.execs.List()
-	response := sandboxapi.SandboxExecsResponse{
-		Execs: make([]sandboxapi.SandboxExec, 0, len(execs)),
-	}
-	for _, item := range execs {
-		response.Execs = append(response.Execs, sandboxExec(item))
-	}
-	return &response, nil
-}
-
-func (h *handler) StreamAgentTerminalResources(ctx context.Context, params sandboxapi.StreamAgentTerminalResourcesParams) (sandboxapi.StreamAgentTerminalResourcesOK, error) {
-	if _, ok := h.terminals.Get(params.TerminalId); !ok {
-		return sandboxapi.StreamAgentTerminalResourcesOK{}, statusError{status: http.StatusNotFound, message: "agent terminal not found"}
+func (h *handler) StreamSandboxExecResources(ctx context.Context, params sandboxapi.StreamSandboxExecResourcesParams) (sandboxapi.StreamSandboxExecResourcesOK, error) {
+	if _, ok := h.execs.Get(params.ExecId); !ok {
+		return sandboxapi.StreamSandboxExecResourcesOK{}, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
 	}
 	reader, writer := io.Pipe()
-	go h.writeResourceStream(ctx, writer, params.TerminalId)
-	return sandboxapi.StreamAgentTerminalResourcesOK{Data: reader}, nil
+	go h.writeResourceStream(ctx, writer, params.ExecId)
+	return sandboxapi.StreamSandboxExecResourcesOK{Data: reader}, nil
+}
+
+func (h *handler) ListAgentHooks(ctx context.Context, params sandboxapi.ListAgentHooksParams) (*sandboxapi.AgentHookLogsResponse, error) {
+	if h.store == nil {
+		return &sandboxapi.AgentHookLogsResponse{}, nil
+	}
+	records, err := h.store.ListAgentHooks(ctx, params.TerminalId.Or(""), params.Limit.Or(100))
+	if err != nil {
+		return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
+	}
+	response := sandboxapi.AgentHookLogsResponse{Hooks: make([]sandboxapi.AgentHookLog, 0, len(records))}
+	for _, record := range records {
+		response.Hooks = append(response.Hooks, agentHookLog(record))
+	}
+	return &response, nil
 }
 
 func (h *handler) NewError(_ context.Context, err error) *sandboxapi.ErrorResponseStatusCode {
@@ -305,52 +240,6 @@ func (h *handler) NewError(_ context.Context, err error) *sandboxapi.ErrorRespon
 		status = statusErr.StatusCode()
 	}
 	return errorStatus(status, err.Error())
-}
-
-func agentTerminal(in execs.Exec) sandboxapi.AgentTerminal {
-	out := sandboxapi.AgentTerminal{
-		ID:        in.ID,
-		Status:    sandboxapi.AgentTerminalStatus(in.Status),
-		Command:   append([]string{}, in.Command...),
-		Workdir:   in.Workdir,
-		CreatedAt: in.CreatedAt,
-	}
-	if agentID := terminal.AgentID(in); agentID != "" {
-		out.AgentId = sandboxapi.NewOptString(agentID)
-	}
-	if in.Unit != "" {
-		out.Unit = sandboxapi.NewOptString(in.Unit)
-	}
-	if in.PID != 0 {
-		out.Pid = sandboxapi.NewOptInt64(in.PID)
-	}
-	if in.ExitCode != nil {
-		out.ExitCode = sandboxapi.NewOptInt64(*in.ExitCode)
-	}
-	if in.Error != "" {
-		out.Error = sandboxapi.NewOptString(in.Error)
-	}
-	if in.StartedAt != nil {
-		out.StartedAt = sandboxapi.NewOptDateTime(*in.StartedAt)
-	}
-	if in.ExitedAt != nil {
-		out.ExitedAt = sandboxapi.NewOptDateTime(*in.ExitedAt)
-	}
-	if len(in.Metadata) > 0 {
-		out.Metadata = sandboxapi.NewOptAgentTerminalMetadata(sandboxapi.AgentTerminalMetadata(stringMap(in.Metadata)))
-	}
-	if terminal.IsPrimary(in) {
-		out.Primary = sandboxapi.NewOptBool(true)
-	}
-	return out
-}
-
-func agentTerminalLogEntry(in execs.LogEntry) sandboxapi.AgentTerminalLogEntry {
-	return sandboxapi.AgentTerminalLogEntry{
-		Timestamp: in.Timestamp,
-		Stream:    sandboxapi.AgentTerminalLogEntryStream(in.Stream),
-		Data:      append([]byte{}, in.Data...),
-	}
 }
 
 func sandboxExec(in execs.Exec) sandboxapi.SandboxExec {
@@ -388,6 +277,12 @@ func sandboxExec(in execs.Exec) sandboxapi.SandboxExec {
 	}
 	if len(in.Metadata) > 0 {
 		out.Metadata = sandboxapi.NewOptSandboxExecMetadata(sandboxapi.SandboxExecMetadata(stringMap(in.Metadata)))
+	}
+	if agentID := terminal.AgentID(in); agentID != "" {
+		out.AgentId = sandboxapi.NewOptString(agentID)
+	}
+	if terminal.IsPrimary(in) {
+		out.Primary = sandboxapi.NewOptBool(true)
 	}
 	return out
 }
@@ -445,14 +340,14 @@ func sandboxExecLogEntry(in execs.LogEntry) sandboxapi.SandboxExecLogEntry {
 	}
 }
 
-func agentTerminalEvent(in store.Event) sandboxapi.AgentTerminalEvent {
-	out := sandboxapi.AgentTerminalEvent{
+func sandboxExecEvent(in store.Event) sandboxapi.SandboxExecEvent {
+	out := sandboxapi.SandboxExecEvent{
 		ID:        in.ID,
 		Type:      in.Type,
 		CreatedAt: in.CreatedAt,
 	}
 	if in.TerminalID != "" {
-		out.TerminalId = sandboxapi.NewOptString(in.TerminalID)
+		out.ExecId = sandboxapi.NewOptString(in.TerminalID)
 	}
 	if in.Message != "" {
 		out.Message = sandboxapi.NewOptString(in.Message)
@@ -497,10 +392,10 @@ func resourceSnapshot(in store.ResourceSample) *sandboxapi.ResourceSnapshot {
 	}
 }
 
-func (h *handler) collectResourceSample(ctx context.Context, terminalID string) (store.ResourceSample, error) {
-	term, ok := h.terminals.Get(terminalID)
+func (h *handler) collectResourceSample(ctx context.Context, execID string) (store.ResourceSample, error) {
+	exec, ok := h.execs.Get(execID)
 	if !ok {
-		return store.ResourceSample{}, terminal.ErrNotFound
+		return store.ResourceSample{}, execs.ErrNotFound
 	}
 	collector := h.resourceCollector
 	defaultCollector := resources.NewCollector()
@@ -510,7 +405,7 @@ func (h *handler) collectResourceSample(ctx context.Context, terminalID string) 
 	if collector.CgroupRoot == "" {
 		collector.CgroupRoot = defaultCollector.CgroupRoot
 	}
-	sample, err := collector.Collect(ctx, term)
+	sample, err := collector.Collect(ctx, exec)
 	if err != nil {
 		return store.ResourceSample{}, err
 	}
@@ -520,23 +415,23 @@ func (h *handler) collectResourceSample(ctx context.Context, terminalID string) 
 	return h.store.RecordResourceSample(ctx, sample, h.resourceRetention)
 }
 
-func (h *handler) listEvents(ctx context.Context, terminalID string, limit int) ([]store.Event, error) {
+func (h *handler) listEvents(ctx context.Context, execID string, limit int) ([]store.Event, error) {
 	if h.store == nil {
 		return nil, nil
 	}
-	return h.store.ListEvents(ctx, terminalID, limit)
+	return h.store.ListEvents(ctx, execID, limit)
 }
 
-func (h *handler) listResourceSamples(ctx context.Context, terminalID string, limit int) ([]store.ResourceSample, error) {
+func (h *handler) listResourceSamples(ctx context.Context, execID string, limit int) ([]store.ResourceSample, error) {
 	if h.store == nil {
 		return nil, nil
 	}
-	return h.store.ListResourceSamples(ctx, terminalID, limit)
+	return h.store.ListResourceSamples(ctx, execID, limit)
 }
 
-func (h *handler) writeResourceStream(ctx context.Context, writer *io.PipeWriter, terminalID string) {
+func (h *handler) writeResourceStream(ctx context.Context, writer *io.PipeWriter, execID string) {
 	defer writer.Close()
-	history, err := h.listResourceSamples(ctx, terminalID, 100)
+	history, err := h.listResourceSamples(ctx, execID, 100)
 	if err != nil {
 		_ = writer.CloseWithError(err)
 		return
@@ -558,7 +453,7 @@ func (h *handler) writeResourceStream(ctx context.Context, writer *io.PipeWriter
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			sample, err := h.collectResourceSample(ctx, terminalID)
+			sample, err := h.collectResourceSample(ctx, execID)
 			if err != nil {
 				_ = writeSSE(writer, "error", map[string]string{"error": err.Error()})
 				return

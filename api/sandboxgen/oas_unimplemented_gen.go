@@ -13,16 +13,6 @@ type UnimplementedHandler struct{}
 
 var _ Handler = UnimplementedHandler{}
 
-// AttachAgentTerminal implements attach-agent-terminal operation.
-//
-// Upgrades to a framed bidirectional stream for a running agent terminal. Closing the stream
-// detaches from the terminal and does not stop the underlying agent process.
-//
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/attach
-func (UnimplementedHandler) AttachAgentTerminal(ctx context.Context, params AttachAgentTerminalParams) (r *AttachAgentTerminalSwitchingProtocols, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
 // AttachSandboxExec implements attach-sandbox-exec operation.
 //
 // Opens a websocket carrying the framed bidirectional stream for a running sandbox exec. Input
@@ -31,17 +21,6 @@ func (UnimplementedHandler) AttachAgentTerminal(ctx context.Context, params Atta
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
 func (UnimplementedHandler) AttachSandboxExec(ctx context.Context, params AttachSandboxExecParams) (r *AttachSandboxExecSwitchingProtocols, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// CreateAgentTerminal implements create-agent-terminal operation.
-//
-// Creates an ephemeral terminal/TUI runtime for a coding-agent CLI. When the request is an upgrade
-// request, the sandbox agent creates the terminal and switches protocols to the framed bidirectional
-// attach stream instead of returning JSON.
-//
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals
-func (UnimplementedHandler) CreateAgentTerminal(ctx context.Context, req *CreateAgentTerminalRequest, params CreateAgentTerminalParams) (r CreateAgentTerminalRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -54,22 +33,13 @@ func (UnimplementedHandler) CreateSandboxExec(ctx context.Context, req *CreateSa
 	return r, ht.ErrNotImplemented
 }
 
-// DeleteAgentTerminal implements delete-agent-terminal operation.
+// DeleteSandboxExec implements delete-sandbox-exec operation.
 //
-// Destroy an agent terminal runtime in a sandbox.
+// Destroy an exec runtime in a sandbox.
 //
-// DELETE /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}
-func (UnimplementedHandler) DeleteAgentTerminal(ctx context.Context, params DeleteAgentTerminalParams) error {
+// DELETE /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
+func (UnimplementedHandler) DeleteSandboxExec(ctx context.Context, params DeleteSandboxExecParams) error {
 	return ht.ErrNotImplemented
-}
-
-// GetAgentTerminalResources implements get-agent-terminal-resources operation.
-//
-// Get the latest opaque resource snapshot for an agent terminal.
-//
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources
-func (UnimplementedHandler) GetAgentTerminalResources(ctx context.Context, params GetAgentTerminalResourcesParams) (r *ResourceSnapshot, _ error) {
-	return r, ht.ErrNotImplemented
 }
 
 // GetSandboxExec implements get-sandbox-exec operation.
@@ -78,6 +48,15 @@ func (UnimplementedHandler) GetAgentTerminalResources(ctx context.Context, param
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
 func (UnimplementedHandler) GetSandboxExec(ctx context.Context, params GetSandboxExecParams) (r *SandboxExec, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetSandboxExecResources implements get-sandbox-exec-resources operation.
+//
+// Get the latest opaque resource snapshot for a sandbox exec.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources
+func (UnimplementedHandler) GetSandboxExecResources(ctx context.Context, params GetSandboxExecResourcesParams) (r *ResourceSnapshot, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -90,39 +69,12 @@ func (UnimplementedHandler) ListAgentHooks(ctx context.Context, params ListAgent
 	return r, ht.ErrNotImplemented
 }
 
-// ListAgentTerminalEvents implements list-agent-terminal-events operation.
+// ListSandboxExecEvents implements list-sandbox-exec-events operation.
 //
-// List recent audit events for an agent terminal.
+// List recent audit events for a sandbox exec.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/events
-func (UnimplementedHandler) ListAgentTerminalEvents(ctx context.Context, params ListAgentTerminalEventsParams) (r *AgentTerminalEventsResponse, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// ListAgentTerminalLogs implements list-agent-terminal-logs operation.
-//
-// List PTY logs for an agent terminal.
-//
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/logs
-func (UnimplementedHandler) ListAgentTerminalLogs(ctx context.Context, params ListAgentTerminalLogsParams) (r *AgentTerminalLogsResponse, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// ListAgentTerminalResourceHistory implements list-agent-terminal-resource-history operation.
-//
-// List recent opaque resource snapshots for an agent terminal.
-//
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/history
-func (UnimplementedHandler) ListAgentTerminalResourceHistory(ctx context.Context, params ListAgentTerminalResourceHistoryParams) (r *ResourceHistoryResponse, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// ListAgentTerminals implements list-agent-terminals operation.
-//
-// List agent terminal runtimes in a sandbox.
-//
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals
-func (UnimplementedHandler) ListAgentTerminals(ctx context.Context, params ListAgentTerminalsParams) (r *AgentTerminalsResponse, _ error) {
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/events
+func (UnimplementedHandler) ListSandboxExecEvents(ctx context.Context, params ListSandboxExecEventsParams) (r *SandboxExecEventsResponse, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -135,21 +87,21 @@ func (UnimplementedHandler) ListSandboxExecLogs(ctx context.Context, params List
 	return r, ht.ErrNotImplemented
 }
 
+// ListSandboxExecResourceHistory implements list-sandbox-exec-resource-history operation.
+//
+// List recent opaque resource snapshots for a sandbox exec.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/history
+func (UnimplementedHandler) ListSandboxExecResourceHistory(ctx context.Context, params ListSandboxExecResourceHistoryParams) (r *ResourceHistoryResponse, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListSandboxExecs implements list-sandbox-execs operation.
 //
 // List exec runtimes in a sandbox.
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs
 func (UnimplementedHandler) ListSandboxExecs(ctx context.Context, params ListSandboxExecsParams) (r *SandboxExecsResponse, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// StartAgentTerminal implements start-agent-terminal operation.
-//
-// Starts a prepared agent terminal after any desired attach stream has connected.
-//
-// POST /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/start
-func (UnimplementedHandler) StartAgentTerminal(ctx context.Context, params StartAgentTerminalParams) (r *AgentTerminal, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -162,12 +114,12 @@ func (UnimplementedHandler) StartSandboxExec(ctx context.Context, params StartSa
 	return r, ht.ErrNotImplemented
 }
 
-// StreamAgentTerminalResources implements stream-agent-terminal-resources operation.
+// StreamSandboxExecResources implements stream-sandbox-exec-resources operation.
 //
-// Stream opaque resource snapshots for an agent terminal.
+// Stream opaque resource snapshots for a sandbox exec.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/stream
-func (UnimplementedHandler) StreamAgentTerminalResources(ctx context.Context, params StreamAgentTerminalResourcesParams) (r StreamAgentTerminalResourcesOK, _ error) {
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream
+func (UnimplementedHandler) StreamSandboxExecResources(ctx context.Context, params StreamSandboxExecResourcesParams) (r StreamSandboxExecResourcesOK, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

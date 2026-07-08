@@ -17,24 +17,19 @@ func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
 	router.Handle("/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/http/{port}", service.sandboxHTTPProxyHandler())
 	router.Handle("/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/http/{port}/*", service.sandboxHTTPProxyHandler())
 
-	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/agent-terminals", service.sandboxAgentProxyHandler())
 	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/agent-hooks", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodPost, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/agent-terminals", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodDelete, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodPost, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/attach", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodPost, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/start", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/events", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/logs", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/history", service.sandboxAgentProxyHandler())
-	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/resources/stream", service.sandboxAgentProxyHandler())
 	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/execs", service.sandboxAgentProxyHandler())
 	router.Method(http.MethodPost, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/execs", service.sandboxAgentProxyHandler())
 	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/execs/{execId}", service.sandboxAgentProxyHandler())
+	router.Method(http.MethodDelete, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/execs/{execId}", service.sandboxAgentProxyHandler())
 	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/execs/{execId}/logs", service.sandboxAgentProxyHandler())
 	router.Method(http.MethodPost, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/execs/{execId}/attach", service.sandboxAgentProxyHandler())
 	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/execs/{execId}/attach", service.sandboxAgentProxyHandler())
 	router.Method(http.MethodPost, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/execs/{execId}/start", service.sandboxAgentProxyHandler())
+	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/execs/{execId}/events", service.sandboxAgentProxyHandler())
+	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/execs/{execId}/resources", service.sandboxAgentProxyHandler())
+	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/execs/{execId}/resources/history", service.sandboxAgentProxyHandler())
+	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream", service.sandboxAgentProxyHandler())
 }
 
 func (s *sandboxService) sandboxHTTPProxyHandler() http.Handler {
@@ -113,15 +108,11 @@ func authorizeProxyScope(r *http.Request, scope string) error {
 }
 
 func sandboxAgentRequiredScope(r *http.Request) string {
-	if strings.Contains(r.URL.Path, "/agent-terminals") || strings.Contains(r.URL.Path, "/agent-hooks") {
-		switch r.Method {
-		case http.MethodGet:
-			return ScopeTerminalRead
-		case http.MethodPost, http.MethodDelete:
-			return ScopeTerminalWrite
-		default:
-			return ""
+	if strings.Contains(r.URL.Path, "/agent-hooks") {
+		if r.Method == http.MethodGet {
+			return ScopeExecRead
 		}
+		return ""
 	}
 	if strings.Contains(r.URL.Path, "/execs") {
 		if strings.HasSuffix(r.URL.Path, "/attach") {

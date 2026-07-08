@@ -219,17 +219,13 @@ func (a *App) listJobCompletions(ctx context.Context, client *apiclientgen.Clien
 	return completions, nil
 }
 
-func (a *App) listTerminalCompletions(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID string) ([]string, error) {
-	res, err := client.ListAgentTerminals(ctx, apiclientgen.ListAgentTerminalsParams{ProjectId: projectID, SandboxId: sandboxID})
+func (a *App) listTerminalCompletions(ctx context.Context, _ *apiclientgen.Client, projectID, sandboxID string) ([]string, error) {
+	terminals, err := a.listSandboxTerminals(ctx, projectID, sandboxID)
 	if err != nil {
 		return nil, err
 	}
-	body, err := expectResponse[apimodel.AgentTerminalsResponse](res)
-	if err != nil {
-		return nil, err
-	}
-	completions := make([]string, 0, len(body.GetTerminals()))
-	for _, terminal := range body.GetTerminals() {
+	completions := make([]string, 0, len(terminals))
+	for _, terminal := range terminals {
 		completions = append(completions, completionItem(terminal.ID, completionDescription(terminal.AgentId.Or(""), string(terminal.Status))))
 	}
 	return completions, nil

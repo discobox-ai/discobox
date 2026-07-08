@@ -20,7 +20,7 @@ func TestSandboxAgentProxyRewritesToSandboxAgentAndForwardsDownstreamToken(t *te
 	workerID := "worker-1"
 	sandboxID := "sandbox-1"
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals" {
+		if r.URL.Path != "/api/projects/project-1/sandboxes/sandbox-1/execs" {
 			t.Fatalf("upstream path = %q", r.URL.Path)
 		}
 		if got := r.Header.Get("Authorization"); got != "Bearer sandbox-token" {
@@ -29,7 +29,7 @@ func TestSandboxAgentProxyRewritesToSandboxAgentAndForwardsDownstreamToken(t *te
 		if got := r.Header.Get(sandboxAgentAuthorizationHeader); got != "" {
 			t.Fatalf("internal auth header leaked upstream: %q", got)
 		}
-		_, _ = w.Write([]byte(`{"terminals":[]}`))
+		_, _ = w.Write([]byte(`{"execs":[]}`))
 	}))
 	t.Cleanup(upstream.Close)
 	baseURL, err := url.Parse(upstream.URL)
@@ -47,8 +47,8 @@ func TestSandboxAgentProxyRewritesToSandboxAgentAndForwardsDownstreamToken(t *te
 		t.Fatalf("new router: %v", err)
 	}
 
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/project/project-1/worker/worker-1/sandboxes/sandbox-1/agent-terminals", nil)
-	req.Header.Set("Authorization", "Bearer "+sign(projectID, workerID, sandboxID, ScopeTerminalRead))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/project/project-1/worker/worker-1/sandboxes/sandbox-1/execs", nil)
+	req.Header.Set("Authorization", "Bearer "+sign(projectID, workerID, sandboxID, ScopeExecRead))
 	req.Header.Set(sandboxAgentAuthorizationHeader, "Bearer sandbox-token")
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
@@ -58,7 +58,7 @@ func TestSandboxAgentProxyRewritesToSandboxAgentAndForwardsDownstreamToken(t *te
 	}
 }
 
-func TestSandboxAgentHookProxyRequiresTerminalReadScope(t *testing.T) {
+func TestSandboxAgentHookProxyRequiresExecReadScope(t *testing.T) {
 	projectID := "project-1"
 	workerID := "worker-1"
 	sandboxID := "sandbox-1"
@@ -85,7 +85,7 @@ func TestSandboxAgentHookProxyRequiresTerminalReadScope(t *testing.T) {
 	}
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/project/project-1/worker/worker-1/sandboxes/sandbox-1/agent-hooks", nil)
-	req.Header.Set("Authorization", "Bearer "+sign(projectID, workerID, sandboxID, ScopeTerminalRead))
+	req.Header.Set("Authorization", "Bearer "+sign(projectID, workerID, sandboxID, ScopeExecRead))
 	req.Header.Set(sandboxAgentAuthorizationHeader, "Bearer sandbox-token")
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)

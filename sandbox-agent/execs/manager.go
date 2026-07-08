@@ -390,7 +390,7 @@ func (m *Manager) Start(ctx context.Context, id string) (Exec, error) {
 	return cloneExec(current), nil
 }
 
-func (m *Manager) Attach(ctx context.Context, w http.ResponseWriter, r *http.Request, id string) error {
+func (m *Manager) Attach(ctx context.Context, w http.ResponseWriter, r *http.Request, id string, replay bool) error {
 	exec, ok := m.Get(id)
 	if !ok {
 		return ErrNotFound
@@ -399,7 +399,7 @@ func (m *Manager) Attach(ctx context.Context, w http.ResponseWriter, r *http.Req
 	defer func() {
 		_ = m.recordEvent(context.Background(), id, "exec.attach.closed", "exec attach closed", map[string]any{"unit": exec.Unit})
 	}()
-	return shimproxy.AttachWebSocket(ctx, w, r, exec.SocketPath, "discobox-sandbox-exec")
+	return shimproxy.AttachWebSocket(ctx, w, r, exec.SocketPath, "discobox-sandbox-exec", replay)
 }
 
 var ErrNotFound = errors.New("sandbox exec not found")
@@ -436,21 +436,6 @@ func (m *Manager) WaitForExit(ctx context.Context, id string, timeout, poll time
 // identically before agent resolution and install.
 func (m *Manager) ResolveWorkdir(requested string) (string, error) {
 	return m.resolveWorkdir(requested)
-}
-
-// AttachUpgrade attaches to an exec over a raw HTTP Upgrade using the given
-// protocol, replaying buffered output when replay is set. The terminal layer
-// uses this for its Upgrade-based attach; plain execs use the WebSocket Attach.
-func (m *Manager) AttachUpgrade(ctx context.Context, w http.ResponseWriter, id, protocol string, replay bool) error {
-	exec, ok := m.Get(id)
-	if !ok {
-		return ErrNotFound
-	}
-	_ = m.recordEvent(ctx, id, "exec.attach.opened", "exec attach opened", map[string]any{"unit": exec.Unit})
-	defer func() {
-		_ = m.recordEvent(context.Background(), id, "exec.attach.closed", "exec attach closed", map[string]any{"unit": exec.Unit})
-	}()
-	return shimproxy.AttachHTTPUpgrade(ctx, w, exec.SocketPath, protocol, replay)
 }
 
 func (m *Manager) resolveWorkdir(requested string) (string, error) {

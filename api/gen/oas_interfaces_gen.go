@@ -5,20 +5,12 @@ type ApproveSecretRequestRes interface {
 	approveSecretRequestRes()
 }
 
-type AttachAgentTerminalRes interface {
-	attachAgentTerminalRes()
-}
-
 type AttachSandboxExecRes interface {
 	attachSandboxExecRes()
 }
 
 type CreateAgentConfigRes interface {
 	createAgentConfigRes()
-}
-
-type CreateAgentTerminalRes interface {
-	createAgentTerminalRes()
 }
 
 type CreateSandboxExecRes interface {
@@ -53,8 +45,8 @@ type DeleteAgentConfigSecretBindingRes interface {
 	deleteAgentConfigSecretBindingRes()
 }
 
-type DeleteAgentTerminalRes interface {
-	deleteAgentTerminalRes()
+type DeleteSandboxExecRes interface {
+	deleteSandboxExecRes()
 }
 
 type DeleteSandboxProviderInstanceRes interface {
@@ -85,10 +77,6 @@ type GetAgentConfigRes interface {
 	getAgentConfigRes()
 }
 
-type GetAgentTerminalResourcesRes interface {
-	getAgentTerminalResourcesRes()
-}
-
 type GetJobRes interface {
 	getJobRes()
 }
@@ -99,6 +87,10 @@ type GetProjectRes interface {
 
 type GetSandboxExecRes interface {
 	getSandboxExecRes()
+}
+
+type GetSandboxExecResourcesRes interface {
+	getSandboxExecResourcesRes()
 }
 
 type GetSandboxProviderInstanceRes interface {
@@ -133,22 +125,6 @@ type ListAgentHooksRes interface {
 	listAgentHooksRes()
 }
 
-type ListAgentTerminalEventsRes interface {
-	listAgentTerminalEventsRes()
-}
-
-type ListAgentTerminalLogsRes interface {
-	listAgentTerminalLogsRes()
-}
-
-type ListAgentTerminalResourceHistoryRes interface {
-	listAgentTerminalResourceHistoryRes()
-}
-
-type ListAgentTerminalsRes interface {
-	listAgentTerminalsRes()
-}
-
 type ListJobsRes interface {
 	listJobsRes()
 }
@@ -157,8 +133,16 @@ type ListProjectsRes interface {
 	listProjectsRes()
 }
 
+type ListSandboxExecEventsRes interface {
+	listSandboxExecEventsRes()
+}
+
 type ListSandboxExecLogsRes interface {
 	listSandboxExecLogsRes()
+}
+
+type ListSandboxExecResourceHistoryRes interface {
+	listSandboxExecResourceHistoryRes()
 }
 
 type ListSandboxExecsRes interface {
@@ -225,10 +209,6 @@ type SetDefaultAgentConfigRes interface {
 	setDefaultAgentConfigRes()
 }
 
-type StartAgentTerminalRes interface {
-	startAgentTerminalRes()
-}
-
 type StartSandboxExecRes interface {
 	startSandboxExecRes()
 }
@@ -241,8 +221,8 @@ type StopSandboxRes interface {
 	stopSandboxRes()
 }
 
-type StreamAgentTerminalResourcesRes interface {
-	streamAgentTerminalResourcesRes()
+type StreamSandboxExecResourcesRes interface {
+	streamSandboxExecResourcesRes()
 }
 
 type UpdateAgentConfigRes interface {

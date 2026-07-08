@@ -15,48 +15,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func encodeAttachAgentTerminalResponse(response *AttachAgentTerminalSwitchingProtocols, w http.ResponseWriter, span trace.Span) error {
-	w.Header().Set("Access-Control-Expose-Headers", "Connection,Upgrade")
-	// Encoding response headers.
-	{
-		h := uri.NewHeaderEncoder(w.Header())
-		// Encode "Connection" header.
-		{
-			cfg := uri.HeaderParameterEncodingConfig{
-				Name:    "Connection",
-				Explode: false,
-			}
-			if err := h.EncodeParam(cfg, func(e uri.Encoder) error {
-				if val, ok := response.Connection.Get(); ok {
-					return e.EncodeValue(conv.StringToString(val))
-				}
-				return nil
-			}); err != nil {
-				return errors.Wrap(err, "encode Connection header")
-			}
-		}
-		// Encode "Upgrade" header.
-		{
-			cfg := uri.HeaderParameterEncodingConfig{
-				Name:    "Upgrade",
-				Explode: false,
-			}
-			if err := h.EncodeParam(cfg, func(e uri.Encoder) error {
-				if val, ok := response.Upgrade.Get(); ok {
-					return e.EncodeValue(conv.StringToString(val))
-				}
-				return nil
-			}); err != nil {
-				return errors.Wrap(err, "encode Upgrade header")
-			}
-		}
-	}
-	w.WriteHeader(101)
-	span.SetStatus(codes.Ok, http.StatusText(101))
-
-	return nil
-}
-
 func encodeAttachSandboxExecResponse(response *AttachSandboxExecSwitchingProtocols, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Access-Control-Expose-Headers", "Connection,Upgrade")
 	// Encoding response headers.
@@ -99,67 +57,6 @@ func encodeAttachSandboxExecResponse(response *AttachSandboxExecSwitchingProtoco
 	return nil
 }
 
-func encodeCreateAgentTerminalResponse(response CreateAgentTerminalRes, w http.ResponseWriter, span trace.Span) error {
-	switch response := response.(type) {
-	case *CreateAgentTerminalSwitchingProtocols:
-		w.Header().Set("Access-Control-Expose-Headers", "Connection,Upgrade")
-		// Encoding response headers.
-		{
-			h := uri.NewHeaderEncoder(w.Header())
-			// Encode "Connection" header.
-			{
-				cfg := uri.HeaderParameterEncodingConfig{
-					Name:    "Connection",
-					Explode: false,
-				}
-				if err := h.EncodeParam(cfg, func(e uri.Encoder) error {
-					if val, ok := response.Connection.Get(); ok {
-						return e.EncodeValue(conv.StringToString(val))
-					}
-					return nil
-				}); err != nil {
-					return errors.Wrap(err, "encode Connection header")
-				}
-			}
-			// Encode "Upgrade" header.
-			{
-				cfg := uri.HeaderParameterEncodingConfig{
-					Name:    "Upgrade",
-					Explode: false,
-				}
-				if err := h.EncodeParam(cfg, func(e uri.Encoder) error {
-					if val, ok := response.Upgrade.Get(); ok {
-						return e.EncodeValue(conv.StringToString(val))
-					}
-					return nil
-				}); err != nil {
-					return errors.Wrap(err, "encode Upgrade header")
-				}
-			}
-		}
-		w.WriteHeader(101)
-		span.SetStatus(codes.Ok, http.StatusText(101))
-
-		return nil
-
-	case *CreateAgentTerminalResponse:
-		w.Header().Set("Content-Type", "application/json; charset=utf-8")
-		w.WriteHeader(201)
-		span.SetStatus(codes.Ok, http.StatusText(201))
-
-		e := new(jx.Encoder)
-		response.Encode(e)
-		if _, err := e.WriteTo(w); err != nil {
-			return errors.Wrap(err, "write")
-		}
-
-		return nil
-
-	default:
-		return errors.Errorf("unexpected response type: %T", response)
-	}
-}
-
 func encodeCreateSandboxExecResponse(response *CreateSandboxExecResponse, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(201)
@@ -174,14 +71,14 @@ func encodeCreateSandboxExecResponse(response *CreateSandboxExecResponse, w http
 	return nil
 }
 
-func encodeDeleteAgentTerminalResponse(response *DeleteAgentTerminalNoContent, w http.ResponseWriter, span trace.Span) error {
+func encodeDeleteSandboxExecResponse(response *DeleteSandboxExecNoContent, w http.ResponseWriter, span trace.Span) error {
 	w.WriteHeader(204)
 	span.SetStatus(codes.Ok, http.StatusText(204))
 
 	return nil
 }
 
-func encodeGetAgentTerminalResourcesResponse(response *ResourceSnapshot, w http.ResponseWriter, span trace.Span) error {
+func encodeGetSandboxExecResponse(response *SandboxExec, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))
@@ -195,7 +92,7 @@ func encodeGetAgentTerminalResourcesResponse(response *ResourceSnapshot, w http.
 	return nil
 }
 
-func encodeGetSandboxExecResponse(response *SandboxExec, w http.ResponseWriter, span trace.Span) error {
+func encodeGetSandboxExecResourcesResponse(response *ResourceSnapshot, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))
@@ -223,49 +120,7 @@ func encodeListAgentHooksResponse(response *AgentHookLogsResponse, w http.Respon
 	return nil
 }
 
-func encodeListAgentTerminalEventsResponse(response *AgentTerminalEventsResponse, w http.ResponseWriter, span trace.Span) error {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(200)
-	span.SetStatus(codes.Ok, http.StatusText(200))
-
-	e := new(jx.Encoder)
-	response.Encode(e)
-	if _, err := e.WriteTo(w); err != nil {
-		return errors.Wrap(err, "write")
-	}
-
-	return nil
-}
-
-func encodeListAgentTerminalLogsResponse(response *AgentTerminalLogsResponse, w http.ResponseWriter, span trace.Span) error {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(200)
-	span.SetStatus(codes.Ok, http.StatusText(200))
-
-	e := new(jx.Encoder)
-	response.Encode(e)
-	if _, err := e.WriteTo(w); err != nil {
-		return errors.Wrap(err, "write")
-	}
-
-	return nil
-}
-
-func encodeListAgentTerminalResourceHistoryResponse(response *ResourceHistoryResponse, w http.ResponseWriter, span trace.Span) error {
-	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(200)
-	span.SetStatus(codes.Ok, http.StatusText(200))
-
-	e := new(jx.Encoder)
-	response.Encode(e)
-	if _, err := e.WriteTo(w); err != nil {
-		return errors.Wrap(err, "write")
-	}
-
-	return nil
-}
-
-func encodeListAgentTerminalsResponse(response *AgentTerminalsResponse, w http.ResponseWriter, span trace.Span) error {
+func encodeListSandboxExecEventsResponse(response *SandboxExecEventsResponse, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))
@@ -293,7 +148,7 @@ func encodeListSandboxExecLogsResponse(response *SandboxExecLogsResponse, w http
 	return nil
 }
 
-func encodeListSandboxExecsResponse(response *SandboxExecsResponse, w http.ResponseWriter, span trace.Span) error {
+func encodeListSandboxExecResourceHistoryResponse(response *ResourceHistoryResponse, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))
@@ -307,7 +162,7 @@ func encodeListSandboxExecsResponse(response *SandboxExecsResponse, w http.Respo
 	return nil
 }
 
-func encodeStartAgentTerminalResponse(response *AgentTerminal, w http.ResponseWriter, span trace.Span) error {
+func encodeListSandboxExecsResponse(response *SandboxExecsResponse, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))
@@ -335,7 +190,7 @@ func encodeStartSandboxExecResponse(response *SandboxExec, w http.ResponseWriter
 	return nil
 }
 
-func encodeStreamAgentTerminalResourcesResponse(response StreamAgentTerminalResourcesOK, w http.ResponseWriter, span trace.Span) error {
+func encodeStreamSandboxExecResourcesResponse(response StreamSandboxExecResourcesOK, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))

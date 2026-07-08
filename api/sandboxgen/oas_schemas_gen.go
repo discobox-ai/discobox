@@ -105,479 +105,6 @@ func (s *AgentHookLogsResponse) SetHooks(val []AgentHookLog) {
 	s.Hooks = val
 }
 
-// Ref: #/components/schemas/AgentTerminal
-type AgentTerminal struct {
-	// Coding agent CLI selected for the terminal.
-	AgentId OptString `json:"agentId"`
-	// Command used to launch the coding-agent CLI.
-	Command   []string  `json:"command"`
-	CreatedAt time.Time `json:"createdAt"`
-	// Runtime error detail when the terminal failed.
-	Error OptString `json:"error"`
-	// Process exit code when the terminal has exited.
-	ExitCode OptInt64    `json:"exitCode"`
-	ExitedAt OptDateTime `json:"exitedAt"`
-	// Agent terminal runtime ID.
-	ID string `json:"id"`
-	// Sandbox-agent-owned terminal metadata.
-	Metadata OptAgentTerminalMetadata `json:"metadata"`
-	// Sandbox-local process ID when known.
-	Pid OptInt64 `json:"pid"`
-	// Whether this is the sandbox's primary terminal, launched by the sandbox-agent from the sandbox
-	// prompt. Set only by the sandbox-agent; it cannot be requested through terminal create.
-	Primary   OptBool     `json:"primary"`
-	StartedAt OptDateTime `json:"startedAt"`
-	// Current observed terminal runtime status.
-	Status AgentTerminalStatus `json:"status"`
-	// Systemd unit or scope name when known.
-	Unit OptString `json:"unit"`
-	// Working directory for the terminal process.
-	Workdir string `json:"workdir"`
-}
-
-// GetAgentId returns the value of AgentId.
-func (s *AgentTerminal) GetAgentId() OptString {
-	return s.AgentId
-}
-
-// GetCommand returns the value of Command.
-func (s *AgentTerminal) GetCommand() []string {
-	return s.Command
-}
-
-// GetCreatedAt returns the value of CreatedAt.
-func (s *AgentTerminal) GetCreatedAt() time.Time {
-	return s.CreatedAt
-}
-
-// GetError returns the value of Error.
-func (s *AgentTerminal) GetError() OptString {
-	return s.Error
-}
-
-// GetExitCode returns the value of ExitCode.
-func (s *AgentTerminal) GetExitCode() OptInt64 {
-	return s.ExitCode
-}
-
-// GetExitedAt returns the value of ExitedAt.
-func (s *AgentTerminal) GetExitedAt() OptDateTime {
-	return s.ExitedAt
-}
-
-// GetID returns the value of ID.
-func (s *AgentTerminal) GetID() string {
-	return s.ID
-}
-
-// GetMetadata returns the value of Metadata.
-func (s *AgentTerminal) GetMetadata() OptAgentTerminalMetadata {
-	return s.Metadata
-}
-
-// GetPid returns the value of Pid.
-func (s *AgentTerminal) GetPid() OptInt64 {
-	return s.Pid
-}
-
-// GetPrimary returns the value of Primary.
-func (s *AgentTerminal) GetPrimary() OptBool {
-	return s.Primary
-}
-
-// GetStartedAt returns the value of StartedAt.
-func (s *AgentTerminal) GetStartedAt() OptDateTime {
-	return s.StartedAt
-}
-
-// GetStatus returns the value of Status.
-func (s *AgentTerminal) GetStatus() AgentTerminalStatus {
-	return s.Status
-}
-
-// GetUnit returns the value of Unit.
-func (s *AgentTerminal) GetUnit() OptString {
-	return s.Unit
-}
-
-// GetWorkdir returns the value of Workdir.
-func (s *AgentTerminal) GetWorkdir() string {
-	return s.Workdir
-}
-
-// SetAgentId sets the value of AgentId.
-func (s *AgentTerminal) SetAgentId(val OptString) {
-	s.AgentId = val
-}
-
-// SetCommand sets the value of Command.
-func (s *AgentTerminal) SetCommand(val []string) {
-	s.Command = val
-}
-
-// SetCreatedAt sets the value of CreatedAt.
-func (s *AgentTerminal) SetCreatedAt(val time.Time) {
-	s.CreatedAt = val
-}
-
-// SetError sets the value of Error.
-func (s *AgentTerminal) SetError(val OptString) {
-	s.Error = val
-}
-
-// SetExitCode sets the value of ExitCode.
-func (s *AgentTerminal) SetExitCode(val OptInt64) {
-	s.ExitCode = val
-}
-
-// SetExitedAt sets the value of ExitedAt.
-func (s *AgentTerminal) SetExitedAt(val OptDateTime) {
-	s.ExitedAt = val
-}
-
-// SetID sets the value of ID.
-func (s *AgentTerminal) SetID(val string) {
-	s.ID = val
-}
-
-// SetMetadata sets the value of Metadata.
-func (s *AgentTerminal) SetMetadata(val OptAgentTerminalMetadata) {
-	s.Metadata = val
-}
-
-// SetPid sets the value of Pid.
-func (s *AgentTerminal) SetPid(val OptInt64) {
-	s.Pid = val
-}
-
-// SetPrimary sets the value of Primary.
-func (s *AgentTerminal) SetPrimary(val OptBool) {
-	s.Primary = val
-}
-
-// SetStartedAt sets the value of StartedAt.
-func (s *AgentTerminal) SetStartedAt(val OptDateTime) {
-	s.StartedAt = val
-}
-
-// SetStatus sets the value of Status.
-func (s *AgentTerminal) SetStatus(val AgentTerminalStatus) {
-	s.Status = val
-}
-
-// SetUnit sets the value of Unit.
-func (s *AgentTerminal) SetUnit(val OptString) {
-	s.Unit = val
-}
-
-// SetWorkdir sets the value of Workdir.
-func (s *AgentTerminal) SetWorkdir(val string) {
-	s.Workdir = val
-}
-
-// Ref: #/components/schemas/AgentTerminalEvent
-type AgentTerminalEvent struct {
-	CreatedAt time.Time `json:"createdAt"`
-	// Opaque event details.
-	Details jx.Raw `json:"details"`
-	// Event ID.
-	ID string `json:"id"`
-	// Human-readable event message.
-	Message OptString `json:"message"`
-	// Agent terminal runtime ID.
-	TerminalId OptString `json:"terminalId"`
-	// Event type.
-	Type string `json:"type"`
-}
-
-// GetCreatedAt returns the value of CreatedAt.
-func (s *AgentTerminalEvent) GetCreatedAt() time.Time {
-	return s.CreatedAt
-}
-
-// GetDetails returns the value of Details.
-func (s *AgentTerminalEvent) GetDetails() jx.Raw {
-	return s.Details
-}
-
-// GetID returns the value of ID.
-func (s *AgentTerminalEvent) GetID() string {
-	return s.ID
-}
-
-// GetMessage returns the value of Message.
-func (s *AgentTerminalEvent) GetMessage() OptString {
-	return s.Message
-}
-
-// GetTerminalId returns the value of TerminalId.
-func (s *AgentTerminalEvent) GetTerminalId() OptString {
-	return s.TerminalId
-}
-
-// GetType returns the value of Type.
-func (s *AgentTerminalEvent) GetType() string {
-	return s.Type
-}
-
-// SetCreatedAt sets the value of CreatedAt.
-func (s *AgentTerminalEvent) SetCreatedAt(val time.Time) {
-	s.CreatedAt = val
-}
-
-// SetDetails sets the value of Details.
-func (s *AgentTerminalEvent) SetDetails(val jx.Raw) {
-	s.Details = val
-}
-
-// SetID sets the value of ID.
-func (s *AgentTerminalEvent) SetID(val string) {
-	s.ID = val
-}
-
-// SetMessage sets the value of Message.
-func (s *AgentTerminalEvent) SetMessage(val OptString) {
-	s.Message = val
-}
-
-// SetTerminalId sets the value of TerminalId.
-func (s *AgentTerminalEvent) SetTerminalId(val OptString) {
-	s.TerminalId = val
-}
-
-// SetType sets the value of Type.
-func (s *AgentTerminalEvent) SetType(val string) {
-	s.Type = val
-}
-
-// Ref: #/components/schemas/AgentTerminalEventsResponse
-type AgentTerminalEventsResponse struct {
-	Events []AgentTerminalEvent `json:"events"`
-}
-
-// GetEvents returns the value of Events.
-func (s *AgentTerminalEventsResponse) GetEvents() []AgentTerminalEvent {
-	return s.Events
-}
-
-// SetEvents sets the value of Events.
-func (s *AgentTerminalEventsResponse) SetEvents(val []AgentTerminalEvent) {
-	s.Events = val
-}
-
-// Ref: #/components/schemas/AgentTerminalLogEntry
-type AgentTerminalLogEntry struct {
-	// Base64-encoded raw PTY bytes.
-	Data []byte `json:"data"`
-	// PTY direction for this chunk.
-	Stream AgentTerminalLogEntryStream `json:"stream"`
-	// Time this PTY input or output chunk was observed.
-	Timestamp time.Time `json:"timestamp"`
-}
-
-// GetData returns the value of Data.
-func (s *AgentTerminalLogEntry) GetData() []byte {
-	return s.Data
-}
-
-// GetStream returns the value of Stream.
-func (s *AgentTerminalLogEntry) GetStream() AgentTerminalLogEntryStream {
-	return s.Stream
-}
-
-// GetTimestamp returns the value of Timestamp.
-func (s *AgentTerminalLogEntry) GetTimestamp() time.Time {
-	return s.Timestamp
-}
-
-// SetData sets the value of Data.
-func (s *AgentTerminalLogEntry) SetData(val []byte) {
-	s.Data = val
-}
-
-// SetStream sets the value of Stream.
-func (s *AgentTerminalLogEntry) SetStream(val AgentTerminalLogEntryStream) {
-	s.Stream = val
-}
-
-// SetTimestamp sets the value of Timestamp.
-func (s *AgentTerminalLogEntry) SetTimestamp(val time.Time) {
-	s.Timestamp = val
-}
-
-// PTY direction for this chunk.
-type AgentTerminalLogEntryStream string
-
-const (
-	AgentTerminalLogEntryStreamInput  AgentTerminalLogEntryStream = "input"
-	AgentTerminalLogEntryStreamOutput AgentTerminalLogEntryStream = "output"
-)
-
-// AllValues returns all AgentTerminalLogEntryStream values.
-func (AgentTerminalLogEntryStream) AllValues() []AgentTerminalLogEntryStream {
-	return []AgentTerminalLogEntryStream{
-		AgentTerminalLogEntryStreamInput,
-		AgentTerminalLogEntryStreamOutput,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s AgentTerminalLogEntryStream) MarshalText() ([]byte, error) {
-	switch s {
-	case AgentTerminalLogEntryStreamInput:
-		return []byte(s), nil
-	case AgentTerminalLogEntryStreamOutput:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *AgentTerminalLogEntryStream) UnmarshalText(data []byte) error {
-	switch AgentTerminalLogEntryStream(data) {
-	case AgentTerminalLogEntryStreamInput:
-		*s = AgentTerminalLogEntryStreamInput
-		return nil
-	case AgentTerminalLogEntryStreamOutput:
-		*s = AgentTerminalLogEntryStreamOutput
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Ref: #/components/schemas/AgentTerminalLogsResponse
-type AgentTerminalLogsResponse struct {
-	Entries []AgentTerminalLogEntry `json:"entries"`
-}
-
-// GetEntries returns the value of Entries.
-func (s *AgentTerminalLogsResponse) GetEntries() []AgentTerminalLogEntry {
-	return s.Entries
-}
-
-// SetEntries sets the value of Entries.
-func (s *AgentTerminalLogsResponse) SetEntries(val []AgentTerminalLogEntry) {
-	s.Entries = val
-}
-
-// Sandbox-agent-owned terminal metadata.
-type AgentTerminalMetadata map[string]string
-
-func (s *AgentTerminalMetadata) init() AgentTerminalMetadata {
-	m := *s
-	if m == nil {
-		m = map[string]string{}
-		*s = m
-	}
-	return m
-}
-
-// Current observed terminal runtime status.
-type AgentTerminalStatus string
-
-const (
-	AgentTerminalStatusStarting AgentTerminalStatus = "starting"
-	AgentTerminalStatusRunning  AgentTerminalStatus = "running"
-	AgentTerminalStatusExited   AgentTerminalStatus = "exited"
-	AgentTerminalStatusFailed   AgentTerminalStatus = "failed"
-	AgentTerminalStatusLost     AgentTerminalStatus = "lost"
-)
-
-// AllValues returns all AgentTerminalStatus values.
-func (AgentTerminalStatus) AllValues() []AgentTerminalStatus {
-	return []AgentTerminalStatus{
-		AgentTerminalStatusStarting,
-		AgentTerminalStatusRunning,
-		AgentTerminalStatusExited,
-		AgentTerminalStatusFailed,
-		AgentTerminalStatusLost,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s AgentTerminalStatus) MarshalText() ([]byte, error) {
-	switch s {
-	case AgentTerminalStatusStarting:
-		return []byte(s), nil
-	case AgentTerminalStatusRunning:
-		return []byte(s), nil
-	case AgentTerminalStatusExited:
-		return []byte(s), nil
-	case AgentTerminalStatusFailed:
-		return []byte(s), nil
-	case AgentTerminalStatusLost:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *AgentTerminalStatus) UnmarshalText(data []byte) error {
-	switch AgentTerminalStatus(data) {
-	case AgentTerminalStatusStarting:
-		*s = AgentTerminalStatusStarting
-		return nil
-	case AgentTerminalStatusRunning:
-		*s = AgentTerminalStatusRunning
-		return nil
-	case AgentTerminalStatusExited:
-		*s = AgentTerminalStatusExited
-		return nil
-	case AgentTerminalStatusFailed:
-		*s = AgentTerminalStatusFailed
-		return nil
-	case AgentTerminalStatusLost:
-		*s = AgentTerminalStatusLost
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Ref: #/components/schemas/AgentTerminalsResponse
-type AgentTerminalsResponse struct {
-	Terminals []AgentTerminal `json:"terminals"`
-}
-
-// GetTerminals returns the value of Terminals.
-func (s *AgentTerminalsResponse) GetTerminals() []AgentTerminal {
-	return s.Terminals
-}
-
-// SetTerminals sets the value of Terminals.
-func (s *AgentTerminalsResponse) SetTerminals(val []AgentTerminal) {
-	s.Terminals = val
-}
-
-// AttachAgentTerminalSwitchingProtocols is response for AttachAgentTerminal operation.
-type AttachAgentTerminalSwitchingProtocols struct {
-	Connection OptString
-	Upgrade    OptString
-}
-
-// GetConnection returns the value of Connection.
-func (s *AttachAgentTerminalSwitchingProtocols) GetConnection() OptString {
-	return s.Connection
-}
-
-// GetUpgrade returns the value of Upgrade.
-func (s *AttachAgentTerminalSwitchingProtocols) GetUpgrade() OptString {
-	return s.Upgrade
-}
-
-// SetConnection sets the value of Connection.
-func (s *AttachAgentTerminalSwitchingProtocols) SetConnection(val OptString) {
-	s.Connection = val
-}
-
-// SetUpgrade sets the value of Upgrade.
-func (s *AttachAgentTerminalSwitchingProtocols) SetUpgrade(val OptString) {
-	s.Upgrade = val
-}
-
 // AttachSandboxExecSwitchingProtocols is response for AttachSandboxExec operation.
 type AttachSandboxExecSwitchingProtocols struct {
 	Connection OptString
@@ -604,168 +131,18 @@ func (s *AttachSandboxExecSwitchingProtocols) SetUpgrade(val OptString) {
 	s.Upgrade = val
 }
 
-// Ref: #/components/schemas/CreateAgentTerminalRequest
-type CreateAgentTerminalRequest struct {
-	// Coding agent CLI to start. Defaults to the sandbox configured agent when omitted.
+// Create an exec. Provide command for a plain exec, or agentId (with optional args) to run a coding
+// agent in terminal mode.
+// Ref: #/components/schemas/CreateSandboxExecRequest
+type CreateSandboxExecRequest struct {
+	// Coding agent CLI to start in terminal mode. Defaults to the sandbox configured agent when omitted.
+	// Mutually exclusive with command.
 	AgentId OptString `json:"agentId"`
-	// Additional command arguments for the coding-agent CLI.
+	// Additional command arguments appended to the resolved agent command in terminal mode.
 	Args []string `json:"args"`
 	// Initial PTY columns when a PTY is allocated.
 	Cols OptInt `json:"cols"`
-	// Additional environment variables for the terminal process.
-	Env OptCreateAgentTerminalRequestEnv `json:"env"`
-	// Caller-supplied metadata to associate with the terminal.
-	Metadata OptCreateAgentTerminalRequestMetadata `json:"metadata"`
-	// Initial PTY rows when a PTY is allocated.
-	Rows OptInt `json:"rows"`
-	// Working directory for the terminal process.
-	Workdir OptString `json:"workdir"`
-}
-
-// GetAgentId returns the value of AgentId.
-func (s *CreateAgentTerminalRequest) GetAgentId() OptString {
-	return s.AgentId
-}
-
-// GetArgs returns the value of Args.
-func (s *CreateAgentTerminalRequest) GetArgs() []string {
-	return s.Args
-}
-
-// GetCols returns the value of Cols.
-func (s *CreateAgentTerminalRequest) GetCols() OptInt {
-	return s.Cols
-}
-
-// GetEnv returns the value of Env.
-func (s *CreateAgentTerminalRequest) GetEnv() OptCreateAgentTerminalRequestEnv {
-	return s.Env
-}
-
-// GetMetadata returns the value of Metadata.
-func (s *CreateAgentTerminalRequest) GetMetadata() OptCreateAgentTerminalRequestMetadata {
-	return s.Metadata
-}
-
-// GetRows returns the value of Rows.
-func (s *CreateAgentTerminalRequest) GetRows() OptInt {
-	return s.Rows
-}
-
-// GetWorkdir returns the value of Workdir.
-func (s *CreateAgentTerminalRequest) GetWorkdir() OptString {
-	return s.Workdir
-}
-
-// SetAgentId sets the value of AgentId.
-func (s *CreateAgentTerminalRequest) SetAgentId(val OptString) {
-	s.AgentId = val
-}
-
-// SetArgs sets the value of Args.
-func (s *CreateAgentTerminalRequest) SetArgs(val []string) {
-	s.Args = val
-}
-
-// SetCols sets the value of Cols.
-func (s *CreateAgentTerminalRequest) SetCols(val OptInt) {
-	s.Cols = val
-}
-
-// SetEnv sets the value of Env.
-func (s *CreateAgentTerminalRequest) SetEnv(val OptCreateAgentTerminalRequestEnv) {
-	s.Env = val
-}
-
-// SetMetadata sets the value of Metadata.
-func (s *CreateAgentTerminalRequest) SetMetadata(val OptCreateAgentTerminalRequestMetadata) {
-	s.Metadata = val
-}
-
-// SetRows sets the value of Rows.
-func (s *CreateAgentTerminalRequest) SetRows(val OptInt) {
-	s.Rows = val
-}
-
-// SetWorkdir sets the value of Workdir.
-func (s *CreateAgentTerminalRequest) SetWorkdir(val OptString) {
-	s.Workdir = val
-}
-
-// Additional environment variables for the terminal process.
-type CreateAgentTerminalRequestEnv map[string]string
-
-func (s *CreateAgentTerminalRequestEnv) init() CreateAgentTerminalRequestEnv {
-	m := *s
-	if m == nil {
-		m = map[string]string{}
-		*s = m
-	}
-	return m
-}
-
-// Caller-supplied metadata to associate with the terminal.
-type CreateAgentTerminalRequestMetadata map[string]string
-
-func (s *CreateAgentTerminalRequestMetadata) init() CreateAgentTerminalRequestMetadata {
-	m := *s
-	if m == nil {
-		m = map[string]string{}
-		*s = m
-	}
-	return m
-}
-
-// Ref: #/components/schemas/CreateAgentTerminalResponse
-type CreateAgentTerminalResponse struct {
-	Terminal AgentTerminal `json:"terminal"`
-}
-
-// GetTerminal returns the value of Terminal.
-func (s *CreateAgentTerminalResponse) GetTerminal() AgentTerminal {
-	return s.Terminal
-}
-
-// SetTerminal sets the value of Terminal.
-func (s *CreateAgentTerminalResponse) SetTerminal(val AgentTerminal) {
-	s.Terminal = val
-}
-
-func (*CreateAgentTerminalResponse) createAgentTerminalRes() {}
-
-// CreateAgentTerminalSwitchingProtocols is response for CreateAgentTerminal operation.
-type CreateAgentTerminalSwitchingProtocols struct {
-	Connection OptString
-	Upgrade    OptString
-}
-
-// GetConnection returns the value of Connection.
-func (s *CreateAgentTerminalSwitchingProtocols) GetConnection() OptString {
-	return s.Connection
-}
-
-// GetUpgrade returns the value of Upgrade.
-func (s *CreateAgentTerminalSwitchingProtocols) GetUpgrade() OptString {
-	return s.Upgrade
-}
-
-// SetConnection sets the value of Connection.
-func (s *CreateAgentTerminalSwitchingProtocols) SetConnection(val OptString) {
-	s.Connection = val
-}
-
-// SetUpgrade sets the value of Upgrade.
-func (s *CreateAgentTerminalSwitchingProtocols) SetUpgrade(val OptString) {
-	s.Upgrade = val
-}
-
-func (*CreateAgentTerminalSwitchingProtocols) createAgentTerminalRes() {}
-
-// Ref: #/components/schemas/CreateSandboxExecRequest
-type CreateSandboxExecRequest struct {
-	// Initial PTY columns when a PTY is allocated.
-	Cols OptInt `json:"cols"`
-	// Command argv to execute in the sandbox.
+	// Command argv to execute in the sandbox. Mutually exclusive with agentId.
 	Command []string `json:"command"`
 	// Additional environment variables for the exec process.
 	Env OptCreateSandboxExecRequestEnv `json:"env"`
@@ -779,6 +156,16 @@ type CreateSandboxExecRequest struct {
 	User OptSandboxUser `json:"user"`
 	// Working directory for the exec process.
 	Workdir OptString `json:"workdir"`
+}
+
+// GetAgentId returns the value of AgentId.
+func (s *CreateSandboxExecRequest) GetAgentId() OptString {
+	return s.AgentId
+}
+
+// GetArgs returns the value of Args.
+func (s *CreateSandboxExecRequest) GetArgs() []string {
+	return s.Args
 }
 
 // GetCols returns the value of Cols.
@@ -819,6 +206,16 @@ func (s *CreateSandboxExecRequest) GetUser() OptSandboxUser {
 // GetWorkdir returns the value of Workdir.
 func (s *CreateSandboxExecRequest) GetWorkdir() OptString {
 	return s.Workdir
+}
+
+// SetAgentId sets the value of AgentId.
+func (s *CreateSandboxExecRequest) SetAgentId(val OptString) {
+	s.AgentId = val
+}
+
+// SetArgs sets the value of Args.
+func (s *CreateSandboxExecRequest) SetArgs(val []string) {
+	s.Args = val
 }
 
 // SetCols sets the value of Cols.
@@ -900,8 +297,8 @@ func (s *CreateSandboxExecResponse) SetExec(val SandboxExec) {
 	s.Exec = val
 }
 
-// DeleteAgentTerminalNoContent is response for DeleteAgentTerminal operation.
-type DeleteAgentTerminalNoContent struct{}
+// DeleteSandboxExecNoContent is response for DeleteSandboxExec operation.
+type DeleteSandboxExecNoContent struct{}
 
 // Ref: #/components/schemas/ErrorResponse
 type ErrorResponse struct {
@@ -945,52 +342,6 @@ func (s *ErrorResponseStatusCode) SetResponse(val ErrorResponse) {
 	s.Response = val
 }
 
-// NewOptAgentTerminalMetadata returns new OptAgentTerminalMetadata with value set to v.
-func NewOptAgentTerminalMetadata(v AgentTerminalMetadata) OptAgentTerminalMetadata {
-	return OptAgentTerminalMetadata{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptAgentTerminalMetadata is optional AgentTerminalMetadata.
-type OptAgentTerminalMetadata struct {
-	Value AgentTerminalMetadata
-	Set   bool
-}
-
-// IsSet returns true if OptAgentTerminalMetadata was set.
-func (o OptAgentTerminalMetadata) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptAgentTerminalMetadata) Reset() {
-	var v AgentTerminalMetadata
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptAgentTerminalMetadata) SetTo(v AgentTerminalMetadata) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptAgentTerminalMetadata) Get() (v AgentTerminalMetadata, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptAgentTerminalMetadata) Or(d AgentTerminalMetadata) AgentTerminalMetadata {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptBool returns new OptBool with value set to v.
 func NewOptBool(v bool) OptBool {
 	return OptBool{
@@ -1031,98 +382,6 @@ func (o OptBool) Get() (v bool, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptBool) Or(d bool) bool {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptCreateAgentTerminalRequestEnv returns new OptCreateAgentTerminalRequestEnv with value set to v.
-func NewOptCreateAgentTerminalRequestEnv(v CreateAgentTerminalRequestEnv) OptCreateAgentTerminalRequestEnv {
-	return OptCreateAgentTerminalRequestEnv{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptCreateAgentTerminalRequestEnv is optional CreateAgentTerminalRequestEnv.
-type OptCreateAgentTerminalRequestEnv struct {
-	Value CreateAgentTerminalRequestEnv
-	Set   bool
-}
-
-// IsSet returns true if OptCreateAgentTerminalRequestEnv was set.
-func (o OptCreateAgentTerminalRequestEnv) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptCreateAgentTerminalRequestEnv) Reset() {
-	var v CreateAgentTerminalRequestEnv
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptCreateAgentTerminalRequestEnv) SetTo(v CreateAgentTerminalRequestEnv) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptCreateAgentTerminalRequestEnv) Get() (v CreateAgentTerminalRequestEnv, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptCreateAgentTerminalRequestEnv) Or(d CreateAgentTerminalRequestEnv) CreateAgentTerminalRequestEnv {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptCreateAgentTerminalRequestMetadata returns new OptCreateAgentTerminalRequestMetadata with value set to v.
-func NewOptCreateAgentTerminalRequestMetadata(v CreateAgentTerminalRequestMetadata) OptCreateAgentTerminalRequestMetadata {
-	return OptCreateAgentTerminalRequestMetadata{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptCreateAgentTerminalRequestMetadata is optional CreateAgentTerminalRequestMetadata.
-type OptCreateAgentTerminalRequestMetadata struct {
-	Value CreateAgentTerminalRequestMetadata
-	Set   bool
-}
-
-// IsSet returns true if OptCreateAgentTerminalRequestMetadata was set.
-func (o OptCreateAgentTerminalRequestMetadata) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptCreateAgentTerminalRequestMetadata) Reset() {
-	var v CreateAgentTerminalRequestMetadata
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptCreateAgentTerminalRequestMetadata) SetTo(v CreateAgentTerminalRequestMetadata) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptCreateAgentTerminalRequestMetadata) Get() (v CreateAgentTerminalRequestMetadata, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptCreateAgentTerminalRequestMetadata) Or(d CreateAgentTerminalRequestMetadata) CreateAgentTerminalRequestMetadata {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -1612,6 +871,8 @@ func (s *ResourceSnapshot) SetTerminalId(val string) {
 
 // Ref: #/components/schemas/SandboxExec
 type SandboxExec struct {
+	// Coding agent this exec runs, when created in agent (terminal) mode.
+	AgentId OptString `json:"agentId"`
 	// Command argv executed in the sandbox.
 	Command   []string  `json:"command"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -1627,7 +888,9 @@ type SandboxExec struct {
 	// Caller-supplied exec metadata.
 	Metadata OptSandboxExecMetadata `json:"metadata"`
 	// Sandbox-local process ID when known.
-	Pid       OptInt64    `json:"pid"`
+	Pid OptInt64 `json:"pid"`
+	// Whether this is the sandbox's primary agent terminal.
+	Primary   OptBool     `json:"primary"`
 	StartedAt OptDateTime `json:"startedAt"`
 	// Current observed exec runtime status.
 	Status SandboxExecStatus `json:"status"`
@@ -1639,6 +902,11 @@ type SandboxExec struct {
 	User OptSandboxUser `json:"user"`
 	// Working directory for the exec process.
 	Workdir string `json:"workdir"`
+}
+
+// GetAgentId returns the value of AgentId.
+func (s *SandboxExec) GetAgentId() OptString {
+	return s.AgentId
 }
 
 // GetCommand returns the value of Command.
@@ -1686,6 +954,11 @@ func (s *SandboxExec) GetPid() OptInt64 {
 	return s.Pid
 }
 
+// GetPrimary returns the value of Primary.
+func (s *SandboxExec) GetPrimary() OptBool {
+	return s.Primary
+}
+
 // GetStartedAt returns the value of StartedAt.
 func (s *SandboxExec) GetStartedAt() OptDateTime {
 	return s.StartedAt
@@ -1714,6 +987,11 @@ func (s *SandboxExec) GetUser() OptSandboxUser {
 // GetWorkdir returns the value of Workdir.
 func (s *SandboxExec) GetWorkdir() string {
 	return s.Workdir
+}
+
+// SetAgentId sets the value of AgentId.
+func (s *SandboxExec) SetAgentId(val OptString) {
+	s.AgentId = val
 }
 
 // SetCommand sets the value of Command.
@@ -1761,6 +1039,11 @@ func (s *SandboxExec) SetPid(val OptInt64) {
 	s.Pid = val
 }
 
+// SetPrimary sets the value of Primary.
+func (s *SandboxExec) SetPrimary(val OptBool) {
+	s.Primary = val
+}
+
 // SetStartedAt sets the value of StartedAt.
 func (s *SandboxExec) SetStartedAt(val OptDateTime) {
 	s.StartedAt = val
@@ -1801,6 +1084,92 @@ func (s *SandboxExecEnv) init() SandboxExecEnv {
 		*s = m
 	}
 	return m
+}
+
+// Ref: #/components/schemas/SandboxExecEvent
+type SandboxExecEvent struct {
+	CreatedAt time.Time `json:"createdAt"`
+	// Structured event detail payload.
+	Details jx.Raw    `json:"details"`
+	ExecId  OptString `json:"execId"`
+	ID      string    `json:"id"`
+	Message OptString `json:"message"`
+	Type    string    `json:"type"`
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *SandboxExecEvent) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetDetails returns the value of Details.
+func (s *SandboxExecEvent) GetDetails() jx.Raw {
+	return s.Details
+}
+
+// GetExecId returns the value of ExecId.
+func (s *SandboxExecEvent) GetExecId() OptString {
+	return s.ExecId
+}
+
+// GetID returns the value of ID.
+func (s *SandboxExecEvent) GetID() string {
+	return s.ID
+}
+
+// GetMessage returns the value of Message.
+func (s *SandboxExecEvent) GetMessage() OptString {
+	return s.Message
+}
+
+// GetType returns the value of Type.
+func (s *SandboxExecEvent) GetType() string {
+	return s.Type
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *SandboxExecEvent) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetDetails sets the value of Details.
+func (s *SandboxExecEvent) SetDetails(val jx.Raw) {
+	s.Details = val
+}
+
+// SetExecId sets the value of ExecId.
+func (s *SandboxExecEvent) SetExecId(val OptString) {
+	s.ExecId = val
+}
+
+// SetID sets the value of ID.
+func (s *SandboxExecEvent) SetID(val string) {
+	s.ID = val
+}
+
+// SetMessage sets the value of Message.
+func (s *SandboxExecEvent) SetMessage(val OptString) {
+	s.Message = val
+}
+
+// SetType sets the value of Type.
+func (s *SandboxExecEvent) SetType(val string) {
+	s.Type = val
+}
+
+// Ref: #/components/schemas/SandboxExecEventsResponse
+type SandboxExecEventsResponse struct {
+	Events []SandboxExecEvent `json:"events"`
+}
+
+// GetEvents returns the value of Events.
+func (s *SandboxExecEventsResponse) GetEvents() []SandboxExecEvent {
+	return s.Events
+}
+
+// SetEvents sets the value of Events.
+func (s *SandboxExecEventsResponse) SetEvents(val []SandboxExecEvent) {
+	s.Events = val
 }
 
 // Ref: #/components/schemas/SandboxExecLogEntry
@@ -2056,14 +1425,14 @@ func (s *SandboxUser) SetUID(val OptInt64) {
 	s.UID = val
 }
 
-type StreamAgentTerminalResourcesOK struct {
+type StreamSandboxExecResourcesOK struct {
 	Data io.Reader
 }
 
 // Read reads data from the Data reader.
 //
 // Kept to satisfy the io.Reader interface.
-func (s StreamAgentTerminalResourcesOK) Read(p []byte) (n int, err error) {
+func (s StreamSandboxExecResourcesOK) Read(p []byte) (n int, err error) {
 	if s.Data == nil {
 		return 0, io.EOF
 	}

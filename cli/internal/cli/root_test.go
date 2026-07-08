@@ -375,11 +375,11 @@ func TestTerminalListUsesTopLevelCommand(t *testing.T) {
 	var requested bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requested = true
-		if got := r.URL.Path; got != "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals" {
-			t.Fatalf("path = %q, want sandbox terminal path", got)
+		if got := r.URL.Path; got != "/api/projects/project-1/sandboxes/sandbox-1/execs" {
+			t.Fatalf("path = %q, want sandbox exec path", got)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"terminals":[]}`))
+		_, _ = w.Write([]byte(`{"execs":[]}`))
 	}))
 	t.Cleanup(server.Close)
 
@@ -405,16 +405,16 @@ func TestTerminalCreateFallsBackWhenStartResponseIsTruncated(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/execs":
 			created = true
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"terminal":{"id":"` + terminalID + `","status":"starting","command":["/bin/bash"],"workdir":"/workspace","createdAt":"2026-01-01T00:00:00Z"}}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals/"+terminalID+"/start":
+			_, _ = w.Write([]byte(`{"exec":{"id":"` + terminalID + `","status":"starting","command":["/bin/bash"],"workdir":"/workspace","tty":true,"createdAt":"2026-01-01T00:00:00Z"}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/execs/"+terminalID+"/start":
 			started = true
 			_, _ = w.Write([]byte(`{`))
-		case r.Method == http.MethodGet && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals":
+		case r.Method == http.MethodGet && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/execs/"+terminalID:
 			listed = true
-			_, _ = w.Write([]byte(`{"terminals":[{"id":"` + terminalID + `","status":"running","command":["/bin/bash"],"workdir":"/workspace","createdAt":"2026-01-01T00:00:00Z"}]}`))
+			_, _ = w.Write([]byte(`{"id":"` + terminalID + `","status":"running","command":["/bin/bash"],"workdir":"/workspace","tty":true,"createdAt":"2026-01-01T00:00:00Z"}`))
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
@@ -440,7 +440,7 @@ func TestTerminalCreateFallsBackWhenStartResponseIsTruncated(t *testing.T) {
 
 func TestTerminalCreateTextPlainErrorIncludesBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals" {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/projects/project-1/sandboxes/sandbox-1/execs" {
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -459,7 +459,7 @@ func TestTerminalCreateTextPlainErrorIncludesBody(t *testing.T) {
 	if err == nil {
 		t.Fatalf("execute terminal create error = nil")
 	}
-	if got := err.Error(); !strings.Contains(got, "409 Conflict") || !strings.Contains(got, "sandbox worker is not assigned") {
+	if got := err.Error(); !strings.Contains(got, "409") || !strings.Contains(got, "sandbox worker is not assigned") {
 		t.Fatalf("execute terminal create error = %q", got)
 	}
 }
@@ -471,7 +471,7 @@ func TestTerminalCreateEnvSupportsShortFlagAndShellLookup(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
-		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals":
+		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/execs":
 			var body struct {
 				Env map[string]string `json:"env"`
 			}
@@ -480,8 +480,8 @@ func TestTerminalCreateEnvSupportsShortFlagAndShellLookup(t *testing.T) {
 			}
 			env = body.Env
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"terminal":{"id":"` + terminalID + `","status":"starting","command":["/bin/bash"],"workdir":"/workspace","createdAt":"2026-01-01T00:00:00Z"}}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals/"+terminalID+"/start":
+			_, _ = w.Write([]byte(`{"exec":{"id":"` + terminalID + `","status":"starting","command":["/bin/bash"],"workdir":"/workspace","tty":true,"createdAt":"2026-01-01T00:00:00Z"}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/api/projects/project-1/sandboxes/sandbox-1/execs/"+terminalID+"/start":
 			_, _ = w.Write([]byte(`{"id":"` + terminalID + `","status":"running","command":["/bin/bash"],"workdir":"/workspace","createdAt":"2026-01-01T00:00:00Z"}`))
 		default:
 			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)

@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -104,7 +103,21 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+	// One exec runtime backs both plain execs and terminals.
+	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
+		WorkingRoot:    cfg.WorkingRoot,
+		DefaultWorkdir: cfg.ExecDefaults.Workdir,
+		DefaultUser:    execDefaultUser(cfg.ExecDefaults),
+		RuntimeDir:     cfg.RuntimeDir,
+		Env:            cfg.Env,
+		Units:          cfg.ExecUnitManager,
+		Audit:          execAudit,
+	})
+	if err != nil {
+		return nil, nil, nil, nil, err
+	}
 	manager, err := terminal.NewService(terminal.ServiceConfig{
+		Execs:               execManager,
 		ResolvedAgentConfig: cfg.ResolvedAgentConfig,
 		Agents:              cfg.Agents,
 		WorkingRoot:         cfg.WorkingRoot,
@@ -113,25 +126,12 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		ExecDefaults:        cfg.ExecDefaults,
 		Units:               cfg.ExecUnitManager,
 		Installer:           cfg.Installer,
-		Audit:               execAudit,
 		PrimaryState:        localStore,
 	})
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
 	manager.SetHookSocketPath(agenthooks.SocketPath(cfg.RuntimeDir))
-	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
-		WorkingRoot:    cfg.WorkingRoot,
-		DefaultWorkdir: cfg.ExecDefaults.Workdir,
-		DefaultUser:    execDefaultUser(cfg.ExecDefaults),
-		RuntimeDir:     filepath.Join(cfg.RuntimeDir, "execs"),
-		Env:            cfg.Env,
-		Units:          cfg.ExecUnitManager,
-		Audit:          execAudit,
-	})
-	if err != nil {
-		return nil, nil, nil, nil, err
-	}
 	handler := &handler{
 		identity:          cfg.Identity,
 		terminals:         manager,
@@ -162,12 +162,6 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 	})
 	router.Group(func(protected chi.Router) {
 		protected.Use(authenticator.Middleware)
-		protected.Post("/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/attach", func(w http.ResponseWriter, r *http.Request) {
-			handler.attachHTTP(w, r, chi.URLParam(r, "terminalId"))
-		})
-		protected.Post("/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals/{terminalId}/start", func(w http.ResponseWriter, r *http.Request) {
-			handler.startTerminalHTTP(w, r, chi.URLParam(r, "terminalId"))
-		})
 		protected.Get("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach", func(w http.ResponseWriter, r *http.Request) {
 			handler.attachExecHTTP(w, r, chi.URLParam(r, "execId"))
 		})
@@ -216,7 +210,6 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 			logger.Error("launch primary terminal", "error", err)
 		}
 	}()
-	go reconcileLoop(ctx, logger, manager)
 	go execReconcileLoop(ctx, logger, execManager)
 	go func() {
 		if err := agenthooks.Serve(ctx, agenthooks.SocketPath(cfg.RuntimeDir), localStore); err != nil && !errors.Is(err, context.Canceled) {

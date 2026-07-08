@@ -164,15 +164,12 @@ func routeIdentity(path string) (string, string, bool) {
 }
 
 func requiredRequestScope(r *http.Request) string {
-	if strings.Contains(r.URL.Path, "/agent-terminals") || strings.Contains(r.URL.Path, "/agent-hooks") {
-		switch r.Method {
-		case http.MethodGet:
-			return ScopeTerminalRead
-		case http.MethodPost, http.MethodDelete:
-			return ScopeTerminalWrite
-		default:
-			return ""
+	// Agent hooks are read-only audit data tied to execs (agent terminals).
+	if strings.Contains(r.URL.Path, "/agent-hooks") {
+		if r.Method == http.MethodGet {
+			return ScopeExecRead
 		}
+		return ""
 	}
 	if strings.Contains(r.URL.Path, "/execs") {
 		if strings.HasSuffix(r.URL.Path, "/attach") {

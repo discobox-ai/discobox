@@ -35,44 +35,7 @@ func TestHealthDoesNotRequireAuth(t *testing.T) {
 	}
 }
 
-func TestListAgentTerminalsRequiresReadScope(t *testing.T) {
-	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
-	if err != nil {
-		t.Fatalf("new router: %v", err)
-	}
-
-	resp := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals", nil)
-	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeTerminalRead))
-	router.ServeHTTP(resp, req)
-
-	if resp.Code != http.StatusOK {
-		t.Fatalf("GET agent terminals status = %d, body = %s", resp.Code, resp.Body.String())
-	}
-	if body := resp.Body.String(); body != `{"terminals":[]}` {
-		t.Fatalf("body = %q", body)
-	}
-}
-
-func TestListAgentTerminalsRejectsWriteOnlyScope(t *testing.T) {
-	publicKey, signToken := sandboxAgentTestSigner(t)
-	router, err := NewRouter(testConfig(publicKey))
-	if err != nil {
-		t.Fatalf("new router: %v", err)
-	}
-
-	resp := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals", nil)
-	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeTerminalWrite))
-	router.ServeHTTP(resp, req)
-
-	if resp.Code != http.StatusForbidden {
-		t.Fatalf("GET agent terminals status = %d, body = %s", resp.Code, resp.Body.String())
-	}
-}
-
-func TestListAgentHooksRequiresTerminalReadScope(t *testing.T) {
+func TestListAgentHooksRequiresExecReadScope(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
 	router, err := NewRouter(testConfig(publicKey))
 	if err != nil {
@@ -81,7 +44,7 @@ func TestListAgentHooksRequiresTerminalReadScope(t *testing.T) {
 
 	resp := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/agent-hooks", nil)
-	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeTerminalRead))
+	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeExecRead))
 	router.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusOK {
@@ -101,7 +64,7 @@ func TestListAgentHooksRejectsWriteOnlyScope(t *testing.T) {
 
 	resp := httptest.NewRecorder()
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/agent-hooks", nil)
-	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeTerminalWrite))
+	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeExecWrite))
 	router.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusForbidden {
@@ -179,8 +142,8 @@ func TestCreateAgentTerminalRequiresWriteScope(t *testing.T) {
 	}
 
 	resp := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals", strings.NewReader(`{}`))
-	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeTerminalWrite))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/projects/project-1/sandboxes/sandbox-1/execs", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeExecWrite))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(resp, req)
 
@@ -203,8 +166,8 @@ func TestTokenRouteIdentityMustMatch(t *testing.T) {
 	}
 
 	resp := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/other-sandbox/agent-terminals", nil)
-	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeTerminalRead))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/other-sandbox/execs", nil)
+	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeExecRead))
 	router.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusForbidden {
@@ -229,25 +192,25 @@ func TestAgentTerminalEventsAndResources(t *testing.T) {
 	}
 
 	createResp := httptest.NewRecorder()
-	createReq := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals", strings.NewReader(`{}`))
-	createReq.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeTerminalWrite))
+	createReq := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/projects/project-1/sandboxes/sandbox-1/execs", strings.NewReader(`{}`))
+	createReq.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeExecWrite))
 	createReq.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(createResp, createReq)
 	if createResp.Code != http.StatusCreated {
 		t.Fatalf("POST terminal status = %d, body = %s", createResp.Code, createResp.Body.String())
 	}
 	var created struct {
-		Terminal struct {
+		Exec struct {
 			ID string `json:"id"`
-		} `json:"terminal"`
+		} `json:"exec"`
 	}
 	if err := json.Unmarshal(createResp.Body.Bytes(), &created); err != nil {
 		t.Fatalf("decode create response: %v", err)
 	}
 
 	eventsResp := httptest.NewRecorder()
-	eventsReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals/"+created.Terminal.ID+"/events?limit=10", nil)
-	eventsReq.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeTerminalRead))
+	eventsReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/execs/"+created.Exec.ID+"/events?limit=10", nil)
+	eventsReq.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeExecRead))
 	router.ServeHTTP(eventsResp, eventsReq)
 	if eventsResp.Code != http.StatusOK {
 		t.Fatalf("GET events status = %d, body = %s", eventsResp.Code, eventsResp.Body.String())
@@ -257,24 +220,24 @@ func TestAgentTerminalEventsAndResources(t *testing.T) {
 	}
 
 	resourceResp := httptest.NewRecorder()
-	resourceReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals/"+created.Terminal.ID+"/resources", nil)
-	resourceReq.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeTerminalRead))
+	resourceReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/execs/"+created.Exec.ID+"/resources", nil)
+	resourceReq.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeExecRead))
 	router.ServeHTTP(resourceResp, resourceReq)
 	if resourceResp.Code != http.StatusOK {
 		t.Fatalf("GET resources status = %d, body = %s", resourceResp.Code, resourceResp.Body.String())
 	}
-	if body := resourceResp.Body.String(); !strings.Contains(body, `"terminalId":"`+created.Terminal.ID+`"`) || !strings.Contains(body, `"data":`) {
+	if body := resourceResp.Body.String(); !strings.Contains(body, `"terminalId":"`+created.Exec.ID+`"`) || !strings.Contains(body, `"data":`) {
 		t.Fatalf("resource body = %s", body)
 	}
 
 	historyResp := httptest.NewRecorder()
-	historyReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals/"+created.Terminal.ID+"/resources/history?limit=1", nil)
-	historyReq.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeTerminalRead))
+	historyReq := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/execs/"+created.Exec.ID+"/resources/history?limit=1", nil)
+	historyReq.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeExecRead))
 	router.ServeHTTP(historyResp, historyReq)
 	if historyResp.Code != http.StatusOK {
 		t.Fatalf("GET resource history status = %d, body = %s", historyResp.Code, historyResp.Body.String())
 	}
-	if body := historyResp.Body.String(); !strings.Contains(body, `"snapshots":[`) || !strings.Contains(body, `"terminalId":"`+created.Terminal.ID+`"`) {
+	if body := historyResp.Body.String(); !strings.Contains(body, `"snapshots":[`) || !strings.Contains(body, `"terminalId":"`+created.Exec.ID+`"`) {
 		t.Fatalf("history body = %s", body)
 	}
 }
@@ -294,14 +257,25 @@ func TestAgentTerminalResourceStreamReplaysHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
+	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
+		WorkingRoot: cfg.WorkingRoot,
+		RuntimeDir:  cfg.RuntimeDir,
+		Units:       runner,
+		Audit:       st,
+		ImageConfig: config.ImageConfig{Env: map[string]string{"PATH": "/usr/bin"}},
+	})
+	if err != nil {
+		t.Fatalf("new exec manager: %v", err)
+	}
 	created, err := terminal.NewService(terminal.ServiceConfig{
+		Execs:               execManager,
 		ResolvedAgentConfig: cfg.ResolvedAgentConfig,
 		Agents:              cfg.Agents,
 		WorkingRoot:         cfg.WorkingRoot,
 		RuntimeDir:          cfg.RuntimeDir,
+		ImageConfig:         config.ImageConfig{Env: map[string]string{"PATH": "/usr/bin"}},
 		Units:               runner,
 		Installer:           cfg.Installer,
-		Audit:               st,
 	})
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
@@ -322,8 +296,8 @@ func TestAgentTerminalResourceStreamReplaysHistory(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	resp := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/agent-terminals/"+term.ID+"/resources/stream", nil)
-	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeTerminalRead))
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/execs/"+term.ID+"/resources/stream", nil)
+	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeExecRead))
 	router.ServeHTTP(resp, req)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("GET stream status = %d, body = %s", resp.Code, resp.Body.String())

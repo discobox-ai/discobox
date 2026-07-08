@@ -7,9 +7,10 @@
 
 A **Stack** is a compose-like template that describes a set of sandboxes plus how
 they connect and how ingress reaches them. A Stack is *deployed* to a sandbox
-provider once. Thereafter the provider mints a **Session** per client-supplied
-session key: each session is a private, isolated instance of the stack's
-sandboxes, created on demand and torn down when idle.
+provider once. Thereafter a **Session** is minted per session key — for the HTTP
+ingress tier the ingress mints and manages that key via a cookie; other ingress
+types may accept a client-supplied key. Each session is a private, isolated
+instance of the stack's sandboxes, created on demand and torn down when idle.
 
 The design goal is that all expensive, variable work is resolved at **deploy**
 time so that creating a session is close to a set of container `start`
@@ -18,7 +19,7 @@ create requests" plus service wiring and ingress rules.
 
 ```mermaid
 flowchart LR
-    client["client request\n(carries external session key)"] --> ingress["control-plane ingress tier"]
+    client["client request\n(session via cookie / key)"] --> ingress["control-plane ingress tier"]
     ingress -->|"map external key -> internal session id"| session["StackSession (sticky worker)"]
     ingress -->|"AcquireStackHTTPClient(stack, sessionID, service)"| provider["sandbox.Provider"]
     provider --> worker["worker-agent (one worker)"]
@@ -80,11 +81,11 @@ Three persisted, control-plane-owned resources.
 | Resource | Persisted? | Lifecycle driven by | Purpose |
 | --- | --- | --- | --- |
 | `Stack` | yes | control plane | Template + resolved plan; deployed to a provider instance. |
-| `StackSession` | yes (lightweight) | on-demand + TTL GC | `externalKey -> internalID` mapping, `OwnerUserID`, worker placement, `lastActiveAt`, status. Parent of the session's sandboxes. |
+| `StackSession` | yes (lightweight) | minted on demand; reaped by the worker-agent (idle), reflected in the control plane | `externalKey -> internalID` mapping, `OwnerUserID`, plan version, worker placement, status. Parent of the session's sandboxes. |
 | session sandbox | yes (`Sandbox` row) | session ensure/reap (imperative), **not** the reconcile pipeline | One per service. Adds `StackID`, `SessionID`, `Service` columns to `Sandbox`. |
 
-Session sandboxes are real `Sandbox` rows so that list, agent-terminals, exec, and
-the HTTP port proxy work unchanged — they all key on a persisted, project-scoped
+Session sandboxes are real `Sandbox` rows so that list, exec (including agent
+terminals), and the HTTP port proxy work unchanged — they all key on a persisted, project-scoped
 row and resolve the worker via `Sandbox.WorkerID`. What differs from a normal
 sandbox:
 
@@ -147,22 +148,26 @@ A `StackDefinition` is close to `[]worker-local sandbox-create request` plus:
   upstream request (path template and/or JSON body sets). The first implementation
   is HTTP (see [HTTP ingress tier](#http-ingress-tier-first-implementation)).
 - network / egress policy (defaults to isolated; see Networking).
+- `idleTimeout` — how long a session may sit idle before the worker-agent reaps it.
+  Defaults to a server-wide value; set per stack to override.
 
 Reuse the worker-agent sandbox-create DTO for each service rather than inventing a
 parallel shape.
 
 ### External vs internal session id
 
-The client supplies an **external session key** (arbitrary, untrusted, client-
-controlled). It is never used directly as the internal handle:
+A session has an **external session key** — minted by the HTTP ingress and carried
+in a cookie, or supplied by a client for other ingress types. It is never used
+directly as the internal handle:
 
 - It is namespaced per `(project, stack)` so distinct clients/stacks cannot
   collide or guess each other's sessions.
 - The **internal session id** is minted by the provider and returned to the
   control plane. It encodes/resolves to placement (which worker), enabling sticky
-  routing.
+  routing. It is the non-secret id surfaced to the agent as `{session.id}`.
 - The control plane stores `externalKey -> internalID -> workerID` on the
-  `StackSession` row. Clients only ever see the external key.
+  `StackSession` row. Clients only ever see the external key (the opaque cookie
+  value for HTTP ingress).
 
 ## Deploy-time resolution (the spine)
 
@@ -192,6 +197,17 @@ possible):
 Session create is then: create the private network + start containers from staged
 images + clone the source template. No control-plane round trips for resolution.
 
+### Stack lifecycle and redeploy
+
+`Stack` is a normal control-plane resource (create/update/delete). Deploy compiles
+a **versioned** `ResolvedPlan`:
+
+- Updating a stack produces a new plan version and redeploys/stages it to workers.
+- Live sessions keep the plan version they were born on; only new sessions use the
+  new version, so a running session's topology is never mutated underneath it.
+- Deleting a stack drains and reaps its sessions, then removes the staged plan from
+  workers.
+
 ## Session lifecycle
 
 ```mermaid
@@ -219,13 +235,22 @@ sequenceDiagram
         Pool-->>P1: HTTP client lease
     end
     Ingress->>Client: proxied response
-    Note over WA: idle sessions reaped by TTL (lastActiveAt)
+    Note over WA: worker-agent reaps idle sessions (idle timeout) and the control plane reflects it
 ```
 
-- Cold start blocks the first request while the worker-agent starts containers, or
-  returns a warming status; the ingress route handles the not-ready state.
-- Idle GC: `lastActiveAt` on `StackSession` drives TTL reaping, mirroring the
-  existing `Sandbox.LastActiveAt` field.
+- **Readiness / cold start.** The worker-agent monitors container state; a session
+  is *up* when its containers are running and, where a health check is defined,
+  healthy. The first request blocks until the worker-agent reports the session
+  ready, or returns a warming status on timeout.
+- **Idle reaping is worker-agent-owned.** The worker-agent owns session sandbox
+  lifecycle and may stop and/or delete a session's containers when it decides; the
+  first policy is an idle timeout. Because all session traffic (HTTP, terminals,
+  exec) is proxied through the worker-agent, it observes activity directly and
+  tracks idleness locally — there is **no per-request `lastActiveAt` write in the
+  control plane**. On reap it tears down the network + containers and reports
+  termination; the control plane reflects that by deleting the `StackSession` and
+  its session sandbox rows. Idle timeout has a server default, overridable per stack
+  (see [Stack definition](#stack-definition)).
 - If a session's worker dies, the session is gone; the next request re-mints it
   fresh on another worker (sessions are ephemeral, not durable state).
 
@@ -324,19 +349,35 @@ into either location:
 
 ```text
 # path injection
-pathTemplate: "/apps/{appName}/users/{userId}/sessions/{sessionId}/{path}"
+pathTemplate: "/apps/{app}/users/{user.id}/sessions/{session.id}/{path}"
 
 # body injection (JSON selector sets)
 body:
-  - set "$.appName"   = "{appName}"
-  - set "$.userId"    = "{userId}"
-  - set "$.sessionId" = "{sessionId}"
+  - set "$.appName"   = "{app}"
+  - set "$.userId"    = "{user.id}"
+  - set "$.sessionId" = "{session.id}"
 ```
 
-Variables: `{sessionId}` (non-secret internal id), `{userId}` (owning principal),
-`{appName}` (stack/ingress config), `{projectId}`, `{stackId}`, `{service}`,
-`{path}` (suffix after the ingress prefix). No rule -> strip the ingress prefix and
-pass `{path}` through unchanged.
+Variables use a dotted namespace:
+
+| Variable | Source |
+| --- | --- |
+| `{session.id}` | non-secret internal session id (never the cookie's external key) |
+| `{user.id}` | `auth.Principal.UserID` from request context (free per request) |
+| `{user.email}`, `{user.name}`, ... | fields on the `User` model, resolved from the owning user (see below) |
+| `{project.id}`, `{stack.id}` | route params |
+| `{service}` | logical service name |
+| `{app}` | static stack/ingress config (e.g. the ADK app name) |
+| `{path}` | suffix after the ingress prefix |
+
+No rule -> strip the ingress prefix and pass `{path}` through unchanged.
+
+The authenticated `auth.Principal` (see `server/internal/auth/context.go`) carries
+only `UserID`, so `{user.id}` is free but richer `{user.*}` fields require loading
+the `User` row. Resolve the owning user **once at session mint** and snapshot the
+needed identity fields onto `StackSession`, so per-request rewrite does no extra DB
+read and the identity handed to the agent stays stable across the session even if
+the user's profile later changes.
 
 Rewrite behavior:
 
@@ -351,7 +392,7 @@ Rewrite behavior:
   **list of rules matched by incoming suffix + method**, each with its own path
   template and/or body sets (see O6).
 
-**Security: never expose the cookie value.** `{sessionId}` is the **non-secret
+**Security: never expose the cookie value.** `{session.id}` is the **non-secret
 internal session id** from the identity model — not the cookie's external key. The
 cookie value is a bearer handle and must never be placed in a rewritten path, body,
 header, query, or log. Only the non-secret internal session id and owning user id
@@ -367,12 +408,13 @@ The cookie selects a session *within* an already-authorized (project, stack); it
 not the auth boundary.
 
 **Session ownership.** Every ingress request under `/projects/{projectId}/...` has
-an authenticated principal, so sessions are owned: `StackSession.OwnerUserID` is set
-from the principal at mint time and surfaced as the `{userId}` rewrite variable. On
-cookie reuse the session's `OwnerUserID` must match the current principal; a
-mismatch is treated as no cookie (mint fresh), so a leaked cookie cannot be used by
-a different project member. See O6 for what string to expose as `{userId}` and for
-the unauthenticated public-traffic case.
+an authenticated `auth.Principal`, so sessions are owned: `StackSession.OwnerUserID`
+is set from `Principal.UserID` at mint time, and the owning user's identity fields
+are snapshotted onto the session to back the `{user.*}` rewrite variables. On cookie
+reuse the session's `OwnerUserID` must match the current principal; a mismatch is
+treated as no cookie (mint fresh), so a leaked cookie cannot be used by a different
+project member. See O6 for which `{user.*}` field a given agent wants and for the
+unauthenticated public-traffic case.
 
 ## Interface additions
 
@@ -399,11 +441,18 @@ worker-backed provider" error.
   template).
 - `DELETE .../stacks/{stackId}` — remove staged plan + all its sessions.
 - `POST .../stacks/{stackId}/sessions` — ensure a session: create private network,
-  start containers, return internal id + service endpoints.
-- `GET .../stacks/{stackId}/sessions` and `.../sandboxes` — list for `List()`.
+  start containers, return internal id + service endpoints + readiness.
+- `GET .../stacks/{stackId}/sessions` and `.../sandboxes` — list for `List()`,
+  including per-service running/healthy readiness derived from monitored container
+  state.
 - `DELETE .../stacks/{stackId}/sessions/{sessionId}` — tear down network +
   containers.
 - per-worker reconcile: ensure all provider stacks are staged on this worker.
+
+The worker-agent owns session lifecycle: it monitors container state for readiness,
+and it stops/deletes idle sessions on its own (default or stack-configured idle
+timeout), then reports termination so the control plane can delete the
+`StackSession` and its session sandbox rows.
 
 ## Open questions
 
@@ -424,9 +473,9 @@ worker-backed provider" error.
   vs. short (per-request, seconds/minutes) changes whether to warm-pool sessions or
   boot-on-first-request. Deploy-time staging helps both; warm session pools only
   pay off for short-lived, high-churn sessions.
-- **O6 — user identity exposed to the agent.** What string to inject as `{userId}`:
-  the raw discobox `User.ID`, the email, or a per-stack derived id that avoids
-  leaking the global user id into the agent's own session store. Plus: what
+- **O6 — user identity exposed to the agent.** Which `{user.*}` field a given agent
+  keys on (`{user.id}` vs `{user.email}` vs a per-stack derived id that avoids
+  leaking the global user id into the agent's own session store). Plus: what
   ownership means if a stack is ever served as unauthenticated public traffic (O3),
   where there is no discobox principal to own the session.
 - **O7 — rewrite rule matching.** How ingress rules select per incoming route:
