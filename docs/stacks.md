@@ -454,7 +454,79 @@ and it stops/deletes idle sessions on its own (default or stack-configured idle
 timeout), then reports termination so the control plane can delete the
 `StackSession` and its session sandbox rows.
 
+## First implementation scope
+
+The design above is committed. This section bounds the initial cut so an
+implementer builds the right slice and defers the rest.
+
+**In scope (v1):**
+
+- `Stack` and `StackSession` resources, plus `StackID` / `SessionID` / `Service` /
+  `ProviderSandboxID` columns on `Sandbox`, all via AutoMigrate.
+- Stack CRUD control-plane API and deploy, which compiles a **versioned**
+  `ResolvedPlan` and stages it to all provider workers (deploy-to-all + per-worker
+  reconcile so late-joining workers stage it too).
+- Core `sandbox.Provider` stack methods (`DeployStack`, `RemoveStack`,
+  `AcquireStackHTTPClient`) implemented by `workerpool.WorkerPoolProvider`; other
+  providers return the "requires a worker-backed provider" error.
+- Worker-agent API: stage plan, ensure session, list, delete session; per-session
+  private docker network with service-name DNS; readiness from monitored container
+  state; worker-agent-owned idle-timeout reaping (server default + per-stack
+  `idleTimeout`), reflected into control-plane rows.
+- HTTP ingress tier: hand-wired, project-authorized route
+  `/projects/{projectId}/stacks/{stackId}/sandbox/{service}/{path...}`;
+  cookie-minted sessions; boot-on-first-request (hold until ready, with timeout).
+- Request rewriting: path template + JSON body **set** selectors, rules matched by
+  suffix + method; identity variables `{session.id}` and `{user.id}` (from
+  `auth.Principal`), with `{user.*}` snapshotted onto the session at mint.
+- Per-worker session/network cap feeding the existing `schedulable` signal, and a
+  configured docker `default-address-pools` for network density.
+
+**Deferred (not v1):**
+
+- Warm session pools / snapshot-restore — boot-on-first-request only (O4).
+- Public / host-based ingress + wildcard TLS (O3).
+- Higher-density networking beyond per-session docker networks (O2).
+- Header/query injection and read/conditional rewrite selectors (O7).
+- "Provisioning" placeholder rows during cold start.
+- Event-stream de-duplication for session churn — emit normal sandbox events for
+  now (O5).
+
+**Suggested build order:**
+
+1. Resources + schema (`Stack`, `StackSession`, `Sandbox` columns) and Stack CRUD
+   API.
+2. Worker-agent stack/session API: staging, per-session network, ensure/list/delete,
+   readiness, idle reaping — tested at the worker-agent layer.
+3. `workerpool.WorkerPoolProvider` stack methods bridging Layer 1 to the worker-agent
+   API; deploy-to-all-workers reconcile; session placement + stickiness.
+4. HTTP ingress tier: route, cookie management, session ensure, proxy.
+5. Request rewriting (path + body) with the variable resolver.
+
+## Implementation constraints
+
+- **Contract-first.** Stack CRUD goes in `api/openapi/server.yaml`; worker-agent
+  stack/session operations go in `worker-agent/api/openapi/worker.yaml`; regenerate
+  with `go tool task generate`. Do not hand-write generated handlers or clients.
+- **The ingress proxy stays hand-wired** in `internal/server`, exactly like the
+  existing sandbox HTTP proxy
+  (`/projects/{projectId}/sandboxes/{sandboxId}/http/...`): it forwards arbitrary
+  methods, paths, and bodies through a provider `HTTPClientLease`, so it is not a
+  generated DTO operation. Mirror that handler and its `ProjectAuthorizer` wiring.
+- **Mirror existing patterns:** the reconcile executor + observed-state persistence
+  for the deploy-to-workers reconcile; the worker-agent server adapter for the new
+  worker API; `sandbox.CreateOptions` / the worker sandbox-create DTO for services.
+- **No migrations.** New tables and columns land via AutoMigrate against a fresh DB
+  (CLAUDE.md); do not write backfill or upgrade code.
+- **On landing, migrate this content** into package `DESIGN.md` files
+  (`server/internal/sandbox`, the new ingress package, `worker-agent`), leaving
+  `docs/stacks.md` as a pointer.
+
 ## Open questions
+
+For v1, O2/O3/O4/O5/O7 are deferred as noted in First implementation scope, and O6
+uses `{user.id}`. The entries below are the durable questions to revisit later; none
+block the first cut.
 
 - **O1 — interface placement.** Decided: stack methods live on the core
   `sandbox.Provider` interface. See [Interface additions](#sandboxprovider-layer-1).
