@@ -2500,6 +2500,9 @@ type WorkerSandboxUpdateRequest struct {
 	Schema    OptURI                    `json:"$schema"`
 	Config    OptSandboxUpdateConfig    `json:"config"`
 	Resources OptWorkerSandboxResources `json:"resources"`
+	// Replacement sentinel placeholder set for a running sandbox. The worker re-registers them with the
+	// proxy so newly bound secrets resolve without a restart.
+	Sentinels OptNilStringArray `json:"sentinels"`
 }
 
 // GetSchema returns the value of Schema.
@@ -2517,6 +2520,11 @@ func (s *WorkerSandboxUpdateRequest) GetResources() OptWorkerSandboxResources {
 	return s.Resources
 }
 
+// GetSentinels returns the value of Sentinels.
+func (s *WorkerSandboxUpdateRequest) GetSentinels() OptNilStringArray {
+	return s.Sentinels
+}
+
 // SetSchema sets the value of Schema.
 func (s *WorkerSandboxUpdateRequest) SetSchema(val OptURI) {
 	s.Schema = val
@@ -2530,4 +2538,9 @@ func (s *WorkerSandboxUpdateRequest) SetConfig(val OptSandboxUpdateConfig) {
 // SetResources sets the value of Resources.
 func (s *WorkerSandboxUpdateRequest) SetResources(val OptWorkerSandboxResources) {
 	s.Resources = val
+}
+
+// SetSentinels sets the value of Sentinels.
+func (s *WorkerSandboxUpdateRequest) SetSentinels(val OptNilStringArray) {
+	s.Sentinels = val
 }

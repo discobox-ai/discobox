@@ -243,6 +243,19 @@ func (s *Service) resolveAgentConfigID(ctx context.Context, project *model.Proje
 		}
 		return &config.ID, nil
 	}
+	// No explicit selector: pin the project default so the sandbox always carries a
+	// concrete agent config. Resolving the agent at create time is what makes its
+	// required-secret gate and binding materialization apply to `run .`.
+	if strings.TrimSpace(project.DefaultAgentConfigID) != "" {
+		config, err := s.store.GetAgentConfig(ctx, project.ID, project.DefaultAgentConfigID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return nil, nil // default was deleted; leave the sandbox agent-less
+			}
+			return nil, mapAPIError(err, "agent config not found")
+		}
+		return &config.ID, nil
+	}
 	return nil, nil
 }
 

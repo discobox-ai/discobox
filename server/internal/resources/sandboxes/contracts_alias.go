@@ -8,6 +8,7 @@ import (
 type Provider = contract.Provider
 type ProviderManager = contract.ProviderManager
 type CreateOptions = contract.CreateOptions
+type UpdateOptions = contract.UpdateOptions
 type SandboxRef = contract.SandboxRef
 type Sandbox = contract.Sandbox
 type Status = contract.Status

@@ -75,6 +75,7 @@ type SandboxService interface {
 	RestartSandbox(ctx context.Context, projectID, sandboxID string, input RestartSandboxBody) (*model.Sandbox, error)
 	ReconcileSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
 	AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*HTTPClientLease, *model.Sandbox, error)
+	AssignSandboxAgentSecrets(ctx context.Context, projectID, sandboxID, agentConfigID string) (map[string]string, error)
 }
 
 type SandboxProviderInstanceService interface {

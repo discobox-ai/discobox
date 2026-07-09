@@ -567,6 +567,9 @@ func (p *recordingSandboxProvider) Create(_ context.Context, ref sandboxes.Sandb
 		Metadata:  map[string]string{"worker_id": "worker-1"},
 	}, []byte("created"), nil
 }
+func (p *recordingSandboxProvider) Update(context.Context, sandboxes.SandboxRef, []byte, sandboxes.UpdateOptions) (*sandboxes.Sandbox, []byte, error) {
+	return nil, []byte("updated"), nil
+}
 func (p *recordingSandboxProvider) Start(context.Context, sandboxes.SandboxRef, []byte) (*sandboxes.Sandbox, []byte, error) {
 	p.startCalls++
 	return nil, []byte("started"), nil

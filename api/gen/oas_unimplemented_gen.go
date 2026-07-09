@@ -22,6 +22,15 @@ func (UnimplementedHandler) ApproveSecretRequest(ctx context.Context, req *Appro
 	return r, ht.ErrNotImplemented
 }
 
+// AssignSandboxAgentSecrets implements assign-sandbox-agent-secrets operation.
+//
+// Assign an agent config's bound secrets to a running sandbox and return their sentinel env.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/agent-secrets
+func (UnimplementedHandler) AssignSandboxAgentSecrets(ctx context.Context, req *AssignSandboxAgentSecretsBody, params AssignSandboxAgentSecretsParams) (r AssignSandboxAgentSecretsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // AttachSandboxExec implements attach-sandbox-exec operation.
 //
 // Opens a websocket carrying the framed bidirectional stream for a running sandbox exec. Input

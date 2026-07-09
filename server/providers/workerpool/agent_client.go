@@ -60,6 +60,27 @@ func (p *workerAgentClient) Create(ctx context.Context, ref sandbox.SandboxRef, 
 	return runtimeSandbox, state, nil
 }
 
+func (p *workerAgentClient) Update(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.UpdateOptions) (*sandbox.Sandbox, []byte, error) {
+	client, release, err := p.workerClient(ref, workeragentauth.ScopeSandboxWrite)
+	if err != nil {
+		return nil, state, err
+	}
+	defer release()
+	req := &workerapimodel.WorkerSandboxUpdateRequest{
+		Sentinels: workerclient.NewOptNilStringArray(opts.Sentinels),
+	}
+	workerSandbox, err := client.WorkerUpdateSandbox(ctx, req, workerclient.WorkerUpdateSandboxParams{ProjectId: ref.ProjectID, WorkerId: p.workerID, SandboxId: ref.SandboxID})
+	if err != nil {
+		return nil, state, mapWorkerClientError(err)
+	}
+	runtimeSandbox := sandboxFromWorker(workerSandbox, p.workerID)
+	state, err = json.Marshal(runtimeSandbox)
+	if err != nil {
+		return nil, state, err
+	}
+	return runtimeSandbox, state, nil
+}
+
 func (p *workerAgentClient) Start(ctx context.Context, ref sandbox.SandboxRef, state []byte) (*sandbox.Sandbox, []byte, error) {
 	client, release, err := p.workerClient(ref, workeragentauth.ScopeSandboxWrite)
 	if err != nil {

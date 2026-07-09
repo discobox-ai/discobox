@@ -76,9 +76,25 @@ func (a *App) newSandboxTerminalCreateCommand(sandboxID *string) *cobra.Command 
 		Short: "Create a sandbox agent terminal",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			projectID, resolvedSandboxID, _, err := a.sandboxTerminalRequest(cmd.Context(), *sandboxID)
+			projectID, resolvedSandboxID, client, err := a.sandboxTerminalRequest(cmd.Context(), *sandboxID)
 			if err != nil {
 				return err
+			}
+			// When a specific agent is requested, assign that agent's bound secrets
+			// to the sandbox and carry their sentinels in this run's environment.
+			if strings.TrimSpace(opts.agentID) != "" {
+				agentConfigID, err := a.resolveAgentConfigID(cmd.Context(), client, projectID, opts.agentID)
+				if err != nil {
+					return err
+				}
+				opts.agentID = agentConfigID
+				assigned, err := a.assignSandboxAgentSecrets(cmd.Context(), client, projectID, resolvedSandboxID, agentConfigID)
+				if err != nil {
+					return err
+				}
+				for env, sentinel := range assigned {
+					opts.env = append(opts.env, env+"="+sentinel)
+				}
 			}
 			body, err := createTerminalExecBody(opts)
 			if err != nil {
@@ -197,6 +213,21 @@ func (a *App) sandboxTerminalRequest(ctx context.Context, sandboxArg string) (st
 		return "", "", nil, fmt.Errorf("--sandbox-id is required")
 	}
 	return a.sandboxRequest(ctx, sandboxArg)
+}
+
+// assignSandboxAgentSecrets asks the control plane to materialize the agent
+// config's bound secrets for the running sandbox and returns their env->sentinel
+// map to inject into this run.
+func (a *App) assignSandboxAgentSecrets(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID, agentConfigID string) (map[string]string, error) {
+	res, err := client.AssignSandboxAgentSecrets(ctx, &apimodel.AssignSandboxAgentSecretsBody{AgentConfigId: agentConfigID}, apiclientgen.AssignSandboxAgentSecretsParams{ProjectId: projectID, SandboxId: sandboxID})
+	if err != nil {
+		return nil, err
+	}
+	body, err := expectResponse[apimodel.SandboxAgentSecretsResponse](res)
+	if err != nil {
+		return nil, err
+	}
+	return body.Secrets, nil
 }
 
 func createTerminalExecBody(opts sandboxTerminalCreateOptions) (*apimodel.CreateSandboxExecRequest, error) {

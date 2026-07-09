@@ -7,6 +7,7 @@ type OperationName = string
 
 const (
 	ApproveSecretRequestOperation           OperationName = "ApproveSecretRequest"
+	AssignSandboxAgentSecretsOperation      OperationName = "AssignSandboxAgentSecrets"
 	AttachSandboxExecOperation              OperationName = "AttachSandboxExec"
 	CreateAgentConfigOperation              OperationName = "CreateAgentConfig"
 	CreateSandboxOperation                  OperationName = "CreateSandbox"

@@ -307,6 +307,14 @@ func (p *WorkerPoolProvider) waitForSchedulableWorker(ctx context.Context, sb *m
 	}
 }
 
+func (p *WorkerPoolProvider) Update(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.UpdateOptions) (*sandbox.Sandbox, []byte, error) {
+	client, err := p.agentClientFromState(ctx, state)
+	if err != nil {
+		return nil, state, err
+	}
+	return client.Update(ctx, ref, state, opts)
+}
+
 func (p *WorkerPoolProvider) Start(ctx context.Context, ref sandbox.SandboxRef, state []byte) (*sandbox.Sandbox, []byte, error) {
 	client, err := p.agentClientFromState(ctx, state)
 	if err != nil {

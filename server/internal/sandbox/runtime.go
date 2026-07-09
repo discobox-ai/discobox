@@ -24,6 +24,9 @@ type Provider interface {
 	List(ctx context.Context) ([]*Sandbox, error)
 
 	Create(ctx context.Context, ref SandboxRef, state []byte, opts CreateOptions) (*Sandbox, []byte, error)
+	// Update applies the mutable subset of a sandbox's configuration to a running
+	// instance in place. Only the fields present in UpdateOptions can change.
+	Update(ctx context.Context, ref SandboxRef, state []byte, opts UpdateOptions) (*Sandbox, []byte, error)
 	Start(ctx context.Context, ref SandboxRef, state []byte) (*Sandbox, []byte, error)
 	Stop(ctx context.Context, ref SandboxRef, state []byte, timeout time.Duration) (*Sandbox, []byte, error)
 	Remove(ctx context.Context, ref SandboxRef, state []byte, opts ...RemoveOption) ([]byte, error)
@@ -116,6 +119,15 @@ type CreateOptions struct {
 	CPUVCPUs                 float64
 	MemoryBytes              int64
 	StorageBytes             int64
+}
+
+// UpdateOptions carries the mutable subset of CreateOptions that can be applied
+// to a running sandbox in place. It mirrors the CreateOptions shape; only the
+// fields present here may be updated after creation.
+type UpdateOptions struct {
+	// Sentinels replaces the placeholder secret set registered with the proxy for
+	// runtime swapping. It mirrors CreateOptions.Sentinels.
+	Sentinels []string
 }
 
 // ResolvedAgentConfig is the sandbox-local coding agent configuration captured

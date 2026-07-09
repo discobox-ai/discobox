@@ -2072,6 +2072,38 @@ components:
                 - availableMemoryBytes
                 - availableStorageBytes
             type: object
+        AssignSandboxAgentSecretsBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/AssignSandboxAgentSecretsBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                agentConfigId:
+                    description: Agent config whose bound secrets should be assigned to the sandbox for a per-invocation run.
+                    type: string
+            required:
+                - agentConfigId
+            type: object
+        SandboxAgentSecretsResponse:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/SandboxAgentSecretsResponse.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                secrets:
+                    additionalProperties:
+                        type: string
+                    description: Environment variable name to sentinel placeholder. Inject these into the exec/terminal environment; the proxy swaps them for real values on egress.
+                    type: object
+            required:
+                - secrets
+            type: object
         ApproveSecretRequestBody:
             additionalProperties: false
             properties:
@@ -3805,6 +3837,47 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Update a sandbox
+            tags:
+                - Sandboxes
+    /projects/{projectId}/sandboxes/{sandboxId}/agent-secrets:
+        post:
+            operationId: assign-sandbox-agent-secrets
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Sandbox ID
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    description: Sandbox ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AssignSandboxAgentSecretsBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxAgentSecretsResponse'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Assign an agent config's bound secrets to a running sandbox and return their sentinel env
             tags:
                 - Sandboxes
     /projects/{projectId}/sandboxes/{sandboxId}/restart:

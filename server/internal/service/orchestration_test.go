@@ -146,7 +146,7 @@ func TestCreateSandboxDefaultsGitSourceSlugs(t *testing.T) {
 	}
 }
 
-func TestCreateSandboxDoesNotSelectDefaultAgentConfig(t *testing.T) {
+func TestCreateSandboxPinsDefaultAgentConfig(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newSandboxTestService(t, nil)
 
@@ -165,12 +165,14 @@ func TestCreateSandboxDoesNotSelectDefaultAgentConfig(t *testing.T) {
 		t.Fatalf("default agent config = %q, want %q", project.DefaultAgentConfigID, agent.ID)
 	}
 
+	// With no explicit agent selector, the sandbox pins the project default so its
+	// required-secret gate and binding materialization resolve at create time.
 	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	if created.AgentConfigID != nil {
-		t.Fatalf("sandbox agent config = %v, want nil", *created.AgentConfigID)
+	if created.AgentConfigID == nil || *created.AgentConfigID != agent.ID {
+		t.Fatalf("sandbox agent config = %v, want %q", created.AgentConfigID, agent.ID)
 	}
 }
 
@@ -418,6 +420,10 @@ func (noopSandboxProvider) List(context.Context) ([]*sandboxes.Sandbox, error) {
 
 func (noopSandboxProvider) Create(_ context.Context, ref sandboxes.SandboxRef, _ []byte, _ sandboxes.CreateOptions) (*sandboxes.Sandbox, []byte, error) {
 	return runtimeSandbox(ref, sandboxes.StatusCreated), nil, nil
+}
+
+func (noopSandboxProvider) Update(_ context.Context, ref sandboxes.SandboxRef, _ []byte, _ sandboxes.UpdateOptions) (*sandboxes.Sandbox, []byte, error) {
+	return runtimeSandbox(ref, sandboxes.Status("running")), nil, nil
 }
 
 func (noopSandboxProvider) Start(_ context.Context, ref sandboxes.SandboxRef, _ []byte) (*sandboxes.Sandbox, []byte, error) {

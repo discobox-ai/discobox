@@ -369,6 +369,12 @@ components:
                     "$ref": "#/components/schemas/SandboxUpdateConfig"
                 resources:
                     "$ref": "#/components/schemas/WorkerSandboxResources"
+                sentinels:
+                    description: Replacement sentinel placeholder set for a running sandbox. The worker re-registers them with the proxy so newly bound secrets resolve without a restart.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
             type: object
         WorkerSandboxPort:
             additionalProperties: false

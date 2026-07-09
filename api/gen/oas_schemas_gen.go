@@ -668,6 +668,34 @@ func (s *ApproveSecretRequestBodyScope) UnmarshalText(data []byte) error {
 	}
 }
 
+// Ref: #/components/schemas/AssignSandboxAgentSecretsBody
+type AssignSandboxAgentSecretsBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Agent config whose bound secrets should be assigned to the sandbox for a per-invocation run.
+	AgentConfigId string `json:"agentConfigId"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *AssignSandboxAgentSecretsBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetAgentConfigId returns the value of AgentConfigId.
+func (s *AssignSandboxAgentSecretsBody) GetAgentConfigId() string {
+	return s.AgentConfigId
+}
+
+// SetSchema sets the value of Schema.
+func (s *AssignSandboxAgentSecretsBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetAgentConfigId sets the value of AgentConfigId.
+func (s *AssignSandboxAgentSecretsBody) SetAgentConfigId(val string) {
+	s.AgentConfigId = val
+}
+
 // AttachSandboxExecSwitchingProtocols is response for AttachSandboxExec operation.
 type AttachSandboxExecSwitchingProtocols struct {
 	Connection OptString
@@ -1620,6 +1648,7 @@ func (s *ErrorModelStatusCode) SetResponse(val ErrorModel) {
 }
 
 func (*ErrorModelStatusCode) approveSecretRequestRes()           {}
+func (*ErrorModelStatusCode) assignSandboxAgentSecretsRes()      {}
 func (*ErrorModelStatusCode) createAgentConfigRes()              {}
 func (*ErrorModelStatusCode) createSandboxProviderInstanceRes()  {}
 func (*ErrorModelStatusCode) createSandboxRes()                  {}
@@ -5892,6 +5921,51 @@ func (*Sandbox) restartSandboxRes()   {}
 func (*Sandbox) startSandboxRes()     {}
 func (*Sandbox) stopSandboxRes()      {}
 func (*Sandbox) updateSandboxRes()    {}
+
+// Ref: #/components/schemas/SandboxAgentSecretsResponse
+type SandboxAgentSecretsResponse struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Environment variable name to sentinel placeholder. Inject these into the exec/terminal environment;
+	//  the proxy swaps them for real values on egress.
+	Secrets SandboxAgentSecretsResponseSecrets `json:"secrets"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *SandboxAgentSecretsResponse) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSecrets returns the value of Secrets.
+func (s *SandboxAgentSecretsResponse) GetSecrets() SandboxAgentSecretsResponseSecrets {
+	return s.Secrets
+}
+
+// SetSchema sets the value of Schema.
+func (s *SandboxAgentSecretsResponse) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSecrets sets the value of Secrets.
+func (s *SandboxAgentSecretsResponse) SetSecrets(val SandboxAgentSecretsResponseSecrets) {
+	s.Secrets = val
+}
+
+func (*SandboxAgentSecretsResponse) assignSandboxAgentSecretsRes() {}
+
+// Environment variable name to sentinel placeholder. Inject these into the exec/terminal environment;
+//
+//	the proxy swaps them for real values on egress.
+type SandboxAgentSecretsResponseSecrets map[string]string
+
+func (s *SandboxAgentSecretsResponseSecrets) init() SandboxAgentSecretsResponseSecrets {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
 
 // Ref: #/components/schemas/SandboxConfig
 type SandboxConfig struct {

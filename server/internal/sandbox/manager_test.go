@@ -187,6 +187,9 @@ func (p *fakeProvider) RemoveProject(_ context.Context, projectID string) error 
 func (p *fakeProvider) Create(context.Context, sandbox.SandboxRef, []byte, sandbox.CreateOptions) (*sandbox.Sandbox, []byte, error) {
 	return nil, nil, nil
 }
+func (p *fakeProvider) Update(context.Context, sandbox.SandboxRef, []byte, sandbox.UpdateOptions) (*sandbox.Sandbox, []byte, error) {
+	return nil, nil, nil
+}
 func (p *fakeProvider) Start(context.Context, sandbox.SandboxRef, []byte) (*sandbox.Sandbox, []byte, error) {
 	return nil, nil, nil
 }

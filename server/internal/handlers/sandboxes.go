@@ -105,6 +105,15 @@ func (h *Handler) RestartSandbox(ctx context.Context, req *apimodel.RestartSandb
 	return &body, nil
 }
 
+func (h *Handler) AssignSandboxAgentSecrets(ctx context.Context, req *apimodel.AssignSandboxAgentSecretsBody, params serverapi.AssignSandboxAgentSecretsParams) (serverapi.AssignSandboxAgentSecretsRes, error) {
+	secrets, err := h.services.Sandboxes.AssignSandboxAgentSecrets(ctx, params.ProjectId, params.SandboxId, req.AgentConfigId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	resp := apimodel.SandboxAgentSecretsResponse{Secrets: secrets}
+	return &resp, nil
+}
+
 func (h *Handler) ReconcileSandbox(ctx context.Context, params serverapi.ReconcileSandboxParams) (serverapi.ReconcileSandboxRes, error) {
 	sandbox, err := h.services.Sandboxes.ReconcileSandbox(ctx, params.ProjectId, params.SandboxId)
 	if err != nil {

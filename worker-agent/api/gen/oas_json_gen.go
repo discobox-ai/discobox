@@ -4267,12 +4267,19 @@ func (s *WorkerSandboxUpdateRequest) encodeFields(e *jx.Encoder) {
 			s.Resources.Encode(e)
 		}
 	}
+	{
+		if s.Sentinels.Set {
+			e.FieldStart("sentinels")
+			s.Sentinels.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfWorkerSandboxUpdateRequest = [3]string{
+var jsonFieldsNameOfWorkerSandboxUpdateRequest = [4]string{
 	0: "$schema",
 	1: "config",
 	2: "resources",
+	3: "sentinels",
 }
 
 // Decode decodes WorkerSandboxUpdateRequest from json.
@@ -4312,6 +4319,16 @@ func (s *WorkerSandboxUpdateRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"resources\"")
+			}
+		case "sentinels":
+			if err := func() error {
+				s.Sentinels.Reset()
+				if err := s.Sentinels.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"sentinels\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)

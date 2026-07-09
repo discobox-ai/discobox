@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fsnotify/fsnotify"
+
 	"github.com/obot-platform/discobox/proxy"
 )
 
@@ -26,7 +28,10 @@ const (
 	ResolveContextFile = Root + "/resolve-context.json"
 
 	secretsPollInterval = 2 * time.Second
-	resolveHTTPTimeout  = 10 * time.Second
+	// secretsBackstopInterval re-applies the file periodically in case an
+	// fsnotify event is dropped; the watcher handles the immediate path.
+	secretsBackstopInterval = 30 * time.Second
+	resolveHTTPTimeout      = 10 * time.Second
 )
 
 // secretsDoc is the on-disk sentinel registry keyed by sandbox (proxy client) ID.
@@ -198,12 +203,12 @@ func (r *secretResolver) readContext() (resolveContext, error) {
 	return rc, nil
 }
 
-// watchSecretsFile polls SecretsFile and applies sentinel sets to the running
-// proxy. base carries the startup config whose runtime policy fields are
+// watchSecretsFile watches SecretsFile and applies sentinel sets to the running
+// proxy. It uses fsnotify so a sentinel push takes effect immediately (rather
+// than after a poll interval), with a slow ticker backstop in case an event is
+// missed. base carries the startup config whose runtime policy fields are
 // replaced on each apply.
 func watchSecretsFile(ctx context.Context, server *proxy.Server, base proxy.Config, path string, onError func(error)) {
-	ticker := time.NewTicker(secretsPollInterval)
-	defer ticker.Stop()
 	var lastMod time.Time
 	apply := func() {
 		info, err := os.Stat(path)
@@ -234,6 +239,53 @@ func watchSecretsFile(ctx context.Context, server *proxy.Server, base proxy.Conf
 		lastMod = info.ModTime()
 	}
 	apply()
+
+	// SecretsFile is written atomically (write temp + rename), so watch the
+	// containing directory for the rename rather than the file itself.
+	watcher, err := fsnotify.NewWatcher()
+	if err == nil {
+		if addErr := watcher.Add(filepath.Dir(path)); addErr != nil {
+			_ = watcher.Close()
+			watcher = nil
+			if onError != nil {
+				onError(fmt.Errorf("watch secrets dir: %w", addErr))
+			}
+		}
+	} else if onError != nil {
+		onError(fmt.Errorf("create secrets watcher: %w", err))
+	}
+	if watcher == nil {
+		pollSecretsFile(ctx, apply) // fall back to polling when fsnotify is unavailable
+		return
+	}
+	defer watcher.Close()
+
+	// Backstop the event stream in case an event is dropped.
+	ticker := time.NewTicker(secretsBackstopInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case event := <-watcher.Events:
+			if filepath.Clean(event.Name) == filepath.Clean(path) {
+				apply()
+			}
+		case watchErr := <-watcher.Errors:
+			if watchErr != nil && onError != nil {
+				onError(watchErr)
+			}
+		case <-ticker.C:
+			apply()
+		}
+	}
+}
+
+// pollSecretsFile applies the secrets file on a fixed interval. It is the
+// fallback when an fsnotify watcher cannot be established.
+func pollSecretsFile(ctx context.Context, apply func()) {
+	ticker := time.NewTicker(secretsPollInterval)
+	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():

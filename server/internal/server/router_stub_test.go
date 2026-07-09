@@ -238,6 +238,15 @@ func (s *routerTestServices) ReconcileSandbox(_ context.Context, projectID, sand
 	return &sandbox, nil
 }
 
+func (s *routerTestServices) AssignSandboxAgentSecrets(_ context.Context, projectID, sandboxID, _ string) (map[string]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, err := s.getSandbox(projectID, sandboxID); err != nil {
+		return nil, err
+	}
+	return map[string]string{}, nil
+}
+
 func (s *routerTestServices) MaxProjectEventSeq(_ context.Context, projectID string) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

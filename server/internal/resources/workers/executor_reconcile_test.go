@@ -438,6 +438,10 @@ func (noopWorkerSandboxProvider) Create(context.Context, sandboxes.SandboxRef, [
 	return nil, nil, nil
 }
 
+func (noopWorkerSandboxProvider) Update(context.Context, sandboxes.SandboxRef, []byte, sandboxes.UpdateOptions) (*sandboxes.Sandbox, []byte, error) {
+	return nil, nil, nil
+}
+
 func (noopWorkerSandboxProvider) Start(context.Context, sandboxes.SandboxRef, []byte) (*sandboxes.Sandbox, []byte, error) {
 	return nil, nil, nil
 }

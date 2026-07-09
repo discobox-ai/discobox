@@ -14,6 +14,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/secret-requests/{requestId}/approve
 	ApproveSecretRequest(ctx context.Context, req *ApproveSecretRequestBody, params ApproveSecretRequestParams) (ApproveSecretRequestRes, error)
+	// AssignSandboxAgentSecrets implements assign-sandbox-agent-secrets operation.
+	//
+	// Assign an agent config's bound secrets to a running sandbox and return their sentinel env.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent-secrets
+	AssignSandboxAgentSecrets(ctx context.Context, req *AssignSandboxAgentSecretsBody, params AssignSandboxAgentSecretsParams) (AssignSandboxAgentSecretsRes, error)
 	// AttachSandboxExec implements attach-sandbox-exec operation.
 	//
 	// Opens a websocket carrying the framed bidirectional stream for a running sandbox exec. Input

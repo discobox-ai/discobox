@@ -5,6 +5,10 @@ type ApproveSecretRequestRes interface {
 	approveSecretRequestRes()
 }
 
+type AssignSandboxAgentSecretsRes interface {
+	assignSandboxAgentSecretsRes()
+}
+
 type AttachSandboxExecRes interface {
 	attachSandboxExecRes()
 }

@@ -554,7 +554,16 @@ func (r *DockerSandboxRuntime) GetSandbox(ctx context.Context, sandboxID string)
 	return r.sandboxFromInspect(ctx, inspect.Container), nil
 }
 
-func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID string, _ *workerapimodel.WorkerSandboxUpdateRequest) (*Sandbox, error) {
+func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxUpdateRequest) (*Sandbox, error) {
+	if req != nil {
+		if sentinels, ok := req.Sentinels.Get(); ok {
+			// Re-register the sandbox's sentinel set with the proxy so newly bound
+			// secrets resolve without a restart.
+			if err := proxyagent.UpsertSandboxSentinels(r.workerHostPath, sandboxID, sentinels); err != nil {
+				return nil, err
+			}
+		}
+	}
 	return r.GetSandbox(ctx, sandboxID)
 }
 

@@ -215,6 +215,125 @@ func (s *Service) createAnonymousSecret(ctx context.Context, projectID, value, h
 
 const defaultAnonymousGrantTTLSeconds = 3600
 
+// AssignSandboxAgentSecrets ensures the given agent config's secret bindings are
+// materialized for a running sandbox and returns the resulting env->sentinel map
+// for the caller to inject into a per-invocation exec/terminal environment.
+//
+// Assignment is flat per env: if an env var is already assigned (by the primary
+// agent or an earlier assignment), that sentinel is reused (first-assigner wins)
+// even if this agent binds the env to a different secret. Newly minted sentinels
+// are pushed to the running sandbox's proxy immediately so they resolve without a
+// restart. Required declared secrets with no binding are rejected.
+func (s *Service) AssignSandboxAgentSecrets(ctx context.Context, projectID, sandboxID, agentConfigID string) (map[string]string, error) {
+	sandboxModel, err := s.store.GetSandbox(ctx, projectID, sandboxID)
+	if err != nil {
+		return nil, mapAPIError(err, "sandbox not found")
+	}
+	config, err := s.store.GetAgentConfig(ctx, projectID, agentConfigID)
+	if err != nil {
+		return nil, mapAPIError(err, "agent config not found")
+	}
+	resolved := agentdefs.Resolve(config)
+	bindings, err := s.store.ListAgentConfigSecretBindings(ctx, projectID, agentConfigID)
+	if err != nil {
+		return nil, err
+	}
+	existing, err := s.store.ListSandboxSecrets(ctx, projectID, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	envSentinel := make(map[string]string, len(existing))
+	for _, assignment := range existing {
+		envSentinel[assignment.EnvName] = assignment.Sentinel
+	}
+
+	result := make(map[string]string, len(bindings))
+	created := false
+	for _, binding := range bindings {
+		if sentinel, ok := envSentinel[binding.EnvName]; ok {
+			result[binding.EnvName] = sentinel // reuse the existing assignment (first wins)
+			continue
+		}
+		secret, err := s.store.GetSecret(ctx, projectID, binding.SecretID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				continue // bound secret was deleted; leave the env unset
+			}
+			return nil, err
+		}
+		sentinel, err := mintSentinel(s.secretFormat(ctx, secret))
+		if err != nil {
+			return nil, err
+		}
+		if err := s.store.CreateSandboxSecret(ctx, &model.SandboxSecret{
+			ProjectID: projectID,
+			SandboxID: sandboxID,
+			SecretID:  secret.ID,
+			EnvName:   binding.EnvName,
+			Sentinel:  sentinel,
+		}); err != nil {
+			return nil, err
+		}
+		envSentinel[binding.EnvName] = sentinel
+		result[binding.EnvName] = sentinel
+		created = true
+	}
+
+	// A required declared secret must be satisfied by an assignment.
+	var missing []string
+	for _, decl := range resolved.Secrets {
+		if !decl.Required {
+			continue
+		}
+		if _, ok := envSentinel[decl.Name]; !ok {
+			missing = append(missing, decl.Name)
+		}
+	}
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			fmt.Sprintf("agent config %q requires secrets with no bound value: %s", config.Slug, strings.Join(missing, ", ")))
+	}
+
+	if created {
+		if err := s.pushSandboxSentinels(ctx, sandboxModel); err != nil {
+			return nil, err
+		}
+	}
+	return result, nil
+}
+
+// pushSandboxSentinels re-registers the running sandbox's full sentinel set with
+// its provider (and thus the proxy) so newly assigned secrets resolve live.
+func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.Sandbox) error {
+	if s.sandboxProviders == nil {
+		return fmt.Errorf("sandbox provider manager is required")
+	}
+	assignments, err := s.store.ListSandboxSecrets(ctx, sandboxModel.ProjectID, sandboxModel.ID)
+	if err != nil {
+		return err
+	}
+	sentinels := make([]string, 0, len(assignments))
+	for _, assignment := range assignments {
+		sentinels = append(sentinels, assignment.Sentinel)
+	}
+	if sandboxModel.ProviderInstanceID != nil && strings.TrimSpace(*sandboxModel.ProviderInstanceID) != "" {
+		provider, err := s.store.GetSandboxProviderInstance(ctx, sandboxModel.ProjectID, *sandboxModel.ProviderInstanceID)
+		if err != nil {
+			return mapAPIError(err, "provider instance not found")
+		}
+		sandboxModel.ProviderInstance = provider
+	}
+	provider, err := s.sandboxProviders.ResolveForSandbox(ctx, sandboxModel)
+	if err != nil {
+		return err
+	}
+	if _, _, err := provider.Update(ctx, SandboxRef{ProjectID: sandboxModel.ProjectID, SandboxID: sandboxModel.ID}, sandboxModel.RuntimeState, UpdateOptions{Sentinels: sentinels}); err != nil {
+		return err
+	}
+	return nil
+}
+
 func mintSentinel(format string) (string, error) {
 	tmpl, err := secretformat.Parse(strings.TrimSpace(format))
 	if err != nil {

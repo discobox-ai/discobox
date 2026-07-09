@@ -9,6 +9,7 @@ replace github.com/obot-platform/discobox/gormdb => ../gormdb
 require (
 	aidanwoods.dev/go-paseto v1.6.0
 	github.com/containerd/errdefs v1.0.0
+	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-faster/errors v0.7.1
 	github.com/go-faster/jx v1.2.0
