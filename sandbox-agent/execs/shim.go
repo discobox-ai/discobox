@@ -32,6 +32,7 @@ type ShimConfig struct {
 	TTY         bool
 	Env         map[string]string
 	User        *User
+	Metadata    map[string]string
 }
 
 type shimRuntime struct {
@@ -96,6 +97,7 @@ func (r *shimRuntime) start(ctx context.Context) error {
 		TTY:         r.cfg.TTY,
 		Unit:        r.cfg.Unit,
 		CreatedAt:   now,
+		Metadata:    cloneMap(r.cfg.Metadata),
 		SocketPath:  r.cfg.SocketPath,
 		RuntimePath: r.cfg.RuntimePath,
 	}

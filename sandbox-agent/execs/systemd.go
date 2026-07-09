@@ -35,6 +35,10 @@ func (SystemdRunner) Start(ctx context.Context, req StartRequest) (StartResult, 
 	if err != nil {
 		return StartResult{}, err
 	}
+	metadataJSON, err := json.Marshal(req.Metadata)
+	if err != nil {
+		return StartResult{}, err
+	}
 	args := []string{
 		"--unit=" + req.Unit,
 		"--collect",
@@ -61,6 +65,7 @@ func (SystemdRunner) Start(ctx context.Context, req StartRequest) (StartResult, 
 		"--command", base64.StdEncoding.EncodeToString(commandJSON),
 		"--env", base64.StdEncoding.EncodeToString(envJSON),
 		"--user", base64.StdEncoding.EncodeToString(userJSON),
+		"--metadata", base64.StdEncoding.EncodeToString(metadataJSON),
 	)
 	if req.TTY {
 		args = append(args, "--tty")

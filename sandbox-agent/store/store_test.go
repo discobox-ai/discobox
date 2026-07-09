@@ -91,6 +91,54 @@ func TestRecordAndListAgentHooks(t *testing.T) {
 	}
 }
 
+func TestExecRecordIsDurableAndImmutable(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "agent.db"))
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	created := time.Now().UTC()
+	rec := execs.Exec{
+		ID:        "ex_1",
+		Command:   []string{"codex", "say hello"},
+		Workdir:   "/workspace",
+		TTY:       true,
+		CreatedAt: created,
+		Metadata:  map[string]string{"agentId": "codex", "primary": "true"},
+	}
+	if err := st.SaveExecRecord(ctx, rec); err != nil {
+		t.Fatalf("save record: %v", err)
+	}
+	// Observing status must not touch the immutable record.
+	exited := time.Now().UTC()
+	code := int64(0)
+	if err := st.ObserveExec(ctx, execs.Exec{ID: "ex_1", Status: execs.StatusExited, ExitedAt: &exited, ExitCode: &code}); err != nil {
+		t.Fatalf("observe: %v", err)
+	}
+	// A second save with different metadata must be ignored (immutable).
+	if err := st.SaveExecRecord(ctx, execs.Exec{ID: "ex_1", Command: []string{"other"}, Metadata: map[string]string{"agentId": "changed"}}); err != nil {
+		t.Fatalf("second save: %v", err)
+	}
+	records, err := st.LoadExecRecords(ctx)
+	if err != nil {
+		t.Fatalf("load records: %v", err)
+	}
+	if len(records) != 1 {
+		t.Fatalf("records = %d, want 1", len(records))
+	}
+	got := records[0]
+	if got.Metadata["agentId"] != "codex" || got.Metadata["primary"] != "true" {
+		t.Fatalf("metadata not durable/immutable: %v", got.Metadata)
+	}
+	if len(got.Command) != 2 || got.Command[0] != "codex" {
+		t.Fatalf("command = %v", got.Command)
+	}
+	// Status is joined from the latest ExecState observation.
+	if got.Status != execs.StatusExited {
+		t.Fatalf("status = %q, want exited (joined from ExecState)", got.Status)
+	}
+}
+
 func TestObserveExecRecordsTransitions(t *testing.T) {
 	ctx := context.Background()
 	st, err := Open(ctx, filepath.Join(t.TempDir(), "agent.db"))

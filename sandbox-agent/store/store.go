@@ -57,7 +57,7 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{write: pools.Write, read: pools.Read}
-	if err := s.write.WithContext(ctx).AutoMigrate(&AgentState{}, &ResourceSnapshot{}, &AgentHookLog{}, &ExecState{}, &ExecEvent{}); err != nil {
+	if err := s.write.WithContext(ctx).AutoMigrate(&AgentState{}, &ResourceSnapshot{}, &AgentHookLog{}, &ExecState{}, &ExecEvent{}, &ExecRecord{}); err != nil {
 		return nil, fmt.Errorf("migrate sandbox-agent store: %w", err)
 	}
 	return s, nil
@@ -163,6 +163,79 @@ func (s *Store) ObserveExec(ctx context.Context, current execs.Exec) error {
 		}
 		return nil
 	})
+}
+
+// SaveExecRecord durably persists an exec's immutable identity/metadata. It is
+// written once at create and never overwritten (OnConflict DoNothing), so the
+// status-observe path can't null it out and a shim runtime write that drops the
+// metadata field can't lose it.
+func (s *Store) SaveExecRecord(ctx context.Context, current execs.Exec) error {
+	if s == nil || current.ID == "" {
+		return nil
+	}
+	command, err := json.Marshal(current.Command)
+	if err != nil {
+		return err
+	}
+	metadata, err := json.Marshal(current.Metadata)
+	if err != nil {
+		return err
+	}
+	record := ExecRecord{
+		ExecID:    current.ID,
+		AgentID:   current.Metadata["agentId"],
+		Primary:   current.Metadata["primary"] == "true",
+		Command:   command,
+		Workdir:   current.Workdir,
+		TTY:       current.TTY,
+		Metadata:  metadata,
+		CreatedAt: current.CreatedAt,
+	}
+	return s.write.WithContext(ctx).Clauses(clause.OnConflict{DoNothing: true}).Create(&record).Error
+}
+
+// LoadExecRecords returns the durable exec identity records joined with their
+// latest observed status. It lets the manager restore metadata onto live execs
+// (in case a shim write dropped it) and surface execs that outlived their tmpfs
+// runtime files across a reboot.
+func (s *Store) LoadExecRecords(ctx context.Context) ([]execs.Exec, error) {
+	if s == nil {
+		return nil, nil
+	}
+	var records []ExecRecord
+	if err := s.read.WithContext(ctx).Find(&records).Error; err != nil {
+		return nil, err
+	}
+	var states []ExecState
+	if err := s.read.WithContext(ctx).Find(&states).Error; err != nil {
+		return nil, err
+	}
+	byID := make(map[string]ExecState, len(states))
+	for _, state := range states {
+		byID[state.ExecID] = state
+	}
+	out := make([]execs.Exec, 0, len(records))
+	for _, record := range records {
+		exec := execs.Exec{
+			ID:        record.ExecID,
+			Workdir:   record.Workdir,
+			TTY:       record.TTY,
+			CreatedAt: record.CreatedAt,
+		}
+		_ = json.Unmarshal(record.Command, &exec.Command)
+		_ = json.Unmarshal(record.Metadata, &exec.Metadata)
+		if state, ok := byID[record.ExecID]; ok {
+			exec.Unit = state.Unit
+			exec.Status = execs.Status(state.Status)
+			exec.PID = state.PID
+			exec.ExitCode = state.ExitCode
+			exec.Error = state.Error
+			exec.StartedAt = state.StartedAt
+			exec.ExitedAt = state.ExitedAt
+		}
+		out = append(out, exec)
+	}
+	return out, nil
 }
 
 func (s *Store) ListEvents(ctx context.Context, terminalID string, limit int) ([]Event, error) {

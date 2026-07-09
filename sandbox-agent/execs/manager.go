@@ -80,6 +80,7 @@ type StartRequest struct {
 	Env         map[string]string
 	User        *User
 	TTY         bool
+	Metadata    map[string]string
 	SocketPath  string
 	RuntimePath string
 	LogDir      string
@@ -106,6 +107,13 @@ type UnitStatus struct {
 type AuditRecorder interface {
 	RecordExecEvent(context.Context, string, string, string, map[string]any) error
 	ObserveExec(context.Context, Exec) error
+	// SaveExecRecord persists an exec's immutable identity/metadata once at
+	// create; LoadExecRecords reads it back (joined with latest status). Together
+	// they make the DB the durable source of truth for exec metadata, so a shim
+	// runtime write that omits metadata cannot lose agentId/primary, and execs
+	// survive the loss of their tmpfs runtime files across a reboot.
+	SaveExecRecord(context.Context, Exec) error
+	LoadExecRecords(context.Context) ([]Exec, error)
 }
 
 type Manager struct {
@@ -258,6 +266,9 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 	if err := writeRuntime(runtimePath, exec); err != nil {
 		return Exec{}, err
 	}
+	// Persist the immutable identity/metadata durably before the shim starts, so
+	// it is never lost to a metadata-less shim runtime write or a reboot.
+	_ = m.saveRecord(ctx, exec)
 	_ = m.recordEvent(ctx, id, "exec.created", "exec created", map[string]any{
 		"unit":    unit,
 		"workdir": workdir,
@@ -273,6 +284,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		Env:         cloneMap(env),
 		User:        cloneUser(user),
 		TTY:         req.TTY,
+		Metadata:    cloneMap(req.Metadata),
 		SocketPath:  socketPath,
 		RuntimePath: runtimePath,
 		LogDir:      m.logDir,
@@ -300,8 +312,11 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 }
 
 func (m *Manager) List() []Exec {
-	execs := m.runtimeExecs(context.Background())
-	if units, err := m.units.List(context.Background()); err == nil {
+	ctx := context.Background()
+	records := m.loadRecords(ctx)
+	execs := m.runtimeExecs(ctx)
+	seen := make(map[string]bool, len(execs))
+	if units, err := m.units.List(ctx); err == nil {
 		byUnit := map[string]UnitStatus{}
 		for _, unit := range units {
 			byUnit[unit.Unit] = unit
@@ -310,11 +325,24 @@ func (m *Manager) List() []Exec {
 			if unit, ok := byUnit[execs[i].Unit]; ok {
 				execs[i] = applyUnitStatus(execs[i], unit)
 			}
-			execs[i] = m.refreshExec(context.Background(), execs[i])
+			execs[i] = m.refreshExec(ctx, execs[i])
 		}
 	} else {
 		for i := range execs {
-			execs[i] = m.refreshExec(context.Background(), execs[i])
+			execs[i] = m.refreshExec(ctx, execs[i])
+		}
+	}
+	for i := range execs {
+		seen[execs[i].ID] = true
+		if record, ok := records[execs[i].ID]; ok {
+			execs[i] = hydrateMetadata(execs[i], record)
+		}
+	}
+	// Surface execs whose tmpfs runtime files are gone (e.g. after a reboot)
+	// from their durable records, so history is not lost.
+	for id, record := range records {
+		if !seen[id] {
+			execs = append(execs, cloneExec(record))
 		}
 	}
 	sort.Slice(execs, func(i, j int) bool {
@@ -331,11 +359,21 @@ func (m *Manager) Reconcile(ctx context.Context) error {
 }
 
 func (m *Manager) Get(id string) (Exec, bool) {
+	ctx := context.Background()
+	records := m.loadRecords(ctx)
 	exec, ok := m.readRuntime(id)
 	if !ok {
+		// The tmpfs runtime file is gone (e.g. after a reboot); fall back to the
+		// durable record so metadata and history survive.
+		if record, ok := records[id]; ok {
+			return cloneExec(record), true
+		}
 		return Exec{}, false
 	}
-	exec = m.refreshExec(context.Background(), exec)
+	exec = m.refreshExec(ctx, exec)
+	if record, ok := records[id]; ok {
+		exec = hydrateMetadata(exec, record)
+	}
 	return cloneExec(exec), true
 }
 
@@ -577,6 +615,40 @@ func (m *Manager) observe(ctx context.Context, exec Exec) error {
 		return nil
 	}
 	return m.audit.ObserveExec(ctx, exec)
+}
+
+func (m *Manager) saveRecord(ctx context.Context, exec Exec) error {
+	if m.audit == nil {
+		return nil
+	}
+	return m.audit.SaveExecRecord(ctx, exec)
+}
+
+// loadRecords returns the durable exec records keyed by ID, best-effort. It is
+// the authoritative source for exec metadata on read.
+func (m *Manager) loadRecords(ctx context.Context) map[string]Exec {
+	if m.audit == nil {
+		return nil
+	}
+	records, err := m.audit.LoadExecRecords(ctx)
+	if err != nil {
+		return nil
+	}
+	out := make(map[string]Exec, len(records))
+	for _, record := range records {
+		out[record.ID] = record
+	}
+	return out
+}
+
+// hydrateMetadata restores an exec's metadata from its durable record when a
+// shim runtime write dropped it. The record is immutable, so it is safe to
+// treat as authoritative.
+func hydrateMetadata(exec, record Exec) Exec {
+	if len(exec.Metadata) == 0 && len(record.Metadata) > 0 {
+		exec.Metadata = cloneMap(record.Metadata)
+	}
+	return exec
 }
 
 func writeRuntime(path string, exec Exec) error {

@@ -51,6 +51,24 @@ type ExecState struct {
 
 func (ExecState) TableName() string { return "exec_states" }
 
+// ExecRecord is the durable, immutable identity/metadata of an exec, written
+// once at create. systemd + the shim remain the source of truth for live state
+// (ExecState); this record survives reboots (tmpfs runtime files and transient
+// units do not) so metadata like agentId/primary and the command are never lost
+// — including when a shim runtime write drops the metadata field.
+type ExecRecord struct {
+	ExecID    string    `gorm:"primaryKey" json:"execId"`
+	AgentID   string    `gorm:"index" json:"agentId,omitempty"`
+	Primary   bool      `json:"primary,omitempty"`
+	Command   []byte    `gorm:"type:json" json:"-"`
+	Workdir   string    `json:"workdir,omitempty"`
+	TTY       bool      `json:"tty,omitempty"`
+	Metadata  []byte    `gorm:"type:json" json:"-"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+func (ExecRecord) TableName() string { return "exec_records" }
+
 type ExecEvent struct {
 	ID        string    `gorm:"primaryKey" json:"id"`
 	ExecID    string    `gorm:"index" json:"execId,omitempty"`

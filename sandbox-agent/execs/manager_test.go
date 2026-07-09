@@ -288,6 +288,79 @@ func (m *fakeUnitManager) Stop(context.Context, string) error {
 	return nil
 }
 
+// recordingAudit is an in-memory AuditRecorder that persists exec records like
+// the SQLite store, for testing metadata durability/hydration.
+type recordingAudit struct {
+	records map[string]Exec
+}
+
+func newRecordingAudit() *recordingAudit { return &recordingAudit{records: map[string]Exec{}} }
+
+func (a *recordingAudit) RecordExecEvent(context.Context, string, string, string, map[string]any) error {
+	return nil
+}
+func (a *recordingAudit) ObserveExec(context.Context, Exec) error { return nil }
+func (a *recordingAudit) SaveExecRecord(_ context.Context, exec Exec) error {
+	if _, ok := a.records[exec.ID]; ok {
+		return nil // immutable
+	}
+	a.records[exec.ID] = cloneExec(exec)
+	return nil
+}
+func (a *recordingAudit) LoadExecRecords(context.Context) ([]Exec, error) {
+	out := make([]Exec, 0, len(a.records))
+	for _, e := range a.records {
+		out = append(out, cloneExec(e))
+	}
+	return out, nil
+}
+
+// A shim runtime write drops the metadata field; the durable record must still
+// restore agentId/primary on read so the exec keeps its identity.
+func TestManagerHydratesMetadataAfterRuntimeClobber(t *testing.T) {
+	audit := newRecordingAudit()
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Units:       &fakeUnitManager{},
+		Audit:       audit,
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	created, err := manager.Create(context.Background(), CreateRequest{
+		Command:  []string{"codex"},
+		Metadata: map[string]string{"agentId": "codex", "primary": "true"},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	// Simulate the shim overwriting the runtime file without metadata.
+	clobbered := created
+	clobbered.Metadata = nil
+	if err := writeRuntime(created.RuntimePath, clobbered); err != nil {
+		t.Fatalf("clobber runtime: %v", err)
+	}
+
+	got, ok := manager.Get(created.ID)
+	if !ok {
+		t.Fatalf("exec not found after clobber")
+	}
+	if got.Metadata["agentId"] != "codex" || got.Metadata["primary"] != "true" {
+		t.Fatalf("metadata not restored from record: %#v", got.Metadata)
+	}
+	// And it is still enumerated with its metadata via List.
+	found := false
+	for _, e := range manager.List() {
+		if e.ID == created.ID && e.Metadata["agentId"] == "codex" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("clobbered exec missing metadata in List")
+	}
+}
+
 func (m *fakeUnitManager) Status(context.Context, string) (UnitStatus, error) {
 	return UnitStatus{}, errors.New("not found")
 }

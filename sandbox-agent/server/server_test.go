@@ -403,3 +403,11 @@ func (sandboxAgentNoopAudit) RecordExecEvent(context.Context, string, string, st
 func (sandboxAgentNoopAudit) ObserveExec(context.Context, execs.Exec) error {
 	return nil
 }
+
+func (sandboxAgentNoopAudit) SaveExecRecord(context.Context, execs.Exec) error {
+	return nil
+}
+
+func (sandboxAgentNoopAudit) LoadExecRecords(context.Context) ([]execs.Exec, error) {
+	return nil, nil
+}

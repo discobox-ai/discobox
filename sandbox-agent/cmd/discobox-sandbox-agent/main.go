@@ -154,7 +154,7 @@ func runProxyBridge(args []string) int {
 
 func runExecShim(args []string) int {
 	var cfg execs.ShimConfig
-	var commandBase64, envBase64, userBase64 string
+	var commandBase64, envBase64, userBase64, metadataBase64 string
 	var rows, cols int
 	flags := flag.NewFlagSet("discobox-sandbox-agent exec-shim", flag.ContinueOnError)
 	flags.StringVar(&cfg.ExecID, "exec-id", "", "sandbox exec id")
@@ -169,6 +169,7 @@ func runExecShim(args []string) int {
 	flags.StringVar(&commandBase64, "command", "", "base64 encoded JSON command argv")
 	flags.StringVar(&envBase64, "env", "", "base64 encoded JSON environment")
 	flags.StringVar(&userBase64, "user", "", "base64 encoded JSON exec user")
+	flags.StringVar(&metadataBase64, "metadata", "", "base64 encoded JSON exec metadata")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -204,6 +205,17 @@ func runExecShim(args []string) int {
 		}
 		if err := json.Unmarshal(userJSON, &cfg.User); err != nil {
 			slog.Error("parse exec shim user", "error", err)
+			return 2
+		}
+	}
+	if metadataBase64 != "" {
+		metadataJSON, err := base64.StdEncoding.DecodeString(metadataBase64)
+		if err != nil {
+			slog.Error("decode exec shim metadata", "error", err)
+			return 2
+		}
+		if err := json.Unmarshal(metadataJSON, &cfg.Metadata); err != nil {
+			slog.Error("parse exec shim metadata", "error", err)
 			return 2
 		}
 	}
