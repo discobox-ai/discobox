@@ -679,6 +679,7 @@ func TestSandboxExecAttachRouteUsesExecWriteScope(t *testing.T) {
 }
 
 func TestNewAppStartsWithDefaults(t *testing.T) {
+	skipWithoutDocker(t)
 	ctx := context.Background()
 	db := newAppTestDB(ctx, t)
 
@@ -710,6 +711,7 @@ func TestNewAppStartsWithDefaults(t *testing.T) {
 }
 
 func TestNewAppResolvesDefaultProjectAlias(t *testing.T) {
+	skipWithoutDocker(t)
 	ctx := context.Background()
 	db := newAppTestDB(ctx, t)
 
@@ -739,6 +741,7 @@ func TestNewAppResolvesDefaultProjectAlias(t *testing.T) {
 }
 
 func TestProjectStreamReceivesSandboxMutation(t *testing.T) {
+	skipWithoutDocker(t)
 	ctx := context.Background()
 	db := newAppTestDB(ctx, t)
 

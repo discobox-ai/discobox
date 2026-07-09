@@ -93,6 +93,7 @@ func TestEnqueueProviderWorkersSchedulesEveryWorkerWithDefaultAttempts(t *testin
 }
 
 func TestEnsureExistingSandboxProviderInstancesSchedulesWorkerProviderReconcile(t *testing.T) {
+	skipWithoutDocker(t)
 	ctx := context.Background()
 	db, err := database.New(database.Config{DSN: ":memory:"})
 	if err != nil {
