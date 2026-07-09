@@ -144,6 +144,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 			CommandInstaller{Execs: installs, User: defaultUser},
 			HookInstaller{},
 			FileInstaller{
+				Name:          cfg.ExecDefaults.Username,
 				HomeDirectory: cfg.ExecDefaults.HomeDirectory,
 				UID:           cfg.ExecDefaults.UID,
 				GID:           cfg.ExecDefaults.GID,
@@ -271,7 +272,7 @@ func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 	agent, _, err := s.resolveAgent("", workdir)
 	if err != nil {
 		// No agent is configured for this sandbox; nothing to launch.
-		return nil
+		return nil //nolint:nilerr // a missing agent is a valid state, not a failure
 	}
 	launched := false
 	if s.primaryState != nil {
@@ -436,7 +437,7 @@ func applyLocalAgentConfig(agent config.Agent, local localAgentConfig) config.Ag
 
 func gitRoot(workdir, workingRoot string) (string, bool) {
 	workdir = filepath.Clean(workdir)
-	if output, err := exec.Command("git", "-C", workdir, "rev-parse", "--show-toplevel").Output(); err == nil {
+	if output, err := exec.CommandContext(context.Background(), "git", "-C", workdir, "rev-parse", "--show-toplevel").Output(); err == nil {
 		root := filepath.Clean(strings.TrimSpace(string(output)))
 		if insideRoot(root, workingRoot) {
 			return root, true
@@ -577,6 +578,7 @@ func harnessAgent(agent config.Agent) harness.Agent {
 
 // FileInstaller writes an agent's configured files into its home directory.
 type FileInstaller struct {
+	Name          string
 	HomeDirectory string
 	UID           *int64
 	GID           *int64
@@ -586,9 +588,9 @@ func (i FileInstaller) EnsureInstalled(_ context.Context, agent config.Agent, _ 
 	if len(agent.Files) == 0 {
 		return nil
 	}
-	home := strings.TrimSpace(i.HomeDirectory)
-	if home == "" {
-		return fmt.Errorf("agent %q has files to install but no home directory is configured", agent.ID)
+	home, err := i.resolveHome()
+	if err != nil {
+		return fmt.Errorf("agent %q %w", agent.ID, err)
 	}
 	home = filepath.Clean(home)
 	for _, file := range agent.Files {
@@ -601,6 +603,26 @@ func (i FileInstaller) EnsureInstalled(_ context.Context, agent config.Agent, _ 
 		}
 	}
 	return nil
+}
+
+// resolveHome resolves the home directory to install agent files into, matching
+// how process env defaults resolve HOME (execs.ResolveUser): an explicit home,
+// then the run user's /etc/passwd entry, then the agent process's own $HOME.
+func (i FileInstaller) resolveHome() (string, error) {
+	if home := strings.TrimSpace(i.HomeDirectory); home != "" {
+		return home, nil
+	}
+	_, home, err := execs.ResolveUser(&execs.User{Name: i.Name, UID: i.UID, GID: i.GID})
+	if err != nil {
+		return "", fmt.Errorf("resolve home directory: %w", err)
+	}
+	if home == "" {
+		home = strings.TrimSpace(os.Getenv("HOME"))
+	}
+	if home == "" {
+		return "", fmt.Errorf("has files to install but no home directory could be resolved for the run user")
+	}
+	return home, nil
 }
 
 func homeRelativePath(home, requested string) (string, error) {
@@ -637,7 +659,7 @@ func writeAgentFile(path, content string, createOnly bool, uid, gid *int64) erro
 			return err
 		}
 	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		return err
 	}
 	if err := os.Chmod(path, 0o644); err != nil {

@@ -176,8 +176,17 @@ func (r *shimRuntime) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	r.mu.Lock()
 	status := r.status
 	r.mu.Unlock()
+	writeJSON(w, status)
+}
+
+func writeJSON(w http.ResponseWriter, value any) {
+	body, err := json.Marshal(value)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(status)
+	_, _ = w.Write(body)
 }
 
 func (r *shimRuntime) serve() {
@@ -198,8 +207,7 @@ func (r *shimRuntime) handleStart(w http.ResponseWriter, _ *http.Request) {
 	r.mu.Lock()
 	status := r.status
 	r.mu.Unlock()
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(status)
+	writeJSON(w, status)
 }
 
 func (r *shimRuntime) startCommand() error {
@@ -213,7 +221,9 @@ func (r *shimRuntime) startCommand() error {
 	}
 	r.mu.Unlock()
 
-	cmd := exec.Command(r.cfg.Command[0], r.cfg.Command[1:]...) //nolint:gosec // command is caller-supplied for sandbox exec.
+	// The exec's lifetime is managed by the shim itself (stop/kill via the
+	// runtime API), not by a request context.
+	cmd := exec.CommandContext(context.Background(), r.cfg.Command[0], r.cfg.Command[1:]...) //nolint:gosec // command is caller-supplied for sandbox exec.
 	cmd.Dir = r.cfg.Workdir
 	cmd.Env = append(os.Environ(), "DISCOBOX_EXEC_ID="+r.cfg.ExecID)
 	userEnv, err := userEnvDefaults(r.cfg.User)

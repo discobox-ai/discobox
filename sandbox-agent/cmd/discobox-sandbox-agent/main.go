@@ -75,7 +75,12 @@ func runHookPublish(args []string) int {
 		payload = []byte(`{}`)
 	}
 	if !json.Valid(payload) {
-		payload, _ = json.Marshal(map[string]string{"raw": string(payload)})
+		wrapped, err := json.Marshal(map[string]string{"raw": string(payload)})
+		if err != nil {
+			slog.Error("wrap hook payload", "error", err)
+			return 1
+		}
+		payload = wrapped
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

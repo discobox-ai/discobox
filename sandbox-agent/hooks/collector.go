@@ -51,7 +51,7 @@ func Serve(ctx context.Context, socketPath string, recorder Recorder) error {
 		return err
 	}
 	_ = os.Remove(socketPath)
-	listener, err := net.Listen("unix", socketPath)
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "unix", socketPath)
 	if err != nil {
 		return fmt.Errorf("listen hook socket: %w", err)
 	}

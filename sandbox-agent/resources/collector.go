@@ -35,6 +35,13 @@ func (c Collector) Collect(ctx context.Context, ex execs.Exec) (store.ResourceSa
 		c.CgroupRoot = "/sys/fs/cgroup"
 	}
 	sampledAt := time.Now().UTC()
+	host := map[string]any{
+		"goos":   runtime.GOOS,
+		"goarch": runtime.GOARCH,
+	}
+	if hostname, err := os.Hostname(); err == nil {
+		host["hostname"] = hostname
+	}
 	data := map[string]any{
 		"terminal": map[string]any{
 			"id":       ex.ID,
@@ -45,13 +52,7 @@ func (c Collector) Collect(ctx context.Context, ex execs.Exec) (store.ResourceSa
 			"workdir":  ex.Workdir,
 			"metadata": ex.Metadata,
 		},
-		"host": map[string]any{
-			"goos":   runtime.GOOS,
-			"goarch": runtime.GOARCH,
-		},
-	}
-	if hostname, err := os.Hostname(); err == nil {
-		data["host"].(map[string]any)["hostname"] = hostname
+		"host": host,
 	}
 	if ex.PID > 0 {
 		pid := int(ex.PID)
@@ -136,9 +137,7 @@ func (c Collector) readCgroupFiles(cgroupPath string) map[string]any {
 func (c Collector) processes(rootPID int, cgroupPath string) []map[string]any {
 	seen := map[int]bool{}
 	pids := []int{rootPID}
-	for _, pid := range c.cgroupPIDs(cgroupPath) {
-		pids = append(pids, pid)
-	}
+	pids = append(pids, c.cgroupPIDs(cgroupPath)...)
 	out := make([]map[string]any, 0, len(pids))
 	for _, pid := range pids {
 		if pid <= 0 || seen[pid] {

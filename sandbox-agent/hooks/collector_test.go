@@ -61,7 +61,7 @@ func waitForSocket(t *testing.T, socketPath string) {
 	t.Helper()
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		conn, err := net.Dial("unix", socketPath)
+		conn, err := (&net.Dialer{}).DialContext(context.Background(), "unix", socketPath)
 		if err == nil {
 			_ = conn.Close()
 			return

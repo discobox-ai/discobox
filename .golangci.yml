@@ -39,6 +39,10 @@ linters:
     nolintlint:
       require-explanation: true
       require-specific: true
+      # Whether a nolint directive is "used" varies with the golangci/gosec
+      # version (local vs the dagger go module's pinned image), so unused
+      # directives cannot be reported stably across environments.
+      allow-unused: true
     revive:
       enable-default-rules: true
       rules:
@@ -52,6 +56,18 @@ linters:
       - legacy
       - std-error-handling
     rules:
+      # Explicit: the common-false-positives preset excludes G115 in newer
+      # golangci-lint versions but not in all older ones; pin the behavior so
+      # local and containerized (dagger) lint agree regardless of version.
+      - text: "G115:"
+        linters:
+          - gosec
+      # The G70x taint-analysis family (path traversal, SSRF, ...) only fires
+      # in some gosec versions; excluded for the same cross-version parity
+      # reason.
+      - text: "G70[0-9]:"
+        linters:
+          - gosec
       - path: _test\.go
         linters:
           - errcheck

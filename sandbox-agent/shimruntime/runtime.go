@@ -44,7 +44,7 @@ type Attacher struct {
 	w         *bufio.ReadWriter
 	done      chan struct{}
 	closeOnce sync.Once
-	// ready is closed when the client sends a frame.Ready, signalling that the
+	// ready is closed when the client sends a frame.Ready, signaling that the
 	// attach tunnel is fully established and the client is reading output.
 	ready     chan struct{}
 	readyOnce sync.Once

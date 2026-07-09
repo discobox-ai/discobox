@@ -202,13 +202,13 @@ func writeUpgradeStreamHeader(w io.Writer, sessionID, upgradeType string, starte
 	if err := writeInt64(w, startedAt.UnixNano()); err != nil {
 		return err
 	}
-	if err := writeUint16(w, uint16(len(sessionID))); err != nil { //nolint:gosec // Length is checked above.
+	if err := writeUint16(w, uint16(len(sessionID))); err != nil {
 		return err
 	}
 	if _, err := io.WriteString(w, sessionID); err != nil {
 		return err
 	}
-	if err := writeUint16(w, uint16(len(upgradeType))); err != nil { //nolint:gosec // Length is checked above.
+	if err := writeUint16(w, uint16(len(upgradeType))); err != nil {
 		return err
 	}
 	_, err := io.WriteString(w, upgradeType)
@@ -228,7 +228,7 @@ func writeUpgradeStreamDataFrame(w io.Writer, direction byte, timestamp time.Tim
 	if err := writeByte(w, direction); err != nil {
 		return err
 	}
-	if err := writeUint32(w, uint32(len(payload))); err != nil { //nolint:gosec // Length is checked above.
+	if err := writeUint32(w, uint32(len(payload))); err != nil {
 		return err
 	}
 	_, err := w.Write(payload)

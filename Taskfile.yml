@@ -205,6 +205,7 @@ tasks:
       - cd gormdb && "$(go -C .. tool -n golangci-lint)" run
       - cd orchestration && "$(go -C .. tool -n golangci-lint)" run
       - cd hooks && "$(go -C .. tool -n golangci-lint)" run
+      - cd sandbox-agent && "$(go -C .. tool -n golangci-lint)" run
       - task: check:ui
       - task: check:electron
 
@@ -265,6 +266,7 @@ tasks:
       - cd gormdb && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd orchestration && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd hooks && "$(go -C .. tool -n golangci-lint)" run --fix
+      - cd sandbox-agent && "$(go -C .. tool -n golangci-lint)" run --fix
       - task: check:ui:fix
       - task: check:electron:fix
 

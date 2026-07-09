@@ -3,6 +3,7 @@ package execs
 import (
 	"bufio"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -51,6 +52,7 @@ func TestRunShimSendsOutputBeforeExitFrame(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read attach response: %v", err)
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusSwitchingProtocols {
 		t.Fatalf("attach status = %s", resp.Status)
 	}
@@ -64,7 +66,7 @@ func TestRunShimSendsOutputBeforeExitFrame(t *testing.T) {
 	for {
 		next, err := frame.Read(reader)
 		if err != nil {
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				t.Fatal("attach closed before exit frame")
 			}
 			t.Fatalf("read frame: %v", err)
@@ -140,6 +142,7 @@ func TestRunShimUsesResizeFrameBeforeStart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read attach response: %v", err)
 	}
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusSwitchingProtocols {
 		t.Fatalf("attach status = %s", resp.Status)
 	}
