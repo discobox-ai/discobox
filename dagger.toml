@@ -1,0 +1,34 @@
+# Dagger workspace configuration (Dagger 1.0 beta; see Taskfile `dagger:check`).
+# Run with: DAGGER_X_RELEASE=v1.0.0-beta.6 dagger check   (or: go tool task dagger:check)
+# Install modules with: dagger install <module>
+
+[modules.go]
+source = "github.com/dagger/go"
+
+[modules.go.settings]
+
+# This repo's Go modules resolve through go.work (cli/server are workspace-only
+# by design — see .discobot/hooks/11-go-mod-tidy.sh), so every Go command needs
+# the full workspace mounted, not just the module's own files.
+#
+# NOTE: string, not array, on purpose. Dagger v1.0.0-beta.6 double-encodes
+# array-valued settings into a single broken pattern; a scalar string is coerced
+# into a one-element list correctly. Once fixed upstream this can become e.g.
+# ["go.work", "go.work.sum", "**/go.mod", "**/go.sum", "**/*.go"].
+includeExtraFiles = "**"
+
+# Debian-based image so test containers have git (several hooks/ and
+# worker-agent/ tests shell out to it); the default alpine base does not.
+base = "golang:1.26"
+
+[modules.dagger-dang-sdk]
+source = "github.com/dagger/dang-sdk"
+
+# Marker filename that skips generate when found at or above a Dang SDK module root.
+# settings.skipGenerateFilename = ""
+
+[modules.release]
+source = ".dagger/modules/release"
+
+[modules.dagger-dang-sdk.as-sdk]
+name = "dang"

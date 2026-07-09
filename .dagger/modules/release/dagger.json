@@ -1,0 +1,10 @@
+{
+  "codegen": {
+    "automaticGitignore": false
+  },
+  "engineVersion": "v1.0.0-beta.6",
+  "name": "release",
+  "sdk": {
+    "source": "dang"
+  }
+}

@@ -1,0 +1,255 @@
+"""
+Release automation for discobox in two chainable phases:
+
+  stage  — build everything into a local, inspectable directory: multi-arch
+           agent image tarballs, cross-compiled discobox CLI binaries, and the
+           tag/commit the release was cut from.
+  push   — publish a staged directory: create the tag on GitHub, push the
+           staged images to the registry, and upload the binaries to the
+           GitHub release.
+
+publish chains the two. The GitHub repo and registry owner are derived from
+the git origin remote unless overridden. UI/Electron artifacts are out of
+scope for now.
+"""
+type Release {
+  """
+  Repository source used as the Docker build context and Go workspace.
+  """
+  pub source: Directory!
+
+  """
+  Registry prefix images are published under. Empty derives ghcr.io/<owner>
+  from the git origin remote.
+  """
+  pub registry: String!
+
+  """
+  GitHub repository (owner/name) that receives the tag and release. Empty
+  derives it from the git origin remote.
+  """
+  pub githubRepo: String!
+
+  let gitDir: Directory!
+
+  new(
+    ws: Workspace!,
+    registry: String! = "",
+    githubRepo: String! = "",
+  ) {
+    # .dockerignore covers the rest; node_modules is excluded here because the
+    # snapshot (not just the build context) would otherwise carry it around.
+    self.source = ws.directory("/", exclude: ["**/node_modules", ".git", "build"])
+    self.gitDir = ws.directory("/", include: [".git"])
+    self.registry = registry
+    self.githubRepo = githubRepo
+    self
+  }
+
+  let imageNames = ["worker-agent", "sandbox-agent"]
+
+  let imagePlatforms = ["linux/amd64", "linux/arm64"]
+
+  let git: Container! {
+    container
+      .from("alpine/git:latest")
+      .withoutEntrypoint
+      .withDirectory("/repo", gitDir)
+      .withWorkdir("/repo")
+  }
+
+  let gh: Container! {
+    container
+      .from("alpine:3.22")
+      .withExec(["apk", "add", "--no-cache", "github-cli"])
+  }
+
+  """
+  GitHub repository (owner/name) the release targets.
+  """
+  pub repo: String! {
+    if (githubRepo != "") {
+      githubRepo
+    } else {
+      git
+        .withExec(["sh", "-c", """
+          git remote get-url origin | sed -E 's#^(git@github.com:|https://github.com/)##; s#[.]git$##'
+        """])
+        .stdout
+        .trimSpace
+    }
+  }
+
+  """
+  Registry prefix images are pushed under.
+  """
+  pub registryPrefix: String! {
+    if (registry != "") {
+      registry
+    } else {
+      "ghcr.io/" + repo.split("/")[0]!
+    }
+  }
+
+  """
+  Commit the release is cut from (local HEAD).
+  """
+  pub headCommit: String! {
+    git.withExec(["git", "rev-parse", "HEAD"]).stdout.trimSpace
+  }
+
+  """
+  Next patch version inferred from the latest v* tag (v0.1.0 when none).
+  """
+  pub nextTag: String! {
+    git
+      .withExec(["sh", "-c", """
+        latest="$(git tag -l 'v*' --sort=-v:refname | head -1)"
+        if [ -z "$latest" ]; then
+          echo v0.1.0
+        else
+          echo "$latest" | awk -F. '{printf "%s.%s.%d", $1, $2, $3+1}'
+        fi
+      """])
+      .stdout
+      .trimSpace
+  }
+
+  """
+  Build one agent image from its Dockerfile with the repo root as context.
+  """
+  pub image(name: String!, platform: Platform! = "linux/amd64"): Container! {
+    source.dockerBuild(dockerfile: name + "/Dockerfile", platform: platform)
+  }
+
+  """
+  Cross-compiled discobox CLI binaries, named discobox-<os>-<arch>[.exe].
+  """
+  pub cliBinaries: Directory! {
+    container
+      .from("golang:1.26")
+      .withMountedCache("/go/pkg/mod", cacheVolume("go-mod"))
+      .withMountedCache("/root/.cache/go-build", cacheVolume("go-build"))
+      .withDirectory("/src", source)
+      .withWorkdir("/src")
+      .withEnvVariable("CGO_ENABLED", "0")
+      .withExec(["bash", "-c", """
+        set -euo pipefail
+        mkdir -p /out
+        for t in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+          export GOOS=${t%/*} GOARCH=${t#*/}
+          ext=''
+          if [ "$GOOS" = windows ]; then ext=.exe; fi
+          go build -C cli -trimpath -ldflags='-s -w' -o /out/discobox-$GOOS-$GOARCH$ext ./cmd/discobox
+        done
+      """])
+      .directory("/out")
+  }
+
+  """
+  Build the complete release into a directory: tag and commit markers, CLI
+  binaries under bin/, and one docker-loadable image tarball per agent and
+  platform under images/. Export it, inspect it, test it — then push it.
+  """
+  pub stage(tag: String = null): Directory! {
+    let resolvedTag = if (tag == null) { nextTag } else { tag! }
+    let base = directory
+      .withNewFile("tag", resolvedTag + "\n")
+      .withNewFile("commit", headCommit + "\n")
+      .withDirectory("bin", cliBinaries)
+    imageNames.reduce(base) { staged, name =>
+      imagePlatforms.reduce(staged) { acc, p =>
+        acc.withFile(
+          "images/" + name + "-" + p.replace("/", "-") + ".tar",
+          image(name, platform: p :: Platform!).asTarball,
+        )
+      }
+    }
+  }
+
+  """
+  Publish a staged release directory: create the tag on GitHub at the staged
+  commit (the commit must already be pushed), publish the staged images as
+  multi-arch manifests, and upload the binaries to the GitHub release.
+  Returns the pushed image refs. Safe to re-run.
+  """
+  pub push(
+    staged: Directory!,
+    username: String!,
+    token: Secret!,
+  ): [String!]! {
+    let tag = staged.file("tag").contents.trimSpace
+    let commit = staged.file("commit").contents.trimSpace
+
+    # Phase 1: the tag must exist on GitHub before the release is created.
+    gh
+      .withSecretVariable("GITHUB_TOKEN", token)
+      .withEnvVariable("GH_REPO", repo)
+      .withExec(["sh", "-c", ```
+        set -eu
+        existing="$(gh api "repos/$GH_REPO/git/ref/tags/${tag}" --jq .object.sha 2>/dev/null || true)"
+        if [ -z "$existing" ]; then
+          gh api "repos/$GH_REPO/commits/${commit}" --jq .sha >/dev/null 2>&1 || {
+            echo "commit ${commit} is not on $GH_REPO; push main first" >&2
+            exit 1
+          }
+          gh api "repos/$GH_REPO/git/refs" -f ref="refs/tags/${tag}" -f sha="${commit}" >/dev/null
+          echo "created tag ${tag} at ${commit}"
+        elif [ "$existing" != "${commit}" ]; then
+          echo "tag ${tag} already exists at $existing but staged commit is ${commit}" >&2
+          exit 1
+        else
+          echo "tag ${tag} already at ${commit}"
+        fi
+      ```])
+      .sync
+
+    # Phase 2: publish the staged image tarballs as multi-arch manifests.
+    let refs = imageNames.map { name =>
+      container
+        .withRegistryAuth("ghcr.io", username, token)
+        .publish(
+          registryPrefix + "/discobox-" + name + ":" + tag,
+          platformVariants: imagePlatforms.map { p =>
+            container.import(staged.file("images/" + name + "-" + p.replace("/", "-") + ".tar"))
+          },
+        )
+    }
+
+    # Phase 3: create the GitHub release if missing and upload the binaries.
+    gh
+      .withSecretVariable("GITHUB_TOKEN", token)
+      .withEnvVariable("GH_REPO", repo)
+      .withDirectory("/assets", staged.directory("bin"))
+      .withExec(["sh", "-c", ```
+        gh release view ${tag} >/dev/null 2>&1 ||
+          gh release create ${tag} --verify-tag --title ${tag} --generate-notes
+        gh release upload ${tag} /assets/* --clobber
+      ```])
+      .sync
+
+    refs
+  }
+
+  """
+  Smoke-check that the release still builds: native-platform agent images and
+  every CLI binary. The full multi-arch tarball path is exercised by stage
+  (run as a dry run on pushes to main), not on every check.
+  """
+  pub buildable: Void @check {
+    imageNames.map { name => image(name).sync }
+    cliBinaries.sync
+    null
+  }
+
+  """
+  Full release: stage and push in one call.
+  """
+  pub publish(
+    tag: String = null,
+    username: String!,
+    token: Secret!,
+  ): [String!]! {
+    push(stage(tag), username: username, token: token)
+  }
+}

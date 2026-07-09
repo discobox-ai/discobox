@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+env:
+  # Dagger 1.0 beta: the stable CLI auto-downloads and runs this release.
+  DAGGER_X_RELEASE: v1.0.0-beta.6
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  dagger-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6.0.2
+
+      - name: Install Dagger CLI
+        run: |
+          curl -fsSL https://dl.dagger.io/dagger/install.sh | DAGGER_VERSION=v0.21.7 BIN_DIR="$HOME/.local/bin" sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      # Runs every workspace check from dagger.toml: go:lint-all, go:test-all,
+      # and generators-as-checks (fails if generated files are stale).
+      - name: Dagger check
+        run: dagger check
