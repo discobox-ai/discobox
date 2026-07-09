@@ -64,7 +64,8 @@ func (h *handler) startExecHTTP(w http.ResponseWriter, r *http.Request, execID s
 		writeJSON(w, http.StatusInternalServerError, sandboxapi.ErrorResponse{Error: err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, sandboxExec(exec))
+	out := sandboxExec(exec)
+	writeJSON(w, http.StatusOK, &out)
 }
 
 // CreateSandboxExec creates a plain exec (command) or, when agentId is set, an
@@ -484,12 +485,4 @@ func stringMap[M ~map[string]string](in M) map[string]string {
 		out[key] = value
 	}
 	return out
-}
-
-func optInt64Ptr(in sandboxapi.OptInt64) *int64 {
-	value, ok := in.Get()
-	if !ok {
-		return nil
-	}
-	return &value
 }

@@ -4,13 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-faster/jx"
+
 	sandboxapi "github.com/obot-platform/discobox/api/sandboxgen"
 
 	"github.com/obot-platform/discobox/sandbox-agent/config"
@@ -259,25 +260,26 @@ func execReconcileLoop(ctx context.Context, logger *slog.Logger, manager *execs.
 	}
 }
 
-func reconcileLoop(ctx context.Context, logger *slog.Logger, manager *terminal.Service) {
-	ticker := time.NewTicker(2 * time.Second)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
+func writeJSON(w http.ResponseWriter, status int, value any) {
+	var body []byte
+	if enc, ok := value.(interface{ Encode(*jx.Encoder) }); ok {
+		// ogen types must be encoded via jx: encoding/json mis-serializes their
+		// optional fields (an unset OptString's MarshalJSON returns empty bytes,
+		// which fails json.Marshal with "unexpected end of JSON input").
+		var e jx.Encoder
+		enc.Encode(&e)
+		body = e.Bytes()
+	} else {
+		var err error
+		body, err = json.Marshal(value)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
-		case <-ticker.C:
-			if err := manager.Reconcile(ctx); err != nil {
-				logger.Debug("sandbox agent terminal reconcile failed", "error", err)
-			}
 		}
 	}
-}
-
-func writeJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	_, _ = w.Write(body)
 }
 
 type statusError struct {
@@ -292,10 +294,6 @@ func (e statusError) StatusCode() int {
 		return http.StatusInternalServerError
 	}
 	return e.status
-}
-
-func notImplemented(message string) error {
-	return statusError{status: http.StatusNotImplemented, message: fmt.Sprintf("%s is not implemented yet", message)}
 }
 
 func errorStatus(status int, message string) *sandboxapi.ErrorResponseStatusCode {
