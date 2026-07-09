@@ -26,6 +26,12 @@ type Entry struct {
 	Size    int64
 	Mode    fs.FileMode
 	ModTime time.Time
+	// Hash is the content digest for regular files. It lets change detection
+	// compare bytes instead of mtime, so tools that rewrite a file with
+	// identical content but a fresh mtime (go mod tidy, go work sync, and other
+	// unconditional writers) do not register as changes. Empty for directories,
+	// symlinks, and other non-regular files.
+	Hash string
 }
 
 // Change is one semantic filesystem change.
@@ -129,5 +135,16 @@ func diffSnapshots(oldSnap, newSnap map[string]Entry) []Change {
 }
 
 func sameEntry(a, b Entry) bool {
-	return a.Path == b.Path && a.IsDir == b.IsDir && a.Size == b.Size && a.Mode == b.Mode && a.ModTime.Equal(b.ModTime)
+	if a.Path != b.Path || a.IsDir != b.IsDir || a.Mode != b.Mode {
+		return false
+	}
+	if a.Mode.IsRegular() {
+		// Compare content, not mtime: many tools rewrite regular files (go.sum,
+		// go.work, formatter output) with identical bytes but a new mtime, which
+		// must not count as a change or the file-change hooks loop forever.
+		return a.Size == b.Size && a.Hash == b.Hash
+	}
+	// Non-regular files (directories, symlinks) carry no content hash; fall back
+	// to size and mtime metadata.
+	return a.Size == b.Size && a.ModTime.Equal(b.ModTime)
 }

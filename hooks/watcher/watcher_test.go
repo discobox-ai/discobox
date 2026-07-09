@@ -125,6 +125,54 @@ func TestDiffSnapshotsOrdersAndClassifiesChanges(t *testing.T) {
 	}
 }
 
+func TestDiffSnapshotsIgnoresMtimeOnlyRewriteForRegularFiles(t *testing.T) {
+	// Regular files (Mode 0 has no type bits, so IsRegular is true).
+	oldSnap := map[string]Entry{
+		"go.sum": {Path: "go.sum", Size: 10, ModTime: time.Unix(1, 0), Hash: "abc"},
+	}
+	// Identical content and size, only mtime advanced — an unconditional rewrite
+	// by go mod tidy / go work sync. This must NOT register as a change.
+	newSnap := map[string]Entry{
+		"go.sum": {Path: "go.sum", Size: 10, ModTime: time.Unix(2, 0), Hash: "abc"},
+	}
+	if changes := diffSnapshots(oldSnap, newSnap); len(changes) != 0 {
+		t.Fatalf("expected no changes for identical content, got %#v", changes)
+	}
+
+	// An actual content change (different hash) is still reported.
+	newSnap["go.sum"] = Entry{Path: "go.sum", Size: 12, ModTime: time.Unix(3, 0), Hash: "def"}
+	changes := diffSnapshots(oldSnap, newSnap)
+	if len(changes) != 1 || changes[0].Kind != Modified {
+		t.Fatalf("expected one Modified change, got %#v", changes)
+	}
+}
+
+func TestWatcherIgnoresIdenticalContentRewrite(t *testing.T) {
+	root := t.TempDir()
+	w := newTestWatcher(t, root)
+	defer w.Close()
+
+	path := filepath.Join(root, "go.sum")
+	writeFile(t, path, []byte("checksum"))
+	batch := waitForBatch(t, w, 2*time.Second)
+	assertChange(t, batch, "go.sum", Created)
+
+	// Rewrite identical bytes with a fresh mtime, exactly as go work sync does.
+	future := time.Now().Add(time.Second)
+	if err := os.WriteFile(path, []byte("checksum"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chtimes(path, future, future); err != nil {
+		t.Fatal(err)
+	}
+	assertNoBatch(t, w, 500*time.Millisecond)
+
+	// A real content change is still detected.
+	writeFile(t, path, []byte("checksum-changed"))
+	batch = waitForBatch(t, w, 2*time.Second)
+	assertChange(t, batch, "go.sum", Modified)
+}
+
 func newTestWatcher(t *testing.T, root string) *Watcher {
 	t.Helper()
 	w, err := New(root, Options{Debounce: 25 * time.Millisecond})

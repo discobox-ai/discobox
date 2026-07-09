@@ -2,8 +2,11 @@ package watcher
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -73,7 +76,7 @@ func New(root string, opts Options) (*Watcher, error) {
 	if opts.InitialSnapshot != nil {
 		w.snapshot = cloneSnapshot(opts.InitialSnapshot)
 	} else {
-		w.snapshot, err = w.scan()
+		w.snapshot, err = w.scan(nil)
 		if err != nil {
 			_ = fw.Close()
 			cancel()
@@ -195,7 +198,10 @@ func tickerC(t *time.Ticker) <-chan time.Time {
 }
 
 func (w *Watcher) rescan(resync bool) {
-	newSnap, err := w.scan()
+	w.mu.Lock()
+	prev := w.snapshot
+	w.mu.Unlock()
+	newSnap, err := w.scan(prev)
 	if err != nil {
 		w.sendError(err)
 		return
@@ -233,7 +239,7 @@ func (w *Watcher) sendError(err error) {
 	}
 }
 
-func (w *Watcher) scan() (map[string]Entry, error) {
+func (w *Watcher) scan(prevSnap map[string]Entry) (map[string]Entry, error) {
 	snap := make(map[string]Entry)
 	err := filepath.WalkDir(w.root, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
@@ -269,10 +275,35 @@ func (w *Watcher) scan() (map[string]Entry, error) {
 			}
 			return nil
 		}
+		if entry.Mode.IsRegular() {
+			// Reuse the previous content hash when size and mtime are unchanged so
+			// we only read files whose stat actually moved. On a stat change (or an
+			// unseeded/first scan) recompute; a read error leaves the hash empty and
+			// falls back to metadata comparison.
+			if prev, ok := prevSnap[rel]; ok && prev.Hash != "" && prev.Size == entry.Size && prev.ModTime.Equal(entry.ModTime) {
+				entry.Hash = prev.Hash
+			} else if h, herr := hashFile(path); herr == nil {
+				entry.Hash = h
+			}
+		}
 		snap[rel] = entry
 		return nil
 	})
 	return snap, err
+}
+
+// hashFile returns a hex content digest for the regular file at path.
+func hashFile(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	h := sha256.New()
+	if _, err := io.Copy(h, f); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func (w *Watcher) addRecursive(root string) error {
