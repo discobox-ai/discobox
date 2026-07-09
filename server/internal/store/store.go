@@ -15,6 +15,9 @@ import (
 var (
 	ErrNotFound           = apperrors.ErrNotFound
 	ErrGenerationConflict = apperrors.ErrGenerationConflict
+	// ErrInUse indicates a resource cannot be deleted because another live
+	// resource still references it.
+	ErrInUse = errors.New("resource is in use")
 )
 
 // Store owns GORM handles for application persistence.

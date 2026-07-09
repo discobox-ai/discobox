@@ -87,6 +87,21 @@ func (s *Store) DeleteAgentConfig(ctx context.Context, projectID, configID strin
 		if err := s.deleteAgentConfigSecretBindingsByAgentConfig(tx, configID); err != nil {
 			return nil, err
 		}
+		// A live sandbox still using the config blocks deletion with a clear error.
+		var liveRefs int64
+		if err := tx.Model(&model.Sandbox{}).Where("agent_config_id = ?", configID).Count(&liveRefs).Error; err != nil {
+			return nil, err
+		}
+		if liveRefs > 0 {
+			return nil, ErrInUse
+		}
+		// Soft-deleted sandboxes still hold the FK; clear it so leftover deleted
+		// sandboxes do not block deletion.
+		if err := tx.Unscoped().Model(&model.Sandbox{}).
+			Where("agent_config_id = ? AND deleted_at IS NOT NULL", configID).
+			Update("agent_config_id", nil).Error; err != nil {
+			return nil, err
+		}
 		if err := tx.Delete(config).Error; err != nil {
 			return nil, err
 		}

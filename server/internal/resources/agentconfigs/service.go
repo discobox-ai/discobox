@@ -254,10 +254,21 @@ func (s *Service) SetDefaultAgentConfig(ctx context.Context, projectID, configID
 }
 
 func (s *Service) DeleteAgentConfig(ctx context.Context, projectID, configID string) error {
-	if _, err := s.store.GetProject(ctx, projectID); err != nil {
+	project, err := s.store.GetProject(ctx, projectID)
+	if err != nil {
 		return apiError(err, "project not found")
 	}
+	config, err := s.store.GetAgentConfig(ctx, projectID, configID)
+	if err != nil {
+		return apiError(err, "agent config not found")
+	}
+	if project.DefaultAgentConfigID == config.ID {
+		return apperrors.NewStatusError(http.StatusConflict, "cannot delete the default agent config; set a different default first")
+	}
 	if err := s.store.DeleteAgentConfig(ctx, projectID, configID); err != nil {
+		if errors.Is(err, store.ErrInUse) {
+			return apperrors.NewStatusError(http.StatusConflict, "agent config is in use by a sandbox")
+		}
 		return apiError(err, "agent config not found")
 	}
 	return nil
