@@ -1,23 +1,23 @@
 ---
 name: push-main
-description: "Push the current content to obot-platform/discobot main, watch GitHub Actions with gh run watch, fix CI failures, and repeat until main CI passes."
+description: "Push the current content to obot-platform/discobox main, watch GitHub Actions with gh run watch, fix CI failures, and repeat until main CI passes."
 ---
 
 # Push Main and Drive CI Green
 
-Push the current repository content to the canonical `obot-platform/discobot`
+Push the current repository content to the canonical `obot-platform/discobox`
 `main` branch, then watch GitHub Actions with `gh run watch --exit-status`.
 If CI fails, diagnose, fix, commit, push, and watch again. Continue until the
 latest pushed `main` commit has passing CI.
 
 Treat invoking `/push-main` as authorization to perform the normal end-to-end
-push-and-fix loop on `obot-platform/discobot` without pausing for routine
+push-and-fix loop on `obot-platform/discobox` without pausing for routine
 confirmation. Keep the user informed with concise progress updates, but do not
 stop on the happy path.
 
 ## Core Rules
 
-- Treat `obot-platform/discobot` as the canonical upstream repository.
+- Treat `obot-platform/discobox` as the canonical upstream repository.
 - Push only to the canonical repository's `main` branch.
 - Do not assume the remote is named `origin` or `upstream`; discover it from
   `git remote -v`.
@@ -44,7 +44,7 @@ stop on the happy path.
 
 1. Run `git status --short --branch`.
 2. Run `git remote -v` and select the remote whose URL points to
-   `obot-platform/discobot`.
+   `obot-platform/discobox`.
 3. Run `gh auth status`.
 4. Fetch the canonical refs:
    - `git fetch <remote> main`
@@ -141,7 +141,7 @@ gh run view <run-id> --log-failed
 
 The skill is complete only when:
 
-- the canonical remote for `obot-platform/discobot` has `main` at the local
+- the canonical remote for `obot-platform/discobox` has `main` at the local
   `HEAD`,
 - all relevant GitHub Actions runs for that exact commit have completed, and
 - every relevant run concluded successfully.
