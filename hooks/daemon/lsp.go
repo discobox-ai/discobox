@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -321,10 +322,10 @@ func (r *runtimeState) handleLSPHookChanges(hook hooks.Hook, changes []watcher.C
 		if err != nil {
 			r.clearPendingLSP(hook.ID, uri)
 			_ = r.store.SetLSPHookError(r.ctx, hook.ID, err.Error())
-			_ = r.recordEvent("lsp.update.failed", hook.ID, "", "language server file update failed", map[string]any{"path": path, "kind": string(change.Kind), "error": err.Error()})
+			_ = r.recordEvent("lsp.update.failed", hook.ID, "", fmt.Sprintf("language server file update failed: %s %s: %v", change.Kind, path, err), map[string]any{"path": path, "kind": string(change.Kind), "error": err.Error()})
 			continue
 		}
-		_ = r.recordEvent("lsp.file.updated", hook.ID, "", "language server file updated", map[string]any{"path": path, "kind": string(change.Kind)})
+		_ = r.recordEvent("lsp.file.updated", hook.ID, "", fmt.Sprintf("language server file updated: %s %s", change.Kind, path), map[string]any{"path": path, "kind": string(change.Kind)})
 	}
 	r.touch()
 }

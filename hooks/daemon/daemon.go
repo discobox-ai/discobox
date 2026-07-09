@@ -221,13 +221,22 @@ func (r *runtimeState) run(parent context.Context) (err error) {
 	}
 	go r.serve()
 
+	// The HTTP API is live from here on, so a graceful shutdown request can
+	// cancel r.ctx while the remaining startup steps are still running. That
+	// is a clean exit, not a startup failure.
+	shutdownRequested := func(err error) error {
+		if r.ctx.Err() != nil {
+			return nil //nolint:nilerr // shutdown was requested; suppress the startup error it caused
+		}
+		return err
+	}
 	initialSnapshot, err := r.store.LoadWatchedSnapshot(r.ctx)
 	if err != nil {
-		return err
+		return shutdownRequested(err)
 	}
 	w, err := watcher.New(r.cfg.RepoRoot, watcher.Options{Debounce: 200 * time.Millisecond, InitialSnapshot: initialSnapshot, PeriodicResync: time.Second, Ignore: ignoreHookRuntimePaths(r.cfg)})
 	if err != nil {
-		return err
+		return shutdownRequested(err)
 	}
 	if initialSnapshot == nil {
 		initialChanges := initialWorkingTreeChanges(r.ctx, r.cfg.RepoRoot)
@@ -235,7 +244,7 @@ func (r *runtimeState) run(parent context.Context) (err error) {
 			r.addBatch(initialChanges, w.Snapshot())
 		} else if err := r.store.ReplaceWatchedSnapshot(r.ctx, w.Snapshot()); err != nil {
 			_ = w.Close()
-			return err
+			return shutdownRequested(err)
 		}
 	}
 	r.watcher = w
@@ -910,7 +919,7 @@ func (r *runtimeState) recordObservedChanges(ctx context.Context, changes []watc
 		return nil, err
 	}
 	for _, change := range recorded {
-		_ = r.recordEvent("file.change.observed", "", "", "file change observed", map[string]any{
+		_ = r.recordEvent("file.change.observed", "", "", fmt.Sprintf("file change observed: %s %s", change.Kind, change.Path), map[string]any{
 			"change_id":   change.ID,
 			"path":        change.Path,
 			"kind":        string(change.Kind),
