@@ -13,7 +13,6 @@ import (
 
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
 	"github.com/obot-platform/discobox/worker-agent/sandboxruntime"
 	"github.com/obot-platform/discobox/worker-agent/server"
 )
@@ -68,12 +67,8 @@ func TestWorkerProviderCreateCreatesDockerContainerE2E(t *testing.T) {
 	driver := &workerHTTPOnlyDriver{baseURL: workerAgent.URL, client: workerAgent.Client(), authTokenProvider: func(context.Context) (string, error) {
 		return workerToken, nil
 	}}
-	baseProvider, err := vm.New(vm.Config{Driver: driver})
-	if err != nil {
-		t.Fatalf("new provider: %v", err)
-	}
 	workerManager := &recordingWorkerManager{worker: &model.Worker{ID: workerID, ProjectID: projectID, ProviderInstanceID: providerID, Ready: true, Schedulable: true}}
-	provider := NewWorkerPoolProvider(baseProvider, WorkerPoolConfig{}, workerManager, false)
+	provider := New(driver, sandbox.ProviderDefinition{Name: "test"}, WorkerPoolConfig{}, workerManager)
 
 	runtimeSandbox, state, err := provider.Create(ctx, sandbox.SandboxRef{ProjectID: projectID, SandboxID: sandboxID}, nil, sandbox.CreateOptions{
 		ProviderInstanceID: providerID,
@@ -130,10 +125,6 @@ func TestWorkerProviderCreateCreatesDockerContainerE2E(t *testing.T) {
 	if !containsContainerEnv(inspect.Container.Config.Env, "DISCOBOX_E2E=true") {
 		t.Fatalf("container env = %#v, missing DISCOBOX_E2E=true", inspect.Container.Config.Env)
 	}
-}
-
-func ptrString(value string) *string {
-	return &value
 }
 
 func listWorkerProviderSandboxContainers(t *testing.T, dockerClient *client.Client, projectID, workerID, sandboxID string) []container.Summary {

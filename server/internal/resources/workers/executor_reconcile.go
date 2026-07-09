@@ -15,7 +15,7 @@ import (
 type WorkerReconcileExecutor struct {
 	store            *store.Store
 	manager          *sandbox.ProviderManager
-	workerManager    any
+	workerManager    sandbox.WorkerManager
 	terminalHandlers []WorkerReconcileTerminalHandler
 }
 
@@ -37,7 +37,7 @@ func WithWorkerProviderManager(manager *sandbox.ProviderManager) WorkerReconcile
 	}
 }
 
-func WithWorkerManager(manager any) WorkerReconcileExecutorOption {
+func WithWorkerManager(manager sandbox.WorkerManager) WorkerReconcileExecutorOption {
 	return func(executor *WorkerReconcileExecutor) {
 		executor.workerManager = manager
 	}
@@ -245,11 +245,11 @@ func (r *WorkerReconcileExecutor) update(ctx context.Context, worker *model.Work
 	return nil
 }
 
-func (r *WorkerReconcileExecutor) reconcileManager() any {
-	if r != nil && r.workerManager != nil {
-		return r.workerManager
+func (r *WorkerReconcileExecutor) reconcileManager() sandbox.WorkerManager {
+	if r == nil {
+		return nil
 	}
-	return r.store
+	return r.workerManager
 }
 
 func (r *WorkerReconcileExecutor) resolveProvider(ctx context.Context, provider *model.SandboxProviderInstance) (sandbox.Provider, error) {

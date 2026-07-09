@@ -12,7 +12,6 @@ import (
 
 	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/orchestration"
-	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	"github.com/obot-platform/discobox/server/internal/model"
 )
 
@@ -20,30 +19,6 @@ const defaultWorkerBootstrapTTL = 30 * time.Minute
 const defaultWorkerRegistrationTimeout = 2 * time.Minute
 
 var workerRegistrationTimeout = defaultWorkerRegistrationTimeout
-
-// WorkerManager is the control-plane surface a VM worker pool needs. Providers
-// own the scaling policy; the manager owns persistence and lifecycle intent.
-type WorkerManager interface {
-	ListWorkers(ctx context.Context, projectID, providerID string) ([]model.Worker, error)
-	GetWorker(ctx context.Context, workerID string) (*model.Worker, error)
-	CreateWorker(ctx context.Context, worker *model.Worker) (*model.Worker, error)
-	DeleteWorker(ctx context.Context, workerID string) (*model.Worker, error)
-	CreateWorkerBootstrapToken(ctx context.Context, token *model.WorkerBootstrapToken) error
-	EnsureWorkerAgentTrustKey(ctx context.Context) (string, error)
-	CreateWorkerAgentToken(ctx context.Context, claims workeragentauth.TokenClaims) (string, error)
-	CreateSandboxAgentToken(ctx context.Context, claims workeragentauth.TokenClaims) (string, error)
-	FindSchedulableWorker(ctx context.Context, sandbox *model.Sandbox) (*model.Worker, error)
-	GetJob(ctx context.Context, id string) (*orchestration.Job, error)
-	GetProject(ctx context.Context, projectID string) (*model.Project, error)
-	GetSandboxProviderInstance(ctx context.Context, projectID, providerID string) (*model.SandboxProviderInstance, error)
-	CountSandboxesForWorker(ctx context.Context, workerID string) (int64, error)
-	CountSandboxesForWorkers(ctx context.Context, workerIDs []string) (map[string]int64, error)
-	MarkWorkerFailedForJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error)
-	DeleteWorkerForExpiredRegistration(ctx context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error)
-	ScheduleWorkerReconciliation(ctx context.Context, workerID string) error
-	ScheduleWorkerProviderReconciliation(ctx context.Context, projectID, providerID string) error
-	ScheduleWorkerProviderReconciliationAt(ctx context.Context, projectID, providerID string, scheduledAt time.Time) error
-}
 
 // WorkerPoolConfig describes VM worker pool bounds.
 type WorkerPoolConfig struct {

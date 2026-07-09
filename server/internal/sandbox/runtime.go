@@ -144,7 +144,7 @@ type AgentConfig struct {
 // WorkerProviderReconciler reconciles worker-provider state for a provider
 // instance, such as maintaining a worker pool.
 type WorkerProviderReconciler interface {
-	ReconcileWorkerProvider(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance) error
+	ReconcileWorkerProvider(ctx context.Context, manager WorkerManager, project *model.Project, provider *model.SandboxProviderInstance) error
 }
 
 // WorkerRuntimeReconciler reconciles provider-owned runtime state for a worker
@@ -152,9 +152,9 @@ type WorkerProviderReconciler interface {
 // RepairWorker is only for preserving repair of active assigned workers; delete
 // reconciliation must use RemoveWorker and must not fall back to repair.
 type WorkerRuntimeReconciler interface {
-	ReconcileWorker(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error
-	RepairWorker(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, reason string) error
-	RemoveWorker(ctx context.Context, store any, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error
+	ReconcileWorker(ctx context.Context, manager WorkerManager, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error
+	RepairWorker(ctx context.Context, manager WorkerManager, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, reason string) error
+	RemoveWorker(ctx context.Context, manager WorkerManager, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error
 }
 
 // ResourceConfig defines runtime resource limits.
@@ -224,19 +224,3 @@ type Stream interface {
 	CloseWrite() error
 	Wait(ctx context.Context) (int, error)
 }
-
-type HTTPClientLease = transport.HTTPClientLease
-
-// NewHTTPClientLease creates a lease around a client and release callback.
-var NewHTTPClientLease = transport.NewHTTPClientLease
-
-// NewHTTPClientLeaseWithBaseURL creates a lease with a preferred logical base URL.
-var NewHTTPClientLeaseWithBaseURL = transport.NewHTTPClientLeaseWithBaseURL
-
-// NewHTTPClientLeaseWithBaseURLAndAuth creates a lease with a base URL and bearer token.
-var NewHTTPClientLeaseWithBaseURLAndAuth = transport.NewHTTPClientLeaseWithBaseURLAndAuth
-
-// NewHTTPClientLeaseWithAuth creates an authenticated lease for a client that
-// handles the logical worker URL itself, for example by dialing a VS Code socket
-// or Unix socket from a custom RoundTripper.
-var NewHTTPClientLeaseWithAuth = transport.NewHTTPClientLeaseWithAuth

@@ -17,7 +17,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/transport"
-	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
+	workeragent "github.com/obot-platform/discobox/worker-agent"
 	workerclient "github.com/obot-platform/discobox/worker-agent/api/gen"
 	"github.com/obot-platform/discobox/worker-agent/sandboxruntime"
 	"github.com/obot-platform/discobox/worker-agent/server"
@@ -302,7 +302,7 @@ func TestNormalizeWorkerPoolConfigKeepsPoolSizeAsMinimumWithReplacementHeadroom(
 func TestWorkerPoolProviderReconcileRunsCapacity(t *testing.T) {
 	workerManager := &recordingWorkerManager{}
 	workerProvider := &testWorkerProvider{}
-	pool := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{Max: 1}, workerManager, false)
+	pool := New(workerProvider, sandbox.ProviderDefinition{Name: "test"}, WorkerPoolConfig{Max: 1}, workerManager)
 	project := &model.Project{ID: "project-1"}
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
 
@@ -310,8 +310,9 @@ func TestWorkerPoolProviderReconcileRunsCapacity(t *testing.T) {
 		t.Fatalf("reconcile worker provider: %v", err)
 	}
 
-	if workerManager.listCalls != 1 {
-		t.Fatalf("list calls after reconcile = %d, want 1", workerManager.listCalls)
+	// Provider reconcile sizes the pool and then re-ensures active workers.
+	if workerManager.listCalls != 2 {
+		t.Fatalf("list calls after reconcile = %d, want 2", workerManager.listCalls)
 	}
 }
 
@@ -322,7 +323,7 @@ func TestWorkerPoolProviderReconcileWorkerSchedulesRegistrationTimeout(t *testin
 
 	workerManager := &recordingWorkerManager{}
 	workerProvider := &testWorkerProvider{}
-	pool := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{}, workerManager, false)
+	pool := New(workerProvider, sandbox.ProviderDefinition{Name: "test"}, WorkerPoolConfig{}, workerManager)
 	project := &model.Project{ID: "project-1"}
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
 	worker := &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1"}
@@ -353,7 +354,7 @@ func TestWorkerProviderCreateClaimsWorkerAndReturnsWorkerID(t *testing.T) {
 		},
 	}
 	workerProvider := newTestWorkerProvider(t, "project-1", "worker-1")
-	provider := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{}, workerManager, false)
+	provider := New(workerProvider, sandbox.ProviderDefinition{Name: "test"}, WorkerPoolConfig{}, workerManager)
 
 	runtimeSandbox, state, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{
 		ProviderInstanceID: "provider-1",
@@ -395,17 +396,13 @@ func TestWorkerProviderCreateCallsWorkerAgentRuntime(t *testing.T) {
 	driver := &workerHTTPOnlyDriver{baseURL: workerAgent.URL, client: workerAgent.Client(), authTokenProvider: func(context.Context) (string, error) {
 		return workerToken, nil
 	}}
-	baseProvider, err := vm.New(vm.Config{Driver: driver})
-	if err != nil {
-		t.Fatalf("new provider: %v", err)
-	}
 	workerManager := &recordingWorkerManager{
 		worker: &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true},
 		workersByID: map[string]*model.Worker{
 			"worker-1": {ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: false, Degraded: true, ResourceLifecycle: model.ResourceLifecycle{Phase: model.WorkerPhaseActive, LastOperationStatus: model.OperationStatusSuccess}},
 		},
 	}
-	provider := NewWorkerPoolProvider(baseProvider, WorkerPoolConfig{}, workerManager, false)
+	provider := New(driver, sandbox.ProviderDefinition{Name: "test"}, WorkerPoolConfig{}, workerManager)
 
 	runtimeSandbox, state, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{
 		ProviderInstanceID: "provider-1",
@@ -467,7 +464,7 @@ func TestWorkerProviderCreateWithExistingStateReusesWorker(t *testing.T) {
 		},
 	}
 	workerProvider := newTestWorkerProvider(t, "project-1", "worker-1")
-	provider := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{}, workerManager, false)
+	provider := New(workerProvider, sandbox.ProviderDefinition{Name: "test"}, WorkerPoolConfig{}, workerManager)
 
 	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Image: "worker-runtime", Metadata: map[string]string{"worker_id": "worker-1"}})
 	workerManager.worker = &model.Worker{ID: "worker-2", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true}
@@ -497,7 +494,7 @@ func TestWorkerProviderCreateWithExistingStateSkipsScheduling(t *testing.T) {
 		},
 	}
 	workerProvider := newTestWorkerProvider(t, "project-1", "worker-1")
-	provider := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{}, workerManager, false)
+	provider := New(workerProvider, sandbox.ProviderDefinition{Name: "test"}, WorkerPoolConfig{}, workerManager)
 
 	runtimeSandbox, nextState, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, sandbox.CreateOptions{ProviderInstanceID: "provider-1", WorkerID: "worker-1"})
 	if err != nil {
@@ -523,7 +520,7 @@ func TestWorkerProviderCreateWithExistingStateRejectsWrongProviderWorker(t *test
 		},
 	}
 	workerProvider := newTestWorkerProvider(t, "project-1", "worker-2")
-	provider := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{}, workerManager, false)
+	provider := New(workerProvider, sandbox.ProviderDefinition{Name: "test"}, WorkerPoolConfig{}, workerManager)
 
 	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, sandbox.CreateOptions{ProviderInstanceID: "provider-1", WorkerID: "worker-2"})
 	if !errors.Is(err, sandbox.ErrNoSandboxCapacity) {
@@ -543,7 +540,7 @@ func TestWorkerProviderCreateWithUnassignedStateSchedulesWorker(t *testing.T) {
 		},
 	}
 	workerProvider := newTestWorkerProvider(t, "project-1", "worker-1")
-	provider := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{}, workerManager, false)
+	provider := New(workerProvider, sandbox.ProviderDefinition{Name: "test"}, WorkerPoolConfig{}, workerManager)
 
 	runtimeSandbox, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, sandbox.CreateOptions{ProviderInstanceID: "provider-1"})
 	if err != nil {
@@ -554,29 +551,6 @@ func TestWorkerProviderCreateWithUnassignedStateSchedulesWorker(t *testing.T) {
 	}
 	if runtimeSandbox == nil || runtimeSandbox.Metadata["worker_id"] != "worker-1" {
 		t.Fatalf("runtime sandbox = %#v, want scheduled worker-1", runtimeSandbox)
-	}
-}
-
-func TestVMProviderCreateWorkerTreatsExistingRuntimeStateAsSuccess(t *testing.T) {
-	driver := &existingInstanceDriver{instanceID: "instance-1"}
-	provider, err := vm.New(vm.Config{Driver: driver})
-	if err != nil {
-		t.Fatalf("new provider: %v", err)
-	}
-	worker := &model.Worker{
-		ID:           "worker-1",
-		RuntimeState: []byte(`{"instanceId":"instance-1"}`),
-	}
-
-	err = provider.CreateWorker(context.Background(), &model.Project{ID: "project-1"}, &model.SandboxProviderInstance{ID: "provider-1"}, worker, "bootstrap-token", "control-plane-public-key")
-	if err != nil {
-		t.Fatalf("launch existing worker: %v", err)
-	}
-	if driver.createCalls != 0 {
-		t.Fatalf("CreateVM calls = %d, want 0 for existing state", driver.createCalls)
-	}
-	if driver.inspectCalls != 1 {
-		t.Fatalf("InspectVM calls = %d, want 1", driver.inspectCalls)
 	}
 }
 
@@ -615,7 +589,7 @@ func TestWorkerProviderCreateEnsuresCapacityAndWaitsForWorker(t *testing.T) {
 		worker:   &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Ready: true, Schedulable: true},
 	}
 	workerProvider := newTestWorkerProvider(t, "project-1", "worker-1")
-	provider := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}, workerManager, false)
+	provider := New(workerProvider, sandbox.ProviderDefinition{Name: "test"}, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}, workerManager)
 
 	runtimeSandbox, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{ProviderInstanceID: "provider-1"})
 	if err != nil {
@@ -644,7 +618,7 @@ func TestWorkerProviderCreateReturnsNoCapacityAfterWait(t *testing.T) {
 		provider: &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "digitalocean", Name: "do"},
 	}
 	workerProvider := newTestWorkerProvider(t, "project-1", "worker-1")
-	provider := NewWorkerPoolProvider(workerProvider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}, workerManager, false)
+	provider := New(workerProvider, sandbox.ProviderDefinition{Name: "test"}, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}, workerManager)
 
 	_, _, err := provider.Create(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, nil, sandbox.CreateOptions{ProviderInstanceID: "provider-1"})
 	if !errors.Is(err, sandbox.ErrNoSandboxCapacity) {
@@ -682,12 +656,8 @@ func TestWorkerProviderGetUsesWorkerAPIState(t *testing.T) {
 	defer server.Close()
 
 	driver := &workerHTTPOnlyDriver{baseURL: server.URL, client: server.Client(), authToken: "worker-token"}
-	baseProvider, err := vm.New(vm.Config{Driver: driver})
-	if err != nil {
-		t.Fatalf("new provider: %v", err)
-	}
 	workerManager := &recordingWorkerManager{worker: &model.Worker{ID: "worker-1"}}
-	provider := NewWorkerPoolProvider(baseProvider, WorkerPoolConfig{}, workerManager, false)
+	provider := New(driver, sandbox.ProviderDefinition{Name: "test"}, WorkerPoolConfig{}, workerManager)
 	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"worker_id": "worker-1"}})
 
 	runtimeSandbox, err := provider.Get(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state)
@@ -696,9 +666,6 @@ func TestWorkerProviderGetUsesWorkerAPIState(t *testing.T) {
 	}
 	if runtimeSandbox.ID != "runtime-1" || runtimeSandbox.Metadata["worker_id"] != "worker-1" {
 		t.Fatalf("runtime sandbox = %#v", runtimeSandbox)
-	}
-	if driver.inspectCalls != 0 {
-		t.Fatalf("InspectVM calls = %d, want 0", driver.inspectCalls)
 	}
 	if driver.workerID != "worker-1" {
 		t.Fatalf("worker HTTP lease workerID = %q", driver.workerID)
@@ -713,12 +680,8 @@ func TestWorkerProviderGetUsesWorkerAPIState(t *testing.T) {
 
 func TestWorkerProviderAcquireHTTPClientUsesWorkerIDFromState(t *testing.T) {
 	driver := &workerHTTPOnlyDriver{client: http.DefaultClient, baseURL: "https://worker.example", authToken: "worker-token"}
-	baseProvider, err := vm.New(vm.Config{Driver: driver})
-	if err != nil {
-		t.Fatalf("new provider: %v", err)
-	}
 	workerManager := &recordingWorkerManager{worker: &model.Worker{ID: "worker-1"}}
-	provider := NewWorkerPoolProvider(baseProvider, WorkerPoolConfig{}, workerManager, false)
+	provider := New(driver, sandbox.ProviderDefinition{Name: "test"}, WorkerPoolConfig{}, workerManager)
 	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"worker_id": "worker-1"}})
 
 	lease, err := provider.AcquireHTTPClient(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, []string{workeragentauth.ScopeSandboxRead, workeragentauth.ScopeSandboxWrite})
@@ -745,9 +708,6 @@ func TestWorkerProviderAcquireHTTPClientUsesWorkerIDFromState(t *testing.T) {
 	if driver.workerID != "worker-1" {
 		t.Fatalf("worker ID = %q", driver.workerID)
 	}
-	if driver.inspectCalls != 0 {
-		t.Fatalf("InspectVM calls = %d, want 0", driver.inspectCalls)
-	}
 }
 
 func TestWorkerProviderAcquireHTTPClientReconcilesWorkerAndRetries(t *testing.T) {
@@ -765,10 +725,6 @@ func TestWorkerProviderAcquireHTTPClientReconcilesWorkerAndRetries(t *testing.T)
 		baseURL:     "https://worker.example",
 		authToken:   "worker-token",
 		acquireErrs: []error{sandbox.ErrNotFound},
-	}
-	baseProvider, err := vm.New(vm.Config{Driver: driver})
-	if err != nil {
-		t.Fatalf("new provider: %v", err)
 	}
 	jobID := "worker-job-1"
 	worker := &model.Worker{
@@ -788,7 +744,7 @@ func TestWorkerProviderAcquireHTTPClientReconcilesWorkerAndRetries(t *testing.T)
 		},
 		scheduledWorkerJobID: jobID,
 	}
-	provider := NewWorkerPoolProvider(baseProvider, WorkerPoolConfig{}, workerManager, false)
+	provider := New(driver, sandbox.ProviderDefinition{Name: "test"}, WorkerPoolConfig{}, workerManager)
 	state := workerRuntimeState(t, &sandbox.Sandbox{SandboxID: "sandbox-1", Metadata: map[string]string{"worker_id": "worker-1"}})
 
 	lease, err := provider.AcquireHTTPClient(context.Background(), sandbox.SandboxRef{ProjectID: "project-1", SandboxID: "sandbox-1"}, state, []string{workeragentauth.ScopeSandboxRead})
@@ -807,6 +763,8 @@ func TestWorkerProviderAcquireHTTPClientReconcilesWorkerAndRetries(t *testing.T)
 	}
 }
 
+func ptrString(value string) *string { return &value }
+
 func workerRuntimeState(t *testing.T, runtimeSandbox *sandbox.Sandbox) []byte {
 	t.Helper()
 	state, err := json.Marshal(runtimeSandbox)
@@ -822,108 +780,28 @@ type workerHTTPOnlyDriver struct {
 	authToken         string
 	authTokenProvider func(context.Context) (string, error)
 	workerID          string
-	inspectCalls      int
 	acquireCalls      int
 	acquireErrs       []error
-}
-
-type existingInstanceDriver struct {
-	instanceID   string
-	createCalls  int
-	inspectCalls int
-}
-
-func (d *existingInstanceDriver) CreateVM(context.Context, vm.InstanceSpec) (*vm.Instance, error) {
-	d.createCalls++
-	return nil, errors.New("CreateVM should not be called for existing state")
-}
-
-func (d *existingInstanceDriver) InitializeWorkerProvider(context.Context, *model.SandboxProviderInstance, any) error {
-	return nil
-}
-
-func (d *existingInstanceDriver) Close() error {
-	return nil
-}
-
-func (d *existingInstanceDriver) StartVM(context.Context, string) (*vm.Instance, error) {
-	return nil, errors.New("StartVM should not be called")
-}
-
-func (d *existingInstanceDriver) StopVM(context.Context, string, time.Duration) (*vm.Instance, error) {
-	return nil, errors.New("StopVM should not be called")
-}
-
-func (d *existingInstanceDriver) DeleteVM(context.Context, string, bool) error {
-	return errors.New("DeleteVM should not be called")
-}
-
-func (d *existingInstanceDriver) RemoveWorkerVM(context.Context, string, string, bool) error {
-	return errors.New("RemoveWorkerVM should not be called")
-}
-
-func (d *existingInstanceDriver) RepairWorkerVM(context.Context, string, string, vm.InstanceSpec, string) (*vm.Instance, error) {
-	return nil, errors.New("RepairWorkerVM should not be called")
-}
-
-func (d *existingInstanceDriver) AcquireHTTPClient(context.Context, *vm.Instance) (*transport.HTTPClientLease, error) {
-	return nil, errors.New("AcquireHTTPClient should not be called")
-}
-
-func (d *existingInstanceDriver) AcquireWorkerHTTPClient(context.Context, string) (*transport.HTTPClientLease, error) {
-	return nil, errors.New("AcquireWorkerHTTPClient should not be called")
-}
-
-func (d *existingInstanceDriver) InspectVM(_ context.Context, id string) (*vm.Instance, error) {
-	d.inspectCalls++
-	if id != d.instanceID {
-		return nil, sandbox.ErrNotFound
-	}
-	return &vm.Instance{ID: id, Status: sandbox.StatusRunning}, nil
-}
-
-func (d *workerHTTPOnlyDriver) CreateVM(context.Context, vm.InstanceSpec) (*vm.Instance, error) {
-	return nil, errors.New("CreateVM should not be called")
-}
-
-func (d *workerHTTPOnlyDriver) InitializeWorkerProvider(context.Context, *model.SandboxProviderInstance, any) error {
-	return nil
 }
 
 func (d *workerHTTPOnlyDriver) Close() error {
 	return nil
 }
 
-func (d *workerHTTPOnlyDriver) StartVM(context.Context, string) (*vm.Instance, error) {
-	return nil, errors.New("StartVM should not be called")
+func (d *workerHTTPOnlyDriver) EnsureWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker, workeragent.Bootstrap) error {
+	return errors.New("EnsureWorker should not be called")
 }
 
-func (d *workerHTTPOnlyDriver) StopVM(context.Context, string, time.Duration) (*vm.Instance, error) {
-	return nil, errors.New("StopVM should not be called")
+func (d *workerHTTPOnlyDriver) RepairWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker, workeragent.Bootstrap, string) error {
+	return errors.New("RepairWorker should not be called")
 }
 
-func (d *workerHTTPOnlyDriver) DeleteVM(context.Context, string, bool) error {
-	return errors.New("DeleteVM should not be called")
+func (d *workerHTTPOnlyDriver) RemoveWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
+	return errors.New("RemoveWorker should not be called")
 }
 
-func (d *workerHTTPOnlyDriver) RemoveWorkerVM(context.Context, string, string, bool) error {
-	return errors.New("RemoveWorkerVM should not be called")
-}
-
-func (d *workerHTTPOnlyDriver) RepairWorkerVM(context.Context, string, string, vm.InstanceSpec, string) (*vm.Instance, error) {
-	return nil, errors.New("RepairWorkerVM should not be called")
-}
-
-func (d *workerHTTPOnlyDriver) AcquireHTTPClient(context.Context, *vm.Instance) (*transport.HTTPClientLease, error) {
-	return nil, errors.New("AcquireHTTPClient should not be called")
-}
-
-func (d *workerHTTPOnlyDriver) InspectVM(context.Context, string) (*vm.Instance, error) {
-	d.inspectCalls++
-	return nil, errors.New("InspectVM should not be called")
-}
-
-func (d *workerHTTPOnlyDriver) AcquireWorkerHTTPClient(_ context.Context, workerID string) (*transport.HTTPClientLease, error) {
+func (d *workerHTTPOnlyDriver) AcquireWorkerAgentClient(_ context.Context, worker *model.Worker) (*transport.HTTPClientLease, error) {
+	workerID := worker.ID
 	d.acquireCalls++
 	d.workerID = workerID
 	if len(d.acquireErrs) > 0 {
@@ -967,31 +845,11 @@ func (p *testWorkerProvider) Close() error {
 	return nil
 }
 
-func (p *testWorkerProvider) Definition() sandbox.ProviderDefinition {
-	return sandbox.ProviderDefinition{Name: "test"}
-}
-
-func (p *testWorkerProvider) Status() sandbox.ProviderStatus {
-	return sandbox.ProviderStatus{Available: true, State: "ready"}
-}
-
-func (p *testWorkerProvider) Reconcile(context.Context) error {
+func (p *testWorkerProvider) EnsureWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker, workeragent.Bootstrap) error {
 	return nil
 }
 
-func (p *testWorkerProvider) RemoveProject(context.Context, string) error {
-	return nil
-}
-
-func (p *testWorkerProvider) InitializeWorkerProvider(context.Context, *model.SandboxProviderInstance, any) error {
-	return nil
-}
-
-func (p *testWorkerProvider) CreateWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker, string, string) error {
-	return nil
-}
-
-func (p *testWorkerProvider) RepairWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker, string, string, string) error {
+func (p *testWorkerProvider) RepairWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker, workeragent.Bootstrap, string) error {
 	return nil
 }
 
@@ -999,7 +857,7 @@ func (p *testWorkerProvider) RemoveWorker(context.Context, *model.Project, *mode
 	return nil
 }
 
-func (p *testWorkerProvider) AcquireWorkerHTTPClient(context.Context, *model.Worker) (*transport.HTTPClientLease, error) {
+func (p *testWorkerProvider) AcquireWorkerAgentClient(context.Context, *model.Worker) (*transport.HTTPClientLease, error) {
 	return transport.NewHTTPClientLeaseWithBaseURLAndAuthProvider(p.client, p.baseURL, func(context.Context) (string, error) {
 		return p.token, nil
 	}, nil), nil

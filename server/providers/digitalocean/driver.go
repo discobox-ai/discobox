@@ -1,4 +1,3 @@
-// Package digitalocean implements a DigitalOcean Droplet VM driver.
 package digitalocean
 
 import (
@@ -8,48 +7,28 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/transport"
-	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
+	"github.com/obot-platform/discobox/server/providers/dockerworker"
+	"github.com/obot-platform/discobox/server/providers/dockerworker/sshdocker"
 )
 
-const (
-	ProviderType      = "digitalocean"
-	defaultAPIBaseURL = "https://api.digitalocean.com"
-	defaultRegion     = "nyc3"
-	defaultSize       = "s-1vcpu-1gb"
-	defaultImage      = "ubuntu-24-04-x64"
-	defaultAgentPort  = 3002
-)
-
-// ProviderInstanceConfig is the persisted provider instance configuration.
-type ProviderInstanceConfig struct {
-	Token           string   `json:"token,omitempty"`
-	TokenEnv        string   `json:"tokenEnv,omitempty"`
-	ControlPlaneURL string   `json:"controlPlaneUrl,omitempty"`
-	APIBaseURL      string   `json:"apiBaseUrl,omitempty"`
-	Region          string   `json:"region,omitempty"`
-	Size            string   `json:"size,omitempty"`
-	Image           string   `json:"image,omitempty"`
-	SSHKeys         []string `json:"sshKeys,omitempty"`
-	VPCUUID         string   `json:"vpcUuid,omitempty"`
-	Tags            []string `json:"tags,omitempty"`
-	Backups         bool     `json:"backups,omitempty"`
-	IPv6            bool     `json:"ipv6,omitempty"`
-	Monitoring      bool     `json:"monitoring,omitempty"`
-	AgentPort       int      `json:"agentPort,omitempty"`
-	PoolSize        int      `json:"poolSize,omitempty"`
-	MinWorkers      int      `json:"minWorkers,omitempty"`
-	MaxWorkers      int      `json:"maxWorkers,omitempty"`
-	MinHealthy      int      `json:"minHealthyWorkers,omitempty"`
-}
+// dockerInstallUserData brings up Docker on a fresh droplet. The worker-agent
+// container is launched by the control plane over the droplet's Docker daemon,
+// so cloud-init only needs Docker itself.
+const dockerInstallUserData = `#cloud-config
+package_update: true
+packages:
+  - docker.io
+runcmd:
+  - [ systemctl, enable, --now, docker ]
+`
 
 // DriverConfig configures a DigitalOcean Droplet driver.
 type DriverConfig struct {
@@ -63,6 +42,9 @@ type DriverConfig struct {
 	VPCUUID    string
 	Tags       []string
 
+	SSHUser       string
+	SSHPrivateKey string
+
 	Backups    bool
 	IPv6       bool
 	Monitoring bool
@@ -71,35 +53,7 @@ type DriverConfig struct {
 	HTTPClient *http.Client
 }
 
-// Definition describes the DigitalOcean provider for provider catalogs.
-func Definition() sandbox.ProviderDefinition {
-	return sandbox.ProviderDefinition{
-		Name:        "DigitalOcean",
-		Icon:        "digitalocean",
-		Description: "Runs sandboxes as DigitalOcean Droplets.",
-		ConfigFields: []sandbox.ProviderConfigField{
-			{Key: "token", Label: "API Token", Type: "password", CredentialProvider: "digitalocean", CredentialAuthType: "token"},
-			{Key: "tokenEnv", Label: "API Token Environment Variable", Type: "string", Placeholder: "DIGITALOCEAN_ACCESS_TOKEN", Description: "Environment variable containing the API token; use instead of token for local CLI workflows."},
-			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Required: true, Placeholder: "https://discobot.example.com"},
-			{Key: "minWorkers", Label: "Minimum Workers", Type: "number", Placeholder: "1", Description: "Minimum active VM workers to keep in the pool."},
-			{Key: "maxWorkers", Label: "Maximum Workers", Type: "number", Placeholder: "2", Description: "Maximum active VM workers allowed in the pool."},
-			{Key: "minHealthyWorkers", Label: "Minimum Healthy Workers", Type: "number", Placeholder: "1", Description: "Minimum ready, schedulable, non-degraded workers before launching replacements."},
-			{Key: "poolSize", Label: "Pool Size", Type: "number", Placeholder: "1", Description: "Deprecated alias for minimum workers.", Advanced: true},
-			{Key: "region", Label: "Region", Type: "string", Placeholder: defaultRegion},
-			{Key: "size", Label: "Droplet Size", Type: "string", Placeholder: defaultSize},
-			{Key: "image", Label: "Image", Type: "string", Placeholder: defaultImage},
-			{Key: "sshKeys", Label: "SSH Keys", Type: "string", Description: "Optional SSH key IDs or fingerprints.", Advanced: true},
-			{Key: "vpcUuid", Label: "VPC UUID", Type: "string", Advanced: true},
-			{Key: "tags", Label: "Tags", Type: "string", Advanced: true},
-			{Key: "backups", Label: "Backups", Type: "boolean", Advanced: true},
-			{Key: "ipv6", Label: "IPv6", Type: "boolean", Advanced: true},
-			{Key: "monitoring", Label: "Monitoring", Type: "boolean", Advanced: true},
-			{Key: "agentPort", Label: "Agent Port", Type: "number", Placeholder: strconv.Itoa(defaultAgentPort), Advanced: true},
-		},
-	}
-}
-
-// Driver manages one DigitalOcean Droplet per sandbox worker.
+// Driver manages one Docker-enabled DigitalOcean Droplet per sandbox worker.
 type Driver struct {
 	token      string
 	baseURL    string
@@ -114,6 +68,7 @@ type Driver struct {
 	monitoring bool
 	agentPort  int
 	client     *http.Client
+	ssh        *sshdocker.Dialer
 }
 
 // NewDriver creates a DigitalOcean VM driver.
@@ -129,6 +84,10 @@ func NewDriver(cfg DriverConfig) (*Driver, error) {
 	if agentPort == 0 {
 		agentPort = defaultAgentPort
 	}
+	ssh, err := sshdocker.New(cfg.SSHUser, cfg.SSHPrivateKey)
+	if err != nil {
+		return nil, err
+	}
 	return &Driver{
 		token:      strings.TrimSpace(cfg.Token),
 		baseURL:    strings.TrimRight(defaultString(cfg.APIBaseURL, defaultAPIBaseURL), "/"),
@@ -143,95 +102,94 @@ func NewDriver(cfg DriverConfig) (*Driver, error) {
 		monitoring: cfg.Monitoring,
 		agentPort:  agentPort,
 		client:     client,
+		ssh:        ssh,
 	}, nil
-}
-
-// NewProvider creates a generic VM provider backed by DigitalOcean Droplets.
-func NewProvider(cfg DriverConfig, providerCfg vm.Config) (*vm.Provider, error) {
-	driver, err := NewDriver(cfg)
-	if err != nil {
-		return nil, err
-	}
-	providerCfg.Driver = driver
-	if providerCfg.Name == "" {
-		providerCfg.Name = "DigitalOcean"
-	}
-	if providerCfg.Description == "" {
-		providerCfg.Description = "Runs sandboxes as DigitalOcean Droplets."
-	}
-	if providerCfg.DefaultImage == "" {
-		providerCfg.DefaultImage = driver.image
-	}
-	if providerCfg.AgentPort == 0 {
-		providerCfg.AgentPort = driver.agentPort
-	}
-	return vm.New(providerCfg)
-}
-
-func (d *Driver) InitializeWorkerProvider(context.Context, *model.SandboxProviderInstance, any) error {
-	return nil
 }
 
 func (d *Driver) Close() error {
 	return nil
 }
 
-func (d *Driver) CreateVM(ctx context.Context, spec vm.InstanceSpec) (*vm.Instance, error) {
-	image := spec.Image
-	if image == "" {
-		image = d.image
+func (d *Driver) EnsureVM(ctx context.Context, workerID string, spec dockerworker.VMSpec) (*dockerworker.VMInfo, error) {
+	existing, err := d.findWorkerDroplet(ctx, workerID)
+	if err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+		return nil, err
+	}
+	if existing != nil {
+		return vmInfoFromDroplet(*existing), nil
 	}
 	req := createDropletRequest{
 		Name:       spec.Name,
 		Region:     d.region,
-		Size:       effectiveSize(d.size, spec.Resources),
-		Image:      image,
+		Size:       d.size,
+		Image:      d.image,
 		SSHKeys:    d.sshKeys,
 		Backups:    d.backups,
 		IPv6:       d.ipv6,
 		Monitoring: d.monitoring,
-		Tags:       dropletTags(d.tags, spec),
-		UserData:   spec.Boot.CloudInitUserData,
+		Tags:       dropletTags(d.tags, workerID),
+		UserData:   dockerInstallUserData,
 		VPCUUID:    d.vpcUUID,
 	}
 	var out dropletResponse
 	if err := d.do(ctx, http.MethodPost, "/v2/droplets", req, &out); err != nil {
 		return nil, err
 	}
-	return instanceFromDroplet(out.Droplet, d.agentPort), nil
+	return vmInfoFromDroplet(out.Droplet), nil
 }
 
-func (d *Driver) StartVM(ctx context.Context, id string) (*vm.Instance, error) {
-	if err := d.action(ctx, id, "power_on"); err != nil {
+func (d *Driver) DeleteVM(ctx context.Context, workerID string) error {
+	droplet, err := d.findWorkerDroplet(ctx, workerID)
+	if err != nil {
+		if errors.Is(err, sandbox.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	err = d.do(ctx, http.MethodDelete, "/v2/droplets/"+url.PathEscape(strconv.FormatInt(droplet.ID, 10)), nil, nil)
+	if errors.Is(err, sandbox.ErrNotFound) {
+		return nil
+	}
+	return err
+}
+
+func (d *Driver) InspectVM(ctx context.Context, workerID string) (*dockerworker.VMInfo, error) {
+	droplet, err := d.findWorkerDroplet(ctx, workerID)
+	if err != nil {
 		return nil, err
 	}
-	return d.InspectVM(ctx, id)
+	return vmInfoFromDroplet(*droplet), nil
 }
 
-func (d *Driver) StopVM(ctx context.Context, id string, timeout time.Duration) (*vm.Instance, error) {
-	actionType := "shutdown"
-	if timeout == 0 {
-		actionType = "power_off"
-	}
-	if err := d.action(ctx, id, actionType); err != nil {
+// AcquireDockerClient reaches the droplet's Docker daemon by dialing its Unix
+// socket over SSH. The engine owns readiness waiting, so failures while the
+// droplet boots or installs Docker are expected and retried by the caller.
+func (d *Driver) AcquireDockerClient(ctx context.Context, workerID string) (*dockerworker.DockerClientLease, error) {
+	droplet, err := d.findWorkerDroplet(ctx, workerID)
+	if err != nil {
 		return nil, err
 	}
-	return d.InspectVM(ctx, id)
+	host := publicIPv4(droplet.Networks)
+	if host == "" {
+		return nil, fmt.Errorf("droplet for worker %s has no public IPv4 address yet", workerID)
+	}
+	return d.ssh.AcquireDockerClient(ctx, sshdocker.Target{Host: host})
 }
 
-func (d *Driver) DeleteVM(ctx context.Context, id string, _ bool) error {
-	return d.do(ctx, http.MethodDelete, "/v2/droplets/"+url.PathEscape(id), nil, nil)
-}
-
-func (d *Driver) InspectVM(ctx context.Context, id string) (*vm.Instance, error) {
-	var out dropletResponse
-	if err := d.do(ctx, http.MethodGet, "/v2/droplets/"+url.PathEscape(id), nil, &out); err != nil {
+func (d *Driver) AcquireWorkerAgentClient(ctx context.Context, workerID string) (*transport.HTTPClientLease, error) {
+	droplet, err := d.findWorkerDroplet(ctx, workerID)
+	if err != nil {
 		return nil, err
 	}
-	return instanceFromDroplet(out.Droplet, d.agentPort), nil
+	host := publicIPv4(droplet.Networks)
+	if host == "" {
+		return nil, fmt.Errorf("droplet for worker %s has no public IPv4 address", workerID)
+	}
+	baseURL := "http://" + net.JoinHostPort(host, strconv.Itoa(d.agentPort))
+	return transport.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, baseURL, nil), nil
 }
 
-func (d *Driver) InspectWorkerVM(ctx context.Context, workerID string) (*vm.Instance, error) {
+func (d *Driver) findWorkerDroplet(ctx context.Context, workerID string) (*droplet, error) {
 	if strings.TrimSpace(workerID) == "" {
 		return nil, sandbox.ErrNotFound
 	}
@@ -242,59 +200,7 @@ func (d *Driver) InspectWorkerVM(ctx context.Context, workerID string) (*vm.Inst
 	if len(out.Droplets) == 0 {
 		return nil, sandbox.ErrNotFound
 	}
-	return instanceFromDroplet(out.Droplets[0], d.agentPort), nil
-}
-
-func (d *Driver) RemoveWorkerVM(ctx context.Context, workerID string, currentInstanceID string, removeVolumes bool) error {
-	instanceID := strings.TrimSpace(currentInstanceID)
-	if instanceID == "" {
-		inst, err := d.InspectWorkerVM(ctx, workerID)
-		if err != nil {
-			if errors.Is(err, sandbox.ErrNotFound) {
-				return nil
-			}
-			return err
-		}
-		instanceID = inst.ID
-	}
-	if instanceID == "" {
-		return nil
-	}
-	if err := d.DeleteVM(ctx, instanceID, removeVolumes); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
-		return err
-	}
-	return nil
-}
-
-func (d *Driver) RepairWorkerVM(ctx context.Context, workerID string, currentInstanceID string, spec vm.InstanceSpec, _ string) (*vm.Instance, error) {
-	instanceID := strings.TrimSpace(currentInstanceID)
-	if instanceID == "" {
-		inst, err := d.InspectWorkerVM(ctx, workerID)
-		if err != nil && !errors.Is(err, sandbox.ErrNotFound) {
-			return nil, err
-		}
-		if inst != nil {
-			instanceID = inst.ID
-		}
-	}
-	if instanceID != "" {
-		if err := d.DeleteVM(ctx, instanceID, true); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
-			return nil, err
-		}
-	}
-	return d.CreateVM(ctx, spec)
-}
-
-func (d *Driver) AcquireHTTPClient(context.Context, *vm.Instance) (*transport.HTTPClientLease, error) {
-	return vm.NewDirectHTTPClientLease(), nil
-}
-
-func (d *Driver) AcquireWorkerHTTPClient(context.Context, string) (*transport.HTTPClientLease, error) {
-	return nil, errors.New("digitalocean driver does not support worker HTTP access by worker ID")
-}
-
-func (d *Driver) action(ctx context.Context, id, actionType string) error {
-	return d.do(ctx, http.MethodPost, "/v2/droplets/"+url.PathEscape(id)+"/actions", map[string]string{"type": actionType}, nil)
+	return &out.Droplets[0], nil
 }
 
 func (d *Driver) do(ctx context.Context, method, path string, in, out any) error {
@@ -332,47 +238,22 @@ func (d *Driver) do(ctx context.Context, method, path string, in, out any) error
 	return json.NewDecoder(resp.Body).Decode(out)
 }
 
-func instanceFromDroplet(d droplet, agentPort int) *vm.Instance {
-	createdAt, _ := time.Parse(time.RFC3339, d.CreatedAt)
+func vmInfoFromDroplet(d droplet) *dockerworker.VMInfo {
 	var status sandbox.Status
-	var startedAt *time.Time
-	var stoppedAt *time.Time
 	switch d.Status {
 	case "active":
 		status = sandbox.StatusRunning
-		if !createdAt.IsZero() {
-			startedAt = &createdAt
-		}
 	case "off", "archive":
 		status = sandbox.StatusStopped
-		now := time.Now().UTC()
-		stoppedAt = &now
 	case "new":
 		status = sandbox.StatusCreated
 	default:
 		status = sandbox.StatusFailed
 	}
-	host := publicIPv4(d.Networks)
-	agentURL := ""
-	if host != "" {
-		agentURL = "http://" + host + ":" + strconv.Itoa(agentPort)
-	}
-	metadata := map[string]string{
-		"digitalocean.region": d.Region.Slug,
-		"digitalocean.size":   d.SizeSlug,
-		"digitalocean.status": d.Status,
-	}
-	return &vm.Instance{
-		ID:        strconv.FormatInt(d.ID, 10),
-		Name:      d.Name,
-		Image:     d.Image.Slug,
-		Status:    status,
-		AgentURL:  agentURL,
-		AgentHost: host,
-		Metadata:  metadata,
-		CreatedAt: createdAt,
-		StartedAt: startedAt,
-		StoppedAt: stoppedAt,
+	return &dockerworker.VMInfo{
+		ID:      strconv.FormatInt(d.ID, 10),
+		Status:  status,
+		Address: publicIPv4(d.Networks),
 	}
 }
 
@@ -385,22 +266,10 @@ func publicIPv4(networks dropletNetworks) string {
 	return ""
 }
 
-func effectiveSize(defaultSize string, _ sandbox.ResourceConfig) string {
-	return defaultSize
-}
-
-func dropletTags(defaultTags []string, spec vm.InstanceSpec) []string {
+func dropletTags(defaultTags []string, workerID string) []string {
 	tags := append([]string(nil), defaultTags...)
-	candidates := []string{
-		"discobox",
-		"discobox-project-" + safeTag(spec.Ref.ProjectID),
-		"discobox-sandbox-" + safeTag(spec.Ref.SandboxID),
-	}
-	if workerID := spec.Metadata["discobox.worker_id"]; workerID != "" {
-		candidates = append(candidates, workerTag(workerID))
-	}
-	for _, tag := range candidates {
-		if strings.TrimRight(tag, "-") != tag || strings.HasSuffix(tag, "-") {
+	for _, tag := range []string{"discobox", workerTag(workerID)} {
+		if tag == "" || strings.HasSuffix(tag, "-") {
 			continue
 		}
 		if !contains(tags, tag) {

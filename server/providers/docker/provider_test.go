@@ -1,9 +1,13 @@
 package docker
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/obot-platform/discobox/server/providers/dockerworker"
+)
 
 func TestEffectiveWorkerImageUsesProviderImageBeforeGlobalDefault(t *testing.T) {
-	t.Setenv(workerImageEnv, "worker:global")
+	t.Setenv(dockerworker.WorkerImageEnv, "worker:global")
 
 	if got := EffectiveWorkerImage("worker:provider"); got != "worker:provider" {
 		t.Fatalf("effective worker image = %q, want provider image", got)
@@ -14,7 +18,7 @@ func TestEffectiveWorkerImageUsesProviderImageBeforeGlobalDefault(t *testing.T) 
 }
 
 func TestEffectiveWorkerImageUsesGlobalWhenProviderImageMissing(t *testing.T) {
-	t.Setenv(workerImageEnv, "worker:global")
+	t.Setenv(dockerworker.WorkerImageEnv, "worker:global")
 
 	if got := EffectiveWorkerImage(""); got != "worker:global" {
 		t.Fatalf("effective worker image = %q, want global image", got)

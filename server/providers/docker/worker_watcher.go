@@ -2,7 +2,6 @@ package docker
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -10,63 +9,61 @@ import (
 	"strings"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
+	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/client"
 
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
+	"github.com/obot-platform/discobox/server/providers/dockerworker"
 	"github.com/obot-platform/discobox/server/providers/workerpool"
-	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
 )
 
-func (d *Driver) InitializeWorkerProvider(ctx context.Context, provider *model.SandboxProviderInstance, manager any) error {
-	if d == nil || provider == nil || manager == nil {
-		return nil
-	}
-	workerManager, ok := manager.(workerpool.WorkerManager)
-	if !ok {
+// startWorkerWatcher starts the worker runtime drift watcher for the provider
+// instance. The initial drift scan and the event watch both run in the
+// background so provider initialization never blocks on, or fails because of,
+// Docker connectivity. The watcher stops when the local driver closes.
+func startWorkerWatcher(driver *LocalDriver, engine *dockerworker.Engine, manager workerpool.WorkerManager, provider *model.SandboxProviderInstance) error {
+	if manager == nil {
 		return fmt.Errorf("worker manager is required")
 	}
-
-	d.watcherMu.Lock()
-	if d.watcherCancel != nil {
-		d.watcherMu.Unlock()
-		return nil
+	watcher := dockerWorkerWatcher{
+		client:     driver.client,
+		engine:     engine,
+		manager:    manager,
+		projectID:  provider.ProjectID,
+		providerID: provider.ID,
 	}
 	watchCtx, cancel := context.WithCancel(context.Background())
-	d.watcherCancel = cancel
-	d.watcherMu.Unlock()
-
-	watcher := dockerWorkerWatcher{
-		driver:          d,
-		manager:         workerManager,
-		projectID:       provider.ProjectID,
-		providerID:      provider.ID,
-		desiredImage:    d.image,
-		desiredMetadata: d.labels,
-	}
-	if _, err := watcher.scan(ctx); err != nil {
+	driver.watcherMu.Lock()
+	if driver.watcherCancel != nil {
+		driver.watcherMu.Unlock()
 		cancel()
-		d.watcherMu.Lock()
-		d.watcherCancel = nil
-		d.watcherMu.Unlock()
-		return err
+		return nil
 	}
-	go watcher.watch(watchCtx)
+	driver.watcherCancel = cancel
+	driver.watcherMu.Unlock()
+	go watcher.run(watchCtx)
 	return nil
 }
 
-type dockerWorkerWatcher struct {
-	driver          *Driver
-	manager         workerpool.WorkerManager
-	projectID       string
-	providerID      string
-	desiredImage    string
-	desiredMetadata map[string]string
+// run performs an initial best-effort drift scan and then watches for runtime
+// events. Scan failures are logged, never fatal: reconcile jobs and runtime
+// events cover anything the scan missed.
+func (w dockerWorkerWatcher) run(ctx context.Context) {
+	if _, err := w.scan(ctx); err != nil {
+		log.Printf("docker worker watcher for provider %s initial scan failed: %v", w.providerID, err)
+	}
+	w.watch(ctx)
 }
 
-type dockerWorkerRuntimeState struct {
-	InstanceID string `json:"instanceId"`
+type dockerWorkerWatcher struct {
+	client     *client.Client
+	engine     *dockerworker.Engine
+	manager    workerpool.WorkerManager
+	projectID  string
+	providerID string
 }
 
 func (w dockerWorkerWatcher) scan(ctx context.Context) (bool, error) {
@@ -74,13 +71,13 @@ func (w dockerWorkerWatcher) scan(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	containers, err := w.driver.ListWorkerVMs(ctx, w.providerID)
+	containers, err := w.listWorkerContainers(ctx)
 	if err != nil {
 		return false, err
 	}
-	containersByWorker := make(map[string]*vm.Instance, len(containers))
+	containersByWorker := make(map[string]*container.InspectResponse, len(containers))
 	for i := range containers {
-		workerID := strings.TrimSpace(containers[i].Metadata[labelWorkerID])
+		workerID := strings.TrimSpace(containers[i].Config.Labels[dockerworker.LabelWorkerID])
 		if workerID == "" {
 			continue
 		}
@@ -92,26 +89,54 @@ func (w dockerWorkerWatcher) scan(ctx context.Context) (bool, error) {
 		workersByID[workers[i].ID] = struct{}{}
 		scheduled, err := w.checkWorker(ctx, &workers[i], containersByWorker[workers[i].ID])
 		if err != nil {
-			return false, err
+			// One bad worker row must not block the scan (or provider init);
+			// its own reconcile job surfaces the failure.
+			log.Printf("docker worker watcher for provider %s could not check worker %s: %v", w.providerID, workers[i].ID, err)
+			continue
 		}
 		pendingWorkerReconcile = pendingWorkerReconcile || scheduled
 	}
 	for i := range containers {
-		workerID := strings.TrimSpace(containers[i].Metadata[labelWorkerID])
+		workerID := strings.TrimSpace(containers[i].Config.Labels[dockerworker.LabelWorkerID])
 		if workerID == "" {
 			continue
 		}
 		if _, ok := workersByID[workerID]; ok {
 			continue
 		}
-		if err := w.driver.DeleteVM(ctx, containers[i].ID, true); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+		// Orphan managed worker runtime with no worker row: no persisted
+		// lifecycle is left to reconcile, delete it directly.
+		if _, err := w.client.ContainerRemove(ctx, containers[i].ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 			return false, err
 		}
 	}
 	return pendingWorkerReconcile, nil
 }
 
-func (w dockerWorkerWatcher) checkWorker(ctx context.Context, worker *model.Worker, current *vm.Instance) (bool, error) {
+func (w dockerWorkerWatcher) listWorkerContainers(ctx context.Context) ([]container.InspectResponse, error) {
+	filters := make(client.Filters).
+		Add("label", dockerworker.LabelManaged+"=true").
+		Add("label", dockerworker.LabelWorkerAgent+"=true").
+		Add("label", dockerworker.LabelProviderInstanceID+"="+w.providerID)
+	summaries, err := w.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: filters})
+	if err != nil {
+		return nil, err
+	}
+	containers := make([]container.InspectResponse, 0, len(summaries.Items))
+	for _, summary := range summaries.Items {
+		inspect, err := w.client.ContainerInspect(ctx, summary.ID, client.ContainerInspectOptions{})
+		if err != nil {
+			if cerrdefs.IsNotFound(err) {
+				continue
+			}
+			return nil, err
+		}
+		containers = append(containers, inspect.Container)
+	}
+	return containers, nil
+}
+
+func (w dockerWorkerWatcher) checkWorker(ctx context.Context, worker *model.Worker, current *container.InspectResponse) (bool, error) {
 	if worker == nil || worker.ProjectID != w.projectID || worker.ProviderInstanceID != w.providerID {
 		return false, nil
 	}
@@ -122,12 +147,12 @@ func (w dockerWorkerWatcher) checkWorker(ctx context.Context, worker *model.Work
 		return false, nil
 	}
 	if worker.LastOperationStatus == model.OperationStatusFailed || worker.Phase == model.WorkerPhaseFailed {
-		if current != nil && current.Status == sandbox.StatusRunning {
+		if current != nil && containerRunning(current) {
 			return w.scheduleWorkerReconciliation(ctx, worker.ID)
 		}
 		return false, nil
 	}
-	state, err := decodeDockerWorkerRuntimeState(worker.RuntimeState)
+	state, err := dockerworker.DecodeRuntimeState(worker.RuntimeState)
 	if err != nil {
 		if errors.Is(err, sandbox.ErrNotFound) {
 			if current != nil {
@@ -137,18 +162,18 @@ func (w dockerWorkerWatcher) checkWorker(ctx context.Context, worker *model.Work
 		}
 		return false, err
 	}
-	inst, err := w.driver.InspectVM(ctx, state.InstanceID)
-	if errors.Is(err, sandbox.ErrNotFound) {
+	inspect, err := w.client.ContainerInspect(ctx, state.ContainerID, client.ContainerInspectOptions{})
+	if cerrdefs.IsNotFound(err) {
 		return w.scheduleWorkerReconciliation(ctx, worker.ID)
 	}
 	if err != nil {
 		return false, err
 	}
-	if inst.Status == sandbox.StatusRunning {
-		if current != nil && current.ID != inst.ID {
+	if containerRunning(&inspect.Container) {
+		if current != nil && current.ID != inspect.Container.ID {
 			return w.scheduleWorkerReconciliation(ctx, worker.ID)
 		}
-		if shouldReconcileWorkerContainer(inst, w.desiredImage, w.desiredMetadata) {
+		if w.engine.ShouldReconcileWorkerContainer(inspect.Container.Config.Image, inspect.Container.Config.Labels) {
 			return w.scheduleWorkerReconciliation(ctx, worker.ID)
 		}
 		return false, nil
@@ -156,22 +181,8 @@ func (w dockerWorkerWatcher) checkWorker(ctx context.Context, worker *model.Work
 	return w.scheduleWorkerReconciliation(ctx, worker.ID)
 }
 
-func shouldReconcileWorkerContainer(inst *vm.Instance, desiredImage string, desiredMetadata map[string]string) bool {
-	if inst == nil {
-		return true
-	}
-	if strings.TrimSpace(desiredImage) != "" && inst.Image != desiredImage {
-		return true
-	}
-	for key, value := range desiredMetadata {
-		if strings.TrimSpace(value) == "" {
-			continue
-		}
-		if inst.Metadata[key] != value {
-			return true
-		}
-	}
-	return false
+func containerRunning(inspect *container.InspectResponse) bool {
+	return inspect != nil && inspect.State != nil && inspect.State.Running
 }
 
 func (w dockerWorkerWatcher) watch(ctx context.Context) {
@@ -200,9 +211,9 @@ func (w dockerWorkerWatcher) watch(ctx context.Context) {
 func (w dockerWorkerWatcher) watchOnce(ctx context.Context) error {
 	filters := make(client.Filters).
 		Add("type", string(events.ContainerEventType)).
-		Add("label", labelWorkerAgent+"=true").
-		Add("label", labelProviderInstanceID+"="+w.providerID)
-	result := w.driver.client.Events(ctx, client.EventsListOptions{Filters: filters})
+		Add("label", dockerworker.LabelWorkerAgent+"=true").
+		Add("label", dockerworker.LabelProviderInstanceID+"="+w.providerID)
+	result := w.client.Events(ctx, client.EventsListOptions{Filters: filters})
 	for {
 		select {
 		case <-ctx.Done():
@@ -230,7 +241,7 @@ func (w dockerWorkerWatcher) handleEvent(ctx context.Context, event events.Messa
 	if event.Type != events.ContainerEventType || !workerContainerLostAction(event.Action) {
 		return nil
 	}
-	workerID := strings.TrimSpace(event.Actor.Attributes[labelWorkerID])
+	workerID := strings.TrimSpace(event.Actor.Attributes[dockerworker.LabelWorkerID])
 	if workerID == "" {
 		return nil
 	}
@@ -242,20 +253,6 @@ func (w dockerWorkerWatcher) scheduleWorkerReconciliation(ctx context.Context, w
 	return true, w.manager.ScheduleWorkerReconciliation(ctx, workerID)
 }
 
-func decodeDockerWorkerRuntimeState(data []byte) (dockerWorkerRuntimeState, error) {
-	if len(data) == 0 {
-		return dockerWorkerRuntimeState{}, sandbox.ErrNotFound
-	}
-	var state dockerWorkerRuntimeState
-	if err := json.Unmarshal(data, &state); err != nil {
-		return dockerWorkerRuntimeState{}, err
-	}
-	if strings.TrimSpace(state.InstanceID) == "" {
-		return dockerWorkerRuntimeState{}, sandbox.ErrNotFound
-	}
-	return state, nil
-}
-
 func workerContainerLostAction(action events.Action) bool {
 	switch action {
 	case events.ActionDie, events.ActionStop, events.ActionKill, events.ActionOOM, events.ActionDestroy, events.ActionRemove:
@@ -263,4 +260,14 @@ func workerContainerLostAction(action events.Action) bool {
 	default:
 		return false
 	}
+}
+
+func mapDockerNotFound(err error) error {
+	if err == nil {
+		return nil
+	}
+	if cerrdefs.IsNotFound(err) {
+		return sandbox.ErrNotFound
+	}
+	return err
 }

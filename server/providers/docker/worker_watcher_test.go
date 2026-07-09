@@ -5,14 +5,40 @@ import (
 	"testing"
 	"time"
 
+	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
+	"github.com/moby/moby/client"
 
 	"github.com/obot-platform/discobox/orchestration"
 	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	"github.com/obot-platform/discobox/server/internal/model"
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
-	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
+	"github.com/obot-platform/discobox/server/providers/dockerworker"
 )
+
+// TestStartWorkerWatcherNeverFailsInitOnScanError proves that a failing
+// initial drift scan cannot fail provider initialization (and therefore
+// cannot crash-loop server startup). The driver points at an unreachable
+// Docker endpoint, so the scan and watch loop error on every call; the scan
+// runs in the background and its failure is only logged.
+func TestStartWorkerWatcherNeverFailsInitOnScanError(t *testing.T) {
+	cli, err := client.New(client.WithHost("tcp://127.0.0.1:1"))
+	if err != nil {
+		t.Fatalf("new docker client: %v", err)
+	}
+	driver := &LocalDriver{client: cli, agentPort: defaultAgentPort}
+	t.Cleanup(func() { _ = driver.Close() })
+	engine, err := dockerworker.New(dockerworker.Config{Image: "worker:test"}, driver)
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
+	}
+
+	if err := startWorkerWatcher(driver, engine, &recordingWorkerReconcileManager{}, &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}); err != nil {
+		t.Fatalf("startWorkerWatcher returned error: %v", err)
+	}
+	// Give the background goroutine time to run the doomed scan and enter the
+	// watch loop; a propagated failure or panic would surface here.
+	time.Sleep(100 * time.Millisecond)
+}
 
 func TestDockerWorkerWatcherSchedulesWorkerReconcileForTerminalContainerEvent(t *testing.T) {
 	manager := &recordingWorkerReconcileManager{}
@@ -28,9 +54,9 @@ func TestDockerWorkerWatcherSchedulesWorkerReconcileForTerminalContainerEvent(t 
 		Actor: events.Actor{
 			ID: "1234567890abcdef",
 			Attributes: map[string]string{
-				labelWorkerID:           "worker-1",
-				labelWorkerAgent:        "true",
-				labelProviderInstanceID: "provider-1",
+				dockerworker.LabelWorkerID:           "worker-1",
+				dockerworker.LabelWorkerAgent:        "true",
+				dockerworker.LabelProviderInstanceID: "provider-1",
 			},
 		},
 	})
@@ -56,7 +82,7 @@ func TestDockerWorkerWatcherIgnoresNonTerminalContainerEvents(t *testing.T) {
 		Actor: events.Actor{
 			ID: "1234567890abcdef",
 			Attributes: map[string]string{
-				labelWorkerID: "worker-1",
+				dockerworker.LabelWorkerID: "worker-1",
 			},
 		},
 	})
@@ -85,7 +111,10 @@ func TestDockerWorkerWatcherSchedulesFailedWorkerWhenCurrentContainerRuns(t *tes
 			LastOperationStatus: model.OperationStatusFailed,
 		},
 	}
-	current := &vm.Instance{ID: "container-1", Status: sandbox.StatusRunning}
+	current := &container.InspectResponse{
+		ID:    "container-1",
+		State: &container.State{Running: true},
+	}
 
 	scheduled, err := watcher.checkWorker(context.Background(), worker, current)
 	if err != nil {
@@ -113,7 +142,10 @@ func TestDockerWorkerWatcherSchedulesDeletedWorkerWhenContainerRemains(t *testin
 			LastOperationStatus: model.OperationStatusSuccess,
 		},
 	}
-	current := &vm.Instance{ID: "container-1", Status: sandbox.StatusRunning}
+	current := &container.InspectResponse{
+		ID:    "container-1",
+		State: &container.State{Running: true},
+	}
 
 	scheduled, err := watcher.checkWorker(context.Background(), worker, current)
 	if err != nil {
@@ -125,18 +157,16 @@ func TestDockerWorkerWatcherSchedulesDeletedWorkerWhenContainerRemains(t *testin
 }
 
 func TestDockerWorkerWatcherSchedulesRunningWorkerWithStaleConfig(t *testing.T) {
-	current := &vm.Instance{
-		ID:       "container-1",
-		Status:   sandbox.StatusRunning,
-		Image:    "worker:old",
-		Metadata: map[string]string{labelWorkerConfig: "old"},
+	engine, err := dockerworker.New(dockerworker.Config{Image: "worker:new"}, &LocalDriver{})
+	if err != nil {
+		t.Fatalf("new engine: %v", err)
 	}
 
-	if !shouldReconcileWorkerContainer(current, "worker:new", map[string]string{labelWorkerConfig: "new"}) {
-		t.Fatalf("shouldReconcileWorkerContainer = false, want true for stale image/config")
+	if !engine.ShouldReconcileWorkerContainer("worker:old", map[string]string{dockerworker.LabelWorkerConfig: "old"}) {
+		t.Fatalf("ShouldReconcileWorkerContainer = false, want true for stale image/config")
 	}
-	if shouldReconcileWorkerContainer(current, "worker:old", map[string]string{labelWorkerConfig: "old"}) {
-		t.Fatalf("shouldReconcileWorkerContainer = true, want false for current image/config")
+	if engine.ShouldReconcileWorkerContainer("worker:new", map[string]string{dockerworker.LabelWorkerConfig: engine.ConfigRevision()}) {
+		t.Fatalf("ShouldReconcileWorkerContainer = true, want false for current image/config")
 	}
 }
 

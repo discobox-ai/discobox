@@ -1,10 +1,10 @@
 # Sandbox Provider Design
 
-This package contains concrete sandbox provider implementations, factory
-registration, and worker-pool VM-backed provider adapters. It consumes
-`server/internal/sandbox` for the Go-level provider interface, provider
-manager, and shared provider types. It also consumes server-owned persistence
-models and the worker-agent package for worker boot metadata.
+This package contains concrete sandbox provider implementations and factory
+registration. It consumes `server/internal/sandbox` for the Go-level provider
+interface, provider manager, typed `WorkerManager` control-plane surface, and
+shared provider types. It also consumes server-owned persistence models and the
+worker-agent package for worker boot metadata.
 
 Providers own runtime mechanics only; services own persistence, authorization,
 orchestration, and API shape.
@@ -19,109 +19,108 @@ orchestration, and API shape.
 
 ## Provider Layers
 
-Built-in worker-backed providers are layered deliberately:
+Docker container management is the invariant: every worker backend ends with
+"run the worker-agent container in some Docker daemon." Backends differ only in
+VM CRUD and how to reach that daemon and the worker-agent API.
 
 ```mermaid
 flowchart TD
-    pool["workerpool.WorkerPoolProvider\nimplements sandbox.Provider"]
-    worker["workerpool.WorkerProvider interface\nworker lifecycle + per-worker access"]
-    vmProvider["workerpool/vm.Provider\nimplements WorkerProvider"]
-    driver["workerpool/vm.Driver\nimplemented by docker, digitalocean, ..."]
+    pool["workerpool.WorkerPoolProvider\nimplements sandbox.Provider\npool sizing · placement · worker-agent API (docker-free)"]
+    engine["dockerworker.Engine\nthe one workerpool.WorkerProvider\nworker-agent container, networks, volumes, drift"]
+    driver["dockerworker.Driver\npure VM CRUD + two connection leases"]
+    local["docker.LocalDriver\nVM CRUD no-op · host socket ·\npublished loopback agent port"]
+    do["digitalocean.Driver\ndroplet CRUD by worker tag ·\ndocker over SSH · agent at public IP"]
+    execd["execvm.Driver\ndelegates every op to an external\ncommand (shell-script backends)"]
+    future["(later) ec2 / apple / windows\nsame shape; vsock for local hypervisors"]
 
-    pool --> worker
-    worker --> vmProvider
-    vmProvider --> driver
+    pool --> engine --> driver
+    driver --> local & do & execd & future
 ```
 
 `server/providers/workerpool.WorkerPoolProvider` is the registered
-`server/internal/sandbox.Provider` for worker-backed provider instances. It owns
-worker pool sizing, provider initialization, worker selection, capacity waits,
-and user-sandbox operations through the worker-agent API.
+`sandbox.Provider` for worker-backed provider instances. It owns worker pool
+sizing, worker selection, capacity waits, bootstrap credential minting, and
+user-sandbox operations through the worker-agent API. Docker never appears at
+this layer or above: the boundary contract downward is the
+`workerpool.WorkerProvider` interface, and the runtime contract for sandboxes
+is the worker-agent HTTP API reached through `transport.HTTPClientLease`.
 
-`server/providers/workerpool.WorkerProvider` is a narrow interface for
-worker runtime lifecycle and access. It can create/remove worker runtimes and
-return a `transport.HTTPClientLease` for a specific worker. The pool layer owns
-the worker-agent client and sandbox CRUD adapter, and depends on this interface
-instead of VM implementation details.
+`workerpool.WorkerProvider` is a five-method interface: `Close`,
+`EnsureWorker`, `RepairWorker`, `RemoveWorker`, and
+`AcquireWorkerAgentClient`. `dockerworker.Engine` is its only implementation.
+The engine owns everything Docker: launching the worker-agent container with
+boot env, socket bind and host mounts, scoped volumes, the per-worker sandbox
+proxy network, health waits, config-revision drift detection, and container
+replacement during repair. It obtains Docker access exclusively through the
+driver.
 
-Worker runtime lifecycle is not the same as worker row deletion. A provider may
-replace the underlying VM/container for an existing worker during active worker
-reconciliation, such as when the worker image or launch configuration changes,
-but it must preserve the worker row and worker ID while sandboxes remain
-assigned to that worker. Worker row deletion is allowed only after the control
-plane proves no sandbox is assigned to the worker.
+`dockerworker.Driver` is the backend seam sized for "add EC2 without reading
+the engine":
 
-`RepairWorker` is a recovery hook for occupied workers whose runtime is known to
-be unhealthy or drifted in a way normal active reconciliation could not fix. It
-must preserve worker identity and worker-local state. The VM worker-pool
-provider calls the required `vm.Driver.RepairWorkerVM` method with the worker
-ID, current instance ID when known, desired `InstanceSpec`, and reason; the
-driver owns whether repair means restart, in-place update, delete/recreate, or
-no-op. Docker-backed repair chooses container replacement with normal container
-cleanup; worker state lives in named Docker volumes that are preserved across
-container removal.
+- `EnsureVM` / `DeleteVM` / `InspectVM`: idempotent VM CRUD keyed by worker ID.
+  The local driver resolves every worker to the host and CRUD is a no-op.
+- `AcquireDockerClient`: a Docker API client lease for the daemon hosting the
+  worker's containers — the host socket locally, the in-VM daemon over SSH for
+  DigitalOcean, vsock later. `NewDockerClientForDialer` adapts any
+  `net.Conn` dialer; `dockerworker/sshdocker` is the shared pure-Go
+  SSH-to-docker-socket dialer for cloud VM drivers (DigitalOcean today, EC2
+  later) and for `ssh://` endpoints from the exec driver.
+- `AcquireWorkerAgentClient`: an HTTP lease reaching the worker-agent API —
+  the container's published loopback port locally, `http://<public-ip>:<agent
+  port>` for cloud VMs.
 
-`server/providers/workerpool/vm.Provider` implements `WorkerProvider`. It owns
-the VM/container mechanics for worker runtimes and obtains worker-agent HTTP
-leases through driver-provided routing.
+The engine owns Docker readiness waiting after `EnsureVM` (ping with a
+deadline), so drivers never implement boot polling.
 
-`server/providers/workerpool/vm.Driver` is the low-level platform adapter. It
-creates, starts, stops, deletes, and inspects VM-like instances:
+Worker runtime lifecycle is not the same as worker row deletion. The engine may
+replace the worker-agent container (and a VM driver may replace the VM) for an
+existing worker during reconciliation, such as when the worker image or config
+revision changes, but the worker row and worker ID are preserved while
+sandboxes remain assigned. Worker row deletion is allowed only after the
+control plane proves no sandbox is assigned to the worker.
 
-- create a VM from an `InstanceSpec`,
-- start/stop/delete/inspect a VM by instance ID,
-- remove or repair a worker VM by worker ID plus current runtime state,
-- provide HTTP client leases to reach worker and sandbox agents.
+`RepairWorker` is the recovery hook for occupied workers whose runtime is known
+to be unhealthy. The engine replaces the container (worker state lives in named
+Docker volumes that survive container removal) and replaces the VM only when
+`InspectVM` reports it missing or unhealthy.
 
-Driver implementations live with their provider package, such as
-`server/providers/docker` and `server/providers/digitalocean`. Drivers should be
-thin platform integrations for Docker, DigitalOcean, KVM, HCS, Apple
-Virtualization, AWS, Azure, GCP, or similar VM/container backends. They should
-not own worker-pool scheduling or control-plane persistence.
-
-`server/internal/sandbox.Provider` has a required lifecycle and metadata
-surface: close, definition, status, startup reconcile, and project cleanup are
-normal provider responsibilities. Do not reintroduce provider status capability
-flags such as "supports images" or "supports inspection"; feature-specific
-interfaces may still exist only where the caller needs a distinct runtime
-operation and handles absence as a real product behavior.
+The control plane launches the worker-agent container over the VM's Docker
+daemon on every backend. Cloud VM images therefore stay generic: DigitalOcean
+cloud-init only installs and enables Docker; bootstrap identity travels as
+container environment rendered by `dockerworker.BootEnv`.
 
 ## Worker Runtime Drift
 
-Runtime drift detection is driver-owned. A VM/container driver may list managed
-worker runtimes and compare them with worker rows to detect stale runtime state,
-failed rows with live runtimes, deleted rows with remaining runtimes, or other
-mismatches. For worker rows that still exist, drift detection must enqueue the
-worker reconcile job and let the worker reconciler perform generation-aware
-lifecycle and runtime-state updates. Provider reconciliation jobs do not run
-runtime inventory; they size the worker pool.
+Runtime drift detection is backend-owned. The local docker provider runs a
+watcher over the shared daemon: it lists managed worker containers, compares
+them with worker rows, and uses the engine's config revision
+(`Engine.ShouldReconcileWorkerContainer`) for drift. For worker rows that still
+exist it enqueues the worker reconcile job; the only direct side effect allowed
+is deleting an orphan managed runtime with no worker row. VM-per-worker
+backends get drift detection through `InspectVM` during normal reconciliation.
 
-Worker runtime drift detection is only about worker runtimes, even when the
-local backend represents workers as Docker containers. It must not inspect,
-reconcile, delete, or otherwise reason about user sandbox containers that are
-hosted inside a worker. Sandbox container reconciliation belongs behind the
-worker-agent sandbox runtime API and is triggered by sandbox reconciliation
-through that API.
+The watcher's initial drift scan and its event loop both run in the background:
+provider initialization starts the watcher and returns immediately. The initial
+scan is best-effort — its failures are logged, never fatal — so Docker
+connectivity or a single bad worker row can never block or crash-loop server
+startup. Reconcile jobs and runtime events cover anything a failed scan missed.
 
-The direct runtime side-effect exception is an orphan managed runtime with no
-worker row. The provider that owns that runtime may delete it immediately because
-there is no persisted worker lifecycle left to reconcile.
+Worker runtime drift detection is only about worker runtimes. It must not
+inspect, reconcile, or delete user sandbox containers hosted inside a worker;
+those belong behind the worker-agent sandbox runtime API.
 
-Runtime drift detection must not delete a persisted worker row, and pool downsizing
-must skip workers that still have assigned sandboxes. Failed worker reconcile
-jobs should mark the worker failed/unschedulable and allow the pool to launch
+Runtime drift detection must not delete a persisted worker row, and pool
+downsizing must skip workers that still have assigned sandboxes. Failed worker
+reconcile jobs mark the worker failed/unschedulable and let the pool launch
 replacement capacity; they must not delete stateful workers.
 
 ## Worker Agent HTTP Routing
 
-VM-backed providers must be able to send provider/runtime requests to worker
-agents and, in the future, sandbox agents. Transport leasing is represented by
-`server/internal/transport.HTTPClientLease`; it is intentionally not
-sandbox-specific. The generic VM provider obtains connectivity through required
-`vm.Driver` methods: `AcquireWorkerHTTPClient` for worker-agent access by
-worker ID and `AcquireHTTPClient` for instance-based sandbox-agent access. The
-returned lease contains an `http.Client` and any lease cleanup needed for the
-driver's routing mechanism.
+Transport leasing is represented by `server/internal/transport.HTTPClientLease`.
+The pool obtains worker-agent connectivity from
+`WorkerProvider.AcquireWorkerAgentClient` and attaches per-request token
+providers to the lease so credentials are minted close to use and are not
+cached as driver or lease state.
 
 The provider-facing logical URL space for a worker agent is:
 
@@ -130,33 +129,17 @@ https://worker/api/project/{project_id}/worker/{worker_id}/...
 ```
 
 The `https://worker` authority is a stable logical authority, not necessarily a
-real DNS name. VM drivers are responsible for translating requests for that
-logical worker endpoint into something that reaches the in-guest worker-agent
-HTTP server:
+real DNS name. Drivers translate it into something that reaches the in-guest
+worker-agent HTTP server: a concrete `BaseURL` (local forwarded port, public
+IP), or a client whose transport dials a socket, tunnel, or proxy. Callers must
+not assume the worker endpoint is reachable by the default network stack.
 
-- local Docker or local VM drivers may rewrite the request to a localhost port,
-  Unix socket, container network address, or other host-local endpoint;
-- editor/dev drivers may return an `http.Client` whose `RoundTripper` dials a
-  VS Code-managed socket while the request URL remains `https://worker/...`;
-- remote VM drivers may use direct private networking, a reverse tunnel, SSH
-  port forwarding, a provider proxy, or another short-lived transport;
-- drivers that require a temporary tunnel should open it in `AcquireHTTPClient`
-  and close it from the lease cleanup function.
-
-The lease may either include a concrete `BaseURL`, such as a local forwarded
-HTTP endpoint, or omit it and rely on the returned client's transport to handle
-the logical `https://worker` authority. Callers must not assume that the worker
-endpoint is reachable by the default network stack.
-
-The worker agent should validate that `{project_id}` and `{worker_id}` match its
+The worker agent validates that `{project_id}` and `{worker_id}` match its
 bootstrap identity before performing any operation. Worker-local sandbox routes
-must also require a short-lived scoped bearer token signed by the control plane.
-Drivers should return connectivity leases only; the workerpool layer attaches a
-per-request token provider to the lease so credentials are minted close to use
-and are not cached as driver or lease state. Transport security depends on the
-driver path: remote paths should use TLS or an authenticated tunnel;
-localhost-only Docker paths do not need to expose HTTPS as long as the driver
-rewrites the logical URL to the local transport.
+also require a short-lived scoped bearer token signed by the control plane.
+Transport security depends on the driver path: remote paths should use TLS or
+an authenticated tunnel (the DigitalOcean docker path rides SSH); localhost
+Docker paths do not need HTTPS.
 
 ## Sandbox Worker API
 
@@ -179,76 +162,56 @@ The logical API under the worker route is:
 
 The worker API intentionally does not expose a restart endpoint. Public restart
 intent is accepted by the control plane as `restartGeneration` and reconciled as
-the required worker-local stop and start operations. Keeping restart orchestration
-in the control plane preserves supersedable desired-state semantics and avoids a
-separate worker-local restart operation with its own lifecycle behavior.
+the required worker-local stop and start operations.
 
-Request and response bodies should stay provider/runtime-level DTOs, not API
-models from the public control-plane package `internal/api`. They should include
-sandbox ID, image/source, working directory, resource requests, environment or
-mount settings, and opaque runtime state as needed by the worker implementation.
-Responses should return the provider/runtime sandbox shape needed by
-`sandbox.Provider` operations: provider runtime ID, sandbox ID, status,
-image/source summary, timestamps, addresses/ports, metadata, and opaque state
-updates. The worker-agent generated client and schema types represent the
-worker-local API contract, not the public control-plane API DTOs, and may be used
-by VM providers and worker-local runtimes that call or implement that API.
+Request and response bodies stay provider/runtime-level DTOs from the
+worker-agent generated client, not API models from the public control-plane
+package `internal/api`. Generated clients must accept an injected `http.Client`
+so driver transports remain behind the lease abstraction.
 
-Operation endpoints should be synchronous from the worker's perspective: when a
-worker endpoint returns 2xx, the worker has completed the local runtime action or
-has made the requested runtime state observable. The control plane may still
-return `202 Accepted` to external clients because the public sandbox API is
-intent-based and reconciliation-driven.
+Operation endpoints are synchronous from the worker's perspective: a 2xx means
+the worker completed the local runtime action or made the requested state
+observable. The control plane may still return `202 Accepted` to external
+clients because the public sandbox API is intent-based and
+reconciliation-driven.
 
 The public control-plane sandbox API remains project scoped and desired-state
-oriented:
+oriented (see `api` package for routes).
 
-| Method | Path | Accepted intent |
-| --- | --- | --- |
-| `GET` | `/projects/{projectId}/sandboxes` | List persisted sandbox resources. |
-| `POST` | `/projects/{projectId}/sandboxes` | Accept create intent; desired state becomes `running`. |
-| `GET` | `/projects/{projectId}/sandboxes/{sandboxId}` | Return persisted desired and observed state. |
-| `PATCH` | `/projects/{projectId}/sandboxes/{sandboxId}` | Update persisted sandbox configuration. |
-| `DELETE` | `/projects/{projectId}/sandboxes/{sandboxId}` | Accept delete intent; desired state becomes `deleted`. |
-| `POST` | `/projects/{projectId}/sandboxes/{sandboxId}/start` | Accept start intent; desired state becomes `running`. |
-| `POST` | `/projects/{projectId}/sandboxes/{sandboxId}/stop` | Accept stop intent; desired state becomes `stopped`. |
-| `POST` | `/projects/{projectId}/sandboxes/{sandboxId}/restart` | Accept restart intent; increment restart generation. |
+## Worker Boot Metadata
 
-Provider operations bridge the two APIs: they use the VM driver's HTTP client
-lease to call the generated worker API, then persist the resulting runtime state
-through the normal reconciler flow. The worker API is defined by the OpenAPI
-contract and used with generated client/server code. Generated clients must accept
-an injected `http.Client` so VM-driver transports such as VS Code sockets, Unix
-sockets, tunnels, or proxies remain behind the lease abstraction.
-
-## VM Boot Metadata
-
-VM drivers receive boot metadata in multiple common forms:
-
-- environment variables,
-- kernel command-line arguments,
-- cloud-init user-data,
-- cloud-init meta-data.
-
-Drivers should pass the form their backend supports. The boot metadata is built
-from the worker-agent bootstrap contract and includes the control plane URL,
-project/sandbox identity, worker ID, bootstrap token, and agent port. This
-allows the in-guest worker agent to register itself with the control plane after
-the VM boots.
+Bootstrap identity — control plane URL, project/worker identity, bootstrap
+token, control-plane trust key, agent port — is rendered as container
+environment by `dockerworker.BootEnv` and injected into the worker-agent
+container by the engine, uniformly on every backend. VM drivers only need
+their platform's Docker bring-up (for example the DigitalOcean docker-install
+cloud-init document); they never carry bootstrap secrets in VM user data.
 
 ## DigitalOcean Driver
 
-`server/providers/digitalocean` implements the VM driver contract
-with one DigitalOcean Droplet per sandbox worker.
+`server/providers/digitalocean` implements the `dockerworker.Driver` contract
+with one Docker-enabled Droplet per sandbox worker, keyed by the
+`discobox-worker-<worker_id>` tag.
 
-Provider instances use type `digitalocean`. Configuration includes the
-DigitalOcean API token, control plane URL, region, size, image, SSH keys, VPC
-UUID, tags, and feature flags such as backups, IPv6, and monitoring. The token
-can be supplied directly by provider config or loaded from an environment
-variable such as `DIGITALOCEAN_ACCESS_TOKEN`.
+Provider instances use type `digitalocean`. Configuration includes the API
+token, control plane URL, region/size/droplet image, worker-agent container
+image, registered SSH keys plus the matching SSH private key (config or
+environment variable), VPC UUID, tags, and feature flags. The SSH key pair is
+required for the engine to reach the droplet's Docker daemon; the worker-agent
+API is reached directly at the droplet's public IPv4 and agent port.
 
-The driver passes cloud-init user-data from the generic VM boot contract to the
-Droplet create API so the guest worker agent can start and register itself.
+## Exec Driver
+
+`server/providers/execvm` implements the `dockerworker.Driver` contract by
+invoking an external command as `<command> <op> <worker-id>`, so a worker
+backend can be a shell script. Operations: `ensure-vm`/`inspect-vm` (JSON
+`{id,status,address}` on stdout; inspect exits 3 for "no VM"), `delete-vm`,
+and `docker-endpoint`/`agent-endpoint` (one endpoint line on stdout;
+`unix://`, `tcp://`, or `ssh://[user@]host[:port]` for Docker, `http(s)://`
+for the agent). SSH endpoints use the provider's configured private key via
+`sshdocker`. The protocol is documented in the `execvm` package doc; it exists
+both as an escape hatch and as the proof that the driver seam needs nothing
+Docker-shaped.
 
 ## Pull-Based Scheduling and Worker Conditions
 

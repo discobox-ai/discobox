@@ -21,6 +21,7 @@ type ProviderDefinition = contract.ProviderDefinition
 type StateEvent = contract.StateEvent
 type HTTPClientLease = transport.HTTPClientLease
 type WorkerRuntimeReconciler = contract.WorkerRuntimeReconciler
+type WorkerManager = contract.WorkerManager
 type ImageEvent = contract.ImageEvent
 type ImageStatus = contract.ImageStatus
 type ImageProvider = contract.ImageProvider

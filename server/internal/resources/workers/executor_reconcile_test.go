@@ -327,15 +327,15 @@ type failingWorkerProvider struct {
 	err error
 }
 
-func (p failingWorkerProvider) ReconcileWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
+func (p failingWorkerProvider) ReconcileWorker(context.Context, sandboxes.WorkerManager, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
 	return p.err
 }
 
-func (p failingWorkerProvider) RepairWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker, string) error {
+func (p failingWorkerProvider) RepairWorker(context.Context, sandboxes.WorkerManager, *model.Project, *model.SandboxProviderInstance, *model.Worker, string) error {
 	return p.err
 }
 
-func (p failingWorkerProvider) RemoveWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
+func (p failingWorkerProvider) RemoveWorker(context.Context, sandboxes.WorkerManager, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
 	return p.err
 }
 
@@ -346,17 +346,17 @@ type countingWorkerProvider struct {
 	repairCalls int
 }
 
-func (p *countingWorkerProvider) ReconcileWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
+func (p *countingWorkerProvider) ReconcileWorker(context.Context, sandboxes.WorkerManager, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
 	p.calls++
 	return nil
 }
 
-func (p *countingWorkerProvider) RepairWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker, string) error {
+func (p *countingWorkerProvider) RepairWorker(context.Context, sandboxes.WorkerManager, *model.Project, *model.SandboxProviderInstance, *model.Worker, string) error {
 	p.repairCalls++
 	return nil
 }
 
-func (p *countingWorkerProvider) RemoveWorker(_ context.Context, _ any, _ *model.Project, _ *model.SandboxProviderInstance, worker *model.Worker) error {
+func (p *countingWorkerProvider) RemoveWorker(_ context.Context, _ sandboxes.WorkerManager, _ *model.Project, _ *model.SandboxProviderInstance, worker *model.Worker) error {
 	p.removeCalls++
 	worker.RuntimeState = nil
 	return nil
@@ -367,17 +367,17 @@ type registeringWorkerProvider struct {
 	store *store.Store
 }
 
-func (p *registeringWorkerProvider) ReconcileWorker(ctx context.Context, _ any, _ *model.Project, _ *model.SandboxProviderInstance, worker *model.Worker) error {
+func (p *registeringWorkerProvider) ReconcileWorker(ctx context.Context, _ sandboxes.WorkerManager, _ *model.Project, _ *model.SandboxProviderInstance, worker *model.Worker) error {
 	worker.RuntimeState = []byte(`{"instanceId":"runtime-1"}`)
 	_, err := p.store.UpdateWorkerStatus(ctx, worker.ID, true, true, false, 4, 8<<30, 20<<30, []byte(`{"status":"ready"}`))
 	return err
 }
 
-func (p *registeringWorkerProvider) RepairWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker, string) error {
+func (p *registeringWorkerProvider) RepairWorker(context.Context, sandboxes.WorkerManager, *model.Project, *model.SandboxProviderInstance, *model.Worker, string) error {
 	return nil
 }
 
-func (p *registeringWorkerProvider) RemoveWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
+func (p *registeringWorkerProvider) RemoveWorker(context.Context, sandboxes.WorkerManager, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
 	return nil
 }
 
@@ -387,11 +387,11 @@ type repairingWorkerProvider struct {
 	repairCalls  int
 }
 
-func (p *repairingWorkerProvider) ReconcileWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
+func (p *repairingWorkerProvider) ReconcileWorker(context.Context, sandboxes.WorkerManager, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
 	return p.reconcileErr
 }
 
-func (p *repairingWorkerProvider) RepairWorker(_ context.Context, _ any, _ *model.Project, _ *model.SandboxProviderInstance, worker *model.Worker, _ string) error {
+func (p *repairingWorkerProvider) RepairWorker(_ context.Context, _ sandboxes.WorkerManager, _ *model.Project, _ *model.SandboxProviderInstance, worker *model.Worker, _ string) error {
 	p.repairCalls++
 	worker.RuntimeState = []byte(`{"instanceId":"repaired-runtime"}`)
 	worker.Ready = true
@@ -400,7 +400,7 @@ func (p *repairingWorkerProvider) RepairWorker(_ context.Context, _ any, _ *mode
 	return nil
 }
 
-func (p *repairingWorkerProvider) RemoveWorker(context.Context, any, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
+func (p *repairingWorkerProvider) RemoveWorker(context.Context, sandboxes.WorkerManager, *model.Project, *model.SandboxProviderInstance, *model.Worker) error {
 	return nil
 }
 

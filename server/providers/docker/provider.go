@@ -1,42 +1,55 @@
+// Package docker registers the "docker" provider type: workers run as
+// containers on the local Docker daemon. It provides the local VM driver for
+// the shared dockerworker engine — VM CRUD is a no-op because the host is the
+// "VM" — plus a runtime drift watcher over the shared daemon.
 package docker
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"os"
+	"strconv"
 	"strings"
 
+	"github.com/obot-platform/discobox/controlplane"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
+	"github.com/obot-platform/discobox/server/providers/dockerworker"
 	"github.com/obot-platform/discobox/server/providers/workerpool"
-	"github.com/obot-platform/discobox/server/providers/workerpool/vm"
 )
 
-const workerImageEnv = "DISCOBOX_DOCKER_WORKER_IMAGE"
-const workerAgentMountLayoutVersion = 4
+const (
+	ProviderType      = "docker"
+	defaultAgentPort  = 3002
+	dockerHostGateway = "host.docker.internal"
+	dockerSocketPath  = "/var/run/docker.sock"
+	labelProviderType = "discobox.provider_type"
+)
 
-func FactoryWithWorkerManager(workerManager workerpool.WorkerManager) sandbox.ProviderFactory {
-	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
-		return newFromInstance(ctx, instance, workerManager)
-	}
-}
+// DefaultImage returns the default Docker worker image.
+func DefaultImage() string { return dockerworker.DefaultWorkerImage }
 
+// DefaultAgentPort returns the default worker-agent port exposed by Docker workers.
+func DefaultAgentPort() int { return defaultAgentPort }
+
+// Config is the persisted provider instance configuration.
 type Config struct {
-	ControlPlaneURL string                `json:"controlPlaneUrl,omitempty"`
-	Host            string                `json:"host,omitempty"`
-	Image           string                `json:"image,omitempty"`
-	Network         string                `json:"network,omitempty"`
-	AgentPort       int                   `json:"agentPort,omitempty"`
-	Systemd         *bool                 `json:"systemd,omitempty"`
-	Privileged      *bool                 `json:"privileged,omitempty"`
-	CgroupNSMode    string                `json:"cgroupNsMode,omitempty"`
-	Command         workerpool.StringList `json:"command,omitempty"`
-	DockerSocket    string                `json:"bindDockerSocket,omitempty"`
-	HostMounts      []HostMount           `json:"hostMounts,omitempty"`
+	ControlPlaneURL string                   `json:"controlPlaneUrl,omitempty"`
+	Host            string                   `json:"host,omitempty"`
+	Image           string                   `json:"image,omitempty"`
+	Network         string                   `json:"network,omitempty"`
+	AgentPort       int                      `json:"agentPort,omitempty"`
+	Systemd         *bool                    `json:"systemd,omitempty"`
+	Privileged      *bool                    `json:"privileged,omitempty"`
+	CgroupNSMode    string                   `json:"cgroupNsMode,omitempty"`
+	Command         workerpool.StringList    `json:"command,omitempty"`
+	DockerSocket    string                   `json:"bindDockerSocket,omitempty"`
+	HostMounts      []dockerworker.HostMount `json:"hostMounts,omitempty"`
 	workerpool.WorkerPoolConfigFields
 }
+
+// HostMount aliases the engine host mount type for provider configuration.
+type HostMount = dockerworker.HostMount
 
 func Decode(data json.RawMessage) (Config, error) {
 	return workerpool.DecodeConfig[Config](data, ProviderType)
@@ -47,72 +60,66 @@ func Validate(data json.RawMessage) error {
 	return err
 }
 
+func FactoryWithWorkerManager(workerManager workerpool.WorkerManager) sandbox.ProviderFactory {
+	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
+		return newFromInstance(ctx, instance, workerManager)
+	}
+}
+
 func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, workerManager workerpool.WorkerManager) (sandbox.Provider, error) {
 	cfg, err := Decode(instance.Config)
 	if err != nil {
 		return nil, err
 	}
-	cfg.Image = effectiveWorkerImage(cfg.Image)
-	return workerpool.NewVMWorkerPoolProvider(ctx, workerpool.VMWorkerPoolProviderConfig{
-		ControlPlaneURL: cfg.ControlPlaneURL,
-		DefaultImage:    cfg.Image,
-		AgentPort:       cfg.AgentPort,
-		WorkerPool:      cfg.WorkerPoolConfig(),
-		WorkerManager:   workerManager,
-		EnsureWorkers:   true,
-	}, func(ctx context.Context, providerConfig workerpool.VMProviderConfig) (workerpool.WorkerProvider, error) {
-		return newProvider(ctx, cfg, vm.Config{
-			ControlPlaneURL: providerConfig.ControlPlaneURL,
-			DefaultImage:    providerConfig.DefaultImage,
-			AgentPort:       providerConfig.AgentPort,
-		})
-	})
-}
-
-func DefaultWorkerImage() string {
-	return effectiveWorkerImage("")
-}
-
-func EffectiveWorkerImage(image string) string {
-	return effectiveWorkerImage(image)
-}
-
-func WorkerImageSource(image string) string {
-	if strings.TrimSpace(image) != "" {
-		return "provider"
+	driver, err := NewLocalDriver(ctx, cfg.Host, effectiveAgentPort(cfg.AgentPort))
+	if err != nil {
+		return nil, err
 	}
-	if strings.TrimSpace(os.Getenv(workerImageEnv)) != "" {
-		return "global"
+	engine, err := dockerworker.New(engineConfig(cfg), driver)
+	if err != nil {
+		_ = driver.Close()
+		return nil, err
 	}
-	return "default"
+	if err := startWorkerWatcher(driver, engine, workerManager, instance); err != nil {
+		_ = engine.Close()
+		return nil, err
+	}
+	return workerpool.New(engine, Definition(), cfg.WorkerPoolConfig(), workerManager), nil
 }
 
-func effectiveWorkerImage(image string) string {
-	if image = strings.TrimSpace(image); image != "" {
-		return image
+// engineConfig maps the docker provider configuration to the shared engine
+// configuration, applying local-Docker defaults such as the host-gateway
+// control plane URL.
+func engineConfig(cfg Config) dockerworker.Config {
+	controlPlaneURL := strings.TrimSpace(cfg.ControlPlaneURL)
+	var extraHosts []string
+	if controlPlaneURL == "" {
+		controlPlaneURL = defaultDockerControlPlaneURL()
+		if controlPlaneURLUsesHostGateway(controlPlaneURL) {
+			extraHosts = []string{dockerHostGateway + ":host-gateway"}
+		}
 	}
-	if value := strings.TrimSpace(os.Getenv(workerImageEnv)); value != "" {
-		return value
+	return dockerworker.Config{
+		ControlPlaneURL: controlPlaneURL,
+		Image:           dockerworker.EffectiveWorkerImage(cfg.Image),
+		Network:         cfg.Network,
+		AgentPort:       effectiveAgentPort(cfg.AgentPort),
+		Systemd:         cfg.systemdValue(),
+		Privileged:      cfg.Privileged,
+		CgroupNSMode:    cfg.CgroupNSMode,
+		Command:         cfg.Command.Values(),
+		DockerSocket:    cfg.DockerSocket,
+		HostMounts:      cfg.HostMounts,
+		ExtraHosts:      extraHosts,
+		Labels:          map[string]string{labelProviderType: ProviderType},
 	}
-	return DefaultImage()
 }
 
-func newProvider(ctx context.Context, cfg Config, vmConfig vm.Config) (*vm.Provider, error) {
-	vmConfig.Metadata = mergeStringMaps(vmConfig.Metadata, map[string]string{
-		labelWorkerConfig: workerAgentConfigRevision(cfg, vmConfig),
-	})
-	return NewProvider(ctx, DriverConfig{
-		Host:         cfg.Host,
-		Image:        cfg.Image,
-		Network:      cfg.Network,
-		AgentPort:    cfg.AgentPort,
-		Systemd:      cfg.systemdValue(),
-		Privileged:   cfg.Privileged,
-		CgroupNSMode: cfg.CgroupNSMode,
-		Command:      cfg.Command.Values(),
-		DockerSocket: cfg.DockerSocket,
-		HostMounts:   cfg.HostMounts,
-	}, vmConfig)
+func effectiveAgentPort(agentPort int) int {
+	if agentPort <= 0 {
+		return defaultAgentPort
+	}
+	return agentPort
 }
 
 func (c Config) systemdValue() bool {
@@ -122,78 +129,47 @@ func (c Config) systemdValue() bool {
 	return *c.Systemd
 }
 
-func workerAgentConfigRevision(cfg Config, vmConfig vm.Config) string {
-	systemd := cfg.systemdValue()
-	privileged := systemd
-	if cfg.Privileged != nil {
-		privileged = *cfg.Privileged
+func defaultDockerControlPlaneURL() string {
+	port := strings.TrimSpace(os.Getenv("PORT"))
+	if port == "" {
+		port = strconv.Itoa(controlplane.DefaultPort)
 	}
-	command := cfg.Command.Values()
-	if len(command) == 0 && systemd {
-		command = []string{"/usr/local/bin/discobox-worker-agent"}
-	}
-	agentPort := cfg.AgentPort
-	if agentPort == 0 {
-		agentPort = DefaultAgentPort()
-	}
-	controlPlaneURL := strings.TrimSpace(vmConfig.ControlPlaneURL)
-	if controlPlaneURL == "" {
-		controlPlaneURL = defaultDockerControlPlaneURL()
-	}
-	image := strings.TrimSpace(cfg.Image)
-	if image == "" {
-		image = DefaultImage()
-	}
-	dockerSocket := cleanAbsPath(cfg.DockerSocket)
-	if dockerSocket == "" {
-		dockerSocket = dockerSocketPath
-	}
-	payload := struct {
-		ControlPlaneURL    string      `json:"controlPlaneUrl"`
-		Image              string      `json:"image"`
-		Network            string      `json:"network"`
-		AgentPort          int         `json:"agentPort"`
-		Systemd            bool        `json:"systemd"`
-		Privileged         bool        `json:"privileged"`
-		CgroupNSMode       string      `json:"cgroupNsMode"`
-		Command            []string    `json:"command,omitempty"`
-		DockerSocket       string      `json:"bindDockerSocket"`
-		HostMounts         []HostMount `json:"hostMounts,omitempty"`
-		MountLayoutVersion int         `json:"mountLayoutVersion"`
-	}{
-		ControlPlaneURL:    controlPlaneURL,
-		Image:              image,
-		Network:            strings.TrimSpace(cfg.Network),
-		AgentPort:          agentPort,
-		Systemd:            systemd,
-		Privileged:         privileged,
-		CgroupNSMode:       strings.TrimSpace(cfg.CgroupNSMode),
-		Command:            command,
-		DockerSocket:       dockerSocket,
-		HostMounts:         normalizeHostMounts(cfg.HostMounts),
-		MountLayoutVersion: workerAgentMountLayoutVersion,
-	}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		panic(err)
-	}
-	sum := sha256.Sum256(data)
-	return hex.EncodeToString(sum[:])
+	return "http://" + dockerHostGateway + ":" + port
 }
 
-func mergeStringMaps(base map[string]string, overlays ...map[string]string) map[string]string {
-	size := len(base)
-	for _, overlay := range overlays {
-		size += len(overlay)
+func controlPlaneURLUsesHostGateway(value string) bool {
+	return strings.Contains(value, "://"+dockerHostGateway) || strings.HasPrefix(value, dockerHostGateway+":")
+}
+
+func EffectiveWorkerImage(image string) string {
+	return dockerworker.EffectiveWorkerImage(image)
+}
+
+func WorkerImageSource(image string) string {
+	return dockerworker.WorkerImageSource(image)
+}
+
+// Definition describes the Docker provider for provider catalogs.
+func Definition() sandbox.ProviderDefinition {
+	return sandbox.ProviderDefinition{
+		Name:        "Docker",
+		Icon:        "docker",
+		Description: "Runs VM-style workers as Docker containers, optionally with systemd as PID 1.",
+		ConfigFields: []sandbox.ProviderConfigField{
+			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: controlplane.DefaultURL(dockerHostGateway, controlplane.DefaultPort), Advanced: true},
+			{Key: "host", Label: "Docker Host", Type: "string", Advanced: true},
+			{Key: "image", Label: "Image", Type: "string", Placeholder: dockerworker.DefaultWorkerImage},
+			{Key: "network", Label: "Docker Network", Type: "string", Advanced: true},
+			{Key: "minWorkers", Label: "Minimum Workers", Type: "number", Placeholder: "1", Description: "Minimum active VM workers to keep in the pool."},
+			{Key: "maxWorkers", Label: "Maximum Workers", Type: "number", Placeholder: "2", Description: "Maximum active VM workers allowed in the pool."},
+			{Key: "minHealthyWorkers", Label: "Minimum Healthy Workers", Type: "number", Placeholder: "1", Description: "Minimum ready, schedulable, non-degraded workers before launching replacements."},
+			{Key: "poolSize", Label: "Pool Size", Type: "number", Placeholder: "1", Description: "Deprecated alias for minimum workers.", Advanced: true},
+			{Key: "systemd", Label: "Run systemd", Type: "boolean", Advanced: true},
+			{Key: "privileged", Label: "Privileged", Type: "boolean", Advanced: true},
+			{Key: "cgroupNsMode", Label: "Cgroup Namespace", Type: "string", Advanced: true},
+			{Key: "command", Label: "Command", Type: "string", Advanced: true},
+			{Key: "bindDockerSocket", Label: "Bind Docker Socket", Type: "string", Placeholder: dockerSocketPath, Advanced: true},
+			{Key: "agentPort", Label: "Agent Port", Type: "number", Placeholder: strconv.Itoa(defaultAgentPort), Advanced: true},
+		},
 	}
-	merged := make(map[string]string, size)
-	for key, value := range base {
-		merged[key] = value
-	}
-	for _, overlay := range overlays {
-		for key, value := range overlay {
-			merged[key] = value
-		}
-	}
-	return merged
 }

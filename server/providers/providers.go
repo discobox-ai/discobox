@@ -4,6 +4,7 @@ import (
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/providers/digitalocean"
 	"github.com/obot-platform/discobox/server/providers/docker"
+	"github.com/obot-platform/discobox/server/providers/execvm"
 	"github.com/obot-platform/discobox/server/providers/workerpool"
 )
 
@@ -17,4 +18,7 @@ func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, w
 	manager.RegisterProviderDefinition(docker.ProviderType, docker.Definition())
 	manager.RegisterFactory(docker.ProviderType, docker.FactoryWithWorkerManager(workerManager))
 	manager.RegisterProviderConfigValidator(docker.ProviderType, docker.Validate)
+	manager.RegisterProviderDefinition(execvm.ProviderType, execvm.Definition())
+	manager.RegisterFactory(execvm.ProviderType, execvm.FactoryWithWorkerManager(workerManager))
+	manager.RegisterProviderConfigValidator(execvm.ProviderType, execvm.Validate)
 }

@@ -1,12 +1,9 @@
 package workerpool
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
-
-	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 )
 
 // StringList accepts either a JSON array of strings or a comma-separated string.
@@ -66,33 +63,4 @@ func RequireControlPlaneURL(providerType, value string) error {
 		return fmt.Errorf("%s controlPlaneUrl is required", providerType)
 	}
 	return nil
-}
-
-type NewProviderFunc func(context.Context, VMProviderConfig) (WorkerProvider, error)
-
-type VMProviderConfig struct {
-	ControlPlaneURL string
-	DefaultImage    string
-	AgentPort       int
-}
-
-type VMWorkerPoolProviderConfig struct {
-	ControlPlaneURL string
-	DefaultImage    string
-	AgentPort       int
-	WorkerPool      WorkerPoolConfig
-	WorkerManager   WorkerManager
-	EnsureWorkers   bool
-}
-
-func NewVMWorkerPoolProvider(ctx context.Context, cfg VMWorkerPoolProviderConfig, newProvider NewProviderFunc) (sandbox.Provider, error) {
-	provider, err := newProvider(ctx, VMProviderConfig{
-		ControlPlaneURL: cfg.ControlPlaneURL,
-		DefaultImage:    cfg.DefaultImage,
-		AgentPort:       cfg.AgentPort,
-	})
-	if err != nil {
-		return nil, err
-	}
-	return NewWorkerPoolProvider(provider, cfg.WorkerPool, cfg.WorkerManager, cfg.EnsureWorkers), nil
 }
