@@ -1,6 +1,9 @@
 # syntax=docker/dockerfile:1.7
 
-FROM golang:1.26-trixie AS build
+# Build natively on the host platform and cross-compile, so multi-arch image
+# builds only emulate the (apt-based) runtime stage, not the Go compiler.
+FROM --platform=$BUILDPLATFORM golang:1.26-trixie AS build
+ARG TARGETOS TARGETARCH
 
 WORKDIR /src
 COPY go.mod go.sum ./
@@ -15,7 +18,7 @@ COPY worker-agent ./worker-agent
 WORKDIR /src/worker-agent
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
-    CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/discobox-worker-agent ./cmd/discobox-worker-agent
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath -ldflags="-s -w" -o /out/discobox-worker-agent ./cmd/discobox-worker-agent
 
 FROM debian:13-slim
 

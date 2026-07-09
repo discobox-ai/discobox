@@ -3,7 +3,10 @@
 ARG DEBIAN_MIRROR=http://deb.debian.org/debian
 ARG DEBIAN_SECURITY_MIRROR=http://security.debian.org/debian-security
 
-FROM golang:1.26-bookworm AS sandbox-agent-builder
+# Build natively on the host platform and cross-compile, so multi-arch image
+# builds only emulate the (apt-based) runtime stage, not the Go compiler.
+FROM --platform=$BUILDPLATFORM golang:1.26-bookworm AS sandbox-agent-builder
+ARG TARGETOS TARGETARCH
 
 WORKDIR /src
 
@@ -16,7 +19,7 @@ COPY sandbox-agent ./sandbox-agent
 
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
-    go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-sandbox-agent ./cmd/discobox-sandbox-agent
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-sandbox-agent ./cmd/discobox-sandbox-agent
 
 FROM debian:bookworm
 
@@ -136,6 +139,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 
 RUN set -eux; \
     unset NIX_REMOTE; \
+    # Build-time only: qemu-user (emulated cross-platform builds) cannot load
+    # seccomp BPF programs, so disable nix syscall filtering for the install
+    # steps without persisting it into the image's /etc/nix/nix.conf.
+    export NIX_CONFIG="filter-syscalls = false"; \
     curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix \
         | sh -s -- install linux --extra-conf "sandbox = false" --init none --no-confirm; \
     install -D -m 0644 /nix/var/nix/profiles/default/lib/systemd/system/nix-daemon.service /etc/systemd/system/nix-daemon.service; \
