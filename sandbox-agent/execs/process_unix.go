@@ -28,27 +28,9 @@ func AgentSysProcAttr(user *User) (*syscall.SysProcAttr, error) {
 }
 
 func userEnvDefaults(user *User) (map[string]string, error) {
-	if emptyUser(user) {
-		return nil, nil
-	}
-	name := strings.TrimSpace(user.Name)
-	home := strings.TrimSpace(user.HomeDirectory)
-	if name != "" {
-		found, err := osuser.Lookup(name)
-		if err != nil {
-			return nil, fmt.Errorf("resolve exec user %q: %w", name, err)
-		}
-		if home == "" {
-			home = strings.TrimSpace(found.HomeDir)
-		}
-	} else if user.UID != nil {
-		found, err := osuser.LookupId(strconv.FormatInt(*user.UID, 10))
-		if err == nil {
-			name = strings.TrimSpace(found.Username)
-			if home == "" {
-				home = strings.TrimSpace(found.HomeDir)
-			}
-		}
+	name, home, err := ResolveUser(user)
+	if err != nil {
+		return nil, err
 	}
 	out := map[string]string{}
 	if name != "" {
