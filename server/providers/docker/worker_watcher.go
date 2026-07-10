@@ -162,6 +162,11 @@ func (w dockerWorkerWatcher) checkWorker(ctx context.Context, worker *model.Work
 		}
 		return false, err
 	}
+	if strings.TrimSpace(state.ContainerID) == "" {
+		// Runtime identity without a container (e.g. a partially-initialized
+		// worker): treat it like a missing container and reconcile.
+		return w.scheduleWorkerReconciliation(ctx, worker.ID)
+	}
 	inspect, err := w.client.ContainerInspect(ctx, state.ContainerID, client.ContainerInspectOptions{})
 	if cerrdefs.IsNotFound(err) {
 		return w.scheduleWorkerReconciliation(ctx, worker.ID)
