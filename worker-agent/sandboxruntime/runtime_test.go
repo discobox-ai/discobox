@@ -70,7 +70,7 @@ func TestSandboxUserEnvPreservesExplicitHomeAndUser(t *testing.T) {
 func TestSandboxSourcesUseConfiguredAndDefaultTargets(t *testing.T) {
 	primaryURL := mustURL(t, "https://example.com/primary.git")
 	toolsURL := mustURL(t, "https://example.com/tools.git")
-	uiURL := mustURL(t, "https://example.com/ui.git")
+	docsURL := mustURL(t, "https://example.com/docs.git")
 	req := &workerapimodel.WorkerSandboxCreateRequest{
 		SandboxId: "sandbox-1",
 		Config: workerapimodel.SandboxConfig{
@@ -87,10 +87,10 @@ func TestSandboxSourcesUseConfiguredAndDefaultTargets(t *testing.T) {
 					Kind: workerclient.GitSourceKindGit,
 					URL:  workerclient.NewOptURI(toolsURL),
 				},
-				"workspace ui": {
+				"workspace docs": {
 					Kind: workerclient.GitSourceKindGit,
-					Slug: workerclient.NewOptString("UI"),
-					URL:  workerclient.NewOptURI(uiURL),
+					Slug: workerclient.NewOptString("Docs"),
+					URL:  workerclient.NewOptURI(docsURL),
 				},
 			}),
 		},
@@ -101,7 +101,7 @@ func TestSandboxSourcesUseConfiguredAndDefaultTargets(t *testing.T) {
 	}
 	assertSource(t, sources[0], "primary-source", "/work/project")
 	assertSource(t, sources[1], "tools", "/tools")
-	assertSource(t, sources[2], "ui", "/workspace/ui")
+	assertSource(t, sources[2], "docs", "/workspace/docs")
 }
 
 func TestGitSourceCloneURLPrefixesAbsoluteLocalDirectoryWithHostMountPrefix(t *testing.T) {

@@ -10,7 +10,7 @@ module so providers can depend on server-owned persistence and manager contracts
 
 ```mermaid
 flowchart LR
-    clients[CLI / UI / API clients] -->|Server REST API| http[internal/server]
+    clients[CLI / API clients] -->|Server REST API| http[internal/server]
     http --> api[internal/services]
     api --> handlers[internal/handlers]
     http --> database[internal/database]

@@ -50,21 +50,21 @@ func TestWatcherIgnoresGitDirectory(t *testing.T) {
 
 func TestWatcherIgnoresNodeModulesDirectories(t *testing.T) {
 	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, "frontend"), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Join(root, "nested"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	w := newTestWatcher(t, root)
 	defer w.Close()
 
 	writeFile(t, filepath.Join(root, "node_modules", "pkg", "index.js"), []byte("ignored"))
-	writeFile(t, filepath.Join(root, "frontend", "node_modules", "pkg", "index.js"), []byte("ignored"))
+	writeFile(t, filepath.Join(root, "nested", "node_modules", "pkg", "index.js"), []byte("ignored"))
 	assertNoBatch(t, w, 250*time.Millisecond)
 
 	writeFile(t, filepath.Join(root, "src", "app.js"), []byte("tracked"))
 	batch := waitForBatch(t, w, 2*time.Second)
 	assertChange(t, batch, "src/app.js", Created)
 	assertNoChange(t, batch, "node_modules/pkg/index.js")
-	assertNoChange(t, batch, "frontend/node_modules/pkg/index.js")
+	assertNoChange(t, batch, "nested/node_modules/pkg/index.js")
 }
 
 func TestWatcherDetectsChangesFromInitialSnapshot(t *testing.T) {

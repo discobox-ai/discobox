@@ -8,8 +8,6 @@ vars:
   HOOKS_BINARY: build/discobox-hooks
   HOOKS_MAIN: ./cmd/discobox-hooks
   PACKAGES: ./...
-  UI_DIR: ui
-  ELECTRON_DIR: electron
 
 tasks:
   default:
@@ -18,13 +16,11 @@ tasks:
       - task --list
 
   build:
-    desc: Compile discobox-server, discobox CLI, hooks CLI, UI, and Electron shell
+    desc: Compile discobox-server, discobox CLI, and hooks CLI
     cmds:
       - task: build:server
       - task: build:cli
       - task: build:hooks
-      - task: build:ui
-      - task: build:electron
 
   build:server:
     desc: Compile discobox-server
@@ -43,18 +39,6 @@ tasks:
     cmds:
       - mkdir -p build
       - cd hooks && go build -o ../{{.HOOKS_BINARY}} {{.HOOKS_MAIN}}
-
-  build:ui:
-    desc: Build the SvelteKit UI
-    cmds:
-      - pnpm --dir {{.UI_DIR}} install --frozen-lockfile
-      - pnpm --dir {{.UI_DIR}} run build
-
-  build:electron:
-    desc: Build the Electron main and preload bundles
-    cmds:
-      - pnpm --dir {{.ELECTRON_DIR}} install --frozen-lockfile
-      - pnpm --dir {{.ELECTRON_DIR}} run build
 
   build:worker-agent-image:
     desc: Build the systemd Docker worker image
@@ -92,19 +76,10 @@ tasks:
       - ./{{.BINARY}}
 
   dev:
-    desc: Run the server, UI, Electron shell, Docker image watcher, and Storybook dev tasks
+    desc: Run the server and Docker image watcher development tasks
     deps:
       - dev:server
-      - dev:ui
-      - dev:electron
       - dev:docker-image-watch
-      - storybook
-
-  storybook:
-    desc: Run Storybook for UI component development
-    cmds:
-      - pnpm --dir {{.UI_DIR}} install --frozen-lockfile
-      - pnpm --dir {{.UI_DIR}} exec storybook dev -p 6006 --host 127.0.0.1
 
   dev:server:
     desc: Run discobox-server with Air hot reload
@@ -126,38 +101,6 @@ tasks:
     desc: Alias for dev:docker-image-watch
     cmds:
       - task: dev:docker-image-watch
-
-  dev:ui:
-    desc: Run the SvelteKit UI dev server
-    cmds:
-      - pnpm --dir {{.UI_DIR}} install --frozen-lockfile
-      - pnpm --dir {{.UI_DIR}} run dev --host 127.0.0.1 --port 5173 --strictPort
-
-  dev:electron:
-    desc: Run the Discobox Electron shell against an existing UI dev server
-    cmds:
-      - pnpm --dir {{.ELECTRON_DIR}} install --frozen-lockfile
-      - |
-        bash -c '
-        set -euo pipefail
-        ui_url="${DISCOBOX_UI_DEV_URL:-http://127.0.0.1:5173}"
-        echo "Waiting for UI dev server at $ui_url"
-        for _ in $(seq 1 60); do
-          if curl --max-time 2 -fs "$ui_url" >/dev/null 2>&1; then
-            echo "Launching Electron against $ui_url"
-            DISCOBOX_UI_DEV_URL="$ui_url" pnpm --dir {{.ELECTRON_DIR}} run dev
-            exit $?
-          fi
-          sleep 1
-        done
-        echo "UI dev server did not become ready at $ui_url" >&2
-        exit 1
-        '
-
-  dev:electron:shell:
-    desc: Alias for dev:electron
-    cmds:
-      - task: dev:electron
 
   test:
     desc: Run root module tests
@@ -206,8 +149,6 @@ tasks:
       - cd orchestration && "$(go -C .. tool -n golangci-lint)" run
       - cd hooks && "$(go -C .. tool -n golangci-lint)" run
       - cd sandbox-agent && "$(go -C .. tool -n golangci-lint)" run
-      - task: check:ui
-      - task: check:electron
 
   dagger:check:
     desc: Run Dagger workspace checks (Go lint/tests, shellcheck) in containers
@@ -298,38 +239,6 @@ tasks:
       - cd orchestration && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd hooks && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd sandbox-agent && "$(go -C .. tool -n golangci-lint)" run --fix
-      - task: check:ui:fix
-      - task: check:electron:fix
-
-  check:ui:
-    desc: Run UI static checks, tests, and dependency audit
-    cmds:
-      - pnpm --dir {{.UI_DIR}} install --frozen-lockfile
-      - pnpm --dir {{.UI_DIR}} audit
-      - pnpm --dir {{.UI_DIR}} run format:check
-      - pnpm --dir {{.UI_DIR}} run lint
-      - pnpm --dir {{.UI_DIR}} run check
-      - pnpm --dir {{.UI_DIR}} run test:unit
-
-  check:ui:fix:
-    desc: Format the UI and apply safe lint fixes
-    cmds:
-      - pnpm --dir {{.UI_DIR}} install --frozen-lockfile
-      - pnpm --dir {{.UI_DIR}} run format
-      - pnpm --dir {{.UI_DIR}} run lint:fix
-
-  check:electron:
-    desc: Run Electron static checks
-    cmds:
-      - pnpm --dir {{.ELECTRON_DIR}} install --frozen-lockfile
-      - pnpm --dir {{.ELECTRON_DIR}} run format:check
-      - pnpm --dir {{.ELECTRON_DIR}} run check
-
-  check:electron:fix:
-    desc: Apply safe Electron formatting fixes
-    cmds:
-      - pnpm --dir {{.ELECTRON_DIR}} install --frozen-lockfile
-      - pnpm --dir {{.ELECTRON_DIR}} run format
 
   generate:
     desc: Regenerate generated files
@@ -339,4 +248,4 @@ tasks:
   clean:
     desc: Remove local build artifacts
     cmds:
-      - rm -rf build build-errors.log {{.UI_DIR}}/.svelte-kit {{.UI_DIR}}/build {{.ELECTRON_DIR}}/dist {{.ELECTRON_DIR}}/release
+      - rm -rf build build-errors.log

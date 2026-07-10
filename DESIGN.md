@@ -26,7 +26,7 @@ At the system boundary, Discobot is three cooperating concepts:
 ```mermaid
 flowchart LR
     cli["CLI"] -->|"generated client"| server["Server / control plane"]
-    clients["API clients / UI"] --> server
+    clients["API clients"] --> server
     server -->|"Go interface"| provider["Sandbox provider"]
     provider -->|"delegates access"| sandbox["Worker-local sandbox operations API"]
     server -->|"REST/OpenAPI through provider"| sandbox
@@ -41,7 +41,7 @@ belong to the owning component docs.
 Use contract-first REST API development for public and provider-delegated REST
 surfaces:
 
-- Server REST API: control plane API consumed by CLI, UI, and external clients.
+- Server REST API: control plane API consumed by the CLI and external clients.
 - Worker-local sandbox operations API: runtime operations exposed by worker
   agents and reached through provider-delegated access.
 - Sandbox agent API: in-sandbox API exposed by the sandbox-agent runtime.
@@ -129,15 +129,3 @@ Root module package map:
 
 Submodule package docs belong in their owning module trees and are intentionally
 not listed here.
-
-## UI Design System
-
-The `ui` package uses SvelteKit, Tailwind CSS, and shadcn-svelte as its design
-system. UI work should use generated shadcn-svelte primitives from
-`ui/src/lib/components/ui` and shadcn token utilities such as `bg-background`,
-`text-foreground`, `border-border`, `bg-card`, `text-muted-foreground`, and
-`text-destructive`.
-
-The global UI CSS should follow the shadcn-svelte Tailwind/token layer used by
-Discobot, with theme state driven by the `.dark` class, `data-theme`, and CSS
-variables.

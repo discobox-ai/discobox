@@ -14,7 +14,7 @@ internal conversions. Public REST API schema types live under the root
 | `ServerState` | Generic key/value state for server preferences and one-time initialization flags. |
 | `Sandbox` | Main managed runtime/session resource. Belongs to a project and is orchestrated. |
 | `AgentConfig` | Project-scoped agent runtime configuration selected by sandboxes. |
-| `AgentConfigDefinition` | Non-persisted, well-known template used by the UI/API to create an `AgentConfig`; definitions are not selectable by sandboxes. |
+| `AgentConfigDefinition` | Non-persisted, well-known template used by API clients to create an `AgentConfig`; definitions are not selectable by sandboxes. |
 | `SandboxProviderInstance` | Project-scoped provider configuration for creating and managing sandboxes. |
 | `Worker` | Provider-backed runtime worker for launching sandboxes. Has its own identity and public key; private key stays on the worker. Workers belong to a provider instance/pool and can host many stateful sandboxes. Scheduling uses `ready`, `schedulable`, and `degraded` columns; detailed condition data is opaque JSON for display. |
 | `WorkerBootstrapToken` | Short-lived, one-time token used by a new worker to register its public key. |

@@ -256,8 +256,8 @@ func (a *AgentConfig) BeforeCreate(_ *gorm.DB) error {
 // AgentConfigDefinition is a well-known template for creating an AgentConfig.
 //
 // Definitions are not project-scoped AgentConfig instances and cannot be
-// selected by sandboxes directly. They provide UI-visible defaults for creating
-// real AgentConfig records.
+// selected by sandboxes directly. They provide client-visible defaults for
+// creating real AgentConfig records.
 type AgentConfigDefinition struct {
 	ID              string              `json:"id" doc:"Stable definition ID"`
 	Name            string              `json:"name" doc:"Agent config definition name" maxLength:"200"`

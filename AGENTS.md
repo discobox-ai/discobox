@@ -22,8 +22,6 @@
 - `sandbox-agent`: nested Go module and image context for the sandbox agent runtime environment.
 - `worker-agent/cmd/discobox-worker-agent`: worker agent entrypoint.
 - `cmd/discobox-docker-image-watch`: local Docker image rebuild watcher for worker-agent and sandbox-agent images.
-- `ui`: SvelteKit frontend application.
-- `electron`: Electron shell for the UI.
 - `docs`: user/developer documentation.
 - `test`: integration and Bats tests.
 - `gormdb`: nested Go module for DB setup helpers.
@@ -47,7 +45,7 @@ go tool task check      # static checks
 go tool task check-hooks # validate hook definitions and hook-related code
 go tool task rerun-hooks # re-run failed or never-run hooks
 go tool task generate   # regenerate generated files
-go tool task build      # build server, CLI, UI, and Electron shell
+go tool task build      # build server, CLI, and hooks CLI
 ```
 
 At the end of a code-changing task, run `go tool task check-hooks` to validate

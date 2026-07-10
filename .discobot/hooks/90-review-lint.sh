@@ -2,7 +2,7 @@
 #---
 # name: GolangCI-Lint
 # type: file
-# pattern: "{**/*.{go,mod,sum},ui/**/*.{svelte,ts,js,json,css,md,yaml,yml},electron/**/*.{ts,mjs,js,json,yaml,yml,md}}"
+# pattern: "**/*.{go,mod,sum}"
 #---
 
 set -euo pipefail

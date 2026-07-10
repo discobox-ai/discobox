@@ -118,7 +118,6 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     && code-server --install-extension golang.go --extensions-dir /opt/discobox/code-server-defaults/extensions \
     && code-server --install-extension rust-lang.rust-analyzer --extensions-dir /opt/discobox/code-server-defaults/extensions \
     && code-server --install-extension ms-python.python --extensions-dir /opt/discobox/code-server-defaults/extensions \
-    && code-server --install-extension svelte.svelte-vscode --extensions-dir /opt/discobox/code-server-defaults/extensions \
     && rm -f /opt/discobox/code-server-defaults/extensions/extensions.json \
     && npm install -g pnpm \
     && GO_VERSION="$(curl -fsSL 'https://go.dev/VERSION?m=text' | head -1)" \

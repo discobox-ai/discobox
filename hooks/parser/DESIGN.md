@@ -96,7 +96,7 @@ Canonical fields:
 | --- | --- | --- | --- |
 | `name` | no | all | Human display name. Defaults to a readable filename-derived name. |
 | `type` | yes | all | One of `session`, `file`, or `pre-commit`. |
-| `description` | no | all | Human description for status/UI. |
+| `description` | no | all | Human description for status output. |
 | `engine` | no | all | One of `script`, `ai`, or `builtin`; default `script`. |
 | `run_as` | no | script/session | Execution user hint, initially `user` or `root`; default `user`. |
 | `blocking` | no | session | Whether startup should wait/block on this session hook. |
@@ -219,7 +219,7 @@ Examples:
 Paths stored in hook definitions should include both:
 
 - absolute path for execution
-- repository-relative path for status/UI, e.g. `.discobox/hooks/go-check.sh`
+- repository-relative path for status output, e.g. `.discobox/hooks/go-check.sh`
 
 ## Pattern and Ignore Semantics
 

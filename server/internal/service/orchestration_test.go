@@ -112,10 +112,10 @@ func TestCreateSandboxDefaultsGitSourceSlugs(t *testing.T) {
 				Kind: serverapi.GitSourceKindGit,
 			}),
 			SourceCodeReferences: serverapi.NewOptSandboxCreateConfigSourceCodeReferences(serverapi.SandboxCreateConfigSourceCodeReferences{
-				"/workspace/UI": {
+				"/workspace/Docs": {
 					Kind: serverapi.GitSourceKindGit,
 				},
-				"workspace ui": {
+				"workspace docs": {
 					Kind: serverapi.GitSourceKindGit,
 				},
 				"tools": {
@@ -132,13 +132,13 @@ func TestCreateSandboxDefaultsGitSourceSlugs(t *testing.T) {
 	if created.Source == nil || created.Source.Slug == nil || *created.Source.Slug != "primary" {
 		t.Fatalf("primary slug = %#v, want primary", created.Source)
 	}
-	ui := created.SourceCodeReferences["/workspace/UI"]
-	if ui.Slug == nil || *ui.Slug != "workspace-ui" {
-		t.Fatalf("ui ref slug = %v, want workspace-ui", ui.Slug)
+	docs := created.SourceCodeReferences["/workspace/Docs"]
+	if docs.Slug == nil || *docs.Slug != "workspace-docs" {
+		t.Fatalf("docs ref slug = %v, want workspace-docs", docs.Slug)
 	}
-	colliding := created.SourceCodeReferences["workspace ui"]
-	if colliding.Slug == nil || *colliding.Slug == "workspace-ui" || !strings.HasPrefix(*colliding.Slug, "workspace-ui-") {
-		t.Fatalf("colliding ref slug = %v, want deterministic workspace-ui suffix", colliding.Slug)
+	colliding := created.SourceCodeReferences["workspace docs"]
+	if colliding.Slug == nil || *colliding.Slug == "workspace-docs" || !strings.HasPrefix(*colliding.Slug, "workspace-docs-") {
+		t.Fatalf("colliding ref slug = %v, want deterministic workspace-docs suffix", colliding.Slug)
 	}
 	tools := created.SourceCodeReferences["tools"]
 	if tools.Slug == nil || *tools.Slug != "custom-tools" {

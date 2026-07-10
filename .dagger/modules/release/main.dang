@@ -9,8 +9,7 @@ Release automation for discobox in two chainable phases:
            GitHub release.
 
 publish chains the two. The GitHub repo and registry owner are derived from
-the git origin remote unless overridden. UI/Electron artifacts are out of
-scope for now.
+the git origin remote unless overridden.
 """
 type Release {
   """

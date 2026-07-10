@@ -20,7 +20,7 @@ Analyze outstanding changes and organize them into logical, well-structured comm
    - Group related changes by:
      - Feature/functionality (e.g., all auth-related changes together)
      - Type (e.g., refactoring, bug fix, new feature, docs, tests)
-     - Component/module (e.g., all UI changes, all API changes)
+     - Component/module (e.g., all CLI changes, all API changes)
 
 3. **Propose commit groups**:
    - Present the proposed groupings to the user via AskUserQuestion
@@ -58,12 +58,12 @@ feat(auth): add OAuth2 login flow
 
 - Add OAuth2 provider configuration
 - Implement token refresh logic
-- Add login/logout UI components
+- Add login/logout CLI commands
 ```
 
 **Mixed changes get split:**
 - `fix(api): handle null response in user endpoint`
-- `refactor(ui): extract Button component`
+- `refactor(cli): extract output formatter`
 - `docs: update README with setup instructions`
 
 ## Safety
