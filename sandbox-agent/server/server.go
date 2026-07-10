@@ -207,7 +207,14 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		return err
 	}
 	go func() {
-		if err := manager.EnsurePrimary(ctx, cfg.Prompt); err != nil && !errors.Is(err, context.Canceled) {
+		switch err := manager.EnsurePrimary(ctx, cfg.Prompt); {
+		case err == nil, errors.Is(err, context.Canceled):
+		case errors.Is(err, terminal.ErrNoAgentConfigured):
+			// Valid empty state, but make it observable: previously this path was
+			// silent, so a sandbox with no agent looked identical to a healthy one
+			// while clients waited forever for a primary terminal that never came.
+			logger.Warn("no agent configured; not launching primary terminal")
+		default:
 			logger.Error("launch primary terminal", "error", err)
 		}
 	}()

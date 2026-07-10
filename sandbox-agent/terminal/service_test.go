@@ -2,12 +2,56 @@ package terminal
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 
 	"github.com/obot-platform/discobox/sandbox-agent/config"
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
 )
+
+// newAgentlessService builds a terminal service with no agents configured, so
+// agent resolution has nothing to select.
+func newAgentlessService(t *testing.T) *Service {
+	t.Helper()
+	dir := t.TempDir()
+	image := config.ImageConfig{Env: map[string]string{"PATH": "/usr/bin"}}
+	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
+		WorkingRoot: dir,
+		RuntimeDir:  filepath.Join(dir, "rt"),
+		ImageConfig: image,
+		Units:       &fakeUnits{},
+	})
+	if err != nil {
+		t.Fatalf("new exec manager: %v", err)
+	}
+	svc, err := NewService(ServiceConfig{
+		Execs:       execManager,
+		WorkingRoot: dir,
+		RuntimeDir:  filepath.Join(dir, "rt"),
+		ImageConfig: image,
+		Units:       &fakeUnits{},
+		Installer:   &noopInstaller{},
+	})
+	if err != nil {
+		t.Fatalf("new service: %v", err)
+	}
+	return svc
+}
+
+// EnsurePrimary must surface the no-agent case as ErrNoAgentConfigured rather
+// than silently returning nil: a silent no-op left clients waiting forever for a
+// primary terminal that would never launch.
+func TestEnsurePrimaryReturnsErrNoAgentConfigured(t *testing.T) {
+	svc := newAgentlessService(t)
+	err := svc.EnsurePrimary(context.Background(), nil)
+	if !errors.Is(err, ErrNoAgentConfigured) {
+		t.Fatalf("EnsurePrimary = %v, want ErrNoAgentConfigured", err)
+	}
+	if execs := svc.List(); len(execs) != 0 {
+		t.Fatalf("List() = %d execs, want 0", len(execs))
+	}
+}
 
 type fakeUnits struct {
 	starts []execs.StartRequest

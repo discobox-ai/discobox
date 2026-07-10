@@ -254,11 +254,17 @@ func AgentID(e execs.Exec) string { return e.Metadata[metadataAgentID] }
 // IsPrimary reports whether an exec is the sandbox's primary terminal.
 func IsPrimary(e execs.Exec) bool { return e.Metadata[metadataPrimary] == "true" }
 
+// ErrNoAgentConfigured reports that the sandbox has no agent to launch as its
+// primary terminal. It is a valid empty state, not a failure: the caller should
+// log it and skip launching rather than treat it as an error.
+var ErrNoAgentConfigured = errors.New("no agent is configured for this sandbox")
+
 // EnsurePrimary launches the sandbox's primary terminal on sandbox start. On the
 // first start it runs the resolved agent with the sandbox prompt as arguments;
 // on subsequent starts it runs the agent's relaunch command to resume the
-// previous session. It is a no-op when a live primary terminal already exists or
-// when no agent is configured.
+// previous session. It is a no-op when a live primary terminal already exists.
+// It returns ErrNoAgentConfigured when no agent is configured; any other error
+// is a real misconfiguration and is returned to the caller.
 func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 	for _, existing := range s.List() {
 		if IsPrimary(existing) && (existing.Status == execs.StatusStarting || existing.Status == execs.StatusRunning) {
@@ -271,8 +277,11 @@ func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 	}
 	agent, _, err := s.resolveAgent("", workdir)
 	if err != nil {
-		// No agent is configured for this sandbox; nothing to launch.
-		return nil //nolint:nilerr // a missing agent is a valid state, not a failure
+		// Surface the outcome to the caller. A missing agent is a valid empty
+		// state (ErrNoAgentConfigured); any other error is a genuine
+		// misconfiguration (e.g. a malformed local agent config) and must not be
+		// swallowed the way it previously was.
+		return err
 	}
 	launched := false
 	if s.primaryState != nil {
@@ -328,7 +337,7 @@ func (s *Service) resolveAgent(requested string, workdir string) (config.Agent, 
 		return local, local.ID, nil
 	}
 	if s.defaultID == "" {
-		return config.Agent{}, "", errors.New("no agent terminals are configured")
+		return config.Agent{}, "", ErrNoAgentConfigured
 	}
 	agent, ok := s.agents[s.defaultID]
 	if !ok {
