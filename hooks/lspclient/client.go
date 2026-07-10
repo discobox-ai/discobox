@@ -333,7 +333,7 @@ func (c *Client) write(ctx context.Context, payload any) error {
 	if err != nil {
 		return err
 	}
-	header := []byte(fmt.Sprintf("Content-Length: %d\r\n\r\n", len(data)))
+	header := fmt.Appendf(nil, "Content-Length: %d\r\n\r\n", len(data))
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	if err := writeAll(ctx, c.stdin, header); err != nil {
