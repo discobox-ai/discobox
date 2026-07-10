@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 
@@ -87,25 +88,19 @@ func (s *Service) applyAgentConfigSecrets(ctx context.Context, projectID string,
 	}
 
 	// A required declared secret must be satisfied by an inline secret, an
-	// agent-config binding, or a literal sandbox env var.
-	var missing []string
-	for _, decl := range resolved.Secrets {
-		if !decl.Required {
-			continue
+	// agent-config binding, or a literal sandbox env var. OneOfGroup members are
+	// satisfied collectively (at least one present).
+	missing := missingRequiredSecrets(resolved.Secrets, func(name string) bool {
+		if _, ok := inlineEnvs[name]; ok {
+			return true
 		}
-		if _, ok := inlineEnvs[decl.Name]; ok {
-			continue
+		if _, ok := boundByEnv[name]; ok {
+			return true
 		}
-		if _, ok := boundByEnv[decl.Name]; ok {
-			continue
-		}
-		if _, ok := sandbox.Env[decl.Name]; ok {
-			continue
-		}
-		missing = append(missing, decl.Name)
-	}
+		_, ok := sandbox.Env[name]
+		return ok
+	})
 	if len(missing) > 0 {
-		sort.Strings(missing)
 		return nil, apperrors.NewStatusError(http.StatusBadRequest,
 			fmt.Sprintf("agent config %q requires secrets with no bound value: %s", config.Slug, strings.Join(missing, ", ")))
 	}
@@ -136,6 +131,43 @@ func (s *Service) applyAgentConfigSecrets(ctx context.Context, projectID string,
 		})
 	}
 	return assignments, nil
+}
+
+// missingRequiredSecrets reports the unsatisfied required secret requirements of
+// an agent config, given a predicate that reports whether a single env var is
+// satisfied. Ungrouped required secrets each must be satisfied. Required secrets
+// sharing a OneOfGroup form an at-least-one requirement: the group is satisfied
+// when any member is present, otherwise it is reported as "one of: A, B". The
+// returned list is deterministically ordered.
+func missingRequiredSecrets(decls []model.AgentConfigSecret, satisfied func(name string) bool) []string {
+	var missing []string
+	groupMembers := map[string][]string{}
+	var groupOrder []string
+	for _, decl := range decls {
+		if !decl.Required {
+			continue
+		}
+		if decl.OneOfGroup == "" {
+			if !satisfied(decl.Name) {
+				missing = append(missing, decl.Name)
+			}
+			continue
+		}
+		if _, seen := groupMembers[decl.OneOfGroup]; !seen {
+			groupOrder = append(groupOrder, decl.OneOfGroup)
+		}
+		groupMembers[decl.OneOfGroup] = append(groupMembers[decl.OneOfGroup], decl.Name)
+	}
+	sort.Strings(missing)
+	for _, group := range groupOrder {
+		members := groupMembers[group]
+		if slices.ContainsFunc(members, satisfied) {
+			continue
+		}
+		sort.Strings(members)
+		missing = append(missing, "one of: "+strings.Join(members, ", "))
+	}
+	return missing
 }
 
 // resolveSecretForInput returns the secret ID and format template for one input,
@@ -279,18 +311,13 @@ func (s *Service) AssignSandboxAgentSecrets(ctx context.Context, projectID, sand
 		created = true
 	}
 
-	// A required declared secret must be satisfied by an assignment.
-	var missing []string
-	for _, decl := range resolved.Secrets {
-		if !decl.Required {
-			continue
-		}
-		if _, ok := envSentinel[decl.Name]; !ok {
-			missing = append(missing, decl.Name)
-		}
-	}
+	// A required declared secret must be satisfied by an assignment. OneOfGroup
+	// members are satisfied collectively (at least one present).
+	missing := missingRequiredSecrets(resolved.Secrets, func(name string) bool {
+		_, ok := envSentinel[name]
+		return ok
+	})
 	if len(missing) > 0 {
-		sort.Strings(missing)
 		return nil, apperrors.NewStatusError(http.StatusBadRequest,
 			fmt.Sprintf("agent config %q requires secrets with no bound value: %s", config.Slug, strings.Join(missing, ", ")))
 	}

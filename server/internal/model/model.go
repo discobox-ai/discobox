@@ -314,6 +314,9 @@ type AgentConfigFile struct {
 type AgentConfigSecret struct {
 	Name     string `json:"name" doc:"Environment variable name the agent expects to be set" pattern:"^[A-Za-z_][A-Za-z0-9_]*$"`
 	Required bool   `json:"required,omitempty" doc:"Whether the secret must be set for the agent to run"`
+	// OneOfGroup ties a required secret to a set of alternatives: required secrets
+	// sharing a group are satisfied when at least one member is present.
+	OneOfGroup string `json:"oneOfGroup,omitempty" doc:"Groups a required secret with alternatives; the requirement is satisfied when at least one member of the group is present"`
 }
 
 // GitSource describes a Git source to materialize into a sandbox.

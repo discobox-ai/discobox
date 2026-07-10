@@ -405,16 +405,16 @@ func (a *App) writeAgentSecretBindings(cmd *cobra.Command, declarations []apimod
 	// didn't declare (e.g. a custom secret the user added).
 	seen := map[string]struct{}{}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ENV\tREQUIRED\tBOUND SECRET")
+	fmt.Fprintln(tw, "ENV\tREQUIRED\tONE-OF GROUP\tBOUND SECRET")
 	for _, decl := range declarations {
 		seen[decl.Name] = struct{}{}
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", decl.Name, formatRequired(decl.Required.Or(false)), formatBoundSecret(boundByEnv[decl.Name]))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", decl.Name, formatRequired(decl.Required.Or(false)), formatOneOfGroup(decl.OneOfGroup.Or("")), formatBoundSecret(boundByEnv[decl.Name]))
 	}
 	for _, b := range bindings {
 		if _, ok := seen[b.EnvName]; ok {
 			continue
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\n", b.EnvName, "-", formatBoundSecret(b.SecretId))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", b.EnvName, "-", "-", formatBoundSecret(b.SecretId))
 	}
 	return tw.Flush()
 }
@@ -424,6 +424,13 @@ func formatRequired(required bool) string {
 		return "yes"
 	}
 	return "no"
+}
+
+func formatOneOfGroup(group string) string {
+	if group == "" {
+		return "-"
+	}
+	return group
 }
 
 func formatBoundSecret(secretID string) string {

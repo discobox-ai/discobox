@@ -162,8 +162,9 @@ func secretsFromHarness(secrets []harness.Secret) []model.AgentConfigSecret {
 	out := make([]model.AgentConfigSecret, 0, len(secrets))
 	for _, secret := range secrets {
 		out = append(out, model.AgentConfigSecret{
-			Name:     secret.Name,
-			Required: secret.Required,
+			Name:       secret.Name,
+			Required:   secret.Required,
+			OneOfGroup: secret.OneOfGroup,
 		})
 	}
 	return out

@@ -50,9 +50,15 @@ type File struct {
 // Secret declares an environment variable the agent expects, and whether it is
 // required for the agent to run. Optional secrets are used when present but do
 // not block the agent from launching.
+//
+// OneOfGroup ties a required secret to a set of alternatives: required secrets
+// sharing a group form an at-least-one requirement, satisfied when any member is
+// present (e.g. an API key or an OAuth token). Ungrouped required secrets each
+// must be satisfied independently.
 type Secret struct {
-	Name     string
-	Required bool
+	Name       string
+	Required   bool
+	OneOfGroup string
 }
 
 // HookInstallRequest is the input to installing a harness's hook integration.

@@ -232,7 +232,7 @@ func agentConfigSecretsFromAPI(secrets []apimodel.AgentConfigSecret) ([]model.Ag
 			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("agent config secret %q is declared more than once", name))
 		}
 		seen[name] = struct{}{}
-		out = append(out, model.AgentConfigSecret{Name: name, Required: secret.Required.Or(false)})
+		out = append(out, model.AgentConfigSecret{Name: name, Required: secret.Required.Or(false), OneOfGroup: strings.TrimSpace(secret.OneOfGroup.Or(""))})
 	}
 	return out, nil
 }

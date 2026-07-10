@@ -720,11 +720,18 @@ func (s *AgentConfigSecret) encodeFields(e *jx.Encoder) {
 			s.Required.Encode(e)
 		}
 	}
+	{
+		if s.OneOfGroup.Set {
+			e.FieldStart("oneOfGroup")
+			s.OneOfGroup.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfAgentConfigSecret = [2]string{
+var jsonFieldsNameOfAgentConfigSecret = [3]string{
 	0: "name",
 	1: "required",
+	2: "oneOfGroup",
 }
 
 // Decode decodes AgentConfigSecret from json.
@@ -757,6 +764,16 @@ func (s *AgentConfigSecret) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"required\"")
+			}
+		case "oneOfGroup":
+			if err := func() error {
+				s.OneOfGroup.Reset()
+				if err := s.OneOfGroup.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"oneOfGroup\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)

@@ -348,6 +348,9 @@ type AgentConfigSecret struct {
 	// Whether the secret must be set for the agent to run. Optional secrets are used when present but do
 	// not block the agent.
 	Required OptBool `json:"required"`
+	// Groups a required secret with alternatives; the requirement is satisfied when at least one member
+	// of the group is present.
+	OneOfGroup OptString `json:"oneOfGroup"`
 }
 
 // GetName returns the value of Name.
@@ -360,6 +363,11 @@ func (s *AgentConfigSecret) GetRequired() OptBool {
 	return s.Required
 }
 
+// GetOneOfGroup returns the value of OneOfGroup.
+func (s *AgentConfigSecret) GetOneOfGroup() OptString {
+	return s.OneOfGroup
+}
+
 // SetName sets the value of Name.
 func (s *AgentConfigSecret) SetName(val string) {
 	s.Name = val
@@ -368,6 +376,11 @@ func (s *AgentConfigSecret) SetName(val string) {
 // SetRequired sets the value of Required.
 func (s *AgentConfigSecret) SetRequired(val OptBool) {
 	s.Required = val
+}
+
+// SetOneOfGroup sets the value of OneOfGroup.
+func (s *AgentConfigSecret) SetOneOfGroup(val OptString) {
+	s.OneOfGroup = val
 }
 
 // Binds one of an agent config's environment variables to a project secret.
