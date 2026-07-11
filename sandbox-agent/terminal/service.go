@@ -92,6 +92,13 @@ type Service struct {
 	hookSocketPath string
 	installer      Installer
 	primaryState   PrimaryStateStore
+
+	// installing tracks exec IDs whose agent install command is still running.
+	// The record exists (execs status "starting") before its process launches, so
+	// the mapper projects these as the "installing" phase to callers. Terminal is
+	// an exec plus this layer, so install belongs here rather than in execs.
+	installingMu sync.Mutex
+	installing   map[string]struct{}
 }
 
 func NewService(cfg ServiceConfig) (*Service, error) {
@@ -138,6 +145,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		defaultUser:  defaultUser,
 		installer:    cfg.Installer,
 		primaryState: cfg.PrimaryState,
+		installing:   map[string]struct{}{},
 	}
 	if s.installer == nil {
 		s.installer = CompositeInstaller{Installers: []Installer{
@@ -189,9 +197,12 @@ func (s *Service) Logs(ctx context.Context, id string) ([]execs.LogEntry, error)
 	return s.execs.Logs(ctx, id)
 }
 
-// Create resolves the agent, installs it, and creates a terminal-mode exec: an
-// always-TTY exec running the resolved agent command, tagged agentId (and
-// primary) in metadata.
+// Create resolves the agent, creates a terminal-mode exec (an always-TTY exec
+// running the resolved agent command, tagged agentId and optionally primary in
+// metadata), then runs the agent's install command. The exec record is created
+// before install so the install is observable: while EnsureInstalled runs, the
+// record exists and the mapper projects it as the "installing" phase. The unit
+// is only launched later by Start, so the record sits idle during install.
 func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, error) {
 	workdir, err := s.execs.ResolveWorkdir(req.Workdir)
 	if err != nil {
@@ -210,9 +221,6 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	if s.hookSocketPath != "" {
 		env["DISCOBOX_HOOK_SOCKET"] = s.hookSocketPath
 	}
-	if err := s.installer.EnsureInstalled(ctx, agent, workdir, env); err != nil {
-		return execs.Exec{}, err
-	}
 	var command []string
 	if len(req.command) > 0 {
 		command = append([]string{}, req.command...)
@@ -228,7 +236,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	if req.primary {
 		metadata[metadataPrimary] = "true"
 	}
-	return s.execs.Create(ctx, execs.CreateRequest{
+	created, err := s.execs.Create(ctx, execs.CreateRequest{
 		ID:       id,
 		Command:  command,
 		Workdir:  workdir,
@@ -239,6 +247,42 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 		Cols:     req.Cols,
 		Metadata: metadata,
 	})
+	if err != nil {
+		return execs.Exec{}, err
+	}
+	// Mark installing so the record surfaces as the "installing" phase while the
+	// (potentially slow) install command runs. On failure the record is removed so
+	// no half-installed terminal lingers, matching the pre-record behavior.
+	s.markInstalling(created.ID)
+	defer s.unmarkInstalling(created.ID)
+	if err := s.installer.EnsureInstalled(ctx, agent, workdir, env); err != nil {
+		_ = s.execs.Delete(context.WithoutCancel(ctx), created.ID)
+		return execs.Exec{}, err
+	}
+	return created, nil
+}
+
+// markInstalling records that an exec's agent install command is running.
+func (s *Service) markInstalling(id string) {
+	s.installingMu.Lock()
+	s.installing[id] = struct{}{}
+	s.installingMu.Unlock()
+}
+
+// unmarkInstalling clears an exec's installing marker once install finishes.
+func (s *Service) unmarkInstalling(id string) {
+	s.installingMu.Lock()
+	delete(s.installing, id)
+	s.installingMu.Unlock()
+}
+
+// IsInstalling reports whether an exec's agent install command is still running.
+// The mapper uses it to project the terminal-layer "installing" phase.
+func (s *Service) IsInstalling(id string) bool {
+	s.installingMu.Lock()
+	_, ok := s.installing[id]
+	s.installingMu.Unlock()
+	return ok
 }
 
 // Metadata keys the terminal layer sets on its execs to express terminal-ness.

@@ -64,7 +64,7 @@ func (h *handler) startExecHTTP(w http.ResponseWriter, r *http.Request, execID s
 		writeJSON(w, http.StatusInternalServerError, sandboxapi.ErrorResponse{Error: err.Error()})
 		return
 	}
-	out := sandboxExec(exec)
+	out := h.sandboxExec(exec)
 	writeJSON(w, http.StatusOK, &out)
 }
 
@@ -91,7 +91,7 @@ func (h *handler) CreateSandboxExec(ctx context.Context, req *sandboxapi.CreateS
 			}
 			return nil, statusError{status: http.StatusBadRequest, message: err.Error()}
 		}
-		return &sandboxapi.CreateSandboxExecResponse{Exec: sandboxExec(created)}, nil
+		return &sandboxapi.CreateSandboxExecResponse{Exec: h.sandboxExec(created)}, nil
 	}
 	created, err := h.execs.Create(ctx, execs.CreateRequest{
 		Command:  append([]string{}, req.Command...),
@@ -109,7 +109,7 @@ func (h *handler) CreateSandboxExec(ctx context.Context, req *sandboxapi.CreateS
 		}
 		return nil, statusError{status: http.StatusBadRequest, message: err.Error()}
 	}
-	return &sandboxapi.CreateSandboxExecResponse{Exec: sandboxExec(created)}, nil
+	return &sandboxapi.CreateSandboxExecResponse{Exec: h.sandboxExec(created)}, nil
 }
 
 func (h *handler) DeleteSandboxExec(ctx context.Context, params sandboxapi.DeleteSandboxExecParams) error {
@@ -127,7 +127,7 @@ func (h *handler) GetSandboxExec(_ context.Context, params sandboxapi.GetSandbox
 	if !ok {
 		return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
 	}
-	out := sandboxExec(exec)
+	out := h.sandboxExec(exec)
 	return &out, nil
 }
 
@@ -139,7 +139,7 @@ func (h *handler) StartSandboxExec(ctx context.Context, params sandboxapi.StartS
 		}
 		return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
 	}
-	out := sandboxExec(exec)
+	out := h.sandboxExec(exec)
 	return &out, nil
 }
 
@@ -149,7 +149,7 @@ func (h *handler) ListSandboxExecs(context.Context, sandboxapi.ListSandboxExecsP
 		Execs: make([]sandboxapi.SandboxExec, 0, len(items)),
 	}
 	for _, item := range items {
-		response.Execs = append(response.Execs, sandboxExec(item))
+		response.Execs = append(response.Execs, h.sandboxExec(item))
 	}
 	return &response, nil
 }
@@ -243,10 +243,17 @@ func (h *handler) NewError(_ context.Context, err error) *sandboxapi.ErrorRespon
 	return errorStatus(status, err.Error())
 }
 
-func sandboxExec(in execs.Exec) sandboxapi.SandboxExec {
+func (h *handler) sandboxExec(in execs.Exec) sandboxapi.SandboxExec {
+	// A terminal-mode exec whose install command is still running is projected as
+	// the "installing" phase, overriding its underlying "starting" status. install
+	// is a terminal-layer step, so it stays out of the generic execs.Status enum.
+	status := sandboxapi.SandboxExecStatus(in.Status)
+	if h.terminals != nil && h.terminals.IsInstalling(in.ID) {
+		status = sandboxapi.SandboxExecStatusInstalling
+	}
 	out := sandboxapi.SandboxExec{
 		ID:        in.ID,
-		Status:    sandboxapi.SandboxExecStatus(in.Status),
+		Status:    status,
 		Command:   append([]string{}, in.Command...),
 		Workdir:   in.Workdir,
 		Tty:       in.TTY,

@@ -335,8 +335,12 @@ components:
                     format: date-time
                     type: string
                 status:
-                    description: Current observed exec runtime status.
+                    description: |
+                        Current observed exec runtime status. installing is a terminal-layer
+                        phase: the exec record exists and its agent install command is still
+                        running, before the agent process is launched (starting -> running).
                     enum:
+                        - installing
                         - starting
                         - running
                         - exited

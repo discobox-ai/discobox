@@ -536,9 +536,13 @@ func (m *Manager) refreshExec(ctx context.Context, exec Exec) Exec {
 		_ = m.observe(ctx, exec)
 		return exec
 	}
+	// A created-but-not-yet-started exec (e.g. a terminal whose agent install
+	// command is still running before Start) legitimately has no live unit yet, so
+	// keep it starting rather than declaring it lost while it waits to launch.
+	notYetLaunched := exec.Status == StatusStarting && exec.StartedAt == nil
 	if unit, err := m.units.Status(ctx, exec.Unit); err == nil {
 		exec = applyUnitStatus(exec, unit)
-	} else if exec.ExitedAt == nil {
+	} else if exec.ExitedAt == nil && !notYetLaunched {
 		exec.Status = StatusLost
 		exec.Error = "exec unit status is unavailable"
 	}

@@ -283,6 +283,8 @@ func (s *SandboxExecLogsResponse) Validate() error {
 
 func (s SandboxExecStatus) Validate() error {
 	switch s {
+	case "installing":
+		return nil
 	case "starting":
 		return nil
 	case "running":

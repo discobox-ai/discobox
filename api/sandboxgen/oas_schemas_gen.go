@@ -892,7 +892,9 @@ type SandboxExec struct {
 	// Whether this is the sandbox's primary agent terminal.
 	Primary   OptBool     `json:"primary"`
 	StartedAt OptDateTime `json:"startedAt"`
-	// Current observed exec runtime status.
+	// Current observed exec runtime status. installing is a terminal-layer
+	// phase: the exec record exists and its agent install command is still
+	// running, before the agent process is launched (starting -> running).
 	Status SandboxExecStatus `json:"status"`
 	// Whether the exec process was started with a PTY.
 	Tty bool `json:"tty"`
@@ -1295,20 +1297,24 @@ func (s *SandboxExecMetadata) init() SandboxExecMetadata {
 	return m
 }
 
-// Current observed exec runtime status.
+// Current observed exec runtime status. installing is a terminal-layer
+// phase: the exec record exists and its agent install command is still
+// running, before the agent process is launched (starting -> running).
 type SandboxExecStatus string
 
 const (
-	SandboxExecStatusStarting SandboxExecStatus = "starting"
-	SandboxExecStatusRunning  SandboxExecStatus = "running"
-	SandboxExecStatusExited   SandboxExecStatus = "exited"
-	SandboxExecStatusFailed   SandboxExecStatus = "failed"
-	SandboxExecStatusLost     SandboxExecStatus = "lost"
+	SandboxExecStatusInstalling SandboxExecStatus = "installing"
+	SandboxExecStatusStarting   SandboxExecStatus = "starting"
+	SandboxExecStatusRunning    SandboxExecStatus = "running"
+	SandboxExecStatusExited     SandboxExecStatus = "exited"
+	SandboxExecStatusFailed     SandboxExecStatus = "failed"
+	SandboxExecStatusLost       SandboxExecStatus = "lost"
 )
 
 // AllValues returns all SandboxExecStatus values.
 func (SandboxExecStatus) AllValues() []SandboxExecStatus {
 	return []SandboxExecStatus{
+		SandboxExecStatusInstalling,
 		SandboxExecStatusStarting,
 		SandboxExecStatusRunning,
 		SandboxExecStatusExited,
@@ -1320,6 +1326,8 @@ func (SandboxExecStatus) AllValues() []SandboxExecStatus {
 // MarshalText implements encoding.TextMarshaler.
 func (s SandboxExecStatus) MarshalText() ([]byte, error) {
 	switch s {
+	case SandboxExecStatusInstalling:
+		return []byte(s), nil
 	case SandboxExecStatusStarting:
 		return []byte(s), nil
 	case SandboxExecStatusRunning:
@@ -1338,6 +1346,9 @@ func (s SandboxExecStatus) MarshalText() ([]byte, error) {
 // UnmarshalText implements encoding.TextUnmarshaler.
 func (s *SandboxExecStatus) UnmarshalText(data []byte) error {
 	switch SandboxExecStatus(data) {
+	case SandboxExecStatusInstalling:
+		*s = SandboxExecStatusInstalling
+		return nil
 	case SandboxExecStatusStarting:
 		*s = SandboxExecStatusStarting
 		return nil

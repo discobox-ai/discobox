@@ -135,6 +135,63 @@ func TestServiceCreateResolvesAgentAndTagsMetadata(t *testing.T) {
 	}
 }
 
+// hookInstaller runs a callback while "installing", so tests can observe the
+// terminal state the mapper projects as the installing phase.
+type hookInstaller struct {
+	during func(ctx context.Context)
+	err    error
+}
+
+func (h hookInstaller) EnsureInstalled(ctx context.Context, _ config.Agent, _ string, _ map[string]string) error {
+	if h.during != nil {
+		h.during(ctx)
+	}
+	return h.err
+}
+
+// While the install command runs, the terminal record already exists and is
+// marked installing, so callers can surface the phase instead of seeing nothing.
+func TestServiceCreateMarksInstallingDuringInstall(t *testing.T) {
+	var idDuringInstall string
+	var installingDuringInstall bool
+	installer := hookInstaller{during: func(context.Context) {}}
+	svc, _ := newTestService(t, nil)
+	// Rewire the service installer to one that can inspect svc mid-install.
+	installer.during = func(context.Context) {
+		execsDuring := svc.List()
+		if len(execsDuring) == 1 {
+			idDuringInstall = execsDuring[0].ID
+			installingDuringInstall = svc.IsInstalling(idDuringInstall)
+		}
+	}
+	svc.installer = installer
+
+	ex, err := svc.Create(context.Background(), CreateRequest{primary: true})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if idDuringInstall != ex.ID {
+		t.Fatalf("record id during install = %q, want created exec %q", idDuringInstall, ex.ID)
+	}
+	if !installingDuringInstall {
+		t.Fatalf("exec should be marked installing while its install command runs")
+	}
+	if svc.IsInstalling(ex.ID) {
+		t.Fatalf("exec should no longer be installing after Create returns")
+	}
+}
+
+// A failing install command leaves no half-installed terminal behind.
+func TestServiceCreateInstallFailureRemovesRecord(t *testing.T) {
+	svc, _ := newTestService(t, hookInstaller{err: errors.New("install boom")})
+	if _, err := svc.Create(context.Background(), CreateRequest{primary: true}); err == nil {
+		t.Fatalf("expected install failure error")
+	}
+	if execsAfter := svc.List(); len(execsAfter) != 0 {
+		t.Fatalf("failed install must remove the terminal record, got %d execs", len(execsAfter))
+	}
+}
+
 // An explicit unknown agent is rejected; a known one is honored.
 func TestServiceCreateExplicitAgent(t *testing.T) {
 	svc, _ := newTestService(t, &noopInstaller{})

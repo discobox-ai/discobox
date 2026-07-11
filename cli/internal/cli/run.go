@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -90,7 +91,7 @@ to create the sandbox and print it without attaching.`,
 func (a *App) attachRunSandbox(cmd *cobra.Command, client *apiclientgen.Client, projectID string, sandbox *apimodel.Sandbox) error {
 	ctx := cmd.Context()
 	stderr := cmd.ErrOrStderr()
-	fmt.Fprintf(stderr, "Created sandbox %s, waiting for it to start...\n", shortID(sandbox.ID))
+	fmt.Fprintf(stderr, "Created sandbox %s, provisioning (fetching source, starting container)...\n", shortID(sandbox.ID))
 	started, err := a.waitForSandbox(cmd, client, projectID, sandbox.ID, 2*time.Minute)
 	if err != nil {
 		return err
@@ -102,7 +103,8 @@ func (a *App) attachRunSandbox(cmd *cobra.Command, client *apiclientgen.Client, 
 	if err := ensureRunAgentWillLaunch(started); err != nil {
 		return err
 	}
-	terminal, err := a.waitForPrimaryTerminal(ctx, client, projectID, sandbox.ID, 2*time.Minute)
+	fmt.Fprintln(stderr, "Sandbox running, preparing agent terminal...")
+	terminal, err := a.waitForPrimaryTerminal(ctx, stderr, projectID, sandbox.ID, 2*time.Minute)
 	if err != nil {
 		return err
 	}
@@ -153,8 +155,11 @@ func localRunAgentConfigPresent(repoRoot string) bool {
 }
 
 // waitForPrimaryTerminal polls the sandbox terminals until the primary
-// (default) terminal launched by the sandbox-agent appears.
-func (a *App) waitForPrimaryTerminal(ctx context.Context, _ *apiclientgen.Client, projectID, sandboxID string, timeout time.Duration) (apimodel.SandboxExec, error) {
+// (default) terminal launched by the sandbox-agent is ready to attach. The
+// primary appears in the "installing" phase while its agent install command
+// runs (often the slowest part of a cold start), so this reports that phase to
+// progress and only returns once the terminal is past installing.
+func (a *App) waitForPrimaryTerminal(ctx context.Context, progress io.Writer, projectID, sandboxID string, timeout time.Duration) (apimodel.SandboxExec, error) {
 	if timeout > 0 {
 		var cancel func()
 		ctx, cancel = context.WithTimeout(ctx, timeout)
@@ -163,11 +168,20 @@ func (a *App) waitForPrimaryTerminal(ctx context.Context, _ *apiclientgen.Client
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	var lastErr error
+	announcedInstalling := false
 	for {
 		if terminals, err := a.listSandboxTerminals(ctx, projectID, sandboxID); err != nil {
 			lastErr = err
 		} else if terminal, ok := primaryTerminal(terminals); ok {
-			return terminal, nil
+			lastErr = nil
+			if terminal.Status == apiclientgen.SandboxExecStatusInstalling {
+				if !announcedInstalling && progress != nil {
+					fmt.Fprintf(progress, "Installing agent %s (this can take a while on first run)...\n", runAgentLabel(terminal))
+					announcedInstalling = true
+				}
+			} else {
+				return terminal, nil
+			}
 		} else {
 			lastErr = nil
 		}
@@ -177,12 +191,24 @@ func (a *App) waitForPrimaryTerminal(ctx context.Context, _ *apiclientgen.Client
 				return apimodel.SandboxExec{}, fmt.Errorf("waiting for sandbox terminal: %w", lastErr)
 			}
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				if announcedInstalling {
+					return apimodel.SandboxExec{}, errors.New("timed out while the agent was still installing; its install command may be slow or failing (see `discobox sandboxes terminals logs`)")
+				}
 				return apimodel.SandboxExec{}, errors.New("timed out waiting for the sandbox's agent terminal; the sandbox may have no agent configured (see `discobox agents list`) or its agent failed to start")
 			}
 			return apimodel.SandboxExec{}, fmt.Errorf("waiting for sandbox terminal: %w", ctx.Err())
 		case <-ticker.C:
 		}
 	}
+}
+
+// runAgentLabel names the agent a terminal runs for progress messages, falling
+// back to a generic label when the agent id is not set.
+func runAgentLabel(terminal apimodel.SandboxExec) string {
+	if agent := strings.TrimSpace(terminal.AgentId.Or("")); agent != "" {
+		return fmt.Sprintf("%q", agent)
+	}
+	return "agent"
 }
 
 // primaryTerminal selects the sandbox's default terminal: the one flagged

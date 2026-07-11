@@ -12343,6 +12343,8 @@ func (s *SandboxExecStatus) Decode(d *jx.Decoder) error {
 	}
 	// Try to use constant string.
 	switch SandboxExecStatus(v) {
+	case SandboxExecStatusInstalling:
+		*s = SandboxExecStatusInstalling
 	case SandboxExecStatusStarting:
 		*s = SandboxExecStatusStarting
 	case SandboxExecStatusRunning:
