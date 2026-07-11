@@ -181,7 +181,7 @@ func (r *WorkerReconcileExecutor) reconcileActive(ctx context.Context, worker *m
 	}
 	if err := workerProvider.ReconcileWorker(ctx, r.reconcileManager(), project, provider, worker); err != nil {
 		if repairErr := r.repairAssignedWorker(ctx, workerProvider, project, provider, worker, err); repairErr != nil {
-			worker.FailOperation(repairErr.Error())
+			r.failReconcile(worker, repairErr.Error())
 			if updateErr := r.update(ctx, worker, generation); updateErr != nil {
 				return updateErr
 			}
@@ -208,6 +208,21 @@ func (r *WorkerReconcileExecutor) reconcileActive(ctx context.Context, worker *m
 	}
 	current.CompleteOperation(phase, nil)
 	return r.update(ctx, current, generation)
+}
+
+// failReconcile records a failed active reconcile. A worker that never
+// completed its initial create fails terminally: there is no runtime to
+// recover. A worker that has already been created is stateful and must be
+// reconciled back to health, so it drops to a non-terminal offline phase
+// (unschedulable, not ready) and stays eligible for re-driven reconciliation.
+func (r *WorkerReconcileExecutor) failReconcile(worker *model.Worker, message string) {
+	if !worker.EverCreated() {
+		worker.FailOperation(message)
+		return
+	}
+	worker.Ready = false
+	worker.Schedulable = false
+	worker.FailOperationRetryable(model.WorkerPhaseOffline, message)
 }
 
 func (r *WorkerReconcileExecutor) repairAssignedWorker(ctx context.Context, workerProvider sandbox.WorkerRuntimeReconciler, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, cause error) error {

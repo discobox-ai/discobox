@@ -125,6 +125,64 @@ func TestDockerWorkerWatcherSchedulesFailedWorkerWhenCurrentContainerRuns(t *tes
 	}
 }
 
+func TestDockerWorkerWatcherSchedulesCreatedFailedWorkerWithoutContainer(t *testing.T) {
+	manager := &recordingWorkerReconcileManager{}
+	watcher := dockerWorkerWatcher{
+		manager:    manager,
+		projectID:  "project-1",
+		providerID: "provider-1",
+	}
+	registeredAt := time.Now().UTC()
+	worker := &model.Worker{
+		ID:                 "worker-1",
+		ProjectID:          "project-1",
+		ProviderInstanceID: "provider-1",
+		RegisteredAt:       &registeredAt,
+		ResourceLifecycle: model.ResourceLifecycle{
+			DesiredState:        model.WorkerDesiredStateActive,
+			Phase:               model.WorkerPhaseOffline,
+			LastOperationStatus: model.OperationStatusFailed,
+		},
+	}
+
+	// A created worker whose container is gone must still be recreated.
+	scheduled, err := watcher.checkWorker(context.Background(), worker, nil)
+	if err != nil {
+		t.Fatalf("check worker: %v", err)
+	}
+	if !scheduled || manager.reconcileWorkerID != "worker-1" {
+		t.Fatalf("scheduled = %v worker = %q, want worker-1", scheduled, manager.reconcileWorkerID)
+	}
+}
+
+func TestDockerWorkerWatcherLeavesNeverCreatedFailedWorkerWithoutContainer(t *testing.T) {
+	manager := &recordingWorkerReconcileManager{}
+	watcher := dockerWorkerWatcher{
+		manager:    manager,
+		projectID:  "project-1",
+		providerID: "provider-1",
+	}
+	worker := &model.Worker{
+		ID:                 "worker-1",
+		ProjectID:          "project-1",
+		ProviderInstanceID: "provider-1",
+		ResourceLifecycle: model.ResourceLifecycle{
+			DesiredState:        model.WorkerDesiredStateActive,
+			Phase:               model.WorkerPhaseFailed,
+			LastOperationStatus: model.OperationStatusFailed,
+		},
+	}
+
+	// A worker that never registered has no runtime to recover.
+	scheduled, err := watcher.checkWorker(context.Background(), worker, nil)
+	if err != nil {
+		t.Fatalf("check worker: %v", err)
+	}
+	if scheduled || manager.reconcileWorkerID != "" {
+		t.Fatalf("scheduled = %v worker = %q, want no reconcile", scheduled, manager.reconcileWorkerID)
+	}
+}
+
 func TestDockerWorkerWatcherSchedulesDeletedWorkerWhenContainerRemains(t *testing.T) {
 	manager := &recordingWorkerReconcileManager{}
 	watcher := dockerWorkerWatcher{

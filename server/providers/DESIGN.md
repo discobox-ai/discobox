@@ -110,9 +110,42 @@ inspect, reconcile, or delete user sandbox containers hosted inside a worker;
 those belong behind the worker-agent sandbox runtime API.
 
 Runtime drift detection must not delete a persisted worker row, and pool
-downsizing must skip workers that still have assigned sandboxes. Failed worker
-reconcile jobs mark the worker failed/unschedulable and let the pool launch
-replacement capacity; they must not delete stateful workers.
+downsizing must skip workers that still have assigned sandboxes. It must not
+delete stateful workers as a repair strategy.
+
+## Worker Failure and Recovery
+
+Terminal failure is reserved for workers whose *initial create* never
+succeeded. A worker is stateful once it has completed create and registered
+(`Worker.EverCreated()`, keyed off `RegisteredAt`): it may own runtime volumes
+and assigned sandboxes, so the control plane makes every effort to reconcile it
+back to health instead of abandoning it.
+
+```mermaid
+flowchart TD
+    F[reconcile/repair fails] --> C{EverCreated?}
+    C -- no --> T[FailOperation → phase=failed, terminal]
+    C -- yes --> O[FailOperationRetryable → phase=offline, not ready]
+    O --> R[re-enqueue reconcile until healthy or drained/deleted]
+```
+
+Consequences enforced across the lifecycle:
+
+- `reconcileActive` calls `FailOperation` (terminal `failed`) only when
+  `!EverCreated()`; a created worker drops to the non-terminal `offline` phase
+  (`FailOperationRetryable`), unschedulable and not ready.
+- `activeWorker` treats `failed`/`LastOperationStatus==failed` as terminal only
+  when `!EverCreated()`. A created worker in recovery stays active (so the pool
+  repairs rather than replaces it) but is excluded from healthy capacity, which
+  lets `MinHealthy` still trigger replacement capacity.
+- The pool's failed-job repair re-enqueues reconciliation for created workers
+  (debounced on an in-flight reconcile job) and only latches never-created
+  workers to `failed`.
+- The docker watcher reschedules reconciliation for a created but failed/offline
+  worker even when its container is gone, so a missing runtime is recreated.
+
+Recovery is driven until the worker becomes healthy or an operator changes its
+desired state (drain/delete). Retries back off at the pool/reconcile-job cadence.
 
 ## Worker Agent HTTP Routing
 

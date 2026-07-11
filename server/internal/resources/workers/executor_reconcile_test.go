@@ -53,6 +53,73 @@ func TestReconcileWorkerMarksLaunchFailure(t *testing.T) {
 	}
 }
 
+func TestReconcileWorkerKeepsCreatedWorkerRecoverableOnFailure(t *testing.T) {
+	ctx := context.Background()
+	appStore := newExecutorTestStore(t)
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "failing", Name: "failing"}
+	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	registeredAt := time.Now().UTC()
+	worker := &model.Worker{
+		ID:                 "worker-1",
+		ProjectID:          "project-1",
+		ProviderInstanceID: "provider-1",
+		RegisteredAt:       &registeredAt,
+		Ready:              true,
+		Schedulable:        true,
+		RuntimeState:       []byte(`{"instanceId":"runtime-1"}`),
+		ResourceLifecycle: model.ResourceLifecycle{
+			DesiredState:        model.WorkerDesiredStateActive,
+			Phase:               model.WorkerPhaseActive,
+			LastOperationStatus: model.OperationStatusSuccess,
+			Generation:          2,
+			ObservedGeneration:  1,
+		},
+	}
+	if err := appStore.CreateWorker(ctx, worker); err != nil {
+		t.Fatalf("create worker: %v", err)
+	}
+	providerID := provider.ID
+	if err := appStore.CreateSandbox(ctx, &model.Sandbox{
+		ID:                 "sandbox-1",
+		ProjectID:          "project-1",
+		CreatedByUserID:    "user-1",
+		ProviderInstanceID: &providerID,
+		WorkerID:           &worker.ID,
+		Name:               "assigned sandbox",
+	}); err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+
+	launchErr := errors.New("image not found")
+	manager := sandboxes.NewProviderManager()
+	manager.RegisterProvider("failing", failingWorkerProvider{err: launchErr})
+	executor := workers.NewWorkerReconcileExecutor(appStore, workers.WithWorkerProviderManager(manager))
+
+	if err := executor.ReconcileWorkerJob(ctx, worker.ProjectID, worker.ProviderInstanceID, worker.ID, "job-1", worker.Generation); err == nil {
+		t.Fatal("expected reconcile failure to surface")
+	}
+
+	updated, err := appStore.GetWorker(ctx, worker.ID)
+	if err != nil {
+		t.Fatalf("get worker: %v", err)
+	}
+	// A created, stateful worker must not latch to the terminal failed phase.
+	if updated.Phase != model.WorkerPhaseOffline || updated.LastOperationStatus != model.OperationStatusFailed {
+		t.Fatalf("worker phase/status = %q/%q, want offline/failed", updated.Phase, updated.LastOperationStatus)
+	}
+	if updated.Ready || updated.Schedulable {
+		t.Fatalf("worker ready/schedulable = %t/%t, want false/false", updated.Ready, updated.Schedulable)
+	}
+	if len(updated.RuntimeState) == 0 {
+		t.Fatal("runtime state was cleared for a recoverable worker")
+	}
+	if updated.ErrorMessage == nil || *updated.ErrorMessage == "" {
+		t.Fatal("expected an error message recorded on the worker")
+	}
+}
+
 func TestReconcileWorkerChecksRuntimeForSuccessfulGeneration(t *testing.T) {
 	ctx := context.Background()
 	appStore := newExecutorTestStore(t)

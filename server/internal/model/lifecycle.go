@@ -79,6 +79,19 @@ func (l *ResourceLifecycle) FailOperation(message string) {
 	l.ErrorMessage = &message
 }
 
+// FailOperationRetryable records an operation failure without moving the
+// resource to the terminal "failed" phase. It is used for stateful resources
+// that must keep being reconciled toward health after a non-create operation
+// fails: the caller supplies a non-terminal phase (e.g. offline) so downstream
+// reconcilers continue to re-drive the resource rather than abandon it.
+func (l *ResourceLifecycle) FailOperationRetryable(phase string, message string) {
+	l.Phase = phase
+	l.ActiveOperation = nil
+	l.LastOperationStatus = OperationStatusFailed
+	l.StatusMessage = nil
+	l.ErrorMessage = &message
+}
+
 func (l *ResourceLifecycle) SetDefaults(desiredState, phase string) {
 	if l.DesiredState == "" {
 		l.DesiredState = desiredState

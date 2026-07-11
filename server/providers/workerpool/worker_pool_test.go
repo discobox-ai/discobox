@@ -154,6 +154,139 @@ func TestEnsureWorkerPoolSkipsSupersededFailedJobRepair(t *testing.T) {
 	}
 }
 
+func TestEnsureWorkerPoolReconcilesCreatedWorkerWithLostJob(t *testing.T) {
+	jobID := "job-1"
+	message := "image not found"
+	registeredAt := time.Now().UTC()
+	store := &repairingWorkerManager{
+		workers: []model.Worker{{
+			ID:                 "worker-1",
+			ProjectID:          "project-1",
+			ProviderInstanceID: "provider-1",
+			RegisteredAt:       &registeredAt,
+			ResourceLifecycle: model.ResourceLifecycle{
+				DesiredState:        model.WorkerDesiredStateActive,
+				Phase:               model.WorkerPhaseLaunching,
+				LastOperationStatus: model.OperationStatusRunning,
+				LastJobID:           &jobID,
+			},
+		}},
+		jobs: map[string]*orchestration.Job{
+			jobID: {ID: jobID, Status: orchestration.StatusFailed, Error: &message},
+		},
+		repairUpdated: true,
+	}
+	project := &model.Project{ID: "project-1"}
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
+
+	if err := ensureWorkerPool(context.Background(), store, project, provider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}); err != nil {
+		t.Fatalf("ensure worker pool: %v", err)
+	}
+
+	// A created worker is stateful: recover it, never latch it to failed.
+	if store.updated != nil {
+		t.Fatalf("updated worker = %#v, want no terminal failure for created worker", store.updated)
+	}
+	if len(store.scheduledReconciliations) != 1 || store.scheduledReconciliations[0] != "worker-1" {
+		t.Fatalf("scheduled reconciliations = %v, want [worker-1]", store.scheduledReconciliations)
+	}
+	if store.createdWorkers != 0 {
+		t.Fatalf("created workers = %d, want no replacement while recovering", store.createdWorkers)
+	}
+}
+
+func TestEnsureWorkerPoolReDrivesFailedCreatedWorker(t *testing.T) {
+	registeredAt := time.Now().UTC()
+	store := &repairingWorkerManager{
+		workers: []model.Worker{{
+			ID:                 "worker-1",
+			ProjectID:          "project-1",
+			ProviderInstanceID: "provider-1",
+			RegisteredAt:       &registeredAt,
+			ResourceLifecycle: model.ResourceLifecycle{
+				DesiredState:        model.WorkerDesiredStateActive,
+				Phase:               model.WorkerPhaseOffline,
+				LastOperationStatus: model.OperationStatusFailed,
+			},
+		}},
+		repairUpdated: true,
+	}
+	project := &model.Project{ID: "project-1"}
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
+
+	if err := ensureWorkerPool(context.Background(), store, project, provider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}); err != nil {
+		t.Fatalf("ensure worker pool: %v", err)
+	}
+
+	if len(store.scheduledReconciliations) != 1 || store.scheduledReconciliations[0] != "worker-1" {
+		t.Fatalf("scheduled reconciliations = %v, want [worker-1]", store.scheduledReconciliations)
+	}
+	if store.updated != nil {
+		t.Fatalf("updated worker = %#v, want no terminal failure for created worker", store.updated)
+	}
+}
+
+func TestEnsureWorkerPoolSkipsReDriveWhenReconcileQueued(t *testing.T) {
+	jobID := "job-1"
+	registeredAt := time.Now().UTC()
+	store := &repairingWorkerManager{
+		workers: []model.Worker{{
+			ID:                 "worker-1",
+			ProjectID:          "project-1",
+			ProviderInstanceID: "provider-1",
+			RegisteredAt:       &registeredAt,
+			ResourceLifecycle: model.ResourceLifecycle{
+				DesiredState:        model.WorkerDesiredStateActive,
+				Phase:               model.WorkerPhaseOffline,
+				LastOperationStatus: model.OperationStatusFailed,
+				LastJobID:           &jobID,
+			},
+		}},
+		jobs: map[string]*orchestration.Job{
+			jobID: {ID: jobID, Status: orchestration.StatusPending},
+		},
+	}
+	project := &model.Project{ID: "project-1"}
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
+
+	if err := ensureWorkerPool(context.Background(), store, project, provider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}); err != nil {
+		t.Fatalf("ensure worker pool: %v", err)
+	}
+
+	if len(store.scheduledReconciliations) != 0 {
+		t.Fatalf("scheduled reconciliations = %v, want none while a reconcile is queued", store.scheduledReconciliations)
+	}
+}
+
+func TestActiveWorkerFailedIsTerminalOnlyBeforeCreate(t *testing.T) {
+	registeredAt := time.Now().UTC()
+	created := &model.Worker{
+		RegisteredAt: &registeredAt,
+		ResourceLifecycle: model.ResourceLifecycle{
+			DesiredState:        model.WorkerDesiredStateActive,
+			Phase:               model.WorkerPhaseOffline,
+			LastOperationStatus: model.OperationStatusFailed,
+		},
+	}
+	if !activeWorker(created) {
+		t.Fatal("created worker recovering from a failed reconcile should stay active")
+	}
+	if healthyWorker(created) {
+		t.Fatal("recovering worker should not count as healthy capacity")
+	}
+
+	neverCreated := &model.Worker{
+		ResourceLifecycle: model.ResourceLifecycle{
+			DesiredState:        model.WorkerDesiredStateActive,
+			Phase:               model.WorkerPhaseFailed,
+			LastOperationStatus: model.OperationStatusFailed,
+		},
+	}
+	if activeWorker(neverCreated) {
+		t.Fatal("worker that never completed create should fail terminally")
+	}
+}
+
 func TestEnsureWorkerPoolRepairsExpiredRegisteringWorkers(t *testing.T) {
 	oldTimeout := workerRegistrationTimeout
 	workerRegistrationTimeout = time.Minute
@@ -1080,13 +1213,14 @@ func (s *capacityWaitWorkerManager) DeleteWorkerForExpiredRegistration(context.C
 }
 
 type repairingWorkerManager struct {
-	workers           []model.Worker
-	jobs              map[string]*orchestration.Job
-	updated           *model.Worker
-	repairUpdated     bool
-	createdWorkers    int
-	deletedWorkerIDs  []string
-	assignedSandboxes map[string]int64
+	workers                  []model.Worker
+	jobs                     map[string]*orchestration.Job
+	updated                  *model.Worker
+	repairUpdated            bool
+	createdWorkers           int
+	deletedWorkerIDs         []string
+	assignedSandboxes        map[string]int64
+	scheduledReconciliations []string
 }
 
 func (s *repairingWorkerManager) ListWorkers(context.Context, string, string) ([]model.Worker, error) {
@@ -1173,7 +1307,8 @@ func (s *repairingWorkerManager) ScheduleWorkerProviderReconciliationAt(context.
 	return nil
 }
 
-func (s *repairingWorkerManager) ScheduleWorkerReconciliation(context.Context, string) error {
+func (s *repairingWorkerManager) ScheduleWorkerReconciliation(_ context.Context, workerID string) error {
+	s.scheduledReconciliations = append(s.scheduledReconciliations, workerID)
 	return nil
 }
 

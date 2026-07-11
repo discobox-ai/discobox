@@ -16,6 +16,14 @@
   volumes that survive container removal, and the engine replaces the VM only
   when it is missing or unhealthy. Never invoke repair from a worker delete
   path.
+- Terminal `failed` is only for workers that never completed create. Gate any
+  new terminal-failure transition on `!Worker.EverCreated()`. A created worker
+  that fails a reconcile/repair must go to a non-terminal state
+  (`FailOperationRetryable`, e.g. `offline`) and keep being re-enqueued for
+  reconciliation, not latched. Do not reintroduce checks that treat every
+  `phase==failed`/`LastOperationStatus==failed` worker as terminal
+  (`activeWorker`, the docker watcher, and pool repair all special-case
+  `EverCreated`).
 - Keep Docker out of `workerpool` and `internal/sandbox`. Container mechanics
   belong in `dockerworker.Engine`; anything backend-specific belongs behind
   `dockerworker.Driver`. A new backend should only implement VM CRUD plus the

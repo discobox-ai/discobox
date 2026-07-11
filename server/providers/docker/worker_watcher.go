@@ -147,7 +147,10 @@ func (w dockerWorkerWatcher) checkWorker(ctx context.Context, worker *model.Work
 		return false, nil
 	}
 	if worker.LastOperationStatus == model.OperationStatusFailed || worker.Phase == model.WorkerPhaseFailed {
-		if current != nil && containerRunning(current) {
+		// A created worker is stateful, so recover it whether or not a container
+		// is still present: its runtime may need to be recreated. A worker that
+		// never registered only reconciles while a container lingers to clean up.
+		if worker.EverCreated() || (current != nil && containerRunning(current)) {
 			return w.scheduleWorkerReconciliation(ctx, worker.ID)
 		}
 		return false, nil

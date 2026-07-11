@@ -547,6 +547,16 @@ func (w *Worker) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
+// EverCreated reports whether the worker completed its initial create and
+// registered at least once. Such workers are stateful (they may own runtime
+// state and assigned sandboxes), so a failed reconcile of an already-created
+// worker must be reconciled back to health rather than latched to a terminal
+// failure. Only a worker that never registered may fail terminally, since its
+// initial create never produced anything to recover.
+func (w *Worker) EverCreated() bool {
+	return w != nil && w.RegisteredAt != nil
+}
+
 // SchedulingPreference returns the coarse scheduling bucket for pull-based
 // workers. Degraded workers may be used as fallback when preferred workers do
 // not claim pending work.
