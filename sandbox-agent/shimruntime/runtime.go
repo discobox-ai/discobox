@@ -26,18 +26,23 @@ type Runtime struct {
 	resize      *frame.ResizePayload
 	resizeReady chan struct{}
 	resizeOnce  sync.Once
-	// outputOffset counts every output byte ever broadcast. A replay attacher
-	// captures it atomically with its own registration to define the exact
-	// cutover between history (streamed from disk) and live output (buffered
-	// from registration onward), so no byte is lost or duplicated across the two.
-	outputOffset int64
+	// screen, when set (TTY execs), mirrors the live output in an in-memory
+	// terminal emulator so a late attacher can be repainted with the current
+	// screen state instead of only output produced after it connected. It is fed
+	// and snapshotted under mu, in lockstep with the attacher set, so a snapshot
+	// captured at an attacher's registration reflects exactly the output
+	// broadcast before it (see Broadcast and addReplayAttacher).
+	screen *screenBuffer
 }
 
-// ReplayFunc streams recorded output up to cutover bytes to a replay attacher
-// before its buffered live output is flushed. It receives writeOutput to emit
-// each historical chunk as an output frame directly to the client. Returning an
-// error aborts the attach.
-type ReplayFunc func(ctx context.Context, cutover int64, writeOutput func([]byte) error) error
+// EnableScreen turns on in-memory screen tracking for repaint-on-attach. It is
+// called once, before output starts, for TTY execs; plain (pipe) execs have no
+// screen and attach without a repaint.
+func (r *Runtime) EnableScreen(rows, cols uint16, scrollbackLines int) {
+	r.mu.Lock()
+	r.screen = newScreenBuffer(rows, cols, scrollbackLines)
+	r.mu.Unlock()
+}
 
 type Attacher struct {
 	mu        sync.Mutex
@@ -89,10 +94,11 @@ func ListenUnix(ctx context.Context, socketPath string) (net.Listener, error) {
 }
 
 // HandleAttach upgrades w to a framed stream and joins it to the broadcast set.
-// When replay is non-nil the attacher starts buffering live output, replay
-// streams the recorded history up to the captured cutover, then the buffered
-// live frames are flushed and normal live streaming resumes.
-func (r *Runtime) HandleAttach(w http.ResponseWriter, replay ReplayFunc) {
+// When the client requests a repaint and the exec has a screen, the attacher
+// starts buffering live output, the captured screen snapshot is streamed as the
+// repaint, then the buffered live frames are flushed and normal live streaming
+// resumes.
+func (r *Runtime) HandleAttach(w http.ResponseWriter, repaintRequested bool) {
 	conn, rw, err := http.NewResponseController(w).Hijack()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -104,31 +110,23 @@ func (r *Runtime) HandleAttach(w http.ResponseWriter, replay ReplayFunc) {
 		return
 	}
 	attach := &Attacher{w: rw, done: make(chan struct{}), ready: make(chan struct{})}
-	var cutover int64
-	if replay != nil {
-		cutover = r.addReplayAttacher(attach)
+	var snapshot []byte
+	repaint := repaintRequested && r.hasScreen()
+	if repaint {
+		snapshot = r.addReplayAttacher(attach)
 	} else {
 		r.addAttacher(attach)
 	}
 	defer r.removeAttacher(attach)
 	go r.readFrames(attach, rw)
-	if replay != nil {
-		// Hold the history stream until the client signals it is attached and
-		// reading (frame.Ready), so nothing is written during the upgrade
-		// handshake window where an intermediate proxy hop may drop buffered
-		// bytes. Fall back after a timeout so a client that never signals still
-		// gets a (best-effort) replay instead of hanging.
+	if repaint {
+		// Hold the repaint until the client signals it is attached and reading
+		// (frame.Ready), so nothing is written during the upgrade handshake window
+		// where an intermediate proxy hop may drop buffered bytes. Fall back after
+		// a timeout so a client that never signals still gets a (best-effort)
+		// repaint instead of hanging.
 		r.waitForReady(attach)
-		ctx, cancel := context.WithCancel(context.Background())
-		go func() {
-			select {
-			case <-attach.done:
-			case <-r.done:
-			}
-			cancel()
-		}()
-		err := replay(ctx, cutover, attach.writeReplayOutput)
-		cancel()
+		err := attach.writeSnapshot(snapshot)
 		if err == nil {
 			err = attach.flushBuffer()
 		}
@@ -140,6 +138,12 @@ func (r *Runtime) HandleAttach(w http.ResponseWriter, replay ReplayFunc) {
 	case <-attach.done:
 	case <-r.done:
 	}
+}
+
+func (r *Runtime) hasScreen() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.screen != nil
 }
 
 func (r *Runtime) readFrames(attach *Attacher, rw *bufio.ReadWriter) {
@@ -198,6 +202,9 @@ func (r *Runtime) InitialWinsize(rows, cols uint16) *pty.Winsize {
 func (r *Runtime) ApplyResize(tty *os.File, resize frame.ResizePayload) {
 	r.mu.Lock()
 	r.resize = &resize
+	if r.screen != nil {
+		r.screen.resize(resize.Rows, resize.Cols)
+	}
 	r.mu.Unlock()
 	r.resizeOnce.Do(func() {
 		close(r.resizeReady)
@@ -221,14 +228,17 @@ func (r *Runtime) WaitForResize(ctx context.Context) {
 }
 
 func (r *Runtime) Broadcast(payload []byte) {
-	// Advance the output offset and snapshot the attacher set under one lock so a
-	// concurrently registering replay attacher captures a cutover that cleanly
-	// splits this chunk to exactly one side: either it is counted below the
-	// cutover (read from disk, not in the snapshot) or at/above it (in the
-	// snapshot and buffered). The network writes stay outside the lock so a slow
-	// client cannot stall the PTY reader.
+	// Feed the screen and snapshot the attacher set under one lock so a
+	// concurrently registering repaint attacher falls cleanly on one side of this
+	// chunk: either the screen absorbs it before the attacher's snapshot is taken
+	// (delivered via the snapshot, not in the attacher set here) or the attacher
+	// is registered first (in the set below, delivered as a buffered live frame).
+	// The network writes stay outside the lock so a slow client cannot stall the
+	// PTY reader.
 	r.mu.Lock()
-	r.outputOffset += int64(len(payload))
+	if r.screen != nil {
+		r.screen.write(payload)
+	}
 	attachers := r.snapshotAttachersLocked()
 	r.mu.Unlock()
 	for _, attach := range attachers {
@@ -252,15 +262,20 @@ func (r *Runtime) snapshotAttachersLocked() []*Attacher {
 	return attachers
 }
 
-// addReplayAttacher registers a buffering attacher and returns the output offset
-// captured at that instant. See Broadcast for why this must be atomic with the
-// offset counter.
-func (r *Runtime) addReplayAttacher(attach *Attacher) int64 {
+// addReplayAttacher registers a buffering attacher and returns the screen
+// snapshot captured at that instant. Capturing the snapshot and registering the
+// attacher under one lock keeps the repaint and the buffered live output exactly
+// contiguous: every output chunk is either already in the snapshot or will be
+// buffered from registration onward. See Broadcast.
+func (r *Runtime) addReplayAttacher(attach *Attacher) []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	attach.buffering = true
 	r.attachers[attach] = struct{}{}
-	return r.outputOffset
+	if r.screen == nil {
+		return nil
+	}
+	return r.screen.snapshot()
 }
 
 func (r *Runtime) HasAttachers() bool {
@@ -303,10 +318,14 @@ func (a *Attacher) writeLocked(typ byte, payload []byte) error {
 	return nil
 }
 
-// writeReplayOutput writes a historical output frame straight to the wire,
-// bypassing the live buffer. The attacher is still buffering while this runs, so
-// live frames queue behind the history and the wire is written only here.
-func (a *Attacher) writeReplayOutput(payload []byte) error {
+// writeSnapshot writes the repaint snapshot straight to the wire as one output
+// frame, bypassing the live buffer. The attacher is still buffering while this
+// runs, so live frames queue behind the snapshot and the wire is written only
+// here. An empty snapshot writes nothing.
+func (a *Attacher) writeSnapshot(payload []byte) error {
+	if len(payload) == 0 {
+		return nil
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.writeLocked(frame.Output, payload)
@@ -314,7 +333,7 @@ func (a *Attacher) writeReplayOutput(payload []byte) error {
 
 // flushBuffer writes the buffered live frames in order and switches the attacher
 // to normal live streaming. The buffer holds exactly the output produced at and
-// after the replay cutover, so it continues seamlessly from the history.
+// after the attacher registered, so it continues seamlessly from the snapshot.
 func (a *Attacher) flushBuffer() error {
 	a.mu.Lock()
 	defer a.mu.Unlock()

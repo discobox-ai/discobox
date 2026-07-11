@@ -65,19 +65,28 @@ runtime operations.
   process startup, status persistence, stream logging, and stdin-close behavior
   in `execs`. The exec shim serves both TTY (terminal, `exec -t`) and
   stdout/stderr-pipe (plain exec) modes.
-- Terminal attach supports `?replay=true`, which streams the recorded session
-  history before live output. The disk log (`AsyncLogger`) is the authoritative
-  history; the shim never buffers the whole transcript in memory. Race-free
-  cutover: `shimruntime.Broadcast` advances an output-byte offset and snapshots
-  the attacher set under one lock, so a replay attacher registers atomically
-  with the offset it captures. Every output chunk falls on exactly one side of
-  the cutover — replayed from disk (below) or buffered live from registration
-  (at/above) — so nothing is lost or duplicated. The shim waits for the async
-  logger to persist the cutover bytes (`WaitForFlush`) before reading history
-  back with `terminal.StreamOutput` (output entries only; the PTY already echoes
-  input into output). The shim withholds the history stream until the client
-  sends a `frame.Ready` (the CLI sends it once its output reader is running):
-  writing history during the HTTP upgrade handshake risks losing the leading
-  bytes at an intermediate proxy hop that buffers them before its tunnel is
-  wired up. `frame.Ready` proves the tunnel is established end to end; a bounded
-  timeout still replays (best effort) for clients that never send it.
+- Terminal attach supports `?replay=true`, which repaints the current screen
+  before live output so a client that connects after a program has been running
+  sees its state, not just output produced from the attach onward. The repaint
+  is a snapshot of an in-memory terminal emulator (`shimruntime.screenBuffer`,
+  backed by `charmbracelet/x/vt`), not the raw transcript: the emulator is fed
+  every output chunk in `Broadcast`, and a snapshot serializes the current
+  screen, capped scrollback (`DefaultScrollbackLines`), the cursor position, and
+  the input/rendering modes a TUI set before the client connected (mouse,
+  bracketed paste, cursor keys, cursor visibility — tracked by scanning the
+  output stream, since the emulator does not expose them). Only TTY execs have a
+  screen (`Runtime.EnableScreen`); plain execs attach without a repaint. The
+  disk log (`AsyncLogger`) is no longer used for attach — it backs only the
+  `terminal logs` command (full forensic transcript).
+- Race-free snapshot: `shimruntime.Broadcast` feeds the emulator and snapshots
+  the attacher set under one lock, and `addReplayAttacher` captures the emulator
+  snapshot and registers the attacher under that same lock. Every output chunk
+  therefore falls on exactly one side of the attach: already absorbed into the
+  snapshot, or buffered as a live frame from registration onward and flushed
+  after the snapshot — so nothing is lost or duplicated. The shim withholds the
+  snapshot until the client sends a `frame.Ready` (the CLI sends it once its
+  output reader is running): writing during the HTTP upgrade handshake risks
+  losing the leading bytes at an intermediate proxy hop that buffers them before
+  its tunnel is wired up. `frame.Ready` proves the tunnel is established end to
+  end; a bounded timeout still repaints (best effort) for clients that never
+  send it.

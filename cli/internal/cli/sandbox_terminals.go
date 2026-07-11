@@ -322,16 +322,17 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 	defer conn.Close()
 
 	session := &framedAttachSession{
-		conn:       conn,
-		stdin:      stdin,
-		stdout:     stdout,
-		stderr:     stderr,
-		kind:       "agent terminal",
-		action:     "attach terminal",
-		rawMode:    true,
-		resize:     true,
-		copyInput:  copyAgentTerminalInput,
-		errorFrame: printAttachErrorFrame(stderr),
+		conn:        conn,
+		stdin:       stdin,
+		stdout:      stdout,
+		stderr:      stderr,
+		kind:        "agent terminal",
+		action:      "attach terminal",
+		rawMode:     true,
+		resize:      true,
+		signalReady: true,
+		copyInput:   copyAgentTerminalInput,
+		errorFrame:  printAttachErrorFrame(stderr),
 		otherErr: func(err error) (bool, error) {
 			if isAttachDone(err) {
 				return true, nil

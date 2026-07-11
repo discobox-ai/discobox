@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -128,7 +129,12 @@ func (r *shimRuntime) startPTY(cmd *exec.Cmd) error {
 		r.stream.WaitForResize(resizeCtx)
 		cancelResize()
 	}
-	tty, err := pty.StartWithSize(cmd, r.stream.InitialWinsize(r.cfg.Rows, r.cfg.Cols))
+	winsize := r.stream.InitialWinsize(r.cfg.Rows, r.cfg.Cols)
+	// Track the screen in memory at the PTY's real size so a late attacher can be
+	// repainted with the current screen and recent scrollback. Only TTY execs
+	// have a screen; plain (pipe) execs attach without a repaint.
+	r.stream.EnableScreen(winsize.Rows, winsize.Cols, shimruntime.DefaultScrollbackLines)
+	tty, err := pty.StartWithSize(cmd, winsize)
 	if err != nil {
 		return err
 	}
@@ -195,8 +201,9 @@ func (r *shimRuntime) serve() {
 	}
 }
 
-func (r *shimRuntime) handleAttach(w http.ResponseWriter, _ *http.Request) {
-	r.stream.HandleAttach(w, nil)
+func (r *shimRuntime) handleAttach(w http.ResponseWriter, req *http.Request) {
+	repaint, _ := strconv.ParseBool(req.URL.Query().Get("replay"))
+	r.stream.HandleAttach(w, repaint)
 }
 
 func (r *shimRuntime) handleStart(w http.ResponseWriter, _ *http.Request) {
