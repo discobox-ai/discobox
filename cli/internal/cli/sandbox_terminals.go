@@ -387,7 +387,8 @@ func filterDetachSequence(in []byte, pendingCtrlP *bool) ([]byte, bool) {
 	for _, b := range in {
 		if *pendingCtrlP {
 			*pendingCtrlP = false
-			if b == 'q' || b == 'Q' {
+			if b == 0x11 {
+				// Ctrl-P Ctrl-Q: the docker-style detach sequence.
 				return out.Bytes(), true
 			}
 			out.WriteByte(0x10)

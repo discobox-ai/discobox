@@ -106,7 +106,14 @@ func TestTerminalDetachSequenceFilter(t *testing.T) {
 		t.Fatalf("non-detach followup = %v detach=%t pending=%t", out, detach, pending)
 	}
 
+	// A plain q after Ctrl-P is passed through, not a detach: the docker-style
+	// sequence requires Ctrl-Q (0x11), and Ctrl-P is a common editing key.
 	out, detach = filterDetachSequence([]byte{0x10, 'q'}, &pending)
+	if detach || string(out) != string([]byte{0x10, 'q'}) || pending {
+		t.Fatalf("ctrl-p then plain q = %v detach=%t pending=%t", out, detach, pending)
+	}
+
+	out, detach = filterDetachSequence([]byte{0x10, 0x11}, &pending)
 	if !detach || len(out) != 0 || pending {
 		t.Fatalf("detach sequence = %v detach=%t pending=%t", out, detach, pending)
 	}
