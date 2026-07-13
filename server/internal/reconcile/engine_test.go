@@ -1,0 +1,261 @@
+package reconcile
+
+import (
+	"context"
+	"errors"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+)
+
+func testEngine(t *testing.T) (*Engine, *gorm.DB) {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	e, err := New(db, Options{
+		SingleNode:   true,
+		PollInterval: 20 * time.Millisecond,
+		Lease:        2 * time.Second,
+		BackoffBase:  50 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	return e, db
+}
+
+func start(t *testing.T, e *Engine) {
+	t.Helper()
+	if err := e.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = e.Stop(ctx)
+	})
+}
+
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
+}
+
+func rowCount(t *testing.T, db *gorm.DB) int64 {
+	t.Helper()
+	var n int64
+	if err := db.Model(&dirtyRow{}).Count(&n).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	return n
+}
+
+type fakeReconciler struct {
+	runs    atomic.Int32
+	fail    atomic.Int32 // fail this many runs before succeeding
+	block   chan struct{} // if non-nil, each run waits until it can receive
+	lastIDs sync.Map
+}
+
+func (f *fakeReconciler) Reconcile(_ context.Context, id string) error {
+	f.lastIDs.Store(id, true)
+	if f.block != nil {
+		<-f.block
+	}
+	n := f.runs.Add(1)
+	if int32(n) <= f.fail.Load() {
+		return errors.New("boom")
+	}
+	return nil
+}
+
+func TestMarkReconcileAndSettle(t *testing.T) {
+	e, db := testEngine(t)
+	r := &fakeReconciler{}
+	if err := e.Register("sandbox", r); err != nil {
+		t.Fatal(err)
+	}
+	start(t, e)
+
+	if err := e.MarkDirty(context.Background(), "sandbox", "sb-1"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "reconcile to run", func() bool { return r.runs.Load() == 1 })
+	waitFor(t, "row to settle", func() bool { return rowCount(t, db) == 0 })
+	if _, ok := r.lastIDs.Load("sb-1"); !ok {
+		t.Fatal("reconciler did not receive sb-1")
+	}
+}
+
+func TestMarksCoalesce(t *testing.T) {
+	e, db := testEngine(t)
+	r := &fakeReconciler{}
+	if err := e.Register("sandbox", r); err != nil {
+		t.Fatal(err)
+	}
+	// Mark many times BEFORE starting: must collapse into one row / one run.
+	for range 25 {
+		if err := e.MarkDirty(context.Background(), "sandbox", "sb-1"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if n := rowCount(t, db); n != 1 {
+		t.Fatalf("expected 1 coalesced row, got %d", n)
+	}
+	start(t, e)
+	waitFor(t, "row to settle", func() bool { return rowCount(t, db) == 0 })
+	if n := r.runs.Load(); n != 1 {
+		t.Fatalf("expected exactly 1 run for 25 marks, got %d", n)
+	}
+}
+
+func TestRemarkDuringRunTriggersRerun(t *testing.T) {
+	e, db := testEngine(t)
+	r := &fakeReconciler{block: make(chan struct{})}
+	if err := e.Register("sandbox", r); err != nil {
+		t.Fatal(err)
+	}
+	start(t, e)
+
+	if err := e.MarkDirty(context.Background(), "sandbox", "sb-1"); err != nil {
+		t.Fatal(err)
+	}
+	// Wait until the first run is in flight (blocked), then re-mark: newer
+	// intent arrived mid-run.
+	waitFor(t, "first run in flight", func() bool {
+		if _, ok := r.lastIDs.Load("sb-1"); !ok {
+			return false
+		}
+		return true
+	})
+	if err := e.MarkDirty(context.Background(), "sandbox", "sb-1"); err != nil {
+		t.Fatal(err)
+	}
+	r.block <- struct{}{} // finish first run
+	// seq moved, so the row must survive completion and run again.
+	waitFor(t, "second run", func() bool {
+		select {
+		case r.block <- struct{}{}:
+			return true
+		default:
+			return false
+		}
+	})
+	waitFor(t, "row to settle after rerun", func() bool { return rowCount(t, db) == 0 })
+	if n := r.runs.Load(); n != 2 {
+		t.Fatalf("expected 2 runs (initial + rerun), got %d", n)
+	}
+}
+
+func TestFailureBacksOffThenConverges(t *testing.T) {
+	e, db := testEngine(t)
+	r := &fakeReconciler{}
+	r.fail.Store(2) // fail twice, then succeed
+	if err := e.Register("sandbox", r); err != nil {
+		t.Fatal(err)
+	}
+	start(t, e)
+
+	if err := e.MarkDirty(context.Background(), "sandbox", "sb-1"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "first failure recorded", func() bool {
+		var row dirtyRow
+		if err := db.First(&row, "resource_id = ?", "sb-1").Error; err != nil {
+			return false
+		}
+		return row.Attempts >= 1 && row.ClaimedBy == nil && row.NotBefore.After(time.Now().Add(-time.Millisecond))
+	})
+	// Stays dirty with backoff until it finally converges.
+	waitFor(t, "eventual convergence", func() bool { return rowCount(t, db) == 0 })
+	if n := r.runs.Load(); n != 3 {
+		t.Fatalf("expected 3 runs (2 failures + success), got %d", n)
+	}
+}
+
+func TestMarkDirtyAtIsATimer(t *testing.T) {
+	e, db := testEngine(t)
+	r := &fakeReconciler{}
+	if err := e.Register("provider", r); err != nil {
+		t.Fatal(err)
+	}
+	start(t, e)
+
+	at := time.Now().Add(300 * time.Millisecond)
+	if err := e.MarkDirtyAt(context.Background(), "provider", "p-1", at); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(150 * time.Millisecond)
+	if n := r.runs.Load(); n != 0 {
+		t.Fatalf("ran %d times before not_before", n)
+	}
+	waitFor(t, "timer fire", func() bool { return r.runs.Load() == 1 })
+	waitFor(t, "row to settle", func() bool { return rowCount(t, db) == 0 })
+
+	// An earlier mark pulls the row forward.
+	far := time.Now().Add(time.Hour)
+	if err := e.MarkDirtyAt(context.Background(), "provider", "p-2", far); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.MarkDirty(context.Background(), "provider", "p-2"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "pulled-forward run", func() bool { return r.runs.Load() == 2 })
+}
+
+type scanningReconciler struct {
+	fakeReconciler
+	scans atomic.Int32
+}
+
+func (s *scanningReconciler) ScanDirty(context.Context) ([]string, error) {
+	if s.scans.Add(1) == 1 {
+		return []string{"drifted-1"}, nil
+	}
+	return nil, nil
+}
+
+func TestScannerBackstop(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(filepath.Join(t.TempDir(), "test.db")), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e, err := New(db, Options{
+		SingleNode:   true,
+		PollInterval: 20 * time.Millisecond,
+		ScanInterval: 50 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := &scanningReconciler{}
+	if err := e.Register("sandbox", r); err != nil {
+		t.Fatal(err)
+	}
+	start(t, e)
+
+	// No explicit mark: the scan must find and heal the drifted resource.
+	waitFor(t, "scan-driven reconcile", func() bool {
+		_, ok := r.lastIDs.Load("drifted-1")
+		return ok
+	})
+}
