@@ -11,11 +11,11 @@ const (
 	deletedWorkerPurgeAge      = 24 * time.Hour
 )
 
-func (s *Manager) StartDeletedWorkerCleanup(ctx context.Context) {
+func (s *ControlPlane) StartDeletedWorkerCleanup(ctx context.Context) {
 	go s.deletedWorkerCleanupLoop(ctx)
 }
 
-func (s *Manager) deletedWorkerCleanupLoop(ctx context.Context) {
+func (s *ControlPlane) deletedWorkerCleanupLoop(ctx context.Context) {
 	ticker := time.NewTicker(deletedWorkerPurgeInterval)
 	defer ticker.Stop()
 	for {

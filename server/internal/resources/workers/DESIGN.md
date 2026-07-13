@@ -1,41 +1,50 @@
 # Workers Design
 
-`internal/resources/workers` owns worker API behavior, worker/provider-facing
-management, and worker lifecycle reconciliation.
-
-## Boundaries
+Workers are the one resource with **two front doors**, because they have two
+very different kinds of caller. Same resource, two dialects:
 
 ```mermaid
 flowchart LR
-    api[internal/handlers] --> service[Service]
-    providers[provider implementations] --> manager[Manager]
-    dispatcher[orchestration.Dispatcher] --> executor[WorkerReconcileExecutor]
-    manager --> store[internal/store]
-    executor --> store
-    executor --> runtime[sandbox worker runtime]
+    handlers[HTTP handlers] --> svc["workers.Service<br/>(untrusted API surface)"]
+    drivers["provider drivers<br/>(workerpool, docker)"] -- sandbox.WorkerManager --> cp["workers.ControlPlane<br/>(trusted control plane)"]
+    svc --> store[(store)]
+    svc -- ScheduleWorkerReconciliation --> cp
+    cp --> store
+    cp --> engine[(reconcile engine)]
+    engine --> rec["WorkerReconciler /<br/>WorkerProviderReconciler"]
+    rec --> store
+    rec -- runtime calls --> drivers
 ```
 
-- `Service` handles worker registration, listing, and authenticated status
-  updates.
-- `Manager` is the narrow provider-facing interface for worker creation,
-  bootstrap tokens, scheduling lookup, worker/provider reconcile enqueueing, and
-  cleanup decisions.
-- `WorkerReconcileExecutor` owns payload decode, generation assertions, and
-  worker lifecycle reconciliation.
-- Worker runtime cleanup/launch decisions must preserve generation checks.
-- Worker lifecycle and runtime-state repair must happen in worker reconcile jobs.
-  Driver-owned drift checks may enqueue worker reconciliation for mismatches,
-  but must not directly mark workers failed, active, deleted, or recovered.
-- Workers are stateful. `Manager.DeleteWorker`, registration-expiry cleanup, and
-  `WorkerReconcileExecutor` must refuse worker deletion while any sandbox row is
-  still assigned to the worker. Runtime providers may replace the underlying
-  VM/container during active worker reconciliation, but that must preserve the
-  worker row and worker ID.
-- Failed worker reconciliation should mark the worker failed/unschedulable and
-  allow provider reconciliation to launch replacement capacity. It must not
-  delete the worker unless the worker never registered and has no assigned
-  sandboxes.
-- Worker repair is separate from worker delete. Active worker reconciliation may
-  call `RepairWorker` when normal runtime reconciliation fails and sandboxes are
-  assigned to the worker. Delete reconciliation must not call repair; an
-  occupied worker delete is a failed delete.
+| | `workers.Service` | `workers.ControlPlane` |
+| --- | --- | --- |
+| Caller | HTTP handlers | provider drivers (via `sandbox.WorkerManager`) |
+| Input trust | untrusted — trim, validate, authorize principals | trusted — ids come from persisted rows |
+| Errors | `apperrors` with HTTP status codes | plain domain errors |
+| Powers | read/annotate | lifecycle intent writes, credential minting, dirty marks |
+
+The split is behavioral, not organizational: both define `ListWorkers` with the
+same signature but different contracts (the Service validates and speaks HTTP;
+the control plane is a raw read). Merging them would hand one method name to
+two callers with incompatible expectations.
+
+## Responsibilities
+
+- `service.go` — API behavior: worker registration, status updates (verifies
+  the calling **worker principal**), list with project validation, manual
+  reconcile requests.
+- `controlplane.go` — trusted operations: intent writes (create/drain/delete =
+  generation bump + operation + `MarkDirtyTx`, one transaction), bootstrap and
+  agent tokens, scheduling re-marks, expired-registration cleanup. Registers
+  both reconcilers on the engine.
+- `reconciler.go` — `WorkerReconciler`: converges one worker (launch, repair,
+  delete via the driver), chains a provider re-mark after every run so the pool
+  re-evaluates its scaling math.
+- `provider_reconciler.go` — `WorkerProviderReconciler`: converges one
+  provider's worker **pool** (scaling); lives here because pools are made of
+  workers and the reconciler drives this package's control plane.
+- `cleanup.go` — periodic purge of long-deleted worker rows.
+
+Reconciliation is level-triggered: intent writers mark `(type, id)` dirty and
+the engine (`internal/reconcile`) drives convergence; see that package's
+DESIGN.md for claiming, backoff, supersede, and scan semantics.

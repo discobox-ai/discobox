@@ -16,11 +16,9 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
-	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/events"
 	"github.com/obot-platform/discobox/server/internal/model"
-	sandboxjobs "github.com/obot-platform/discobox/server/internal/resources/jobs"
 	"github.com/obot-platform/discobox/server/internal/service"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
@@ -66,17 +64,8 @@ func TestDockerProviderWorkerCreateFlowE2E(t *testing.T) {
 
 	broker := events.NewBroker()
 	appStore := store.New(db.Write, db.Read, store.WithPublisher(broker))
-	queueConfig := orchestration.QueueConfig{DefaultMaxAttempts: 1}
-	jobManager := sandboxjobs.NewManager(ctx, appStore, sandboxjobs.ManagerConfig{
-		Enabled:            true,
-		QueueConfig:        queueConfig,
-		PollInterval:       10 * time.Millisecond,
-		JobTimeout:         30 * time.Second,
-		StaleJobTimeout:    time.Minute,
-		ImmediateExecution: true,
-		DefaultConcurrency: 2,
-	})
-	svc := service.New(appStore, jobManager, service.JobManagerOptions{}, broker)
+	engine := newTestReconcileEngine(t, db.Write)
+	svc := service.New(appStore, engine, service.JobManagerOptions{}, broker)
 	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
@@ -86,8 +75,8 @@ func TestDockerProviderWorkerCreateFlowE2E(t *testing.T) {
 	t.Cleanup(func() {
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
 		defer stopCancel()
-		if err := jobManager.Stop(stopCtx); err != nil {
-			t.Fatalf("stop job manager: %v", err)
+		if err := engine.Stop(stopCtx); err != nil {
+			t.Fatalf("stop reconcile engine: %v", err)
 		}
 	})
 
@@ -114,9 +103,6 @@ func TestDockerProviderWorkerCreateFlowE2E(t *testing.T) {
 	t.Cleanup(func() { cleanupDockerProviderContainers(t, dockerClient, provider.ID) })
 
 	worker := waitForProviderWorker(ctx, t, appStore, provider.ID)
-	if worker.LastJobID == nil {
-		t.Fatal("worker last job ID is nil")
-	}
 	if worker.Phase != model.WorkerPhaseRegistering {
 		t.Fatalf("worker phase = %q, want %q", worker.Phase, model.WorkerPhaseRegistering)
 	}

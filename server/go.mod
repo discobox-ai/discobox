@@ -7,6 +7,7 @@ require (
 	github.com/adrg/xdg v0.5.3
 	github.com/coder/websocket v1.8.14
 	github.com/containerd/errdefs v1.0.0
+	github.com/glebarez/sqlite v1.11.0
 	github.com/go-faster/jx v1.2.0
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
@@ -147,7 +148,6 @@ require (
 	github.com/ghodss/yaml v1.0.0 // indirect
 	github.com/ghostiam/protogetter v0.3.20 // indirect
 	github.com/glebarez/go-sqlite v1.21.2 // indirect
-	github.com/glebarez/sqlite v1.11.0 // indirect
 	github.com/go-critic/go-critic v0.14.3 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect
 	github.com/go-faster/yaml v0.4.6 // indirect
@@ -370,13 +370,10 @@ require (
 	github.com/jinzhu/now v1.1.5 // indirect
 	github.com/obot-platform/discobox v0.0.0
 	github.com/obot-platform/discobox/gormdb v0.0.0
-	github.com/obot-platform/discobox/orchestration v0.0.0
 	golang.org/x/text v0.38.0 // indirect
 )
 
 replace github.com/obot-platform/discobox/gormdb => ../gormdb
-
-replace github.com/obot-platform/discobox/orchestration => ../orchestration
 
 tool (
 	github.com/air-verse/air

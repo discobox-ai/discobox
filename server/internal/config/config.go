@@ -38,19 +38,11 @@ type Config struct {
 	DatabaseReadDSN string
 	DatabaseDriver  gormdb.Driver
 
-	// Job queue settings.
-	JobMaxAttempts int
-
 	// Secret encryption settings.
 	EncryptionKey string
 
-	// Dispatcher settings.
-	DispatcherEnabled              bool
+	// Reconcile engine settings.
 	DispatcherPollInterval         time.Duration
-	DispatcherJobTimeout           time.Duration
-	DispatcherStaleJobTimeout      time.Duration
-	DispatcherImmediateExecution   bool
-	DispatcherDefaultConcurrency   int
 	SandboxReconcileJobConcurrency int
 
 	// Sandbox settings.
@@ -77,15 +69,9 @@ func Load() (*Config, error) {
 	cfg.DatabaseReadDSN = getEnv("DATABASE_READ_DSN", "")
 	cfg.DatabaseDriver = getEnvDriver("DATABASE_DRIVER", gormdb.DetectDriver(cfg.DatabaseDSN))
 
-	cfg.JobMaxAttempts = getEnvInt("JOB_MAX_ATTEMPTS", 3)
 	cfg.EncryptionKey = getEnv("DISCOBOX_ENCRYPTION_KEY", "")
 
-	cfg.DispatcherEnabled = getEnvBool("DISPATCHER_ENABLED", true)
 	cfg.DispatcherPollInterval = getEnvDuration("DISPATCHER_POLL_INTERVAL", time.Second)
-	cfg.DispatcherJobTimeout = getEnvDuration("DISPATCHER_JOB_TIMEOUT", time.Minute)
-	cfg.DispatcherStaleJobTimeout = getEnvDuration("DISPATCHER_STALE_JOB_TIMEOUT", 5*time.Minute)
-	cfg.DispatcherImmediateExecution = getEnvBool("DISPATCHER_IMMEDIATE_EXECUTION", true)
-	cfg.DispatcherDefaultConcurrency = getEnvInt("DISPATCHER_DEFAULT_CONCURRENCY", 1)
 	cfg.SandboxReconcileJobConcurrency = getEnvInt("SANDBOX_RECONCILE_JOB_CONCURRENCY", 4)
 	cfg.DefaultSandboxImage = getEnv("DISCOBOX_DEFAULT_SANDBOX_IMAGE", sandbox.DefaultSandboxImageName)
 	cfg.OTelMetricsEnabled = strings.EqualFold(getEnv("OTEL_METRICS_EXPORTER", "none"), "otlp")
@@ -125,20 +111,8 @@ func Load() (*Config, error) {
 	default:
 		return nil, fmt.Errorf("DATABASE_DRIVER must be one of: sqlite, postgres")
 	}
-	if cfg.JobMaxAttempts < 1 {
-		return nil, fmt.Errorf("JOB_MAX_ATTEMPTS must be at least 1")
-	}
 	if cfg.DispatcherPollInterval <= 0 {
 		return nil, fmt.Errorf("DISPATCHER_POLL_INTERVAL must be greater than 0")
-	}
-	if cfg.DispatcherJobTimeout <= 0 {
-		return nil, fmt.Errorf("DISPATCHER_JOB_TIMEOUT must be greater than 0")
-	}
-	if cfg.DispatcherStaleJobTimeout <= 0 {
-		return nil, fmt.Errorf("DISPATCHER_STALE_JOB_TIMEOUT must be greater than 0")
-	}
-	if cfg.DispatcherDefaultConcurrency < 1 {
-		return nil, fmt.Errorf("DISPATCHER_DEFAULT_CONCURRENCY must be at least 1")
 	}
 	if cfg.SandboxReconcileJobConcurrency < 1 {
 		return nil, fmt.Errorf("SANDBOX_RECONCILE_JOB_CONCURRENCY must be at least 1")

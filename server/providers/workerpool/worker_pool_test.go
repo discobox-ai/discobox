@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	"github.com/obot-platform/discobox/server/internal/model"
@@ -79,9 +78,11 @@ func TestDesiredAdditionalWorkersIgnoresFailedWorkers(t *testing.T) {
 	}
 }
 
-func TestEnsureWorkerPoolRepairsWorkersWithFailedJobs(t *testing.T) {
-	jobID := "job-1"
-	message := "image not found"
+// TestEnsureWorkerPoolLeavesInFlightOperationsAlone pins the level-triggered
+// contract: a worker whose recorded operation is still in flight belongs to
+// the reconcile engine (dirty row + lease recovery), so the pool must not
+// touch it — no failure latching, no re-marking, no replacement.
+func TestEnsureWorkerPoolLeavesInFlightOperationsAlone(t *testing.T) {
 	store := &repairingWorkerManager{
 		workers: []model.Worker{{
 			ID:                 "worker-1",
@@ -91,53 +92,8 @@ func TestEnsureWorkerPoolRepairsWorkersWithFailedJobs(t *testing.T) {
 				DesiredState:        model.WorkerDesiredStateActive,
 				Phase:               model.WorkerPhaseLaunching,
 				LastOperationStatus: model.OperationStatusRunning,
-				LastJobID:           &jobID,
 			},
 		}},
-		jobs: map[string]*orchestration.Job{
-			jobID: {ID: jobID, Status: orchestration.StatusFailed, Error: &message},
-		},
-		repairUpdated: true,
-	}
-	project := &model.Project{ID: "project-1"}
-	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
-
-	if err := ensureWorkerPool(context.Background(), store, project, provider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}); err != nil {
-		t.Fatalf("ensure worker pool: %v", err)
-	}
-
-	if store.updated == nil {
-		t.Fatal("expected stale worker to be updated")
-	}
-	if store.updated.DesiredState != model.WorkerDesiredStateActive || store.updated.Phase != model.WorkerPhaseFailed || store.updated.LastOperationStatus != model.OperationStatusFailed {
-		t.Fatalf("updated worker desired/phase/status = %q/%q/%q, want active/failed/failed", store.updated.DesiredState, store.updated.Phase, store.updated.LastOperationStatus)
-	}
-	if store.updated.ErrorMessage == nil || *store.updated.ErrorMessage != message {
-		t.Fatalf("updated worker error message = %v, want %q", store.updated.ErrorMessage, message)
-	}
-	if store.createdWorkers != 1 {
-		t.Fatalf("created workers = %d, want replacement", store.createdWorkers)
-	}
-}
-
-func TestEnsureWorkerPoolSkipsSupersededFailedJobRepair(t *testing.T) {
-	jobID := "job-1"
-	message := "image not found"
-	store := &repairingWorkerManager{
-		workers: []model.Worker{{
-			ID:                 "worker-1",
-			ProjectID:          "project-1",
-			ProviderInstanceID: "provider-1",
-			ResourceLifecycle: model.ResourceLifecycle{
-				DesiredState:        model.WorkerDesiredStateActive,
-				Phase:               model.WorkerPhaseLaunching,
-				LastOperationStatus: model.OperationStatusRunning,
-				LastJobID:           &jobID,
-			},
-		}},
-		jobs: map[string]*orchestration.Job{
-			jobID: {ID: jobID, Status: orchestration.StatusFailed, Error: &message},
-		},
 	}
 	project := &model.Project{ID: "project-1"}
 	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
@@ -147,51 +103,13 @@ func TestEnsureWorkerPoolSkipsSupersededFailedJobRepair(t *testing.T) {
 	}
 
 	if store.updated != nil {
-		t.Fatalf("updated worker = %#v, want no superseded repair update", store.updated)
+		t.Fatalf("updated worker = %#v, want untouched in-flight operation", store.updated)
+	}
+	if len(store.scheduledReconciliations) != 0 {
+		t.Fatalf("scheduled reconciliations = %v, want none for in-flight operation", store.scheduledReconciliations)
 	}
 	if store.createdWorkers != 0 {
-		t.Fatalf("created workers = %d, want no replacement for superseded repair", store.createdWorkers)
-	}
-}
-
-func TestEnsureWorkerPoolReconcilesCreatedWorkerWithLostJob(t *testing.T) {
-	jobID := "job-1"
-	message := "image not found"
-	registeredAt := time.Now().UTC()
-	store := &repairingWorkerManager{
-		workers: []model.Worker{{
-			ID:                 "worker-1",
-			ProjectID:          "project-1",
-			ProviderInstanceID: "provider-1",
-			RegisteredAt:       &registeredAt,
-			ResourceLifecycle: model.ResourceLifecycle{
-				DesiredState:        model.WorkerDesiredStateActive,
-				Phase:               model.WorkerPhaseLaunching,
-				LastOperationStatus: model.OperationStatusRunning,
-				LastJobID:           &jobID,
-			},
-		}},
-		jobs: map[string]*orchestration.Job{
-			jobID: {ID: jobID, Status: orchestration.StatusFailed, Error: &message},
-		},
-		repairUpdated: true,
-	}
-	project := &model.Project{ID: "project-1"}
-	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
-
-	if err := ensureWorkerPool(context.Background(), store, project, provider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}); err != nil {
-		t.Fatalf("ensure worker pool: %v", err)
-	}
-
-	// A created worker is stateful: recover it, never latch it to failed.
-	if store.updated != nil {
-		t.Fatalf("updated worker = %#v, want no terminal failure for created worker", store.updated)
-	}
-	if len(store.scheduledReconciliations) != 1 || store.scheduledReconciliations[0] != "worker-1" {
-		t.Fatalf("scheduled reconciliations = %v, want [worker-1]", store.scheduledReconciliations)
-	}
-	if store.createdWorkers != 0 {
-		t.Fatalf("created workers = %d, want no replacement while recovering", store.createdWorkers)
+		t.Fatalf("created workers = %d, want none while operation is in flight", store.createdWorkers)
 	}
 }
 
@@ -223,38 +141,6 @@ func TestEnsureWorkerPoolReDrivesFailedCreatedWorker(t *testing.T) {
 	}
 	if store.updated != nil {
 		t.Fatalf("updated worker = %#v, want no terminal failure for created worker", store.updated)
-	}
-}
-
-func TestEnsureWorkerPoolSkipsReDriveWhenReconcileQueued(t *testing.T) {
-	jobID := "job-1"
-	registeredAt := time.Now().UTC()
-	store := &repairingWorkerManager{
-		workers: []model.Worker{{
-			ID:                 "worker-1",
-			ProjectID:          "project-1",
-			ProviderInstanceID: "provider-1",
-			RegisteredAt:       &registeredAt,
-			ResourceLifecycle: model.ResourceLifecycle{
-				DesiredState:        model.WorkerDesiredStateActive,
-				Phase:               model.WorkerPhaseOffline,
-				LastOperationStatus: model.OperationStatusFailed,
-				LastJobID:           &jobID,
-			},
-		}},
-		jobs: map[string]*orchestration.Job{
-			jobID: {ID: jobID, Status: orchestration.StatusPending},
-		},
-	}
-	project := &model.Project{ID: "project-1"}
-	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
-
-	if err := ensureWorkerPool(context.Background(), store, project, provider, WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}); err != nil {
-		t.Fatalf("ensure worker pool: %v", err)
-	}
-
-	if len(store.scheduledReconciliations) != 0 {
-		t.Fatalf("scheduled reconciliations = %v, want none while a reconcile is queued", store.scheduledReconciliations)
 	}
 }
 
@@ -871,10 +757,7 @@ func TestWorkerProviderAcquireHTTPClientReconcilesWorkerAndRetries(t *testing.T)
 		},
 	}
 	workerManager := &recordingWorkerManager{
-		worker: worker,
-		jobs: map[string]*orchestration.Job{
-			jobID: {ID: jobID, Status: orchestration.StatusCompleted},
-		},
+		worker:               worker,
 		scheduledWorkerJobID: jobID,
 	}
 	provider := New(driver, sandbox.ProviderDefinition{Name: "test"}, WorkerPoolConfig{}, workerManager)
@@ -1006,7 +889,6 @@ type recordingWorkerManager struct {
 	scheduleWorkerCalls        int
 	workerAgentTokenClaims     []workeragentauth.TokenClaims
 	sandboxAgentTokenClaims    []workeragentauth.TokenClaims
-	jobs                       map[string]*orchestration.Job
 	scheduledWorkerJobID       string
 	scheduledProviderProjectID string
 	scheduledProviderID        string
@@ -1081,21 +963,7 @@ func (s *recordingWorkerManager) ScheduleWorkerProviderReconciliationAt(_ contex
 
 func (s *recordingWorkerManager) ScheduleWorkerReconciliation(context.Context, string) error {
 	s.scheduleWorkerCalls++
-	if s.worker != nil && s.scheduledWorkerJobID != "" {
-		s.worker.LastJobID = &s.scheduledWorkerJobID
-	}
 	return nil
-}
-
-func (s *recordingWorkerManager) GetJob(_ context.Context, id string) (*orchestration.Job, error) {
-	if s.jobs == nil {
-		return nil, orchestration.ErrJobNotFound
-	}
-	job := s.jobs[id]
-	if job == nil {
-		return nil, orchestration.ErrJobNotFound
-	}
-	return job, nil
 }
 
 func (s *recordingWorkerManager) CountSandboxesForWorkers(_ context.Context, workerIDs []string) (map[string]int64, error) {
@@ -1112,10 +980,6 @@ func (s *recordingWorkerManager) GetProject(context.Context, string) (*model.Pro
 
 func (s *recordingWorkerManager) GetSandboxProviderInstance(context.Context, string, string) (*model.SandboxProviderInstance, error) {
 	return &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}, nil
-}
-
-func (s *recordingWorkerManager) MarkWorkerFailedForJob(context.Context, string, int64, string, string) (bool, error) {
-	return false, nil
 }
 
 func (s *recordingWorkerManager) DeleteWorkerForExpiredRegistration(context.Context, string, int64, time.Time, string) (bool, error) {
@@ -1192,10 +1056,6 @@ func (s *capacityWaitWorkerManager) ScheduleWorkerReconciliation(context.Context
 	return nil
 }
 
-func (s *capacityWaitWorkerManager) GetJob(context.Context, string) (*orchestration.Job, error) {
-	return nil, orchestration.ErrJobNotFound
-}
-
 func (s *capacityWaitWorkerManager) CountSandboxesForWorkers(_ context.Context, workerIDs []string) (map[string]int64, error) {
 	return make(map[string]int64, len(workerIDs)), nil
 }
@@ -1204,17 +1064,12 @@ func (s *capacityWaitWorkerManager) CountSandboxesForWorker(context.Context, str
 	return 0, nil
 }
 
-func (s *capacityWaitWorkerManager) MarkWorkerFailedForJob(context.Context, string, int64, string, string) (bool, error) {
-	return false, nil
-}
-
 func (s *capacityWaitWorkerManager) DeleteWorkerForExpiredRegistration(context.Context, string, int64, time.Time, string) (bool, error) {
 	return false, nil
 }
 
 type repairingWorkerManager struct {
 	workers                  []model.Worker
-	jobs                     map[string]*orchestration.Job
 	updated                  *model.Worker
 	repairUpdated            bool
 	createdWorkers           int
@@ -1248,7 +1103,7 @@ func (s *repairingWorkerManager) DeleteWorker(_ context.Context, workerID string
 			continue
 		}
 		s.workers[i].IncrementGeneration()
-		s.workers[i].BeginOperation(model.WorkerDeleteOperation, nil)
+		s.workers[i].BeginOperation(model.WorkerDeleteOperation)
 		return &s.workers[i], nil
 	}
 	return nil, apperrors.ErrNotFound
@@ -1312,37 +1167,6 @@ func (s *repairingWorkerManager) ScheduleWorkerReconciliation(_ context.Context,
 	return nil
 }
 
-func (s *repairingWorkerManager) GetJob(_ context.Context, id string) (*orchestration.Job, error) {
-	job := s.jobs[id]
-	if job == nil {
-		return nil, orchestration.ErrJobNotFound
-	}
-	return job, nil
-}
-
-func (s *repairingWorkerManager) MarkWorkerFailedForJob(_ context.Context, workerID string, generation int64, jobID string, message string) (bool, error) {
-	if !s.repairUpdated {
-		return false, nil
-	}
-	var copied model.Worker
-	for _, worker := range s.workers {
-		if worker.ID == workerID && worker.Generation == generation && worker.LastJobID != nil && *worker.LastJobID == jobID {
-			copied = worker
-			break
-		}
-	}
-	if copied.ID == "" {
-		return false, nil
-	}
-	copied.Phase = model.WorkerPhaseFailed
-	copied.ActiveOperation = nil
-	copied.LastOperationStatus = model.OperationStatusFailed
-	copied.StatusMessage = nil
-	copied.ErrorMessage = &message
-	s.updated = &copied
-	return true, nil
-}
-
 func (s *repairingWorkerManager) DeleteWorkerForExpiredRegistration(_ context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error) {
 	if !s.repairUpdated {
 		return false, nil
@@ -1364,7 +1188,7 @@ func (s *repairingWorkerManager) DeleteWorkerForExpiredRegistration(_ context.Co
 		return false, nil
 	}
 	copied.IncrementGeneration()
-	copied.BeginOperation(model.WorkerDeleteOperation, nil)
+	copied.BeginOperation(model.WorkerDeleteOperation)
 	copied.StatusMessage = &message
 	s.updated = &copied
 	return true, nil

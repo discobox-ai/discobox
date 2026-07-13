@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
@@ -404,6 +403,10 @@ func (p *WorkerPoolProvider) reconcileWorkerAfterClientError(ctx context.Context
 	return p.waitForWorkerReconcile(ctx, current.ID)
 }
 
+// waitForWorkerReconcile polls the worker row until its recorded operation
+// reaches a terminal status. Reconciliation is level-triggered: the reconciler
+// writes progress onto the resource itself, so the resource — not a job row —
+// is the thing to watch.
 func (p *WorkerPoolProvider) waitForWorkerReconcile(ctx context.Context, workerID string) (*model.Worker, error) {
 	deadline := time.Now().Add(workerCapacityWaitTimeout)
 	for {
@@ -411,14 +414,8 @@ func (p *WorkerPoolProvider) waitForWorkerReconcile(ctx context.Context, workerI
 		if err != nil {
 			return nil, err
 		}
-		if worker != nil && worker.LastJobID != nil && strings.TrimSpace(*worker.LastJobID) != "" {
-			job, err := p.manager.GetJob(ctx, *worker.LastJobID)
-			if err != nil {
-				return nil, err
-			}
-			if workerReconcileJobTerminal(job) {
-				return worker, nil
-			}
+		if worker != nil && workerOperationTerminal(worker) {
+			return worker, nil
 		}
 		if workerCapacityWaitTimeout <= 0 || !time.Now().Before(deadline) {
 			return nil, sandbox.ErrNoSandboxCapacity
@@ -435,12 +432,11 @@ func (p *WorkerPoolProvider) waitForWorkerReconcile(ctx context.Context, workerI
 	}
 }
 
-func workerReconcileJobTerminal(job *orchestration.Job) bool {
-	if job == nil {
-		return false
-	}
-	switch job.Status {
-	case orchestration.StatusCompleted, orchestration.StatusFailed, orchestration.StatusCanceled:
+// workerOperationTerminal reports whether the worker's last recorded operation
+// settled (success or failure) rather than being queued or in flight.
+func workerOperationTerminal(worker *model.Worker) bool {
+	switch worker.LastOperationStatus {
+	case model.OperationStatusSuccess, model.OperationStatusFailed:
 		return true
 	default:
 		return false

@@ -108,8 +108,8 @@ func TestFindSchedulableWorkerSamplesTwoAndPicksBestResourceFit(t *testing.T) {
 	}
 	now := time.Now().UTC()
 	workers := []model.Worker{
-		{ID: "worker-low", ProjectID: "project-1", ProviderInstanceID: provider.ID, Identity: "worker-low", Ready: true, Schedulable: true, AvailableCPUVCPUs: 2, AvailableMemoryBytes: 2 << 30, AvailableStorageBytes: 20 << 30, RegisteredAt: &now, LastSeenAt: &now, ResourceLifecycle: model.NewResourceLifecycle(model.WorkerCreateOperation, nil)},
-		{ID: "worker-high", ProjectID: "project-1", ProviderInstanceID: provider.ID, Identity: "worker-high", Ready: true, Schedulable: true, AvailableCPUVCPUs: 4, AvailableMemoryBytes: 8 << 30, AvailableStorageBytes: 40 << 30, RegisteredAt: &now, LastSeenAt: &now, ResourceLifecycle: model.NewResourceLifecycle(model.WorkerCreateOperation, nil)},
+		{ID: "worker-low", ProjectID: "project-1", ProviderInstanceID: provider.ID, Identity: "worker-low", Ready: true, Schedulable: true, AvailableCPUVCPUs: 2, AvailableMemoryBytes: 2 << 30, AvailableStorageBytes: 20 << 30, RegisteredAt: &now, LastSeenAt: &now, ResourceLifecycle: model.NewResourceLifecycle(model.WorkerCreateOperation)},
+		{ID: "worker-high", ProjectID: "project-1", ProviderInstanceID: provider.ID, Identity: "worker-high", Ready: true, Schedulable: true, AvailableCPUVCPUs: 4, AvailableMemoryBytes: 8 << 30, AvailableStorageBytes: 40 << 30, RegisteredAt: &now, LastSeenAt: &now, ResourceLifecycle: model.NewResourceLifecycle(model.WorkerCreateOperation)},
 	}
 	for i := range workers {
 		if err := s.CreateWorkerWithBootstrapToken(ctx, &workers[i], &model.WorkerBootstrapToken{WorkerID: workers[i].ID, TokenHash: []byte(workers[i].ID), ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
@@ -144,7 +144,7 @@ func TestFindSchedulableWorkerRequiresResourceFit(t *testing.T) {
 		AvailableCPUVCPUs:     1,
 		AvailableMemoryBytes:  1 << 30,
 		AvailableStorageBytes: 1 << 30,
-		ResourceLifecycle:     model.NewResourceLifecycle(model.WorkerCreateOperation, nil),
+		ResourceLifecycle:     model.NewResourceLifecycle(model.WorkerCreateOperation),
 	}
 	if err := s.CreateWorkerWithBootstrapToken(ctx, worker, &model.WorkerBootstrapToken{WorkerID: worker.ID, TokenHash: []byte("empty"), ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
 		t.Fatalf("create worker: %v", err)
@@ -194,73 +194,6 @@ func TestWorkerGenerationOptions(t *testing.T) {
 	worker.Identity = "worker-generation-stale"
 	if err := s.UpdateWorker(ctx, worker, store.WithWorkerGeneration(worker.Generation+1)); !errors.Is(err, store.ErrGenerationConflict) {
 		t.Fatalf("update stale generation error = %v, want ErrGenerationConflict", err)
-	}
-}
-
-func TestMarkWorkerFailedForJobRequiresCurrentJobAndGeneration(t *testing.T) {
-	ctx := context.Background()
-	s := newTestStore(t)
-
-	provider := &model.SandboxProviderInstance{ID: "provider-worker-job", ProjectID: "project-1", Type: "digitalocean", Name: "do"}
-	if err := s.CreateSandboxProviderInstance(ctx, provider); err != nil {
-		t.Fatalf("create provider: %v", err)
-	}
-	currentJobID := "job-current"
-	worker := &model.Worker{
-		ID:                 "worker-job",
-		ProjectID:          "project-1",
-		ProviderInstanceID: provider.ID,
-		Identity:           "worker-job",
-		ResourceLifecycle: model.ResourceLifecycle{
-			DesiredState:        model.WorkerDesiredStateActive,
-			Phase:               model.WorkerPhaseLaunching,
-			LastOperationStatus: model.OperationStatusRunning,
-			LastJobID:           &currentJobID,
-		},
-	}
-	if err := s.CreateWorker(ctx, worker); err != nil {
-		t.Fatalf("create worker: %v", err)
-	}
-
-	updated, err := s.MarkWorkerFailedForJob(ctx, worker.ID, worker.Generation, "job-stale", "stale failed")
-	if err != nil {
-		t.Fatalf("mark stale job failed: %v", err)
-	}
-	if updated {
-		t.Fatal("stale job updated worker")
-	}
-	got, err := s.GetWorker(ctx, worker.ID)
-	if err != nil {
-		t.Fatalf("get worker after stale job: %v", err)
-	}
-	if got.Phase != model.WorkerPhaseLaunching || got.LastOperationStatus != model.OperationStatusRunning || got.ErrorMessage != nil {
-		t.Fatalf("worker after stale repair = phase %q status %q error %v", got.Phase, got.LastOperationStatus, got.ErrorMessage)
-	}
-
-	updated, err = s.MarkWorkerFailedForJob(ctx, worker.ID, worker.Generation+1, currentJobID, "wrong generation")
-	if err != nil {
-		t.Fatalf("mark stale generation failed: %v", err)
-	}
-	if updated {
-		t.Fatal("stale generation updated worker")
-	}
-
-	updated, err = s.MarkWorkerFailedForJob(ctx, worker.ID, worker.Generation, currentJobID, "image not found")
-	if err != nil {
-		t.Fatalf("mark current job failed: %v", err)
-	}
-	if !updated {
-		t.Fatal("current job did not update worker")
-	}
-	got, err = s.GetWorker(ctx, worker.ID)
-	if err != nil {
-		t.Fatalf("get worker after current job: %v", err)
-	}
-	if got.Phase != model.WorkerPhaseFailed || got.LastOperationStatus != model.OperationStatusFailed {
-		t.Fatalf("worker after current repair = phase %q status %q, want failed/failed", got.Phase, got.LastOperationStatus)
-	}
-	if got.ErrorMessage == nil || *got.ErrorMessage != "image not found" {
-		t.Fatalf("worker error = %v, want image not found", got.ErrorMessage)
 	}
 }
 

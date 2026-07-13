@@ -71,14 +71,8 @@ func Run(ctx context.Context) error {
 
 	router, err := NewApp(ctx, db.Write, db.Read, AppOptions{
 		UserID:                         service.DefaultUserID,
-		JobMaxAttempts:                 cfg.JobMaxAttempts,
 		SecretSealer:                   sealer,
-		DispatcherEnabled:              cfg.DispatcherEnabled,
 		DispatcherPollInterval:         cfg.DispatcherPollInterval,
-		DispatcherJobTimeout:           cfg.DispatcherJobTimeout,
-		DispatcherStaleJobTimeout:      cfg.DispatcherStaleJobTimeout,
-		DispatcherImmediateExecution:   cfg.DispatcherImmediateExecution,
-		DispatcherDefaultConcurrency:   cfg.DispatcherDefaultConcurrency,
 		SandboxReconcileJobConcurrency: cfg.SandboxReconcileJobConcurrency,
 		DefaultSandboxImage:            cfg.DefaultSandboxImage,
 	})

@@ -16,7 +16,7 @@ func (s *Service) enqueueProviderWorkers(ctx context.Context, projectID, provide
 
 func (s *Service) providers() *providers.Service {
 	if s.providerService == nil {
-		return providers.NewService(s.store, nil, s.workerManager, s.jobManager)
+		return providers.NewService(s.store, nil, s.workerManager)
 	}
 	return s.providerService
 }

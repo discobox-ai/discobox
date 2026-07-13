@@ -24,7 +24,7 @@ func TestReconcileWorkerMarksLaunchFailure(t *testing.T) {
 		ID:                 "worker-1",
 		ProjectID:          "project-1",
 		ProviderInstanceID: "provider-1",
-		ResourceLifecycle:  model.NewResourceLifecycle(model.WorkerCreateOperation, nil),
+		ResourceLifecycle:  model.NewResourceLifecycle(model.WorkerCreateOperation),
 	}
 	worker.IncrementGeneration()
 	if err := appStore.CreateWorker(ctx, worker); err != nil {
@@ -34,9 +34,9 @@ func TestReconcileWorkerMarksLaunchFailure(t *testing.T) {
 	launchErr := errors.New("launch failed")
 	manager := sandboxes.NewProviderManager()
 	manager.RegisterProvider("failing", failingWorkerProvider{err: launchErr})
-	executor := workers.NewWorkerReconcileExecutor(appStore, workers.WithWorkerProviderManager(manager))
+	executor := workers.NewWorkerReconciler(appStore, workers.WithWorkerProviderManager(manager))
 
-	err := executor.ReconcileWorkerJob(ctx, worker.ProjectID, worker.ProviderInstanceID, worker.ID, "job-1", worker.Generation)
+	err := executor.ReconcileWorker(ctx, worker)
 	if !errors.Is(err, launchErr) {
 		t.Fatalf("reconcile error = %v, want launch failed", err)
 	}
@@ -95,9 +95,9 @@ func TestReconcileWorkerKeepsCreatedWorkerRecoverableOnFailure(t *testing.T) {
 	launchErr := errors.New("image not found")
 	manager := sandboxes.NewProviderManager()
 	manager.RegisterProvider("failing", failingWorkerProvider{err: launchErr})
-	executor := workers.NewWorkerReconcileExecutor(appStore, workers.WithWorkerProviderManager(manager))
+	executor := workers.NewWorkerReconciler(appStore, workers.WithWorkerProviderManager(manager))
 
-	if err := executor.ReconcileWorkerJob(ctx, worker.ProjectID, worker.ProviderInstanceID, worker.ID, "job-1", worker.Generation); err == nil {
+	if err := executor.ReconcileWorker(ctx, worker); err == nil {
 		t.Fatal("expected reconcile failure to surface")
 	}
 
@@ -148,9 +148,9 @@ func TestReconcileWorkerChecksRuntimeForSuccessfulGeneration(t *testing.T) {
 	providerImpl := &countingWorkerProvider{}
 	manager := sandboxes.NewProviderManager()
 	manager.RegisterProvider("counting", providerImpl)
-	executor := workers.NewWorkerReconcileExecutor(appStore, workers.WithWorkerProviderManager(manager))
+	executor := workers.NewWorkerReconciler(appStore, workers.WithWorkerProviderManager(manager))
 
-	if err := executor.ReconcileWorkerJob(ctx, worker.ProjectID, worker.ProviderInstanceID, worker.ID, "job-1", worker.Generation); err != nil {
+	if err := executor.ReconcileWorker(ctx, worker); err != nil {
 		t.Fatalf("reconcile worker: %v", err)
 	}
 	if providerImpl.calls != 1 {
@@ -176,7 +176,7 @@ func TestReconcileWorkerPreservesConcurrentStatusUpdate(t *testing.T) {
 		ID:                 "worker-1",
 		ProjectID:          "project-1",
 		ProviderInstanceID: "provider-1",
-		ResourceLifecycle:  model.NewResourceLifecycle(model.WorkerCreateOperation, nil),
+		ResourceLifecycle:  model.NewResourceLifecycle(model.WorkerCreateOperation),
 	}
 	worker.IncrementGeneration()
 	if err := appStore.CreateWorker(ctx, worker); err != nil {
@@ -186,9 +186,9 @@ func TestReconcileWorkerPreservesConcurrentStatusUpdate(t *testing.T) {
 	providerImpl := &registeringWorkerProvider{store: appStore}
 	manager := sandboxes.NewProviderManager()
 	manager.RegisterProvider("registering", providerImpl)
-	executor := workers.NewWorkerReconcileExecutor(appStore, workers.WithWorkerProviderManager(manager))
+	executor := workers.NewWorkerReconciler(appStore, workers.WithWorkerProviderManager(manager))
 
-	if err := executor.ReconcileWorkerJob(ctx, worker.ProjectID, worker.ProviderInstanceID, worker.ID, "job-1", worker.Generation); err != nil {
+	if err := executor.ReconcileWorker(ctx, worker); err != nil {
 		t.Fatalf("reconcile worker: %v", err)
 	}
 	updated, err := appStore.GetWorker(ctx, worker.ID)
@@ -241,9 +241,9 @@ func TestReconcileWorkerDeletedRemovesRuntimeBeforeMarkingDeleted(t *testing.T) 
 	providerImpl := &countingWorkerProvider{}
 	manager := sandboxes.NewProviderManager()
 	manager.RegisterProvider("removing", providerImpl)
-	executor := workers.NewWorkerReconcileExecutor(appStore, workers.WithWorkerProviderManager(manager))
+	executor := workers.NewWorkerReconciler(appStore, workers.WithWorkerProviderManager(manager))
 
-	if err := executor.ReconcileWorkerJob(ctx, worker.ProjectID, worker.ProviderInstanceID, worker.ID, "job-1", worker.Generation); err != nil {
+	if err := executor.ReconcileWorker(ctx, worker); err != nil {
 		t.Fatalf("reconcile worker delete: %v", err)
 	}
 	if providerImpl.removeCalls != 1 {
@@ -305,9 +305,9 @@ func TestReconcileWorkerDeletedRefusesAssignedSandboxes(t *testing.T) {
 	providerImpl := &countingWorkerProvider{}
 	manager := sandboxes.NewProviderManager()
 	manager.RegisterProvider("removing", providerImpl)
-	executor := workers.NewWorkerReconcileExecutor(appStore, workers.WithWorkerProviderManager(manager))
+	executor := workers.NewWorkerReconciler(appStore, workers.WithWorkerProviderManager(manager))
 
-	if err := executor.ReconcileWorkerJob(ctx, worker.ProjectID, worker.ProviderInstanceID, worker.ID, "job-1", worker.Generation); err == nil {
+	if err := executor.ReconcileWorker(ctx, worker); err == nil {
 		t.Fatal("expected assigned worker delete to fail")
 	}
 	if providerImpl.removeCalls != 0 {
@@ -369,9 +369,9 @@ func TestReconcileWorkerRepairsAssignedWorkerAfterActiveReconcileFailure(t *test
 	providerImpl := &repairingWorkerProvider{reconcileErr: errors.New("runtime unhealthy")}
 	manager := sandboxes.NewProviderManager()
 	manager.RegisterProvider("repairing", providerImpl)
-	executor := workers.NewWorkerReconcileExecutor(appStore, workers.WithWorkerProviderManager(manager))
+	executor := workers.NewWorkerReconciler(appStore, workers.WithWorkerProviderManager(manager))
 
-	if err := executor.ReconcileWorkerJob(ctx, worker.ProjectID, worker.ProviderInstanceID, worker.ID, "job-1", worker.Generation); err != nil {
+	if err := executor.ReconcileWorker(ctx, worker); err != nil {
 		t.Fatalf("reconcile worker: %v", err)
 	}
 	if providerImpl.repairCalls != 1 {

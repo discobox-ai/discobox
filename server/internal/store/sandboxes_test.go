@@ -6,7 +6,6 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/secrets"
@@ -72,11 +71,6 @@ func TestGetResourcesByShortIDSuffix(t *testing.T) {
 	if err := s.CreateWorker(ctx, worker); err != nil {
 		t.Fatalf("create worker: %v", err)
 	}
-	job := &orchestration.Job{ID: "000000000000000004abc12345", Type: "test", Payload: []byte(`{}`), Resource: orchestration.Resource{Type: "sandbox", ID: sandbox.ID}}
-	if err := s.CreateJob(ctx, job); err != nil {
-		t.Fatalf("create job: %v", err)
-	}
-
 	short := "abc12345"
 	gotProject, err := s.GetProject(ctx, short)
 	if err != nil || gotProject.ID != project.ID {
@@ -94,11 +88,6 @@ func TestGetResourcesByShortIDSuffix(t *testing.T) {
 	if err != nil || gotWorker.ID != worker.ID {
 		t.Fatalf("short worker = %#v err=%v", gotWorker, err)
 	}
-	gotJob, err := s.GetJobForProject(ctx, project.ID, short)
-	if err != nil || gotJob.ID != job.ID {
-		t.Fatalf("short job = %#v err=%v", gotJob, err)
-	}
-
 	ambiguous := &model.Sandbox{ID: "000000000000000005abc12345", ProjectID: project.ID, CreatedByUserID: "user-1", Name: "ambiguous"}
 	if err := s.CreateSandbox(ctx, ambiguous); err != nil {
 		t.Fatalf("create ambiguous sandbox: %v", err)

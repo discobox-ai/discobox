@@ -22,6 +22,17 @@ import (
 	providerdocker "github.com/obot-platform/discobox/server/providers/docker"
 )
 
+// reconcileSandbox mirrors the reconcile engine's entry: load the LATEST
+// sandbox state, then converge it.
+func reconcileSandbox(ctx context.Context, t *testing.T, svc *service.Service, executor *sandboxes.SandboxReconciler, projectID, sandboxID string) error {
+	t.Helper()
+	current, err := svc.GetSandbox(ctx, projectID, sandboxID)
+	if err != nil {
+		t.Fatalf("get sandbox for reconcile: %v", err)
+	}
+	return executor.ReconcileSandbox(ctx, current)
+}
+
 func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newSandboxTestService(t, nil)
@@ -37,7 +48,7 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create recording provider instance: %v", err)
 	}
-	executor := svc.NewSandboxReconcileExecutor()
+	executor := svc.NewSandboxReconciler()
 
 	sourceURL := mustParseURL(t, "https://example.com/repo.git")
 	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
@@ -58,7 +69,7 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	}
 	sb.SecretState = []byte("initial")
 	sb.RuntimeState = []byte(`{"existing":true}`)
-	if err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-start", sb.Generation); err != nil {
+	if err := reconcileSandbox(ctx, t, svc, executor, sb.ProjectID, sb.ID); err != nil {
 		t.Fatalf("reconcile start: %v", err)
 	}
 	if provider.createCalls != 1 || provider.startCalls != 1 {
@@ -88,7 +99,7 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stop sandbox: %v", err)
 	}
-	if err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-stop", sb.Generation); err != nil {
+	if err := reconcileSandbox(ctx, t, svc, executor, sb.ProjectID, sb.ID); err != nil {
 		t.Fatalf("reconcile stop: %v", err)
 	}
 	if provider.stopCalls != 1 {
@@ -109,7 +120,7 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get sandbox after delete intent: %v", err)
 	}
-	if err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-delete", sb.Generation); err != nil {
+	if err := reconcileSandbox(ctx, t, svc, executor, sb.ProjectID, sb.ID); err != nil {
 		t.Fatalf("reconcile delete: %v", err)
 	}
 	if provider.removeCalls != 1 {
@@ -140,7 +151,7 @@ func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create recording provider instance: %v", err)
 	}
-	executor := svc.NewSandboxReconcileExecutor()
+	executor := svc.NewSandboxReconciler()
 
 	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
 		ProviderInstanceId: serverapi.NewOptString(providerInstance.ID),
@@ -152,7 +163,7 @@ func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
 	if sb.Image != "discobox-sandbox-agent:default" {
 		t.Fatalf("sandbox image = %q, want default image", sb.Image)
 	}
-	if err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-start", sb.Generation); err != nil {
+	if err := reconcileSandbox(ctx, t, svc, executor, sb.ProjectID, sb.ID); err != nil {
 		t.Fatalf("reconcile start: %v", err)
 	}
 	if provider.createOptions.Image.Name != "discobox-sandbox-agent:default" {
@@ -173,7 +184,7 @@ func TestCreateSandboxExplicitImageOverridesDefault(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create recording provider instance: %v", err)
 	}
-	executor := svc.NewSandboxReconcileExecutor()
+	executor := svc.NewSandboxReconciler()
 
 	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
 		ProviderInstanceId: serverapi.NewOptString(providerInstance.ID),
@@ -188,7 +199,7 @@ func TestCreateSandboxExplicitImageOverridesDefault(t *testing.T) {
 	if sb.Image != "custom:sandbox" {
 		t.Fatalf("sandbox image = %q, want explicit image", sb.Image)
 	}
-	if err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-start", sb.Generation); err != nil {
+	if err := reconcileSandbox(ctx, t, svc, executor, sb.ProjectID, sb.ID); err != nil {
 		t.Fatalf("reconcile start: %v", err)
 	}
 	if provider.createOptions.Image.Name != "custom:sandbox" {
@@ -201,19 +212,19 @@ func TestSandboxReconcileExecutorInjectsTrustKey(t *testing.T) {
 	appStore := newProviderCatalogTestStore(t)
 	provider := &recordingSandboxProvider{}
 	auth := &recordingSandboxAuth{trustKey: "public-key"}
-	executor := sandboxes.NewSandboxReconcileExecutor(appStore, sandboxes.WithSandboxProvider(provider), sandboxes.WithSandboxAuthenticator(auth))
+	executor := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider), sandboxes.WithSandboxAuthenticator(auth))
 	sb := &model.Sandbox{
 		ID:                "sandbox-1",
 		ProjectID:         service.DefaultProjectID,
 		CreatedByUserID:   service.DefaultUserID,
 		Name:              "sandbox-1",
-		ResourceLifecycle: model.NewResourceLifecycle(model.SandboxCreateOperation, nil),
+		ResourceLifecycle: model.NewResourceLifecycle(model.SandboxCreateOperation),
 	}
 	sb.IncrementGeneration()
 	if err := appStore.CreateSandbox(ctx, sb); err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	if err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-1", sb.Generation); err != nil {
+	if err := executor.ReconcileSandbox(ctx, sb); err != nil {
 		t.Fatalf("reconcile start: %v", err)
 	}
 	if auth.userID != service.DefaultUserID {

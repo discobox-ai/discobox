@@ -1,89 +1,118 @@
 package workers
 
+
 import (
 	"context"
 	"errors"
 	"fmt"
 	"time"
 
-	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/obot-platform/discobox/server/internal/reconcile"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
-type WorkerReconcileExecutor struct {
-	store            *store.Store
-	manager          *sandbox.ProviderManager
-	workerManager    sandbox.WorkerManager
-	terminalHandlers []WorkerReconcileTerminalHandler
-}
+// WorkerResourceType is the reconcile-engine resource type for workers. The
+// dirty id is the worker id (globally unique).
+const WorkerResourceType = "worker"
 
-type WorkerReconcileExecutorOption func(*WorkerReconcileExecutor)
+// ProviderChain marks a worker's provider dirty. The worker reconciler calls
+// it after every reconcile so the pool re-evaluates its scaling math — the
+// level-triggered replacement for the old terminal-observer job chaining.
+type ProviderChain func(ctx context.Context, projectID, providerID string) error
 
-func NewWorkerReconcileExecutor(store *store.Store, options ...WorkerReconcileExecutorOption) *WorkerReconcileExecutor {
-	executor := &WorkerReconcileExecutor{store: store}
-	for _, option := range options {
-		if option != nil {
-			option(executor)
-		}
-	}
-	return executor
-}
-
-func WithWorkerProviderManager(manager *sandbox.ProviderManager) WorkerReconcileExecutorOption {
-	return func(executor *WorkerReconcileExecutor) {
-		executor.manager = manager
-	}
-}
-
-func WithWorkerManager(manager sandbox.WorkerManager) WorkerReconcileExecutorOption {
-	return func(executor *WorkerReconcileExecutor) {
-		executor.workerManager = manager
-	}
-}
-
-func WithWorkerReconcileTerminalHandler(handler WorkerReconcileTerminalHandler) WorkerReconcileExecutorOption {
-	return func(executor *WorkerReconcileExecutor) {
-		if handler != nil {
-			executor.terminalHandlers = append(executor.terminalHandlers, handler)
-		}
-	}
-}
-
-func (r *WorkerReconcileExecutor) AssertWorkerGeneration(ctx context.Context, projectID, providerID, workerID string, generation int64) error {
-	worker, err := r.store.GetWorker(ctx, workerID, store.WithWorkerGeneration(generation))
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil
-		}
-		if errors.Is(err, store.ErrGenerationConflict) {
-			return orchestration.Superseded("worker generation changed")
-		}
-		return err
-	}
-	if worker.ProjectID != projectID || worker.ProviderInstanceID != providerID {
-		return orchestration.Superseded("worker placement changed")
-	}
-	return nil
-}
-
-func (r *WorkerReconcileExecutor) ReconcileWorkerJob(ctx context.Context, projectID, providerID, workerID, jobID string, generation int64) error {
-	worker, err := r.store.GetWorker(ctx, workerID, store.WithWorkerGeneration(generation))
+// Reconcile drives the worker toward its desired state, reading the LATEST
+// persisted intent (there is no accepted-generation payload: level-triggered
+// reconciliation always converges on current state). The worker's own
+// generation guards the writes; a mid-run generation conflict means newer
+// intent arrived, whose transactional mark re-runs us — so conflicts settle
+// this run as a no-op rather than failing it.
+func (r *WorkerReconciler) Reconcile(ctx context.Context, workerID string) error {
+	worker, err := r.store.GetWorker(ctx, workerID)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil
 	}
-	if errors.Is(err, store.ErrGenerationConflict) {
-		return orchestration.Superseded("worker generation changed")
-	}
 	if err != nil {
 		return err
 	}
-	if worker.ProjectID != projectID || worker.ProviderInstanceID != providerID {
-		return orchestration.Superseded("worker placement changed")
-	}
 
-	worker.LastJobID = &jobID
+	err = r.ReconcileWorker(ctx, worker)
+	if errors.Is(err, reconcile.ErrSuperseded) {
+		err = nil // superseded: the newer intent's mark re-runs us
+	}
+	// Chain the provider on success and on failure alike (the pool's math
+	// changed either way). Marks coalesce, so this is one upsert.
+	if r.chain != nil {
+		if chainErr := r.chain(ctx, worker.ProjectID, worker.ProviderInstanceID); chainErr != nil && err == nil {
+			err = chainErr
+		}
+	}
+	return err
+}
+
+// stuckWorkerCutoff is how long a worker may sit with an in-flight operation
+// (pending/running) before the scan re-marks it. Normal reconciles finish in
+// seconds; a stale in-flight operation means a mark was lost.
+const stuckWorkerCutoff = 10 * time.Minute
+
+// ScanDirty is the level-triggered backstop: workers whose recorded operation
+// has been in flight for implausibly long are re-marked. Terminal states
+// (success/failed) are deliberately excluded — failed never-created workers
+// are terminal by design, and failed created workers are re-driven by the
+// worker pool at its own cadence.
+func (r *WorkerReconciler) ScanDirty(ctx context.Context) ([]string, error) {
+	return r.store.ListWorkerIDsWithStaleOperations(ctx, time.Now().Add(-stuckWorkerCutoff))
+}
+
+// WorkerReconciler converges workers toward their desired state. It implements
+// reconcile.Reconciler and reconcile.Scanner (see reconciler.go for the engine
+// entry points); this file holds the convergence logic.
+type WorkerReconciler struct {
+	store         *store.Store
+	manager       *sandbox.ProviderManager
+	workerManager sandbox.WorkerManager
+	chain         ProviderChain
+}
+
+type WorkerReconcilerOption func(*WorkerReconciler)
+
+func NewWorkerReconciler(store *store.Store, options ...WorkerReconcilerOption) *WorkerReconciler {
+	reconciler := &WorkerReconciler{store: store}
+	for _, option := range options {
+		if option != nil {
+			option(reconciler)
+		}
+	}
+	return reconciler
+}
+
+func WithWorkerProviderManager(manager *sandbox.ProviderManager) WorkerReconcilerOption {
+	return func(reconciler *WorkerReconciler) {
+		reconciler.manager = manager
+	}
+}
+
+func WithWorkerManager(manager sandbox.WorkerManager) WorkerReconcilerOption {
+	return func(reconciler *WorkerReconciler) {
+		reconciler.workerManager = manager
+	}
+}
+
+// WithProviderChain marks the worker's provider dirty after every reconcile so
+// the pool re-evaluates its scaling math.
+func WithProviderChain(chain ProviderChain) WorkerReconcilerOption {
+	return func(reconciler *WorkerReconciler) {
+		reconciler.chain = chain
+	}
+}
+
+// ReconcileWorker converges the given (freshly loaded) worker toward its
+// desired state. The worker's current generation guards every write, so newer
+// intent arriving mid-run surfaces as a Superseded error, which the reconciler
+// maps to a clean settle (the newer intent's own mark re-runs the reconcile).
+func (r *WorkerReconciler) ReconcileWorker(ctx context.Context, worker *model.Worker) error {
+	generation := worker.Generation
 	switch worker.DesiredState {
 	case model.WorkerDesiredStateActive:
 		return r.reconcileActive(ctx, worker, generation)
@@ -96,7 +125,7 @@ func (r *WorkerReconcileExecutor) ReconcileWorkerJob(ctx context.Context, projec
 	}
 }
 
-func (r *WorkerReconcileExecutor) reconcileDeleted(ctx context.Context, worker *model.Worker, generation int64) error {
+func (r *WorkerReconciler) reconcileDeleted(ctx context.Context, worker *model.Worker, generation int64) error {
 	assigned, err := r.store.CountSandboxesForWorker(ctx, worker.ID)
 	if err != nil {
 		return err
@@ -150,7 +179,7 @@ func (r *WorkerReconcileExecutor) reconcileDeleted(ctx context.Context, worker *
 	return r.update(ctx, worker, generation)
 }
 
-func (r *WorkerReconcileExecutor) reconcileActive(ctx context.Context, worker *model.Worker, generation int64) error {
+func (r *WorkerReconciler) reconcileActive(ctx context.Context, worker *model.Worker, generation int64) error {
 	alreadySuccessful := worker.ObservedGeneration == generation && worker.LastOperationStatus == model.OperationStatusSuccess
 	status := "launching worker"
 	if alreadySuccessful {
@@ -190,7 +219,7 @@ func (r *WorkerReconcileExecutor) reconcileActive(ctx context.Context, worker *m
 	}
 	current, err := r.store.GetWorker(ctx, worker.ID, store.WithWorkerGeneration(generation))
 	if errors.Is(err, store.ErrGenerationConflict) {
-		return orchestration.Superseded("worker generation changed")
+		return reconcile.Superseded("worker generation changed")
 	}
 	if err != nil {
 		return err
@@ -215,7 +244,7 @@ func (r *WorkerReconcileExecutor) reconcileActive(ctx context.Context, worker *m
 // recover. A worker that has already been created is stateful and must be
 // reconciled back to health, so it drops to a non-terminal offline phase
 // (unschedulable, not ready) and stays eligible for re-driven reconciliation.
-func (r *WorkerReconcileExecutor) failReconcile(worker *model.Worker, message string) {
+func (r *WorkerReconciler) failReconcile(worker *model.Worker, message string) {
 	if !worker.EverCreated() {
 		worker.FailOperation(message)
 		return
@@ -225,7 +254,7 @@ func (r *WorkerReconcileExecutor) failReconcile(worker *model.Worker, message st
 	worker.FailOperationRetryable(model.WorkerPhaseOffline, message)
 }
 
-func (r *WorkerReconcileExecutor) repairAssignedWorker(ctx context.Context, workerProvider sandbox.WorkerRuntimeReconciler, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, cause error) error {
+func (r *WorkerReconciler) repairAssignedWorker(ctx context.Context, workerProvider sandbox.WorkerRuntimeReconciler, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, cause error) error {
 	assigned, err := r.store.CountSandboxesForWorker(ctx, worker.ID)
 	if err != nil {
 		return err
@@ -240,7 +269,7 @@ func (r *WorkerReconcileExecutor) repairAssignedWorker(ctx context.Context, work
 	return nil
 }
 
-func (r *WorkerReconcileExecutor) completeNoop(ctx context.Context, worker *model.Worker, generation int64, phase string, status string) error {
+func (r *WorkerReconciler) completeNoop(ctx context.Context, worker *model.Worker, generation int64, phase string, status string) error {
 	worker.MarkOperationRunning(&status)
 	if err := r.update(ctx, worker, generation); err != nil {
 		return err
@@ -250,24 +279,24 @@ func (r *WorkerReconcileExecutor) completeNoop(ctx context.Context, worker *mode
 	return r.update(ctx, worker, generation)
 }
 
-func (r *WorkerReconcileExecutor) update(ctx context.Context, worker *model.Worker, generation int64) error {
+func (r *WorkerReconciler) update(ctx context.Context, worker *model.Worker, generation int64) error {
 	if err := r.store.UpdateWorker(ctx, worker, store.WithWorkerGeneration(generation)); err != nil {
 		if errors.Is(err, store.ErrGenerationConflict) {
-			return orchestration.Superseded("worker generation changed")
+			return reconcile.Superseded("worker generation changed")
 		}
 		return err
 	}
 	return nil
 }
 
-func (r *WorkerReconcileExecutor) reconcileManager() sandbox.WorkerManager {
+func (r *WorkerReconciler) reconcileManager() sandbox.WorkerManager {
 	if r == nil {
 		return nil
 	}
 	return r.workerManager
 }
 
-func (r *WorkerReconcileExecutor) resolveProvider(ctx context.Context, provider *model.SandboxProviderInstance) (sandbox.Provider, error) {
+func (r *WorkerReconciler) resolveProvider(ctx context.Context, provider *model.SandboxProviderInstance) (sandbox.Provider, error) {
 	if r == nil || r.manager == nil {
 		return nil, fmt.Errorf("sandbox provider manager is required")
 	}

@@ -7321,8 +7321,6 @@ type SandboxRuntime struct {
 	Generation int64 `json:"generation"`
 	// Last observed activity timestamp.
 	LastActiveAt OptDateTime `json:"lastActiveAt"`
-	// Most recent lifecycle job ID.
-	LastJobId OptString `json:"lastJobId"`
 	// Status of the most recent operation.
 	LastOperationStatus SandboxRuntimeLastOperationStatus `json:"lastOperationStatus"`
 	// Latest generation fully observed by reconciliation.
@@ -7362,11 +7360,6 @@ func (s *SandboxRuntime) GetGeneration() int64 {
 // GetLastActiveAt returns the value of LastActiveAt.
 func (s *SandboxRuntime) GetLastActiveAt() OptDateTime {
 	return s.LastActiveAt
-}
-
-// GetLastJobId returns the value of LastJobId.
-func (s *SandboxRuntime) GetLastJobId() OptString {
-	return s.LastJobId
 }
 
 // GetLastOperationStatus returns the value of LastOperationStatus.
@@ -7427,11 +7420,6 @@ func (s *SandboxRuntime) SetGeneration(val int64) {
 // SetLastActiveAt sets the value of LastActiveAt.
 func (s *SandboxRuntime) SetLastActiveAt(val OptDateTime) {
 	s.LastActiveAt = val
-}
-
-// SetLastJobId sets the value of LastJobId.
-func (s *SandboxRuntime) SetLastJobId(val OptString) {
-	s.LastJobId = val
 }
 
 // SetLastOperationStatus sets the value of LastOperationStatus.
@@ -9109,8 +9097,6 @@ type Worker struct {
 	Identity string `json:"identity"`
 	// Worker key type.
 	KeyType OptString `json:"keyType"`
-	// Most recent lifecycle job ID.
-	LastJobId OptString `json:"lastJobId"`
 	// Status of the most recent operation.
 	LastOperationStatus WorkerLastOperationStatus `json:"lastOperationStatus"`
 	// Last heartbeat timestamp.
@@ -9209,11 +9195,6 @@ func (s *Worker) GetIdentity() string {
 // GetKeyType returns the value of KeyType.
 func (s *Worker) GetKeyType() OptString {
 	return s.KeyType
-}
-
-// GetLastJobId returns the value of LastJobId.
-func (s *Worker) GetLastJobId() OptString {
-	return s.LastJobId
 }
 
 // GetLastOperationStatus returns the value of LastOperationStatus.
@@ -9354,11 +9335,6 @@ func (s *Worker) SetIdentity(val string) {
 // SetKeyType sets the value of KeyType.
 func (s *Worker) SetKeyType(val OptString) {
 	s.KeyType = val
-}
-
-// SetLastJobId sets the value of LastJobId.
-func (s *Worker) SetLastJobId(val OptString) {
-	s.LastJobId = val
 }
 
 // SetLastOperationStatus sets the value of LastOperationStatus.

@@ -2,12 +2,10 @@ package sandboxes_test
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/resources/sandboxes"
@@ -29,15 +27,15 @@ func TestReconcileSandboxNoCapacityFailsFast(t *testing.T) {
 		CreatedByUserID:    "user-1",
 		ProviderInstanceID: &providerID,
 		Name:               "alpha",
-		ResourceLifecycle:  model.NewResourceLifecycle(model.SandboxCreateOperation, nil),
+		ResourceLifecycle:  model.NewResourceLifecycle(model.SandboxCreateOperation),
 	}
 	sb.IncrementGeneration()
 	if err := appStore.CreateSandbox(ctx, sb); err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
 
-	executor := sandboxes.NewSandboxReconcileExecutor(appStore, sandboxes.WithSandboxProvider(noCapacityProvider{}))
-	err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-1", sb.Generation)
+	executor := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(noCapacityProvider{}))
+	err := executor.ReconcileSandbox(ctx, sb)
 	if !errors.Is(err, sandboxes.ErrNoSandboxCapacity) {
 		t.Fatalf("reconcile error = %v, want ErrNoSandboxCapacity", err)
 	}
@@ -67,8 +65,8 @@ func TestReconcileSandboxMarksStartFailure(t *testing.T) {
 		Generation:          1,
 	})
 
-	executor := sandboxes.NewSandboxReconcileExecutor(appStore, sandboxes.WithSandboxProvider(failingSandboxProvider{startErr: startErr}))
-	err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-1", sb.Generation)
+	executor := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(failingSandboxProvider{startErr: startErr}))
+	err := executor.ReconcileSandbox(ctx, sb)
 	if !errors.Is(err, startErr) {
 		t.Fatalf("reconcile error = %v, want %v", err, startErr)
 	}
@@ -90,8 +88,8 @@ func TestReconcileSandboxMarksStopFailure(t *testing.T) {
 		ObservedGeneration:  1,
 	})
 
-	executor := sandboxes.NewSandboxReconcileExecutor(appStore, sandboxes.WithSandboxProvider(failingSandboxProvider{stopErr: stopErr}))
-	err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-1", sb.Generation)
+	executor := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(failingSandboxProvider{stopErr: stopErr}))
+	err := executor.ReconcileSandbox(ctx, sb)
 	if !errors.Is(err, stopErr) {
 		t.Fatalf("reconcile error = %v, want %v", err, stopErr)
 	}
@@ -113,55 +111,13 @@ func TestReconcileSandboxMarksDeleteFailure(t *testing.T) {
 		ObservedGeneration:  1,
 	})
 
-	executor := sandboxes.NewSandboxReconcileExecutor(appStore, sandboxes.WithSandboxProvider(failingSandboxProvider{removeErr: removeErr}))
-	err := executor.ReconcileSandboxJob(ctx, sb.ProjectID, sb.ID, "job-1", sb.Generation)
+	executor := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(failingSandboxProvider{removeErr: removeErr}))
+	err := executor.ReconcileSandbox(ctx, sb)
 	if !errors.Is(err, removeErr) {
 		t.Fatalf("reconcile error = %v, want %v", err, removeErr)
 	}
 
 	assertSandboxFailed(t, appStore, sb.ProjectID, sb.ID, removeErr.Error())
-}
-
-func TestSandboxTerminalFailureMarksCurrentPendingOperationFailed(t *testing.T) {
-	ctx := context.Background()
-	appStore := newExecutorTestStore(t)
-
-	jobID := "job-1"
-	sb := createSandboxForReconcile(t, appStore, model.ResourceLifecycle{
-		DesiredState:        model.SandboxDesiredStateRunning,
-		Phase:               model.SandboxPhasePending,
-		ActiveOperation:     stringPtr(model.SandboxOperationCreate),
-		LastOperationStatus: model.SandboxOperationStatusPending,
-		LastJobID:           &jobID,
-		Generation:          1,
-	})
-	payload, err := json.Marshal(sandboxes.SandboxReconcilePayload{
-		ProjectID:  sb.ProjectID,
-		SandboxID:  sb.ID,
-		Generation: sb.Generation,
-	})
-	if err != nil {
-		t.Fatalf("marshal payload: %v", err)
-	}
-	message := "executor failed before updating sandbox"
-	job := &orchestration.Job{
-		ID:      jobID,
-		Type:    sandboxes.SandboxReconcileType,
-		Payload: payload,
-		Status:  orchestration.StatusFailed,
-		Error:   &message,
-		Resource: orchestration.Resource{
-			Type: "sandbox",
-			ID:   sb.ID,
-		},
-	}
-
-	executor := sandboxes.NewSandboxReconcileExecutor(appStore)
-	if err := executor.OnTerminal(ctx, job); err != nil {
-		t.Fatalf("terminal handler: %v", err)
-	}
-
-	assertSandboxFailed(t, appStore, sb.ProjectID, sb.ID, message)
 }
 
 type noCapacityProvider struct {

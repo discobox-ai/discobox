@@ -5,13 +5,11 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"sort"
 	"time"
 
 	"github.com/obot-platform/discobox/id"
-	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/model"
 )
 
@@ -174,7 +172,7 @@ func deleteExcessWorkers(ctx context.Context, manager WorkerManager, workers []m
 			continue
 		}
 		workers[i].IncrementGeneration()
-		workers[i].BeginOperation(model.WorkerDeleteOperation, nil)
+		workers[i].BeginOperation(model.WorkerDeleteOperation)
 	}
 	return workers, nil
 }
@@ -227,98 +225,29 @@ func retainWorkerBefore(left, right model.Worker) bool {
 	return left.ID < right.ID
 }
 
-// repairWorkersWithFailedJobs keeps active workers progressing after a
-// reconcile job ends. A worker that never completed its initial create fails
-// terminally when that create dies: there is no runtime to recover. An
-// already-created worker is stateful, so a failed or lost reconcile re-enqueues
-// a fresh reconcile instead of latching the worker to a terminal failure.
+// repairWorkersWithFailedJobs keeps stateful workers progressing after a
+// failed reconcile. A created worker that failed a prior reconcile must keep
+// being driven back to health, so the pool re-marks it dirty at its own
+// cadence (marks coalesce in the reconcile engine, so this is one upsert).
+//
+// The old job-queue failure modes need no handling here anymore: a reconcile
+// that dies mid-run keeps its dirty row and is re-claimed after lease expiry,
+// and a never-created worker whose create fails is latched to a terminal
+// failure by the reconciler itself (failReconcile).
 func repairWorkersWithFailedJobs(ctx context.Context, manager WorkerManager, workers []model.Worker) ([]model.Worker, error) {
 	for i := range workers {
 		worker := &workers[i]
 		if worker.RevokedAt != nil || worker.DesiredState != model.WorkerDesiredStateActive {
 			continue
 		}
-
-		switch worker.LastOperationStatus {
-		case model.OperationStatusPending, model.OperationStatusRunning:
-			// The record shows an operation in progress. Detect a job that died
-			// without writing its result back and reconcile the row.
-			if worker.LastJobID == nil {
-				continue
-			}
-			job, err := manager.GetJob(ctx, *worker.LastJobID)
-			if err != nil {
-				if errors.Is(err, orchestration.ErrJobNotFound) {
-					continue
-				}
-				return nil, err
-			}
-			if job.Status != orchestration.StatusFailed {
-				continue
-			}
-			message := "worker reconcile job failed"
-			if job.Error != nil && *job.Error != "" {
-				message = *job.Error
-			}
-			if worker.EverCreated() {
-				// Stateful worker: recover rather than abandon the runtime.
-				if err := manager.ScheduleWorkerReconciliation(ctx, worker.ID); err != nil {
-					return nil, err
-				}
-				continue
-			}
-			updated, err := manager.MarkWorkerFailedForJob(ctx, worker.ID, worker.Generation, *worker.LastJobID, message)
-			if err != nil {
-				return nil, err
-			}
-			if updated {
-				worker.Phase = model.WorkerPhaseFailed
-				worker.ActiveOperation = nil
-				worker.LastOperationStatus = model.OperationStatusFailed
-				worker.StatusMessage = nil
-				worker.ErrorMessage = &message
-			}
-		case model.OperationStatusFailed:
-			// A created worker that failed a prior reconcile must keep being
-			// driven back to health. Re-enqueue only when no reconcile is
-			// already queued or running, so retries back off at the pool cadence.
-			if !worker.EverCreated() {
-				continue
-			}
-			queued, err := workerReconcileInFlight(ctx, manager, worker)
-			if err != nil {
-				return nil, err
-			}
-			if queued {
-				continue
-			}
-			if err := manager.ScheduleWorkerReconciliation(ctx, worker.ID); err != nil {
-				return nil, err
-			}
+		if worker.LastOperationStatus != model.OperationStatusFailed || !worker.EverCreated() {
+			continue
+		}
+		if err := manager.ScheduleWorkerReconciliation(ctx, worker.ID); err != nil {
+			return nil, err
 		}
 	}
 	return workers, nil
-}
-
-// workerReconcileInFlight reports whether the worker's most recent reconcile
-// job is still queued or running, so callers avoid re-enqueuing duplicate work.
-func workerReconcileInFlight(ctx context.Context, manager WorkerManager, worker *model.Worker) (bool, error) {
-	if worker.LastJobID == nil {
-		return false, nil
-	}
-	job, err := manager.GetJob(ctx, *worker.LastJobID)
-	if err != nil {
-		if errors.Is(err, orchestration.ErrJobNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-	switch job.Status {
-	case orchestration.StatusPending, orchestration.StatusBackoff, orchestration.StatusRunning:
-		return true, nil
-	default:
-		return false, nil
-	}
 }
 
 func repairExpiredRegisteringWorkers(ctx context.Context, manager WorkerManager, workers []model.Worker, now time.Time) ([]model.Worker, error) {
@@ -342,7 +271,7 @@ func repairExpiredRegisteringWorkers(ctx context.Context, manager WorkerManager,
 		}
 		if updated {
 			worker.IncrementGeneration()
-			worker.BeginOperation(model.WorkerDeleteOperation, nil)
+			worker.BeginOperation(model.WorkerDeleteOperation)
 			worker.StatusMessage = &message
 		}
 	}

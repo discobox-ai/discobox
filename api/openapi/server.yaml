@@ -1741,9 +1741,6 @@ components:
                     description: Last observed activity timestamp
                     format: date-time
                     type: string
-                lastJobId:
-                    description: Most recent lifecycle job ID
-                    type: string
                 lastOperationStatus:
                     description: Status of the most recent operation
                     enum:
@@ -2749,9 +2746,6 @@ components:
                     type: string
                 keyType:
                     description: Worker key type
-                    type: string
-                lastJobId:
-                    description: Most recent lifecycle job ID
                     type: string
                 lastOperationStatus:
                     description: Status of the most recent operation

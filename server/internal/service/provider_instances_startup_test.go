@@ -5,10 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/resources/jobs"
+	"github.com/obot-platform/discobox/server/internal/reconcile"
 	"github.com/obot-platform/discobox/server/internal/resources/providers"
 	"github.com/obot-platform/discobox/server/internal/resources/workers"
 	"github.com/obot-platform/discobox/server/internal/store"
@@ -53,42 +52,29 @@ func TestEnqueueProviderWorkersSchedulesEveryWorkerWithDefaultAttempts(t *testin
 		}
 	}
 
-	jobManager := newStartedProviderStartupTestJobManager(ctx, t, appStore, orchestration.QueueConfig{DefaultMaxAttempts: 5})
-	svc := New(appStore, jobManager, JobManagerOptions{})
+	engine := newStartedTestReconcileEngine(ctx, t, db)
+	svc := New(appStore, engine, JobManagerOptions{})
 	if err := svc.enqueueProviderWorkers(ctx, project.ID, provider.ID); err != nil {
 		t.Fatalf("enqueue provider workers: %v", err)
 	}
 
-	queued, err := appStore.ListJobsForProject(ctx, project.ID)
+	// Worker reconciliation rides the level-triggered reconcile engine: every
+	// worker of the target provider must be marked dirty, and no others.
+	dirty, err := engine.ListDirty(ctx, workers.WorkerResourceType)
 	if err != nil {
-		t.Fatalf("list jobs: %v", err)
+		t.Fatalf("list dirty: %v", err)
 	}
 	gotWorkers := map[string]bool{}
-	for _, job := range queued {
-		if job.Type != workers.WorkerReconcileType {
-			continue
-		}
-		if job.MaxAttempts != 5 {
-			t.Fatalf("worker job %s max attempts = %d, want 5", job.ID, job.MaxAttempts)
-		}
-		gotWorkers[job.Resource.ID] = true
+	for _, mark := range dirty {
+		gotWorkers[mark.ResourceID] = true
 	}
 	for _, id := range []string{"worker-1", "worker-2"} {
 		if !gotWorkers[id] {
-			t.Fatalf("missing reconcile job for %s; got %#v", id, gotWorkers)
+			t.Fatalf("missing dirty mark for %s; got %#v", id, gotWorkers)
 		}
 	}
 	if gotWorkers["worker-3"] {
-		t.Fatalf("queued worker from a different provider: %#v", gotWorkers)
-	}
-	for _, id := range []string{"worker-1", "worker-2"} {
-		worker, err := appStore.GetWorker(ctx, id)
-		if err != nil {
-			t.Fatalf("get worker %s: %v", id, err)
-		}
-		if worker.LastJobID == nil || *worker.LastJobID == "" {
-			t.Fatalf("worker %s last job ID was not set", id)
-		}
+		t.Fatalf("marked worker from a different provider: %#v", gotWorkers)
 	}
 }
 
@@ -127,54 +113,52 @@ func TestEnsureExistingSandboxProviderInstancesSchedulesWorkerProviderReconcile(
 		}
 	}
 
-	jobManager := newStartedProviderStartupTestJobManager(ctx, t, appStore, orchestration.QueueConfig{DefaultMaxAttempts: 5})
-	svc := New(appStore, jobManager, JobManagerOptions{})
+	engine := newStartedTestReconcileEngine(ctx, t, db)
+	svc := New(appStore, engine, JobManagerOptions{})
 	if err := svc.EnsureExistingSandboxProviderInstances(ctx); err != nil {
 		t.Fatalf("ensure existing providers: %v", err)
 	}
 
-	queued, err := appStore.ListJobsForProject(ctx, project.ID)
+	// Provider reconciliation now rides the level-triggered reconcile engine:
+	// startup must mark the provider dirty rather than append a job row.
+	dirty, err := engine.ListDirty(ctx, workers.WorkerProviderResourceType)
 	if err != nil {
-		t.Fatalf("list jobs: %v", err)
+		t.Fatalf("list dirty: %v", err)
 	}
-	var providerJobs int
-	for _, job := range queued {
-		switch job.Type {
-		case providers.WorkerProviderReconcileType:
-			providerJobs++
-			if job.Resource.Type != "workerprovider" || job.Resource.ID != provider.ID {
-				t.Fatalf("provider job resource = %#v, want provider %s", job.Resource, provider.ID)
-			}
-			if job.MaxAttempts != 5 {
-				t.Fatalf("provider job max attempts = %d, want 5", job.MaxAttempts)
-			}
-		case workers.WorkerReconcileType:
-			t.Fatalf("unexpected worker reconcile job %s from startup", job.ID)
-		}
+	if len(dirty) != 1 {
+		t.Fatalf("dirty provider marks = %d, want 1 (%#v)", len(dirty), dirty)
 	}
-	if providerJobs != 1 {
-		t.Fatalf("provider jobs = %d, want 1", providerJobs)
+	if want := workers.WorkerProviderDirtyID(project.ID, provider.ID); dirty[0].ResourceID != want {
+		t.Fatalf("dirty provider id = %q, want %q", dirty[0].ResourceID, want)
+	}
+
+	workerDirty, err := engine.ListDirty(ctx, workers.WorkerResourceType)
+	if err != nil {
+		t.Fatalf("list dirty workers: %v", err)
+	}
+	if len(workerDirty) != 0 {
+		t.Fatalf("unexpected worker dirty marks from startup: %#v", workerDirty)
 	}
 }
 
-func newStartedProviderStartupTestJobManager(ctx context.Context, t *testing.T, appStore *store.Store, queueConfig orchestration.QueueConfig) *jobs.Manager {
+func newStartedTestReconcileEngine(ctx context.Context, t *testing.T, db *database.DB) *reconcile.Engine {
 	t.Helper()
 
-	manager := jobs.NewManager(ctx, appStore, jobs.ManagerConfig{
-		Enabled:     true,
-		QueueConfig: queueConfig,
-	})
-	if err := manager.Start(ctx); err != nil {
-		t.Fatalf("start job manager: %v", err)
+	engine, err := reconcile.New(db.Write, reconcile.Options{SingleNode: true})
+	if err != nil {
+		t.Fatalf("new reconcile engine: %v", err)
+	}
+	if err := engine.Start(ctx); err != nil {
+		t.Fatalf("start reconcile engine: %v", err)
 	}
 	t.Cleanup(func() {
 		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		if err := manager.Stop(stopCtx); err != nil {
-			t.Fatalf("stop job manager: %v", err)
+		if err := engine.Stop(stopCtx); err != nil {
+			t.Fatalf("stop reconcile engine: %v", err)
 		}
 	})
-	return manager
+	return engine
 }
 
 func TestListSandboxProviderInstancesIncludesWorkerFailureStatus(t *testing.T) {
@@ -409,7 +393,7 @@ func TestListSandboxProviderInstancesTreatsFailedJobCleanupAsFailureStatus(t *te
 func newProviderInstanceTestService(appStore *store.Store) *Service {
 	return &Service{
 		store:                          appStore,
-		SandboxProviderInstanceService: providers.NewService(appStore, nil, nil, nil),
+		SandboxProviderInstanceService: providers.NewService(appStore, nil, nil),
 	}
 }
 

@@ -303,36 +303,21 @@ func (s *Store) UpdateWorker(ctx context.Context, worker *model.Worker, options 
 	return err
 }
 
-func (s *Store) MarkWorkerFailedForJob(ctx context.Context, workerID string, generation int64, jobID string, message string) (bool, error) {
-	_, err := withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.Worker, error) {
-		result := tx.Model(&model.Worker{}).
-			Where("id = ? AND generation = ? AND last_job_id = ? AND last_operation_status NOT IN ?", workerID, generation, jobID, []string{model.OperationStatusFailed, model.OperationStatusSuccess}).
-			Updates(map[string]any{
-				"phase":                 model.WorkerPhaseFailed,
-				"active_operation":      nil,
-				"last_operation_status": model.OperationStatusFailed,
-				"status_message":        nil,
-				"error_message":         message,
-			})
-		if result.Error != nil {
-			return nil, result.Error
-		}
-		if result.RowsAffected == 0 {
-			return nil, ErrGenerationConflict
-		}
-		var worker model.Worker
-		if err := tx.First(&worker, "id = ?", workerID).Error; err != nil {
-			return nil, mapNotFound(err)
-		}
-		return &worker, nil
-	})
-	if errors.Is(err, ErrGenerationConflict) {
-		return false, nil
-	}
+// ListWorkerIDsWithStaleOperations returns ids of workers whose recorded
+// operation has been in flight (pending/running) since before cutoff. It is
+// the reconcile engine's lost-mark backstop: a healthy reconcile settles in
+// seconds, so a long-stale in-flight operation means the dirty mark was lost.
+func (s *Store) ListWorkerIDsWithStaleOperations(ctx context.Context, cutoff time.Time) ([]string, error) {
+	read, err := s.getRead(ctx)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	return true, nil
+	var ids []string
+	err = read.Model(&model.Worker{}).
+		Where("last_operation_status IN ?", []string{model.OperationStatusPending, model.OperationStatusRunning}).
+		Where("updated_at < ?", cutoff).
+		Pluck("id", &ids).Error
+	return ids, err
 }
 
 func (s *Store) RegisterWorker(ctx context.Context, workerID string, tokenHash []byte, publicKey, keyType string) (*model.Worker, error) {

@@ -134,9 +134,6 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 	if sandbox.LastActiveAt != nil {
 		runtime["lastActiveAt"] = *sandbox.LastActiveAt
 	}
-	if sandbox.LastJobID != nil {
-		runtime["lastJobId"] = *sandbox.LastJobID
-	}
 	if sandbox.StatusMessage != nil {
 		runtime["statusMessage"] = *sandbox.StatusMessage
 	}

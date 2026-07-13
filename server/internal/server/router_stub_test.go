@@ -143,7 +143,7 @@ func (s *routerTestServices) CreateSandbox(_ context.Context, projectID string, 
 		AgentConfigID:            agentConfigID,
 		Name:                     config.Name,
 		Description:              services.OptStringPtr(config.Description),
-		ResourceLifecycle:        model.NewResourceLifecycle(model.SandboxCreateOperation, nil),
+		ResourceLifecycle:        model.NewResourceLifecycle(model.SandboxCreateOperation),
 		AgentModel:               services.OptStringPtr(config.AgentModel),
 		AgentModelServiceTier:    services.OptStringPtr(config.AgentModelServiceTier),
 		AgentModelReasoningLevel: services.OptStringPtr(config.AgentModelReasoningLevel),
@@ -579,7 +579,7 @@ func (s *routerTestServices) beginSandboxOperation(projectID, sandboxID string, 
 	if err != nil {
 		return nil, err
 	}
-	sandbox.BeginOperation(spec, nil)
+	sandbox.BeginOperation(spec)
 	sandbox.UpdatedAt = time.Now().UTC()
 	s.sandboxes[sandbox.ID] = sandbox
 	return &sandbox, nil

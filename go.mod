@@ -368,8 +368,6 @@ require (
 
 replace github.com/obot-platform/discobox/gormdb => ./gormdb
 
-replace github.com/obot-platform/discobox/orchestration => ./orchestration
-
 tool (
 	github.com/air-verse/air
 	github.com/go-task/task/v3/cmd/task

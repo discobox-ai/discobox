@@ -9,7 +9,6 @@ import (
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/client"
 
-	"github.com/obot-platform/discobox/orchestration"
 	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/providers/dockerworker"
@@ -268,10 +267,6 @@ func (m *recordingWorkerReconcileManager) CreateSandboxAgentToken(context.Contex
 
 func (m *recordingWorkerReconcileManager) FindSchedulableWorker(context.Context, *model.Sandbox) (*model.Worker, error) {
 	return nil, nil
-}
-
-func (m *recordingWorkerReconcileManager) GetJob(context.Context, string) (*orchestration.Job, error) {
-	return nil, orchestration.ErrJobNotFound
 }
 
 func (m *recordingWorkerReconcileManager) CountSandboxesForWorker(context.Context, string) (int64, error) {

@@ -9,16 +9,16 @@ import (
 	"time"
 
 	serverapi "github.com/obot-platform/discobox/api/gen"
-	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/events"
 	"github.com/obot-platform/discobox/server/internal/model"
-	sandboxjobs "github.com/obot-platform/discobox/server/internal/resources/jobs"
+	"github.com/obot-platform/discobox/server/internal/reconcile"
 	"github.com/obot-platform/discobox/server/internal/resources/sandboxes"
 	"github.com/obot-platform/discobox/server/internal/service"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
+	"gorm.io/gorm"
 )
 
 func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {
@@ -41,8 +41,10 @@ func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {
 		t.Fatalf("stop generation = %d, want 2", stopped.Generation)
 	}
 
-	err = executor.ReconcileSandboxJob(ctx, service.DefaultProjectID, sandbox.ID, "stale-job", sandbox.Generation)
-	if !errors.Is(err, orchestration.ErrJobCanceled) {
+	// The in-memory sandbox still carries generation 1; the store moved on to 2.
+	// The reconcile's generation-guarded writes must supersede, not clobber.
+	err = executor.ReconcileSandbox(ctx, sandbox)
+	if !errors.Is(err, reconcile.ErrSuperseded) {
 		t.Fatalf("stale reconcile error = %v, want ErrJobCanceled", err)
 	}
 }
@@ -55,22 +57,12 @@ func TestSandboxIntentCreatesGenerationScopedJobs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	if created.LastJobID == nil {
-		t.Fatal("create last job ID is nil")
-	}
-
 	started, err := svc.StartSandbox(ctx, service.DefaultProjectID, created.ID, services.StartSandboxBody{})
 	if err != nil {
 		t.Fatalf("start sandbox: %v", err)
 	}
-	if started.LastJobID == nil {
-		t.Fatal("start last job ID is nil")
-	}
 	if started.Generation != created.Generation+1 {
 		t.Fatalf("start generation = %d, want %d", started.Generation, created.Generation+1)
-	}
-	if *started.LastJobID == *created.LastJobID {
-		t.Fatalf("start reused create job ID %s; want a generation-scoped job", *started.LastJobID)
 	}
 }
 
@@ -82,10 +74,6 @@ func TestReconcileSandboxDoesNotChangeIntent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	if created.LastJobID == nil {
-		t.Fatal("create last job ID is nil")
-	}
-
 	reconciled, err := svc.ReconcileSandbox(ctx, service.DefaultProjectID, created.ID)
 	if err != nil {
 		t.Fatalf("reconcile sandbox: %v", err)
@@ -95,9 +83,6 @@ func TestReconcileSandboxDoesNotChangeIntent(t *testing.T) {
 	}
 	if reconciled.DesiredState != created.DesiredState || derefString(reconciled.ActiveOperation) != derefString(created.ActiveOperation) {
 		t.Fatalf("reconcile intent = %q/%q, want %q/%q", reconciled.DesiredState, derefString(reconciled.ActiveOperation), created.DesiredState, derefString(created.ActiveOperation))
-	}
-	if reconciled.LastJobID == nil || *reconciled.LastJobID == *created.LastJobID {
-		t.Fatalf("reconcile last job ID = %v, want new job", reconciled.LastJobID)
 	}
 }
 
@@ -176,6 +161,17 @@ func TestCreateSandboxPinsDefaultAgentConfig(t *testing.T) {
 	}
 }
 
+// newTestReconcileEngine builds the level-triggered reconcile engine job
+// managers now require (provider reconciliation rides it).
+func newTestReconcileEngine(t *testing.T, db *gorm.DB) *reconcile.Engine {
+	t.Helper()
+	engine, err := reconcile.New(db, reconcile.Options{SingleNode: true})
+	if err != nil {
+		t.Fatalf("new reconcile engine: %v", err)
+	}
+	return engine
+}
+
 func TestCreateSandboxRequiresResolvedProviderInstance(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.New(database.Config{DSN: ":memory:"})
@@ -192,19 +188,19 @@ func TestCreateSandboxRequiresResolvedProviderInstance(t *testing.T) {
 	}
 
 	appStore := store.New(db.Write, db.Read)
-	jobManager := sandboxjobs.NewManager(ctx, appStore, sandboxjobs.ManagerConfig{Enabled: true})
-	svc := service.New(appStore, jobManager, service.JobManagerOptions{})
+	engine := newTestReconcileEngine(t, db.Write)
+	svc := service.New(appStore, engine, service.JobManagerOptions{})
 	if err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
-	if err := jobManager.Start(ctx); err != nil {
-		t.Fatalf("start job manager: %v", err)
+	if err := engine.Start(ctx); err != nil {
+		t.Fatalf("start reconcile engine: %v", err)
 	}
 	t.Cleanup(func() {
 		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		if err := jobManager.Stop(stopCtx); err != nil {
-			t.Fatalf("stop job manager: %v", err)
+		if err := engine.Stop(stopCtx); err != nil {
+			t.Fatalf("stop reconcile engine: %v", err)
 		}
 	})
 
@@ -237,17 +233,8 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 
 	broker := events.NewBroker()
 	appStore := store.New(db.Write, db.Read, store.WithPublisher(broker))
-	queueConfig := orchestration.QueueConfig{DefaultMaxAttempts: 3}
-	jobManager := sandboxjobs.NewManager(ctx, appStore, sandboxjobs.ManagerConfig{
-		Enabled:            true,
-		QueueConfig:        queueConfig,
-		PollInterval:       10 * time.Millisecond,
-		JobTimeout:         time.Second,
-		StaleJobTimeout:    time.Minute,
-		ImmediateExecution: true,
-		DefaultConcurrency: 1,
-	})
-	svc := service.New(appStore, jobManager, service.JobManagerOptions{}, broker)
+	engine := newTestReconcileEngine(t, db.Write)
+	svc := service.New(appStore, engine, service.JobManagerOptions{}, broker)
 
 	if err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
@@ -260,8 +247,8 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	t.Cleanup(func() {
 		stopCtx, stopCancel := context.WithTimeout(context.Background(), time.Second)
 		defer stopCancel()
-		if err := jobManager.Stop(stopCtx); err != nil {
-			t.Fatalf("stop job manager: %v", err)
+		if err := engine.Stop(stopCtx); err != nil {
+			t.Fatalf("stop reconcile engine: %v", err)
 		}
 	})
 
@@ -313,7 +300,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	}
 }
 
-func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sandboxes.SandboxReconcileExecutor) {
+func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sandboxes.SandboxReconciler) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -332,32 +319,28 @@ func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sand
 
 	broker := events.NewBroker()
 	appStore := store.New(db.Write, db.Read, store.WithPublisher(broker))
-	queueConfig := orchestration.QueueConfig{DefaultMaxAttempts: 3}
 	var notifyContext func(context.Context)
 	if notify != nil {
 		notifyContext = func(context.Context) { notify() }
 	}
 	_ = notifyContext
-	jobManager := sandboxjobs.NewManager(ctx, appStore, sandboxjobs.ManagerConfig{
-		Enabled:     true,
-		QueueConfig: queueConfig,
-	})
-	svc := service.New(appStore, jobManager, service.JobManagerOptions{}, broker)
+	engine := newTestReconcileEngine(t, db.Write)
+	svc := service.New(appStore, engine, service.JobManagerOptions{}, broker)
 	if err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
 	installDefaultSandboxProviderInstance(ctx, t, appStore, "provider-test", "test")
-	if err := jobManager.Start(ctx); err != nil {
-		t.Fatalf("start job manager: %v", err)
+	if err := engine.Start(ctx); err != nil {
+		t.Fatalf("start reconcile engine: %v", err)
 	}
 	t.Cleanup(func() {
 		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		if err := jobManager.Stop(stopCtx); err != nil {
-			t.Fatalf("stop job manager: %v", err)
+		if err := engine.Stop(stopCtx); err != nil {
+			t.Fatalf("stop reconcile engine: %v", err)
 		}
 	})
-	return svc, svc.NewSandboxReconcileExecutor()
+	return svc, svc.NewSandboxReconciler()
 }
 
 func installDefaultSandboxProviderInstance(ctx context.Context, t *testing.T, appStore *store.Store, providerID, providerType string) {

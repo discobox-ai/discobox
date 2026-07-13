@@ -1,91 +1,149 @@
 package sandboxes
 
+
 import (
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/agentdefs"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
 	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/obot-platform/discobox/server/internal/reconcile"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
-type SandboxReconcileExecutor struct {
+// SandboxResourceType is the reconcile-engine resource type for sandboxes. The
+// dirty id carries the project scope: "projectID/sandboxID".
+const SandboxResourceType = "sandbox"
+
+// SandboxDirtyID encodes the composite identity a sandbox reconcile needs.
+func SandboxDirtyID(projectID, sandboxID string) string {
+	return projectID + "/" + sandboxID
+}
+
+func splitSandboxDirtyID(id string) (projectID, sandboxID string, err error) {
+	projectID, sandboxID, ok := strings.Cut(id, "/")
+	if !ok || projectID == "" || sandboxID == "" {
+		return "", "", fmt.Errorf("invalid sandbox dirty id %q", id)
+	}
+	return projectID, sandboxID, nil
+}
+
+// Reconcile loads the LATEST sandbox state and converges it. Semantics:
+//   - missing sandbox: converged (settle).
+//   - superseded mid-run (generation conflict): settle; the newer intent's
+//     transactional mark re-runs us against current state.
+//   - failure RECORDED on the resource (LastOperationStatus == failed):
+//     converged-to-failed — one logical attempt, like the old MaxAttempts(1)
+//     jobs. New intent re-drives it.
+//   - failure NOT recorded (crash/timeout before the status write): return the
+//     error so the row stays dirty and retries with backoff. This replaces the
+//     old MarkSandboxJobFailed terminal latch with self-healing.
+func (r *SandboxReconciler) Reconcile(ctx context.Context, id string) error {
+	projectID, sandboxID, err := splitSandboxDirtyID(id)
+	if err != nil {
+		return err
+	}
+	sandbox, err := r.store.GetSandbox(ctx, projectID, sandboxID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	err = r.ReconcileSandbox(ctx, sandbox)
+	if errors.Is(err, reconcile.ErrSuperseded) {
+		return nil // superseded: newer intent's mark re-runs us
+	}
+	if err == nil {
+		return nil
+	}
+	if current, gerr := r.store.GetSandbox(ctx, projectID, sandboxID); gerr == nil &&
+		current.LastOperationStatus == model.SandboxOperationStatusFailed {
+		return nil // failure recorded on the resource: converged until new intent
+	}
+	return err
+}
+
+// stuckSandboxCutoff mirrors the worker backstop: an operation recorded as in
+// flight for this long means the dirty mark was lost.
+const stuckSandboxCutoff = 10 * time.Minute
+
+// ScanDirty is the level-triggered backstop: sandboxes whose recorded
+// operation has been in flight implausibly long are re-marked. Terminal
+// operations are excluded — a recorded failure is converged by design until
+// new intent arrives.
+func (r *SandboxReconciler) ScanDirty(ctx context.Context) ([]string, error) {
+	pairs, err := r.store.ListSandboxIDsWithStaleOperations(ctx, time.Now().Add(-stuckSandboxCutoff))
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(pairs))
+	for _, p := range pairs {
+		ids = append(ids, SandboxDirtyID(p.ProjectID, p.SandboxID))
+	}
+	return ids, nil
+}
+
+// SandboxReconciler converges sandboxes toward their desired state. It
+// implements reconcile.Reconciler and reconcile.Scanner (see reconciler.go for
+// the engine entry points); this file holds the convergence state machine.
+type SandboxReconciler struct {
 	store    *store.Store
 	provider Provider
 	manager  *ProviderManager
 	auth     SandboxAuthenticator
 }
 
-// SandboxReconcileExecutorOption configures a sandbox executor.
-type SandboxReconcileExecutorOption func(*SandboxReconcileExecutor)
+// SandboxReconcilerOption configures a sandbox reconciler.
+type SandboxReconcilerOption func(*SandboxReconciler)
 
-func NewSandboxReconcileExecutor(store *store.Store, options ...SandboxReconcileExecutorOption) *SandboxReconcileExecutor {
-	executor := &SandboxReconcileExecutor{
+func NewSandboxReconciler(store *store.Store, options ...SandboxReconcilerOption) *SandboxReconciler {
+	reconciler := &SandboxReconciler{
 		store: store,
 	}
 	for _, option := range options {
 		if option != nil {
-			option(executor)
+			option(reconciler)
 		}
 	}
-	return executor
+	return reconciler
 }
 
 // WithSandboxProvider uses a single provider for all sandbox reconciliation.
-func WithSandboxProvider(provider Provider) SandboxReconcileExecutorOption {
-	return func(executor *SandboxReconcileExecutor) {
-		executor.provider = provider
+func WithSandboxProvider(provider Provider) SandboxReconcilerOption {
+	return func(reconciler *SandboxReconciler) {
+		reconciler.provider = provider
 	}
 }
 
 // WithSandboxProviderManager resolves providers through a manager.
-func WithSandboxProviderManager(manager *ProviderManager) SandboxReconcileExecutorOption {
-	return func(executor *SandboxReconcileExecutor) {
-		executor.manager = manager
+func WithSandboxProviderManager(manager *ProviderManager) SandboxReconcilerOption {
+	return func(reconciler *SandboxReconciler) {
+		reconciler.manager = manager
 	}
 }
 
 // WithSandboxAuthenticator injects trust-key authentication into sandbox
 // creation. When configured, sandbox starts ensure the creating user has a
 // public trust key and pass it to the runtime as DISCOBOX_TRUST_KEY.
-func WithSandboxAuthenticator(auth SandboxAuthenticator) SandboxReconcileExecutorOption {
-	return func(executor *SandboxReconcileExecutor) {
-		executor.auth = auth
+func WithSandboxAuthenticator(auth SandboxAuthenticator) SandboxReconcilerOption {
+	return func(reconciler *SandboxReconciler) {
+		reconciler.auth = auth
 	}
 }
 
-func (r *SandboxReconcileExecutor) AssertSandboxGeneration(ctx context.Context, projectID, sandboxID string, generation int64) error {
-	if _, err := r.store.GetSandbox(ctx, projectID, sandboxID, store.WithGeneration(generation)); err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil
-		}
-		if errors.Is(err, store.ErrGenerationConflict) {
-			return orchestration.Superseded("sandbox generation changed")
-		}
-		return err
-	}
-	return nil
-}
-
-func (r *SandboxReconcileExecutor) ReconcileSandboxJob(ctx context.Context, projectID, sandboxID, jobID string, generation int64) error {
-	sandbox, err := r.store.GetSandbox(ctx, projectID, sandboxID, store.WithGeneration(generation))
-	if errors.Is(err, store.ErrNotFound) {
-		return nil
-	}
-	if errors.Is(err, store.ErrGenerationConflict) {
-		return orchestration.Superseded("sandbox generation changed")
-	}
-	if err != nil {
-		return err
-	}
-
-	sandbox.LastJobID = &jobID
-
+// ReconcileSandbox converges the given (freshly loaded) sandbox toward its
+// desired state. The sandbox's current generation guards every write, so newer
+// intent arriving mid-run surfaces as a Superseded error, which the reconciler
+// maps to a clean settle (the newer intent's own mark re-runs the reconcile).
+func (r *SandboxReconciler) ReconcileSandbox(ctx context.Context, sandbox *model.Sandbox) error {
+	generation := sandbox.Generation
 	switch sandbox.DesiredState {
 	case model.SandboxDesiredStateRunning:
 		if sandbox.RestartGeneration > sandbox.RestartedGeneration {
@@ -101,25 +159,7 @@ func (r *SandboxReconcileExecutor) ReconcileSandboxJob(ctx context.Context, proj
 	}
 }
 
-func (r *SandboxReconcileExecutor) MarkSandboxJobFailed(ctx context.Context, projectID, sandboxID, jobID string, generation int64, message string) error {
-	sandbox, err := r.store.GetSandbox(ctx, projectID, sandboxID, store.WithGeneration(generation))
-	if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrGenerationConflict) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	if sandbox.LastJobID == nil || *sandbox.LastJobID != jobID {
-		return nil
-	}
-	if sandbox.LastOperationStatus == model.SandboxOperationStatusFailed || sandbox.LastOperationStatus == model.SandboxOperationStatusSuccess {
-		return nil
-	}
-	sandbox.FailOperation(message)
-	return r.update(ctx, sandbox, generation)
-}
-
-func (r *SandboxReconcileExecutor) start(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
+func (r *SandboxReconciler) start(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
 	if sandbox.Phase == model.SandboxPhaseRunning && sandbox.ObservedGeneration == generation && sandbox.LastOperationStatus == model.SandboxOperationStatusSuccess {
 		return nil
 	}
@@ -141,7 +181,7 @@ func (r *SandboxReconcileExecutor) start(ctx context.Context, sandbox *model.San
 	return r.update(ctx, sandbox, generation)
 }
 
-func (r *SandboxReconcileExecutor) restart(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
+func (r *SandboxReconciler) restart(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
 	status := "restarting sandbox"
 	sandbox.MarkOperationRunning(&status)
 	if err := r.update(ctx, sandbox, generation); err != nil {
@@ -167,7 +207,7 @@ func (r *SandboxReconcileExecutor) restart(ctx context.Context, sandbox *model.S
 	return r.update(ctx, sandbox, generation)
 }
 
-func (r *SandboxReconcileExecutor) stop(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
+func (r *SandboxReconciler) stop(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
 	if sandbox.Phase == model.SandboxPhaseStopped && sandbox.ObservedGeneration == generation && sandbox.LastOperationStatus == model.SandboxOperationStatusSuccess {
 		return nil
 	}
@@ -189,7 +229,7 @@ func (r *SandboxReconcileExecutor) stop(ctx context.Context, sandbox *model.Sand
 	return r.update(ctx, sandbox, generation)
 }
 
-func (r *SandboxReconcileExecutor) delete(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
+func (r *SandboxReconciler) delete(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
 	if sandbox.Phase == model.SandboxPhaseDeleted && sandbox.ObservedGeneration == generation && sandbox.LastOperationStatus == model.SandboxOperationStatusSuccess {
 		return nil
 	}
@@ -217,10 +257,10 @@ func (r *SandboxReconcileExecutor) delete(ctx context.Context, sandbox *model.Sa
 	return r.update(ctx, sandbox, generation)
 }
 
-func (r *SandboxReconcileExecutor) update(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
+func (r *SandboxReconciler) update(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
 	if err := r.store.UpdateSandbox(ctx, sandbox, store.WithGeneration(generation)); err != nil {
 		if errors.Is(err, store.ErrGenerationConflict) {
-			return orchestration.Superseded("sandbox generation changed")
+			return reconcile.Superseded("sandbox generation changed")
 		}
 		return err
 	}
@@ -239,7 +279,7 @@ type SandboxAuthenticator interface {
 	CreateToken(ctx context.Context, claims sandboxauth.TokenClaims) (string, error)
 }
 
-func (r *SandboxReconcileExecutor) startSandbox(ctx context.Context, sb *model.Sandbox) error {
+func (r *SandboxReconciler) startSandbox(ctx context.Context, sb *model.Sandbox) error {
 	provider, err := r.resolveProvider(ctx, sb)
 	if err != nil {
 		return err
@@ -291,7 +331,7 @@ func (r *SandboxReconcileExecutor) startSandbox(ctx context.Context, sb *model.S
 	return nil
 }
 
-func (r *SandboxReconcileExecutor) stopSandbox(ctx context.Context, sb *model.Sandbox) error {
+func (r *SandboxReconciler) stopSandbox(ctx context.Context, sb *model.Sandbox) error {
 	provider, err := r.resolveProvider(ctx, sb)
 	if err != nil {
 		return err
@@ -316,7 +356,7 @@ func (r *SandboxReconcileExecutor) stopSandbox(ctx context.Context, sb *model.Sa
 	return nil
 }
 
-func (r *SandboxReconcileExecutor) deleteSandbox(ctx context.Context, sb *model.Sandbox) error {
+func (r *SandboxReconciler) deleteSandbox(ctx context.Context, sb *model.Sandbox) error {
 	provider, err := r.resolveProvider(ctx, sb)
 	if err != nil {
 		return err
@@ -340,7 +380,7 @@ func (r *SandboxReconcileExecutor) deleteSandbox(ctx context.Context, sb *model.
 	return nil
 }
 
-func (r *SandboxReconcileExecutor) resolveProvider(ctx context.Context, sb *model.Sandbox) (Provider, error) {
+func (r *SandboxReconciler) resolveProvider(ctx context.Context, sb *model.Sandbox) (Provider, error) {
 	if r == nil {
 		return nil, nil
 	}
@@ -350,7 +390,7 @@ func (r *SandboxReconcileExecutor) resolveProvider(ctx context.Context, sb *mode
 	return r.provider, nil
 }
 
-func (r *SandboxReconcileExecutor) applyTrustKey(ctx context.Context, sb *model.Sandbox, opts *CreateOptions) error {
+func (r *SandboxReconciler) applyTrustKey(ctx context.Context, sb *model.Sandbox, opts *CreateOptions) error {
 	if r == nil || r.auth == nil {
 		return nil
 	}
@@ -420,7 +460,7 @@ func ensureSandboxImage(ctx context.Context, provider Provider, opts *CreateOpti
 	return nil
 }
 
-func (r *SandboxReconcileExecutor) createOptionsFromSandbox(ctx context.Context, sb *model.Sandbox) CreateOptions {
+func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *model.Sandbox) CreateOptions {
 	opts := CreateOptions{
 		Labels: map[string]string{
 			"discobox.project_id": sb.ProjectID,

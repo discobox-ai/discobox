@@ -8,7 +8,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/obot-platform/discobox/orchestration"
+	"github.com/obot-platform/discobox/server/internal/reconcile"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 
 	"github.com/obot-platform/discobox/id"
@@ -25,7 +25,7 @@ import (
 // sandbox auth dependencies.
 type Service struct {
 	store            *store.Store
-	jobs             SandboxJobManager
+	engine           *reconcile.Engine
 	sandboxProviders *sandbox.ProviderManager
 	providerStore    any
 	sandboxAuth      *sandboxauth.Manager
@@ -33,23 +33,10 @@ type Service struct {
 	defaultImage     string
 }
 
-type SandboxJobManager interface {
-	CreateSandbox(context.Context, *model.Sandbox) (*model.Sandbox, error)
-	StartSandbox(context.Context, string, string) (*model.Sandbox, error)
-	StopSandbox(context.Context, string, string) (*model.Sandbox, error)
-	RestartSandbox(context.Context, string, string) (*model.Sandbox, error)
-	DeleteSandbox(context.Context, string, string) (*model.Sandbox, error)
-	SubmitSandboxReconcile(context.Context, string, string) (*model.Sandbox, error)
-}
-
-type JobRegistrar interface {
-	Register(orchestration.Type, orchestration.Executor, ...orchestration.ExecutorOption) error
-}
-
-func NewService(store *store.Store, manager *sandbox.ProviderManager, defaultUserID string, jobs SandboxJobManager, providerStore ...any) *Service {
+func NewService(store *store.Store, manager *sandbox.ProviderManager, defaultUserID string, engine *reconcile.Engine, providerStore ...any) *Service {
 	svc := &Service{
 		store:            store,
-		jobs:             jobs,
+		engine:           engine,
 		sandboxProviders: manager,
 		defaultUserID:    defaultUserID,
 		defaultImage:     sandbox.DefaultSandboxImageName,
@@ -60,16 +47,13 @@ func NewService(store *store.Store, manager *sandbox.ProviderManager, defaultUse
 	return svc
 }
 
-func (s *Service) RegisterJobs(registrar JobRegistrar, opts ...orchestration.ExecutorOption) error {
-	return registrar.Register(
-		SandboxReconcileType,
-		NewSandboxReconcileExecutor(
-			s.store,
-			WithSandboxProviderManager(s.sandboxProviders),
-			WithSandboxAuthenticator(s.sandboxAuth),
-		),
-		opts...,
-	)
+// RegisterJobs installs the sandbox reconciler on the level-triggered
+// reconcile engine.
+func (s *Service) RegisterJobs(opts ...reconcile.RegisterOption) error {
+	if s.engine == nil {
+		return errors.New("reconcile engine is required")
+	}
+	return s.engine.Register(SandboxResourceType, s.NewSandboxReconciler(), opts...)
 }
 
 func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
@@ -168,7 +152,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		AgentConfigID:            agentConfigID,
 		Name:                     config.Name,
 		Description:              services.OptStringPtr(config.Description),
-		ResourceLifecycle:        model.NewResourceLifecycle(model.SandboxCreateOperation, nil),
+		ResourceLifecycle:        model.NewResourceLifecycle(model.SandboxCreateOperation),
 		AgentModel:               services.OptStringPtr(config.AgentModel),
 		AgentModelServiceTier:    services.OptStringPtr(config.AgentModelServiceTier),
 		AgentModelReasoningLevel: services.OptStringPtr(config.AgentModelReasoningLevel),
@@ -184,9 +168,6 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		CPUVCPUs:                 config.CpuVcpus.Or(0),
 		MemoryBytes:              config.MemoryBytes.Or(0),
 		StorageBytes:             config.StorageBytes.Or(0),
-	}
-	if s.jobs == nil {
-		return nil, fmt.Errorf("job manager is required")
 	}
 	assignments, err := s.prepareSandboxSecrets(ctx, projectID, sandbox, config.Secrets)
 	if err != nil {
@@ -205,7 +186,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		}
 		assignments = append(assignments, agentAssignments...)
 	}
-	created, err := s.jobs.CreateSandbox(ctx, sandbox)
+	created, err := s.createSandboxIntent(ctx, sandbox)
 	if err != nil {
 		return nil, err
 	}
@@ -344,10 +325,7 @@ func (s *Service) UpdateSandbox(ctx context.Context, projectID, sandboxID string
 }
 
 func (s *Service) DeleteSandbox(ctx context.Context, projectID, sandboxID string) error {
-	if s.jobs == nil {
-		return fmt.Errorf("job manager is required")
-	}
-	_, err := s.jobs.DeleteSandbox(ctx, projectID, sandboxID)
+	_, err := s.submitSandboxOperation(ctx, projectID, sandboxID, model.SandboxDeleteOperation)
 	if err != nil {
 		return mapAPIError(err, "sandbox not found")
 	}
@@ -355,10 +333,7 @@ func (s *Service) DeleteSandbox(ctx context.Context, projectID, sandboxID string
 }
 
 func (s *Service) StartSandbox(ctx context.Context, projectID, sandboxID string, _ services.StartSandboxBody) (*model.Sandbox, error) {
-	if s.jobs == nil {
-		return nil, fmt.Errorf("job manager is required")
-	}
-	sandbox, err := s.jobs.StartSandbox(ctx, projectID, sandboxID)
+	sandbox, err := s.submitSandboxOperation(ctx, projectID, sandboxID, model.SandboxStartOperation)
 	if err != nil {
 		return nil, mapAPIError(err, "sandbox not found")
 	}
@@ -366,10 +341,7 @@ func (s *Service) StartSandbox(ctx context.Context, projectID, sandboxID string,
 }
 
 func (s *Service) StopSandbox(ctx context.Context, projectID, sandboxID string, _ services.StopSandboxBody) (*model.Sandbox, error) {
-	if s.jobs == nil {
-		return nil, fmt.Errorf("job manager is required")
-	}
-	sandbox, err := s.jobs.StopSandbox(ctx, projectID, sandboxID)
+	sandbox, err := s.submitSandboxOperation(ctx, projectID, sandboxID, model.SandboxStopOperation)
 	if err != nil {
 		return nil, mapAPIError(err, "sandbox not found")
 	}
@@ -377,10 +349,9 @@ func (s *Service) StopSandbox(ctx context.Context, projectID, sandboxID string, 
 }
 
 func (s *Service) RestartSandbox(ctx context.Context, projectID, sandboxID string, _ services.RestartSandboxBody) (*model.Sandbox, error) {
-	if s.jobs == nil {
-		return nil, fmt.Errorf("job manager is required")
-	}
-	sandbox, err := s.jobs.RestartSandbox(ctx, projectID, sandboxID)
+	sandbox, err := s.submitSandboxOperation(ctx, projectID, sandboxID, model.SandboxRestartOperation, func(sandbox *model.Sandbox) {
+		sandbox.RestartGeneration++
+	})
 	if err != nil {
 		return nil, mapAPIError(err, "sandbox not found")
 	}
@@ -388,10 +359,7 @@ func (s *Service) RestartSandbox(ctx context.Context, projectID, sandboxID strin
 }
 
 func (s *Service) ReconcileSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error) {
-	if s.jobs == nil {
-		return nil, fmt.Errorf("job manager is required")
-	}
-	sandbox, err := s.jobs.SubmitSandboxReconcile(ctx, projectID, sandboxID)
+	sandbox, err := s.scheduleSandboxReconcile(ctx, projectID, sandboxID)
 	if err != nil {
 		return nil, mapAPIError(err, "sandbox not found")
 	}
@@ -410,9 +378,9 @@ func (s *Service) SandboxProviderManager() *sandbox.ProviderManager {
 	return s.sandboxProviders
 }
 
-// NewSandboxReconcileExecutor returns a provider-manager-backed sandbox reconcile executor.
-func (s *Service) NewSandboxReconcileExecutor() *SandboxReconcileExecutor {
-	return NewSandboxReconcileExecutor(
+// NewSandboxReconciler returns the service-wired sandbox reconciler.
+func (s *Service) NewSandboxReconciler() *SandboxReconciler {
+	return NewSandboxReconciler(
 		s.store,
 		WithSandboxProviderManager(s.sandboxProviders),
 		WithSandboxAuthenticator(s.sandboxAuth),

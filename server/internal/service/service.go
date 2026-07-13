@@ -3,13 +3,13 @@ package service
 
 import (
 	"context"
+	"errors"
 	"time"
 
-	"github.com/obot-platform/discobox/orchestration"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
 	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	eventbroker "github.com/obot-platform/discobox/server/internal/events"
-	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/obot-platform/discobox/server/internal/reconcile"
 	"github.com/obot-platform/discobox/server/internal/resources/agentconfigs"
 	resourceevents "github.com/obot-platform/discobox/server/internal/resources/events"
 	resourcejobs "github.com/obot-platform/discobox/server/internal/resources/jobs"
@@ -40,55 +40,34 @@ type Service struct {
 	services.SecretService
 
 	store             *store.Store
-	jobManager        JobManager
+	engine            *reconcile.Engine
 	jobManagerOptions JobManagerOptions
 	jobs              *resourcejobs.Service
 	providerService   *providers.Service
-	workerManager     *workers.Manager
-}
-
-type JobManager interface {
-	Register(orchestration.Type, orchestration.Executor, ...orchestration.ExecutorOption) error
-	Start(context.Context) error
-	Stop(context.Context) error
-	NotifyNewJob(context.Context)
-	CreateSandbox(context.Context, *model.Sandbox) (*model.Sandbox, error)
-	StartSandbox(context.Context, string, string) (*model.Sandbox, error)
-	StopSandbox(context.Context, string, string) (*model.Sandbox, error)
-	RestartSandbox(context.Context, string, string) (*model.Sandbox, error)
-	DeleteSandbox(context.Context, string, string) (*model.Sandbox, error)
-	SubmitSandboxReconcile(context.Context, string, string) (*model.Sandbox, error)
-	CreateWorker(context.Context, *model.Worker) (*model.Worker, error)
-	DeleteWorker(context.Context, string) (*model.Worker, error)
-	MarkWorkerFailedForJob(context.Context, string, int64, string, string) (bool, error)
-	DeleteWorkerForExpiredRegistration(context.Context, string, int64, time.Time, string) (bool, error)
-	SubmitWorkerReconcile(context.Context, string) (*orchestration.Job, error)
-	SubmitWorkerProviderReconcile(context.Context, string, string) (*orchestration.Job, error)
-	SubmitWorkerProviderReconcileAt(context.Context, string, string, time.Time) (*orchestration.Job, error)
-	OnWorkerReconcileTerminal(context.Context, *orchestration.Job, workers.WorkerReconcilePayload) error
+	workerManager     *workers.ControlPlane
 }
 
 type JobManagerOptions struct {
 	SandboxReconcileJobConcurrency int
 }
 
-func New(store *store.Store, jobManager JobManager, jobManagerOptions JobManagerOptions, broker ...*eventbroker.Broker) *Service {
+func New(store *store.Store, engine *reconcile.Engine, jobManagerOptions JobManagerOptions, broker ...*eventbroker.Broker) *Service {
 	var b *eventbroker.Broker
 	if len(broker) > 0 {
 		b = broker[0]
 	}
 	manager := sandbox.NewProviderManager()
-	workerManager := workers.NewManager(store, jobManager)
+	workerManager := workers.NewControlPlane(store, engine)
 	providerregistry.RegisterBuiltInSandboxProviderFactories(manager, workerManager)
-	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, jobManager, workerManager)
-	providerService := providers.NewService(store, sandboxService, workerManager, jobManager)
-	jobsService := resourcejobs.NewService(store, jobManager)
+	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, engine, workerManager)
+	providerService := providers.NewService(store, sandboxService, workerManager)
+	jobsService := resourcejobs.NewService(store, engine)
 	return &Service{
 		ProjectService:                 projects.NewService(store),
 		AgentConfigService:             agentconfigs.NewService(store),
 		Service:                        sandboxService,
 		SandboxProviderInstanceService: providerService,
-		WorkerService:                  workers.NewService(store, jobManager),
+		WorkerService:                  workers.NewService(store, workerManager),
 		JobService:                     jobsService,
 		ProjectEventService:            resourceevents.NewService(store, b),
 		SecretService:                  secrets.NewService(store),
@@ -97,7 +76,7 @@ func New(store *store.Store, jobManager JobManager, jobManagerOptions JobManager
 		providerService: providerService,
 
 		store:             store,
-		jobManager:        jobManager,
+		engine:            engine,
 		jobManagerOptions: jobManagerOptions,
 		workerManager:     workerManager,
 	}
@@ -116,43 +95,43 @@ func (s *Service) SetWorkerAgentAuthManager(manager *workeragentauth.Manager) {
 }
 
 func (s *Service) Start(ctx context.Context) error {
-	if s.jobManager != nil {
-		if err := s.registerJobExecutors(); err != nil {
-			return err
-		}
-		if err := s.jobManager.Start(ctx); err != nil {
-			return err
-		}
+	if s.engine == nil {
+		return errors.New("reconcile engine is required")
+	}
+	if err := s.registerReconcilers(); err != nil {
+		return err
+	}
+	if err := s.engine.Start(ctx); err != nil {
+		return err
 	}
 	s.workerManager.StartDeletedWorkerCleanup(ctx)
-	startedJobs := s.jobManager != nil
 	if err := s.EnsureExistingSandboxProviderInstances(ctx); err != nil {
-		if startedJobs {
-			stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-			defer cancel()
-			_ = s.jobManager.Stop(stopCtx)
-		}
+		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		_ = s.engine.Stop(stopCtx)
 		return err
 	}
 	return nil
 }
 
-func (s *Service) registerJobExecutors() error {
+// Stop shuts down the reconcile engine, waiting for in-flight reconciles.
+func (s *Service) Stop(ctx context.Context) error {
+	if s.engine == nil {
+		return nil
+	}
+	return s.engine.Stop(ctx)
+}
+
+func (s *Service) registerReconcilers() error {
 	concurrency := s.jobManagerOptions.SandboxReconcileJobConcurrency
-	executorOptions := []orchestration.ExecutorOption(nil)
+	sandboxOptions := []reconcile.RegisterOption(nil)
 	if concurrency > 0 {
-		executorOptions = append(executorOptions, orchestration.WithConcurrency(concurrency))
+		sandboxOptions = append(sandboxOptions, reconcile.WithConcurrency(concurrency))
 	}
-	if err := s.RegisterJobs(s.jobManager, executorOptions...); err != nil {
+	if err := s.RegisterJobs(sandboxOptions...); err != nil {
 		return err
 	}
-	if err := s.providerService.RegisterJobs(s.jobManager, executorOptions...); err != nil {
-		return err
-	}
-	if err := s.workerManager.RegisterJobs(s.jobManager, s.SandboxProviderManager(), executorOptions...); err != nil {
-		return err
-	}
-	return nil
+	return s.workerManager.RegisterJobs(s.SandboxProviderManager())
 }
 
 func (s *Service) SandboxProviderManager() *sandbox.ProviderManager {

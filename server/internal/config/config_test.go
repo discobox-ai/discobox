@@ -47,12 +47,6 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.DatabaseDriver != gormdb.DriverSQLite {
 		t.Fatalf("DatabaseDriver = %q, want %q", cfg.DatabaseDriver, gormdb.DriverSQLite)
 	}
-	if cfg.JobMaxAttempts != 3 {
-		t.Fatalf("JobMaxAttempts = %d, want 3", cfg.JobMaxAttempts)
-	}
-	if !cfg.DispatcherEnabled {
-		t.Fatalf("DispatcherEnabled = false, want true")
-	}
 	if cfg.DispatcherPollInterval != time.Second {
 		t.Fatalf("DispatcherPollInterval = %s, want 1s", cfg.DispatcherPollInterval)
 	}
@@ -81,13 +75,7 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	t.Setenv("DATABASE_DSN", testDatabaseDSN)
 	t.Setenv("DATABASE_READ_DSN", testDatabaseReadDSN)
 	t.Setenv("DATABASE_DRIVER", "postgres")
-	t.Setenv("JOB_MAX_ATTEMPTS", "7")
-	t.Setenv("DISPATCHER_ENABLED", "false")
 	t.Setenv("DISPATCHER_POLL_INTERVAL", "250ms")
-	t.Setenv("DISPATCHER_JOB_TIMEOUT", "2m")
-	t.Setenv("DISPATCHER_STALE_JOB_TIMEOUT", "10m")
-	t.Setenv("DISPATCHER_IMMEDIATE_EXECUTION", "false")
-	t.Setenv("DISPATCHER_DEFAULT_CONCURRENCY", "3")
 	t.Setenv("SANDBOX_RECONCILE_JOB_CONCURRENCY", "9")
 	t.Setenv("DISCOBOX_DEFAULT_SANDBOX_IMAGE", "discobox-sandbox-agent:test")
 	t.Setenv("DISCOBOX_ENCRYPTION_KEY", "key")
@@ -129,26 +117,8 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	if cfg.DatabaseReadDSN != testDatabaseReadDSN {
 		t.Fatalf("DatabaseReadDSN = %q", cfg.DatabaseReadDSN)
 	}
-	if cfg.JobMaxAttempts != 7 {
-		t.Fatalf("JobMaxAttempts = %d, want 7", cfg.JobMaxAttempts)
-	}
-	if cfg.DispatcherEnabled {
-		t.Fatalf("DispatcherEnabled = true, want false")
-	}
 	if cfg.DispatcherPollInterval != 250*time.Millisecond {
 		t.Fatalf("DispatcherPollInterval = %s, want 250ms", cfg.DispatcherPollInterval)
-	}
-	if cfg.DispatcherJobTimeout != 2*time.Minute {
-		t.Fatalf("DispatcherJobTimeout = %s, want 2m", cfg.DispatcherJobTimeout)
-	}
-	if cfg.DispatcherStaleJobTimeout != 10*time.Minute {
-		t.Fatalf("DispatcherStaleJobTimeout = %s, want 10m", cfg.DispatcherStaleJobTimeout)
-	}
-	if cfg.DispatcherImmediateExecution {
-		t.Fatalf("DispatcherImmediateExecution = true, want false")
-	}
-	if cfg.DispatcherDefaultConcurrency != 3 {
-		t.Fatalf("DispatcherDefaultConcurrency = %d, want 3", cfg.DispatcherDefaultConcurrency)
 	}
 	if cfg.SandboxReconcileJobConcurrency != 9 {
 		t.Fatalf("SandboxReconcileJobConcurrency = %d, want 9", cfg.SandboxReconcileJobConcurrency)
@@ -251,11 +221,7 @@ func TestLoadRejectsInvalidValues(t *testing.T) {
 		{name: "port", key: "PORT", val: "0"},
 		{name: "idle timeout", key: "DISCOBOX_SERVER_IDLE_TIMEOUT", val: "-1s"},
 		{name: "driver", key: "DATABASE_DRIVER", val: "mysql"},
-		{name: "attempts", key: "JOB_MAX_ATTEMPTS", val: "0"},
 		{name: "poll interval", key: "DISPATCHER_POLL_INTERVAL", val: "-1s"},
-		{name: "job timeout", key: "DISPATCHER_JOB_TIMEOUT", val: "0s"},
-		{name: "stale timeout", key: "DISPATCHER_STALE_JOB_TIMEOUT", val: "0s"},
-		{name: "dispatcher concurrency", key: "DISPATCHER_DEFAULT_CONCURRENCY", val: "0"},
 		{name: "sandbox concurrency", key: "SANDBOX_RECONCILE_JOB_CONCURRENCY", val: "0"},
 		{name: "otel metric export interval", key: "OTEL_METRIC_EXPORT_INTERVAL", val: "0s"},
 	}
@@ -287,13 +253,7 @@ func clearConfigEnv(t *testing.T) {
 		"DATABASE_DSN",
 		"DATABASE_READ_DSN",
 		"DATABASE_DRIVER",
-		"JOB_MAX_ATTEMPTS",
-		"DISPATCHER_ENABLED",
 		"DISPATCHER_POLL_INTERVAL",
-		"DISPATCHER_JOB_TIMEOUT",
-		"DISPATCHER_STALE_JOB_TIMEOUT",
-		"DISPATCHER_IMMEDIATE_EXECUTION",
-		"DISPATCHER_DEFAULT_CONCURRENCY",
 		"SANDBOX_RECONCILE_JOB_CONCURRENCY",
 		"DISCOBOX_DEFAULT_SANDBOX_IMAGE",
 		"DISCOBOX_ENCRYPTION_KEY",

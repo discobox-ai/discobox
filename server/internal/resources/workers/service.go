@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/auth"
 	"github.com/obot-platform/discobox/server/internal/model"
@@ -19,14 +18,16 @@ import (
 
 type Service struct {
 	store *store.Store
-	jobs  WorkerReconcileJobManager
+	jobs  WorkerReconcileScheduler
 }
 
-type WorkerReconcileJobManager interface {
-	SubmitWorkerReconcile(context.Context, string) (*orchestration.Job, error)
+// WorkerReconcileScheduler is the slice of the worker Manager the API service
+// needs: drift-driven re-marks.
+type WorkerReconcileScheduler interface {
+	ScheduleWorkerReconciliation(context.Context, string) error
 }
 
-func NewService(store *store.Store, jobs ...WorkerReconcileJobManager) *Service {
+func NewService(store *store.Store, jobs ...WorkerReconcileScheduler) *Service {
 	svc := &Service{store: store}
 	if len(jobs) > 0 {
 		svc.jobs = jobs[0]
@@ -126,7 +127,7 @@ func (s *Service) ReconcileWorker(ctx context.Context, projectID, workerID strin
 	if worker.ProjectID != projectID {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "worker not found")
 	}
-	if _, err := s.jobs.SubmitWorkerReconcile(ctx, workerID); err != nil {
+	if err := s.jobs.ScheduleWorkerReconciliation(ctx, workerID); err != nil {
 		return nil, apiError(err, "worker not found")
 	}
 	worker, err = s.store.GetWorker(ctx, workerID)

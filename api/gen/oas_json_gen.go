@@ -13266,12 +13266,6 @@ func (s *SandboxRuntime) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.LastJobId.Set {
-			e.FieldStart("lastJobId")
-			s.LastJobId.Encode(e)
-		}
-	}
-	{
 		e.FieldStart("lastOperationStatus")
 		s.LastOperationStatus.Encode(e)
 	}
@@ -13305,20 +13299,19 @@ func (s *SandboxRuntime) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxRuntime = [13]string{
+var jsonFieldsNameOfSandboxRuntime = [12]string{
 	0:  "activeOperation",
 	1:  "desiredState",
 	2:  "errorMessage",
 	3:  "generation",
 	4:  "lastActiveAt",
-	5:  "lastJobId",
-	6:  "lastOperationStatus",
-	7:  "observedGeneration",
-	8:  "phase",
-	9:  "restartGeneration",
-	10: "restartedGeneration",
-	11: "statusMessage",
-	12: "workerId",
+	5:  "lastOperationStatus",
+	6:  "observedGeneration",
+	7:  "phase",
+	8:  "restartGeneration",
+	9:  "restartedGeneration",
+	10: "statusMessage",
+	11: "workerId",
 }
 
 // Decode decodes SandboxRuntime from json.
@@ -13382,18 +13375,8 @@ func (s *SandboxRuntime) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"lastActiveAt\"")
 			}
-		case "lastJobId":
-			if err := func() error {
-				s.LastJobId.Reset()
-				if err := s.LastJobId.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"lastJobId\"")
-			}
 		case "lastOperationStatus":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				if err := s.LastOperationStatus.Decode(d); err != nil {
 					return err
@@ -13403,7 +13386,7 @@ func (s *SandboxRuntime) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"lastOperationStatus\"")
 			}
 		case "observedGeneration":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Int64()
 				s.ObservedGeneration = int64(v)
@@ -13415,7 +13398,7 @@ func (s *SandboxRuntime) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"observedGeneration\"")
 			}
 		case "phase":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				if err := s.Phase.Decode(d); err != nil {
 					return err
@@ -13425,7 +13408,7 @@ func (s *SandboxRuntime) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"phase\"")
 			}
 		case "restartGeneration":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Int64()
 				s.RestartGeneration = int64(v)
@@ -13437,7 +13420,7 @@ func (s *SandboxRuntime) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"restartGeneration\"")
 			}
 		case "restartedGeneration":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Int64()
 				s.RestartedGeneration = int64(v)
@@ -13478,8 +13461,8 @@ func (s *SandboxRuntime) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b11001010,
-		0b00000111,
+		0b11101010,
+		0b00000011,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -16432,12 +16415,6 @@ func (s *Worker) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.LastJobId.Set {
-			e.FieldStart("lastJobId")
-			s.LastJobId.Encode(e)
-		}
-	}
-	{
 		e.FieldStart("lastOperationStatus")
 		s.LastOperationStatus.Encode(e)
 	}
@@ -16507,7 +16484,7 @@ func (s *Worker) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfWorker = [29]string{
+var jsonFieldsNameOfWorker = [28]string{
 	0:  "$schema",
 	1:  "activeOperation",
 	2:  "availableCpuVcpus",
@@ -16522,21 +16499,20 @@ var jsonFieldsNameOfWorker = [29]string{
 	11: "id",
 	12: "identity",
 	13: "keyType",
-	14: "lastJobId",
-	15: "lastOperationStatus",
-	16: "lastSeenAt",
-	17: "observedGeneration",
-	18: "phase",
-	19: "projectId",
-	20: "providerInstance",
-	21: "providerInstanceId",
-	22: "publicKey",
-	23: "ready",
-	24: "registeredAt",
-	25: "revokedAt",
-	26: "schedulable",
-	27: "statusMessage",
-	28: "updatedAt",
+	14: "lastOperationStatus",
+	15: "lastSeenAt",
+	16: "observedGeneration",
+	17: "phase",
+	18: "projectId",
+	19: "providerInstance",
+	20: "providerInstanceId",
+	21: "publicKey",
+	22: "ready",
+	23: "registeredAt",
+	24: "revokedAt",
+	25: "schedulable",
+	26: "statusMessage",
+	27: "updatedAt",
 }
 
 // Decode decodes Worker from json.
@@ -16705,18 +16681,8 @@ func (s *Worker) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"keyType\"")
 			}
-		case "lastJobId":
-			if err := func() error {
-				s.LastJobId.Reset()
-				if err := s.LastJobId.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"lastJobId\"")
-			}
 		case "lastOperationStatus":
-			requiredBitSet[1] |= 1 << 7
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				if err := s.LastOperationStatus.Decode(d); err != nil {
 					return err
@@ -16736,7 +16702,7 @@ func (s *Worker) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"lastSeenAt\"")
 			}
 		case "observedGeneration":
-			requiredBitSet[2] |= 1 << 1
+			requiredBitSet[2] |= 1 << 0
 			if err := func() error {
 				v, err := d.Int64()
 				s.ObservedGeneration = int64(v)
@@ -16748,7 +16714,7 @@ func (s *Worker) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"observedGeneration\"")
 			}
 		case "phase":
-			requiredBitSet[2] |= 1 << 2
+			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				if err := s.Phase.Decode(d); err != nil {
 					return err
@@ -16758,7 +16724,7 @@ func (s *Worker) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"phase\"")
 			}
 		case "projectId":
-			requiredBitSet[2] |= 1 << 3
+			requiredBitSet[2] |= 1 << 2
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -16780,7 +16746,7 @@ func (s *Worker) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"providerInstance\"")
 			}
 		case "providerInstanceId":
-			requiredBitSet[2] |= 1 << 5
+			requiredBitSet[2] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.ProviderInstanceId = string(v)
@@ -16802,7 +16768,7 @@ func (s *Worker) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"publicKey\"")
 			}
 		case "ready":
-			requiredBitSet[2] |= 1 << 7
+			requiredBitSet[2] |= 1 << 6
 			if err := func() error {
 				v, err := d.Bool()
 				s.Ready = bool(v)
@@ -16834,7 +16800,7 @@ func (s *Worker) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"revokedAt\"")
 			}
 		case "schedulable":
-			requiredBitSet[3] |= 1 << 2
+			requiredBitSet[3] |= 1 << 1
 			if err := func() error {
 				v, err := d.Bool()
 				s.Schedulable = bool(v)
@@ -16856,7 +16822,7 @@ func (s *Worker) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"statusMessage\"")
 			}
 		case "updatedAt":
-			requiredBitSet[3] |= 1 << 4
+			requiredBitSet[3] |= 1 << 3
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -16878,9 +16844,9 @@ func (s *Worker) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [4]uint8{
 		0b11011100,
-		0b10011101,
-		0b10101110,
-		0b00010100,
+		0b01011101,
+		0b01010111,
+		0b00001010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

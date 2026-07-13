@@ -1,23 +1,28 @@
 # Jobs Design
 
-`internal/resources/jobs` owns durable job dispatcher infrastructure for the
-server. It is resource-neutral: resource packages own payloads, executors, and
-lifecycle policy.
+`internal/resources/jobs` serves the jobs REST API. There is no job queue:
+resource reconciliation rides the level-triggered reconcile engine
+(`internal/reconcile`), and this package projects the engine's **dirty set**
+into the API's job shape.
 
 ## Boundaries
 
 ```mermaid
 flowchart LR
-    service[internal/service] --> manager[internal/resources/jobs.Manager]
-    resources[resource managers] --> manager
-    manager --> dispatcher[orchestration.Dispatcher]
-    dispatcher --> executors[resource executors]
-    dispatcher --> store[internal/store]
+    handlers[internal/handlers] --> jobs[jobs.Service]
+    jobs --> engine["reconcile.Engine (dirty set)"]
+    jobs --> store[internal/store]
+    intents["resource packages (sandboxes, workers)"] --> engine
 ```
 
-- `Manager` owns dispatcher start/stop, executor registration, wakeup, and queue
-  config.
-- Resource packages own job payload types and executors, for example
-  `sandboxes.SandboxReconcileExecutor`.
-- Keep resource lifecycle decisions out of this package except while migration
-  code is still being split into resource managers.
+- A "job" is a pending reconcile mark: id `type:resource-id`, status derived
+  from claim state and `not_before` (pending / backoff / running).
+- `ForceJob` pulls a backed-off mark forward (`MarkDirty`), making it claimable
+  immediately.
+- Terminal history is not served here: a reconcile's outcome lives on the
+  resource itself (`Phase`, `LastOperationStatus`, `ErrorMessage`) and in
+  project events.
+- Lifecycle **intent** does not live here either: each resource package owns
+  its intent writes (generation bump + operation + `MarkDirtyTx`, one
+  transaction) — sandboxes in `resources/sandboxes/intents.go`, workers in
+  `resources/workers/manager.go`.

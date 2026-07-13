@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -68,6 +69,35 @@ func WithGeneration(generation int64) SandboxGetOption {
 	return func(opts *sandboxGetOptions) {
 		opts.generation = &generation
 	}
+}
+
+// SandboxOperationRef identifies one sandbox by its project scope.
+type SandboxOperationRef struct {
+	ProjectID string
+	SandboxID string
+}
+
+// ListSandboxIDsWithStaleOperations returns refs of sandboxes whose recorded
+// operation has been in flight (pending/running) since before cutoff. It is
+// the reconcile engine's lost-mark backstop.
+func (s *Store) ListSandboxIDsWithStaleOperations(ctx context.Context, cutoff time.Time) ([]SandboxOperationRef, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var rows []model.Sandbox
+	if err := read.Model(&model.Sandbox{}).
+		Select("project_id", "id").
+		Where("last_operation_status IN ?", []string{model.SandboxOperationStatusPending, model.SandboxOperationStatusRunning}).
+		Where("updated_at < ?", cutoff).
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	refs := make([]SandboxOperationRef, 0, len(rows))
+	for _, row := range rows {
+		refs = append(refs, SandboxOperationRef{ProjectID: row.ProjectID, SandboxID: row.ID})
+	}
+	return refs, nil
 }
 
 func (s *Store) ListSandboxes(ctx context.Context, projectID string) ([]model.Sandbox, error) {

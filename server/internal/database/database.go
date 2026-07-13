@@ -9,7 +9,6 @@ import (
 
 	"github.com/obot-platform/discobox/gormdb"
 	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/store"
 )
 
 // DB wraps the application write/read GORM pools.
@@ -59,10 +58,45 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := dropAgentConfigDeletedAt(write); err != nil {
 		return err
 	}
-	if err := write.AutoMigrate(store.JobModels()...); err != nil {
-		return err
+	return dropJobQueueArtifacts(write)
+}
+
+// dropJobQueueArtifacts removes the retired job-queue schema: the job and
+// leader tables, and the last_job_id lifecycle columns. Reconciliation now
+// rides the reconcile engine's dirty set.
+func dropJobQueueArtifacts(db *gorm.DB) error {
+	drop := func(tx *gorm.DB) error {
+		for _, table := range []string{"jobqueue_jobs", "jobqueue_leaders"} {
+			if tx.Migrator().HasTable(table) {
+				if err := tx.Migrator().DropTable(table); err != nil {
+					return err
+				}
+			}
+		}
+		for _, m := range []any{&model.Sandbox{}, &model.Worker{}} {
+			if tx.Migrator().HasColumn(m, "last_job_id") {
+				if err := tx.Migrator().DropColumn(m, "last_job_id"); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
 	}
-	return store.BackfillJobProjectIDs(ctx, write)
+	if db.Dialector.Name() != "sqlite" {
+		return drop(db)
+	}
+	// SQLite drops columns by rebuilding the table (create new, copy, DROP TABLE,
+	// rename). With foreign_keys ON, dropping `workers` fails because sandboxes
+	// and bootstrap tokens reference it. Follow SQLite's documented ALTER TABLE
+	// procedure: disable the pragma around the rebuild. Pragmas are
+	// per-connection, so pin one connection for the whole operation.
+	return db.Connection(func(tx *gorm.DB) error {
+		if err := tx.Exec("PRAGMA foreign_keys = OFF").Error; err != nil {
+			return err
+		}
+		defer tx.Exec("PRAGMA foreign_keys = ON")
+		return drop(tx)
+	})
 }
 
 func dropAgentConfigDeletedAt(db *gorm.DB) error {

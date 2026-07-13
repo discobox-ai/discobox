@@ -5,7 +5,6 @@ use (
 	./cli
 	./gormdb
 	./hooks
-	./orchestration
 	./sandbox-agent
 	./server
 	./worker-agent

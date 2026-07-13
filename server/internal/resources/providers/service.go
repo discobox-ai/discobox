@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/obot-platform/discobox/orchestration"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandboxesvc "github.com/obot-platform/discobox/server/internal/resources/sandboxes"
@@ -22,8 +21,7 @@ import (
 type Service struct {
 	store     *store.Store
 	sandboxes SandboxCatalogService
-	workers   *workers.Manager
-	jobs      JobManager
+	workers   *workers.ControlPlane
 }
 
 type SandboxCatalogService interface {
@@ -33,20 +31,8 @@ type SandboxCatalogService interface {
 
 type SandboxProviderCatalogItem = sandboxesvc.SandboxProviderCatalogItem
 
-type JobManager interface {
-	SubmitWorkerReconcile(context.Context, string) (*orchestration.Job, error)
-}
-
-type JobRegistrar interface {
-	Register(orchestration.Type, orchestration.Executor, ...orchestration.ExecutorOption) error
-}
-
-func NewService(store *store.Store, sandboxes SandboxCatalogService, workerManager *workers.Manager, jobs JobManager) *Service {
-	return &Service{store: store, sandboxes: sandboxes, workers: workerManager, jobs: jobs}
-}
-
-func (s *Service) RegisterJobs(registrar JobRegistrar, opts ...orchestration.ExecutorOption) error {
-	return registrar.Register(WorkerProviderReconcileType, s.newWorkerProviderReconcileExecutor(), opts...)
+func NewService(store *store.Store, sandboxes SandboxCatalogService, workerManager *workers.ControlPlane) *Service {
+	return &Service{store: store, sandboxes: sandboxes, workers: workerManager}
 }
 
 func mapAPIError(err error, notFoundMessage string) error {
@@ -407,13 +393,10 @@ func (s *Service) EnqueueProviderWorkers(ctx context.Context, projectID, provide
 		return err
 	}
 	for i := range workers {
-		if _, err := s.jobs.SubmitWorkerReconcile(ctx, workers[i].ID); err != nil {
+		if err := s.workers.ScheduleWorkerReconciliation(ctx, workers[i].ID); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (s *Service) newWorkerProviderReconcileExecutor() *WorkerProviderReconcileExecutor {
-	return NewWorkerProviderReconcileExecutor(s.store, s.sandboxes.SandboxProviderManager(), s.workers)
-}
