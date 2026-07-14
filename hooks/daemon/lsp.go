@@ -385,7 +385,7 @@ func (r *runtimeState) recordLSPDiagnostics(hook hooks.Hook, uri string, diagnos
 		return
 	}
 	r.clearPendingLSP(hook.ID, uri)
-	_ = r.recordEvent("lsp.diagnostics.updated", hook.ID, "", "language server diagnostics updated", map[string]any{"uri": uri, "path": path, "diagnostics": len(filtered)})
+	_ = r.recordEvent("lsp.diagnostics.updated", hook.ID, "", fmt.Sprintf("language server diagnostics updated: %s: %s", path, summarizeDiagnostics(filtered)), map[string]any{"uri": uri, "path": path, "diagnostics": len(filtered)})
 	r.touch()
 }
 
@@ -549,6 +549,38 @@ func splitLSPPendingKey(key string) (string, string, bool) {
 
 func lspStartupKey(hookID string) string {
 	return "startup:" + hookID
+}
+
+var severityLabels = map[string]string{
+	"error":       "error",
+	"warning":     "warning",
+	"information": "info",
+	"hint":        "hint",
+}
+
+// summarizeDiagnostics renders retained diagnostics as "2 errors, 1 warning",
+// or "clean" when a document has none left.
+func summarizeDiagnostics(diagnostics []store.Diagnostic) string {
+	if len(diagnostics) == 0 {
+		return "clean"
+	}
+	counts := map[string]int{}
+	for _, diagnostic := range diagnostics {
+		counts[strings.ToLower(strings.TrimSpace(diagnostic.Severity))]++
+	}
+	parts := make([]string, 0, len(severityLabels))
+	for _, severity := range []string{"error", "warning", "information", "hint"} {
+		count := counts[severity]
+		if count == 0 {
+			continue
+		}
+		label := severityLabels[severity]
+		if count > 1 {
+			label += "s"
+		}
+		parts = append(parts, fmt.Sprintf("%d %s", count, label))
+	}
+	return strings.Join(parts, ", ")
 }
 
 func severityIncluded(severity, minSeverity string) bool {
