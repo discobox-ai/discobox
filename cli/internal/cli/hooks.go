@@ -94,7 +94,7 @@ func writeHarnessHookLogs(out io.Writer, logs []apimodel.HarnessHookLog) error {
 		payload := compactJSON(log.Payload)
 		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
 			formatTime(log.CreatedAt),
-			shortID(log.TerminalId.Or("")),
+			log.TerminalId.Or(""),
 			log.Provider,
 			log.Event,
 			truncateTableValue(payload, 120),

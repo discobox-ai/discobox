@@ -103,7 +103,7 @@ func (a *App) newHarnessSecretsBindCommand() *cobra.Command {
 		if a.output == "json" {
 			return writeJSON(cmd.OutOrStdout(), binding)
 		}
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "bound %s to secret %s\n", binding.EnvName, shortID(binding.SecretId))
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "bound %s to secret %s\n", binding.EnvName, binding.SecretId)
 		return err
 	}}
 }
@@ -395,7 +395,7 @@ func (a *App) newHarnessSetDefaultCommand() *cobra.Command {
 		if a.output == "json" {
 			return writeJSON(cmd.OutOrStdout(), project)
 		}
-		_, err = cmd.OutOrStdout().Write([]byte("default harness config set to " + shortID(harnessID) + "\n"))
+		_, err = cmd.OutOrStdout().Write([]byte("default harness config set to " + harnessID + "\n"))
 		return err
 	}}
 }

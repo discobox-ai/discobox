@@ -10,15 +10,11 @@ import (
 	idpkg "github.com/obot-platform/discobox/id"
 )
 
-func shortID(id string) string {
-	return idpkg.Short(id)
-}
-
 func shortResourceID(resourceType, resourceID string) string {
 	if resourceType == "" {
-		return shortID(resourceID)
+		return resourceID
 	}
-	return resourceType + "/" + shortID(resourceID)
+	return resourceType + "/" + resourceID
 }
 
 func resolveShortID(value, name string, ids []string) (string, error) {
@@ -31,7 +27,10 @@ func resolveShortID(value, name string, ids []string) (string, error) {
 	}
 	var matches []string
 	for _, candidate := range ids {
-		if strings.HasSuffix(candidate, id) || strings.HasPrefix(candidate, id) {
+		if candidate == id {
+			return candidate, nil
+		}
+		if strings.HasPrefix(candidate, id) {
 			matches = append(matches, candidate)
 		}
 	}
@@ -46,11 +45,11 @@ func resolveShortID(value, name string, ids []string) (string, error) {
 }
 
 func isResolvableShortID(id string) bool {
-	if !idpkg.IsShort(id) || idpkg.IsFriendly(id) {
+	if id == "" || idpkg.IsGenerated(id) {
 		return false
 	}
 	for _, r := range id {
-		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') {
+		if (r >= '0' && r <= '9') || (r >= 'a' && r <= 'z') || r == '_' {
 			continue
 		}
 		return false

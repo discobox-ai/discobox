@@ -1083,7 +1083,7 @@ func (a *app) writeSnapshots(cmd *cobra.Command, snapshots []client.WorkspaceSna
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tTIME\tBASE\tPATCH_BYTES\tCHANGED\tOMITTED\tOBSERVED")
 	for _, snapshot := range snapshots {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%d\t%d\n", idpkg.Short(snapshot.ID), formatEventTime(snapshot.CreatedAt), formatShortCommit(snapshot.BaseCommit), snapshot.PatchBytes, len(snapshot.ChangedFiles), len(snapshot.OmittedFiles), len(snapshot.ObservedChangeIDs))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%d\t%d\t%d\n", snapshot.ID, formatEventTime(snapshot.CreatedAt), formatShortCommit(snapshot.BaseCommit), snapshot.PatchBytes, len(snapshot.ChangedFiles), len(snapshot.OmittedFiles), len(snapshot.ObservedChangeIDs))
 	}
 	return tw.Flush()
 }
@@ -1320,7 +1320,7 @@ func selectedSnapshot(ctx context.Context, c *client.Client, args []string) (cli
 	}
 	matches := make([]client.WorkspaceSnapshot, 0, 1)
 	for _, snapshot := range snapshots {
-		if snapshot.ID == id || (idpkg.IsShort(id) && strings.HasSuffix(snapshot.ID, id)) {
+		if snapshot.ID == id || (!idpkg.IsGenerated(id) && strings.HasPrefix(snapshot.ID, id)) {
 			matches = append(matches, snapshot)
 		}
 	}

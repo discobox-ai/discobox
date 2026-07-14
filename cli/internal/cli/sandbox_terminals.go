@@ -202,7 +202,7 @@ func (a *App) newSandboxTerminalDeleteCommand(sandboxID *string) *cobra.Command 
 			if a.output == "json" {
 				return writeJSON(cmd.OutOrStdout(), map[string]any{"deleted": true, "terminalId": terminalID})
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "deleted terminal %s\n", shortID(terminalID))
+			_, err = fmt.Fprintf(cmd.OutOrStdout(), "deleted terminal %s\n", terminalID)
 			return err
 		},
 	}
@@ -299,7 +299,7 @@ func (a *App) writeSandboxTerminals(cmd *cobra.Command, terminals []apimodel.San
 			exitCode = fmt.Sprint(value)
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			shortID(terminal.ID),
+			terminal.ID,
 			terminal.HarnessId.Or(""),
 			terminal.Status,
 			pid,

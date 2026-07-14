@@ -301,7 +301,7 @@ func healthyWorker(worker *model.Worker) bool {
 }
 
 func createWorker(ctx context.Context, manager WorkerManager, project *model.Project, provider *model.SandboxProviderInstance, ordinal int) (*model.Worker, error) {
-	workerID, err := id.New()
+	workerID, err := id.New(id.PrefixWorker)
 	if err != nil {
 		return nil, err
 	}

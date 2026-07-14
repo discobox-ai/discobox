@@ -98,7 +98,7 @@ func snapshotEvent(projectID, resourceType, resourceID string, seq int64, resour
 		return model.ProjectEvent{}, err
 	}
 	return model.ProjectEvent{
-		ID:           id.NewString(),
+		ID:           id.NewString(id.PrefixEvent),
 		Seq:          seq,
 		ProjectID:    projectID,
 		Type:         model.EventTypeResourceListed,

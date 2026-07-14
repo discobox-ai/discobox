@@ -102,7 +102,7 @@ type HookRun struct {
 }
 
 func (HookRun) TableName() string              { return "hook_runs" }
-func (r *HookRun) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&r.ID) }
+func (r *HookRun) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&r.ID, "hkrun") }
 
 // PendingHook stores one serial queue item.
 type PendingHook struct {
@@ -141,7 +141,7 @@ type DaemonSession struct {
 }
 
 func (DaemonSession) TableName() string              { return "daemon_sessions" }
-func (s *DaemonSession) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&s.ID) }
+func (s *DaemonSession) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&s.ID, "hksess") }
 
 // HookEvent stores one audit-trail event.
 type HookEvent struct {
@@ -155,7 +155,7 @@ type HookEvent struct {
 }
 
 func (HookEvent) TableName() string              { return "hook_events" }
-func (e *HookEvent) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&e.ID) }
+func (e *HookEvent) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&e.ID, "hkevt") }
 
 // HookLog stores one line of hook output.
 type HookLog struct {
@@ -167,7 +167,7 @@ type HookLog struct {
 }
 
 func (HookLog) TableName() string              { return "hook_logs" }
-func (l *HookLog) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&l.ID) }
+func (l *HookLog) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&l.ID, "hklog") }
 
 // HookDiagnostic stores one current diagnostic reported by an LSP hook.
 type HookDiagnostic struct {
@@ -187,7 +187,7 @@ type HookDiagnostic struct {
 }
 
 func (HookDiagnostic) TableName() string              { return "hook_diagnostics" }
-func (d *HookDiagnostic) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&d.ID) }
+func (d *HookDiagnostic) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&d.ID, "hkdiag") }
 
 // ObservedFileChange stores one daemon-observed file change.
 type ObservedFileChange struct {
@@ -200,7 +200,7 @@ type ObservedFileChange struct {
 }
 
 func (ObservedFileChange) TableName() string              { return "observed_file_changes" }
-func (c *ObservedFileChange) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&c.ID) }
+func (c *ObservedFileChange) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&c.ID, "hkchg") }
 
 // WorkspaceSnapshot stores one debounced DB-backed workspace snapshot.
 type WorkspaceSnapshot struct {
@@ -218,7 +218,7 @@ type WorkspaceSnapshot struct {
 }
 
 func (WorkspaceSnapshot) TableName() string              { return "workspace_snapshots" }
-func (s *WorkspaceSnapshot) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&s.ID) }
+func (s *WorkspaceSnapshot) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&s.ID, "hksnap") }
 
 // HookInvocation stores one hook invocation attempt.
 type HookInvocation struct {
@@ -229,7 +229,7 @@ type HookInvocation struct {
 }
 
 func (HookInvocation) TableName() string              { return "hook_invocations" }
-func (i *HookInvocation) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&i.ID) }
+func (i *HookInvocation) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&i.ID, "hkinv") }
 
 // HookInvocationChange stores one invocation-to-observed-change join row.
 type HookInvocationChange struct {
@@ -239,7 +239,7 @@ type HookInvocationChange struct {
 }
 
 func (HookInvocationChange) TableName() string              { return "hook_invocation_changes" }
-func (c *HookInvocationChange) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&c.ID) }
+func (c *HookInvocationChange) BeforeCreate(*gorm.DB) error { return ensureGeneratedID(&c.ID, "hkivc") }
 
 // WatchedFile stores the latest watcher snapshot entry for restart diffing.
 type WatchedFile struct {
@@ -258,11 +258,11 @@ func AllModels() []any {
 	return []any{&HookDefinition{}, &HookStatus{}, &HookRun{}, &PendingHook{}, &DaemonState{}, &DaemonSession{}, &HookEvent{}, &HookLog{}, &HookDiagnostic{}, &ObservedFileChange{}, &WorkspaceSnapshot{}, &HookInvocation{}, &HookInvocationChange{}, &WatchedFile{}}
 }
 
-func ensureGeneratedID(target *string) error {
+func ensureGeneratedID(target *string, prefix string) error {
 	if *target != "" {
 		return nil
 	}
-	generated, err := id.New()
+	generated, err := id.New(prefix)
 	if err != nil {
 		return err
 	}

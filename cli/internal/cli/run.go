@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -37,9 +35,10 @@ use -C to run against another directory or a Git repository (optionally with
 @REF). Use -- when the prompt needs to be separated from command flags
 explicitly.
 
-By default run waits for the sandbox to start and attaches to its default harness
-terminal, streaming it to your terminal (press Ctrl-P Ctrl-Q to detach). Pass -d
-to create the sandbox and print it without attaching.`,
+Every sandbox has one default terminal: the configured harness, or a shell when
+no harness is configured. By default run waits for the sandbox to start and
+attaches to that terminal, streaming it to your terminal (press Ctrl-P Ctrl-Q to
+detach). Pass -d to create the sandbox and print it without attaching.`,
 		Example: `  discobox run fix the failing tests
   discobox run -C https://github.com/obot-platform/discobox.git@main summarize the CLI package
   discobox run -e GITHUB_TOKEN -e MODE=test fix the failing tests
@@ -85,73 +84,27 @@ to create the sandbox and print it without attaching.`,
 }
 
 // attachRunSandbox waits for the freshly created sandbox to start and for its
-// default terminal to come up, then attaches the caller's stdio to it. The
-// sandbox-agent always launches one primary terminal running the configured
-// harness, so run attaches to it unless --detach was passed.
+// default terminal to come up, then attaches the caller's stdio to it. Every
+// sandbox gets one primary terminal from the sandbox-agent — the configured
+// harness, or a plain shell when it has none — so run attaches to it unless
+// --detach was passed.
 func (a *App) attachRunSandbox(cmd *cobra.Command, client *apiclientgen.Client, projectID string, sandbox *apimodel.Sandbox) error {
 	ctx := cmd.Context()
 	stderr := cmd.ErrOrStderr()
-	fmt.Fprintf(stderr, "Created sandbox %s, provisioning (fetching source, starting container)...\n", shortID(sandbox.ID))
-	started, err := a.waitForSandbox(cmd, client, projectID, sandbox.ID, 2*time.Minute)
-	if err != nil {
+	fmt.Fprintf(stderr, "Created sandbox %s, provisioning (fetching source, starting container)...\n", sandbox.ID)
+	if _, err := a.waitForSandbox(cmd, client, projectID, sandbox.ID, 2*time.Minute); err != nil {
 		return err
 	}
-	// Fail fast when the running sandbox has no harness to launch. The sandbox-agent
-	// only starts a primary terminal when it can resolve a harness, so without one
-	// waitForPrimaryTerminal below would block until its timeout for a terminal
-	// that never appears.
-	if err := ensureRunHarnessWillLaunch(started); err != nil {
-		return err
-	}
-	fmt.Fprintln(stderr, "Sandbox running, preparing harness terminal...")
+	fmt.Fprintln(stderr, "Sandbox running, preparing default terminal...")
 	terminal, err := a.waitForPrimaryTerminal(ctx, stderr, projectID, sandbox.ID, 2*time.Minute)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stderr, "Attaching to terminal %s (Ctrl-P Ctrl-Q to detach)\n", shortID(terminal.ID))
+	fmt.Fprintf(stderr, "Attaching to terminal %s (Ctrl-P Ctrl-Q to detach)\n", terminal.ID)
 	// Replay the primary terminal's saved history first: the sandbox-agent
 	// launches and drives it before run connects, so replay shows the session
 	// from the start rather than only output produced after the attach.
 	return a.attachSandboxTerminal(ctx, projectID, sandbox.ID, terminal.ID, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
-}
-
-// errNoRunHarness explains that a sandbox has no harness and how to configure one. It
-// is returned when run can prove no primary terminal will ever launch.
-var errNoRunHarness = errors.New("no harness is configured for this sandbox: enable one with `discobox harnesses enable <definition>` (see `discobox harnesses definitions`), set a project default with `discobox harnesses set-default <id>`, or pass --harness")
-
-// ensureRunHarnessWillLaunch reports whether a freshly started sandbox will launch
-// a primary terminal. The sandbox-agent resolves the harness in this precedence:
-// the sandbox's resolved harness config, a local repo harness config, then the
-// project default. When the server pinned a harness config the terminal will
-// launch. Otherwise the only remaining source is a local repo harness config,
-// which run can check for local sources; remote sources are resolved
-// sandbox-side, so those defer to the bounded wait rather than fail here.
-func ensureRunHarnessWillLaunch(sandbox *apimodel.Sandbox) error {
-	if strings.TrimSpace(sandbox.Config.HarnessConfigId.Or("")) != "" {
-		return nil
-	}
-	source, ok := sandbox.Config.Source.Get()
-	if !ok {
-		return nil
-	}
-	localDir := strings.TrimSpace(source.LocalDirectory.Or(""))
-	if localDir == "" || localRunHarnessConfigPresent(localDir) {
-		return nil
-	}
-	return errNoRunHarness
-}
-
-// localRunHarnessConfigPresent reports whether a local source directory carries a
-// .discobox harness config. It mirrors the sandbox-agent's local harness config
-// lookup (sandbox-agent/terminal/service.go localHarnessConfigPath) so run can
-// predict whether that path will supply a harness.
-func localRunHarnessConfigPresent(repoRoot string) bool {
-	for _, name := range []string{"harness.json", "harness-config.json", "sandbox.json"} {
-		if info, err := os.Stat(filepath.Join(repoRoot, ".discobox", name)); err == nil && !info.IsDir() {
-			return true
-		}
-	}
-	return false
 }
 
 // waitForPrimaryTerminal polls the sandbox terminals until the primary
@@ -194,7 +147,7 @@ func (a *App) waitForPrimaryTerminal(ctx context.Context, progress io.Writer, pr
 				if announcedInstalling {
 					return apimodel.SandboxExec{}, errors.New("timed out while the harness was still installing; its install command may be slow or failing (see `discobox sandboxes terminals logs`)")
 				}
-				return apimodel.SandboxExec{}, errors.New("timed out waiting for the sandbox's harness terminal; the sandbox may have no harness configured (see `discobox harnesses list`) or its harness failed to start")
+				return apimodel.SandboxExec{}, errors.New("timed out waiting for the sandbox's default terminal; it may have failed to start (see `discobox sandboxes terminals logs`)")
 			}
 			return apimodel.SandboxExec{}, fmt.Errorf("waiting for sandbox terminal: %w", ctx.Err())
 		case <-ticker.C:
@@ -255,11 +208,11 @@ func splitRunSourceRef(value string) (string, string, bool) {
 }
 
 func createRunSandboxBody(ctx context.Context, opts runOptions) (*apimodel.CreateSandboxBody, error) {
-	runID, err := id.New()
+	runID, err := id.New(id.PrefixRun)
 	if err != nil {
 		return nil, err
 	}
-	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: "run-" + shortID(runID)}}
+	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: "run-" + id.RandomPart(runID)[:8]}}
 	if len(opts.prompt) > 0 {
 		body.Config.SetPrompt(append([]string(nil), opts.prompt...))
 	}

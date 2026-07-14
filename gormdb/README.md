@@ -49,14 +49,6 @@ If `Config.ReadDSN` is set, reads use a separate pool opened from `ReadDSN`.
 
 ## Turso
 
-Turso support is behind the `turso` build tag so the default SQLite build does
-not import Turso bindings:
-
-```bash
-go test -tags turso ./...
-go build -tags turso ./...
-```
-
 Local Turso uses `turso.tech/database/tursogo`, which is a no-CGO
 `database/sql` driver. Use a `turso:` or `turso://` DSN to select Turso from the
 same DSN setting used for SQLite and Postgres:

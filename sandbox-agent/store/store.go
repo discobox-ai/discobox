@@ -2,14 +2,13 @@ package store
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
 
 	"github.com/obot-platform/discobox/gormdb"
+	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -454,9 +453,5 @@ func execDetails(e execs.Exec) map[string]any {
 }
 
 func newID() (string, error) {
-	var data [16]byte
-	if _, err := rand.Read(data[:]); err != nil {
-		return "", err
-	}
-	return "evt_" + hex.EncodeToString(data[:]), nil
+	return id.New(id.PrefixEvent)
 }

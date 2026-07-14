@@ -18,8 +18,6 @@ import (
 	"github.com/obot-platform/discobox/worker-agent/sandboxruntime"
 )
 
-const workerHTTPWriteTimeout = 5 * time.Minute
-
 type Registration struct {
 	PublicKey string
 }
@@ -89,9 +87,12 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		Addr:              fmt.Sprintf(":%d", port),
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      workerHTTPWriteTimeout,
-		IdleTimeout:       120 * time.Second,
+		// No ReadTimeout/WriteTimeout: those set absolute per-request conn
+		// deadlines that survive protocol upgrades (exec attach websockets
+		// proxied to the sandbox agent) and cut long-lived streams off
+		// mid-flight. Liveness comes from ReadHeaderTimeout, IdleTimeout, and
+		// websocket keepalive pings on attach tunnels.
+		IdleTimeout: 120 * time.Second,
 	}
 	errCh := make(chan error, 1)
 	go func() {

@@ -145,7 +145,7 @@ func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef 
 	if !workspaceTree.Dirty {
 		return resolved, nil
 	}
-	snapshotID, err := id.New()
+	snapshotID, err := id.New(id.PrefixSnapshot)
 	if err != nil {
 		return resolvedRunSource{}, err
 	}

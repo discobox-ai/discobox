@@ -21,7 +21,7 @@ runtime operations.
 | `terminal` | Harness-terminal layer built on top of `execs`: harness resolution, install (run as ephemeral execs), and primary-terminal lifecycle. A terminal is an exec created in harness mode, tagged `harnessId`/`primary` in exec metadata; all runtime mechanics belong to `execs`. |
 | `terminal/frame` | Docker-exec-style binary stream framing shared by exec attach endpoints. |
 | `shimruntime` | Shared local shim attach runtime for Unix socket setup, HTTP upgrade handling, framed stream attachers, broadcast, exit frames, and pending resize state. |
-| `hooks` | Local Unix-socket collector and publisher protocol for harness lifecycle hook payloads. |
+| `hooks` | Local Unix-socket collector and publisher protocol for coding-harness lifecycle hook payloads. |
 | `resources` | Opaque cgroup/procfs/systemd-style resource snapshot collection for exec runtimes. |
 | `store` | Sandbox-local SQLite/GORM audit log, observed terminal state snapshots, and retained resource blobs. |
 | `Dockerfile` | Debian-based systemd sandbox runtime image with Docker, development tools, Chromium, socket-activated desktop access, code-server, and Nix tooling. |
@@ -32,11 +32,11 @@ runtime operations.
   canonical route and DTO definitions live in `api/openapi/server.yaml`.
 - Depend on root contracts and generated API types only for cross-module data.
 - Do not import server internals or provider implementation packages.
-- Keep worker registration and control-plane bootstrapping in the `worker-agent`
+- Keep worker registration and control-plane bootstrapping in the `worker-harness`
   module unless a shared contract belongs in the root module.
-- Do not call back to the worker-agent or server; resolved config is injected
+- Do not call back to the worker-harness or server; resolved config is injected
   into the sandbox and read locally.
-- Render templated agent files locally at installation time against the public
+- Render templated harness files locally at installation time against the public
   `SandboxConfig` object from the manifest. Keep API field names as the template
   surface and expose only deterministic, non-secret formatting helpers.
 - Treat systemd as the source of truth for terminal unit liveness. Runtime JSON
@@ -48,20 +48,24 @@ runtime operations.
   observations instead of an in-memory cache.
 - A terminal is one primitive: an exec created in harness mode. The `terminal`
   layer resolves the harness (explicit request, sandbox resolved config, local
-  repo `.discobox` config, or default), runs the harness's install command as an
-  ephemeral exec, injects the hook/terminal env, then calls `execs.Manager` with
+  repo `.discobox` config, default, then the `shell` fallback harness — a login
+  shell — when the sandbox has no harness at all), runs the harness's install command
+  as an ephemeral exec, injects the hook/terminal env, then calls `execs.Manager` with
   the resolved command, `TTY`, and `harnessId`/`primary` metadata. `execs.Manager`
   never learns what a harness is. Plain execs and terminals currently use
   separate `execs.Manager` instances (distinct runtime dirs); the API-level merge
   to a single `/execs` surface is pending.
-- On sandbox start the harness launches one primary terminal from the manifest
-  prompt (`terminal.Service.EnsurePrimary`). The first start runs the resolved
-  harness with the prompt as arguments; later starts run the harness's
-  `relaunchCommand` to resume the previous session instead of replaying the
-  prompt. First-vs-subsequent is decided by a durable marker in the SQLite store
-  (`AgentState`), so it survives restarts. The launched exec is tagged
-  `primary` in metadata by the sandbox-agent; that tag cannot be requested
-  through the terminal create API.
+- Every sandbox has a default terminal: on sandbox start the harness always
+  launches exactly one primary terminal (`terminal.Service.EnsurePrimary`), so
+  clients such as `discobox run` can rely on one existing and attach to it. The
+  first start runs the resolved harness with the manifest prompt as arguments;
+  later starts run the harness's `relaunchCommand` to resume the previous session
+  instead of replaying the prompt. First-vs-subsequent is decided by a durable
+  marker in the SQLite store (`AgentState`), so it survives restarts. When no
+  harness is configured the primary terminal is a login shell (harness id `shell`)
+  and the prompt is not passed, since a shell would run it as a command. The
+  launched exec is tagged `primary` in metadata by the sandbox-agent; that tag
+  cannot be requested through the terminal create API.
 - There is one shim (`execs/shim.go`) and one framed attach mechanism. Keep Unix
   socket setup, HTTP upgrade, attacher tracking, frame writes, output broadcast,
   exit frame emission, and pending resize handling in `shimruntime`; keep
@@ -93,3 +97,28 @@ runtime operations.
   its tunnel is wired up. `frame.Ready` proves the tunnel is established end to
   end; a bounded timeout still repaints (best effort) for clients that never
   send it.
+- Terminal-query answering: the screen emulator responds to queries in the
+  output stream (DA1, DSR, DECRQM, ...) by writing answers to an unbuffered
+  internal pipe. `Runtime.pumpScreenResponses` must always drain that pipe —
+  an undrained pipe blocks `Broadcast` inside the runtime mutex and deadlocks
+  the whole shim (Claude Code emits DA1 right after its first paint). While no
+  client is attached the answers are fed to the PTY so a headless TUI blocked
+  on a startup query comes up; while a client is attached they are dropped,
+  because the client's real terminal sees the query in the raw stream and
+  answers it.
+- The screen fails open, never closed: every emulator call runs under
+  `Runtime.runScreenLocked`, which recovers a panic by dropping the screen —
+  repaint-on-attach degrades to plain live streaming instead of the emulator
+  bug killing the exec. The PTY handle outlives the screen for this reason.
+- The program's repaint is authoritative: after a replay (snapshot present or
+  not), `Runtime.redrawAfterReplay` jiggles the PTY one row smaller and back,
+  so SIGWINCH makes the program redraw itself and the client converges to the
+  program's real screen even when the snapshot was imperfect or missing.
+- No phantom deadlines on attach: `http.Server` per-request read/write
+  deadlines survive hijacks and websocket accepts, so long-lived attach
+  streams must not inherit them. The shim and `shimproxy.AttachHTTPUpgrade`
+  clear conn deadlines after hijacking, the harness HTTP servers set no
+  `ReadTimeout`/`WriteTimeout` (only `ReadHeaderTimeout`/`IdleTimeout`), and
+  both websocket ends of an attach (CLI dial, `shimproxy.AttachWebSocket`)
+  run keepalive ping loops that close the tunnel when the peer stops
+  answering.

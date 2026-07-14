@@ -49,7 +49,10 @@ current schema; it is not a data-preserving tenant-schema converter.
 
 ## ID Generation
 
-Generated database row IDs should be lowercase ULID strings. This keeps IDs
-globally unique while preserving creation-time locality for indexes and ordered
-scans. Composite keys and fixed singleton rows may use non-generated IDs when
-that is part of the table design.
+Generated database row IDs are `<prefix>_<random>`: a short per-resource-type
+prefix from the root `id` package, an underscore, and 16 random lowercase
+Crockford base32 characters. The prefix makes an ID's type recognizable on
+sight; ordering comes from `CreatedAt` columns, not the ID. Mint IDs with
+`id.New(id.Prefix<Type>)` and register new prefixes in `id/id.go`. Composite
+keys and fixed well-known rows (e.g. `user_default`) may use non-generated IDs
+when that is part of the table design.

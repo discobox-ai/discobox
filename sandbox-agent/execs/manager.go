@@ -2,8 +2,6 @@ package execs
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -13,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/sandbox-agent/config"
 	"github.com/obot-platform/discobox/sandbox-agent/shimproxy"
 )
@@ -682,11 +681,7 @@ func readRuntime(path string) (Exec, error) {
 // NewID mints an exec ID. Exported so the terminal layer can pre-generate an ID
 // and correlate installed state with the exec before creating it.
 func NewID() (string, error) {
-	var data [16]byte
-	if _, err := rand.Read(data[:]); err != nil {
-		return "", err
-	}
-	return "ex_" + hex.EncodeToString(data[:]), nil
+	return id.New(id.PrefixExec)
 }
 
 func cloneMap(in map[string]string) map[string]string {

@@ -33,10 +33,10 @@ type Config struct {
 
 	// DSN is used by Open. SQLite accepts raw paths, file:, sqlite://,
 	// sqlite3://, and :memory:. Postgres accepts postgres:// and postgresql://.
-	// Turso support requires building with -tags turso and accepts turso: and
-	// turso:// DSNs. Turso DSNs use the path as the local database path and may
-	// include remote_url to sync that local database with Turso Cloud. Set
-	// TursoAuthToken separately for remote authentication.
+	// Turso accepts turso: and turso:// DSNs. Turso DSNs use the path as the
+	// local database path and may include remote_url to sync that local
+	// database with Turso Cloud. Set TursoAuthToken separately for remote
+	// authentication.
 	DSN string
 
 	// ReadDSN optionally opens a separate read pool for Postgres and Turso

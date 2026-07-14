@@ -1,63 +1,89 @@
-// Package id contains ID generation helpers.
+// Package id generates and classifies Discobox resource IDs.
+//
+// A generated ID is "<prefix>_<random>": a short resource-type prefix, an
+// underscore, and 16 random lowercase Crockford base32 characters (80 bits of
+// entropy). The prefix makes IDs recognizable on sight and keeps tab
+// completion useful; creation time lives in CreatedAt columns, not in the ID.
 package id
 
 import (
 	"crypto/rand"
 	"strings"
-	"time"
-
-	"github.com/oklog/ulid/v2"
 )
 
+// Well-known resource ID prefixes. Every resource type mints IDs with a
+// distinct prefix so an ID's type is recognizable on sight.
 const (
-	// GeneratedLength is the length of Discobox-generated lowercase ULID strings.
-	GeneratedLength = 26
-	// DefaultShortLength is the default display length for short Discobox IDs.
-	DefaultShortLength = 8
+	PrefixUser                       = "user"
+	PrefixProject                    = "proj"
+	PrefixHarnessConfig              = "harness"
+	PrefixHarnessConfigSecretBinding = "bind"
+	PrefixSandbox                    = "sbx"
+	PrefixSandboxProvider            = "prov"
+	PrefixSandboxSecret              = "sbsec"
+	PrefixWorker                     = "wrk"
+	PrefixWorkerBootstrapToken       = "wbt"
+	PrefixWorkerAuthToken            = "wat"
+	PrefixEvent                      = "evt"
+	PrefixSecret                     = "sec"
+	PrefixSecretRequest              = "sreq"
+	PrefixSecretGrant                = "grant"
+	PrefixExec                       = "ex"
+	PrefixRun                        = "run"
+	PrefixSnapshot                   = "snap"
 )
 
-func New() (string, error) {
-	id, err := ulid.New(ulid.Timestamp(time.Now()), rand.Reader)
-	if err != nil {
+// RandomLength is the length of the random portion of a generated ID.
+const RandomLength = 16
+
+// alphabet is lowercase Crockford base32: exactly 32 characters, excluding
+// i, l, o, and u to avoid lookalike ambiguity.
+const alphabet = "0123456789abcdefghjkmnpqrstvwxyz"
+
+// New returns a new "<prefix>_<random>" ID.
+func New(prefix string) (string, error) {
+	var buf [RandomLength]byte
+	if _, err := rand.Read(buf[:]); err != nil {
 		return "", err
 	}
-	return strings.ToLower(id.String()), nil
+	for i, b := range buf {
+		buf[i] = alphabet[int(b)&31]
+	}
+	return prefix + "_" + string(buf[:]), nil
 }
 
-func NewString() string {
-	id, err := New()
+// NewString is New for callers without an error path. ID generation only fails
+// when the platform random source is broken, which is not recoverable.
+func NewString(prefix string) string {
+	id, err := New(prefix)
 	if err != nil {
 		panic(err)
 	}
 	return id
 }
 
-// Short returns the conventional short display form for a Discobox ID.
-func Short(id string) string {
-	return ShortN(id, DefaultShortLength)
-}
-
-// ShortN returns the rightmost n characters of id, or id itself when shorter.
-func ShortN(id string, n int) string {
-	id = strings.TrimSpace(id)
-	if IsFriendly(id) {
-		return id
-	}
-	if n <= 0 || len(id) <= n {
-		return id
-	}
-	return id[len(id)-n:]
-}
-
-// IsFriendly reports whether value is a typed, human-readable ID rather than a
-// generated Discobox ID.
-func IsFriendly(value string) bool {
+// IsGenerated reports whether value has the exact shape of a generated ID:
+// a nonempty prefix, an underscore, and RandomLength alphabet characters.
+// Well-known IDs like "user_default" and partial IDs do not match.
+func IsGenerated(value string) bool {
 	value = strings.TrimSpace(value)
-	return value != "" && len(value) < GeneratedLength && strings.Contains(value, "_")
+	sep := strings.LastIndexByte(value, '_')
+	if sep <= 0 || len(value)-sep-1 != RandomLength {
+		return false
+	}
+	for i := sep + 1; i < len(value); i++ {
+		if strings.IndexByte(alphabet, value[i]) < 0 {
+			return false
+		}
+	}
+	return true
 }
 
-// IsShort reports whether value is shorter than a generated Discobox ID.
-func IsShort(value string) bool {
-	value = strings.TrimSpace(value)
-	return value != "" && len(value) < GeneratedLength
+// RandomPart returns the random portion of a generated ID, or the value
+// unchanged when it has no prefix separator.
+func RandomPart(id string) string {
+	if sep := strings.IndexByte(id, '_'); sep >= 0 {
+		return id[sep+1:]
+	}
+	return id
 }

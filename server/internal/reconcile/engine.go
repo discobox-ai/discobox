@@ -244,7 +244,7 @@ func (e *Engine) execute(row dirtyRow) {
 				"type", row.ResourceType, "id", row.ResourceID,
 				"attempts", row.Attempts+1, "err", err)
 		}
-		e.release(row, err)
+		e.release(row)
 		return
 	}
 	e.complete(row)
@@ -270,7 +270,7 @@ func (e *Engine) complete(row dirtyRow) {
 }
 
 // release returns a failed row to the dirty set with exponential backoff.
-func (e *Engine) release(row dirtyRow, _ error) {
+func (e *Engine) release(row dirtyRow) {
 	backoff := e.opt.BackoffBase << row.Attempts
 	if backoff > e.opt.BackoffMax || backoff <= 0 {
 		backoff = e.opt.BackoffMax

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/obot-platform/discobox/sandbox-agent/config"
@@ -39,17 +40,23 @@ func newHarnesslessService(t *testing.T) *Service {
 	return svc
 }
 
-// EnsurePrimary must surface the no-harness case as ErrNoHarnessConfigured rather
-// than silently returning nil: a silent no-op left clients waiting forever for a
-// primary terminal that would never launch.
-func TestEnsurePrimaryReturnsErrNoHarnessConfigured(t *testing.T) {
+// Every sandbox gets a default terminal, so a sandbox with no harness configured
+// resolves to a shell rather than to nothing at all: clients (run) always have a
+// terminal to attach to.
+func TestTerminalFallsBackToShellWhenNoHarnessConfigured(t *testing.T) {
 	svc := newHarnesslessService(t)
-	err := svc.EnsurePrimary(context.Background(), nil)
-	if !errors.Is(err, ErrNoHarnessConfigured) {
-		t.Fatalf("EnsurePrimary = %v, want ErrNoHarnessConfigured", err)
+	terminal, err := svc.Create(context.Background(), CreateRequest{})
+	if err != nil {
+		t.Fatalf("create: %v", err)
 	}
-	if execs := svc.List(); len(execs) != 0 {
-		t.Fatalf("List() = %d execs, want 0", len(execs))
+	if HarnessID(terminal) != ShellHarnessID {
+		t.Fatalf("harnessId = %q, want %q (metadata=%v)", HarnessID(terminal), ShellHarnessID, terminal.Metadata)
+	}
+	if len(terminal.Command) != 2 || !strings.HasSuffix(terminal.Command[0], "sh") || terminal.Command[1] != "-l" {
+		t.Fatalf("command = %v, want a login shell", terminal.Command)
+	}
+	if !terminal.TTY {
+		t.Fatal("shell terminal must allocate a TTY")
 	}
 }
 
@@ -206,18 +213,23 @@ func TestServiceCreateExplicitAgent(t *testing.T) {
 func TestPrimaryCreateRequest(t *testing.T) {
 	harness := config.Harness{ID: "codex", Command: []string{"codex"}, RelaunchCommand: []string{"codex", "resume"}}
 	// First start: prompt as args, no relaunch command.
-	first := primaryCreateRequest(harness, []string{"do a thing"}, false)
+	first := primaryCreateRequest(harness, "codex", []string{"do a thing"}, false)
 	if !first.primary || len(first.command) != 0 || len(first.Args) != 1 {
 		t.Fatalf("first start = %#v", first)
 	}
 	// Subsequent start: relaunch command replaces the run command.
-	resume := primaryCreateRequest(harness, []string{"do a thing"}, true)
+	resume := primaryCreateRequest(harness, "codex", []string{"do a thing"}, true)
 	if len(resume.command) != 2 || resume.command[1] != "resume" || len(resume.Args) != 0 {
 		t.Fatalf("resume = %#v", resume)
 	}
 	// Subsequent start with no relaunch command: start bare, no prompt replay.
-	bare := primaryCreateRequest(config.Harness{ID: "codex", Command: []string{"codex"}}, []string{"p"}, true)
+	bare := primaryCreateRequest(config.Harness{ID: "codex", Command: []string{"codex"}}, "codex", []string{"p"}, true)
 	if len(bare.command) != 0 || len(bare.Args) != 0 {
 		t.Fatalf("bare = %#v", bare)
+	}
+	// The shell fallback never takes the prompt as arguments, on any start.
+	shell := primaryCreateRequest(config.Harness{ID: ShellHarnessID, Command: []string{"/bin/sh", "-l"}}, ShellHarnessID, []string{"p"}, false)
+	if len(shell.command) != 0 || len(shell.Args) != 0 {
+		t.Fatalf("shell = %#v", shell)
 	}
 }

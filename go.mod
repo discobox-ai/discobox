@@ -11,7 +11,6 @@ require (
 	github.com/go-faster/jx v1.2.0
 	github.com/obot-platform/discobox/gormdb v0.0.0
 	github.com/ogen-go/ogen v1.20.3
-	github.com/oklog/ulid/v2 v2.1.1
 	github.com/things-go/go-socks5 v0.1.1
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/metric v1.43.0

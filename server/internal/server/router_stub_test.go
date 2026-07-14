@@ -136,7 +136,7 @@ func (s *routerTestServices) CreateSandbox(_ context.Context, projectID string, 
 	}
 	userName, userUID, userGID, homeDirectory := services.SandboxUserToModel(config.User)
 	sandbox := model.Sandbox{
-		ID:                   id.NewString(),
+		ID:                   id.NewString(id.PrefixProject),
 		ProjectID:            s.project.ID,
 		CreatedByUserID:      s.user.ID,
 		ProviderInstanceID:   services.OptStringPtr(input.ProviderInstanceId),
@@ -356,7 +356,7 @@ func (s *routerTestServices) CreateHarnessConfig(_ context.Context, projectID st
 		runCommand = definition.RunCommand
 	}
 	now := time.Now().UTC()
-	config := model.HarnessConfig{ID: id.NewString(), ProjectID: projectID, Name: name, InstallCommand: installCommand, RunCommand: runCommand, CreatedAt: now, UpdatedAt: now}
+	config := model.HarnessConfig{ID: id.NewString(id.PrefixHarnessConfig), ProjectID: projectID, Name: name, InstallCommand: installCommand, RunCommand: runCommand, CreatedAt: now, UpdatedAt: now}
 	s.harnessConfigs[config.ID] = config
 	if s.project.DefaultHarnessConfigID == "" {
 		s.project.DefaultHarnessConfigID = config.ID
@@ -487,7 +487,7 @@ func (s *routerTestServices) CreateSandboxProviderInstance(_ context.Context, pr
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	now := time.Now().UTC()
-	provider := model.SandboxProviderInstance{ID: id.NewString(), ProjectID: projectID, Type: input.Type, Name: input.Name, Config: services.RawMessage(input.Config), CreatedAt: now, UpdatedAt: now}
+	provider := model.SandboxProviderInstance{ID: id.NewString(id.PrefixSandboxProvider), ProjectID: projectID, Type: input.Type, Name: input.Name, Config: services.RawMessage(input.Config), CreatedAt: now, UpdatedAt: now}
 	s.providers[provider.ID] = provider
 	if s.project.DefaultSandboxProviderID == "" {
 		s.project.DefaultSandboxProviderID = provider.ID

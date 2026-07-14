@@ -42,7 +42,7 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tPHASE\tDESIRED\tGENERATION\tERROR\tUPDATED")
 	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
-		shortID(sandbox.ID),
+		sandbox.ID,
 		sandbox.Config.Name,
 		sandbox.Runtime.Phase,
 		sandbox.Runtime.DesiredState,
@@ -66,7 +66,7 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox) e
 	fmt.Fprintln(tw, "ID\tNAME\tPHASE\tDESIRED\tGENERATION\tERROR\tUPDATED")
 	for _, sandbox := range sandboxes {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
-			shortID(sandbox.ID),
+			sandbox.ID,
 			sandbox.Config.Name,
 			sandbox.Runtime.Phase,
 			sandbox.Runtime.DesiredState,
@@ -109,7 +109,7 @@ func (a *App) writeProvider(cmd *cobra.Command, provider *apimodel.SandboxProvid
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "FIELD\tVALUE")
-	fmt.Fprintf(tw, "ID\t%s\n", shortID(provider.ID))
+	fmt.Fprintf(tw, "ID\t%s\n", provider.ID)
 	fmt.Fprintf(tw, "NAME\t%s\n", provider.Name)
 	fmt.Fprintf(tw, "TYPE\t%s\n", provider.Type)
 	fmt.Fprintf(tw, "DISABLED\t%t\n", provider.Disabled)
@@ -138,7 +138,7 @@ func (a *App) writeProviders(cmd *cobra.Command, providers []apimodel.SandboxPro
 	for _, provider := range providers {
 		status, _ := compactProviderStatusFromProvider(provider)
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\t%s\t%s\n",
-			shortID(provider.ID),
+			provider.ID,
 			provider.Name,
 			provider.Type,
 			provider.Disabled,
@@ -159,7 +159,7 @@ func (a *App) writeSecret(cmd *cobra.Command, secret *apimodel.Secret) error {
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "FIELD\tVALUE")
-	fmt.Fprintf(tw, "ID\t%s\n", shortID(secret.ID))
+	fmt.Fprintf(tw, "ID\t%s\n", secret.ID)
 	fmt.Fprintf(tw, "NAME\t%s\n", secret.Name)
 	fmt.Fprintf(tw, "TYPE\t%s\n", secret.Type)
 	fmt.Fprintf(tw, "HOST\t%s\n", secret.Host.Or(""))
@@ -182,7 +182,7 @@ func (a *App) writeSecrets(cmd *cobra.Command, secrets []apimodel.Secret) error 
 	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tHOST\tGRANT TTL\tUPDATED")
 	for _, secret := range secrets {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			shortID(secret.ID),
+			secret.ID,
 			secret.Name,
 			secret.Type,
 			secret.Host.Or(""),
@@ -202,10 +202,10 @@ func (a *App) writeSecretGrant(cmd *cobra.Command, grant *apimodel.SecretGrant) 
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "FIELD\tVALUE")
-	fmt.Fprintf(tw, "ID\t%s\n", shortID(grant.ID))
-	fmt.Fprintf(tw, "SECRET\t%s\n", shortID(grant.SecretId))
+	fmt.Fprintf(tw, "ID\t%s\n", grant.ID)
+	fmt.Fprintf(tw, "SECRET\t%s\n", grant.SecretId)
 	fmt.Fprintf(tw, "SCOPE\t%s\n", grant.Scope)
-	fmt.Fprintf(tw, "SCOPE KEY\t%s\n", shortID(grant.ScopeKey))
+	fmt.Fprintf(tw, "SCOPE KEY\t%s\n", grant.ScopeKey)
 	fmt.Fprintf(tw, "HOST\t%s\n", grant.Host.Or("(any)"))
 	fmt.Fprintf(tw, "EXPIRES\t%s\n", formatGrantExpiry(grant))
 	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(grant.CreatedAt))
@@ -223,10 +223,10 @@ func (a *App) writeSecretGrants(cmd *cobra.Command, grants []apimodel.SecretGran
 	fmt.Fprintln(tw, "ID\tSECRET\tSCOPE\tSCOPE KEY\tHOST\tEXPIRES")
 	for _, grant := range grants {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			shortID(grant.ID),
-			shortID(grant.SecretId),
+			grant.ID,
+			grant.SecretId,
 			grant.Scope,
-			shortID(grant.ScopeKey),
+			grant.ScopeKey,
 			grant.Host.Or("(any)"),
 			formatGrantExpiry(&grant),
 		)
@@ -250,16 +250,16 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "FIELD\tVALUE")
-	fmt.Fprintf(tw, "ID\t%s\n", shortID(request.ID))
+	fmt.Fprintf(tw, "ID\t%s\n", request.ID)
 	fmt.Fprintf(tw, "REQUESTED BY\t%s\n", request.RequestedBy)
 	fmt.Fprintf(tw, "TYPE\t%s\n", request.Type)
 	fmt.Fprintf(tw, "HOST\t%s\n", request.Host.Or(""))
 	fmt.Fprintf(tw, "STATUS\t%s\n", request.Status)
 	if secretID, ok := request.SecretId.Get(); ok && secretID != "" {
-		fmt.Fprintf(tw, "SECRET\t%s\n", shortID(secretID))
+		fmt.Fprintf(tw, "SECRET\t%s\n", secretID)
 	}
 	if grantID, ok := request.GrantId.Get(); ok && grantID != "" {
-		fmt.Fprintf(tw, "GRANT\t%s\n", shortID(grantID))
+		fmt.Fprintf(tw, "GRANT\t%s\n", grantID)
 	}
 	fmt.Fprintf(tw, "CREATED\t%s\n", formatTime(request.CreatedAt))
 	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(request.UpdatedAt))
@@ -279,12 +279,12 @@ func (a *App) writeSecretRequests(cmd *cobra.Command, requests []apimodel.Secret
 	fmt.Fprintln(tw, "ID\tTYPE\tHOST\tSTATUS\tSECRET\tSANDBOX\tREQUESTED BY\tUPDATED")
 	for _, request := range requests {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
-			shortID(request.ID),
+			request.ID,
 			request.Type,
 			request.Host.Or(""),
 			request.Status,
-			shortID(request.SecretId.Or("")),
-			shortID(request.SandboxId.Or("")),
+			request.SecretId.Or(""),
+			request.SandboxId.Or(""),
 			request.RequestedBy,
 			formatTime(request.UpdatedAt),
 		)
@@ -305,8 +305,8 @@ func (a *App) writeWorkers(cmd *cobra.Command, workers []apimodel.Worker) error 
 	fmt.Fprintln(tw, "ID\tPROVIDER\tPHASE\tREADY\tSCHEDULABLE\tDEGRADED\tCPU\tMEMORY\tSTORAGE\tUPDATED\tMESSAGE")
 	for _, worker := range workers {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%t\t%t\t%.2f\t%s\t%s\t%s\t%s\n",
-			shortID(worker.ID),
-			shortID(worker.ProviderInstanceId),
+			worker.ID,
+			worker.ProviderInstanceId,
 			worker.Phase,
 			worker.Ready,
 			worker.Schedulable,
@@ -340,7 +340,7 @@ func (a *App) writeHarnessDefinition(cmd *cobra.Command, definition *apimodel.Ha
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tSECRETS\tDESCRIPTION")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", shortID(definition.ID), definition.Name, strings.Join(definition.RunCommand, " "), formatHarnessSecrets(definition.Secrets.Or(nil)), definition.Description.Or(""))
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", definition.ID, definition.Name, strings.Join(definition.RunCommand, " "), formatHarnessSecrets(definition.Secrets.Or(nil)), definition.Description.Or(""))
 	return tw.Flush()
 }
 
@@ -354,7 +354,7 @@ func (a *App) writeHarnessDefinitions(cmd *cobra.Command, definitions []apimodel
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tDESCRIPTION")
 	for _, definition := range definitions {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", shortID(definition.ID), definition.Name, strings.Join(definition.RunCommand, " "), definition.Description.Or(""))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", definition.ID, definition.Name, strings.Join(definition.RunCommand, " "), definition.Description.Or(""))
 	}
 	return tw.Flush()
 }
@@ -368,7 +368,7 @@ func (a *App) writeHarness(cmd *cobra.Command, harness *apimodel.HarnessConfig) 
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tRUN COMMAND\tSECRETS\tUPDATED")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", shortID(harness.ID), harness.Slug, harness.Name, strings.Join(harness.RunCommand, " "), formatHarnessSecrets(harness.Secrets.Or(nil)), formatTime(harness.UpdatedAt))
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", harness.ID, harness.Slug, harness.Name, strings.Join(harness.RunCommand, " "), formatHarnessSecrets(harness.Secrets.Or(nil)), formatTime(harness.UpdatedAt))
 	return tw.Flush()
 }
 
@@ -388,7 +388,7 @@ func (a *App) writeHarnesses(cmd *cobra.Command, harnesses []apimodel.HarnessCon
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tDEFAULT\tRUN COMMAND\tUPDATED")
 	for _, harness := range harnesses {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", shortID(harness.ID), harness.Slug, harness.Name, formatDefaultMarker(harness.ID == defaultID), strings.Join(harness.RunCommand, " "), formatTime(harness.UpdatedAt))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", harness.ID, harness.Slug, harness.Name, formatDefaultMarker(harness.ID == defaultID), strings.Join(harness.RunCommand, " "), formatTime(harness.UpdatedAt))
 	}
 	return tw.Flush()
 }
@@ -437,7 +437,7 @@ func formatBoundSecret(secretID string) string {
 	if secretID == "" {
 		return "—"
 	}
-	return shortID(secretID)
+	return secretID
 }
 
 func formatHarnessSecrets(secrets []apimodel.HarnessConfigSecret) string {
@@ -477,11 +477,11 @@ func (a *App) writeJobs(cmd *cobra.Command, jobs []apimodel.Job) error {
 	for _, job := range jobs {
 		message := truncateTableValue(job.Message.Or(""), 40)
 		rows = append(rows, []string{
-			shortID(job.ID),
+			job.ID,
 			job.Type,
 			string(job.Status),
 			fmt.Sprintf("%d/%d", job.Attempts, job.MaxAttempts),
-			job.ResourceType + "/" + shortID(job.ResourceId),
+			job.ResourceType + "/" + job.ResourceId,
 			formatTime(job.CreatedAt),
 			formatFutureTime(now, job.ScheduledAt),
 			message,
@@ -535,7 +535,7 @@ func writeStatusSandboxes(w io.Writer, sandboxes []apimodel.Sandbox) error {
 	}
 	for _, sandbox := range sandboxes {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			shortID(sandbox.ID),
+			sandbox.ID,
 			sandbox.Config.Name,
 			sandbox.Runtime.Phase,
 			sandbox.Runtime.DesiredState,
@@ -561,8 +561,8 @@ func writeStatusWorkers(w io.Writer, workers []apimodel.Worker) error {
 	}
 	for _, worker := range workers {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%t\t%s\t%s\n",
-			shortID(worker.ID),
-			shortID(worker.ProviderInstanceId),
+			worker.ID,
+			worker.ProviderInstanceId,
 			worker.Phase,
 			worker.Ready,
 			worker.Schedulable,
@@ -589,7 +589,7 @@ func writeStatusProviders(w io.Writer, providers []apimodel.SandboxProviderInsta
 	for _, provider := range providers {
 		status, _ := compactProviderStatusFromProvider(provider)
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\t%s\t%s\n",
-			shortID(provider.ID),
+			provider.ID,
 			provider.Name,
 			provider.Type,
 			provider.Disabled,
@@ -617,7 +617,7 @@ func writeStatusJobs(w io.Writer, jobs []apimodel.Job) error {
 	}
 	for _, job := range jobs {
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%d/%d\t%s\t%s\t%s\t%s\n",
-			shortID(job.ID),
+			job.ID,
 			job.Type,
 			job.Status,
 			job.Attempts,
@@ -656,12 +656,12 @@ func (a *App) writeJob(cmd *cobra.Command, job *apimodel.Job) error {
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "FIELD\tVALUE")
-	fmt.Fprintf(tw, "ID\t%s\n", shortID(job.ID))
+	fmt.Fprintf(tw, "ID\t%s\n", job.ID)
 	fmt.Fprintf(tw, "TYPE\t%s\n", job.Type)
 	fmt.Fprintf(tw, "STATUS\t%s\n", job.Status)
 	fmt.Fprintf(tw, "ATTEMPTS\t%d/%d\n", job.Attempts, job.MaxAttempts)
 	if job.WorkerId.Set && job.WorkerId.Value != "" {
-		fmt.Fprintf(tw, "WORKER\t%s\n", shortID(job.WorkerId.Value))
+		fmt.Fprintf(tw, "WORKER\t%s\n", job.WorkerId.Value)
 	}
 	fmt.Fprintf(tw, "RESOURCE\t%s\n", shortResourceID(job.ResourceType, job.ResourceId))
 	fmt.Fprintf(tw, "SCHEDULED\t%s\n", formatTime(job.ScheduledAt))

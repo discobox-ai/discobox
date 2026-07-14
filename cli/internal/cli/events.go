@@ -98,7 +98,7 @@ func (a *App) writeEvent(cmd *cobra.Command, msg *apiclientgen.ProjectEventMessa
 
 func eventIDOrSeq(id string, seq int64) string {
 	if strings.TrimSpace(id) != "" {
-		return shortID(id)
+		return id
 	}
 	return fmt.Sprintf("seq=%d", seq)
 }

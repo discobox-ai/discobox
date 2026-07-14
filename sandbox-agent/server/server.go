@@ -212,11 +212,6 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	go func() {
 		switch err := manager.EnsurePrimary(ctx, cfg.Prompt); {
 		case err == nil, errors.Is(err, context.Canceled):
-		case errors.Is(err, terminal.ErrNoHarnessConfigured):
-			// Valid empty state, but make it observable: previously this path was
-			// silent, so a sandbox with no harness looked identical to a healthy one
-			// while clients waited forever for a primary terminal that never came.
-			logger.Warn("no harness configured; not launching primary terminal")
 		default:
 			logger.Error("launch primary terminal", "error", err)
 		}
@@ -231,9 +226,12 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		Addr:              addr,
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		// No ReadTimeout/WriteTimeout: those set absolute per-request conn
+		// deadlines that survive the websocket hijack in exec attach
+		// (coder/websocket Accept keeps them) and cut long-lived attaches off
+		// mid-flight. Liveness comes from ReadHeaderTimeout, IdleTimeout, and
+		// websocket keepalive pings on attach tunnels.
+		IdleTimeout: 120 * time.Second,
 	}
 	errCh := make(chan error, 1)
 	go func() {

@@ -1,5 +1,5 @@
 // Package terminal is the harness-terminal layer built on top of the exec
-// primitive. A terminal is an exec whose command is resolved from an harness
+// primitive. A terminal is an exec whose command is resolved from a harness
 // config, whose environment is prepared by an installer before start, and which
 // is tagged (harnessId, primary) in exec metadata. The Service owns harness
 // resolution, install, and primary-terminal lifecycle; all runtime mechanics
@@ -302,17 +302,16 @@ func HarnessID(e execs.Exec) string { return e.Metadata[metadataHarnessID] }
 // IsPrimary reports whether an exec is the sandbox's primary terminal.
 func IsPrimary(e execs.Exec) bool { return e.Metadata[metadataPrimary] == "true" }
 
-// ErrNoHarnessConfigured reports that the sandbox has no harness to launch as its
-// primary terminal. It is a valid empty state, not a failure: the caller should
-// log it and skip launching rather than treat it as an error.
-var ErrNoHarnessConfigured = errors.New("no harness is configured for this sandbox")
+// ShellHarnessID names the fallback harness a terminal runs when no harness config
+// resolves: an interactive login shell. Every sandbox gets a default terminal,
+// so a harnessless sandbox is a shell session rather than an empty sandbox.
+const ShellHarnessID = "shell"
 
-// EnsurePrimary launches the sandbox's primary terminal on sandbox start. On the
-// first start it runs the resolved harness with the sandbox prompt as arguments;
-// on subsequent starts it runs the harness's relaunch command to resume the
-// previous session. It is a no-op when a live primary terminal already exists.
-// It returns ErrNoHarnessConfigured when no harness is configured; any other error
-// is a real misconfiguration and is returned to the caller.
+// EnsurePrimary launches the sandbox's primary terminal on sandbox start. Every
+// sandbox has one: on the first start it runs the resolved harness with the
+// sandbox prompt as arguments, on subsequent starts it runs the harness's relaunch
+// command to resume the previous session, and when no harness is configured it
+// runs a plain shell. It is a no-op when a live primary terminal already exists.
 func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 	for _, existing := range s.List() {
 		if IsPrimary(existing) && (existing.Status == execs.StatusStarting || existing.Status == execs.StatusRunning) {
@@ -323,12 +322,10 @@ func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 	if err != nil {
 		return err
 	}
-	harness, _, err := s.resolveHarness("", workdir)
+	harness, harnessID, err := s.resolveHarness("", workdir)
 	if err != nil {
-		// Surface the outcome to the caller. A missing harness is a valid empty
-		// state (ErrNoHarnessConfigured); any other error is a genuine
-		// misconfiguration (e.g. a malformed local harness config) and must not be
-		// swallowed the way it previously was.
+		// A genuine misconfiguration (e.g. a malformed local harness config). The
+		// absent-harness case is not an error: it resolves to the shell harness.
 		return err
 	}
 	launched := false
@@ -337,7 +334,7 @@ func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 			return err
 		}
 	}
-	created, err := s.Create(ctx, primaryCreateRequest(harness, prompt, launched))
+	created, err := s.Create(ctx, primaryCreateRequest(harness, harnessID, prompt, launched))
 	if err != nil {
 		return err
 	}
@@ -350,9 +347,13 @@ func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 	return nil
 }
 
-func primaryCreateRequest(harness config.Harness, prompt []string, launched bool) CreateRequest {
+func primaryCreateRequest(harness config.Harness, harnessID string, prompt []string, launched bool) CreateRequest {
 	req := CreateRequest{primary: true}
 	switch {
+	// A shell takes the prompt neither as arguments (it would try to run it as a
+	// command) nor as a session to resume; it is the same interactive shell on
+	// every start.
+	case harnessID == ShellHarnessID:
 	case launched && len(harness.RelaunchCommand) > 0:
 		req.command = append([]string{}, harness.RelaunchCommand...)
 	case launched:
@@ -364,7 +365,8 @@ func primaryCreateRequest(harness config.Harness, prompt []string, launched bool
 
 // resolveHarness selects the harness for a terminal in precedence order: an explicit
 // request, then the sandbox's resolved harness, then a local repo harness config,
-// then the configured default.
+// then the configured default, and finally the shell harness when the sandbox has
+// no harness at all.
 func (s *Service) resolveHarness(requested string, workdir string) (config.Harness, string, error) {
 	requested = strings.TrimSpace(requested)
 	if requested != "" {
@@ -385,13 +387,37 @@ func (s *Service) resolveHarness(requested string, workdir string) (config.Harne
 		return local, local.ID, nil
 	}
 	if s.defaultID == "" {
-		return config.Harness{}, "", ErrNoHarnessConfigured
+		return s.shellAgent(), ShellHarnessID, nil
 	}
 	harness, ok := s.harnesses[s.defaultID]
 	if !ok {
 		return config.Harness{}, "", fmt.Errorf("default harness %q is not configured", s.defaultID)
 	}
 	return harness, s.defaultID, nil
+}
+
+// shellAgent builds the fallback shell harness: an interactive login shell taken
+// from the sandbox environment, falling back to what the image actually has.
+func (s *Service) shellAgent() config.Harness {
+	return config.Harness{
+		ID:      ShellHarnessID,
+		Name:    "Shell",
+		Command: []string{s.shellPath(), "-l"},
+	}
+}
+
+func (s *Service) shellPath() string {
+	for _, env := range []map[string]string{s.env, s.imageConfig.Env} {
+		if shell := strings.TrimSpace(env["SHELL"]); shell != "" {
+			return shell
+		}
+	}
+	for _, candidate := range []string{"/bin/bash", "/bin/sh"} {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	return "/bin/sh"
 }
 
 type localHarnessConfig struct {
@@ -546,7 +572,7 @@ func (i CompositeInstaller) EnsureInstalled(ctx context.Context, harness config.
 	return nil
 }
 
-// CommandInstaller runs an harness's install command to completion as an ephemeral
+// CommandInstaller runs a harness's install command to completion as an ephemeral
 // exec, once per distinct command.
 type CommandInstaller struct {
 	Execs         *execs.Manager
@@ -633,7 +659,7 @@ func harnessFromConfig(h config.Harness) harness.Harness {
 	}
 }
 
-// FileInstaller writes an harness's configured files into its home directory.
+// FileInstaller writes a harness's configured files into its home directory.
 type FileInstaller struct {
 	Name          string
 	HomeDirectory string

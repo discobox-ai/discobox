@@ -55,15 +55,6 @@ By default, Postgres uses the same pool for reads and writes with 25 max open
 connections and 5 max idle connections. When `Config.ReadDSN` is set, `gormdb`
 opens a separate read pool from that DSN with the same connection limits.
 
-## Turso Build Tag
-
-Turso support is optional and is compiled only with the `turso` build tag. This
-keeps normal SQLite/Postgres builds from importing Turso bindings.
-
-- Default builds include `DriverTurso`, but opening Turso returns a build-tag
-  guidance error.
-- `-tags turso` builds register and use the `tursogo` `database/sql` driver.
-
 ## Local Turso Pool Pattern
 
 Local Turso uses `turso.tech/database/tursogo`, a no-CGO `database/sql` driver
