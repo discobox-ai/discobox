@@ -135,8 +135,8 @@ tasks:
       - cd server && go test ./...
       - cd worker-agent && go test ./...
       - cd gormdb && go test ./...
-      - cd orchestration && go test ./...
       - cd hooks && go test ./...
+      - cd sandbox-agent && go test ./...
 
   check:
     desc: Run static checks
@@ -146,7 +146,6 @@ tasks:
       - cd server && "$(go -C .. tool -n golangci-lint)" run
       - cd worker-agent && "$(go -C .. tool -n golangci-lint)" run
       - cd gormdb && "$(go -C .. tool -n golangci-lint)" run
-      - cd orchestration && "$(go -C .. tool -n golangci-lint)" run
       - cd hooks && "$(go -C .. tool -n golangci-lint)" run
       - cd sandbox-agent && "$(go -C .. tool -n golangci-lint)" run
 
@@ -236,7 +235,6 @@ tasks:
       - cd server && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd worker-agent && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd gormdb && "$(go -C .. tool -n golangci-lint)" run --fix
-      - cd orchestration && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd hooks && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd sandbox-agent && "$(go -C .. tool -n golangci-lint)" run --fix
 

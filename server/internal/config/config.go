@@ -188,18 +188,6 @@ func getEnvInt(key string, defaultValue int) int {
 	return parsed
 }
 
-func getEnvBool(key string, defaultValue bool) bool {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return defaultValue
-	}
-	parsed, err := strconv.ParseBool(value)
-	if err != nil {
-		return defaultValue
-	}
-	return parsed
-}
-
 func getEnvDuration(key string, defaultValue time.Duration) time.Duration {
 	value := strings.TrimSpace(os.Getenv(key))
 	if value == "" {

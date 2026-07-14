@@ -82,7 +82,7 @@ func dropJobQueueArtifacts(db *gorm.DB) error {
 		}
 		return nil
 	}
-	if db.Dialector.Name() != "sqlite" {
+	if db.Name() != "sqlite" {
 		return drop(db)
 	}
 	// SQLite drops columns by rebuilding the table (create new, copy, DROP TABLE,
