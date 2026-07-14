@@ -270,7 +270,7 @@ func (e *Engine) complete(row dirtyRow) {
 }
 
 // release returns a failed row to the dirty set with exponential backoff.
-func (e *Engine) release(row dirtyRow, cause error) {
+func (e *Engine) release(row dirtyRow, _ error) {
 	backoff := e.opt.BackoffBase << row.Attempts
 	if backoff > e.opt.BackoffMax || backoff <= 0 {
 		backoff = e.opt.BackoffMax

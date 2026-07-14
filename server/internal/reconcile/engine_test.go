@@ -69,7 +69,7 @@ func rowCount(t *testing.T, db *gorm.DB) int64 {
 
 type fakeReconciler struct {
 	runs    atomic.Int32
-	fail    atomic.Int32 // fail this many runs before succeeding
+	fail    atomic.Int32  // fail this many runs before succeeding
 	block   chan struct{} // if non-nil, each run waits until it can receive
 	lastIDs sync.Map
 }
@@ -80,7 +80,7 @@ func (f *fakeReconciler) Reconcile(_ context.Context, id string) error {
 		<-f.block
 	}
 	n := f.runs.Add(1)
-	if int32(n) <= f.fail.Load() {
+	if n <= f.fail.Load() {
 		return errors.New("boom")
 	}
 	return nil
