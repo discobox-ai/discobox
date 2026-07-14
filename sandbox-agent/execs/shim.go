@@ -130,16 +130,19 @@ func (r *shimRuntime) startPTY(cmd *exec.Cmd) error {
 		cancelResize()
 	}
 	winsize := r.stream.InitialWinsize(r.cfg.Rows, r.cfg.Cols)
-	// Track the screen in memory at the PTY's real size so a late attacher can be
-	// repainted with the current screen and recent scrollback. Only TTY execs
-	// have a screen; plain (pipe) execs attach without a repaint.
-	r.stream.EnableScreen(winsize.Rows, winsize.Cols, shimruntime.DefaultScrollbackLines)
 	tty, err := pty.StartWithSize(cmd, winsize)
 	if err != nil {
 		return err
 	}
 	r.tty = tty
 	r.stdin = tty
+	// Track the screen in memory at the PTY's real size so a late attacher can be
+	// repainted with the current screen and recent scrollback, and so the
+	// program's terminal queries are answered at the PTY while no client is
+	// attached. Only TTY execs have a screen; plain (pipe) execs attach without
+	// a repaint. Output cannot race this: broadcasting starts with copyOutput
+	// below.
+	r.stream.EnableScreen(winsize.Rows, winsize.Cols, shimruntime.DefaultScrollbackLines, tty)
 	r.status.PID = int64(cmd.Process.Pid)
 	r.outputWG.Add(1)
 	go r.copyOutput(LogStreamOutput, tty)
@@ -320,10 +323,7 @@ func (r *shimRuntime) handleAttachFrame(attach *shimruntime.Attacher, next frame
 			attach.Close()
 			return
 		}
-		r.mu.Lock()
-		tty := r.tty
-		r.mu.Unlock()
-		r.stream.ApplyResize(tty, resize)
+		r.stream.ApplyResize(resize)
 	case frame.Signal:
 		if err := signalProcess(r.cmd, string(next.Payload)); err != nil {
 			_ = attach.WriteFrame(frame.Error, []byte(err.Error()))

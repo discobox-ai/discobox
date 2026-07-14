@@ -93,3 +93,28 @@ runtime operations.
   its tunnel is wired up. `frame.Ready` proves the tunnel is established end to
   end; a bounded timeout still repaints (best effort) for clients that never
   send it.
+- Terminal-query answering: the screen emulator responds to queries in the
+  output stream (DA1, DSR, DECRQM, ...) by writing answers to an unbuffered
+  internal pipe. `Runtime.pumpScreenResponses` must always drain that pipe —
+  an undrained pipe blocks `Broadcast` inside the runtime mutex and deadlocks
+  the whole shim (Claude Code emits DA1 right after its first paint). While no
+  client is attached the answers are fed to the PTY so a headless TUI blocked
+  on a startup query comes up; while a client is attached they are dropped,
+  because the client's real terminal sees the query in the raw stream and
+  answers it.
+- The screen fails open, never closed: every emulator call runs under
+  `Runtime.runScreenLocked`, which recovers a panic by dropping the screen —
+  repaint-on-attach degrades to plain live streaming instead of the emulator
+  bug killing the exec. The PTY handle outlives the screen for this reason.
+- The program's repaint is authoritative: after a replay (snapshot present or
+  not), `Runtime.redrawAfterReplay` jiggles the PTY one row smaller and back,
+  so SIGWINCH makes the program redraw itself and the client converges to the
+  program's real screen even when the snapshot was imperfect or missing.
+- No phantom deadlines on attach: `http.Server` per-request read/write
+  deadlines survive hijacks and websocket accepts, so long-lived attach
+  streams must not inherit them. The shim and `shimproxy.AttachHTTPUpgrade`
+  clear conn deadlines after hijacking, the agent HTTP servers set no
+  `ReadTimeout`/`WriteTimeout` (only `ReadHeaderTimeout`/`IdleTimeout`), and
+  both websocket ends of an attach (CLI dial, `shimproxy.AttachWebSocket`)
+  run keepalive ping loops that close the tunnel when the peer stops
+  answering.

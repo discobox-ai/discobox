@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -33,15 +34,93 @@ type Runtime struct {
 	// captured at an attacher's registration reflects exactly the output
 	// broadcast before it (see Broadcast and addReplayAttacher).
 	screen *screenBuffer
+	// tty is the PTY master for TTY execs, set alongside the screen in
+	// EnableScreen and nil for pipe execs. It receives resizes, the emulator's
+	// terminal-query answers while no client is attached, and the post-replay
+	// redraw jiggle. It outlives the screen: an emulator panic drops screen but
+	// keeps tty, so attach still forces a program redraw.
+	tty *os.File
 }
 
 // EnableScreen turns on in-memory screen tracking for repaint-on-attach. It is
-// called once, before output starts, for TTY execs; plain (pipe) execs have no
-// screen and attach without a repaint.
-func (r *Runtime) EnableScreen(rows, cols uint16, scrollbackLines int) {
+// called once, after the PTY exists but before output is broadcast, for TTY
+// execs; plain (pipe) execs have no screen and attach without a repaint.
+//
+// tty is the PTY master: it answers the program's terminal queries while no
+// client is attached (see pumpScreenResponses) and carries resizes and the
+// post-replay redraw jiggle.
+func (r *Runtime) EnableScreen(rows, cols uint16, scrollbackLines int, tty *os.File) {
 	r.mu.Lock()
-	r.screen = newScreenBuffer(rows, cols, scrollbackLines)
+	screen := newScreenBuffer(rows, cols, scrollbackLines)
+	r.screen = screen
+	r.tty = tty
 	r.mu.Unlock()
+	go r.pumpScreenResponses(screen, tty)
+}
+
+// runScreenLocked runs fn against the screen buffer, dropping the screen if fn
+// panics. The emulator is third-party code fed untrusted program output, so a
+// bug in it must degrade repaint-on-attach to plain live streaming — the
+// post-replay redraw jiggle still recovers the picture — rather than kill the
+// exec. Callers hold r.mu and have checked r.screen is non-nil.
+func (r *Runtime) runScreenLocked(fn func(*screenBuffer)) {
+	defer func() {
+		if v := recover(); v != nil {
+			r.screen = nil
+			fmt.Fprintf(os.Stderr, "screen emulator panic; disabling repaint-on-attach: %v\n%s", v, debug.Stack())
+		}
+	}()
+	fn(r.screen)
+}
+
+// pumpScreenResponses drains the terminal-query responses (DA1, DSR, DECRQM,
+// ...) that the screen emulator generates while absorbing output. The emulator
+// writes responses to an unbuffered internal pipe during screenBuffer.write —
+// which Broadcast calls holding r.mu — so an undrained pipe blocks Broadcast
+// and deadlocks the whole runtime. This pump must therefore never stall: the
+// reader goroutine below only reads the pipe and drops chunks when the
+// delivery loop falls behind, so it can never be the blocked end.
+//
+// Delivery emulates a real terminal for a program running headless: while no
+// client is attached the response is written to the PTY, so a TUI that blocks
+// on a startup query (Claude Code waits on DA1) still comes up. While a client
+// is attached its real terminal sees the query in the raw output stream and
+// answers it, so the emulator's answer is dropped to avoid double responses.
+//
+// The pump lives for the process lifetime: vt.Emulator.Close races with the
+// writes Broadcast issues, so the pipe is intentionally never closed.
+func (r *Runtime) pumpScreenResponses(screen *screenBuffer, input io.Writer) {
+	responses := make(chan []byte, 16)
+	go func() {
+		defer close(responses)
+		defer func() {
+			if v := recover(); v != nil {
+				fmt.Fprintf(os.Stderr, "screen response pump panic; terminal queries will go unanswered: %v\n", v)
+			}
+		}()
+		buf := make([]byte, 4096)
+		for {
+			n, err := screen.emu.Read(buf)
+			if n > 0 {
+				chunk := append([]byte(nil), buf[:n]...)
+				select {
+				case responses <- chunk:
+				default:
+					// Delivery is stalled (e.g. a full PTY input buffer); drop
+					// the response rather than block the emulator pipe.
+				}
+			}
+			if err != nil {
+				return
+			}
+		}
+	}()
+	for chunk := range responses {
+		if input == nil || r.HasAttachers() {
+			continue
+		}
+		_, _ = input.Write(chunk)
+	}
 }
 
 type Attacher struct {
@@ -119,20 +198,27 @@ func (r *Runtime) HandleAttach(w http.ResponseWriter, repaintRequested bool) {
 	}
 	defer r.removeAttacher(attach)
 	go r.readFrames(attach, rw)
-	if repaint {
+	if repaintRequested && r.hasTTY() {
 		// Hold the repaint until the client signals it is attached and reading
 		// (frame.Ready), so nothing is written during the upgrade handshake window
 		// where an intermediate proxy hop may drop buffered bytes. Fall back after
 		// a timeout so a client that never signals still gets a (best-effort)
 		// repaint instead of hanging.
 		r.waitForReady(attach)
-		err := attach.writeSnapshot(snapshot)
-		if err == nil {
-			err = attach.flushBuffer()
+		if repaint {
+			err := attach.writeSnapshot(snapshot)
+			if err == nil {
+				err = attach.flushBuffer()
+			}
+			if err != nil {
+				attach.Close()
+			}
 		}
-		if err != nil {
-			attach.Close()
-		}
+		// The program's own repaint is authoritative: jiggle the PTY size after
+		// the replay so the program redraws itself and any snapshot imperfection
+		// — or a missing snapshot after the screen was dropped — converges to
+		// the program's real screen right after attach.
+		r.redrawAfterReplay()
 	}
 	select {
 	case <-attach.done:
@@ -144,6 +230,38 @@ func (r *Runtime) hasScreen() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.screen != nil
+}
+
+func (r *Runtime) hasTTY() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.tty != nil
+}
+
+// redrawAfterReplay forces the running program to repaint itself by shrinking
+// the PTY by one row and restoring it, which delivers SIGWINCH and makes a TUI
+// redraw at the (restored) real size. The replayed snapshot paints instantly
+// but is only as faithful as the emulator; the program's redraw is the ground
+// truth the client screen converges to.
+func (r *Runtime) redrawAfterReplay() {
+	r.mu.Lock()
+	tty := r.tty
+	r.mu.Unlock()
+	if tty == nil {
+		return
+	}
+	size, err := pty.GetsizeFull(tty)
+	if err != nil || size.Rows == 0 || size.Cols == 0 {
+		return
+	}
+	jiggle := *size
+	if jiggle.Rows > 1 {
+		jiggle.Rows--
+	} else {
+		jiggle.Rows++
+	}
+	_ = pty.Setsize(tty, &jiggle)
+	_ = pty.Setsize(tty, size)
 }
 
 func (r *Runtime) readFrames(attach *Attacher, rw *bufio.ReadWriter) {
@@ -199,12 +317,13 @@ func (r *Runtime) InitialWinsize(rows, cols uint16) *pty.Winsize {
 	return size
 }
 
-func (r *Runtime) ApplyResize(tty *os.File, resize frame.ResizePayload) {
+func (r *Runtime) ApplyResize(resize frame.ResizePayload) {
 	r.mu.Lock()
 	r.resize = &resize
 	if r.screen != nil {
-		r.screen.resize(resize.Rows, resize.Cols)
+		r.runScreenLocked(func(screen *screenBuffer) { screen.resize(resize.Rows, resize.Cols) })
 	}
+	tty := r.tty
 	r.mu.Unlock()
 	r.resizeOnce.Do(func() {
 		close(r.resizeReady)
@@ -237,7 +356,7 @@ func (r *Runtime) Broadcast(payload []byte) {
 	// PTY reader.
 	r.mu.Lock()
 	if r.screen != nil {
-		r.screen.write(payload)
+		r.runScreenLocked(func(screen *screenBuffer) { screen.write(payload) })
 	}
 	attachers := r.snapshotAttachersLocked()
 	r.mu.Unlock()
@@ -275,7 +394,9 @@ func (r *Runtime) addReplayAttacher(attach *Attacher) []byte {
 	if r.screen == nil {
 		return nil
 	}
-	return r.screen.snapshot()
+	var snapshot []byte
+	r.runScreenLocked(func(screen *screenBuffer) { snapshot = screen.snapshot() })
+	return snapshot
 }
 
 func (r *Runtime) HasAttachers() bool {
