@@ -10,10 +10,10 @@ import (
 	"testing"
 )
 
-func TestParseRunArgs(t *testing.T) {
-	opts, err := parseRunArgs([]string{"https://example.com/repo.git@main", "fix", "tests"})
+func TestParseRunOptions(t *testing.T) {
+	opts, err := parseRunOptions(runOptions{source: "https://example.com/repo.git@main"}, []string{"fix", "tests"})
 	if err != nil {
-		t.Fatalf("parseRunArgs: %v", err)
+		t.Fatalf("parseRunOptions: %v", err)
 	}
 	if opts.source != "https://example.com/repo.git" || opts.ref != "main" {
 		t.Fatalf("source/ref = %q/%q, want repo/main", opts.source, opts.ref)
@@ -23,23 +23,29 @@ func TestParseRunArgs(t *testing.T) {
 	}
 }
 
-func TestParseRunArgsKeepsSSHRepoWithoutRef(t *testing.T) {
-	opts, err := parseRunArgs([]string{"git@github.com:obot-platform/discobox.git", "fix"})
+func TestParseRunOptionsKeepsSSHRepoWithoutRef(t *testing.T) {
+	opts, err := parseRunOptions(runOptions{source: "git@github.com:obot-platform/discobox.git"}, []string{"fix"})
 	if err != nil {
-		t.Fatalf("parseRunArgs: %v", err)
+		t.Fatalf("parseRunOptions: %v", err)
 	}
 	if opts.source != "git@github.com:obot-platform/discobox.git" || opts.ref != "" {
 		t.Fatalf("source/ref = %q/%q, want SSH repo with empty ref", opts.source, opts.ref)
 	}
 }
 
-func TestParseRunArgsSplitsSSHRepoWithRef(t *testing.T) {
-	opts, err := parseRunArgs([]string{"git@github.com:obot-platform/discobox.git@main", "fix"})
+func TestParseRunOptionsSplitsSSHRepoWithRef(t *testing.T) {
+	opts, err := parseRunOptions(runOptions{source: "git@github.com:obot-platform/discobox.git@main"}, []string{"fix"})
 	if err != nil {
-		t.Fatalf("parseRunArgs: %v", err)
+		t.Fatalf("parseRunOptions: %v", err)
 	}
 	if opts.source != "git@github.com:obot-platform/discobox.git" || opts.ref != "main" {
 		t.Fatalf("source/ref = %q/%q, want SSH repo/main", opts.source, opts.ref)
+	}
+}
+
+func TestParseRunOptionsRejectsEmptySource(t *testing.T) {
+	if _, err := parseRunOptions(runOptions{source: " "}, []string{"fix"}); err == nil {
+		t.Fatal("expected error for empty source")
 	}
 }
 
@@ -67,7 +73,7 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "-e", "EXPLICIT=value", "-e", "RUN_ENV_FROM_SHELL", repo + "@HEAD", "fix", "tests"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "-e", "EXPLICIT=value", "-e", "RUN_ENV_FROM_SHELL", "-C", repo + "@HEAD", "fix", "tests"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute run: %v", err)
@@ -111,6 +117,48 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	}
 }
 
+func TestRunCommandDefaultsSourceToCurrentDirectory(t *testing.T) {
+	repo := newRunSourceTestRepo(t)
+	t.Chdir(repo)
+	var posted map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/sandboxes" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		defer r.Body.Close()
+		if err := json.NewDecoder(r.Body).Decode(&posted); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"id":"01kv9w440bpa9qk5n25t2hh2rv","projectId":"project-1","createdByUserId":"user-1","config":{"name":"run-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"pending","desiredState":"stopped","lastOperationStatus":"pending","generation":1,"observedGeneration":0,"restartGeneration":0,"restartedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "fix", "tests"})
+
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute run: %v", err)
+	}
+	config := posted["config"].(map[string]any)
+	source, ok := config["source"].(map[string]any)
+	if !ok {
+		t.Fatalf("source = %#v, want object", config["source"])
+	}
+	if source["localDirectory"] != repo {
+		t.Fatalf("localDirectory = %q, want %s", source["localDirectory"], repo)
+	}
+	destination := source["destination"].(map[string]any)
+	if destination["directory"] != repo || destination["workingDirectory"] != repo {
+		t.Fatalf("destination = %#v, want repo root", destination)
+	}
+	prompt, ok := config["prompt"].([]any)
+	if !ok || len(prompt) != 2 || prompt[0] != "fix" || prompt[1] != "tests" {
+		t.Fatalf("prompt = %#v, want [fix tests]", config["prompt"])
+	}
+}
+
 func TestRunCommandStillAcceptsDashDashSeparator(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
 	var sawCreate bool
@@ -126,7 +174,7 @@ func TestRunCommandStillAcceptsDashDashSeparator(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	cmd := NewRootCommand()
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "--", repo + "@HEAD", "hello"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "-C", repo + "@HEAD", "--", "hello", "--flag-like", "prompt"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute run: %v", err)
