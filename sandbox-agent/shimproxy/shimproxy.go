@@ -59,6 +59,10 @@ func AttachHTTPUpgrade(ctx context.Context, w http.ResponseWriter, socketPath, p
 		return err
 	}
 	defer clientConn.Close()
+	// The http.Server's per-request read/write deadlines survive the hijack and
+	// would kill this long-lived attach stream mid-session; the attach owns the
+	// conn from here on, so clear them.
+	_ = clientConn.SetDeadline(time.Time{})
 	_, _ = clientRW.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: " + protocol + "\r\n\r\n")
 	if err := clientRW.Flush(); err != nil {
 		return err
@@ -80,6 +84,15 @@ func AttachHTTPUpgrade(ctx context.Context, w http.ResponseWriter, socketPath, p
 	return nil
 }
 
+// attachPingInterval paces websocket keepalive pings on an attach. The pings
+// keep idle attach tunnels alive across NATs and intermediate proxies and
+// detect dead peers, which an idle raw-byte tunnel never would.
+const attachPingInterval = 30 * time.Second
+
+// attachPingTimeout bounds how long a ping waits for the peer's pong before
+// the connection is considered dead.
+const attachPingTimeout = 10 * time.Second
+
 func AttachWebSocket(ctx context.Context, w http.ResponseWriter, r *http.Request, socketPath, protocol string, replay bool) error {
 	shimConn, shimReader, err := attachShim(ctx, socketPath, protocol, replay)
 	if err != nil {
@@ -94,6 +107,15 @@ func AttachWebSocket(ctx context.Context, w http.ResponseWriter, r *http.Request
 	defer wsConn.Close(websocket.StatusNormalClosure, "done")
 	clientConn := websocket.NetConn(ctx, wsConn, websocket.MessageBinary)
 	defer clientConn.Close()
+
+	pingCtx, cancelPing := context.WithCancel(ctx)
+	defer cancelPing()
+	go func() {
+		if err := pingWebSocket(pingCtx, wsConn); err != nil {
+			// The peer is gone; close the tunnel so both copy loops unblock.
+			_ = clientConn.Close()
+		}
+	}()
 
 	var wg sync.WaitGroup
 	wg.Add(2)
@@ -167,6 +189,31 @@ func Dial(ctx context.Context, socketPath string, timeout time.Duration) (net.Co
 		lastErr = fmt.Errorf("timed out waiting for shim socket")
 	}
 	return nil, lastErr
+}
+
+// pingWebSocket sends keepalive pings every attachPingInterval until ctx is
+// canceled, returning an error when a ping goes unanswered for
+// attachPingTimeout. The peer must be reading the connection for pongs to be
+// processed; both ends of an attach always are.
+func pingWebSocket(ctx context.Context, conn *websocket.Conn) error {
+	ticker := time.NewTicker(attachPingInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			pingCtx, cancel := context.WithTimeout(ctx, attachPingTimeout)
+			err := conn.Ping(pingCtx)
+			cancel()
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return err
+			}
+		}
+	}
 }
 
 func closeWrite(conn net.Conn) {

@@ -98,9 +98,12 @@ func Run(ctx context.Context) error {
 	httpServer := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		// No ReadTimeout/WriteTimeout: those set absolute per-request conn
+		// deadlines that survive protocol upgrades (exec attach websockets
+		// proxied to workers) and cut long-lived streams (project events, log
+		// follows) off mid-flight. Liveness comes from ReadHeaderTimeout,
+		// IdleTimeout, and websocket keepalive pings on attach tunnels.
+		IdleTimeout: 120 * time.Second,
 	}
 	router.Post("/shutdown", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusAccepted)

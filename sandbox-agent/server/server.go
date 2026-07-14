@@ -231,9 +231,12 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 		Addr:              addr,
 		Handler:           router,
 		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       120 * time.Second,
+		// No ReadTimeout/WriteTimeout: those set absolute per-request conn
+		// deadlines that survive the websocket hijack in exec attach
+		// (coder/websocket Accept keeps them) and cut long-lived attaches off
+		// mid-flight. Liveness comes from ReadHeaderTimeout, IdleTimeout, and
+		// websocket keepalive pings on attach tunnels.
+		IdleTimeout: 120 * time.Second,
 	}
 	errCh := make(chan error, 1)
 	go func() {

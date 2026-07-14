@@ -184,6 +184,10 @@ func (r *Runtime) HandleAttach(w http.ResponseWriter, repaintRequested bool) {
 		return
 	}
 	defer conn.Close()
+	// The http.Server's per-request read/write deadlines survive the hijack and
+	// would kill this long-lived attach stream mid-session; the attach owns the
+	// conn from here on, so clear them.
+	_ = conn.SetDeadline(time.Time{})
 	_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: " + r.protocol + "\r\n\r\n")
 	if err := rw.Flush(); err != nil {
 		return

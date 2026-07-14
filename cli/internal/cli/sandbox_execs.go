@@ -399,7 +399,48 @@ func (a *App) openSandboxExecAttach(ctx context.Context, projectID, sandboxID, e
 		}
 		return nil, fmt.Errorf("attach exec: %w", err)
 	}
-	return websocket.NetConn(ctx, conn, websocket.MessageBinary), nil
+	netConn := websocket.NetConn(ctx, conn, websocket.MessageBinary)
+	go func() {
+		if err := pingAttachWebSocket(ctx, conn); err != nil {
+			// The server side is gone; close the conn so the attach session's
+			// blocked reads and writes unblock instead of hanging forever.
+			_ = netConn.Close()
+		}
+	}()
+	return netConn, nil
+}
+
+// attachPingInterval paces websocket keepalive pings on an exec attach. The
+// pings keep an idle attach alive across NATs and proxies and detect a dead
+// server, which an idle attach stream never would.
+const attachPingInterval = 30 * time.Second
+
+// attachPingTimeout bounds how long a ping waits for the server's pong before
+// the connection is considered dead.
+const attachPingTimeout = 10 * time.Second
+
+// pingAttachWebSocket sends keepalive pings every attachPingInterval until ctx
+// is canceled, returning an error when a ping goes unanswered for
+// attachPingTimeout. Pongs are processed by the attach session's read loop.
+func pingAttachWebSocket(ctx context.Context, conn *websocket.Conn) error {
+	ticker := time.NewTicker(attachPingInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			pingCtx, cancel := context.WithTimeout(ctx, attachPingTimeout)
+			err := conn.Ping(pingCtx)
+			cancel()
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return err
+			}
+		}
+	}
 }
 
 type sandboxExecRecordResponse struct {
