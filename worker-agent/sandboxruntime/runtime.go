@@ -159,6 +159,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	} else if !errors.Is(err, ErrNotFound) {
 		return nil, err
 	}
+	normalizeSandboxConfig(&req.Config)
 	config := req.Config
 	imageName := strings.TrimSpace(optString(config.Image))
 	if imageName == "" {
@@ -327,6 +328,7 @@ func manifestHarnessConfigFiles(files []workerapimodel.HarnessConfigFile) []apim
 			Path:       file.Path,
 			Content:    file.Content,
 			CreateOnly: publicOptBool(file.CreateOnly),
+			Template:   publicOptBool(file.Template),
 		})
 	}
 	return out
@@ -1158,6 +1160,28 @@ func sourceWorkingDirectory(req *workerapimodel.WorkerSandboxCreateRequest) stri
 		return ""
 	}
 	return optString(destination.WorkingDirectory)
+}
+
+// normalizeSandboxConfig applies provider-owned path defaults before the
+// configuration is used for either bind mounts or the public sandbox manifest.
+// This keeps manifest consumers on the documented SandboxConfig contract while
+// ensuring they observe the paths the runtime actually mounted.
+func normalizeSandboxConfig(config *workerapimodel.SandboxConfig) {
+	if config == nil {
+		return
+	}
+	source, ok := config.Source.Get()
+	if !ok {
+		return
+	}
+	destination, _ := source.Destination.Get()
+	directory := cleanContainerPath(optString(destination.Directory))
+	if directory == "" {
+		directory = "/workspace"
+	}
+	destination.Directory = workerclient.NewOptString(directory)
+	source.Destination = workerclient.NewOptGitSourceDestination(destination)
+	config.Source = workerclient.NewOptGitSource(source)
 }
 
 type sandboxSource struct {

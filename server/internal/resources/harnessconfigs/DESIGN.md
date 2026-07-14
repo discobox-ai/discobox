@@ -8,4 +8,6 @@ harness config API behavior.
   `internal/store`.
 - Keep transport DTO conversion in `internal/handlers`; this package may use
   generated DTO aliases from `internal/services`.
-
+- Harness config files are literal by default. Files marked `template` are rendered
+  inside the sandbox against the public `SandboxConfig` JSON shape; definitions
+  must not invent a parallel set of runtime variables.

@@ -66,7 +66,7 @@ func TestResolveRunSourceDirtyLocalCreatesHiddenSnapshotRef(t *testing.T) {
 	}
 }
 
-func TestResolveRunSourceLocalDirectoryUsesRepoRootDestinationAndCurrentWorkingDirectory(t *testing.T) {
+func TestResolveRunSourceLocalSubdirectoryUsesRepoRootDestinationAndSubdirWorkingDirectory(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
 	subdir := filepath.Join(repo, "nested", "work")
 	if err := os.MkdirAll(subdir, 0o755); err != nil {
@@ -86,7 +86,24 @@ func TestResolveRunSourceLocalDirectoryUsesRepoRootDestinationAndCurrentWorkingD
 	}
 }
 
-func TestResolveRunSourceLocalDirectoryOutsideCurrentWorkingDirectoryUsesRepoRoot(t *testing.T) {
+func TestResolveRunSourceLocalSubdirectoryOutsideCurrentWorkingDirectoryKeepsSubdirWorkingDirectory(t *testing.T) {
+	repo := newRunSourceTestRepo(t)
+	subdir := filepath.Join(repo, "nested", "work")
+	if err := os.MkdirAll(subdir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(t.TempDir())
+
+	source, err := resolveRunSource(context.Background(), subdir)
+	if err != nil {
+		t.Fatalf("resolveRunSource: %v", err)
+	}
+	if source.Destination.Directory != repo || source.Destination.WorkingDirectory != subdir {
+		t.Fatalf("destination = %#v, want directory %s working directory %s", source.Destination, repo, subdir)
+	}
+}
+
+func TestResolveRunSourceLocalRepoRootOutsideCurrentWorkingDirectoryUsesRepoRoot(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
 	t.Chdir(t.TempDir())
 

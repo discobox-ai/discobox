@@ -1653,6 +1653,8 @@ type HarnessConfigFile struct {
 	Path string `json:"path"`
 	// Do not overwrite this file if it already exists.
 	CreateOnly OptBool `json:"createOnly"`
+	// Render file content against the public sandbox configuration before writing.
+	Template OptBool `json:"template"`
 }
 
 // GetContent returns the value of Content.
@@ -1670,6 +1672,11 @@ func (s *HarnessConfigFile) GetCreateOnly() OptBool {
 	return s.CreateOnly
 }
 
+// GetTemplate returns the value of Template.
+func (s *HarnessConfigFile) GetTemplate() OptBool {
+	return s.Template
+}
+
 // SetContent sets the value of Content.
 func (s *HarnessConfigFile) SetContent(val string) {
 	s.Content = val
@@ -1683,6 +1690,11 @@ func (s *HarnessConfigFile) SetPath(val string) {
 // SetCreateOnly sets the value of CreateOnly.
 func (s *HarnessConfigFile) SetCreateOnly(val OptBool) {
 	s.CreateOnly = val
+}
+
+// SetTemplate sets the value of Template.
+func (s *HarnessConfigFile) SetTemplate(val OptBool) {
+	s.Template = val
 }
 
 // Declares an environment variable the harness expects, and whether it is required.

@@ -1,6 +1,6 @@
 components:
     schemas:
-        AgentConfigFile:
+        HarnessConfigFile:
             additionalProperties: false
             properties:
                 content:
@@ -8,6 +8,9 @@ components:
                 path:
                     type: string
                 createOnly:
+                    type: boolean
+                template:
+                    description: Render file content against the public sandbox configuration before writing
                     type: boolean
             required:
             - path
@@ -123,12 +126,12 @@ components:
                 snapshotRef:
                     type: string
             type: object
-        ResolvedAgentConfig:
+        ResolvedHarnessConfig:
             additionalProperties: false
             properties:
                 files:
                     items:
-                        "$ref": "#/components/schemas/AgentConfigFile"
+                        "$ref": "#/components/schemas/HarnessConfigFile"
                     nullable: true
                     type: array
                 id:
@@ -154,12 +157,12 @@ components:
             - name
             - runCommand
             type: object
-        SandboxAgentConfig:
+        SandboxHarnessConfig:
             additionalProperties: false
             properties:
                 files:
                     items:
-                        "$ref": "#/components/schemas/AgentConfigFile"
+                        "$ref": "#/components/schemas/HarnessConfigFile"
                     nullable: true
                     type: array
                 id:
@@ -191,13 +194,13 @@ components:
         SandboxConfig:
             additionalProperties: false
             properties:
-                agentConfigId:
+                harnessConfigId:
                     type: string
-                agentModel:
+                model:
                     type: string
-                agentModelReasoningLevel:
+                modelReasoningLevel:
                     type: string
-                agentModelServiceTier:
+                modelServiceTier:
                     type: string
                 cpuVcpus:
                     format: double
@@ -275,15 +278,15 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                agentConfigs:
+                harnessConfigs:
                     items:
-                        "$ref": "#/components/schemas/SandboxAgentConfig"
+                        "$ref": "#/components/schemas/SandboxHarnessConfig"
                     nullable: true
                     type: array
                 config:
                     "$ref": "#/components/schemas/SandboxConfig"
-                resolvedAgentConfig:
-                    "$ref": "#/components/schemas/ResolvedAgentConfig"
+                resolvedHarnessConfig:
+                    "$ref": "#/components/schemas/ResolvedHarnessConfig"
                 resources:
                     "$ref": "#/components/schemas/WorkerSandboxResources"
                 sandboxId:
@@ -307,15 +310,15 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                agentConfigs:
+                harnessConfigs:
                     items:
-                        "$ref": "#/components/schemas/SandboxAgentConfig"
+                        "$ref": "#/components/schemas/SandboxHarnessConfig"
                     nullable: true
                     type: array
                 config:
                     "$ref": "#/components/schemas/SandboxConfig"
-                resolvedAgentConfig:
-                    "$ref": "#/components/schemas/ResolvedAgentConfig"
+                resolvedHarnessConfig:
+                    "$ref": "#/components/schemas/ResolvedHarnessConfig"
                 resources:
                     "$ref": "#/components/schemas/WorkerSandboxResources"
                 runtime:

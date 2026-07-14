@@ -114,10 +114,7 @@ func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef 
 	if err != nil {
 		return resolvedRunSource{}, err
 	}
-	destination, err := localRunDestination(repoRoot)
-	if err != nil {
-		return resolvedRunSource{}, err
-	}
+	destination := localRunDestination(repoRoot, absSource)
 	resolved := resolvedRunSource{
 		Kind:           runSourceKindGit,
 		LocalDirectory: repoRoot,
@@ -293,20 +290,20 @@ func defaultRunDestination() resolvedRunSourceDestination {
 	}
 }
 
-func localRunDestination(repoRoot string) (resolvedRunSourceDestination, error) {
-	cwd, err := os.Getwd()
-	if err != nil {
-		return resolvedRunSourceDestination{}, fmt.Errorf("resolve current working directory: %w", err)
-	}
-	cwd = filepath.Clean(cwd)
+// localRunDestination keeps the repo root as the sandbox source directory and
+// makes the requested source directory the working directory, so running
+// against a subdirectory of a repo starts the harness in that subdirectory. The
+// inside-repo guard covers cases where the source path does not sit under the
+// resolved root lexically (e.g. symlinked paths).
+func localRunDestination(repoRoot, sourceDir string) resolvedRunSourceDestination {
 	workingDirectory := repoRoot
-	if pathInsideDirectory(repoRoot, cwd) {
-		workingDirectory = cwd
+	if dir := filepath.Clean(sourceDir); pathInsideDirectory(repoRoot, dir) {
+		workingDirectory = dir
 	}
 	return resolvedRunSourceDestination{
 		Directory:        repoRoot,
 		WorkingDirectory: workingDirectory,
-	}, nil
+	}
 }
 
 func pathInsideDirectory(root, path string) bool {

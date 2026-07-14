@@ -210,7 +210,12 @@ func harnessConfigFilesFromAPI(files []apimodel.HarnessConfigFile) []model.Harne
 	}
 	out := make([]model.HarnessConfigFile, 0, len(files))
 	for _, file := range files {
-		out = append(out, model.HarnessConfigFile{Path: file.Path, Content: file.Content, CreateOnly: file.CreateOnly.Or(false)})
+		out = append(out, model.HarnessConfigFile{
+			Path:       file.Path,
+			Content:    file.Content,
+			CreateOnly: file.CreateOnly.Or(false),
+			Template:   file.Template.Or(false),
+		})
 	}
 	return out
 }

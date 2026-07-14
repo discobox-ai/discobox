@@ -28,30 +28,29 @@ type runOptions struct {
 func (a *App) newRunCommand() *cobra.Command {
 	var opts runOptions
 	cmd := &cobra.Command{
-		Use:   "run [flags] SOURCE[@REF] [PROMPT...]",
+		Use:   "run [flags] [PROMPT...]",
 		Short: "Run a prompt against a local directory or Git repository",
 		Long: `Run a prompt against a local directory or Git repository.
 
-The run command is intentionally shaped like docker run: command flags come first,
-then the source directory or Git repository, followed by the prompt. Use -- when
-the source or prompt needs to be separated from command flags explicitly.
+The arguments are the prompt. The source defaults to the current directory;
+use -C to run against another directory or a Git repository (optionally with
+@REF). Use -- when the prompt needs to be separated from command flags
+explicitly.
 
 By default run waits for the sandbox to start and attaches to its default harness
 terminal, streaming it to your terminal (press Ctrl-P Ctrl-Q to detach). Pass -d
 to create the sandbox and print it without attaching.`,
-		Example: `  discobox run . fix the failing tests
-  discobox run https://github.com/obot-platform/discobox.git@main summarize the CLI package
-  discobox run -e GITHUB_TOKEN -e MODE=test . fix the failing tests
-  discobox run -d . fix the failing tests
-  discobox run -- . prompt starting with --flag-like text`,
-		Args: cobra.MinimumNArgs(1),
+		Example: `  discobox run fix the failing tests
+  discobox run -C https://github.com/obot-platform/discobox.git@main summarize the CLI package
+  discobox run -e GITHUB_TOKEN -e MODE=test fix the failing tests
+  discobox run -d fix the failing tests
+  discobox run -- prompt starting with --flag-like text`,
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			parsedOpts, err := parseRunArgs(args)
+			parsedOpts, err := parseRunOptions(opts, args)
 			if err != nil {
 				return err
 			}
-			parsedOpts.env = append(parsedOpts.env, opts.env...)
-			parsedOpts.harness = opts.harness
 			projectID, err := a.projectIDValue()
 			if err != nil {
 				return err
@@ -78,6 +77,7 @@ to create the sandbox and print it without attaching.`,
 			return a.attachRunSandbox(cmd, client, projectID, sandbox)
 		},
 	}
+	cmd.Flags().StringVarP(&opts.source, "chdir", "C", ".", "Source directory or Git repository to run against, optionally with @REF")
 	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables")
 	cmd.Flags().StringVarP(&opts.harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
 	cmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "Create the sandbox and print it without attaching to its terminal")
@@ -229,15 +229,11 @@ func primaryTerminal(terminals []apimodel.SandboxExec) (apimodel.SandboxExec, bo
 	return apimodel.SandboxExec{}, false
 }
 
-func parseRunArgs(args []string) (runOptions, error) {
-	if len(args) == 0 {
-		return runOptions{}, errors.New("source directory or Git repository is required")
-	}
-	opts := runOptions{
-		source: args[0],
-		prompt: append([]string(nil), args[1:]...),
-	}
-	if opts.source == "" {
+// parseRunOptions combines the flag-provided options with the positional
+// prompt arguments and splits an optional @REF suffix off the source.
+func parseRunOptions(opts runOptions, args []string) (runOptions, error) {
+	opts.prompt = append([]string(nil), args...)
+	if strings.TrimSpace(opts.source) == "" {
 		return runOptions{}, errors.New("source directory or Git repository is required")
 	}
 	if source, ref, ok := splitRunSourceRef(opts.source); ok {

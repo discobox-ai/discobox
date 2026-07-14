@@ -307,6 +307,7 @@ type HarnessConfigFile struct {
 	Path       string `json:"path" doc:"File path relative to the harness's home directory"`
 	Content    string `json:"content" doc:"File content to write"`
 	CreateOnly bool   `json:"createOnly,omitempty" doc:"Only create this file if it does not already exist"`
+	Template   bool   `json:"template,omitempty" doc:"Render file content against the public sandbox configuration before writing"`
 }
 
 // HarnessConfigSecret declares an environment variable the harness expects, and

@@ -41,6 +41,7 @@ type Config struct {
 	Resources             config.ResourceConfig
 	ResolvedHarnessConfig *config.Harness
 	Harnesses             []config.Harness
+	SandboxConfig         map[string]any
 	Installer             terminal.Installer
 	ExecUnitManager       execs.UnitManager
 	ExecAuditRecorder     execs.AuditRecorder
@@ -66,6 +67,7 @@ func ConfigFromHarnessConfig(cfg config.Config) Config {
 		Resources:             cfg.Resources,
 		ResolvedHarnessConfig: cfg.ResolvedHarnessConfig,
 		Harnesses:             cfg.Harnesses,
+		SandboxConfig:         cfg.SandboxConfig,
 	}
 }
 
@@ -121,6 +123,7 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		Execs:                 execManager,
 		ResolvedHarnessConfig: cfg.ResolvedHarnessConfig,
 		Harnesses:             cfg.Harnesses,
+		SandboxConfig:         cfg.SandboxConfig,
 		WorkingRoot:           cfg.WorkingRoot,
 		RuntimeDir:            cfg.RuntimeDir,
 		Env:                   cfg.Env,

@@ -7,6 +7,7 @@
 package terminal
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,6 +17,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"text/template"
 	"time"
 
 	"github.com/obot-platform/discobox/harness"
@@ -66,6 +68,7 @@ type ServiceConfig struct {
 	Execs                 *execs.Manager
 	ResolvedHarnessConfig *config.Harness
 	Harnesses             []config.Harness
+	SandboxConfig         map[string]any
 	WorkingRoot           string
 	RuntimeDir            string
 	Env                   map[string]string
@@ -156,6 +159,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 				HomeDirectory: cfg.ExecDefaults.HomeDirectory,
 				UID:           cfg.ExecDefaults.UID,
 				GID:           cfg.ExecDefaults.GID,
+				SandboxConfig: cfg.SandboxConfig,
 			},
 		}}
 	}
@@ -635,6 +639,7 @@ type FileInstaller struct {
 	HomeDirectory string
 	UID           *int64
 	GID           *int64
+	SandboxConfig map[string]any
 }
 
 func (i FileInstaller) EnsureInstalled(_ context.Context, harness config.Harness, _ string, _ map[string]string) error {
@@ -651,11 +656,34 @@ func (i FileInstaller) EnsureInstalled(_ context.Context, harness config.Harness
 		if err != nil {
 			return fmt.Errorf("harness %q file %q: %w", harness.ID, file.Path, err)
 		}
-		if err := writeHarnessFile(path, file.Content, file.CreateOnly, i.UID, i.GID); err != nil {
+		content := file.Content
+		if file.Template {
+			content, err = renderHarnessFileTemplate(file.Path, content, i.SandboxConfig)
+			if err != nil {
+				return fmt.Errorf("harness %q file %q: %w", harness.ID, file.Path, err)
+			}
+		}
+		if err := writeHarnessFile(path, content, file.CreateOnly, i.UID, i.GID); err != nil {
 			return fmt.Errorf("harness %q file %q: %w", harness.ID, file.Path, err)
 		}
 	}
 	return nil
+}
+
+func renderHarnessFileTemplate(name, content string, sandboxConfig map[string]any) (string, error) {
+	jsonValue := func(value any) (string, error) {
+		encoded, err := json.Marshal(value)
+		return string(encoded), err
+	}
+	tmpl, err := template.New(name).Funcs(template.FuncMap{"json": jsonValue}).Option("missingkey=zero").Parse(content)
+	if err != nil {
+		return "", fmt.Errorf("parse template: %w", err)
+	}
+	var rendered bytes.Buffer
+	if err := tmpl.Execute(&rendered, sandboxConfig); err != nil {
+		return "", fmt.Errorf("render template: %w", err)
+	}
+	return rendered.String(), nil
 }
 
 // resolveHome resolves the home directory to install harness files into, matching

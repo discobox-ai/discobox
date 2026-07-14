@@ -247,6 +247,7 @@ func workerHarnessConfigFiles(files []model.HarnessConfigFile) workerclient.OptN
 			Path:       file.Path,
 			Content:    file.Content,
 			CreateOnly: workerclient.NewOptBool(file.CreateOnly),
+			Template:   workerclient.NewOptBool(file.Template),
 		})
 	}
 	return workerclient.NewOptNilHarnessConfigFileArray(out)

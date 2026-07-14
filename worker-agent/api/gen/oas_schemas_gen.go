@@ -15,43 +15,6 @@ func (s *ErrorModelStatusCode) Error() string {
 	return fmt.Sprintf("code %d: %+v", s.StatusCode, s.Response)
 }
 
-// Ref: #/components/schemas/HarnessConfigFile
-type HarnessConfigFile struct {
-	Content    string  `json:"content"`
-	Path       string  `json:"path"`
-	CreateOnly OptBool `json:"createOnly"`
-}
-
-// GetContent returns the value of Content.
-func (s *HarnessConfigFile) GetContent() string {
-	return s.Content
-}
-
-// GetPath returns the value of Path.
-func (s *HarnessConfigFile) GetPath() string {
-	return s.Path
-}
-
-// GetCreateOnly returns the value of CreateOnly.
-func (s *HarnessConfigFile) GetCreateOnly() OptBool {
-	return s.CreateOnly
-}
-
-// SetContent sets the value of Content.
-func (s *HarnessConfigFile) SetContent(val string) {
-	s.Content = val
-}
-
-// SetPath sets the value of Path.
-func (s *HarnessConfigFile) SetPath(val string) {
-	s.Path = val
-}
-
-// SetCreateOnly sets the value of CreateOnly.
-func (s *HarnessConfigFile) SetCreateOnly(val OptBool) {
-	s.CreateOnly = val
-}
-
 // Ref: #/components/schemas/ErrorDetail
 type ErrorDetail struct {
 	// Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id'.
@@ -462,6 +425,55 @@ func (s *GitSourceWorkspaceMode) UnmarshalText(data []byte) error {
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
+}
+
+// Ref: #/components/schemas/HarnessConfigFile
+type HarnessConfigFile struct {
+	Content    string  `json:"content"`
+	Path       string  `json:"path"`
+	CreateOnly OptBool `json:"createOnly"`
+	// Render file content against the public sandbox configuration before writing.
+	Template OptBool `json:"template"`
+}
+
+// GetContent returns the value of Content.
+func (s *HarnessConfigFile) GetContent() string {
+	return s.Content
+}
+
+// GetPath returns the value of Path.
+func (s *HarnessConfigFile) GetPath() string {
+	return s.Path
+}
+
+// GetCreateOnly returns the value of CreateOnly.
+func (s *HarnessConfigFile) GetCreateOnly() OptBool {
+	return s.CreateOnly
+}
+
+// GetTemplate returns the value of Template.
+func (s *HarnessConfigFile) GetTemplate() OptBool {
+	return s.Template
+}
+
+// SetContent sets the value of Content.
+func (s *HarnessConfigFile) SetContent(val string) {
+	s.Content = val
+}
+
+// SetPath sets the value of Path.
+func (s *HarnessConfigFile) SetPath(val string) {
+	s.Path = val
+}
+
+// SetCreateOnly sets the value of CreateOnly.
+func (s *HarnessConfigFile) SetCreateOnly(val OptBool) {
+	s.CreateOnly = val
+}
+
+// SetTemplate sets the value of Template.
+func (s *HarnessConfigFile) SetTemplate(val OptBool) {
+	s.Template = val
 }
 
 // NewNilDateTime returns new NilDateTime with value set to v.
@@ -877,69 +889,6 @@ func (o OptInt64) Or(d int64) int64 {
 	return d
 }
 
-// NewOptNilHarnessConfigFileArray returns new OptNilHarnessConfigFileArray with value set to v.
-func NewOptNilHarnessConfigFileArray(v []HarnessConfigFile) OptNilHarnessConfigFileArray {
-	return OptNilHarnessConfigFileArray{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptNilHarnessConfigFileArray is optional nullable []HarnessConfigFile.
-type OptNilHarnessConfigFileArray struct {
-	Value []HarnessConfigFile
-	Set   bool
-	Null  bool
-}
-
-// IsSet returns true if OptNilHarnessConfigFileArray was set.
-func (o OptNilHarnessConfigFileArray) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptNilHarnessConfigFileArray) Reset() {
-	var v []HarnessConfigFile
-	o.Value = v
-	o.Set = false
-	o.Null = false
-}
-
-// SetTo sets value to v.
-func (o *OptNilHarnessConfigFileArray) SetTo(v []HarnessConfigFile) {
-	o.Set = true
-	o.Null = false
-	o.Value = v
-}
-
-// IsNull returns true if value is Null.
-func (o OptNilHarnessConfigFileArray) IsNull() bool { return o.Null }
-
-// SetToNull sets value to null.
-func (o *OptNilHarnessConfigFileArray) SetToNull() {
-	o.Set = true
-	o.Null = true
-	var v []HarnessConfigFile
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptNilHarnessConfigFileArray) Get() (v []HarnessConfigFile, ok bool) {
-	if o.Null {
-		return v, false
-	}
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptNilHarnessConfigFileArray) Or(d []HarnessConfigFile) []HarnessConfigFile {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptNilErrorDetailArray returns new OptNilErrorDetailArray with value set to v.
 func NewOptNilErrorDetailArray(v []ErrorDetail) OptNilErrorDetailArray {
 	return OptNilErrorDetailArray{
@@ -997,6 +946,69 @@ func (o OptNilErrorDetailArray) Get() (v []ErrorDetail, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilErrorDetailArray) Or(d []ErrorDetail) []ErrorDetail {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilHarnessConfigFileArray returns new OptNilHarnessConfigFileArray with value set to v.
+func NewOptNilHarnessConfigFileArray(v []HarnessConfigFile) OptNilHarnessConfigFileArray {
+	return OptNilHarnessConfigFileArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilHarnessConfigFileArray is optional nullable []HarnessConfigFile.
+type OptNilHarnessConfigFileArray struct {
+	Value []HarnessConfigFile
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilHarnessConfigFileArray was set.
+func (o OptNilHarnessConfigFileArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilHarnessConfigFileArray) Reset() {
+	var v []HarnessConfigFile
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilHarnessConfigFileArray) SetTo(v []HarnessConfigFile) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilHarnessConfigFileArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilHarnessConfigFileArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []HarnessConfigFile
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilHarnessConfigFileArray) Get() (v []HarnessConfigFile, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilHarnessConfigFileArray) Or(d []HarnessConfigFile) []HarnessConfigFile {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -1613,87 +1625,6 @@ func (s *ResolvedHarnessConfig) SetRunCommand(val []string) {
 	s.RunCommand = val
 }
 
-// Ref: #/components/schemas/SandboxHarnessConfig
-type SandboxHarnessConfig struct {
-	Files           OptNilHarnessConfigFileArray `json:"files"`
-	ID              string                       `json:"id"`
-	InstallCommand  OptNilStringArray            `json:"installCommand"`
-	IsDefault       bool                         `json:"isDefault"`
-	Name            string                       `json:"name"`
-	RelaunchCommand OptNilStringArray            `json:"relaunchCommand"`
-	RunCommand      []string                     `json:"runCommand"`
-}
-
-// GetFiles returns the value of Files.
-func (s *SandboxHarnessConfig) GetFiles() OptNilHarnessConfigFileArray {
-	return s.Files
-}
-
-// GetID returns the value of ID.
-func (s *SandboxHarnessConfig) GetID() string {
-	return s.ID
-}
-
-// GetInstallCommand returns the value of InstallCommand.
-func (s *SandboxHarnessConfig) GetInstallCommand() OptNilStringArray {
-	return s.InstallCommand
-}
-
-// GetIsDefault returns the value of IsDefault.
-func (s *SandboxHarnessConfig) GetIsDefault() bool {
-	return s.IsDefault
-}
-
-// GetName returns the value of Name.
-func (s *SandboxHarnessConfig) GetName() string {
-	return s.Name
-}
-
-// GetRelaunchCommand returns the value of RelaunchCommand.
-func (s *SandboxHarnessConfig) GetRelaunchCommand() OptNilStringArray {
-	return s.RelaunchCommand
-}
-
-// GetRunCommand returns the value of RunCommand.
-func (s *SandboxHarnessConfig) GetRunCommand() []string {
-	return s.RunCommand
-}
-
-// SetFiles sets the value of Files.
-func (s *SandboxHarnessConfig) SetFiles(val OptNilHarnessConfigFileArray) {
-	s.Files = val
-}
-
-// SetID sets the value of ID.
-func (s *SandboxHarnessConfig) SetID(val string) {
-	s.ID = val
-}
-
-// SetInstallCommand sets the value of InstallCommand.
-func (s *SandboxHarnessConfig) SetInstallCommand(val OptNilStringArray) {
-	s.InstallCommand = val
-}
-
-// SetIsDefault sets the value of IsDefault.
-func (s *SandboxHarnessConfig) SetIsDefault(val bool) {
-	s.IsDefault = val
-}
-
-// SetName sets the value of Name.
-func (s *SandboxHarnessConfig) SetName(val string) {
-	s.Name = val
-}
-
-// SetRelaunchCommand sets the value of RelaunchCommand.
-func (s *SandboxHarnessConfig) SetRelaunchCommand(val OptNilStringArray) {
-	s.RelaunchCommand = val
-}
-
-// SetRunCommand sets the value of RunCommand.
-func (s *SandboxHarnessConfig) SetRunCommand(val []string) {
-	s.RunCommand = val
-}
-
 // Ref: #/components/schemas/SandboxConfig
 type SandboxConfig struct {
 	HarnessConfigId      OptString                            `json:"harnessConfigId"`
@@ -1883,6 +1814,87 @@ func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeRefere
 		*s = m
 	}
 	return m
+}
+
+// Ref: #/components/schemas/SandboxHarnessConfig
+type SandboxHarnessConfig struct {
+	Files           OptNilHarnessConfigFileArray `json:"files"`
+	ID              string                       `json:"id"`
+	InstallCommand  OptNilStringArray            `json:"installCommand"`
+	IsDefault       bool                         `json:"isDefault"`
+	Name            string                       `json:"name"`
+	RelaunchCommand OptNilStringArray            `json:"relaunchCommand"`
+	RunCommand      []string                     `json:"runCommand"`
+}
+
+// GetFiles returns the value of Files.
+func (s *SandboxHarnessConfig) GetFiles() OptNilHarnessConfigFileArray {
+	return s.Files
+}
+
+// GetID returns the value of ID.
+func (s *SandboxHarnessConfig) GetID() string {
+	return s.ID
+}
+
+// GetInstallCommand returns the value of InstallCommand.
+func (s *SandboxHarnessConfig) GetInstallCommand() OptNilStringArray {
+	return s.InstallCommand
+}
+
+// GetIsDefault returns the value of IsDefault.
+func (s *SandboxHarnessConfig) GetIsDefault() bool {
+	return s.IsDefault
+}
+
+// GetName returns the value of Name.
+func (s *SandboxHarnessConfig) GetName() string {
+	return s.Name
+}
+
+// GetRelaunchCommand returns the value of RelaunchCommand.
+func (s *SandboxHarnessConfig) GetRelaunchCommand() OptNilStringArray {
+	return s.RelaunchCommand
+}
+
+// GetRunCommand returns the value of RunCommand.
+func (s *SandboxHarnessConfig) GetRunCommand() []string {
+	return s.RunCommand
+}
+
+// SetFiles sets the value of Files.
+func (s *SandboxHarnessConfig) SetFiles(val OptNilHarnessConfigFileArray) {
+	s.Files = val
+}
+
+// SetID sets the value of ID.
+func (s *SandboxHarnessConfig) SetID(val string) {
+	s.ID = val
+}
+
+// SetInstallCommand sets the value of InstallCommand.
+func (s *SandboxHarnessConfig) SetInstallCommand(val OptNilStringArray) {
+	s.InstallCommand = val
+}
+
+// SetIsDefault sets the value of IsDefault.
+func (s *SandboxHarnessConfig) SetIsDefault(val bool) {
+	s.IsDefault = val
+}
+
+// SetName sets the value of Name.
+func (s *SandboxHarnessConfig) SetName(val string) {
+	s.Name = val
+}
+
+// SetRelaunchCommand sets the value of RelaunchCommand.
+func (s *SandboxHarnessConfig) SetRelaunchCommand(val OptNilStringArray) {
+	s.RelaunchCommand = val
+}
+
+// SetRunCommand sets the value of RunCommand.
+func (s *SandboxHarnessConfig) SetRunCommand(val []string) {
+	s.RunCommand = val
 }
 
 // Ref: #/components/schemas/SandboxUpdateConfig

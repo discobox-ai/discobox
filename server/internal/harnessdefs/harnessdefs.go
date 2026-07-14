@@ -180,6 +180,7 @@ func filesFromHarness(files []harness.File) []model.HarnessConfigFile {
 			Path:       file.Path,
 			Content:    file.Content,
 			CreateOnly: file.CreateOnly,
+			Template:   file.Template,
 		})
 	}
 	return out
