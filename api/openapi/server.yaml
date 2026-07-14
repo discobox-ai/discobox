@@ -1,11 +1,11 @@
 components:
     schemas:
-        AgentConfig:
+        HarnessConfig:
             additionalProperties: false
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/AgentConfig.json
+                    example: https://example.com/schemas/HarnessConfig.json
                     format: uri
                     readOnly: true
                     type: string
@@ -14,49 +14,49 @@ components:
                     format: date-time
                     type: string
                 definitionId:
-                    description: Built-in agent definition this config extends. Unset fields are inherited from the definition at runtime, so definition upgrades propagate unless overridden. Empty for fully custom configs.
+                    description: Built-in harness definition this config extends. Unset fields are inherited from the definition at runtime, so definition upgrades propagate unless overridden. Empty for fully custom configs.
                     type: string
                 files:
-                    description: Override for files to write into the agent's home directory when the agent is installed. Unset inherits from the definition.
+                    description: Override for files to write into the harness's home directory when the harness is installed. Unset inherits from the definition.
                     items:
-                        $ref: '#/components/schemas/AgentConfigFile'
+                        $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
                     type: array
                 id:
-                    description: Stable agent config ID
+                    description: Stable harness config ID
                     type: string
                 installCommand:
-                    description: Override for the argv used to install the agent. Unset inherits from the definition. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    description: Override for the argv used to install the harness. Unset inherits from the definition. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
                         type: string
                     nullable: true
                     type: array
                 name:
-                    description: Agent config name
+                    description: Harness config name
                     maxLength: 200
                     type: string
                 projectId:
                     description: Project ID
                     type: string
                 relaunchCommand:
-                    description: Override for the argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. Unset inherits from the definition. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    description: Override for the argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. Unset inherits from the definition. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
                         type: string
                     nullable: true
                     type: array
                 runCommand:
-                    description: Effective argv used to run the agent, resolved from the definition and any overrides. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    description: Effective argv used to run the harness, resolved from the definition and any overrides. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
                         type: string
                     type: array
                 secrets:
-                    description: Override for the environment-variable secrets the agent expects. Unset inherits from the definition.
+                    description: Override for the environment-variable secrets the harness expects. Unset inherits from the definition.
                     items:
-                        $ref: '#/components/schemas/AgentConfigSecret'
+                        $ref: '#/components/schemas/HarnessConfigSecret'
                     nullable: true
                     type: array
                 slug:
-                    description: Stable, URL-safe identifier used to select the agent config (e.g. codex). Unique within the project.
+                    description: Stable, URL-safe identifier used to select the harness config (e.g. codex). Unique within the project.
                     pattern: ^[a-z0-9][a-z0-9-]*$
                     type: string
                 updatedAt:
@@ -72,52 +72,52 @@ components:
                 - createdAt
                 - updatedAt
             type: object
-        AgentConfigDefinition:
+        HarnessDefinition:
             additionalProperties: false
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/AgentConfigDefinition.json
+                    example: https://example.com/schemas/HarnessDefinition.json
                     format: uri
                     readOnly: true
                     type: string
                 description:
-                    description: Agent config definition description
+                    description: Harness config definition description
                     type: string
                 files:
-                    description: Files to write into the agent's home directory when the agent is installed
+                    description: Files to write into the harness's home directory when the harness is installed
                     items:
-                        $ref: '#/components/schemas/AgentConfigFile'
+                        $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
                     type: array
                 id:
                     description: Stable definition ID
                     type: string
                 installCommand:
-                    description: Argv used to install the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    description: Argv used to install the harness. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
                         type: string
                     nullable: true
                     type: array
                 name:
-                    description: Agent config definition name
+                    description: Harness config definition name
                     maxLength: 200
                     type: string
                 relaunchCommand:
-                    description: Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    description: Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
                         type: string
                     nullable: true
                     type: array
                 runCommand:
-                    description: Argv used to run the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    description: Argv used to run the harness. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
                         type: string
                     type: array
                 secrets:
-                    description: Environment-variable secrets the agent expects.
+                    description: Environment-variable secrets the harness expects.
                     items:
-                        $ref: '#/components/schemas/AgentConfigSecret'
+                        $ref: '#/components/schemas/HarnessConfigSecret'
                     nullable: true
                     type: array
             required:
@@ -125,15 +125,15 @@ components:
                 - name
                 - runCommand
             type: object
-        AgentConfigFile:
+        HarnessConfigFile:
             additionalProperties: false
-            description: A file to write into an agent's home directory when the agent is installed.
+            description: A file to write into a harness's home directory when the harness is installed.
             properties:
                 content:
                     description: File content to write
                     type: string
                 path:
-                    description: File path relative to the agent's home directory
+                    description: File path relative to the harness's home directory
                     type: string
                 createOnly:
                     description: Do not overwrite this file if it already exists
@@ -142,16 +142,16 @@ components:
                 - path
                 - content
             type: object
-        AgentConfigSecret:
+        HarnessConfigSecret:
             additionalProperties: false
-            description: Declares an environment variable the agent expects, and whether it is required.
+            description: Declares an environment variable the harness expects, and whether it is required.
             properties:
                 name:
-                    description: Environment variable name the agent expects to be set.
+                    description: Environment variable name the harness expects to be set.
                     pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                     type: string
                 required:
-                    description: Whether the secret must be set for the agent to run. Optional secrets are used when present but do not block the agent.
+                    description: Whether the secret must be set for the harness to run. Optional secrets are used when present but do not block the harness.
                     type: boolean
                 oneOfGroup:
                     description: Groups a required secret with alternatives; the requirement is satisfied when at least one member of the group is present.
@@ -159,18 +159,18 @@ components:
             required:
                 - name
             type: object
-        AgentConfigSecretBinding:
+        HarnessConfigSecretBinding:
             additionalProperties: false
-            description: Binds one of an agent config's environment variables to a project secret.
+            description: Binds one of a harness config's environment variables to a project secret.
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/AgentConfigSecretBinding.json
+                    example: https://example.com/schemas/HarnessConfigSecretBinding.json
                     format: uri
                     readOnly: true
                     type: string
-                agentConfigId:
-                    description: Agent config the binding belongs to
+                harnessConfigId:
+                    description: Harness config the binding belongs to
                     type: string
                 createdAt:
                     description: Creation timestamp
@@ -195,34 +195,34 @@ components:
             required:
                 - id
                 - projectId
-                - agentConfigId
+                - harnessConfigId
                 - envName
                 - secretId
                 - createdAt
                 - updatedAt
             type: object
-        ListAgentConfigSecretBindingsBody:
+        ListHarnessConfigSecretBindingsBody:
             additionalProperties: false
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/ListAgentConfigSecretBindingsBody.json
+                    example: https://example.com/schemas/ListHarnessConfigSecretBindingsBody.json
                     format: uri
                     readOnly: true
                     type: string
                 secretBindings:
                     items:
-                        $ref: '#/components/schemas/AgentConfigSecretBinding'
+                        $ref: '#/components/schemas/HarnessConfigSecretBinding'
                     type: array
             required:
                 - secretBindings
             type: object
-        SetAgentConfigSecretBindingBody:
+        SetHarnessConfigSecretBindingBody:
             additionalProperties: false
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/SetAgentConfigSecretBindingBody.json
+                    example: https://example.com/schemas/SetHarnessConfigSecretBindingBody.json
                     format: uri
                     readOnly: true
                     type: string
@@ -250,54 +250,54 @@ components:
             required:
                 - projectId
             type: object
-        CreateAgentConfigBody:
+        CreateHarnessConfigBody:
             additionalProperties: false
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/CreateAgentConfigBody.json
+                    example: https://example.com/schemas/CreateHarnessConfigBody.json
                     format: uri
                     readOnly: true
                     type: string
                 definitionId:
-                    description: Built-in agent definition to extend. Unset command/file fields are inherited from the definition at runtime, so definition upgrades propagate unless overridden. Omit for a fully custom config, in which case runCommand is required.
+                    description: Built-in harness definition to extend. Unset command/file fields are inherited from the definition at runtime, so definition upgrades propagate unless overridden. Omit for a fully custom config, in which case runCommand is required.
                     type: string
                 files:
-                    description: Override for files to write into the agent's home directory. Unset inherits from the definition when definitionId is provided.
+                    description: Override for files to write into the harness's home directory. Unset inherits from the definition when definitionId is provided.
                     items:
-                        $ref: '#/components/schemas/AgentConfigFile'
+                        $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
                     type: array
                 installCommand:
-                    description: Override for the argv used to install the agent. Unset inherits from the definition when definitionId is provided. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    description: Override for the argv used to install the harness. Unset inherits from the definition when definitionId is provided. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
                         type: string
                     nullable: true
                     type: array
                 name:
-                    description: Agent config name. Defaults to the definition name when definitionId is provided.
+                    description: Harness config name. Defaults to the definition name when definitionId is provided.
                     maxLength: 200
                     type: string
                 relaunchCommand:
-                    description: Override for the argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. Unset inherits from the definition when definitionId is provided. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    description: Override for the argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. Unset inherits from the definition when definitionId is provided. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
                         type: string
                     nullable: true
                     type: array
                 runCommand:
-                    description: Override for the argv used to run the agent. Unset inherits from the definition when definitionId is provided; required for a fully custom config. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    description: Override for the argv used to run the harness. Unset inherits from the definition when definitionId is provided; required for a fully custom config. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
                         type: string
                     nullable: true
                     type: array
                 secrets:
-                    description: Override for the environment-variable secrets the agent expects. Unset inherits from the definition when definitionId is provided.
+                    description: Override for the environment-variable secrets the harness expects. Unset inherits from the definition when definitionId is provided.
                     items:
-                        $ref: '#/components/schemas/AgentConfigSecret'
+                        $ref: '#/components/schemas/HarnessConfigSecret'
                     nullable: true
                     type: array
                 slug:
-                    description: Stable, URL-safe identifier used to select the agent config (e.g. codex). Defaults to definitionId, or a slug derived from name. Unique within the project.
+                    description: Stable, URL-safe identifier used to select the harness config (e.g. codex). Defaults to definitionId, or a slug derived from name. Unique within the project.
                     pattern: ^[a-z0-9][a-z0-9-]*$
                     type: string
             type: object
@@ -310,8 +310,8 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                agentName:
-                    description: Agent config name to resolve at create time
+                harnessName:
+                    description: Harness config name to resolve at create time
                     type: string
                 config:
                     $ref: '#/components/schemas/SandboxCreateConfig'
@@ -396,17 +396,17 @@ components:
                     format: uri
                     type: string
             type: object
-        AgentHookLog:
+        HarnessHookLog:
             additionalProperties: false
             properties:
                 id:
                     description: Hook log ID.
                     type: string
                 terminalId:
-                    description: Agent terminal runtime ID that emitted the hook.
+                    description: Harness terminal runtime ID that emitted the hook.
                     type: string
                 provider:
-                    description: Agent hook provider.
+                    description: Harness hook provider.
                     type: string
                 event:
                     description: Provider-specific hook event name.
@@ -423,12 +423,12 @@ components:
                 - payload
                 - createdAt
             type: object
-        AgentHookLogsResponse:
+        HarnessHookLogsResponse:
             additionalProperties: false
             properties:
                 hooks:
                     items:
-                        $ref: '#/components/schemas/AgentHookLog'
+                        $ref: '#/components/schemas/HarnessHookLog'
                     type: array
             required:
                 - hooks
@@ -442,8 +442,8 @@ components:
                 status:
                     description: |
                         Current observed exec runtime status. installing is a terminal-layer
-                        phase: the exec record exists and its agent install command is still
-                        running, before the agent process is launched (starting -> running).
+                        phase: the exec record exists and its harness install command is still
+                        running, before the harness process is launched (starting -> running).
                     enum:
                         - installing
                         - starting
@@ -499,11 +499,11 @@ components:
                         type: string
                     description: Caller-supplied exec metadata.
                     type: object
-                agentId:
-                    description: Coding agent this exec runs, when created in agent (terminal) mode.
+                harnessId:
+                    description: Harness this exec runs, when created in harness (terminal) mode.
                     type: string
                 primary:
-                    description: Whether this is the sandbox's primary agent terminal.
+                    description: Whether this is the sandbox's primary harness terminal.
                     type: boolean
             required:
                 - id
@@ -590,18 +590,18 @@ components:
             type: object
         CreateSandboxExecRequest:
             additionalProperties: false
-            description: Create an exec. Provide command for a plain exec, or agentId (with optional args) to run a coding agent in terminal mode.
+            description: Create an exec. Provide command for a plain exec, or harnessId (with optional args) to run a harness in terminal mode.
             properties:
                 command:
-                    description: Command argv to execute in the sandbox. Mutually exclusive with agentId.
+                    description: Command argv to execute in the sandbox. Mutually exclusive with harnessId.
                     items:
                         type: string
                     type: array
-                agentId:
-                    description: Coding agent CLI to start in terminal mode. Defaults to the sandbox configured agent when omitted. Mutually exclusive with command.
+                harnessId:
+                    description: Harness CLI to start in terminal mode. Defaults to the sandbox configured harness when omitted. Mutually exclusive with command.
                     type: string
                 args:
-                    description: Additional command arguments appended to the resolved agent command in terminal mode.
+                    description: Additional command arguments appended to the resolved harness command in terminal mode.
                     items:
                         type: string
                     type: array
@@ -666,7 +666,7 @@ components:
             additionalProperties: false
             properties:
                 terminalId:
-                    description: Agent terminal runtime ID.
+                    description: Harness terminal runtime ID.
                     type: string
                 sampledAt:
                     description: Time when the snapshot was collected.
@@ -755,41 +755,41 @@ components:
                     description: Discobox-owned hidden Git ref containing dirty workspace snapshot data
                     type: string
             type: object
-        ListAgentConfigDefinitionsBody:
+        ListHarnessDefinitionsBody:
             additionalProperties: false
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/ListAgentConfigDefinitionsBody.json
+                    example: https://example.com/schemas/ListHarnessDefinitionsBody.json
                     format: uri
                     readOnly: true
                     type: string
-                agentConfigDefinitions:
-                    description: Agent config definitions
+                harnessDefinitions:
+                    description: Harness config definitions
                     items:
-                        $ref: '#/components/schemas/AgentConfigDefinition'
+                        $ref: '#/components/schemas/HarnessDefinition'
                     nullable: true
                     type: array
             required:
-                - agentConfigDefinitions
+                - harnessDefinitions
             type: object
-        ListAgentConfigsBody:
+        ListHarnessConfigsBody:
             additionalProperties: false
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/ListAgentConfigsBody.json
+                    example: https://example.com/schemas/ListHarnessConfigsBody.json
                     format: uri
                     readOnly: true
                     type: string
-                agentConfigs:
-                    description: Agent configs
+                harnessConfigs:
+                    description: Harness configs
                     items:
-                        $ref: '#/components/schemas/AgentConfig'
+                        $ref: '#/components/schemas/HarnessConfig'
                     nullable: true
                     type: array
             required:
-                - agentConfigs
+                - harnessConfigs
             type: object
         ListProjectsBody:
             additionalProperties: false
@@ -974,10 +974,10 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                agentConfigs:
-                    description: Agent configurations
+                harnessConfigs:
+                    description: Harness configurations
                     items:
-                        $ref: '#/components/schemas/AgentConfig'
+                        $ref: '#/components/schemas/HarnessConfig'
                     nullable: true
                     type: array
                 createdAt:
@@ -990,8 +990,8 @@ components:
                 defaultSandboxProviderId:
                     description: Default sandbox provider instance ID
                     type: string
-                defaultAgentConfigId:
-                    description: Default agent config ID
+                defaultHarnessConfigId:
+                    description: Default harness config ID
                     type: string
                 id:
                     description: Stable project ID
@@ -1300,17 +1300,17 @@ components:
         SandboxConfig:
             additionalProperties: false
             properties:
-                agentConfigId:
-                    description: Agent config ID
+                harnessConfigId:
+                    description: Harness config ID
                     type: string
-                agentModel:
-                    description: Model the agent should use
+                model:
+                    description: Model the harness should use
                     type: string
-                agentModelReasoningLevel:
-                    description: Model reasoning level the agent should use
+                modelReasoningLevel:
+                    description: Model reasoning level the harness should use
                     type: string
-                agentModelServiceTier:
-                    description: Model service tier the agent should use
+                modelServiceTier:
+                    description: Model service tier the harness should use
                     type: string
                 cpuVcpus:
                     description: Requested CPU capacity in vCPUs
@@ -1322,7 +1322,7 @@ components:
                 env:
                     additionalProperties:
                         type: string
-                    description: Environment variables available to sandbox-agent terminals and execs by default.
+                    description: Environment variables available to sandbox-harness terminals and execs by default.
                     type: object
                 image:
                     description: Sandbox base image
@@ -1336,7 +1336,7 @@ components:
                     maxLength: 200
                     type: string
                 prompt:
-                    description: Prompt the agent should run, passed as argv to preserve the caller's exact tokens.
+                    description: Prompt the harness should run, passed as argv to preserve the caller's exact tokens.
                     items:
                         type: string
                     type: array
@@ -1372,10 +1372,10 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                agentConfigs:
-                    description: Non-secret agent configurations available inside the sandbox.
+                harnessConfigs:
+                    description: Non-secret harness configurations available inside the sandbox.
                     items:
-                        $ref: '#/components/schemas/SandboxManifestAgentConfig'
+                        $ref: '#/components/schemas/SandboxManifestHarnessConfig'
                     nullable: true
                     type: array
                 agentRuntime:
@@ -1392,9 +1392,9 @@ components:
                 provider:
                     $ref: '#/components/schemas/SandboxManifestProvider'
                     description: Non-secret provider context for the sandbox runtime.
-                resolvedAgentConfig:
-                    $ref: '#/components/schemas/SandboxManifestResolvedAgentConfig'
-                    description: Non-secret resolved default agent configuration, when one has been selected.
+                resolvedHarnessConfig:
+                    $ref: '#/components/schemas/SandboxManifestResolvedHarnessConfig'
+                    description: Non-secret resolved default harness configuration, when one has been selected.
                 resources:
                     $ref: '#/components/schemas/SandboxResources'
                     description: Provider-normalized resource allocation for the sandbox.
@@ -1407,39 +1407,39 @@ components:
                 - config
             type: object
             x-sandbox-agent-component: true
-        SandboxManifestAgentConfig:
+        SandboxManifestHarnessConfig:
             additionalProperties: false
-            description: Non-secret coding-agent configuration available inside a sandbox.
+            description: Non-secret harness configuration available inside a sandbox.
             properties:
                 files:
-                    description: Files to write into the agent's home directory when the agent is installed. This content must not contain credentials, tokens, private keys, or other secret material.
+                    description: Files to write into the harness's home directory when the harness is installed. This content must not contain credentials, tokens, private keys, or other secret material.
                     items:
-                        $ref: '#/components/schemas/AgentConfigFile'
+                        $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
                     type: array
                 id:
-                    description: Stable agent config ID.
+                    description: Stable harness config ID.
                     type: string
                 installCommand:
-                    description: Argv used to install the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+                    description: Argv used to install the harness. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
                     items:
                         type: string
                     nullable: true
                     type: array
                 isDefault:
-                    description: Whether this is the default agent configuration.
+                    description: Whether this is the default harness configuration.
                     type: boolean
                 name:
-                    description: Agent config display name.
+                    description: Harness config display name.
                     type: string
                 relaunchCommand:
-                    description: Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+                    description: Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
                     items:
                         type: string
                     nullable: true
                     type: array
                 runCommand:
-                    description: Argv used to run the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+                    description: Argv used to run the harness. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
                     items:
                         type: string
                     type: array
@@ -1499,36 +1499,36 @@ components:
             required:
                 - kind
             type: object
-        SandboxManifestResolvedAgentConfig:
+        SandboxManifestResolvedHarnessConfig:
             additionalProperties: false
-            description: Non-secret resolved coding-agent configuration selected for a sandbox.
+            description: Non-secret resolved harness configuration selected for a sandbox.
             properties:
                 files:
-                    description: Files to write into the agent's home directory when the agent is installed. This content must not contain credentials, tokens, private keys, or other secret material.
+                    description: Files to write into the harness's home directory when the harness is installed. This content must not contain credentials, tokens, private keys, or other secret material.
                     items:
-                        $ref: '#/components/schemas/AgentConfigFile'
+                        $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
                     type: array
                 id:
-                    description: Stable agent config ID.
+                    description: Stable harness config ID.
                     type: string
                 installCommand:
-                    description: Argv used to install the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+                    description: Argv used to install the harness. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
                     items:
                         type: string
                     nullable: true
                     type: array
                 name:
-                    description: Agent config display name.
+                    description: Harness config display name.
                     type: string
                 relaunchCommand:
-                    description: Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+                    description: Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
                     items:
                         type: string
                     nullable: true
                     type: array
                 runCommand:
-                    description: Argv used to run the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+                    description: Argv used to run the harness. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
                     items:
                         type: string
                     type: array
@@ -1578,17 +1578,17 @@ components:
         SandboxCreateConfig:
             additionalProperties: false
             properties:
-                agentConfigId:
-                    description: Agent config ID
+                harnessConfigId:
+                    description: Harness config ID
                     type: string
-                agentModel:
-                    description: Model the agent should use
+                model:
+                    description: Model the harness should use
                     type: string
-                agentModelReasoningLevel:
-                    description: Model reasoning level the agent should use
+                modelReasoningLevel:
+                    description: Model reasoning level the harness should use
                     type: string
-                agentModelServiceTier:
-                    description: Model service tier the agent should use
+                modelServiceTier:
+                    description: Model service tier the harness should use
                     type: string
                 cpuVcpus:
                     description: Requested CPU capacity in vCPUs
@@ -1600,7 +1600,7 @@ components:
                 env:
                     additionalProperties:
                         type: string
-                    description: Environment variables available to sandbox-agent terminals and execs by default.
+                    description: Environment variables available to sandbox-harness terminals and execs by default.
                     type: object
                 image:
                     description: Sandbox base image. Defaults to the server configured sandbox image when omitted.
@@ -1614,7 +1614,7 @@ components:
                     maxLength: 200
                     type: string
                 prompt:
-                    description: Prompt the agent should run, passed as argv to preserve the caller's exact tokens.
+                    description: Prompt the harness should run, passed as argv to preserve the caller's exact tokens.
                     items:
                         type: string
                     type: array
@@ -1798,9 +1798,9 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                agentConfig:
-                    $ref: '#/components/schemas/AgentConfig'
-                    description: Agent config
+                harnessConfig:
+                    $ref: '#/components/schemas/HarnessConfig'
+                    description: Harness config
                 config:
                     $ref: '#/components/schemas/SandboxConfig'
                     description: Desired sandbox configuration.
@@ -2076,27 +2076,27 @@ components:
                 - availableMemoryBytes
                 - availableStorageBytes
             type: object
-        AssignSandboxAgentSecretsBody:
+        AssignSandboxHarnessSecretsBody:
             additionalProperties: false
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/AssignSandboxAgentSecretsBody.json
+                    example: https://example.com/schemas/AssignSandboxHarnessSecretsBody.json
                     format: uri
                     readOnly: true
                     type: string
-                agentConfigId:
-                    description: Agent config whose bound secrets should be assigned to the sandbox for a per-invocation run.
+                harnessConfigId:
+                    description: Harness config whose bound secrets should be assigned to the sandbox for a per-invocation run.
                     type: string
             required:
-                - agentConfigId
+                - harnessConfigId
             type: object
-        SandboxAgentSecretsResponse:
+        SandboxHarnessSecretsResponse:
             additionalProperties: false
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/SandboxAgentSecretsResponse.json
+                    example: https://example.com/schemas/SandboxHarnessSecretsResponse.json
                     format: uri
                     readOnly: true
                     type: string
@@ -2125,7 +2125,7 @@ components:
                     description: How widely the minted grant applies. Defaults to sandbox for sandbox-originated requests, otherwise project.
                     enum:
                         - sandbox
-                        - agentConfig
+                        - harnessConfig
                         - project
                     type: string
                 secretId:
@@ -2188,11 +2188,11 @@ components:
                     description: How widely the grant applies
                     enum:
                         - sandbox
-                        - agentConfig
+                        - harnessConfig
                         - project
                     type: string
                 scopeKey:
-                    description: Identifier the scope resolves against (sandbox ID or agent config ID). Defaults to the project ID for project scope.
+                    description: Identifier the scope resolves against (sandbox ID or harness config ID). Defaults to the project ID for project scope.
                     type: string
                 secretId:
                     description: Secret ID to grant
@@ -2347,7 +2347,7 @@ components:
                     description: How widely the grant applies
                     enum:
                         - sandbox
-                        - agentConfig
+                        - harnessConfig
                         - project
                     type: string
                 scopeKey:
@@ -2529,47 +2529,47 @@ components:
                 - stream
                 - error
             type: object
-        UpdateAgentConfigBody:
+        UpdateHarnessConfigBody:
             additionalProperties: false
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/UpdateAgentConfigBody.json
+                    example: https://example.com/schemas/UpdateHarnessConfigBody.json
                     format: uri
                     readOnly: true
                     type: string
                 files:
-                    description: Files to write into the agent's home directory when the agent is installed
+                    description: Files to write into the harness's home directory when the harness is installed
                     items:
-                        $ref: '#/components/schemas/AgentConfigFile'
+                        $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
                     type: array
                 installCommand:
-                    description: Argv used to install the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    description: Argv used to install the harness. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
                         type: string
                     nullable: true
                     type: array
                 name:
-                    description: Agent config name
+                    description: Harness config name
                     maxLength: 200
                     type: string
                 relaunchCommand:
-                    description: Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    description: Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
                         type: string
                     nullable: true
                     type: array
                 runCommand:
-                    description: Argv used to run the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    description: Argv used to run the harness. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
                     items:
                         type: string
                     nullable: true
                     type: array
                 secrets:
-                    description: Environment-variable secrets the agent expects.
+                    description: Environment-variable secrets the harness expects.
                     items:
-                        $ref: '#/components/schemas/AgentConfigSecret'
+                        $ref: '#/components/schemas/HarnessConfigSecret'
                     nullable: true
                     type: array
             type: object
@@ -2922,15 +2922,15 @@ paths:
             summary: Force a pending or backoff job to run immediately
             tags:
                 - jobs
-    /agent-config-definitions:
+    /harness-definitions:
         get:
-            operationId: list-agent-config-definitions
+            operationId: list-harness-definitions
             responses:
                 200:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListAgentConfigDefinitionsBody'
+                                $ref: '#/components/schemas/ListHarnessDefinitionsBody'
                     description: OK
                 default:
                     content:
@@ -2938,26 +2938,26 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: List agent config definitions
+            summary: List harness config definitions
             tags:
-                - Agent Configs
-    /agent-config-definitions/{definitionId}:
+                - Harness Configs
+    /harness-definitions/{definitionId}:
         get:
-            operationId: get-agent-config-definition
+            operationId: get-harness-definition
             parameters:
-                - description: Agent config definition ID
+                - description: Harness config definition ID
                   in: path
                   name: definitionId
                   required: true
                   schema:
-                    description: Agent config definition ID
+                    description: Harness config definition ID
                     type: string
             responses:
                 200:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/AgentConfigDefinition'
+                                $ref: '#/components/schemas/HarnessDefinition'
                     description: OK
                 default:
                     content:
@@ -2965,9 +2965,9 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Get an agent config definition
+            summary: Get a harness config definition
             tags:
-                - Agent Configs
+                - Harness Configs
     /api/workers/register:
         post:
             operationId: register-worker
@@ -3118,9 +3118,9 @@ paths:
             summary: Get a project
             tags:
                 - Projects
-    /projects/{projectId}/agent-configs:
+    /projects/{projectId}/harness-configs:
         get:
-            operationId: list-agent-configs
+            operationId: list-harness-configs
             parameters:
                 - description: Project ID
                   in: path
@@ -3135,7 +3135,7 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListAgentConfigsBody'
+                                $ref: '#/components/schemas/ListHarnessConfigsBody'
                     description: OK
                 default:
                     content:
@@ -3143,11 +3143,11 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: List agent configs
+            summary: List harness configs
             tags:
-                - Agent Configs
+                - Harness Configs
         post:
-            operationId: create-agent-config
+            operationId: create-harness-config
             parameters:
                 - description: Project ID
                   in: path
@@ -3161,14 +3161,14 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/CreateAgentConfigBody'
+                            $ref: '#/components/schemas/CreateHarnessConfigBody'
                 required: true
             responses:
                 200:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/AgentConfig'
+                                $ref: '#/components/schemas/HarnessConfig'
                     description: OK
                 default:
                     content:
@@ -3176,12 +3176,12 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Create an agent config
+            summary: Create a harness config
             tags:
-                - Agent Configs
-    /projects/{projectId}/agent-configs/{agentConfigId}:
+                - Harness Configs
+    /projects/{projectId}/harness-configs/{harnessConfigId}:
         delete:
-            operationId: delete-agent-config
+            operationId: delete-harness-config
             parameters:
                 - description: Project ID
                   in: path
@@ -3191,12 +3191,12 @@ paths:
                     default: default
                     description: Project ID
                     type: string
-                - description: Agent config ID
+                - description: Harness config ID
                   in: path
-                  name: agentConfigId
+                  name: harnessConfigId
                   required: true
                   schema:
-                    description: Agent config ID
+                    description: Harness config ID
                     type: string
             responses:
                 204:
@@ -3207,11 +3207,11 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Delete an agent config
+            summary: Delete a harness config
             tags:
-                - Agent Configs
+                - Harness Configs
         get:
-            operationId: get-agent-config
+            operationId: get-harness-config
             parameters:
                 - description: Project ID
                   in: path
@@ -3221,19 +3221,19 @@ paths:
                     default: default
                     description: Project ID
                     type: string
-                - description: Agent config ID
+                - description: Harness config ID
                   in: path
-                  name: agentConfigId
+                  name: harnessConfigId
                   required: true
                   schema:
-                    description: Agent config ID
+                    description: Harness config ID
                     type: string
             responses:
                 200:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/AgentConfig'
+                                $ref: '#/components/schemas/HarnessConfig'
                     description: OK
                 default:
                     content:
@@ -3241,11 +3241,11 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Get an agent config
+            summary: Get a harness config
             tags:
-                - Agent Configs
+                - Harness Configs
         patch:
-            operationId: update-agent-config
+            operationId: update-harness-config
             parameters:
                 - description: Project ID
                   in: path
@@ -3255,25 +3255,25 @@ paths:
                     default: default
                     description: Project ID
                     type: string
-                - description: Agent config ID
+                - description: Harness config ID
                   in: path
-                  name: agentConfigId
+                  name: harnessConfigId
                   required: true
                   schema:
-                    description: Agent config ID
+                    description: Harness config ID
                     type: string
             requestBody:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/UpdateAgentConfigBody'
+                            $ref: '#/components/schemas/UpdateHarnessConfigBody'
                 required: true
             responses:
                 200:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/AgentConfig'
+                                $ref: '#/components/schemas/HarnessConfig'
                     description: OK
                 default:
                     content:
@@ -3281,12 +3281,12 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Update an agent config
+            summary: Update a harness config
             tags:
-                - Agent Configs
-    /projects/{projectId}/agent-configs/{agentConfigId}/default:
+                - Harness Configs
+    /projects/{projectId}/harness-configs/{harnessConfigId}/default:
         put:
-            operationId: set-default-agent-config
+            operationId: set-default-harness-config
             parameters:
                 - description: Project ID
                   in: path
@@ -3296,12 +3296,12 @@ paths:
                     default: default
                     description: Project ID
                     type: string
-                - description: Agent config ID
+                - description: Harness config ID
                   in: path
-                  name: agentConfigId
+                  name: harnessConfigId
                   required: true
                   schema:
-                    description: Agent config ID
+                    description: Harness config ID
                     type: string
             responses:
                 200:
@@ -3316,12 +3316,12 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Set the project default agent config
+            summary: Set the project default harness config
             tags:
-                - Agent Configs
-    /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings:
+                - Harness Configs
+    /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings:
         get:
-            operationId: list-agent-config-secret-bindings
+            operationId: list-harness-config-secret-bindings
             parameters:
                 - description: Project ID
                   in: path
@@ -3331,19 +3331,19 @@ paths:
                     default: default
                     description: Project ID
                     type: string
-                - description: Agent config ID
+                - description: Harness config ID
                   in: path
-                  name: agentConfigId
+                  name: harnessConfigId
                   required: true
                   schema:
-                    description: Agent config ID
+                    description: Harness config ID
                     type: string
             responses:
                 200:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListAgentConfigSecretBindingsBody'
+                                $ref: '#/components/schemas/ListHarnessConfigSecretBindingsBody'
                     description: OK
                 default:
                     content:
@@ -3351,12 +3351,12 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: List agent config secret bindings
+            summary: List harness config secret bindings
             tags:
-                - Agent Configs
-    /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}:
+                - Harness Configs
+    /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}:
         put:
-            operationId: set-agent-config-secret-binding
+            operationId: set-harness-config-secret-binding
             parameters:
                 - description: Project ID
                   in: path
@@ -3366,12 +3366,12 @@ paths:
                     default: default
                     description: Project ID
                     type: string
-                - description: Agent config ID
+                - description: Harness config ID
                   in: path
-                  name: agentConfigId
+                  name: harnessConfigId
                   required: true
                   schema:
-                    description: Agent config ID
+                    description: Harness config ID
                     type: string
                 - description: Environment variable name
                   in: path
@@ -3384,14 +3384,14 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/SetAgentConfigSecretBindingBody'
+                            $ref: '#/components/schemas/SetHarnessConfigSecretBindingBody'
                 required: true
             responses:
                 200:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/AgentConfigSecretBinding'
+                                $ref: '#/components/schemas/HarnessConfigSecretBinding'
                     description: OK
                 default:
                     content:
@@ -3399,11 +3399,11 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Bind an agent config environment variable to a secret
+            summary: Bind a harness config environment variable to a secret
             tags:
-                - Agent Configs
+                - Harness Configs
         delete:
-            operationId: delete-agent-config-secret-binding
+            operationId: delete-harness-config-secret-binding
             parameters:
                 - description: Project ID
                   in: path
@@ -3413,12 +3413,12 @@ paths:
                     default: default
                     description: Project ID
                     type: string
-                - description: Agent config ID
+                - description: Harness config ID
                   in: path
-                  name: agentConfigId
+                  name: harnessConfigId
                   required: true
                   schema:
-                    description: Agent config ID
+                    description: Harness config ID
                     type: string
                 - description: Environment variable name
                   in: path
@@ -3436,9 +3436,9 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Remove an agent config secret binding
+            summary: Remove a harness config secret binding
             tags:
-                - Agent Configs
+                - Harness Configs
     /projects/{projectId}/providers:
         get:
             operationId: list-sandbox-provider-instances
@@ -3840,9 +3840,9 @@ paths:
             summary: Update a sandbox
             tags:
                 - Sandboxes
-    /projects/{projectId}/sandboxes/{sandboxId}/agent-secrets:
+    /projects/{projectId}/sandboxes/{sandboxId}/harness-secrets:
         post:
-            operationId: assign-sandbox-agent-secrets
+            operationId: assign-sandbox-harness-secrets
             parameters:
                 - description: Project ID
                   in: path
@@ -3863,14 +3863,14 @@ paths:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/AssignSandboxAgentSecretsBody'
+                            $ref: '#/components/schemas/AssignSandboxHarnessSecretsBody'
                 required: true
             responses:
                 200:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/SandboxAgentSecretsResponse'
+                                $ref: '#/components/schemas/SandboxHarnessSecretsResponse'
                     description: OK
                 default:
                     content:
@@ -3878,7 +3878,7 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Assign an agent config's bound secrets to a running sandbox and return their sentinel env
+            summary: Assign a harness config's bound secrets to a running sandbox and return their sentinel env
             tags:
                 - Sandboxes
     /projects/{projectId}/sandboxes/{sandboxId}/restart:
@@ -4039,9 +4039,9 @@ paths:
             summary: Stop a sandbox
             tags:
                 - Sandboxes
-    /api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks:
+    /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks:
         get:
-            operationId: list-agent-hooks
+            operationId: list-harness-hooks
             parameters:
                 - description: Project that owns the sandbox.
                   in: path
@@ -4055,7 +4055,7 @@ paths:
                   required: true
                   schema:
                     type: string
-                - description: Optional agent terminal runtime ID filter.
+                - description: Optional harness terminal runtime ID filter.
                   in: query
                   name: terminalId
                   required: false
@@ -4074,17 +4074,17 @@ paths:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/AgentHookLogsResponse'
-                    description: Recent agent hook payload logs.
+                                $ref: '#/components/schemas/HarnessHookLogsResponse'
+                    description: Recent harness hook payload logs.
                 default:
                     content:
                         application/json:
                             schema:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Error response.
-            summary: List recent sandbox agent hook payload logs.
+            summary: List recent sandbox harness hook payload logs.
             tags:
-                - Agent Hooks
+                - Harness Hooks
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/execs:
         get:

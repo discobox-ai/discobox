@@ -10,11 +10,11 @@ internal conversions. Public REST API schema types live under the root
 | Entity | Description |
 | --- | --- |
 | `User` | Authenticated person. Owns projects and creates sandboxes. |
-| `Project` | Group for sandboxes, provider configuration, agent configuration, workers, and project events. |
+| `Project` | Group for sandboxes, provider configuration, harness configuration, workers, and project events. |
 | `ServerState` | Generic key/value state for server preferences and one-time initialization flags. |
 | `Sandbox` | Main managed runtime/session resource. Belongs to a project and is orchestrated. |
-| `AgentConfig` | Project-scoped agent runtime configuration selected by sandboxes. |
-| `AgentConfigDefinition` | Non-persisted, well-known template used by API clients to create an `AgentConfig`; definitions are not selectable by sandboxes. |
+| `HarnessConfig` | Project-scoped harness runtime configuration selected by sandboxes. |
+| `HarnessDefinition` | Non-persisted, well-known template used by API clients to create an `HarnessConfig`; definitions are not selectable by sandboxes. |
 | `SandboxProviderInstance` | Project-scoped provider configuration for creating and managing sandboxes. |
 | `Worker` | Provider-backed runtime worker for launching sandboxes. Has its own identity and public key; private key stays on the worker. Workers belong to a provider instance/pool and can host many stateful sandboxes. Scheduling uses `ready`, `schedulable`, and `degraded` columns; detailed condition data is opaque JSON for display. |
 | `WorkerBootstrapToken` | Short-lived, one-time token used by a new worker to register its public key. |
@@ -32,8 +32,8 @@ Project-owned resources include `project_id` and should use project boundaries
 for uniqueness whenever values are only unique within a project. User-owned rows
 include `user_id`. Do not add cross-database routing fields.
 
-`AgentConfigDefinition` is non-persisted catalog data and only supplies defaults
-for creating persisted `AgentConfig` instances.
+`HarnessDefinition` is non-persisted catalog data and only supplies defaults
+for creating persisted `HarnessConfig` instances.
 
 ## Deletes
 
@@ -49,7 +49,7 @@ state rows that intentionally rely on hard deletes, such as project events or
 server initialization state, should document that exception instead of adding
 soft-delete fields.
 
-`AgentConfig` intentionally hard-deletes. Disabling an agent config is modeled as
+`HarnessConfig` intentionally hard-deletes. Disabling a harness config is modeled as
 removing that project-scoped name so the same definition name can be enabled
 again without colliding with a hidden soft-deleted row.
 
@@ -81,13 +81,13 @@ erDiagram
 
     PROJECT ||--o{ SANDBOX : contains
     PROJECT ||--o{ SANDBOX_PROVIDER_INSTANCE : configures
-    PROJECT ||--o{ AGENT_CONFIG : configures
+    PROJECT ||--o{ HARNESS_CONFIG : configures
     PROJECT ||--o{ PROJECT_EVENT : emits
     PROJECT ||--o{ SANDBOX_ACCESS_ISSUER_KEY : has
     PROJECT ||--o| SANDBOX_PROVIDER_INSTANCE : default_provider
-    PROJECT ||--o| AGENT_CONFIG : default_agent
+    PROJECT ||--o| HARNESS_CONFIG : default_harness
 
-    AGENT_CONFIG ||--o{ SANDBOX : runs
+    HARNESS_CONFIG ||--o{ SANDBOX : runs
     SANDBOX_PROVIDER_INSTANCE ||--o{ SANDBOX : manages
     SANDBOX_PROVIDER_INSTANCE ||--o{ WORKER : runs
     WORKER ||--o{ WORKER_BOOTSTRAP_TOKEN : registers_with
@@ -106,7 +106,7 @@ erDiagram
         string name
         string slug
         string default_sandbox_provider_id
-        string default_agent_config_id
+        string default_harness_config_id
     }
 
     SERVER_STATE {
@@ -119,12 +119,12 @@ erDiagram
         string project_id
         string created_by_user_id
         string provider_instance_id
-        string agent_config_id
+        string harness_config_id
         json source
         json source_code_references
     }
 
-    AGENT_CONFIG {
+    HARNESS_CONFIG {
         string id
         string project_id
         string name

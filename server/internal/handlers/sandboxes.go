@@ -105,12 +105,12 @@ func (h *Handler) RestartSandbox(ctx context.Context, req *apimodel.RestartSandb
 	return &body, nil
 }
 
-func (h *Handler) AssignSandboxAgentSecrets(ctx context.Context, req *apimodel.AssignSandboxAgentSecretsBody, params serverapi.AssignSandboxAgentSecretsParams) (serverapi.AssignSandboxAgentSecretsRes, error) {
-	secrets, err := h.services.Sandboxes.AssignSandboxAgentSecrets(ctx, params.ProjectId, params.SandboxId, req.AgentConfigId)
+func (h *Handler) AssignSandboxHarnessSecrets(ctx context.Context, req *apimodel.AssignSandboxHarnessSecretsBody, params serverapi.AssignSandboxHarnessSecretsParams) (serverapi.AssignSandboxHarnessSecretsRes, error) {
+	secrets, err := h.services.Sandboxes.AssignSandboxHarnessSecrets(ctx, params.ProjectId, params.SandboxId, req.HarnessConfigId)
 	if err != nil {
 		return apiError(err), nil
 	}
-	resp := apimodel.SandboxAgentSecretsResponse{Secrets: secrets}
+	resp := apimodel.SandboxHarnessSecretsResponse{Secrets: secrets}
 	return &resp, nil
 }
 

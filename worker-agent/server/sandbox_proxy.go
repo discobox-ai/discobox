@@ -17,7 +17,7 @@ func registerSandboxProxyRoutes(router chi.Router, service *sandboxService) {
 	router.Handle("/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/http/{port}", service.sandboxHTTPProxyHandler())
 	router.Handle("/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/http/{port}/*", service.sandboxHTTPProxyHandler())
 
-	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/agent-hooks", service.sandboxAgentProxyHandler())
+	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/harness-hooks", service.sandboxAgentProxyHandler())
 	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/execs", service.sandboxAgentProxyHandler())
 	router.Method(http.MethodPost, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/execs", service.sandboxAgentProxyHandler())
 	router.Method(http.MethodGet, "/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/execs/{execId}", service.sandboxAgentProxyHandler())
@@ -108,7 +108,7 @@ func authorizeProxyScope(r *http.Request, scope string) error {
 }
 
 func sandboxAgentRequiredScope(r *http.Request) string {
-	if strings.Contains(r.URL.Path, "/agent-hooks") {
+	if strings.Contains(r.URL.Path, "/harness-hooks") {
 		if r.Method == http.MethodGet {
 			return ScopeExecRead
 		}

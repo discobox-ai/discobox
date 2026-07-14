@@ -11,12 +11,12 @@ import (
 )
 
 type ApproveSecretRequestBody = apimodel.ApproveSecretRequestBody
-type CreateAgentConfigBody = apimodel.CreateAgentConfigBody
-type SetAgentConfigSecretBindingBody = apimodel.SetAgentConfigSecretBindingBody
+type CreateHarnessConfigBody = apimodel.CreateHarnessConfigBody
+type SetHarnessConfigSecretBindingBody = apimodel.SetHarnessConfigSecretBindingBody
 type CreateSecretBody = apimodel.CreateSecretBody
 type CreateSecretRequestBody = apimodel.CreateSecretRequestBody
 type CreateSecretGrantBody = apimodel.CreateSecretGrantBody
-type UpdateAgentConfigBody = apimodel.UpdateAgentConfigBody
+type UpdateHarnessConfigBody = apimodel.UpdateHarnessConfigBody
 type UpdateSecretBody = apimodel.UpdateSecretBody
 type CreateSandboxBody = apimodel.CreateSandboxBody
 type SandboxSecretInput = apimodel.SandboxSecretInput
@@ -47,20 +47,20 @@ type ProjectService interface {
 	GetProject(ctx context.Context, projectID string) (*model.Project, error)
 }
 
-// AgentConfigService manages project-scoped agent configurations.
-type AgentConfigService interface {
-	ListAgentConfigDefinitions(ctx context.Context) ([]model.AgentConfigDefinition, error)
-	GetAgentConfigDefinition(ctx context.Context, definitionID string) (*model.AgentConfigDefinition, error)
-	ListAgentConfigs(ctx context.Context, projectID string) ([]model.AgentConfig, error)
-	CreateAgentConfig(ctx context.Context, projectID string, input CreateAgentConfigBody) (*model.AgentConfig, error)
-	GetAgentConfig(ctx context.Context, projectID, configID string) (*model.AgentConfig, error)
-	UpdateAgentConfig(ctx context.Context, projectID, configID string, input UpdateAgentConfigBody) (*model.AgentConfig, error)
-	SetDefaultAgentConfig(ctx context.Context, projectID, configID string) (*model.Project, error)
-	DeleteAgentConfig(ctx context.Context, projectID, configID string) error
+// HarnessConfigService manages project-scoped harness configurations.
+type HarnessConfigService interface {
+	ListHarnessDefinitions(ctx context.Context) ([]model.HarnessDefinition, error)
+	GetHarnessDefinition(ctx context.Context, definitionID string) (*model.HarnessDefinition, error)
+	ListHarnessConfigs(ctx context.Context, projectID string) ([]model.HarnessConfig, error)
+	CreateHarnessConfig(ctx context.Context, projectID string, input CreateHarnessConfigBody) (*model.HarnessConfig, error)
+	GetHarnessConfig(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error)
+	UpdateHarnessConfig(ctx context.Context, projectID, configID string, input UpdateHarnessConfigBody) (*model.HarnessConfig, error)
+	SetDefaultHarnessConfig(ctx context.Context, projectID, configID string) (*model.Project, error)
+	DeleteHarnessConfig(ctx context.Context, projectID, configID string) error
 
-	ListAgentConfigSecretBindings(ctx context.Context, projectID, configID string) ([]model.AgentConfigSecretBinding, error)
-	SetAgentConfigSecretBinding(ctx context.Context, projectID, configID, envName, secretID string) (*model.AgentConfigSecretBinding, error)
-	DeleteAgentConfigSecretBinding(ctx context.Context, projectID, configID, envName string) error
+	ListHarnessConfigSecretBindings(ctx context.Context, projectID, configID string) ([]model.HarnessConfigSecretBinding, error)
+	SetHarnessConfigSecretBinding(ctx context.Context, projectID, configID, envName, secretID string) (*model.HarnessConfigSecretBinding, error)
+	DeleteHarnessConfigSecretBinding(ctx context.Context, projectID, configID, envName string) error
 }
 
 // SandboxService manages sandboxes within a project.
@@ -75,7 +75,7 @@ type SandboxService interface {
 	RestartSandbox(ctx context.Context, projectID, sandboxID string, input RestartSandboxBody) (*model.Sandbox, error)
 	ReconcileSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
 	AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*HTTPClientLease, *model.Sandbox, error)
-	AssignSandboxAgentSecrets(ctx context.Context, projectID, sandboxID, agentConfigID string) (map[string]string, error)
+	AssignSandboxHarnessSecrets(ctx context.Context, projectID, sandboxID, harnessConfigID string) (map[string]string, error)
 }
 
 type SandboxProviderInstanceService interface {
@@ -132,12 +132,12 @@ type ProjectEventService interface {
 
 // Services groups the dependencies needed by the API operations.
 type Services struct {
-	Projects     ProjectService
-	AgentConfigs AgentConfigService
-	Sandboxes    SandboxService
-	Providers    SandboxProviderInstanceService
-	Workers      WorkerService
-	Jobs         JobService
-	Events       ProjectEventService
-	Secrets      SecretService
+	Projects       ProjectService
+	HarnessConfigs HarnessConfigService
+	Sandboxes      SandboxService
+	Providers      SandboxProviderInstanceService
+	Workers        WorkerService
+	Jobs           JobService
+	Events         ProjectEventService
+	Secrets        SecretService
 }

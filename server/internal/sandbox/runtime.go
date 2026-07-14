@@ -96,29 +96,29 @@ type CreateOptions struct {
 	// the worker registers with the proxy for runtime swapping.
 	Sentinels []string
 
-	Name                     string
-	Description              *string
-	AgentConfigID            *string
-	AgentModel               *string
-	AgentModelServiceTier    *string
-	AgentModelReasoningLevel *string
-	Prompt                   []string
-	Source                   *model.GitSource
-	SourceCodeReferences     model.SourceCodeReferences
-	UserName                 *string
-	UserUID                  *int
-	UserGID                  *int
-	HomeDirectory            *string
-	ResolvedAgentConfig      *ResolvedAgentConfig
-	AgentConfigs             []AgentConfig
-	AgentServerURL           string
-	OAuthRedirectBase        string
-	Resources                ResourceConfig
-	ProviderInstanceID       string
-	WorkerID                 string
-	CPUVCPUs                 float64
-	MemoryBytes              int64
-	StorageBytes             int64
+	Name                  string
+	Description           *string
+	HarnessConfigID       *string
+	Model                 *string
+	ModelServiceTier      *string
+	ModelReasoningLevel   *string
+	Prompt                []string
+	Source                *model.GitSource
+	SourceCodeReferences  model.SourceCodeReferences
+	UserName              *string
+	UserUID               *int
+	UserGID               *int
+	HomeDirectory         *string
+	ResolvedHarnessConfig *ResolvedHarnessConfig
+	HarnessConfigs        []HarnessConfig
+	AgentServerURL        string
+	OAuthRedirectBase     string
+	Resources             ResourceConfig
+	ProviderInstanceID    string
+	WorkerID              string
+	CPUVCPUs              float64
+	MemoryBytes           int64
+	StorageBytes          int64
 }
 
 // UpdateOptions carries the mutable subset of CreateOptions that can be applied
@@ -130,27 +130,27 @@ type UpdateOptions struct {
 	Sentinels []string
 }
 
-// ResolvedAgentConfig is the sandbox-local coding agent configuration captured
+// ResolvedHarnessConfig is the sandbox-local harness configuration captured
 // at sandbox create time.
-type ResolvedAgentConfig struct {
+type ResolvedHarnessConfig struct {
 	ID              string
 	Name            string
 	InstallCommand  []string
 	RunCommand      []string
 	RelaunchCommand []string
-	Files           []model.AgentConfigFile
+	Files           []model.HarnessConfigFile
 }
 
-// AgentConfig is a project-scoped coding agent configuration made available to
+// HarnessConfig is a project-scoped harness configuration made available to
 // the sandbox runtime.
-type AgentConfig struct {
+type HarnessConfig struct {
 	ID              string
 	Name            string
 	InstallCommand  []string
 	RunCommand      []string
 	RelaunchCommand []string
 	IsDefault       bool
-	Files           []model.AgentConfigFile
+	Files           []model.HarnessConfigFile
 }
 
 // WorkerProviderReconciler reconciles worker-provider state for a provider

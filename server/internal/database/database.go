@@ -55,7 +55,7 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := write.AutoMigrate(model.AllModels()...); err != nil {
 		return err
 	}
-	if err := dropAgentConfigDeletedAt(write); err != nil {
+	if err := dropHarnessConfigDeletedAt(write); err != nil {
 		return err
 	}
 	return dropJobQueueArtifacts(write)
@@ -82,7 +82,7 @@ func dropJobQueueArtifacts(db *gorm.DB) error {
 		}
 		return nil
 	}
-	if db.Dialector.Name() != "sqlite" {
+	if db.Name() != "sqlite" {
 		return drop(db)
 	}
 	// SQLite drops columns by rebuilding the table (create new, copy, DROP TABLE,
@@ -99,11 +99,11 @@ func dropJobQueueArtifacts(db *gorm.DB) error {
 	})
 }
 
-func dropAgentConfigDeletedAt(db *gorm.DB) error {
-	if !db.Migrator().HasColumn(&model.AgentConfig{}, "deleted_at") {
+func dropHarnessConfigDeletedAt(db *gorm.DB) error {
+	if !db.Migrator().HasColumn(&model.HarnessConfig{}, "deleted_at") {
 		return nil
 	}
-	return db.Migrator().DropColumn(&model.AgentConfig{}, "deleted_at")
+	return db.Migrator().DropColumn(&model.HarnessConfig{}, "deleted_at")
 }
 
 // Close closes the underlying database pools.

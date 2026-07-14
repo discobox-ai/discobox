@@ -1,7 +1,7 @@
-// Package terminal is the agent-terminal layer built on top of the exec
-// primitive. A terminal is an exec whose command is resolved from an agent
+// Package terminal is the harness-terminal layer built on top of the exec
+// primitive. A terminal is an exec whose command is resolved from an harness
 // config, whose environment is prepared by an installer before start, and which
-// is tagged (agentId, primary) in exec metadata. The Service owns agent
+// is tagged (harnessId, primary) in exec metadata. The Service owns harness
 // resolution, install, and primary-terminal lifecycle; all runtime mechanics
 // (systemd unit, shim, PTY, attach, status) belong to execs.Manager.
 package terminal
@@ -31,24 +31,24 @@ const installStatusTimeout = 5 * time.Minute
 var ErrNotFound = execs.ErrNotFound
 
 type CreateRequest struct {
-	AgentID  string
-	Args     []string
-	Workdir  string
-	Env      map[string]string
-	Metadata map[string]string
-	Rows     uint16
-	Cols     uint16
+	HarnessID string
+	Args      []string
+	Workdir   string
+	Env       map[string]string
+	Metadata  map[string]string
+	Rows      uint16
+	Cols      uint16
 
 	// primary and command are set only by the sandbox-agent's own primary
 	// terminal launch, never from the terminal create API. command, when set,
-	// replaces the resolved agent command and args entirely (used for the
+	// replaces the resolved harness command and args entirely (used for the
 	// relaunch/resume command on subsequent sandbox starts).
 	primary bool
 	command []string
 }
 
 type Installer interface {
-	EnsureInstalled(context.Context, config.Agent, string, map[string]string) error
+	EnsureInstalled(context.Context, config.Harness, string, map[string]string) error
 }
 
 // PrimaryStateStore records, durably across sandbox restarts, whether the
@@ -63,26 +63,26 @@ type ServiceConfig struct {
 	// Execs is the shared runtime primitive that backs both plain execs and
 	// terminals. The service creates terminal-mode execs on it and never owns a
 	// runtime of its own.
-	Execs               *execs.Manager
-	ResolvedAgentConfig *config.Agent
-	Agents              []config.Agent
-	WorkingRoot         string
-	RuntimeDir          string
-	Env                 map[string]string
-	ImageConfig         config.ImageConfig
-	ImageConfigPath     string
-	ExecDefaults        config.ExecDefaults
-	DefaultUser         *execs.User
-	Units               execs.UnitManager
-	Installer           Installer
-	PrimaryState        PrimaryStateStore
+	Execs                 *execs.Manager
+	ResolvedHarnessConfig *config.Harness
+	Harnesses             []config.Harness
+	WorkingRoot           string
+	RuntimeDir            string
+	Env                   map[string]string
+	ImageConfig           config.ImageConfig
+	ImageConfigPath       string
+	ExecDefaults          config.ExecDefaults
+	DefaultUser           *execs.User
+	Units                 execs.UnitManager
+	Installer             Installer
+	PrimaryState          PrimaryStateStore
 }
 
-// Service is the agent-terminal layer over execs.Manager.
+// Service is the harness-terminal layer over execs.Manager.
 type Service struct {
 	execs          *execs.Manager
 	installs       *execs.Manager
-	agents         map[string]config.Agent
+	harnesses      map[string]config.Harness
 	resolvedID     string
 	defaultID      string
 	workingRoot    string
@@ -93,7 +93,7 @@ type Service struct {
 	installer      Installer
 	primaryState   PrimaryStateStore
 
-	// installing tracks exec IDs whose agent install command is still running.
+	// installing tracks exec IDs whose harness install command is still running.
 	// The record exists (execs status "starting") before its process launches, so
 	// the mapper projects these as the "installing" phase to callers. Terminal is
 	// an exec plus this layer, so install belongs here rather than in execs.
@@ -138,7 +138,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	s := &Service{
 		execs:        terminals,
 		installs:     installs,
-		agents:       map[string]config.Agent{},
+		harnesses:    map[string]config.Harness{},
 		workingRoot:  filepath.Clean(cfg.WorkingRoot),
 		env:          cloneMap(cfg.Env),
 		imageConfig:  imageConfig,
@@ -159,22 +159,22 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 			},
 		}}
 	}
-	for _, agent := range cfg.Agents {
-		if strings.TrimSpace(agent.ID) == "" {
+	for _, harness := range cfg.Harnesses {
+		if strings.TrimSpace(harness.ID) == "" {
 			continue
 		}
-		if _, exists := s.agents[agent.ID]; exists {
-			return nil, fmt.Errorf("duplicate agent %q", agent.ID)
+		if _, exists := s.harnesses[harness.ID]; exists {
+			return nil, fmt.Errorf("duplicate harness %q", harness.ID)
 		}
-		s.agents[agent.ID] = cloneAgent(agent)
-		if s.defaultID == "" || agent.IsDefault {
-			s.defaultID = agent.ID
+		s.harnesses[harness.ID] = cloneHarness(harness)
+		if s.defaultID == "" || harness.IsDefault {
+			s.defaultID = harness.ID
 		}
 	}
-	if cfg.ResolvedAgentConfig != nil && strings.TrimSpace(cfg.ResolvedAgentConfig.ID) != "" {
-		s.resolvedID = strings.TrimSpace(cfg.ResolvedAgentConfig.ID)
-		if _, exists := s.agents[s.resolvedID]; !exists {
-			s.agents[s.resolvedID] = cloneAgent(*cfg.ResolvedAgentConfig)
+	if cfg.ResolvedHarnessConfig != nil && strings.TrimSpace(cfg.ResolvedHarnessConfig.ID) != "" {
+		s.resolvedID = strings.TrimSpace(cfg.ResolvedHarnessConfig.ID)
+		if _, exists := s.harnesses[s.resolvedID]; !exists {
+			s.harnesses[s.resolvedID] = cloneHarness(*cfg.ResolvedHarnessConfig)
 		}
 	}
 	return s, nil
@@ -197,9 +197,9 @@ func (s *Service) Logs(ctx context.Context, id string) ([]execs.LogEntry, error)
 	return s.execs.Logs(ctx, id)
 }
 
-// Create resolves the agent, creates a terminal-mode exec (an always-TTY exec
-// running the resolved agent command, tagged agentId and optionally primary in
-// metadata), then runs the agent's install command. The exec record is created
+// Create resolves the harness, creates a terminal-mode exec (an always-TTY exec
+// running the resolved harness command, tagged harnessId and optionally primary in
+// metadata), then runs the harness's install command. The exec record is created
 // before install so the install is observable: while EnsureInstalled runs, the
 // record exists and the mapper projects it as the "installing" phase. The unit
 // is only launched later by Start, so the record sits idle during install.
@@ -208,7 +208,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	if err != nil {
 		return execs.Exec{}, err
 	}
-	agent, agentID, err := s.resolveAgent(req.AgentID, workdir)
+	harness, harnessID, err := s.resolveHarness(req.HarnessID, workdir)
 	if err != nil {
 		return execs.Exec{}, err
 	}
@@ -225,14 +225,14 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	if len(req.command) > 0 {
 		command = append([]string{}, req.command...)
 	} else {
-		command = append([]string{}, agent.Command...)
+		command = append([]string{}, harness.Command...)
 		command = append(command, req.Args...)
 	}
 	metadata := cloneMap(req.Metadata)
 	if metadata == nil {
 		metadata = map[string]string{}
 	}
-	metadata[metadataAgentID] = agentID
+	metadata[metadataHarnessID] = harnessID
 	if req.primary {
 		metadata[metadataPrimary] = "true"
 	}
@@ -255,14 +255,14 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	// no half-installed terminal lingers, matching the pre-record behavior.
 	s.markInstalling(created.ID)
 	defer s.unmarkInstalling(created.ID)
-	if err := s.installer.EnsureInstalled(ctx, agent, workdir, env); err != nil {
+	if err := s.installer.EnsureInstalled(ctx, harness, workdir, env); err != nil {
 		_ = s.execs.Delete(context.WithoutCancel(ctx), created.ID)
 		return execs.Exec{}, err
 	}
 	return created, nil
 }
 
-// markInstalling records that an exec's agent install command is running.
+// markInstalling records that an exec's harness install command is running.
 func (s *Service) markInstalling(id string) {
 	s.installingMu.Lock()
 	s.installing[id] = struct{}{}
@@ -276,7 +276,7 @@ func (s *Service) unmarkInstalling(id string) {
 	s.installingMu.Unlock()
 }
 
-// IsInstalling reports whether an exec's agent install command is still running.
+// IsInstalling reports whether an exec's harness install command is still running.
 // The mapper uses it to project the terminal-layer "installing" phase.
 func (s *Service) IsInstalling(id string) bool {
 	s.installingMu.Lock()
@@ -287,27 +287,27 @@ func (s *Service) IsInstalling(id string) bool {
 
 // Metadata keys the terminal layer sets on its execs to express terminal-ness.
 const (
-	metadataAgentID = "agentId"
-	metadataPrimary = "primary"
+	metadataHarnessID = "harnessId"
+	metadataPrimary   = "primary"
 )
 
-// AgentID returns the agent an exec was created for, if it is a terminal-mode
+// HarnessID returns the harness an exec was created for, if it is a terminal-mode
 // exec, reading the value the terminal layer stored in metadata.
-func AgentID(e execs.Exec) string { return e.Metadata[metadataAgentID] }
+func HarnessID(e execs.Exec) string { return e.Metadata[metadataHarnessID] }
 
 // IsPrimary reports whether an exec is the sandbox's primary terminal.
 func IsPrimary(e execs.Exec) bool { return e.Metadata[metadataPrimary] == "true" }
 
-// ErrNoAgentConfigured reports that the sandbox has no agent to launch as its
+// ErrNoHarnessConfigured reports that the sandbox has no harness to launch as its
 // primary terminal. It is a valid empty state, not a failure: the caller should
 // log it and skip launching rather than treat it as an error.
-var ErrNoAgentConfigured = errors.New("no agent is configured for this sandbox")
+var ErrNoHarnessConfigured = errors.New("no harness is configured for this sandbox")
 
 // EnsurePrimary launches the sandbox's primary terminal on sandbox start. On the
-// first start it runs the resolved agent with the sandbox prompt as arguments;
-// on subsequent starts it runs the agent's relaunch command to resume the
+// first start it runs the resolved harness with the sandbox prompt as arguments;
+// on subsequent starts it runs the harness's relaunch command to resume the
 // previous session. It is a no-op when a live primary terminal already exists.
-// It returns ErrNoAgentConfigured when no agent is configured; any other error
+// It returns ErrNoHarnessConfigured when no harness is configured; any other error
 // is a real misconfiguration and is returned to the caller.
 func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 	for _, existing := range s.List() {
@@ -319,11 +319,11 @@ func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 	if err != nil {
 		return err
 	}
-	agent, _, err := s.resolveAgent("", workdir)
+	harness, _, err := s.resolveHarness("", workdir)
 	if err != nil {
-		// Surface the outcome to the caller. A missing agent is a valid empty
-		// state (ErrNoAgentConfigured); any other error is a genuine
-		// misconfiguration (e.g. a malformed local agent config) and must not be
+		// Surface the outcome to the caller. A missing harness is a valid empty
+		// state (ErrNoHarnessConfigured); any other error is a genuine
+		// misconfiguration (e.g. a malformed local harness config) and must not be
 		// swallowed the way it previously was.
 		return err
 	}
@@ -333,7 +333,7 @@ func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 			return err
 		}
 	}
-	created, err := s.Create(ctx, primaryCreateRequest(agent, prompt, launched))
+	created, err := s.Create(ctx, primaryCreateRequest(harness, prompt, launched))
 	if err != nil {
 		return err
 	}
@@ -346,11 +346,11 @@ func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 	return nil
 }
 
-func primaryCreateRequest(agent config.Agent, prompt []string, launched bool) CreateRequest {
+func primaryCreateRequest(harness config.Harness, prompt []string, launched bool) CreateRequest {
 	req := CreateRequest{primary: true}
 	switch {
-	case launched && len(agent.RelaunchCommand) > 0:
-		req.command = append([]string{}, agent.RelaunchCommand...)
+	case launched && len(harness.RelaunchCommand) > 0:
+		req.command = append([]string{}, harness.RelaunchCommand...)
 	case launched:
 	default:
 		req.Args = append([]string{}, prompt...)
@@ -358,40 +358,40 @@ func primaryCreateRequest(agent config.Agent, prompt []string, launched bool) Cr
 	return req
 }
 
-// resolveAgent selects the agent for a terminal in precedence order: an explicit
-// request, then the sandbox's resolved agent, then a local repo agent config,
+// resolveHarness selects the harness for a terminal in precedence order: an explicit
+// request, then the sandbox's resolved harness, then a local repo harness config,
 // then the configured default.
-func (s *Service) resolveAgent(requested string, workdir string) (config.Agent, string, error) {
+func (s *Service) resolveHarness(requested string, workdir string) (config.Harness, string, error) {
 	requested = strings.TrimSpace(requested)
 	if requested != "" {
-		agent, ok := s.agents[requested]
+		harness, ok := s.harnesses[requested]
 		if !ok {
-			return config.Agent{}, "", fmt.Errorf("agent %q is not configured", requested)
+			return config.Harness{}, "", fmt.Errorf("harness %q is not configured", requested)
 		}
-		return agent, requested, nil
+		return harness, requested, nil
 	}
 	if s.resolvedID != "" {
-		if agent, ok := s.agents[s.resolvedID]; ok {
-			return agent, s.resolvedID, nil
+		if harness, ok := s.harnesses[s.resolvedID]; ok {
+			return harness, s.resolvedID, nil
 		}
 	}
-	if local, ok, err := s.localAgentConfig(workdir); err != nil {
-		return config.Agent{}, "", err
+	if local, ok, err := s.localHarnessConfig(workdir); err != nil {
+		return config.Harness{}, "", err
 	} else if ok {
 		return local, local.ID, nil
 	}
 	if s.defaultID == "" {
-		return config.Agent{}, "", ErrNoAgentConfigured
+		return config.Harness{}, "", ErrNoHarnessConfigured
 	}
-	agent, ok := s.agents[s.defaultID]
+	harness, ok := s.harnesses[s.defaultID]
 	if !ok {
-		return config.Agent{}, "", fmt.Errorf("default agent %q is not configured", s.defaultID)
+		return config.Harness{}, "", fmt.Errorf("default harness %q is not configured", s.defaultID)
 	}
-	return agent, s.defaultID, nil
+	return harness, s.defaultID, nil
 }
 
-type localAgentConfig struct {
-	Agent          string    `json:"agent,omitempty"`
+type localHarnessConfig struct {
+	Harness        string    `json:"harness,omitempty"`
 	ID             string    `json:"id,omitempty"`
 	Name           string    `json:"name,omitempty"`
 	InstallCommand *[]string `json:"installCommand,omitempty"`
@@ -399,39 +399,39 @@ type localAgentConfig struct {
 	RunCommand     *[]string `json:"runCommand,omitempty"`
 }
 
-func (s *Service) localAgentConfig(workdir string) (config.Agent, bool, error) {
+func (s *Service) localHarnessConfig(workdir string) (config.Harness, bool, error) {
 	repoRoot, ok := gitRoot(workdir, s.workingRoot)
 	if !ok {
-		return config.Agent{}, false, nil
+		return config.Harness{}, false, nil
 	}
-	path, ok := localAgentConfigPath(repoRoot)
+	path, ok := localHarnessConfigPath(repoRoot)
 	if !ok {
-		return config.Agent{}, false, nil
+		return config.Harness{}, false, nil
 	}
-	local, err := readLocalAgentConfig(path)
+	local, err := readLocalHarnessConfig(path)
 	if err != nil {
-		return config.Agent{}, false, err
+		return config.Harness{}, false, err
 	}
-	selector := firstNonEmpty(local.Agent, local.ID, local.Name)
+	selector := firstNonEmpty(local.Harness, local.ID, local.Name)
 	if selector == "" {
-		return config.Agent{}, false, fmt.Errorf("local agent config %s must set agent, id, or name", path)
+		return config.Harness{}, false, fmt.Errorf("local harness config %s must set harness, id, or name", path)
 	}
-	agent, ok := s.matchAgent(selector)
+	harness, ok := s.matchHarness(selector)
 	if !ok {
-		agent = config.Agent{ID: selector, Name: selector}
+		harness = config.Harness{ID: selector, Name: selector}
 	}
-	agent = applyLocalAgentConfig(agent, local)
-	if strings.TrimSpace(agent.ID) == "" {
-		return config.Agent{}, false, fmt.Errorf("local agent config %s resolved empty agent id", path)
+	harness = applyLocalHarnessConfig(harness, local)
+	if strings.TrimSpace(harness.ID) == "" {
+		return config.Harness{}, false, fmt.Errorf("local harness config %s resolved empty harness id", path)
 	}
-	if len(agent.Command) == 0 || strings.TrimSpace(agent.Command[0]) == "" {
-		return config.Agent{}, false, fmt.Errorf("local agent config %s resolved agent %q without command", path, agent.ID)
+	if len(harness.Command) == 0 || strings.TrimSpace(harness.Command[0]) == "" {
+		return config.Harness{}, false, fmt.Errorf("local harness config %s resolved harness %q without command", path, harness.ID)
 	}
-	return agent, true, nil
+	return harness, true, nil
 }
 
-func localAgentConfigPath(repoRoot string) (string, bool) {
-	for _, name := range []string{"agent.json", "agent-config.json", "sandbox.json"} {
+func localHarnessConfigPath(repoRoot string) (string, bool) {
+	for _, name := range []string{"harness.json", "harness-config.json", "sandbox.json"} {
 		path := filepath.Join(repoRoot, ".discobox", name)
 		if info, err := os.Stat(path); err == nil && !info.IsDir() {
 			return path, true
@@ -440,52 +440,52 @@ func localAgentConfigPath(repoRoot string) (string, bool) {
 	return "", false
 }
 
-func readLocalAgentConfig(path string) (localAgentConfig, error) {
+func readLocalHarnessConfig(path string) (localHarnessConfig, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return localAgentConfig{}, err
+		return localHarnessConfig{}, err
 	}
 	var name string
 	if err := json.Unmarshal(data, &name); err == nil {
-		return localAgentConfig{Agent: name}, nil
+		return localHarnessConfig{Harness: name}, nil
 	}
-	var out localAgentConfig
+	var out localHarnessConfig
 	if err := json.Unmarshal(data, &out); err != nil {
-		return localAgentConfig{}, fmt.Errorf("parse local agent config %s: %w", path, err)
+		return localHarnessConfig{}, fmt.Errorf("parse local harness config %s: %w", path, err)
 	}
 	return out, nil
 }
 
-func (s *Service) matchAgent(selector string) (config.Agent, bool) {
+func (s *Service) matchHarness(selector string) (config.Harness, bool) {
 	selector = strings.TrimSpace(selector)
-	if agent, ok := s.agents[selector]; ok {
-		return cloneAgent(agent), true
+	if harness, ok := s.harnesses[selector]; ok {
+		return cloneHarness(harness), true
 	}
-	for _, agent := range s.agents {
-		if strings.EqualFold(agent.Name, selector) {
-			return cloneAgent(agent), true
+	for _, harness := range s.harnesses {
+		if strings.EqualFold(harness.Name, selector) {
+			return cloneHarness(harness), true
 		}
 	}
-	return config.Agent{}, false
+	return config.Harness{}, false
 }
 
-func applyLocalAgentConfig(agent config.Agent, local localAgentConfig) config.Agent {
+func applyLocalHarnessConfig(harness config.Harness, local localHarnessConfig) config.Harness {
 	if strings.TrimSpace(local.ID) != "" {
-		agent.ID = strings.TrimSpace(local.ID)
+		harness.ID = strings.TrimSpace(local.ID)
 	}
 	if strings.TrimSpace(local.Name) != "" {
-		agent.Name = strings.TrimSpace(local.Name)
+		harness.Name = strings.TrimSpace(local.Name)
 	}
 	if local.InstallCommand != nil {
-		agent.InstallCommand = append([]string{}, (*local.InstallCommand)...)
+		harness.InstallCommand = append([]string{}, (*local.InstallCommand)...)
 	}
 	if local.Command != nil {
-		agent.Command = append([]string{}, (*local.Command)...)
+		harness.Command = append([]string{}, (*local.Command)...)
 	}
 	if local.RunCommand != nil {
-		agent.Command = append([]string{}, (*local.RunCommand)...)
+		harness.Command = append([]string{}, (*local.RunCommand)...)
 	}
-	return agent
+	return harness
 }
 
 func gitRoot(workdir, workingRoot string) (string, bool) {
@@ -530,19 +530,19 @@ type CompositeInstaller struct {
 	Installers []Installer
 }
 
-func (i CompositeInstaller) EnsureInstalled(ctx context.Context, agent config.Agent, workdir string, env map[string]string) error {
+func (i CompositeInstaller) EnsureInstalled(ctx context.Context, harness config.Harness, workdir string, env map[string]string) error {
 	for _, installer := range i.Installers {
 		if installer == nil {
 			continue
 		}
-		if err := installer.EnsureInstalled(ctx, agent, workdir, env); err != nil {
+		if err := installer.EnsureInstalled(ctx, harness, workdir, env); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// CommandInstaller runs an agent's install command to completion as an ephemeral
+// CommandInstaller runs an harness's install command to completion as an ephemeral
 // exec, once per distinct command.
 type CommandInstaller struct {
 	Execs         *execs.Manager
@@ -556,11 +556,11 @@ var (
 	installedCommands   = map[string]struct{}{}
 )
 
-func (i CommandInstaller) EnsureInstalled(ctx context.Context, agent config.Agent, workdir string, env map[string]string) error {
-	if len(agent.InstallCommand) == 0 {
+func (i CommandInstaller) EnsureInstalled(ctx context.Context, harness config.Harness, workdir string, env map[string]string) error {
+	if len(harness.InstallCommand) == 0 {
 		return nil
 	}
-	installKey := strings.Join(agent.InstallCommand, "\x00")
+	installKey := strings.Join(harness.InstallCommand, "\x00")
 	installedCommandsMu.Lock()
 	defer installedCommandsMu.Unlock()
 	if _, ok := installedCommands[installKey]; ok {
@@ -571,21 +571,21 @@ func (i CommandInstaller) EnsureInstalled(ctx context.Context, agent config.Agen
 		timeout = installStatusTimeout
 	}
 	created, err := i.Execs.Create(ctx, execs.CreateRequest{
-		Command: append([]string{}, agent.InstallCommand...),
+		Command: append([]string{}, harness.InstallCommand...),
 		Workdir: workdir,
 		Env:     env,
 		User:    cloneUser(i.User),
 	})
 	if err != nil {
-		return fmt.Errorf("start install agent %q: %w", agent.ID, err)
+		return fmt.Errorf("start install harness %q: %w", harness.ID, err)
 	}
 	defer func() { _ = i.Execs.Delete(context.Background(), created.ID) }()
 	if _, err := i.Execs.Start(ctx, created.ID); err != nil {
-		return fmt.Errorf("start install agent %q command: %w", agent.ID, err)
+		return fmt.Errorf("start install harness %q command: %w", harness.ID, err)
 	}
 	status, err := i.Execs.WaitForExit(ctx, created.ID, timeout, i.PollInterval)
 	if err != nil {
-		return fmt.Errorf("wait for install agent %q command: %w", agent.ID, err)
+		return fmt.Errorf("wait for install harness %q command: %w", harness.ID, err)
 	}
 	if status.ExitCode == nil || *status.ExitCode != 0 || status.Status == execs.StatusFailed {
 		detail := strings.TrimSpace(status.Error)
@@ -595,7 +595,7 @@ func (i CommandInstaller) EnsureInstalled(ctx context.Context, agent config.Agen
 		if detail == "" {
 			detail = "missing successful exit status"
 		}
-		return fmt.Errorf("install agent %q failed: %s", agent.ID, detail)
+		return fmt.Errorf("install harness %q failed: %s", harness.ID, detail)
 	}
 	installedCommands[installKey] = struct{}{}
 	return nil
@@ -606,14 +606,14 @@ type HookInstaller struct {
 	PublisherCommand string
 }
 
-func (i HookInstaller) EnsureInstalled(ctx context.Context, agent config.Agent, workdir string, env map[string]string) error {
+func (i HookInstaller) EnsureInstalled(ctx context.Context, h config.Harness, workdir string, env map[string]string) error {
 	installer := registry.Installer{
-		Drivers:          registry.DriverForAgent(harnessAgent(agent)),
+		Drivers:          registry.DriverForHarness(harnessFromConfig(h)),
 		ManagedRoot:      i.ManagedRoot,
 		PublisherCommand: i.PublisherCommand,
 	}
 	return installer.InstallHooks(ctx, harness.HookInstallRequest{
-		Agent:            harnessAgent(agent),
+		Harness:          harnessFromConfig(h),
 		Workdir:          workdir,
 		Env:              env,
 		ManagedRoot:      i.ManagedRoot,
@@ -621,15 +621,15 @@ func (i HookInstaller) EnsureInstalled(ctx context.Context, agent config.Agent, 
 	})
 }
 
-func harnessAgent(agent config.Agent) harness.Agent {
-	return harness.Agent{
-		ID:      agent.ID,
-		Name:    agent.Name,
-		Command: append([]string{}, agent.Command...),
+func harnessFromConfig(h config.Harness) harness.Harness {
+	return harness.Harness{
+		ID:      h.ID,
+		Name:    h.Name,
+		Command: append([]string{}, h.Command...),
 	}
 }
 
-// FileInstaller writes an agent's configured files into its home directory.
+// FileInstaller writes an harness's configured files into its home directory.
 type FileInstaller struct {
 	Name          string
 	HomeDirectory string
@@ -637,30 +637,30 @@ type FileInstaller struct {
 	GID           *int64
 }
 
-func (i FileInstaller) EnsureInstalled(_ context.Context, agent config.Agent, _ string, _ map[string]string) error {
-	if len(agent.Files) == 0 {
+func (i FileInstaller) EnsureInstalled(_ context.Context, harness config.Harness, _ string, _ map[string]string) error {
+	if len(harness.Files) == 0 {
 		return nil
 	}
 	home, err := i.resolveHome()
 	if err != nil {
-		return fmt.Errorf("agent %q %w", agent.ID, err)
+		return fmt.Errorf("harness %q %w", harness.ID, err)
 	}
 	home = filepath.Clean(home)
-	for _, file := range agent.Files {
+	for _, file := range harness.Files {
 		path, err := homeRelativePath(home, file.Path)
 		if err != nil {
-			return fmt.Errorf("agent %q file %q: %w", agent.ID, file.Path, err)
+			return fmt.Errorf("harness %q file %q: %w", harness.ID, file.Path, err)
 		}
-		if err := writeAgentFile(path, file.Content, file.CreateOnly, i.UID, i.GID); err != nil {
-			return fmt.Errorf("agent %q file %q: %w", agent.ID, file.Path, err)
+		if err := writeHarnessFile(path, file.Content, file.CreateOnly, i.UID, i.GID); err != nil {
+			return fmt.Errorf("harness %q file %q: %w", harness.ID, file.Path, err)
 		}
 	}
 	return nil
 }
 
-// resolveHome resolves the home directory to install agent files into, matching
+// resolveHome resolves the home directory to install harness files into, matching
 // how process env defaults resolve HOME (execs.ResolveUser): an explicit home,
-// then the run user's /etc/passwd entry, then the agent process's own $HOME.
+// then the run user's /etc/passwd entry, then the harness process's own $HOME.
 func (i FileInstaller) resolveHome() (string, error) {
 	if home := strings.TrimSpace(i.HomeDirectory); home != "" {
 		return home, nil
@@ -697,7 +697,7 @@ func homeRelativePath(home, requested string) (string, error) {
 	return cleaned, nil
 }
 
-func writeAgentFile(path, content string, createOnly bool, uid, gid *int64) error {
+func writeHarnessFile(path, content string, createOnly bool, uid, gid *int64) error {
 	createdDirs, err := mkdirAllTracked(filepath.Dir(path), 0o755)
 	if err != nil {
 		return err
@@ -774,12 +774,12 @@ func terminalDefaultUser(cfg ServiceConfig) *execs.User {
 	})
 }
 
-func cloneAgent(in config.Agent) config.Agent {
+func cloneHarness(in config.Harness) config.Harness {
 	out := in
 	out.Command = append([]string{}, in.Command...)
 	out.InstallCommand = append([]string{}, in.InstallCommand...)
 	out.RelaunchCommand = append([]string{}, in.RelaunchCommand...)
-	out.Files = append([]config.AgentFile{}, in.Files...)
+	out.Files = append([]config.HarnessFile{}, in.Files...)
 	return out
 }
 

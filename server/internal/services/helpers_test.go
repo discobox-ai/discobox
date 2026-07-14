@@ -6,14 +6,14 @@ import (
 	"github.com/obot-platform/discobox/server/internal/model"
 )
 
-// A sandbox's embedded agent config is stored sparse (definition-backed fields
+// A sandbox's embedded harness config is stored sparse (definition-backed fields
 // unset). The response must resolve it so runCommand — required by the schema —
 // is present; otherwise clients fail to decode the sandbox.
-func TestSandboxToAPIResolvesEmbeddedAgentConfig(t *testing.T) {
+func TestSandboxToAPIResolvesEmbeddedHarnessConfig(t *testing.T) {
 	sandbox := &model.Sandbox{
 		ID:        "sb_1",
 		ProjectID: "p1",
-		AgentConfig: &model.AgentConfig{
+		HarnessConfig: &model.HarnessConfig{
 			ID:           "ac_1",
 			ProjectID:    "p1",
 			Slug:         "codex",
@@ -26,11 +26,11 @@ func TestSandboxToAPIResolvesEmbeddedAgentConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SandboxToAPI: %v", err)
 	}
-	agentConfig, ok := out.AgentConfig.Get()
+	harnessConfig, ok := out.HarnessConfig.Get()
 	if !ok {
-		t.Fatalf("expected embedded agent config")
+		t.Fatalf("expected embedded harness config")
 	}
-	if got := agentConfig.RunCommand; len(got) != 1 || got[0] != "codex" {
+	if got := harnessConfig.RunCommand; len(got) != 1 || got[0] != "codex" {
 		t.Fatalf("runCommand = %#v, want [codex] resolved from the definition", got)
 	}
 }

@@ -183,7 +183,7 @@ func (s GitSourceWorkspaceMode) Validate() error {
 	}
 }
 
-func (s *ResolvedAgentConfig) Validate() error {
+func (s *ResolvedHarnessConfig) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
 	}
@@ -260,7 +260,7 @@ func (s *ResolvedAgentConfig) Validate() error {
 	return nil
 }
 
-func (s *SandboxAgentConfig) Validate() error {
+func (s *SandboxHarnessConfig) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
 	}
@@ -462,7 +462,7 @@ func (s *WorkerSandboxCreateRequest) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if value, ok := s.AgentConfigs.Get(); ok {
+		if value, ok := s.HarnessConfigs.Get(); ok {
 			if err := func() error {
 				if value == nil {
 					return errors.New("nil is invalid value")
@@ -492,7 +492,7 @@ func (s *WorkerSandboxCreateRequest) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "agentConfigs",
+			Name:  "harnessConfigs",
 			Error: err,
 		})
 	}
@@ -508,7 +508,7 @@ func (s *WorkerSandboxCreateRequest) Validate() error {
 		})
 	}
 	if err := func() error {
-		if value, ok := s.ResolvedAgentConfig.Get(); ok {
+		if value, ok := s.ResolvedHarnessConfig.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
 					return err
@@ -521,7 +521,7 @@ func (s *WorkerSandboxCreateRequest) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "resolvedAgentConfig",
+			Name:  "resolvedHarnessConfig",
 			Error: err,
 		})
 	}
@@ -574,7 +574,7 @@ func (s *WorkerSandboxInstance) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if value, ok := s.AgentConfigs.Get(); ok {
+		if value, ok := s.HarnessConfigs.Get(); ok {
 			if err := func() error {
 				if value == nil {
 					return errors.New("nil is invalid value")
@@ -604,7 +604,7 @@ func (s *WorkerSandboxInstance) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "agentConfigs",
+			Name:  "harnessConfigs",
 			Error: err,
 		})
 	}
@@ -620,7 +620,7 @@ func (s *WorkerSandboxInstance) Validate() error {
 		})
 	}
 	if err := func() error {
-		if value, ok := s.ResolvedAgentConfig.Get(); ok {
+		if value, ok := s.ResolvedHarnessConfig.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
 					return err
@@ -633,7 +633,7 @@ func (s *WorkerSandboxInstance) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "resolvedAgentConfig",
+			Name:  "resolvedHarnessConfig",
 			Error: err,
 		})
 	}

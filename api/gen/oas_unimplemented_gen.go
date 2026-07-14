@@ -22,12 +22,12 @@ func (UnimplementedHandler) ApproveSecretRequest(ctx context.Context, req *Appro
 	return r, ht.ErrNotImplemented
 }
 
-// AssignSandboxAgentSecrets implements assign-sandbox-agent-secrets operation.
+// AssignSandboxHarnessSecrets implements assign-sandbox-harness-secrets operation.
 //
-// Assign an agent config's bound secrets to a running sandbox and return their sentinel env.
+// Assign a harness config's bound secrets to a running sandbox and return their sentinel env.
 //
-// POST /projects/{projectId}/sandboxes/{sandboxId}/agent-secrets
-func (UnimplementedHandler) AssignSandboxAgentSecrets(ctx context.Context, req *AssignSandboxAgentSecretsBody, params AssignSandboxAgentSecretsParams) (r AssignSandboxAgentSecretsRes, _ error) {
+// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-secrets
+func (UnimplementedHandler) AssignSandboxHarnessSecrets(ctx context.Context, req *AssignSandboxHarnessSecretsBody, params AssignSandboxHarnessSecretsParams) (r AssignSandboxHarnessSecretsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -42,12 +42,12 @@ func (UnimplementedHandler) AttachSandboxExec(ctx context.Context, params Attach
 	return r, ht.ErrNotImplemented
 }
 
-// CreateAgentConfig implements create-agent-config operation.
+// CreateHarnessConfig implements create-harness-config operation.
 //
-// Create an agent config.
+// Create a harness config.
 //
-// POST /projects/{projectId}/agent-configs
-func (UnimplementedHandler) CreateAgentConfig(ctx context.Context, req *CreateAgentConfigBody, params CreateAgentConfigParams) (r CreateAgentConfigRes, _ error) {
+// POST /projects/{projectId}/harness-configs
+func (UnimplementedHandler) CreateHarnessConfig(ctx context.Context, req *CreateHarnessConfigBody, params CreateHarnessConfigParams) (r CreateHarnessConfigRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -105,21 +105,21 @@ func (UnimplementedHandler) CreateSecretRequest(ctx context.Context, req *Create
 	return r, ht.ErrNotImplemented
 }
 
-// DeleteAgentConfig implements delete-agent-config operation.
+// DeleteHarnessConfig implements delete-harness-config operation.
 //
-// Delete an agent config.
+// Delete a harness config.
 //
-// DELETE /projects/{projectId}/agent-configs/{agentConfigId}
-func (UnimplementedHandler) DeleteAgentConfig(ctx context.Context, params DeleteAgentConfigParams) (r DeleteAgentConfigRes, _ error) {
+// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}
+func (UnimplementedHandler) DeleteHarnessConfig(ctx context.Context, params DeleteHarnessConfigParams) (r DeleteHarnessConfigRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
-// DeleteAgentConfigSecretBinding implements delete-agent-config-secret-binding operation.
+// DeleteHarnessConfigSecretBinding implements delete-harness-config-secret-binding operation.
 //
-// Remove an agent config secret binding.
+// Remove a harness config secret binding.
 //
-// DELETE /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}
-func (UnimplementedHandler) DeleteAgentConfigSecretBinding(ctx context.Context, params DeleteAgentConfigSecretBindingParams) (r DeleteAgentConfigSecretBindingRes, _ error) {
+// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
+func (UnimplementedHandler) DeleteHarnessConfigSecretBinding(ctx context.Context, params DeleteHarnessConfigSecretBindingParams) (r DeleteHarnessConfigSecretBindingRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -177,21 +177,21 @@ func (UnimplementedHandler) ForceJob(ctx context.Context, params ForceJobParams)
 	return r, ht.ErrNotImplemented
 }
 
-// GetAgentConfig implements get-agent-config operation.
+// GetHarnessConfig implements get-harness-config operation.
 //
-// Get an agent config.
+// Get a harness config.
 //
-// GET /projects/{projectId}/agent-configs/{agentConfigId}
-func (UnimplementedHandler) GetAgentConfig(ctx context.Context, params GetAgentConfigParams) (r GetAgentConfigRes, _ error) {
+// GET /projects/{projectId}/harness-configs/{harnessConfigId}
+func (UnimplementedHandler) GetHarnessConfig(ctx context.Context, params GetHarnessConfigParams) (r GetHarnessConfigRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
-// GetAgentConfigDefinition implements get-agent-config-definition operation.
+// GetHarnessDefinition implements get-harness-definition operation.
 //
-// Get an agent config definition.
+// Get a harness config definition.
 //
-// GET /agent-config-definitions/{definitionId}
-func (UnimplementedHandler) GetAgentConfigDefinition(ctx context.Context, params GetAgentConfigDefinitionParams) (r GetAgentConfigDefinitionRes, _ error) {
+// GET /harness-definitions/{definitionId}
+func (UnimplementedHandler) GetHarnessDefinition(ctx context.Context, params GetHarnessDefinitionParams) (r GetHarnessDefinitionRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -267,39 +267,39 @@ func (UnimplementedHandler) GetSecretRequest(ctx context.Context, params GetSecr
 	return r, ht.ErrNotImplemented
 }
 
-// ListAgentConfigDefinitions implements list-agent-config-definitions operation.
+// ListHarnessConfigSecretBindings implements list-harness-config-secret-bindings operation.
 //
-// List agent config definitions.
+// List harness config secret bindings.
 //
-// GET /agent-config-definitions
-func (UnimplementedHandler) ListAgentConfigDefinitions(ctx context.Context) (r ListAgentConfigDefinitionsRes, _ error) {
+// GET /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings
+func (UnimplementedHandler) ListHarnessConfigSecretBindings(ctx context.Context, params ListHarnessConfigSecretBindingsParams) (r ListHarnessConfigSecretBindingsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
-// ListAgentConfigSecretBindings implements list-agent-config-secret-bindings operation.
+// ListHarnessConfigs implements list-harness-configs operation.
 //
-// List agent config secret bindings.
+// List harness configs.
 //
-// GET /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings
-func (UnimplementedHandler) ListAgentConfigSecretBindings(ctx context.Context, params ListAgentConfigSecretBindingsParams) (r ListAgentConfigSecretBindingsRes, _ error) {
+// GET /projects/{projectId}/harness-configs
+func (UnimplementedHandler) ListHarnessConfigs(ctx context.Context, params ListHarnessConfigsParams) (r ListHarnessConfigsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
-// ListAgentConfigs implements list-agent-configs operation.
+// ListHarnessDefinitions implements list-harness-definitions operation.
 //
-// List agent configs.
+// List harness config definitions.
 //
-// GET /projects/{projectId}/agent-configs
-func (UnimplementedHandler) ListAgentConfigs(ctx context.Context, params ListAgentConfigsParams) (r ListAgentConfigsRes, _ error) {
+// GET /harness-definitions
+func (UnimplementedHandler) ListHarnessDefinitions(ctx context.Context) (r ListHarnessDefinitionsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
-// ListAgentHooks implements list-agent-hooks operation.
+// ListHarnessHooks implements list-harness-hooks operation.
 //
-// List recent sandbox agent hook payload logs.
+// List recent sandbox harness hook payload logs.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks
-func (UnimplementedHandler) ListAgentHooks(ctx context.Context, params ListAgentHooksParams) (r ListAgentHooksRes, _ error) {
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks
+func (UnimplementedHandler) ListHarnessHooks(ctx context.Context, params ListHarnessHooksParams) (r ListHarnessHooksRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -474,21 +474,21 @@ func (UnimplementedHandler) RevokeSecretGrant(ctx context.Context, params Revoke
 	return r, ht.ErrNotImplemented
 }
 
-// SetAgentConfigSecretBinding implements set-agent-config-secret-binding operation.
+// SetDefaultHarnessConfig implements set-default-harness-config operation.
 //
-// Bind an agent config environment variable to a secret.
+// Set the project default harness config.
 //
-// PUT /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}
-func (UnimplementedHandler) SetAgentConfigSecretBinding(ctx context.Context, req *SetAgentConfigSecretBindingBody, params SetAgentConfigSecretBindingParams) (r SetAgentConfigSecretBindingRes, _ error) {
+// PUT /projects/{projectId}/harness-configs/{harnessConfigId}/default
+func (UnimplementedHandler) SetDefaultHarnessConfig(ctx context.Context, params SetDefaultHarnessConfigParams) (r SetDefaultHarnessConfigRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
-// SetDefaultAgentConfig implements set-default-agent-config operation.
+// SetHarnessConfigSecretBinding implements set-harness-config-secret-binding operation.
 //
-// Set the project default agent config.
+// Bind a harness config environment variable to a secret.
 //
-// PUT /projects/{projectId}/agent-configs/{agentConfigId}/default
-func (UnimplementedHandler) SetDefaultAgentConfig(ctx context.Context, params SetDefaultAgentConfigParams) (r SetDefaultAgentConfigRes, _ error) {
+// PUT /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
+func (UnimplementedHandler) SetHarnessConfigSecretBinding(ctx context.Context, req *SetHarnessConfigSecretBindingBody, params SetHarnessConfigSecretBindingParams) (r SetHarnessConfigSecretBindingRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -528,12 +528,12 @@ func (UnimplementedHandler) StreamSandboxExecResources(ctx context.Context, para
 	return r, ht.ErrNotImplemented
 }
 
-// UpdateAgentConfig implements update-agent-config operation.
+// UpdateHarnessConfig implements update-harness-config operation.
 //
-// Update an agent config.
+// Update a harness config.
 //
-// PATCH /projects/{projectId}/agent-configs/{agentConfigId}
-func (UnimplementedHandler) UpdateAgentConfig(ctx context.Context, req *UpdateAgentConfigBody, params UpdateAgentConfigParams) (r UpdateAgentConfigRes, _ error) {
+// PATCH /projects/{projectId}/harness-configs/{harnessConfigId}
+func (UnimplementedHandler) UpdateHarnessConfig(ctx context.Context, req *UpdateHarnessConfigBody, params UpdateHarnessConfigParams) (r UpdateHarnessConfigRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

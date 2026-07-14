@@ -16,13 +16,13 @@ import (
 const componentMarker = "x-sandbox-agent-component"
 
 var generatedSchemaNames = map[string]bool{
-	"SandboxManifest":                    true,
-	"SandboxManifestAgentConfig":         true,
-	"SandboxManifestAgentRuntime":        true,
-	"SandboxManifestProvider":            true,
-	"SandboxManifestResolvedAgentConfig": true,
-	"SandboxManifestResourceCollection":  true,
-	"SandboxResources":                   true,
+	"SandboxManifest":                      true,
+	"SandboxManifestHarnessConfig":         true,
+	"SandboxManifestAgentRuntime":          true,
+	"SandboxManifestProvider":              true,
+	"SandboxManifestResolvedHarnessConfig": true,
+	"SandboxManifestResourceCollection":    true,
+	"SandboxResources":                     true,
 }
 
 func main() {

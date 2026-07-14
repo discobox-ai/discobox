@@ -31,7 +31,7 @@ func (Driver) Definition() harness.Definition {
 	return harness.Definition{
 		ID:              "claude-code",
 		Name:            "Claude Code",
-		Description:     "Anthropic Claude Code coding agent.",
+		Description:     "Anthropic Claude Code coding harness.",
 		InstallCommand:  []string{"npm", "install", "-g", "@anthropic-ai/claude-code"},
 		RunCommand:      []string{"claude"},
 		RelaunchCommand: []string{"claude", "--continue"},

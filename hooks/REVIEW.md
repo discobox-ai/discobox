@@ -1,7 +1,7 @@
 # Hooks Review Notes
 
 - Keep this module standalone. Do not import server internals, control-plane DTOs,
-  or Discobot `agent-go` packages.
+  or Discobot `harness-go` packages.
 - Preserve session scoping: one daemon/socket/database namespace per session.
 - Keep daemon-owned DB writes authoritative. CLI commands should use the Unix
   socket API for mutations.

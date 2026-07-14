@@ -17,12 +17,12 @@ import (
 )
 
 type runOptions struct {
-	source string
-	ref    string
-	prompt []string
-	env    []string
-	agent  string
-	detach bool
+	source  string
+	ref     string
+	prompt  []string
+	env     []string
+	harness string
+	detach  bool
 }
 
 func (a *App) newRunCommand() *cobra.Command {
@@ -36,7 +36,7 @@ The run command is intentionally shaped like docker run: command flags come firs
 then the source directory or Git repository, followed by the prompt. Use -- when
 the source or prompt needs to be separated from command flags explicitly.
 
-By default run waits for the sandbox to start and attaches to its default agent
+By default run waits for the sandbox to start and attaches to its default harness
 terminal, streaming it to your terminal (press Ctrl-P Ctrl-Q to detach). Pass -d
 to create the sandbox and print it without attaching.`,
 		Example: `  discobox run . fix the failing tests
@@ -51,7 +51,7 @@ to create the sandbox and print it without attaching.`,
 				return err
 			}
 			parsedOpts.env = append(parsedOpts.env, opts.env...)
-			parsedOpts.agent = opts.agent
+			parsedOpts.harness = opts.harness
 			projectID, err := a.projectIDValue()
 			if err != nil {
 				return err
@@ -79,7 +79,7 @@ to create the sandbox and print it without attaching.`,
 		},
 	}
 	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables")
-	cmd.Flags().StringVarP(&opts.agent, "agent", "a", "", "Agent config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
+	cmd.Flags().StringVarP(&opts.harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
 	cmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "Create the sandbox and print it without attaching to its terminal")
 	return cmd
 }
@@ -87,7 +87,7 @@ to create the sandbox and print it without attaching.`,
 // attachRunSandbox waits for the freshly created sandbox to start and for its
 // default terminal to come up, then attaches the caller's stdio to it. The
 // sandbox-agent always launches one primary terminal running the configured
-// agent, so run attaches to it unless --detach was passed.
+// harness, so run attaches to it unless --detach was passed.
 func (a *App) attachRunSandbox(cmd *cobra.Command, client *apiclientgen.Client, projectID string, sandbox *apimodel.Sandbox) error {
 	ctx := cmd.Context()
 	stderr := cmd.ErrOrStderr()
@@ -96,14 +96,14 @@ func (a *App) attachRunSandbox(cmd *cobra.Command, client *apiclientgen.Client, 
 	if err != nil {
 		return err
 	}
-	// Fail fast when the running sandbox has no agent to launch. The sandbox-agent
-	// only starts a primary terminal when it can resolve an agent, so without one
+	// Fail fast when the running sandbox has no harness to launch. The sandbox-agent
+	// only starts a primary terminal when it can resolve a harness, so without one
 	// waitForPrimaryTerminal below would block until its timeout for a terminal
 	// that never appears.
-	if err := ensureRunAgentWillLaunch(started); err != nil {
+	if err := ensureRunHarnessWillLaunch(started); err != nil {
 		return err
 	}
-	fmt.Fprintln(stderr, "Sandbox running, preparing agent terminal...")
+	fmt.Fprintln(stderr, "Sandbox running, preparing harness terminal...")
 	terminal, err := a.waitForPrimaryTerminal(ctx, stderr, projectID, sandbox.ID, 2*time.Minute)
 	if err != nil {
 		return err
@@ -115,19 +115,19 @@ func (a *App) attachRunSandbox(cmd *cobra.Command, client *apiclientgen.Client, 
 	return a.attachSandboxTerminal(ctx, projectID, sandbox.ID, terminal.ID, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
-// errNoRunAgent explains that a sandbox has no agent and how to configure one. It
+// errNoRunHarness explains that a sandbox has no harness and how to configure one. It
 // is returned when run can prove no primary terminal will ever launch.
-var errNoRunAgent = errors.New("no agent is configured for this sandbox: enable one with `discobox agents enable <definition>` (see `discobox agents definitions`), set a project default with `discobox agents set-default <id>`, or pass --agent")
+var errNoRunHarness = errors.New("no harness is configured for this sandbox: enable one with `discobox harnesses enable <definition>` (see `discobox harnesses definitions`), set a project default with `discobox harnesses set-default <id>`, or pass --harness")
 
-// ensureRunAgentWillLaunch reports whether a freshly started sandbox will launch
-// a primary terminal. The sandbox-agent resolves the agent in this precedence:
-// the sandbox's resolved agent config, a local repo agent config, then the
-// project default. When the server pinned an agent config the terminal will
-// launch. Otherwise the only remaining source is a local repo agent config,
+// ensureRunHarnessWillLaunch reports whether a freshly started sandbox will launch
+// a primary terminal. The sandbox-agent resolves the harness in this precedence:
+// the sandbox's resolved harness config, a local repo harness config, then the
+// project default. When the server pinned a harness config the terminal will
+// launch. Otherwise the only remaining source is a local repo harness config,
 // which run can check for local sources; remote sources are resolved
 // sandbox-side, so those defer to the bounded wait rather than fail here.
-func ensureRunAgentWillLaunch(sandbox *apimodel.Sandbox) error {
-	if strings.TrimSpace(sandbox.Config.AgentConfigId.Or("")) != "" {
+func ensureRunHarnessWillLaunch(sandbox *apimodel.Sandbox) error {
+	if strings.TrimSpace(sandbox.Config.HarnessConfigId.Or("")) != "" {
 		return nil
 	}
 	source, ok := sandbox.Config.Source.Get()
@@ -135,18 +135,18 @@ func ensureRunAgentWillLaunch(sandbox *apimodel.Sandbox) error {
 		return nil
 	}
 	localDir := strings.TrimSpace(source.LocalDirectory.Or(""))
-	if localDir == "" || localRunAgentConfigPresent(localDir) {
+	if localDir == "" || localRunHarnessConfigPresent(localDir) {
 		return nil
 	}
-	return errNoRunAgent
+	return errNoRunHarness
 }
 
-// localRunAgentConfigPresent reports whether a local source directory carries a
-// .discobox agent config. It mirrors the sandbox-agent's local agent config
-// lookup (sandbox-agent/terminal/service.go localAgentConfigPath) so run can
-// predict whether that path will supply an agent.
-func localRunAgentConfigPresent(repoRoot string) bool {
-	for _, name := range []string{"agent.json", "agent-config.json", "sandbox.json"} {
+// localRunHarnessConfigPresent reports whether a local source directory carries a
+// .discobox harness config. It mirrors the sandbox-agent's local harness config
+// lookup (sandbox-agent/terminal/service.go localHarnessConfigPath) so run can
+// predict whether that path will supply a harness.
+func localRunHarnessConfigPresent(repoRoot string) bool {
+	for _, name := range []string{"harness.json", "harness-config.json", "sandbox.json"} {
 		if info, err := os.Stat(filepath.Join(repoRoot, ".discobox", name)); err == nil && !info.IsDir() {
 			return true
 		}
@@ -156,7 +156,7 @@ func localRunAgentConfigPresent(repoRoot string) bool {
 
 // waitForPrimaryTerminal polls the sandbox terminals until the primary
 // (default) terminal launched by the sandbox-agent is ready to attach. The
-// primary appears in the "installing" phase while its agent install command
+// primary appears in the "installing" phase while its harness install command
 // runs (often the slowest part of a cold start), so this reports that phase to
 // progress and only returns once the terminal is past installing.
 func (a *App) waitForPrimaryTerminal(ctx context.Context, progress io.Writer, projectID, sandboxID string, timeout time.Duration) (apimodel.SandboxExec, error) {
@@ -176,7 +176,7 @@ func (a *App) waitForPrimaryTerminal(ctx context.Context, progress io.Writer, pr
 			lastErr = nil
 			if terminal.Status == apiclientgen.SandboxExecStatusInstalling {
 				if !announcedInstalling && progress != nil {
-					fmt.Fprintf(progress, "Installing agent %s (this can take a while on first run)...\n", runAgentLabel(terminal))
+					fmt.Fprintf(progress, "Installing harness %s (this can take a while on first run)...\n", runHarnessLabel(terminal))
 					announcedInstalling = true
 				}
 			} else {
@@ -192,9 +192,9 @@ func (a *App) waitForPrimaryTerminal(ctx context.Context, progress io.Writer, pr
 			}
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				if announcedInstalling {
-					return apimodel.SandboxExec{}, errors.New("timed out while the agent was still installing; its install command may be slow or failing (see `discobox sandboxes terminals logs`)")
+					return apimodel.SandboxExec{}, errors.New("timed out while the harness was still installing; its install command may be slow or failing (see `discobox sandboxes terminals logs`)")
 				}
-				return apimodel.SandboxExec{}, errors.New("timed out waiting for the sandbox's agent terminal; the sandbox may have no agent configured (see `discobox agents list`) or its agent failed to start")
+				return apimodel.SandboxExec{}, errors.New("timed out waiting for the sandbox's harness terminal; the sandbox may have no harness configured (see `discobox harnesses list`) or its harness failed to start")
 			}
 			return apimodel.SandboxExec{}, fmt.Errorf("waiting for sandbox terminal: %w", ctx.Err())
 		case <-ticker.C:
@@ -202,13 +202,13 @@ func (a *App) waitForPrimaryTerminal(ctx context.Context, progress io.Writer, pr
 	}
 }
 
-// runAgentLabel names the agent a terminal runs for progress messages, falling
-// back to a generic label when the agent id is not set.
-func runAgentLabel(terminal apimodel.SandboxExec) string {
-	if agent := strings.TrimSpace(terminal.AgentId.Or("")); agent != "" {
-		return fmt.Sprintf("%q", agent)
+// runHarnessLabel names the harness a terminal runs for progress messages, falling
+// back to a generic label when the harness id is not set.
+func runHarnessLabel(terminal apimodel.SandboxExec) string {
+	if harness := strings.TrimSpace(terminal.HarnessId.Or("")); harness != "" {
+		return fmt.Sprintf("%q", harness)
 	}
-	return "agent"
+	return "harness"
 }
 
 // primaryTerminal selects the sandbox's default terminal: the one flagged
@@ -267,8 +267,8 @@ func createRunSandboxBody(ctx context.Context, opts runOptions) (*apimodel.Creat
 	if len(opts.prompt) > 0 {
 		body.Config.SetPrompt(append([]string(nil), opts.prompt...))
 	}
-	if strings.TrimSpace(opts.agent) != "" {
-		body.SetAgentName(optString(opts.agent))
+	if strings.TrimSpace(opts.harness) != "" {
+		body.SetHarnessName(optString(opts.harness))
 	}
 	env, err := keyValueMapFromShell(opts.env)
 	if err != nil {

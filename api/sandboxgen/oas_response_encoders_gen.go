@@ -106,7 +106,7 @@ func encodeGetSandboxExecResourcesResponse(response *ResourceSnapshot, w http.Re
 	return nil
 }
 
-func encodeListAgentHooksResponse(response *AgentHookLogsResponse, w http.ResponseWriter, span trace.Span) error {
+func encodeListHarnessHooksResponse(response *HarnessHookLogsResponse, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(200)
 	span.SetStatus(codes.Ok, http.StatusText(200))

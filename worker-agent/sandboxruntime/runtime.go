@@ -186,7 +186,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		Target:   proxyagent.SandboxProxyMount,
 		ReadOnly: true,
 	})
-	if err := r.writeSandboxAgentConfig(ctx, sandboxID, req, proxyMaterial.Env); err != nil {
+	if err := r.writeSandboxHarnessConfig(ctx, sandboxID, req, proxyMaterial.Env); err != nil {
 		return nil, err
 	}
 	baseEnv := mergeEnv(map[string]string(optSandboxConfigEnv(config.Env)), proxyMaterial.Env)
@@ -294,7 +294,7 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 	return mounts, nil
 }
 
-func (r *DockerSandboxRuntime) writeSandboxAgentConfig(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxCreateRequest, proxyEnv map[string]string) error {
+func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxCreateRequest, proxyEnv map[string]string) error {
 	configDir := r.workerHostPath(sandboxConfigRoot(r.projectID, sandboxID))
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return err
@@ -317,13 +317,13 @@ func (r *DockerSandboxRuntime) writeSandboxAgentConfig(ctx context.Context, sand
 	return chownRecursive(ctx, configDir, 0, 0)
 }
 
-func manifestAgentConfigFiles(files []workerapimodel.AgentConfigFile) []apimodel.AgentConfigFile {
+func manifestHarnessConfigFiles(files []workerapimodel.HarnessConfigFile) []apimodel.HarnessConfigFile {
 	if len(files) == 0 {
 		return nil
 	}
-	out := make([]apimodel.AgentConfigFile, 0, len(files))
+	out := make([]apimodel.HarnessConfigFile, 0, len(files))
 	for _, file := range files {
-		out = append(out, apimodel.AgentConfigFile{
+		out = append(out, apimodel.HarnessConfigFile{
 			Path:       file.Path,
 			Content:    file.Content,
 			CreateOnly: publicOptBool(file.CreateOnly),
@@ -365,8 +365,8 @@ func buildSandboxManifest(projectID, sandboxID, workerID, controlPlanePublicKey 
 				TimeoutSeconds: resources.TimeoutSeconds,
 			}
 		}
-		if resolved, ok := req.ResolvedAgentConfig.Get(); ok {
-			resolvedConfig := apimodel.SandboxManifestResolvedAgentConfig{
+		if resolved, ok := req.ResolvedHarnessConfig.Get(); ok {
+			resolvedConfig := apimodel.SandboxManifestResolvedHarnessConfig{
 				ID:         resolved.ID,
 				Name:       resolved.Name,
 				RunCommand: resolved.RunCommand,
@@ -378,29 +378,29 @@ func buildSandboxManifest(projectID, sandboxID, workerID, controlPlanePublicKey 
 				resolvedConfig.RelaunchCommand = relaunchCommand
 			}
 			if files, ok := resolved.Files.Get(); ok {
-				resolvedConfig.Files = manifestAgentConfigFiles(files)
+				resolvedConfig.Files = manifestHarnessConfigFiles(files)
 			}
-			manifest.ResolvedAgentConfig = &resolvedConfig
+			manifest.ResolvedHarnessConfig = &resolvedConfig
 		}
-		if configs, ok := req.AgentConfigs.Get(); ok {
-			manifest.AgentConfigs = make([]apimodel.SandboxManifestAgentConfig, 0, len(configs))
+		if configs, ok := req.HarnessConfigs.Get(); ok {
+			manifest.HarnessConfigs = make([]apimodel.SandboxManifestHarnessConfig, 0, len(configs))
 			for _, config := range configs {
-				agentConfig := apimodel.SandboxManifestAgentConfig{
+				harnessConfig := apimodel.SandboxManifestHarnessConfig{
 					ID:         config.ID,
 					Name:       config.Name,
 					RunCommand: config.RunCommand,
 					IsDefault:  config.IsDefault,
 				}
 				if installCommand, ok := config.InstallCommand.Get(); ok {
-					agentConfig.InstallCommand = installCommand
+					harnessConfig.InstallCommand = installCommand
 				}
 				if relaunchCommand, ok := config.RelaunchCommand.Get(); ok {
-					agentConfig.RelaunchCommand = relaunchCommand
+					harnessConfig.RelaunchCommand = relaunchCommand
 				}
 				if files, ok := config.Files.Get(); ok {
-					agentConfig.Files = manifestAgentConfigFiles(files)
+					harnessConfig.Files = manifestHarnessConfigFiles(files)
 				}
-				manifest.AgentConfigs = append(manifest.AgentConfigs, agentConfig)
+				manifest.HarnessConfigs = append(manifest.HarnessConfigs, harnessConfig)
 			}
 		}
 	}
@@ -424,17 +424,17 @@ func buildSandboxManifest(projectID, sandboxID, workerID, controlPlanePublicKey 
 
 func publicSandboxConfig(config workerapimodel.SandboxConfig) apimodel.SandboxConfig {
 	out := apimodel.SandboxConfig{
-		AgentConfigId:            publicOptString(config.AgentConfigId),
-		AgentModel:               publicOptString(config.AgentModel),
-		AgentModelReasoningLevel: publicOptString(config.AgentModelReasoningLevel),
-		AgentModelServiceTier:    publicOptString(config.AgentModelServiceTier),
-		Description:              publicOptString(config.Description),
-		Image:                    optString(config.Image),
-		Name:                     optString(config.Name),
-		Prompt:                   config.Prompt,
-		CpuVcpus:                 optFloat64(config.CpuVcpus),
-		MemoryBytes:              optInt64(config.MemoryBytes),
-		StorageBytes:             optInt64(config.StorageBytes),
+		HarnessConfigId:     publicOptString(config.HarnessConfigId),
+		Model:               publicOptString(config.Model),
+		ModelReasoningLevel: publicOptString(config.ModelReasoningLevel),
+		ModelServiceTier:    publicOptString(config.ModelServiceTier),
+		Description:         publicOptString(config.Description),
+		Image:               optString(config.Image),
+		Name:                optString(config.Name),
+		Prompt:              config.Prompt,
+		CpuVcpus:            optFloat64(config.CpuVcpus),
+		MemoryBytes:         optInt64(config.MemoryBytes),
+		StorageBytes:        optInt64(config.StorageBytes),
 	}
 	if env, ok := config.Env.Get(); ok {
 		out.Env = apigen.NewOptSandboxConfigEnv(apigen.SandboxConfigEnv(env))

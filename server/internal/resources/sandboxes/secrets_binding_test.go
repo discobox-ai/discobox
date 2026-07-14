@@ -31,15 +31,15 @@ func newBindingFixture(t *testing.T) (*Service, *store.Store) {
 	return &Service{store: st}, st
 }
 
-// codexConfig stores an agent config declaring OPENAI_API_KEY as required.
-func codexConfig(t *testing.T, st *store.Store) *model.AgentConfig {
+// codexConfig stores a harness config declaring OPENAI_API_KEY as required.
+func codexConfig(t *testing.T, st *store.Store) *model.HarnessConfig {
 	t.Helper()
-	config := &model.AgentConfig{
+	config := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "codex", Name: "Codex", RunCommand: []string{"codex"},
-		Secrets: []model.AgentConfigSecret{{Name: "OPENAI_API_KEY", Required: true}},
+		Secrets: []model.HarnessConfigSecret{{Name: "OPENAI_API_KEY", Required: true}},
 	}
-	if err := st.CreateAgentConfig(context.Background(), config); err != nil {
-		t.Fatalf("create agent config: %v", err)
+	if err := st.CreateHarnessConfig(context.Background(), config); err != nil {
+		t.Fatalf("create harness config: %v", err)
 	}
 	return config
 }
@@ -53,19 +53,19 @@ func bearerSecret(t *testing.T, st *store.Store, name, host string) *model.Secre
 	return sec
 }
 
-func TestApplyAgentConfigSecretsMaterializesBinding(t *testing.T) {
+func TestApplyHarnessConfigSecretsMaterializesBinding(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newBindingFixture(t)
 	config := codexConfig(t, st)
 	sec := bearerSecret(t, st, "openai", "")
-	if err := st.UpsertAgentConfigSecretBinding(ctx, &model.AgentConfigSecretBinding{
-		ProjectID: "project-1", AgentConfigID: config.ID, EnvName: "OPENAI_API_KEY", SecretID: sec.ID,
+	if err := st.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
+		ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: "OPENAI_API_KEY", SecretID: sec.ID,
 	}); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
 
 	sandbox := &model.Sandbox{ID: "sb-1", ProjectID: "project-1"}
-	assignments, err := svc.applyAgentConfigSecrets(ctx, "project-1", sandbox, config.ID, nil)
+	assignments, err := svc.applyHarnessConfigSecrets(ctx, "project-1", sandbox, config.ID, nil)
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -81,12 +81,12 @@ func TestApplyAgentConfigSecretsMaterializesBinding(t *testing.T) {
 	}
 }
 
-func TestApplyAgentConfigSecretsBlocksMissingRequired(t *testing.T) {
+func TestApplyHarnessConfigSecretsBlocksMissingRequired(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newBindingFixture(t)
 	config := codexConfig(t, st)
 
-	_, err := svc.applyAgentConfigSecrets(ctx, "project-1", &model.Sandbox{ID: "sb-1", ProjectID: "project-1"}, config.ID, nil)
+	_, err := svc.applyHarnessConfigSecrets(ctx, "project-1", &model.Sandbox{ID: "sb-1", ProjectID: "project-1"}, config.ID, nil)
 	if err == nil {
 		t.Fatal("expected block-create error for unbound required secret")
 	}
@@ -96,7 +96,7 @@ func TestApplyAgentConfigSecretsBlocksMissingRequired(t *testing.T) {
 	}
 }
 
-func TestApplyAgentConfigSecretsInlineSatisfiesRequired(t *testing.T) {
+func TestApplyHarnessConfigSecretsInlineSatisfiesRequired(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newBindingFixture(t)
 	config := codexConfig(t, st)
@@ -104,7 +104,7 @@ func TestApplyAgentConfigSecretsInlineSatisfiesRequired(t *testing.T) {
 	// An inline per-sandbox secret for the same env satisfies the requirement and
 	// suppresses any binding materialization.
 	inline := map[string]struct{}{"OPENAI_API_KEY": {}}
-	assignments, err := svc.applyAgentConfigSecrets(ctx, "project-1", &model.Sandbox{ID: "sb-1", ProjectID: "project-1"}, config.ID, inline)
+	assignments, err := svc.applyHarnessConfigSecrets(ctx, "project-1", &model.Sandbox{ID: "sb-1", ProjectID: "project-1"}, config.ID, inline)
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -113,18 +113,18 @@ func TestApplyAgentConfigSecretsInlineSatisfiesRequired(t *testing.T) {
 	}
 }
 
-func TestApplyAgentConfigSecretsOptionalUnboundIsAllowed(t *testing.T) {
+func TestApplyHarnessConfigSecretsOptionalUnboundIsAllowed(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newBindingFixture(t)
-	config := &model.AgentConfig{
+	config := &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "opencode", Name: "opencode", RunCommand: []string{"opencode"},
-		Secrets: []model.AgentConfigSecret{{Name: "ANTHROPIC_API_KEY", Required: false}},
+		Secrets: []model.HarnessConfigSecret{{Name: "ANTHROPIC_API_KEY", Required: false}},
 	}
-	if err := st.CreateAgentConfig(ctx, config); err != nil {
-		t.Fatalf("create agent config: %v", err)
+	if err := st.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create harness config: %v", err)
 	}
 
-	assignments, err := svc.applyAgentConfigSecrets(ctx, "project-1", &model.Sandbox{ID: "sb-1", ProjectID: "project-1"}, config.ID, nil)
+	assignments, err := svc.applyHarnessConfigSecrets(ctx, "project-1", &model.Sandbox{ID: "sb-1", ProjectID: "project-1"}, config.ID, nil)
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}

@@ -195,24 +195,24 @@ func (s *Server) handleApproveSecretRequestRequest(args [2]string, argsEscaped b
 	}
 }
 
-// handleAssignSandboxAgentSecretsRequest handles assign-sandbox-agent-secrets operation.
+// handleAssignSandboxHarnessSecretsRequest handles assign-sandbox-harness-secrets operation.
 //
-// Assign an agent config's bound secrets to a running sandbox and return their sentinel env.
+// Assign a harness config's bound secrets to a running sandbox and return their sentinel env.
 //
-// POST /projects/{projectId}/sandboxes/{sandboxId}/agent-secrets
-func (s *Server) handleAssignSandboxAgentSecretsRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-secrets
+func (s *Server) handleAssignSandboxHarnessSecretsRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("assign-sandbox-agent-secrets"),
+		otelogen.OperationID("assign-sandbox-harness-secrets"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent-secrets"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/sandboxes/{sandboxId}/harness-secrets"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), AssignSandboxAgentSecretsOperation,
+	ctx, span := s.cfg.Tracer.Start(r.Context(), AssignSandboxHarnessSecretsOperation,
 		trace.WithAttributes(otelAttrs...),
 		serverSpanKind,
 	)
@@ -267,11 +267,11 @@ func (s *Server) handleAssignSandboxAgentSecretsRequest(args [2]string, argsEsca
 		}
 		err          error
 		opErrContext = ogenerrors.OperationContext{
-			Name: AssignSandboxAgentSecretsOperation,
-			ID:   "assign-sandbox-agent-secrets",
+			Name: AssignSandboxHarnessSecretsOperation,
+			ID:   "assign-sandbox-harness-secrets",
 		}
 	)
-	params, err := decodeAssignSandboxAgentSecretsParams(args, argsEscaped, r)
+	params, err := decodeAssignSandboxHarnessSecretsParams(args, argsEscaped, r)
 	if err != nil {
 		err = &ogenerrors.DecodeParamsError{
 			OperationContext: opErrContext,
@@ -283,7 +283,7 @@ func (s *Server) handleAssignSandboxAgentSecretsRequest(args [2]string, argsEsca
 	}
 
 	var rawBody []byte
-	request, rawBody, close, err := s.decodeAssignSandboxAgentSecretsRequest(r)
+	request, rawBody, close, err := s.decodeAssignSandboxHarnessSecretsRequest(r)
 	if err != nil {
 		err = &ogenerrors.DecodeRequestError{
 			OperationContext: opErrContext,
@@ -299,13 +299,13 @@ func (s *Server) handleAssignSandboxAgentSecretsRequest(args [2]string, argsEsca
 		}
 	}()
 
-	var response AssignSandboxAgentSecretsRes
+	var response AssignSandboxHarnessSecretsRes
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
-			OperationName:    AssignSandboxAgentSecretsOperation,
-			OperationSummary: "Assign an agent config's bound secrets to a running sandbox and return their sentinel env",
-			OperationID:      "assign-sandbox-agent-secrets",
+			OperationName:    AssignSandboxHarnessSecretsOperation,
+			OperationSummary: "Assign a harness config's bound secrets to a running sandbox and return their sentinel env",
+			OperationID:      "assign-sandbox-harness-secrets",
 			Body:             request,
 			RawBody:          rawBody,
 			Params: middleware.Parameters{
@@ -322,9 +322,9 @@ func (s *Server) handleAssignSandboxAgentSecretsRequest(args [2]string, argsEsca
 		}
 
 		type (
-			Request  = *AssignSandboxAgentSecretsBody
-			Params   = AssignSandboxAgentSecretsParams
-			Response = AssignSandboxAgentSecretsRes
+			Request  = *AssignSandboxHarnessSecretsBody
+			Params   = AssignSandboxHarnessSecretsParams
+			Response = AssignSandboxHarnessSecretsRes
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -333,14 +333,14 @@ func (s *Server) handleAssignSandboxAgentSecretsRequest(args [2]string, argsEsca
 		](
 			m,
 			mreq,
-			unpackAssignSandboxAgentSecretsParams,
+			unpackAssignSandboxHarnessSecretsParams,
 			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.AssignSandboxAgentSecrets(ctx, request, params)
+				response, err = s.h.AssignSandboxHarnessSecrets(ctx, request, params)
 				return response, err
 			},
 		)
 	} else {
-		response, err = s.h.AssignSandboxAgentSecrets(ctx, request, params)
+		response, err = s.h.AssignSandboxHarnessSecrets(ctx, request, params)
 	}
 	if err != nil {
 		defer recordError("Internal", err)
@@ -348,7 +348,7 @@ func (s *Server) handleAssignSandboxAgentSecretsRequest(args [2]string, argsEsca
 		return
 	}
 
-	if err := encodeAssignSandboxAgentSecretsResponse(response, w, span); err != nil {
+	if err := encodeAssignSandboxHarnessSecretsResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)
@@ -510,24 +510,24 @@ func (s *Server) handleAttachSandboxExecRequest(args [3]string, argsEscaped bool
 	}
 }
 
-// handleCreateAgentConfigRequest handles create-agent-config operation.
+// handleCreateHarnessConfigRequest handles create-harness-config operation.
 //
-// Create an agent config.
+// Create a harness config.
 //
-// POST /projects/{projectId}/agent-configs
-func (s *Server) handleCreateAgentConfigRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+// POST /projects/{projectId}/harness-configs
+func (s *Server) handleCreateHarnessConfigRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("create-agent-config"),
+		otelogen.OperationID("create-harness-config"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.HTTPRouteKey.String("/projects/{projectId}/agent-configs"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/harness-configs"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), CreateAgentConfigOperation,
+	ctx, span := s.cfg.Tracer.Start(r.Context(), CreateHarnessConfigOperation,
 		trace.WithAttributes(otelAttrs...),
 		serverSpanKind,
 	)
@@ -582,11 +582,11 @@ func (s *Server) handleCreateAgentConfigRequest(args [1]string, argsEscaped bool
 		}
 		err          error
 		opErrContext = ogenerrors.OperationContext{
-			Name: CreateAgentConfigOperation,
-			ID:   "create-agent-config",
+			Name: CreateHarnessConfigOperation,
+			ID:   "create-harness-config",
 		}
 	)
-	params, err := decodeCreateAgentConfigParams(args, argsEscaped, r)
+	params, err := decodeCreateHarnessConfigParams(args, argsEscaped, r)
 	if err != nil {
 		err = &ogenerrors.DecodeParamsError{
 			OperationContext: opErrContext,
@@ -598,7 +598,7 @@ func (s *Server) handleCreateAgentConfigRequest(args [1]string, argsEscaped bool
 	}
 
 	var rawBody []byte
-	request, rawBody, close, err := s.decodeCreateAgentConfigRequest(r)
+	request, rawBody, close, err := s.decodeCreateHarnessConfigRequest(r)
 	if err != nil {
 		err = &ogenerrors.DecodeRequestError{
 			OperationContext: opErrContext,
@@ -614,13 +614,13 @@ func (s *Server) handleCreateAgentConfigRequest(args [1]string, argsEscaped bool
 		}
 	}()
 
-	var response CreateAgentConfigRes
+	var response CreateHarnessConfigRes
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
-			OperationName:    CreateAgentConfigOperation,
-			OperationSummary: "Create an agent config",
-			OperationID:      "create-agent-config",
+			OperationName:    CreateHarnessConfigOperation,
+			OperationSummary: "Create a harness config",
+			OperationID:      "create-harness-config",
 			Body:             request,
 			RawBody:          rawBody,
 			Params: middleware.Parameters{
@@ -633,9 +633,9 @@ func (s *Server) handleCreateAgentConfigRequest(args [1]string, argsEscaped bool
 		}
 
 		type (
-			Request  = *CreateAgentConfigBody
-			Params   = CreateAgentConfigParams
-			Response = CreateAgentConfigRes
+			Request  = *CreateHarnessConfigBody
+			Params   = CreateHarnessConfigParams
+			Response = CreateHarnessConfigRes
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -644,14 +644,14 @@ func (s *Server) handleCreateAgentConfigRequest(args [1]string, argsEscaped bool
 		](
 			m,
 			mreq,
-			unpackCreateAgentConfigParams,
+			unpackCreateHarnessConfigParams,
 			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.CreateAgentConfig(ctx, request, params)
+				response, err = s.h.CreateHarnessConfig(ctx, request, params)
 				return response, err
 			},
 		)
 	} else {
-		response, err = s.h.CreateAgentConfig(ctx, request, params)
+		response, err = s.h.CreateHarnessConfig(ctx, request, params)
 	}
 	if err != nil {
 		defer recordError("Internal", err)
@@ -659,7 +659,7 @@ func (s *Server) handleCreateAgentConfigRequest(args [1]string, argsEscaped bool
 		return
 	}
 
-	if err := encodeCreateAgentConfigResponse(response, w, span); err != nil {
+	if err := encodeCreateHarnessConfigResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)
@@ -1620,24 +1620,24 @@ func (s *Server) handleCreateSecretRequestRequest(args [1]string, argsEscaped bo
 	}
 }
 
-// handleDeleteAgentConfigRequest handles delete-agent-config operation.
+// handleDeleteHarnessConfigRequest handles delete-harness-config operation.
 //
-// Delete an agent config.
+// Delete a harness config.
 //
-// DELETE /projects/{projectId}/agent-configs/{agentConfigId}
-func (s *Server) handleDeleteAgentConfigRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}
+func (s *Server) handleDeleteHarnessConfigRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("delete-agent-config"),
+		otelogen.OperationID("delete-harness-config"),
 		semconv.HTTPRequestMethodKey.String("DELETE"),
-		semconv.HTTPRouteKey.String("/projects/{projectId}/agent-configs/{agentConfigId}"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), DeleteAgentConfigOperation,
+	ctx, span := s.cfg.Tracer.Start(r.Context(), DeleteHarnessConfigOperation,
 		trace.WithAttributes(otelAttrs...),
 		serverSpanKind,
 	)
@@ -1692,11 +1692,11 @@ func (s *Server) handleDeleteAgentConfigRequest(args [2]string, argsEscaped bool
 		}
 		err          error
 		opErrContext = ogenerrors.OperationContext{
-			Name: DeleteAgentConfigOperation,
-			ID:   "delete-agent-config",
+			Name: DeleteHarnessConfigOperation,
+			ID:   "delete-harness-config",
 		}
 	)
-	params, err := decodeDeleteAgentConfigParams(args, argsEscaped, r)
+	params, err := decodeDeleteHarnessConfigParams(args, argsEscaped, r)
 	if err != nil {
 		err = &ogenerrors.DecodeParamsError{
 			OperationContext: opErrContext,
@@ -1709,13 +1709,13 @@ func (s *Server) handleDeleteAgentConfigRequest(args [2]string, argsEscaped bool
 
 	var rawBody []byte
 
-	var response DeleteAgentConfigRes
+	var response DeleteHarnessConfigRes
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
-			OperationName:    DeleteAgentConfigOperation,
-			OperationSummary: "Delete an agent config",
-			OperationID:      "delete-agent-config",
+			OperationName:    DeleteHarnessConfigOperation,
+			OperationSummary: "Delete a harness config",
+			OperationID:      "delete-harness-config",
 			Body:             nil,
 			RawBody:          rawBody,
 			Params: middleware.Parameters{
@@ -1724,17 +1724,17 @@ func (s *Server) handleDeleteAgentConfigRequest(args [2]string, argsEscaped bool
 					In:   "path",
 				}: params.ProjectId,
 				{
-					Name: "agentConfigId",
+					Name: "harnessConfigId",
 					In:   "path",
-				}: params.AgentConfigId,
+				}: params.HarnessConfigId,
 			},
 			Raw: r,
 		}
 
 		type (
 			Request  = struct{}
-			Params   = DeleteAgentConfigParams
-			Response = DeleteAgentConfigRes
+			Params   = DeleteHarnessConfigParams
+			Response = DeleteHarnessConfigRes
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -1743,14 +1743,14 @@ func (s *Server) handleDeleteAgentConfigRequest(args [2]string, argsEscaped bool
 		](
 			m,
 			mreq,
-			unpackDeleteAgentConfigParams,
+			unpackDeleteHarnessConfigParams,
 			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.DeleteAgentConfig(ctx, params)
+				response, err = s.h.DeleteHarnessConfig(ctx, params)
 				return response, err
 			},
 		)
 	} else {
-		response, err = s.h.DeleteAgentConfig(ctx, params)
+		response, err = s.h.DeleteHarnessConfig(ctx, params)
 	}
 	if err != nil {
 		defer recordError("Internal", err)
@@ -1758,7 +1758,7 @@ func (s *Server) handleDeleteAgentConfigRequest(args [2]string, argsEscaped bool
 		return
 	}
 
-	if err := encodeDeleteAgentConfigResponse(response, w, span); err != nil {
+	if err := encodeDeleteHarnessConfigResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)
@@ -1767,24 +1767,24 @@ func (s *Server) handleDeleteAgentConfigRequest(args [2]string, argsEscaped bool
 	}
 }
 
-// handleDeleteAgentConfigSecretBindingRequest handles delete-agent-config-secret-binding operation.
+// handleDeleteHarnessConfigSecretBindingRequest handles delete-harness-config-secret-binding operation.
 //
-// Remove an agent config secret binding.
+// Remove a harness config secret binding.
 //
-// DELETE /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}
-func (s *Server) handleDeleteAgentConfigSecretBindingRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
+func (s *Server) handleDeleteHarnessConfigSecretBindingRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("delete-agent-config-secret-binding"),
+		otelogen.OperationID("delete-harness-config-secret-binding"),
 		semconv.HTTPRequestMethodKey.String("DELETE"),
-		semconv.HTTPRouteKey.String("/projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), DeleteAgentConfigSecretBindingOperation,
+	ctx, span := s.cfg.Tracer.Start(r.Context(), DeleteHarnessConfigSecretBindingOperation,
 		trace.WithAttributes(otelAttrs...),
 		serverSpanKind,
 	)
@@ -1839,11 +1839,11 @@ func (s *Server) handleDeleteAgentConfigSecretBindingRequest(args [3]string, arg
 		}
 		err          error
 		opErrContext = ogenerrors.OperationContext{
-			Name: DeleteAgentConfigSecretBindingOperation,
-			ID:   "delete-agent-config-secret-binding",
+			Name: DeleteHarnessConfigSecretBindingOperation,
+			ID:   "delete-harness-config-secret-binding",
 		}
 	)
-	params, err := decodeDeleteAgentConfigSecretBindingParams(args, argsEscaped, r)
+	params, err := decodeDeleteHarnessConfigSecretBindingParams(args, argsEscaped, r)
 	if err != nil {
 		err = &ogenerrors.DecodeParamsError{
 			OperationContext: opErrContext,
@@ -1856,13 +1856,13 @@ func (s *Server) handleDeleteAgentConfigSecretBindingRequest(args [3]string, arg
 
 	var rawBody []byte
 
-	var response DeleteAgentConfigSecretBindingRes
+	var response DeleteHarnessConfigSecretBindingRes
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
-			OperationName:    DeleteAgentConfigSecretBindingOperation,
-			OperationSummary: "Remove an agent config secret binding",
-			OperationID:      "delete-agent-config-secret-binding",
+			OperationName:    DeleteHarnessConfigSecretBindingOperation,
+			OperationSummary: "Remove a harness config secret binding",
+			OperationID:      "delete-harness-config-secret-binding",
 			Body:             nil,
 			RawBody:          rawBody,
 			Params: middleware.Parameters{
@@ -1871,9 +1871,9 @@ func (s *Server) handleDeleteAgentConfigSecretBindingRequest(args [3]string, arg
 					In:   "path",
 				}: params.ProjectId,
 				{
-					Name: "agentConfigId",
+					Name: "harnessConfigId",
 					In:   "path",
-				}: params.AgentConfigId,
+				}: params.HarnessConfigId,
 				{
 					Name: "envName",
 					In:   "path",
@@ -1884,8 +1884,8 @@ func (s *Server) handleDeleteAgentConfigSecretBindingRequest(args [3]string, arg
 
 		type (
 			Request  = struct{}
-			Params   = DeleteAgentConfigSecretBindingParams
-			Response = DeleteAgentConfigSecretBindingRes
+			Params   = DeleteHarnessConfigSecretBindingParams
+			Response = DeleteHarnessConfigSecretBindingRes
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -1894,14 +1894,14 @@ func (s *Server) handleDeleteAgentConfigSecretBindingRequest(args [3]string, arg
 		](
 			m,
 			mreq,
-			unpackDeleteAgentConfigSecretBindingParams,
+			unpackDeleteHarnessConfigSecretBindingParams,
 			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.DeleteAgentConfigSecretBinding(ctx, params)
+				response, err = s.h.DeleteHarnessConfigSecretBinding(ctx, params)
 				return response, err
 			},
 		)
 	} else {
-		response, err = s.h.DeleteAgentConfigSecretBinding(ctx, params)
+		response, err = s.h.DeleteHarnessConfigSecretBinding(ctx, params)
 	}
 	if err != nil {
 		defer recordError("Internal", err)
@@ -1909,7 +1909,7 @@ func (s *Server) handleDeleteAgentConfigSecretBindingRequest(args [3]string, arg
 		return
 	}
 
-	if err := encodeDeleteAgentConfigSecretBindingResponse(response, w, span); err != nil {
+	if err := encodeDeleteHarnessConfigSecretBindingResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)
@@ -2804,24 +2804,24 @@ func (s *Server) handleForceJobRequest(args [2]string, argsEscaped bool, w http.
 	}
 }
 
-// handleGetAgentConfigRequest handles get-agent-config operation.
+// handleGetHarnessConfigRequest handles get-harness-config operation.
 //
-// Get an agent config.
+// Get a harness config.
 //
-// GET /projects/{projectId}/agent-configs/{agentConfigId}
-func (s *Server) handleGetAgentConfigRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+// GET /projects/{projectId}/harness-configs/{harnessConfigId}
+func (s *Server) handleGetHarnessConfigRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("get-agent-config"),
+		otelogen.OperationID("get-harness-config"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/projects/{projectId}/agent-configs/{agentConfigId}"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), GetAgentConfigOperation,
+	ctx, span := s.cfg.Tracer.Start(r.Context(), GetHarnessConfigOperation,
 		trace.WithAttributes(otelAttrs...),
 		serverSpanKind,
 	)
@@ -2876,11 +2876,11 @@ func (s *Server) handleGetAgentConfigRequest(args [2]string, argsEscaped bool, w
 		}
 		err          error
 		opErrContext = ogenerrors.OperationContext{
-			Name: GetAgentConfigOperation,
-			ID:   "get-agent-config",
+			Name: GetHarnessConfigOperation,
+			ID:   "get-harness-config",
 		}
 	)
-	params, err := decodeGetAgentConfigParams(args, argsEscaped, r)
+	params, err := decodeGetHarnessConfigParams(args, argsEscaped, r)
 	if err != nil {
 		err = &ogenerrors.DecodeParamsError{
 			OperationContext: opErrContext,
@@ -2893,13 +2893,13 @@ func (s *Server) handleGetAgentConfigRequest(args [2]string, argsEscaped bool, w
 
 	var rawBody []byte
 
-	var response GetAgentConfigRes
+	var response GetHarnessConfigRes
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
-			OperationName:    GetAgentConfigOperation,
-			OperationSummary: "Get an agent config",
-			OperationID:      "get-agent-config",
+			OperationName:    GetHarnessConfigOperation,
+			OperationSummary: "Get a harness config",
+			OperationID:      "get-harness-config",
 			Body:             nil,
 			RawBody:          rawBody,
 			Params: middleware.Parameters{
@@ -2908,17 +2908,17 @@ func (s *Server) handleGetAgentConfigRequest(args [2]string, argsEscaped bool, w
 					In:   "path",
 				}: params.ProjectId,
 				{
-					Name: "agentConfigId",
+					Name: "harnessConfigId",
 					In:   "path",
-				}: params.AgentConfigId,
+				}: params.HarnessConfigId,
 			},
 			Raw: r,
 		}
 
 		type (
 			Request  = struct{}
-			Params   = GetAgentConfigParams
-			Response = GetAgentConfigRes
+			Params   = GetHarnessConfigParams
+			Response = GetHarnessConfigRes
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -2927,14 +2927,14 @@ func (s *Server) handleGetAgentConfigRequest(args [2]string, argsEscaped bool, w
 		](
 			m,
 			mreq,
-			unpackGetAgentConfigParams,
+			unpackGetHarnessConfigParams,
 			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.GetAgentConfig(ctx, params)
+				response, err = s.h.GetHarnessConfig(ctx, params)
 				return response, err
 			},
 		)
 	} else {
-		response, err = s.h.GetAgentConfig(ctx, params)
+		response, err = s.h.GetHarnessConfig(ctx, params)
 	}
 	if err != nil {
 		defer recordError("Internal", err)
@@ -2942,7 +2942,7 @@ func (s *Server) handleGetAgentConfigRequest(args [2]string, argsEscaped bool, w
 		return
 	}
 
-	if err := encodeGetAgentConfigResponse(response, w, span); err != nil {
+	if err := encodeGetHarnessConfigResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)
@@ -2951,24 +2951,24 @@ func (s *Server) handleGetAgentConfigRequest(args [2]string, argsEscaped bool, w
 	}
 }
 
-// handleGetAgentConfigDefinitionRequest handles get-agent-config-definition operation.
+// handleGetHarnessDefinitionRequest handles get-harness-definition operation.
 //
-// Get an agent config definition.
+// Get a harness config definition.
 //
-// GET /agent-config-definitions/{definitionId}
-func (s *Server) handleGetAgentConfigDefinitionRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+// GET /harness-definitions/{definitionId}
+func (s *Server) handleGetHarnessDefinitionRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("get-agent-config-definition"),
+		otelogen.OperationID("get-harness-definition"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/agent-config-definitions/{definitionId}"),
+		semconv.HTTPRouteKey.String("/harness-definitions/{definitionId}"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), GetAgentConfigDefinitionOperation,
+	ctx, span := s.cfg.Tracer.Start(r.Context(), GetHarnessDefinitionOperation,
 		trace.WithAttributes(otelAttrs...),
 		serverSpanKind,
 	)
@@ -3023,11 +3023,11 @@ func (s *Server) handleGetAgentConfigDefinitionRequest(args [1]string, argsEscap
 		}
 		err          error
 		opErrContext = ogenerrors.OperationContext{
-			Name: GetAgentConfigDefinitionOperation,
-			ID:   "get-agent-config-definition",
+			Name: GetHarnessDefinitionOperation,
+			ID:   "get-harness-definition",
 		}
 	)
-	params, err := decodeGetAgentConfigDefinitionParams(args, argsEscaped, r)
+	params, err := decodeGetHarnessDefinitionParams(args, argsEscaped, r)
 	if err != nil {
 		err = &ogenerrors.DecodeParamsError{
 			OperationContext: opErrContext,
@@ -3040,13 +3040,13 @@ func (s *Server) handleGetAgentConfigDefinitionRequest(args [1]string, argsEscap
 
 	var rawBody []byte
 
-	var response GetAgentConfigDefinitionRes
+	var response GetHarnessDefinitionRes
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
-			OperationName:    GetAgentConfigDefinitionOperation,
-			OperationSummary: "Get an agent config definition",
-			OperationID:      "get-agent-config-definition",
+			OperationName:    GetHarnessDefinitionOperation,
+			OperationSummary: "Get a harness config definition",
+			OperationID:      "get-harness-definition",
 			Body:             nil,
 			RawBody:          rawBody,
 			Params: middleware.Parameters{
@@ -3060,8 +3060,8 @@ func (s *Server) handleGetAgentConfigDefinitionRequest(args [1]string, argsEscap
 
 		type (
 			Request  = struct{}
-			Params   = GetAgentConfigDefinitionParams
-			Response = GetAgentConfigDefinitionRes
+			Params   = GetHarnessDefinitionParams
+			Response = GetHarnessDefinitionRes
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -3070,14 +3070,14 @@ func (s *Server) handleGetAgentConfigDefinitionRequest(args [1]string, argsEscap
 		](
 			m,
 			mreq,
-			unpackGetAgentConfigDefinitionParams,
+			unpackGetHarnessDefinitionParams,
 			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.GetAgentConfigDefinition(ctx, params)
+				response, err = s.h.GetHarnessDefinition(ctx, params)
 				return response, err
 			},
 		)
 	} else {
-		response, err = s.h.GetAgentConfigDefinition(ctx, params)
+		response, err = s.h.GetHarnessDefinition(ctx, params)
 	}
 	if err != nil {
 		defer recordError("Internal", err)
@@ -3085,7 +3085,7 @@ func (s *Server) handleGetAgentConfigDefinitionRequest(args [1]string, argsEscap
 		return
 	}
 
-	if err := encodeGetAgentConfigDefinitionResponse(response, w, span); err != nil {
+	if err := encodeGetHarnessDefinitionResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)
@@ -4274,24 +4274,314 @@ func (s *Server) handleGetSecretRequestRequest(args [2]string, argsEscaped bool,
 	}
 }
 
-// handleListAgentConfigDefinitionsRequest handles list-agent-config-definitions operation.
+// handleListHarnessConfigSecretBindingsRequest handles list-harness-config-secret-bindings operation.
 //
-// List agent config definitions.
+// List harness config secret bindings.
 //
-// GET /agent-config-definitions
-func (s *Server) handleListAgentConfigDefinitionsRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+// GET /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings
+func (s *Server) handleListHarnessConfigSecretBindingsRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("list-agent-config-definitions"),
+		otelogen.OperationID("list-harness-config-secret-bindings"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/agent-config-definitions"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), ListAgentConfigDefinitionsOperation,
+	ctx, span := s.cfg.Tracer.Start(r.Context(), ListHarnessConfigSecretBindingsOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: ListHarnessConfigSecretBindingsOperation,
+			ID:   "list-harness-config-secret-bindings",
+		}
+	)
+	params, err := decodeListHarnessConfigSecretBindingsParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+
+	var response ListHarnessConfigSecretBindingsRes
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    ListHarnessConfigSecretBindingsOperation,
+			OperationSummary: "List harness config secret bindings",
+			OperationID:      "list-harness-config-secret-bindings",
+			Body:             nil,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "projectId",
+					In:   "path",
+				}: params.ProjectId,
+				{
+					Name: "harnessConfigId",
+					In:   "path",
+				}: params.HarnessConfigId,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = struct{}
+			Params   = ListHarnessConfigSecretBindingsParams
+			Response = ListHarnessConfigSecretBindingsRes
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackListHarnessConfigSecretBindingsParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.ListHarnessConfigSecretBindings(ctx, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.ListHarnessConfigSecretBindings(ctx, params)
+	}
+	if err != nil {
+		defer recordError("Internal", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	if err := encodeListHarnessConfigSecretBindingsResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
+// handleListHarnessConfigsRequest handles list-harness-configs operation.
+//
+// List harness configs.
+//
+// GET /projects/{projectId}/harness-configs
+func (s *Server) handleListHarnessConfigsRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-harness-configs"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/harness-configs"),
+	}
+	// Add attributes from config.
+	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), ListHarnessConfigsOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: ListHarnessConfigsOperation,
+			ID:   "list-harness-configs",
+		}
+	)
+	params, err := decodeListHarnessConfigsParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+
+	var response ListHarnessConfigsRes
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    ListHarnessConfigsOperation,
+			OperationSummary: "List harness configs",
+			OperationID:      "list-harness-configs",
+			Body:             nil,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "projectId",
+					In:   "path",
+				}: params.ProjectId,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = struct{}
+			Params   = ListHarnessConfigsParams
+			Response = ListHarnessConfigsRes
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackListHarnessConfigsParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.ListHarnessConfigs(ctx, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.ListHarnessConfigs(ctx, params)
+	}
+	if err != nil {
+		defer recordError("Internal", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	if err := encodeListHarnessConfigsResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
+// handleListHarnessDefinitionsRequest handles list-harness-definitions operation.
+//
+// List harness config definitions.
+//
+// GET /harness-definitions
+func (s *Server) handleListHarnessDefinitionsRequest(args [0]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-harness-definitions"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.HTTPRouteKey.String("/harness-definitions"),
+	}
+	// Add attributes from config.
+	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), ListHarnessDefinitionsOperation,
 		trace.WithAttributes(otelAttrs...),
 		serverSpanKind,
 	)
@@ -4349,13 +4639,13 @@ func (s *Server) handleListAgentConfigDefinitionsRequest(args [0]string, argsEsc
 
 	var rawBody []byte
 
-	var response ListAgentConfigDefinitionsRes
+	var response ListHarnessDefinitionsRes
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
-			OperationName:    ListAgentConfigDefinitionsOperation,
-			OperationSummary: "List agent config definitions",
-			OperationID:      "list-agent-config-definitions",
+			OperationName:    ListHarnessDefinitionsOperation,
+			OperationSummary: "List harness config definitions",
+			OperationID:      "list-harness-definitions",
 			Body:             nil,
 			RawBody:          rawBody,
 			Params:           middleware.Parameters{},
@@ -4365,7 +4655,7 @@ func (s *Server) handleListAgentConfigDefinitionsRequest(args [0]string, argsEsc
 		type (
 			Request  = struct{}
 			Params   = struct{}
-			Response = ListAgentConfigDefinitionsRes
+			Response = ListHarnessDefinitionsRes
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -4376,12 +4666,12 @@ func (s *Server) handleListAgentConfigDefinitionsRequest(args [0]string, argsEsc
 			mreq,
 			nil,
 			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.ListAgentConfigDefinitions(ctx)
+				response, err = s.h.ListHarnessDefinitions(ctx)
 				return response, err
 			},
 		)
 	} else {
-		response, err = s.h.ListAgentConfigDefinitions(ctx)
+		response, err = s.h.ListHarnessDefinitions(ctx)
 	}
 	if err != nil {
 		defer recordError("Internal", err)
@@ -4389,7 +4679,7 @@ func (s *Server) handleListAgentConfigDefinitionsRequest(args [0]string, argsEsc
 		return
 	}
 
-	if err := encodeListAgentConfigDefinitionsResponse(response, w, span); err != nil {
+	if err := encodeListHarnessDefinitionsResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)
@@ -4398,24 +4688,24 @@ func (s *Server) handleListAgentConfigDefinitionsRequest(args [0]string, argsEsc
 	}
 }
 
-// handleListAgentConfigSecretBindingsRequest handles list-agent-config-secret-bindings operation.
+// handleListHarnessHooksRequest handles list-harness-hooks operation.
 //
-// List agent config secret bindings.
+// List recent sandbox harness hook payload logs.
 //
-// GET /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings
-func (s *Server) handleListAgentConfigSecretBindingsRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks
+func (s *Server) handleListHarnessHooksRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("list-agent-config-secret-bindings"),
+		otelogen.OperationID("list-harness-hooks"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings"),
+		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), ListAgentConfigSecretBindingsOperation,
+	ctx, span := s.cfg.Tracer.Start(r.Context(), ListHarnessHooksOperation,
 		trace.WithAttributes(otelAttrs...),
 		serverSpanKind,
 	)
@@ -4470,11 +4760,11 @@ func (s *Server) handleListAgentConfigSecretBindingsRequest(args [2]string, args
 		}
 		err          error
 		opErrContext = ogenerrors.OperationContext{
-			Name: ListAgentConfigSecretBindingsOperation,
-			ID:   "list-agent-config-secret-bindings",
+			Name: ListHarnessHooksOperation,
+			ID:   "list-harness-hooks",
 		}
 	)
-	params, err := decodeListAgentConfigSecretBindingsParams(args, argsEscaped, r)
+	params, err := decodeListHarnessHooksParams(args, argsEscaped, r)
 	if err != nil {
 		err = &ogenerrors.DecodeParamsError{
 			OperationContext: opErrContext,
@@ -4487,303 +4777,13 @@ func (s *Server) handleListAgentConfigSecretBindingsRequest(args [2]string, args
 
 	var rawBody []byte
 
-	var response ListAgentConfigSecretBindingsRes
+	var response ListHarnessHooksRes
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
-			OperationName:    ListAgentConfigSecretBindingsOperation,
-			OperationSummary: "List agent config secret bindings",
-			OperationID:      "list-agent-config-secret-bindings",
-			Body:             nil,
-			RawBody:          rawBody,
-			Params: middleware.Parameters{
-				{
-					Name: "projectId",
-					In:   "path",
-				}: params.ProjectId,
-				{
-					Name: "agentConfigId",
-					In:   "path",
-				}: params.AgentConfigId,
-			},
-			Raw: r,
-		}
-
-		type (
-			Request  = struct{}
-			Params   = ListAgentConfigSecretBindingsParams
-			Response = ListAgentConfigSecretBindingsRes
-		)
-		response, err = middleware.HookMiddleware[
-			Request,
-			Params,
-			Response,
-		](
-			m,
-			mreq,
-			unpackListAgentConfigSecretBindingsParams,
-			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.ListAgentConfigSecretBindings(ctx, params)
-				return response, err
-			},
-		)
-	} else {
-		response, err = s.h.ListAgentConfigSecretBindings(ctx, params)
-	}
-	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
-		return
-	}
-
-	if err := encodeListAgentConfigSecretBindingsResponse(response, w, span); err != nil {
-		defer recordError("EncodeResponse", err)
-		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
-			s.cfg.ErrorHandler(ctx, w, r, err)
-		}
-		return
-	}
-}
-
-// handleListAgentConfigsRequest handles list-agent-configs operation.
-//
-// List agent configs.
-//
-// GET /projects/{projectId}/agent-configs
-func (s *Server) handleListAgentConfigsRequest(args [1]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
-	statusWriter := &codeRecorder{ResponseWriter: w}
-	w = statusWriter
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("list-agent-configs"),
-		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/projects/{projectId}/agent-configs"),
-	}
-	// Add attributes from config.
-	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
-
-	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), ListAgentConfigsOperation,
-		trace.WithAttributes(otelAttrs...),
-		serverSpanKind,
-	)
-	defer span.End()
-
-	// Add Labeler to context.
-	labeler := &Labeler{attrs: otelAttrs}
-	ctx = contextWithLabeler(ctx, labeler)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		elapsedDuration := time.Since(startTime)
-
-		attrSet := labeler.AttributeSet()
-		attrs := attrSet.ToSlice()
-		code := statusWriter.status
-		if code != 0 {
-			codeAttr := semconv.HTTPResponseStatusCode(code)
-			attrs = append(attrs, codeAttr)
-			span.SetAttributes(codeAttr)
-		}
-		attrOpt := metric.WithAttributes(attrs...)
-
-		// Increment request counter.
-		s.requests.Add(ctx, 1, attrOpt)
-
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
-	}()
-
-	var (
-		recordError = func(stage string, err error) {
-			span.RecordError(err)
-
-			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
-			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
-			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
-			// max redirects exceeded), in which case status MUST be set to Error.
-			code := statusWriter.status
-			if code < 100 || code >= 500 {
-				span.SetStatus(codes.Error, stage)
-			}
-
-			attrSet := labeler.AttributeSet()
-			attrs := attrSet.ToSlice()
-			if code != 0 {
-				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
-			}
-
-			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
-		}
-		err          error
-		opErrContext = ogenerrors.OperationContext{
-			Name: ListAgentConfigsOperation,
-			ID:   "list-agent-configs",
-		}
-	)
-	params, err := decodeListAgentConfigsParams(args, argsEscaped, r)
-	if err != nil {
-		err = &ogenerrors.DecodeParamsError{
-			OperationContext: opErrContext,
-			Err:              err,
-		}
-		defer recordError("DecodeParams", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
-		return
-	}
-
-	var rawBody []byte
-
-	var response ListAgentConfigsRes
-	if m := s.cfg.Middleware; m != nil {
-		mreq := middleware.Request{
-			Context:          ctx,
-			OperationName:    ListAgentConfigsOperation,
-			OperationSummary: "List agent configs",
-			OperationID:      "list-agent-configs",
-			Body:             nil,
-			RawBody:          rawBody,
-			Params: middleware.Parameters{
-				{
-					Name: "projectId",
-					In:   "path",
-				}: params.ProjectId,
-			},
-			Raw: r,
-		}
-
-		type (
-			Request  = struct{}
-			Params   = ListAgentConfigsParams
-			Response = ListAgentConfigsRes
-		)
-		response, err = middleware.HookMiddleware[
-			Request,
-			Params,
-			Response,
-		](
-			m,
-			mreq,
-			unpackListAgentConfigsParams,
-			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.ListAgentConfigs(ctx, params)
-				return response, err
-			},
-		)
-	} else {
-		response, err = s.h.ListAgentConfigs(ctx, params)
-	}
-	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
-		return
-	}
-
-	if err := encodeListAgentConfigsResponse(response, w, span); err != nil {
-		defer recordError("EncodeResponse", err)
-		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
-			s.cfg.ErrorHandler(ctx, w, r, err)
-		}
-		return
-	}
-}
-
-// handleListAgentHooksRequest handles list-agent-hooks operation.
-//
-// List recent sandbox agent hook payload logs.
-//
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks
-func (s *Server) handleListAgentHooksRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
-	statusWriter := &codeRecorder{ResponseWriter: w}
-	w = statusWriter
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("list-agent-hooks"),
-		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks"),
-	}
-	// Add attributes from config.
-	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
-
-	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), ListAgentHooksOperation,
-		trace.WithAttributes(otelAttrs...),
-		serverSpanKind,
-	)
-	defer span.End()
-
-	// Add Labeler to context.
-	labeler := &Labeler{attrs: otelAttrs}
-	ctx = contextWithLabeler(ctx, labeler)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		elapsedDuration := time.Since(startTime)
-
-		attrSet := labeler.AttributeSet()
-		attrs := attrSet.ToSlice()
-		code := statusWriter.status
-		if code != 0 {
-			codeAttr := semconv.HTTPResponseStatusCode(code)
-			attrs = append(attrs, codeAttr)
-			span.SetAttributes(codeAttr)
-		}
-		attrOpt := metric.WithAttributes(attrs...)
-
-		// Increment request counter.
-		s.requests.Add(ctx, 1, attrOpt)
-
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
-	}()
-
-	var (
-		recordError = func(stage string, err error) {
-			span.RecordError(err)
-
-			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
-			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
-			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
-			// max redirects exceeded), in which case status MUST be set to Error.
-			code := statusWriter.status
-			if code < 100 || code >= 500 {
-				span.SetStatus(codes.Error, stage)
-			}
-
-			attrSet := labeler.AttributeSet()
-			attrs := attrSet.ToSlice()
-			if code != 0 {
-				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
-			}
-
-			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
-		}
-		err          error
-		opErrContext = ogenerrors.OperationContext{
-			Name: ListAgentHooksOperation,
-			ID:   "list-agent-hooks",
-		}
-	)
-	params, err := decodeListAgentHooksParams(args, argsEscaped, r)
-	if err != nil {
-		err = &ogenerrors.DecodeParamsError{
-			OperationContext: opErrContext,
-			Err:              err,
-		}
-		defer recordError("DecodeParams", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
-		return
-	}
-
-	var rawBody []byte
-
-	var response ListAgentHooksRes
-	if m := s.cfg.Middleware; m != nil {
-		mreq := middleware.Request{
-			Context:          ctx,
-			OperationName:    ListAgentHooksOperation,
-			OperationSummary: "List recent sandbox agent hook payload logs.",
-			OperationID:      "list-agent-hooks",
+			OperationName:    ListHarnessHooksOperation,
+			OperationSummary: "List recent sandbox harness hook payload logs.",
+			OperationID:      "list-harness-hooks",
 			Body:             nil,
 			RawBody:          rawBody,
 			Params: middleware.Parameters{
@@ -4809,8 +4809,8 @@ func (s *Server) handleListAgentHooksRequest(args [2]string, argsEscaped bool, w
 
 		type (
 			Request  = struct{}
-			Params   = ListAgentHooksParams
-			Response = ListAgentHooksRes
+			Params   = ListHarnessHooksParams
+			Response = ListHarnessHooksRes
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -4819,14 +4819,14 @@ func (s *Server) handleListAgentHooksRequest(args [2]string, argsEscaped bool, w
 		](
 			m,
 			mreq,
-			unpackListAgentHooksParams,
+			unpackListHarnessHooksParams,
 			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.ListAgentHooks(ctx, params)
+				response, err = s.h.ListHarnessHooks(ctx, params)
 				return response, err
 			},
 		)
 	} else {
-		response, err = s.h.ListAgentHooks(ctx, params)
+		response, err = s.h.ListHarnessHooks(ctx, params)
 	}
 	if err != nil {
 		defer recordError("Internal", err)
@@ -4834,7 +4834,7 @@ func (s *Server) handleListAgentHooksRequest(args [2]string, argsEscaped bool, w
 		return
 	}
 
-	if err := encodeListAgentHooksResponse(response, w, span); err != nil {
+	if err := encodeListHarnessHooksResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)
@@ -7616,24 +7616,24 @@ func (s *Server) handleRevokeSecretGrantRequest(args [2]string, argsEscaped bool
 	}
 }
 
-// handleSetAgentConfigSecretBindingRequest handles set-agent-config-secret-binding operation.
+// handleSetDefaultHarnessConfigRequest handles set-default-harness-config operation.
 //
-// Bind an agent config environment variable to a secret.
+// Set the project default harness config.
 //
-// PUT /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}
-func (s *Server) handleSetAgentConfigSecretBindingRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+// PUT /projects/{projectId}/harness-configs/{harnessConfigId}/default
+func (s *Server) handleSetDefaultHarnessConfigRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("set-agent-config-secret-binding"),
+		otelogen.OperationID("set-default-harness-config"),
 		semconv.HTTPRequestMethodKey.String("PUT"),
-		semconv.HTTPRouteKey.String("/projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}/default"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), SetAgentConfigSecretBindingOperation,
+	ctx, span := s.cfg.Tracer.Start(r.Context(), SetDefaultHarnessConfigOperation,
 		trace.WithAttributes(otelAttrs...),
 		serverSpanKind,
 	)
@@ -7688,11 +7688,11 @@ func (s *Server) handleSetAgentConfigSecretBindingRequest(args [3]string, argsEs
 		}
 		err          error
 		opErrContext = ogenerrors.OperationContext{
-			Name: SetAgentConfigSecretBindingOperation,
-			ID:   "set-agent-config-secret-binding",
+			Name: SetDefaultHarnessConfigOperation,
+			ID:   "set-default-harness-config",
 		}
 	)
-	params, err := decodeSetAgentConfigSecretBindingParams(args, argsEscaped, r)
+	params, err := decodeSetDefaultHarnessConfigParams(args, argsEscaped, r)
 	if err != nil {
 		err = &ogenerrors.DecodeParamsError{
 			OperationContext: opErrContext,
@@ -7704,7 +7704,154 @@ func (s *Server) handleSetAgentConfigSecretBindingRequest(args [3]string, argsEs
 	}
 
 	var rawBody []byte
-	request, rawBody, close, err := s.decodeSetAgentConfigSecretBindingRequest(r)
+
+	var response SetDefaultHarnessConfigRes
+	if m := s.cfg.Middleware; m != nil {
+		mreq := middleware.Request{
+			Context:          ctx,
+			OperationName:    SetDefaultHarnessConfigOperation,
+			OperationSummary: "Set the project default harness config",
+			OperationID:      "set-default-harness-config",
+			Body:             nil,
+			RawBody:          rawBody,
+			Params: middleware.Parameters{
+				{
+					Name: "projectId",
+					In:   "path",
+				}: params.ProjectId,
+				{
+					Name: "harnessConfigId",
+					In:   "path",
+				}: params.HarnessConfigId,
+			},
+			Raw: r,
+		}
+
+		type (
+			Request  = struct{}
+			Params   = SetDefaultHarnessConfigParams
+			Response = SetDefaultHarnessConfigRes
+		)
+		response, err = middleware.HookMiddleware[
+			Request,
+			Params,
+			Response,
+		](
+			m,
+			mreq,
+			unpackSetDefaultHarnessConfigParams,
+			func(ctx context.Context, request Request, params Params) (response Response, err error) {
+				response, err = s.h.SetDefaultHarnessConfig(ctx, params)
+				return response, err
+			},
+		)
+	} else {
+		response, err = s.h.SetDefaultHarnessConfig(ctx, params)
+	}
+	if err != nil {
+		defer recordError("Internal", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	if err := encodeSetDefaultHarnessConfigResponse(response, w, span); err != nil {
+		defer recordError("EncodeResponse", err)
+		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
+			s.cfg.ErrorHandler(ctx, w, r, err)
+		}
+		return
+	}
+}
+
+// handleSetHarnessConfigSecretBindingRequest handles set-harness-config-secret-binding operation.
+//
+// Bind a harness config environment variable to a secret.
+//
+// PUT /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
+func (s *Server) handleSetHarnessConfigSecretBindingRequest(args [3]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+	statusWriter := &codeRecorder{ResponseWriter: w}
+	w = statusWriter
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("set-harness-config-secret-binding"),
+		semconv.HTTPRequestMethodKey.String("PUT"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}"),
+	}
+	// Add attributes from config.
+	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
+
+	// Start a span for this request.
+	ctx, span := s.cfg.Tracer.Start(r.Context(), SetHarnessConfigSecretBindingOperation,
+		trace.WithAttributes(otelAttrs...),
+		serverSpanKind,
+	)
+	defer span.End()
+
+	// Add Labeler to context.
+	labeler := &Labeler{attrs: otelAttrs}
+	ctx = contextWithLabeler(ctx, labeler)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		elapsedDuration := time.Since(startTime)
+
+		attrSet := labeler.AttributeSet()
+		attrs := attrSet.ToSlice()
+		code := statusWriter.status
+		if code != 0 {
+			codeAttr := semconv.HTTPResponseStatusCode(code)
+			attrs = append(attrs, codeAttr)
+			span.SetAttributes(codeAttr)
+		}
+		attrOpt := metric.WithAttributes(attrs...)
+
+		// Increment request counter.
+		s.requests.Add(ctx, 1, attrOpt)
+
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
+	}()
+
+	var (
+		recordError = func(stage string, err error) {
+			span.RecordError(err)
+
+			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
+			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
+			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
+			// max redirects exceeded), in which case status MUST be set to Error.
+			code := statusWriter.status
+			if code < 100 || code >= 500 {
+				span.SetStatus(codes.Error, stage)
+			}
+
+			attrSet := labeler.AttributeSet()
+			attrs := attrSet.ToSlice()
+			if code != 0 {
+				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
+			}
+
+			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
+		}
+		err          error
+		opErrContext = ogenerrors.OperationContext{
+			Name: SetHarnessConfigSecretBindingOperation,
+			ID:   "set-harness-config-secret-binding",
+		}
+	)
+	params, err := decodeSetHarnessConfigSecretBindingParams(args, argsEscaped, r)
+	if err != nil {
+		err = &ogenerrors.DecodeParamsError{
+			OperationContext: opErrContext,
+			Err:              err,
+		}
+		defer recordError("DecodeParams", err)
+		s.cfg.ErrorHandler(ctx, w, r, err)
+		return
+	}
+
+	var rawBody []byte
+	request, rawBody, close, err := s.decodeSetHarnessConfigSecretBindingRequest(r)
 	if err != nil {
 		err = &ogenerrors.DecodeRequestError{
 			OperationContext: opErrContext,
@@ -7720,13 +7867,13 @@ func (s *Server) handleSetAgentConfigSecretBindingRequest(args [3]string, argsEs
 		}
 	}()
 
-	var response SetAgentConfigSecretBindingRes
+	var response SetHarnessConfigSecretBindingRes
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
-			OperationName:    SetAgentConfigSecretBindingOperation,
-			OperationSummary: "Bind an agent config environment variable to a secret",
-			OperationID:      "set-agent-config-secret-binding",
+			OperationName:    SetHarnessConfigSecretBindingOperation,
+			OperationSummary: "Bind a harness config environment variable to a secret",
+			OperationID:      "set-harness-config-secret-binding",
 			Body:             request,
 			RawBody:          rawBody,
 			Params: middleware.Parameters{
@@ -7735,9 +7882,9 @@ func (s *Server) handleSetAgentConfigSecretBindingRequest(args [3]string, argsEs
 					In:   "path",
 				}: params.ProjectId,
 				{
-					Name: "agentConfigId",
+					Name: "harnessConfigId",
 					In:   "path",
-				}: params.AgentConfigId,
+				}: params.HarnessConfigId,
 				{
 					Name: "envName",
 					In:   "path",
@@ -7747,9 +7894,9 @@ func (s *Server) handleSetAgentConfigSecretBindingRequest(args [3]string, argsEs
 		}
 
 		type (
-			Request  = *SetAgentConfigSecretBindingBody
-			Params   = SetAgentConfigSecretBindingParams
-			Response = SetAgentConfigSecretBindingRes
+			Request  = *SetHarnessConfigSecretBindingBody
+			Params   = SetHarnessConfigSecretBindingParams
+			Response = SetHarnessConfigSecretBindingRes
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -7758,14 +7905,14 @@ func (s *Server) handleSetAgentConfigSecretBindingRequest(args [3]string, argsEs
 		](
 			m,
 			mreq,
-			unpackSetAgentConfigSecretBindingParams,
+			unpackSetHarnessConfigSecretBindingParams,
 			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.SetAgentConfigSecretBinding(ctx, request, params)
+				response, err = s.h.SetHarnessConfigSecretBinding(ctx, request, params)
 				return response, err
 			},
 		)
 	} else {
-		response, err = s.h.SetAgentConfigSecretBinding(ctx, request, params)
+		response, err = s.h.SetHarnessConfigSecretBinding(ctx, request, params)
 	}
 	if err != nil {
 		defer recordError("Internal", err)
@@ -7773,154 +7920,7 @@ func (s *Server) handleSetAgentConfigSecretBindingRequest(args [3]string, argsEs
 		return
 	}
 
-	if err := encodeSetAgentConfigSecretBindingResponse(response, w, span); err != nil {
-		defer recordError("EncodeResponse", err)
-		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
-			s.cfg.ErrorHandler(ctx, w, r, err)
-		}
-		return
-	}
-}
-
-// handleSetDefaultAgentConfigRequest handles set-default-agent-config operation.
-//
-// Set the project default agent config.
-//
-// PUT /projects/{projectId}/agent-configs/{agentConfigId}/default
-func (s *Server) handleSetDefaultAgentConfigRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
-	statusWriter := &codeRecorder{ResponseWriter: w}
-	w = statusWriter
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("set-default-agent-config"),
-		semconv.HTTPRequestMethodKey.String("PUT"),
-		semconv.HTTPRouteKey.String("/projects/{projectId}/agent-configs/{agentConfigId}/default"),
-	}
-	// Add attributes from config.
-	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
-
-	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), SetDefaultAgentConfigOperation,
-		trace.WithAttributes(otelAttrs...),
-		serverSpanKind,
-	)
-	defer span.End()
-
-	// Add Labeler to context.
-	labeler := &Labeler{attrs: otelAttrs}
-	ctx = contextWithLabeler(ctx, labeler)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		elapsedDuration := time.Since(startTime)
-
-		attrSet := labeler.AttributeSet()
-		attrs := attrSet.ToSlice()
-		code := statusWriter.status
-		if code != 0 {
-			codeAttr := semconv.HTTPResponseStatusCode(code)
-			attrs = append(attrs, codeAttr)
-			span.SetAttributes(codeAttr)
-		}
-		attrOpt := metric.WithAttributes(attrs...)
-
-		// Increment request counter.
-		s.requests.Add(ctx, 1, attrOpt)
-
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		s.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), attrOpt)
-	}()
-
-	var (
-		recordError = func(stage string, err error) {
-			span.RecordError(err)
-
-			// https://opentelemetry.io/docs/specs/semconv/http/http-spans/#status
-			// Span Status MUST be left unset if HTTP status code was in the 1xx, 2xx or 3xx ranges,
-			// unless there was another error (e.g., network error receiving the response body; or 3xx codes with
-			// max redirects exceeded), in which case status MUST be set to Error.
-			code := statusWriter.status
-			if code < 100 || code >= 500 {
-				span.SetStatus(codes.Error, stage)
-			}
-
-			attrSet := labeler.AttributeSet()
-			attrs := attrSet.ToSlice()
-			if code != 0 {
-				attrs = append(attrs, semconv.HTTPResponseStatusCode(code))
-			}
-
-			s.errors.Add(ctx, 1, metric.WithAttributes(attrs...))
-		}
-		err          error
-		opErrContext = ogenerrors.OperationContext{
-			Name: SetDefaultAgentConfigOperation,
-			ID:   "set-default-agent-config",
-		}
-	)
-	params, err := decodeSetDefaultAgentConfigParams(args, argsEscaped, r)
-	if err != nil {
-		err = &ogenerrors.DecodeParamsError{
-			OperationContext: opErrContext,
-			Err:              err,
-		}
-		defer recordError("DecodeParams", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
-		return
-	}
-
-	var rawBody []byte
-
-	var response SetDefaultAgentConfigRes
-	if m := s.cfg.Middleware; m != nil {
-		mreq := middleware.Request{
-			Context:          ctx,
-			OperationName:    SetDefaultAgentConfigOperation,
-			OperationSummary: "Set the project default agent config",
-			OperationID:      "set-default-agent-config",
-			Body:             nil,
-			RawBody:          rawBody,
-			Params: middleware.Parameters{
-				{
-					Name: "projectId",
-					In:   "path",
-				}: params.ProjectId,
-				{
-					Name: "agentConfigId",
-					In:   "path",
-				}: params.AgentConfigId,
-			},
-			Raw: r,
-		}
-
-		type (
-			Request  = struct{}
-			Params   = SetDefaultAgentConfigParams
-			Response = SetDefaultAgentConfigRes
-		)
-		response, err = middleware.HookMiddleware[
-			Request,
-			Params,
-			Response,
-		](
-			m,
-			mreq,
-			unpackSetDefaultAgentConfigParams,
-			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.SetDefaultAgentConfig(ctx, params)
-				return response, err
-			},
-		)
-	} else {
-		response, err = s.h.SetDefaultAgentConfig(ctx, params)
-	}
-	if err != nil {
-		defer recordError("Internal", err)
-		s.cfg.ErrorHandler(ctx, w, r, err)
-		return
-	}
-
-	if err := encodeSetDefaultAgentConfigResponse(response, w, span); err != nil {
+	if err := encodeSetHarnessConfigSecretBindingResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)
@@ -8555,24 +8555,24 @@ func (s *Server) handleStreamSandboxExecResourcesRequest(args [3]string, argsEsc
 	}
 }
 
-// handleUpdateAgentConfigRequest handles update-agent-config operation.
+// handleUpdateHarnessConfigRequest handles update-harness-config operation.
 //
-// Update an agent config.
+// Update a harness config.
 //
-// PATCH /projects/{projectId}/agent-configs/{agentConfigId}
-func (s *Server) handleUpdateAgentConfigRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+// PATCH /projects/{projectId}/harness-configs/{harnessConfigId}
+func (s *Server) handleUpdateHarnessConfigRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("update-agent-config"),
+		otelogen.OperationID("update-harness-config"),
 		semconv.HTTPRequestMethodKey.String("PATCH"),
-		semconv.HTTPRouteKey.String("/projects/{projectId}/agent-configs/{agentConfigId}"),
+		semconv.HTTPRouteKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), UpdateAgentConfigOperation,
+	ctx, span := s.cfg.Tracer.Start(r.Context(), UpdateHarnessConfigOperation,
 		trace.WithAttributes(otelAttrs...),
 		serverSpanKind,
 	)
@@ -8627,11 +8627,11 @@ func (s *Server) handleUpdateAgentConfigRequest(args [2]string, argsEscaped bool
 		}
 		err          error
 		opErrContext = ogenerrors.OperationContext{
-			Name: UpdateAgentConfigOperation,
-			ID:   "update-agent-config",
+			Name: UpdateHarnessConfigOperation,
+			ID:   "update-harness-config",
 		}
 	)
-	params, err := decodeUpdateAgentConfigParams(args, argsEscaped, r)
+	params, err := decodeUpdateHarnessConfigParams(args, argsEscaped, r)
 	if err != nil {
 		err = &ogenerrors.DecodeParamsError{
 			OperationContext: opErrContext,
@@ -8643,7 +8643,7 @@ func (s *Server) handleUpdateAgentConfigRequest(args [2]string, argsEscaped bool
 	}
 
 	var rawBody []byte
-	request, rawBody, close, err := s.decodeUpdateAgentConfigRequest(r)
+	request, rawBody, close, err := s.decodeUpdateHarnessConfigRequest(r)
 	if err != nil {
 		err = &ogenerrors.DecodeRequestError{
 			OperationContext: opErrContext,
@@ -8659,13 +8659,13 @@ func (s *Server) handleUpdateAgentConfigRequest(args [2]string, argsEscaped bool
 		}
 	}()
 
-	var response UpdateAgentConfigRes
+	var response UpdateHarnessConfigRes
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
-			OperationName:    UpdateAgentConfigOperation,
-			OperationSummary: "Update an agent config",
-			OperationID:      "update-agent-config",
+			OperationName:    UpdateHarnessConfigOperation,
+			OperationSummary: "Update a harness config",
+			OperationID:      "update-harness-config",
 			Body:             request,
 			RawBody:          rawBody,
 			Params: middleware.Parameters{
@@ -8674,17 +8674,17 @@ func (s *Server) handleUpdateAgentConfigRequest(args [2]string, argsEscaped bool
 					In:   "path",
 				}: params.ProjectId,
 				{
-					Name: "agentConfigId",
+					Name: "harnessConfigId",
 					In:   "path",
-				}: params.AgentConfigId,
+				}: params.HarnessConfigId,
 			},
 			Raw: r,
 		}
 
 		type (
-			Request  = *UpdateAgentConfigBody
-			Params   = UpdateAgentConfigParams
-			Response = UpdateAgentConfigRes
+			Request  = *UpdateHarnessConfigBody
+			Params   = UpdateHarnessConfigParams
+			Response = UpdateHarnessConfigRes
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -8693,14 +8693,14 @@ func (s *Server) handleUpdateAgentConfigRequest(args [2]string, argsEscaped bool
 		](
 			m,
 			mreq,
-			unpackUpdateAgentConfigParams,
+			unpackUpdateHarnessConfigParams,
 			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.UpdateAgentConfig(ctx, request, params)
+				response, err = s.h.UpdateHarnessConfig(ctx, request, params)
 				return response, err
 			},
 		)
 	} else {
-		response, err = s.h.UpdateAgentConfig(ctx, request, params)
+		response, err = s.h.UpdateHarnessConfig(ctx, request, params)
 	}
 	if err != nil {
 		defer recordError("Internal", err)
@@ -8708,7 +8708,7 @@ func (s *Server) handleUpdateAgentConfigRequest(args [2]string, argsEscaped bool
 		return
 	}
 
-	if err := encodeUpdateAgentConfigResponse(response, w, span); err != nil {
+	if err := encodeUpdateHarnessConfigResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)

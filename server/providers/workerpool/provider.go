@@ -144,7 +144,7 @@ func (p *WorkerPoolProvider) RemoveWorker(ctx context.Context, _ sandbox.WorkerM
 
 // workerBootstrap mints the registration credentials handed to a new worker
 // runtime. The worker provider fills runtime-specific fields such as the
-// control plane URL and agent port.
+// control plane URL and harness port.
 func workerBootstrap(ctx context.Context, manager WorkerManager, project *model.Project, worker *model.Worker) (workeragent.Bootstrap, error) {
 	token, err := createWorkerBootstrap(ctx, manager, project, worker)
 	if err != nil {

@@ -29,13 +29,13 @@ import (
 func newStubRouterForTest() *chi.Mux {
 	stubs := newRouterTestServices()
 	router, _ := NewRouter(services.Services{
-		Projects:     stubs,
-		AgentConfigs: stubs,
-		Sandboxes:    stubs,
-		Providers:    stubs,
-		Workers:      stubs,
-		Jobs:         stubs,
-		Events:       stubs,
+		Projects:       stubs,
+		HarnessConfigs: stubs,
+		Sandboxes:      stubs,
+		Providers:      stubs,
+		Workers:        stubs,
+		Jobs:           stubs,
+		Events:         stubs,
 	})
 	return router
 }
@@ -63,13 +63,13 @@ func newAppTestDB(ctx context.Context, t *testing.T) *database.DB {
 func TestNewOpenAPIRouterServesOpenAPIAndScalarDocs(t *testing.T) {
 	stubs := newRouterTestServices()
 	router, err := NewOpenAPIRouter(services.Services{
-		Projects:     stubs,
-		AgentConfigs: stubs,
-		Sandboxes:    stubs,
-		Providers:    stubs,
-		Workers:      stubs,
-		Jobs:         stubs,
-		Events:       stubs,
+		Projects:       stubs,
+		HarnessConfigs: stubs,
+		Sandboxes:      stubs,
+		Providers:      stubs,
+		Workers:        stubs,
+		Jobs:           stubs,
+		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new OpenAPI router: %v", err)
@@ -126,25 +126,25 @@ func scopedUserRequest(ctx context.Context, method, target string, body io.Reade
 	return req.WithContext(auth.WithPrincipal(req.Context(), principal))
 }
 
-func TestNewRouterCreateSandboxResolvesAgentName(t *testing.T) {
+func TestNewRouterCreateSandboxResolvesHarnessName(t *testing.T) {
 	router := newStubRouterForTest()
 
-	createAgentResp := httptest.NewRecorder()
-	router.ServeHTTP(createAgentResp, jsonRequest(http.MethodPost, "/projects/"+service.DefaultProjectID+"/agent-configs", `{
+	createHarnessResp := httptest.NewRecorder()
+	router.ServeHTTP(createHarnessResp, jsonRequest(http.MethodPost, "/projects/"+service.DefaultProjectID+"/harness-configs", `{
 		"name": "Codex",
 		"runCommand": ["codex", "exec"]
 	}`))
-	if createAgentResp.Code != http.StatusOK {
-		t.Fatalf("POST /agent-configs status = %d, body = %s", createAgentResp.Code, createAgentResp.Body.String())
+	if createHarnessResp.Code != http.StatusOK {
+		t.Fatalf("POST /harness-configs status = %d, body = %s", createHarnessResp.Code, createHarnessResp.Body.String())
 	}
-	var agent model.AgentConfig
-	if err := json.Unmarshal(createAgentResp.Body.Bytes(), &agent); err != nil {
-		t.Fatalf("decode agent config: %v", err)
+	var harness model.HarnessConfig
+	if err := json.Unmarshal(createHarnessResp.Body.Bytes(), &harness); err != nil {
+		t.Fatalf("decode harness config: %v", err)
 	}
 
 	createSandboxResp := httptest.NewRecorder()
 	router.ServeHTTP(createSandboxResp, jsonRequest(http.MethodPost, "/projects/"+service.DefaultProjectID+"/sandboxes", `{
-		"agentName": "Codex",
+		"harnessName": "Codex",
 		"config": {
 			"name": "sandbox",
 			"user": {
@@ -162,8 +162,8 @@ func TestNewRouterCreateSandboxResolvesAgentName(t *testing.T) {
 	if err := json.Unmarshal(createSandboxResp.Body.Bytes(), &sandbox); err != nil {
 		t.Fatalf("decode sandbox: %v", err)
 	}
-	if got := sandbox.Config.AgentConfigId.Or(""); got != agent.ID {
-		t.Fatalf("agentConfigId = %q, want %q", got, agent.ID)
+	if got := sandbox.Config.HarnessConfigId.Or(""); got != harness.ID {
+		t.Fatalf("harnessConfigId = %q, want %q", got, harness.ID)
 	}
 }
 
@@ -228,13 +228,13 @@ func TestSandboxGitRepositoryRouteProxiesToWorker(t *testing.T) {
 	})
 
 	router, err := NewRouter(services.Services{
-		Projects:     stubs,
-		AgentConfigs: stubs,
-		Sandboxes:    stubs,
-		Providers:    stubs,
-		Workers:      stubs,
-		Jobs:         stubs,
-		Events:       stubs,
+		Projects:       stubs,
+		HarnessConfigs: stubs,
+		Sandboxes:      stubs,
+		Providers:      stubs,
+		Workers:        stubs,
+		Jobs:           stubs,
+		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)
@@ -281,13 +281,13 @@ func TestSandboxGitRepositoryRouteUsesWriteScopeForReceivePack(t *testing.T) {
 	stubs.sandboxLease = transport.NewHTTPClientLeaseWithBaseURLAndAuth(upstream.Client(), upstream.URL, "worker-token", nil)
 
 	router, err := NewRouter(services.Services{
-		Projects:     stubs,
-		AgentConfigs: stubs,
-		Sandboxes:    stubs,
-		Providers:    stubs,
-		Workers:      stubs,
-		Jobs:         stubs,
-		Events:       stubs,
+		Projects:       stubs,
+		HarnessConfigs: stubs,
+		Sandboxes:      stubs,
+		Providers:      stubs,
+		Workers:        stubs,
+		Jobs:           stubs,
+		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)
@@ -337,13 +337,13 @@ func TestSandboxHTTPRouteProxiesPortToWorker(t *testing.T) {
 	})
 
 	router, err := NewRouter(services.Services{
-		Projects:     stubs,
-		AgentConfigs: stubs,
-		Sandboxes:    stubs,
-		Providers:    stubs,
-		Workers:      stubs,
-		Jobs:         stubs,
-		Events:       stubs,
+		Projects:       stubs,
+		HarnessConfigs: stubs,
+		Sandboxes:      stubs,
+		Providers:      stubs,
+		Workers:        stubs,
+		Jobs:           stubs,
+		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)
@@ -403,13 +403,13 @@ func TestSandboxExecListRouteProxiesToSandboxAgent(t *testing.T) {
 	}
 
 	router, err := NewRouter(services.Services{
-		Projects:     stubs,
-		AgentConfigs: stubs,
-		Sandboxes:    stubs,
-		Providers:    stubs,
-		Workers:      stubs,
-		Jobs:         stubs,
-		Events:       stubs,
+		Projects:       stubs,
+		HarnessConfigs: stubs,
+		Sandboxes:      stubs,
+		Providers:      stubs,
+		Workers:        stubs,
+		Jobs:           stubs,
+		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)
@@ -446,13 +446,13 @@ func TestSandboxExecProxyErrorUsesJSON(t *testing.T) {
 	projectID := service.DefaultProjectID
 
 	router, err := NewRouter(services.Services{
-		Projects:     stubs,
-		AgentConfigs: stubs,
-		Sandboxes:    stubs,
-		Providers:    stubs,
-		Workers:      stubs,
-		Jobs:         stubs,
-		Events:       stubs,
+		Projects:       stubs,
+		HarnessConfigs: stubs,
+		Sandboxes:      stubs,
+		Providers:      stubs,
+		Workers:        stubs,
+		Jobs:           stubs,
+		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)
@@ -508,13 +508,13 @@ func TestSandboxExecAttachRouteUsesWriteScope(t *testing.T) {
 	}
 
 	router, err := NewRouter(services.Services{
-		Projects:     stubs,
-		AgentConfigs: stubs,
-		Sandboxes:    stubs,
-		Providers:    stubs,
-		Workers:      stubs,
-		Jobs:         stubs,
-		Events:       stubs,
+		Projects:       stubs,
+		HarnessConfigs: stubs,
+		Sandboxes:      stubs,
+		Providers:      stubs,
+		Workers:        stubs,
+		Jobs:           stubs,
+		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)
@@ -531,7 +531,7 @@ func TestSandboxExecAttachRouteUsesWriteScope(t *testing.T) {
 	}
 }
 
-func TestSandboxAgentHookRouteUsesExecReadScope(t *testing.T) {
+func TestSandboxHarnessHookRouteUsesExecReadScope(t *testing.T) {
 	ctx := context.Background()
 	stubs := newRouterTestServices()
 	workerID := "worker-1"
@@ -544,7 +544,7 @@ func TestSandboxAgentHookRouteUsesExecReadScope(t *testing.T) {
 	}
 	projectID := service.DefaultProjectID
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		wantPath := "/api/project/" + projectID + "/worker/worker-1/sandboxes/sandbox-1/agent-hooks"
+		wantPath := "/api/project/" + projectID + "/worker/worker-1/sandboxes/sandbox-1/harness-hooks"
 		if r.URL.Path != wantPath {
 			t.Fatalf("upstream path = %q", r.URL.Path)
 		}
@@ -557,23 +557,23 @@ func TestSandboxAgentHookRouteUsesExecReadScope(t *testing.T) {
 	}
 
 	router, err := NewRouter(services.Services{
-		Projects:     stubs,
-		AgentConfigs: stubs,
-		Sandboxes:    stubs,
-		Providers:    stubs,
-		Workers:      stubs,
-		Jobs:         stubs,
-		Events:       stubs,
+		Projects:       stubs,
+		HarnessConfigs: stubs,
+		Sandboxes:      stubs,
+		Providers:      stubs,
+		Workers:        stubs,
+		Jobs:           stubs,
+		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)
 	}
 	resp := httptest.NewRecorder()
-	req := scopedUserRequest(ctx, http.MethodGet, "/api/projects/"+projectID+"/sandboxes/sandbox-1/agent-hooks", nil, workeragentauth.ScopeExecRead)
+	req := scopedUserRequest(ctx, http.MethodGet, "/api/projects/"+projectID+"/sandboxes/sandbox-1/harness-hooks", nil, workeragentauth.ScopeExecRead)
 	router.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusOK {
-		t.Fatalf("GET agent hooks status = %d, body = %s", resp.Code, resp.Body.String())
+		t.Fatalf("GET harness hooks status = %d, body = %s", resp.Code, resp.Body.String())
 	}
 	if !slices.Equal(stubs.sandboxScopes, []string{workeragentauth.ScopeExecRead}) {
 		t.Fatalf("sandbox HTTP scopes = %#v", stubs.sandboxScopes)
@@ -606,13 +606,13 @@ func TestSandboxExecRoutesUseExecScopes(t *testing.T) {
 	}
 
 	router, err := NewRouter(services.Services{
-		Projects:     stubs,
-		AgentConfigs: stubs,
-		Sandboxes:    stubs,
-		Providers:    stubs,
-		Workers:      stubs,
-		Jobs:         stubs,
-		Events:       stubs,
+		Projects:       stubs,
+		HarnessConfigs: stubs,
+		Sandboxes:      stubs,
+		Providers:      stubs,
+		Workers:        stubs,
+		Jobs:           stubs,
+		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)
@@ -655,13 +655,13 @@ func TestSandboxExecAttachRouteUsesExecWriteScope(t *testing.T) {
 	}
 
 	router, err := NewRouter(services.Services{
-		Projects:     stubs,
-		AgentConfigs: stubs,
-		Sandboxes:    stubs,
-		Providers:    stubs,
-		Workers:      stubs,
-		Jobs:         stubs,
-		Events:       stubs,
+		Projects:       stubs,
+		HarnessConfigs: stubs,
+		Sandboxes:      stubs,
+		Providers:      stubs,
+		Workers:        stubs,
+		Jobs:           stubs,
+		Events:         stubs,
 	})
 	if err != nil {
 		t.Fatalf("new router: %v", err)

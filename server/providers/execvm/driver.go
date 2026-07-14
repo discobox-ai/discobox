@@ -21,7 +21,7 @@
 //	docker-endpoint  One line: how to reach the VM's Docker daemon:
 //	                 unix:///path, tcp://host:port, or ssh://[user@]host[:port]
 //	                 (ssh endpoints use the provider's configured private key).
-//	agent-endpoint   One line: http(s)://host:port of the worker-agent API.
+//	harness-endpoint   One line: http(s)://host:port of the worker-agent API.
 //
 // A non-zero exit is an error and stderr is included in the failure message.
 // The engine owns Docker readiness waiting, so ensure-vm may return before
@@ -50,7 +50,7 @@ const (
 	opInspectVM      = "inspect-vm"
 	opDeleteVM       = "delete-vm"
 	opDockerEndpoint = "docker-endpoint"
-	opAgentEndpoint  = "agent-endpoint"
+	opAgentEndpoint  = "harness-endpoint"
 
 	// notFoundExitCode is the documented inspect-vm exit code for "no VM".
 	notFoundExitCode = 3

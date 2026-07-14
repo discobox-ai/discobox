@@ -60,9 +60,9 @@ func encodeApproveSecretRequestResponse(response ApproveSecretRequestRes, w http
 	}
 }
 
-func encodeAssignSandboxAgentSecretsResponse(response AssignSandboxAgentSecretsRes, w http.ResponseWriter, span trace.Span) error {
+func encodeAssignSandboxHarnessSecretsResponse(response AssignSandboxHarnessSecretsRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *SandboxAgentSecretsResponse:
+	case *SandboxHarnessSecretsResponse:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))
@@ -178,9 +178,9 @@ func encodeAttachSandboxExecResponse(response AttachSandboxExecRes, w http.Respo
 	}
 }
 
-func encodeCreateAgentConfigResponse(response CreateAgentConfigRes, w http.ResponseWriter, span trace.Span) error {
+func encodeCreateHarnessConfigResponse(response CreateHarnessConfigRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *AgentConfig:
+	case *HarnessConfig:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))
@@ -493,9 +493,9 @@ func encodeCreateSecretRequestResponse(response CreateSecretRequestRes, w http.R
 	}
 }
 
-func encodeDeleteAgentConfigResponse(response DeleteAgentConfigRes, w http.ResponseWriter, span trace.Span) error {
+func encodeDeleteHarnessConfigResponse(response DeleteHarnessConfigRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *DeleteAgentConfigNoContent:
+	case *DeleteHarnessConfigNoContent:
 		w.WriteHeader(204)
 		span.SetStatus(codes.Ok, http.StatusText(204))
 
@@ -531,9 +531,9 @@ func encodeDeleteAgentConfigResponse(response DeleteAgentConfigRes, w http.Respo
 	}
 }
 
-func encodeDeleteAgentConfigSecretBindingResponse(response DeleteAgentConfigSecretBindingRes, w http.ResponseWriter, span trace.Span) error {
+func encodeDeleteHarnessConfigSecretBindingResponse(response DeleteHarnessConfigSecretBindingRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *DeleteAgentConfigSecretBindingNoContent:
+	case *DeleteHarnessConfigSecretBindingNoContent:
 		w.WriteHeader(204)
 		span.SetStatus(codes.Ok, http.StatusText(204))
 
@@ -804,9 +804,9 @@ func encodeForceJobResponse(response ForceJobRes, w http.ResponseWriter, span tr
 	}
 }
 
-func encodeGetAgentConfigResponse(response GetAgentConfigRes, w http.ResponseWriter, span trace.Span) error {
+func encodeGetHarnessConfigResponse(response GetHarnessConfigRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *AgentConfig:
+	case *HarnessConfig:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))
@@ -849,9 +849,9 @@ func encodeGetAgentConfigResponse(response GetAgentConfigRes, w http.ResponseWri
 	}
 }
 
-func encodeGetAgentConfigDefinitionResponse(response GetAgentConfigDefinitionRes, w http.ResponseWriter, span trace.Span) error {
+func encodeGetHarnessDefinitionResponse(response GetHarnessDefinitionRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *AgentConfigDefinition:
+	case *HarnessDefinition:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))
@@ -1254,9 +1254,9 @@ func encodeGetSecretRequestResponse(response GetSecretRequestRes, w http.Respons
 	}
 }
 
-func encodeListAgentConfigDefinitionsResponse(response ListAgentConfigDefinitionsRes, w http.ResponseWriter, span trace.Span) error {
+func encodeListHarnessConfigSecretBindingsResponse(response ListHarnessConfigSecretBindingsRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *ListAgentConfigDefinitionsBody:
+	case *ListHarnessConfigSecretBindingsBody:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))
@@ -1299,9 +1299,9 @@ func encodeListAgentConfigDefinitionsResponse(response ListAgentConfigDefinition
 	}
 }
 
-func encodeListAgentConfigSecretBindingsResponse(response ListAgentConfigSecretBindingsRes, w http.ResponseWriter, span trace.Span) error {
+func encodeListHarnessConfigsResponse(response ListHarnessConfigsRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *ListAgentConfigSecretBindingsBody:
+	case *ListHarnessConfigsBody:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))
@@ -1344,9 +1344,9 @@ func encodeListAgentConfigSecretBindingsResponse(response ListAgentConfigSecretB
 	}
 }
 
-func encodeListAgentConfigsResponse(response ListAgentConfigsRes, w http.ResponseWriter, span trace.Span) error {
+func encodeListHarnessDefinitionsResponse(response ListHarnessDefinitionsRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *ListAgentConfigsBody:
+	case *ListHarnessDefinitionsBody:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))
@@ -1389,9 +1389,9 @@ func encodeListAgentConfigsResponse(response ListAgentConfigsRes, w http.Respons
 	}
 }
 
-func encodeListAgentHooksResponse(response ListAgentHooksRes, w http.ResponseWriter, span trace.Span) error {
+func encodeListHarnessHooksResponse(response ListHarnessHooksRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *AgentHookLogsResponse:
+	case *HarnessHookLogsResponse:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))
@@ -2282,9 +2282,9 @@ func encodeRevokeSecretGrantResponse(response RevokeSecretGrantRes, w http.Respo
 	}
 }
 
-func encodeSetAgentConfigSecretBindingResponse(response SetAgentConfigSecretBindingRes, w http.ResponseWriter, span trace.Span) error {
+func encodeSetDefaultHarnessConfigResponse(response SetDefaultHarnessConfigRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *AgentConfigSecretBinding:
+	case *Project:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))
@@ -2327,9 +2327,9 @@ func encodeSetAgentConfigSecretBindingResponse(response SetAgentConfigSecretBind
 	}
 }
 
-func encodeSetDefaultAgentConfigResponse(response SetDefaultAgentConfigRes, w http.ResponseWriter, span trace.Span) error {
+func encodeSetHarnessConfigSecretBindingResponse(response SetHarnessConfigSecretBindingRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *Project:
+	case *HarnessConfigSecretBinding:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))
@@ -2554,9 +2554,9 @@ func encodeStreamSandboxExecResourcesResponse(response StreamSandboxExecResource
 	}
 }
 
-func encodeUpdateAgentConfigResponse(response UpdateAgentConfigRes, w http.ResponseWriter, span trace.Span) error {
+func encodeUpdateHarnessConfigResponse(response UpdateHarnessConfigRes, w http.ResponseWriter, span trace.Span) error {
 	switch response := response.(type) {
-	case *AgentConfig:
+	case *HarnessConfig:
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(200)
 		span.SetStatus(codes.Ok, http.StatusText(200))

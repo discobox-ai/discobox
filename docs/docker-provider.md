@@ -25,10 +25,10 @@ docker
 ## Worker agent image
 
 `worker-agent/Dockerfile` builds a systemd-capable Docker image with the real
-`discobox-worker-agent` binary installed as a systemd service. The agent reads the
+`discobox-worker-agent` binary installed as a systemd service. The harness reads the
 VM boot metadata from environment variables, registers with the control plane,
 marks the worker ready/schedulable, and serves health metadata on the configured
-agent port.
+harness port.
 
 Build it locally with:
 

@@ -74,7 +74,7 @@ func (s *Store) DeleteSecretGrant(ctx context.Context, projectID, grantID string
 // FindLiveGrant returns the most specific unexpired grant for a secret whose
 // scope key matches one of the candidate scopes and whose host constraint
 // permits the requested host. Returns ErrNotFound when none applies. Scope
-// specificity narrows from sandbox to agentConfig to project; an exact host
+// specificity narrows from sandbox to harnessConfig to project; an exact host
 // beats a wildcard grant.
 func (s *Store) FindLiveGrant(ctx context.Context, projectID, secretID, host string, scopes []GrantScope) (*model.SecretGrant, error) {
 	if len(scopes) == 0 {
@@ -95,9 +95,9 @@ func (s *Store) FindLiveGrant(ctx context.Context, projectID, secretID, host str
 	}
 
 	scopeRank := map[string]int{
-		model.SecretGrantScopeSandbox:     0,
-		model.SecretGrantScopeAgentConfig: 1,
-		model.SecretGrantScopeProject:     2,
+		model.SecretGrantScopeSandbox:       0,
+		model.SecretGrantScopeHarnessConfig: 1,
+		model.SecretGrantScopeProject:       2,
 	}
 	allowed := make(map[GrantScope]struct{}, len(scopes))
 	for _, sc := range scopes {

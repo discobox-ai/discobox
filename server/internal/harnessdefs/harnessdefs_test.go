@@ -1,4 +1,4 @@
-package agentdefs
+package harnessdefs
 
 import (
 	"reflect"
@@ -8,7 +8,7 @@ import (
 )
 
 func TestResolveInheritsDefinitionForUnsetFields(t *testing.T) {
-	config := &model.AgentConfig{
+	config := &model.HarnessConfig{
 		ID:           "ac_1",
 		Slug:         "codex",
 		DefinitionID: "codex",
@@ -29,7 +29,7 @@ func TestResolveInheritsDefinitionForUnsetFields(t *testing.T) {
 }
 
 func TestResolveKeepsOverridesAndInheritsRest(t *testing.T) {
-	config := &model.AgentConfig{
+	config := &model.HarnessConfig{
 		ID:              "ac_2",
 		Slug:            "codex",
 		DefinitionID:    "codex",
@@ -46,20 +46,20 @@ func TestResolveKeepsOverridesAndInheritsRest(t *testing.T) {
 }
 
 func TestResolveLeavesCustomConfigUnchanged(t *testing.T) {
-	config := &model.AgentConfig{ID: "ac_3", Slug: "mine", Name: "Mine", RunCommand: []string{"my-agent"}}
+	config := &model.HarnessConfig{ID: "ac_3", Slug: "mine", Name: "Mine", RunCommand: []string{"my-harness"}}
 	resolved := Resolve(config)
-	if !reflect.DeepEqual(resolved.RunCommand, []string{"my-agent"}) || len(resolved.RelaunchCommand) != 0 {
+	if !reflect.DeepEqual(resolved.RunCommand, []string{"my-harness"}) || len(resolved.RelaunchCommand) != 0 {
 		t.Fatalf("custom config changed: %#v", resolved)
 	}
 
-	unknown := &model.AgentConfig{ID: "ac_4", Slug: "x", DefinitionID: "does-not-exist", RunCommand: []string{"x"}}
+	unknown := &model.HarnessConfig{ID: "ac_4", Slug: "x", DefinitionID: "does-not-exist", RunCommand: []string{"x"}}
 	if got := Resolve(unknown); len(got.RelaunchCommand) != 0 {
 		t.Fatalf("unknown definition should not inherit: %#v", got)
 	}
 }
 
 func TestSparsifyDropsFieldsEqualToDefinition(t *testing.T) {
-	config := &model.AgentConfig{
+	config := &model.HarnessConfig{
 		ID:              "ac_1",
 		Slug:            "codex",
 		DefinitionID:    "codex",
@@ -80,7 +80,7 @@ func TestSparsifyDropsFieldsEqualToDefinition(t *testing.T) {
 // A client that reads the resolved config and writes the whole object back must
 // not accidentally pin every inherited field.
 func TestResolveThenSparsifyRoundTrip(t *testing.T) {
-	stored := &model.AgentConfig{ID: "ac_2", Slug: "codex", DefinitionID: "codex", Name: "Codex"}
+	stored := &model.HarnessConfig{ID: "ac_2", Slug: "codex", DefinitionID: "codex", Name: "Codex"}
 
 	// Client fetches the full resolved config...
 	resolved := Resolve(stored)
@@ -100,24 +100,24 @@ func TestResolveThenSparsifyRoundTrip(t *testing.T) {
 }
 
 func TestResolveInheritsAndSparsifyDropsSecrets(t *testing.T) {
-	definitionSecrets := []model.AgentConfigSecret{{Name: "OPENAI_API_KEY", Required: true}}
+	definitionSecrets := []model.HarnessConfigSecret{{Name: "OPENAI_API_KEY", Required: true}}
 
 	// Unset secrets inherit the definition's declared secrets.
-	inherit := &model.AgentConfig{ID: "ac_1", Slug: "codex", DefinitionID: "codex", Name: "Codex"}
+	inherit := &model.HarnessConfig{ID: "ac_1", Slug: "codex", DefinitionID: "codex", Name: "Codex"}
 	if got := Resolve(inherit).Secrets; !reflect.DeepEqual(got, definitionSecrets) {
 		t.Fatalf("secrets = %#v, want inherited %#v", got, definitionSecrets)
 	}
 
 	// An override that equals the definition is dropped back to nil (inherit).
-	equal := &model.AgentConfig{ID: "ac_2", Slug: "codex", DefinitionID: "codex", Name: "Codex", Secrets: definitionSecrets}
+	equal := &model.HarnessConfig{ID: "ac_2", Slug: "codex", DefinitionID: "codex", Name: "Codex", Secrets: definitionSecrets}
 	Sparsify(equal)
 	if equal.Secrets != nil {
 		t.Fatalf("secrets equal to definition were not dropped: %#v", equal.Secrets)
 	}
 
 	// A differing override is kept.
-	override := []model.AgentConfigSecret{{Name: "OPENAI_API_KEY", Required: true}, {Name: "OPENAI_BASE_URL"}}
-	custom := &model.AgentConfig{ID: "ac_3", Slug: "codex", DefinitionID: "codex", Name: "Codex", Secrets: override}
+	override := []model.HarnessConfigSecret{{Name: "OPENAI_API_KEY", Required: true}, {Name: "OPENAI_BASE_URL"}}
+	custom := &model.HarnessConfig{ID: "ac_3", Slug: "codex", DefinitionID: "codex", Name: "Codex", Secrets: override}
 	Sparsify(custom)
 	if !reflect.DeepEqual(custom.Secrets, override) {
 		t.Fatalf("secret override was dropped: %#v", custom.Secrets)
@@ -125,19 +125,19 @@ func TestResolveInheritsAndSparsifyDropsSecrets(t *testing.T) {
 }
 
 func TestSparsifyLeavesCustomConfig(t *testing.T) {
-	config := &model.AgentConfig{ID: "ac_3", Slug: "mine", Name: "Mine", RunCommand: []string{"my-agent"}}
+	config := &model.HarnessConfig{ID: "ac_3", Slug: "mine", Name: "Mine", RunCommand: []string{"my-harness"}}
 	Sparsify(config)
-	if !reflect.DeepEqual(config.RunCommand, []string{"my-agent"}) {
+	if !reflect.DeepEqual(config.RunCommand, []string{"my-harness"}) {
 		t.Fatalf("custom config run command dropped: %#v", config)
 	}
 }
 
 func TestSlugify(t *testing.T) {
 	cases := map[string]string{
-		"Claude Code":  "claude-code",
-		"  My Agent! ": "my-agent",
-		"codex":        "codex",
-		"a__b--c":      "a-b-c",
+		"Claude Code":    "claude-code",
+		"  My Harness! ": "my-harness",
+		"codex":          "codex",
+		"a__b--c":        "a-b-c",
 	}
 	for in, want := range cases {
 		if got := Slugify(in); got != want {

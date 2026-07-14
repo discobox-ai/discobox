@@ -5,16 +5,16 @@ type ApproveSecretRequestRes interface {
 	approveSecretRequestRes()
 }
 
-type AssignSandboxAgentSecretsRes interface {
-	assignSandboxAgentSecretsRes()
+type AssignSandboxHarnessSecretsRes interface {
+	assignSandboxHarnessSecretsRes()
 }
 
 type AttachSandboxExecRes interface {
 	attachSandboxExecRes()
 }
 
-type CreateAgentConfigRes interface {
-	createAgentConfigRes()
+type CreateHarnessConfigRes interface {
+	createHarnessConfigRes()
 }
 
 type CreateSandboxExecRes interface {
@@ -41,12 +41,12 @@ type CreateSecretRes interface {
 	createSecretRes()
 }
 
-type DeleteAgentConfigRes interface {
-	deleteAgentConfigRes()
+type DeleteHarnessConfigRes interface {
+	deleteHarnessConfigRes()
 }
 
-type DeleteAgentConfigSecretBindingRes interface {
-	deleteAgentConfigSecretBindingRes()
+type DeleteHarnessConfigSecretBindingRes interface {
+	deleteHarnessConfigSecretBindingRes()
 }
 
 type DeleteSandboxExecRes interface {
@@ -73,12 +73,12 @@ type ForceJobRes interface {
 	forceJobRes()
 }
 
-type GetAgentConfigDefinitionRes interface {
-	getAgentConfigDefinitionRes()
+type GetHarnessConfigRes interface {
+	getHarnessConfigRes()
 }
 
-type GetAgentConfigRes interface {
-	getAgentConfigRes()
+type GetHarnessDefinitionRes interface {
+	getHarnessDefinitionRes()
 }
 
 type GetJobRes interface {
@@ -113,20 +113,20 @@ type GetSecretRes interface {
 	getSecretRes()
 }
 
-type ListAgentConfigDefinitionsRes interface {
-	listAgentConfigDefinitionsRes()
+type ListHarnessConfigSecretBindingsRes interface {
+	listHarnessConfigSecretBindingsRes()
 }
 
-type ListAgentConfigSecretBindingsRes interface {
-	listAgentConfigSecretBindingsRes()
+type ListHarnessConfigsRes interface {
+	listHarnessConfigsRes()
 }
 
-type ListAgentConfigsRes interface {
-	listAgentConfigsRes()
+type ListHarnessDefinitionsRes interface {
+	listHarnessDefinitionsRes()
 }
 
-type ListAgentHooksRes interface {
-	listAgentHooksRes()
+type ListHarnessHooksRes interface {
+	listHarnessHooksRes()
 }
 
 type ListJobsRes interface {
@@ -205,12 +205,12 @@ type RevokeSecretGrantRes interface {
 	revokeSecretGrantRes()
 }
 
-type SetAgentConfigSecretBindingRes interface {
-	setAgentConfigSecretBindingRes()
+type SetDefaultHarnessConfigRes interface {
+	setDefaultHarnessConfigRes()
 }
 
-type SetDefaultAgentConfigRes interface {
-	setDefaultAgentConfigRes()
+type SetHarnessConfigSecretBindingRes interface {
+	setHarnessConfigSecretBindingRes()
 }
 
 type StartSandboxExecRes interface {
@@ -229,8 +229,8 @@ type StreamSandboxExecResourcesRes interface {
 	streamSandboxExecResourcesRes()
 }
 
-type UpdateAgentConfigRes interface {
-	updateAgentConfigRes()
+type UpdateHarnessConfigRes interface {
+	updateHarnessConfigRes()
 }
 
 type UpdateSandboxProviderInstanceRes interface {

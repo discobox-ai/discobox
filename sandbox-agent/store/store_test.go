@@ -12,25 +12,25 @@ import (
 
 func TestRecordAndListEvents(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, filepath.Join(t.TempDir(), "agent.db"))
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "harness.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	if err := st.RecordExecEvent(ctx, "ex_1", "exec.created", "created", map[string]any{"agentId": "codex"}); err != nil {
+	if err := st.RecordExecEvent(ctx, "ex_1", "exec.created", "created", map[string]any{"harnessId": "codex"}); err != nil {
 		t.Fatalf("record event: %v", err)
 	}
 	events, err := st.ListEvents(ctx, "ex_1", 10)
 	if err != nil {
 		t.Fatalf("list events: %v", err)
 	}
-	if len(events) != 1 || events[0].Type != "exec.created" || events[0].Details["agentId"] != "codex" {
+	if len(events) != 1 || events[0].Type != "exec.created" || events[0].Details["harnessId"] != "codex" {
 		t.Fatalf("events = %#v", events)
 	}
 }
 
 func TestPrimaryTerminalLaunchedMarker(t *testing.T) {
 	ctx := context.Background()
-	dbPath := filepath.Join(t.TempDir(), "agent.db")
+	dbPath := filepath.Join(t.TempDir(), "harness.db")
 	st, err := Open(ctx, dbPath)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -64,13 +64,13 @@ func TestPrimaryTerminalLaunchedMarker(t *testing.T) {
 	}
 }
 
-func TestRecordAndListAgentHooks(t *testing.T) {
+func TestRecordAndListHarnessHooks(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, filepath.Join(t.TempDir(), "agent.db"))
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "harness.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	_, err = st.RecordAgentHook(ctx, AgentHookRecord{
+	_, err = st.RecordHarnessHook(ctx, HarnessHookRecord{
 		TerminalID: "agt_1",
 		Provider:   "codex",
 		Event:      "PreToolUse",
@@ -79,7 +79,7 @@ func TestRecordAndListAgentHooks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("record hook: %v", err)
 	}
-	hooks, err := st.ListAgentHooks(ctx, "agt_1", 10)
+	hooks, err := st.ListHarnessHooks(ctx, "agt_1", 10)
 	if err != nil {
 		t.Fatalf("list hooks: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestRecordAndListAgentHooks(t *testing.T) {
 
 func TestExecRecordIsDurableAndImmutable(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, filepath.Join(t.TempDir(), "agent.db"))
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "harness.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -104,7 +104,7 @@ func TestExecRecordIsDurableAndImmutable(t *testing.T) {
 		Workdir:   "/workspace",
 		TTY:       true,
 		CreatedAt: created,
-		Metadata:  map[string]string{"agentId": "codex", "primary": "true"},
+		Metadata:  map[string]string{"harnessId": "codex", "primary": "true"},
 	}
 	if err := st.SaveExecRecord(ctx, rec); err != nil {
 		t.Fatalf("save record: %v", err)
@@ -116,7 +116,7 @@ func TestExecRecordIsDurableAndImmutable(t *testing.T) {
 		t.Fatalf("observe: %v", err)
 	}
 	// A second save with different metadata must be ignored (immutable).
-	if err := st.SaveExecRecord(ctx, execs.Exec{ID: "ex_1", Command: []string{"other"}, Metadata: map[string]string{"agentId": "changed"}}); err != nil {
+	if err := st.SaveExecRecord(ctx, execs.Exec{ID: "ex_1", Command: []string{"other"}, Metadata: map[string]string{"harnessId": "changed"}}); err != nil {
 		t.Fatalf("second save: %v", err)
 	}
 	records, err := st.LoadExecRecords(ctx)
@@ -127,7 +127,7 @@ func TestExecRecordIsDurableAndImmutable(t *testing.T) {
 		t.Fatalf("records = %d, want 1", len(records))
 	}
 	got := records[0]
-	if got.Metadata["agentId"] != "codex" || got.Metadata["primary"] != "true" {
+	if got.Metadata["harnessId"] != "codex" || got.Metadata["primary"] != "true" {
 		t.Fatalf("metadata not durable/immutable: %v", got.Metadata)
 	}
 	if len(got.Command) != 2 || got.Command[0] != "codex" {
@@ -141,7 +141,7 @@ func TestExecRecordIsDurableAndImmutable(t *testing.T) {
 
 func TestObserveExecRecordsTransitions(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, filepath.Join(t.TempDir(), "agent.db"))
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "harness.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -175,7 +175,7 @@ func TestObserveExecRecordsTransitions(t *testing.T) {
 
 func TestResourceSamplesRespectRetention(t *testing.T) {
 	ctx := context.Background()
-	st, err := Open(ctx, filepath.Join(t.TempDir(), "agent.db"))
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "harness.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

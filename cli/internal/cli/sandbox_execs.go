@@ -426,7 +426,7 @@ type sandboxExecRecord struct {
 	StartedAt *time.Time                     `json:"startedAt"`
 	ExitedAt  *time.Time                     `json:"exitedAt"`
 	Metadata  map[string]string              `json:"metadata"`
-	AgentID   *string                        `json:"agentId"`
+	HarnessID *string                        `json:"harnessId"`
 	Primary   *bool                          `json:"primary"`
 }
 
@@ -469,7 +469,7 @@ func (a *App) listSandboxExecs(ctx context.Context, projectID, sandboxID string)
 func (a *App) startSandboxExec(ctx context.Context, projectID, sandboxID, execID string) (apimodel.SandboxExec, error) {
 	var response sandboxExecRecord
 	if err := a.execJSON(ctx, http.MethodPost, projectID, sandboxID, "/"+url.PathEscape(execID)+"/start", nil, &response); err != nil {
-		// A started exec (notably an agent terminal) may return an empty or
+		// A started exec (notably a harness terminal) may return an empty or
 		// truncated body; fall back to fetching its current state.
 		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 			exec, getErr := a.getSandboxExec(ctx, projectID, sandboxID, execID)
@@ -562,8 +562,8 @@ func (r sandboxExecRecord) model() apimodel.SandboxExec {
 	if r.Metadata != nil {
 		exec.SetMetadata(apiclientgen.NewOptSandboxExecMetadata(apiclientgen.SandboxExecMetadata(r.Metadata)))
 	}
-	if r.AgentID != nil {
-		exec.SetAgentId(apiclientgen.NewOptString(*r.AgentID))
+	if r.HarnessID != nil {
+		exec.SetHarnessId(apiclientgen.NewOptString(*r.HarnessID))
 	}
 	if r.Primary != nil {
 		exec.SetPrimary(apiclientgen.NewOptBool(*r.Primary))

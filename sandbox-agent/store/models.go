@@ -24,16 +24,16 @@ type ResourceSnapshot struct {
 
 func (ResourceSnapshot) TableName() string { return "resource_snapshots" }
 
-type AgentHookLog struct {
+type HarnessHookLog struct {
 	ID         string    `gorm:"primaryKey" json:"id"`
-	TerminalID string    `gorm:"index:idx_agent_hook_logs_terminal_created,priority:1" json:"terminalId,omitempty"`
+	TerminalID string    `gorm:"index:idx_harness_hook_logs_terminal_created,priority:1" json:"terminalId,omitempty"`
 	Provider   string    `gorm:"index" json:"provider"`
 	Event      string    `gorm:"index" json:"event"`
 	Payload    []byte    `gorm:"type:json" json:"payload"`
-	CreatedAt  time.Time `gorm:"index:idx_agent_hook_logs_terminal_created,priority:2" json:"createdAt"`
+	CreatedAt  time.Time `gorm:"index:idx_harness_hook_logs_terminal_created,priority:2" json:"createdAt"`
 }
 
-func (AgentHookLog) TableName() string { return "agent_hook_logs" }
+func (HarnessHookLog) TableName() string { return "harness_hook_logs" }
 
 type ExecState struct {
 	ExecID     string     `gorm:"primaryKey" json:"execId"`
@@ -54,11 +54,11 @@ func (ExecState) TableName() string { return "exec_states" }
 // ExecRecord is the durable, immutable identity/metadata of an exec, written
 // once at create. systemd + the shim remain the source of truth for live state
 // (ExecState); this record survives reboots (tmpfs runtime files and transient
-// units do not) so metadata like agentId/primary and the command are never lost
+// units do not) so metadata like harnessId/primary and the command are never lost
 // — including when a shim runtime write drops the metadata field.
 type ExecRecord struct {
 	ExecID    string    `gorm:"primaryKey" json:"execId"`
-	AgentID   string    `gorm:"index" json:"agentId,omitempty"`
+	HarnessID string    `gorm:"index" json:"harnessId,omitempty"`
 	Primary   bool      `json:"primary,omitempty"`
 	Command   []byte    `gorm:"type:json" json:"-"`
 	Workdir   string    `json:"workdir,omitempty"`

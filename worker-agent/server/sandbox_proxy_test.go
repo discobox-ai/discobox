@@ -58,12 +58,12 @@ func TestSandboxAgentProxyRewritesToSandboxAgentAndForwardsDownstreamToken(t *te
 	}
 }
 
-func TestSandboxAgentHookProxyRequiresExecReadScope(t *testing.T) {
+func TestSandboxHarnessHookProxyRequiresExecReadScope(t *testing.T) {
 	projectID := "project-1"
 	workerID := "worker-1"
 	sandboxID := "sandbox-1"
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/projects/project-1/sandboxes/sandbox-1/agent-hooks" {
+		if r.URL.Path != "/api/projects/project-1/sandboxes/sandbox-1/harness-hooks" {
 			t.Fatalf("upstream path = %q", r.URL.Path)
 		}
 		_, _ = w.Write([]byte(`{"hooks":[]}`))
@@ -84,7 +84,7 @@ func TestSandboxAgentHookProxyRequiresExecReadScope(t *testing.T) {
 		t.Fatalf("new router: %v", err)
 	}
 
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/project/project-1/worker/worker-1/sandboxes/sandbox-1/agent-hooks", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/project/project-1/worker/worker-1/sandboxes/sandbox-1/harness-hooks", nil)
 	req.Header.Set("Authorization", "Bearer "+sign(projectID, workerID, sandboxID, ScopeExecRead))
 	req.Header.Set(sandboxAgentAuthorizationHeader, "Bearer sandbox-token")
 	resp := httptest.NewRecorder()

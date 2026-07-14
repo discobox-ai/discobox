@@ -19,14 +19,14 @@ func satisfiedSet(names ...string) func(string) bool {
 }
 
 func TestMissingRequiredSecrets(t *testing.T) {
-	auth := []model.AgentConfigSecret{
+	auth := []model.HarnessConfigSecret{
 		{Name: "ANTHROPIC_API_KEY", Required: true, OneOfGroup: "auth"},
 		{Name: "CLAUDE_CODE_OAUTH_TOKEN", Required: true, OneOfGroup: "auth"},
 	}
 
 	tests := []struct {
 		name      string
-		decls     []model.AgentConfigSecret
+		decls     []model.HarnessConfigSecret
 		satisfied func(string) bool
 		want      []string
 	}{
@@ -50,7 +50,7 @@ func TestMissingRequiredSecrets(t *testing.T) {
 		},
 		{
 			name: "ungrouped required still enforced independently",
-			decls: []model.AgentConfigSecret{
+			decls: []model.HarnessConfigSecret{
 				{Name: "GITHUB_TOKEN", Required: true},
 				{Name: "NPM_TOKEN", Required: true},
 			},
@@ -59,7 +59,7 @@ func TestMissingRequiredSecrets(t *testing.T) {
 		},
 		{
 			name: "optional secrets never reported",
-			decls: []model.AgentConfigSecret{
+			decls: []model.HarnessConfigSecret{
 				{Name: "OPTIONAL_KEY", Required: false},
 				{Name: "OPTIONAL_GROUPED", Required: false, OneOfGroup: "opt"},
 			},
@@ -68,7 +68,7 @@ func TestMissingRequiredSecrets(t *testing.T) {
 		},
 		{
 			name: "mixed grouped and ungrouped, both missing, deterministic order",
-			decls: append([]model.AgentConfigSecret{
+			decls: append([]model.HarnessConfigSecret{
 				{Name: "GITHUB_TOKEN", Required: true},
 			}, auth...),
 			satisfied: satisfiedSet(),

@@ -1,4 +1,4 @@
-package agentconfigs_test
+package harnessconfigs_test
 
 import (
 	"context"
@@ -8,11 +8,11 @@ import (
 
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/resources/agentconfigs"
+	"github.com/obot-platform/discobox/server/internal/resources/harnessconfigs"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
-func newBindingService(t *testing.T) (*agentconfigs.Service, *store.Store, string) {
+func newBindingService(t *testing.T) (*harnessconfigs.Service, *store.Store, string) {
 	t.Helper()
 	ctx := context.Background()
 	db, err := database.New(database.Config{DSN: ":memory:"})
@@ -29,11 +29,11 @@ func newBindingService(t *testing.T) (*agentconfigs.Service, *store.Store, strin
 		t.Fatalf("create project: %v", err)
 	}
 	st := store.New(db.Write, db.Read)
-	config := &model.AgentConfig{ProjectID: "project-1", Slug: "codex", Name: "Codex", RunCommand: []string{"codex"}}
-	if err := st.CreateAgentConfig(ctx, config); err != nil {
-		t.Fatalf("create agent config: %v", err)
+	config := &model.HarnessConfig{ProjectID: "project-1", Slug: "codex", Name: "Codex", RunCommand: []string{"codex"}}
+	if err := st.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create harness config: %v", err)
 	}
-	return agentconfigs.NewService(st), st, config.ID
+	return harnessconfigs.NewService(st), st, config.ID
 }
 
 func badRequest(t *testing.T, err error) {
@@ -44,7 +44,7 @@ func badRequest(t *testing.T, err error) {
 	}
 }
 
-func TestSetAgentConfigSecretBindingValidates(t *testing.T) {
+func TestSetHarnessConfigSecretBindingValidates(t *testing.T) {
 	ctx := context.Background()
 	svc, st, configID := newBindingService(t)
 	sec := &model.Secret{ProjectID: "project-1", Name: "openai", Type: model.SecretTypeBearer, EncryptedValue: []byte(`{"token":"t"}`)}
@@ -52,17 +52,17 @@ func TestSetAgentConfigSecretBindingValidates(t *testing.T) {
 		t.Fatalf("create secret: %v", err)
 	}
 
-	if _, err := svc.SetAgentConfigSecretBinding(ctx, "project-1", configID, "1BAD", sec.ID); err == nil {
+	if _, err := svc.SetHarnessConfigSecretBinding(ctx, "project-1", configID, "1BAD", sec.ID); err == nil {
 		t.Fatal("expected invalid env name to fail")
 	} else {
 		badRequest(t, err)
 	}
 
-	if _, err := svc.SetAgentConfigSecretBinding(ctx, "project-1", configID, "OPENAI_API_KEY", "does-not-exist"); err == nil {
+	if _, err := svc.SetHarnessConfigSecretBinding(ctx, "project-1", configID, "OPENAI_API_KEY", "does-not-exist"); err == nil {
 		t.Fatal("expected missing secret to fail")
 	}
 
-	binding, err := svc.SetAgentConfigSecretBinding(ctx, "project-1", configID, "OPENAI_API_KEY", sec.ID)
+	binding, err := svc.SetHarnessConfigSecretBinding(ctx, "project-1", configID, "OPENAI_API_KEY", sec.ID)
 	if err != nil {
 		t.Fatalf("bind: %v", err)
 	}

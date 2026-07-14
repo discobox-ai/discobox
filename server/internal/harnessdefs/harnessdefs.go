@@ -1,10 +1,10 @@
-// Package agentdefs owns the built-in agent-config definitions and the
-// resolution between a sparse stored AgentConfig and the definition it extends.
+// Package harnessdefs owns the built-in harness-config definitions and the
+// resolution between a sparse stored HarnessConfig and the definition it extends.
 //
 // It deliberately depends only on the harness registry and the model package so
-// that both the agentconfigs resource service and the higher-level services
+// that both the harnessconfigs resource service and the higher-level services
 // package can resolve configs without an import cycle.
-package agentdefs
+package harnessdefs
 
 import (
 	"fmt"
@@ -19,13 +19,13 @@ import (
 	"github.com/obot-platform/discobox/server/internal/model"
 )
 
-// Definitions returns the built-in agent-config templates. Each is owned by its
+// Definitions returns the built-in harness-config templates. Each is owned by its
 // harness package under github.com/obot-platform/discobox/harness and surfaced
-// through the harness registry so all agent-specific defaults live with the
+// through the harness registry so all harness-specific defaults live with the
 // harness they describe.
-func Definitions() []model.AgentConfigDefinition {
+func Definitions() []model.HarnessDefinition {
 	harnessDefinitions := registry.Definitions()
-	out := make([]model.AgentConfigDefinition, 0, len(harnessDefinitions))
+	out := make([]model.HarnessDefinition, 0, len(harnessDefinitions))
 	for _, definition := range harnessDefinitions {
 		out = append(out, fromHarness(definition))
 	}
@@ -33,7 +33,7 @@ func Definitions() []model.AgentConfigDefinition {
 }
 
 // DefinitionByID returns the built-in definition with the given ID.
-func DefinitionByID(definitionID string) (*model.AgentConfigDefinition, bool) {
+func DefinitionByID(definitionID string) (*model.HarnessDefinition, bool) {
 	for _, definition := range registry.Definitions() {
 		if definition.ID == definitionID {
 			converted := fromHarness(definition)
@@ -43,12 +43,12 @@ func DefinitionByID(definitionID string) (*model.AgentConfigDefinition, bool) {
 	return nil, false
 }
 
-// Resolve returns a copy of the agent config with unset (nil) command and file
+// Resolve returns a copy of the harness config with unset (nil) command and file
 // fields filled in from the built-in definition it extends (DefinitionID). This
 // is the runtime view: a definition upgrade propagates to every field the user
 // did not explicitly override. Configs without a known definition are returned
 // unchanged.
-func Resolve(config *model.AgentConfig) *model.AgentConfig {
+func Resolve(config *model.HarnessConfig) *model.HarnessConfig {
 	if config == nil {
 		return nil
 	}
@@ -88,7 +88,7 @@ func Resolve(config *model.AgentConfig) *model.AgentConfig {
 // config and writes the whole object back does not accidentally pin every field
 // and freeze it against future definition upgrades. It is a no-op for custom
 // configs (no definition to compare against). Name is left concrete.
-func Sparsify(config *model.AgentConfig) {
+func Sparsify(config *model.HarnessConfig) {
 	if config == nil || strings.TrimSpace(config.DefinitionID) == "" {
 		return
 	}
@@ -115,7 +115,7 @@ func Sparsify(config *model.AgentConfig) {
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
-// ValidateSlug reports whether slug is a valid URL-safe agent-config slug.
+// ValidateSlug reports whether slug is a valid URL-safe harness-config slug.
 func ValidateSlug(slug string) error {
 	if !slugPattern.MatchString(slug) {
 		return fmt.Errorf("slug %q must be URL-safe: lowercase letters, digits, and hyphens, starting with a letter or digit", slug)
@@ -142,8 +142,8 @@ func Slugify(name string) string {
 	return strings.Trim(b.String(), "-")
 }
 
-func fromHarness(definition harness.Definition) model.AgentConfigDefinition {
-	return model.AgentConfigDefinition{
+func fromHarness(definition harness.Definition) model.HarnessDefinition {
+	return model.HarnessDefinition{
 		ID:              definition.ID,
 		Name:            definition.Name,
 		Description:     definition.Description,
@@ -155,13 +155,13 @@ func fromHarness(definition harness.Definition) model.AgentConfigDefinition {
 	}
 }
 
-func secretsFromHarness(secrets []harness.Secret) []model.AgentConfigSecret {
+func secretsFromHarness(secrets []harness.Secret) []model.HarnessConfigSecret {
 	if len(secrets) == 0 {
 		return nil
 	}
-	out := make([]model.AgentConfigSecret, 0, len(secrets))
+	out := make([]model.HarnessConfigSecret, 0, len(secrets))
 	for _, secret := range secrets {
-		out = append(out, model.AgentConfigSecret{
+		out = append(out, model.HarnessConfigSecret{
 			Name:       secret.Name,
 			Required:   secret.Required,
 			OneOfGroup: secret.OneOfGroup,
@@ -170,13 +170,13 @@ func secretsFromHarness(secrets []harness.Secret) []model.AgentConfigSecret {
 	return out
 }
 
-func filesFromHarness(files []harness.File) []model.AgentConfigFile {
+func filesFromHarness(files []harness.File) []model.HarnessConfigFile {
 	if len(files) == 0 {
 		return nil
 	}
-	out := make([]model.AgentConfigFile, 0, len(files))
+	out := make([]model.HarnessConfigFile, 0, len(files))
 	for _, file := range files {
-		out = append(out, model.AgentConfigFile{
+		out = append(out, model.HarnessConfigFile{
 			Path:       file.Path,
 			Content:    file.Content,
 			CreateOnly: file.CreateOnly,

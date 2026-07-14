@@ -121,7 +121,7 @@ func (s *framedAttachSession) writeInitialResize() error {
 
 func (s *framedAttachSession) copyOutput() error {
 	for {
-		frame, err := readAgentTerminalFrame(s.conn)
+		frame, err := readTerminalFrame(s.conn)
 		if err != nil {
 			return err
 		}
@@ -210,7 +210,7 @@ func (s *framedAttachSession) writeResize(cols, rows int) error {
 func (s *framedAttachSession) writeFrame(typ byte, payload []byte) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return writeAgentTerminalFrame(s.conn, typ, payload)
+	return writeTerminalFrame(s.conn, typ, payload)
 }
 
 func terminalSize(file *os.File) (cols, rows int, ok bool) {
@@ -221,12 +221,12 @@ func terminalSize(file *os.File) (cols, rows int, ok bool) {
 	return cols, rows, err == nil && cols > 0 && rows > 0
 }
 
-type agentTerminalFrame struct {
+type terminalFrame struct {
 	typ     byte
 	payload []byte
 }
 
-func writeAgentTerminalFrame(w io.Writer, typ byte, payload []byte) error {
+func writeTerminalFrame(w io.Writer, typ byte, payload []byte) error {
 	if len(payload) > attachFrameMaxPayload {
 		return fmt.Errorf("frame payload too large: %d", len(payload))
 	}
@@ -244,22 +244,22 @@ func writeAgentTerminalFrame(w io.Writer, typ byte, payload []byte) error {
 	return err
 }
 
-func readAgentTerminalFrame(r io.Reader) (agentTerminalFrame, error) {
+func readTerminalFrame(r io.Reader) (terminalFrame, error) {
 	var header [5]byte
 	if _, err := io.ReadFull(r, header[:]); err != nil {
-		return agentTerminalFrame{}, err
+		return terminalFrame{}, err
 	}
 	size := binary.BigEndian.Uint32(header[1:])
 	if size > attachFrameMaxPayload {
-		return agentTerminalFrame{}, fmt.Errorf("frame payload too large: %d", size)
+		return terminalFrame{}, fmt.Errorf("frame payload too large: %d", size)
 	}
 	payload := make([]byte, int(size))
 	if size > 0 {
 		if _, err := io.ReadFull(r, payload); err != nil {
-			return agentTerminalFrame{}, err
+			return terminalFrame{}, err
 		}
 	}
-	return agentTerminalFrame{typ: header[0], payload: payload}, nil
+	return terminalFrame{typ: header[0], payload: payload}, nil
 }
 
 func printAttachErrorFrame(stderr io.Writer) func([]byte) error {

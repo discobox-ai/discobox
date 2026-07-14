@@ -48,7 +48,7 @@ func TestLoadAppliesEnvironmentOverrides(t *testing.T) {
 	}
 }
 
-func TestLoadUsesAgentConfigsAsLaunchableAgents(t *testing.T) {
+func TestLoadUsesHarnessConfigsAsLaunchableAgents(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sandbox.json")
 	if err := os.WriteFile(path, []byte(`{
 		"apiVersion": "discobox.dev/sandbox/v1",
@@ -72,12 +72,12 @@ func TestLoadUsesAgentConfigsAsLaunchableAgents(t *testing.T) {
 				"controlPlane": "`+base64.StdEncoding.EncodeToString(make([]byte, 32))+`"
 			}
 		},
-		"resolvedAgentConfig": {
+		"resolvedHarnessConfig": {
 			"id": "claude",
 			"name": "Claude",
 			"runCommand": ["claude"]
 		},
-		"agentConfigs": [
+		"harnessConfigs": [
 			{
 				"id": "codex",
 				"name": "Codex",
@@ -100,17 +100,17 @@ func TestLoadUsesAgentConfigsAsLaunchableAgents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(cfg.Agents) != 2 {
-		t.Fatalf("agents = %#v, want 2", cfg.Agents)
+	if len(cfg.Harnesses) != 2 {
+		t.Fatalf("harnesses = %#v, want 2", cfg.Harnesses)
 	}
-	if cfg.Agents[0].ID != "codex" || !cfg.Agents[0].IsDefault || len(cfg.Agents[0].InstallCommand) == 0 {
-		t.Fatalf("first agent = %#v, want default codex with install command", cfg.Agents[0])
+	if cfg.Harnesses[0].ID != "codex" || !cfg.Harnesses[0].IsDefault || len(cfg.Harnesses[0].InstallCommand) == 0 {
+		t.Fatalf("first harness = %#v, want default codex with install command", cfg.Harnesses[0])
 	}
-	if got := cfg.Agents[0].RelaunchCommand; len(got) != 3 || got[0] != "codex" || got[1] != "resume" || got[2] != "--last" {
+	if got := cfg.Harnesses[0].RelaunchCommand; len(got) != 3 || got[0] != "codex" || got[1] != "resume" || got[2] != "--last" {
 		t.Fatalf("codex relaunch command = %#v, want [codex, resume, --last]", got)
 	}
-	if cfg.Agents[1].ID != "claude" {
-		t.Fatalf("second agent = %#v, want claude", cfg.Agents[1])
+	if cfg.Harnesses[1].ID != "claude" {
+		t.Fatalf("second harness = %#v, want claude", cfg.Harnesses[1])
 	}
 	if cfg.Env["BASE"] != "sandbox" {
 		t.Fatalf("env = %#v, want sandbox config env", cfg.Env)

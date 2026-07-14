@@ -59,12 +59,12 @@ type Invoker interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources
 	GetSandboxExecResources(ctx context.Context, params GetSandboxExecResourcesParams) (*ResourceSnapshot, error)
-	// ListAgentHooks invokes list-agent-hooks operation.
+	// ListHarnessHooks invokes list-harness-hooks operation.
 	//
-	// List recent sandbox agent hook payload logs.
+	// List recent sandbox harness hook payload logs.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks
-	ListAgentHooks(ctx context.Context, params ListAgentHooksParams) (*AgentHookLogsResponse, error)
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks
+	ListHarnessHooks(ctx context.Context, params ListHarnessHooksParams) (*HarnessHookLogsResponse, error)
 	// ListSandboxExecEvents invokes list-sandbox-exec-events operation.
 	//
 	// List recent audit events for a sandbox exec.
@@ -781,21 +781,21 @@ func (c *Client) sendGetSandboxExecResources(ctx context.Context, params GetSand
 	return result, nil
 }
 
-// ListAgentHooks invokes list-agent-hooks operation.
+// ListHarnessHooks invokes list-harness-hooks operation.
 //
-// List recent sandbox agent hook payload logs.
+// List recent sandbox harness hook payload logs.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks
-func (c *Client) ListAgentHooks(ctx context.Context, params ListAgentHooksParams) (*AgentHookLogsResponse, error) {
-	res, err := c.sendListAgentHooks(ctx, params)
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks
+func (c *Client) ListHarnessHooks(ctx context.Context, params ListHarnessHooksParams) (*HarnessHookLogsResponse, error) {
+	res, err := c.sendListHarnessHooks(ctx, params)
 	return res, err
 }
 
-func (c *Client) sendListAgentHooks(ctx context.Context, params ListAgentHooksParams) (res *AgentHookLogsResponse, err error) {
+func (c *Client) sendListHarnessHooks(ctx context.Context, params ListHarnessHooksParams) (res *HarnessHookLogsResponse, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("list-agent-hooks"),
+		otelogen.OperationID("list-harness-hooks"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -811,7 +811,7 @@ func (c *Client) sendListAgentHooks(ctx context.Context, params ListAgentHooksPa
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, ListAgentHooksOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, ListHarnessHooksOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -867,7 +867,7 @@ func (c *Client) sendListAgentHooks(ctx context.Context, params ListAgentHooksPa
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/agent-hooks"
+	pathParts[4] = "/harness-hooks"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeQueryParams"
@@ -923,7 +923,7 @@ func (c *Client) sendListAgentHooks(ctx context.Context, params ListAgentHooksPa
 	defer body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeListAgentHooksResponse(resp)
+	result, err := decodeListHarnessHooksResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

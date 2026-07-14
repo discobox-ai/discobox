@@ -11,573 +11,6 @@ import (
 	"github.com/go-faster/jx"
 )
 
-// Ref: #/components/schemas/AgentConfig
-type AgentConfig struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Creation timestamp.
-	CreatedAt time.Time `json:"createdAt"`
-	// Built-in agent definition this config extends. Unset fields are inherited from the definition at
-	// runtime, so definition upgrades propagate unless overridden. Empty for fully custom configs.
-	DefinitionId OptString `json:"definitionId"`
-	// Override for files to write into the agent's home directory when the agent is installed. Unset
-	// inherits from the definition.
-	Files OptNilAgentConfigFileArray `json:"files"`
-	// Stable agent config ID.
-	ID string `json:"id"`
-	// Override for the argv used to install the agent. Unset inherits from the definition. Not run
-	// through a shell; use ["sh", "-c", "..."] for shell semantics.
-	InstallCommand OptNilStringArray `json:"installCommand"`
-	// Agent config name.
-	Name string `json:"name"`
-	// Project ID.
-	ProjectId string `json:"projectId"`
-	// Override for the argv used to resume the previous agent session on subsequent sandbox starts.
-	// Replaces runCommand for non-first launches. Unset inherits from the definition. Not run through a
-	// shell; use ["sh", "-c", "..."] for shell semantics.
-	RelaunchCommand OptNilStringArray `json:"relaunchCommand"`
-	// Effective argv used to run the agent, resolved from the definition and any overrides. Not run
-	// through a shell; use ["sh", "-c", "..."] for shell semantics.
-	RunCommand []string `json:"runCommand"`
-	// Override for the environment-variable secrets the agent expects. Unset inherits from the
-	// definition.
-	Secrets OptNilAgentConfigSecretArray `json:"secrets"`
-	// Stable, URL-safe identifier used to select the agent config (e.g. codex). Unique within the
-	// project.
-	Slug string `json:"slug"`
-	// Last update timestamp.
-	UpdatedAt time.Time `json:"updatedAt"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *AgentConfig) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetCreatedAt returns the value of CreatedAt.
-func (s *AgentConfig) GetCreatedAt() time.Time {
-	return s.CreatedAt
-}
-
-// GetDefinitionId returns the value of DefinitionId.
-func (s *AgentConfig) GetDefinitionId() OptString {
-	return s.DefinitionId
-}
-
-// GetFiles returns the value of Files.
-func (s *AgentConfig) GetFiles() OptNilAgentConfigFileArray {
-	return s.Files
-}
-
-// GetID returns the value of ID.
-func (s *AgentConfig) GetID() string {
-	return s.ID
-}
-
-// GetInstallCommand returns the value of InstallCommand.
-func (s *AgentConfig) GetInstallCommand() OptNilStringArray {
-	return s.InstallCommand
-}
-
-// GetName returns the value of Name.
-func (s *AgentConfig) GetName() string {
-	return s.Name
-}
-
-// GetProjectId returns the value of ProjectId.
-func (s *AgentConfig) GetProjectId() string {
-	return s.ProjectId
-}
-
-// GetRelaunchCommand returns the value of RelaunchCommand.
-func (s *AgentConfig) GetRelaunchCommand() OptNilStringArray {
-	return s.RelaunchCommand
-}
-
-// GetRunCommand returns the value of RunCommand.
-func (s *AgentConfig) GetRunCommand() []string {
-	return s.RunCommand
-}
-
-// GetSecrets returns the value of Secrets.
-func (s *AgentConfig) GetSecrets() OptNilAgentConfigSecretArray {
-	return s.Secrets
-}
-
-// GetSlug returns the value of Slug.
-func (s *AgentConfig) GetSlug() string {
-	return s.Slug
-}
-
-// GetUpdatedAt returns the value of UpdatedAt.
-func (s *AgentConfig) GetUpdatedAt() time.Time {
-	return s.UpdatedAt
-}
-
-// SetSchema sets the value of Schema.
-func (s *AgentConfig) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetCreatedAt sets the value of CreatedAt.
-func (s *AgentConfig) SetCreatedAt(val time.Time) {
-	s.CreatedAt = val
-}
-
-// SetDefinitionId sets the value of DefinitionId.
-func (s *AgentConfig) SetDefinitionId(val OptString) {
-	s.DefinitionId = val
-}
-
-// SetFiles sets the value of Files.
-func (s *AgentConfig) SetFiles(val OptNilAgentConfigFileArray) {
-	s.Files = val
-}
-
-// SetID sets the value of ID.
-func (s *AgentConfig) SetID(val string) {
-	s.ID = val
-}
-
-// SetInstallCommand sets the value of InstallCommand.
-func (s *AgentConfig) SetInstallCommand(val OptNilStringArray) {
-	s.InstallCommand = val
-}
-
-// SetName sets the value of Name.
-func (s *AgentConfig) SetName(val string) {
-	s.Name = val
-}
-
-// SetProjectId sets the value of ProjectId.
-func (s *AgentConfig) SetProjectId(val string) {
-	s.ProjectId = val
-}
-
-// SetRelaunchCommand sets the value of RelaunchCommand.
-func (s *AgentConfig) SetRelaunchCommand(val OptNilStringArray) {
-	s.RelaunchCommand = val
-}
-
-// SetRunCommand sets the value of RunCommand.
-func (s *AgentConfig) SetRunCommand(val []string) {
-	s.RunCommand = val
-}
-
-// SetSecrets sets the value of Secrets.
-func (s *AgentConfig) SetSecrets(val OptNilAgentConfigSecretArray) {
-	s.Secrets = val
-}
-
-// SetSlug sets the value of Slug.
-func (s *AgentConfig) SetSlug(val string) {
-	s.Slug = val
-}
-
-// SetUpdatedAt sets the value of UpdatedAt.
-func (s *AgentConfig) SetUpdatedAt(val time.Time) {
-	s.UpdatedAt = val
-}
-
-func (*AgentConfig) createAgentConfigRes() {}
-func (*AgentConfig) getAgentConfigRes()    {}
-func (*AgentConfig) updateAgentConfigRes() {}
-
-// Ref: #/components/schemas/AgentConfigDefinition
-type AgentConfigDefinition struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Agent config definition description.
-	Description OptString `json:"description"`
-	// Files to write into the agent's home directory when the agent is installed.
-	Files OptNilAgentConfigFileArray `json:"files"`
-	// Stable definition ID.
-	ID string `json:"id"`
-	// Argv used to install the agent. Not run through a shell; use ["sh", "-c", "..."] for shell
-	// semantics.
-	InstallCommand OptNilStringArray `json:"installCommand"`
-	// Agent config definition name.
-	Name string `json:"name"`
-	// Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand
-	// for non-first launches. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-	RelaunchCommand OptNilStringArray `json:"relaunchCommand"`
-	// Argv used to run the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-	RunCommand []string `json:"runCommand"`
-	// Environment-variable secrets the agent expects.
-	Secrets OptNilAgentConfigSecretArray `json:"secrets"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *AgentConfigDefinition) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetDescription returns the value of Description.
-func (s *AgentConfigDefinition) GetDescription() OptString {
-	return s.Description
-}
-
-// GetFiles returns the value of Files.
-func (s *AgentConfigDefinition) GetFiles() OptNilAgentConfigFileArray {
-	return s.Files
-}
-
-// GetID returns the value of ID.
-func (s *AgentConfigDefinition) GetID() string {
-	return s.ID
-}
-
-// GetInstallCommand returns the value of InstallCommand.
-func (s *AgentConfigDefinition) GetInstallCommand() OptNilStringArray {
-	return s.InstallCommand
-}
-
-// GetName returns the value of Name.
-func (s *AgentConfigDefinition) GetName() string {
-	return s.Name
-}
-
-// GetRelaunchCommand returns the value of RelaunchCommand.
-func (s *AgentConfigDefinition) GetRelaunchCommand() OptNilStringArray {
-	return s.RelaunchCommand
-}
-
-// GetRunCommand returns the value of RunCommand.
-func (s *AgentConfigDefinition) GetRunCommand() []string {
-	return s.RunCommand
-}
-
-// GetSecrets returns the value of Secrets.
-func (s *AgentConfigDefinition) GetSecrets() OptNilAgentConfigSecretArray {
-	return s.Secrets
-}
-
-// SetSchema sets the value of Schema.
-func (s *AgentConfigDefinition) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetDescription sets the value of Description.
-func (s *AgentConfigDefinition) SetDescription(val OptString) {
-	s.Description = val
-}
-
-// SetFiles sets the value of Files.
-func (s *AgentConfigDefinition) SetFiles(val OptNilAgentConfigFileArray) {
-	s.Files = val
-}
-
-// SetID sets the value of ID.
-func (s *AgentConfigDefinition) SetID(val string) {
-	s.ID = val
-}
-
-// SetInstallCommand sets the value of InstallCommand.
-func (s *AgentConfigDefinition) SetInstallCommand(val OptNilStringArray) {
-	s.InstallCommand = val
-}
-
-// SetName sets the value of Name.
-func (s *AgentConfigDefinition) SetName(val string) {
-	s.Name = val
-}
-
-// SetRelaunchCommand sets the value of RelaunchCommand.
-func (s *AgentConfigDefinition) SetRelaunchCommand(val OptNilStringArray) {
-	s.RelaunchCommand = val
-}
-
-// SetRunCommand sets the value of RunCommand.
-func (s *AgentConfigDefinition) SetRunCommand(val []string) {
-	s.RunCommand = val
-}
-
-// SetSecrets sets the value of Secrets.
-func (s *AgentConfigDefinition) SetSecrets(val OptNilAgentConfigSecretArray) {
-	s.Secrets = val
-}
-
-func (*AgentConfigDefinition) getAgentConfigDefinitionRes() {}
-
-// A file to write into an agent's home directory when the agent is installed.
-// Ref: #/components/schemas/AgentConfigFile
-type AgentConfigFile struct {
-	// File content to write.
-	Content string `json:"content"`
-	// File path relative to the agent's home directory.
-	Path string `json:"path"`
-	// Do not overwrite this file if it already exists.
-	CreateOnly OptBool `json:"createOnly"`
-}
-
-// GetContent returns the value of Content.
-func (s *AgentConfigFile) GetContent() string {
-	return s.Content
-}
-
-// GetPath returns the value of Path.
-func (s *AgentConfigFile) GetPath() string {
-	return s.Path
-}
-
-// GetCreateOnly returns the value of CreateOnly.
-func (s *AgentConfigFile) GetCreateOnly() OptBool {
-	return s.CreateOnly
-}
-
-// SetContent sets the value of Content.
-func (s *AgentConfigFile) SetContent(val string) {
-	s.Content = val
-}
-
-// SetPath sets the value of Path.
-func (s *AgentConfigFile) SetPath(val string) {
-	s.Path = val
-}
-
-// SetCreateOnly sets the value of CreateOnly.
-func (s *AgentConfigFile) SetCreateOnly(val OptBool) {
-	s.CreateOnly = val
-}
-
-// Declares an environment variable the agent expects, and whether it is required.
-// Ref: #/components/schemas/AgentConfigSecret
-type AgentConfigSecret struct {
-	// Environment variable name the agent expects to be set.
-	Name string `json:"name"`
-	// Whether the secret must be set for the agent to run. Optional secrets are used when present but do
-	// not block the agent.
-	Required OptBool `json:"required"`
-	// Groups a required secret with alternatives; the requirement is satisfied when at least one member
-	// of the group is present.
-	OneOfGroup OptString `json:"oneOfGroup"`
-}
-
-// GetName returns the value of Name.
-func (s *AgentConfigSecret) GetName() string {
-	return s.Name
-}
-
-// GetRequired returns the value of Required.
-func (s *AgentConfigSecret) GetRequired() OptBool {
-	return s.Required
-}
-
-// GetOneOfGroup returns the value of OneOfGroup.
-func (s *AgentConfigSecret) GetOneOfGroup() OptString {
-	return s.OneOfGroup
-}
-
-// SetName sets the value of Name.
-func (s *AgentConfigSecret) SetName(val string) {
-	s.Name = val
-}
-
-// SetRequired sets the value of Required.
-func (s *AgentConfigSecret) SetRequired(val OptBool) {
-	s.Required = val
-}
-
-// SetOneOfGroup sets the value of OneOfGroup.
-func (s *AgentConfigSecret) SetOneOfGroup(val OptString) {
-	s.OneOfGroup = val
-}
-
-// Binds one of an agent config's environment variables to a project secret.
-// Ref: #/components/schemas/AgentConfigSecretBinding
-type AgentConfigSecretBinding struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Agent config the binding belongs to.
-	AgentConfigId string `json:"agentConfigId"`
-	// Creation timestamp.
-	CreatedAt time.Time `json:"createdAt"`
-	// Environment variable filled by the secret.
-	EnvName string `json:"envName"`
-	// Stable binding ID.
-	ID string `json:"id"`
-	// Project ID.
-	ProjectId string `json:"projectId"`
-	// Bound secret ID.
-	SecretId string `json:"secretId"`
-	// Last update timestamp.
-	UpdatedAt time.Time `json:"updatedAt"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *AgentConfigSecretBinding) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetAgentConfigId returns the value of AgentConfigId.
-func (s *AgentConfigSecretBinding) GetAgentConfigId() string {
-	return s.AgentConfigId
-}
-
-// GetCreatedAt returns the value of CreatedAt.
-func (s *AgentConfigSecretBinding) GetCreatedAt() time.Time {
-	return s.CreatedAt
-}
-
-// GetEnvName returns the value of EnvName.
-func (s *AgentConfigSecretBinding) GetEnvName() string {
-	return s.EnvName
-}
-
-// GetID returns the value of ID.
-func (s *AgentConfigSecretBinding) GetID() string {
-	return s.ID
-}
-
-// GetProjectId returns the value of ProjectId.
-func (s *AgentConfigSecretBinding) GetProjectId() string {
-	return s.ProjectId
-}
-
-// GetSecretId returns the value of SecretId.
-func (s *AgentConfigSecretBinding) GetSecretId() string {
-	return s.SecretId
-}
-
-// GetUpdatedAt returns the value of UpdatedAt.
-func (s *AgentConfigSecretBinding) GetUpdatedAt() time.Time {
-	return s.UpdatedAt
-}
-
-// SetSchema sets the value of Schema.
-func (s *AgentConfigSecretBinding) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetAgentConfigId sets the value of AgentConfigId.
-func (s *AgentConfigSecretBinding) SetAgentConfigId(val string) {
-	s.AgentConfigId = val
-}
-
-// SetCreatedAt sets the value of CreatedAt.
-func (s *AgentConfigSecretBinding) SetCreatedAt(val time.Time) {
-	s.CreatedAt = val
-}
-
-// SetEnvName sets the value of EnvName.
-func (s *AgentConfigSecretBinding) SetEnvName(val string) {
-	s.EnvName = val
-}
-
-// SetID sets the value of ID.
-func (s *AgentConfigSecretBinding) SetID(val string) {
-	s.ID = val
-}
-
-// SetProjectId sets the value of ProjectId.
-func (s *AgentConfigSecretBinding) SetProjectId(val string) {
-	s.ProjectId = val
-}
-
-// SetSecretId sets the value of SecretId.
-func (s *AgentConfigSecretBinding) SetSecretId(val string) {
-	s.SecretId = val
-}
-
-// SetUpdatedAt sets the value of UpdatedAt.
-func (s *AgentConfigSecretBinding) SetUpdatedAt(val time.Time) {
-	s.UpdatedAt = val
-}
-
-func (*AgentConfigSecretBinding) setAgentConfigSecretBindingRes() {}
-
-// Ref: #/components/schemas/AgentHookLog
-type AgentHookLog struct {
-	// Hook log ID.
-	ID string `json:"id"`
-	// Agent terminal runtime ID that emitted the hook.
-	TerminalId OptString `json:"terminalId"`
-	// Agent hook provider.
-	Provider string `json:"provider"`
-	// Provider-specific hook event name.
-	Event string `json:"event"`
-	// Raw provider hook payload.
-	Payload   jx.Raw    `json:"payload"`
-	CreatedAt time.Time `json:"createdAt"`
-}
-
-// GetID returns the value of ID.
-func (s *AgentHookLog) GetID() string {
-	return s.ID
-}
-
-// GetTerminalId returns the value of TerminalId.
-func (s *AgentHookLog) GetTerminalId() OptString {
-	return s.TerminalId
-}
-
-// GetProvider returns the value of Provider.
-func (s *AgentHookLog) GetProvider() string {
-	return s.Provider
-}
-
-// GetEvent returns the value of Event.
-func (s *AgentHookLog) GetEvent() string {
-	return s.Event
-}
-
-// GetPayload returns the value of Payload.
-func (s *AgentHookLog) GetPayload() jx.Raw {
-	return s.Payload
-}
-
-// GetCreatedAt returns the value of CreatedAt.
-func (s *AgentHookLog) GetCreatedAt() time.Time {
-	return s.CreatedAt
-}
-
-// SetID sets the value of ID.
-func (s *AgentHookLog) SetID(val string) {
-	s.ID = val
-}
-
-// SetTerminalId sets the value of TerminalId.
-func (s *AgentHookLog) SetTerminalId(val OptString) {
-	s.TerminalId = val
-}
-
-// SetProvider sets the value of Provider.
-func (s *AgentHookLog) SetProvider(val string) {
-	s.Provider = val
-}
-
-// SetEvent sets the value of Event.
-func (s *AgentHookLog) SetEvent(val string) {
-	s.Event = val
-}
-
-// SetPayload sets the value of Payload.
-func (s *AgentHookLog) SetPayload(val jx.Raw) {
-	s.Payload = val
-}
-
-// SetCreatedAt sets the value of CreatedAt.
-func (s *AgentHookLog) SetCreatedAt(val time.Time) {
-	s.CreatedAt = val
-}
-
-// Ref: #/components/schemas/AgentHookLogsResponse
-type AgentHookLogsResponse struct {
-	Hooks []AgentHookLog `json:"hooks"`
-}
-
-// GetHooks returns the value of Hooks.
-func (s *AgentHookLogsResponse) GetHooks() []AgentHookLog {
-	return s.Hooks
-}
-
-// SetHooks sets the value of Hooks.
-func (s *AgentHookLogsResponse) SetHooks(val []AgentHookLog) {
-	s.Hooks = val
-}
-
-func (*AgentHookLogsResponse) listAgentHooksRes() {}
-
 // Ref: #/components/schemas/ApproveSecretRequestBody
 type ApproveSecretRequestBody struct {
 	// A URL to the JSON Schema for this object.
@@ -636,16 +69,16 @@ func (s *ApproveSecretRequestBody) SetSecretId(val string) {
 type ApproveSecretRequestBodyScope string
 
 const (
-	ApproveSecretRequestBodyScopeSandbox     ApproveSecretRequestBodyScope = "sandbox"
-	ApproveSecretRequestBodyScopeAgentConfig ApproveSecretRequestBodyScope = "agentConfig"
-	ApproveSecretRequestBodyScopeProject     ApproveSecretRequestBodyScope = "project"
+	ApproveSecretRequestBodyScopeSandbox       ApproveSecretRequestBodyScope = "sandbox"
+	ApproveSecretRequestBodyScopeHarnessConfig ApproveSecretRequestBodyScope = "harnessConfig"
+	ApproveSecretRequestBodyScopeProject       ApproveSecretRequestBodyScope = "project"
 )
 
 // AllValues returns all ApproveSecretRequestBodyScope values.
 func (ApproveSecretRequestBodyScope) AllValues() []ApproveSecretRequestBodyScope {
 	return []ApproveSecretRequestBodyScope{
 		ApproveSecretRequestBodyScopeSandbox,
-		ApproveSecretRequestBodyScopeAgentConfig,
+		ApproveSecretRequestBodyScopeHarnessConfig,
 		ApproveSecretRequestBodyScopeProject,
 	}
 }
@@ -655,7 +88,7 @@ func (s ApproveSecretRequestBodyScope) MarshalText() ([]byte, error) {
 	switch s {
 	case ApproveSecretRequestBodyScopeSandbox:
 		return []byte(s), nil
-	case ApproveSecretRequestBodyScopeAgentConfig:
+	case ApproveSecretRequestBodyScopeHarnessConfig:
 		return []byte(s), nil
 	case ApproveSecretRequestBodyScopeProject:
 		return []byte(s), nil
@@ -670,8 +103,8 @@ func (s *ApproveSecretRequestBodyScope) UnmarshalText(data []byte) error {
 	case ApproveSecretRequestBodyScopeSandbox:
 		*s = ApproveSecretRequestBodyScopeSandbox
 		return nil
-	case ApproveSecretRequestBodyScopeAgentConfig:
-		*s = ApproveSecretRequestBodyScopeAgentConfig
+	case ApproveSecretRequestBodyScopeHarnessConfig:
+		*s = ApproveSecretRequestBodyScopeHarnessConfig
 		return nil
 	case ApproveSecretRequestBodyScopeProject:
 		*s = ApproveSecretRequestBodyScopeProject
@@ -681,32 +114,32 @@ func (s *ApproveSecretRequestBodyScope) UnmarshalText(data []byte) error {
 	}
 }
 
-// Ref: #/components/schemas/AssignSandboxAgentSecretsBody
-type AssignSandboxAgentSecretsBody struct {
+// Ref: #/components/schemas/AssignSandboxHarnessSecretsBody
+type AssignSandboxHarnessSecretsBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Agent config whose bound secrets should be assigned to the sandbox for a per-invocation run.
-	AgentConfigId string `json:"agentConfigId"`
+	// Harness config whose bound secrets should be assigned to the sandbox for a per-invocation run.
+	HarnessConfigId string `json:"harnessConfigId"`
 }
 
 // GetSchema returns the value of Schema.
-func (s *AssignSandboxAgentSecretsBody) GetSchema() OptURI {
+func (s *AssignSandboxHarnessSecretsBody) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetAgentConfigId returns the value of AgentConfigId.
-func (s *AssignSandboxAgentSecretsBody) GetAgentConfigId() string {
-	return s.AgentConfigId
+// GetHarnessConfigId returns the value of HarnessConfigId.
+func (s *AssignSandboxHarnessSecretsBody) GetHarnessConfigId() string {
+	return s.HarnessConfigId
 }
 
 // SetSchema sets the value of Schema.
-func (s *AssignSandboxAgentSecretsBody) SetSchema(val OptURI) {
+func (s *AssignSandboxHarnessSecretsBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetAgentConfigId sets the value of AgentConfigId.
-func (s *AssignSandboxAgentSecretsBody) SetAgentConfigId(val string) {
-	s.AgentConfigId = val
+// SetHarnessConfigId sets the value of HarnessConfigId.
+func (s *AssignSandboxHarnessSecretsBody) SetHarnessConfigId(val string) {
+	s.HarnessConfigId = val
 }
 
 // AttachSandboxExecSwitchingProtocols is response for AttachSandboxExec operation.
@@ -737,125 +170,125 @@ func (s *AttachSandboxExecSwitchingProtocols) SetUpgrade(val OptString) {
 
 func (*AttachSandboxExecSwitchingProtocols) attachSandboxExecRes() {}
 
-// Ref: #/components/schemas/CreateAgentConfigBody
-type CreateAgentConfigBody struct {
+// Ref: #/components/schemas/CreateHarnessConfigBody
+type CreateHarnessConfigBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Built-in agent definition to extend. Unset command/file fields are inherited from the definition
+	// Built-in harness definition to extend. Unset command/file fields are inherited from the definition
 	// at runtime, so definition upgrades propagate unless overridden. Omit for a fully custom config, in
 	// which case runCommand is required.
 	DefinitionId OptString `json:"definitionId"`
-	// Override for files to write into the agent's home directory. Unset inherits from the definition
+	// Override for files to write into the harness's home directory. Unset inherits from the definition
 	// when definitionId is provided.
-	Files OptNilAgentConfigFileArray `json:"files"`
-	// Override for the argv used to install the agent. Unset inherits from the definition when
+	Files OptNilHarnessConfigFileArray `json:"files"`
+	// Override for the argv used to install the harness. Unset inherits from the definition when
 	// definitionId is provided. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
 	InstallCommand OptNilStringArray `json:"installCommand"`
-	// Agent config name. Defaults to the definition name when definitionId is provided.
+	// Harness config name. Defaults to the definition name when definitionId is provided.
 	Name OptString `json:"name"`
-	// Override for the argv used to resume the previous agent session on subsequent sandbox starts.
+	// Override for the argv used to resume the previous harness session on subsequent sandbox starts.
 	// Replaces runCommand for non-first launches. Unset inherits from the definition when definitionId
 	// is provided. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
 	RelaunchCommand OptNilStringArray `json:"relaunchCommand"`
-	// Override for the argv used to run the agent. Unset inherits from the definition when definitionId
-	// is provided; required for a fully custom config. Not run through a shell; use ["sh", "-c", "..."]
-	// for shell semantics.
+	// Override for the argv used to run the harness. Unset inherits from the definition when
+	// definitionId is provided; required for a fully custom config. Not run through a shell; use ["sh",
+	// "-c", "..."] for shell semantics.
 	RunCommand OptNilStringArray `json:"runCommand"`
-	// Override for the environment-variable secrets the agent expects. Unset inherits from the
+	// Override for the environment-variable secrets the harness expects. Unset inherits from the
 	// definition when definitionId is provided.
-	Secrets OptNilAgentConfigSecretArray `json:"secrets"`
-	// Stable, URL-safe identifier used to select the agent config (e.g. codex). Defaults to definitionId,
-	//  or a slug derived from name. Unique within the project.
+	Secrets OptNilHarnessConfigSecretArray `json:"secrets"`
+	// Stable, URL-safe identifier used to select the harness config (e.g. codex). Defaults to
+	// definitionId, or a slug derived from name. Unique within the project.
 	Slug OptString `json:"slug"`
 }
 
 // GetSchema returns the value of Schema.
-func (s *CreateAgentConfigBody) GetSchema() OptURI {
+func (s *CreateHarnessConfigBody) GetSchema() OptURI {
 	return s.Schema
 }
 
 // GetDefinitionId returns the value of DefinitionId.
-func (s *CreateAgentConfigBody) GetDefinitionId() OptString {
+func (s *CreateHarnessConfigBody) GetDefinitionId() OptString {
 	return s.DefinitionId
 }
 
 // GetFiles returns the value of Files.
-func (s *CreateAgentConfigBody) GetFiles() OptNilAgentConfigFileArray {
+func (s *CreateHarnessConfigBody) GetFiles() OptNilHarnessConfigFileArray {
 	return s.Files
 }
 
 // GetInstallCommand returns the value of InstallCommand.
-func (s *CreateAgentConfigBody) GetInstallCommand() OptNilStringArray {
+func (s *CreateHarnessConfigBody) GetInstallCommand() OptNilStringArray {
 	return s.InstallCommand
 }
 
 // GetName returns the value of Name.
-func (s *CreateAgentConfigBody) GetName() OptString {
+func (s *CreateHarnessConfigBody) GetName() OptString {
 	return s.Name
 }
 
 // GetRelaunchCommand returns the value of RelaunchCommand.
-func (s *CreateAgentConfigBody) GetRelaunchCommand() OptNilStringArray {
+func (s *CreateHarnessConfigBody) GetRelaunchCommand() OptNilStringArray {
 	return s.RelaunchCommand
 }
 
 // GetRunCommand returns the value of RunCommand.
-func (s *CreateAgentConfigBody) GetRunCommand() OptNilStringArray {
+func (s *CreateHarnessConfigBody) GetRunCommand() OptNilStringArray {
 	return s.RunCommand
 }
 
 // GetSecrets returns the value of Secrets.
-func (s *CreateAgentConfigBody) GetSecrets() OptNilAgentConfigSecretArray {
+func (s *CreateHarnessConfigBody) GetSecrets() OptNilHarnessConfigSecretArray {
 	return s.Secrets
 }
 
 // GetSlug returns the value of Slug.
-func (s *CreateAgentConfigBody) GetSlug() OptString {
+func (s *CreateHarnessConfigBody) GetSlug() OptString {
 	return s.Slug
 }
 
 // SetSchema sets the value of Schema.
-func (s *CreateAgentConfigBody) SetSchema(val OptURI) {
+func (s *CreateHarnessConfigBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
 // SetDefinitionId sets the value of DefinitionId.
-func (s *CreateAgentConfigBody) SetDefinitionId(val OptString) {
+func (s *CreateHarnessConfigBody) SetDefinitionId(val OptString) {
 	s.DefinitionId = val
 }
 
 // SetFiles sets the value of Files.
-func (s *CreateAgentConfigBody) SetFiles(val OptNilAgentConfigFileArray) {
+func (s *CreateHarnessConfigBody) SetFiles(val OptNilHarnessConfigFileArray) {
 	s.Files = val
 }
 
 // SetInstallCommand sets the value of InstallCommand.
-func (s *CreateAgentConfigBody) SetInstallCommand(val OptNilStringArray) {
+func (s *CreateHarnessConfigBody) SetInstallCommand(val OptNilStringArray) {
 	s.InstallCommand = val
 }
 
 // SetName sets the value of Name.
-func (s *CreateAgentConfigBody) SetName(val OptString) {
+func (s *CreateHarnessConfigBody) SetName(val OptString) {
 	s.Name = val
 }
 
 // SetRelaunchCommand sets the value of RelaunchCommand.
-func (s *CreateAgentConfigBody) SetRelaunchCommand(val OptNilStringArray) {
+func (s *CreateHarnessConfigBody) SetRelaunchCommand(val OptNilStringArray) {
 	s.RelaunchCommand = val
 }
 
 // SetRunCommand sets the value of RunCommand.
-func (s *CreateAgentConfigBody) SetRunCommand(val OptNilStringArray) {
+func (s *CreateHarnessConfigBody) SetRunCommand(val OptNilStringArray) {
 	s.RunCommand = val
 }
 
 // SetSecrets sets the value of Secrets.
-func (s *CreateAgentConfigBody) SetSecrets(val OptNilAgentConfigSecretArray) {
+func (s *CreateHarnessConfigBody) SetSecrets(val OptNilHarnessConfigSecretArray) {
 	s.Secrets = val
 }
 
 // SetSlug sets the value of Slug.
-func (s *CreateAgentConfigBody) SetSlug(val OptString) {
+func (s *CreateHarnessConfigBody) SetSlug(val OptString) {
 	s.Slug = val
 }
 
@@ -863,8 +296,8 @@ func (s *CreateAgentConfigBody) SetSlug(val OptString) {
 type CreateSandboxBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Agent config name to resolve at create time.
-	AgentName OptString `json:"agentName"`
+	// Harness config name to resolve at create time.
+	HarnessName OptString `json:"harnessName"`
 	// Desired sandbox configuration.
 	Config SandboxCreateConfig `json:"config"`
 	// Sandbox provider instance ID.
@@ -876,9 +309,9 @@ func (s *CreateSandboxBody) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetAgentName returns the value of AgentName.
-func (s *CreateSandboxBody) GetAgentName() OptString {
-	return s.AgentName
+// GetHarnessName returns the value of HarnessName.
+func (s *CreateSandboxBody) GetHarnessName() OptString {
+	return s.HarnessName
 }
 
 // GetConfig returns the value of Config.
@@ -896,9 +329,9 @@ func (s *CreateSandboxBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetAgentName sets the value of AgentName.
-func (s *CreateSandboxBody) SetAgentName(val OptString) {
-	s.AgentName = val
+// SetHarnessName sets the value of HarnessName.
+func (s *CreateSandboxBody) SetHarnessName(val OptString) {
+	s.HarnessName = val
 }
 
 // SetConfig sets the value of Config.
@@ -911,16 +344,16 @@ func (s *CreateSandboxBody) SetProviderInstanceId(val OptString) {
 	s.ProviderInstanceId = val
 }
 
-// Create an exec. Provide command for a plain exec, or agentId (with optional args) to run a coding
-// agent in terminal mode.
+// Create an exec. Provide command for a plain exec, or harnessId (with optional args) to run a
+// harness in terminal mode.
 // Ref: #/components/schemas/CreateSandboxExecRequest
 type CreateSandboxExecRequest struct {
-	// Command argv to execute in the sandbox. Mutually exclusive with agentId.
+	// Command argv to execute in the sandbox. Mutually exclusive with harnessId.
 	Command []string `json:"command"`
-	// Coding agent CLI to start in terminal mode. Defaults to the sandbox configured agent when omitted.
+	// Harness CLI to start in terminal mode. Defaults to the sandbox configured harness when omitted.
 	// Mutually exclusive with command.
-	AgentId OptString `json:"agentId"`
-	// Additional command arguments appended to the resolved agent command in terminal mode.
+	HarnessId OptString `json:"harnessId"`
+	// Additional command arguments appended to the resolved harness command in terminal mode.
 	Args []string `json:"args"`
 	// Working directory for the exec process.
 	Workdir OptString `json:"workdir"`
@@ -943,9 +376,9 @@ func (s *CreateSandboxExecRequest) GetCommand() []string {
 	return s.Command
 }
 
-// GetAgentId returns the value of AgentId.
-func (s *CreateSandboxExecRequest) GetAgentId() OptString {
-	return s.AgentId
+// GetHarnessId returns the value of HarnessId.
+func (s *CreateSandboxExecRequest) GetHarnessId() OptString {
+	return s.HarnessId
 }
 
 // GetArgs returns the value of Args.
@@ -993,9 +426,9 @@ func (s *CreateSandboxExecRequest) SetCommand(val []string) {
 	s.Command = val
 }
 
-// SetAgentId sets the value of AgentId.
-func (s *CreateSandboxExecRequest) SetAgentId(val OptString) {
-	s.AgentId = val
+// SetHarnessId sets the value of HarnessId.
+func (s *CreateSandboxExecRequest) SetHarnessId(val OptString) {
+	s.HarnessId = val
 }
 
 // SetArgs sets the value of Args.
@@ -1265,8 +698,8 @@ type CreateSecretGrantBody struct {
 	Host OptString `json:"host"`
 	// How widely the grant applies.
 	Scope CreateSecretGrantBodyScope `json:"scope"`
-	// Identifier the scope resolves against (sandbox ID or agent config ID). Defaults to the project ID
-	// for project scope.
+	// Identifier the scope resolves against (sandbox ID or harness config ID). Defaults to the project
+	// ID for project scope.
 	ScopeKey OptString `json:"scopeKey"`
 	// Secret ID to grant.
 	SecretId string `json:"secretId"`
@@ -1336,16 +769,16 @@ func (s *CreateSecretGrantBody) SetSecretId(val string) {
 type CreateSecretGrantBodyScope string
 
 const (
-	CreateSecretGrantBodyScopeSandbox     CreateSecretGrantBodyScope = "sandbox"
-	CreateSecretGrantBodyScopeAgentConfig CreateSecretGrantBodyScope = "agentConfig"
-	CreateSecretGrantBodyScopeProject     CreateSecretGrantBodyScope = "project"
+	CreateSecretGrantBodyScopeSandbox       CreateSecretGrantBodyScope = "sandbox"
+	CreateSecretGrantBodyScopeHarnessConfig CreateSecretGrantBodyScope = "harnessConfig"
+	CreateSecretGrantBodyScopeProject       CreateSecretGrantBodyScope = "project"
 )
 
 // AllValues returns all CreateSecretGrantBodyScope values.
 func (CreateSecretGrantBodyScope) AllValues() []CreateSecretGrantBodyScope {
 	return []CreateSecretGrantBodyScope{
 		CreateSecretGrantBodyScopeSandbox,
-		CreateSecretGrantBodyScopeAgentConfig,
+		CreateSecretGrantBodyScopeHarnessConfig,
 		CreateSecretGrantBodyScopeProject,
 	}
 }
@@ -1355,7 +788,7 @@ func (s CreateSecretGrantBodyScope) MarshalText() ([]byte, error) {
 	switch s {
 	case CreateSecretGrantBodyScopeSandbox:
 		return []byte(s), nil
-	case CreateSecretGrantBodyScopeAgentConfig:
+	case CreateSecretGrantBodyScopeHarnessConfig:
 		return []byte(s), nil
 	case CreateSecretGrantBodyScopeProject:
 		return []byte(s), nil
@@ -1370,8 +803,8 @@ func (s *CreateSecretGrantBodyScope) UnmarshalText(data []byte) error {
 	case CreateSecretGrantBodyScopeSandbox:
 		*s = CreateSecretGrantBodyScopeSandbox
 		return nil
-	case CreateSecretGrantBodyScopeAgentConfig:
-		*s = CreateSecretGrantBodyScopeAgentConfig
+	case CreateSecretGrantBodyScopeHarnessConfig:
+		*s = CreateSecretGrantBodyScopeHarnessConfig
 		return nil
 	case CreateSecretGrantBodyScopeProject:
 		*s = CreateSecretGrantBodyScopeProject
@@ -1470,15 +903,15 @@ func (s *CreateSecretRequestBodyType) UnmarshalText(data []byte) error {
 	}
 }
 
-// DeleteAgentConfigNoContent is response for DeleteAgentConfig operation.
-type DeleteAgentConfigNoContent struct{}
+// DeleteHarnessConfigNoContent is response for DeleteHarnessConfig operation.
+type DeleteHarnessConfigNoContent struct{}
 
-func (*DeleteAgentConfigNoContent) deleteAgentConfigRes() {}
+func (*DeleteHarnessConfigNoContent) deleteHarnessConfigRes() {}
 
-// DeleteAgentConfigSecretBindingNoContent is response for DeleteAgentConfigSecretBinding operation.
-type DeleteAgentConfigSecretBindingNoContent struct{}
+// DeleteHarnessConfigSecretBindingNoContent is response for DeleteHarnessConfigSecretBinding operation.
+type DeleteHarnessConfigSecretBindingNoContent struct{}
 
-func (*DeleteAgentConfigSecretBindingNoContent) deleteAgentConfigSecretBindingRes() {}
+func (*DeleteHarnessConfigSecretBindingNoContent) deleteHarnessConfigSecretBindingRes() {}
 
 // DeleteSandboxAccepted is response for DeleteSandbox operation.
 type DeleteSandboxAccepted struct{}
@@ -1660,56 +1093,56 @@ func (s *ErrorModelStatusCode) SetResponse(val ErrorModel) {
 	s.Response = val
 }
 
-func (*ErrorModelStatusCode) approveSecretRequestRes()           {}
-func (*ErrorModelStatusCode) assignSandboxAgentSecretsRes()      {}
-func (*ErrorModelStatusCode) createAgentConfigRes()              {}
-func (*ErrorModelStatusCode) createSandboxProviderInstanceRes()  {}
-func (*ErrorModelStatusCode) createSandboxRes()                  {}
-func (*ErrorModelStatusCode) createSecretGrantRes()              {}
-func (*ErrorModelStatusCode) createSecretRequestRes()            {}
-func (*ErrorModelStatusCode) createSecretRes()                   {}
-func (*ErrorModelStatusCode) deleteAgentConfigRes()              {}
-func (*ErrorModelStatusCode) deleteAgentConfigSecretBindingRes() {}
-func (*ErrorModelStatusCode) deleteSandboxProviderInstanceRes()  {}
-func (*ErrorModelStatusCode) deleteSandboxRes()                  {}
-func (*ErrorModelStatusCode) deleteSecretRes()                   {}
-func (*ErrorModelStatusCode) denySecretRequestRes()              {}
-func (*ErrorModelStatusCode) forceJobRes()                       {}
-func (*ErrorModelStatusCode) getAgentConfigDefinitionRes()       {}
-func (*ErrorModelStatusCode) getAgentConfigRes()                 {}
-func (*ErrorModelStatusCode) getJobRes()                         {}
-func (*ErrorModelStatusCode) getProjectRes()                     {}
-func (*ErrorModelStatusCode) getSandboxProviderInstanceRes()     {}
-func (*ErrorModelStatusCode) getSandboxRes()                     {}
-func (*ErrorModelStatusCode) getSecretRequestRes()               {}
-func (*ErrorModelStatusCode) getSecretRes()                      {}
-func (*ErrorModelStatusCode) listAgentConfigDefinitionsRes()     {}
-func (*ErrorModelStatusCode) listAgentConfigSecretBindingsRes()  {}
-func (*ErrorModelStatusCode) listAgentConfigsRes()               {}
-func (*ErrorModelStatusCode) listJobsRes()                       {}
-func (*ErrorModelStatusCode) listProjectsRes()                   {}
-func (*ErrorModelStatusCode) listSandboxProviderCatalogRes()     {}
-func (*ErrorModelStatusCode) listSandboxProviderInstancesRes()   {}
-func (*ErrorModelStatusCode) listSandboxesRes()                  {}
-func (*ErrorModelStatusCode) listSecretGrantsRes()               {}
-func (*ErrorModelStatusCode) listSecretRequestsRes()             {}
-func (*ErrorModelStatusCode) listSecretsRes()                    {}
-func (*ErrorModelStatusCode) listWorkersRes()                    {}
-func (*ErrorModelStatusCode) reconcileSandboxRes()               {}
-func (*ErrorModelStatusCode) reconcileWorkerRes()                {}
-func (*ErrorModelStatusCode) registerWorkerRes()                 {}
-func (*ErrorModelStatusCode) resolveSandboxSecretRes()           {}
-func (*ErrorModelStatusCode) restartSandboxRes()                 {}
-func (*ErrorModelStatusCode) revokeSecretGrantRes()              {}
-func (*ErrorModelStatusCode) setAgentConfigSecretBindingRes()    {}
-func (*ErrorModelStatusCode) setDefaultAgentConfigRes()          {}
-func (*ErrorModelStatusCode) startSandboxRes()                   {}
-func (*ErrorModelStatusCode) stopSandboxRes()                    {}
-func (*ErrorModelStatusCode) updateAgentConfigRes()              {}
-func (*ErrorModelStatusCode) updateSandboxProviderInstanceRes()  {}
-func (*ErrorModelStatusCode) updateSandboxRes()                  {}
-func (*ErrorModelStatusCode) updateSecretRes()                   {}
-func (*ErrorModelStatusCode) updateWorkerStatusRes()             {}
+func (*ErrorModelStatusCode) approveSecretRequestRes()             {}
+func (*ErrorModelStatusCode) assignSandboxHarnessSecretsRes()      {}
+func (*ErrorModelStatusCode) createHarnessConfigRes()              {}
+func (*ErrorModelStatusCode) createSandboxProviderInstanceRes()    {}
+func (*ErrorModelStatusCode) createSandboxRes()                    {}
+func (*ErrorModelStatusCode) createSecretGrantRes()                {}
+func (*ErrorModelStatusCode) createSecretRequestRes()              {}
+func (*ErrorModelStatusCode) createSecretRes()                     {}
+func (*ErrorModelStatusCode) deleteHarnessConfigRes()              {}
+func (*ErrorModelStatusCode) deleteHarnessConfigSecretBindingRes() {}
+func (*ErrorModelStatusCode) deleteSandboxProviderInstanceRes()    {}
+func (*ErrorModelStatusCode) deleteSandboxRes()                    {}
+func (*ErrorModelStatusCode) deleteSecretRes()                     {}
+func (*ErrorModelStatusCode) denySecretRequestRes()                {}
+func (*ErrorModelStatusCode) forceJobRes()                         {}
+func (*ErrorModelStatusCode) getHarnessConfigRes()                 {}
+func (*ErrorModelStatusCode) getHarnessDefinitionRes()             {}
+func (*ErrorModelStatusCode) getJobRes()                           {}
+func (*ErrorModelStatusCode) getProjectRes()                       {}
+func (*ErrorModelStatusCode) getSandboxProviderInstanceRes()       {}
+func (*ErrorModelStatusCode) getSandboxRes()                       {}
+func (*ErrorModelStatusCode) getSecretRequestRes()                 {}
+func (*ErrorModelStatusCode) getSecretRes()                        {}
+func (*ErrorModelStatusCode) listHarnessConfigSecretBindingsRes()  {}
+func (*ErrorModelStatusCode) listHarnessConfigsRes()               {}
+func (*ErrorModelStatusCode) listHarnessDefinitionsRes()           {}
+func (*ErrorModelStatusCode) listJobsRes()                         {}
+func (*ErrorModelStatusCode) listProjectsRes()                     {}
+func (*ErrorModelStatusCode) listSandboxProviderCatalogRes()       {}
+func (*ErrorModelStatusCode) listSandboxProviderInstancesRes()     {}
+func (*ErrorModelStatusCode) listSandboxesRes()                    {}
+func (*ErrorModelStatusCode) listSecretGrantsRes()                 {}
+func (*ErrorModelStatusCode) listSecretRequestsRes()               {}
+func (*ErrorModelStatusCode) listSecretsRes()                      {}
+func (*ErrorModelStatusCode) listWorkersRes()                      {}
+func (*ErrorModelStatusCode) reconcileSandboxRes()                 {}
+func (*ErrorModelStatusCode) reconcileWorkerRes()                  {}
+func (*ErrorModelStatusCode) registerWorkerRes()                   {}
+func (*ErrorModelStatusCode) resolveSandboxSecretRes()             {}
+func (*ErrorModelStatusCode) restartSandboxRes()                   {}
+func (*ErrorModelStatusCode) revokeSecretGrantRes()                {}
+func (*ErrorModelStatusCode) setDefaultHarnessConfigRes()          {}
+func (*ErrorModelStatusCode) setHarnessConfigSecretBindingRes()    {}
+func (*ErrorModelStatusCode) startSandboxRes()                     {}
+func (*ErrorModelStatusCode) stopSandboxRes()                      {}
+func (*ErrorModelStatusCode) updateHarnessConfigRes()              {}
+func (*ErrorModelStatusCode) updateSandboxProviderInstanceRes()    {}
+func (*ErrorModelStatusCode) updateSandboxRes()                    {}
+func (*ErrorModelStatusCode) updateSecretRes()                     {}
+func (*ErrorModelStatusCode) updateWorkerStatusRes()               {}
 
 // Ref: #/components/schemas/ErrorResponse
 type ErrorResponse struct {
@@ -1758,7 +1191,7 @@ func (*ErrorResponseStatusCode) createSandboxExecRes()              {}
 func (*ErrorResponseStatusCode) deleteSandboxExecRes()              {}
 func (*ErrorResponseStatusCode) getSandboxExecRes()                 {}
 func (*ErrorResponseStatusCode) getSandboxExecResourcesRes()        {}
-func (*ErrorResponseStatusCode) listAgentHooksRes()                 {}
+func (*ErrorResponseStatusCode) listHarnessHooksRes()               {}
 func (*ErrorResponseStatusCode) listSandboxExecEventsRes()          {}
 func (*ErrorResponseStatusCode) listSandboxExecLogsRes()            {}
 func (*ErrorResponseStatusCode) listSandboxExecResourceHistoryRes() {}
@@ -2039,6 +1472,573 @@ func (s *GitSourceWorkspaceMode) UnmarshalText(data []byte) error {
 	}
 }
 
+// Ref: #/components/schemas/HarnessConfig
+type HarnessConfig struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Creation timestamp.
+	CreatedAt time.Time `json:"createdAt"`
+	// Built-in harness definition this config extends. Unset fields are inherited from the definition at
+	// runtime, so definition upgrades propagate unless overridden. Empty for fully custom configs.
+	DefinitionId OptString `json:"definitionId"`
+	// Override for files to write into the harness's home directory when the harness is installed. Unset
+	// inherits from the definition.
+	Files OptNilHarnessConfigFileArray `json:"files"`
+	// Stable harness config ID.
+	ID string `json:"id"`
+	// Override for the argv used to install the harness. Unset inherits from the definition. Not run
+	// through a shell; use ["sh", "-c", "..."] for shell semantics.
+	InstallCommand OptNilStringArray `json:"installCommand"`
+	// Harness config name.
+	Name string `json:"name"`
+	// Project ID.
+	ProjectId string `json:"projectId"`
+	// Override for the argv used to resume the previous harness session on subsequent sandbox starts.
+	// Replaces runCommand for non-first launches. Unset inherits from the definition. Not run through a
+	// shell; use ["sh", "-c", "..."] for shell semantics.
+	RelaunchCommand OptNilStringArray `json:"relaunchCommand"`
+	// Effective argv used to run the harness, resolved from the definition and any overrides. Not run
+	// through a shell; use ["sh", "-c", "..."] for shell semantics.
+	RunCommand []string `json:"runCommand"`
+	// Override for the environment-variable secrets the harness expects. Unset inherits from the
+	// definition.
+	Secrets OptNilHarnessConfigSecretArray `json:"secrets"`
+	// Stable, URL-safe identifier used to select the harness config (e.g. codex). Unique within the
+	// project.
+	Slug string `json:"slug"`
+	// Last update timestamp.
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *HarnessConfig) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *HarnessConfig) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetDefinitionId returns the value of DefinitionId.
+func (s *HarnessConfig) GetDefinitionId() OptString {
+	return s.DefinitionId
+}
+
+// GetFiles returns the value of Files.
+func (s *HarnessConfig) GetFiles() OptNilHarnessConfigFileArray {
+	return s.Files
+}
+
+// GetID returns the value of ID.
+func (s *HarnessConfig) GetID() string {
+	return s.ID
+}
+
+// GetInstallCommand returns the value of InstallCommand.
+func (s *HarnessConfig) GetInstallCommand() OptNilStringArray {
+	return s.InstallCommand
+}
+
+// GetName returns the value of Name.
+func (s *HarnessConfig) GetName() string {
+	return s.Name
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *HarnessConfig) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetRelaunchCommand returns the value of RelaunchCommand.
+func (s *HarnessConfig) GetRelaunchCommand() OptNilStringArray {
+	return s.RelaunchCommand
+}
+
+// GetRunCommand returns the value of RunCommand.
+func (s *HarnessConfig) GetRunCommand() []string {
+	return s.RunCommand
+}
+
+// GetSecrets returns the value of Secrets.
+func (s *HarnessConfig) GetSecrets() OptNilHarnessConfigSecretArray {
+	return s.Secrets
+}
+
+// GetSlug returns the value of Slug.
+func (s *HarnessConfig) GetSlug() string {
+	return s.Slug
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *HarnessConfig) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// SetSchema sets the value of Schema.
+func (s *HarnessConfig) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *HarnessConfig) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetDefinitionId sets the value of DefinitionId.
+func (s *HarnessConfig) SetDefinitionId(val OptString) {
+	s.DefinitionId = val
+}
+
+// SetFiles sets the value of Files.
+func (s *HarnessConfig) SetFiles(val OptNilHarnessConfigFileArray) {
+	s.Files = val
+}
+
+// SetID sets the value of ID.
+func (s *HarnessConfig) SetID(val string) {
+	s.ID = val
+}
+
+// SetInstallCommand sets the value of InstallCommand.
+func (s *HarnessConfig) SetInstallCommand(val OptNilStringArray) {
+	s.InstallCommand = val
+}
+
+// SetName sets the value of Name.
+func (s *HarnessConfig) SetName(val string) {
+	s.Name = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *HarnessConfig) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetRelaunchCommand sets the value of RelaunchCommand.
+func (s *HarnessConfig) SetRelaunchCommand(val OptNilStringArray) {
+	s.RelaunchCommand = val
+}
+
+// SetRunCommand sets the value of RunCommand.
+func (s *HarnessConfig) SetRunCommand(val []string) {
+	s.RunCommand = val
+}
+
+// SetSecrets sets the value of Secrets.
+func (s *HarnessConfig) SetSecrets(val OptNilHarnessConfigSecretArray) {
+	s.Secrets = val
+}
+
+// SetSlug sets the value of Slug.
+func (s *HarnessConfig) SetSlug(val string) {
+	s.Slug = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *HarnessConfig) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+func (*HarnessConfig) createHarnessConfigRes() {}
+func (*HarnessConfig) getHarnessConfigRes()    {}
+func (*HarnessConfig) updateHarnessConfigRes() {}
+
+// A file to write into a harness's home directory when the harness is installed.
+// Ref: #/components/schemas/HarnessConfigFile
+type HarnessConfigFile struct {
+	// File content to write.
+	Content string `json:"content"`
+	// File path relative to the harness's home directory.
+	Path string `json:"path"`
+	// Do not overwrite this file if it already exists.
+	CreateOnly OptBool `json:"createOnly"`
+}
+
+// GetContent returns the value of Content.
+func (s *HarnessConfigFile) GetContent() string {
+	return s.Content
+}
+
+// GetPath returns the value of Path.
+func (s *HarnessConfigFile) GetPath() string {
+	return s.Path
+}
+
+// GetCreateOnly returns the value of CreateOnly.
+func (s *HarnessConfigFile) GetCreateOnly() OptBool {
+	return s.CreateOnly
+}
+
+// SetContent sets the value of Content.
+func (s *HarnessConfigFile) SetContent(val string) {
+	s.Content = val
+}
+
+// SetPath sets the value of Path.
+func (s *HarnessConfigFile) SetPath(val string) {
+	s.Path = val
+}
+
+// SetCreateOnly sets the value of CreateOnly.
+func (s *HarnessConfigFile) SetCreateOnly(val OptBool) {
+	s.CreateOnly = val
+}
+
+// Declares an environment variable the harness expects, and whether it is required.
+// Ref: #/components/schemas/HarnessConfigSecret
+type HarnessConfigSecret struct {
+	// Environment variable name the harness expects to be set.
+	Name string `json:"name"`
+	// Whether the secret must be set for the harness to run. Optional secrets are used when present but
+	// do not block the harness.
+	Required OptBool `json:"required"`
+	// Groups a required secret with alternatives; the requirement is satisfied when at least one member
+	// of the group is present.
+	OneOfGroup OptString `json:"oneOfGroup"`
+}
+
+// GetName returns the value of Name.
+func (s *HarnessConfigSecret) GetName() string {
+	return s.Name
+}
+
+// GetRequired returns the value of Required.
+func (s *HarnessConfigSecret) GetRequired() OptBool {
+	return s.Required
+}
+
+// GetOneOfGroup returns the value of OneOfGroup.
+func (s *HarnessConfigSecret) GetOneOfGroup() OptString {
+	return s.OneOfGroup
+}
+
+// SetName sets the value of Name.
+func (s *HarnessConfigSecret) SetName(val string) {
+	s.Name = val
+}
+
+// SetRequired sets the value of Required.
+func (s *HarnessConfigSecret) SetRequired(val OptBool) {
+	s.Required = val
+}
+
+// SetOneOfGroup sets the value of OneOfGroup.
+func (s *HarnessConfigSecret) SetOneOfGroup(val OptString) {
+	s.OneOfGroup = val
+}
+
+// Binds one of a harness config's environment variables to a project secret.
+// Ref: #/components/schemas/HarnessConfigSecretBinding
+type HarnessConfigSecretBinding struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Harness config the binding belongs to.
+	HarnessConfigId string `json:"harnessConfigId"`
+	// Creation timestamp.
+	CreatedAt time.Time `json:"createdAt"`
+	// Environment variable filled by the secret.
+	EnvName string `json:"envName"`
+	// Stable binding ID.
+	ID string `json:"id"`
+	// Project ID.
+	ProjectId string `json:"projectId"`
+	// Bound secret ID.
+	SecretId string `json:"secretId"`
+	// Last update timestamp.
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *HarnessConfigSecretBinding) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetHarnessConfigId returns the value of HarnessConfigId.
+func (s *HarnessConfigSecretBinding) GetHarnessConfigId() string {
+	return s.HarnessConfigId
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *HarnessConfigSecretBinding) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetEnvName returns the value of EnvName.
+func (s *HarnessConfigSecretBinding) GetEnvName() string {
+	return s.EnvName
+}
+
+// GetID returns the value of ID.
+func (s *HarnessConfigSecretBinding) GetID() string {
+	return s.ID
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *HarnessConfigSecretBinding) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetSecretId returns the value of SecretId.
+func (s *HarnessConfigSecretBinding) GetSecretId() string {
+	return s.SecretId
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *HarnessConfigSecretBinding) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// SetSchema sets the value of Schema.
+func (s *HarnessConfigSecretBinding) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetHarnessConfigId sets the value of HarnessConfigId.
+func (s *HarnessConfigSecretBinding) SetHarnessConfigId(val string) {
+	s.HarnessConfigId = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *HarnessConfigSecretBinding) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetEnvName sets the value of EnvName.
+func (s *HarnessConfigSecretBinding) SetEnvName(val string) {
+	s.EnvName = val
+}
+
+// SetID sets the value of ID.
+func (s *HarnessConfigSecretBinding) SetID(val string) {
+	s.ID = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *HarnessConfigSecretBinding) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetSecretId sets the value of SecretId.
+func (s *HarnessConfigSecretBinding) SetSecretId(val string) {
+	s.SecretId = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *HarnessConfigSecretBinding) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+func (*HarnessConfigSecretBinding) setHarnessConfigSecretBindingRes() {}
+
+// Ref: #/components/schemas/HarnessDefinition
+type HarnessDefinition struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Harness config definition description.
+	Description OptString `json:"description"`
+	// Files to write into the harness's home directory when the harness is installed.
+	Files OptNilHarnessConfigFileArray `json:"files"`
+	// Stable definition ID.
+	ID string `json:"id"`
+	// Argv used to install the harness. Not run through a shell; use ["sh", "-c", "..."] for shell
+	// semantics.
+	InstallCommand OptNilStringArray `json:"installCommand"`
+	// Harness config definition name.
+	Name string `json:"name"`
+	// Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand
+	// for non-first launches. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+	RelaunchCommand OptNilStringArray `json:"relaunchCommand"`
+	// Argv used to run the harness. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+	RunCommand []string `json:"runCommand"`
+	// Environment-variable secrets the harness expects.
+	Secrets OptNilHarnessConfigSecretArray `json:"secrets"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *HarnessDefinition) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetDescription returns the value of Description.
+func (s *HarnessDefinition) GetDescription() OptString {
+	return s.Description
+}
+
+// GetFiles returns the value of Files.
+func (s *HarnessDefinition) GetFiles() OptNilHarnessConfigFileArray {
+	return s.Files
+}
+
+// GetID returns the value of ID.
+func (s *HarnessDefinition) GetID() string {
+	return s.ID
+}
+
+// GetInstallCommand returns the value of InstallCommand.
+func (s *HarnessDefinition) GetInstallCommand() OptNilStringArray {
+	return s.InstallCommand
+}
+
+// GetName returns the value of Name.
+func (s *HarnessDefinition) GetName() string {
+	return s.Name
+}
+
+// GetRelaunchCommand returns the value of RelaunchCommand.
+func (s *HarnessDefinition) GetRelaunchCommand() OptNilStringArray {
+	return s.RelaunchCommand
+}
+
+// GetRunCommand returns the value of RunCommand.
+func (s *HarnessDefinition) GetRunCommand() []string {
+	return s.RunCommand
+}
+
+// GetSecrets returns the value of Secrets.
+func (s *HarnessDefinition) GetSecrets() OptNilHarnessConfigSecretArray {
+	return s.Secrets
+}
+
+// SetSchema sets the value of Schema.
+func (s *HarnessDefinition) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetDescription sets the value of Description.
+func (s *HarnessDefinition) SetDescription(val OptString) {
+	s.Description = val
+}
+
+// SetFiles sets the value of Files.
+func (s *HarnessDefinition) SetFiles(val OptNilHarnessConfigFileArray) {
+	s.Files = val
+}
+
+// SetID sets the value of ID.
+func (s *HarnessDefinition) SetID(val string) {
+	s.ID = val
+}
+
+// SetInstallCommand sets the value of InstallCommand.
+func (s *HarnessDefinition) SetInstallCommand(val OptNilStringArray) {
+	s.InstallCommand = val
+}
+
+// SetName sets the value of Name.
+func (s *HarnessDefinition) SetName(val string) {
+	s.Name = val
+}
+
+// SetRelaunchCommand sets the value of RelaunchCommand.
+func (s *HarnessDefinition) SetRelaunchCommand(val OptNilStringArray) {
+	s.RelaunchCommand = val
+}
+
+// SetRunCommand sets the value of RunCommand.
+func (s *HarnessDefinition) SetRunCommand(val []string) {
+	s.RunCommand = val
+}
+
+// SetSecrets sets the value of Secrets.
+func (s *HarnessDefinition) SetSecrets(val OptNilHarnessConfigSecretArray) {
+	s.Secrets = val
+}
+
+func (*HarnessDefinition) getHarnessDefinitionRes() {}
+
+// Ref: #/components/schemas/HarnessHookLog
+type HarnessHookLog struct {
+	// Hook log ID.
+	ID string `json:"id"`
+	// Harness terminal runtime ID that emitted the hook.
+	TerminalId OptString `json:"terminalId"`
+	// Harness hook provider.
+	Provider string `json:"provider"`
+	// Provider-specific hook event name.
+	Event string `json:"event"`
+	// Raw provider hook payload.
+	Payload   jx.Raw    `json:"payload"`
+	CreatedAt time.Time `json:"createdAt"`
+}
+
+// GetID returns the value of ID.
+func (s *HarnessHookLog) GetID() string {
+	return s.ID
+}
+
+// GetTerminalId returns the value of TerminalId.
+func (s *HarnessHookLog) GetTerminalId() OptString {
+	return s.TerminalId
+}
+
+// GetProvider returns the value of Provider.
+func (s *HarnessHookLog) GetProvider() string {
+	return s.Provider
+}
+
+// GetEvent returns the value of Event.
+func (s *HarnessHookLog) GetEvent() string {
+	return s.Event
+}
+
+// GetPayload returns the value of Payload.
+func (s *HarnessHookLog) GetPayload() jx.Raw {
+	return s.Payload
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *HarnessHookLog) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// SetID sets the value of ID.
+func (s *HarnessHookLog) SetID(val string) {
+	s.ID = val
+}
+
+// SetTerminalId sets the value of TerminalId.
+func (s *HarnessHookLog) SetTerminalId(val OptString) {
+	s.TerminalId = val
+}
+
+// SetProvider sets the value of Provider.
+func (s *HarnessHookLog) SetProvider(val string) {
+	s.Provider = val
+}
+
+// SetEvent sets the value of Event.
+func (s *HarnessHookLog) SetEvent(val string) {
+	s.Event = val
+}
+
+// SetPayload sets the value of Payload.
+func (s *HarnessHookLog) SetPayload(val jx.Raw) {
+	s.Payload = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *HarnessHookLog) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// Ref: #/components/schemas/HarnessHookLogsResponse
+type HarnessHookLogsResponse struct {
+	Hooks []HarnessHookLog `json:"hooks"`
+}
+
+// GetHooks returns the value of Hooks.
+func (s *HarnessHookLogsResponse) GetHooks() []HarnessHookLog {
+	return s.Hooks
+}
+
+// SetHooks sets the value of Hooks.
+func (s *HarnessHookLogsResponse) SetHooks(val []HarnessHookLog) {
+	s.Hooks = val
+}
+
+func (*HarnessHookLogsResponse) listHarnessHooksRes() {}
+
 // Ref: #/components/schemas/Job
 type Job struct {
 	// Stable job ID.
@@ -2308,94 +2308,94 @@ func (s *JobStatus) UnmarshalText(data []byte) error {
 	}
 }
 
-// Ref: #/components/schemas/ListAgentConfigDefinitionsBody
-type ListAgentConfigDefinitionsBody struct {
+// Ref: #/components/schemas/ListHarnessConfigSecretBindingsBody
+type ListHarnessConfigSecretBindingsBody struct {
 	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Agent config definitions.
-	AgentConfigDefinitions []AgentConfigDefinition `json:"agentConfigDefinitions"`
+	Schema         OptURI                       `json:"$schema"`
+	SecretBindings []HarnessConfigSecretBinding `json:"secretBindings"`
 }
 
 // GetSchema returns the value of Schema.
-func (s *ListAgentConfigDefinitionsBody) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetAgentConfigDefinitions returns the value of AgentConfigDefinitions.
-func (s *ListAgentConfigDefinitionsBody) GetAgentConfigDefinitions() []AgentConfigDefinition {
-	return s.AgentConfigDefinitions
-}
-
-// SetSchema sets the value of Schema.
-func (s *ListAgentConfigDefinitionsBody) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetAgentConfigDefinitions sets the value of AgentConfigDefinitions.
-func (s *ListAgentConfigDefinitionsBody) SetAgentConfigDefinitions(val []AgentConfigDefinition) {
-	s.AgentConfigDefinitions = val
-}
-
-func (*ListAgentConfigDefinitionsBody) listAgentConfigDefinitionsRes() {}
-
-// Ref: #/components/schemas/ListAgentConfigSecretBindingsBody
-type ListAgentConfigSecretBindingsBody struct {
-	// A URL to the JSON Schema for this object.
-	Schema         OptURI                     `json:"$schema"`
-	SecretBindings []AgentConfigSecretBinding `json:"secretBindings"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *ListAgentConfigSecretBindingsBody) GetSchema() OptURI {
+func (s *ListHarnessConfigSecretBindingsBody) GetSchema() OptURI {
 	return s.Schema
 }
 
 // GetSecretBindings returns the value of SecretBindings.
-func (s *ListAgentConfigSecretBindingsBody) GetSecretBindings() []AgentConfigSecretBinding {
+func (s *ListHarnessConfigSecretBindingsBody) GetSecretBindings() []HarnessConfigSecretBinding {
 	return s.SecretBindings
 }
 
 // SetSchema sets the value of Schema.
-func (s *ListAgentConfigSecretBindingsBody) SetSchema(val OptURI) {
+func (s *ListHarnessConfigSecretBindingsBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
 // SetSecretBindings sets the value of SecretBindings.
-func (s *ListAgentConfigSecretBindingsBody) SetSecretBindings(val []AgentConfigSecretBinding) {
+func (s *ListHarnessConfigSecretBindingsBody) SetSecretBindings(val []HarnessConfigSecretBinding) {
 	s.SecretBindings = val
 }
 
-func (*ListAgentConfigSecretBindingsBody) listAgentConfigSecretBindingsRes() {}
+func (*ListHarnessConfigSecretBindingsBody) listHarnessConfigSecretBindingsRes() {}
 
-// Ref: #/components/schemas/ListAgentConfigsBody
-type ListAgentConfigsBody struct {
+// Ref: #/components/schemas/ListHarnessConfigsBody
+type ListHarnessConfigsBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Agent configs.
-	AgentConfigs []AgentConfig `json:"agentConfigs"`
+	// Harness configs.
+	HarnessConfigs []HarnessConfig `json:"harnessConfigs"`
 }
 
 // GetSchema returns the value of Schema.
-func (s *ListAgentConfigsBody) GetSchema() OptURI {
+func (s *ListHarnessConfigsBody) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetAgentConfigs returns the value of AgentConfigs.
-func (s *ListAgentConfigsBody) GetAgentConfigs() []AgentConfig {
-	return s.AgentConfigs
+// GetHarnessConfigs returns the value of HarnessConfigs.
+func (s *ListHarnessConfigsBody) GetHarnessConfigs() []HarnessConfig {
+	return s.HarnessConfigs
 }
 
 // SetSchema sets the value of Schema.
-func (s *ListAgentConfigsBody) SetSchema(val OptURI) {
+func (s *ListHarnessConfigsBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetAgentConfigs sets the value of AgentConfigs.
-func (s *ListAgentConfigsBody) SetAgentConfigs(val []AgentConfig) {
-	s.AgentConfigs = val
+// SetHarnessConfigs sets the value of HarnessConfigs.
+func (s *ListHarnessConfigsBody) SetHarnessConfigs(val []HarnessConfig) {
+	s.HarnessConfigs = val
 }
 
-func (*ListAgentConfigsBody) listAgentConfigsRes() {}
+func (*ListHarnessConfigsBody) listHarnessConfigsRes() {}
+
+// Ref: #/components/schemas/ListHarnessDefinitionsBody
+type ListHarnessDefinitionsBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Harness config definitions.
+	HarnessDefinitions []HarnessDefinition `json:"harnessDefinitions"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListHarnessDefinitionsBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetHarnessDefinitions returns the value of HarnessDefinitions.
+func (s *ListHarnessDefinitionsBody) GetHarnessDefinitions() []HarnessDefinition {
+	return s.HarnessDefinitions
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListHarnessDefinitionsBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetHarnessDefinitions sets the value of HarnessDefinitions.
+func (s *ListHarnessDefinitionsBody) SetHarnessDefinitions(val []HarnessDefinition) {
+	s.HarnessDefinitions = val
+}
+
+func (*ListHarnessDefinitionsBody) listHarnessDefinitionsRes() {}
 
 // Ref: #/components/schemas/ListJobsBody
 type ListJobsBody struct {
@@ -2699,52 +2699,6 @@ func (s *ListWorkersBody) SetWorkers(val []Worker) {
 }
 
 func (*ListWorkersBody) listWorkersRes() {}
-
-// NewOptAgentConfig returns new OptAgentConfig with value set to v.
-func NewOptAgentConfig(v AgentConfig) OptAgentConfig {
-	return OptAgentConfig{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptAgentConfig is optional AgentConfig.
-type OptAgentConfig struct {
-	Value AgentConfig
-	Set   bool
-}
-
-// IsSet returns true if OptAgentConfig was set.
-func (o OptAgentConfig) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptAgentConfig) Reset() {
-	var v AgentConfig
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptAgentConfig) SetTo(v AgentConfig) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptAgentConfig) Get() (v AgentConfig, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptAgentConfig) Or(d AgentConfig) AgentConfig {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
 
 // NewOptApproveSecretRequestBodyScope returns new OptApproveSecretRequestBodyScope with value set to v.
 func NewOptApproveSecretRequestBodyScope(v ApproveSecretRequestBodyScope) OptApproveSecretRequestBodyScope {
@@ -3252,6 +3206,52 @@ func (o OptGitSourceWorkspaceMode) Or(d GitSourceWorkspaceMode) GitSourceWorkspa
 	return d
 }
 
+// NewOptHarnessConfig returns new OptHarnessConfig with value set to v.
+func NewOptHarnessConfig(v HarnessConfig) OptHarnessConfig {
+	return OptHarnessConfig{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptHarnessConfig is optional HarnessConfig.
+type OptHarnessConfig struct {
+	Value HarnessConfig
+	Set   bool
+}
+
+// IsSet returns true if OptHarnessConfig was set.
+func (o OptHarnessConfig) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptHarnessConfig) Reset() {
+	var v HarnessConfig
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptHarnessConfig) SetTo(v HarnessConfig) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptHarnessConfig) Get() (v HarnessConfig, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptHarnessConfig) Or(d HarnessConfig) HarnessConfig {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptInt returns new OptInt with value set to v.
 func NewOptInt(v int) OptInt {
 	return OptInt{
@@ -3390,195 +3390,6 @@ func (o OptListSecretRequestsStatus) Or(d ListSecretRequestsStatus) ListSecretRe
 	return d
 }
 
-// NewOptNilAgentConfigArray returns new OptNilAgentConfigArray with value set to v.
-func NewOptNilAgentConfigArray(v []AgentConfig) OptNilAgentConfigArray {
-	return OptNilAgentConfigArray{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptNilAgentConfigArray is optional nullable []AgentConfig.
-type OptNilAgentConfigArray struct {
-	Value []AgentConfig
-	Set   bool
-	Null  bool
-}
-
-// IsSet returns true if OptNilAgentConfigArray was set.
-func (o OptNilAgentConfigArray) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptNilAgentConfigArray) Reset() {
-	var v []AgentConfig
-	o.Value = v
-	o.Set = false
-	o.Null = false
-}
-
-// SetTo sets value to v.
-func (o *OptNilAgentConfigArray) SetTo(v []AgentConfig) {
-	o.Set = true
-	o.Null = false
-	o.Value = v
-}
-
-// IsNull returns true if value is Null.
-func (o OptNilAgentConfigArray) IsNull() bool { return o.Null }
-
-// SetToNull sets value to null.
-func (o *OptNilAgentConfigArray) SetToNull() {
-	o.Set = true
-	o.Null = true
-	var v []AgentConfig
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptNilAgentConfigArray) Get() (v []AgentConfig, ok bool) {
-	if o.Null {
-		return v, false
-	}
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptNilAgentConfigArray) Or(d []AgentConfig) []AgentConfig {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptNilAgentConfigFileArray returns new OptNilAgentConfigFileArray with value set to v.
-func NewOptNilAgentConfigFileArray(v []AgentConfigFile) OptNilAgentConfigFileArray {
-	return OptNilAgentConfigFileArray{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptNilAgentConfigFileArray is optional nullable []AgentConfigFile.
-type OptNilAgentConfigFileArray struct {
-	Value []AgentConfigFile
-	Set   bool
-	Null  bool
-}
-
-// IsSet returns true if OptNilAgentConfigFileArray was set.
-func (o OptNilAgentConfigFileArray) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptNilAgentConfigFileArray) Reset() {
-	var v []AgentConfigFile
-	o.Value = v
-	o.Set = false
-	o.Null = false
-}
-
-// SetTo sets value to v.
-func (o *OptNilAgentConfigFileArray) SetTo(v []AgentConfigFile) {
-	o.Set = true
-	o.Null = false
-	o.Value = v
-}
-
-// IsNull returns true if value is Null.
-func (o OptNilAgentConfigFileArray) IsNull() bool { return o.Null }
-
-// SetToNull sets value to null.
-func (o *OptNilAgentConfigFileArray) SetToNull() {
-	o.Set = true
-	o.Null = true
-	var v []AgentConfigFile
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptNilAgentConfigFileArray) Get() (v []AgentConfigFile, ok bool) {
-	if o.Null {
-		return v, false
-	}
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptNilAgentConfigFileArray) Or(d []AgentConfigFile) []AgentConfigFile {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptNilAgentConfigSecretArray returns new OptNilAgentConfigSecretArray with value set to v.
-func NewOptNilAgentConfigSecretArray(v []AgentConfigSecret) OptNilAgentConfigSecretArray {
-	return OptNilAgentConfigSecretArray{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptNilAgentConfigSecretArray is optional nullable []AgentConfigSecret.
-type OptNilAgentConfigSecretArray struct {
-	Value []AgentConfigSecret
-	Set   bool
-	Null  bool
-}
-
-// IsSet returns true if OptNilAgentConfigSecretArray was set.
-func (o OptNilAgentConfigSecretArray) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptNilAgentConfigSecretArray) Reset() {
-	var v []AgentConfigSecret
-	o.Value = v
-	o.Set = false
-	o.Null = false
-}
-
-// SetTo sets value to v.
-func (o *OptNilAgentConfigSecretArray) SetTo(v []AgentConfigSecret) {
-	o.Set = true
-	o.Null = false
-	o.Value = v
-}
-
-// IsNull returns true if value is Null.
-func (o OptNilAgentConfigSecretArray) IsNull() bool { return o.Null }
-
-// SetToNull sets value to null.
-func (o *OptNilAgentConfigSecretArray) SetToNull() {
-	o.Set = true
-	o.Null = true
-	var v []AgentConfigSecret
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptNilAgentConfigSecretArray) Get() (v []AgentConfigSecret, ok bool) {
-	if o.Null {
-		return v, false
-	}
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptNilAgentConfigSecretArray) Or(d []AgentConfigSecret) []AgentConfigSecret {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptNilErrorDetailArray returns new OptNilErrorDetailArray with value set to v.
 func NewOptNilErrorDetailArray(v []ErrorDetail) OptNilErrorDetailArray {
 	return OptNilErrorDetailArray{
@@ -3636,6 +3447,195 @@ func (o OptNilErrorDetailArray) Get() (v []ErrorDetail, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilErrorDetailArray) Or(d []ErrorDetail) []ErrorDetail {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilHarnessConfigArray returns new OptNilHarnessConfigArray with value set to v.
+func NewOptNilHarnessConfigArray(v []HarnessConfig) OptNilHarnessConfigArray {
+	return OptNilHarnessConfigArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilHarnessConfigArray is optional nullable []HarnessConfig.
+type OptNilHarnessConfigArray struct {
+	Value []HarnessConfig
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilHarnessConfigArray was set.
+func (o OptNilHarnessConfigArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilHarnessConfigArray) Reset() {
+	var v []HarnessConfig
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilHarnessConfigArray) SetTo(v []HarnessConfig) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilHarnessConfigArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilHarnessConfigArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []HarnessConfig
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilHarnessConfigArray) Get() (v []HarnessConfig, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilHarnessConfigArray) Or(d []HarnessConfig) []HarnessConfig {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilHarnessConfigFileArray returns new OptNilHarnessConfigFileArray with value set to v.
+func NewOptNilHarnessConfigFileArray(v []HarnessConfigFile) OptNilHarnessConfigFileArray {
+	return OptNilHarnessConfigFileArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilHarnessConfigFileArray is optional nullable []HarnessConfigFile.
+type OptNilHarnessConfigFileArray struct {
+	Value []HarnessConfigFile
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilHarnessConfigFileArray was set.
+func (o OptNilHarnessConfigFileArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilHarnessConfigFileArray) Reset() {
+	var v []HarnessConfigFile
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilHarnessConfigFileArray) SetTo(v []HarnessConfigFile) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilHarnessConfigFileArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilHarnessConfigFileArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []HarnessConfigFile
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilHarnessConfigFileArray) Get() (v []HarnessConfigFile, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilHarnessConfigFileArray) Or(d []HarnessConfigFile) []HarnessConfigFile {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilHarnessConfigSecretArray returns new OptNilHarnessConfigSecretArray with value set to v.
+func NewOptNilHarnessConfigSecretArray(v []HarnessConfigSecret) OptNilHarnessConfigSecretArray {
+	return OptNilHarnessConfigSecretArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilHarnessConfigSecretArray is optional nullable []HarnessConfigSecret.
+type OptNilHarnessConfigSecretArray struct {
+	Value []HarnessConfigSecret
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilHarnessConfigSecretArray was set.
+func (o OptNilHarnessConfigSecretArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilHarnessConfigSecretArray) Reset() {
+	var v []HarnessConfigSecret
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilHarnessConfigSecretArray) SetTo(v []HarnessConfigSecret) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilHarnessConfigSecretArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilHarnessConfigSecretArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []HarnessConfigSecret
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilHarnessConfigSecretArray) Get() (v []HarnessConfigSecret, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilHarnessConfigSecretArray) Or(d []HarnessConfigSecret) []HarnessConfigSecret {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -4823,16 +4823,16 @@ func (o OptWorkerActiveOperation) Or(d WorkerActiveOperation) WorkerActiveOperat
 type Project struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Agent configurations.
-	AgentConfigs OptNilAgentConfigArray `json:"agentConfigs"`
+	// Harness configurations.
+	HarnessConfigs OptNilHarnessConfigArray `json:"harnessConfigs"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
 	// Whether this is the user's default project.
 	Default bool `json:"default"`
 	// Default sandbox provider instance ID.
 	DefaultSandboxProviderId OptString `json:"defaultSandboxProviderId"`
-	// Default agent config ID.
-	DefaultAgentConfigId OptString `json:"defaultAgentConfigId"`
+	// Default harness config ID.
+	DefaultHarnessConfigId OptString `json:"defaultHarnessConfigId"`
 	// Stable project ID.
 	ID string `json:"id"`
 	// Project members.
@@ -4858,9 +4858,9 @@ func (s *Project) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetAgentConfigs returns the value of AgentConfigs.
-func (s *Project) GetAgentConfigs() OptNilAgentConfigArray {
-	return s.AgentConfigs
+// GetHarnessConfigs returns the value of HarnessConfigs.
+func (s *Project) GetHarnessConfigs() OptNilHarnessConfigArray {
+	return s.HarnessConfigs
 }
 
 // GetCreatedAt returns the value of CreatedAt.
@@ -4878,9 +4878,9 @@ func (s *Project) GetDefaultSandboxProviderId() OptString {
 	return s.DefaultSandboxProviderId
 }
 
-// GetDefaultAgentConfigId returns the value of DefaultAgentConfigId.
-func (s *Project) GetDefaultAgentConfigId() OptString {
-	return s.DefaultAgentConfigId
+// GetDefaultHarnessConfigId returns the value of DefaultHarnessConfigId.
+func (s *Project) GetDefaultHarnessConfigId() OptString {
+	return s.DefaultHarnessConfigId
 }
 
 // GetID returns the value of ID.
@@ -4933,9 +4933,9 @@ func (s *Project) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetAgentConfigs sets the value of AgentConfigs.
-func (s *Project) SetAgentConfigs(val OptNilAgentConfigArray) {
-	s.AgentConfigs = val
+// SetHarnessConfigs sets the value of HarnessConfigs.
+func (s *Project) SetHarnessConfigs(val OptNilHarnessConfigArray) {
+	s.HarnessConfigs = val
 }
 
 // SetCreatedAt sets the value of CreatedAt.
@@ -4953,9 +4953,9 @@ func (s *Project) SetDefaultSandboxProviderId(val OptString) {
 	s.DefaultSandboxProviderId = val
 }
 
-// SetDefaultAgentConfigId sets the value of DefaultAgentConfigId.
-func (s *Project) SetDefaultAgentConfigId(val OptString) {
-	s.DefaultAgentConfigId = val
+// SetDefaultHarnessConfigId sets the value of DefaultHarnessConfigId.
+func (s *Project) SetDefaultHarnessConfigId(val OptString) {
+	s.DefaultHarnessConfigId = val
 }
 
 // SetID sets the value of ID.
@@ -5003,8 +5003,8 @@ func (s *Project) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
 }
 
-func (*Project) getProjectRes()            {}
-func (*Project) setDefaultAgentConfigRes() {}
+func (*Project) getProjectRes()              {}
+func (*Project) setDefaultHarnessConfigRes() {}
 
 // Ref: #/components/schemas/ProjectMember
 type ProjectMember struct {
@@ -5694,7 +5694,7 @@ func (*ResourceHistoryResponse) listSandboxExecResourceHistoryRes() {}
 
 // Ref: #/components/schemas/ResourceSnapshot
 type ResourceSnapshot struct {
-	// Agent terminal runtime ID.
+	// Harness terminal runtime ID.
 	TerminalId string `json:"terminalId"`
 	// Time when the snapshot was collected.
 	SampledAt time.Time `json:"sampledAt"`
@@ -5783,8 +5783,8 @@ func (*RevokeSecretGrantNoContent) revokeSecretGrantRes() {}
 type Sandbox struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Agent config.
-	AgentConfig OptAgentConfig `json:"agentConfig"`
+	// Harness config.
+	HarnessConfig OptHarnessConfig `json:"harnessConfig"`
 	// Desired sandbox configuration.
 	Config SandboxConfig `json:"config"`
 	// Creation timestamp.
@@ -5812,9 +5812,9 @@ func (s *Sandbox) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetAgentConfig returns the value of AgentConfig.
-func (s *Sandbox) GetAgentConfig() OptAgentConfig {
-	return s.AgentConfig
+// GetHarnessConfig returns the value of HarnessConfig.
+func (s *Sandbox) GetHarnessConfig() OptHarnessConfig {
+	return s.HarnessConfig
 }
 
 // GetConfig returns the value of Config.
@@ -5872,9 +5872,9 @@ func (s *Sandbox) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetAgentConfig sets the value of AgentConfig.
-func (s *Sandbox) SetAgentConfig(val OptAgentConfig) {
-	s.AgentConfig = val
+// SetHarnessConfig sets the value of HarnessConfig.
+func (s *Sandbox) SetHarnessConfig(val OptHarnessConfig) {
+	s.HarnessConfig = val
 }
 
 // SetConfig sets the value of Config.
@@ -5935,66 +5935,21 @@ func (*Sandbox) startSandboxRes()     {}
 func (*Sandbox) stopSandboxRes()      {}
 func (*Sandbox) updateSandboxRes()    {}
 
-// Ref: #/components/schemas/SandboxAgentSecretsResponse
-type SandboxAgentSecretsResponse struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Environment variable name to sentinel placeholder. Inject these into the exec/terminal environment;
-	//  the proxy swaps them for real values on egress.
-	Secrets SandboxAgentSecretsResponseSecrets `json:"secrets"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *SandboxAgentSecretsResponse) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetSecrets returns the value of Secrets.
-func (s *SandboxAgentSecretsResponse) GetSecrets() SandboxAgentSecretsResponseSecrets {
-	return s.Secrets
-}
-
-// SetSchema sets the value of Schema.
-func (s *SandboxAgentSecretsResponse) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetSecrets sets the value of Secrets.
-func (s *SandboxAgentSecretsResponse) SetSecrets(val SandboxAgentSecretsResponseSecrets) {
-	s.Secrets = val
-}
-
-func (*SandboxAgentSecretsResponse) assignSandboxAgentSecretsRes() {}
-
-// Environment variable name to sentinel placeholder. Inject these into the exec/terminal environment;
-//
-//	the proxy swaps them for real values on egress.
-type SandboxAgentSecretsResponseSecrets map[string]string
-
-func (s *SandboxAgentSecretsResponseSecrets) init() SandboxAgentSecretsResponseSecrets {
-	m := *s
-	if m == nil {
-		m = map[string]string{}
-		*s = m
-	}
-	return m
-}
-
 // Ref: #/components/schemas/SandboxConfig
 type SandboxConfig struct {
-	// Agent config ID.
-	AgentConfigId OptString `json:"agentConfigId"`
-	// Model the agent should use.
-	AgentModel OptString `json:"agentModel"`
-	// Model reasoning level the agent should use.
-	AgentModelReasoningLevel OptString `json:"agentModelReasoningLevel"`
-	// Model service tier the agent should use.
-	AgentModelServiceTier OptString `json:"agentModelServiceTier"`
+	// Harness config ID.
+	HarnessConfigId OptString `json:"harnessConfigId"`
+	// Model the harness should use.
+	Model OptString `json:"model"`
+	// Model reasoning level the harness should use.
+	ModelReasoningLevel OptString `json:"modelReasoningLevel"`
+	// Model service tier the harness should use.
+	ModelServiceTier OptString `json:"modelServiceTier"`
 	// Requested CPU capacity in vCPUs.
 	CpuVcpus float64 `json:"cpuVcpus"`
 	// Sandbox description.
 	Description OptString `json:"description"`
-	// Environment variables available to sandbox-agent terminals and execs by default.
+	// Environment variables available to sandbox-harness terminals and execs by default.
 	Env OptSandboxConfigEnv `json:"env"`
 	// Sandbox base image.
 	Image string `json:"image"`
@@ -6002,7 +5957,7 @@ type SandboxConfig struct {
 	MemoryBytes int64 `json:"memoryBytes"`
 	// Sandbox name.
 	Name string `json:"name"`
-	// Prompt the agent should run, passed as argv to preserve the caller's exact tokens.
+	// Prompt the harness should run, passed as argv to preserve the caller's exact tokens.
 	Prompt []string `json:"prompt"`
 	// Primary Git source to materialize in the sandbox.
 	Source OptGitSource `json:"source"`
@@ -6014,24 +5969,24 @@ type SandboxConfig struct {
 	User OptSandboxUser `json:"user"`
 }
 
-// GetAgentConfigId returns the value of AgentConfigId.
-func (s *SandboxConfig) GetAgentConfigId() OptString {
-	return s.AgentConfigId
+// GetHarnessConfigId returns the value of HarnessConfigId.
+func (s *SandboxConfig) GetHarnessConfigId() OptString {
+	return s.HarnessConfigId
 }
 
-// GetAgentModel returns the value of AgentModel.
-func (s *SandboxConfig) GetAgentModel() OptString {
-	return s.AgentModel
+// GetModel returns the value of Model.
+func (s *SandboxConfig) GetModel() OptString {
+	return s.Model
 }
 
-// GetAgentModelReasoningLevel returns the value of AgentModelReasoningLevel.
-func (s *SandboxConfig) GetAgentModelReasoningLevel() OptString {
-	return s.AgentModelReasoningLevel
+// GetModelReasoningLevel returns the value of ModelReasoningLevel.
+func (s *SandboxConfig) GetModelReasoningLevel() OptString {
+	return s.ModelReasoningLevel
 }
 
-// GetAgentModelServiceTier returns the value of AgentModelServiceTier.
-func (s *SandboxConfig) GetAgentModelServiceTier() OptString {
-	return s.AgentModelServiceTier
+// GetModelServiceTier returns the value of ModelServiceTier.
+func (s *SandboxConfig) GetModelServiceTier() OptString {
+	return s.ModelServiceTier
 }
 
 // GetCpuVcpus returns the value of CpuVcpus.
@@ -6089,24 +6044,24 @@ func (s *SandboxConfig) GetUser() OptSandboxUser {
 	return s.User
 }
 
-// SetAgentConfigId sets the value of AgentConfigId.
-func (s *SandboxConfig) SetAgentConfigId(val OptString) {
-	s.AgentConfigId = val
+// SetHarnessConfigId sets the value of HarnessConfigId.
+func (s *SandboxConfig) SetHarnessConfigId(val OptString) {
+	s.HarnessConfigId = val
 }
 
-// SetAgentModel sets the value of AgentModel.
-func (s *SandboxConfig) SetAgentModel(val OptString) {
-	s.AgentModel = val
+// SetModel sets the value of Model.
+func (s *SandboxConfig) SetModel(val OptString) {
+	s.Model = val
 }
 
-// SetAgentModelReasoningLevel sets the value of AgentModelReasoningLevel.
-func (s *SandboxConfig) SetAgentModelReasoningLevel(val OptString) {
-	s.AgentModelReasoningLevel = val
+// SetModelReasoningLevel sets the value of ModelReasoningLevel.
+func (s *SandboxConfig) SetModelReasoningLevel(val OptString) {
+	s.ModelReasoningLevel = val
 }
 
-// SetAgentModelServiceTier sets the value of AgentModelServiceTier.
-func (s *SandboxConfig) SetAgentModelServiceTier(val OptString) {
-	s.AgentModelServiceTier = val
+// SetModelServiceTier sets the value of ModelServiceTier.
+func (s *SandboxConfig) SetModelServiceTier(val OptString) {
+	s.ModelServiceTier = val
 }
 
 // SetCpuVcpus sets the value of CpuVcpus.
@@ -6164,7 +6119,7 @@ func (s *SandboxConfig) SetUser(val OptSandboxUser) {
 	s.User = val
 }
 
-// Environment variables available to sandbox-agent terminals and execs by default.
+// Environment variables available to sandbox-harness terminals and execs by default.
 type SandboxConfigEnv map[string]string
 
 func (s *SandboxConfigEnv) init() SandboxConfigEnv {
@@ -6190,19 +6145,19 @@ func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeRefere
 
 // Ref: #/components/schemas/SandboxCreateConfig
 type SandboxCreateConfig struct {
-	// Agent config ID.
-	AgentConfigId OptString `json:"agentConfigId"`
-	// Model the agent should use.
-	AgentModel OptString `json:"agentModel"`
-	// Model reasoning level the agent should use.
-	AgentModelReasoningLevel OptString `json:"agentModelReasoningLevel"`
-	// Model service tier the agent should use.
-	AgentModelServiceTier OptString `json:"agentModelServiceTier"`
+	// Harness config ID.
+	HarnessConfigId OptString `json:"harnessConfigId"`
+	// Model the harness should use.
+	Model OptString `json:"model"`
+	// Model reasoning level the harness should use.
+	ModelReasoningLevel OptString `json:"modelReasoningLevel"`
+	// Model service tier the harness should use.
+	ModelServiceTier OptString `json:"modelServiceTier"`
 	// Requested CPU capacity in vCPUs.
 	CpuVcpus OptFloat64 `json:"cpuVcpus"`
 	// Sandbox description.
 	Description OptString `json:"description"`
-	// Environment variables available to sandbox-agent terminals and execs by default.
+	// Environment variables available to sandbox-harness terminals and execs by default.
 	Env OptSandboxCreateConfigEnv `json:"env"`
 	// Sandbox base image. Defaults to the server configured sandbox image when omitted.
 	Image OptString `json:"image"`
@@ -6210,7 +6165,7 @@ type SandboxCreateConfig struct {
 	MemoryBytes OptInt64 `json:"memoryBytes"`
 	// Sandbox name.
 	Name string `json:"name"`
-	// Prompt the agent should run, passed as argv to preserve the caller's exact tokens.
+	// Prompt the harness should run, passed as argv to preserve the caller's exact tokens.
 	Prompt []string `json:"prompt"`
 	// Secrets to inject into the sandbox as sentinel placeholders that the proxy resolves to real values
 	// at runtime.
@@ -6225,24 +6180,24 @@ type SandboxCreateConfig struct {
 	User OptSandboxUser `json:"user"`
 }
 
-// GetAgentConfigId returns the value of AgentConfigId.
-func (s *SandboxCreateConfig) GetAgentConfigId() OptString {
-	return s.AgentConfigId
+// GetHarnessConfigId returns the value of HarnessConfigId.
+func (s *SandboxCreateConfig) GetHarnessConfigId() OptString {
+	return s.HarnessConfigId
 }
 
-// GetAgentModel returns the value of AgentModel.
-func (s *SandboxCreateConfig) GetAgentModel() OptString {
-	return s.AgentModel
+// GetModel returns the value of Model.
+func (s *SandboxCreateConfig) GetModel() OptString {
+	return s.Model
 }
 
-// GetAgentModelReasoningLevel returns the value of AgentModelReasoningLevel.
-func (s *SandboxCreateConfig) GetAgentModelReasoningLevel() OptString {
-	return s.AgentModelReasoningLevel
+// GetModelReasoningLevel returns the value of ModelReasoningLevel.
+func (s *SandboxCreateConfig) GetModelReasoningLevel() OptString {
+	return s.ModelReasoningLevel
 }
 
-// GetAgentModelServiceTier returns the value of AgentModelServiceTier.
-func (s *SandboxCreateConfig) GetAgentModelServiceTier() OptString {
-	return s.AgentModelServiceTier
+// GetModelServiceTier returns the value of ModelServiceTier.
+func (s *SandboxCreateConfig) GetModelServiceTier() OptString {
+	return s.ModelServiceTier
 }
 
 // GetCpuVcpus returns the value of CpuVcpus.
@@ -6305,24 +6260,24 @@ func (s *SandboxCreateConfig) GetUser() OptSandboxUser {
 	return s.User
 }
 
-// SetAgentConfigId sets the value of AgentConfigId.
-func (s *SandboxCreateConfig) SetAgentConfigId(val OptString) {
-	s.AgentConfigId = val
+// SetHarnessConfigId sets the value of HarnessConfigId.
+func (s *SandboxCreateConfig) SetHarnessConfigId(val OptString) {
+	s.HarnessConfigId = val
 }
 
-// SetAgentModel sets the value of AgentModel.
-func (s *SandboxCreateConfig) SetAgentModel(val OptString) {
-	s.AgentModel = val
+// SetModel sets the value of Model.
+func (s *SandboxCreateConfig) SetModel(val OptString) {
+	s.Model = val
 }
 
-// SetAgentModelReasoningLevel sets the value of AgentModelReasoningLevel.
-func (s *SandboxCreateConfig) SetAgentModelReasoningLevel(val OptString) {
-	s.AgentModelReasoningLevel = val
+// SetModelReasoningLevel sets the value of ModelReasoningLevel.
+func (s *SandboxCreateConfig) SetModelReasoningLevel(val OptString) {
+	s.ModelReasoningLevel = val
 }
 
-// SetAgentModelServiceTier sets the value of AgentModelServiceTier.
-func (s *SandboxCreateConfig) SetAgentModelServiceTier(val OptString) {
-	s.AgentModelServiceTier = val
+// SetModelServiceTier sets the value of ModelServiceTier.
+func (s *SandboxCreateConfig) SetModelServiceTier(val OptString) {
+	s.ModelServiceTier = val
 }
 
 // SetCpuVcpus sets the value of CpuVcpus.
@@ -6385,7 +6340,7 @@ func (s *SandboxCreateConfig) SetUser(val OptSandboxUser) {
 	s.User = val
 }
 
-// Environment variables available to sandbox-agent terminals and execs by default.
+// Environment variables available to sandbox-harness terminals and execs by default.
 type SandboxCreateConfigEnv map[string]string
 
 func (s *SandboxCreateConfigEnv) init() SandboxCreateConfigEnv {
@@ -6414,8 +6369,8 @@ type SandboxExec struct {
 	// Sandbox exec runtime ID.
 	ID string `json:"id"`
 	// Current observed exec runtime status. installing is a terminal-layer
-	// phase: the exec record exists and its agent install command is still
-	// running, before the agent process is launched (starting -> running).
+	// phase: the exec record exists and its harness install command is still
+	// running, before the harness process is launched (starting -> running).
 	Status SandboxExecStatus `json:"status"`
 	// Command argv executed in the sandbox.
 	Command []string `json:"command"`
@@ -6440,9 +6395,9 @@ type SandboxExec struct {
 	ExitedAt  OptDateTime `json:"exitedAt"`
 	// Caller-supplied exec metadata.
 	Metadata OptSandboxExecMetadata `json:"metadata"`
-	// Coding agent this exec runs, when created in agent (terminal) mode.
-	AgentId OptString `json:"agentId"`
-	// Whether this is the sandbox's primary agent terminal.
+	// Harness this exec runs, when created in harness (terminal) mode.
+	HarnessId OptString `json:"harnessId"`
+	// Whether this is the sandbox's primary harness terminal.
 	Primary OptBool `json:"primary"`
 }
 
@@ -6521,9 +6476,9 @@ func (s *SandboxExec) GetMetadata() OptSandboxExecMetadata {
 	return s.Metadata
 }
 
-// GetAgentId returns the value of AgentId.
-func (s *SandboxExec) GetAgentId() OptString {
-	return s.AgentId
+// GetHarnessId returns the value of HarnessId.
+func (s *SandboxExec) GetHarnessId() OptString {
+	return s.HarnessId
 }
 
 // GetPrimary returns the value of Primary.
@@ -6606,9 +6561,9 @@ func (s *SandboxExec) SetMetadata(val OptSandboxExecMetadata) {
 	s.Metadata = val
 }
 
-// SetAgentId sets the value of AgentId.
-func (s *SandboxExec) SetAgentId(val OptString) {
-	s.AgentId = val
+// SetHarnessId sets the value of HarnessId.
+func (s *SandboxExec) SetHarnessId(val OptString) {
+	s.HarnessId = val
 }
 
 // SetPrimary sets the value of Primary.
@@ -6845,8 +6800,8 @@ func (s *SandboxExecMetadata) init() SandboxExecMetadata {
 }
 
 // Current observed exec runtime status. installing is a terminal-layer
-// phase: the exec record exists and its agent install command is still
-// running, before the agent process is launched (starting -> running).
+// phase: the exec record exists and its harness install command is still
+// running, before the harness process is launched (starting -> running).
 type SandboxExecStatus string
 
 const (
@@ -6932,6 +6887,51 @@ func (s *SandboxExecsResponse) SetExecs(val []SandboxExec) {
 }
 
 func (*SandboxExecsResponse) listSandboxExecsRes() {}
+
+// Ref: #/components/schemas/SandboxHarnessSecretsResponse
+type SandboxHarnessSecretsResponse struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Environment variable name to sentinel placeholder. Inject these into the exec/terminal environment;
+	//  the proxy swaps them for real values on egress.
+	Secrets SandboxHarnessSecretsResponseSecrets `json:"secrets"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *SandboxHarnessSecretsResponse) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSecrets returns the value of Secrets.
+func (s *SandboxHarnessSecretsResponse) GetSecrets() SandboxHarnessSecretsResponseSecrets {
+	return s.Secrets
+}
+
+// SetSchema sets the value of Schema.
+func (s *SandboxHarnessSecretsResponse) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSecrets sets the value of Secrets.
+func (s *SandboxHarnessSecretsResponse) SetSecrets(val SandboxHarnessSecretsResponseSecrets) {
+	s.Secrets = val
+}
+
+func (*SandboxHarnessSecretsResponse) assignSandboxHarnessSecretsRes() {}
+
+// Environment variable name to sentinel placeholder. Inject these into the exec/terminal environment;
+//
+//	the proxy swaps them for real values on egress.
+type SandboxHarnessSecretsResponseSecrets map[string]string
+
+func (s *SandboxHarnessSecretsResponseSecrets) init() SandboxHarnessSecretsResponseSecrets {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
 
 // Ref: #/components/schemas/SandboxProviderCatalogItem
 type SandboxProviderCatalogItem struct {
@@ -8132,16 +8132,16 @@ func (*SecretGrant) createSecretGrantRes() {}
 type SecretGrantScope string
 
 const (
-	SecretGrantScopeSandbox     SecretGrantScope = "sandbox"
-	SecretGrantScopeAgentConfig SecretGrantScope = "agentConfig"
-	SecretGrantScopeProject     SecretGrantScope = "project"
+	SecretGrantScopeSandbox       SecretGrantScope = "sandbox"
+	SecretGrantScopeHarnessConfig SecretGrantScope = "harnessConfig"
+	SecretGrantScopeProject       SecretGrantScope = "project"
 )
 
 // AllValues returns all SecretGrantScope values.
 func (SecretGrantScope) AllValues() []SecretGrantScope {
 	return []SecretGrantScope{
 		SecretGrantScopeSandbox,
-		SecretGrantScopeAgentConfig,
+		SecretGrantScopeHarnessConfig,
 		SecretGrantScopeProject,
 	}
 }
@@ -8151,7 +8151,7 @@ func (s SecretGrantScope) MarshalText() ([]byte, error) {
 	switch s {
 	case SecretGrantScopeSandbox:
 		return []byte(s), nil
-	case SecretGrantScopeAgentConfig:
+	case SecretGrantScopeHarnessConfig:
 		return []byte(s), nil
 	case SecretGrantScopeProject:
 		return []byte(s), nil
@@ -8166,8 +8166,8 @@ func (s *SecretGrantScope) UnmarshalText(data []byte) error {
 	case SecretGrantScopeSandbox:
 		*s = SecretGrantScopeSandbox
 		return nil
-	case SecretGrantScopeAgentConfig:
-		*s = SecretGrantScopeAgentConfig
+	case SecretGrantScopeHarnessConfig:
+		*s = SecretGrantScopeHarnessConfig
 		return nil
 	case SecretGrantScopeProject:
 		*s = SecretGrantScopeProject
@@ -8541,8 +8541,8 @@ func (s *SecretValue) SetUsername(val OptString) {
 	s.Username = val
 }
 
-// Ref: #/components/schemas/SetAgentConfigSecretBindingBody
-type SetAgentConfigSecretBindingBody struct {
+// Ref: #/components/schemas/SetHarnessConfigSecretBindingBody
+type SetHarnessConfigSecretBindingBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 	// Secret ID to bind to the environment variable.
@@ -8550,22 +8550,22 @@ type SetAgentConfigSecretBindingBody struct {
 }
 
 // GetSchema returns the value of Schema.
-func (s *SetAgentConfigSecretBindingBody) GetSchema() OptURI {
+func (s *SetHarnessConfigSecretBindingBody) GetSchema() OptURI {
 	return s.Schema
 }
 
 // GetSecretId returns the value of SecretId.
-func (s *SetAgentConfigSecretBindingBody) GetSecretId() string {
+func (s *SetHarnessConfigSecretBindingBody) GetSecretId() string {
 	return s.SecretId
 }
 
 // SetSchema sets the value of Schema.
-func (s *SetAgentConfigSecretBindingBody) SetSchema(val OptURI) {
+func (s *SetHarnessConfigSecretBindingBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
 // SetSecretId sets the value of SecretId.
-func (s *SetAgentConfigSecretBindingBody) SetSecretId(val string) {
+func (s *SetHarnessConfigSecretBindingBody) SetSecretId(val string) {
 	s.SecretId = val
 }
 
@@ -8641,93 +8641,93 @@ func (s StreamSandboxExecResourcesOK) Read(p []byte) (n int, err error) {
 
 func (*StreamSandboxExecResourcesOK) streamSandboxExecResourcesRes() {}
 
-// Ref: #/components/schemas/UpdateAgentConfigBody
-type UpdateAgentConfigBody struct {
+// Ref: #/components/schemas/UpdateHarnessConfigBody
+type UpdateHarnessConfigBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Files to write into the agent's home directory when the agent is installed.
-	Files OptNilAgentConfigFileArray `json:"files"`
-	// Argv used to install the agent. Not run through a shell; use ["sh", "-c", "..."] for shell
+	// Files to write into the harness's home directory when the harness is installed.
+	Files OptNilHarnessConfigFileArray `json:"files"`
+	// Argv used to install the harness. Not run through a shell; use ["sh", "-c", "..."] for shell
 	// semantics.
 	InstallCommand OptNilStringArray `json:"installCommand"`
-	// Agent config name.
+	// Harness config name.
 	Name OptString `json:"name"`
-	// Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand
+	// Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand
 	// for non-first launches. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
 	RelaunchCommand OptNilStringArray `json:"relaunchCommand"`
-	// Argv used to run the agent. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+	// Argv used to run the harness. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
 	RunCommand OptNilStringArray `json:"runCommand"`
-	// Environment-variable secrets the agent expects.
-	Secrets OptNilAgentConfigSecretArray `json:"secrets"`
+	// Environment-variable secrets the harness expects.
+	Secrets OptNilHarnessConfigSecretArray `json:"secrets"`
 }
 
 // GetSchema returns the value of Schema.
-func (s *UpdateAgentConfigBody) GetSchema() OptURI {
+func (s *UpdateHarnessConfigBody) GetSchema() OptURI {
 	return s.Schema
 }
 
 // GetFiles returns the value of Files.
-func (s *UpdateAgentConfigBody) GetFiles() OptNilAgentConfigFileArray {
+func (s *UpdateHarnessConfigBody) GetFiles() OptNilHarnessConfigFileArray {
 	return s.Files
 }
 
 // GetInstallCommand returns the value of InstallCommand.
-func (s *UpdateAgentConfigBody) GetInstallCommand() OptNilStringArray {
+func (s *UpdateHarnessConfigBody) GetInstallCommand() OptNilStringArray {
 	return s.InstallCommand
 }
 
 // GetName returns the value of Name.
-func (s *UpdateAgentConfigBody) GetName() OptString {
+func (s *UpdateHarnessConfigBody) GetName() OptString {
 	return s.Name
 }
 
 // GetRelaunchCommand returns the value of RelaunchCommand.
-func (s *UpdateAgentConfigBody) GetRelaunchCommand() OptNilStringArray {
+func (s *UpdateHarnessConfigBody) GetRelaunchCommand() OptNilStringArray {
 	return s.RelaunchCommand
 }
 
 // GetRunCommand returns the value of RunCommand.
-func (s *UpdateAgentConfigBody) GetRunCommand() OptNilStringArray {
+func (s *UpdateHarnessConfigBody) GetRunCommand() OptNilStringArray {
 	return s.RunCommand
 }
 
 // GetSecrets returns the value of Secrets.
-func (s *UpdateAgentConfigBody) GetSecrets() OptNilAgentConfigSecretArray {
+func (s *UpdateHarnessConfigBody) GetSecrets() OptNilHarnessConfigSecretArray {
 	return s.Secrets
 }
 
 // SetSchema sets the value of Schema.
-func (s *UpdateAgentConfigBody) SetSchema(val OptURI) {
+func (s *UpdateHarnessConfigBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
 // SetFiles sets the value of Files.
-func (s *UpdateAgentConfigBody) SetFiles(val OptNilAgentConfigFileArray) {
+func (s *UpdateHarnessConfigBody) SetFiles(val OptNilHarnessConfigFileArray) {
 	s.Files = val
 }
 
 // SetInstallCommand sets the value of InstallCommand.
-func (s *UpdateAgentConfigBody) SetInstallCommand(val OptNilStringArray) {
+func (s *UpdateHarnessConfigBody) SetInstallCommand(val OptNilStringArray) {
 	s.InstallCommand = val
 }
 
 // SetName sets the value of Name.
-func (s *UpdateAgentConfigBody) SetName(val OptString) {
+func (s *UpdateHarnessConfigBody) SetName(val OptString) {
 	s.Name = val
 }
 
 // SetRelaunchCommand sets the value of RelaunchCommand.
-func (s *UpdateAgentConfigBody) SetRelaunchCommand(val OptNilStringArray) {
+func (s *UpdateHarnessConfigBody) SetRelaunchCommand(val OptNilStringArray) {
 	s.RelaunchCommand = val
 }
 
 // SetRunCommand sets the value of RunCommand.
-func (s *UpdateAgentConfigBody) SetRunCommand(val OptNilStringArray) {
+func (s *UpdateHarnessConfigBody) SetRunCommand(val OptNilStringArray) {
 	s.RunCommand = val
 }
 
 // SetSecrets sets the value of Secrets.
-func (s *UpdateAgentConfigBody) SetSecrets(val OptNilAgentConfigSecretArray) {
+func (s *UpdateHarnessConfigBody) SetSecrets(val OptNilHarnessConfigSecretArray) {
 	s.Secrets = val
 }
 

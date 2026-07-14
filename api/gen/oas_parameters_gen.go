@@ -139,15 +139,15 @@ func decodeApproveSecretRequestParams(args [2]string, argsEscaped bool, r *http.
 	return params, nil
 }
 
-// AssignSandboxAgentSecretsParams is parameters of assign-sandbox-agent-secrets operation.
-type AssignSandboxAgentSecretsParams struct {
+// AssignSandboxHarnessSecretsParams is parameters of assign-sandbox-harness-secrets operation.
+type AssignSandboxHarnessSecretsParams struct {
 	// Project ID.
 	ProjectId string
 	// Sandbox ID.
 	SandboxId string
 }
 
-func unpackAssignSandboxAgentSecretsParams(packed middleware.Parameters) (params AssignSandboxAgentSecretsParams) {
+func unpackAssignSandboxHarnessSecretsParams(packed middleware.Parameters) (params AssignSandboxHarnessSecretsParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "projectId",
@@ -165,7 +165,7 @@ func unpackAssignSandboxAgentSecretsParams(packed middleware.Parameters) (params
 	return params
 }
 
-func decodeAssignSandboxAgentSecretsParams(args [2]string, argsEscaped bool, r *http.Request) (params AssignSandboxAgentSecretsParams, _ error) {
+func decodeAssignSandboxHarnessSecretsParams(args [2]string, argsEscaped bool, r *http.Request) (params AssignSandboxHarnessSecretsParams, _ error) {
 	// Set default value for path: projectId.
 	{
 		val := string("default")
@@ -438,13 +438,13 @@ func decodeAttachSandboxExecParams(args [3]string, argsEscaped bool, r *http.Req
 	return params, nil
 }
 
-// CreateAgentConfigParams is parameters of create-agent-config operation.
-type CreateAgentConfigParams struct {
+// CreateHarnessConfigParams is parameters of create-harness-config operation.
+type CreateHarnessConfigParams struct {
 	// Project ID.
 	ProjectId string
 }
 
-func unpackCreateAgentConfigParams(packed middleware.Parameters) (params CreateAgentConfigParams) {
+func unpackCreateHarnessConfigParams(packed middleware.Parameters) (params CreateHarnessConfigParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "projectId",
@@ -455,7 +455,7 @@ func unpackCreateAgentConfigParams(packed middleware.Parameters) (params CreateA
 	return params
 }
 
-func decodeCreateAgentConfigParams(args [1]string, argsEscaped bool, r *http.Request) (params CreateAgentConfigParams, _ error) {
+func decodeCreateHarnessConfigParams(args [1]string, argsEscaped bool, r *http.Request) (params CreateHarnessConfigParams, _ error) {
 	// Set default value for path: projectId.
 	{
 		val := string("default")
@@ -984,15 +984,15 @@ func decodeCreateSecretRequestParams(args [1]string, argsEscaped bool, r *http.R
 	return params, nil
 }
 
-// DeleteAgentConfigParams is parameters of delete-agent-config operation.
-type DeleteAgentConfigParams struct {
+// DeleteHarnessConfigParams is parameters of delete-harness-config operation.
+type DeleteHarnessConfigParams struct {
 	// Project ID.
 	ProjectId string
-	// Agent config ID.
-	AgentConfigId string
+	// Harness config ID.
+	HarnessConfigId string
 }
 
-func unpackDeleteAgentConfigParams(packed middleware.Parameters) (params DeleteAgentConfigParams) {
+func unpackDeleteHarnessConfigParams(packed middleware.Parameters) (params DeleteHarnessConfigParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "projectId",
@@ -1002,15 +1002,15 @@ func unpackDeleteAgentConfigParams(packed middleware.Parameters) (params DeleteA
 	}
 	{
 		key := middleware.ParameterKey{
-			Name: "agentConfigId",
+			Name: "harnessConfigId",
 			In:   "path",
 		}
-		params.AgentConfigId = packed[key].(string)
+		params.HarnessConfigId = packed[key].(string)
 	}
 	return params
 }
 
-func decodeDeleteAgentConfigParams(args [2]string, argsEscaped bool, r *http.Request) (params DeleteAgentConfigParams, _ error) {
+func decodeDeleteHarnessConfigParams(args [2]string, argsEscaped bool, r *http.Request) (params DeleteHarnessConfigParams, _ error) {
 	// Set default value for path: projectId.
 	{
 		val := string("default")
@@ -1061,7 +1061,7 @@ func decodeDeleteAgentConfigParams(args [2]string, argsEscaped bool, r *http.Req
 			Err:  err,
 		}
 	}
-	// Decode path: agentConfigId.
+	// Decode path: harnessConfigId.
 	if err := func() error {
 		param := args[1]
 		if argsEscaped {
@@ -1073,7 +1073,7 @@ func decodeDeleteAgentConfigParams(args [2]string, argsEscaped bool, r *http.Req
 		}
 		if len(param) > 0 {
 			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "agentConfigId",
+				Param:   "harnessConfigId",
 				Value:   param,
 				Style:   uri.PathStyleSimple,
 				Explode: false,
@@ -1090,7 +1090,7 @@ func decodeDeleteAgentConfigParams(args [2]string, argsEscaped bool, r *http.Req
 					return err
 				}
 
-				params.AgentConfigId = c
+				params.HarnessConfigId = c
 				return nil
 			}(); err != nil {
 				return err
@@ -1101,7 +1101,7 @@ func decodeDeleteAgentConfigParams(args [2]string, argsEscaped bool, r *http.Req
 		return nil
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
-			Name: "agentConfigId",
+			Name: "harnessConfigId",
 			In:   "path",
 			Err:  err,
 		}
@@ -1109,17 +1109,17 @@ func decodeDeleteAgentConfigParams(args [2]string, argsEscaped bool, r *http.Req
 	return params, nil
 }
 
-// DeleteAgentConfigSecretBindingParams is parameters of delete-agent-config-secret-binding operation.
-type DeleteAgentConfigSecretBindingParams struct {
+// DeleteHarnessConfigSecretBindingParams is parameters of delete-harness-config-secret-binding operation.
+type DeleteHarnessConfigSecretBindingParams struct {
 	// Project ID.
 	ProjectId string
-	// Agent config ID.
-	AgentConfigId string
+	// Harness config ID.
+	HarnessConfigId string
 	// Environment variable name.
 	EnvName string
 }
 
-func unpackDeleteAgentConfigSecretBindingParams(packed middleware.Parameters) (params DeleteAgentConfigSecretBindingParams) {
+func unpackDeleteHarnessConfigSecretBindingParams(packed middleware.Parameters) (params DeleteHarnessConfigSecretBindingParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "projectId",
@@ -1129,10 +1129,10 @@ func unpackDeleteAgentConfigSecretBindingParams(packed middleware.Parameters) (p
 	}
 	{
 		key := middleware.ParameterKey{
-			Name: "agentConfigId",
+			Name: "harnessConfigId",
 			In:   "path",
 		}
-		params.AgentConfigId = packed[key].(string)
+		params.HarnessConfigId = packed[key].(string)
 	}
 	{
 		key := middleware.ParameterKey{
@@ -1144,7 +1144,7 @@ func unpackDeleteAgentConfigSecretBindingParams(packed middleware.Parameters) (p
 	return params
 }
 
-func decodeDeleteAgentConfigSecretBindingParams(args [3]string, argsEscaped bool, r *http.Request) (params DeleteAgentConfigSecretBindingParams, _ error) {
+func decodeDeleteHarnessConfigSecretBindingParams(args [3]string, argsEscaped bool, r *http.Request) (params DeleteHarnessConfigSecretBindingParams, _ error) {
 	// Set default value for path: projectId.
 	{
 		val := string("default")
@@ -1195,7 +1195,7 @@ func decodeDeleteAgentConfigSecretBindingParams(args [3]string, argsEscaped bool
 			Err:  err,
 		}
 	}
-	// Decode path: agentConfigId.
+	// Decode path: harnessConfigId.
 	if err := func() error {
 		param := args[1]
 		if argsEscaped {
@@ -1207,7 +1207,7 @@ func decodeDeleteAgentConfigSecretBindingParams(args [3]string, argsEscaped bool
 		}
 		if len(param) > 0 {
 			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "agentConfigId",
+				Param:   "harnessConfigId",
 				Value:   param,
 				Style:   uri.PathStyleSimple,
 				Explode: false,
@@ -1224,7 +1224,7 @@ func decodeDeleteAgentConfigSecretBindingParams(args [3]string, argsEscaped bool
 					return err
 				}
 
-				params.AgentConfigId = c
+				params.HarnessConfigId = c
 				return nil
 			}(); err != nil {
 				return err
@@ -1235,7 +1235,7 @@ func decodeDeleteAgentConfigSecretBindingParams(args [3]string, argsEscaped bool
 		return nil
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
-			Name: "agentConfigId",
+			Name: "harnessConfigId",
 			In:   "path",
 			Err:  err,
 		}
@@ -2082,15 +2082,15 @@ func decodeForceJobParams(args [2]string, argsEscaped bool, r *http.Request) (pa
 	return params, nil
 }
 
-// GetAgentConfigParams is parameters of get-agent-config operation.
-type GetAgentConfigParams struct {
+// GetHarnessConfigParams is parameters of get-harness-config operation.
+type GetHarnessConfigParams struct {
 	// Project ID.
 	ProjectId string
-	// Agent config ID.
-	AgentConfigId string
+	// Harness config ID.
+	HarnessConfigId string
 }
 
-func unpackGetAgentConfigParams(packed middleware.Parameters) (params GetAgentConfigParams) {
+func unpackGetHarnessConfigParams(packed middleware.Parameters) (params GetHarnessConfigParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "projectId",
@@ -2100,15 +2100,15 @@ func unpackGetAgentConfigParams(packed middleware.Parameters) (params GetAgentCo
 	}
 	{
 		key := middleware.ParameterKey{
-			Name: "agentConfigId",
+			Name: "harnessConfigId",
 			In:   "path",
 		}
-		params.AgentConfigId = packed[key].(string)
+		params.HarnessConfigId = packed[key].(string)
 	}
 	return params
 }
 
-func decodeGetAgentConfigParams(args [2]string, argsEscaped bool, r *http.Request) (params GetAgentConfigParams, _ error) {
+func decodeGetHarnessConfigParams(args [2]string, argsEscaped bool, r *http.Request) (params GetHarnessConfigParams, _ error) {
 	// Set default value for path: projectId.
 	{
 		val := string("default")
@@ -2159,7 +2159,7 @@ func decodeGetAgentConfigParams(args [2]string, argsEscaped bool, r *http.Reques
 			Err:  err,
 		}
 	}
-	// Decode path: agentConfigId.
+	// Decode path: harnessConfigId.
 	if err := func() error {
 		param := args[1]
 		if argsEscaped {
@@ -2171,7 +2171,7 @@ func decodeGetAgentConfigParams(args [2]string, argsEscaped bool, r *http.Reques
 		}
 		if len(param) > 0 {
 			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "agentConfigId",
+				Param:   "harnessConfigId",
 				Value:   param,
 				Style:   uri.PathStyleSimple,
 				Explode: false,
@@ -2188,7 +2188,7 @@ func decodeGetAgentConfigParams(args [2]string, argsEscaped bool, r *http.Reques
 					return err
 				}
 
-				params.AgentConfigId = c
+				params.HarnessConfigId = c
 				return nil
 			}(); err != nil {
 				return err
@@ -2199,7 +2199,7 @@ func decodeGetAgentConfigParams(args [2]string, argsEscaped bool, r *http.Reques
 		return nil
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
-			Name: "agentConfigId",
+			Name: "harnessConfigId",
 			In:   "path",
 			Err:  err,
 		}
@@ -2207,13 +2207,13 @@ func decodeGetAgentConfigParams(args [2]string, argsEscaped bool, r *http.Reques
 	return params, nil
 }
 
-// GetAgentConfigDefinitionParams is parameters of get-agent-config-definition operation.
-type GetAgentConfigDefinitionParams struct {
-	// Agent config definition ID.
+// GetHarnessDefinitionParams is parameters of get-harness-definition operation.
+type GetHarnessDefinitionParams struct {
+	// Harness config definition ID.
 	DefinitionId string
 }
 
-func unpackGetAgentConfigDefinitionParams(packed middleware.Parameters) (params GetAgentConfigDefinitionParams) {
+func unpackGetHarnessDefinitionParams(packed middleware.Parameters) (params GetHarnessDefinitionParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "definitionId",
@@ -2224,7 +2224,7 @@ func unpackGetAgentConfigDefinitionParams(packed middleware.Parameters) (params 
 	return params
 }
 
-func decodeGetAgentConfigDefinitionParams(args [1]string, argsEscaped bool, r *http.Request) (params GetAgentConfigDefinitionParams, _ error) {
+func decodeGetHarnessDefinitionParams(args [1]string, argsEscaped bool, r *http.Request) (params GetHarnessDefinitionParams, _ error) {
 	// Decode path: definitionId.
 	if err := func() error {
 		param := args[0]
@@ -3312,15 +3312,15 @@ func decodeGetSecretRequestParams(args [2]string, argsEscaped bool, r *http.Requ
 	return params, nil
 }
 
-// ListAgentConfigSecretBindingsParams is parameters of list-agent-config-secret-bindings operation.
-type ListAgentConfigSecretBindingsParams struct {
+// ListHarnessConfigSecretBindingsParams is parameters of list-harness-config-secret-bindings operation.
+type ListHarnessConfigSecretBindingsParams struct {
 	// Project ID.
 	ProjectId string
-	// Agent config ID.
-	AgentConfigId string
+	// Harness config ID.
+	HarnessConfigId string
 }
 
-func unpackListAgentConfigSecretBindingsParams(packed middleware.Parameters) (params ListAgentConfigSecretBindingsParams) {
+func unpackListHarnessConfigSecretBindingsParams(packed middleware.Parameters) (params ListHarnessConfigSecretBindingsParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "projectId",
@@ -3330,15 +3330,15 @@ func unpackListAgentConfigSecretBindingsParams(packed middleware.Parameters) (pa
 	}
 	{
 		key := middleware.ParameterKey{
-			Name: "agentConfigId",
+			Name: "harnessConfigId",
 			In:   "path",
 		}
-		params.AgentConfigId = packed[key].(string)
+		params.HarnessConfigId = packed[key].(string)
 	}
 	return params
 }
 
-func decodeListAgentConfigSecretBindingsParams(args [2]string, argsEscaped bool, r *http.Request) (params ListAgentConfigSecretBindingsParams, _ error) {
+func decodeListHarnessConfigSecretBindingsParams(args [2]string, argsEscaped bool, r *http.Request) (params ListHarnessConfigSecretBindingsParams, _ error) {
 	// Set default value for path: projectId.
 	{
 		val := string("default")
@@ -3389,7 +3389,7 @@ func decodeListAgentConfigSecretBindingsParams(args [2]string, argsEscaped bool,
 			Err:  err,
 		}
 	}
-	// Decode path: agentConfigId.
+	// Decode path: harnessConfigId.
 	if err := func() error {
 		param := args[1]
 		if argsEscaped {
@@ -3401,7 +3401,7 @@ func decodeListAgentConfigSecretBindingsParams(args [2]string, argsEscaped bool,
 		}
 		if len(param) > 0 {
 			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "agentConfigId",
+				Param:   "harnessConfigId",
 				Value:   param,
 				Style:   uri.PathStyleSimple,
 				Explode: false,
@@ -3418,7 +3418,7 @@ func decodeListAgentConfigSecretBindingsParams(args [2]string, argsEscaped bool,
 					return err
 				}
 
-				params.AgentConfigId = c
+				params.HarnessConfigId = c
 				return nil
 			}(); err != nil {
 				return err
@@ -3429,7 +3429,7 @@ func decodeListAgentConfigSecretBindingsParams(args [2]string, argsEscaped bool,
 		return nil
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
-			Name: "agentConfigId",
+			Name: "harnessConfigId",
 			In:   "path",
 			Err:  err,
 		}
@@ -3437,13 +3437,13 @@ func decodeListAgentConfigSecretBindingsParams(args [2]string, argsEscaped bool,
 	return params, nil
 }
 
-// ListAgentConfigsParams is parameters of list-agent-configs operation.
-type ListAgentConfigsParams struct {
+// ListHarnessConfigsParams is parameters of list-harness-configs operation.
+type ListHarnessConfigsParams struct {
 	// Project ID.
 	ProjectId string
 }
 
-func unpackListAgentConfigsParams(packed middleware.Parameters) (params ListAgentConfigsParams) {
+func unpackListHarnessConfigsParams(packed middleware.Parameters) (params ListHarnessConfigsParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "projectId",
@@ -3454,7 +3454,7 @@ func unpackListAgentConfigsParams(packed middleware.Parameters) (params ListAgen
 	return params
 }
 
-func decodeListAgentConfigsParams(args [1]string, argsEscaped bool, r *http.Request) (params ListAgentConfigsParams, _ error) {
+func decodeListHarnessConfigsParams(args [1]string, argsEscaped bool, r *http.Request) (params ListHarnessConfigsParams, _ error) {
 	// Set default value for path: projectId.
 	{
 		val := string("default")
@@ -3508,19 +3508,19 @@ func decodeListAgentConfigsParams(args [1]string, argsEscaped bool, r *http.Requ
 	return params, nil
 }
 
-// ListAgentHooksParams is parameters of list-agent-hooks operation.
-type ListAgentHooksParams struct {
+// ListHarnessHooksParams is parameters of list-harness-hooks operation.
+type ListHarnessHooksParams struct {
 	// Project that owns the sandbox.
 	ProjectId string
 	// Sandbox resource ID.
 	SandboxId string
-	// Optional agent terminal runtime ID filter.
+	// Optional harness terminal runtime ID filter.
 	TerminalId OptString `json:",omitempty,omitzero"`
 	// Maximum number of hook records to return.
 	Limit OptInt `json:",omitempty,omitzero"`
 }
 
-func unpackListAgentHooksParams(packed middleware.Parameters) (params ListAgentHooksParams) {
+func unpackListHarnessHooksParams(packed middleware.Parameters) (params ListHarnessHooksParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "projectId",
@@ -3556,7 +3556,7 @@ func unpackListAgentHooksParams(packed middleware.Parameters) (params ListAgentH
 	return params
 }
 
-func decodeListAgentHooksParams(args [2]string, argsEscaped bool, r *http.Request) (params ListAgentHooksParams, _ error) {
+func decodeListHarnessHooksParams(args [2]string, argsEscaped bool, r *http.Request) (params ListHarnessHooksParams, _ error) {
 	q := uri.NewQueryDecoder(r.URL.Query())
 	// Decode path: projectId.
 	if err := func() error {
@@ -5788,17 +5788,15 @@ func decodeRevokeSecretGrantParams(args [2]string, argsEscaped bool, r *http.Req
 	return params, nil
 }
 
-// SetAgentConfigSecretBindingParams is parameters of set-agent-config-secret-binding operation.
-type SetAgentConfigSecretBindingParams struct {
+// SetDefaultHarnessConfigParams is parameters of set-default-harness-config operation.
+type SetDefaultHarnessConfigParams struct {
 	// Project ID.
 	ProjectId string
-	// Agent config ID.
-	AgentConfigId string
-	// Environment variable name.
-	EnvName string
+	// Harness config ID.
+	HarnessConfigId string
 }
 
-func unpackSetAgentConfigSecretBindingParams(packed middleware.Parameters) (params SetAgentConfigSecretBindingParams) {
+func unpackSetDefaultHarnessConfigParams(packed middleware.Parameters) (params SetDefaultHarnessConfigParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "projectId",
@@ -5808,22 +5806,15 @@ func unpackSetAgentConfigSecretBindingParams(packed middleware.Parameters) (para
 	}
 	{
 		key := middleware.ParameterKey{
-			Name: "agentConfigId",
+			Name: "harnessConfigId",
 			In:   "path",
 		}
-		params.AgentConfigId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "envName",
-			In:   "path",
-		}
-		params.EnvName = packed[key].(string)
+		params.HarnessConfigId = packed[key].(string)
 	}
 	return params
 }
 
-func decodeSetAgentConfigSecretBindingParams(args [3]string, argsEscaped bool, r *http.Request) (params SetAgentConfigSecretBindingParams, _ error) {
+func decodeSetDefaultHarnessConfigParams(args [2]string, argsEscaped bool, r *http.Request) (params SetDefaultHarnessConfigParams, _ error) {
 	// Set default value for path: projectId.
 	{
 		val := string("default")
@@ -5874,7 +5865,7 @@ func decodeSetAgentConfigSecretBindingParams(args [3]string, argsEscaped bool, r
 			Err:  err,
 		}
 	}
-	// Decode path: agentConfigId.
+	// Decode path: harnessConfigId.
 	if err := func() error {
 		param := args[1]
 		if argsEscaped {
@@ -5886,7 +5877,7 @@ func decodeSetAgentConfigSecretBindingParams(args [3]string, argsEscaped bool, r
 		}
 		if len(param) > 0 {
 			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "agentConfigId",
+				Param:   "harnessConfigId",
 				Value:   param,
 				Style:   uri.PathStyleSimple,
 				Explode: false,
@@ -5903,7 +5894,7 @@ func decodeSetAgentConfigSecretBindingParams(args [3]string, argsEscaped bool, r
 					return err
 				}
 
-				params.AgentConfigId = c
+				params.HarnessConfigId = c
 				return nil
 			}(); err != nil {
 				return err
@@ -5914,7 +5905,141 @@ func decodeSetAgentConfigSecretBindingParams(args [3]string, argsEscaped bool, r
 		return nil
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
-			Name: "agentConfigId",
+			Name: "harnessConfigId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// SetHarnessConfigSecretBindingParams is parameters of set-harness-config-secret-binding operation.
+type SetHarnessConfigSecretBindingParams struct {
+	// Project ID.
+	ProjectId string
+	// Harness config ID.
+	HarnessConfigId string
+	// Environment variable name.
+	EnvName string
+}
+
+func unpackSetHarnessConfigSecretBindingParams(packed middleware.Parameters) (params SetHarnessConfigSecretBindingParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "harnessConfigId",
+			In:   "path",
+		}
+		params.HarnessConfigId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "envName",
+			In:   "path",
+		}
+		params.EnvName = packed[key].(string)
+	}
+	return params
+}
+
+func decodeSetHarnessConfigSecretBindingParams(args [3]string, argsEscaped bool, r *http.Request) (params SetHarnessConfigSecretBindingParams, _ error) {
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: harnessConfigId.
+	if err := func() error {
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "harnessConfigId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.HarnessConfigId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "harnessConfigId",
 			In:   "path",
 			Err:  err,
 		}
@@ -5960,131 +6085,6 @@ func decodeSetAgentConfigSecretBindingParams(args [3]string, argsEscaped bool, r
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "envName",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
-// SetDefaultAgentConfigParams is parameters of set-default-agent-config operation.
-type SetDefaultAgentConfigParams struct {
-	// Project ID.
-	ProjectId string
-	// Agent config ID.
-	AgentConfigId string
-}
-
-func unpackSetDefaultAgentConfigParams(packed middleware.Parameters) (params SetDefaultAgentConfigParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "projectId",
-			In:   "path",
-		}
-		params.ProjectId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "agentConfigId",
-			In:   "path",
-		}
-		params.AgentConfigId = packed[key].(string)
-	}
-	return params
-}
-
-func decodeSetDefaultAgentConfigParams(args [2]string, argsEscaped bool, r *http.Request) (params SetDefaultAgentConfigParams, _ error) {
-	// Set default value for path: projectId.
-	{
-		val := string("default")
-		params.ProjectId = val
-	}
-	// Decode path: projectId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "projectId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.ProjectId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: agentConfigId.
-	if err := func() error {
-		param := args[1]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[1])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "agentConfigId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.AgentConfigId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "agentConfigId",
 			In:   "path",
 			Err:  err,
 		}
@@ -6690,15 +6690,15 @@ func decodeStreamSandboxExecResourcesParams(args [3]string, argsEscaped bool, r 
 	return params, nil
 }
 
-// UpdateAgentConfigParams is parameters of update-agent-config operation.
-type UpdateAgentConfigParams struct {
+// UpdateHarnessConfigParams is parameters of update-harness-config operation.
+type UpdateHarnessConfigParams struct {
 	// Project ID.
 	ProjectId string
-	// Agent config ID.
-	AgentConfigId string
+	// Harness config ID.
+	HarnessConfigId string
 }
 
-func unpackUpdateAgentConfigParams(packed middleware.Parameters) (params UpdateAgentConfigParams) {
+func unpackUpdateHarnessConfigParams(packed middleware.Parameters) (params UpdateHarnessConfigParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "projectId",
@@ -6708,15 +6708,15 @@ func unpackUpdateAgentConfigParams(packed middleware.Parameters) (params UpdateA
 	}
 	{
 		key := middleware.ParameterKey{
-			Name: "agentConfigId",
+			Name: "harnessConfigId",
 			In:   "path",
 		}
-		params.AgentConfigId = packed[key].(string)
+		params.HarnessConfigId = packed[key].(string)
 	}
 	return params
 }
 
-func decodeUpdateAgentConfigParams(args [2]string, argsEscaped bool, r *http.Request) (params UpdateAgentConfigParams, _ error) {
+func decodeUpdateHarnessConfigParams(args [2]string, argsEscaped bool, r *http.Request) (params UpdateHarnessConfigParams, _ error) {
 	// Set default value for path: projectId.
 	{
 		val := string("default")
@@ -6767,7 +6767,7 @@ func decodeUpdateAgentConfigParams(args [2]string, argsEscaped bool, r *http.Req
 			Err:  err,
 		}
 	}
-	// Decode path: agentConfigId.
+	// Decode path: harnessConfigId.
 	if err := func() error {
 		param := args[1]
 		if argsEscaped {
@@ -6779,7 +6779,7 @@ func decodeUpdateAgentConfigParams(args [2]string, argsEscaped bool, r *http.Req
 		}
 		if len(param) > 0 {
 			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "agentConfigId",
+				Param:   "harnessConfigId",
 				Value:   param,
 				Style:   uri.PathStyleSimple,
 				Explode: false,
@@ -6796,7 +6796,7 @@ func decodeUpdateAgentConfigParams(args [2]string, argsEscaped bool, r *http.Req
 					return err
 				}
 
-				params.AgentConfigId = c
+				params.HarnessConfigId = c
 				return nil
 			}(); err != nil {
 				return err
@@ -6807,7 +6807,7 @@ func decodeUpdateAgentConfigParams(args [2]string, argsEscaped bool, r *http.Req
 		return nil
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
-			Name: "agentConfigId",
+			Name: "harnessConfigId",
 			In:   "path",
 			Err:  err,
 		}

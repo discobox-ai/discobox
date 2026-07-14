@@ -169,7 +169,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "cgroupNsMode", Label: "Cgroup Namespace", Type: "string", Advanced: true},
 			{Key: "command", Label: "Command", Type: "string", Advanced: true},
 			{Key: "bindDockerSocket", Label: "Bind Docker Socket", Type: "string", Placeholder: dockerSocketPath, Advanced: true},
-			{Key: "agentPort", Label: "Agent Port", Type: "number", Placeholder: strconv.Itoa(defaultAgentPort), Advanced: true},
+			{Key: "agentPort", Label: "Harness Port", Type: "number", Placeholder: strconv.Itoa(defaultAgentPort), Advanced: true},
 		},
 	}
 }

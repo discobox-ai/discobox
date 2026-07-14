@@ -114,7 +114,7 @@ func TestBootEnvOmitsEmptyValues(t *testing.T) {
 		t.Fatalf("env = %#v, want no empty control plane URL", env)
 	}
 	if _, ok := env[workeragent.EnvAgentPort]; ok {
-		t.Fatalf("env = %#v, want no zero agent port", env)
+		t.Fatalf("env = %#v, want no zero harness port", env)
 	}
 }
 
@@ -367,12 +367,12 @@ func TestContainerReadyErrorReportsHealthStates(t *testing.T) {
 			Running: true,
 			Health: &container.Health{
 				Status: "unhealthy",
-				Log:    []*container.HealthcheckResult{{Output: "agent did not answer\n"}},
+				Log:    []*container.HealthcheckResult{{Output: "harness did not answer\n"}},
 			},
 		},
 	}
 	err := containerReadyError(unhealthy)
-	if err == nil || !strings.Contains(err.Error(), "agent did not answer") {
+	if err == nil || !strings.Contains(err.Error(), "harness did not answer") {
 		t.Fatalf("unhealthy error = %v", err)
 	}
 }

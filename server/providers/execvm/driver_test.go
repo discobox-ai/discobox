@@ -96,7 +96,7 @@ exit 1
 
 func TestAcquireWorkerAgentClientUsesEndpointLine(t *testing.T) {
 	driver := newScriptDriver(t, `
-[ "$op" = "agent-endpoint" ] && { echo "http://203.0.113.9:3002"; exit 0; }
+[ "$op" = "harness-endpoint" ] && { echo "http://203.0.113.9:3002"; exit 0; }
 exit 1
 `)
 	lease, err := driver.AcquireWorkerAgentClient(context.Background(), "worker-1")

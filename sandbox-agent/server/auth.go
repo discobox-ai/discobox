@@ -164,8 +164,8 @@ func routeIdentity(path string) (string, string, bool) {
 }
 
 func requiredRequestScope(r *http.Request) string {
-	// Agent hooks are read-only audit data tied to execs (agent terminals).
-	if strings.Contains(r.URL.Path, "/agent-hooks") {
+	// Harness hooks are read-only audit data tied to execs (harness terminals).
+	if strings.Contains(r.URL.Path, "/harness-hooks") {
 		if r.Method == http.MethodGet {
 			return ScopeExecRead
 		}

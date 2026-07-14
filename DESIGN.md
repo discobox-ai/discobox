@@ -43,7 +43,7 @@ surfaces:
 
 - Server REST API: control plane API consumed by the CLI and external clients.
 - Worker-local sandbox operations API: runtime operations exposed by worker
-  agents and reached through provider-delegated access.
+  harnesses and reached through provider-delegated access.
 - Sandbox agent API: in-sandbox API exposed by the sandbox-agent runtime.
 
 The OpenAPI contract is the canonical API definition. Generate server handlers,
@@ -109,7 +109,7 @@ flowchart TD
   worker boot contracts and OpenAPI contracts.
 - Root module: local Docker development image watcher for worker-agent and
   sandbox-agent images.
-- Sandbox-agent module: in-sandbox agent REST API runtime environment and agent
+- Sandbox-agent module: in-sandbox agent REST API runtime environment and harness
   implementation; depends on root contracts and generated API types.
 
 Worker-agent and sandbox-agent implementations cannot depend on packages under
@@ -124,7 +124,7 @@ Root module package map:
 | [`api/gen`](api/gen) | Generated client/server API scaffold from `api/openapi/server.yaml`, plus handwritten client helpers for transports OpenAPI generation cannot own. |
 | [`api/sandboxgen`](api/sandboxgen) | Generated client/server API scaffold from generated `api/openapi/sandbox.yaml`, the sandbox-agent subset of the server contract. |
 | [`api/model`](api/model) | Generated stable aliases for server REST API schema types. |
-| [`harness`](harness) | Coding-agent hook registration drivers for sandbox terminal agents. |
+| [`harness`](harness) | Harness hook registration drivers for sandbox terminals. |
 | [`id`](id) | Shared identifier helpers. |
 
 Submodule package docs belong in their owning module trees and are intentionally

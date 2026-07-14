@@ -6,7 +6,7 @@ This file records working plan details that are more provisional than
 ## Source Reference
 
 The first implementation should draw from the temporary analysis of
-`github.com/obot-platform/discobot/agent-go`:
+`github.com/obot-platform/discobot/harness-go`:
 
 - `internal/hooks/parser.go`: hook front matter, normalized IDs, discovery rules.
 - `internal/hooks/executor.go`: script execution, timeout, output capture,
@@ -17,7 +17,7 @@ The first implementation should draw from the temporary analysis of
 - `internal/hooks/precommit.go`: conceptual reference only; avoid copying the
   shell-side JSON status mutation approach.
 
-Do not import Discobot `agent-go` packages. Copy/adapt only code that is generic
+Do not import Discobot `harness-go` packages. Copy/adapt only code that is generic
 enough for this module and rename Discobot-specific contracts to Discobox.
 
 ## Proposed Initial Package Shape

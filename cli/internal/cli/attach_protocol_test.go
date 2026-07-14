@@ -17,7 +17,7 @@ func TestAttachExitFrameReturnsExitCode(t *testing.T) {
 }
 
 func TestAttachExitFrameZeroExitIsSuccess(t *testing.T) {
-	if err := attachExitErrorFromPayload("agent terminal", []byte(`{"status":"exited","exitCode":0}`)); err != nil {
+	if err := attachExitErrorFromPayload("harness terminal", []byte(`{"status":"exited","exitCode":0}`)); err != nil {
 		t.Fatalf("exit frame error = %v, want nil", err)
 	}
 }

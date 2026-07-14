@@ -96,7 +96,7 @@ func (d *LocalDriver) AcquireWorkerAgentClient(ctx context.Context, workerID str
 	}
 	host, port := dockerworker.AssignedAgentEndpoint(inspect.Container.NetworkSettings.Ports, d.agentPort)
 	if host == "" || port <= 0 {
-		return nil, fmt.Errorf("worker %q does not expose an agent URL", workerID)
+		return nil, fmt.Errorf("worker %q does not expose a harness URL", workerID)
 	}
 	baseURL := "http://" + net.JoinHostPort(host, strconv.Itoa(port))
 	return transport.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, baseURL, nil), nil

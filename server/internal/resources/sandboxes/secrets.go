@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/obot-platform/discobox/id"
-	"github.com/obot-platform/discobox/server/internal/agentdefs"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
+	"github.com/obot-platform/discobox/server/internal/harnessdefs"
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/secretformat"
 	services "github.com/obot-platform/discobox/server/internal/services"
@@ -64,18 +64,18 @@ func (s *Service) prepareSandboxSecrets(ctx context.Context, projectID string, s
 	return assignments, nil
 }
 
-// applyAgentConfigSecrets materializes an agent config's secret bindings into
+// applyHarnessConfigSecrets materializes a harness config's secret bindings into
 // sandbox sentinels and enforces that every declared required secret is
 // satisfied. inlineEnvs are env vars already bound per-sandbox by the create
 // request; an inline secret wins over a binding for the same env. It mutates
 // sandbox.Env and returns the assignment rows to persist.
-func (s *Service) applyAgentConfigSecrets(ctx context.Context, projectID string, sandbox *model.Sandbox, agentConfigID string, inlineEnvs map[string]struct{}) ([]*model.SandboxSecret, error) {
-	config, err := s.store.GetAgentConfig(ctx, projectID, agentConfigID)
+func (s *Service) applyHarnessConfigSecrets(ctx context.Context, projectID string, sandbox *model.Sandbox, harnessConfigID string, inlineEnvs map[string]struct{}) ([]*model.SandboxSecret, error) {
+	config, err := s.store.GetHarnessConfig(ctx, projectID, harnessConfigID)
 	if err != nil {
-		return nil, mapAPIError(err, "agent config not found")
+		return nil, mapAPIError(err, "harness config not found")
 	}
-	resolved := agentdefs.Resolve(config)
-	bindings, err := s.store.ListAgentConfigSecretBindings(ctx, projectID, agentConfigID)
+	resolved := harnessdefs.Resolve(config)
+	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, projectID, harnessConfigID)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (s *Service) applyAgentConfigSecrets(ctx context.Context, projectID string,
 	}
 
 	// A required declared secret must be satisfied by an inline secret, an
-	// agent-config binding, or a literal sandbox env var. OneOfGroup members are
+	// harness-config binding, or a literal sandbox env var. OneOfGroup members are
 	// satisfied collectively (at least one present).
 	missing := missingRequiredSecrets(resolved.Secrets, func(name string) bool {
 		if _, ok := inlineEnvs[name]; ok {
@@ -102,7 +102,7 @@ func (s *Service) applyAgentConfigSecrets(ctx context.Context, projectID string,
 	})
 	if len(missing) > 0 {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest,
-			fmt.Sprintf("agent config %q requires secrets with no bound value: %s", config.Slug, strings.Join(missing, ", ")))
+			fmt.Sprintf("harness config %q requires secrets with no bound value: %s", config.Slug, strings.Join(missing, ", ")))
 	}
 
 	assignments := make([]*model.SandboxSecret, 0, len(bindings))
@@ -134,12 +134,12 @@ func (s *Service) applyAgentConfigSecrets(ctx context.Context, projectID string,
 }
 
 // missingRequiredSecrets reports the unsatisfied required secret requirements of
-// an agent config, given a predicate that reports whether a single env var is
+// a harness config, given a predicate that reports whether a single env var is
 // satisfied. Ungrouped required secrets each must be satisfied. Required secrets
 // sharing a OneOfGroup form an at-least-one requirement: the group is satisfied
 // when any member is present, otherwise it is reported as "one of: A, B". The
 // returned list is deterministically ordered.
-func missingRequiredSecrets(decls []model.AgentConfigSecret, satisfied func(name string) bool) []string {
+func missingRequiredSecrets(decls []model.HarnessConfigSecret, satisfied func(name string) bool) []string {
 	var missing []string
 	groupMembers := map[string][]string{}
 	var groupOrder []string
@@ -247,26 +247,26 @@ func (s *Service) createAnonymousSecret(ctx context.Context, projectID, value, h
 
 const defaultAnonymousGrantTTLSeconds = 3600
 
-// AssignSandboxAgentSecrets ensures the given agent config's secret bindings are
+// AssignSandboxHarnessSecrets ensures the given harness config's secret bindings are
 // materialized for a running sandbox and returns the resulting env->sentinel map
 // for the caller to inject into a per-invocation exec/terminal environment.
 //
 // Assignment is flat per env: if an env var is already assigned (by the primary
-// agent or an earlier assignment), that sentinel is reused (first-assigner wins)
-// even if this agent binds the env to a different secret. Newly minted sentinels
+// harness or an earlier assignment), that sentinel is reused (first-assigner wins)
+// even if this harness binds the env to a different secret. Newly minted sentinels
 // are pushed to the running sandbox's proxy immediately so they resolve without a
 // restart. Required declared secrets with no binding are rejected.
-func (s *Service) AssignSandboxAgentSecrets(ctx context.Context, projectID, sandboxID, agentConfigID string) (map[string]string, error) {
+func (s *Service) AssignSandboxHarnessSecrets(ctx context.Context, projectID, sandboxID, harnessConfigID string) (map[string]string, error) {
 	sandboxModel, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
 		return nil, mapAPIError(err, "sandbox not found")
 	}
-	config, err := s.store.GetAgentConfig(ctx, projectID, agentConfigID)
+	config, err := s.store.GetHarnessConfig(ctx, projectID, harnessConfigID)
 	if err != nil {
-		return nil, mapAPIError(err, "agent config not found")
+		return nil, mapAPIError(err, "harness config not found")
 	}
-	resolved := agentdefs.Resolve(config)
-	bindings, err := s.store.ListAgentConfigSecretBindings(ctx, projectID, agentConfigID)
+	resolved := harnessdefs.Resolve(config)
+	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, projectID, harnessConfigID)
 	if err != nil {
 		return nil, err
 	}
@@ -319,7 +319,7 @@ func (s *Service) AssignSandboxAgentSecrets(ctx context.Context, projectID, sand
 	})
 	if len(missing) > 0 {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest,
-			fmt.Sprintf("agent config %q requires secrets with no bound value: %s", config.Slug, strings.Join(missing, ", ")))
+			fmt.Sprintf("harness config %q requires secrets with no bound value: %s", config.Slug, strings.Join(missing, ", ")))
 	}
 
 	if created {

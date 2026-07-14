@@ -27,7 +27,7 @@ func (Driver) Definition() harness.Definition {
 	return harness.Definition{
 		ID:              "opencode",
 		Name:            "opencode",
-		Description:     "opencode terminal coding agent.",
+		Description:     "opencode terminal coding harness.",
 		InstallCommand:  []string{"npm", "install", "-g", "opencode-ai"},
 		RunCommand:      []string{"opencode"},
 		RelaunchCommand: []string{"opencode", "--continue"},

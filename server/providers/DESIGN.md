@@ -28,8 +28,8 @@ flowchart TD
     pool["workerpool.WorkerPoolProvider\nimplements sandbox.Provider\npool sizing · placement · worker-agent API (docker-free)"]
     engine["dockerworker.Engine\nthe one workerpool.WorkerProvider\nworker-agent container, networks, volumes, drift"]
     driver["dockerworker.Driver\npure VM CRUD + two connection leases"]
-    local["docker.LocalDriver\nVM CRUD no-op · host socket ·\npublished loopback agent port"]
-    do["digitalocean.Driver\ndroplet CRUD by worker tag ·\ndocker over SSH · agent at public IP"]
+    local["docker.LocalDriver\nVM CRUD no-op · host socket ·\npublished loopback harness port"]
+    do["digitalocean.Driver\ndroplet CRUD by worker tag ·\ndocker over SSH · harness at public IP"]
     execd["execvm.Driver\ndelegates every op to an external\ncommand (shell-script backends)"]
     future["(later) ec2 / apple / windows\nsame shape; vsock for local hypervisors"]
 
@@ -66,7 +66,7 @@ the engine":
   SSH-to-docker-socket dialer for cloud VM drivers (DigitalOcean today, EC2
   later) and for `ssh://` endpoints from the exec driver.
 - `AcquireWorkerAgentClient`: an HTTP lease reaching the worker-agent API —
-  the container's published loopback port locally, `http://<public-ip>:<agent
+  the container's published loopback port locally, `http://<public-ip>:<harness
   port>` for cloud VMs.
 
 The engine owns Docker readiness waiting after `EnsureVM` (ping with a
@@ -147,7 +147,7 @@ Consequences enforced across the lifecycle:
 Recovery is driven until the worker becomes healthy or an operator changes its
 desired state (drain/delete). Retries back off at the pool/reconcile-job cadence.
 
-## Worker Agent HTTP Routing
+## Worker Harness HTTP Routing
 
 Transport leasing is represented by `server/internal/transport.HTTPClientLease`.
 The pool obtains worker-agent connectivity from
@@ -214,7 +214,7 @@ oriented (see `api` package for routes).
 ## Worker Boot Metadata
 
 Bootstrap identity — control plane URL, project/worker identity, bootstrap
-token, control-plane trust key, agent port — is rendered as container
+token, control-plane trust key, harness port — is rendered as container
 environment by `dockerworker.BootEnv` and injected into the worker-agent
 container by the engine, uniformly on every backend. VM drivers only need
 their platform's Docker bring-up (for example the DigitalOcean docker-install
@@ -231,7 +231,7 @@ token, control plane URL, region/size/droplet image, worker-agent container
 image, registered SSH keys plus the matching SSH private key (config or
 environment variable), VPC UUID, tags, and feature flags. The SSH key pair is
 required for the engine to reach the droplet's Docker daemon; the worker-agent
-API is reached directly at the droplet's public IPv4 and agent port.
+API is reached directly at the droplet's public IPv4 and harness port.
 
 ## Exec Driver
 
@@ -239,9 +239,9 @@ API is reached directly at the droplet's public IPv4 and agent port.
 invoking an external command as `<command> <op> <worker-id>`, so a worker
 backend can be a shell script. Operations: `ensure-vm`/`inspect-vm` (JSON
 `{id,status,address}` on stdout; inspect exits 3 for "no VM"), `delete-vm`,
-and `docker-endpoint`/`agent-endpoint` (one endpoint line on stdout;
+and `docker-endpoint`/`harness-endpoint` (one endpoint line on stdout;
 `unix://`, `tcp://`, or `ssh://[user@]host[:port]` for Docker, `http(s)://`
-for the agent). SSH endpoints use the provider's configured private key via
+for the harness). SSH endpoints use the provider's configured private key via
 `sshdocker`. The protocol is documented in the `execvm` package doc; it exists
 both as an escape hatch and as the proof that the driver seam needs nothing
 Docker-shaped.

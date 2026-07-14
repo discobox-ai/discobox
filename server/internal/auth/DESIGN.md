@@ -58,8 +58,8 @@ The authenticated allow-list is hard-coded in `authenticatedAllowedPaths`.
 Entries ending in `/` are prefixes; entries without a trailing `/` require exact
 path equality:
 
-- `/agent-config-definitions`
-- `/agent-config-definitions/`
+- `/harness-definitions`
+- `/harness-definitions/`
 - `/api/workers/register`
 - `/projects`
 - `/providers/catalog`

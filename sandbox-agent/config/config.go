@@ -26,9 +26,9 @@ type Config struct {
 	DatabasePath          string            `json:"databasePath"`
 	Env                   map[string]string `json:"env,omitempty"`
 	Prompt                []string          `json:"prompt,omitempty"`
-	ResolvedAgentConfig   *Agent            `json:"resolvedAgentConfig,omitempty"`
-	AgentConfigs          []Agent           `json:"agentConfigs,omitempty"`
-	Agents                []Agent           `json:"agents"`
+	ResolvedHarnessConfig *Harness          `json:"resolvedHarnessConfig,omitempty"`
+	HarnessConfigs        []Harness         `json:"harnessConfigs,omitempty"`
+	Harnesses             []Harness         `json:"harnesses"`
 	Resources             ResourceConfig    `json:"resources"`
 }
 
@@ -46,19 +46,19 @@ type ExecDefaults struct {
 	HomeDirectory string `json:"homeDirectory,omitempty"`
 }
 
-type Agent struct {
-	ID              string      `json:"id"`
-	Name            string      `json:"name"`
-	InstallCommand  []string    `json:"installCommand,omitempty"`
-	Command         []string    `json:"command"`
-	RelaunchCommand []string    `json:"relaunchCommand,omitempty"`
-	IsDefault       bool        `json:"isDefault,omitempty"`
-	Files           []AgentFile `json:"files,omitempty"`
+type Harness struct {
+	ID              string        `json:"id"`
+	Name            string        `json:"name"`
+	InstallCommand  []string      `json:"installCommand,omitempty"`
+	Command         []string      `json:"command"`
+	RelaunchCommand []string      `json:"relaunchCommand,omitempty"`
+	IsDefault       bool          `json:"isDefault,omitempty"`
+	Files           []HarnessFile `json:"files,omitempty"`
 }
 
-// AgentFile is a file to write into the agent's home directory when the agent
+// HarnessFile is a file to write into the harness's home directory when the harness
 // is installed.
-type AgentFile struct {
+type HarnessFile struct {
 	Path       string `json:"path"`
 	Content    string `json:"content"`
 	CreateOnly bool   `json:"createOnly,omitempty"`
@@ -83,7 +83,7 @@ func Load(path string) (Config, error) {
 	}
 	applyEnv(&cfg)
 	applyDefaults(&cfg)
-	cfg.Agents = launchableAgents(cfg.Agents, cfg.ResolvedAgentConfig, cfg.AgentConfigs)
+	cfg.Harnesses = launchableAgents(cfg.Harnesses, cfg.ResolvedHarnessConfig, cfg.HarnessConfigs)
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -132,14 +132,14 @@ func configFromManifest(manifest model.SandboxManifest) Config {
 			cfg.Resources.RetentionCount = int(manifest.AgentRuntime.ResourceCollection.RetentionCount)
 		}
 	}
-	if manifest.ResolvedAgentConfig != nil {
-		resolved := agentFromResolvedManifest(*manifest.ResolvedAgentConfig)
-		cfg.ResolvedAgentConfig = &resolved
+	if manifest.ResolvedHarnessConfig != nil {
+		resolved := agentFromResolvedManifest(*manifest.ResolvedHarnessConfig)
+		cfg.ResolvedHarnessConfig = &resolved
 	}
-	if len(manifest.AgentConfigs) > 0 {
-		cfg.AgentConfigs = make([]Agent, 0, len(manifest.AgentConfigs))
-		for _, agentConfig := range manifest.AgentConfigs {
-			cfg.AgentConfigs = append(cfg.AgentConfigs, agentFromManifest(agentConfig))
+	if len(manifest.HarnessConfigs) > 0 {
+		cfg.HarnessConfigs = make([]Harness, 0, len(manifest.HarnessConfigs))
+		for _, harnessConfig := range manifest.HarnessConfigs {
+			cfg.HarnessConfigs = append(cfg.HarnessConfigs, agentFromManifest(harnessConfig))
 		}
 	}
 	return cfg
@@ -178,36 +178,36 @@ func publicKey(values map[string]string) string {
 	return strings.TrimSpace(values[ControlPlanePublicKeyName])
 }
 
-func agentFromManifest(in model.SandboxManifestAgentConfig) Agent {
-	return Agent{
+func agentFromManifest(in model.SandboxManifestHarnessConfig) Harness {
+	return Harness{
 		ID:              in.ID,
 		Name:            in.Name,
 		InstallCommand:  cloneCommand(in.InstallCommand),
 		Command:         cloneCommand(in.RunCommand),
 		RelaunchCommand: cloneCommand(in.RelaunchCommand),
 		IsDefault:       in.IsDefault,
-		Files:           agentFilesFromManifest(in.Files),
+		Files:           harnessFilesFromManifest(in.Files),
 	}
 }
 
-func agentFromResolvedManifest(in model.SandboxManifestResolvedAgentConfig) Agent {
-	return Agent{
+func agentFromResolvedManifest(in model.SandboxManifestResolvedHarnessConfig) Harness {
+	return Harness{
 		ID:              in.ID,
 		Name:            in.Name,
 		InstallCommand:  cloneCommand(in.InstallCommand),
 		Command:         cloneCommand(in.RunCommand),
 		RelaunchCommand: cloneCommand(in.RelaunchCommand),
-		Files:           agentFilesFromManifest(in.Files),
+		Files:           harnessFilesFromManifest(in.Files),
 	}
 }
 
-func agentFilesFromManifest(in []model.AgentConfigFile) []AgentFile {
+func harnessFilesFromManifest(in []model.HarnessConfigFile) []HarnessFile {
 	if len(in) == 0 {
 		return nil
 	}
-	out := make([]AgentFile, 0, len(in))
+	out := make([]HarnessFile, 0, len(in))
 	for _, file := range in {
-		out = append(out, AgentFile{
+		out = append(out, HarnessFile{
 			Path:       file.Path,
 			Content:    file.Content,
 			CreateOnly: file.CreateOnly.Or(false),
@@ -223,28 +223,28 @@ func cloneCommand(command []string) []string {
 	return append([]string{}, command...)
 }
 
-func launchableAgents(agents []Agent, resolved *Agent, configs []Agent) []Agent {
+func launchableAgents(harnesses []Harness, resolved *Harness, configs []Harness) []Harness {
 	if len(configs) == 0 && resolved == nil {
-		return agents
+		return harnesses
 	}
-	seen := make(map[string]struct{}, len(agents)+len(configs)+1)
-	out := make([]Agent, 0, len(agents)+len(configs)+1)
-	for _, agent := range agents {
-		if strings.TrimSpace(agent.ID) == "" {
+	seen := make(map[string]struct{}, len(harnesses)+len(configs)+1)
+	out := make([]Harness, 0, len(harnesses)+len(configs)+1)
+	for _, harness := range harnesses {
+		if strings.TrimSpace(harness.ID) == "" {
 			continue
 		}
-		seen[agent.ID] = struct{}{}
-		out = append(out, agent)
+		seen[harness.ID] = struct{}{}
+		out = append(out, harness)
 	}
-	for _, agent := range configs {
-		if strings.TrimSpace(agent.ID) == "" {
+	for _, harness := range configs {
+		if strings.TrimSpace(harness.ID) == "" {
 			continue
 		}
-		if _, ok := seen[agent.ID]; ok {
+		if _, ok := seen[harness.ID]; ok {
 			continue
 		}
-		seen[agent.ID] = struct{}{}
-		out = append(out, agent)
+		seen[harness.ID] = struct{}{}
+		out = append(out, harness)
 	}
 	if resolved != nil && strings.TrimSpace(resolved.ID) != "" {
 		if _, ok := seen[resolved.ID]; !ok {
@@ -264,12 +264,12 @@ func (c Config) Validate() error {
 	if strings.TrimSpace(c.ControlPlanePublicKey) == "" {
 		return fmt.Errorf("provider.publicKeys.%s is required", ControlPlanePublicKeyName)
 	}
-	for _, agent := range c.Agents {
-		if strings.TrimSpace(agent.ID) == "" {
-			return fmt.Errorf("agent id is required")
+	for _, harness := range c.Harnesses {
+		if strings.TrimSpace(harness.ID) == "" {
+			return fmt.Errorf("harness id is required")
 		}
-		if len(agent.Command) == 0 || strings.TrimSpace(agent.Command[0]) == "" {
-			return fmt.Errorf("agent %q command is required", agent.ID)
+		if len(harness.Command) == 0 || strings.TrimSpace(harness.Command[0]) == "" {
+			return fmt.Errorf("harness %q command is required", harness.ID)
 		}
 	}
 	return nil
@@ -299,7 +299,7 @@ func applyDefaults(cfg *Config) {
 		cfg.WorkingRoot = "/workspace"
 	}
 	if cfg.RuntimeDir == "" {
-		cfg.RuntimeDir = "/run/discobox/agent-terminals"
+		cfg.RuntimeDir = "/run/discobox/harness-terminals"
 	}
 	if cfg.DatabasePath == "" {
 		cfg.DatabasePath = "/var/lib/discobox/sandbox-agent.db"

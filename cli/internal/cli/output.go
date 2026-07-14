@@ -331,7 +331,7 @@ func workerMessage(worker apimodel.Worker) string {
 	return ""
 }
 
-func (a *App) writeAgentDefinition(cmd *cobra.Command, definition *apimodel.AgentConfigDefinition) error {
+func (a *App) writeHarnessDefinition(cmd *cobra.Command, definition *apimodel.HarnessDefinition) error {
 	if definition == nil {
 		return nil
 	}
@@ -340,16 +340,16 @@ func (a *App) writeAgentDefinition(cmd *cobra.Command, definition *apimodel.Agen
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tSECRETS\tDESCRIPTION")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", shortID(definition.ID), definition.Name, strings.Join(definition.RunCommand, " "), formatAgentSecrets(definition.Secrets.Or(nil)), definition.Description.Or(""))
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", shortID(definition.ID), definition.Name, strings.Join(definition.RunCommand, " "), formatHarnessSecrets(definition.Secrets.Or(nil)), definition.Description.Or(""))
 	return tw.Flush()
 }
 
-func (a *App) writeAgentDefinitions(cmd *cobra.Command, definitions []apimodel.AgentConfigDefinition) error {
+func (a *App) writeHarnessDefinitions(cmd *cobra.Command, definitions []apimodel.HarnessDefinition) error {
 	if a.quiet {
-		return writeResourceIDs(cmd.OutOrStdout(), definitions, func(definition apimodel.AgentConfigDefinition) string { return definition.ID })
+		return writeResourceIDs(cmd.OutOrStdout(), definitions, func(definition apimodel.HarnessDefinition) string { return definition.ID })
 	}
 	if a.output == "json" {
-		return writeJSON(cmd.OutOrStdout(), map[string]any{"agentConfigDefinitions": definitions})
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"harnessDefinitions": definitions})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tDESCRIPTION")
@@ -359,41 +359,41 @@ func (a *App) writeAgentDefinitions(cmd *cobra.Command, definitions []apimodel.A
 	return tw.Flush()
 }
 
-func (a *App) writeAgent(cmd *cobra.Command, agent *apimodel.AgentConfig) error {
-	if agent == nil {
+func (a *App) writeHarness(cmd *cobra.Command, harness *apimodel.HarnessConfig) error {
+	if harness == nil {
 		return nil
 	}
 	if a.output == "json" {
-		return writeJSON(cmd.OutOrStdout(), agent)
+		return writeJSON(cmd.OutOrStdout(), harness)
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tRUN COMMAND\tSECRETS\tUPDATED")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", shortID(agent.ID), agent.Slug, agent.Name, strings.Join(agent.RunCommand, " "), formatAgentSecrets(agent.Secrets.Or(nil)), formatTime(agent.UpdatedAt))
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", shortID(harness.ID), harness.Slug, harness.Name, strings.Join(harness.RunCommand, " "), formatHarnessSecrets(harness.Secrets.Or(nil)), formatTime(harness.UpdatedAt))
 	return tw.Flush()
 }
 
-func (a *App) writeAgents(cmd *cobra.Command, agents []apimodel.AgentConfig, defaultAgentConfigID ...string) error {
+func (a *App) writeHarnesses(cmd *cobra.Command, harnesses []apimodel.HarnessConfig, defaultHarnessConfigID ...string) error {
 	if a.quiet {
-		agents = sortedByCreatedAt(agents, func(agent apimodel.AgentConfig) time.Time { return agent.CreatedAt })
-		return writeResourceIDs(cmd.OutOrStdout(), agents, func(agent apimodel.AgentConfig) string { return agent.ID })
+		harnesses = sortedByCreatedAt(harnesses, func(harness apimodel.HarnessConfig) time.Time { return harness.CreatedAt })
+		return writeResourceIDs(cmd.OutOrStdout(), harnesses, func(harness apimodel.HarnessConfig) string { return harness.ID })
 	}
 	if a.output == "json" {
-		return writeJSON(cmd.OutOrStdout(), map[string]any{"agentConfigs": agents})
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"harnessConfigs": harnesses})
 	}
 	defaultID := ""
-	if len(defaultAgentConfigID) > 0 {
-		defaultID = defaultAgentConfigID[0]
+	if len(defaultHarnessConfigID) > 0 {
+		defaultID = defaultHarnessConfigID[0]
 	}
-	agents = sortedByCreatedAt(agents, func(agent apimodel.AgentConfig) time.Time { return agent.CreatedAt })
+	harnesses = sortedByCreatedAt(harnesses, func(harness apimodel.HarnessConfig) time.Time { return harness.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tDEFAULT\tRUN COMMAND\tUPDATED")
-	for _, agent := range agents {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", shortID(agent.ID), agent.Slug, agent.Name, formatDefaultMarker(agent.ID == defaultID), strings.Join(agent.RunCommand, " "), formatTime(agent.UpdatedAt))
+	for _, harness := range harnesses {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", shortID(harness.ID), harness.Slug, harness.Name, formatDefaultMarker(harness.ID == defaultID), strings.Join(harness.RunCommand, " "), formatTime(harness.UpdatedAt))
 	}
 	return tw.Flush()
 }
 
-func (a *App) writeAgentSecretBindings(cmd *cobra.Command, declarations []apimodel.AgentConfigSecret, bindings []apimodel.AgentConfigSecretBinding) error {
+func (a *App) writeHarnessSecretBindings(cmd *cobra.Command, declarations []apimodel.HarnessConfigSecret, bindings []apimodel.HarnessConfigSecretBinding) error {
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"secrets": declarations, "secretBindings": bindings})
 	}
@@ -440,7 +440,7 @@ func formatBoundSecret(secretID string) string {
 	return shortID(secretID)
 }
 
-func formatAgentSecrets(secrets []apimodel.AgentConfigSecret) string {
+func formatHarnessSecrets(secrets []apimodel.HarnessConfigSecret) string {
 	if len(secrets) == 0 {
 		return "-"
 	}

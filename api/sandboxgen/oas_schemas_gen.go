@@ -15,96 +15,6 @@ func (s *ErrorResponseStatusCode) Error() string {
 	return fmt.Sprintf("code %d: %+v", s.StatusCode, s.Response)
 }
 
-// Ref: #/components/schemas/AgentHookLog
-type AgentHookLog struct {
-	CreatedAt time.Time `json:"createdAt"`
-	// Provider-specific hook event name.
-	Event string `json:"event"`
-	// Hook log ID.
-	ID string `json:"id"`
-	// Raw provider hook payload.
-	Payload jx.Raw `json:"payload"`
-	// Agent hook provider.
-	Provider string `json:"provider"`
-	// Agent terminal runtime ID that emitted the hook.
-	TerminalId OptString `json:"terminalId"`
-}
-
-// GetCreatedAt returns the value of CreatedAt.
-func (s *AgentHookLog) GetCreatedAt() time.Time {
-	return s.CreatedAt
-}
-
-// GetEvent returns the value of Event.
-func (s *AgentHookLog) GetEvent() string {
-	return s.Event
-}
-
-// GetID returns the value of ID.
-func (s *AgentHookLog) GetID() string {
-	return s.ID
-}
-
-// GetPayload returns the value of Payload.
-func (s *AgentHookLog) GetPayload() jx.Raw {
-	return s.Payload
-}
-
-// GetProvider returns the value of Provider.
-func (s *AgentHookLog) GetProvider() string {
-	return s.Provider
-}
-
-// GetTerminalId returns the value of TerminalId.
-func (s *AgentHookLog) GetTerminalId() OptString {
-	return s.TerminalId
-}
-
-// SetCreatedAt sets the value of CreatedAt.
-func (s *AgentHookLog) SetCreatedAt(val time.Time) {
-	s.CreatedAt = val
-}
-
-// SetEvent sets the value of Event.
-func (s *AgentHookLog) SetEvent(val string) {
-	s.Event = val
-}
-
-// SetID sets the value of ID.
-func (s *AgentHookLog) SetID(val string) {
-	s.ID = val
-}
-
-// SetPayload sets the value of Payload.
-func (s *AgentHookLog) SetPayload(val jx.Raw) {
-	s.Payload = val
-}
-
-// SetProvider sets the value of Provider.
-func (s *AgentHookLog) SetProvider(val string) {
-	s.Provider = val
-}
-
-// SetTerminalId sets the value of TerminalId.
-func (s *AgentHookLog) SetTerminalId(val OptString) {
-	s.TerminalId = val
-}
-
-// Ref: #/components/schemas/AgentHookLogsResponse
-type AgentHookLogsResponse struct {
-	Hooks []AgentHookLog `json:"hooks"`
-}
-
-// GetHooks returns the value of Hooks.
-func (s *AgentHookLogsResponse) GetHooks() []AgentHookLog {
-	return s.Hooks
-}
-
-// SetHooks sets the value of Hooks.
-func (s *AgentHookLogsResponse) SetHooks(val []AgentHookLog) {
-	s.Hooks = val
-}
-
 // AttachSandboxExecSwitchingProtocols is response for AttachSandboxExec operation.
 type AttachSandboxExecSwitchingProtocols struct {
 	Connection OptString
@@ -131,21 +41,21 @@ func (s *AttachSandboxExecSwitchingProtocols) SetUpgrade(val OptString) {
 	s.Upgrade = val
 }
 
-// Create an exec. Provide command for a plain exec, or agentId (with optional args) to run a coding
-// agent in terminal mode.
+// Create an exec. Provide command for a plain exec, or harnessId (with optional args) to run a
+// harness in terminal mode.
 // Ref: #/components/schemas/CreateSandboxExecRequest
 type CreateSandboxExecRequest struct {
-	// Coding agent CLI to start in terminal mode. Defaults to the sandbox configured agent when omitted.
-	// Mutually exclusive with command.
-	AgentId OptString `json:"agentId"`
-	// Additional command arguments appended to the resolved agent command in terminal mode.
+	// Additional command arguments appended to the resolved harness command in terminal mode.
 	Args []string `json:"args"`
 	// Initial PTY columns when a PTY is allocated.
 	Cols OptInt `json:"cols"`
-	// Command argv to execute in the sandbox. Mutually exclusive with agentId.
+	// Command argv to execute in the sandbox. Mutually exclusive with harnessId.
 	Command []string `json:"command"`
 	// Additional environment variables for the exec process.
 	Env OptCreateSandboxExecRequestEnv `json:"env"`
+	// Harness CLI to start in terminal mode. Defaults to the sandbox configured harness when omitted.
+	// Mutually exclusive with command.
+	HarnessId OptString `json:"harnessId"`
 	// Caller-supplied metadata to associate with the exec.
 	Metadata OptCreateSandboxExecRequestMetadata `json:"metadata"`
 	// Initial PTY rows when a PTY is allocated.
@@ -156,11 +66,6 @@ type CreateSandboxExecRequest struct {
 	User OptSandboxUser `json:"user"`
 	// Working directory for the exec process.
 	Workdir OptString `json:"workdir"`
-}
-
-// GetAgentId returns the value of AgentId.
-func (s *CreateSandboxExecRequest) GetAgentId() OptString {
-	return s.AgentId
 }
 
 // GetArgs returns the value of Args.
@@ -181,6 +86,11 @@ func (s *CreateSandboxExecRequest) GetCommand() []string {
 // GetEnv returns the value of Env.
 func (s *CreateSandboxExecRequest) GetEnv() OptCreateSandboxExecRequestEnv {
 	return s.Env
+}
+
+// GetHarnessId returns the value of HarnessId.
+func (s *CreateSandboxExecRequest) GetHarnessId() OptString {
+	return s.HarnessId
 }
 
 // GetMetadata returns the value of Metadata.
@@ -208,11 +118,6 @@ func (s *CreateSandboxExecRequest) GetWorkdir() OptString {
 	return s.Workdir
 }
 
-// SetAgentId sets the value of AgentId.
-func (s *CreateSandboxExecRequest) SetAgentId(val OptString) {
-	s.AgentId = val
-}
-
 // SetArgs sets the value of Args.
 func (s *CreateSandboxExecRequest) SetArgs(val []string) {
 	s.Args = val
@@ -231,6 +136,11 @@ func (s *CreateSandboxExecRequest) SetCommand(val []string) {
 // SetEnv sets the value of Env.
 func (s *CreateSandboxExecRequest) SetEnv(val OptCreateSandboxExecRequestEnv) {
 	s.Env = val
+}
+
+// SetHarnessId sets the value of HarnessId.
+func (s *CreateSandboxExecRequest) SetHarnessId(val OptString) {
+	s.HarnessId = val
 }
 
 // SetMetadata sets the value of Metadata.
@@ -340,6 +250,96 @@ func (s *ErrorResponseStatusCode) SetStatusCode(val int) {
 // SetResponse sets the value of Response.
 func (s *ErrorResponseStatusCode) SetResponse(val ErrorResponse) {
 	s.Response = val
+}
+
+// Ref: #/components/schemas/HarnessHookLog
+type HarnessHookLog struct {
+	CreatedAt time.Time `json:"createdAt"`
+	// Provider-specific hook event name.
+	Event string `json:"event"`
+	// Hook log ID.
+	ID string `json:"id"`
+	// Raw provider hook payload.
+	Payload jx.Raw `json:"payload"`
+	// Harness hook provider.
+	Provider string `json:"provider"`
+	// Harness terminal runtime ID that emitted the hook.
+	TerminalId OptString `json:"terminalId"`
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *HarnessHookLog) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetEvent returns the value of Event.
+func (s *HarnessHookLog) GetEvent() string {
+	return s.Event
+}
+
+// GetID returns the value of ID.
+func (s *HarnessHookLog) GetID() string {
+	return s.ID
+}
+
+// GetPayload returns the value of Payload.
+func (s *HarnessHookLog) GetPayload() jx.Raw {
+	return s.Payload
+}
+
+// GetProvider returns the value of Provider.
+func (s *HarnessHookLog) GetProvider() string {
+	return s.Provider
+}
+
+// GetTerminalId returns the value of TerminalId.
+func (s *HarnessHookLog) GetTerminalId() OptString {
+	return s.TerminalId
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *HarnessHookLog) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetEvent sets the value of Event.
+func (s *HarnessHookLog) SetEvent(val string) {
+	s.Event = val
+}
+
+// SetID sets the value of ID.
+func (s *HarnessHookLog) SetID(val string) {
+	s.ID = val
+}
+
+// SetPayload sets the value of Payload.
+func (s *HarnessHookLog) SetPayload(val jx.Raw) {
+	s.Payload = val
+}
+
+// SetProvider sets the value of Provider.
+func (s *HarnessHookLog) SetProvider(val string) {
+	s.Provider = val
+}
+
+// SetTerminalId sets the value of TerminalId.
+func (s *HarnessHookLog) SetTerminalId(val OptString) {
+	s.TerminalId = val
+}
+
+// Ref: #/components/schemas/HarnessHookLogsResponse
+type HarnessHookLogsResponse struct {
+	Hooks []HarnessHookLog `json:"hooks"`
+}
+
+// GetHooks returns the value of Hooks.
+func (s *HarnessHookLogsResponse) GetHooks() []HarnessHookLog {
+	return s.Hooks
+}
+
+// SetHooks sets the value of Hooks.
+func (s *HarnessHookLogsResponse) SetHooks(val []HarnessHookLog) {
+	s.Hooks = val
 }
 
 // NewOptBool returns new OptBool with value set to v.
@@ -825,7 +825,7 @@ type ResourceSnapshot struct {
 	SampledAt time.Time `json:"sampledAt"`
 	// Resource collector source.
 	Source string `json:"source"`
-	// Agent terminal runtime ID.
+	// Harness terminal runtime ID.
 	TerminalId string `json:"terminalId"`
 }
 
@@ -871,8 +871,6 @@ func (s *ResourceSnapshot) SetTerminalId(val string) {
 
 // Ref: #/components/schemas/SandboxExec
 type SandboxExec struct {
-	// Coding agent this exec runs, when created in agent (terminal) mode.
-	AgentId OptString `json:"agentId"`
 	// Command argv executed in the sandbox.
 	Command   []string  `json:"command"`
 	CreatedAt time.Time `json:"createdAt"`
@@ -883,18 +881,20 @@ type SandboxExec struct {
 	// Process exit code when the exec has exited.
 	ExitCode OptInt64    `json:"exitCode"`
 	ExitedAt OptDateTime `json:"exitedAt"`
+	// Harness this exec runs, when created in harness (terminal) mode.
+	HarnessId OptString `json:"harnessId"`
 	// Sandbox exec runtime ID.
 	ID string `json:"id"`
 	// Caller-supplied exec metadata.
 	Metadata OptSandboxExecMetadata `json:"metadata"`
 	// Sandbox-local process ID when known.
 	Pid OptInt64 `json:"pid"`
-	// Whether this is the sandbox's primary agent terminal.
+	// Whether this is the sandbox's primary harness terminal.
 	Primary   OptBool     `json:"primary"`
 	StartedAt OptDateTime `json:"startedAt"`
 	// Current observed exec runtime status. installing is a terminal-layer
-	// phase: the exec record exists and its agent install command is still
-	// running, before the agent process is launched (starting -> running).
+	// phase: the exec record exists and its harness install command is still
+	// running, before the harness process is launched (starting -> running).
 	Status SandboxExecStatus `json:"status"`
 	// Whether the exec process was started with a PTY.
 	Tty bool `json:"tty"`
@@ -904,11 +904,6 @@ type SandboxExec struct {
 	User OptSandboxUser `json:"user"`
 	// Working directory for the exec process.
 	Workdir string `json:"workdir"`
-}
-
-// GetAgentId returns the value of AgentId.
-func (s *SandboxExec) GetAgentId() OptString {
-	return s.AgentId
 }
 
 // GetCommand returns the value of Command.
@@ -939,6 +934,11 @@ func (s *SandboxExec) GetExitCode() OptInt64 {
 // GetExitedAt returns the value of ExitedAt.
 func (s *SandboxExec) GetExitedAt() OptDateTime {
 	return s.ExitedAt
+}
+
+// GetHarnessId returns the value of HarnessId.
+func (s *SandboxExec) GetHarnessId() OptString {
+	return s.HarnessId
 }
 
 // GetID returns the value of ID.
@@ -991,11 +991,6 @@ func (s *SandboxExec) GetWorkdir() string {
 	return s.Workdir
 }
 
-// SetAgentId sets the value of AgentId.
-func (s *SandboxExec) SetAgentId(val OptString) {
-	s.AgentId = val
-}
-
 // SetCommand sets the value of Command.
 func (s *SandboxExec) SetCommand(val []string) {
 	s.Command = val
@@ -1024,6 +1019,11 @@ func (s *SandboxExec) SetExitCode(val OptInt64) {
 // SetExitedAt sets the value of ExitedAt.
 func (s *SandboxExec) SetExitedAt(val OptDateTime) {
 	s.ExitedAt = val
+}
+
+// SetHarnessId sets the value of HarnessId.
+func (s *SandboxExec) SetHarnessId(val OptString) {
+	s.HarnessId = val
 }
 
 // SetID sets the value of ID.
@@ -1298,8 +1298,8 @@ func (s *SandboxExecMetadata) init() SandboxExecMetadata {
 }
 
 // Current observed exec runtime status. installing is a terminal-layer
-// phase: the exec record exists and its agent install command is still
-// running, before the agent process is launched (starting -> running).
+// phase: the exec record exists and its harness install command is still
+// running, before the harness process is launched (starting -> running).
 type SandboxExecStatus string
 
 const (

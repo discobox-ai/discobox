@@ -10,7 +10,7 @@ service startup. Resource-specific API behavior lives in resource packages under
 flowchart LR
     api[internal/services or internal/handlers] --> service[internal/service]
     service --> projects[internal/resources/projects.Service]
-    service --> agentconfigs[internal/resources/agentconfigs.Service]
+    service --> harnessconfigs[internal/resources/harnessconfigs.Service]
     service --> sandboxes[internal/resources/sandboxes.Service]
     service --> workers[internal/resources/workers.Service]
     service --> providers[internal/resources/providers.Service]
@@ -48,7 +48,7 @@ internal/resources/workers.Manager
 internal/resources/workers.WorkerReconcileExecutor
 internal/resources/providers.Service
 internal/resources/providers.WorkerProviderReconcileExecutor
-internal/resources/agentconfigs.Service
+internal/resources/harnessconfigs.Service
 internal/resources/events.Service
 internal/resources/jobs.Service
 internal/resources/projects.Service

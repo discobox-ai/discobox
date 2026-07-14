@@ -22,7 +22,7 @@ const (
 )
 
 type Recorder interface {
-	RecordAgentHook(context.Context, store.AgentHookRecord) (store.AgentHookRecord, error)
+	RecordHarnessHook(context.Context, store.HarnessHookRecord) (store.HarnessHookRecord, error)
 }
 
 type Message struct {
@@ -34,7 +34,7 @@ type Message struct {
 
 func SocketPath(runtimeDir string) string {
 	if strings.TrimSpace(runtimeDir) == "" {
-		runtimeDir = "/run/discobox/agent-terminals"
+		runtimeDir = "/run/discobox/harness-terminals"
 	}
 	return filepath.Join(filepath.Clean(runtimeDir), "hooks.sock")
 }
@@ -117,7 +117,7 @@ func handleConn(ctx context.Context, conn net.Conn, recorder Recorder) {
 	if len(payload) == 0 {
 		payload = json.RawMessage(`{}`)
 	}
-	if _, err := recorder.RecordAgentHook(ctx, store.AgentHookRecord{
+	if _, err := recorder.RecordHarnessHook(ctx, store.HarnessHookRecord{
 		TerminalID: message.TerminalID,
 		Provider:   message.Provider,
 		Event:      message.Event,

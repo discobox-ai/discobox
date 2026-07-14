@@ -830,19 +830,19 @@ func decodeGetSandboxExecResourcesParams(args [3]string, argsEscaped bool, r *ht
 	return params, nil
 }
 
-// ListAgentHooksParams is parameters of list-agent-hooks operation.
-type ListAgentHooksParams struct {
+// ListHarnessHooksParams is parameters of list-harness-hooks operation.
+type ListHarnessHooksParams struct {
 	// Project that owns the sandbox.
 	ProjectId string
 	// Sandbox resource ID.
 	SandboxId string
-	// Optional agent terminal runtime ID filter.
+	// Optional harness terminal runtime ID filter.
 	TerminalId OptString `json:",omitempty,omitzero"`
 	// Maximum number of hook records to return.
 	Limit OptInt `json:",omitempty,omitzero"`
 }
 
-func unpackListAgentHooksParams(packed middleware.Parameters) (params ListAgentHooksParams) {
+func unpackListHarnessHooksParams(packed middleware.Parameters) (params ListHarnessHooksParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "projectId",
@@ -878,7 +878,7 @@ func unpackListAgentHooksParams(packed middleware.Parameters) (params ListAgentH
 	return params
 }
 
-func decodeListAgentHooksParams(args [2]string, argsEscaped bool, r *http.Request) (params ListAgentHooksParams, _ error) {
+func decodeListHarnessHooksParams(args [2]string, argsEscaped bool, r *http.Request) (params ListHarnessHooksParams, _ error) {
 	q := uri.NewQueryDecoder(r.URL.Query())
 	// Decode path: projectId.
 	if err := func() error {

@@ -61,8 +61,8 @@ type Config struct {
 	Network string
 	// AgentPort is the container port the worker agent listens on.
 	AgentPort int
-	// PublicAgentPort publishes the agent port on all interfaces at the fixed
-	// agent port so the control plane can reach it at the VM's address. When
+	// PublicAgentPort publishes the harness port on all interfaces at the fixed
+	// harness port so the control plane can reach it at the VM's address. When
 	// false the port is published on a loopback-only ephemeral port, for the
 	// local driver.
 	PublicAgentPort bool
@@ -335,7 +335,7 @@ func (e *Engine) createWorkerContainer(ctx context.Context, cli *client.Client, 
 
 	exposedPort, ok := agentNetworkPort(e.cfg.AgentPort)
 	if !ok {
-		return nil, fmt.Errorf("invalid agent port %d", e.cfg.AgentPort)
+		return nil, fmt.Errorf("invalid harness port %d", e.cfg.AgentPort)
 	}
 	config := &container.Config{
 		Image:        e.cfg.Image,
@@ -593,7 +593,7 @@ func shortContainerID(id string) string {
 }
 
 // AssignedAgentEndpoint resolves the published host endpoint for the worker
-// agent port from a container's port map.
+// harness port from a container's port map.
 func AssignedAgentEndpoint(ports network.PortMap, agentPort int) (string, int) {
 	port, ok := agentNetworkPort(agentPort)
 	if !ok {

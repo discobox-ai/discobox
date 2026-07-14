@@ -35,7 +35,7 @@ func TestHealthDoesNotRequireAuth(t *testing.T) {
 	}
 }
 
-func TestListAgentHooksRequiresExecReadScope(t *testing.T) {
+func TestListHarnessHooksRequiresExecReadScope(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
 	router, err := NewRouter(testConfig(publicKey))
 	if err != nil {
@@ -43,19 +43,19 @@ func TestListAgentHooksRequiresExecReadScope(t *testing.T) {
 	}
 
 	resp := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/agent-hooks", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/harness-hooks", nil)
 	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeExecRead))
 	router.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusOK {
-		t.Fatalf("GET agent hooks status = %d, body = %s", resp.Code, resp.Body.String())
+		t.Fatalf("GET harness hooks status = %d, body = %s", resp.Code, resp.Body.String())
 	}
 	if body := resp.Body.String(); body != `{"hooks":[]}` {
 		t.Fatalf("body = %q", body)
 	}
 }
 
-func TestListAgentHooksRejectsWriteOnlyScope(t *testing.T) {
+func TestListHarnessHooksRejectsWriteOnlyScope(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
 	router, err := NewRouter(testConfig(publicKey))
 	if err != nil {
@@ -63,12 +63,12 @@ func TestListAgentHooksRejectsWriteOnlyScope(t *testing.T) {
 	}
 
 	resp := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/agent-hooks", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/harness-hooks", nil)
 	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeExecWrite))
 	router.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusForbidden {
-		t.Fatalf("GET agent hooks status = %d, body = %s", resp.Code, resp.Body.String())
+		t.Fatalf("GET harness hooks status = %d, body = %s", resp.Code, resp.Body.String())
 	}
 }
 
@@ -148,7 +148,7 @@ func TestCreateAgentTerminalRequiresWriteScope(t *testing.T) {
 	router.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusCreated {
-		t.Fatalf("POST agent terminals status = %d, body = %s", resp.Code, resp.Body.String())
+		t.Fatalf("POST harness terminals status = %d, body = %s", resp.Code, resp.Body.String())
 	}
 	if len(runner.starts) != 1 {
 		t.Fatalf("starts = %#v", runner.starts)
@@ -171,13 +171,13 @@ func TestTokenRouteIdentityMustMatch(t *testing.T) {
 	router.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusForbidden {
-		t.Fatalf("GET agent terminals status = %d, body = %s", resp.Code, resp.Body.String())
+		t.Fatalf("GET harness terminals status = %d, body = %s", resp.Code, resp.Body.String())
 	}
 }
 
 func TestAgentTerminalEventsAndResources(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	st, err := agentstore.Open(context.Background(), filepath.Join(t.TempDir(), "agent.db"))
+	st, err := agentstore.Open(context.Background(), filepath.Join(t.TempDir(), "harness.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestAgentTerminalEventsAndResources(t *testing.T) {
 
 func TestAgentTerminalResourceStreamReplaysHistory(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
-	st, err := agentstore.Open(context.Background(), filepath.Join(t.TempDir(), "agent.db"))
+	st, err := agentstore.Open(context.Background(), filepath.Join(t.TempDir(), "harness.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
@@ -268,14 +268,14 @@ func TestAgentTerminalResourceStreamReplaysHistory(t *testing.T) {
 		t.Fatalf("new exec manager: %v", err)
 	}
 	created, err := terminal.NewService(terminal.ServiceConfig{
-		Execs:               execManager,
-		ResolvedAgentConfig: cfg.ResolvedAgentConfig,
-		Agents:              cfg.Agents,
-		WorkingRoot:         cfg.WorkingRoot,
-		RuntimeDir:          cfg.RuntimeDir,
-		ImageConfig:         config.ImageConfig{Env: map[string]string{"PATH": "/usr/bin"}},
-		Units:               runner,
-		Installer:           cfg.Installer,
+		Execs:                 execManager,
+		ResolvedHarnessConfig: cfg.ResolvedHarnessConfig,
+		Harnesses:             cfg.Harnesses,
+		WorkingRoot:           cfg.WorkingRoot,
+		RuntimeDir:            cfg.RuntimeDir,
+		ImageConfig:           config.ImageConfig{Env: map[string]string{"PATH": "/usr/bin"}},
+		Units:                 runner,
+		Installer:             cfg.Installer,
 	})
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
@@ -319,8 +319,8 @@ func testConfig(publicKey string) Config {
 		ListenAddress:         ":0",
 		WorkingRoot:           "/workspace",
 		RuntimeDir:            runtimeDir,
-		DatabasePath:          filepath.Join(runtimeDir, "agent.db"),
-		Agents: []config.Agent{{
+		DatabasePath:          filepath.Join(runtimeDir, "harness.db"),
+		Harnesses: []config.Harness{{
 			ID:      "codex",
 			Command: []string{"codex"},
 		}},
@@ -392,7 +392,7 @@ type sandboxAgentNoopAudit struct{}
 
 type sandboxAgentNoopInstaller struct{}
 
-func (sandboxAgentNoopInstaller) EnsureInstalled(context.Context, config.Agent, string, map[string]string) error {
+func (sandboxAgentNoopInstaller) EnsureInstalled(context.Context, config.Harness, string, map[string]string) error {
 	return nil
 }
 

@@ -85,8 +85,8 @@ func TestAuthorizationStopsOnAuthorizerError(t *testing.T) {
 func TestAuthenticatedAuthorizerAllowsOnlyExplicitPaths(t *testing.T) {
 	principal := Principal{Type: PrincipalTypeUser, UserID: "user-1"}
 	for _, path := range []string{
-		"/agent-config-definitions",
-		"/agent-config-definitions/example",
+		"/harness-definitions",
+		"/harness-definitions/example",
 		"/api/workers/register",
 		"/projects",
 		"/providers/catalog",

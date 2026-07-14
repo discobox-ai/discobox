@@ -28,7 +28,7 @@ func (Driver) Definition() harness.Definition {
 	return harness.Definition{
 		ID:              "codex",
 		Name:            "Codex",
-		Description:     "OpenAI Codex coding agent.",
+		Description:     "OpenAI Codex coding harness.",
 		InstallCommand:  []string{"npm", "install", "-g", "@openai/codex"},
 		RunCommand:      []string{"codex"},
 		RelaunchCommand: []string{"codex", "resume", "--last"},

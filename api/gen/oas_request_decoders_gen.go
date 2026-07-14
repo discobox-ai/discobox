@@ -93,8 +93,8 @@ func (s *Server) decodeApproveSecretRequestRequest(r *http.Request) (
 	}
 }
 
-func (s *Server) decodeAssignSandboxAgentSecretsRequest(r *http.Request) (
-	req *AssignSandboxAgentSecretsBody,
+func (s *Server) decodeAssignSandboxHarnessSecretsRequest(r *http.Request) (
+	req *AssignSandboxHarnessSecretsBody,
 	rawBody []byte,
 	close func() error,
 	rerr error,
@@ -141,7 +141,7 @@ func (s *Server) decodeAssignSandboxAgentSecretsRequest(r *http.Request) (
 		rawBody = append(rawBody, buf...)
 		d := jx.DecodeBytes(buf)
 
-		var request AssignSandboxAgentSecretsBody
+		var request AssignSandboxHarnessSecretsBody
 		if err := func() error {
 			if err := request.Decode(d); err != nil {
 				return err
@@ -164,8 +164,8 @@ func (s *Server) decodeAssignSandboxAgentSecretsRequest(r *http.Request) (
 	}
 }
 
-func (s *Server) decodeCreateAgentConfigRequest(r *http.Request) (
-	req *CreateAgentConfigBody,
+func (s *Server) decodeCreateHarnessConfigRequest(r *http.Request) (
+	req *CreateHarnessConfigBody,
 	rawBody []byte,
 	close func() error,
 	rerr error,
@@ -212,7 +212,7 @@ func (s *Server) decodeCreateAgentConfigRequest(r *http.Request) (
 		rawBody = append(rawBody, buf...)
 		d := jx.DecodeBytes(buf)
 
-		var request CreateAgentConfigBody
+		var request CreateHarnessConfigBody
 		if err := func() error {
 			if err := request.Decode(d); err != nil {
 				return err
@@ -930,8 +930,8 @@ func (s *Server) decodeRestartSandboxRequest(r *http.Request) (
 	}
 }
 
-func (s *Server) decodeSetAgentConfigSecretBindingRequest(r *http.Request) (
-	req *SetAgentConfigSecretBindingBody,
+func (s *Server) decodeSetHarnessConfigSecretBindingRequest(r *http.Request) (
+	req *SetHarnessConfigSecretBindingBody,
 	rawBody []byte,
 	close func() error,
 	rerr error,
@@ -978,7 +978,7 @@ func (s *Server) decodeSetAgentConfigSecretBindingRequest(r *http.Request) (
 		rawBody = append(rawBody, buf...)
 		d := jx.DecodeBytes(buf)
 
-		var request SetAgentConfigSecretBindingBody
+		var request SetHarnessConfigSecretBindingBody
 		if err := func() error {
 			if err := request.Decode(d); err != nil {
 				return err
@@ -1143,8 +1143,8 @@ func (s *Server) decodeStopSandboxRequest(r *http.Request) (
 	}
 }
 
-func (s *Server) decodeUpdateAgentConfigRequest(r *http.Request) (
-	req *UpdateAgentConfigBody,
+func (s *Server) decodeUpdateHarnessConfigRequest(r *http.Request) (
+	req *UpdateHarnessConfigBody,
 	rawBody []byte,
 	close func() error,
 	rerr error,
@@ -1191,7 +1191,7 @@ func (s *Server) decodeUpdateAgentConfigRequest(r *http.Request) (
 		rawBody = append(rawBody, buf...)
 		d := jx.DecodeBytes(buf)
 
-		var request UpdateAgentConfigBody
+		var request UpdateHarnessConfigBody
 		if err := func() error {
 			if err := request.Decode(d); err != nil {
 				return err

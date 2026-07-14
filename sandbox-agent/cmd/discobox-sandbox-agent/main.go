@@ -17,7 +17,7 @@ import (
 	"github.com/obot-platform/discobox/proxy/bridge"
 	"github.com/obot-platform/discobox/sandbox-agent/config"
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
-	agenthooks "github.com/obot-platform/discobox/sandbox-agent/hooks"
+	harnesshooks "github.com/obot-platform/discobox/sandbox-agent/hooks"
 	"github.com/obot-platform/discobox/sandbox-agent/server"
 )
 
@@ -51,7 +51,7 @@ func run(args []string) int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := server.Serve(ctx, slog.Default(), server.ConfigFromAgentConfig(cfg)); err != nil && !errors.Is(err, context.Canceled) {
+	if err := server.Serve(ctx, slog.Default(), server.ConfigFromHarnessConfig(cfg)); err != nil && !errors.Is(err, context.Canceled) {
 		slog.Error("serve sandbox agent", "error", err)
 		return 1
 	}
@@ -61,8 +61,8 @@ func run(args []string) int {
 func runHookPublish(args []string) int {
 	var provider, event string
 	flags := flag.NewFlagSet("discobox-hook-publish", flag.ContinueOnError)
-	flags.StringVar(&provider, "provider", "", "agent hook provider")
-	flags.StringVar(&event, "event", "", "agent hook event")
+	flags.StringVar(&provider, "provider", "", "harness hook provider")
+	flags.StringVar(&event, "event", "", "harness hook event")
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
@@ -84,8 +84,8 @@ func runHookPublish(args []string) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	if err := agenthooks.Publish(ctx, os.Getenv(agenthooks.SocketEnv), agenthooks.Message{
-		TerminalID: os.Getenv(agenthooks.TerminalIDEnv),
+	if err := harnesshooks.Publish(ctx, os.Getenv(harnesshooks.SocketEnv), harnesshooks.Message{
+		TerminalID: os.Getenv(harnesshooks.TerminalIDEnv),
 		Provider:   provider,
 		Event:      event,
 		Payload:    payload,
@@ -96,7 +96,7 @@ func runHookPublish(args []string) int {
 	return 0
 }
 
-// bridgeConfig mirrors the on-disk config written by the worker agent into the
+// bridgeConfig mirrors the on-disk config written by the worker harness into the
 // sandbox proxy material directory.
 type bridgeConfig struct {
 	ListenAddress  string `json:"listenAddress"`

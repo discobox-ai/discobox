@@ -9,357 +9,6 @@ import (
 	"github.com/ogen-go/ogen/validate"
 )
 
-func (s *AgentConfig) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		if value, ok := s.Files.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "files",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.InstallCommand.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "installCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if err := (validate.String{
-			MinLength:     0,
-			MinLengthSet:  false,
-			MaxLength:     200,
-			MaxLengthSet:  true,
-			Email:         false,
-			Hostname:      false,
-			Regex:         nil,
-			MinNumeric:    0,
-			MinNumericSet: false,
-			MaxNumeric:    0,
-			MaxNumericSet: false,
-		}).Validate(string(s.Name)); err != nil {
-			return errors.Wrap(err, "string")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "name",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.RelaunchCommand.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "relaunchCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if s.RunCommand == nil {
-			return errors.New("nil is invalid value")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "runCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.Secrets.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				var failures []validate.FieldError
-				for i, elem := range value {
-					if err := func() error {
-						if err := elem.Validate(); err != nil {
-							return err
-						}
-						return nil
-					}(); err != nil {
-						failures = append(failures, validate.FieldError{
-							Name:  fmt.Sprintf("[%d]", i),
-							Error: err,
-						})
-					}
-				}
-				if len(failures) > 0 {
-					return &validate.Error{Fields: failures}
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "secrets",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if err := (validate.String{
-			MinLength:     0,
-			MinLengthSet:  false,
-			MaxLength:     0,
-			MaxLengthSet:  false,
-			Email:         false,
-			Hostname:      false,
-			Regex:         regexMap["^[a-z0-9][a-z0-9-]*$"],
-			MinNumeric:    0,
-			MinNumericSet: false,
-			MaxNumeric:    0,
-			MaxNumericSet: false,
-		}).Validate(string(s.Slug)); err != nil {
-			return errors.Wrap(err, "string")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "slug",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
-func (s *AgentConfigDefinition) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		if value, ok := s.Files.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "files",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.InstallCommand.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "installCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if err := (validate.String{
-			MinLength:     0,
-			MinLengthSet:  false,
-			MaxLength:     200,
-			MaxLengthSet:  true,
-			Email:         false,
-			Hostname:      false,
-			Regex:         nil,
-			MinNumeric:    0,
-			MinNumericSet: false,
-			MaxNumeric:    0,
-			MaxNumericSet: false,
-		}).Validate(string(s.Name)); err != nil {
-			return errors.Wrap(err, "string")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "name",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.RelaunchCommand.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "relaunchCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if s.RunCommand == nil {
-			return errors.New("nil is invalid value")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "runCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.Secrets.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				var failures []validate.FieldError
-				for i, elem := range value {
-					if err := func() error {
-						if err := elem.Validate(); err != nil {
-							return err
-						}
-						return nil
-					}(); err != nil {
-						failures = append(failures, validate.FieldError{
-							Name:  fmt.Sprintf("[%d]", i),
-							Error: err,
-						})
-					}
-				}
-				if len(failures) > 0 {
-					return &validate.Error{Fields: failures}
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "secrets",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
-func (s *AgentConfigSecret) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		if err := (validate.String{
-			MinLength:     0,
-			MinLengthSet:  false,
-			MaxLength:     0,
-			MaxLengthSet:  false,
-			Email:         false,
-			Hostname:      false,
-			Regex:         regexMap["^[A-Za-z_][A-Za-z0-9_]*$"],
-			MinNumeric:    0,
-			MinNumericSet: false,
-			MaxNumeric:    0,
-			MaxNumericSet: false,
-		}).Validate(string(s.Name)); err != nil {
-			return errors.Wrap(err, "string")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "name",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
-func (s *AgentHookLogsResponse) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		if s.Hooks == nil {
-			return errors.New("nil is invalid value")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "hooks",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
 func (s *ApproveSecretRequestBody) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -394,7 +43,7 @@ func (s ApproveSecretRequestBodyScope) Validate() error {
 	switch s {
 	case "sandbox":
 		return nil
-	case "agentConfig":
+	case "harnessConfig":
 		return nil
 	case "project":
 		return nil
@@ -403,7 +52,7 @@ func (s ApproveSecretRequestBodyScope) Validate() error {
 	}
 }
 
-func (s *CreateAgentConfigBody) Validate() error {
+func (s *CreateHarnessConfigBody) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
 	}
@@ -817,7 +466,7 @@ func (s CreateSecretGrantBodyScope) Validate() error {
 	switch s {
 	case "sandbox":
 		return nil
-	case "agentConfig":
+	case "harnessConfig":
 		return nil
 	case "project":
 		return nil
@@ -1036,6 +685,357 @@ func (s GitSourceWorkspaceMode) Validate() error {
 	}
 }
 
+func (s *HarnessConfig) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Files.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "files",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.InstallCommand.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "installCommand",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := (validate.String{
+			MinLength:     0,
+			MinLengthSet:  false,
+			MaxLength:     200,
+			MaxLengthSet:  true,
+			Email:         false,
+			Hostname:      false,
+			Regex:         nil,
+			MinNumeric:    0,
+			MinNumericSet: false,
+			MaxNumeric:    0,
+			MaxNumericSet: false,
+		}).Validate(string(s.Name)); err != nil {
+			return errors.Wrap(err, "string")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "name",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.RelaunchCommand.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "relaunchCommand",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if s.RunCommand == nil {
+			return errors.New("nil is invalid value")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "runCommand",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Secrets.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				var failures []validate.FieldError
+				for i, elem := range value {
+					if err := func() error {
+						if err := elem.Validate(); err != nil {
+							return err
+						}
+						return nil
+					}(); err != nil {
+						failures = append(failures, validate.FieldError{
+							Name:  fmt.Sprintf("[%d]", i),
+							Error: err,
+						})
+					}
+				}
+				if len(failures) > 0 {
+					return &validate.Error{Fields: failures}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "secrets",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := (validate.String{
+			MinLength:     0,
+			MinLengthSet:  false,
+			MaxLength:     0,
+			MaxLengthSet:  false,
+			Email:         false,
+			Hostname:      false,
+			Regex:         regexMap["^[a-z0-9][a-z0-9-]*$"],
+			MinNumeric:    0,
+			MinNumericSet: false,
+			MaxNumeric:    0,
+			MaxNumericSet: false,
+		}).Validate(string(s.Slug)); err != nil {
+			return errors.Wrap(err, "string")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "slug",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *HarnessConfigSecret) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if err := (validate.String{
+			MinLength:     0,
+			MinLengthSet:  false,
+			MaxLength:     0,
+			MaxLengthSet:  false,
+			Email:         false,
+			Hostname:      false,
+			Regex:         regexMap["^[A-Za-z_][A-Za-z0-9_]*$"],
+			MinNumeric:    0,
+			MinNumericSet: false,
+			MaxNumeric:    0,
+			MaxNumericSet: false,
+		}).Validate(string(s.Name)); err != nil {
+			return errors.Wrap(err, "string")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "name",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *HarnessDefinition) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if value, ok := s.Files.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "files",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.InstallCommand.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "installCommand",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if err := (validate.String{
+			MinLength:     0,
+			MinLengthSet:  false,
+			MaxLength:     200,
+			MaxLengthSet:  true,
+			Email:         false,
+			Hostname:      false,
+			Regex:         nil,
+			MinNumeric:    0,
+			MinNumericSet: false,
+			MaxNumeric:    0,
+			MaxNumericSet: false,
+		}).Validate(string(s.Name)); err != nil {
+			return errors.Wrap(err, "string")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "name",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.RelaunchCommand.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "relaunchCommand",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if s.RunCommand == nil {
+			return errors.New("nil is invalid value")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "runCommand",
+			Error: err,
+		})
+	}
+	if err := func() error {
+		if value, ok := s.Secrets.Get(); ok {
+			if err := func() error {
+				if value == nil {
+					return errors.New("nil is invalid value")
+				}
+				var failures []validate.FieldError
+				for i, elem := range value {
+					if err := func() error {
+						if err := elem.Validate(); err != nil {
+							return err
+						}
+						return nil
+					}(); err != nil {
+						failures = append(failures, validate.FieldError{
+							Name:  fmt.Sprintf("[%d]", i),
+							Error: err,
+						})
+					}
+				}
+				if len(failures) > 0 {
+					return &validate.Error{Fields: failures}
+				}
+				return nil
+			}(); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "secrets",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *HarnessHookLogsResponse) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		if s.Hooks == nil {
+			return errors.New("nil is invalid value")
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "hooks",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
 func (s *Job) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
@@ -1078,44 +1078,7 @@ func (s JobStatus) Validate() error {
 	}
 }
 
-func (s *ListAgentConfigDefinitionsBody) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		var failures []validate.FieldError
-		for i, elem := range s.AgentConfigDefinitions {
-			if err := func() error {
-				if err := elem.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				failures = append(failures, validate.FieldError{
-					Name:  fmt.Sprintf("[%d]", i),
-					Error: err,
-				})
-			}
-		}
-		if len(failures) > 0 {
-			return &validate.Error{Fields: failures}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "agentConfigDefinitions",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
-func (s *ListAgentConfigSecretBindingsBody) Validate() error {
+func (s *ListHarnessConfigSecretBindingsBody) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
 	}
@@ -1138,7 +1101,7 @@ func (s *ListAgentConfigSecretBindingsBody) Validate() error {
 	return nil
 }
 
-func (s *ListAgentConfigsBody) Validate() error {
+func (s *ListHarnessConfigsBody) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
 	}
@@ -1146,7 +1109,7 @@ func (s *ListAgentConfigsBody) Validate() error {
 	var failures []validate.FieldError
 	if err := func() error {
 		var failures []validate.FieldError
-		for i, elem := range s.AgentConfigs {
+		for i, elem := range s.HarnessConfigs {
 			if err := func() error {
 				if err := elem.Validate(); err != nil {
 					return err
@@ -1165,7 +1128,44 @@ func (s *ListAgentConfigsBody) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "agentConfigs",
+			Name:  "harnessConfigs",
+			Error: err,
+		})
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+	return nil
+}
+
+func (s *ListHarnessDefinitionsBody) Validate() error {
+	if s == nil {
+		return validate.ErrNilPointer
+	}
+
+	var failures []validate.FieldError
+	if err := func() error {
+		var failures []validate.FieldError
+		for i, elem := range s.HarnessDefinitions {
+			if err := func() error {
+				if err := elem.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				failures = append(failures, validate.FieldError{
+					Name:  fmt.Sprintf("[%d]", i),
+					Error: err,
+				})
+			}
+		}
+		if len(failures) > 0 {
+			return &validate.Error{Fields: failures}
+		}
+		return nil
+	}(); err != nil {
+		failures = append(failures, validate.FieldError{
+			Name:  "harnessDefinitions",
 			Error: err,
 		})
 	}
@@ -1540,7 +1540,7 @@ func (s *Project) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if value, ok := s.AgentConfigs.Get(); ok {
+		if value, ok := s.HarnessConfigs.Get(); ok {
 			if err := func() error {
 				if value == nil {
 					return errors.New("nil is invalid value")
@@ -1570,7 +1570,7 @@ func (s *Project) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "agentConfigs",
+			Name:  "harnessConfigs",
 			Error: err,
 		})
 	}
@@ -1821,7 +1821,7 @@ func (s *Sandbox) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if value, ok := s.AgentConfig.Get(); ok {
+		if value, ok := s.HarnessConfig.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
 					return err
@@ -1834,7 +1834,7 @@ func (s *Sandbox) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "agentConfig",
+			Name:  "harnessConfig",
 			Error: err,
 		})
 	}
@@ -2736,7 +2736,7 @@ func (s SecretGrantScope) Validate() error {
 	switch s {
 	case "sandbox":
 		return nil
-	case "agentConfig":
+	case "harnessConfig":
 		return nil
 	case "project":
 		return nil
@@ -2818,7 +2818,7 @@ func (s SecretType) Validate() error {
 	}
 }
 
-func (s *UpdateAgentConfigBody) Validate() error {
+func (s *UpdateHarnessConfigBody) Validate() error {
 	if s == nil {
 		return validate.ErrNilPointer
 	}

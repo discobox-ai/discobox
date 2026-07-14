@@ -84,7 +84,7 @@ Keep files split by resource area:
 | File area | Responsibility |
 | --- | --- |
 | `projects.go`, `users.go` | Project/user lookup and defaults. |
-| `agent_configs.go` | Agent config definition and instance persistence. |
+| `harness_configs.go` | Harness config definition and instance persistence. |
 | `sandboxes.go` | Sandbox desired/observed lifecycle persistence. |
 | `providers_workers.go` | Provider instance, worker, token, and scheduling persistence. |
 | `events.go`, `resource_events.go` | Project event rows and event snapshots. |

@@ -124,14 +124,14 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	registerSandboxHTTPRoutes(router, appServices)
 	registerSandboxAgentTerminalRoutes(router, appServices)
 	generated, err := handlers.NewServer(services.Services{
-		Projects:     appServices,
-		AgentConfigs: appServices,
-		Sandboxes:    appServices,
-		Providers:    appServices,
-		Workers:      appServices,
-		Jobs:         appServices,
-		Events:       appServices,
-		Secrets:      appServices,
+		Projects:       appServices,
+		HarnessConfigs: appServices,
+		Sandboxes:      appServices,
+		Providers:      appServices,
+		Workers:        appServices,
+		Jobs:           appServices,
+		Events:         appServices,
+		Secrets:        appServices,
 	})
 	if err != nil {
 		return nil, err

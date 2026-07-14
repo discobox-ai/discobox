@@ -117,7 +117,7 @@ func decodeApproveSecretRequestResponse(resp *http.Response) (res ApproveSecretR
 	return res, nil
 }
 
-func decodeAssignSandboxAgentSecretsResponse(resp *http.Response) (res AssignSandboxAgentSecretsRes, _ error) {
+func decodeAssignSandboxHarnessSecretsResponse(resp *http.Response) (res AssignSandboxHarnessSecretsRes, _ error) {
 	switch resp.StatusCode {
 	case 200:
 		// Code 200.
@@ -133,7 +133,7 @@ func decodeAssignSandboxAgentSecretsResponse(resp *http.Response) (res AssignSan
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response SandboxAgentSecretsResponse
+			var response SandboxHarnessSecretsResponse
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -156,7 +156,7 @@ func decodeAssignSandboxAgentSecretsResponse(resp *http.Response) (res AssignSan
 		}
 	}
 	// Default response.
-	res, err := func() (res AssignSandboxAgentSecretsRes, err error) {
+	res, err := func() (res AssignSandboxHarnessSecretsRes, err error) {
 		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 		if err != nil {
 			return res, errors.Wrap(err, "parse media type")
@@ -336,7 +336,7 @@ func decodeAttachSandboxExecResponse(resp *http.Response) (res AttachSandboxExec
 	return res, nil
 }
 
-func decodeCreateAgentConfigResponse(resp *http.Response) (res CreateAgentConfigRes, _ error) {
+func decodeCreateHarnessConfigResponse(resp *http.Response) (res CreateHarnessConfigRes, _ error) {
 	switch resp.StatusCode {
 	case 200:
 		// Code 200.
@@ -352,7 +352,7 @@ func decodeCreateAgentConfigResponse(resp *http.Response) (res CreateAgentConfig
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response AgentConfig
+			var response HarnessConfig
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -384,7 +384,7 @@ func decodeCreateAgentConfigResponse(resp *http.Response) (res CreateAgentConfig
 		}
 	}
 	// Default response.
-	res, err := func() (res CreateAgentConfigRes, err error) {
+	res, err := func() (res CreateHarnessConfigRes, err error) {
 		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 		if err != nil {
 			return res, errors.Wrap(err, "parse media type")
@@ -1034,14 +1034,14 @@ func decodeCreateSecretRequestResponse(resp *http.Response) (res CreateSecretReq
 	return res, nil
 }
 
-func decodeDeleteAgentConfigResponse(resp *http.Response) (res DeleteAgentConfigRes, _ error) {
+func decodeDeleteHarnessConfigResponse(resp *http.Response) (res DeleteHarnessConfigRes, _ error) {
 	switch resp.StatusCode {
 	case 204:
 		// Code 204.
-		return &DeleteAgentConfigNoContent{}, nil
+		return &DeleteHarnessConfigNoContent{}, nil
 	}
 	// Default response.
-	res, err := func() (res DeleteAgentConfigRes, err error) {
+	res, err := func() (res DeleteHarnessConfigRes, err error) {
 		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 		if err != nil {
 			return res, errors.Wrap(err, "parse media type")
@@ -1094,14 +1094,14 @@ func decodeDeleteAgentConfigResponse(resp *http.Response) (res DeleteAgentConfig
 	return res, nil
 }
 
-func decodeDeleteAgentConfigSecretBindingResponse(resp *http.Response) (res DeleteAgentConfigSecretBindingRes, _ error) {
+func decodeDeleteHarnessConfigSecretBindingResponse(resp *http.Response) (res DeleteHarnessConfigSecretBindingRes, _ error) {
 	switch resp.StatusCode {
 	case 204:
 		// Code 204.
-		return &DeleteAgentConfigSecretBindingNoContent{}, nil
+		return &DeleteHarnessConfigSecretBindingNoContent{}, nil
 	}
 	// Default response.
-	res, err := func() (res DeleteAgentConfigSecretBindingRes, err error) {
+	res, err := func() (res DeleteHarnessConfigSecretBindingRes, err error) {
 		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 		if err != nil {
 			return res, errors.Wrap(err, "parse media type")
@@ -1546,7 +1546,7 @@ func decodeForceJobResponse(resp *http.Response) (res ForceJobRes, _ error) {
 	return res, nil
 }
 
-func decodeGetAgentConfigResponse(resp *http.Response) (res GetAgentConfigRes, _ error) {
+func decodeGetHarnessConfigResponse(resp *http.Response) (res GetHarnessConfigRes, _ error) {
 	switch resp.StatusCode {
 	case 200:
 		// Code 200.
@@ -1562,7 +1562,7 @@ func decodeGetAgentConfigResponse(resp *http.Response) (res GetAgentConfigRes, _
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response AgentConfig
+			var response HarnessConfig
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -1594,7 +1594,7 @@ func decodeGetAgentConfigResponse(resp *http.Response) (res GetAgentConfigRes, _
 		}
 	}
 	// Default response.
-	res, err := func() (res GetAgentConfigRes, err error) {
+	res, err := func() (res GetHarnessConfigRes, err error) {
 		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 		if err != nil {
 			return res, errors.Wrap(err, "parse media type")
@@ -1647,7 +1647,7 @@ func decodeGetAgentConfigResponse(resp *http.Response) (res GetAgentConfigRes, _
 	return res, nil
 }
 
-func decodeGetAgentConfigDefinitionResponse(resp *http.Response) (res GetAgentConfigDefinitionRes, _ error) {
+func decodeGetHarnessDefinitionResponse(resp *http.Response) (res GetHarnessDefinitionRes, _ error) {
 	switch resp.StatusCode {
 	case 200:
 		// Code 200.
@@ -1663,7 +1663,7 @@ func decodeGetAgentConfigDefinitionResponse(resp *http.Response) (res GetAgentCo
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response AgentConfigDefinition
+			var response HarnessDefinition
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -1695,7 +1695,7 @@ func decodeGetAgentConfigDefinitionResponse(resp *http.Response) (res GetAgentCo
 		}
 	}
 	// Default response.
-	res, err := func() (res GetAgentConfigDefinitionRes, err error) {
+	res, err := func() (res GetHarnessDefinitionRes, err error) {
 		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 		if err != nil {
 			return res, errors.Wrap(err, "parse media type")
@@ -2529,7 +2529,7 @@ func decodeGetSecretRequestResponse(resp *http.Response) (res GetSecretRequestRe
 	return res, nil
 }
 
-func decodeListAgentConfigDefinitionsResponse(resp *http.Response) (res ListAgentConfigDefinitionsRes, _ error) {
+func decodeListHarnessConfigSecretBindingsResponse(resp *http.Response) (res ListHarnessConfigSecretBindingsRes, _ error) {
 	switch resp.StatusCode {
 	case 200:
 		// Code 200.
@@ -2545,7 +2545,7 @@ func decodeListAgentConfigDefinitionsResponse(resp *http.Response) (res ListAgen
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response ListAgentConfigDefinitionsBody
+			var response ListHarnessConfigSecretBindingsBody
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -2577,7 +2577,7 @@ func decodeListAgentConfigDefinitionsResponse(resp *http.Response) (res ListAgen
 		}
 	}
 	// Default response.
-	res, err := func() (res ListAgentConfigDefinitionsRes, err error) {
+	res, err := func() (res ListHarnessConfigSecretBindingsRes, err error) {
 		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 		if err != nil {
 			return res, errors.Wrap(err, "parse media type")
@@ -2630,7 +2630,7 @@ func decodeListAgentConfigDefinitionsResponse(resp *http.Response) (res ListAgen
 	return res, nil
 }
 
-func decodeListAgentConfigSecretBindingsResponse(resp *http.Response) (res ListAgentConfigSecretBindingsRes, _ error) {
+func decodeListHarnessConfigsResponse(resp *http.Response) (res ListHarnessConfigsRes, _ error) {
 	switch resp.StatusCode {
 	case 200:
 		// Code 200.
@@ -2646,7 +2646,7 @@ func decodeListAgentConfigSecretBindingsResponse(resp *http.Response) (res ListA
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response ListAgentConfigSecretBindingsBody
+			var response ListHarnessConfigsBody
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -2678,7 +2678,7 @@ func decodeListAgentConfigSecretBindingsResponse(resp *http.Response) (res ListA
 		}
 	}
 	// Default response.
-	res, err := func() (res ListAgentConfigSecretBindingsRes, err error) {
+	res, err := func() (res ListHarnessConfigsRes, err error) {
 		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 		if err != nil {
 			return res, errors.Wrap(err, "parse media type")
@@ -2731,7 +2731,7 @@ func decodeListAgentConfigSecretBindingsResponse(resp *http.Response) (res ListA
 	return res, nil
 }
 
-func decodeListAgentConfigsResponse(resp *http.Response) (res ListAgentConfigsRes, _ error) {
+func decodeListHarnessDefinitionsResponse(resp *http.Response) (res ListHarnessDefinitionsRes, _ error) {
 	switch resp.StatusCode {
 	case 200:
 		// Code 200.
@@ -2747,7 +2747,7 @@ func decodeListAgentConfigsResponse(resp *http.Response) (res ListAgentConfigsRe
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response ListAgentConfigsBody
+			var response ListHarnessDefinitionsBody
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -2779,7 +2779,7 @@ func decodeListAgentConfigsResponse(resp *http.Response) (res ListAgentConfigsRe
 		}
 	}
 	// Default response.
-	res, err := func() (res ListAgentConfigsRes, err error) {
+	res, err := func() (res ListHarnessDefinitionsRes, err error) {
 		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 		if err != nil {
 			return res, errors.Wrap(err, "parse media type")
@@ -2832,7 +2832,7 @@ func decodeListAgentConfigsResponse(resp *http.Response) (res ListAgentConfigsRe
 	return res, nil
 }
 
-func decodeListAgentHooksResponse(resp *http.Response) (res ListAgentHooksRes, _ error) {
+func decodeListHarnessHooksResponse(resp *http.Response) (res ListHarnessHooksRes, _ error) {
 	switch resp.StatusCode {
 	case 200:
 		// Code 200.
@@ -2848,7 +2848,7 @@ func decodeListAgentHooksResponse(resp *http.Response) (res ListAgentHooksRes, _
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response AgentHookLogsResponse
+			var response HarnessHookLogsResponse
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -2880,7 +2880,7 @@ func decodeListAgentHooksResponse(resp *http.Response) (res ListAgentHooksRes, _
 		}
 	}
 	// Default response.
-	res, err := func() (res ListAgentHooksRes, err error) {
+	res, err := func() (res ListHarnessHooksRes, err error) {
 		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 		if err != nil {
 			return res, errors.Wrap(err, "parse media type")
@@ -4757,7 +4757,7 @@ func decodeRevokeSecretGrantResponse(resp *http.Response) (res RevokeSecretGrant
 	return res, nil
 }
 
-func decodeSetAgentConfigSecretBindingResponse(resp *http.Response) (res SetAgentConfigSecretBindingRes, _ error) {
+func decodeSetDefaultHarnessConfigResponse(resp *http.Response) (res SetDefaultHarnessConfigRes, _ error) {
 	switch resp.StatusCode {
 	case 200:
 		// Code 200.
@@ -4773,7 +4773,7 @@ func decodeSetAgentConfigSecretBindingResponse(resp *http.Response) (res SetAgen
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response AgentConfigSecretBinding
+			var response Project
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -4790,13 +4790,22 @@ func decodeSetAgentConfigSecretBindingResponse(resp *http.Response) (res SetAgen
 				}
 				return res, err
 			}
+			// Validate response.
+			if err := func() error {
+				if err := response.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return res, errors.Wrap(err, "validate")
+			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
 		}
 	}
 	// Default response.
-	res, err := func() (res SetAgentConfigSecretBindingRes, err error) {
+	res, err := func() (res SetDefaultHarnessConfigRes, err error) {
 		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 		if err != nil {
 			return res, errors.Wrap(err, "parse media type")
@@ -4849,7 +4858,7 @@ func decodeSetAgentConfigSecretBindingResponse(resp *http.Response) (res SetAgen
 	return res, nil
 }
 
-func decodeSetDefaultAgentConfigResponse(resp *http.Response) (res SetDefaultAgentConfigRes, _ error) {
+func decodeSetHarnessConfigSecretBindingResponse(resp *http.Response) (res SetHarnessConfigSecretBindingRes, _ error) {
 	switch resp.StatusCode {
 	case 200:
 		// Code 200.
@@ -4865,7 +4874,7 @@ func decodeSetDefaultAgentConfigResponse(resp *http.Response) (res SetDefaultAge
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response Project
+			var response HarnessConfigSecretBinding
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -4882,22 +4891,13 @@ func decodeSetDefaultAgentConfigResponse(resp *http.Response) (res SetDefaultAge
 				}
 				return res, err
 			}
-			// Validate response.
-			if err := func() error {
-				if err := response.Validate(); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return res, errors.Wrap(err, "validate")
-			}
 			return &response, nil
 		default:
 			return res, validate.InvalidContentType(ct)
 		}
 	}
 	// Default response.
-	res, err := func() (res SetDefaultAgentConfigRes, err error) {
+	res, err := func() (res SetHarnessConfigSecretBindingRes, err error) {
 		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 		if err != nil {
 			return res, errors.Wrap(err, "parse media type")
@@ -5311,7 +5311,7 @@ func decodeStreamSandboxExecResourcesResponse(resp *http.Response) (res StreamSa
 	return res, nil
 }
 
-func decodeUpdateAgentConfigResponse(resp *http.Response) (res UpdateAgentConfigRes, _ error) {
+func decodeUpdateHarnessConfigResponse(resp *http.Response) (res UpdateHarnessConfigRes, _ error) {
 	switch resp.StatusCode {
 	case 200:
 		// Code 200.
@@ -5327,7 +5327,7 @@ func decodeUpdateAgentConfigResponse(resp *http.Response) (res UpdateAgentConfig
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response AgentConfig
+			var response HarnessConfig
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err
@@ -5359,7 +5359,7 @@ func decodeUpdateAgentConfigResponse(resp *http.Response) (res UpdateAgentConfig
 		}
 	}
 	// Default response.
-	res, err := func() (res UpdateAgentConfigRes, err error) {
+	res, err := func() (res UpdateHarnessConfigRes, err error) {
 		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
 		if err != nil {
 			return res, errors.Wrap(err, "parse media type")

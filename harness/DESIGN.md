@@ -1,22 +1,22 @@
 # Harness Design
 
-This package owns coding-agent hook registration for sandbox terminals.
+This package owns harness hook registration for sandbox terminals.
 
 ## Driver Model
 
-- `harness.Driver` wires one agent provider's hook integration via
-  `InstallHooks` (writes managed hook config) and describes that agent's built-in
+- `harness.Driver` wires one harness provider's hook integration via
+  `InstallHooks` (writes managed hook config) and describes that harness's built-in
   config via `Definition()` (install/run/relaunch argv and seed files). All
-  agent-specific defaults live with the driver, never in the control plane.
+  harness-specific defaults live with the driver, never in the control plane.
 - `InstallHooks` (hook wiring) is unrelated to `Definition.InstallCommand`, which
-  is the argv that installs the agent CLI itself.
-- Provider-specific implementations live in one folder per agent:
+  is the argv that installs the harness CLI itself.
+- Provider-specific implementations live in one folder per harness:
   - `claude-code`
   - `codex-cli`
   - `opencode`
-- `registry` selects the driver from the terminal's configured agent ID or
+- `registry` selects the driver from the terminal's configured harness ID or
   command, can install all drivers for image/bootstrap workflows, and exposes
-  `Definitions()` for the control plane to surface built-in agent configs.
+  `Definitions()` for the control plane to surface built-in harness configs.
 
 ## Managed Layers
 
@@ -30,5 +30,5 @@ subject to repo trust prompts or user/project override:
   `/etc/opencode/plugins/` with `OPENCODE_CONFIG_DIR=/etc/opencode` for the
   launched terminal so the root-owned plugin directory is loaded.
 
-Drivers must be idempotent and preserve unrelated settings where the agent uses
+Drivers must be idempotent and preserve unrelated settings where the harness uses
 a single shared JSON object.

@@ -17,7 +17,7 @@ created, modified, and deleted path information.
 
 ## Snapshot-Diff Model
 
-Use the Discobot `agent-go/filewatcher` design as the starting point:
+Use the Discobot `harness-go/filewatcher` design as the starting point:
 
 1. Maintain a snapshot of watched paths.
 2. Use native file notifications as a wake-up signal.

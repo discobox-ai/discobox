@@ -33,7 +33,7 @@ type terminalStore interface {
 	ListEvents(context.Context, string, int) ([]store.Event, error)
 	RecordResourceSample(context.Context, store.ResourceSample, int) (store.ResourceSample, error)
 	ListResourceSamples(context.Context, string, int) ([]store.ResourceSample, error)
-	ListAgentHooks(context.Context, string, int) ([]store.AgentHookRecord, error)
+	ListHarnessHooks(context.Context, string, int) ([]store.HarnessHookRecord, error)
 }
 
 func (h *handler) AttachSandboxExec(context.Context, sandboxapi.AttachSandboxExecParams) (*sandboxapi.AttachSandboxExecSwitchingProtocols, error) {
@@ -68,22 +68,22 @@ func (h *handler) startExecHTTP(w http.ResponseWriter, r *http.Request, execID s
 	writeJSON(w, http.StatusOK, &out)
 }
 
-// CreateSandboxExec creates a plain exec (command) or, when agentId is set, an
-// agent terminal (an exec created in agent mode via the terminal layer).
+// CreateSandboxExec creates a plain exec (command) or, when harnessId is set, an
+// harness terminal (an exec created in harness mode via the terminal layer).
 func (h *handler) CreateSandboxExec(ctx context.Context, req *sandboxapi.CreateSandboxExecRequest, _ sandboxapi.CreateSandboxExecParams) (*sandboxapi.CreateSandboxExecResponse, error) {
 	if req == nil {
 		req = &sandboxapi.CreateSandboxExecRequest{}
 	}
-	agentID := strings.TrimSpace(req.AgentId.Or(""))
-	if agentID != "" || len(req.Command) == 0 {
+	harnessID := strings.TrimSpace(req.HarnessId.Or(""))
+	if harnessID != "" || len(req.Command) == 0 {
 		created, err := h.terminals.Create(ctx, terminal.CreateRequest{
-			AgentID:  agentID,
-			Args:     append([]string{}, req.Args...),
-			Workdir:  req.Workdir.Or(""),
-			Env:      stringMap(req.Env.Or(nil)),
-			Metadata: stringMap(req.Metadata.Or(nil)),
-			Rows:     uint16(req.Rows.Or(0)),
-			Cols:     uint16(req.Cols.Or(0)),
+			HarnessID: harnessID,
+			Args:      append([]string{}, req.Args...),
+			Workdir:   req.Workdir.Or(""),
+			Env:       stringMap(req.Env.Or(nil)),
+			Metadata:  stringMap(req.Metadata.Or(nil)),
+			Rows:      uint16(req.Rows.Or(0)),
+			Cols:      uint16(req.Cols.Or(0)),
 		})
 		if err != nil {
 			if created.ID != "" && created.Status == execs.StatusFailed {
@@ -219,17 +219,17 @@ func (h *handler) StreamSandboxExecResources(ctx context.Context, params sandbox
 	return sandboxapi.StreamSandboxExecResourcesOK{Data: reader}, nil
 }
 
-func (h *handler) ListAgentHooks(ctx context.Context, params sandboxapi.ListAgentHooksParams) (*sandboxapi.AgentHookLogsResponse, error) {
+func (h *handler) ListHarnessHooks(ctx context.Context, params sandboxapi.ListHarnessHooksParams) (*sandboxapi.HarnessHookLogsResponse, error) {
 	if h.store == nil {
-		return &sandboxapi.AgentHookLogsResponse{}, nil
+		return &sandboxapi.HarnessHookLogsResponse{}, nil
 	}
-	records, err := h.store.ListAgentHooks(ctx, params.TerminalId.Or(""), params.Limit.Or(100))
+	records, err := h.store.ListHarnessHooks(ctx, params.TerminalId.Or(""), params.Limit.Or(100))
 	if err != nil {
 		return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
 	}
-	response := sandboxapi.AgentHookLogsResponse{Hooks: make([]sandboxapi.AgentHookLog, 0, len(records))}
+	response := sandboxapi.HarnessHookLogsResponse{Hooks: make([]sandboxapi.HarnessHookLog, 0, len(records))}
 	for _, record := range records {
-		response.Hooks = append(response.Hooks, agentHookLog(record))
+		response.Hooks = append(response.Hooks, harnessHookLog(record))
 	}
 	return &response, nil
 }
@@ -286,8 +286,8 @@ func (h *handler) sandboxExec(in execs.Exec) sandboxapi.SandboxExec {
 	if len(in.Metadata) > 0 {
 		out.Metadata = sandboxapi.NewOptSandboxExecMetadata(sandboxapi.SandboxExecMetadata(stringMap(in.Metadata)))
 	}
-	if agentID := terminal.AgentID(in); agentID != "" {
-		out.AgentId = sandboxapi.NewOptString(agentID)
+	if harnessID := terminal.HarnessID(in); harnessID != "" {
+		out.HarnessId = sandboxapi.NewOptString(harnessID)
 	}
 	if terminal.IsPrimary(in) {
 		out.Primary = sandboxapi.NewOptBool(true)
@@ -369,12 +369,12 @@ func sandboxExecEvent(in store.Event) sandboxapi.SandboxExecEvent {
 	return out
 }
 
-func agentHookLog(in store.AgentHookRecord) sandboxapi.AgentHookLog {
+func harnessHookLog(in store.HarnessHookRecord) sandboxapi.HarnessHookLog {
 	payload := in.Payload
 	if len(payload) == 0 || !json.Valid(payload) {
 		payload = json.RawMessage(`{}`)
 	}
-	out := sandboxapi.AgentHookLog{
+	out := sandboxapi.HarnessHookLog{
 		ID:        in.ID,
 		Provider:  in.Provider,
 		Event:     in.Event,

@@ -1,6 +1,5 @@
 package sandboxes
 
-
 import (
 	"context"
 	"encoding/json"
@@ -9,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/server/internal/agentdefs"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
+	"github.com/obot-platform/discobox/server/internal/harnessdefs"
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/reconcile"
 	"github.com/obot-platform/discobox/server/internal/store"
@@ -476,10 +475,10 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	}
 	opts.Name = sb.Name
 	opts.Description = sb.Description
-	opts.AgentConfigID = sb.AgentConfigID
-	opts.AgentModel = sb.AgentModel
-	opts.AgentModelServiceTier = sb.AgentModelServiceTier
-	opts.AgentModelReasoningLevel = sb.AgentModelReasoningLevel
+	opts.HarnessConfigID = sb.HarnessConfigID
+	opts.Model = sb.Model
+	opts.ModelServiceTier = sb.ModelServiceTier
+	opts.ModelReasoningLevel = sb.ModelReasoningLevel
 	opts.Prompt = sb.Prompt
 	if sb.Env != nil {
 		opts.Env = make(map[string]string, len(sb.Env))
@@ -503,12 +502,12 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	opts.UserUID = sb.UserUID
 	opts.UserGID = sb.UserGID
 	opts.HomeDirectory = sb.HomeDirectory
-	if sb.AgentConfigID != nil && r.store != nil {
-		if cfg, err := r.store.GetAgentConfig(ctx, sb.ProjectID, *sb.AgentConfigID); err == nil {
+	if sb.HarnessConfigID != nil && r.store != nil {
+		if cfg, err := r.store.GetHarnessConfig(ctx, sb.ProjectID, *sb.HarnessConfigID); err == nil {
 			// Resolve the sparse config against its built-in definition so the
 			// sandbox runs the effective (upgrade-propagated) commands and files.
-			cfg = agentdefs.Resolve(cfg)
-			opts.ResolvedAgentConfig = &ResolvedAgentConfig{
+			cfg = harnessdefs.Resolve(cfg)
+			opts.ResolvedHarnessConfig = &ResolvedHarnessConfig{
 				ID:              cfg.ID,
 				Name:            cfg.Name,
 				InstallCommand:  cfg.InstallCommand,
@@ -519,21 +518,21 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 		}
 	}
 	if r.store != nil {
-		if configs, err := r.store.ListAgentConfigs(ctx, sb.ProjectID); err == nil {
-			opts.AgentConfigs = make([]AgentConfig, 0, len(configs))
-			defaultAgentConfigID := ""
+		if configs, err := r.store.ListHarnessConfigs(ctx, sb.ProjectID); err == nil {
+			opts.HarnessConfigs = make([]HarnessConfig, 0, len(configs))
+			defaultHarnessConfigID := ""
 			if sb.Project != nil {
-				defaultAgentConfigID = sb.Project.DefaultAgentConfigID
+				defaultHarnessConfigID = sb.Project.DefaultHarnessConfigID
 			}
 			for i := range configs {
-				cfg := agentdefs.Resolve(&configs[i])
-				opts.AgentConfigs = append(opts.AgentConfigs, AgentConfig{
+				cfg := harnessdefs.Resolve(&configs[i])
+				opts.HarnessConfigs = append(opts.HarnessConfigs, HarnessConfig{
 					ID:              cfg.ID,
 					Name:            cfg.Name,
 					InstallCommand:  cfg.InstallCommand,
 					RunCommand:      cfg.RunCommand,
 					RelaunchCommand: cfg.RelaunchCommand,
-					IsDefault:       cfg.ID == defaultAgentConfigID,
+					IsDefault:       cfg.ID == defaultHarnessConfigID,
 					Files:           cfg.Files,
 				})
 			}

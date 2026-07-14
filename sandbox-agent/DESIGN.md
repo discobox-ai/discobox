@@ -1,4 +1,4 @@
-# Sandbox Agent Design
+# Sandbox Harness Design
 
 This module owns the sandbox runtime environment and in-sandbox agent REST API
 implementation.
@@ -6,7 +6,7 @@ implementation.
 The Go implementation serves the generated sandbox-agent subset of
 `api/openapi/server.yaml` using the generated `api/sandboxgen` server scaffold.
 It validates the sandbox's hard-coded project/sandbox identity, accepts
-short-lived control-plane-signed tokens, and owns sandbox-local agent terminal
+short-lived control-plane-signed tokens, and owns sandbox-local harness terminal
 runtime operations.
 
 ## Package Map
@@ -16,12 +16,12 @@ runtime operations.
 | `cmd/discobox-sandbox-agent` | Binary entrypoint, config loading, signal handling, and server startup. |
 | `config` | Local boot/config file parsing, environment overrides, defaults, and validation. |
 | `server` | HTTP router, generated OpenAPI handler adapter, PASETO auth middleware, and identity/scope validation. |
-| `execs` | The sandbox runtime primitive: exec lifecycle, runtime metadata, systemd unit abstraction, stdout/stderr or PTY logging, shim launch, status socket, and attach. Agent terminals are execs. |
+| `execs` | The sandbox runtime primitive: exec lifecycle, runtime metadata, systemd unit abstraction, stdout/stderr or PTY logging, shim launch, status socket, and attach. Harness terminals are execs. |
 | `execs` (`shim.go`) | Per-exec child process that owns the PTY/pipes and local Unix socket attach/status/start API, used by both plain execs and terminals. |
-| `terminal` | Agent-terminal layer built on top of `execs`: agent resolution, install (run as ephemeral execs), and primary-terminal lifecycle. A terminal is an exec created in agent mode, tagged `agentId`/`primary` in exec metadata; all runtime mechanics belong to `execs`. |
+| `terminal` | Harness-terminal layer built on top of `execs`: harness resolution, install (run as ephemeral execs), and primary-terminal lifecycle. A terminal is an exec created in harness mode, tagged `harnessId`/`primary` in exec metadata; all runtime mechanics belong to `execs`. |
 | `terminal/frame` | Docker-exec-style binary stream framing shared by exec attach endpoints. |
 | `shimruntime` | Shared local shim attach runtime for Unix socket setup, HTTP upgrade handling, framed stream attachers, broadcast, exit frames, and pending resize state. |
-| `hooks` | Local Unix-socket collector and publisher protocol for coding-agent lifecycle hook payloads. |
+| `hooks` | Local Unix-socket collector and publisher protocol for harness lifecycle hook payloads. |
 | `resources` | Opaque cgroup/procfs/systemd-style resource snapshot collection for exec runtimes. |
 | `store` | Sandbox-local SQLite/GORM audit log, observed terminal state snapshots, and retained resource blobs. |
 | `Dockerfile` | Debian-based systemd sandbox runtime image with Docker, development tools, Chromium, socket-activated desktop access, code-server, and Nix tooling. |
@@ -43,17 +43,17 @@ runtime operations.
   lifecycle events, latest observed runtime state, and retained opaque resource
   samples, but REST runtime state should be derived from runtime/systemd/shim
   observations instead of an in-memory cache.
-- A terminal is one primitive: an exec created in agent mode. The `terminal`
-  layer resolves the agent (explicit request, sandbox resolved config, local
-  repo `.discobox` config, or default), runs the agent's install command as an
+- A terminal is one primitive: an exec created in harness mode. The `terminal`
+  layer resolves the harness (explicit request, sandbox resolved config, local
+  repo `.discobox` config, or default), runs the harness's install command as an
   ephemeral exec, injects the hook/terminal env, then calls `execs.Manager` with
-  the resolved command, `TTY`, and `agentId`/`primary` metadata. `execs.Manager`
-  never learns what an agent is. Plain execs and terminals currently use
+  the resolved command, `TTY`, and `harnessId`/`primary` metadata. `execs.Manager`
+  never learns what a harness is. Plain execs and terminals currently use
   separate `execs.Manager` instances (distinct runtime dirs); the API-level merge
   to a single `/execs` surface is pending.
-- On sandbox start the agent launches one primary terminal from the manifest
+- On sandbox start the harness launches one primary terminal from the manifest
   prompt (`terminal.Service.EnsurePrimary`). The first start runs the resolved
-  agent with the prompt as arguments; later starts run the agent's
+  harness with the prompt as arguments; later starts run the harness's
   `relaunchCommand` to resume the previous session instead of replaying the
   prompt. First-vs-subsequent is decided by a durable marker in the SQLite store
   (`AgentState`), so it survives restarts. The launched exec is tagged

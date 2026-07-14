@@ -24,8 +24,8 @@ func encodeApproveSecretRequestRequest(
 	return nil
 }
 
-func encodeAssignSandboxAgentSecretsRequest(
-	req *AssignSandboxAgentSecretsBody,
+func encodeAssignSandboxHarnessSecretsRequest(
+	req *AssignSandboxHarnessSecretsBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"
@@ -38,8 +38,8 @@ func encodeAssignSandboxAgentSecretsRequest(
 	return nil
 }
 
-func encodeCreateAgentConfigRequest(
-	req *CreateAgentConfigBody,
+func encodeCreateHarnessConfigRequest(
+	req *CreateHarnessConfigBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"
@@ -178,8 +178,8 @@ func encodeRestartSandboxRequest(
 	return nil
 }
 
-func encodeSetAgentConfigSecretBindingRequest(
-	req *SetAgentConfigSecretBindingBody,
+func encodeSetHarnessConfigSecretBindingRequest(
+	req *SetHarnessConfigSecretBindingBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"
@@ -220,8 +220,8 @@ func encodeStopSandboxRequest(
 	return nil
 }
 
-func encodeUpdateAgentConfigRequest(
-	req *UpdateAgentConfigBody,
+func encodeUpdateHarnessConfigRequest(
+	req *UpdateHarnessConfigBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

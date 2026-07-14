@@ -46,7 +46,7 @@ func (a *App) newHooksLogsCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			params := apiclientgen.ListAgentHooksParams{
+			params := apiclientgen.ListHarnessHooksParams{
 				ProjectId: projectID,
 				SandboxId: resolvedSandboxID,
 			}
@@ -56,11 +56,11 @@ func (a *App) newHooksLogsCommand() *cobra.Command {
 			if limit > 0 {
 				params.Limit = apiclientgen.NewOptInt(limit)
 			}
-			res, err := client.ListAgentHooks(cmd.Context(), params)
+			res, err := client.ListHarnessHooks(cmd.Context(), params)
 			if err != nil {
 				return err
 			}
-			body, err := expectResponse[apimodel.AgentHookLogsResponse](res)
+			body, err := expectResponse[apimodel.HarnessHookLogsResponse](res)
 			if err != nil {
 				return err
 			}
@@ -68,7 +68,7 @@ func (a *App) newHooksLogsCommand() *cobra.Command {
 			if a.output == "json" {
 				return writeJSON(cmd.OutOrStdout(), body)
 			}
-			return writeAgentHookLogs(cmd.OutOrStdout(), logs)
+			return writeHarnessHookLogs(cmd.OutOrStdout(), logs)
 		},
 	}
 	cmd.Flags().StringVar(&sandboxID, "sandbox-id", "", "Sandbox ID")
@@ -87,7 +87,7 @@ func (a *App) resolveHookLogScope(ctx context.Context, sandboxID string) (string
 	return projectID, resolvedSandboxID, err
 }
 
-func writeAgentHookLogs(out io.Writer, logs []apimodel.AgentHookLog) error {
+func writeHarnessHookLogs(out io.Writer, logs []apimodel.HarnessHookLog) error {
 	tw := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "TIME\tTERMINAL\tPROVIDER\tEVENT\tPAYLOAD")
 	for _, log := range logs {

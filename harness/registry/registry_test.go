@@ -147,33 +147,33 @@ func TestInstallerPreservesExistingConfigAndIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestDriverForAgentSelectsByRunBinary(t *testing.T) {
+func TestDriverForHarnessSelectsByRunBinary(t *testing.T) {
 	cases := []struct {
-		agent harness.Agent
-		want  string
+		harness harness.Harness
+		want    string
 	}{
-		{agent: harness.Agent{Command: []string{"claude", "--dangerously-skip-permissions"}}, want: claudecode.Driver{}.ID()},
-		{agent: harness.Agent{Command: []string{"codex"}}, want: codexcli.Driver{}.ID()},
-		{agent: harness.Agent{Command: []string{"opencode"}}, want: opencode.Driver{}.ID()},
+		{harness: harness.Harness{Command: []string{"claude", "--dangerously-skip-permissions"}}, want: claudecode.Driver{}.ID()},
+		{harness: harness.Harness{Command: []string{"codex"}}, want: codexcli.Driver{}.ID()},
+		{harness: harness.Harness{Command: []string{"opencode"}}, want: opencode.Driver{}.ID()},
 		// A custom config ID does not affect selection; the run binary does.
-		{agent: harness.Agent{ID: "my-custom-agent", Command: []string{"/usr/local/bin/Claude"}}, want: claudecode.Driver{}.ID()},
+		{harness: harness.Harness{ID: "my-custom-harness", Command: []string{"/usr/local/bin/Claude"}}, want: claudecode.Driver{}.ID()},
 	}
 	for _, tc := range cases {
-		got := DriverForAgent(tc.agent)
+		got := DriverForHarness(tc.harness)
 		if len(got) != 1 || got[0].ID() != tc.want {
-			t.Fatalf("DriverForAgent(%#v) = %#v, want %s", tc.agent, got, tc.want)
+			t.Fatalf("DriverForHarness(%#v) = %#v, want %s", tc.harness, got, tc.want)
 		}
 	}
 }
 
-func TestDriverForAgentFallsBackForUnknownBinary(t *testing.T) {
-	for _, agent := range []harness.Agent{
+func TestDriverForHarnessFallsBackForUnknownBinary(t *testing.T) {
+	for _, harness := range []harness.Harness{
 		{},
 		{Command: []string{"sh", "-c", "claude"}},
 		{ID: "claude-code"},
 	} {
-		if got := DriverForAgent(agent); len(got) != len(DefaultDrivers()) {
-			t.Fatalf("DriverForAgent(%#v) = %#v, want all default drivers", agent, got)
+		if got := DriverForHarness(harness); len(got) != len(DefaultDrivers()) {
+			t.Fatalf("DriverForHarness(%#v) = %#v, want all default drivers", harness, got)
 		}
 	}
 }

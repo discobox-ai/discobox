@@ -6,33 +6,33 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func TestCreateSandboxBodyIncludesAgentLaunchFields(t *testing.T) {
+func TestCreateSandboxBodyIncludesHarnessLaunchFields(t *testing.T) {
 	t.Setenv("SANDBOX_ENV_FROM_SHELL", "from-shell")
 	body, err := createSandboxBody(sandboxCreateOptions{
-		name:                     "work",
-		agentName:                "Codex",
-		agentModel:               "gpt-5.1-codex-max",
-		agentModelServiceTier:    "priority",
-		agentModelReasoningLevel: "high",
-		prompt:                   []string{"implement this"},
-		env:                      []string{"EXPLICIT=value", "SANDBOX_ENV_FROM_SHELL"},
-		sourceURL:                "https://example.com/repo.git",
-		sourceRef:                "main",
-		sourceRefType:            "branch",
-		sourceDirectory:          "/workspace/repo",
-		workingDirectory:         "/workspace/repo",
-		sourceCodeReferences:     `{"lib":{"kind":"git","url":"https://example.com/lib.git","checkout":{"commit":"abc123","refType":"commit"},"destination":{"directory":"/workspace/lib"}}}`,
-		userName:                 "darren",
-		userUID:                  1000,
-		userGID:                  1000,
-		homeDirectory:            "/home/darren",
+		name:                 "work",
+		harnessName:          "Codex",
+		model:                "gpt-5.1-codex-max",
+		modelServiceTier:     "priority",
+		modelReasoningLevel:  "high",
+		prompt:               []string{"implement this"},
+		env:                  []string{"EXPLICIT=value", "SANDBOX_ENV_FROM_SHELL"},
+		sourceURL:            "https://example.com/repo.git",
+		sourceRef:            "main",
+		sourceRefType:        "branch",
+		sourceDirectory:      "/workspace/repo",
+		workingDirectory:     "/workspace/repo",
+		sourceCodeReferences: `{"lib":{"kind":"git","url":"https://example.com/lib.git","checkout":{"commit":"abc123","refType":"commit"},"destination":{"directory":"/workspace/lib"}}}`,
+		userName:             "darren",
+		userUID:              1000,
+		userGID:              1000,
+		homeDirectory:        "/home/darren",
 	})
 	if err != nil {
 		t.Fatalf("createSandboxBody: %v", err)
 	}
-	if body.AgentName.Value != "Codex" || body.Config.AgentModel.Value != "gpt-5.1-codex-max" ||
+	if body.HarnessName.Value != "Codex" || body.Config.Model.Value != "gpt-5.1-codex-max" ||
 		len(body.Config.Prompt) != 1 || body.Config.Prompt[0] != "implement this" {
-		t.Fatalf("agent fields = %#v", body)
+		t.Fatalf("harness fields = %#v", body)
 	}
 	env, ok := body.Config.Env.Get()
 	if !ok {

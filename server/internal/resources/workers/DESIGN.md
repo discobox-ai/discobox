@@ -35,7 +35,7 @@ two callers with incompatible expectations.
   reconcile requests.
 - `controlplane.go` — trusted operations: intent writes (create/drain/delete =
   generation bump + operation + `MarkDirtyTx`, one transaction), bootstrap and
-  agent tokens, scheduling re-marks, expired-registration cleanup. Registers
+  harness tokens, scheduling re-marks, expired-registration cleanup. Registers
   both reconcilers on the engine.
 - `reconciler.go` — `WorkerReconciler`: converges one worker (launch, repair,
   delete via the driver), chains a provider re-mark after every run so the pool

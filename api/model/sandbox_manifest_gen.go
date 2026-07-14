@@ -6,40 +6,22 @@ const SandboxManifestAPIVersion = "discobox.dev/sandbox/v1"
 
 // SandboxManifest Public, non-secret sandbox manifest read by the sandbox-agent from /etc/discobox/sandbox.json.
 type SandboxManifest struct {
-	// AgentConfigs Non-secret agent configurations available inside the sandbox.
-	AgentConfigs []SandboxManifestAgentConfig `json:"agentConfigs,omitempty"`
 	// AgentRuntime Sandbox-agent local runtime settings. These values must not contain credentials, tokens, private keys, or other secret material.
 	AgentRuntime *SandboxManifestAgentRuntime `json:"agentRuntime,omitempty"`
 	// APIVersion Sandbox manifest contract version.
 	APIVersion string `json:"apiVersion"`
 	// Config Public sandbox configuration intent.
 	Config SandboxConfig `json:"config"`
+	// HarnessConfigs Non-secret harness configurations available inside the sandbox.
+	HarnessConfigs []SandboxManifestHarnessConfig `json:"harnessConfigs,omitempty"`
 	// Provider Non-secret provider context for the sandbox runtime.
 	Provider *SandboxManifestProvider `json:"provider,omitempty"`
-	// ResolvedAgentConfig Non-secret resolved default agent configuration, when one has been selected.
-	ResolvedAgentConfig *SandboxManifestResolvedAgentConfig `json:"resolvedAgentConfig,omitempty"`
+	// ResolvedHarnessConfig Non-secret resolved default harness configuration, when one has been selected.
+	ResolvedHarnessConfig *SandboxManifestResolvedHarnessConfig `json:"resolvedHarnessConfig,omitempty"`
 	// Resources Provider-normalized resource allocation for the sandbox.
 	Resources *SandboxResources `json:"resources,omitempty"`
 	// SandboxID Stable sandbox ID.
 	SandboxID string `json:"sandboxId"`
-}
-
-// SandboxManifestAgentConfig Non-secret coding-agent configuration available inside a sandbox.
-type SandboxManifestAgentConfig struct {
-	// Files Files to write into the agent's home directory when the agent is installed. This content must not contain credentials, tokens, private keys, or other secret material.
-	Files []AgentConfigFile `json:"files,omitempty"`
-	// ID Stable agent config ID.
-	ID string `json:"id"`
-	// InstallCommand Argv used to install the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
-	InstallCommand []string `json:"installCommand,omitempty"`
-	// IsDefault Whether this is the default agent configuration.
-	IsDefault bool `json:"isDefault,omitempty"`
-	// Name Agent config display name.
-	Name string `json:"name"`
-	// RelaunchCommand Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
-	RelaunchCommand []string `json:"relaunchCommand,omitempty"`
-	// RunCommand Argv used to run the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
-	RunCommand []string `json:"runCommand"`
 }
 
 // SandboxManifestAgentRuntime Sandbox-agent daemon-local runtime settings. This object must not contain credentials, tokens, private keys, or other secret material.
@@ -54,6 +36,24 @@ type SandboxManifestAgentRuntime struct {
 	RuntimeDir string `json:"runtimeDir,omitempty"`
 	// WorkingRoot Default working root inside the sandbox.
 	WorkingRoot string `json:"workingRoot,omitempty"`
+}
+
+// SandboxManifestHarnessConfig Non-secret harness configuration available inside a sandbox.
+type SandboxManifestHarnessConfig struct {
+	// Files Files to write into the harness's home directory when the harness is installed. This content must not contain credentials, tokens, private keys, or other secret material.
+	Files []HarnessConfigFile `json:"files,omitempty"`
+	// ID Stable harness config ID.
+	ID string `json:"id"`
+	// InstallCommand Argv used to install the harness. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+	InstallCommand []string `json:"installCommand,omitempty"`
+	// IsDefault Whether this is the default harness configuration.
+	IsDefault bool `json:"isDefault,omitempty"`
+	// Name Harness config display name.
+	Name string `json:"name"`
+	// RelaunchCommand Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+	RelaunchCommand []string `json:"relaunchCommand,omitempty"`
+	// RunCommand Argv used to run the harness. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+	RunCommand []string `json:"runCommand"`
 }
 
 // SandboxManifestProvider Non-secret provider context. Secret material such as bearer tokens, bootstrap tokens, credentials, and private keys must be injected through a separate provider-owned channel, never through /etc/discobox/sandbox.json.
@@ -72,19 +72,19 @@ type SandboxManifestProvider struct {
 	WorkerID string `json:"workerId,omitempty"`
 }
 
-// SandboxManifestResolvedAgentConfig Non-secret resolved coding-agent configuration selected for a sandbox.
-type SandboxManifestResolvedAgentConfig struct {
-	// Files Files to write into the agent's home directory when the agent is installed. This content must not contain credentials, tokens, private keys, or other secret material.
-	Files []AgentConfigFile `json:"files,omitempty"`
-	// ID Stable agent config ID.
+// SandboxManifestResolvedHarnessConfig Non-secret resolved harness configuration selected for a sandbox.
+type SandboxManifestResolvedHarnessConfig struct {
+	// Files Files to write into the harness's home directory when the harness is installed. This content must not contain credentials, tokens, private keys, or other secret material.
+	Files []HarnessConfigFile `json:"files,omitempty"`
+	// ID Stable harness config ID.
 	ID string `json:"id"`
-	// InstallCommand Argv used to install the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+	// InstallCommand Argv used to install the harness. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
 	InstallCommand []string `json:"installCommand,omitempty"`
-	// Name Agent config display name.
+	// Name Harness config display name.
 	Name string `json:"name"`
-	// RelaunchCommand Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+	// RelaunchCommand Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
 	RelaunchCommand []string `json:"relaunchCommand,omitempty"`
-	// RunCommand Argv used to run the agent. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
+	// RunCommand Argv used to run the harness. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
 	RunCommand []string `json:"runCommand"`
 }
 

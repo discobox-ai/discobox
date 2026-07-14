@@ -131,33 +131,33 @@ func TestCreateSandboxDefaultsGitSourceSlugs(t *testing.T) {
 	}
 }
 
-func TestCreateSandboxPinsDefaultAgentConfig(t *testing.T) {
+func TestCreateSandboxPinsDefaultHarnessConfig(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newSandboxTestService(t, nil)
 
-	agent, err := svc.CreateAgentConfig(ctx, service.DefaultProjectID, services.CreateAgentConfigBody{
+	harness, err := svc.CreateHarnessConfig(ctx, service.DefaultProjectID, services.CreateHarnessConfigBody{
 		Name:       serverapi.NewOptString("Codex"),
 		RunCommand: serverapi.NewOptNilStringArray([]string{"codex", "exec"}),
 	})
 	if err != nil {
-		t.Fatalf("create agent config: %v", err)
+		t.Fatalf("create harness config: %v", err)
 	}
 	project, err := svc.GetProject(ctx, service.DefaultProjectID)
 	if err != nil {
 		t.Fatalf("get project: %v", err)
 	}
-	if project.DefaultAgentConfigID != agent.ID {
-		t.Fatalf("default agent config = %q, want %q", project.DefaultAgentConfigID, agent.ID)
+	if project.DefaultHarnessConfigID != harness.ID {
+		t.Fatalf("default harness config = %q, want %q", project.DefaultHarnessConfigID, harness.ID)
 	}
 
-	// With no explicit agent selector, the sandbox pins the project default so its
+	// With no explicit harness selector, the sandbox pins the project default so its
 	// required-secret gate and binding materialization resolve at create time.
 	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	if created.AgentConfigID == nil || *created.AgentConfigID != agent.ID {
-		t.Fatalf("sandbox agent config = %v, want %q", created.AgentConfigID, agent.ID)
+	if created.HarnessConfigID == nil || *created.HarnessConfigID != harness.ID {
+		t.Fatalf("sandbox agent config = %v, want %q", created.HarnessConfigID, harness.ID)
 	}
 }
 

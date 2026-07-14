@@ -141,7 +141,7 @@ type Project struct {
 	Slug                     string         `gorm:"uniqueIndex;not null;type:text" json:"slug" doc:"URL-safe project slug" pattern:"^[a-z0-9][a-z0-9-]*$"`
 	Default                  bool           `gorm:"column:default_project;not null;default:false;index" json:"default" doc:"Whether this is the user's default project"`
 	DefaultSandboxProviderID string         `gorm:"column:default_sandbox_provider_id;type:text;default:''" json:"defaultSandboxProviderId,omitempty" doc:"Default sandbox provider instance ID"`
-	DefaultAgentConfigID     string         `gorm:"column:default_agent_config_id;type:text;default:''" json:"defaultAgentConfigId,omitempty" doc:"Default agent config ID"`
+	DefaultHarnessConfigID   string         `gorm:"column:default_harness_config_id;type:text;default:''" json:"defaultHarnessConfigId,omitempty" doc:"Default harness config ID"`
 	CreatedAt                time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt                time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 	DeletedAt                gorm.DeletedAt `gorm:"index" json:"-"`
@@ -150,7 +150,7 @@ type Project struct {
 	Members                  []ProjectMember           `gorm:"foreignKey:ProjectID" json:"members,omitempty" doc:"Project members"`
 	Sandboxes                []Sandbox                 `gorm:"foreignKey:ProjectID" json:"sandboxes,omitempty" doc:"Project sandboxes"`
 	SandboxProviderInstances []SandboxProviderInstance `gorm:"foreignKey:ProjectID" json:"sandboxProviderInstances,omitempty" doc:"Sandbox provider instances"`
-	AgentConfigs             []AgentConfig             `gorm:"foreignKey:ProjectID" json:"agentConfigs,omitempty" doc:"Agent configurations"`
+	HarnessConfigs           []HarnessConfig           `gorm:"foreignKey:ProjectID" json:"harnessConfigs,omitempty" doc:"Harness configurations"`
 }
 
 func (Project) TableName() string { return "projects" }
@@ -215,34 +215,34 @@ func (SandboxAccessIssuerKey) TableName() string { return "sandbox_access_issuer
 // design-level SandboxAccessIssuerKey name.
 type ProjectUserKey = SandboxAccessIssuerKey
 
-// AgentConfig stores a project-scoped agent runtime configuration.
-type AgentConfig struct {
-	ID              string              `gorm:"primaryKey;type:text" json:"id" doc:"Stable agent config ID"`
-	ProjectID       string              `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_agent_config_project_name,priority:1" json:"projectId" doc:"Project ID"`
-	Slug            string              `gorm:"column:slug;not null;type:text;default:'';index" json:"slug" doc:"Stable, URL-safe identifier used to select the agent config (e.g. codex). Unique within the project." pattern:"^[a-z0-9][a-z0-9-]*$"`
-	DefinitionID    string              `gorm:"column:definition_id;type:text;default:''" json:"definitionId,omitempty" doc:"Built-in agent definition this config extends. Unset fields are inherited from the definition at runtime, so definition upgrades propagate unless overridden. Empty for fully custom configs."`
-	Name            string              `gorm:"column:name;not null;type:text;uniqueIndex:idx_agent_config_project_name,priority:2" json:"name" doc:"Agent config name" maxLength:"200"`
-	InstallCommand  []string            `gorm:"column:install_command;type:text;serializer:json" json:"installCommand,omitempty" doc:"Override for the argv used to install the agent. Unset inherits from the definition. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	RunCommand      []string            `gorm:"column:run_command;type:text;serializer:json" json:"runCommand,omitempty" doc:"Override for the argv used to run the agent. Unset inherits from the definition. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	RelaunchCommand []string            `gorm:"column:relaunch_command;type:text;serializer:json" json:"relaunchCommand,omitempty" doc:"Override for the argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. Unset inherits from the definition. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	Files           []AgentConfigFile   `gorm:"column:files;type:text;serializer:json" json:"files,omitempty" doc:"Override for files to write into the agent's home directory when the agent is installed. Unset inherits from the definition."`
-	Secrets         []AgentConfigSecret `gorm:"column:secrets;type:text;serializer:json" json:"secrets,omitempty" doc:"Override for the environment-variable secrets the agent expects. Unset inherits from the definition."`
-	CreatedAt       time.Time           `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt       time.Time           `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+// HarnessConfig stores a project-scoped harness runtime configuration.
+type HarnessConfig struct {
+	ID              string                `gorm:"primaryKey;type:text" json:"id" doc:"Stable harness config ID"`
+	ProjectID       string                `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_harness_config_project_name,priority:1" json:"projectId" doc:"Project ID"`
+	Slug            string                `gorm:"column:slug;not null;type:text;default:'';index" json:"slug" doc:"Stable, URL-safe identifier used to select the harness config (e.g. codex). Unique within the project." pattern:"^[a-z0-9][a-z0-9-]*$"`
+	DefinitionID    string                `gorm:"column:definition_id;type:text;default:''" json:"definitionId,omitempty" doc:"Built-in harness definition this config extends. Unset fields are inherited from the definition at runtime, so definition upgrades propagate unless overridden. Empty for fully custom configs."`
+	Name            string                `gorm:"column:name;not null;type:text;uniqueIndex:idx_harness_config_project_name,priority:2" json:"name" doc:"Harness config name" maxLength:"200"`
+	InstallCommand  []string              `gorm:"column:install_command;type:text;serializer:json" json:"installCommand,omitempty" doc:"Override for the argv used to install the harness. Unset inherits from the definition. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
+	RunCommand      []string              `gorm:"column:run_command;type:text;serializer:json" json:"runCommand,omitempty" doc:"Override for the argv used to run the harness. Unset inherits from the definition. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
+	RelaunchCommand []string              `gorm:"column:relaunch_command;type:text;serializer:json" json:"relaunchCommand,omitempty" doc:"Override for the argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. Unset inherits from the definition. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
+	Files           []HarnessConfigFile   `gorm:"column:files;type:text;serializer:json" json:"files,omitempty" doc:"Override for files to write into the harness's home directory when the harness is installed. Unset inherits from the definition."`
+	Secrets         []HarnessConfigSecret `gorm:"column:secrets;type:text;serializer:json" json:"secrets,omitempty" doc:"Override for the environment-variable secrets the harness expects. Unset inherits from the definition."`
+	CreatedAt       time.Time             `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt       time.Time             `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project   *Project  `gorm:"foreignKey:ProjectID" json:"-"`
-	Sandboxes []Sandbox `gorm:"foreignKey:AgentConfigID" json:"-"`
+	Sandboxes []Sandbox `gorm:"foreignKey:HarnessConfigID" json:"-"`
 }
 
-func (AgentConfig) TableName() string { return "agent_configs" }
+func (HarnessConfig) TableName() string { return "harness_configs" }
 
-func (a *AgentConfig) EventProjectID() string { return a.ProjectID }
+func (a *HarnessConfig) EventProjectID() string { return a.ProjectID }
 
-func (a *AgentConfig) EventResourceType() string { return "agentConfig" }
+func (a *HarnessConfig) EventResourceType() string { return "harnessConfig" }
 
-func (a *AgentConfig) EventResourceID() string { return a.ID }
+func (a *HarnessConfig) EventResourceID() string { return a.ID }
 
-func (a *AgentConfig) BeforeCreate(_ *gorm.DB) error {
+func (a *HarnessConfig) BeforeCreate(_ *gorm.DB) error {
 	if a.ID == "" {
 		var err error
 		a.ID, err = id.New()
@@ -253,44 +253,44 @@ func (a *AgentConfig) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
-// AgentConfigDefinition is a well-known template for creating an AgentConfig.
+// HarnessDefinition is a well-known template for creating an HarnessConfig.
 //
-// Definitions are not project-scoped AgentConfig instances and cannot be
+// Definitions are not project-scoped HarnessConfig instances and cannot be
 // selected by sandboxes directly. They provide client-visible defaults for
-// creating real AgentConfig records.
-type AgentConfigDefinition struct {
-	ID              string              `json:"id" doc:"Stable definition ID"`
-	Name            string              `json:"name" doc:"Agent config definition name" maxLength:"200"`
-	Description     string              `json:"description,omitempty" doc:"Agent config definition description"`
-	InstallCommand  []string            `json:"installCommand,omitempty" doc:"Argv used to install the agent. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	RunCommand      []string            `json:"runCommand" doc:"Argv used to run the agent. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	RelaunchCommand []string            `json:"relaunchCommand,omitempty" doc:"Argv used to resume the previous agent session on subsequent sandbox starts. Replaces runCommand for non-first launches. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	Files           []AgentConfigFile   `json:"files,omitempty" doc:"Files to write into the agent's home directory when the agent is installed"`
-	Secrets         []AgentConfigSecret `json:"secrets,omitempty" doc:"Environment-variable secrets the agent expects"`
+// creating real HarnessConfig records.
+type HarnessDefinition struct {
+	ID              string                `json:"id" doc:"Stable definition ID"`
+	Name            string                `json:"name" doc:"Harness config definition name" maxLength:"200"`
+	Description     string                `json:"description,omitempty" doc:"Harness config definition description"`
+	InstallCommand  []string              `json:"installCommand,omitempty" doc:"Argv used to install the harness. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
+	RunCommand      []string              `json:"runCommand" doc:"Argv used to run the harness. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
+	RelaunchCommand []string              `json:"relaunchCommand,omitempty" doc:"Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
+	Files           []HarnessConfigFile   `json:"files,omitempty" doc:"Files to write into the harness's home directory when the harness is installed"`
+	Secrets         []HarnessConfigSecret `json:"secrets,omitempty" doc:"Environment-variable secrets the harness expects"`
 }
 
-// AgentConfigSecretBinding binds one of an agent config's environment variables
-// to a project secret. Every sandbox created for the agent config materializes
-// its bindings into SandboxSecret sentinels, so the agent receives the secret
+// HarnessConfigSecretBinding binds one of a harness config's environment variables
+// to a project secret. Every sandbox created for the harness config materializes
+// its bindings into SandboxSecret sentinels, so the harness receives the secret
 // values (subject to the usual grant/approval flow — a binding is not a grant).
-type AgentConfigSecretBinding struct {
-	ID            string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable binding ID"`
-	ProjectID     string         `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	AgentConfigID string         `gorm:"column:agent_config_id;not null;type:text;index;uniqueIndex:idx_agent_config_secret_env,priority:1" json:"agentConfigId" doc:"Agent config the binding belongs to"`
-	EnvName       string         `gorm:"column:env_name;not null;type:text;uniqueIndex:idx_agent_config_secret_env,priority:2" json:"envName" doc:"Environment variable filled by the secret"`
-	SecretID      string         `gorm:"column:secret_id;not null;type:text;index" json:"secretId" doc:"Bound secret ID"`
-	CreatedAt     time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt     time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-	DeletedAt     gorm.DeletedAt `gorm:"index" json:"-"`
+type HarnessConfigSecretBinding struct {
+	ID              string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable binding ID"`
+	ProjectID       string         `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	HarnessConfigID string         `gorm:"column:harness_config_id;not null;type:text;index;uniqueIndex:idx_harness_config_secret_env,priority:1" json:"harnessConfigId" doc:"Harness config the binding belongs to"`
+	EnvName         string         `gorm:"column:env_name;not null;type:text;uniqueIndex:idx_harness_config_secret_env,priority:2" json:"envName" doc:"Environment variable filled by the secret"`
+	SecretID        string         `gorm:"column:secret_id;not null;type:text;index" json:"secretId" doc:"Bound secret ID"`
+	CreatedAt       time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt       time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
 }
 
-func (AgentConfigSecretBinding) TableName() string { return "agent_config_secret_bindings" }
+func (HarnessConfigSecretBinding) TableName() string { return "harness_config_secret_bindings" }
 
-func (b *AgentConfigSecretBinding) EventProjectID() string    { return b.ProjectID }
-func (b *AgentConfigSecretBinding) EventResourceType() string { return "agentConfigSecretBinding" }
-func (b *AgentConfigSecretBinding) EventResourceID() string   { return b.ID }
+func (b *HarnessConfigSecretBinding) EventProjectID() string    { return b.ProjectID }
+func (b *HarnessConfigSecretBinding) EventResourceType() string { return "harnessConfigSecretBinding" }
+func (b *HarnessConfigSecretBinding) EventResourceID() string   { return b.ID }
 
-func (b *AgentConfigSecretBinding) BeforeCreate(_ *gorm.DB) error {
+func (b *HarnessConfigSecretBinding) BeforeCreate(_ *gorm.DB) error {
 	if b.ID == "" {
 		var err error
 		b.ID, err = id.New()
@@ -301,19 +301,19 @@ func (b *AgentConfigSecretBinding) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
-// AgentConfigFile is a file to write into an agent's home directory when the
-// agent is installed.
-type AgentConfigFile struct {
-	Path       string `json:"path" doc:"File path relative to the agent's home directory"`
+// HarnessConfigFile is a file to write into a harness's home directory when the
+// harness is installed.
+type HarnessConfigFile struct {
+	Path       string `json:"path" doc:"File path relative to the harness's home directory"`
 	Content    string `json:"content" doc:"File content to write"`
 	CreateOnly bool   `json:"createOnly,omitempty" doc:"Only create this file if it does not already exist"`
 }
 
-// AgentConfigSecret declares an environment variable the agent expects, and
-// whether it is required for the agent to run.
-type AgentConfigSecret struct {
-	Name     string `json:"name" doc:"Environment variable name the agent expects to be set" pattern:"^[A-Za-z_][A-Za-z0-9_]*$"`
-	Required bool   `json:"required,omitempty" doc:"Whether the secret must be set for the agent to run"`
+// HarnessConfigSecret declares an environment variable the harness expects, and
+// whether it is required for the harness to run.
+type HarnessConfigSecret struct {
+	Name     string `json:"name" doc:"Environment variable name the harness expects to be set" pattern:"^[A-Za-z_][A-Za-z0-9_]*$"`
+	Required bool   `json:"required,omitempty" doc:"Whether the secret must be set for the harness to run"`
 	// OneOfGroup ties a required secret to a set of alternatives: required secrets
 	// sharing a group are satisfied when at least one member is present.
 	OneOfGroup string `json:"oneOfGroup,omitempty" doc:"Groups a required secret with alternatives; the requirement is satisfied when at least one member of the group is present"`
@@ -355,43 +355,43 @@ type SourceCodeReferences map[string]GitSource
 
 // Sandbox is the managed runtime/session unit.
 type Sandbox struct {
-	ID                       string  `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
-	ProjectID                string  `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	CreatedByUserID          string  `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
-	ProviderInstanceID       *string `gorm:"column:provider_instance_id;type:text;index" json:"providerInstanceId,omitempty" doc:"Sandbox provider instance ID"`
-	AgentConfigID            *string `gorm:"column:agent_config_id;type:text;index" json:"agentConfigId,omitempty" doc:"Agent config ID"`
-	Name                     string  `gorm:"not null;type:text" json:"name" doc:"Sandbox name" maxLength:"200"`
-	Description              *string `gorm:"type:text" json:"description,omitempty" doc:"Sandbox description"`
-	ResourceLifecycle        `gorm:"embedded"`
-	RestartGeneration        int64                `gorm:"column:restart_generation;not null;default:0" json:"restartGeneration" doc:"Requested restart generation"`
-	RestartedGeneration      int64                `gorm:"column:restarted_generation;not null;default:0" json:"restartedGeneration" doc:"Last restart generation completed by reconciliation"`
-	AgentModel               *string              `gorm:"column:agent_model;type:text" json:"agentModel,omitempty" doc:"Model the agent should use"`
-	AgentModelServiceTier    *string              `gorm:"column:agent_model_service_tier;type:text" json:"agentModelServiceTier,omitempty" doc:"Model service tier the agent should use"`
-	AgentModelReasoningLevel *string              `gorm:"column:agent_model_reasoning_level;type:text" json:"agentModelReasoningLevel,omitempty" doc:"Model reasoning level the agent should use"`
-	Prompt                   []string             `gorm:"column:prompt;type:text;serializer:json" json:"prompt,omitempty" doc:"Prompt the agent should run, passed as argv to preserve the caller's exact tokens"`
-	Image                    string               `gorm:"column:image;type:text" json:"image,omitempty" doc:"Sandbox base image"`
-	Env                      map[string]string    `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Environment variables available to sandbox-agent terminals and execs by default"`
-	Source                   *GitSource           `gorm:"column:source;type:text;serializer:json" json:"source,omitempty" doc:"Primary Git source to materialize in the sandbox"`
-	SourceCodeReferences     SourceCodeReferences `gorm:"column:source_code_references;type:text;serializer:json" json:"sourceCodeReferences,omitempty" doc:"Additional Git sources to materialize in the sandbox"`
-	UserName                 *string              `gorm:"column:user_name;type:text" json:"userName,omitempty" doc:"Username to use inside the sandbox"`
-	UserUID                  *int                 `gorm:"column:user_uid" json:"userUid,omitempty" doc:"UID to use inside the sandbox"`
-	UserGID                  *int                 `gorm:"column:user_gid" json:"userGid,omitempty" doc:"GID to use inside the sandbox"`
-	HomeDirectory            *string              `gorm:"column:home_directory;type:text" json:"homeDirectory,omitempty" doc:"User home directory to use inside the sandbox"`
-	CPUVCPUs                 float64              `gorm:"column:cpu_vcpus;not null;default:1" json:"cpuVcpus" doc:"Requested CPU capacity in vCPUs"`
-	MemoryBytes              int64                `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"Requested memory capacity in bytes"`
-	StorageBytes             int64                `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Requested storage capacity in bytes"`
-	WorkerID                 *string              `gorm:"column:worker_id;type:text;index" json:"workerId,omitempty" doc:"Assigned worker ID, when scheduled through a worker-backed provider"`
-	RuntimeState             json.RawMessage      `gorm:"column:runtime_state;type:text" json:"runtimeState,omitempty" doc:"Non-secret provider runtime state"`
-	SecretState              []byte               `gorm:"column:secret_state" json:"-"`
-	LastActiveAt             *time.Time           `gorm:"column:last_active_at;index" json:"lastActiveAt,omitempty" doc:"Last observed activity timestamp" format:"date-time"`
-	CreatedAt                time.Time            `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt                time.Time            `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-	DeletedAt                gorm.DeletedAt       `gorm:"index" json:"-"`
+	ID                   string  `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
+	ProjectID            string  `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	CreatedByUserID      string  `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
+	ProviderInstanceID   *string `gorm:"column:provider_instance_id;type:text;index" json:"providerInstanceId,omitempty" doc:"Sandbox provider instance ID"`
+	HarnessConfigID      *string `gorm:"column:harness_config_id;type:text;index" json:"harnessConfigId,omitempty" doc:"Harness config ID"`
+	Name                 string  `gorm:"not null;type:text" json:"name" doc:"Sandbox name" maxLength:"200"`
+	Description          *string `gorm:"type:text" json:"description,omitempty" doc:"Sandbox description"`
+	ResourceLifecycle    `gorm:"embedded"`
+	RestartGeneration    int64                `gorm:"column:restart_generation;not null;default:0" json:"restartGeneration" doc:"Requested restart generation"`
+	RestartedGeneration  int64                `gorm:"column:restarted_generation;not null;default:0" json:"restartedGeneration" doc:"Last restart generation completed by reconciliation"`
+	Model                *string              `gorm:"column:model;type:text" json:"model,omitempty" doc:"Model the harness should use"`
+	ModelServiceTier     *string              `gorm:"column:model_service_tier;type:text" json:"modelServiceTier,omitempty" doc:"Model service tier the harness should use"`
+	ModelReasoningLevel  *string              `gorm:"column:model_reasoning_level;type:text" json:"modelReasoningLevel,omitempty" doc:"Model reasoning level the harness should use"`
+	Prompt               []string             `gorm:"column:prompt;type:text;serializer:json" json:"prompt,omitempty" doc:"Prompt the harness should run, passed as argv to preserve the caller's exact tokens"`
+	Image                string               `gorm:"column:image;type:text" json:"image,omitempty" doc:"Sandbox base image"`
+	Env                  map[string]string    `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Environment variables available to sandbox-agent terminals and execs by default"`
+	Source               *GitSource           `gorm:"column:source;type:text;serializer:json" json:"source,omitempty" doc:"Primary Git source to materialize in the sandbox"`
+	SourceCodeReferences SourceCodeReferences `gorm:"column:source_code_references;type:text;serializer:json" json:"sourceCodeReferences,omitempty" doc:"Additional Git sources to materialize in the sandbox"`
+	UserName             *string              `gorm:"column:user_name;type:text" json:"userName,omitempty" doc:"Username to use inside the sandbox"`
+	UserUID              *int                 `gorm:"column:user_uid" json:"userUid,omitempty" doc:"UID to use inside the sandbox"`
+	UserGID              *int                 `gorm:"column:user_gid" json:"userGid,omitempty" doc:"GID to use inside the sandbox"`
+	HomeDirectory        *string              `gorm:"column:home_directory;type:text" json:"homeDirectory,omitempty" doc:"User home directory to use inside the sandbox"`
+	CPUVCPUs             float64              `gorm:"column:cpu_vcpus;not null;default:1" json:"cpuVcpus" doc:"Requested CPU capacity in vCPUs"`
+	MemoryBytes          int64                `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"Requested memory capacity in bytes"`
+	StorageBytes         int64                `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Requested storage capacity in bytes"`
+	WorkerID             *string              `gorm:"column:worker_id;type:text;index" json:"workerId,omitempty" doc:"Assigned worker ID, when scheduled through a worker-backed provider"`
+	RuntimeState         json.RawMessage      `gorm:"column:runtime_state;type:text" json:"runtimeState,omitempty" doc:"Non-secret provider runtime state"`
+	SecretState          []byte               `gorm:"column:secret_state" json:"-"`
+	LastActiveAt         *time.Time           `gorm:"column:last_active_at;index" json:"lastActiveAt,omitempty" doc:"Last observed activity timestamp" format:"date-time"`
+	CreatedAt            time.Time            `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt            time.Time            `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	DeletedAt            gorm.DeletedAt       `gorm:"index" json:"-"`
 
 	Project          *Project                 `gorm:"foreignKey:ProjectID" json:"-"`
 	CreatedBy        *User                    `gorm:"-" json:"createdBy,omitempty" doc:"Creating user"`
 	ProviderInstance *SandboxProviderInstance `gorm:"foreignKey:ProviderInstanceID" json:"providerInstance,omitempty" doc:"Sandbox provider instance"`
-	AgentConfig      *AgentConfig             `gorm:"foreignKey:AgentConfigID" json:"agentConfig,omitempty" doc:"Agent config"`
+	HarnessConfig    *HarnessConfig           `gorm:"foreignKey:HarnessConfigID" json:"harnessConfig,omitempty" doc:"Harness config"`
 }
 
 func (Sandbox) TableName() string { return "sandboxes" }
@@ -659,10 +659,10 @@ const (
 
 	// SecretGrantScopeSandbox and its siblings decide how widely a single grant
 	// applies. A grant is matched against a resolving sandbox by its scope key:
-	// the sandbox's own ID, its agent config ID, or the project ID.
-	SecretGrantScopeSandbox     = "sandbox"
-	SecretGrantScopeAgentConfig = "agentConfig"
-	SecretGrantScopeProject     = "project"
+	// the sandbox's own ID, its harness config ID, or the project ID.
+	SecretGrantScopeSandbox       = "sandbox"
+	SecretGrantScopeHarnessConfig = "harnessConfig"
+	SecretGrantScopeProject       = "project"
 )
 
 // Secret is a project-scoped encrypted credential that can be requested by sandboxes.
@@ -753,7 +753,7 @@ func (r *SecretRequest) BeforeCreate(_ *gorm.DB) error {
 }
 
 // SecretGrant is a standing authorization to use a secret, scoped to a sandbox,
-// an agent config, or a whole project. It can be minted ahead of any request
+// a harness config, or a whole project. It can be minted ahead of any request
 // (pre-approval) or as the result of approving a SecretRequest. A live,
 // unexpired grant whose scope key matches a resolving sandbox lets the proxy
 // return the decrypted value without a pending request.
@@ -761,8 +761,8 @@ type SecretGrant struct {
 	ID        string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable grant ID"`
 	ProjectID string         `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
 	SecretID  string         `gorm:"column:secret_id;not null;type:text;index" json:"secretId" doc:"Granted secret ID"`
-	Scope     string         `gorm:"column:scope;not null;type:text" json:"scope" doc:"How widely the grant applies" enum:"sandbox,agentConfig,project"`
-	ScopeKey  string         `gorm:"column:scope_key;not null;type:text;index" json:"scopeKey" doc:"Identifier the scope resolves against: sandbox ID, agent config ID, or project ID"`
+	Scope     string         `gorm:"column:scope;not null;type:text" json:"scope" doc:"How widely the grant applies" enum:"sandbox,harnessConfig,project"`
+	ScopeKey  string         `gorm:"column:scope_key;not null;type:text;index" json:"scopeKey" doc:"Identifier the scope resolves against: sandbox ID, harness config ID, or project ID"`
 	Host      string         `gorm:"column:host;not null;type:text;default:''" json:"host,omitempty" doc:"Host the grant is limited to; empty matches any host"`
 	GrantedBy string         `gorm:"column:granted_by;not null;type:text;default:''" json:"grantedBy,omitempty" doc:"Principal ID that created the grant"`
 	GrantedAt time.Time      `gorm:"column:granted_at;autoCreateTime" json:"grantedAt" doc:"Creation timestamp" format:"date-time"`
@@ -863,8 +863,8 @@ func AllModels() []any {
 		&ProjectMember{},
 		&ServerState{},
 		&SandboxAccessIssuerKey{},
-		&AgentConfig{},
-		&AgentConfigSecretBinding{},
+		&HarnessConfig{},
+		&HarnessConfigSecretBinding{},
 		&Sandbox{},
 		&SandboxProviderInstance{},
 		&Worker{},

@@ -39,7 +39,7 @@ type ResourceSample struct {
 	Data       json.RawMessage `json:"data"`
 }
 
-type AgentHookRecord struct {
+type HarnessHookRecord struct {
 	ID         string          `json:"id,omitempty"`
 	TerminalID string          `json:"terminalId,omitempty"`
 	Provider   string          `json:"provider"`
@@ -57,7 +57,7 @@ func Open(ctx context.Context, dsn string) (*Store, error) {
 		return nil, err
 	}
 	s := &Store{write: pools.Write, read: pools.Read}
-	if err := s.write.WithContext(ctx).AutoMigrate(&AgentState{}, &ResourceSnapshot{}, &AgentHookLog{}, &ExecState{}, &ExecEvent{}, &ExecRecord{}); err != nil {
+	if err := s.write.WithContext(ctx).AutoMigrate(&AgentState{}, &ResourceSnapshot{}, &HarnessHookLog{}, &ExecState{}, &ExecEvent{}, &ExecRecord{}); err != nil {
 		return nil, fmt.Errorf("migrate sandbox-agent store: %w", err)
 	}
 	return s, nil
@@ -67,7 +67,7 @@ const primaryTerminalLaunchedKey = "primary_terminal_launched"
 
 // PrimaryTerminalLaunched reports whether the sandbox-agent has launched the
 // primary terminal in a previous sandbox start. It is used to decide between
-// running the agent with the initial prompt (first start) and resuming the
+// running the harness with the initial prompt (first start) and resuming the
 // previous session with the relaunch command (subsequent starts).
 func (s *Store) PrimaryTerminalLaunched(ctx context.Context) (bool, error) {
 	if s == nil {
@@ -183,7 +183,7 @@ func (s *Store) SaveExecRecord(ctx context.Context, current execs.Exec) error {
 	}
 	record := ExecRecord{
 		ExecID:    current.ID,
-		AgentID:   current.Metadata["agentId"],
+		HarnessID: current.Metadata["harnessId"],
 		Primary:   current.Metadata["primary"] == "true",
 		Command:   command,
 		Workdir:   current.Workdir,
@@ -354,32 +354,32 @@ func (s *Store) ListResourceSamples(ctx context.Context, terminalID string, limi
 	return out, nil
 }
 
-func (s *Store) RecordAgentHook(ctx context.Context, record AgentHookRecord) (AgentHookRecord, error) {
+func (s *Store) RecordHarnessHook(ctx context.Context, record HarnessHookRecord) (HarnessHookRecord, error) {
 	if s == nil {
 		return record, nil
 	}
 	record.Provider = strings.TrimSpace(record.Provider)
 	if record.Provider == "" {
-		return AgentHookRecord{}, fmt.Errorf("hook provider is required")
+		return HarnessHookRecord{}, fmt.Errorf("hook provider is required")
 	}
 	record.Event = strings.TrimSpace(record.Event)
 	if record.Event == "" {
-		return AgentHookRecord{}, fmt.Errorf("hook event is required")
+		return HarnessHookRecord{}, fmt.Errorf("hook event is required")
 	}
 	if len(record.Payload) == 0 {
 		record.Payload = json.RawMessage(`{}`)
 	}
 	if !json.Valid(record.Payload) {
-		return AgentHookRecord{}, fmt.Errorf("hook payload must be valid JSON")
+		return HarnessHookRecord{}, fmt.Errorf("hook payload must be valid JSON")
 	}
 	id, err := newID()
 	if err != nil {
-		return AgentHookRecord{}, err
+		return HarnessHookRecord{}, err
 	}
 	record.ID = id
 	record.TerminalID = strings.TrimSpace(record.TerminalID)
 	record.CreatedAt = time.Now().UTC()
-	row := AgentHookLog{
+	row := HarnessHookLog{
 		ID:         record.ID,
 		TerminalID: record.TerminalID,
 		Provider:   record.Provider,
@@ -390,7 +390,7 @@ func (s *Store) RecordAgentHook(ctx context.Context, record AgentHookRecord) (Ag
 	return record, s.write.WithContext(ctx).Create(&row).Error
 }
 
-func (s *Store) ListAgentHooks(ctx context.Context, terminalID string, limit int) ([]AgentHookRecord, error) {
+func (s *Store) ListHarnessHooks(ctx context.Context, terminalID string, limit int) ([]HarnessHookRecord, error) {
 	if s == nil {
 		return nil, nil
 	}
@@ -401,18 +401,18 @@ func (s *Store) ListAgentHooks(ctx context.Context, terminalID string, limit int
 	if strings.TrimSpace(terminalID) != "" {
 		query = query.Where("terminal_id = ?", strings.TrimSpace(terminalID))
 	}
-	var rows []AgentHookLog
+	var rows []HarnessHookLog
 	if err := query.Find(&rows).Error; err != nil {
 		return nil, err
 	}
-	out := make([]AgentHookRecord, 0, len(rows))
+	out := make([]HarnessHookRecord, 0, len(rows))
 	for i := len(rows) - 1; i >= 0; i-- {
 		row := rows[i]
 		payload := json.RawMessage(append([]byte{}, row.Payload...))
 		if len(payload) == 0 || !json.Valid(payload) {
 			payload = json.RawMessage(`{}`)
 		}
-		out = append(out, AgentHookRecord{
+		out = append(out, HarnessHookRecord{
 			ID:         row.ID,
 			TerminalID: row.TerminalID,
 			Provider:   row.Provider,

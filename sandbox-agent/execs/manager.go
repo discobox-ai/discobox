@@ -110,7 +110,7 @@ type AuditRecorder interface {
 	// SaveExecRecord persists an exec's immutable identity/metadata once at
 	// create; LoadExecRecords reads it back (joined with latest status). Together
 	// they make the DB the durable source of truth for exec metadata, so a shim
-	// runtime write that omits metadata cannot lose agentId/primary, and execs
+	// runtime write that omits metadata cannot lose harnessId/primary, and execs
 	// survive the loss of their tmpfs runtime files across a reboot.
 	SaveExecRecord(context.Context, Exec) error
 	LoadExecRecords(context.Context) ([]Exec, error)
@@ -186,7 +186,7 @@ func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
 
 // MergeEnv overlays override on base, returning nil when both are empty. It is
 // exported so the terminal layer can compute the same effective environment the
-// exec will run with (e.g. to pass to the agent installer) before creation.
+// exec will run with (e.g. to pass to the harness installer) before creation.
 func MergeEnv(base, override map[string]string) map[string]string {
 	if len(base) == 0 && len(override) == 0 {
 		return nil
@@ -385,7 +385,7 @@ func (m *Manager) Logs(ctx context.Context, id string) ([]LogEntry, error) {
 }
 
 // Delete stops the exec's unit and removes its runtime and socket files. It is
-// used for long-lived execs (such as agent terminals) that outlive a single
+// used for long-lived execs (such as harness terminals) that outlive a single
 // command and must be explicitly torn down.
 func (m *Manager) Delete(ctx context.Context, id string) error {
 	exec, ok := m.Get(id)
@@ -444,7 +444,7 @@ var ErrNotFound = errors.New("sandbox exec not found")
 
 // WaitForExit polls an exec until it reaches a terminal status (exited or
 // failed) or the timeout elapses. It is used to run ephemeral execs, such as
-// agent install commands, to completion.
+// harness install commands, to completion.
 func (m *Manager) WaitForExit(ctx context.Context, id string, timeout, poll time.Duration) (Exec, error) {
 	if poll <= 0 {
 		poll = 100 * time.Millisecond
@@ -471,7 +471,7 @@ func (m *Manager) WaitForExit(ctx context.Context, id string, timeout, poll time
 
 // ResolveWorkdir resolves a requested workdir against the manager's working
 // root and default, exported so the terminal layer resolves workdirs
-// identically before agent resolution and install.
+// identically before harness resolution and install.
 func (m *Manager) ResolveWorkdir(requested string) (string, error) {
 	return m.resolveWorkdir(requested)
 }
@@ -536,7 +536,7 @@ func (m *Manager) refreshExec(ctx context.Context, exec Exec) Exec {
 		_ = m.observe(ctx, exec)
 		return exec
 	}
-	// A created-but-not-yet-started exec (e.g. a terminal whose agent install
+	// A created-but-not-yet-started exec (e.g. a terminal whose harness install
 	// command is still running before Start) legitimately has no live unit yet, so
 	// keep it starting rather than declaring it lost while it waits to launch.
 	notYetLaunched := exec.Status == StatusStarting && exec.StartedAt == nil

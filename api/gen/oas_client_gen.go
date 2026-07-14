@@ -33,12 +33,12 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/secret-requests/{requestId}/approve
 	ApproveSecretRequest(ctx context.Context, request *ApproveSecretRequestBody, params ApproveSecretRequestParams) (ApproveSecretRequestRes, error)
-	// AssignSandboxAgentSecrets invokes assign-sandbox-agent-secrets operation.
+	// AssignSandboxHarnessSecrets invokes assign-sandbox-harness-secrets operation.
 	//
-	// Assign an agent config's bound secrets to a running sandbox and return their sentinel env.
+	// Assign a harness config's bound secrets to a running sandbox and return their sentinel env.
 	//
-	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent-secrets
-	AssignSandboxAgentSecrets(ctx context.Context, request *AssignSandboxAgentSecretsBody, params AssignSandboxAgentSecretsParams) (AssignSandboxAgentSecretsRes, error)
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-secrets
+	AssignSandboxHarnessSecrets(ctx context.Context, request *AssignSandboxHarnessSecretsBody, params AssignSandboxHarnessSecretsParams) (AssignSandboxHarnessSecretsRes, error)
 	// AttachSandboxExec invokes attach-sandbox-exec operation.
 	//
 	// Opens a websocket carrying the framed bidirectional stream for a running sandbox exec. Input
@@ -47,12 +47,12 @@ type Invoker interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
 	AttachSandboxExec(ctx context.Context, params AttachSandboxExecParams) (AttachSandboxExecRes, error)
-	// CreateAgentConfig invokes create-agent-config operation.
+	// CreateHarnessConfig invokes create-harness-config operation.
 	//
-	// Create an agent config.
+	// Create a harness config.
 	//
-	// POST /projects/{projectId}/agent-configs
-	CreateAgentConfig(ctx context.Context, request *CreateAgentConfigBody, params CreateAgentConfigParams) (CreateAgentConfigRes, error)
+	// POST /projects/{projectId}/harness-configs
+	CreateHarnessConfig(ctx context.Context, request *CreateHarnessConfigBody, params CreateHarnessConfigParams) (CreateHarnessConfigRes, error)
 	// CreateSandbox invokes create-sandbox operation.
 	//
 	// Create a sandbox.
@@ -89,18 +89,18 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/secret-requests
 	CreateSecretRequest(ctx context.Context, request *CreateSecretRequestBody, params CreateSecretRequestParams) (CreateSecretRequestRes, error)
-	// DeleteAgentConfig invokes delete-agent-config operation.
+	// DeleteHarnessConfig invokes delete-harness-config operation.
 	//
-	// Delete an agent config.
+	// Delete a harness config.
 	//
-	// DELETE /projects/{projectId}/agent-configs/{agentConfigId}
-	DeleteAgentConfig(ctx context.Context, params DeleteAgentConfigParams) (DeleteAgentConfigRes, error)
-	// DeleteAgentConfigSecretBinding invokes delete-agent-config-secret-binding operation.
+	// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}
+	DeleteHarnessConfig(ctx context.Context, params DeleteHarnessConfigParams) (DeleteHarnessConfigRes, error)
+	// DeleteHarnessConfigSecretBinding invokes delete-harness-config-secret-binding operation.
 	//
-	// Remove an agent config secret binding.
+	// Remove a harness config secret binding.
 	//
-	// DELETE /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}
-	DeleteAgentConfigSecretBinding(ctx context.Context, params DeleteAgentConfigSecretBindingParams) (DeleteAgentConfigSecretBindingRes, error)
+	// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
+	DeleteHarnessConfigSecretBinding(ctx context.Context, params DeleteHarnessConfigSecretBindingParams) (DeleteHarnessConfigSecretBindingRes, error)
 	// DeleteSandbox invokes delete-sandbox operation.
 	//
 	// Delete a sandbox.
@@ -137,18 +137,18 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/jobs/{jobId}/force
 	ForceJob(ctx context.Context, params ForceJobParams) (ForceJobRes, error)
-	// GetAgentConfig invokes get-agent-config operation.
+	// GetHarnessConfig invokes get-harness-config operation.
 	//
-	// Get an agent config.
+	// Get a harness config.
 	//
-	// GET /projects/{projectId}/agent-configs/{agentConfigId}
-	GetAgentConfig(ctx context.Context, params GetAgentConfigParams) (GetAgentConfigRes, error)
-	// GetAgentConfigDefinition invokes get-agent-config-definition operation.
+	// GET /projects/{projectId}/harness-configs/{harnessConfigId}
+	GetHarnessConfig(ctx context.Context, params GetHarnessConfigParams) (GetHarnessConfigRes, error)
+	// GetHarnessDefinition invokes get-harness-definition operation.
 	//
-	// Get an agent config definition.
+	// Get a harness config definition.
 	//
-	// GET /agent-config-definitions/{definitionId}
-	GetAgentConfigDefinition(ctx context.Context, params GetAgentConfigDefinitionParams) (GetAgentConfigDefinitionRes, error)
+	// GET /harness-definitions/{definitionId}
+	GetHarnessDefinition(ctx context.Context, params GetHarnessDefinitionParams) (GetHarnessDefinitionRes, error)
 	// GetJob invokes get-job operation.
 	//
 	// Get a job.
@@ -197,30 +197,30 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/secret-requests/{requestId}
 	GetSecretRequest(ctx context.Context, params GetSecretRequestParams) (GetSecretRequestRes, error)
-	// ListAgentConfigDefinitions invokes list-agent-config-definitions operation.
+	// ListHarnessConfigSecretBindings invokes list-harness-config-secret-bindings operation.
 	//
-	// List agent config definitions.
+	// List harness config secret bindings.
 	//
-	// GET /agent-config-definitions
-	ListAgentConfigDefinitions(ctx context.Context) (ListAgentConfigDefinitionsRes, error)
-	// ListAgentConfigSecretBindings invokes list-agent-config-secret-bindings operation.
+	// GET /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings
+	ListHarnessConfigSecretBindings(ctx context.Context, params ListHarnessConfigSecretBindingsParams) (ListHarnessConfigSecretBindingsRes, error)
+	// ListHarnessConfigs invokes list-harness-configs operation.
 	//
-	// List agent config secret bindings.
+	// List harness configs.
 	//
-	// GET /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings
-	ListAgentConfigSecretBindings(ctx context.Context, params ListAgentConfigSecretBindingsParams) (ListAgentConfigSecretBindingsRes, error)
-	// ListAgentConfigs invokes list-agent-configs operation.
+	// GET /projects/{projectId}/harness-configs
+	ListHarnessConfigs(ctx context.Context, params ListHarnessConfigsParams) (ListHarnessConfigsRes, error)
+	// ListHarnessDefinitions invokes list-harness-definitions operation.
 	//
-	// List agent configs.
+	// List harness config definitions.
 	//
-	// GET /projects/{projectId}/agent-configs
-	ListAgentConfigs(ctx context.Context, params ListAgentConfigsParams) (ListAgentConfigsRes, error)
-	// ListAgentHooks invokes list-agent-hooks operation.
+	// GET /harness-definitions
+	ListHarnessDefinitions(ctx context.Context) (ListHarnessDefinitionsRes, error)
+	// ListHarnessHooks invokes list-harness-hooks operation.
 	//
-	// List recent sandbox agent hook payload logs.
+	// List recent sandbox harness hook payload logs.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks
-	ListAgentHooks(ctx context.Context, params ListAgentHooksParams) (ListAgentHooksRes, error)
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks
+	ListHarnessHooks(ctx context.Context, params ListHarnessHooksParams) (ListHarnessHooksRes, error)
 	// ListJobs invokes list-jobs operation.
 	//
 	// List jobs for a project.
@@ -335,18 +335,18 @@ type Invoker interface {
 	//
 	// DELETE /projects/{projectId}/secret-grants/{grantId}
 	RevokeSecretGrant(ctx context.Context, params RevokeSecretGrantParams) (RevokeSecretGrantRes, error)
-	// SetAgentConfigSecretBinding invokes set-agent-config-secret-binding operation.
+	// SetDefaultHarnessConfig invokes set-default-harness-config operation.
 	//
-	// Bind an agent config environment variable to a secret.
+	// Set the project default harness config.
 	//
-	// PUT /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}
-	SetAgentConfigSecretBinding(ctx context.Context, request *SetAgentConfigSecretBindingBody, params SetAgentConfigSecretBindingParams) (SetAgentConfigSecretBindingRes, error)
-	// SetDefaultAgentConfig invokes set-default-agent-config operation.
+	// PUT /projects/{projectId}/harness-configs/{harnessConfigId}/default
+	SetDefaultHarnessConfig(ctx context.Context, params SetDefaultHarnessConfigParams) (SetDefaultHarnessConfigRes, error)
+	// SetHarnessConfigSecretBinding invokes set-harness-config-secret-binding operation.
 	//
-	// Set the project default agent config.
+	// Bind a harness config environment variable to a secret.
 	//
-	// PUT /projects/{projectId}/agent-configs/{agentConfigId}/default
-	SetDefaultAgentConfig(ctx context.Context, params SetDefaultAgentConfigParams) (SetDefaultAgentConfigRes, error)
+	// PUT /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
+	SetHarnessConfigSecretBinding(ctx context.Context, request *SetHarnessConfigSecretBindingBody, params SetHarnessConfigSecretBindingParams) (SetHarnessConfigSecretBindingRes, error)
 	// StartSandbox invokes start-sandbox operation.
 	//
 	// Start a sandbox.
@@ -371,12 +371,12 @@ type Invoker interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream
 	StreamSandboxExecResources(ctx context.Context, params StreamSandboxExecResourcesParams) (StreamSandboxExecResourcesRes, error)
-	// UpdateAgentConfig invokes update-agent-config operation.
+	// UpdateHarnessConfig invokes update-harness-config operation.
 	//
-	// Update an agent config.
+	// Update a harness config.
 	//
-	// PATCH /projects/{projectId}/agent-configs/{agentConfigId}
-	UpdateAgentConfig(ctx context.Context, request *UpdateAgentConfigBody, params UpdateAgentConfigParams) (UpdateAgentConfigRes, error)
+	// PATCH /projects/{projectId}/harness-configs/{harnessConfigId}
+	UpdateHarnessConfig(ctx context.Context, request *UpdateHarnessConfigBody, params UpdateHarnessConfigParams) (UpdateHarnessConfigRes, error)
 	// UpdateSandbox invokes update-sandbox operation.
 	//
 	// Update a sandbox.
@@ -557,21 +557,21 @@ func (c *Client) sendApproveSecretRequest(ctx context.Context, request *ApproveS
 	return result, nil
 }
 
-// AssignSandboxAgentSecrets invokes assign-sandbox-agent-secrets operation.
+// AssignSandboxHarnessSecrets invokes assign-sandbox-harness-secrets operation.
 //
-// Assign an agent config's bound secrets to a running sandbox and return their sentinel env.
+// Assign a harness config's bound secrets to a running sandbox and return their sentinel env.
 //
-// POST /projects/{projectId}/sandboxes/{sandboxId}/agent-secrets
-func (c *Client) AssignSandboxAgentSecrets(ctx context.Context, request *AssignSandboxAgentSecretsBody, params AssignSandboxAgentSecretsParams) (AssignSandboxAgentSecretsRes, error) {
-	res, err := c.sendAssignSandboxAgentSecrets(ctx, request, params)
+// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-secrets
+func (c *Client) AssignSandboxHarnessSecrets(ctx context.Context, request *AssignSandboxHarnessSecretsBody, params AssignSandboxHarnessSecretsParams) (AssignSandboxHarnessSecretsRes, error) {
+	res, err := c.sendAssignSandboxHarnessSecrets(ctx, request, params)
 	return res, err
 }
 
-func (c *Client) sendAssignSandboxAgentSecrets(ctx context.Context, request *AssignSandboxAgentSecretsBody, params AssignSandboxAgentSecretsParams) (res AssignSandboxAgentSecretsRes, err error) {
+func (c *Client) sendAssignSandboxHarnessSecrets(ctx context.Context, request *AssignSandboxHarnessSecretsBody, params AssignSandboxHarnessSecretsParams) (res AssignSandboxHarnessSecretsRes, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("assign-sandbox-agent-secrets"),
+		otelogen.OperationID("assign-sandbox-harness-secrets"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/agent-secrets"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/harness-secrets"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -587,7 +587,7 @@ func (c *Client) sendAssignSandboxAgentSecrets(ctx context.Context, request *Ass
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, AssignSandboxAgentSecretsOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, AssignSandboxHarnessSecretsOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -643,7 +643,7 @@ func (c *Client) sendAssignSandboxAgentSecrets(ctx context.Context, request *Ass
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/agent-secrets"
+	pathParts[4] = "/harness-secrets"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -651,7 +651,7 @@ func (c *Client) sendAssignSandboxAgentSecrets(ctx context.Context, request *Ass
 	if err != nil {
 		return res, errors.Wrap(err, "create request")
 	}
-	if err := encodeAssignSandboxAgentSecretsRequest(request, r); err != nil {
+	if err := encodeAssignSandboxHarnessSecretsRequest(request, r); err != nil {
 		return res, errors.Wrap(err, "encode request")
 	}
 
@@ -664,7 +664,7 @@ func (c *Client) sendAssignSandboxAgentSecrets(ctx context.Context, request *Ass
 	defer body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeAssignSandboxAgentSecretsResponse(resp)
+	result, err := decodeAssignSandboxHarnessSecretsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -805,21 +805,21 @@ func (c *Client) sendAttachSandboxExec(ctx context.Context, params AttachSandbox
 	return result, nil
 }
 
-// CreateAgentConfig invokes create-agent-config operation.
+// CreateHarnessConfig invokes create-harness-config operation.
 //
-// Create an agent config.
+// Create a harness config.
 //
-// POST /projects/{projectId}/agent-configs
-func (c *Client) CreateAgentConfig(ctx context.Context, request *CreateAgentConfigBody, params CreateAgentConfigParams) (CreateAgentConfigRes, error) {
-	res, err := c.sendCreateAgentConfig(ctx, request, params)
+// POST /projects/{projectId}/harness-configs
+func (c *Client) CreateHarnessConfig(ctx context.Context, request *CreateHarnessConfigBody, params CreateHarnessConfigParams) (CreateHarnessConfigRes, error) {
+	res, err := c.sendCreateHarnessConfig(ctx, request, params)
 	return res, err
 }
 
-func (c *Client) sendCreateAgentConfig(ctx context.Context, request *CreateAgentConfigBody, params CreateAgentConfigParams) (res CreateAgentConfigRes, err error) {
+func (c *Client) sendCreateHarnessConfig(ctx context.Context, request *CreateHarnessConfigBody, params CreateHarnessConfigParams) (res CreateHarnessConfigRes, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("create-agent-config"),
+		otelogen.OperationID("create-harness-config"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/projects/{projectId}/agent-configs"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/harness-configs"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -835,7 +835,7 @@ func (c *Client) sendCreateAgentConfig(ctx context.Context, request *CreateAgent
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, CreateAgentConfigOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, CreateHarnessConfigOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -872,7 +872,7 @@ func (c *Client) sendCreateAgentConfig(ctx context.Context, request *CreateAgent
 		}
 		pathParts[1] = encoded
 	}
-	pathParts[2] = "/agent-configs"
+	pathParts[2] = "/harness-configs"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -880,7 +880,7 @@ func (c *Client) sendCreateAgentConfig(ctx context.Context, request *CreateAgent
 	if err != nil {
 		return res, errors.Wrap(err, "create request")
 	}
-	if err := encodeCreateAgentConfigRequest(request, r); err != nil {
+	if err := encodeCreateHarnessConfigRequest(request, r); err != nil {
 		return res, errors.Wrap(err, "encode request")
 	}
 
@@ -893,7 +893,7 @@ func (c *Client) sendCreateAgentConfig(ctx context.Context, request *CreateAgent
 	defer body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeCreateAgentConfigResponse(resp)
+	result, err := decodeCreateHarnessConfigResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -1496,21 +1496,21 @@ func (c *Client) sendCreateSecretRequest(ctx context.Context, request *CreateSec
 	return result, nil
 }
 
-// DeleteAgentConfig invokes delete-agent-config operation.
+// DeleteHarnessConfig invokes delete-harness-config operation.
 //
-// Delete an agent config.
+// Delete a harness config.
 //
-// DELETE /projects/{projectId}/agent-configs/{agentConfigId}
-func (c *Client) DeleteAgentConfig(ctx context.Context, params DeleteAgentConfigParams) (DeleteAgentConfigRes, error) {
-	res, err := c.sendDeleteAgentConfig(ctx, params)
+// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}
+func (c *Client) DeleteHarnessConfig(ctx context.Context, params DeleteHarnessConfigParams) (DeleteHarnessConfigRes, error) {
+	res, err := c.sendDeleteHarnessConfig(ctx, params)
 	return res, err
 }
 
-func (c *Client) sendDeleteAgentConfig(ctx context.Context, params DeleteAgentConfigParams) (res DeleteAgentConfigRes, err error) {
+func (c *Client) sendDeleteHarnessConfig(ctx context.Context, params DeleteHarnessConfigParams) (res DeleteHarnessConfigRes, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("delete-agent-config"),
+		otelogen.OperationID("delete-harness-config"),
 		semconv.HTTPRequestMethodKey.String("DELETE"),
-		semconv.URLTemplateKey.String("/projects/{projectId}/agent-configs/{agentConfigId}"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -1526,7 +1526,7 @@ func (c *Client) sendDeleteAgentConfig(ctx context.Context, params DeleteAgentCo
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, DeleteAgentConfigOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, DeleteHarnessConfigOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -1563,16 +1563,16 @@ func (c *Client) sendDeleteAgentConfig(ctx context.Context, params DeleteAgentCo
 		}
 		pathParts[1] = encoded
 	}
-	pathParts[2] = "/agent-configs/"
+	pathParts[2] = "/harness-configs/"
 	{
-		// Encode "agentConfigId" parameter.
+		// Encode "harnessConfigId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "agentConfigId",
+			Param:   "harnessConfigId",
 			Style:   uri.PathStyleSimple,
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.AgentConfigId))
+			return e.EncodeValue(conv.StringToString(params.HarnessConfigId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -1599,7 +1599,7 @@ func (c *Client) sendDeleteAgentConfig(ctx context.Context, params DeleteAgentCo
 	defer body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeDeleteAgentConfigResponse(resp)
+	result, err := decodeDeleteHarnessConfigResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -1607,21 +1607,21 @@ func (c *Client) sendDeleteAgentConfig(ctx context.Context, params DeleteAgentCo
 	return result, nil
 }
 
-// DeleteAgentConfigSecretBinding invokes delete-agent-config-secret-binding operation.
+// DeleteHarnessConfigSecretBinding invokes delete-harness-config-secret-binding operation.
 //
-// Remove an agent config secret binding.
+// Remove a harness config secret binding.
 //
-// DELETE /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}
-func (c *Client) DeleteAgentConfigSecretBinding(ctx context.Context, params DeleteAgentConfigSecretBindingParams) (DeleteAgentConfigSecretBindingRes, error) {
-	res, err := c.sendDeleteAgentConfigSecretBinding(ctx, params)
+// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
+func (c *Client) DeleteHarnessConfigSecretBinding(ctx context.Context, params DeleteHarnessConfigSecretBindingParams) (DeleteHarnessConfigSecretBindingRes, error) {
+	res, err := c.sendDeleteHarnessConfigSecretBinding(ctx, params)
 	return res, err
 }
 
-func (c *Client) sendDeleteAgentConfigSecretBinding(ctx context.Context, params DeleteAgentConfigSecretBindingParams) (res DeleteAgentConfigSecretBindingRes, err error) {
+func (c *Client) sendDeleteHarnessConfigSecretBinding(ctx context.Context, params DeleteHarnessConfigSecretBindingParams) (res DeleteHarnessConfigSecretBindingRes, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("delete-agent-config-secret-binding"),
+		otelogen.OperationID("delete-harness-config-secret-binding"),
 		semconv.HTTPRequestMethodKey.String("DELETE"),
-		semconv.URLTemplateKey.String("/projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -1637,7 +1637,7 @@ func (c *Client) sendDeleteAgentConfigSecretBinding(ctx context.Context, params 
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, DeleteAgentConfigSecretBindingOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, DeleteHarnessConfigSecretBindingOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -1674,16 +1674,16 @@ func (c *Client) sendDeleteAgentConfigSecretBinding(ctx context.Context, params 
 		}
 		pathParts[1] = encoded
 	}
-	pathParts[2] = "/agent-configs/"
+	pathParts[2] = "/harness-configs/"
 	{
-		// Encode "agentConfigId" parameter.
+		// Encode "harnessConfigId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "agentConfigId",
+			Param:   "harnessConfigId",
 			Style:   uri.PathStyleSimple,
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.AgentConfigId))
+			return e.EncodeValue(conv.StringToString(params.HarnessConfigId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -1729,7 +1729,7 @@ func (c *Client) sendDeleteAgentConfigSecretBinding(ctx context.Context, params 
 	defer body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeDeleteAgentConfigSecretBindingResponse(resp)
+	result, err := decodeDeleteHarnessConfigSecretBindingResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -2424,21 +2424,21 @@ func (c *Client) sendForceJob(ctx context.Context, params ForceJobParams) (res F
 	return result, nil
 }
 
-// GetAgentConfig invokes get-agent-config operation.
+// GetHarnessConfig invokes get-harness-config operation.
 //
-// Get an agent config.
+// Get a harness config.
 //
-// GET /projects/{projectId}/agent-configs/{agentConfigId}
-func (c *Client) GetAgentConfig(ctx context.Context, params GetAgentConfigParams) (GetAgentConfigRes, error) {
-	res, err := c.sendGetAgentConfig(ctx, params)
+// GET /projects/{projectId}/harness-configs/{harnessConfigId}
+func (c *Client) GetHarnessConfig(ctx context.Context, params GetHarnessConfigParams) (GetHarnessConfigRes, error) {
+	res, err := c.sendGetHarnessConfig(ctx, params)
 	return res, err
 }
 
-func (c *Client) sendGetAgentConfig(ctx context.Context, params GetAgentConfigParams) (res GetAgentConfigRes, err error) {
+func (c *Client) sendGetHarnessConfig(ctx context.Context, params GetHarnessConfigParams) (res GetHarnessConfigRes, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("get-agent-config"),
+		otelogen.OperationID("get-harness-config"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/projects/{projectId}/agent-configs/{agentConfigId}"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -2454,7 +2454,7 @@ func (c *Client) sendGetAgentConfig(ctx context.Context, params GetAgentConfigPa
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, GetAgentConfigOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, GetHarnessConfigOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -2491,16 +2491,16 @@ func (c *Client) sendGetAgentConfig(ctx context.Context, params GetAgentConfigPa
 		}
 		pathParts[1] = encoded
 	}
-	pathParts[2] = "/agent-configs/"
+	pathParts[2] = "/harness-configs/"
 	{
-		// Encode "agentConfigId" parameter.
+		// Encode "harnessConfigId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "agentConfigId",
+			Param:   "harnessConfigId",
 			Style:   uri.PathStyleSimple,
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.AgentConfigId))
+			return e.EncodeValue(conv.StringToString(params.HarnessConfigId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -2527,7 +2527,7 @@ func (c *Client) sendGetAgentConfig(ctx context.Context, params GetAgentConfigPa
 	defer body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeGetAgentConfigResponse(resp)
+	result, err := decodeGetHarnessConfigResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -2535,21 +2535,21 @@ func (c *Client) sendGetAgentConfig(ctx context.Context, params GetAgentConfigPa
 	return result, nil
 }
 
-// GetAgentConfigDefinition invokes get-agent-config-definition operation.
+// GetHarnessDefinition invokes get-harness-definition operation.
 //
-// Get an agent config definition.
+// Get a harness config definition.
 //
-// GET /agent-config-definitions/{definitionId}
-func (c *Client) GetAgentConfigDefinition(ctx context.Context, params GetAgentConfigDefinitionParams) (GetAgentConfigDefinitionRes, error) {
-	res, err := c.sendGetAgentConfigDefinition(ctx, params)
+// GET /harness-definitions/{definitionId}
+func (c *Client) GetHarnessDefinition(ctx context.Context, params GetHarnessDefinitionParams) (GetHarnessDefinitionRes, error) {
+	res, err := c.sendGetHarnessDefinition(ctx, params)
 	return res, err
 }
 
-func (c *Client) sendGetAgentConfigDefinition(ctx context.Context, params GetAgentConfigDefinitionParams) (res GetAgentConfigDefinitionRes, err error) {
+func (c *Client) sendGetHarnessDefinition(ctx context.Context, params GetHarnessDefinitionParams) (res GetHarnessDefinitionRes, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("get-agent-config-definition"),
+		otelogen.OperationID("get-harness-definition"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/agent-config-definitions/{definitionId}"),
+		semconv.URLTemplateKey.String("/harness-definitions/{definitionId}"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -2565,7 +2565,7 @@ func (c *Client) sendGetAgentConfigDefinition(ctx context.Context, params GetAge
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, GetAgentConfigDefinitionOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, GetHarnessDefinitionOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -2583,7 +2583,7 @@ func (c *Client) sendGetAgentConfigDefinition(ctx context.Context, params GetAge
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [2]string
-	pathParts[0] = "/agent-config-definitions/"
+	pathParts[0] = "/harness-definitions/"
 	{
 		// Encode "definitionId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
@@ -2619,7 +2619,7 @@ func (c *Client) sendGetAgentConfigDefinition(ctx context.Context, params GetAge
 	defer body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeGetAgentConfigDefinitionResponse(resp)
+	result, err := decodeGetHarnessDefinitionResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -3535,21 +3535,21 @@ func (c *Client) sendGetSecretRequest(ctx context.Context, params GetSecretReque
 	return result, nil
 }
 
-// ListAgentConfigDefinitions invokes list-agent-config-definitions operation.
+// ListHarnessConfigSecretBindings invokes list-harness-config-secret-bindings operation.
 //
-// List agent config definitions.
+// List harness config secret bindings.
 //
-// GET /agent-config-definitions
-func (c *Client) ListAgentConfigDefinitions(ctx context.Context) (ListAgentConfigDefinitionsRes, error) {
-	res, err := c.sendListAgentConfigDefinitions(ctx)
+// GET /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings
+func (c *Client) ListHarnessConfigSecretBindings(ctx context.Context, params ListHarnessConfigSecretBindingsParams) (ListHarnessConfigSecretBindingsRes, error) {
+	res, err := c.sendListHarnessConfigSecretBindings(ctx, params)
 	return res, err
 }
 
-func (c *Client) sendListAgentConfigDefinitions(ctx context.Context) (res ListAgentConfigDefinitionsRes, err error) {
+func (c *Client) sendListHarnessConfigSecretBindings(ctx context.Context, params ListHarnessConfigSecretBindingsParams) (res ListHarnessConfigSecretBindingsRes, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("list-agent-config-definitions"),
+		otelogen.OperationID("list-harness-config-secret-bindings"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/agent-config-definitions"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -3565,81 +3565,7 @@ func (c *Client) sendListAgentConfigDefinitions(ctx context.Context) (res ListAg
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, ListAgentConfigDefinitionsOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [1]string
-	pathParts[0] = "/agent-config-definitions"
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "GET", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	body := resp.Body
-	defer body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeListAgentConfigDefinitionsResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
-// ListAgentConfigSecretBindings invokes list-agent-config-secret-bindings operation.
-//
-// List agent config secret bindings.
-//
-// GET /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings
-func (c *Client) ListAgentConfigSecretBindings(ctx context.Context, params ListAgentConfigSecretBindingsParams) (ListAgentConfigSecretBindingsRes, error) {
-	res, err := c.sendListAgentConfigSecretBindings(ctx, params)
-	return res, err
-}
-
-func (c *Client) sendListAgentConfigSecretBindings(ctx context.Context, params ListAgentConfigSecretBindingsParams) (res ListAgentConfigSecretBindingsRes, err error) {
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("list-agent-config-secret-bindings"),
-		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings"),
-	}
-	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, ListAgentConfigSecretBindingsOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, ListHarnessConfigSecretBindingsOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -3676,16 +3602,16 @@ func (c *Client) sendListAgentConfigSecretBindings(ctx context.Context, params L
 		}
 		pathParts[1] = encoded
 	}
-	pathParts[2] = "/agent-configs/"
+	pathParts[2] = "/harness-configs/"
 	{
-		// Encode "agentConfigId" parameter.
+		// Encode "harnessConfigId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "agentConfigId",
+			Param:   "harnessConfigId",
 			Style:   uri.PathStyleSimple,
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.AgentConfigId))
+			return e.EncodeValue(conv.StringToString(params.HarnessConfigId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -3713,7 +3639,7 @@ func (c *Client) sendListAgentConfigSecretBindings(ctx context.Context, params L
 	defer body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeListAgentConfigSecretBindingsResponse(resp)
+	result, err := decodeListHarnessConfigSecretBindingsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -3721,21 +3647,21 @@ func (c *Client) sendListAgentConfigSecretBindings(ctx context.Context, params L
 	return result, nil
 }
 
-// ListAgentConfigs invokes list-agent-configs operation.
+// ListHarnessConfigs invokes list-harness-configs operation.
 //
-// List agent configs.
+// List harness configs.
 //
-// GET /projects/{projectId}/agent-configs
-func (c *Client) ListAgentConfigs(ctx context.Context, params ListAgentConfigsParams) (ListAgentConfigsRes, error) {
-	res, err := c.sendListAgentConfigs(ctx, params)
+// GET /projects/{projectId}/harness-configs
+func (c *Client) ListHarnessConfigs(ctx context.Context, params ListHarnessConfigsParams) (ListHarnessConfigsRes, error) {
+	res, err := c.sendListHarnessConfigs(ctx, params)
 	return res, err
 }
 
-func (c *Client) sendListAgentConfigs(ctx context.Context, params ListAgentConfigsParams) (res ListAgentConfigsRes, err error) {
+func (c *Client) sendListHarnessConfigs(ctx context.Context, params ListHarnessConfigsParams) (res ListHarnessConfigsRes, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("list-agent-configs"),
+		otelogen.OperationID("list-harness-configs"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/projects/{projectId}/agent-configs"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/harness-configs"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -3751,7 +3677,7 @@ func (c *Client) sendListAgentConfigs(ctx context.Context, params ListAgentConfi
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, ListAgentConfigsOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, ListHarnessConfigsOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -3788,7 +3714,7 @@ func (c *Client) sendListAgentConfigs(ctx context.Context, params ListAgentConfi
 		}
 		pathParts[1] = encoded
 	}
-	pathParts[2] = "/agent-configs"
+	pathParts[2] = "/harness-configs"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -3806,7 +3732,7 @@ func (c *Client) sendListAgentConfigs(ctx context.Context, params ListAgentConfi
 	defer body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeListAgentConfigsResponse(resp)
+	result, err := decodeListHarnessConfigsResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -3814,21 +3740,21 @@ func (c *Client) sendListAgentConfigs(ctx context.Context, params ListAgentConfi
 	return result, nil
 }
 
-// ListAgentHooks invokes list-agent-hooks operation.
+// ListHarnessDefinitions invokes list-harness-definitions operation.
 //
-// List recent sandbox agent hook payload logs.
+// List harness config definitions.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks
-func (c *Client) ListAgentHooks(ctx context.Context, params ListAgentHooksParams) (ListAgentHooksRes, error) {
-	res, err := c.sendListAgentHooks(ctx, params)
+// GET /harness-definitions
+func (c *Client) ListHarnessDefinitions(ctx context.Context) (ListHarnessDefinitionsRes, error) {
+	res, err := c.sendListHarnessDefinitions(ctx)
 	return res, err
 }
 
-func (c *Client) sendListAgentHooks(ctx context.Context, params ListAgentHooksParams) (res ListAgentHooksRes, err error) {
+func (c *Client) sendListHarnessDefinitions(ctx context.Context) (res ListHarnessDefinitionsRes, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("list-agent-hooks"),
+		otelogen.OperationID("list-harness-definitions"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks"),
+		semconv.URLTemplateKey.String("/harness-definitions"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -3844,7 +3770,81 @@ func (c *Client) sendListAgentHooks(ctx context.Context, params ListAgentHooksPa
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, ListAgentHooksOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, ListHarnessDefinitionsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [1]string
+	pathParts[0] = "/harness-definitions"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListHarnessDefinitionsResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ListHarnessHooks invokes list-harness-hooks operation.
+//
+// List recent sandbox harness hook payload logs.
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks
+func (c *Client) ListHarnessHooks(ctx context.Context, params ListHarnessHooksParams) (ListHarnessHooksRes, error) {
+	res, err := c.sendListHarnessHooks(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListHarnessHooks(ctx context.Context, params ListHarnessHooksParams) (res ListHarnessHooksRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-harness-hooks"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListHarnessHooksOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -3900,7 +3900,7 @@ func (c *Client) sendListAgentHooks(ctx context.Context, params ListAgentHooksPa
 		}
 		pathParts[3] = encoded
 	}
-	pathParts[4] = "/agent-hooks"
+	pathParts[4] = "/harness-hooks"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeQueryParams"
@@ -3956,7 +3956,7 @@ func (c *Client) sendListAgentHooks(ctx context.Context, params ListAgentHooksPa
 	defer body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeListAgentHooksResponse(resp)
+	result, err := decodeListHarnessHooksResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -5996,21 +5996,21 @@ func (c *Client) sendRevokeSecretGrant(ctx context.Context, params RevokeSecretG
 	return result, nil
 }
 
-// SetAgentConfigSecretBinding invokes set-agent-config-secret-binding operation.
+// SetDefaultHarnessConfig invokes set-default-harness-config operation.
 //
-// Bind an agent config environment variable to a secret.
+// Set the project default harness config.
 //
-// PUT /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}
-func (c *Client) SetAgentConfigSecretBinding(ctx context.Context, request *SetAgentConfigSecretBindingBody, params SetAgentConfigSecretBindingParams) (SetAgentConfigSecretBindingRes, error) {
-	res, err := c.sendSetAgentConfigSecretBinding(ctx, request, params)
+// PUT /projects/{projectId}/harness-configs/{harnessConfigId}/default
+func (c *Client) SetDefaultHarnessConfig(ctx context.Context, params SetDefaultHarnessConfigParams) (SetDefaultHarnessConfigRes, error) {
+	res, err := c.sendSetDefaultHarnessConfig(ctx, params)
 	return res, err
 }
 
-func (c *Client) sendSetAgentConfigSecretBinding(ctx context.Context, request *SetAgentConfigSecretBindingBody, params SetAgentConfigSecretBindingParams) (res SetAgentConfigSecretBindingRes, err error) {
+func (c *Client) sendSetDefaultHarnessConfig(ctx context.Context, params SetDefaultHarnessConfigParams) (res SetDefaultHarnessConfigRes, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("set-agent-config-secret-binding"),
+		otelogen.OperationID("set-default-harness-config"),
 		semconv.HTTPRequestMethodKey.String("PUT"),
-		semconv.URLTemplateKey.String("/projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}/default"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -6026,140 +6026,7 @@ func (c *Client) sendSetAgentConfigSecretBinding(ctx context.Context, request *S
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, SetAgentConfigSecretBindingOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [6]string
-	pathParts[0] = "/projects/"
-	{
-		// Encode "projectId" parameter.
-		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "projectId",
-			Style:   uri.PathStyleSimple,
-			Explode: false,
-		})
-		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.ProjectId))
-		}(); err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		encoded, err := e.Result()
-		if err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		pathParts[1] = encoded
-	}
-	pathParts[2] = "/agent-configs/"
-	{
-		// Encode "agentConfigId" parameter.
-		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "agentConfigId",
-			Style:   uri.PathStyleSimple,
-			Explode: false,
-		})
-		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.AgentConfigId))
-		}(); err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		encoded, err := e.Result()
-		if err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		pathParts[3] = encoded
-	}
-	pathParts[4] = "/secret-bindings/"
-	{
-		// Encode "envName" parameter.
-		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "envName",
-			Style:   uri.PathStyleSimple,
-			Explode: false,
-		})
-		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.EnvName))
-		}(); err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		encoded, err := e.Result()
-		if err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		pathParts[5] = encoded
-	}
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "PUT", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-	if err := encodeSetAgentConfigSecretBindingRequest(request, r); err != nil {
-		return res, errors.Wrap(err, "encode request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	body := resp.Body
-	defer body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeSetAgentConfigSecretBindingResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
-// SetDefaultAgentConfig invokes set-default-agent-config operation.
-//
-// Set the project default agent config.
-//
-// PUT /projects/{projectId}/agent-configs/{agentConfigId}/default
-func (c *Client) SetDefaultAgentConfig(ctx context.Context, params SetDefaultAgentConfigParams) (SetDefaultAgentConfigRes, error) {
-	res, err := c.sendSetDefaultAgentConfig(ctx, params)
-	return res, err
-}
-
-func (c *Client) sendSetDefaultAgentConfig(ctx context.Context, params SetDefaultAgentConfigParams) (res SetDefaultAgentConfigRes, err error) {
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("set-default-agent-config"),
-		semconv.HTTPRequestMethodKey.String("PUT"),
-		semconv.URLTemplateKey.String("/projects/{projectId}/agent-configs/{agentConfigId}/default"),
-	}
-	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, SetDefaultAgentConfigOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, SetDefaultHarnessConfigOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -6196,16 +6063,16 @@ func (c *Client) sendSetDefaultAgentConfig(ctx context.Context, params SetDefaul
 		}
 		pathParts[1] = encoded
 	}
-	pathParts[2] = "/agent-configs/"
+	pathParts[2] = "/harness-configs/"
 	{
-		// Encode "agentConfigId" parameter.
+		// Encode "harnessConfigId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "agentConfigId",
+			Param:   "harnessConfigId",
 			Style:   uri.PathStyleSimple,
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.AgentConfigId))
+			return e.EncodeValue(conv.StringToString(params.HarnessConfigId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -6233,7 +6100,140 @@ func (c *Client) sendSetDefaultAgentConfig(ctx context.Context, params SetDefaul
 	defer body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeSetDefaultAgentConfigResponse(resp)
+	result, err := decodeSetDefaultHarnessConfigResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// SetHarnessConfigSecretBinding invokes set-harness-config-secret-binding operation.
+//
+// Bind a harness config environment variable to a secret.
+//
+// PUT /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
+func (c *Client) SetHarnessConfigSecretBinding(ctx context.Context, request *SetHarnessConfigSecretBindingBody, params SetHarnessConfigSecretBindingParams) (SetHarnessConfigSecretBindingRes, error) {
+	res, err := c.sendSetHarnessConfigSecretBinding(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendSetHarnessConfigSecretBinding(ctx context.Context, request *SetHarnessConfigSecretBindingBody, params SetHarnessConfigSecretBindingParams) (res SetHarnessConfigSecretBindingRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("set-harness-config-secret-binding"),
+		semconv.HTTPRequestMethodKey.String("PUT"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, SetHarnessConfigSecretBindingOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [6]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/harness-configs/"
+	{
+		// Encode "harnessConfigId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "harnessConfigId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.HarnessConfigId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/secret-bindings/"
+	{
+		// Encode "envName" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "envName",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.EnvName))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[5] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PUT", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeSetHarnessConfigSecretBindingRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeSetHarnessConfigSecretBindingResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -6733,21 +6733,21 @@ func (c *Client) sendStreamSandboxExecResources(ctx context.Context, params Stre
 	return result, nil
 }
 
-// UpdateAgentConfig invokes update-agent-config operation.
+// UpdateHarnessConfig invokes update-harness-config operation.
 //
-// Update an agent config.
+// Update a harness config.
 //
-// PATCH /projects/{projectId}/agent-configs/{agentConfigId}
-func (c *Client) UpdateAgentConfig(ctx context.Context, request *UpdateAgentConfigBody, params UpdateAgentConfigParams) (UpdateAgentConfigRes, error) {
-	res, err := c.sendUpdateAgentConfig(ctx, request, params)
+// PATCH /projects/{projectId}/harness-configs/{harnessConfigId}
+func (c *Client) UpdateHarnessConfig(ctx context.Context, request *UpdateHarnessConfigBody, params UpdateHarnessConfigParams) (UpdateHarnessConfigRes, error) {
+	res, err := c.sendUpdateHarnessConfig(ctx, request, params)
 	return res, err
 }
 
-func (c *Client) sendUpdateAgentConfig(ctx context.Context, request *UpdateAgentConfigBody, params UpdateAgentConfigParams) (res UpdateAgentConfigRes, err error) {
+func (c *Client) sendUpdateHarnessConfig(ctx context.Context, request *UpdateHarnessConfigBody, params UpdateHarnessConfigParams) (res UpdateHarnessConfigRes, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("update-agent-config"),
+		otelogen.OperationID("update-harness-config"),
 		semconv.HTTPRequestMethodKey.String("PATCH"),
-		semconv.URLTemplateKey.String("/projects/{projectId}/agent-configs/{agentConfigId}"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -6763,7 +6763,7 @@ func (c *Client) sendUpdateAgentConfig(ctx context.Context, request *UpdateAgent
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, UpdateAgentConfigOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, UpdateHarnessConfigOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -6800,16 +6800,16 @@ func (c *Client) sendUpdateAgentConfig(ctx context.Context, request *UpdateAgent
 		}
 		pathParts[1] = encoded
 	}
-	pathParts[2] = "/agent-configs/"
+	pathParts[2] = "/harness-configs/"
 	{
-		// Encode "agentConfigId" parameter.
+		// Encode "harnessConfigId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "agentConfigId",
+			Param:   "harnessConfigId",
 			Style:   uri.PathStyleSimple,
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.AgentConfigId))
+			return e.EncodeValue(conv.StringToString(params.HarnessConfigId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -6826,7 +6826,7 @@ func (c *Client) sendUpdateAgentConfig(ctx context.Context, request *UpdateAgent
 	if err != nil {
 		return res, errors.Wrap(err, "create request")
 	}
-	if err := encodeUpdateAgentConfigRequest(request, r); err != nil {
+	if err := encodeUpdateHarnessConfigRequest(request, r); err != nil {
 		return res, errors.Wrap(err, "encode request")
 	}
 
@@ -6839,7 +6839,7 @@ func (c *Client) sendUpdateAgentConfig(ctx context.Context, request *UpdateAgent
 	defer body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeUpdateAgentConfigResponse(resp)
+	result, err := decodeUpdateHarnessConfigResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

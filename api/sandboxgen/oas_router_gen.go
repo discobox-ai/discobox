@@ -109,34 +109,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 						break
 					}
 					switch elem[0] {
-					case 'a': // Prefix: "agent-hooks"
-
-						if l := len("agent-hooks"); len(elem) >= l && elem[0:l] == "agent-hooks" {
-							elem = elem[l:]
-						} else {
-							break
-						}
-
-						if len(elem) == 0 {
-							// Leaf node.
-							switch r.Method {
-							case "GET":
-								s.handleListAgentHooksRequest([2]string{
-									args[0],
-									args[1],
-								}, elemIsEscaped, w, r)
-							default:
-								s.notAllowed(w, r, notAllowedParams{
-									allowedMethods: "GET",
-									allowedHeaders: nil,
-									acceptPost:     "",
-									acceptPatch:    "",
-								})
-							}
-
-							return
-						}
-
 					case 'e': // Prefix: "execs"
 
 						if l := len("execs"); len(elem) >= l && elem[0:l] == "execs" {
@@ -448,6 +420,34 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 						}
 
+					case 'h': // Prefix: "harness-hooks"
+
+						if l := len("harness-hooks"); len(elem) >= l && elem[0:l] == "harness-hooks" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch r.Method {
+							case "GET":
+								s.handleListHarnessHooksRequest([2]string{
+									args[0],
+									args[1],
+								}, elemIsEscaped, w, r)
+							default:
+								s.notAllowed(w, r, notAllowedParams{
+									allowedMethods: "GET",
+									allowedHeaders: nil,
+									acceptPost:     "",
+									acceptPatch:    "",
+								})
+							}
+
+							return
+						}
+
 					}
 
 				}
@@ -594,31 +594,6 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 						break
 					}
 					switch elem[0] {
-					case 'a': // Prefix: "agent-hooks"
-
-						if l := len("agent-hooks"); len(elem) >= l && elem[0:l] == "agent-hooks" {
-							elem = elem[l:]
-						} else {
-							break
-						}
-
-						if len(elem) == 0 {
-							// Leaf node.
-							switch method {
-							case "GET":
-								r.name = ListAgentHooksOperation
-								r.summary = "List recent sandbox agent hook payload logs."
-								r.operationID = "list-agent-hooks"
-								r.operationGroup = ""
-								r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks"
-								r.args = args
-								r.count = 2
-								return r, true
-							default:
-								return
-							}
-						}
-
 					case 'e': // Prefix: "execs"
 
 						if l := len("execs"); len(elem) >= l && elem[0:l] == "execs" {
@@ -900,6 +875,31 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 
 							}
 
+						}
+
+					case 'h': // Prefix: "harness-hooks"
+
+						if l := len("harness-hooks"); len(elem) >= l && elem[0:l] == "harness-hooks" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch method {
+							case "GET":
+								r.name = ListHarnessHooksOperation
+								r.summary = "List recent sandbox harness hook payload logs."
+								r.operationID = "list-harness-hooks"
+								r.operationGroup = ""
+								r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks"
+								r.args = args
+								r.count = 2
+								return r, true
+							default:
+								return
+							}
 						}
 
 					}

@@ -60,12 +60,12 @@ func (UnimplementedHandler) GetSandboxExecResources(ctx context.Context, params 
 	return r, ht.ErrNotImplemented
 }
 
-// ListAgentHooks implements list-agent-hooks operation.
+// ListHarnessHooks implements list-harness-hooks operation.
 //
-// List recent sandbox agent hook payload logs.
+// List recent sandbox harness hook payload logs.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks
-func (UnimplementedHandler) ListAgentHooks(ctx context.Context, params ListAgentHooksParams) (r *AgentHookLogsResponse, _ error) {
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks
+func (UnimplementedHandler) ListHarnessHooks(ctx context.Context, params ListHarnessHooksParams) (r *HarnessHookLogsResponse, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

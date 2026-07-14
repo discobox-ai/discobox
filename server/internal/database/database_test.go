@@ -64,7 +64,7 @@ func TestMigrateMigratesSingleSchema(t *testing.T) {
 	}
 }
 
-func TestMigrateDropsAgentConfigDeletedAt(t *testing.T) {
+func TestMigrateDropsHarnessConfigDeletedAt(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.New(database.Config{
 		Driver: gormdb.DriverSQLite,
@@ -79,18 +79,18 @@ func TestMigrateDropsAgentConfigDeletedAt(t *testing.T) {
 		}
 	})
 
-	if err := db.Write.AutoMigrate(&legacyAgentConfig{}); err != nil {
-		t.Fatalf("create legacy agent config table: %v", err)
+	if err := db.Write.AutoMigrate(&legacyHarnessConfig{}); err != nil {
+		t.Fatalf("create legacy harness config table: %v", err)
 	}
-	if !db.Write.Migrator().HasColumn(&legacyAgentConfig{}, "deleted_at") {
+	if !db.Write.Migrator().HasColumn(&legacyHarnessConfig{}, "deleted_at") {
 		t.Fatalf("legacy schema missing deleted_at before migration")
 	}
 
 	if err := db.Migrate(ctx); err != nil {
 		t.Fatalf("migrate database: %v", err)
 	}
-	if db.Write.Migrator().HasColumn(&legacyAgentConfig{}, "deleted_at") {
-		t.Fatalf("agent_configs still has deleted_at after migration")
+	if db.Write.Migrator().HasColumn(&legacyHarnessConfig{}, "deleted_at") {
+		t.Fatalf("harness_configs still has deleted_at after migration")
 	}
 }
 
@@ -184,10 +184,10 @@ func TestMigrateDropsJobQueueArtifactsWithForeignKeys(t *testing.T) {
 	}
 }
 
-type legacyAgentConfig struct {
+type legacyHarnessConfig struct {
 	ID             string         `gorm:"primaryKey;type:text"`
-	ProjectID      string         `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_agent_config_project_name,priority:1"`
-	Name           string         `gorm:"column:name;not null;type:text;uniqueIndex:idx_agent_config_project_name,priority:2"`
+	ProjectID      string         `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_harness_config_project_name,priority:1"`
+	Name           string         `gorm:"column:name;not null;type:text;uniqueIndex:idx_harness_config_project_name,priority:2"`
 	InstallCommand string         `gorm:"column:install_command;type:text"`
 	RunCommand     string         `gorm:"column:run_command;not null;type:text"`
 	CreatedAt      time.Time      `gorm:"autoCreateTime"`
@@ -195,7 +195,7 @@ type legacyAgentConfig struct {
 	DeletedAt      gorm.DeletedAt `gorm:"index"`
 }
 
-func (legacyAgentConfig) TableName() string { return "agent_configs" }
+func (legacyHarnessConfig) TableName() string { return "harness_configs" }
 
 func fileExists(path string) bool {
 	matches, err := filepath.Glob(path)

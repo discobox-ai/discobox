@@ -12,7 +12,7 @@ import (
 	"github.com/obot-platform/discobox/sandbox-agent/store"
 )
 
-func TestPublishRecordsAgentHook(t *testing.T) {
+func TestPublishRecordsHarnessHook(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	recorder := &recordingRecorder{done: make(chan struct{})}
@@ -47,11 +47,11 @@ func TestPublishRecordsAgentHook(t *testing.T) {
 }
 
 type recordingRecorder struct {
-	record store.AgentHookRecord
+	record store.HarnessHookRecord
 	done   chan struct{}
 }
 
-func (r *recordingRecorder) RecordAgentHook(_ context.Context, record store.AgentHookRecord) (store.AgentHookRecord, error) {
+func (r *recordingRecorder) RecordHarnessHook(_ context.Context, record store.HarnessHookRecord) (store.HarnessHookRecord, error) {
 	r.record = record
 	close(r.done)
 	return record, nil

@@ -461,7 +461,7 @@ func decodeGetSandboxExecResourcesResponse(resp *http.Response) (res *ResourceSn
 	return res, errors.Wrap(defRes, "error")
 }
 
-func decodeListAgentHooksResponse(resp *http.Response) (res *AgentHookLogsResponse, _ error) {
+func decodeListHarnessHooksResponse(resp *http.Response) (res *HarnessHookLogsResponse, _ error) {
 	switch resp.StatusCode {
 	case 200:
 		// Code 200.
@@ -477,7 +477,7 @@ func decodeListAgentHooksResponse(resp *http.Response) (res *AgentHookLogsRespon
 			}
 			d := jx.DecodeBytes(buf)
 
-			var response AgentHookLogsResponse
+			var response HarnessHookLogsResponse
 			if err := func() error {
 				if err := response.Decode(d); err != nil {
 					return err

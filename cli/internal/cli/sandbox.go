@@ -14,33 +14,33 @@ import (
 )
 
 type sandboxCreateOptions struct {
-	name                     string
-	description              string
-	image                    string
-	providerInstanceID       string
-	agentConfigID            string
-	agentName                string
-	agentModel               string
-	agentModelServiceTier    string
-	agentModelReasoningLevel string
-	prompt                   []string
-	env                      []string
-	secret                   []string
-	sourceURL                string
-	sourceRef                string
-	sourceRefType            string
-	sourceDirectory          string
-	workingDirectory         string
-	sourceCodeReferences     string
-	userName                 string
-	userUID                  int64
-	userGID                  int64
-	homeDirectory            string
-	cpuVCPUs                 float64
-	memoryBytes              int64
-	storageBytes             int64
-	wait                     bool
-	waitTimeout              time.Duration
+	name                 string
+	description          string
+	image                string
+	providerInstanceID   string
+	harnessConfigID      string
+	harnessName          string
+	model                string
+	modelServiceTier     string
+	modelReasoningLevel  string
+	prompt               []string
+	env                  []string
+	secret               []string
+	sourceURL            string
+	sourceRef            string
+	sourceRefType        string
+	sourceDirectory      string
+	workingDirectory     string
+	sourceCodeReferences string
+	userName             string
+	userUID              int64
+	userGID              int64
+	homeDirectory        string
+	cpuVCPUs             float64
+	memoryBytes          int64
+	storageBytes         int64
+	wait                 bool
+	waitTimeout          time.Duration
 }
 
 type sandboxUpdateOptions struct {
@@ -136,8 +136,8 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 					return err
 				}
 			}
-			if opts.agentConfigID != "" {
-				opts.agentConfigID, err = a.resolveAgentConfigID(cmd.Context(), client, projectID, opts.agentConfigID)
+			if opts.harnessConfigID != "" {
+				opts.harnessConfigID, err = a.resolveHarnessConfigID(cmd.Context(), client, projectID, opts.harnessConfigID)
 				if err != nil {
 					return err
 				}
@@ -165,8 +165,8 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 	}
 	addCreateFlags(cmd, &opts)
 	_ = cmd.RegisterFlagCompletionFunc("provider-instance", a.completeProviders)
-	_ = cmd.RegisterFlagCompletionFunc("agent-config", a.completeAgentConfigs)
-	_ = cmd.RegisterFlagCompletionFunc("agent", a.completeAgentConfigNames)
+	_ = cmd.RegisterFlagCompletionFunc("harness-config", a.completeHarnessConfigs)
+	_ = cmd.RegisterFlagCompletionFunc("harness", a.completeHarnessConfigNames)
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
 }
@@ -346,12 +346,12 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.description, "description", "", "Sandbox description")
 	cmd.Flags().StringVar(&opts.image, "image", "", "Sandbox base image")
 	cmd.Flags().StringVar(&opts.providerInstanceID, "provider-instance", "", "Sandbox provider instance ID")
-	cmd.Flags().StringVar(&opts.agentConfigID, "agent-config", "", "Agent config ID")
-	cmd.Flags().StringVar(&opts.agentName, "agent", "", "Agent config name to resolve at create time")
-	cmd.Flags().StringVar(&opts.agentModel, "agent-model", "", "Model the agent should use")
-	cmd.Flags().StringVar(&opts.agentModelServiceTier, "agent-model-service-tier", "", "Model service tier the agent should use")
-	cmd.Flags().StringVar(&opts.agentModelReasoningLevel, "agent-model-reasoning-level", "", "Model reasoning level the agent should use")
-	cmd.Flags().StringArrayVar(&opts.prompt, "prompt", nil, "Prompt argument the agent should run; repeat to pass multiple argv tokens, preserving the caller's exact tokens")
+	cmd.Flags().StringVar(&opts.harnessConfigID, "harness-config", "", "Harness config ID")
+	cmd.Flags().StringVar(&opts.harnessName, "harness", "", "Harness config name to resolve at create time")
+	cmd.Flags().StringVar(&opts.model, "model", "", "Model the harness should use")
+	cmd.Flags().StringVar(&opts.modelServiceTier, "model-service-tier", "", "Model service tier the harness should use")
+	cmd.Flags().StringVar(&opts.modelReasoningLevel, "model-reasoning-level", "", "Model reasoning level the harness should use")
+	cmd.Flags().StringArrayVar(&opts.prompt, "prompt", nil, "Prompt argument the harness should run; repeat to pass multiple argv tokens, preserving the caller's exact tokens")
 	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
 	cmd.Flags().StringArrayVarP(&opts.secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
 	cmd.Flags().StringVar(&opts.sourceURL, "source-url", "", "Source repository or archive URL")
@@ -381,11 +381,11 @@ func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, 
 	config.SetDescription(optString(opts.description))
 	config.SetImage(optString(opts.image))
 	body.SetProviderInstanceId(optString(opts.providerInstanceID))
-	config.SetAgentConfigId(optString(opts.agentConfigID))
-	body.SetAgentName(optString(opts.agentName))
-	config.SetAgentModel(optString(opts.agentModel))
-	config.SetAgentModelServiceTier(optString(opts.agentModelServiceTier))
-	config.SetAgentModelReasoningLevel(optString(opts.agentModelReasoningLevel))
+	config.SetHarnessConfigId(optString(opts.harnessConfigID))
+	body.SetHarnessName(optString(opts.harnessName))
+	config.SetModel(optString(opts.model))
+	config.SetModelServiceTier(optString(opts.modelServiceTier))
+	config.SetModelReasoningLevel(optString(opts.modelReasoningLevel))
 	if len(opts.prompt) > 0 {
 		config.SetPrompt(append([]string(nil), opts.prompt...))
 	}

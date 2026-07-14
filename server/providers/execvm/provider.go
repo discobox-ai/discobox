@@ -76,8 +76,8 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 }
 
 // engineConfig maps the exec provider configuration to the shared engine
-// configuration. The agent port publishes on all interfaces by default so the
-// agent-endpoint command can return a fixed VM address and port.
+// configuration. The harness port publishes on all interfaces by default so the
+// harness-endpoint command can return a fixed VM address and port.
 func engineConfig(cfg Config) dockerworker.Config {
 	publicAgentPort := true
 	if cfg.PublicAgentPort != nil {
@@ -120,7 +120,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "command", Label: "Command", Type: "string", Required: true, Description: "Executable (plus fixed arguments) invoked as `<command> <op> <worker-id>`."},
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Required: true, Placeholder: "https://discobot.example.com"},
 			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultWorkerImage, Description: "Worker-agent container image launched in the VM's Docker daemon.", Advanced: true},
-			{Key: "publicAgentPort", Label: "Publish Agent Port Publicly", Type: "boolean", Description: "Publish the worker-agent port on all VM interfaces at the fixed agent port.", Advanced: true},
+			{Key: "publicAgentPort", Label: "Publish Harness Port Publicly", Type: "boolean", Description: "Publish the worker-agent port on all VM interfaces at the fixed harness port.", Advanced: true},
 			{Key: "sshUser", Label: "SSH User", Type: "string", Placeholder: "root", Advanced: true},
 			{Key: "sshPrivateKey", Label: "SSH Private Key", Type: "password", Description: "PEM private key used when docker-endpoint returns ssh:// URLs.", Advanced: true},
 			{Key: "sshPrivateKeyEnv", Label: "SSH Private Key Environment Variable", Type: "string", Advanced: true},
@@ -128,7 +128,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "maxWorkers", Label: "Maximum Workers", Type: "number", Placeholder: "2", Description: "Maximum active VM workers allowed in the pool."},
 			{Key: "minHealthyWorkers", Label: "Minimum Healthy Workers", Type: "number", Placeholder: "1", Description: "Minimum ready, schedulable, non-degraded workers before launching replacements."},
 			{Key: "poolSize", Label: "Pool Size", Type: "number", Placeholder: "1", Description: "Deprecated alias for minimum workers.", Advanced: true},
-			{Key: "agentPort", Label: "Agent Port", Type: "number", Placeholder: strconv.Itoa(defaultAgentPort), Advanced: true},
+			{Key: "agentPort", Label: "Harness Port", Type: "number", Placeholder: strconv.Itoa(defaultAgentPort), Advanced: true},
 		},
 	}
 }

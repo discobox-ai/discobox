@@ -15,40 +15,40 @@ func (s *ErrorModelStatusCode) Error() string {
 	return fmt.Sprintf("code %d: %+v", s.StatusCode, s.Response)
 }
 
-// Ref: #/components/schemas/AgentConfigFile
-type AgentConfigFile struct {
+// Ref: #/components/schemas/HarnessConfigFile
+type HarnessConfigFile struct {
 	Content    string  `json:"content"`
 	Path       string  `json:"path"`
 	CreateOnly OptBool `json:"createOnly"`
 }
 
 // GetContent returns the value of Content.
-func (s *AgentConfigFile) GetContent() string {
+func (s *HarnessConfigFile) GetContent() string {
 	return s.Content
 }
 
 // GetPath returns the value of Path.
-func (s *AgentConfigFile) GetPath() string {
+func (s *HarnessConfigFile) GetPath() string {
 	return s.Path
 }
 
 // GetCreateOnly returns the value of CreateOnly.
-func (s *AgentConfigFile) GetCreateOnly() OptBool {
+func (s *HarnessConfigFile) GetCreateOnly() OptBool {
 	return s.CreateOnly
 }
 
 // SetContent sets the value of Content.
-func (s *AgentConfigFile) SetContent(val string) {
+func (s *HarnessConfigFile) SetContent(val string) {
 	s.Content = val
 }
 
 // SetPath sets the value of Path.
-func (s *AgentConfigFile) SetPath(val string) {
+func (s *HarnessConfigFile) SetPath(val string) {
 	s.Path = val
 }
 
 // SetCreateOnly sets the value of CreateOnly.
-func (s *AgentConfigFile) SetCreateOnly(val OptBool) {
+func (s *HarnessConfigFile) SetCreateOnly(val OptBool) {
 	s.CreateOnly = val
 }
 
@@ -877,52 +877,52 @@ func (o OptInt64) Or(d int64) int64 {
 	return d
 }
 
-// NewOptNilAgentConfigFileArray returns new OptNilAgentConfigFileArray with value set to v.
-func NewOptNilAgentConfigFileArray(v []AgentConfigFile) OptNilAgentConfigFileArray {
-	return OptNilAgentConfigFileArray{
+// NewOptNilHarnessConfigFileArray returns new OptNilHarnessConfigFileArray with value set to v.
+func NewOptNilHarnessConfigFileArray(v []HarnessConfigFile) OptNilHarnessConfigFileArray {
+	return OptNilHarnessConfigFileArray{
 		Value: v,
 		Set:   true,
 	}
 }
 
-// OptNilAgentConfigFileArray is optional nullable []AgentConfigFile.
-type OptNilAgentConfigFileArray struct {
-	Value []AgentConfigFile
+// OptNilHarnessConfigFileArray is optional nullable []HarnessConfigFile.
+type OptNilHarnessConfigFileArray struct {
+	Value []HarnessConfigFile
 	Set   bool
 	Null  bool
 }
 
-// IsSet returns true if OptNilAgentConfigFileArray was set.
-func (o OptNilAgentConfigFileArray) IsSet() bool { return o.Set }
+// IsSet returns true if OptNilHarnessConfigFileArray was set.
+func (o OptNilHarnessConfigFileArray) IsSet() bool { return o.Set }
 
 // Reset unsets value.
-func (o *OptNilAgentConfigFileArray) Reset() {
-	var v []AgentConfigFile
+func (o *OptNilHarnessConfigFileArray) Reset() {
+	var v []HarnessConfigFile
 	o.Value = v
 	o.Set = false
 	o.Null = false
 }
 
 // SetTo sets value to v.
-func (o *OptNilAgentConfigFileArray) SetTo(v []AgentConfigFile) {
+func (o *OptNilHarnessConfigFileArray) SetTo(v []HarnessConfigFile) {
 	o.Set = true
 	o.Null = false
 	o.Value = v
 }
 
 // IsNull returns true if value is Null.
-func (o OptNilAgentConfigFileArray) IsNull() bool { return o.Null }
+func (o OptNilHarnessConfigFileArray) IsNull() bool { return o.Null }
 
 // SetToNull sets value to null.
-func (o *OptNilAgentConfigFileArray) SetToNull() {
+func (o *OptNilHarnessConfigFileArray) SetToNull() {
 	o.Set = true
 	o.Null = true
-	var v []AgentConfigFile
+	var v []HarnessConfigFile
 	o.Value = v
 }
 
 // Get returns value and boolean that denotes whether value was set.
-func (o OptNilAgentConfigFileArray) Get() (v []AgentConfigFile, ok bool) {
+func (o OptNilHarnessConfigFileArray) Get() (v []HarnessConfigFile, ok bool) {
 	if o.Null {
 		return v, false
 	}
@@ -933,7 +933,7 @@ func (o OptNilAgentConfigFileArray) Get() (v []AgentConfigFile, ok bool) {
 }
 
 // Or returns value if set, or given parameter if does not.
-func (o OptNilAgentConfigFileArray) Or(d []AgentConfigFile) []AgentConfigFile {
+func (o OptNilHarnessConfigFileArray) Or(d []HarnessConfigFile) []HarnessConfigFile {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -1003,52 +1003,52 @@ func (o OptNilErrorDetailArray) Or(d []ErrorDetail) []ErrorDetail {
 	return d
 }
 
-// NewOptNilSandboxAgentConfigArray returns new OptNilSandboxAgentConfigArray with value set to v.
-func NewOptNilSandboxAgentConfigArray(v []SandboxAgentConfig) OptNilSandboxAgentConfigArray {
-	return OptNilSandboxAgentConfigArray{
+// NewOptNilSandboxHarnessConfigArray returns new OptNilSandboxHarnessConfigArray with value set to v.
+func NewOptNilSandboxHarnessConfigArray(v []SandboxHarnessConfig) OptNilSandboxHarnessConfigArray {
+	return OptNilSandboxHarnessConfigArray{
 		Value: v,
 		Set:   true,
 	}
 }
 
-// OptNilSandboxAgentConfigArray is optional nullable []SandboxAgentConfig.
-type OptNilSandboxAgentConfigArray struct {
-	Value []SandboxAgentConfig
+// OptNilSandboxHarnessConfigArray is optional nullable []SandboxHarnessConfig.
+type OptNilSandboxHarnessConfigArray struct {
+	Value []SandboxHarnessConfig
 	Set   bool
 	Null  bool
 }
 
-// IsSet returns true if OptNilSandboxAgentConfigArray was set.
-func (o OptNilSandboxAgentConfigArray) IsSet() bool { return o.Set }
+// IsSet returns true if OptNilSandboxHarnessConfigArray was set.
+func (o OptNilSandboxHarnessConfigArray) IsSet() bool { return o.Set }
 
 // Reset unsets value.
-func (o *OptNilSandboxAgentConfigArray) Reset() {
-	var v []SandboxAgentConfig
+func (o *OptNilSandboxHarnessConfigArray) Reset() {
+	var v []SandboxHarnessConfig
 	o.Value = v
 	o.Set = false
 	o.Null = false
 }
 
 // SetTo sets value to v.
-func (o *OptNilSandboxAgentConfigArray) SetTo(v []SandboxAgentConfig) {
+func (o *OptNilSandboxHarnessConfigArray) SetTo(v []SandboxHarnessConfig) {
 	o.Set = true
 	o.Null = false
 	o.Value = v
 }
 
 // IsNull returns true if value is Null.
-func (o OptNilSandboxAgentConfigArray) IsNull() bool { return o.Null }
+func (o OptNilSandboxHarnessConfigArray) IsNull() bool { return o.Null }
 
 // SetToNull sets value to null.
-func (o *OptNilSandboxAgentConfigArray) SetToNull() {
+func (o *OptNilSandboxHarnessConfigArray) SetToNull() {
 	o.Set = true
 	o.Null = true
-	var v []SandboxAgentConfig
+	var v []SandboxHarnessConfig
 	o.Value = v
 }
 
 // Get returns value and boolean that denotes whether value was set.
-func (o OptNilSandboxAgentConfigArray) Get() (v []SandboxAgentConfig, ok bool) {
+func (o OptNilSandboxHarnessConfigArray) Get() (v []SandboxHarnessConfig, ok bool) {
 	if o.Null {
 		return v, false
 	}
@@ -1059,7 +1059,7 @@ func (o OptNilSandboxAgentConfigArray) Get() (v []SandboxAgentConfig, ok bool) {
 }
 
 // Or returns value if set, or given parameter if does not.
-func (o OptNilSandboxAgentConfigArray) Or(d []SandboxAgentConfig) []SandboxAgentConfig {
+func (o OptNilSandboxHarnessConfigArray) Or(d []SandboxHarnessConfig) []SandboxHarnessConfig {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -1129,38 +1129,38 @@ func (o OptNilStringArray) Or(d []string) []string {
 	return d
 }
 
-// NewOptResolvedAgentConfig returns new OptResolvedAgentConfig with value set to v.
-func NewOptResolvedAgentConfig(v ResolvedAgentConfig) OptResolvedAgentConfig {
-	return OptResolvedAgentConfig{
+// NewOptResolvedHarnessConfig returns new OptResolvedHarnessConfig with value set to v.
+func NewOptResolvedHarnessConfig(v ResolvedHarnessConfig) OptResolvedHarnessConfig {
+	return OptResolvedHarnessConfig{
 		Value: v,
 		Set:   true,
 	}
 }
 
-// OptResolvedAgentConfig is optional ResolvedAgentConfig.
-type OptResolvedAgentConfig struct {
-	Value ResolvedAgentConfig
+// OptResolvedHarnessConfig is optional ResolvedHarnessConfig.
+type OptResolvedHarnessConfig struct {
+	Value ResolvedHarnessConfig
 	Set   bool
 }
 
-// IsSet returns true if OptResolvedAgentConfig was set.
-func (o OptResolvedAgentConfig) IsSet() bool { return o.Set }
+// IsSet returns true if OptResolvedHarnessConfig was set.
+func (o OptResolvedHarnessConfig) IsSet() bool { return o.Set }
 
 // Reset unsets value.
-func (o *OptResolvedAgentConfig) Reset() {
-	var v ResolvedAgentConfig
+func (o *OptResolvedHarnessConfig) Reset() {
+	var v ResolvedHarnessConfig
 	o.Value = v
 	o.Set = false
 }
 
 // SetTo sets value to v.
-func (o *OptResolvedAgentConfig) SetTo(v ResolvedAgentConfig) {
+func (o *OptResolvedHarnessConfig) SetTo(v ResolvedHarnessConfig) {
 	o.Set = true
 	o.Value = v
 }
 
 // Get returns value and boolean that denotes whether value was set.
-func (o OptResolvedAgentConfig) Get() (v ResolvedAgentConfig, ok bool) {
+func (o OptResolvedHarnessConfig) Get() (v ResolvedHarnessConfig, ok bool) {
 	if !o.Set {
 		return v, false
 	}
@@ -1168,7 +1168,7 @@ func (o OptResolvedAgentConfig) Get() (v ResolvedAgentConfig, ok bool) {
 }
 
 // Or returns value if set, or given parameter if does not.
-func (o OptResolvedAgentConfig) Or(d ResolvedAgentConfig) ResolvedAgentConfig {
+func (o OptResolvedHarnessConfig) Or(d ResolvedHarnessConfig) ResolvedHarnessConfig {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -1543,194 +1543,194 @@ func (o OptWorkerSandboxResources) Or(d WorkerSandboxResources) WorkerSandboxRes
 	return d
 }
 
-// Ref: #/components/schemas/ResolvedAgentConfig
-type ResolvedAgentConfig struct {
-	Files           OptNilAgentConfigFileArray `json:"files"`
-	ID              string                     `json:"id"`
-	InstallCommand  OptNilStringArray          `json:"installCommand"`
-	Name            string                     `json:"name"`
-	RelaunchCommand OptNilStringArray          `json:"relaunchCommand"`
-	RunCommand      []string                   `json:"runCommand"`
+// Ref: #/components/schemas/ResolvedHarnessConfig
+type ResolvedHarnessConfig struct {
+	Files           OptNilHarnessConfigFileArray `json:"files"`
+	ID              string                       `json:"id"`
+	InstallCommand  OptNilStringArray            `json:"installCommand"`
+	Name            string                       `json:"name"`
+	RelaunchCommand OptNilStringArray            `json:"relaunchCommand"`
+	RunCommand      []string                     `json:"runCommand"`
 }
 
 // GetFiles returns the value of Files.
-func (s *ResolvedAgentConfig) GetFiles() OptNilAgentConfigFileArray {
+func (s *ResolvedHarnessConfig) GetFiles() OptNilHarnessConfigFileArray {
 	return s.Files
 }
 
 // GetID returns the value of ID.
-func (s *ResolvedAgentConfig) GetID() string {
+func (s *ResolvedHarnessConfig) GetID() string {
 	return s.ID
 }
 
 // GetInstallCommand returns the value of InstallCommand.
-func (s *ResolvedAgentConfig) GetInstallCommand() OptNilStringArray {
+func (s *ResolvedHarnessConfig) GetInstallCommand() OptNilStringArray {
 	return s.InstallCommand
 }
 
 // GetName returns the value of Name.
-func (s *ResolvedAgentConfig) GetName() string {
+func (s *ResolvedHarnessConfig) GetName() string {
 	return s.Name
 }
 
 // GetRelaunchCommand returns the value of RelaunchCommand.
-func (s *ResolvedAgentConfig) GetRelaunchCommand() OptNilStringArray {
+func (s *ResolvedHarnessConfig) GetRelaunchCommand() OptNilStringArray {
 	return s.RelaunchCommand
 }
 
 // GetRunCommand returns the value of RunCommand.
-func (s *ResolvedAgentConfig) GetRunCommand() []string {
+func (s *ResolvedHarnessConfig) GetRunCommand() []string {
 	return s.RunCommand
 }
 
 // SetFiles sets the value of Files.
-func (s *ResolvedAgentConfig) SetFiles(val OptNilAgentConfigFileArray) {
+func (s *ResolvedHarnessConfig) SetFiles(val OptNilHarnessConfigFileArray) {
 	s.Files = val
 }
 
 // SetID sets the value of ID.
-func (s *ResolvedAgentConfig) SetID(val string) {
+func (s *ResolvedHarnessConfig) SetID(val string) {
 	s.ID = val
 }
 
 // SetInstallCommand sets the value of InstallCommand.
-func (s *ResolvedAgentConfig) SetInstallCommand(val OptNilStringArray) {
+func (s *ResolvedHarnessConfig) SetInstallCommand(val OptNilStringArray) {
 	s.InstallCommand = val
 }
 
 // SetName sets the value of Name.
-func (s *ResolvedAgentConfig) SetName(val string) {
+func (s *ResolvedHarnessConfig) SetName(val string) {
 	s.Name = val
 }
 
 // SetRelaunchCommand sets the value of RelaunchCommand.
-func (s *ResolvedAgentConfig) SetRelaunchCommand(val OptNilStringArray) {
+func (s *ResolvedHarnessConfig) SetRelaunchCommand(val OptNilStringArray) {
 	s.RelaunchCommand = val
 }
 
 // SetRunCommand sets the value of RunCommand.
-func (s *ResolvedAgentConfig) SetRunCommand(val []string) {
+func (s *ResolvedHarnessConfig) SetRunCommand(val []string) {
 	s.RunCommand = val
 }
 
-// Ref: #/components/schemas/SandboxAgentConfig
-type SandboxAgentConfig struct {
-	Files           OptNilAgentConfigFileArray `json:"files"`
-	ID              string                     `json:"id"`
-	InstallCommand  OptNilStringArray          `json:"installCommand"`
-	IsDefault       bool                       `json:"isDefault"`
-	Name            string                     `json:"name"`
-	RelaunchCommand OptNilStringArray          `json:"relaunchCommand"`
-	RunCommand      []string                   `json:"runCommand"`
+// Ref: #/components/schemas/SandboxHarnessConfig
+type SandboxHarnessConfig struct {
+	Files           OptNilHarnessConfigFileArray `json:"files"`
+	ID              string                       `json:"id"`
+	InstallCommand  OptNilStringArray            `json:"installCommand"`
+	IsDefault       bool                         `json:"isDefault"`
+	Name            string                       `json:"name"`
+	RelaunchCommand OptNilStringArray            `json:"relaunchCommand"`
+	RunCommand      []string                     `json:"runCommand"`
 }
 
 // GetFiles returns the value of Files.
-func (s *SandboxAgentConfig) GetFiles() OptNilAgentConfigFileArray {
+func (s *SandboxHarnessConfig) GetFiles() OptNilHarnessConfigFileArray {
 	return s.Files
 }
 
 // GetID returns the value of ID.
-func (s *SandboxAgentConfig) GetID() string {
+func (s *SandboxHarnessConfig) GetID() string {
 	return s.ID
 }
 
 // GetInstallCommand returns the value of InstallCommand.
-func (s *SandboxAgentConfig) GetInstallCommand() OptNilStringArray {
+func (s *SandboxHarnessConfig) GetInstallCommand() OptNilStringArray {
 	return s.InstallCommand
 }
 
 // GetIsDefault returns the value of IsDefault.
-func (s *SandboxAgentConfig) GetIsDefault() bool {
+func (s *SandboxHarnessConfig) GetIsDefault() bool {
 	return s.IsDefault
 }
 
 // GetName returns the value of Name.
-func (s *SandboxAgentConfig) GetName() string {
+func (s *SandboxHarnessConfig) GetName() string {
 	return s.Name
 }
 
 // GetRelaunchCommand returns the value of RelaunchCommand.
-func (s *SandboxAgentConfig) GetRelaunchCommand() OptNilStringArray {
+func (s *SandboxHarnessConfig) GetRelaunchCommand() OptNilStringArray {
 	return s.RelaunchCommand
 }
 
 // GetRunCommand returns the value of RunCommand.
-func (s *SandboxAgentConfig) GetRunCommand() []string {
+func (s *SandboxHarnessConfig) GetRunCommand() []string {
 	return s.RunCommand
 }
 
 // SetFiles sets the value of Files.
-func (s *SandboxAgentConfig) SetFiles(val OptNilAgentConfigFileArray) {
+func (s *SandboxHarnessConfig) SetFiles(val OptNilHarnessConfigFileArray) {
 	s.Files = val
 }
 
 // SetID sets the value of ID.
-func (s *SandboxAgentConfig) SetID(val string) {
+func (s *SandboxHarnessConfig) SetID(val string) {
 	s.ID = val
 }
 
 // SetInstallCommand sets the value of InstallCommand.
-func (s *SandboxAgentConfig) SetInstallCommand(val OptNilStringArray) {
+func (s *SandboxHarnessConfig) SetInstallCommand(val OptNilStringArray) {
 	s.InstallCommand = val
 }
 
 // SetIsDefault sets the value of IsDefault.
-func (s *SandboxAgentConfig) SetIsDefault(val bool) {
+func (s *SandboxHarnessConfig) SetIsDefault(val bool) {
 	s.IsDefault = val
 }
 
 // SetName sets the value of Name.
-func (s *SandboxAgentConfig) SetName(val string) {
+func (s *SandboxHarnessConfig) SetName(val string) {
 	s.Name = val
 }
 
 // SetRelaunchCommand sets the value of RelaunchCommand.
-func (s *SandboxAgentConfig) SetRelaunchCommand(val OptNilStringArray) {
+func (s *SandboxHarnessConfig) SetRelaunchCommand(val OptNilStringArray) {
 	s.RelaunchCommand = val
 }
 
 // SetRunCommand sets the value of RunCommand.
-func (s *SandboxAgentConfig) SetRunCommand(val []string) {
+func (s *SandboxHarnessConfig) SetRunCommand(val []string) {
 	s.RunCommand = val
 }
 
 // Ref: #/components/schemas/SandboxConfig
 type SandboxConfig struct {
-	AgentConfigId            OptString                            `json:"agentConfigId"`
-	AgentModel               OptString                            `json:"agentModel"`
-	AgentModelReasoningLevel OptString                            `json:"agentModelReasoningLevel"`
-	AgentModelServiceTier    OptString                            `json:"agentModelServiceTier"`
-	CpuVcpus                 OptFloat64                           `json:"cpuVcpus"`
-	Description              OptString                            `json:"description"`
-	Env                      OptSandboxConfigEnv                  `json:"env"`
-	Image                    OptString                            `json:"image"`
-	MemoryBytes              OptInt64                             `json:"memoryBytes"`
-	Name                     OptString                            `json:"name"`
-	Prompt                   []string                             `json:"prompt"`
-	Source                   OptGitSource                         `json:"source"`
-	SourceCodeReferences     OptSandboxConfigSourceCodeReferences `json:"sourceCodeReferences"`
-	StorageBytes             OptInt64                             `json:"storageBytes"`
-	User                     OptSandboxUser                       `json:"user"`
+	HarnessConfigId      OptString                            `json:"harnessConfigId"`
+	Model                OptString                            `json:"model"`
+	ModelReasoningLevel  OptString                            `json:"modelReasoningLevel"`
+	ModelServiceTier     OptString                            `json:"modelServiceTier"`
+	CpuVcpus             OptFloat64                           `json:"cpuVcpus"`
+	Description          OptString                            `json:"description"`
+	Env                  OptSandboxConfigEnv                  `json:"env"`
+	Image                OptString                            `json:"image"`
+	MemoryBytes          OptInt64                             `json:"memoryBytes"`
+	Name                 OptString                            `json:"name"`
+	Prompt               []string                             `json:"prompt"`
+	Source               OptGitSource                         `json:"source"`
+	SourceCodeReferences OptSandboxConfigSourceCodeReferences `json:"sourceCodeReferences"`
+	StorageBytes         OptInt64                             `json:"storageBytes"`
+	User                 OptSandboxUser                       `json:"user"`
 }
 
-// GetAgentConfigId returns the value of AgentConfigId.
-func (s *SandboxConfig) GetAgentConfigId() OptString {
-	return s.AgentConfigId
+// GetHarnessConfigId returns the value of HarnessConfigId.
+func (s *SandboxConfig) GetHarnessConfigId() OptString {
+	return s.HarnessConfigId
 }
 
-// GetAgentModel returns the value of AgentModel.
-func (s *SandboxConfig) GetAgentModel() OptString {
-	return s.AgentModel
+// GetModel returns the value of Model.
+func (s *SandboxConfig) GetModel() OptString {
+	return s.Model
 }
 
-// GetAgentModelReasoningLevel returns the value of AgentModelReasoningLevel.
-func (s *SandboxConfig) GetAgentModelReasoningLevel() OptString {
-	return s.AgentModelReasoningLevel
+// GetModelReasoningLevel returns the value of ModelReasoningLevel.
+func (s *SandboxConfig) GetModelReasoningLevel() OptString {
+	return s.ModelReasoningLevel
 }
 
-// GetAgentModelServiceTier returns the value of AgentModelServiceTier.
-func (s *SandboxConfig) GetAgentModelServiceTier() OptString {
-	return s.AgentModelServiceTier
+// GetModelServiceTier returns the value of ModelServiceTier.
+func (s *SandboxConfig) GetModelServiceTier() OptString {
+	return s.ModelServiceTier
 }
 
 // GetCpuVcpus returns the value of CpuVcpus.
@@ -1788,24 +1788,24 @@ func (s *SandboxConfig) GetUser() OptSandboxUser {
 	return s.User
 }
 
-// SetAgentConfigId sets the value of AgentConfigId.
-func (s *SandboxConfig) SetAgentConfigId(val OptString) {
-	s.AgentConfigId = val
+// SetHarnessConfigId sets the value of HarnessConfigId.
+func (s *SandboxConfig) SetHarnessConfigId(val OptString) {
+	s.HarnessConfigId = val
 }
 
-// SetAgentModel sets the value of AgentModel.
-func (s *SandboxConfig) SetAgentModel(val OptString) {
-	s.AgentModel = val
+// SetModel sets the value of Model.
+func (s *SandboxConfig) SetModel(val OptString) {
+	s.Model = val
 }
 
-// SetAgentModelReasoningLevel sets the value of AgentModelReasoningLevel.
-func (s *SandboxConfig) SetAgentModelReasoningLevel(val OptString) {
-	s.AgentModelReasoningLevel = val
+// SetModelReasoningLevel sets the value of ModelReasoningLevel.
+func (s *SandboxConfig) SetModelReasoningLevel(val OptString) {
+	s.ModelReasoningLevel = val
 }
 
-// SetAgentModelServiceTier sets the value of AgentModelServiceTier.
-func (s *SandboxConfig) SetAgentModelServiceTier(val OptString) {
-	s.AgentModelServiceTier = val
+// SetModelServiceTier sets the value of ModelServiceTier.
+func (s *SandboxConfig) SetModelServiceTier(val OptString) {
+	s.ModelServiceTier = val
 }
 
 // SetCpuVcpus sets the value of CpuVcpus.
@@ -2045,12 +2045,12 @@ type WorkerDeleteSandboxNoContent struct{}
 // Ref: #/components/schemas/WorkerSandboxCreateRequest
 type WorkerSandboxCreateRequest struct {
 	// A URL to the JSON Schema for this object.
-	Schema              OptURI                        `json:"$schema"`
-	AgentConfigs        OptNilSandboxAgentConfigArray `json:"agentConfigs"`
-	Config              SandboxConfig                 `json:"config"`
-	ResolvedAgentConfig OptResolvedAgentConfig        `json:"resolvedAgentConfig"`
-	Resources           OptWorkerSandboxResources     `json:"resources"`
-	SandboxId           string                        `json:"sandboxId"`
+	Schema                OptURI                          `json:"$schema"`
+	HarnessConfigs        OptNilSandboxHarnessConfigArray `json:"harnessConfigs"`
+	Config                SandboxConfig                   `json:"config"`
+	ResolvedHarnessConfig OptResolvedHarnessConfig        `json:"resolvedHarnessConfig"`
+	Resources             OptWorkerSandboxResources       `json:"resources"`
+	SandboxId             string                          `json:"sandboxId"`
 	// Sentinel placeholder values injected into this sandbox. The worker registers them with the proxy
 	// so their real secret values are swapped at runtime.
 	Sentinels OptNilStringArray `json:"sentinels"`
@@ -2061,9 +2061,9 @@ func (s *WorkerSandboxCreateRequest) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetAgentConfigs returns the value of AgentConfigs.
-func (s *WorkerSandboxCreateRequest) GetAgentConfigs() OptNilSandboxAgentConfigArray {
-	return s.AgentConfigs
+// GetHarnessConfigs returns the value of HarnessConfigs.
+func (s *WorkerSandboxCreateRequest) GetHarnessConfigs() OptNilSandboxHarnessConfigArray {
+	return s.HarnessConfigs
 }
 
 // GetConfig returns the value of Config.
@@ -2071,9 +2071,9 @@ func (s *WorkerSandboxCreateRequest) GetConfig() SandboxConfig {
 	return s.Config
 }
 
-// GetResolvedAgentConfig returns the value of ResolvedAgentConfig.
-func (s *WorkerSandboxCreateRequest) GetResolvedAgentConfig() OptResolvedAgentConfig {
-	return s.ResolvedAgentConfig
+// GetResolvedHarnessConfig returns the value of ResolvedHarnessConfig.
+func (s *WorkerSandboxCreateRequest) GetResolvedHarnessConfig() OptResolvedHarnessConfig {
+	return s.ResolvedHarnessConfig
 }
 
 // GetResources returns the value of Resources.
@@ -2096,9 +2096,9 @@ func (s *WorkerSandboxCreateRequest) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetAgentConfigs sets the value of AgentConfigs.
-func (s *WorkerSandboxCreateRequest) SetAgentConfigs(val OptNilSandboxAgentConfigArray) {
-	s.AgentConfigs = val
+// SetHarnessConfigs sets the value of HarnessConfigs.
+func (s *WorkerSandboxCreateRequest) SetHarnessConfigs(val OptNilSandboxHarnessConfigArray) {
+	s.HarnessConfigs = val
 }
 
 // SetConfig sets the value of Config.
@@ -2106,9 +2106,9 @@ func (s *WorkerSandboxCreateRequest) SetConfig(val SandboxConfig) {
 	s.Config = val
 }
 
-// SetResolvedAgentConfig sets the value of ResolvedAgentConfig.
-func (s *WorkerSandboxCreateRequest) SetResolvedAgentConfig(val OptResolvedAgentConfig) {
-	s.ResolvedAgentConfig = val
+// SetResolvedHarnessConfig sets the value of ResolvedHarnessConfig.
+func (s *WorkerSandboxCreateRequest) SetResolvedHarnessConfig(val OptResolvedHarnessConfig) {
+	s.ResolvedHarnessConfig = val
 }
 
 // SetResources sets the value of Resources.
@@ -2129,13 +2129,13 @@ func (s *WorkerSandboxCreateRequest) SetSentinels(val OptNilStringArray) {
 // Ref: #/components/schemas/WorkerSandboxInstance
 type WorkerSandboxInstance struct {
 	// A URL to the JSON Schema for this object.
-	Schema              OptURI                        `json:"$schema"`
-	AgentConfigs        OptNilSandboxAgentConfigArray `json:"agentConfigs"`
-	Config              SandboxConfig                 `json:"config"`
-	ResolvedAgentConfig OptResolvedAgentConfig        `json:"resolvedAgentConfig"`
-	Resources           OptWorkerSandboxResources     `json:"resources"`
-	Runtime             WorkerSandboxRuntime          `json:"runtime"`
-	SandboxId           string                        `json:"sandboxId"`
+	Schema                OptURI                          `json:"$schema"`
+	HarnessConfigs        OptNilSandboxHarnessConfigArray `json:"harnessConfigs"`
+	Config                SandboxConfig                   `json:"config"`
+	ResolvedHarnessConfig OptResolvedHarnessConfig        `json:"resolvedHarnessConfig"`
+	Resources             OptWorkerSandboxResources       `json:"resources"`
+	Runtime               WorkerSandboxRuntime            `json:"runtime"`
+	SandboxId             string                          `json:"sandboxId"`
 }
 
 // GetSchema returns the value of Schema.
@@ -2143,9 +2143,9 @@ func (s *WorkerSandboxInstance) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetAgentConfigs returns the value of AgentConfigs.
-func (s *WorkerSandboxInstance) GetAgentConfigs() OptNilSandboxAgentConfigArray {
-	return s.AgentConfigs
+// GetHarnessConfigs returns the value of HarnessConfigs.
+func (s *WorkerSandboxInstance) GetHarnessConfigs() OptNilSandboxHarnessConfigArray {
+	return s.HarnessConfigs
 }
 
 // GetConfig returns the value of Config.
@@ -2153,9 +2153,9 @@ func (s *WorkerSandboxInstance) GetConfig() SandboxConfig {
 	return s.Config
 }
 
-// GetResolvedAgentConfig returns the value of ResolvedAgentConfig.
-func (s *WorkerSandboxInstance) GetResolvedAgentConfig() OptResolvedAgentConfig {
-	return s.ResolvedAgentConfig
+// GetResolvedHarnessConfig returns the value of ResolvedHarnessConfig.
+func (s *WorkerSandboxInstance) GetResolvedHarnessConfig() OptResolvedHarnessConfig {
+	return s.ResolvedHarnessConfig
 }
 
 // GetResources returns the value of Resources.
@@ -2178,9 +2178,9 @@ func (s *WorkerSandboxInstance) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetAgentConfigs sets the value of AgentConfigs.
-func (s *WorkerSandboxInstance) SetAgentConfigs(val OptNilSandboxAgentConfigArray) {
-	s.AgentConfigs = val
+// SetHarnessConfigs sets the value of HarnessConfigs.
+func (s *WorkerSandboxInstance) SetHarnessConfigs(val OptNilSandboxHarnessConfigArray) {
+	s.HarnessConfigs = val
 }
 
 // SetConfig sets the value of Config.
@@ -2188,9 +2188,9 @@ func (s *WorkerSandboxInstance) SetConfig(val SandboxConfig) {
 	s.Config = val
 }
 
-// SetResolvedAgentConfig sets the value of ResolvedAgentConfig.
-func (s *WorkerSandboxInstance) SetResolvedAgentConfig(val OptResolvedAgentConfig) {
-	s.ResolvedAgentConfig = val
+// SetResolvedHarnessConfig sets the value of ResolvedHarnessConfig.
+func (s *WorkerSandboxInstance) SetResolvedHarnessConfig(val OptResolvedHarnessConfig) {
+	s.ResolvedHarnessConfig = val
 }
 
 // SetResources sets the value of Resources.

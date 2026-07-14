@@ -25,9 +25,9 @@ func TestSystemdRunnerKeepsShimRootAndPassesUserToShim(t *testing.T) {
 		Command:     []string{"true"},
 		Workdir:     "/workspace",
 		User:        &User{Name: "darren", UID: &uid, GID: &gid},
-		SocketPath:  "/run/discobox/agent-terminals/execs/exec-test.sock",
-		RuntimePath: "/run/discobox/agent-terminals/execs/exec-test.json",
-		LogDir:      "/run/discobox/agent-terminals/execs/logs",
+		SocketPath:  "/run/discobox/harness-terminals/execs/exec-test.sock",
+		RuntimePath: "/run/discobox/harness-terminals/execs/exec-test.json",
+		LogDir:      "/run/discobox/harness-terminals/execs/logs",
 	}); err != nil {
 		t.Fatalf("start: %v", err)
 	}

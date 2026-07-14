@@ -40,12 +40,12 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources
 	GetSandboxExecResources(ctx context.Context, params GetSandboxExecResourcesParams) (*ResourceSnapshot, error)
-	// ListAgentHooks implements list-agent-hooks operation.
+	// ListHarnessHooks implements list-harness-hooks operation.
 	//
-	// List recent sandbox agent hook payload logs.
+	// List recent sandbox harness hook payload logs.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks
-	ListAgentHooks(ctx context.Context, params ListAgentHooksParams) (*AgentHookLogsResponse, error)
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks
+	ListHarnessHooks(ctx context.Context, params ListHarnessHooksParams) (*HarnessHookLogsResponse, error)
 	// ListSandboxExecEvents implements list-sandbox-exec-events operation.
 	//
 	// List recent audit events for a sandbox exec.

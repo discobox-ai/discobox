@@ -16,7 +16,7 @@ import (
 
 	"github.com/obot-platform/discobox/sandbox-agent/config"
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
-	agenthooks "github.com/obot-platform/discobox/sandbox-agent/hooks"
+	harnesshooks "github.com/obot-platform/discobox/sandbox-agent/hooks"
 	"github.com/obot-platform/discobox/sandbox-agent/resources"
 	agentstore "github.com/obot-platform/discobox/sandbox-agent/store"
 	"github.com/obot-platform/discobox/sandbox-agent/terminal"
@@ -39,8 +39,8 @@ type Config struct {
 	Env                   map[string]string
 	Prompt                []string
 	Resources             config.ResourceConfig
-	ResolvedAgentConfig   *config.Agent
-	Agents                []config.Agent
+	ResolvedHarnessConfig *config.Harness
+	Harnesses             []config.Harness
 	Installer             terminal.Installer
 	ExecUnitManager       execs.UnitManager
 	ExecAuditRecorder     execs.AuditRecorder
@@ -48,7 +48,7 @@ type Config struct {
 	ResourceCollector     resources.Collector
 }
 
-func ConfigFromAgentConfig(cfg config.Config) Config {
+func ConfigFromHarnessConfig(cfg config.Config) Config {
 	return Config{
 		Identity: Identity{
 			ProjectID: cfg.Identity.ProjectID,
@@ -64,8 +64,8 @@ func ConfigFromAgentConfig(cfg config.Config) Config {
 		Env:                   cfg.Env,
 		Prompt:                cfg.Prompt,
 		Resources:             cfg.Resources,
-		ResolvedAgentConfig:   cfg.ResolvedAgentConfig,
-		Agents:                cfg.Agents,
+		ResolvedHarnessConfig: cfg.ResolvedHarnessConfig,
+		Harnesses:             cfg.Harnesses,
 	}
 }
 
@@ -79,7 +79,7 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		cfg.WorkingRoot = "/workspace"
 	}
 	if cfg.RuntimeDir == "" {
-		cfg.RuntimeDir = "/run/discobox/agent-terminals"
+		cfg.RuntimeDir = "/run/discobox/harness-terminals"
 	}
 	if cfg.Resources.SampleInterval <= 0 {
 		cfg.Resources.SampleInterval = time.Second
@@ -118,21 +118,21 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		return nil, nil, nil, nil, err
 	}
 	manager, err := terminal.NewService(terminal.ServiceConfig{
-		Execs:               execManager,
-		ResolvedAgentConfig: cfg.ResolvedAgentConfig,
-		Agents:              cfg.Agents,
-		WorkingRoot:         cfg.WorkingRoot,
-		RuntimeDir:          cfg.RuntimeDir,
-		Env:                 cfg.Env,
-		ExecDefaults:        cfg.ExecDefaults,
-		Units:               cfg.ExecUnitManager,
-		Installer:           cfg.Installer,
-		PrimaryState:        localStore,
+		Execs:                 execManager,
+		ResolvedHarnessConfig: cfg.ResolvedHarnessConfig,
+		Harnesses:             cfg.Harnesses,
+		WorkingRoot:           cfg.WorkingRoot,
+		RuntimeDir:            cfg.RuntimeDir,
+		Env:                   cfg.Env,
+		ExecDefaults:          cfg.ExecDefaults,
+		Units:                 cfg.ExecUnitManager,
+		Installer:             cfg.Installer,
+		PrimaryState:          localStore,
 	})
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
-	manager.SetHookSocketPath(agenthooks.SocketPath(cfg.RuntimeDir))
+	manager.SetHookSocketPath(harnesshooks.SocketPath(cfg.RuntimeDir))
 	handler := &handler{
 		identity:          cfg.Identity,
 		terminals:         manager,
@@ -209,18 +209,18 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	go func() {
 		switch err := manager.EnsurePrimary(ctx, cfg.Prompt); {
 		case err == nil, errors.Is(err, context.Canceled):
-		case errors.Is(err, terminal.ErrNoAgentConfigured):
+		case errors.Is(err, terminal.ErrNoHarnessConfigured):
 			// Valid empty state, but make it observable: previously this path was
-			// silent, so a sandbox with no agent looked identical to a healthy one
+			// silent, so a sandbox with no harness looked identical to a healthy one
 			// while clients waited forever for a primary terminal that never came.
-			logger.Warn("no agent configured; not launching primary terminal")
+			logger.Warn("no harness configured; not launching primary terminal")
 		default:
 			logger.Error("launch primary terminal", "error", err)
 		}
 	}()
 	go execReconcileLoop(ctx, logger, execManager)
 	go func() {
-		if err := agenthooks.Serve(ctx, agenthooks.SocketPath(cfg.RuntimeDir), localStore); err != nil && !errors.Is(err, context.Canceled) {
+		if err := harnesshooks.Serve(ctx, harnesshooks.SocketPath(cfg.RuntimeDir), localStore); err != nil && !errors.Is(err, context.Canceled) {
 			logger.Debug("sandbox agent hook collector stopped", "error", err)
 		}
 	}()

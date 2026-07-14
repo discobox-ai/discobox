@@ -61,7 +61,7 @@ func run() error {
 	out := map[string]any{
 		"openapi": source["openapi"],
 		"info": map[string]any{
-			"title":       "Discobox Sandbox Agent REST API",
+			"title":       "Discobox Sandbox Harness REST API",
 			"version":     nestedString(source, "info", "version"),
 			"description": "Generated subset of the canonical Discobox Server REST API implemented inside a sandbox.",
 		},

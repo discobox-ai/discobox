@@ -44,13 +44,13 @@ func (c Collector) Collect(ctx context.Context, ex execs.Exec) (store.ResourceSa
 	}
 	data := map[string]any{
 		"terminal": map[string]any{
-			"id":       ex.ID,
-			"agentId":  terminal.AgentID(ex),
-			"status":   ex.Status,
-			"unit":     ex.Unit,
-			"pid":      ex.PID,
-			"workdir":  ex.Workdir,
-			"metadata": ex.Metadata,
+			"id":        ex.ID,
+			"harnessId": terminal.HarnessID(ex),
+			"status":    ex.Status,
+			"unit":      ex.Unit,
+			"pid":       ex.PID,
+			"workdir":   ex.Workdir,
+			"metadata":  ex.Metadata,
 		},
 		"host": host,
 	}

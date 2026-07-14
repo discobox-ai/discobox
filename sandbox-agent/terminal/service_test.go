@@ -10,9 +10,9 @@ import (
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
 )
 
-// newAgentlessService builds a terminal service with no agents configured, so
-// agent resolution has nothing to select.
-func newAgentlessService(t *testing.T) *Service {
+// newHarnesslessService builds a terminal service with no harnesses configured, so
+// harness resolution has nothing to select.
+func newHarnesslessService(t *testing.T) *Service {
 	t.Helper()
 	dir := t.TempDir()
 	image := config.ImageConfig{Env: map[string]string{"PATH": "/usr/bin"}}
@@ -39,14 +39,14 @@ func newAgentlessService(t *testing.T) *Service {
 	return svc
 }
 
-// EnsurePrimary must surface the no-agent case as ErrNoAgentConfigured rather
+// EnsurePrimary must surface the no-harness case as ErrNoHarnessConfigured rather
 // than silently returning nil: a silent no-op left clients waiting forever for a
 // primary terminal that would never launch.
-func TestEnsurePrimaryReturnsErrNoAgentConfigured(t *testing.T) {
-	svc := newAgentlessService(t)
+func TestEnsurePrimaryReturnsErrNoHarnessConfigured(t *testing.T) {
+	svc := newHarnesslessService(t)
 	err := svc.EnsurePrimary(context.Background(), nil)
-	if !errors.Is(err, ErrNoAgentConfigured) {
-		t.Fatalf("EnsurePrimary = %v, want ErrNoAgentConfigured", err)
+	if !errors.Is(err, ErrNoHarnessConfigured) {
+		t.Fatalf("EnsurePrimary = %v, want ErrNoHarnessConfigured", err)
 	}
 	if execs := svc.List(); len(execs) != 0 {
 		t.Fatalf("List() = %d execs, want 0", len(execs))
@@ -68,11 +68,11 @@ func (f *fakeUnits) Status(context.Context, string) (execs.UnitStatus, error) {
 func (f *fakeUnits) List(context.Context) ([]execs.UnitStatus, error) { return nil, nil }
 
 type noopInstaller struct {
-	calls []config.Agent
+	calls []config.Harness
 }
 
-func (n *noopInstaller) EnsureInstalled(_ context.Context, agent config.Agent, _ string, _ map[string]string) error {
-	n.calls = append(n.calls, agent)
+func (n *noopInstaller) EnsureInstalled(_ context.Context, harness config.Harness, _ string, _ map[string]string) error {
+	n.calls = append(n.calls, harness)
 	return nil
 }
 
@@ -95,7 +95,7 @@ func newTestService(t *testing.T, installer Installer) (*Service, *fakeUnits) {
 		WorkingRoot: dir,
 		RuntimeDir:  filepath.Join(dir, "rt"),
 		ImageConfig: image,
-		Agents:      []config.Agent{{ID: "codex", Command: []string{"codex"}, IsDefault: true}},
+		Harnesses:   []config.Harness{{ID: "codex", Command: []string{"codex"}, IsDefault: true}},
 		Units:       units,
 		Installer:   installer,
 	})
@@ -105,8 +105,8 @@ func newTestService(t *testing.T, installer Installer) (*Service, *fakeUnits) {
 	return svc, units
 }
 
-// A terminal is an exec created in agent mode: the resolved agent command runs
-// with TTY, tagged agentId in metadata, after the installer runs for that agent.
+// A terminal is an exec created in harness mode: the resolved harness command runs
+// with TTY, tagged harnessId in metadata, after the installer runs for that harness.
 func TestServiceCreateResolvesAgentAndTagsMetadata(t *testing.T) {
 	installer := &noopInstaller{}
 	svc, units := newTestService(t, installer)
@@ -115,8 +115,8 @@ func TestServiceCreateResolvesAgentAndTagsMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if AgentID(ex) != "codex" {
-		t.Fatalf("agentId = %q, want codex (metadata=%v)", AgentID(ex), ex.Metadata)
+	if HarnessID(ex) != "codex" {
+		t.Fatalf("harnessId = %q, want codex (metadata=%v)", HarnessID(ex), ex.Metadata)
 	}
 	if !ex.TTY {
 		t.Fatalf("terminal exec must allocate a TTY")
@@ -142,7 +142,7 @@ type hookInstaller struct {
 	err    error
 }
 
-func (h hookInstaller) EnsureInstalled(ctx context.Context, _ config.Agent, _ string, _ map[string]string) error {
+func (h hookInstaller) EnsureInstalled(ctx context.Context, _ config.Harness, _ string, _ map[string]string) error {
 	if h.during != nil {
 		h.during(ctx)
 	}
@@ -192,31 +192,31 @@ func TestServiceCreateInstallFailureRemovesRecord(t *testing.T) {
 	}
 }
 
-// An explicit unknown agent is rejected; a known one is honored.
+// An explicit unknown harness is rejected; a known one is honored.
 func TestServiceCreateExplicitAgent(t *testing.T) {
 	svc, _ := newTestService(t, &noopInstaller{})
-	if _, err := svc.Create(context.Background(), CreateRequest{AgentID: "missing"}); err == nil {
-		t.Fatalf("expected error for unknown agent")
+	if _, err := svc.Create(context.Background(), CreateRequest{HarnessID: "missing"}); err == nil {
+		t.Fatalf("expected error for unknown harness")
 	}
-	if _, err := svc.Create(context.Background(), CreateRequest{AgentID: "codex"}); err != nil {
-		t.Fatalf("known agent create: %v", err)
+	if _, err := svc.Create(context.Background(), CreateRequest{HarnessID: "codex"}); err != nil {
+		t.Fatalf("known harness create: %v", err)
 	}
 }
 
 func TestPrimaryCreateRequest(t *testing.T) {
-	agent := config.Agent{ID: "codex", Command: []string{"codex"}, RelaunchCommand: []string{"codex", "resume"}}
+	harness := config.Harness{ID: "codex", Command: []string{"codex"}, RelaunchCommand: []string{"codex", "resume"}}
 	// First start: prompt as args, no relaunch command.
-	first := primaryCreateRequest(agent, []string{"do a thing"}, false)
+	first := primaryCreateRequest(harness, []string{"do a thing"}, false)
 	if !first.primary || len(first.command) != 0 || len(first.Args) != 1 {
 		t.Fatalf("first start = %#v", first)
 	}
 	// Subsequent start: relaunch command replaces the run command.
-	resume := primaryCreateRequest(agent, []string{"do a thing"}, true)
+	resume := primaryCreateRequest(harness, []string{"do a thing"}, true)
 	if len(resume.command) != 2 || resume.command[1] != "resume" || len(resume.Args) != 0 {
 		t.Fatalf("resume = %#v", resume)
 	}
 	// Subsequent start with no relaunch command: start bare, no prompt replay.
-	bare := primaryCreateRequest(config.Agent{ID: "codex", Command: []string{"codex"}}, []string{"p"}, true)
+	bare := primaryCreateRequest(config.Harness{ID: "codex", Command: []string{"codex"}}, []string{"p"}, true)
 	if len(bare.command) != 0 || len(bare.Args) != 0 {
 		t.Fatalf("bare = %#v", bare)
 	}

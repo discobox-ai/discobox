@@ -72,18 +72,18 @@ func newAssignFixture(t *testing.T) (*Service, *recordingProvider) {
 	return svc, rec
 }
 
-func TestAssignSandboxAgentSecretsMintsPushesAndReuses(t *testing.T) {
+func TestAssignSandboxHarnessSecretsMintsPushesAndReuses(t *testing.T) {
 	ctx := context.Background()
 	svc, rec := newAssignFixture(t)
 	config := codexConfig(t, svc.store) // declares OPENAI_API_KEY required
 	sec := bearerSecret(t, svc.store, "openai", "")
-	if err := svc.store.UpsertAgentConfigSecretBinding(ctx, &model.AgentConfigSecretBinding{
-		ProjectID: "project-1", AgentConfigID: config.ID, EnvName: "OPENAI_API_KEY", SecretID: sec.ID,
+	if err := svc.store.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
+		ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: "OPENAI_API_KEY", SecretID: sec.ID,
 	}); err != nil {
 		t.Fatalf("bind: %v", err)
 	}
 
-	got, err := svc.AssignSandboxAgentSecrets(ctx, "project-1", "sb-1", config.ID)
+	got, err := svc.AssignSandboxHarnessSecrets(ctx, "project-1", "sb-1", config.ID)
 	if err != nil {
 		t.Fatalf("assign: %v", err)
 	}
@@ -96,7 +96,7 @@ func TestAssignSandboxAgentSecretsMintsPushesAndReuses(t *testing.T) {
 	}
 
 	// A second assignment for the same env reuses the sentinel and does not push.
-	got2, err := svc.AssignSandboxAgentSecrets(ctx, "project-1", "sb-1", config.ID)
+	got2, err := svc.AssignSandboxHarnessSecrets(ctx, "project-1", "sb-1", config.ID)
 	if err != nil {
 		t.Fatalf("assign again: %v", err)
 	}
@@ -108,12 +108,12 @@ func TestAssignSandboxAgentSecretsMintsPushesAndReuses(t *testing.T) {
 	}
 }
 
-func TestAssignSandboxAgentSecretsBlocksUnboundRequired(t *testing.T) {
+func TestAssignSandboxHarnessSecretsBlocksUnboundRequired(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newAssignFixture(t)
 	config := codexConfig(t, svc.store) // OPENAI_API_KEY required, no binding
 
-	_, err := svc.AssignSandboxAgentSecrets(ctx, "project-1", "sb-1", config.ID)
+	_, err := svc.AssignSandboxHarnessSecrets(ctx, "project-1", "sb-1", config.ID)
 	if err == nil {
 		t.Fatal("expected 400 for unbound required secret")
 	}

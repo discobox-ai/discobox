@@ -64,13 +64,13 @@ func (s *Service) ListProjectResourceSnapshots(ctx context.Context, projectID st
 				}
 				result = append(result, event)
 			}
-		case "agentConfig":
-			configs, err := s.store.ListAgentConfigSnapshots(ctx, projectID)
+		case "harnessConfig":
+			configs, err := s.store.ListHarnessConfigSnapshots(ctx, projectID)
 			if err != nil {
 				return nil, err
 			}
 			for _, config := range configs {
-				event, err := snapshotEvent(projectID, "agentConfig", config.ID, seq, config)
+				event, err := snapshotEvent(projectID, "harnessConfig", config.ID, seq, config)
 				if err != nil {
 					return nil, err
 				}

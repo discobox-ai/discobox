@@ -316,7 +316,7 @@ func (a *recordingAudit) LoadExecRecords(context.Context) ([]Exec, error) {
 }
 
 // A shim runtime write drops the metadata field; the durable record must still
-// restore agentId/primary on read so the exec keeps its identity.
+// restore harnessId/primary on read so the exec keeps its identity.
 func TestManagerHydratesMetadataAfterRuntimeClobber(t *testing.T) {
 	audit := newRecordingAudit()
 	manager, err := NewManagerWithConfig(ManagerConfig{
@@ -330,7 +330,7 @@ func TestManagerHydratesMetadataAfterRuntimeClobber(t *testing.T) {
 	}
 	created, err := manager.Create(context.Background(), CreateRequest{
 		Command:  []string{"codex"},
-		Metadata: map[string]string{"agentId": "codex", "primary": "true"},
+		Metadata: map[string]string{"harnessId": "codex", "primary": "true"},
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -346,13 +346,13 @@ func TestManagerHydratesMetadataAfterRuntimeClobber(t *testing.T) {
 	if !ok {
 		t.Fatalf("exec not found after clobber")
 	}
-	if got.Metadata["agentId"] != "codex" || got.Metadata["primary"] != "true" {
+	if got.Metadata["harnessId"] != "codex" || got.Metadata["primary"] != "true" {
 		t.Fatalf("metadata not restored from record: %#v", got.Metadata)
 	}
 	// And it is still enumerated with its metadata via List.
 	found := false
 	for _, e := range manager.List() {
-		if e.ID == created.ID && e.Metadata["agentId"] == "codex" {
+		if e.ID == created.ID && e.Metadata["harnessId"] == "codex" {
 			found = true
 		}
 	}

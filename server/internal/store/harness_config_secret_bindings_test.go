@@ -7,13 +7,13 @@ import (
 	"github.com/obot-platform/discobox/server/internal/model"
 )
 
-func TestAgentConfigSecretBindingUpsertListDelete(t *testing.T) {
+func TestHarnessConfigSecretBindingUpsertListDelete(t *testing.T) {
 	ctx := context.Background()
 	s, _ := newTestStoreWithDB(t, nil)
 
-	config := &model.AgentConfig{ProjectID: "project-1", Slug: "codex", Name: "Codex", RunCommand: []string{"codex"}}
-	if err := s.CreateAgentConfig(ctx, config); err != nil {
-		t.Fatalf("create agent config: %v", err)
+	config := &model.HarnessConfig{ProjectID: "project-1", Slug: "codex", Name: "Codex", RunCommand: []string{"codex"}}
+	if err := s.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create harness config: %v", err)
 	}
 	sec := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeBearer, Host: "a.example.com", EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := s.CreateSecret(ctx, sec); err != nil {
@@ -26,8 +26,8 @@ func TestAgentConfigSecretBindingUpsertListDelete(t *testing.T) {
 
 	bind := func(secretID string) {
 		t.Helper()
-		if err := s.UpsertAgentConfigSecretBinding(ctx, &model.AgentConfigSecretBinding{
-			ProjectID: "project-1", AgentConfigID: config.ID, EnvName: "OPENAI_API_KEY", SecretID: secretID,
+		if err := s.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
+			ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: "OPENAI_API_KEY", SecretID: secretID,
 		}); err != nil {
 			t.Fatalf("upsert binding: %v", err)
 		}
@@ -37,7 +37,7 @@ func TestAgentConfigSecretBindingUpsertListDelete(t *testing.T) {
 	// replace rather than create a duplicate.
 	bind(sec.ID)
 	bind(other.ID)
-	bindings, err := s.ListAgentConfigSecretBindings(ctx, "project-1", config.ID)
+	bindings, err := s.ListHarnessConfigSecretBindings(ctx, "project-1", config.ID)
 	if err != nil {
 		t.Fatalf("list bindings: %v", err)
 	}
@@ -48,29 +48,29 @@ func TestAgentConfigSecretBindingUpsertListDelete(t *testing.T) {
 		t.Fatalf("secret id = %q, want %q", bindings[0].SecretID, other.ID)
 	}
 
-	if err := s.DeleteAgentConfigSecretBinding(ctx, "project-1", config.ID, "OPENAI_API_KEY"); err != nil {
+	if err := s.DeleteHarnessConfigSecretBinding(ctx, "project-1", config.ID, "OPENAI_API_KEY"); err != nil {
 		t.Fatalf("delete binding: %v", err)
 	}
-	bindings, _ = s.ListAgentConfigSecretBindings(ctx, "project-1", config.ID)
+	bindings, _ = s.ListHarnessConfigSecretBindings(ctx, "project-1", config.ID)
 	if len(bindings) != 0 {
 		t.Fatalf("bindings after delete = %d, want 0", len(bindings))
 	}
 }
 
-func TestDeletingSecretRemovesAgentConfigBindings(t *testing.T) {
+func TestDeletingSecretRemovesHarnessConfigBindings(t *testing.T) {
 	ctx := context.Background()
 	s, _ := newTestStoreWithDB(t, nil)
 
-	config := &model.AgentConfig{ProjectID: "project-1", Slug: "codex", Name: "Codex", RunCommand: []string{"codex"}}
-	if err := s.CreateAgentConfig(ctx, config); err != nil {
-		t.Fatalf("create agent config: %v", err)
+	config := &model.HarnessConfig{ProjectID: "project-1", Slug: "codex", Name: "Codex", RunCommand: []string{"codex"}}
+	if err := s.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create harness config: %v", err)
 	}
 	sec := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeBearer, EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := s.CreateSecret(ctx, sec); err != nil {
 		t.Fatalf("create secret: %v", err)
 	}
-	if err := s.UpsertAgentConfigSecretBinding(ctx, &model.AgentConfigSecretBinding{
-		ProjectID: "project-1", AgentConfigID: config.ID, EnvName: "OPENAI_API_KEY", SecretID: sec.ID,
+	if err := s.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
+		ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: "OPENAI_API_KEY", SecretID: sec.ID,
 	}); err != nil {
 		t.Fatalf("upsert binding: %v", err)
 	}
@@ -78,7 +78,7 @@ func TestDeletingSecretRemovesAgentConfigBindings(t *testing.T) {
 	if err := s.DeleteSecret(ctx, "project-1", sec.ID); err != nil {
 		t.Fatalf("delete secret: %v", err)
 	}
-	bindings, err := s.ListAgentConfigSecretBindings(ctx, "project-1", config.ID)
+	bindings, err := s.ListHarnessConfigSecretBindings(ctx, "project-1", config.ID)
 	if err != nil {
 		t.Fatalf("list bindings: %v", err)
 	}
@@ -113,32 +113,32 @@ func TestDeletingSecretRemovesGrants(t *testing.T) {
 	}
 }
 
-func TestDeletingAgentConfigRemovesBindings(t *testing.T) {
+func TestDeletingHarnessConfigRemovesBindings(t *testing.T) {
 	ctx := context.Background()
 	s, _ := newTestStoreWithDB(t, nil)
 
-	config := &model.AgentConfig{ProjectID: "project-1", Slug: "codex", Name: "Codex", RunCommand: []string{"codex"}}
-	if err := s.CreateAgentConfig(ctx, config); err != nil {
-		t.Fatalf("create agent config: %v", err)
+	config := &model.HarnessConfig{ProjectID: "project-1", Slug: "codex", Name: "Codex", RunCommand: []string{"codex"}}
+	if err := s.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create harness config: %v", err)
 	}
 	sec := &model.Secret{ProjectID: "project-1", Name: "key", Type: model.SecretTypeBearer, EncryptedValue: []byte(`{"token":"t"}`)}
 	if err := s.CreateSecret(ctx, sec); err != nil {
 		t.Fatalf("create secret: %v", err)
 	}
-	if err := s.UpsertAgentConfigSecretBinding(ctx, &model.AgentConfigSecretBinding{
-		ProjectID: "project-1", AgentConfigID: config.ID, EnvName: "OPENAI_API_KEY", SecretID: sec.ID,
+	if err := s.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
+		ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: "OPENAI_API_KEY", SecretID: sec.ID,
 	}); err != nil {
 		t.Fatalf("upsert binding: %v", err)
 	}
 
-	if err := s.DeleteAgentConfig(ctx, "project-1", config.ID); err != nil {
-		t.Fatalf("delete agent config: %v", err)
+	if err := s.DeleteHarnessConfig(ctx, "project-1", config.ID); err != nil {
+		t.Fatalf("delete harness config: %v", err)
 	}
-	bindings, err := s.ListAgentConfigSecretBindings(ctx, "project-1", config.ID)
+	bindings, err := s.ListHarnessConfigSecretBindings(ctx, "project-1", config.ID)
 	if err != nil {
 		t.Fatalf("list bindings: %v", err)
 	}
 	if len(bindings) != 0 {
-		t.Fatalf("bindings after agent config delete = %d, want 0", len(bindings))
+		t.Fatalf("bindings after harness config delete = %d, want 0", len(bindings))
 	}
 }

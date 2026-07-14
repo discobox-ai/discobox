@@ -177,7 +177,7 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "backups", Label: "Backups", Type: "boolean", Advanced: true},
 			{Key: "ipv6", Label: "IPv6", Type: "boolean", Advanced: true},
 			{Key: "monitoring", Label: "Monitoring", Type: "boolean", Advanced: true},
-			{Key: "agentPort", Label: "Agent Port", Type: "number", Placeholder: strconv.Itoa(defaultAgentPort), Advanced: true},
+			{Key: "agentPort", Label: "Harness Port", Type: "number", Placeholder: strconv.Itoa(defaultAgentPort), Advanced: true},
 		},
 	}
 }

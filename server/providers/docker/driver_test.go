@@ -73,7 +73,7 @@ func TestEngineConfigDefaultsSystemdOn(t *testing.T) {
 func TestEngineConfigDoesNotPublishAgentPortPublicly(t *testing.T) {
 	cfg := engineConfig(Config{})
 	if cfg.PublicAgentPort {
-		t.Fatalf("public agent port = true, want loopback publishing for local workers")
+		t.Fatalf("public harness port = true, want loopback publishing for local workers")
 	}
 }
 

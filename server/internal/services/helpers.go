@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	serverapi "github.com/obot-platform/discobox/api/gen"
-	"github.com/obot-platform/discobox/server/internal/agentdefs"
+	"github.com/obot-platform/discobox/server/internal/harnessdefs"
 	"github.com/obot-platform/discobox/server/internal/model"
 )
 
@@ -86,17 +86,17 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 		"name":         sandbox.Name,
 		"storageBytes": sandbox.StorageBytes,
 	}
-	if sandbox.AgentConfigID != nil {
-		config["agentConfigId"] = *sandbox.AgentConfigID
+	if sandbox.HarnessConfigID != nil {
+		config["harnessConfigId"] = *sandbox.HarnessConfigID
 	}
-	if sandbox.AgentModel != nil {
-		config["agentModel"] = *sandbox.AgentModel
+	if sandbox.Model != nil {
+		config["model"] = *sandbox.Model
 	}
-	if sandbox.AgentModelServiceTier != nil {
-		config["agentModelServiceTier"] = *sandbox.AgentModelServiceTier
+	if sandbox.ModelServiceTier != nil {
+		config["modelServiceTier"] = *sandbox.ModelServiceTier
 	}
-	if sandbox.AgentModelReasoningLevel != nil {
-		config["agentModelReasoningLevel"] = *sandbox.AgentModelReasoningLevel
+	if sandbox.ModelReasoningLevel != nil {
+		config["modelReasoningLevel"] = *sandbox.ModelReasoningLevel
 	}
 	if sandbox.Description != nil {
 		config["description"] = *sandbox.Description
@@ -158,10 +158,10 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 	if sandbox.ProviderInstance != nil {
 		fields["providerInstance"] = sandbox.ProviderInstance
 	}
-	if sandbox.AgentConfig != nil {
+	if sandbox.HarnessConfig != nil {
 		// Resolve the sparse stored config against its definition so the embedded
-		// agent config carries its effective commands (runCommand is required).
-		fields["agentConfig"] = agentdefs.Resolve(sandbox.AgentConfig)
+		// harness config carries its effective commands (runCommand is required).
+		fields["harnessConfig"] = harnessdefs.Resolve(sandbox.HarnessConfig)
 	}
 	return Convert[serverapi.Sandbox](fields)
 }

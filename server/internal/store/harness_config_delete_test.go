@@ -9,20 +9,20 @@ import (
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
-func TestDeleteAgentConfigSandboxReferences(t *testing.T) {
+func TestDeleteHarnessConfigSandboxReferences(t *testing.T) {
 	ctx := context.Background()
 	s, db := newTestStoreWithDB(t, nil)
 
-	newConfig := func(slug string) *model.AgentConfig {
-		cfg := &model.AgentConfig{ProjectID: "project-1", Slug: slug, Name: slug, RunCommand: []string{"x"}}
-		if err := s.CreateAgentConfig(ctx, cfg); err != nil {
-			t.Fatalf("create agent config: %v", err)
+	newConfig := func(slug string) *model.HarnessConfig {
+		cfg := &model.HarnessConfig{ProjectID: "project-1", Slug: slug, Name: slug, RunCommand: []string{"x"}}
+		if err := s.CreateHarnessConfig(ctx, cfg); err != nil {
+			t.Fatalf("create harness config: %v", err)
 		}
 		return cfg
 	}
-	newSandbox := func(id, agentConfigID string) {
+	newSandbox := func(id, harnessConfigID string) {
 		if err := s.CreateSandbox(ctx, &model.Sandbox{
-			ID: id, ProjectID: "project-1", CreatedByUserID: "user-1", Name: id, AgentConfigID: &agentConfigID,
+			ID: id, ProjectID: "project-1", CreatedByUserID: "user-1", Name: id, HarnessConfigID: &harnessConfigID,
 		}); err != nil {
 			t.Fatalf("create sandbox: %v", err)
 		}
@@ -31,7 +31,7 @@ func TestDeleteAgentConfigSandboxReferences(t *testing.T) {
 	// A live sandbox referencing the config blocks deletion with ErrInUse.
 	live := newConfig("live")
 	newSandbox("sb-live", live.ID)
-	if err := s.DeleteAgentConfig(ctx, "project-1", live.ID); !errors.Is(err, store.ErrInUse) {
+	if err := s.DeleteHarnessConfig(ctx, "project-1", live.ID); !errors.Is(err, store.ErrInUse) {
 		t.Fatalf("delete with live sandbox = %v, want ErrInUse", err)
 	}
 
@@ -41,10 +41,10 @@ func TestDeleteAgentConfigSandboxReferences(t *testing.T) {
 	if err := db.Write.WithContext(ctx).Delete(&model.Sandbox{}, "id = ?", "sb-stale").Error; err != nil {
 		t.Fatalf("soft-delete sandbox: %v", err)
 	}
-	if err := s.DeleteAgentConfig(ctx, "project-1", stale.ID); err != nil {
+	if err := s.DeleteHarnessConfig(ctx, "project-1", stale.ID); err != nil {
 		t.Fatalf("delete with only a soft-deleted sandbox = %v, want success", err)
 	}
-	if _, err := s.GetAgentConfig(ctx, "project-1", stale.ID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.GetHarnessConfig(ctx, "project-1", stale.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("config should be gone, got %v", err)
 	}
 }

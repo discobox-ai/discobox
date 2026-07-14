@@ -126,9 +126,9 @@ func (s *Store) DeleteSecret(ctx context.Context, projectID, secretID string) er
 		if err := tx.Model(sec).Update("encrypted_value", nil).Error; err != nil {
 			return nil, err
 		}
-		// Drop agent-config bindings and standing grants that reference this secret
+		// Drop harness-config bindings and standing grants that reference this secret
 		// so nothing dangles.
-		if err := s.deleteAgentConfigSecretBindingsBySecret(tx, secretID); err != nil {
+		if err := s.deleteHarnessConfigSecretBindingsBySecret(tx, secretID); err != nil {
 			return nil, err
 		}
 		if err := s.deleteSecretGrantsBySecret(tx, secretID); err != nil {

@@ -8,7 +8,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/model"
 )
 
-func TestResolveAgentConfigIDDefaultsToProjectDefault(t *testing.T) {
+func TestResolveHarnessConfigIDDefaultsToProjectDefault(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newBindingFixture(t)
 	cfg := codexConfig(t, st)
@@ -16,8 +16,8 @@ func TestResolveAgentConfigIDDefaultsToProjectDefault(t *testing.T) {
 	unset := serverapi.OptString{}
 
 	// No explicit selector + a project default → the default is pinned.
-	project := &model.Project{ID: "project-1", DefaultAgentConfigID: cfg.ID}
-	got, err := svc.resolveAgentConfigID(ctx, project, unset, unset)
+	project := &model.Project{ID: "project-1", DefaultHarnessConfigID: cfg.ID}
+	got, err := svc.resolveHarnessConfigID(ctx, project, unset, unset)
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -25,19 +25,19 @@ func TestResolveAgentConfigIDDefaultsToProjectDefault(t *testing.T) {
 		t.Fatalf("resolved = %v, want %q", got, cfg.ID)
 	}
 
-	// No default set → unresolved (agent-less sandbox).
-	if got, err := svc.resolveAgentConfigID(ctx, &model.Project{ID: "project-1"}, unset, unset); err != nil || got != nil {
+	// No default set → unresolved (harness-less sandbox).
+	if got, err := svc.resolveHarnessConfigID(ctx, &model.Project{ID: "project-1"}, unset, unset); err != nil || got != nil {
 		t.Fatalf("no-default resolve = %v, %v; want nil, nil", got, err)
 	}
 
 	// Default points at a deleted config → unresolved, not an error.
-	stale := &model.Project{ID: "project-1", DefaultAgentConfigID: "does-not-exist"}
-	if got, err := svc.resolveAgentConfigID(ctx, stale, unset, unset); err != nil || got != nil {
+	stale := &model.Project{ID: "project-1", DefaultHarnessConfigID: "does-not-exist"}
+	if got, err := svc.resolveHarnessConfigID(ctx, stale, unset, unset); err != nil || got != nil {
 		t.Fatalf("stale-default resolve = %v, %v; want nil, nil", got, err)
 	}
 
 	// An explicit selector still wins over the default.
-	if got, err := svc.resolveAgentConfigID(ctx, project, unset, serverapi.NewOptString("codex")); err != nil || got == nil || *got != cfg.ID {
+	if got, err := svc.resolveHarnessConfigID(ctx, project, unset, serverapi.NewOptString("codex")); err != nil || got == nil || *got != cfg.ID {
 		t.Fatalf("slug resolve = %v, %v; want %q", got, err, cfg.ID)
 	}
 }

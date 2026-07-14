@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/obot-platform/discobox/server/internal/reconcile"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
+	"github.com/obot-platform/discobox/server/internal/reconcile"
 
 	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/server/internal/auth"
@@ -113,7 +113,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if provider.Disabled {
 		return nil, fmt.Errorf("provider instance disabled")
 	}
-	agentConfigID, err := s.resolveAgentConfigID(ctx, project, config.AgentConfigId, input.AgentName)
+	harnessConfigID, err := s.resolveHarnessConfigID(ctx, project, config.HarnessConfigId, input.HarnessName)
 	if err != nil {
 		return nil, err
 	}
@@ -145,46 +145,46 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		image = s.defaultImage
 	}
 	sandbox := &model.Sandbox{
-		ID:                       sandboxID,
-		ProjectID:                projectID,
-		CreatedByUserID:          userID,
-		ProviderInstanceID:       providerID,
-		AgentConfigID:            agentConfigID,
-		Name:                     config.Name,
-		Description:              services.OptStringPtr(config.Description),
-		ResourceLifecycle:        model.NewResourceLifecycle(model.SandboxCreateOperation),
-		AgentModel:               services.OptStringPtr(config.AgentModel),
-		AgentModelServiceTier:    services.OptStringPtr(config.AgentModelServiceTier),
-		AgentModelReasoningLevel: services.OptStringPtr(config.AgentModelReasoningLevel),
-		Prompt:                   config.Prompt,
-		Image:                    image,
-		Env:                      map[string]string(config.Env.Or(nil)),
-		Source:                   source,
-		SourceCodeReferences:     sourceCodeReferences,
-		UserName:                 userName,
-		UserUID:                  userUID,
-		UserGID:                  userGID,
-		HomeDirectory:            homeDirectory,
-		CPUVCPUs:                 config.CpuVcpus.Or(0),
-		MemoryBytes:              config.MemoryBytes.Or(0),
-		StorageBytes:             config.StorageBytes.Or(0),
+		ID:                   sandboxID,
+		ProjectID:            projectID,
+		CreatedByUserID:      userID,
+		ProviderInstanceID:   providerID,
+		HarnessConfigID:      harnessConfigID,
+		Name:                 config.Name,
+		Description:          services.OptStringPtr(config.Description),
+		ResourceLifecycle:    model.NewResourceLifecycle(model.SandboxCreateOperation),
+		Model:                services.OptStringPtr(config.Model),
+		ModelServiceTier:     services.OptStringPtr(config.ModelServiceTier),
+		ModelReasoningLevel:  services.OptStringPtr(config.ModelReasoningLevel),
+		Prompt:               config.Prompt,
+		Image:                image,
+		Env:                  map[string]string(config.Env.Or(nil)),
+		Source:               source,
+		SourceCodeReferences: sourceCodeReferences,
+		UserName:             userName,
+		UserUID:              userUID,
+		UserGID:              userGID,
+		HomeDirectory:        homeDirectory,
+		CPUVCPUs:             config.CpuVcpus.Or(0),
+		MemoryBytes:          config.MemoryBytes.Or(0),
+		StorageBytes:         config.StorageBytes.Or(0),
 	}
 	assignments, err := s.prepareSandboxSecrets(ctx, projectID, sandbox, config.Secrets)
 	if err != nil {
 		return nil, err
 	}
-	// Materialize the agent config's secret bindings and enforce its required
+	// Materialize the harness config's secret bindings and enforce its required
 	// secrets. Inline per-sandbox secrets take precedence over bindings.
-	if agentConfigID != nil && strings.TrimSpace(*agentConfigID) != "" {
+	if harnessConfigID != nil && strings.TrimSpace(*harnessConfigID) != "" {
 		inlineEnvs := make(map[string]struct{}, len(config.Secrets))
 		for _, in := range config.Secrets {
 			inlineEnvs[strings.TrimSpace(in.Env)] = struct{}{}
 		}
-		agentAssignments, err := s.applyAgentConfigSecrets(ctx, projectID, sandbox, strings.TrimSpace(*agentConfigID), inlineEnvs)
+		harnessAssignments, err := s.applyHarnessConfigSecrets(ctx, projectID, sandbox, strings.TrimSpace(*harnessConfigID), inlineEnvs)
 		if err != nil {
 			return nil, err
 		}
-		assignments = append(assignments, agentAssignments...)
+		assignments = append(assignments, harnessAssignments...)
 	}
 	created, err := s.createSandboxIntent(ctx, sandbox)
 	if err != nil {
@@ -198,42 +198,42 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	return created, nil
 }
 
-func (s *Service) resolveAgentConfigID(ctx context.Context, project *model.Project, agentConfigID, agentName services.OptString) (*string, error) {
+func (s *Service) resolveHarnessConfigID(ctx context.Context, project *model.Project, harnessConfigID, harnessName services.OptString) (*string, error) {
 	if project == nil {
 		return nil, fmt.Errorf("project is required")
 	}
-	if id, ok := agentConfigID.Get(); ok && id != "" {
-		config, err := s.store.GetAgentConfig(ctx, project.ID, id)
+	if id, ok := harnessConfigID.Get(); ok && id != "" {
+		config, err := s.store.GetHarnessConfig(ctx, project.ID, id)
 		if err != nil {
-			return nil, mapAPIError(err, "agent config not found")
+			return nil, mapAPIError(err, "harness config not found")
 		}
 		return &config.ID, nil
 	}
-	name, ok := agentName.Get()
+	name, ok := harnessName.Get()
 	if ok && strings.TrimSpace(name) != "" {
 		selector := strings.TrimSpace(name)
 		// Prefer the stable slug (e.g. "codex"), then fall back to the display name.
-		if config, err := s.store.GetAgentConfigBySlug(ctx, project.ID, selector); err == nil {
+		if config, err := s.store.GetHarnessConfigBySlug(ctx, project.ID, selector); err == nil {
 			return &config.ID, nil
 		} else if !errors.Is(err, store.ErrNotFound) {
-			return nil, mapAPIError(err, "agent config not found")
+			return nil, mapAPIError(err, "harness config not found")
 		}
-		config, err := s.store.GetAgentConfigByName(ctx, project.ID, selector)
+		config, err := s.store.GetHarnessConfigByName(ctx, project.ID, selector)
 		if err != nil {
-			return nil, mapAPIError(err, "agent config not found")
+			return nil, mapAPIError(err, "harness config not found")
 		}
 		return &config.ID, nil
 	}
 	// No explicit selector: pin the project default so the sandbox always carries a
-	// concrete agent config. Resolving the agent at create time is what makes its
+	// concrete harness config. Resolving the harness at create time is what makes its
 	// required-secret gate and binding materialization apply to `run .`.
-	if strings.TrimSpace(project.DefaultAgentConfigID) != "" {
-		config, err := s.store.GetAgentConfig(ctx, project.ID, project.DefaultAgentConfigID)
+	if strings.TrimSpace(project.DefaultHarnessConfigID) != "" {
+		config, err := s.store.GetHarnessConfig(ctx, project.ID, project.DefaultHarnessConfigID)
 		if err != nil {
 			if errors.Is(err, store.ErrNotFound) {
 				return nil, nil // default was deleted; leave the sandbox agent-less
 			}
-			return nil, mapAPIError(err, "agent config not found")
+			return nil, mapAPIError(err, "harness config not found")
 		}
 		return &config.ID, nil
 	}

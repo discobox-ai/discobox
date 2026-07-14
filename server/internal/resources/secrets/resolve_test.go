@@ -35,10 +35,10 @@ func newResolveFixture(t *testing.T) (*resourcesecrets.Service, *store.Store) {
 
 func createSandbox(t *testing.T, st *store.Store, sandboxID, workerID string) {
 	t.Helper()
-	createSandboxWithAgent(t, st, sandboxID, workerID, "")
+	createSandboxWithHarness(t, st, sandboxID, workerID, "")
 }
 
-func createSandboxWithAgent(t *testing.T, st *store.Store, sandboxID, workerID, agentConfigID string) {
+func createSandboxWithHarness(t *testing.T, st *store.Store, sandboxID, workerID, harnessConfigID string) {
 	t.Helper()
 	sb := &model.Sandbox{
 		ID:              sandboxID,
@@ -47,8 +47,8 @@ func createSandboxWithAgent(t *testing.T, st *store.Store, sandboxID, workerID, 
 		Name:            sandboxID,
 		WorkerID:        &workerID,
 	}
-	if agentConfigID != "" {
-		sb.AgentConfigID = &agentConfigID
+	if harnessConfigID != "" {
+		sb.HarnessConfigID = &harnessConfigID
 	}
 	if err := st.CreateSandbox(context.Background(), sb); err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -125,18 +125,18 @@ func TestResolveSandboxSecretProjectGrantReturnsValue(t *testing.T) {
 	}
 }
 
-func TestResolveSandboxSecretAgentConfigGrantReturnsValue(t *testing.T) {
+func TestResolveSandboxSecretHarnessConfigGrantReturnsValue(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newResolveFixture(t)
 
 	sec := mustSecret(t, st, "ac", "real-token")
-	if err := st.CreateAgentConfig(ctx, &model.AgentConfig{
+	if err := st.CreateHarnessConfig(ctx, &model.HarnessConfig{
 		ID: "ac-1", ProjectID: "project-1", Slug: "codex", Name: "Codex", RunCommand: []string{"codex"},
 	}); err != nil {
-		t.Fatalf("create agent config: %v", err)
+		t.Fatalf("create harness config: %v", err)
 	}
-	mustGrant(t, st, sec.ID, model.SecretGrantScopeAgentConfig, "ac-1")
-	createSandboxWithAgent(t, st, "sb-1", "worker-1", "ac-1")
+	mustGrant(t, st, sec.ID, model.SecretGrantScopeHarnessConfig, "ac-1")
+	createSandboxWithHarness(t, st, "sb-1", "worker-1", "ac-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-C")
 
 	res, err := svc.ResolveSandboxSecret(ctx, "worker-1", "sb-1", "SENTINEL-C", "api.example.com")

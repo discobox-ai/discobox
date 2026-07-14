@@ -237,19 +237,19 @@ func workerOptStringArray(values []string) workerclient.OptNilStringArray {
 	return workerclient.NewOptNilStringArray(values)
 }
 
-func workerAgentConfigFiles(files []model.AgentConfigFile) workerclient.OptNilAgentConfigFileArray {
+func workerHarnessConfigFiles(files []model.HarnessConfigFile) workerclient.OptNilHarnessConfigFileArray {
 	if len(files) == 0 {
-		return workerclient.OptNilAgentConfigFileArray{}
+		return workerclient.OptNilHarnessConfigFileArray{}
 	}
-	out := make([]workerapimodel.AgentConfigFile, 0, len(files))
+	out := make([]workerapimodel.HarnessConfigFile, 0, len(files))
 	for _, file := range files {
-		out = append(out, workerapimodel.AgentConfigFile{
+		out = append(out, workerapimodel.HarnessConfigFile{
 			Path:       file.Path,
 			Content:    file.Content,
 			CreateOnly: workerclient.NewOptBool(file.CreateOnly),
 		})
 	}
-	return workerclient.NewOptNilAgentConfigFileArray(out)
+	return workerclient.NewOptNilHarnessConfigFileArray(out)
 }
 
 func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) *workerapimodel.WorkerSandboxCreateRequest {
@@ -270,43 +270,43 @@ func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions
 	if opts.Description != nil {
 		config.Description = workerclient.NewOptString(*opts.Description)
 	}
-	if opts.AgentConfigID != nil {
-		config.AgentConfigId = workerclient.NewOptString(*opts.AgentConfigID)
+	if opts.HarnessConfigID != nil {
+		config.HarnessConfigId = workerclient.NewOptString(*opts.HarnessConfigID)
 	}
-	if opts.ResolvedAgentConfig != nil {
-		resolved := workerapimodel.ResolvedAgentConfig{
-			ID:              opts.ResolvedAgentConfig.ID,
-			Name:            opts.ResolvedAgentConfig.Name,
-			InstallCommand:  workerOptStringArray(opts.ResolvedAgentConfig.InstallCommand),
-			RunCommand:      opts.ResolvedAgentConfig.RunCommand,
-			RelaunchCommand: workerOptStringArray(opts.ResolvedAgentConfig.RelaunchCommand),
-			Files:           workerAgentConfigFiles(opts.ResolvedAgentConfig.Files),
+	if opts.ResolvedHarnessConfig != nil {
+		resolved := workerapimodel.ResolvedHarnessConfig{
+			ID:              opts.ResolvedHarnessConfig.ID,
+			Name:            opts.ResolvedHarnessConfig.Name,
+			InstallCommand:  workerOptStringArray(opts.ResolvedHarnessConfig.InstallCommand),
+			RunCommand:      opts.ResolvedHarnessConfig.RunCommand,
+			RelaunchCommand: workerOptStringArray(opts.ResolvedHarnessConfig.RelaunchCommand),
+			Files:           workerHarnessConfigFiles(opts.ResolvedHarnessConfig.Files),
 		}
-		out.ResolvedAgentConfig = workerclient.NewOptResolvedAgentConfig(resolved)
+		out.ResolvedHarnessConfig = workerclient.NewOptResolvedHarnessConfig(resolved)
 	}
-	if len(opts.AgentConfigs) > 0 {
-		configs := make([]workerapimodel.SandboxAgentConfig, 0, len(opts.AgentConfigs))
-		for _, config := range opts.AgentConfigs {
-			configs = append(configs, workerapimodel.SandboxAgentConfig{
+	if len(opts.HarnessConfigs) > 0 {
+		configs := make([]workerapimodel.SandboxHarnessConfig, 0, len(opts.HarnessConfigs))
+		for _, config := range opts.HarnessConfigs {
+			configs = append(configs, workerapimodel.SandboxHarnessConfig{
 				ID:              config.ID,
 				Name:            config.Name,
 				InstallCommand:  workerOptStringArray(config.InstallCommand),
 				RunCommand:      config.RunCommand,
 				RelaunchCommand: workerOptStringArray(config.RelaunchCommand),
 				IsDefault:       config.IsDefault,
-				Files:           workerAgentConfigFiles(config.Files),
+				Files:           workerHarnessConfigFiles(config.Files),
 			})
 		}
-		out.AgentConfigs = workerclient.NewOptNilSandboxAgentConfigArray(configs)
+		out.HarnessConfigs = workerclient.NewOptNilSandboxHarnessConfigArray(configs)
 	}
-	if opts.AgentModel != nil {
-		config.AgentModel = workerclient.NewOptString(*opts.AgentModel)
+	if opts.Model != nil {
+		config.Model = workerclient.NewOptString(*opts.Model)
 	}
-	if opts.AgentModelServiceTier != nil {
-		config.AgentModelServiceTier = workerclient.NewOptString(*opts.AgentModelServiceTier)
+	if opts.ModelServiceTier != nil {
+		config.ModelServiceTier = workerclient.NewOptString(*opts.ModelServiceTier)
 	}
-	if opts.AgentModelReasoningLevel != nil {
-		config.AgentModelReasoningLevel = workerclient.NewOptString(*opts.AgentModelReasoningLevel)
+	if opts.ModelReasoningLevel != nil {
+		config.ModelReasoningLevel = workerclient.NewOptString(*opts.ModelReasoningLevel)
 	}
 	if len(opts.Prompt) > 0 {
 		config.Prompt = opts.Prompt

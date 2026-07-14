@@ -44,20 +44,20 @@ func (a *App) completeProviders(cmd *cobra.Command, _ []string, toComplete strin
 	return a.completeProjectResource(cmd, toComplete, a.listProviderCompletions)
 }
 
-func (a *App) completeAgentConfigs(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	return a.completeProjectResource(cmd, toComplete, a.listAgentConfigCompletions)
+func (a *App) completeHarnessConfigs(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return a.completeProjectResource(cmd, toComplete, a.listHarnessConfigCompletions)
 }
 
-func (a *App) completeAgentConfigNames(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	return a.completeProjectResource(cmd, toComplete, a.listAgentConfigNameCompletions)
+func (a *App) completeHarnessConfigNames(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return a.completeProjectResource(cmd, toComplete, a.listHarnessConfigNameCompletions)
 }
 
-func (a *App) completeAgentDefinitions(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+func (a *App) completeHarnessDefinitions(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	client, err := a.apiClient()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
-	completions, err := a.listAgentDefinitionCompletions(commandContext(cmd), client)
+	completions, err := a.listHarnessDefinitionCompletions(commandContext(cmd), client)
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
@@ -152,49 +152,49 @@ func (a *App) listProviderCompletions(ctx context.Context, client *apiclientgen.
 	return completions, nil
 }
 
-func (a *App) listAgentConfigCompletions(ctx context.Context, client *apiclientgen.Client, projectID string) ([]string, error) {
-	res, err := client.ListAgentConfigs(ctx, apiclientgen.ListAgentConfigsParams{ProjectId: projectID})
+func (a *App) listHarnessConfigCompletions(ctx context.Context, client *apiclientgen.Client, projectID string) ([]string, error) {
+	res, err := client.ListHarnessConfigs(ctx, apiclientgen.ListHarnessConfigsParams{ProjectId: projectID})
 	if err != nil {
 		return nil, err
 	}
-	body, err := expectResponse[apimodel.ListAgentConfigsBody](res)
+	body, err := expectResponse[apimodel.ListHarnessConfigsBody](res)
 	if err != nil {
 		return nil, err
 	}
-	completions := make([]string, 0, len(body.GetAgentConfigs()))
-	for _, agent := range body.GetAgentConfigs() {
-		completions = append(completions, completionItem(agent.ID, completionDescription(agent.Name, strings.Join(agent.RunCommand, " "))))
+	completions := make([]string, 0, len(body.GetHarnessConfigs()))
+	for _, harness := range body.GetHarnessConfigs() {
+		completions = append(completions, completionItem(harness.ID, completionDescription(harness.Name, strings.Join(harness.RunCommand, " "))))
 	}
 	return completions, nil
 }
 
-func (a *App) listAgentConfigNameCompletions(ctx context.Context, client *apiclientgen.Client, projectID string) ([]string, error) {
-	res, err := client.ListAgentConfigs(ctx, apiclientgen.ListAgentConfigsParams{ProjectId: projectID})
+func (a *App) listHarnessConfigNameCompletions(ctx context.Context, client *apiclientgen.Client, projectID string) ([]string, error) {
+	res, err := client.ListHarnessConfigs(ctx, apiclientgen.ListHarnessConfigsParams{ProjectId: projectID})
 	if err != nil {
 		return nil, err
 	}
-	body, err := expectResponse[apimodel.ListAgentConfigsBody](res)
+	body, err := expectResponse[apimodel.ListHarnessConfigsBody](res)
 	if err != nil {
 		return nil, err
 	}
-	completions := make([]string, 0, len(body.GetAgentConfigs()))
-	for _, agent := range body.GetAgentConfigs() {
-		completions = append(completions, completionItem(agent.Name, completionDescription(agent.ID, strings.Join(agent.RunCommand, " "))))
+	completions := make([]string, 0, len(body.GetHarnessConfigs()))
+	for _, harness := range body.GetHarnessConfigs() {
+		completions = append(completions, completionItem(harness.Name, completionDescription(harness.ID, strings.Join(harness.RunCommand, " "))))
 	}
 	return completions, nil
 }
 
-func (a *App) listAgentDefinitionCompletions(ctx context.Context, client *apiclientgen.Client) ([]string, error) {
-	res, err := client.ListAgentConfigDefinitions(ctx)
+func (a *App) listHarnessDefinitionCompletions(ctx context.Context, client *apiclientgen.Client) ([]string, error) {
+	res, err := client.ListHarnessDefinitions(ctx)
 	if err != nil {
 		return nil, err
 	}
-	body, err := expectResponse[apimodel.ListAgentConfigDefinitionsBody](res)
+	body, err := expectResponse[apimodel.ListHarnessDefinitionsBody](res)
 	if err != nil {
 		return nil, err
 	}
-	completions := make([]string, 0, len(body.GetAgentConfigDefinitions())*2)
-	for _, definition := range body.GetAgentConfigDefinitions() {
+	completions := make([]string, 0, len(body.GetHarnessDefinitions())*2)
+	for _, definition := range body.GetHarnessDefinitions() {
 		completions = append(completions, completionItem(definition.ID, completionDescription(definition.Name, definition.Description.Or(""))))
 		if definition.Name != "" && !strings.EqualFold(definition.Name, definition.ID) {
 			completions = append(completions, completionItem(definition.Name, definition.ID))
@@ -226,7 +226,7 @@ func (a *App) listTerminalCompletions(ctx context.Context, _ *apiclientgen.Clien
 	}
 	completions := make([]string, 0, len(terminals))
 	for _, terminal := range terminals {
-		completions = append(completions, completionItem(terminal.ID, completionDescription(terminal.AgentId.Or(""), string(terminal.Status))))
+		completions = append(completions, completionItem(terminal.ID, completionDescription(terminal.HarnessId.Or(""), string(terminal.Status))))
 	}
 	return completions, nil
 }

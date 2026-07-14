@@ -5,15 +5,15 @@ package model
 
 import workeragentapi "github.com/obot-platform/discobox/worker-agent/api/gen"
 
-type AgentConfigFile = workeragentapi.AgentConfigFile
+type HarnessConfigFile = workeragentapi.HarnessConfigFile
 type ErrorDetail = workeragentapi.ErrorDetail
 type ErrorModel = workeragentapi.ErrorModel
 type GitSource = workeragentapi.GitSource
 type GitSourceCheckout = workeragentapi.GitSourceCheckout
 type GitSourceDestination = workeragentapi.GitSourceDestination
 type GitSourceWorkspace = workeragentapi.GitSourceWorkspace
-type ResolvedAgentConfig = workeragentapi.ResolvedAgentConfig
-type SandboxAgentConfig = workeragentapi.SandboxAgentConfig
+type ResolvedHarnessConfig = workeragentapi.ResolvedHarnessConfig
+type SandboxHarnessConfig = workeragentapi.SandboxHarnessConfig
 type SandboxConfig = workeragentapi.SandboxConfig
 type SandboxUpdateConfig = workeragentapi.SandboxUpdateConfig
 type SandboxUser = workeragentapi.SandboxUser

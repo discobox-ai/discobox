@@ -10,7 +10,7 @@ import (
 // ResolveUser resolves the effective login name and home directory for a run
 // user. Values set explicitly on user win; anything unset is filled in from the
 // OS user database (/etc/passwd) by name, then by UID. It is the single source
-// of truth for user/home resolution shared by process env defaults and agent
+// of truth for user/home resolution shared by process env defaults and harness
 // file installation, so the two cannot drift.
 //
 // An empty user yields empty results. A name that does not exist is an error; a

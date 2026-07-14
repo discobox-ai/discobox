@@ -14,12 +14,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/secret-requests/{requestId}/approve
 	ApproveSecretRequest(ctx context.Context, req *ApproveSecretRequestBody, params ApproveSecretRequestParams) (ApproveSecretRequestRes, error)
-	// AssignSandboxAgentSecrets implements assign-sandbox-agent-secrets operation.
+	// AssignSandboxHarnessSecrets implements assign-sandbox-harness-secrets operation.
 	//
-	// Assign an agent config's bound secrets to a running sandbox and return their sentinel env.
+	// Assign a harness config's bound secrets to a running sandbox and return their sentinel env.
 	//
-	// POST /projects/{projectId}/sandboxes/{sandboxId}/agent-secrets
-	AssignSandboxAgentSecrets(ctx context.Context, req *AssignSandboxAgentSecretsBody, params AssignSandboxAgentSecretsParams) (AssignSandboxAgentSecretsRes, error)
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/harness-secrets
+	AssignSandboxHarnessSecrets(ctx context.Context, req *AssignSandboxHarnessSecretsBody, params AssignSandboxHarnessSecretsParams) (AssignSandboxHarnessSecretsRes, error)
 	// AttachSandboxExec implements attach-sandbox-exec operation.
 	//
 	// Opens a websocket carrying the framed bidirectional stream for a running sandbox exec. Input
@@ -28,12 +28,12 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
 	AttachSandboxExec(ctx context.Context, params AttachSandboxExecParams) (AttachSandboxExecRes, error)
-	// CreateAgentConfig implements create-agent-config operation.
+	// CreateHarnessConfig implements create-harness-config operation.
 	//
-	// Create an agent config.
+	// Create a harness config.
 	//
-	// POST /projects/{projectId}/agent-configs
-	CreateAgentConfig(ctx context.Context, req *CreateAgentConfigBody, params CreateAgentConfigParams) (CreateAgentConfigRes, error)
+	// POST /projects/{projectId}/harness-configs
+	CreateHarnessConfig(ctx context.Context, req *CreateHarnessConfigBody, params CreateHarnessConfigParams) (CreateHarnessConfigRes, error)
 	// CreateSandbox implements create-sandbox operation.
 	//
 	// Create a sandbox.
@@ -70,18 +70,18 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/secret-requests
 	CreateSecretRequest(ctx context.Context, req *CreateSecretRequestBody, params CreateSecretRequestParams) (CreateSecretRequestRes, error)
-	// DeleteAgentConfig implements delete-agent-config operation.
+	// DeleteHarnessConfig implements delete-harness-config operation.
 	//
-	// Delete an agent config.
+	// Delete a harness config.
 	//
-	// DELETE /projects/{projectId}/agent-configs/{agentConfigId}
-	DeleteAgentConfig(ctx context.Context, params DeleteAgentConfigParams) (DeleteAgentConfigRes, error)
-	// DeleteAgentConfigSecretBinding implements delete-agent-config-secret-binding operation.
+	// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}
+	DeleteHarnessConfig(ctx context.Context, params DeleteHarnessConfigParams) (DeleteHarnessConfigRes, error)
+	// DeleteHarnessConfigSecretBinding implements delete-harness-config-secret-binding operation.
 	//
-	// Remove an agent config secret binding.
+	// Remove a harness config secret binding.
 	//
-	// DELETE /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}
-	DeleteAgentConfigSecretBinding(ctx context.Context, params DeleteAgentConfigSecretBindingParams) (DeleteAgentConfigSecretBindingRes, error)
+	// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
+	DeleteHarnessConfigSecretBinding(ctx context.Context, params DeleteHarnessConfigSecretBindingParams) (DeleteHarnessConfigSecretBindingRes, error)
 	// DeleteSandbox implements delete-sandbox operation.
 	//
 	// Delete a sandbox.
@@ -118,18 +118,18 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/jobs/{jobId}/force
 	ForceJob(ctx context.Context, params ForceJobParams) (ForceJobRes, error)
-	// GetAgentConfig implements get-agent-config operation.
+	// GetHarnessConfig implements get-harness-config operation.
 	//
-	// Get an agent config.
+	// Get a harness config.
 	//
-	// GET /projects/{projectId}/agent-configs/{agentConfigId}
-	GetAgentConfig(ctx context.Context, params GetAgentConfigParams) (GetAgentConfigRes, error)
-	// GetAgentConfigDefinition implements get-agent-config-definition operation.
+	// GET /projects/{projectId}/harness-configs/{harnessConfigId}
+	GetHarnessConfig(ctx context.Context, params GetHarnessConfigParams) (GetHarnessConfigRes, error)
+	// GetHarnessDefinition implements get-harness-definition operation.
 	//
-	// Get an agent config definition.
+	// Get a harness config definition.
 	//
-	// GET /agent-config-definitions/{definitionId}
-	GetAgentConfigDefinition(ctx context.Context, params GetAgentConfigDefinitionParams) (GetAgentConfigDefinitionRes, error)
+	// GET /harness-definitions/{definitionId}
+	GetHarnessDefinition(ctx context.Context, params GetHarnessDefinitionParams) (GetHarnessDefinitionRes, error)
 	// GetJob implements get-job operation.
 	//
 	// Get a job.
@@ -178,30 +178,30 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/secret-requests/{requestId}
 	GetSecretRequest(ctx context.Context, params GetSecretRequestParams) (GetSecretRequestRes, error)
-	// ListAgentConfigDefinitions implements list-agent-config-definitions operation.
+	// ListHarnessConfigSecretBindings implements list-harness-config-secret-bindings operation.
 	//
-	// List agent config definitions.
+	// List harness config secret bindings.
 	//
-	// GET /agent-config-definitions
-	ListAgentConfigDefinitions(ctx context.Context) (ListAgentConfigDefinitionsRes, error)
-	// ListAgentConfigSecretBindings implements list-agent-config-secret-bindings operation.
+	// GET /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings
+	ListHarnessConfigSecretBindings(ctx context.Context, params ListHarnessConfigSecretBindingsParams) (ListHarnessConfigSecretBindingsRes, error)
+	// ListHarnessConfigs implements list-harness-configs operation.
 	//
-	// List agent config secret bindings.
+	// List harness configs.
 	//
-	// GET /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings
-	ListAgentConfigSecretBindings(ctx context.Context, params ListAgentConfigSecretBindingsParams) (ListAgentConfigSecretBindingsRes, error)
-	// ListAgentConfigs implements list-agent-configs operation.
+	// GET /projects/{projectId}/harness-configs
+	ListHarnessConfigs(ctx context.Context, params ListHarnessConfigsParams) (ListHarnessConfigsRes, error)
+	// ListHarnessDefinitions implements list-harness-definitions operation.
 	//
-	// List agent configs.
+	// List harness config definitions.
 	//
-	// GET /projects/{projectId}/agent-configs
-	ListAgentConfigs(ctx context.Context, params ListAgentConfigsParams) (ListAgentConfigsRes, error)
-	// ListAgentHooks implements list-agent-hooks operation.
+	// GET /harness-definitions
+	ListHarnessDefinitions(ctx context.Context) (ListHarnessDefinitionsRes, error)
+	// ListHarnessHooks implements list-harness-hooks operation.
 	//
-	// List recent sandbox agent hook payload logs.
+	// List recent sandbox harness hook payload logs.
 	//
-	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks
-	ListAgentHooks(ctx context.Context, params ListAgentHooksParams) (ListAgentHooksRes, error)
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks
+	ListHarnessHooks(ctx context.Context, params ListHarnessHooksParams) (ListHarnessHooksRes, error)
 	// ListJobs implements list-jobs operation.
 	//
 	// List jobs for a project.
@@ -316,18 +316,18 @@ type Handler interface {
 	//
 	// DELETE /projects/{projectId}/secret-grants/{grantId}
 	RevokeSecretGrant(ctx context.Context, params RevokeSecretGrantParams) (RevokeSecretGrantRes, error)
-	// SetAgentConfigSecretBinding implements set-agent-config-secret-binding operation.
+	// SetDefaultHarnessConfig implements set-default-harness-config operation.
 	//
-	// Bind an agent config environment variable to a secret.
+	// Set the project default harness config.
 	//
-	// PUT /projects/{projectId}/agent-configs/{agentConfigId}/secret-bindings/{envName}
-	SetAgentConfigSecretBinding(ctx context.Context, req *SetAgentConfigSecretBindingBody, params SetAgentConfigSecretBindingParams) (SetAgentConfigSecretBindingRes, error)
-	// SetDefaultAgentConfig implements set-default-agent-config operation.
+	// PUT /projects/{projectId}/harness-configs/{harnessConfigId}/default
+	SetDefaultHarnessConfig(ctx context.Context, params SetDefaultHarnessConfigParams) (SetDefaultHarnessConfigRes, error)
+	// SetHarnessConfigSecretBinding implements set-harness-config-secret-binding operation.
 	//
-	// Set the project default agent config.
+	// Bind a harness config environment variable to a secret.
 	//
-	// PUT /projects/{projectId}/agent-configs/{agentConfigId}/default
-	SetDefaultAgentConfig(ctx context.Context, params SetDefaultAgentConfigParams) (SetDefaultAgentConfigRes, error)
+	// PUT /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
+	SetHarnessConfigSecretBinding(ctx context.Context, req *SetHarnessConfigSecretBindingBody, params SetHarnessConfigSecretBindingParams) (SetHarnessConfigSecretBindingRes, error)
 	// StartSandbox implements start-sandbox operation.
 	//
 	// Start a sandbox.
@@ -352,12 +352,12 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream
 	StreamSandboxExecResources(ctx context.Context, params StreamSandboxExecResourcesParams) (StreamSandboxExecResourcesRes, error)
-	// UpdateAgentConfig implements update-agent-config operation.
+	// UpdateHarnessConfig implements update-harness-config operation.
 	//
-	// Update an agent config.
+	// Update a harness config.
 	//
-	// PATCH /projects/{projectId}/agent-configs/{agentConfigId}
-	UpdateAgentConfig(ctx context.Context, req *UpdateAgentConfigBody, params UpdateAgentConfigParams) (UpdateAgentConfigRes, error)
+	// PATCH /projects/{projectId}/harness-configs/{harnessConfigId}
+	UpdateHarnessConfig(ctx context.Context, req *UpdateHarnessConfigBody, params UpdateHarnessConfigParams) (UpdateHarnessConfigRes, error)
 	// UpdateSandbox implements update-sandbox operation.
 	//
 	// Update a sandbox.

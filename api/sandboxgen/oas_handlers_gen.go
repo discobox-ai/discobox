@@ -856,24 +856,24 @@ func (s *Server) handleGetSandboxExecResourcesRequest(args [3]string, argsEscape
 	}
 }
 
-// handleListAgentHooksRequest handles list-agent-hooks operation.
+// handleListHarnessHooksRequest handles list-harness-hooks operation.
 //
-// List recent sandbox agent hook payload logs.
+// List recent sandbox harness hook payload logs.
 //
-// GET /api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks
-func (s *Server) handleListAgentHooksRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks
+func (s *Server) handleListHarnessHooksRequest(args [2]string, argsEscaped bool, w http.ResponseWriter, r *http.Request) {
 	statusWriter := &codeRecorder{ResponseWriter: w}
 	w = statusWriter
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("list-agent-hooks"),
+		otelogen.OperationID("list-harness-hooks"),
 		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/agent-hooks"),
+		semconv.HTTPRouteKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks"),
 	}
 	// Add attributes from config.
 	otelAttrs = append(otelAttrs, s.cfg.Attributes...)
 
 	// Start a span for this request.
-	ctx, span := s.cfg.Tracer.Start(r.Context(), ListAgentHooksOperation,
+	ctx, span := s.cfg.Tracer.Start(r.Context(), ListHarnessHooksOperation,
 		trace.WithAttributes(otelAttrs...),
 		serverSpanKind,
 	)
@@ -928,11 +928,11 @@ func (s *Server) handleListAgentHooksRequest(args [2]string, argsEscaped bool, w
 		}
 		err          error
 		opErrContext = ogenerrors.OperationContext{
-			Name: ListAgentHooksOperation,
-			ID:   "list-agent-hooks",
+			Name: ListHarnessHooksOperation,
+			ID:   "list-harness-hooks",
 		}
 	)
-	params, err := decodeListAgentHooksParams(args, argsEscaped, r)
+	params, err := decodeListHarnessHooksParams(args, argsEscaped, r)
 	if err != nil {
 		err = &ogenerrors.DecodeParamsError{
 			OperationContext: opErrContext,
@@ -945,13 +945,13 @@ func (s *Server) handleListAgentHooksRequest(args [2]string, argsEscaped bool, w
 
 	var rawBody []byte
 
-	var response *AgentHookLogsResponse
+	var response *HarnessHookLogsResponse
 	if m := s.cfg.Middleware; m != nil {
 		mreq := middleware.Request{
 			Context:          ctx,
-			OperationName:    ListAgentHooksOperation,
-			OperationSummary: "List recent sandbox agent hook payload logs.",
-			OperationID:      "list-agent-hooks",
+			OperationName:    ListHarnessHooksOperation,
+			OperationSummary: "List recent sandbox harness hook payload logs.",
+			OperationID:      "list-harness-hooks",
 			Body:             nil,
 			RawBody:          rawBody,
 			Params: middleware.Parameters{
@@ -977,8 +977,8 @@ func (s *Server) handleListAgentHooksRequest(args [2]string, argsEscaped bool, w
 
 		type (
 			Request  = struct{}
-			Params   = ListAgentHooksParams
-			Response = *AgentHookLogsResponse
+			Params   = ListHarnessHooksParams
+			Response = *HarnessHookLogsResponse
 		)
 		response, err = middleware.HookMiddleware[
 			Request,
@@ -987,14 +987,14 @@ func (s *Server) handleListAgentHooksRequest(args [2]string, argsEscaped bool, w
 		](
 			m,
 			mreq,
-			unpackListAgentHooksParams,
+			unpackListHarnessHooksParams,
 			func(ctx context.Context, request Request, params Params) (response Response, err error) {
-				response, err = s.h.ListAgentHooks(ctx, params)
+				response, err = s.h.ListHarnessHooks(ctx, params)
 				return response, err
 			},
 		)
 	} else {
-		response, err = s.h.ListAgentHooks(ctx, params)
+		response, err = s.h.ListHarnessHooks(ctx, params)
 	}
 	if err != nil {
 		if errRes, ok := errors.Into[*ErrorResponseStatusCode](err); ok {
@@ -1013,7 +1013,7 @@ func (s *Server) handleListAgentHooksRequest(args [2]string, argsEscaped bool, w
 		return
 	}
 
-	if err := encodeListAgentHooksResponse(response, w, span); err != nil {
+	if err := encodeListHarnessHooksResponse(response, w, span); err != nil {
 		defer recordError("EncodeResponse", err)
 		if !errors.Is(err, ht.ErrInternalServerErrorResponse) {
 			s.cfg.ErrorHandler(ctx, w, r, err)

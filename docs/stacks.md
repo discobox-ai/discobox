@@ -26,7 +26,7 @@ flowchart LR
     worker --> net["per-session private network"]
     net --> svcA["service: api"]
     net --> svcB["service: db"]
-    net --> agent["service: agent"]
+    net --> harness["service: harness"]
 ```
 
 ## Provider layering
@@ -84,7 +84,7 @@ Three persisted, control-plane-owned resources.
 | `StackSession` | yes (lightweight) | minted on demand; reaped by the worker-agent (idle), reflected in the control plane | `externalKey -> internalID` mapping, `OwnerUserID`, plan version, worker placement, status. Parent of the session's sandboxes. |
 | session sandbox | yes (`Sandbox` row) | session ensure/reap (imperative), **not** the reconcile pipeline | One per service. Adds `StackID`, `SessionID`, `Service` columns to `Sandbox`. |
 
-Session sandboxes are real `Sandbox` rows so that list, exec (including agent
+Session sandboxes are real `Sandbox` rows so that list, exec (including harness
 terminals), and the HTTP port proxy work unchanged — they all key on a persisted, project-scoped
 row and resolve the worker via `Sandbox.WorkerID`. What differs from a normal
 sandbox:
@@ -164,7 +164,7 @@ directly as the internal handle:
   collide or guess each other's sessions.
 - The **internal session id** is minted by the provider and returned to the
   control plane. It encodes/resolves to placement (which worker), enabling sticky
-  routing. It is the non-secret id surfaced to the agent as `{session.id}`.
+  routing. It is the non-secret id surfaced to the harness as `{session.id}`.
 - The control plane stores `externalKey -> internalID -> workerID` on the
   `StackSession` row. Clients only ever see the external key (the opaque cookie
   value for HTTP ingress).
@@ -174,7 +174,7 @@ directly as the internal handle:
 Deploy compiles a `Stack` into a frozen `ResolvedPlan`, reusing existing
 resolve-up-front patterns in the codebase:
 
-- flatten agent-config layered definitions into concrete argv/files;
+- flatten harness-config layered definitions into concrete argv/files;
 - pin every `GitSource` to an immutable commit (no live remote resolution at
   session time);
 - resolve images to digests;
@@ -337,7 +337,7 @@ flowchart TD
 
 **Request rewriting (path + body).** The ingress owns the session via an opaque
 cookie, so it must inject identity into the upstream request in whatever shape the
-agent framework expects. ADK (verified) uses two conventions at once:
+harness framework expects. ADK (verified) uses two conventions at once:
 
 - path-based session management: `POST /apps/{app}/users/{user}/sessions/{session}`
   — all ids in the path;
@@ -376,7 +376,7 @@ The authenticated `auth.Principal` (see `server/internal/auth/context.go`) carri
 only `UserID`, so `{user.id}` is free but richer `{user.*}` fields require loading
 the `User` row. Resolve the owning user **once at session mint** and snapshot the
 needed identity fields onto `StackSession`, so per-request rewrite does no extra DB
-read and the identity handed to the agent stays stable across the session even if
+read and the identity handed to the harness stays stable across the session even if
 the user's profile later changes.
 
 Rewrite behavior:
@@ -413,7 +413,7 @@ is set from `Principal.UserID` at mint time, and the owning user's identity fiel
 are snapshotted onto the session to back the `{user.*}` rewrite variables. On cookie
 reuse the session's `OwnerUserID` must match the current principal; a mismatch is
 treated as no cookie (mint fresh), so a leaked cookie cannot be used by a different
-project member. See O6 for which `{user.*}` field a given agent wants and for the
+project member. See O6 for which `{user.*}` field a given harness wants and for the
 unauthenticated public-traffic case.
 
 ## Interface additions
@@ -534,7 +534,7 @@ block the first cut.
   isolation requirement but cap out per host. Decide the per-worker session cap and
   whether a future mode (shared network + policy, or userns/netns tricks) is needed
   for high session density.
-- **O3 — public app traffic (only if needed).** Settled for control-plane / agent
+- **O3 — public app traffic (only if needed).** Settled for control-plane / harness
   traffic: path params address stack+service and a cookie carries the session (see
   [HTTP ingress tier](#http-ingress-tier-first-implementation)). It becomes an open
   question only if a stack must serve raw public app traffic (an end user hitting an
@@ -545,9 +545,9 @@ block the first cut.
   vs. short (per-request, seconds/minutes) changes whether to warm-pool sessions or
   boot-on-first-request. Deploy-time staging helps both; warm session pools only
   pay off for short-lived, high-churn sessions.
-- **O6 — user identity exposed to the agent.** Which `{user.*}` field a given agent
+- **O6 — user identity exposed to the harness.** Which `{user.*}` field a given harness
   keys on (`{user.id}` vs `{user.email}` vs a per-stack derived id that avoids
-  leaking the global user id into the agent's own session store). Plus: what
+  leaking the global user id into the harness's own session store). Plus: what
   ownership means if a stack is ever served as unauthenticated public traffic (O3),
   where there is no discobox principal to own the session.
 - **O7 — rewrite rule matching.** How ingress rules select per incoming route:

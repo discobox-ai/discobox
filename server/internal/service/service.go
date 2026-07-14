@@ -10,8 +10,8 @@ import (
 	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	eventbroker "github.com/obot-platform/discobox/server/internal/events"
 	"github.com/obot-platform/discobox/server/internal/reconcile"
-	"github.com/obot-platform/discobox/server/internal/resources/agentconfigs"
 	resourceevents "github.com/obot-platform/discobox/server/internal/resources/events"
+	"github.com/obot-platform/discobox/server/internal/resources/harnessconfigs"
 	resourcejobs "github.com/obot-platform/discobox/server/internal/resources/jobs"
 	"github.com/obot-platform/discobox/server/internal/resources/projects"
 	"github.com/obot-platform/discobox/server/internal/resources/providers"
@@ -31,7 +31,7 @@ const (
 // Service implements the API service interfaces using the database store.
 type Service struct {
 	services.ProjectService
-	services.AgentConfigService
+	services.HarnessConfigService
 	*sandboxes.Service
 	services.SandboxProviderInstanceService
 	services.WorkerService
@@ -64,7 +64,7 @@ func New(store *store.Store, engine *reconcile.Engine, jobManagerOptions JobMana
 	jobsService := resourcejobs.NewService(store, engine)
 	return &Service{
 		ProjectService:                 projects.NewService(store),
-		AgentConfigService:             agentconfigs.NewService(store),
+		HarnessConfigService:           harnessconfigs.NewService(store),
 		Service:                        sandboxService,
 		SandboxProviderInstanceService: providerService,
 		WorkerService:                  workers.NewService(store, workerManager),

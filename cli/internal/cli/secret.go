@@ -116,8 +116,8 @@ func (a *App) newSecretGrantCreateCommand() *cobra.Command {
 		return a.writeSecretGrant(cmd, grant)
 	}}
 	cmd.Flags().StringVar(&secretRef, "secret", "", "Secret ID to grant")
-	cmd.Flags().StringVar(&scope, "scope", "", "Grant scope: sandbox, agentConfig, or project")
-	cmd.Flags().StringVar(&scopeKey, "scope-key", "", "Sandbox ID or agent config ID the scope resolves against (defaults to project ID for project scope)")
+	cmd.Flags().StringVar(&scope, "scope", "", "Grant scope: sandbox, harnessConfig, or project")
+	cmd.Flags().StringVar(&scopeKey, "scope-key", "", "Sandbox ID or harness config ID the scope resolves against (defaults to project ID for project scope)")
 	cmd.Flags().StringVar(&host, "host", "", "Limit the grant to a host; defaults to the secret's host")
 	cmd.Flags().Int64Var(&ttl, "grant-ttl", 0, "Grant duration in seconds; 0 never expires")
 	return cmd
@@ -150,12 +150,12 @@ func createSecretGrantBodyScope(value string) (apiclientgen.CreateSecretGrantBod
 	switch strings.TrimSpace(value) {
 	case "sandbox":
 		return apiclientgen.CreateSecretGrantBodyScopeSandbox, nil
-	case "agentConfig", "agent-config":
-		return apiclientgen.CreateSecretGrantBodyScopeAgentConfig, nil
+	case "harnessConfig", "harness-config":
+		return apiclientgen.CreateSecretGrantBodyScopeHarnessConfig, nil
 	case "project":
 		return apiclientgen.CreateSecretGrantBodyScopeProject, nil
 	default:
-		return "", fmt.Errorf("grant scope must be sandbox, agentConfig, or project")
+		return "", fmt.Errorf("grant scope must be sandbox, harnessConfig, or project")
 	}
 }
 
@@ -447,7 +447,7 @@ func (a *App) newSecretRequestApproveCommand() *cobra.Command {
 		return a.writeSecretRequest(cmd, request)
 	}}
 	cmd.Flags().StringVar(&secretID, "secret-id", "", "Secret ID to grant")
-	cmd.Flags().StringVar(&scope, "scope", "", "Grant scope: sandbox, agentConfig, or project (defaults to sandbox for sandbox requests, else project)")
+	cmd.Flags().StringVar(&scope, "scope", "", "Grant scope: sandbox, harnessConfig, or project (defaults to sandbox for sandbox requests, else project)")
 	cmd.Flags().Int64Var(&ttl, "grant-ttl", 0, "Grant duration in seconds")
 	return cmd
 }
@@ -456,12 +456,12 @@ func approveSecretRequestBodyScope(value string) (apiclientgen.ApproveSecretRequ
 	switch strings.TrimSpace(value) {
 	case "sandbox":
 		return apiclientgen.ApproveSecretRequestBodyScopeSandbox, nil
-	case "agentConfig", "agent-config":
-		return apiclientgen.ApproveSecretRequestBodyScopeAgentConfig, nil
+	case "harnessConfig", "harness-config":
+		return apiclientgen.ApproveSecretRequestBodyScopeHarnessConfig, nil
 	case "project":
 		return apiclientgen.ApproveSecretRequestBodyScopeProject, nil
 	default:
-		return "", fmt.Errorf("grant scope must be sandbox, agentConfig, or project")
+		return "", fmt.Errorf("grant scope must be sandbox, harnessConfig, or project")
 	}
 }
 

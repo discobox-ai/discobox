@@ -60,7 +60,7 @@ func TestProviderFlagCompletionListsProviders(t *testing.T) {
 
 func TestTerminalCompletionUsesSandboxScope(t *testing.T) {
 	server := completionServer(t, map[string]string{
-		"/api/projects/project-1/sandboxes/sandbox-1/execs": `{"execs":[{"id":"terminal-1","agentId":"codex","status":"running","command":["codex"],"workdir":"/workspace","tty":true,"createdAt":"2026-01-01T00:00:00Z"}]}`,
+		"/api/projects/project-1/sandboxes/sandbox-1/execs": `{"execs":[{"id":"terminal-1","harnessId":"codex","status":"running","command":["codex"],"workdir":"/workspace","tty":true,"createdAt":"2026-01-01T00:00:00Z"}]}`,
 	})
 	root := NewRootCommand()
 	setFlag(t, root, "server", server.URL)

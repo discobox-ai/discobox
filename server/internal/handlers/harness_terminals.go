@@ -7,7 +7,7 @@ import (
 	serverapi "github.com/obot-platform/discobox/api/gen"
 )
 
-// Sandbox exec (and agent-terminal) operations are served inside the sandbox and
+// Sandbox exec (and harness-terminal) operations are served inside the sandbox and
 // reverse-proxied by the control plane, so the generated control-plane handler
 // only needs not-implemented stubs to satisfy the interface.
 
@@ -31,7 +31,7 @@ func (h *Handler) GetSandboxExecResources(context.Context, serverapi.GetSandboxE
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
-func (h *Handler) ListAgentHooks(context.Context, serverapi.ListAgentHooksParams) (serverapi.ListAgentHooksRes, error) {
+func (h *Handler) ListHarnessHooks(context.Context, serverapi.ListHarnessHooksParams) (serverapi.ListHarnessHooksRes, error) {
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 

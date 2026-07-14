@@ -287,7 +287,7 @@ func (s *Service) DenySecretRequest(ctx context.Context, projectID, requestID st
 
 // ResolveSandboxSecret resolves a sentinel injected into a sandbox. It maps the
 // sentinel to its assignment and looks for a live grant covering the sandbox at
-// any scope (its own ID, its agent config, or the project). A match returns the
+// any scope (its own ID, its harness config, or the project). A match returns the
 // decrypted value; otherwise a single pending request is created (or reused) and
 // the proxy leaves the sentinel in place until a grant exists.
 func (s *Service) ResolveSandboxSecret(ctx context.Context, workerID, sandboxID, sentinel, host string) (*model.SandboxSecretResolution, error) {
@@ -313,8 +313,8 @@ func (s *Service) ResolveSandboxSecret(ctx context.Context, workerID, sandboxID,
 		{Scope: model.SecretGrantScopeSandbox, ScopeKey: sandbox.ID},
 		{Scope: model.SecretGrantScopeProject, ScopeKey: assignment.ProjectID},
 	}
-	if sandbox.AgentConfigID != nil && strings.TrimSpace(*sandbox.AgentConfigID) != "" {
-		scopes = append(scopes, store.GrantScope{Scope: model.SecretGrantScopeAgentConfig, ScopeKey: strings.TrimSpace(*sandbox.AgentConfigID)})
+	if sandbox.HarnessConfigID != nil && strings.TrimSpace(*sandbox.HarnessConfigID) != "" {
+		scopes = append(scopes, store.GrantScope{Scope: model.SecretGrantScopeHarnessConfig, ScopeKey: strings.TrimSpace(*sandbox.HarnessConfigID)})
 	}
 	grant, err := s.store.FindLiveGrant(ctx, assignment.ProjectID, assignment.SecretID, host, scopes)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -414,20 +414,20 @@ func (s *Service) grantScopeKey(ctx context.Context, projectID, sandboxID, scope
 			return "", apperrors.NewStatusError(http.StatusBadRequest, "sandbox scope requires a sandbox-originated request")
 		}
 		return sandboxID, nil
-	case model.SecretGrantScopeAgentConfig:
+	case model.SecretGrantScopeHarnessConfig:
 		if sandboxID == "" {
-			return "", apperrors.NewStatusError(http.StatusBadRequest, "agentConfig scope requires a sandbox-originated request")
+			return "", apperrors.NewStatusError(http.StatusBadRequest, "harnessConfig scope requires a sandbox-originated request")
 		}
 		sandbox, err := s.store.GetSandbox(ctx, projectID, sandboxID)
 		if err != nil {
 			return "", apiError(err, "sandbox not found")
 		}
-		if sandbox.AgentConfigID == nil || strings.TrimSpace(*sandbox.AgentConfigID) == "" {
-			return "", apperrors.NewStatusError(http.StatusBadRequest, "sandbox has no agent config to scope the grant to")
+		if sandbox.HarnessConfigID == nil || strings.TrimSpace(*sandbox.HarnessConfigID) == "" {
+			return "", apperrors.NewStatusError(http.StatusBadRequest, "sandbox has no harness config to scope the grant to")
 		}
-		return strings.TrimSpace(*sandbox.AgentConfigID), nil
+		return strings.TrimSpace(*sandbox.HarnessConfigID), nil
 	default:
-		return "", apperrors.NewStatusError(http.StatusBadRequest, "grant scope must be sandbox, agentConfig, or project")
+		return "", apperrors.NewStatusError(http.StatusBadRequest, "grant scope must be sandbox, harnessConfig, or project")
 	}
 }
 
@@ -457,9 +457,9 @@ func (s *Service) mintGrant(ctx context.Context, projectID, secretID, scope, sco
 
 func validateGrantScope(scope, scopeKey string) error {
 	switch scope {
-	case model.SecretGrantScopeSandbox, model.SecretGrantScopeAgentConfig, model.SecretGrantScopeProject:
+	case model.SecretGrantScopeSandbox, model.SecretGrantScopeHarnessConfig, model.SecretGrantScopeProject:
 	default:
-		return apperrors.NewStatusError(http.StatusBadRequest, "grant scope must be sandbox, agentConfig, or project")
+		return apperrors.NewStatusError(http.StatusBadRequest, "grant scope must be sandbox, harnessConfig, or project")
 	}
 	if scopeKey == "" {
 		return apperrors.NewStatusError(http.StatusBadRequest, "grant scopeKey is required")

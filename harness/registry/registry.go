@@ -25,7 +25,7 @@ func DefaultDrivers() []harness.Driver {
 	}
 }
 
-// Definitions returns the built-in agent-config template for every known
+// Definitions returns the built-in harness-config template for every known
 // harness, in default-driver order.
 func Definitions() []harness.Definition {
 	drivers := DefaultDrivers()
@@ -58,13 +58,13 @@ func (i Installer) InstallHooks(ctx context.Context, req harness.HookInstallRequ
 	return nil
 }
 
-// DriverForAgent selects the harness whose coding-agent CLI a terminal runs,
-// identified by the agent's run binary (argv[0]) matched exactly against each
-// driver's own definition. The agent's config ID is a random, project-scoped
+// DriverForHarness selects the driver for the harness a terminal runs,
+// identified by the harness's run binary (argv[0]) matched exactly against each
+// driver's own definition. The harness's config ID is a random, project-scoped
 // identifier, not a harness identifier, so it is not used here. Falls back to
 // all drivers when the binary is unknown.
-func DriverForAgent(agent harness.Agent) []harness.Driver {
-	binary := commandBinary(agent.Command)
+func DriverForHarness(h harness.Harness) []harness.Driver {
+	binary := commandBinary(h.Command)
 	if binary == "" {
 		return DefaultDrivers()
 	}
@@ -77,7 +77,7 @@ func DriverForAgent(agent harness.Agent) []harness.Driver {
 }
 
 // commandBinary returns the lowercase base name of a command's executable
-// (argv[0]), which identifies the coding-agent CLI a terminal runs.
+// (argv[0]), which identifies the harness CLI a terminal runs.
 func commandBinary(command []string) string {
 	if len(command) == 0 {
 		return ""

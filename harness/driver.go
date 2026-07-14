@@ -1,4 +1,4 @@
-// Package harness installs coding-agent hook integrations for sandbox terminals.
+// Package harness installs harness hook integrations for sandbox terminals.
 package harness
 
 import (
@@ -17,17 +17,17 @@ const (
 	ManagedFileMode = 0o644
 )
 
-type Agent struct {
+type Harness struct {
 	ID      string
 	Name    string
 	Command []string
 }
 
-// Definition is a harness's built-in agent-config template: how to install and
-// run the coding agent, how to resume its previous session on a restart, and any
-// files to seed into the agent's home directory. It is the single source of
-// truth for an agent's harness-specific defaults; the control plane converts it
-// into a project-scoped agent config.
+// Definition is a harness's built-in harness-config template: how to install and
+// run the harness, how to resume its previous session on a restart, and any
+// files to seed into the harness's home directory. It is the single source of
+// truth for a harness's harness-specific defaults; the control plane converts it
+// into a project-scoped harness config.
 type Definition struct {
 	ID              string
 	Name            string
@@ -39,7 +39,7 @@ type Definition struct {
 	Secrets         []Secret
 }
 
-// File is a file to write into the agent's home directory when the agent is
+// File is a file to write into the harness's home directory when the harness is
 // installed.
 type File struct {
 	Path       string
@@ -47,9 +47,9 @@ type File struct {
 	CreateOnly bool
 }
 
-// Secret declares an environment variable the agent expects, and whether it is
-// required for the agent to run. Optional secrets are used when present but do
-// not block the agent from launching.
+// Secret declares an environment variable the harness expects, and whether it is
+// required for the harness to run. Optional secrets are used when present but do
+// not block the harness from launching.
 //
 // OneOfGroup ties a required secret to a set of alternatives: required secrets
 // sharing a group form an at-least-one requirement, satisfied when any member is
@@ -62,10 +62,10 @@ type Secret struct {
 }
 
 // HookInstallRequest is the input to installing a harness's hook integration.
-// It is unrelated to Definition.InstallCommand, which installs the agent CLI
+// It is unrelated to Definition.InstallCommand, which installs the harness CLI
 // itself.
 type HookInstallRequest struct {
-	Agent            Agent
+	Harness          Harness
 	Workdir          string
 	Env              map[string]string
 	PublisherCommand string
@@ -74,10 +74,10 @@ type HookInstallRequest struct {
 
 type Driver interface {
 	ID() string
-	// Definition returns the harness's built-in agent-config template.
+	// Definition returns the harness's built-in harness-config template.
 	Definition() Definition
-	// InstallHooks wires the agent's lifecycle hook integration into its managed
-	// config. It does not install the agent CLI (see Definition.InstallCommand).
+	// InstallHooks wires the harness's lifecycle hook integration into its managed
+	// config. It does not install the harness CLI (see Definition.InstallCommand).
 	InstallHooks(context.Context, HookInstallRequest) error
 }
 

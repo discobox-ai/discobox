@@ -19,18 +19,18 @@ import (
 	apimodel "github.com/obot-platform/discobox/api/model"
 )
 
-var errAgentTerminalDetached = errors.New("detached")
+var errTerminalDetached = errors.New("detached")
 
 type sandboxTerminalCreateOptions struct {
-	agentID string
-	args    []string
-	workdir string
-	env     []string
-	attach  bool
+	harnessID string
+	args      []string
+	workdir   string
+	env       []string
+	attach    bool
 }
 
-// A terminal is an exec created in agent mode: the CLI terminal commands are a
-// thin preset over the sandbox exec API (create with agentId, always TTY).
+// A terminal is an exec created in harness mode: the CLI terminal commands are a
+// thin preset over the sandbox exec API (create with harnessId, always TTY).
 func (a *App) newSandboxTerminalsCommand() *cobra.Command {
 	var sandboxID string
 	cmd := &cobra.Command{
@@ -80,15 +80,15 @@ func (a *App) newSandboxTerminalCreateCommand(sandboxID *string) *cobra.Command 
 			if err != nil {
 				return err
 			}
-			// When a specific agent is requested, assign that agent's bound secrets
+			// When a specific harness is requested, assign that harness's bound secrets
 			// to the sandbox and carry their sentinels in this run's environment.
-			if strings.TrimSpace(opts.agentID) != "" {
-				agentConfigID, err := a.resolveAgentConfigID(cmd.Context(), client, projectID, opts.agentID)
+			if strings.TrimSpace(opts.harnessID) != "" {
+				harnessConfigID, err := a.resolveHarnessConfigID(cmd.Context(), client, projectID, opts.harnessID)
 				if err != nil {
 					return err
 				}
-				opts.agentID = agentConfigID
-				assigned, err := a.assignSandboxAgentSecrets(cmd.Context(), client, projectID, resolvedSandboxID, agentConfigID)
+				opts.harnessID = harnessConfigID
+				assigned, err := a.assignSandboxHarnessSecrets(cmd.Context(), client, projectID, resolvedSandboxID, harnessConfigID)
 				if err != nil {
 					return err
 				}
@@ -114,7 +114,7 @@ func (a *App) newSandboxTerminalCreateCommand(sandboxID *string) *cobra.Command 
 			return a.writeSandboxTerminal(cmd, &started)
 		},
 	}
-	cmd.Flags().StringVar(&opts.agentID, "agent", "", "Agent ID to start; defaults to the sandbox configured agent")
+	cmd.Flags().StringVar(&opts.harnessID, "harness", "", "Harness ID to start; defaults to the sandbox configured harness")
 	cmd.Flags().StringArrayVar(&opts.args, "arg", nil, "Additional command argument; repeat for multiple arguments")
 	cmd.Flags().StringVar(&opts.workdir, "workdir", "", "Working directory inside the sandbox")
 	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables")
@@ -215,15 +215,15 @@ func (a *App) sandboxTerminalRequest(ctx context.Context, sandboxArg string) (st
 	return a.sandboxRequest(ctx, sandboxArg)
 }
 
-// assignSandboxAgentSecrets asks the control plane to materialize the agent
+// assignSandboxHarnessSecrets asks the control plane to materialize the harness
 // config's bound secrets for the running sandbox and returns their env->sentinel
 // map to inject into this run.
-func (a *App) assignSandboxAgentSecrets(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID, agentConfigID string) (map[string]string, error) {
-	res, err := client.AssignSandboxAgentSecrets(ctx, &apimodel.AssignSandboxAgentSecretsBody{AgentConfigId: agentConfigID}, apiclientgen.AssignSandboxAgentSecretsParams{ProjectId: projectID, SandboxId: sandboxID})
+func (a *App) assignSandboxHarnessSecrets(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID, harnessConfigID string) (map[string]string, error) {
+	res, err := client.AssignSandboxHarnessSecrets(ctx, &apimodel.AssignSandboxHarnessSecretsBody{HarnessConfigId: harnessConfigID}, apiclientgen.AssignSandboxHarnessSecretsParams{ProjectId: projectID, SandboxId: sandboxID})
 	if err != nil {
 		return nil, err
 	}
-	body, err := expectResponse[apimodel.SandboxAgentSecretsResponse](res)
+	body, err := expectResponse[apimodel.SandboxHarnessSecretsResponse](res)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +232,7 @@ func (a *App) assignSandboxAgentSecrets(ctx context.Context, client *apiclientge
 
 func createTerminalExecBody(opts sandboxTerminalCreateOptions) (*apimodel.CreateSandboxExecRequest, error) {
 	body := &apimodel.CreateSandboxExecRequest{}
-	body.SetAgentId(optString(opts.agentID))
+	body.SetHarnessId(optString(opts.harnessID))
 	if len(opts.args) > 0 {
 		body.SetArgs(append([]string{}, opts.args...))
 	}
@@ -252,8 +252,8 @@ func createTerminalExecBody(opts sandboxTerminalCreateOptions) (*apimodel.Create
 	return body, nil
 }
 
-// listSandboxTerminals returns the execs that were created in agent (terminal)
-// mode, i.e. those carrying an agentId.
+// listSandboxTerminals returns the execs that were created in harness (terminal)
+// mode, i.e. those carrying a harnessId.
 func (a *App) listSandboxTerminals(ctx context.Context, projectID, sandboxID string) ([]apimodel.SandboxExec, error) {
 	execs, err := a.listSandboxExecs(ctx, projectID, sandboxID)
 	if err != nil {
@@ -261,7 +261,7 @@ func (a *App) listSandboxTerminals(ctx context.Context, projectID, sandboxID str
 	}
 	out := make([]apimodel.SandboxExec, 0, len(execs))
 	for _, exec := range execs {
-		if strings.TrimSpace(exec.AgentId.Or("")) != "" {
+		if strings.TrimSpace(exec.HarnessId.Or("")) != "" {
 			out = append(out, exec)
 		}
 	}
@@ -300,7 +300,7 @@ func (a *App) writeSandboxTerminals(cmd *cobra.Command, terminals []apimodel.San
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 			shortID(terminal.ID),
-			terminal.AgentId.Or(""),
+			terminal.HarnessId.Or(""),
 			terminal.Status,
 			pid,
 			exitCode,
@@ -326,12 +326,12 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 		stdin:       stdin,
 		stdout:      stdout,
 		stderr:      stderr,
-		kind:        "agent terminal",
+		kind:        "harness terminal",
 		action:      "attach terminal",
 		rawMode:     true,
 		resize:      true,
 		signalReady: true,
-		copyInput:   copyAgentTerminalInput,
+		copyInput:   copyTerminalInput,
 		errorFrame:  printAttachErrorFrame(stderr),
 		otherErr: func(err error) (bool, error) {
 			if isAttachDone(err) {
@@ -347,13 +347,13 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 		return err
 	}
 	err = session.run(ctx)
-	if errors.Is(err, errAgentTerminalDetached) {
+	if errors.Is(err, errTerminalDetached) {
 		return nil
 	}
 	return err
 }
 
-func copyAgentTerminalInput(ctx context.Context, s *framedAttachSession) error {
+func copyTerminalInput(ctx context.Context, s *framedAttachSession) error {
 	buf := make([]byte, 32*1024)
 	pendingCtrlP := false
 	for {
@@ -366,7 +366,7 @@ func copyAgentTerminalInput(ctx context.Context, s *framedAttachSession) error {
 				}
 			}
 			if detach {
-				return errAgentTerminalDetached
+				return errTerminalDetached
 			}
 		}
 		if errors.Is(err, io.EOF) {

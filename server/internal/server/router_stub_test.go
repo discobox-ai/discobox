@@ -12,20 +12,20 @@ import (
 
 	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/resources/agentconfigs"
+	"github.com/obot-platform/discobox/server/internal/resources/harnessconfigs"
 	appservice "github.com/obot-platform/discobox/server/internal/service"
 	services "github.com/obot-platform/discobox/server/internal/services"
 )
 
 type routerTestServices struct {
-	mu            sync.Mutex
-	user          model.User
-	project       model.Project
-	agentConfigs  map[string]model.AgentConfig
-	providers     map[string]model.SandboxProviderInstance
-	sandboxes     map[string]model.Sandbox
-	sandboxLease  *services.HTTPClientLease
-	sandboxScopes []string
+	mu             sync.Mutex
+	user           model.User
+	project        model.Project
+	harnessConfigs map[string]model.HarnessConfig
+	providers      map[string]model.SandboxProviderInstance
+	sandboxes      map[string]model.Sandbox
+	sandboxLease   *services.HTTPClientLease
+	sandboxScopes  []string
 }
 
 func newRouterTestServices() *routerTestServices {
@@ -48,11 +48,11 @@ func newRouterTestServices() *routerTestServices {
 		UpdatedAt:   now,
 	}
 	return &routerTestServices{
-		user:         user,
-		project:      project,
-		agentConfigs: make(map[string]model.AgentConfig),
-		providers:    make(map[string]model.SandboxProviderInstance),
-		sandboxes:    make(map[string]model.Sandbox),
+		user:           user,
+		project:        project,
+		harnessConfigs: make(map[string]model.HarnessConfig),
+		providers:      make(map[string]model.SandboxProviderInstance),
+		sandboxes:      make(map[string]model.Sandbox),
 	}
 }
 
@@ -123,7 +123,7 @@ func (s *routerTestServices) CreateSandbox(_ context.Context, projectID string, 
 	if projectID != s.project.ID {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
-	agentConfigID, err := s.resolveAgentConfigID(config.AgentConfigId, input.AgentName)
+	harnessConfigID, err := s.resolveHarnessConfigID(config.HarnessConfigId, input.HarnessName)
 	if err != nil {
 		return nil, err
 	}
@@ -136,27 +136,27 @@ func (s *routerTestServices) CreateSandbox(_ context.Context, projectID string, 
 	}
 	userName, userUID, userGID, homeDirectory := services.SandboxUserToModel(config.User)
 	sandbox := model.Sandbox{
-		ID:                       id.NewString(),
-		ProjectID:                s.project.ID,
-		CreatedByUserID:          s.user.ID,
-		ProviderInstanceID:       services.OptStringPtr(input.ProviderInstanceId),
-		AgentConfigID:            agentConfigID,
-		Name:                     config.Name,
-		Description:              services.OptStringPtr(config.Description),
-		ResourceLifecycle:        model.NewResourceLifecycle(model.SandboxCreateOperation),
-		AgentModel:               services.OptStringPtr(config.AgentModel),
-		AgentModelServiceTier:    services.OptStringPtr(config.AgentModelServiceTier),
-		AgentModelReasoningLevel: services.OptStringPtr(config.AgentModelReasoningLevel),
-		Prompt:                   config.Prompt,
-		Source:                   source,
-		SourceCodeReferences:     stubSourceCodeReferences(config.SourceCodeReferences),
-		UserName:                 userName,
-		UserUID:                  userUID,
-		UserGID:                  userGID,
-		HomeDirectory:            homeDirectory,
-		CreatedAt:                now,
-		UpdatedAt:                now,
-		CreatedBy:                &s.user,
+		ID:                   id.NewString(),
+		ProjectID:            s.project.ID,
+		CreatedByUserID:      s.user.ID,
+		ProviderInstanceID:   services.OptStringPtr(input.ProviderInstanceId),
+		HarnessConfigID:      harnessConfigID,
+		Name:                 config.Name,
+		Description:          services.OptStringPtr(config.Description),
+		ResourceLifecycle:    model.NewResourceLifecycle(model.SandboxCreateOperation),
+		Model:                services.OptStringPtr(config.Model),
+		ModelServiceTier:     services.OptStringPtr(config.ModelServiceTier),
+		ModelReasoningLevel:  services.OptStringPtr(config.ModelReasoningLevel),
+		Prompt:               config.Prompt,
+		Source:               source,
+		SourceCodeReferences: stubSourceCodeReferences(config.SourceCodeReferences),
+		UserName:             userName,
+		UserUID:              userUID,
+		UserGID:              userGID,
+		HomeDirectory:        homeDirectory,
+		CreatedAt:            now,
+		UpdatedAt:            now,
+		CreatedBy:            &s.user,
 	}
 	s.sandboxes[sandbox.ID] = sandbox
 	return &sandbox, nil
@@ -238,7 +238,7 @@ func (s *routerTestServices) ReconcileSandbox(_ context.Context, projectID, sand
 	return &sandbox, nil
 }
 
-func (s *routerTestServices) AssignSandboxAgentSecrets(_ context.Context, projectID, sandboxID, _ string) (map[string]string, error) {
+func (s *routerTestServices) AssignSandboxHarnessSecrets(_ context.Context, projectID, sandboxID, _ string) (map[string]string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, err := s.getSandbox(projectID, sandboxID); err != nil {
@@ -295,29 +295,29 @@ func (s *routerTestServices) SubscribeProjectEvents(ctx context.Context, project
 	return ch, unsubscribe, nil
 }
 
-func (s *routerTestServices) ListAgentConfigDefinitions(context.Context) ([]model.AgentConfigDefinition, error) {
-	return agentconfigs.Definitions(), nil
+func (s *routerTestServices) ListHarnessDefinitions(context.Context) ([]model.HarnessDefinition, error) {
+	return harnessconfigs.Definitions(), nil
 }
 
-func (s *routerTestServices) GetAgentConfigDefinition(_ context.Context, definitionID string) (*model.AgentConfigDefinition, error) {
-	definition, ok := agentconfigs.DefinitionByID(definitionID)
+func (s *routerTestServices) GetHarnessDefinition(_ context.Context, definitionID string) (*model.HarnessDefinition, error) {
+	definition, ok := harnessconfigs.DefinitionByID(definitionID)
 	if !ok {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config definition not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config definition not found")
 	}
 	return definition, nil
 }
 
-func (s *routerTestServices) ListAgentConfigs(_ context.Context, projectID string) ([]model.AgentConfig, error) {
+func (s *routerTestServices) ListHarnessConfigs(_ context.Context, projectID string) ([]model.HarnessConfig, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
-	configs := make([]model.AgentConfig, 0, len(s.agentConfigs))
-	for _, config := range s.agentConfigs {
+	configs := make([]model.HarnessConfig, 0, len(s.harnessConfigs))
+	for _, config := range s.harnessConfigs {
 		configs = append(configs, config)
 	}
-	slices.SortFunc(configs, func(a, b model.AgentConfig) int {
+	slices.SortFunc(configs, func(a, b model.HarnessConfig) int {
 		if a.CreatedAt.Before(b.CreatedAt) {
 			return -1
 		}
@@ -329,18 +329,18 @@ func (s *routerTestServices) ListAgentConfigs(_ context.Context, projectID strin
 	return configs, nil
 }
 
-func (s *routerTestServices) CreateAgentConfig(_ context.Context, projectID string, input services.CreateAgentConfigBody) (*model.AgentConfig, error) {
+func (s *routerTestServices) CreateHarnessConfig(_ context.Context, projectID string, input services.CreateHarnessConfigBody) (*model.HarnessConfig, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
-	var definition *model.AgentConfigDefinition
+	var definition *model.HarnessDefinition
 	if definitionID, isSet := input.DefinitionId.Get(); isSet {
 		var found bool
-		definition, found = agentconfigs.DefinitionByID(definitionID)
+		definition, found = harnessconfigs.DefinitionByID(definitionID)
 		if !found {
-			return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config definition not found")
+			return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config definition not found")
 		}
 	}
 	name := strings.TrimSpace(input.Name.Or(""))
@@ -356,36 +356,36 @@ func (s *routerTestServices) CreateAgentConfig(_ context.Context, projectID stri
 		runCommand = definition.RunCommand
 	}
 	now := time.Now().UTC()
-	config := model.AgentConfig{ID: id.NewString(), ProjectID: projectID, Name: name, InstallCommand: installCommand, RunCommand: runCommand, CreatedAt: now, UpdatedAt: now}
-	s.agentConfigs[config.ID] = config
-	if s.project.DefaultAgentConfigID == "" {
-		s.project.DefaultAgentConfigID = config.ID
+	config := model.HarnessConfig{ID: id.NewString(), ProjectID: projectID, Name: name, InstallCommand: installCommand, RunCommand: runCommand, CreatedAt: now, UpdatedAt: now}
+	s.harnessConfigs[config.ID] = config
+	if s.project.DefaultHarnessConfigID == "" {
+		s.project.DefaultHarnessConfigID = config.ID
 	}
 	return &config, nil
 }
 
-func (s *routerTestServices) GetAgentConfig(_ context.Context, projectID, configID string) (*model.AgentConfig, error) {
+func (s *routerTestServices) GetHarnessConfig(_ context.Context, projectID, configID string) (*model.HarnessConfig, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
-	config, ok := s.agentConfigs[configID]
+	config, ok := s.harnessConfigs[configID]
 	if !ok {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
 	}
 	return &config, nil
 }
 
-func (s *routerTestServices) UpdateAgentConfig(_ context.Context, projectID, configID string, input services.UpdateAgentConfigBody) (*model.AgentConfig, error) {
+func (s *routerTestServices) UpdateHarnessConfig(_ context.Context, projectID, configID string, input services.UpdateHarnessConfigBody) (*model.HarnessConfig, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
-	config, ok := s.agentConfigs[configID]
+	config, ok := s.harnessConfigs[configID]
 	if !ok {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
 	}
 	if name, ok := input.Name.Get(); ok {
 		config.Name = name
@@ -397,72 +397,72 @@ func (s *routerTestServices) UpdateAgentConfig(_ context.Context, projectID, con
 		config.RunCommand = runCommand
 	}
 	config.UpdatedAt = time.Now().UTC()
-	s.agentConfigs[config.ID] = config
+	s.harnessConfigs[config.ID] = config
 	return &config, nil
 }
 
-func (s *routerTestServices) SetDefaultAgentConfig(_ context.Context, projectID, configID string) (*model.Project, error) {
+func (s *routerTestServices) SetDefaultHarnessConfig(_ context.Context, projectID, configID string) (*model.Project, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
-	if _, ok := s.agentConfigs[configID]; !ok {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
+	if _, ok := s.harnessConfigs[configID]; !ok {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
 	}
-	s.project.DefaultAgentConfigID = configID
+	s.project.DefaultHarnessConfigID = configID
 	project := s.projectWithSandboxes()
 	return &project, nil
 }
 
-func (s *routerTestServices) DeleteAgentConfig(_ context.Context, projectID, configID string) error {
+func (s *routerTestServices) DeleteHarnessConfig(_ context.Context, projectID, configID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
 		return apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
-	if _, ok := s.agentConfigs[configID]; !ok {
-		return apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
+	if _, ok := s.harnessConfigs[configID]; !ok {
+		return apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
 	}
-	delete(s.agentConfigs, configID)
-	if s.project.DefaultAgentConfigID == configID {
-		s.project.DefaultAgentConfigID = ""
+	delete(s.harnessConfigs, configID)
+	if s.project.DefaultHarnessConfigID == configID {
+		s.project.DefaultHarnessConfigID = ""
 	}
 	return nil
 }
 
-func (s *routerTestServices) ListAgentConfigSecretBindings(_ context.Context, projectID, configID string) ([]model.AgentConfigSecretBinding, error) {
+func (s *routerTestServices) ListHarnessConfigSecretBindings(_ context.Context, projectID, configID string) ([]model.HarnessConfigSecretBinding, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
-	if _, ok := s.agentConfigs[configID]; !ok {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
+	if _, ok := s.harnessConfigs[configID]; !ok {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
 	}
 	return nil, nil
 }
 
-func (s *routerTestServices) SetAgentConfigSecretBinding(_ context.Context, projectID, configID, envName, secretID string) (*model.AgentConfigSecretBinding, error) {
+func (s *routerTestServices) SetHarnessConfigSecretBinding(_ context.Context, projectID, configID, envName, secretID string) (*model.HarnessConfigSecretBinding, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
-	if _, ok := s.agentConfigs[configID]; !ok {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
+	if _, ok := s.harnessConfigs[configID]; !ok {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
 	}
-	return &model.AgentConfigSecretBinding{ID: "binding-1", ProjectID: projectID, AgentConfigID: configID, EnvName: envName, SecretID: secretID}, nil
+	return &model.HarnessConfigSecretBinding{ID: "binding-1", ProjectID: projectID, HarnessConfigID: configID, EnvName: envName, SecretID: secretID}, nil
 }
 
-func (s *routerTestServices) DeleteAgentConfigSecretBinding(_ context.Context, projectID, configID, _ string) error {
+func (s *routerTestServices) DeleteHarnessConfigSecretBinding(_ context.Context, projectID, configID, _ string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if projectID != s.project.ID {
 		return apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
-	if _, ok := s.agentConfigs[configID]; !ok {
-		return apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
+	if _, ok := s.harnessConfigs[configID]; !ok {
+		return apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
 	}
 	return nil
 }
@@ -597,22 +597,22 @@ func (s *routerTestServices) getSandbox(projectID, sandboxID string) (model.Sand
 	return sandbox, nil
 }
 
-func (s *routerTestServices) resolveAgentConfigID(agentConfigID, agentName services.OptString) (*string, error) {
-	if id, ok := agentConfigID.Get(); ok && id != "" {
-		if _, ok := s.agentConfigs[id]; !ok {
-			return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
+func (s *routerTestServices) resolveHarnessConfigID(harnessConfigID, harnessName services.OptString) (*string, error) {
+	if id, ok := harnessConfigID.Get(); ok && id != "" {
+		if _, ok := s.harnessConfigs[id]; !ok {
+			return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
 		}
 		return &id, nil
 	}
-	name, ok := agentName.Get()
+	name, ok := harnessName.Get()
 	if ok && strings.TrimSpace(name) != "" {
-		for _, config := range s.agentConfigs {
+		for _, config := range s.harnessConfigs {
 			if config.Name == strings.TrimSpace(name) {
 				id := config.ID
 				return &id, nil
 			}
 		}
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "agent config not found")
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
 	}
 	return nil, nil
 }
@@ -628,9 +628,9 @@ func stubSourceCodeReferences(input services.OptSandboxCreateConfigSourceCodeRef
 func (s *routerTestServices) projectWithSandboxes() model.Project {
 	project := s.project
 	project.Owner = &s.user
-	project.AgentConfigs = make([]model.AgentConfig, 0, len(s.agentConfigs))
-	for _, config := range s.agentConfigs {
-		project.AgentConfigs = append(project.AgentConfigs, config)
+	project.HarnessConfigs = make([]model.HarnessConfig, 0, len(s.harnessConfigs))
+	for _, config := range s.harnessConfigs {
+		project.HarnessConfigs = append(project.HarnessConfigs, config)
 	}
 	project.SandboxProviderInstances = s.sortedProviders()
 	project.Sandboxes = s.sortedSandboxes()

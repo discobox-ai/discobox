@@ -75,7 +75,7 @@ Current proxy routes:
   `/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/http/{port}/{path...}`.
   The future worker-agent implementation owns translating that worker-local
   route to `http://localhost:{port}/{path...}` inside the sandbox.
-- `/api/projects/{projectId}/sandboxes/{sandboxId}/agent-terminals...` forwards
+- `/api/projects/{projectId}/sandboxes/{sandboxId}/harness-terminals...` forwards
   to the sandbox-agent terminal runtime API with the same path. The worker-agent
   forwarding layer and sandbox-agent implementation own serving that API; the
   server owns project authorization, scope selection, and lease/token injection
@@ -86,7 +86,7 @@ flow. The git proxy requests `sandbox:read` and `sandbox:write` because Git HTTP
 uses method and service-specific read/write behavior. The sandbox HTTP port
 proxy requests only `sandbox:http`; worker-agent support for this route must
 require that scope rather than accepting the broader sandbox read/write scopes.
-The agent-terminal proxy requests `terminal:read` for listing and resource reads
+The harness-terminal proxy requests `terminal:read` for listing and resource reads
 and `terminal:write` for create, attach, and delete because attach streams carry
 input, resize, and signal frames.
 
@@ -157,7 +157,7 @@ and runtime operation progress. `internal/resources/jobs` owns dispatcher infras
 | `internal/handlers` | Generated OpenAPI handler adapter methods split by resource; transport DTO conversion only. |
 | `internal/resources/jobs` | Server-wide durable job manager and dispatcher lifecycle. |
 | `internal/service` | Root API service aggregation, default data initialization, service startup, and job executor registration. |
-| `internal/resources/agentconfigs` | Agent config definition and project-scoped agent config API behavior. |
+| `internal/resources/harnessconfigs` | Harness config definition and project-scoped harness config API behavior. |
 | `internal/resources/events` | Project event query and subscription service behavior. |
 | `internal/resources/projects` | Project read service behavior. |
 | `internal/resources/sandboxes` | Sandbox API service behavior, sandbox reconcile executor/payload, sandbox runtime reconciliation, and sandbox provider catalog helpers. |
@@ -199,7 +199,7 @@ and runtime operation progress. `internal/resources/jobs` owns dispatcher infras
 | `internal/model` | [`internal/model/DESIGN.md`](internal/model/DESIGN.md) |
 | `internal/projectstream` | [`internal/projectstream/DESIGN.md`](internal/projectstream/DESIGN.md) |
 | `internal/resources` | [`internal/resources/DESIGN.md`](internal/resources/DESIGN.md) |
-| `internal/resources/agentconfigs` | [`internal/resources/agentconfigs/DESIGN.md`](internal/resources/agentconfigs/DESIGN.md) |
+| `internal/resources/harnessconfigs` | [`internal/resources/harnessconfigs/DESIGN.md`](internal/resources/harnessconfigs/DESIGN.md) |
 | `internal/resources/events` | [`internal/resources/events/DESIGN.md`](internal/resources/events/DESIGN.md) |
 | `internal/resources/jobs` | [`internal/resources/jobs/DESIGN.md`](internal/resources/jobs/DESIGN.md) |
 | `internal/resources/providers` | [`internal/resources/providers/DESIGN.md`](internal/resources/providers/DESIGN.md) |
