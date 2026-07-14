@@ -49,50 +49,49 @@ func TestGetSandboxWithGeneration(t *testing.T) {
 	}
 }
 
-func TestGetResourcesByShortIDSuffix(t *testing.T) {
+func TestGetResourcesByShortIDPrefix(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
-	project := &model.Project{ID: "000000000000000000abc12345", OwnerUserID: "user-1", Name: "Project", Slug: "project-short-id"}
+	project := &model.Project{ID: "proj_abc12345000000p1", OwnerUserID: "user-1", Name: "Project", Slug: "project-short-id"}
 	if err := s.UpsertProject(ctx, project); err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 	if _, err := s.CreateProjectMemberIfNotExists(ctx, &model.ProjectMember{ProjectID: project.ID, UserID: "user-1", Role: "owner"}); err != nil {
 		t.Fatalf("create project member: %v", err)
 	}
-	provider := &model.SandboxProviderInstance{ID: "000000000000000001abc12345", ProjectID: project.ID, Type: "docker", Name: "provider"}
+	provider := &model.SandboxProviderInstance{ID: "prov_abc12345000000p2", ProjectID: project.ID, Type: "docker", Name: "provider"}
 	if err := s.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
-	sandbox := &model.Sandbox{ID: "000000000000000002abc12345", ProjectID: project.ID, CreatedByUserID: "user-1", Name: "sandbox"}
+	sandbox := &model.Sandbox{ID: "sbx_abc12345000000p3", ProjectID: project.ID, CreatedByUserID: "user-1", Name: "sandbox"}
 	if err := s.CreateSandbox(ctx, sandbox); err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	worker := &model.Worker{ID: "000000000000000003abc12345", ProjectID: project.ID, ProviderInstanceID: provider.ID}
+	worker := &model.Worker{ID: "wrk_abc12345000000p4", ProjectID: project.ID, ProviderInstanceID: provider.ID}
 	if err := s.CreateWorker(ctx, worker); err != nil {
 		t.Fatalf("create worker: %v", err)
 	}
-	short := "abc12345"
-	gotProject, err := s.GetProject(ctx, short)
+	gotProject, err := s.GetProject(ctx, "proj_abc12345")
 	if err != nil || gotProject.ID != project.ID {
 		t.Fatalf("short project = %#v err=%v", gotProject, err)
 	}
-	gotProvider, err := s.GetSandboxProviderInstance(ctx, project.ID, short)
+	gotProvider, err := s.GetSandboxProviderInstance(ctx, project.ID, "prov_abc12345")
 	if err != nil || gotProvider.ID != provider.ID {
 		t.Fatalf("short provider = %#v err=%v", gotProvider, err)
 	}
-	gotSandbox, err := s.GetSandbox(ctx, project.ID, short)
+	gotSandbox, err := s.GetSandbox(ctx, project.ID, "sbx_abc12345")
 	if err != nil || gotSandbox.ID != sandbox.ID {
 		t.Fatalf("short sandbox = %#v err=%v", gotSandbox, err)
 	}
-	gotWorker, err := s.GetWorker(ctx, short)
+	gotWorker, err := s.GetWorker(ctx, "wrk_abc12345")
 	if err != nil || gotWorker.ID != worker.ID {
 		t.Fatalf("short worker = %#v err=%v", gotWorker, err)
 	}
-	ambiguous := &model.Sandbox{ID: "000000000000000005abc12345", ProjectID: project.ID, CreatedByUserID: "user-1", Name: "ambiguous"}
+	ambiguous := &model.Sandbox{ID: "sbx_abc12345000000p5", ProjectID: project.ID, CreatedByUserID: "user-1", Name: "ambiguous"}
 	if err := s.CreateSandbox(ctx, ambiguous); err != nil {
 		t.Fatalf("create ambiguous sandbox: %v", err)
 	}
-	if _, err := s.GetSandbox(ctx, project.ID, short); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.GetSandbox(ctx, project.ID, "sbx_abc12345"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("ambiguous short sandbox error = %v, want not found", err)
 	}
 }

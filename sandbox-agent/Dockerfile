@@ -14,6 +14,7 @@ COPY go.mod go.sum ./
 COPY api ./api
 COPY gormdb ./gormdb
 COPY harness ./harness
+COPY id ./id
 COPY proxy ./proxy
 COPY sandbox-agent ./sandbox-agent
 

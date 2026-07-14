@@ -54,7 +54,7 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
 	git := runSourceTestGit(t, repo)
 	commit := strings.TrimSpace(git("rev-parse", "HEAD"))
-	const sandboxID = "01kv9w440bpa9qk5n25t2hh2rv"
+	const sandboxID = "sbx_9qk5n25t2hh2rv00"
 	var posted map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/sandboxes" {
@@ -112,7 +112,7 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	if workspace["mode"] != runWorkspaceModeClean {
 		t.Fatalf("workspace = %#v, want clean", workspace)
 	}
-	if output := out.String(); !strings.Contains(output, shortID(sandboxID)) {
+	if output := out.String(); !strings.Contains(output, sandboxID) {
 		t.Fatalf("output = %q, want sandbox ID", output)
 	}
 }
@@ -131,7 +131,7 @@ func TestRunCommandDefaultsSourceToCurrentDirectory(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"id":"01kv9w440bpa9qk5n25t2hh2rv","projectId":"project-1","createdByUserId":"user-1","config":{"name":"run-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"pending","desiredState":"stopped","lastOperationStatus":"pending","generation":1,"observedGeneration":0,"restartGeneration":0,"restartedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		_, _ = w.Write([]byte(`{"id":"sbx_9qk5n25t2hh2rv00","projectId":"project-1","createdByUserId":"user-1","config":{"name":"run-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"pending","desiredState":"stopped","lastOperationStatus":"pending","generation":1,"observedGeneration":0,"restartGeneration":0,"restartedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 	}))
 	t.Cleanup(server.Close)
 
@@ -169,7 +169,7 @@ func TestRunCommandStillAcceptsDashDashSeparator(t *testing.T) {
 		sawCreate = true
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
 		w.WriteHeader(http.StatusAccepted)
-		_, _ = w.Write([]byte(`{"id":"01kv9w440bpa9qk5n25t2hh2rv","projectId":"project-1","createdByUserId":"user-1","config":{"name":"run-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"pending","desiredState":"stopped","lastOperationStatus":"pending","generation":1,"observedGeneration":0,"restartGeneration":0,"restartedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+		_, _ = w.Write([]byte(`{"id":"sbx_9qk5n25t2hh2rv00","projectId":"project-1","createdByUserId":"user-1","config":{"name":"run-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"pending","desiredState":"stopped","lastOperationStatus":"pending","generation":1,"observedGeneration":0,"restartGeneration":0,"restartedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
 	}))
 	t.Cleanup(server.Close)
 

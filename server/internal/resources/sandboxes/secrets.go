@@ -214,7 +214,7 @@ func (s *Service) secretFormat(ctx context.Context, secret *model.Secret) string
 }
 
 func (s *Service) createAnonymousSecret(ctx context.Context, projectID, value, host string) (*model.Secret, error) {
-	secretID, err := id.New()
+	secretID, err := id.New(id.PrefixSecret)
 	if err != nil {
 		return nil, err
 	}

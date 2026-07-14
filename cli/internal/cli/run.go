@@ -91,7 +91,7 @@ to create the sandbox and print it without attaching.`,
 func (a *App) attachRunSandbox(cmd *cobra.Command, client *apiclientgen.Client, projectID string, sandbox *apimodel.Sandbox) error {
 	ctx := cmd.Context()
 	stderr := cmd.ErrOrStderr()
-	fmt.Fprintf(stderr, "Created sandbox %s, provisioning (fetching source, starting container)...\n", shortID(sandbox.ID))
+	fmt.Fprintf(stderr, "Created sandbox %s, provisioning (fetching source, starting container)...\n", sandbox.ID)
 	started, err := a.waitForSandbox(cmd, client, projectID, sandbox.ID, 2*time.Minute)
 	if err != nil {
 		return err
@@ -108,7 +108,7 @@ func (a *App) attachRunSandbox(cmd *cobra.Command, client *apiclientgen.Client, 
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(stderr, "Attaching to terminal %s (Ctrl-P Ctrl-Q to detach)\n", shortID(terminal.ID))
+	fmt.Fprintf(stderr, "Attaching to terminal %s (Ctrl-P Ctrl-Q to detach)\n", terminal.ID)
 	// Replay the primary terminal's saved history first: the sandbox-agent
 	// launches and drives it before run connects, so replay shows the session
 	// from the start rather than only output produced after the attach.
@@ -255,11 +255,11 @@ func splitRunSourceRef(value string) (string, string, bool) {
 }
 
 func createRunSandboxBody(ctx context.Context, opts runOptions) (*apimodel.CreateSandboxBody, error) {
-	runID, err := id.New()
+	runID, err := id.New(id.PrefixRun)
 	if err != nil {
 		return nil, err
 	}
-	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: "run-" + shortID(runID)}}
+	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: "run-" + id.RandomPart(runID)[:8]}}
 	if len(opts.prompt) > 0 {
 		body.Config.SetPrompt(append([]string(nil), opts.prompt...))
 	}

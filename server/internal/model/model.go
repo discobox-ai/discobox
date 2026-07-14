@@ -125,7 +125,7 @@ func (User) TableName() string { return "users" }
 func (u *User) BeforeCreate(_ *gorm.DB) error {
 	if u.ID == "" {
 		var err error
-		u.ID, err = id.New()
+		u.ID, err = id.New(id.PrefixUser)
 		if err != nil {
 			return err
 		}
@@ -158,7 +158,7 @@ func (Project) TableName() string { return "projects" }
 func (p *Project) BeforeCreate(_ *gorm.DB) error {
 	if p.ID == "" {
 		var err error
-		p.ID, err = id.New()
+		p.ID, err = id.New(id.PrefixProject)
 		if err != nil {
 			return err
 		}
@@ -245,7 +245,7 @@ func (a *AgentConfig) EventResourceID() string { return a.ID }
 func (a *AgentConfig) BeforeCreate(_ *gorm.DB) error {
 	if a.ID == "" {
 		var err error
-		a.ID, err = id.New()
+		a.ID, err = id.New(id.PrefixAgentConfig)
 		if err != nil {
 			return err
 		}
@@ -293,7 +293,7 @@ func (b *AgentConfigSecretBinding) EventResourceID() string   { return b.ID }
 func (b *AgentConfigSecretBinding) BeforeCreate(_ *gorm.DB) error {
 	if b.ID == "" {
 		var err error
-		b.ID, err = id.New()
+		b.ID, err = id.New(id.PrefixAgentConfigSecretBinding)
 		if err != nil {
 			return err
 		}
@@ -406,7 +406,7 @@ func (s *Sandbox) EventResourceID() string { return s.ID }
 func (s *Sandbox) BeforeCreate(_ *gorm.DB) error {
 	if s.ID == "" {
 		var err error
-		s.ID, err = id.New()
+		s.ID, err = id.New(id.PrefixSandbox)
 		if err != nil {
 			return err
 		}
@@ -452,7 +452,7 @@ func (SandboxProviderInstance) TableName() string { return "sandbox_provider_ins
 func (p *SandboxProviderInstance) BeforeCreate(_ *gorm.DB) error {
 	if p.ID == "" {
 		var err error
-		p.ID, err = id.New()
+		p.ID, err = id.New(id.PrefixSandboxProvider)
 		if err != nil {
 			return err
 		}
@@ -533,7 +533,7 @@ func (w *Worker) EventResourceID() string { return w.ID }
 func (w *Worker) BeforeCreate(_ *gorm.DB) error {
 	if w.ID == "" {
 		var err error
-		w.ID, err = id.New()
+		w.ID, err = id.New(id.PrefixWorker)
 		if err != nil {
 			return err
 		}
@@ -594,7 +594,7 @@ func (WorkerBootstrapToken) TableName() string { return "worker_bootstrap_tokens
 func (t *WorkerBootstrapToken) BeforeCreate(_ *gorm.DB) error {
 	if t.ID == "" {
 		var err error
-		t.ID, err = id.New()
+		t.ID, err = id.New(id.PrefixWorkerBootstrapToken)
 		if err != nil {
 			return err
 		}
@@ -623,7 +623,7 @@ func (WorkerAuthToken) TableName() string { return "worker_auth_tokens" }
 func (t *WorkerAuthToken) BeforeCreate(_ *gorm.DB) error {
 	if t.ID == "" {
 		var err error
-		t.ID, err = id.New()
+		t.ID, err = id.New(id.PrefixWorkerAuthToken)
 		if err != nil {
 			return err
 		}
@@ -694,7 +694,7 @@ func (s *Secret) EventResourceID() string   { return s.ID }
 func (s *Secret) BeforeCreate(_ *gorm.DB) error {
 	if s.ID == "" {
 		var err error
-		s.ID, err = id.New()
+		s.ID, err = id.New(id.PrefixSecret)
 		if err != nil {
 			return err
 		}
@@ -745,7 +745,7 @@ func (r *SecretRequest) EventResourceID() string   { return r.ID }
 func (r *SecretRequest) BeforeCreate(_ *gorm.DB) error {
 	if r.ID == "" {
 		var err error
-		r.ID, err = id.New()
+		r.ID, err = id.New(id.PrefixSecretRequest)
 		if err != nil {
 			return err
 		}
@@ -784,7 +784,7 @@ func (g *SecretGrant) EventResourceID() string   { return g.ID }
 func (g *SecretGrant) BeforeCreate(_ *gorm.DB) error {
 	if g.ID == "" {
 		var err error
-		g.ID, err = id.New()
+		g.ID, err = id.New(id.PrefixSecretGrant)
 		if err != nil {
 			return err
 		}
@@ -820,7 +820,7 @@ func (SandboxSecret) TableName() string { return "sandbox_secrets" }
 func (s *SandboxSecret) BeforeCreate(_ *gorm.DB) error {
 	if s.ID == "" {
 		var err error
-		s.ID, err = id.New()
+		s.ID, err = id.New(id.PrefixSandboxSecret)
 		if err != nil {
 			return err
 		}
@@ -848,7 +848,7 @@ func (ProjectEvent) TableName() string { return "project_events" }
 func (e *ProjectEvent) BeforeCreate(_ *gorm.DB) error {
 	if e.ID == "" {
 		var err error
-		e.ID, err = id.New()
+		e.ID, err = id.New(id.PrefixEvent)
 		if err != nil {
 			return err
 		}

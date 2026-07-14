@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/obot-platform/discobox/server/internal/reconcile"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
+	"github.com/obot-platform/discobox/server/internal/reconcile"
 
 	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/server/internal/auth"
@@ -125,7 +125,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if authenticatedUserID, err := auth.UserID(ctx); err == nil {
 		userID = authenticatedUserID
 	}
-	sandboxID, err := id.New()
+	sandboxID, err := id.New(id.PrefixSandbox)
 	if err != nil {
 		return nil, err
 	}

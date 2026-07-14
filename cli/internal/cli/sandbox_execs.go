@@ -320,7 +320,7 @@ func (a *App) writeSandboxExecs(cmd *cobra.Command, execs []apimodel.SandboxExec
 			exitCode = fmt.Sprint(value)
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%t\t%s\t%s\t%s\n",
-			shortID(exec.ID),
+			exec.ID,
 			exec.Status,
 			pid,
 			exitCode,
@@ -664,10 +664,10 @@ func (a *App) returnSandboxExecStatus(ctx context.Context, projectID, sandboxID,
 		return exitCodeError{code: int(code)}
 	}
 	if exec.Status == apiclientgen.SandboxExecStatusFailed {
-		return fmt.Errorf("exec %s failed: %s", shortID(exec.ID), exec.Error.Or(""))
+		return fmt.Errorf("exec %s failed: %s", exec.ID, exec.Error.Or(""))
 	}
 	if exec.Status == apiclientgen.SandboxExecStatusLost {
-		return fmt.Errorf("exec %s lost: %s", shortID(exec.ID), exec.Error.Or(""))
+		return fmt.Errorf("exec %s lost: %s", exec.ID, exec.Error.Or(""))
 	}
 	return nil
 }

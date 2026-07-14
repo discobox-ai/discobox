@@ -13,8 +13,8 @@ func firstByID[T any](db *gorm.DB, column, value string) (*T, error) {
 	value = strings.TrimSpace(value)
 	var matches []T
 	var query *gorm.DB
-	if idpkg.IsShort(value) {
-		query = db.Where(column+" = ? OR "+column+" LIKE ?", value, "%"+value)
+	if !idpkg.IsGenerated(value) {
+		query = db.Where(column+" = ? OR "+column+" LIKE ?", value, value+"%")
 	} else {
 		query = db.Where(column+" = ?", value)
 	}

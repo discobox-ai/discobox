@@ -160,7 +160,7 @@ func authenticateTestWorker(ctx context.Context, appStore *store.Store, authoriz
 
 func registerTestWorker(ctx context.Context, t *testing.T, svc *service.Service, appStore *store.Store) (string, ed25519.PrivateKey) {
 	t.Helper()
-	worker := &model.Worker{ID: id.NewString(), ProjectID: service.DefaultProjectID, ProviderInstanceID: "provider-auth"}
+	worker := &model.Worker{ID: id.NewString(id.PrefixWorker), ProjectID: service.DefaultProjectID, ProviderInstanceID: "provider-auth"}
 	bootstrap := "bootstrap-" + time.Now().String()
 	h := sha256.Sum256([]byte(bootstrap))
 	if err := appStore.CreateWorkerWithBootstrapToken(ctx, worker, &model.WorkerBootstrapToken{WorkerID: worker.ID, TokenHash: h[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
@@ -193,8 +193,8 @@ func signTestWorkerAssertion(t *testing.T, projectID, workerID string, privateKe
 func TestRegisterWorkerSupportsSandboxAssignedWorkerCompatibility(t *testing.T) {
 	ctx := context.Background()
 	svc, appStore, _ := newWorkerAuthService(t)
-	worker := &model.Worker{ID: id.NewString(), ProjectID: service.DefaultProjectID, ProviderInstanceID: "provider-auth"}
-	sandboxID := id.NewString()
+	worker := &model.Worker{ID: id.NewString(id.PrefixWorker), ProjectID: service.DefaultProjectID, ProviderInstanceID: "provider-auth"}
+	sandboxID := id.NewString(id.PrefixSandbox)
 	bootstrap := "bootstrap-" + time.Now().String()
 	h := sha256.Sum256([]byte(bootstrap))
 	if err := appStore.CreateWorkerWithBootstrapToken(ctx, worker, &model.WorkerBootstrapToken{WorkerID: worker.ID, TokenHash: h[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
@@ -223,7 +223,7 @@ func TestRegisterWorkerSupportsSandboxAssignedWorkerCompatibility(t *testing.T) 
 func TestRegisterWorkerSupportsSyntheticWorkerSandboxIDCompatibility(t *testing.T) {
 	ctx := context.Background()
 	svc, appStore, _ := newWorkerAuthService(t)
-	worker := &model.Worker{ID: id.NewString(), ProjectID: service.DefaultProjectID, ProviderInstanceID: "provider-auth"}
+	worker := &model.Worker{ID: id.NewString(id.PrefixWorker), ProjectID: service.DefaultProjectID, ProviderInstanceID: "provider-auth"}
 	bootstrap := "bootstrap-" + time.Now().String()
 	h := sha256.Sum256([]byte(bootstrap))
 	if err := appStore.CreateWorkerWithBootstrapToken(ctx, worker, &model.WorkerBootstrapToken{WorkerID: worker.ID, TokenHash: h[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {

@@ -254,7 +254,7 @@ func TestDynamicProviderCreateAllowsMissingName(t *testing.T) {
 }
 
 func TestProviderUpdateCommandSendsDynamicConfig(t *testing.T) {
-	const providerID = "00000000000000000000000010"
+	const providerID = "prov_0000000000000010"
 	var patched map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -352,7 +352,7 @@ func TestProviderCreateCommandSendsDynamicConfig(t *testing.T) {
 			}
 			now := time.Now().UTC().Format(time.RFC3339Nano)
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"id":        "00000000000000000000000010",
+				"id":        "prov_0000000000000010",
 				"projectId": "prj_default",
 				"name":      "local",
 				"type":      "example",
@@ -405,7 +405,7 @@ func TestProviderCreateCommandConsumesDebugGlobalFlag(t *testing.T) {
 		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/projects/") && strings.HasSuffix(r.URL.Path, "/providers"):
 			now := time.Now().UTC().Format(time.RFC3339Nano)
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"id":        "00000000000000000000000010",
+				"id":        "prov_0000000000000010",
 				"projectId": "prj_default",
 				"name":      "local",
 				"type":      "example",

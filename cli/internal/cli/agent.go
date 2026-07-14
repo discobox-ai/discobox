@@ -103,7 +103,7 @@ func (a *App) newAgentSecretsBindCommand() *cobra.Command {
 		if a.output == "json" {
 			return writeJSON(cmd.OutOrStdout(), binding)
 		}
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "bound %s to secret %s\n", binding.EnvName, shortID(binding.SecretId))
+		_, err = fmt.Fprintf(cmd.OutOrStdout(), "bound %s to secret %s\n", binding.EnvName, binding.SecretId)
 		return err
 	}}
 }
@@ -395,7 +395,7 @@ func (a *App) newAgentSetDefaultCommand() *cobra.Command {
 		if a.output == "json" {
 			return writeJSON(cmd.OutOrStdout(), project)
 		}
-		_, err = cmd.OutOrStdout().Write([]byte("default agent config set to " + shortID(agentID) + "\n"))
+		_, err = cmd.OutOrStdout().Write([]byte("default agent config set to " + agentID + "\n"))
 		return err
 	}}
 }

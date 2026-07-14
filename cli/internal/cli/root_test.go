@@ -263,7 +263,7 @@ func TestWriteEventPrintsEventIDInsteadOfSeqWhenPresent(t *testing.T) {
 	cmd := &cobra.Command{}
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	eventID := "01kv9w440bpa9qk5n25t2hh2rv"
+	eventID := "evt_9qk5n25t2hh2rv00"
 	msg := &apiclientgen.ProjectEventMessage{
 		Event: apiclientgen.ProjectEventNameResourceChanged,
 		Data: &apiclientgen.ResourceChangedEvent{
@@ -280,7 +280,7 @@ func TestWriteEventPrintsEventIDInsteadOfSeqWhenPresent(t *testing.T) {
 		t.Fatalf("writeEvent: %v", err)
 	}
 	output := out.String()
-	if !strings.Contains(output, shortID(eventID)) {
+	if !strings.Contains(output, eventID) {
 		t.Fatalf("event output = %q, want short event ID", output)
 	}
 	if strings.Contains(output, "seq=42") {
@@ -348,7 +348,7 @@ func TestRootCommandRejectsInvalidOutputFormat(t *testing.T) {
 }
 
 func TestSandboxListQuietCommandPrintsFullIDsOnly(t *testing.T) {
-	const sandboxID = "01kv9w440bpa9qk5n25t2hh2rv"
+	const sandboxID = "sbx_9qk5n25t2hh2rv00"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Path; got != "/projects/project-1/sandboxes" {
 			t.Fatalf("path = %q, want project sandboxes path", got)
@@ -433,7 +433,7 @@ func TestTerminalCreateFallsBackWhenStartResponseIsTruncated(t *testing.T) {
 		t.Fatalf("requests created=%v started=%v listed=%v, want all true", created, started, listed)
 	}
 	output := out.String()
-	if !strings.Contains(output, shortID(terminalID)) || !strings.Contains(output, "running") {
+	if !strings.Contains(output, terminalID) || !strings.Contains(output, "running") {
 		t.Fatalf("terminal create output = %q, want fallback terminal row", output)
 	}
 }
@@ -531,7 +531,7 @@ func TestAgentSetDefaultCommand(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute set-default: %v", err)
 	}
-	if got, want := out.String(), "default agent config set to "+shortID(agentID)+"\n"; got != want {
+	if got, want := out.String(), "default agent config set to "+agentID+"\n"; got != want {
 		t.Fatalf("output = %q, want %q", got, want)
 	}
 }
@@ -603,7 +603,7 @@ func TestSecretRequestApproveCommandSendsSelectedSecretID(t *testing.T) {
 	if approved["secretId"] != secretID || approved["grantTTLSeconds"] != float64(600) {
 		t.Fatalf("approve body = %#v", approved)
 	}
-	if output := out.String(); !strings.Contains(output, shortID(requestID)) || !strings.Contains(output, "approved") {
+	if output := out.String(); !strings.Contains(output, requestID) || !strings.Contains(output, "approved") {
 		t.Fatalf("approve output = %q, want approved request", output)
 	}
 }
@@ -644,7 +644,7 @@ func TestAgentListShowsProjectDefault(t *testing.T) {
 	if !strings.Contains(output, "DEFAULT") {
 		t.Fatalf("output = %q, want DEFAULT column", output)
 	}
-	if !strings.Contains(output, shortID(defaultAgentID)+"  codex  Codex  yes") {
+	if !strings.Contains(output, defaultAgentID+"  codex  Codex  yes") {
 		t.Fatalf("output = %q, want default agent marked yes", output)
 	}
 	if strings.Contains(output, "Other  yes") {
@@ -697,7 +697,7 @@ func TestAgentEnableCreatesDefinitionWhenMissing(t *testing.T) {
 	if requested[http.MethodPut+" /projects/project-1/agent-configs/"+agentID+"/default"] != 1 {
 		t.Fatalf("set default requests = %d, want 1", requested[http.MethodPut+" /projects/project-1/agent-configs/"+agentID+"/default"])
 	}
-	if output := out.String(); !strings.Contains(output, shortID(agentID)) || !strings.Contains(output, "Codex") {
+	if output := out.String(); !strings.Contains(output, agentID) || !strings.Contains(output, "Codex") {
 		t.Fatalf("output = %q, want created agent", output)
 	}
 }
@@ -734,7 +734,7 @@ func TestAgentEnableDoesNothingWhenDefinitionAlreadyEnabled(t *testing.T) {
 	if requested[http.MethodPut+" /projects/project-1/agent-configs/"+agentID+"/default"] != 0 {
 		t.Fatalf("set default requests = %d, want 0", requested[http.MethodPut+" /projects/project-1/agent-configs/"+agentID+"/default"])
 	}
-	if output := out.String(); !strings.Contains(output, shortID(agentID)) || !strings.Contains(output, "Codex") {
+	if output := out.String(); !strings.Contains(output, agentID) || !strings.Contains(output, "Codex") {
 		t.Fatalf("output = %q, want existing agent", output)
 	}
 }
@@ -773,7 +773,7 @@ func TestAgentEnableDefaultFlagSetsExistingDefinitionAgentDefault(t *testing.T) 
 	if requested[http.MethodPut+" /projects/project-1/agent-configs/"+agentID+"/default"] != 1 {
 		t.Fatalf("set default requests = %d, want 1", requested[http.MethodPut+" /projects/project-1/agent-configs/"+agentID+"/default"])
 	}
-	if output := out.String(); !strings.Contains(output, shortID(agentID)) || !strings.Contains(output, "Codex") {
+	if output := out.String(); !strings.Contains(output, agentID) || !strings.Contains(output, "Codex") {
 		t.Fatalf("output = %q, want existing agent", output)
 	}
 }
@@ -1026,8 +1026,8 @@ func TestWriteSandboxesTableIncludesErrorMessage(t *testing.T) {
 }
 
 func TestJobsCommandListsProjectJobs(t *testing.T) {
-	const jobID = "01kv9w440bpa9qk5n25t2hh2rv"
-	const resourceID = "01kv9w440a7bhqnk550g3821ck"
+	const jobID = "job_9qk5n25t2hh2rv00"
+	const resourceID = "sbx_hqnk550g3821ck00"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Path; got != "/projects/project-1/jobs" {
 			t.Fatalf("path = %q, want project jobs path", got)
@@ -1046,18 +1046,13 @@ func TestJobsCommandListsProjectJobs(t *testing.T) {
 		t.Fatalf("execute jobs: %v", err)
 	}
 	output := out.String()
-	for _, want := range []string{"ID", "CREATED", "ERROR", shortID(jobID), "sandbox.reconcile", "failed", "sandbox/" + shortID(resourceID), "failed to launch sandbox"} {
+	for _, want := range []string{"ID", "CREATED", "ERROR", jobID, "sandbox.reconcile", "failed", "sandbox/" + resourceID, "failed to launch sandbox"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("jobs output = %q, want %q", output, want)
 		}
 	}
 	if strings.Contains(output, "UPDATED") || strings.Contains(output, "updatedAt") {
 		t.Fatalf("jobs output = %q, did not expect updated column", output)
-	}
-	for _, unexpected := range []string{jobID, resourceID} {
-		if strings.Contains(output, unexpected) {
-			t.Fatalf("jobs output = %q, did not expect full ID %q", output, unexpected)
-		}
 	}
 }
 
@@ -1136,7 +1131,7 @@ func TestStatusCommandShowsNewestFiveOfEachResource(t *testing.T) {
 }
 
 func TestJobsParentQuietCommandPrintsFullIDsOnly(t *testing.T) {
-	const jobID = "01kv9w440bpa9qk5n25t2hh2rv"
+	const jobID = "job_9qk5n25t2hh2rv00"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.URL.Path; got != "/projects/project-1/jobs" {
 			t.Fatalf("path = %q, want project jobs path", got)
@@ -1165,8 +1160,8 @@ func TestJobsTableSortsByCreatedAtAscending(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 
-	newerID := "01kv9w440bpa9qk5n25t2hh2rv"
-	olderID := "01kv9w440a7bhqnk550g3821ck"
+	newerID := "job_9qk5n25t2hh2rv00"
+	olderID := "job_hqnk550g3821ck00"
 	jobs := []apimodel.Job{
 		{
 			ID:           newerID,
@@ -1194,8 +1189,8 @@ func TestJobsTableSortsByCreatedAtAscending(t *testing.T) {
 		t.Fatalf("writeJobs: %v", err)
 	}
 	output := out.String()
-	olderIndex := strings.Index(output, shortID(olderID))
-	newerIndex := strings.Index(output, shortID(newerID))
+	olderIndex := strings.Index(output, olderID)
+	newerIndex := strings.Index(output, newerID)
 	if olderIndex < 0 || newerIndex < 0 || olderIndex > newerIndex {
 		t.Fatalf("jobs output = %q, want older job before newer job", output)
 	}
@@ -1210,7 +1205,7 @@ func TestJobsTableShowsFutureSchedule(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 
-	jobID := "01kv9w440bpa9qk5n25t2hh2rv"
+	jobID := "job_9qk5n25t2hh2rv00"
 	jobs := []apimodel.Job{
 		{
 			ID:           jobID,
@@ -1229,7 +1224,7 @@ func TestJobsTableShowsFutureSchedule(t *testing.T) {
 		t.Fatalf("writeJobs: %v", err)
 	}
 	output := out.String()
-	for _, want := range []string{"NEXT", shortID(jobID), "backoff", "5 minutes from now"} {
+	for _, want := range []string{"NEXT", jobID, "backoff", "5 minutes from now"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("jobs output = %q, want %q", output, want)
 		}
@@ -1242,8 +1237,8 @@ func TestJobsJSONPreservesResponseOrder(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 
-	newerID := "01kv9w440bpa9qk5n25t2hh2rv"
-	olderID := "01kv9w440a7bhqnk550g3821ck"
+	newerID := "job_9qk5n25t2hh2rv00"
+	olderID := "job_hqnk550g3821ck00"
 	jobs := []apimodel.Job{
 		{ID: newerID, CreatedAt: time.Date(2026, 6, 17, 1, 0, 0, 0, time.UTC)},
 		{ID: olderID, CreatedAt: time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC)},
@@ -1261,7 +1256,7 @@ func TestJobsJSONPreservesResponseOrder(t *testing.T) {
 }
 
 func TestWorkerListCommandFiltersByProvider(t *testing.T) {
-	const workerID = "01kv9w440bpa9qk5n25t2hh2rv"
+	const workerID = "wrk_9qk5n25t2hh2rv00"
 	const providerID = "provider-1"
 	var sawWorkerList bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -1289,13 +1284,10 @@ func TestWorkerListCommandFiltersByProvider(t *testing.T) {
 		t.Fatal("worker list endpoint was not called")
 	}
 	output := out.String()
-	for _, want := range []string{"ID", "PROVIDER", "MESSAGE", shortID(workerID), shortID(providerID), "active", "true", "2.00", "1.0GiB", "worker registration expired"} {
+	for _, want := range []string{"ID", "PROVIDER", "MESSAGE", workerID, providerID, "active", "true", "2.00", "1.0GiB", "worker registration expired"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("worker output = %q, want %q", output, want)
 		}
-	}
-	if strings.Contains(output, workerID) {
-		t.Fatalf("worker output = %q, did not expect full worker ID", output)
 	}
 }
 
@@ -1360,7 +1352,7 @@ func TestFormatRelativeTime(t *testing.T) {
 }
 
 func TestSandboxGetResolvesShortID(t *testing.T) {
-	const fullID = "01kv9w440bpa9qk5n25t2hh2rv"
+	const fullID = "sbx_9qk5n25t2hh2rv00"
 	sandboxJSON := testSandboxJSON(fullID, "alpha", "2026-06-17T00:00:00Z", "2026-06-17T00:00:01Z")
 	var sawList bool
 	var sawGet bool
@@ -1382,7 +1374,7 @@ func TestSandboxGetResolvesShortID(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "sandbox", "get", shortID(fullID)})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "sandbox", "get", "sbx_9qk5"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute sandbox get: %v", err)
@@ -1390,14 +1382,14 @@ func TestSandboxGetResolvesShortID(t *testing.T) {
 	if !sawList || !sawGet {
 		t.Fatalf("sawList=%t sawGet=%t, want both", sawList, sawGet)
 	}
-	if output := out.String(); !strings.Contains(output, shortID(fullID)) || strings.Contains(output, fullID) {
-		t.Fatalf("sandbox output = %q, want short ID only", output)
+	if output := out.String(); !strings.Contains(output, fullID) {
+		t.Fatalf("sandbox output = %q, want full ID", output)
 	}
 }
 
-func TestResolveShortIDMatchesPrefixOrSuffix(t *testing.T) {
-	const fullID = "01kv9w440bpa9qk5n25t2hh2rv"
-	for _, value := range []string{"01kv9w44", "5t2hh2rv", "01kv9w440bpa"} {
+func TestResolveShortIDMatchesPrefix(t *testing.T) {
+	const fullID = "sbx_9qk5n25t2hh2rv00"
+	for _, value := range []string{"sbx_9qk5", "sbx_9qk5n25t2hh2rv00", "sbx_9"} {
 		t.Run(value, func(t *testing.T) {
 			got, err := resolveShortID(value, "sandbox ID", []string{fullID})
 			if err != nil {
