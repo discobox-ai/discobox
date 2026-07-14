@@ -191,10 +191,14 @@ func TestUnixTransportAndRequestShapes(t *testing.T) {
 		t.Fatalf("queue limit zero request = %q", got)
 	}
 	var streamed []Event
-	if err := c.FollowEvents(context.Background(), EventOptions{HookID: "hook one", Limit: 5, LastEventID: "01test"}, func(event Event) error {
+	// FollowEvents reconnects when the stream ends, so stop it from the callback.
+	streamCtx, stopStream := context.WithCancel(context.Background())
+	defer stopStream()
+	if err := c.FollowEvents(streamCtx, EventOptions{HookID: "hook one", Limit: 5, LastEventID: "01test"}, func(event Event) error {
 		streamed = append(streamed, event)
+		stopStream()
 		return nil
-	}); err != nil {
+	}); !errors.Is(err, context.Canceled) {
 		t.Fatalf("follow events: %v", err)
 	}
 	if len(streamed) != 1 || streamed[0].ID != "02test" || streamed[0].HookID != "hook one" {
@@ -221,6 +225,94 @@ func TestUnixTransportAndRequestShapes(t *testing.T) {
 	}
 	if string(out) != "" {
 		t.Fatalf("output = %q", out)
+	}
+}
+
+// TestFollowEventsReconnects covers a daemon restart: the stream drops after the
+// shutdown event and the client reconnects, resuming after the last event seen.
+func TestFollowEventsReconnects(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "daemon.sock")
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	lastEventIDs := make(chan string, 4)
+	attempts := 0
+	srv := &http.Server{ReadHeaderTimeout: time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.EscapedPath() != "/events/stream" {
+			http.NotFound(w, r)
+			return
+		}
+		lastEventIDs <- r.Header.Get("Last-Event-ID")
+		attempts++
+		w.Header().Set("Content-Type", "text/event-stream")
+		if attempts == 1 {
+			fmt.Fprint(w, "data: {\"id\":\"01test\",\"type\":\"daemon.shutdown.requested\"}\n\n")
+			return
+		}
+		fmt.Fprint(w, "data: {\"id\":\"02test\",\"type\":\"hook.run.finished\"}\n\n")
+	})}
+	go func() { _ = srv.Serve(ln) }()
+	defer srv.Shutdown(context.Background())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	disconnects := 0
+	var streamed []string
+	err = New(sock).FollowEvents(ctx, EventOptions{
+		OnDisconnect: func(_ error, _ int) { disconnects++ },
+	}, func(event Event) error {
+		streamed = append(streamed, event.ID)
+		if event.ID == "02test" {
+			cancel()
+		}
+		return nil
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("follow events after reconnect: %v", err)
+	}
+	if len(streamed) != 2 || streamed[0] != "01test" || streamed[1] != "02test" {
+		t.Fatalf("streamed events = %v", streamed)
+	}
+	if disconnects != 1 {
+		t.Fatalf("disconnect notices = %d, want 1", disconnects)
+	}
+	if got := <-lastEventIDs; got != "" {
+		t.Fatalf("first Last-Event-ID = %q, want empty", got)
+	}
+	if got := <-lastEventIDs; got != "01test" {
+		t.Fatalf("reconnect Last-Event-ID = %q, want 01test", got)
+	}
+}
+
+// TestFollowEventsCallbackErrorIsTerminal ensures a callback failure ends the
+// follow instead of being retried as a stream failure.
+func TestFollowEventsCallbackErrorIsTerminal(t *testing.T) {
+	sock := filepath.Join(t.TempDir(), "daemon.sock")
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+
+	requests := 0
+	srv := &http.Server{ReadHeaderTimeout: time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "text/event-stream")
+		fmt.Fprint(w, "data: {\"id\":\"01test\",\"type\":\"hook.run.finished\"}\n\n")
+	})}
+	go func() { _ = srv.Serve(ln) }()
+	defer srv.Shutdown(context.Background())
+
+	boom := errors.New("boom")
+	err = New(sock).FollowEvents(context.Background(), EventOptions{}, func(Event) error { return boom })
+	if !errors.Is(err, boom) {
+		t.Fatalf("follow events error = %v, want boom", err)
+	}
+	if requests != 1 {
+		t.Fatalf("stream requests = %d, want 1", requests)
 	}
 }
 

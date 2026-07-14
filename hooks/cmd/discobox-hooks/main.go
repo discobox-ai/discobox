@@ -1258,7 +1258,7 @@ func (a *app) followEvents(cmd *cobra.Command, c *client.Client, args []string, 
 			return err
 		}
 	}
-	return c.FollowEvents(cmd.Context(), client.EventOptions{HookID: hookID, Limit: limit}, func(event client.Event) error {
+	return c.FollowEvents(cmd.Context(), a.followOptions(cmd, hookID, limit), func(event client.Event) error {
 		if a.opts.output == "json" {
 			return writeJSONLine(w, event)
 		}
@@ -1266,6 +1266,18 @@ func (a *app) followEvents(cmd *cobra.Command, c *client.Client, args []string, 
 		writeEventTableRow(tw, event, formatLiveEventTime)
 		return tw.Flush()
 	})
+}
+
+// followOptions builds the follow request and reports reconnects on stderr, so
+// a daemon restart shows up as a notice instead of ending the follow.
+func (a *app) followOptions(cmd *cobra.Command, hookID string, limit int) client.EventOptions {
+	return client.EventOptions{
+		HookID: hookID,
+		Limit:  limit,
+		OnDisconnect: func(err error, attempt int) {
+			fmt.Fprintf(cmd.ErrOrStderr(), "hook daemon connection lost (%s); reconnecting (attempt %d)\n", oneLine(err.Error()), attempt)
+		},
+	}
 }
 
 func (a *app) followLSPEvents(cmd *cobra.Command, c *client.Client, args []string, limit int) error {
@@ -1282,7 +1294,7 @@ func (a *app) followLSPEvents(cmd *cobra.Command, c *client.Client, args []strin
 			return err
 		}
 	}
-	return c.FollowEvents(cmd.Context(), client.EventOptions{HookID: hookID, Limit: limit}, func(event client.Event) error {
+	return c.FollowEvents(cmd.Context(), a.followOptions(cmd, hookID, limit), func(event client.Event) error {
 		if !isLSPEvent(event) {
 			return nil
 		}

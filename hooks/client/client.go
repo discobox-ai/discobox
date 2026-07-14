@@ -25,6 +25,8 @@ var (
 	ErrNotRunning = errors.New("hook daemon not running")
 	// ErrTimeout reports that a daemon request timed out.
 	ErrTimeout = errors.New("hook daemon request timed out")
+	// errStreamClosed reports that the daemon ended an event stream.
+	errStreamClosed = errors.New("hook daemon closed the event stream")
 )
 
 // Client talks to a session hook daemon over HTTP on a Unix domain socket.
@@ -362,12 +364,89 @@ func (c *Client) ListDiagnostics(ctx context.Context, opts DiagnosticOptions) ([
 	return wrapped.Diagnostics, nil
 }
 
-// FollowEvents streams daemon audit events until ctx is canceled or the stream
+// Reconnect policy for FollowEvents. A daemon restart drops the stream, so a
+// dropped stream is retried for a bounded window before the call gives up.
+const (
+	reconnectMaxAttempts  = 15
+	reconnectInitialDelay = 100 * time.Millisecond
+	reconnectMaxDelay     = 2 * time.Second
+	// A stream that stayed up at least this long counts as healthy, so the
+	// next drop starts a fresh retry budget instead of exhausting the old one.
+	healthyStreamDuration = 5 * time.Second
+)
+
+// callbackError marks an error returned by the caller's event callback so the
+// reconnect loop treats it as terminal rather than as a stream failure.
+type callbackError struct{ err error }
+
+func (e callbackError) Error() string { return e.err.Error() }
+func (e callbackError) Unwrap() error { return e.err }
+
+// FollowEvents streams daemon audit events until ctx is canceled or the callback
 // fails. Existing events are not replayed unless LastEventID is set.
+//
+// A dropped stream (most often a daemon restart, announced by a preceding
+// daemon.shutdown.requested event) is retried with backoff, resuming after the
+// last event already delivered so no event is repeated or missed. Retries are
+// bounded: if the daemon does not come back, the original stream error is
+// returned.
 func (c *Client) FollowEvents(ctx context.Context, opts EventOptions, fn func(Event) error) error {
 	if fn == nil {
 		return fmt.Errorf("event callback is required")
 	}
+	lastEventID := opts.LastEventID
+	attempt := 0
+	for {
+		attemptOpts := opts
+		attemptOpts.LastEventID = lastEventID
+		start := time.Now()
+		err := c.followEventsOnce(ctx, attemptOpts, func(event Event) error {
+			if err := fn(event); err != nil {
+				return callbackError{err: err}
+			}
+			if event.ID != "" {
+				lastEventID = event.ID
+			}
+			return nil
+		})
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		var cbErr callbackError
+		if errors.As(err, &cbErr) {
+			return cbErr.err
+		}
+		if time.Since(start) >= healthyStreamDuration {
+			attempt = 0
+		}
+		attempt++
+		if attempt > reconnectMaxAttempts {
+			return err
+		}
+		if opts.OnDisconnect != nil {
+			opts.OnDisconnect(err, attempt)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(reconnectDelay(attempt)):
+		}
+	}
+}
+
+// reconnectDelay returns the backoff before the given 1-based retry attempt.
+func reconnectDelay(attempt int) time.Duration {
+	delay := reconnectInitialDelay << (attempt - 1)
+	if delay <= 0 || delay > reconnectMaxDelay {
+		return reconnectMaxDelay
+	}
+	return delay
+}
+
+func (c *Client) followEventsOnce(ctx context.Context, opts EventOptions, fn func(Event) error) error {
 	if c.httpClient == nil {
 		c.httpClient = unixHTTPClient(c.socketPath, defaultTimeout)
 	}
@@ -394,7 +473,12 @@ func (c *Client) FollowEvents(ctx context.Context, opts EventOptions, fn func(Ev
 		b, _ := io.ReadAll(resp.Body)
 		return responseError(resp.StatusCode, b)
 	}
-	return readSSEEvents(resp.Body, fn)
+	if err := readSSEEvents(resp.Body, fn); err != nil {
+		return err
+	}
+	// A follow stream only ends when the daemon goes away, so a clean end of
+	// body is still a disconnect as far as the caller is concerned.
+	return errStreamClosed
 }
 
 func eventQuery(opts EventOptions) url.Values {
@@ -644,6 +728,10 @@ type EventOptions struct {
 	HookID      string
 	Limit       int
 	LastEventID string
+	// OnDisconnect, when set, is called by FollowEvents each time the event
+	// stream drops and a reconnect is about to be attempted. attempt is the
+	// 1-based retry number.
+	OnDisconnect func(err error, attempt int)
 }
 
 type ListOptions struct {
