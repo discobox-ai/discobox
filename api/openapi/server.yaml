@@ -81,6 +81,9 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                configure:
+                    $ref: '#/components/schemas/SandboxCreateConfig'
+                    description: Ephemeral sandbox definition run interactively to collect configuration before a HarnessConfig is created from this definition. Its primary terminal must exit 0; the sandbox is then expected to have written /run/discobox/harness-configure.json with secrets and files to apply to the new HarnessConfig.
                 description:
                     description: Harness config definition description
                     type: string
@@ -161,6 +164,42 @@ components:
                     type: string
             required:
                 - name
+            type: object
+        InlineHarnessConfig:
+            additionalProperties: false
+            description: An ad hoc harness process spec provided directly on a sandbox create request instead of by HarnessConfig reference.
+            properties:
+                files:
+                    description: Files to write into the harness's home directory when the harness is installed.
+                    items:
+                        $ref: '#/components/schemas/HarnessConfigFile'
+                    nullable: true
+                    type: array
+                installCommand:
+                    description: Argv used to install the harness. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                relaunchCommand:
+                    description: Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                runCommand:
+                    description: Argv used to run the harness. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    items:
+                        type: string
+                    type: array
+                secrets:
+                    description: Environment-variable secrets the harness expects.
+                    items:
+                        $ref: '#/components/schemas/HarnessConfigSecret'
+                    nullable: true
+                    type: array
+            required:
+                - runCommand
             type: object
         HarnessConfigSecretBinding:
             additionalProperties: false
@@ -1303,6 +1342,9 @@ components:
         SandboxConfig:
             additionalProperties: false
             properties:
+                harnessConfig:
+                    $ref: '#/components/schemas/InlineHarnessConfig'
+                    description: Ad hoc harness config running in this sandbox, provided inline instead of by reference. Takes precedence over harnessConfigId when both are set.
                 harnessConfigId:
                     description: Harness config ID
                     type: string
@@ -1581,6 +1623,9 @@ components:
         SandboxCreateConfig:
             additionalProperties: false
             properties:
+                harnessConfig:
+                    $ref: '#/components/schemas/InlineHarnessConfig'
+                    description: Ad hoc harness config to run in this sandbox, provided inline instead of by reference. Takes precedence over harnessConfigId when both are set.
                 harnessConfigId:
                     description: Harness config ID
                     type: string

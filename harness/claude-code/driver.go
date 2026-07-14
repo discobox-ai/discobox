@@ -3,6 +3,7 @@ package claudecode
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -11,6 +12,17 @@ import (
 )
 
 const ManagedSettingsPath = "/etc/claude-code/managed-settings.json"
+
+// configureScript runs as the primary terminal of the claude-code Configure
+// sandbox. See configure.sh for what it does.
+//
+//go:embed configure.sh
+var configureScript string
+
+// configureScriptPath is where configureScript is written in the configure
+// sandbox's home directory (see Definition().Configure.Files) and the path
+// its RunCommand executes.
+const configureScriptPath = ".discobox-configure.sh"
 
 var Events = []string{
 	"SessionStart", "Setup", "InstructionsLoaded", "UserPromptSubmit",
@@ -56,6 +68,13 @@ func (Driver) Definition() harness.Definition {
 		Secrets: []harness.Secret{
 			{Name: "ANTHROPIC_API_KEY", Required: true, OneOfGroup: "auth"},
 			{Name: "CLAUDE_CODE_OAUTH_TOKEN", Required: true, OneOfGroup: "auth"},
+		},
+		Configure: &harness.Configure{
+			InstallCommand: []string{"npm", "install", "-g", "@anthropic-ai/claude-code"},
+			RunCommand:     []string{"sh", configureScriptPath},
+			Files: []harness.File{
+				{Path: configureScriptPath, Content: configureScript},
+			},
 		},
 	}
 }

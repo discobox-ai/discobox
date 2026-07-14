@@ -1847,6 +1847,11 @@ func (*HarnessConfigSecretBinding) setHarnessConfigSecretBindingRes() {}
 type HarnessDefinition struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// Ephemeral sandbox definition run interactively to collect configuration before a HarnessConfig is
+	// created from this definition. Its primary terminal must exit 0; the sandbox is then expected to
+	// have written /run/discobox/harness-configure.json with secrets and files to apply to the new
+	// HarnessConfig.
+	Configure OptSandboxCreateConfig `json:"configure"`
 	// Harness config definition description.
 	Description OptString `json:"description"`
 	// Files to write into the harness's home directory when the harness is installed.
@@ -1870,6 +1875,11 @@ type HarnessDefinition struct {
 // GetSchema returns the value of Schema.
 func (s *HarnessDefinition) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetConfigure returns the value of Configure.
+func (s *HarnessDefinition) GetConfigure() OptSandboxCreateConfig {
+	return s.Configure
 }
 
 // GetDescription returns the value of Description.
@@ -1915,6 +1925,11 @@ func (s *HarnessDefinition) GetSecrets() OptNilHarnessConfigSecretArray {
 // SetSchema sets the value of Schema.
 func (s *HarnessDefinition) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetConfigure sets the value of Configure.
+func (s *HarnessDefinition) SetConfigure(val OptSandboxCreateConfig) {
+	s.Configure = val
 }
 
 // SetDescription sets the value of Description.
@@ -2050,6 +2065,74 @@ func (s *HarnessHookLogsResponse) SetHooks(val []HarnessHookLog) {
 }
 
 func (*HarnessHookLogsResponse) listHarnessHooksRes() {}
+
+// An ad hoc harness process spec provided directly on a sandbox create request instead of by
+// HarnessConfig reference.
+// Ref: #/components/schemas/InlineHarnessConfig
+type InlineHarnessConfig struct {
+	// Files to write into the harness's home directory when the harness is installed.
+	Files OptNilHarnessConfigFileArray `json:"files"`
+	// Argv used to install the harness. Not run through a shell; use ["sh", "-c", "..."] for shell
+	// semantics.
+	InstallCommand OptNilStringArray `json:"installCommand"`
+	// Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand
+	// for non-first launches.
+	RelaunchCommand OptNilStringArray `json:"relaunchCommand"`
+	// Argv used to run the harness. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+	RunCommand []string `json:"runCommand"`
+	// Environment-variable secrets the harness expects.
+	Secrets OptNilHarnessConfigSecretArray `json:"secrets"`
+}
+
+// GetFiles returns the value of Files.
+func (s *InlineHarnessConfig) GetFiles() OptNilHarnessConfigFileArray {
+	return s.Files
+}
+
+// GetInstallCommand returns the value of InstallCommand.
+func (s *InlineHarnessConfig) GetInstallCommand() OptNilStringArray {
+	return s.InstallCommand
+}
+
+// GetRelaunchCommand returns the value of RelaunchCommand.
+func (s *InlineHarnessConfig) GetRelaunchCommand() OptNilStringArray {
+	return s.RelaunchCommand
+}
+
+// GetRunCommand returns the value of RunCommand.
+func (s *InlineHarnessConfig) GetRunCommand() []string {
+	return s.RunCommand
+}
+
+// GetSecrets returns the value of Secrets.
+func (s *InlineHarnessConfig) GetSecrets() OptNilHarnessConfigSecretArray {
+	return s.Secrets
+}
+
+// SetFiles sets the value of Files.
+func (s *InlineHarnessConfig) SetFiles(val OptNilHarnessConfigFileArray) {
+	s.Files = val
+}
+
+// SetInstallCommand sets the value of InstallCommand.
+func (s *InlineHarnessConfig) SetInstallCommand(val OptNilStringArray) {
+	s.InstallCommand = val
+}
+
+// SetRelaunchCommand sets the value of RelaunchCommand.
+func (s *InlineHarnessConfig) SetRelaunchCommand(val OptNilStringArray) {
+	s.RelaunchCommand = val
+}
+
+// SetRunCommand sets the value of RunCommand.
+func (s *InlineHarnessConfig) SetRunCommand(val []string) {
+	s.RunCommand = val
+}
+
+// SetSecrets sets the value of Secrets.
+func (s *InlineHarnessConfig) SetSecrets(val OptNilHarnessConfigSecretArray) {
+	s.Secrets = val
+}
 
 // Ref: #/components/schemas/Job
 type Job struct {
@@ -3264,6 +3347,52 @@ func (o OptHarnessConfig) Or(d HarnessConfig) HarnessConfig {
 	return d
 }
 
+// NewOptInlineHarnessConfig returns new OptInlineHarnessConfig with value set to v.
+func NewOptInlineHarnessConfig(v InlineHarnessConfig) OptInlineHarnessConfig {
+	return OptInlineHarnessConfig{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptInlineHarnessConfig is optional InlineHarnessConfig.
+type OptInlineHarnessConfig struct {
+	Value InlineHarnessConfig
+	Set   bool
+}
+
+// IsSet returns true if OptInlineHarnessConfig was set.
+func (o OptInlineHarnessConfig) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptInlineHarnessConfig) Reset() {
+	var v InlineHarnessConfig
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptInlineHarnessConfig) SetTo(v InlineHarnessConfig) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptInlineHarnessConfig) Get() (v InlineHarnessConfig, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptInlineHarnessConfig) Or(d InlineHarnessConfig) InlineHarnessConfig {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptInt returns new OptInt with value set to v.
 func NewOptInt(v int) OptInt {
 	return OptInt{
@@ -4181,6 +4310,52 @@ func (o OptSandboxConfigSourceCodeReferences) Get() (v SandboxConfigSourceCodeRe
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxConfigSourceCodeReferences) Or(d SandboxConfigSourceCodeReferences) SandboxConfigSourceCodeReferences {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxCreateConfig returns new OptSandboxCreateConfig with value set to v.
+func NewOptSandboxCreateConfig(v SandboxCreateConfig) OptSandboxCreateConfig {
+	return OptSandboxCreateConfig{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxCreateConfig is optional SandboxCreateConfig.
+type OptSandboxCreateConfig struct {
+	Value SandboxCreateConfig
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxCreateConfig was set.
+func (o OptSandboxCreateConfig) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxCreateConfig) Reset() {
+	var v SandboxCreateConfig
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxCreateConfig) SetTo(v SandboxCreateConfig) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxCreateConfig) Get() (v SandboxCreateConfig, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxCreateConfig) Or(d SandboxCreateConfig) SandboxCreateConfig {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -5949,6 +6124,9 @@ func (*Sandbox) updateSandboxRes()    {}
 
 // Ref: #/components/schemas/SandboxConfig
 type SandboxConfig struct {
+	// Ad hoc harness config running in this sandbox, provided inline instead of by reference. Takes
+	// precedence over harnessConfigId when both are set.
+	HarnessConfig OptInlineHarnessConfig `json:"harnessConfig"`
 	// Harness config ID.
 	HarnessConfigId OptString `json:"harnessConfigId"`
 	// Model the harness should use.
@@ -5979,6 +6157,11 @@ type SandboxConfig struct {
 	StorageBytes int64 `json:"storageBytes"`
 	// User identity and home directory to use inside the sandbox.
 	User OptSandboxUser `json:"user"`
+}
+
+// GetHarnessConfig returns the value of HarnessConfig.
+func (s *SandboxConfig) GetHarnessConfig() OptInlineHarnessConfig {
+	return s.HarnessConfig
 }
 
 // GetHarnessConfigId returns the value of HarnessConfigId.
@@ -6054,6 +6237,11 @@ func (s *SandboxConfig) GetStorageBytes() int64 {
 // GetUser returns the value of User.
 func (s *SandboxConfig) GetUser() OptSandboxUser {
 	return s.User
+}
+
+// SetHarnessConfig sets the value of HarnessConfig.
+func (s *SandboxConfig) SetHarnessConfig(val OptInlineHarnessConfig) {
+	s.HarnessConfig = val
 }
 
 // SetHarnessConfigId sets the value of HarnessConfigId.
@@ -6157,6 +6345,9 @@ func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeRefere
 
 // Ref: #/components/schemas/SandboxCreateConfig
 type SandboxCreateConfig struct {
+	// Ad hoc harness config to run in this sandbox, provided inline instead of by reference. Takes
+	// precedence over harnessConfigId when both are set.
+	HarnessConfig OptInlineHarnessConfig `json:"harnessConfig"`
 	// Harness config ID.
 	HarnessConfigId OptString `json:"harnessConfigId"`
 	// Model the harness should use.
@@ -6190,6 +6381,11 @@ type SandboxCreateConfig struct {
 	StorageBytes OptInt64 `json:"storageBytes"`
 	// User identity and home directory to use inside the sandbox.
 	User OptSandboxUser `json:"user"`
+}
+
+// GetHarnessConfig returns the value of HarnessConfig.
+func (s *SandboxCreateConfig) GetHarnessConfig() OptInlineHarnessConfig {
+	return s.HarnessConfig
 }
 
 // GetHarnessConfigId returns the value of HarnessConfigId.
@@ -6270,6 +6466,11 @@ func (s *SandboxCreateConfig) GetStorageBytes() OptInt64 {
 // GetUser returns the value of User.
 func (s *SandboxCreateConfig) GetUser() OptSandboxUser {
 	return s.User
+}
+
+// SetHarnessConfig sets the value of HarnessConfig.
+func (s *SandboxCreateConfig) SetHarnessConfig(val OptInlineHarnessConfig) {
+	s.HarnessConfig = val
 }
 
 // SetHarnessConfigId sets the value of HarnessConfigId.

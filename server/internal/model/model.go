@@ -267,6 +267,7 @@ type HarnessDefinition struct {
 	RelaunchCommand []string              `json:"relaunchCommand,omitempty" doc:"Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
 	Files           []HarnessConfigFile   `json:"files,omitempty" doc:"Files to write into the harness's home directory when the harness is installed"`
 	Secrets         []HarnessConfigSecret `json:"secrets,omitempty" doc:"Environment-variable secrets the harness expects"`
+	Configure       *ConfigureSandbox     `json:"configure,omitempty" doc:"Ephemeral sandbox definition run interactively to collect configuration (e.g. authentication) before a HarnessConfig is created from this definition. Its primary terminal must exit 0; the sandbox is then expected to have written /run/discobox/harness-configure.json with secrets and files to apply to the new HarnessConfig."`
 }
 
 // HarnessConfigSecretBinding binds one of a harness config's environment variables
@@ -320,6 +321,29 @@ type HarnessConfigSecret struct {
 	OneOfGroup string `json:"oneOfGroup,omitempty" doc:"Groups a required secret with alternatives; the requirement is satisfied when at least one member of the group is present"`
 }
 
+// InlineHarnessConfig is an ad hoc harness process spec provided directly on a
+// sandbox create request instead of by HarnessConfig reference. When set on a
+// Sandbox it takes precedence over any HarnessConfigID reference when resolving
+// the sandbox's primary terminal.
+type InlineHarnessConfig struct {
+	InstallCommand  []string              `json:"installCommand,omitempty" doc:"Argv used to install the harness. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
+	RunCommand      []string              `json:"runCommand" doc:"Argv used to run the harness. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
+	RelaunchCommand []string              `json:"relaunchCommand,omitempty" doc:"Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
+	Files           []HarnessConfigFile   `json:"files,omitempty" doc:"Files to write into the harness's home directory when the harness is installed"`
+	Secrets         []HarnessConfigSecret `json:"secrets,omitempty" doc:"Environment-variable secrets the harness expects"`
+}
+
+// ConfigureSandbox is an ephemeral sandbox definition run interactively
+// before a HarnessConfig is created from the owning HarnessDefinition.
+type ConfigureSandbox struct {
+	Image         string              `json:"image,omitempty" doc:"Sandbox base image. Defaults to the server configured sandbox image when omitted."`
+	Env           map[string]string   `json:"env,omitempty" doc:"Environment variables available to the configure sandbox"`
+	CPUVCPUs      float64             `json:"cpuVcpus,omitempty" doc:"Requested CPU capacity in vCPUs"`
+	MemoryBytes   int64               `json:"memoryBytes,omitempty" doc:"Requested memory capacity in bytes"`
+	StorageBytes  int64               `json:"storageBytes,omitempty" doc:"Requested storage capacity in bytes"`
+	HarnessConfig InlineHarnessConfig `json:"harnessConfig" doc:"Harness process the configure sandbox runs as its primary terminal"`
+}
+
 // GitSource describes a Git source to materialize into a sandbox.
 type GitSource struct {
 	Kind           string                `json:"kind" doc:"Source kind. Currently only git is supported." enum:"git"`
@@ -356,13 +380,14 @@ type SourceCodeReferences map[string]GitSource
 
 // Sandbox is the managed runtime/session unit.
 type Sandbox struct {
-	ID                   string  `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
-	ProjectID            string  `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	CreatedByUserID      string  `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
-	ProviderInstanceID   *string `gorm:"column:provider_instance_id;type:text;index" json:"providerInstanceId,omitempty" doc:"Sandbox provider instance ID"`
-	HarnessConfigID      *string `gorm:"column:harness_config_id;type:text;index" json:"harnessConfigId,omitempty" doc:"Harness config ID"`
-	Name                 string  `gorm:"not null;type:text" json:"name" doc:"Sandbox name" maxLength:"200"`
-	Description          *string `gorm:"type:text" json:"description,omitempty" doc:"Sandbox description"`
+	ID                   string               `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
+	ProjectID            string               `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	CreatedByUserID      string               `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
+	ProviderInstanceID   *string              `gorm:"column:provider_instance_id;type:text;index" json:"providerInstanceId,omitempty" doc:"Sandbox provider instance ID"`
+	HarnessConfigID      *string              `gorm:"column:harness_config_id;type:text;index" json:"harnessConfigId,omitempty" doc:"Harness config ID"`
+	InlineHarnessConfig  *InlineHarnessConfig `gorm:"column:inline_harness_config;type:text;serializer:json" json:"inlineHarnessConfig,omitempty" doc:"Ad hoc harness config running in this sandbox, provided inline instead of by reference. Takes precedence over HarnessConfigID when both are set."`
+	Name                 string               `gorm:"not null;type:text" json:"name" doc:"Sandbox name" maxLength:"200"`
+	Description          *string              `gorm:"type:text" json:"description,omitempty" doc:"Sandbox description"`
 	ResourceLifecycle    `gorm:"embedded"`
 	RestartGeneration    int64                `gorm:"column:restart_generation;not null;default:0" json:"restartGeneration" doc:"Requested restart generation"`
 	RestartedGeneration  int64                `gorm:"column:restarted_generation;not null;default:0" json:"restartedGeneration" doc:"Last restart generation completed by reconciliation"`

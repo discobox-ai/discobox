@@ -5,10 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
 
-	apimodel "github.com/obot-platform/discobox/api/model"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/harnessdefs"
 
@@ -105,11 +103,11 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 	relaunchCommand, _ := input.RelaunchCommand.Get()
 	var files []model.HarnessConfigFile
 	if apiFiles, ok := input.Files.Get(); ok {
-		files = harnessConfigFilesFromAPI(apiFiles)
+		files = services.HarnessConfigFilesToModel(apiFiles)
 	}
 	var secrets []model.HarnessConfigSecret
 	if apiSecrets, ok := input.Secrets.Get(); ok {
-		secrets, err = harnessConfigSecretsFromAPI(apiSecrets)
+		secrets, err = services.HarnessConfigSecretsToModel(apiSecrets)
 		if err != nil {
 			return nil, err
 		}
@@ -178,10 +176,10 @@ func (s *Service) UpdateHarnessConfig(ctx context.Context, projectID, configID s
 		config.RelaunchCommand = relaunchCommand
 	}
 	if apiFiles, ok := input.Files.Get(); ok {
-		config.Files = harnessConfigFilesFromAPI(apiFiles)
+		config.Files = services.HarnessConfigFilesToModel(apiFiles)
 	}
 	if apiSecrets, ok := input.Secrets.Get(); ok {
-		secrets, err := harnessConfigSecretsFromAPI(apiSecrets)
+		secrets, err := services.HarnessConfigSecretsToModel(apiSecrets)
 		if err != nil {
 			return nil, err
 		}
@@ -202,44 +200,6 @@ func (s *Service) UpdateHarnessConfig(ctx context.Context, projectID, configID s
 		return nil, err
 	}
 	return harnessdefs.Resolve(stored), nil
-}
-
-func harnessConfigFilesFromAPI(files []apimodel.HarnessConfigFile) []model.HarnessConfigFile {
-	if len(files) == 0 {
-		return nil
-	}
-	out := make([]model.HarnessConfigFile, 0, len(files))
-	for _, file := range files {
-		out = append(out, model.HarnessConfigFile{
-			Path:       file.Path,
-			Content:    file.Content,
-			CreateOnly: file.CreateOnly.Or(false),
-			Template:   file.Template.Or(false),
-		})
-	}
-	return out
-}
-
-var envVarNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-
-func harnessConfigSecretsFromAPI(secrets []apimodel.HarnessConfigSecret) ([]model.HarnessConfigSecret, error) {
-	if len(secrets) == 0 {
-		return nil, nil
-	}
-	out := make([]model.HarnessConfigSecret, 0, len(secrets))
-	seen := make(map[string]struct{}, len(secrets))
-	for _, secret := range secrets {
-		name := strings.TrimSpace(secret.Name)
-		if !envVarNamePattern.MatchString(name) {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("harness config secret name %q must be a valid environment variable name", secret.Name))
-		}
-		if _, dup := seen[name]; dup {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("harness config secret %q is declared more than once", name))
-		}
-		seen[name] = struct{}{}
-		out = append(out, model.HarnessConfigSecret{Name: name, Required: secret.Required.Or(false), OneOfGroup: strings.TrimSpace(secret.OneOfGroup.Or(""))})
-	}
-	return out, nil
 }
 
 func (s *Service) SetDefaultHarnessConfig(ctx context.Context, projectID, configID string) (*model.Project, error) {
@@ -295,7 +255,7 @@ func (s *Service) SetHarnessConfigSecretBinding(ctx context.Context, projectID, 
 		return nil, apiError(err, "harness config not found")
 	}
 	envName = strings.TrimSpace(envName)
-	if !envVarNamePattern.MatchString(envName) {
+	if !services.HarnessConfigEnvVarNamePattern.MatchString(envName) {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("environment variable name %q is invalid", envName))
 	}
 	secretID = strings.TrimSpace(secretID)

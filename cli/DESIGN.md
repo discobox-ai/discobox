@@ -25,3 +25,16 @@ the transport/session mechanics in `internal/cli/attach_session.go`.
 - Do not fork a second terminal/exec attach loop for a new stream feature. Add
   an option or callback to the shared session when the behavior is protocol
   plumbing; add resource-specific code only when the semantics differ.
+
+## Harness Config Definition Configure Step
+
+`harnesses enable` (`internal/cli/harness.go`) runs a harness config definition's
+optional `configure` sandbox spec before creating the HarnessConfig, unless
+`--no-configure` is passed. It reuses the existing sandbox lifecycle and attach
+helpers rather than introducing new ones: `waitForSandbox`/`waitForPrimaryTerminal`
+(`run.go`) to launch and locate the primary terminal, `attachSandboxTerminal`
+to let the user answer prompts, and `createSandboxExec`/`attachSandboxExec`/
+`returnSandboxExecStatus` (`sandbox_execs.go`) to `cat` back
+`/run/discobox/harness-configure.json` once the primary terminal exits 0. This
+orchestration is entirely client-side; the server has no configure-specific
+API surface.

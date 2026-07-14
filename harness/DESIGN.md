@@ -8,6 +8,11 @@ This package owns harness hook registration for sandbox terminals.
   `InstallHooks` (writes managed hook config) and describes that harness's built-in
   config via `Definition()` (install/run/relaunch argv and seed files). All
   harness-specific defaults live with the driver, never in the control plane.
+- A `Definition` may set `Configure` to describe an ephemeral sandbox the CLI
+  runs interactively before creating a `HarnessConfig`. The configure process
+  writes files and collected secret values to
+  `/run/discobox/harness-configure.json`; definitions without interactive setup
+  leave it nil.
 - `InstallHooks` (hook wiring) is unrelated to `Definition.InstallCommand`, which
   is the argv that installs the harness CLI itself.
 - Provider-specific implementations live in one folder per harness:
@@ -32,3 +37,10 @@ subject to repo trust prompts or user/project override:
 
 Drivers must be idempotent and preserve unrelated settings where the harness uses
 a single shared JSON object.
+
+## Claude Code configure flow
+
+`claude-code/configure.sh` runs Claude Code's interactive onboarding, captures
+its settings and credentials, and writes the configure result contract. The
+CLI owns the ephemeral sandbox lifecycle and applies the returned files and
+secret bindings only after the configure terminal exits successfully.

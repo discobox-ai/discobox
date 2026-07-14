@@ -152,6 +152,27 @@ func fromHarness(definition harness.Definition) model.HarnessDefinition {
 		RelaunchCommand: definition.RelaunchCommand,
 		Files:           filesFromHarness(definition.Files),
 		Secrets:         secretsFromHarness(definition.Secrets),
+		Configure:       configureFromHarness(definition.Configure),
+	}
+}
+
+func configureFromHarness(configure *harness.Configure) *model.ConfigureSandbox {
+	if configure == nil {
+		return nil
+	}
+	return &model.ConfigureSandbox{
+		Image:        configure.Image,
+		Env:          configure.Env,
+		CPUVCPUs:     configure.CPUVCPUs,
+		MemoryBytes:  configure.MemoryBytes,
+		StorageBytes: configure.StorageBytes,
+		HarnessConfig: model.InlineHarnessConfig{
+			InstallCommand:  configure.InstallCommand,
+			RunCommand:      configure.RunCommand,
+			RelaunchCommand: configure.RelaunchCommand,
+			Files:           filesFromHarness(configure.Files),
+			Secrets:         secretsFromHarness(configure.Secrets),
+		},
 	}
 }
 

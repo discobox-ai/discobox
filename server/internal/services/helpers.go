@@ -4,10 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 
 	serverapi "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
+	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/harnessdefs"
 	"github.com/obot-platform/discobox/server/internal/model"
 )
@@ -45,6 +49,58 @@ func OptIntPtr(value OptInt64) *int {
 		return &i
 	}
 	return nil
+}
+
+func HarnessConfigFilesToModel(files []apimodel.HarnessConfigFile) []model.HarnessConfigFile {
+	if len(files) == 0 {
+		return nil
+	}
+	out := make([]model.HarnessConfigFile, 0, len(files))
+	for _, file := range files {
+		out = append(out, model.HarnessConfigFile{Path: file.Path, Content: file.Content, CreateOnly: file.CreateOnly.Or(false), Template: file.Template.Or(false)})
+	}
+	return out
+}
+
+var HarnessConfigEnvVarNamePattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+func HarnessConfigSecretsToModel(secrets []apimodel.HarnessConfigSecret) ([]model.HarnessConfigSecret, error) {
+	if len(secrets) == 0 {
+		return nil, nil
+	}
+	out := make([]model.HarnessConfigSecret, 0, len(secrets))
+	seen := make(map[string]struct{}, len(secrets))
+	for _, secret := range secrets {
+		name := strings.TrimSpace(secret.Name)
+		if !HarnessConfigEnvVarNamePattern.MatchString(name) {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("harness config secret name %q must be a valid environment variable name", secret.Name))
+		}
+		if _, duplicate := seen[name]; duplicate {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, fmt.Sprintf("harness config secret %q is declared more than once", name))
+		}
+		seen[name] = struct{}{}
+		out = append(out, model.HarnessConfigSecret{Name: name, Required: secret.Required.Or(false), OneOfGroup: strings.TrimSpace(secret.OneOfGroup.Or(""))})
+	}
+	return out, nil
+}
+
+func InlineHarnessConfigToModel(value OptInlineHarnessConfig) (*model.InlineHarnessConfig, error) {
+	config, ok := value.Get()
+	if !ok {
+		return nil, nil
+	}
+	files, _ := config.Files.Get()
+	secrets, _ := config.Secrets.Get()
+	convertedSecrets, err := HarnessConfigSecretsToModel(secrets)
+	if err != nil {
+		return nil, err
+	}
+	installCommand, _ := config.InstallCommand.Get()
+	relaunchCommand, _ := config.RelaunchCommand.Get()
+	return &model.InlineHarnessConfig{
+		InstallCommand: installCommand, RelaunchCommand: relaunchCommand,
+		RunCommand: config.RunCommand, Files: HarnessConfigFilesToModel(files), Secrets: convertedSecrets,
+	}, nil
 }
 
 func SandboxUserToModel(value OptSandboxUser) (name *string, uid *int, gid *int, homeDirectory *string) {
@@ -88,6 +144,9 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 	}
 	if sandbox.HarnessConfigID != nil {
 		config["harnessConfigId"] = *sandbox.HarnessConfigID
+	}
+	if sandbox.InlineHarnessConfig != nil {
+		config["harnessConfig"] = sandbox.InlineHarnessConfig
 	}
 	if sandbox.Model != nil {
 		config["model"] = *sandbox.Model

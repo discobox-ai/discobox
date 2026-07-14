@@ -37,6 +37,25 @@ type Definition struct {
 	RelaunchCommand []string
 	Files           []File
 	Secrets         []Secret
+	Configure       *Configure
+}
+
+// Configure is an ephemeral sandbox definition run interactively, before an
+// HarnessConfig is created from this Definition, to collect configuration such
+// as authentication. Its primary terminal (RunCommand) must exit 0; the
+// sandbox is then expected to have written /run/discobox/harness-configure.json
+// with the secrets and files to apply to the new HarnessConfig.
+type Configure struct {
+	Image           string
+	Env             map[string]string
+	CPUVCPUs        float64
+	MemoryBytes     int64
+	StorageBytes    int64
+	InstallCommand  []string
+	RunCommand      []string
+	RelaunchCommand []string
+	Files           []File
+	Secrets         []Secret
 }
 
 // File is a file to write into the harness's home directory when the harness is

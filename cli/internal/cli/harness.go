@@ -1,15 +1,20 @@
 package cli
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
+	"github.com/obot-platform/discobox/id"
 )
 
 type harnessCreateOptions struct {
@@ -266,6 +271,7 @@ func (a *App) newHarnessCreateCommand() *cobra.Command {
 
 func (a *App) newHarnessEnableCommand() *cobra.Command {
 	var setDefault bool
+	var noConfigure bool
 	cmd := &cobra.Command{Use: "enable DEFINITION_NAME", Aliases: []string{"enabled"}, Short: "Enable a harness config definition", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessDefinitions, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
@@ -292,8 +298,31 @@ func (a *App) newHarnessEnableCommand() *cobra.Command {
 			}
 			return a.writeHarness(cmd, existing)
 		}
+		var configured *harnessConfigureOutput
+		if configureSpec, ok := definition.Configure.Get(); ok && !noConfigure {
+			configured, err = a.runHarnessConfigure(cmd, client, projectID, configureSpec)
+			if err != nil {
+				return fmt.Errorf("harness configure: %w", err)
+			}
+		}
 		body := &apimodel.CreateHarnessConfigBody{}
 		body.SetDefinitionId(apiclientgen.NewOptString(definition.ID))
+		if configured != nil && len(configured.Files) > 0 {
+			body.SetFiles(apiclientgen.NewOptNilHarnessConfigFileArray(configured.Files))
+		}
+		if configured != nil {
+			declarations := make([]apimodel.HarnessConfigSecret, 0, len(configured.Secrets))
+			for _, secret := range configured.Secrets {
+				if strings.TrimSpace(secret.EnvName) == "" {
+					return fmt.Errorf("harness configure: configure secret is missing envName")
+				}
+				declarations = append(declarations, apimodel.HarnessConfigSecret{
+					Name:     strings.TrimSpace(secret.EnvName),
+					Required: apiclientgen.NewOptBool(true),
+				})
+			}
+			body.SetSecrets(apiclientgen.NewOptNilHarnessConfigSecretArray(declarations))
+		}
 		harnessRes, err := client.CreateHarnessConfig(cmd.Context(), body, apiclientgen.CreateHarnessConfigParams{ProjectId: projectID})
 		if err != nil {
 			return err
@@ -301,6 +330,14 @@ func (a *App) newHarnessEnableCommand() *cobra.Command {
 		harness, err := expectResponse[apimodel.HarnessConfig](harnessRes)
 		if err != nil {
 			return err
+		}
+		if configured != nil {
+			if err := a.applyHarnessConfigureSecrets(cmd.Context(), client, projectID, harness.ID, configured.Secrets); err != nil {
+				if res, deleteErr := client.DeleteHarnessConfig(cmd.Context(), apiclientgen.DeleteHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harness.ID}); deleteErr == nil {
+					_ = expectNoContent[apiclientgen.DeleteHarnessConfigNoContent](res)
+				}
+				return fmt.Errorf("harness configure: apply secrets: %w", err)
+			}
 		}
 		if setDefault || len(harnesses) == 0 {
 			if err := a.setDefaultHarnessConfig(cmd.Context(), client, projectID, harness.ID); err != nil {
@@ -310,7 +347,124 @@ func (a *App) newHarnessEnableCommand() *cobra.Command {
 		return a.writeHarness(cmd, harness)
 	}}
 	cmd.Flags().BoolVarP(&setDefault, "default", "d", false, "Set the project default harness config")
+	cmd.Flags().BoolVar(&noConfigure, "no-configure", false, "Skip the definition's interactive configure step even if one is defined")
 	return cmd
+}
+
+const harnessConfigureOutputPath = "/run/discobox/harness-configure.json"
+
+type harnessConfigureOutput struct {
+	Secrets []harnessConfigureSecret     `json:"secrets"`
+	Files   []apimodel.HarnessConfigFile `json:"files"`
+}
+
+type harnessConfigureSecret struct {
+	EnvName string                            `json:"envName"`
+	Name    string                            `json:"name"`
+	Type    apiclientgen.CreateSecretBodyType `json:"type"`
+	Host    string                            `json:"host,omitempty"`
+	Value   apimodel.SecretValue              `json:"value"`
+}
+
+func (a *App) runHarnessConfigure(cmd *cobra.Command, client *apiclientgen.Client, projectID string, configureSpec apimodel.SandboxCreateConfig) (*harnessConfigureOutput, error) {
+	ctx := cmd.Context()
+	stderr := cmd.ErrOrStderr()
+	runID, err := id.New(id.PrefixSandbox)
+	if err != nil {
+		return nil, err
+	}
+	configureSpec.Name = "configure-" + id.RandomPart(runID)[:8]
+	sandboxRes, err := client.CreateSandbox(ctx, &apimodel.CreateSandboxBody{Config: configureSpec}, apiclientgen.CreateSandboxParams{ProjectId: projectID})
+	if err != nil {
+		return nil, fmt.Errorf("create configure sandbox: %w", err)
+	}
+	sandbox, err := expectResponse[apimodel.Sandbox](sandboxRes)
+	if err != nil {
+		return nil, fmt.Errorf("create configure sandbox: %w", err)
+	}
+	defer a.deleteConfigureSandboxQuietly(context.WithoutCancel(ctx), client, projectID, sandbox.ID, stderr)
+
+	fmt.Fprintf(stderr, "Running configure sandbox %s, waiting for it to start...\n", id.RandomPart(sandbox.ID))
+	if _, err := a.waitForSandbox(cmd, client, projectID, sandbox.ID, 2*time.Minute); err != nil {
+		return nil, fmt.Errorf("configure sandbox failed to start: %w", err)
+	}
+	terminal, err := a.waitForPrimaryTerminal(ctx, stderr, projectID, sandbox.ID, 2*time.Minute)
+	if err != nil {
+		return nil, fmt.Errorf("configure sandbox failed to launch: %w", err)
+	}
+	fmt.Fprintf(stderr, "Attaching to configure terminal %s (answer any prompts; Ctrl-P Ctrl-Q to detach)\n", id.RandomPart(terminal.ID))
+	if err := a.attachSandboxTerminal(ctx, projectID, sandbox.ID, terminal.ID, cmd.InOrStdin(), cmd.OutOrStdout(), stderr); err != nil {
+		return nil, fmt.Errorf("attach configure terminal: %w", err)
+	}
+	finished, err := a.getSandboxExec(ctx, projectID, sandbox.ID, terminal.ID)
+	if err != nil {
+		return nil, fmt.Errorf("check configure terminal status: %w", err)
+	}
+	switch finished.Status {
+	case apiclientgen.SandboxExecStatusExited:
+		if code, ok := finished.ExitCode.Get(); !ok || code != 0 {
+			return nil, fmt.Errorf("configure sandbox exited with code %d", code)
+		}
+	case apiclientgen.SandboxExecStatusFailed, apiclientgen.SandboxExecStatusLost:
+		return nil, fmt.Errorf("configure sandbox %s: %s", finished.Status, finished.Error.Or(""))
+	default:
+		return nil, fmt.Errorf("detached before the configure sandbox finished; re-run to retry")
+	}
+
+	var buf bytes.Buffer
+	catBody := &apimodel.CreateSandboxExecRequest{}
+	catBody.SetCommand([]string{"cat", harnessConfigureOutputPath})
+	catExec, err := a.createSandboxExec(ctx, projectID, sandbox.ID, catBody)
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", harnessConfigureOutputPath, err)
+	}
+	if err := a.attachSandboxExec(ctx, projectID, sandbox.ID, catExec.ID, false, false, bytes.NewReader(nil), &buf, stderr); err != nil {
+		return nil, fmt.Errorf("read %s: %w", harnessConfigureOutputPath, err)
+	}
+	if err := a.returnSandboxExecStatus(ctx, projectID, sandbox.ID, catExec.ID); err != nil {
+		return nil, fmt.Errorf("read %s: %w", harnessConfigureOutputPath, err)
+	}
+	var out harnessConfigureOutput
+	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
+		return nil, fmt.Errorf("%s is invalid: %w", harnessConfigureOutputPath, err)
+	}
+	return &out, nil
+}
+
+func (a *App) applyHarnessConfigureSecrets(ctx context.Context, client *apiclientgen.Client, projectID, harnessConfigID string, secrets []harnessConfigureSecret) error {
+	for _, secret := range secrets {
+		envName := strings.TrimSpace(secret.EnvName)
+		if envName == "" {
+			return fmt.Errorf("configure secret is missing envName")
+		}
+		name := strings.TrimSpace(secret.Name)
+		if name == "" {
+			name = envName
+		}
+		body := &apimodel.CreateSecretBody{Name: name, Type: secret.Type, Value: secret.Value}
+		if secret.Host != "" {
+			body.SetHost(apiclientgen.NewOptString(secret.Host))
+		}
+		secretRes, err := client.CreateSecret(ctx, body, apiclientgen.CreateSecretParams{ProjectId: projectID})
+		if err != nil {
+			return err
+		}
+		created, err := expectResponse[apimodel.Secret](secretRes)
+		if err != nil {
+			return err
+		}
+		bindBody := &apimodel.SetHarnessConfigSecretBindingBody{SecretId: created.ID}
+		if _, err := client.SetHarnessConfigSecretBinding(ctx, bindBody, apiclientgen.SetHarnessConfigSecretBindingParams{ProjectId: projectID, HarnessConfigId: harnessConfigID, EnvName: envName}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *App) deleteConfigureSandboxQuietly(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID string, stderr io.Writer) {
+	if _, err := client.DeleteSandbox(ctx, apiclientgen.DeleteSandboxParams{ProjectId: projectID, SandboxId: sandboxID}); err != nil {
+		fmt.Fprintf(stderr, "warning: failed to delete configure sandbox %s: %v\n", id.RandomPart(sandboxID), err)
+	}
 }
 
 func (a *App) newHarnessDisableCommand() *cobra.Command {

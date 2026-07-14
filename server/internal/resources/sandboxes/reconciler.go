@@ -502,7 +502,17 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	opts.UserUID = sb.UserUID
 	opts.UserGID = sb.UserGID
 	opts.HomeDirectory = sb.HomeDirectory
-	if sb.HarnessConfigID != nil && r.store != nil {
+	if sb.InlineHarnessConfig != nil {
+		inline := sb.InlineHarnessConfig
+		opts.ResolvedHarnessConfig = &ResolvedHarnessConfig{
+			ID:              "inline",
+			Name:            "inline",
+			InstallCommand:  inline.InstallCommand,
+			RunCommand:      inline.RunCommand,
+			RelaunchCommand: inline.RelaunchCommand,
+			Files:           inline.Files,
+		}
+	} else if sb.HarnessConfigID != nil && r.store != nil {
 		if cfg, err := r.store.GetHarnessConfig(ctx, sb.ProjectID, *sb.HarnessConfigID); err == nil {
 			// Resolve the sparse config against its built-in definition so the
 			// sandbox runs the effective (upgrade-propagated) commands and files.

@@ -139,6 +139,10 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		source = &converted
 	}
 	services.DefaultGitSourceSlugs(source, sourceCodeReferences)
+	inlineHarnessConfig, err := services.InlineHarnessConfigToModel(config.HarnessConfig)
+	if err != nil {
+		return nil, err
+	}
 	userName, userUID, userGID, homeDirectory := services.SandboxUserToModel(config.User)
 	image := strings.TrimSpace(config.Image.Or(""))
 	if image == "" {
@@ -150,6 +154,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		CreatedByUserID:      userID,
 		ProviderInstanceID:   providerID,
 		HarnessConfigID:      harnessConfigID,
+		InlineHarnessConfig:  inlineHarnessConfig,
 		Name:                 config.Name,
 		Description:          services.OptStringPtr(config.Description),
 		ResourceLifecycle:    model.NewResourceLifecycle(model.SandboxCreateOperation),
