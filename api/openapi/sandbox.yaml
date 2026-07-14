@@ -14,6 +14,9 @@ components:
                 path:
                     description: File path relative to the agent's home directory
                     type: string
+                template:
+                    description: Render file content against the public sandbox configuration before writing
+                    type: boolean
             required:
                 - path
                 - content

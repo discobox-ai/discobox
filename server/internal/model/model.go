@@ -307,6 +307,7 @@ type AgentConfigFile struct {
 	Path       string `json:"path" doc:"File path relative to the agent's home directory"`
 	Content    string `json:"content" doc:"File content to write"`
 	CreateOnly bool   `json:"createOnly,omitempty" doc:"Only create this file if it does not already exist"`
+	Template   bool   `json:"template,omitempty" doc:"Render file content against the public sandbox configuration before writing"`
 }
 
 // AgentConfigSecret declares an environment variable the agent expects, and

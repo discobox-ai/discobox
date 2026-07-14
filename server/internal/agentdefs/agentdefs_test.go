@@ -2,10 +2,31 @@ package agentdefs
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/obot-platform/discobox/server/internal/model"
 )
+
+func TestClaudeCodeDefinitionTrustsPrimarySource(t *testing.T) {
+	definition, ok := DefinitionByID("claude-code")
+	if !ok {
+		t.Fatal("claude-code definition not found")
+	}
+	for _, file := range definition.Files {
+		if file.Path != ".claude.json" {
+			continue
+		}
+		if !file.Template || !file.CreateOnly {
+			t.Fatalf("claude state file = %#v, want create-only template", file)
+		}
+		if !strings.Contains(file.Content, ".source") || !strings.Contains(file.Content, "hasTrustDialogAccepted") {
+			t.Fatalf("claude state template does not trust sandbox source: %s", file.Content)
+		}
+		return
+	}
+	t.Fatal("claude-code definition has no .claude.json file")
+}
 
 func TestResolveInheritsDefinitionForUnsetFields(t *testing.T) {
 	config := &model.AgentConfig{

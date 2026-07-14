@@ -104,6 +104,40 @@ func TestSandboxSourcesUseConfiguredAndDefaultTargets(t *testing.T) {
 	assertSource(t, sources[2], "docs", "/workspace/docs")
 }
 
+func TestNormalizeSandboxConfigPublishesPrimaryBindRoot(t *testing.T) {
+	config := workerapimodel.SandboxConfig{
+		Source: workerclient.NewOptGitSource(workerapimodel.GitSource{Kind: workerclient.GitSourceKindGit}),
+	}
+	normalizeSandboxConfig(&config)
+	source, ok := config.Source.Get()
+	if !ok {
+		t.Fatal("normalized config lost primary source")
+	}
+	destination, ok := source.Destination.Get()
+	if !ok || destination.Directory.Or("") != "/workspace" {
+		t.Fatalf("destination = %#v, want default primary bind root /workspace", destination)
+	}
+	manifest := buildSandboxManifest("project-1", "sandbox-1", "worker-1", "public-key", &workerapimodel.WorkerSandboxCreateRequest{Config: config}, nil)
+	manifestSource, ok := manifest.Config.Source.Get()
+	if !ok {
+		t.Fatal("manifest lost normalized primary source")
+	}
+	manifestDestination, ok := manifestSource.Destination.Get()
+	if !ok || manifestDestination.Directory.Or("") != "/workspace" {
+		t.Fatalf("manifest destination = %#v, want runtime bind root /workspace", manifestDestination)
+	}
+
+	destination.Directory = workerclient.NewOptString("workspace/../project")
+	source.Destination = workerclient.NewOptGitSourceDestination(destination)
+	config.Source = workerclient.NewOptGitSource(source)
+	normalizeSandboxConfig(&config)
+	source, _ = config.Source.Get()
+	destination, _ = source.Destination.Get()
+	if destination.Directory.Or("") != "/project" {
+		t.Fatalf("destination = %#v, want cleaned effective bind root /project", destination)
+	}
+}
+
 func TestGitSourceCloneURLPrefixesAbsoluteLocalDirectoryWithHostMountPrefix(t *testing.T) {
 	source := workerapimodel.GitSource{
 		Kind:           workerclient.GitSourceKindGit,

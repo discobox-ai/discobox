@@ -41,6 +41,7 @@ type Config struct {
 	Resources             config.ResourceConfig
 	ResolvedAgentConfig   *config.Agent
 	Agents                []config.Agent
+	SandboxConfig         map[string]any
 	Installer             terminal.Installer
 	ExecUnitManager       execs.UnitManager
 	ExecAuditRecorder     execs.AuditRecorder
@@ -66,6 +67,7 @@ func ConfigFromAgentConfig(cfg config.Config) Config {
 		Resources:             cfg.Resources,
 		ResolvedAgentConfig:   cfg.ResolvedAgentConfig,
 		Agents:                cfg.Agents,
+		SandboxConfig:         cfg.SandboxConfig,
 	}
 }
 
@@ -121,6 +123,7 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		Execs:               execManager,
 		ResolvedAgentConfig: cfg.ResolvedAgentConfig,
 		Agents:              cfg.Agents,
+		SandboxConfig:       cfg.SandboxConfig,
 		WorkingRoot:         cfg.WorkingRoot,
 		RuntimeDir:          cfg.RuntimeDir,
 		Env:                 cfg.Env,

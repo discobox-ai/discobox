@@ -36,7 +36,21 @@ func (Driver) Definition() harness.Definition {
 		RunCommand:      []string{"claude"},
 		RelaunchCommand: []string{"claude", "--continue"},
 		Files: []harness.File{
-			{Path: ".claude.json", Content: `{"hasCompletedOnboarding": true}`, CreateOnly: true},
+			{
+				Path:       ".claude.json",
+				CreateOnly: true,
+				Template:   true,
+				Content: `{
+  "hasCompletedOnboarding": true
+  {{- with .source }},
+  "projects": {
+    {{ .destination.directory | json }}: {
+      "hasTrustDialogAccepted": true
+    }
+  }
+  {{- end }}
+}`,
+			},
 			{Path: ".claude/settings.json", Content: `{"theme":"dark","skipDangerousModePermissionPrompt":true}`},
 		},
 		Secrets: []harness.Secret{

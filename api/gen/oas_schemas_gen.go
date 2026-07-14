@@ -308,6 +308,8 @@ type AgentConfigFile struct {
 	Path string `json:"path"`
 	// Do not overwrite this file if it already exists.
 	CreateOnly OptBool `json:"createOnly"`
+	// Render file content against the public sandbox configuration before writing.
+	Template OptBool `json:"template"`
 }
 
 // GetContent returns the value of Content.
@@ -325,6 +327,11 @@ func (s *AgentConfigFile) GetCreateOnly() OptBool {
 	return s.CreateOnly
 }
 
+// GetTemplate returns the value of Template.
+func (s *AgentConfigFile) GetTemplate() OptBool {
+	return s.Template
+}
+
 // SetContent sets the value of Content.
 func (s *AgentConfigFile) SetContent(val string) {
 	s.Content = val
@@ -338,6 +345,11 @@ func (s *AgentConfigFile) SetPath(val string) {
 // SetCreateOnly sets the value of CreateOnly.
 func (s *AgentConfigFile) SetCreateOnly(val OptBool) {
 	s.CreateOnly = val
+}
+
+// SetTemplate sets the value of Template.
+func (s *AgentConfigFile) SetTemplate(val OptBool) {
+	s.Template = val
 }
 
 // Declares an environment variable the agent expects, and whether it is required.

@@ -594,12 +594,19 @@ func (s *AgentConfigFile) encodeFields(e *jx.Encoder) {
 			s.CreateOnly.Encode(e)
 		}
 	}
+	{
+		if s.Template.Set {
+			e.FieldStart("template")
+			s.Template.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfAgentConfigFile = [3]string{
+var jsonFieldsNameOfAgentConfigFile = [4]string{
 	0: "content",
 	1: "path",
 	2: "createOnly",
+	3: "template",
 }
 
 // Decode decodes AgentConfigFile from json.
@@ -644,6 +651,16 @@ func (s *AgentConfigFile) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"createOnly\"")
+			}
+		case "template":
+			if err := func() error {
+				s.Template.Reset()
+				if err := s.Template.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"template\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)

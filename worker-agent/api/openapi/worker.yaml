@@ -9,6 +9,9 @@ components:
                     type: string
                 createOnly:
                     type: boolean
+                template:
+                    description: Render file content against the public sandbox configuration before writing
+                    type: boolean
             required:
             - path
             - content

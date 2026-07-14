@@ -166,4 +166,12 @@ func TestLoadDerivesExecDefaultsFromSandboxManifest(t *testing.T) {
 	if cfg.ExecDefaults.Username != "darren" || cfg.ExecDefaults.HomeDirectory != "/home/darren" || cfg.ExecDefaults.UID == nil || *cfg.ExecDefaults.UID != 1000 || cfg.ExecDefaults.GID == nil || *cfg.ExecDefaults.GID != 1001 {
 		t.Fatalf("exec default user = %#v", cfg.ExecDefaults)
 	}
+	source, ok := cfg.SandboxConfig["source"].(map[string]any)
+	if !ok {
+		t.Fatalf("sandbox config = %#v, want public source object", cfg.SandboxConfig)
+	}
+	destination, ok := source["destination"].(map[string]any)
+	if !ok || destination["workingDirectory"] != "/workspace/project" {
+		t.Fatalf("sandbox config source = %#v, want public lower-camel-case fields", source)
+	}
 }

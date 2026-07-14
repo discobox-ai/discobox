@@ -100,6 +100,9 @@ flowchart LR
   public CAs and that sandbox's keypair at `/etc/discobox/proxy` (read-only), and
   injects the `HTTP(S)_PROXY`/CA environment into both the container and the
   sandbox manifest so `sandbox-agent`-spawned terminals and execs are proxied.
+- Normalize provider-owned source destination defaults before both mounting
+  sources and writing the public sandbox manifest so manifest consumers observe
+  the paths actually used by the runtime.
 - MITM CA trust is split by how tools find roots: the sandbox
   `discobox-trust-ca.service` runs `update-ca-certificates` early in boot so the
   system bundle (curl, git, wget, OpenSSL, and the `SSL_CERT_FILE` /

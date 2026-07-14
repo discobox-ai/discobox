@@ -247,6 +247,7 @@ func workerAgentConfigFiles(files []model.AgentConfigFile) workerclient.OptNilAg
 			Path:       file.Path,
 			Content:    file.Content,
 			CreateOnly: workerclient.NewOptBool(file.CreateOnly),
+			Template:   workerclient.NewOptBool(file.Template),
 		})
 	}
 	return workerclient.NewOptNilAgentConfigFileArray(out)

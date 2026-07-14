@@ -29,6 +29,7 @@ type Config struct {
 	ResolvedAgentConfig   *Agent            `json:"resolvedAgentConfig,omitempty"`
 	AgentConfigs          []Agent           `json:"agentConfigs,omitempty"`
 	Agents                []Agent           `json:"agents"`
+	SandboxConfig         map[string]any    `json:"-"`
 	Resources             ResourceConfig    `json:"resources"`
 }
 
@@ -62,6 +63,7 @@ type AgentFile struct {
 	Path       string `json:"path"`
 	Content    string `json:"content"`
 	CreateOnly bool   `json:"createOnly,omitempty"`
+	Template   bool   `json:"template,omitempty"`
 }
 
 type ResourceConfig struct {
@@ -98,7 +100,14 @@ func unmarshalManifest(data []byte, cfg *Config) error {
 	if strings.TrimSpace(manifest.APIVersion) != model.SandboxManifestAPIVersion {
 		return fmt.Errorf("apiVersion = %q, want %q", manifest.APIVersion, model.SandboxManifestAPIVersion)
 	}
+	var templateData struct {
+		Config map[string]any `json:"config"`
+	}
+	if err := json.Unmarshal(data, &templateData); err != nil {
+		return fmt.Errorf("decode public sandbox config template data: %w", err)
+	}
 	*cfg = configFromManifest(manifest)
+	cfg.SandboxConfig = templateData.Config
 	return nil
 }
 
@@ -211,6 +220,7 @@ func agentFilesFromManifest(in []model.AgentConfigFile) []AgentFile {
 			Path:       file.Path,
 			Content:    file.Content,
 			CreateOnly: file.CreateOnly.Or(false),
+			Template:   file.Template.Or(false),
 		})
 	}
 	return out

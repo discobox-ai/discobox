@@ -45,6 +45,7 @@ type File struct {
 	Path       string
 	Content    string
 	CreateOnly bool
+	Template   bool
 }
 
 // Secret declares an environment variable the agent expects, and whether it is

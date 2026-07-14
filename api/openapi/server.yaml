@@ -138,6 +138,9 @@ components:
                 createOnly:
                     description: Do not overwrite this file if it already exists
                     type: boolean
+                template:
+                    description: Render file content against the public sandbox configuration before writing
+                    type: boolean
             required:
                 - path
                 - content

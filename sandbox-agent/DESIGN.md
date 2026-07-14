@@ -36,6 +36,9 @@ runtime operations.
   module unless a shared contract belongs in the root module.
 - Do not call back to the worker-agent or server; resolved config is injected
   into the sandbox and read locally.
+- Render templated agent files locally at installation time against the public
+  `SandboxConfig` object from the manifest. Keep API field names as the template
+  surface and expose only deterministic, non-secret formatting helpers.
 - Treat systemd as the source of truth for terminal unit liveness. Runtime JSON
   files identify known terminals; reconciliation joins those files with systemd
   status and shim status.
