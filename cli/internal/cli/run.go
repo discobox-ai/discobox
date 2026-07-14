@@ -5,8 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -37,9 +35,10 @@ use -C to run against another directory or a Git repository (optionally with
 @REF). Use -- when the prompt needs to be separated from command flags
 explicitly.
 
-By default run waits for the sandbox to start and attaches to its default agent
-terminal, streaming it to your terminal (press Ctrl-P Ctrl-Q to detach). Pass -d
-to create the sandbox and print it without attaching.`,
+Every sandbox has one default terminal: the configured agent, or a shell when no
+agent is configured. By default run waits for the sandbox to start and attaches
+to that terminal, streaming it to your terminal (press Ctrl-P Ctrl-Q to detach).
+Pass -d to create the sandbox and print it without attaching.`,
 		Example: `  discobox run fix the failing tests
   discobox run -C https://github.com/obot-platform/discobox.git@main summarize the CLI package
   discobox run -e GITHUB_TOKEN -e MODE=test fix the failing tests
@@ -85,25 +84,18 @@ to create the sandbox and print it without attaching.`,
 }
 
 // attachRunSandbox waits for the freshly created sandbox to start and for its
-// default terminal to come up, then attaches the caller's stdio to it. The
-// sandbox-agent always launches one primary terminal running the configured
-// agent, so run attaches to it unless --detach was passed.
+// default terminal to come up, then attaches the caller's stdio to it. Every
+// sandbox gets one primary terminal from the sandbox-agent — the configured
+// agent, or a plain shell when it has none — so run attaches to it unless
+// --detach was passed.
 func (a *App) attachRunSandbox(cmd *cobra.Command, client *apiclientgen.Client, projectID string, sandbox *apimodel.Sandbox) error {
 	ctx := cmd.Context()
 	stderr := cmd.ErrOrStderr()
 	fmt.Fprintf(stderr, "Created sandbox %s, provisioning (fetching source, starting container)...\n", sandbox.ID)
-	started, err := a.waitForSandbox(cmd, client, projectID, sandbox.ID, 2*time.Minute)
-	if err != nil {
+	if _, err := a.waitForSandbox(cmd, client, projectID, sandbox.ID, 2*time.Minute); err != nil {
 		return err
 	}
-	// Fail fast when the running sandbox has no agent to launch. The sandbox-agent
-	// only starts a primary terminal when it can resolve an agent, so without one
-	// waitForPrimaryTerminal below would block until its timeout for a terminal
-	// that never appears.
-	if err := ensureRunAgentWillLaunch(started); err != nil {
-		return err
-	}
-	fmt.Fprintln(stderr, "Sandbox running, preparing agent terminal...")
+	fmt.Fprintln(stderr, "Sandbox running, preparing default terminal...")
 	terminal, err := a.waitForPrimaryTerminal(ctx, stderr, projectID, sandbox.ID, 2*time.Minute)
 	if err != nil {
 		return err
@@ -113,45 +105,6 @@ func (a *App) attachRunSandbox(cmd *cobra.Command, client *apiclientgen.Client, 
 	// launches and drives it before run connects, so replay shows the session
 	// from the start rather than only output produced after the attach.
 	return a.attachSandboxTerminal(ctx, projectID, sandbox.ID, terminal.ID, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
-}
-
-// errNoRunAgent explains that a sandbox has no agent and how to configure one. It
-// is returned when run can prove no primary terminal will ever launch.
-var errNoRunAgent = errors.New("no agent is configured for this sandbox: enable one with `discobox agents enable <definition>` (see `discobox agents definitions`), set a project default with `discobox agents set-default <id>`, or pass --agent")
-
-// ensureRunAgentWillLaunch reports whether a freshly started sandbox will launch
-// a primary terminal. The sandbox-agent resolves the agent in this precedence:
-// the sandbox's resolved agent config, a local repo agent config, then the
-// project default. When the server pinned an agent config the terminal will
-// launch. Otherwise the only remaining source is a local repo agent config,
-// which run can check for local sources; remote sources are resolved
-// sandbox-side, so those defer to the bounded wait rather than fail here.
-func ensureRunAgentWillLaunch(sandbox *apimodel.Sandbox) error {
-	if strings.TrimSpace(sandbox.Config.AgentConfigId.Or("")) != "" {
-		return nil
-	}
-	source, ok := sandbox.Config.Source.Get()
-	if !ok {
-		return nil
-	}
-	localDir := strings.TrimSpace(source.LocalDirectory.Or(""))
-	if localDir == "" || localRunAgentConfigPresent(localDir) {
-		return nil
-	}
-	return errNoRunAgent
-}
-
-// localRunAgentConfigPresent reports whether a local source directory carries a
-// .discobox agent config. It mirrors the sandbox-agent's local agent config
-// lookup (sandbox-agent/terminal/service.go localAgentConfigPath) so run can
-// predict whether that path will supply an agent.
-func localRunAgentConfigPresent(repoRoot string) bool {
-	for _, name := range []string{"agent.json", "agent-config.json", "sandbox.json"} {
-		if info, err := os.Stat(filepath.Join(repoRoot, ".discobox", name)); err == nil && !info.IsDir() {
-			return true
-		}
-	}
-	return false
 }
 
 // waitForPrimaryTerminal polls the sandbox terminals until the primary
@@ -194,7 +147,7 @@ func (a *App) waitForPrimaryTerminal(ctx context.Context, progress io.Writer, pr
 				if announcedInstalling {
 					return apimodel.SandboxExec{}, errors.New("timed out while the agent was still installing; its install command may be slow or failing (see `discobox sandboxes terminals logs`)")
 				}
-				return apimodel.SandboxExec{}, errors.New("timed out waiting for the sandbox's agent terminal; the sandbox may have no agent configured (see `discobox agents list`) or its agent failed to start")
+				return apimodel.SandboxExec{}, errors.New("timed out waiting for the sandbox's default terminal; it may have failed to start (see `discobox sandboxes terminals logs`)")
 			}
 			return apimodel.SandboxExec{}, fmt.Errorf("waiting for sandbox terminal: %w", ctx.Err())
 		case <-ticker.C:

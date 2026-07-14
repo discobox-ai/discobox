@@ -302,17 +302,16 @@ func AgentID(e execs.Exec) string { return e.Metadata[metadataAgentID] }
 // IsPrimary reports whether an exec is the sandbox's primary terminal.
 func IsPrimary(e execs.Exec) bool { return e.Metadata[metadataPrimary] == "true" }
 
-// ErrNoAgentConfigured reports that the sandbox has no agent to launch as its
-// primary terminal. It is a valid empty state, not a failure: the caller should
-// log it and skip launching rather than treat it as an error.
-var ErrNoAgentConfigured = errors.New("no agent is configured for this sandbox")
+// ShellAgentID names the fallback agent a terminal runs when no agent config
+// resolves: an interactive login shell. Every sandbox gets a default terminal,
+// so an agentless sandbox is a shell session rather than an empty sandbox.
+const ShellAgentID = "shell"
 
-// EnsurePrimary launches the sandbox's primary terminal on sandbox start. On the
-// first start it runs the resolved agent with the sandbox prompt as arguments;
-// on subsequent starts it runs the agent's relaunch command to resume the
-// previous session. It is a no-op when a live primary terminal already exists.
-// It returns ErrNoAgentConfigured when no agent is configured; any other error
-// is a real misconfiguration and is returned to the caller.
+// EnsurePrimary launches the sandbox's primary terminal on sandbox start. Every
+// sandbox has one: on the first start it runs the resolved agent with the
+// sandbox prompt as arguments, on subsequent starts it runs the agent's relaunch
+// command to resume the previous session, and when no agent is configured it
+// runs a plain shell. It is a no-op when a live primary terminal already exists.
 func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 	for _, existing := range s.List() {
 		if IsPrimary(existing) && (existing.Status == execs.StatusStarting || existing.Status == execs.StatusRunning) {
@@ -323,12 +322,10 @@ func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 	if err != nil {
 		return err
 	}
-	agent, _, err := s.resolveAgent("", workdir)
+	agent, agentID, err := s.resolveAgent("", workdir)
 	if err != nil {
-		// Surface the outcome to the caller. A missing agent is a valid empty
-		// state (ErrNoAgentConfigured); any other error is a genuine
-		// misconfiguration (e.g. a malformed local agent config) and must not be
-		// swallowed the way it previously was.
+		// A genuine misconfiguration (e.g. a malformed local agent config). The
+		// absent-agent case is not an error: it resolves to the shell agent.
 		return err
 	}
 	launched := false
@@ -337,7 +334,7 @@ func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 			return err
 		}
 	}
-	created, err := s.Create(ctx, primaryCreateRequest(agent, prompt, launched))
+	created, err := s.Create(ctx, primaryCreateRequest(agent, agentID, prompt, launched))
 	if err != nil {
 		return err
 	}
@@ -350,9 +347,13 @@ func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 	return nil
 }
 
-func primaryCreateRequest(agent config.Agent, prompt []string, launched bool) CreateRequest {
+func primaryCreateRequest(agent config.Agent, agentID string, prompt []string, launched bool) CreateRequest {
 	req := CreateRequest{primary: true}
 	switch {
+	// A shell takes the prompt neither as arguments (it would try to run it as a
+	// command) nor as a session to resume; it is the same interactive shell on
+	// every start.
+	case agentID == ShellAgentID:
 	case launched && len(agent.RelaunchCommand) > 0:
 		req.command = append([]string{}, agent.RelaunchCommand...)
 	case launched:
@@ -364,7 +365,8 @@ func primaryCreateRequest(agent config.Agent, prompt []string, launched bool) Cr
 
 // resolveAgent selects the agent for a terminal in precedence order: an explicit
 // request, then the sandbox's resolved agent, then a local repo agent config,
-// then the configured default.
+// then the configured default, and finally the shell agent when the sandbox has
+// no agent at all.
 func (s *Service) resolveAgent(requested string, workdir string) (config.Agent, string, error) {
 	requested = strings.TrimSpace(requested)
 	if requested != "" {
@@ -385,13 +387,37 @@ func (s *Service) resolveAgent(requested string, workdir string) (config.Agent, 
 		return local, local.ID, nil
 	}
 	if s.defaultID == "" {
-		return config.Agent{}, "", ErrNoAgentConfigured
+		return s.shellAgent(), ShellAgentID, nil
 	}
 	agent, ok := s.agents[s.defaultID]
 	if !ok {
 		return config.Agent{}, "", fmt.Errorf("default agent %q is not configured", s.defaultID)
 	}
 	return agent, s.defaultID, nil
+}
+
+// shellAgent builds the fallback shell agent: an interactive login shell taken
+// from the sandbox environment, falling back to what the image actually has.
+func (s *Service) shellAgent() config.Agent {
+	return config.Agent{
+		ID:      ShellAgentID,
+		Name:    "Shell",
+		Command: []string{s.shellPath(), "-l"},
+	}
+}
+
+func (s *Service) shellPath() string {
+	for _, env := range []map[string]string{s.env, s.imageConfig.Env} {
+		if shell := strings.TrimSpace(env["SHELL"]); shell != "" {
+			return shell
+		}
+	}
+	for _, candidate := range []string{"/bin/bash", "/bin/sh"} {
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+			return candidate
+		}
+	}
+	return "/bin/sh"
 }
 
 type localAgentConfig struct {

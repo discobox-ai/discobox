@@ -48,20 +48,24 @@ runtime operations.
   observations instead of an in-memory cache.
 - A terminal is one primitive: an exec created in agent mode. The `terminal`
   layer resolves the agent (explicit request, sandbox resolved config, local
-  repo `.discobox` config, or default), runs the agent's install command as an
-  ephemeral exec, injects the hook/terminal env, then calls `execs.Manager` with
+  repo `.discobox` config, default, then the `shell` fallback agent — a login
+  shell — when the sandbox has no agent at all), runs the agent's install command
+  as an ephemeral exec, injects the hook/terminal env, then calls `execs.Manager` with
   the resolved command, `TTY`, and `agentId`/`primary` metadata. `execs.Manager`
   never learns what an agent is. Plain execs and terminals currently use
   separate `execs.Manager` instances (distinct runtime dirs); the API-level merge
   to a single `/execs` surface is pending.
-- On sandbox start the agent launches one primary terminal from the manifest
-  prompt (`terminal.Service.EnsurePrimary`). The first start runs the resolved
-  agent with the prompt as arguments; later starts run the agent's
-  `relaunchCommand` to resume the previous session instead of replaying the
-  prompt. First-vs-subsequent is decided by a durable marker in the SQLite store
-  (`AgentState`), so it survives restarts. The launched exec is tagged
-  `primary` in metadata by the sandbox-agent; that tag cannot be requested
-  through the terminal create API.
+- Every sandbox has a default terminal: on sandbox start the agent always
+  launches exactly one primary terminal (`terminal.Service.EnsurePrimary`), so
+  clients such as `discobox run` can rely on one existing and attach to it. The
+  first start runs the resolved agent with the manifest prompt as arguments;
+  later starts run the agent's `relaunchCommand` to resume the previous session
+  instead of replaying the prompt. First-vs-subsequent is decided by a durable
+  marker in the SQLite store (`AgentState`), so it survives restarts. When no
+  agent is configured the primary terminal is a login shell (agent id `shell`)
+  and the prompt is not passed, since a shell would run it as a command. The
+  launched exec is tagged `primary` in metadata by the sandbox-agent; that tag
+  cannot be requested through the terminal create API.
 - There is one shim (`execs/shim.go`) and one framed attach mechanism. Keep Unix
   socket setup, HTTP upgrade, attacher tracking, frame writes, output broadcast,
   exit frame emission, and pending resize handling in `shimruntime`; keep
