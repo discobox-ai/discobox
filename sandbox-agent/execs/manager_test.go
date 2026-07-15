@@ -361,6 +361,61 @@ func TestManagerHydratesMetadataAfterRuntimeClobber(t *testing.T) {
 	}
 }
 
+// A durable record does not contain manager-local runtime paths. If the tmpfs
+// runtime file disappears, reads must restore those paths and reconcile stale
+// active state instead of returning an attachable-looking exec with no socket.
+func TestManagerReconcilesDurableRecordWithoutRuntimeFile(t *testing.T) {
+	audit := newRecordingAudit()
+	runtimeDir := t.TempDir()
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: "/workspace",
+		RuntimeDir:  runtimeDir,
+		Units:       &fakeUnitManager{},
+		Audit:       audit,
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	created, err := manager.Create(context.Background(), CreateRequest{
+		Command:  []string{"claude"},
+		Metadata: map[string]string{"harnessId": "claude-code", "primary": "true"},
+	})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	if err := os.Remove(created.RuntimePath); err != nil {
+		t.Fatalf("remove runtime: %v", err)
+	}
+	// Match the SQLite durable record, which deliberately excludes local paths.
+	record := audit.records[created.ID]
+	record.RuntimePath = ""
+	record.SocketPath = ""
+	audit.records[created.ID] = record
+
+	listed := manager.List()
+	if len(listed) != 1 || listed[0].SocketPath == "" || listed[0].Status != StatusLost {
+		t.Fatalf("listed execs = %#v", listed)
+	}
+	// List persists the reconciled status back to the derived runtime path;
+	// remove it again to exercise Get's durable-record fallback independently.
+	if err := os.Remove(created.RuntimePath); err != nil {
+		t.Fatalf("remove reconciled runtime: %v", err)
+	}
+	got, ok := manager.Get(created.ID)
+	if !ok {
+		t.Fatal("durable exec not found")
+	}
+	if got.RuntimePath != filepath.Join(runtimeDir, safeName(created.ID)+".json") {
+		t.Fatalf("runtime path = %q", got.RuntimePath)
+	}
+	if got.SocketPath != filepath.Join(runtimeDir, safeName(created.ID)+".sock") {
+		t.Fatalf("socket path = %q", got.SocketPath)
+	}
+	if got.Status != StatusLost {
+		t.Fatalf("status = %q, want lost", got.Status)
+	}
+}
+
 func (m *fakeUnitManager) Status(context.Context, string) (UnitStatus, error) {
 	return UnitStatus{}, errors.New("not found")
 }

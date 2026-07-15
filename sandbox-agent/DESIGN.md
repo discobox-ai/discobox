@@ -41,7 +41,9 @@ runtime operations.
   surface and expose only deterministic, non-secret formatting helpers.
 - Treat systemd as the source of truth for terminal unit liveness. Runtime JSON
   files identify known terminals; reconciliation joins those files with systemd
-  status and shim status.
+  status and shim status. Durable database-only exec records must be reconciled
+  before they are returned: restore manager-owned runtime/socket paths, and do
+  not preserve stale `starting` or `running` state when the unit is gone.
 - Keep terminal and exec history local. The SQLite store records append-only
   lifecycle events, latest observed runtime state, and retained opaque resource
   samples, but REST runtime state should be derived from runtime/systemd/shim

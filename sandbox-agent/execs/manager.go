@@ -324,11 +324,11 @@ func (m *Manager) List() []Exec {
 			if unit, ok := byUnit[execs[i].Unit]; ok {
 				execs[i] = applyUnitStatus(execs[i], unit)
 			}
-			execs[i] = m.refreshExec(ctx, execs[i])
+			execs[i] = m.refreshExec(ctx, execs[i], true)
 		}
 	} else {
 		for i := range execs {
-			execs[i] = m.refreshExec(ctx, execs[i])
+			execs[i] = m.refreshExec(ctx, execs[i], true)
 		}
 	}
 	for i := range execs {
@@ -341,7 +341,7 @@ func (m *Manager) List() []Exec {
 	// from their durable records, so history is not lost.
 	for id, record := range records {
 		if !seen[id] {
-			execs = append(execs, cloneExec(record))
+			execs = append(execs, m.refreshExec(ctx, m.withRuntimePaths(record), false))
 		}
 	}
 	sort.Slice(execs, func(i, j int) bool {
@@ -352,7 +352,7 @@ func (m *Manager) List() []Exec {
 
 func (m *Manager) Reconcile(ctx context.Context) error {
 	for _, exec := range m.runtimeExecs(ctx) {
-		_ = m.refreshExec(ctx, exec)
+		_ = m.refreshExec(ctx, exec, true)
 	}
 	return nil
 }
@@ -363,13 +363,15 @@ func (m *Manager) Get(id string) (Exec, bool) {
 	exec, ok := m.readRuntime(id)
 	if !ok {
 		// The tmpfs runtime file is gone (e.g. after a reboot); fall back to the
-		// durable record so metadata and history survive.
+		// durable record so metadata and history survive. Reconcile it against
+		// the unit manager before returning it: the last durable observation may
+		// still say starting/running even though its runtime and unit are gone.
 		if record, ok := records[id]; ok {
-			return cloneExec(record), true
+			return cloneExec(m.refreshExec(ctx, m.withRuntimePaths(record), false)), true
 		}
 		return Exec{}, false
 	}
-	exec = m.refreshExec(ctx, exec)
+	exec = m.refreshExec(ctx, exec, true)
 	if record, ok := records[id]; ok {
 		exec = hydrateMetadata(exec, record)
 	}
@@ -514,23 +516,37 @@ func (m *Manager) runtimeExecs(ctx context.Context) []Exec {
 		if err != nil || exec.ID == "" {
 			continue
 		}
-		if exec.RuntimePath == "" {
-			exec.RuntimePath = path
-		}
-		if exec.SocketPath == "" {
-			exec.SocketPath = m.socketPath(exec.ID)
-		}
-		out = append(out, m.refreshExec(ctx, exec))
+		exec = m.withRuntimePaths(exec)
+		out = append(out, m.refreshExec(ctx, exec, true))
 	}
 	return out
 }
 
 func (m *Manager) readRuntime(id string) (Exec, bool) {
 	exec, err := readRuntime(m.runtimePath(id))
-	return exec, err == nil && exec.ID != ""
+	if err != nil || exec.ID == "" {
+		return Exec{}, false
+	}
+	return m.withRuntimePaths(exec), true
 }
 
-func (m *Manager) refreshExec(ctx context.Context, exec Exec) Exec {
+// withRuntimePaths restores manager-owned runtime locations that are not kept
+// in the durable exec record. Any Exec returned by Manager must carry these
+// paths because start, attach, delete, and status refresh all depend on them.
+func (m *Manager) withRuntimePaths(exec Exec) Exec {
+	if exec.ID == "" {
+		return exec
+	}
+	if exec.RuntimePath == "" {
+		exec.RuntimePath = m.runtimePath(exec.ID)
+	}
+	if exec.SocketPath == "" {
+		exec.SocketPath = m.socketPath(exec.ID)
+	}
+	return exec
+}
+
+func (m *Manager) refreshExec(ctx context.Context, exec Exec, runtimePresent bool) Exec {
 	if exec.Status == StatusExited || exec.Status == StatusFailed {
 		_ = m.observe(ctx, exec)
 		return exec
@@ -538,7 +554,7 @@ func (m *Manager) refreshExec(ctx context.Context, exec Exec) Exec {
 	// A created-but-not-yet-started exec (e.g. a terminal whose harness install
 	// command is still running before Start) legitimately has no live unit yet, so
 	// keep it starting rather than declaring it lost while it waits to launch.
-	notYetLaunched := exec.Status == StatusStarting && exec.StartedAt == nil
+	notYetLaunched := runtimePresent && exec.Status == StatusStarting && exec.StartedAt == nil
 	if unit, err := m.units.Status(ctx, exec.Unit); err == nil {
 		exec = applyUnitStatus(exec, unit)
 	} else if exec.ExitedAt == nil && !notYetLaunched {
