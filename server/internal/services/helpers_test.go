@@ -3,8 +3,27 @@ package services
 import (
 	"testing"
 
+	apimodel "github.com/obot-platform/discobox/api/model"
+	"github.com/obot-platform/discobox/server/internal/harnessdefs"
 	"github.com/obot-platform/discobox/server/internal/model"
 )
+
+// The list-harness-definitions handler serves the built-in definitions through
+// Convert, which round-trips them through the generated API type's decoder and
+// its required-field validation. Every built-in definition — including its
+// optional configure block — must survive that decode, or the endpoint 500s.
+// This guards against the model and OpenAPI schema drifting apart.
+func TestBuiltInHarnessDefinitionsConvertToAPI(t *testing.T) {
+	definitions := harnessdefs.Definitions()
+	if len(definitions) == 0 {
+		t.Fatal("no built-in harness definitions to check")
+	}
+	if _, err := Convert[apimodel.ListHarnessDefinitionsBody](struct {
+		HarnessDefinitions any `json:"harnessDefinitions"`
+	}{HarnessDefinitions: definitions}); err != nil {
+		t.Fatalf("convert built-in harness definitions to API: %v", err)
+	}
+}
 
 // A sandbox's embedded harness config is stored sparse (definition-backed fields
 // unset). The response must resolve it so runCommand — required by the schema —

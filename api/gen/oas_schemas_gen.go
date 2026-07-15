@@ -170,6 +170,96 @@ func (s *AttachSandboxExecSwitchingProtocols) SetUpgrade(val OptString) {
 
 func (*AttachSandboxExecSwitchingProtocols) attachSandboxExecRes() {}
 
+// An ephemeral sandbox definition run interactively to collect configuration before a HarnessConfig
+// is created from a HarnessDefinition.
+// Ref: #/components/schemas/ConfigureSandbox
+type ConfigureSandbox struct {
+	// Requested CPU capacity in vCPUs.
+	CpuVcpus OptFloat64 `json:"cpuVcpus"`
+	// Environment variables available to the configure sandbox.
+	Env OptConfigureSandboxEnv `json:"env"`
+	// Harness process the configure sandbox runs as its primary terminal.
+	HarnessConfig InlineHarnessConfig `json:"harnessConfig"`
+	// Sandbox base image. Defaults to the server configured sandbox image when omitted.
+	Image OptString `json:"image"`
+	// Requested memory capacity in bytes.
+	MemoryBytes OptInt64 `json:"memoryBytes"`
+	// Requested storage capacity in bytes.
+	StorageBytes OptInt64 `json:"storageBytes"`
+}
+
+// GetCpuVcpus returns the value of CpuVcpus.
+func (s *ConfigureSandbox) GetCpuVcpus() OptFloat64 {
+	return s.CpuVcpus
+}
+
+// GetEnv returns the value of Env.
+func (s *ConfigureSandbox) GetEnv() OptConfigureSandboxEnv {
+	return s.Env
+}
+
+// GetHarnessConfig returns the value of HarnessConfig.
+func (s *ConfigureSandbox) GetHarnessConfig() InlineHarnessConfig {
+	return s.HarnessConfig
+}
+
+// GetImage returns the value of Image.
+func (s *ConfigureSandbox) GetImage() OptString {
+	return s.Image
+}
+
+// GetMemoryBytes returns the value of MemoryBytes.
+func (s *ConfigureSandbox) GetMemoryBytes() OptInt64 {
+	return s.MemoryBytes
+}
+
+// GetStorageBytes returns the value of StorageBytes.
+func (s *ConfigureSandbox) GetStorageBytes() OptInt64 {
+	return s.StorageBytes
+}
+
+// SetCpuVcpus sets the value of CpuVcpus.
+func (s *ConfigureSandbox) SetCpuVcpus(val OptFloat64) {
+	s.CpuVcpus = val
+}
+
+// SetEnv sets the value of Env.
+func (s *ConfigureSandbox) SetEnv(val OptConfigureSandboxEnv) {
+	s.Env = val
+}
+
+// SetHarnessConfig sets the value of HarnessConfig.
+func (s *ConfigureSandbox) SetHarnessConfig(val InlineHarnessConfig) {
+	s.HarnessConfig = val
+}
+
+// SetImage sets the value of Image.
+func (s *ConfigureSandbox) SetImage(val OptString) {
+	s.Image = val
+}
+
+// SetMemoryBytes sets the value of MemoryBytes.
+func (s *ConfigureSandbox) SetMemoryBytes(val OptInt64) {
+	s.MemoryBytes = val
+}
+
+// SetStorageBytes sets the value of StorageBytes.
+func (s *ConfigureSandbox) SetStorageBytes(val OptInt64) {
+	s.StorageBytes = val
+}
+
+// Environment variables available to the configure sandbox.
+type ConfigureSandboxEnv map[string]string
+
+func (s *ConfigureSandboxEnv) init() ConfigureSandboxEnv {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
+
 // Ref: #/components/schemas/CreateHarnessConfigBody
 type CreateHarnessConfigBody struct {
 	// A URL to the JSON Schema for this object.
@@ -1851,7 +1941,7 @@ type HarnessDefinition struct {
 	// created from this definition. Its primary terminal must exit 0; the sandbox is then expected to
 	// have written /run/discobox/harness-configure.json with secrets and files to apply to the new
 	// HarnessConfig.
-	Configure OptSandboxCreateConfig `json:"configure"`
+	Configure OptConfigureSandbox `json:"configure"`
 	// Harness config definition description.
 	Description OptString `json:"description"`
 	// Files to write into the harness's home directory when the harness is installed.
@@ -1878,7 +1968,7 @@ func (s *HarnessDefinition) GetSchema() OptURI {
 }
 
 // GetConfigure returns the value of Configure.
-func (s *HarnessDefinition) GetConfigure() OptSandboxCreateConfig {
+func (s *HarnessDefinition) GetConfigure() OptConfigureSandbox {
 	return s.Configure
 }
 
@@ -1928,7 +2018,7 @@ func (s *HarnessDefinition) SetSchema(val OptURI) {
 }
 
 // SetConfigure sets the value of Configure.
-func (s *HarnessDefinition) SetConfigure(val OptSandboxCreateConfig) {
+func (s *HarnessDefinition) SetConfigure(val OptConfigureSandbox) {
 	s.Configure = val
 }
 
@@ -2881,6 +2971,98 @@ func (o OptBool) Get() (v bool, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptBool) Or(d bool) bool {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptConfigureSandbox returns new OptConfigureSandbox with value set to v.
+func NewOptConfigureSandbox(v ConfigureSandbox) OptConfigureSandbox {
+	return OptConfigureSandbox{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptConfigureSandbox is optional ConfigureSandbox.
+type OptConfigureSandbox struct {
+	Value ConfigureSandbox
+	Set   bool
+}
+
+// IsSet returns true if OptConfigureSandbox was set.
+func (o OptConfigureSandbox) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptConfigureSandbox) Reset() {
+	var v ConfigureSandbox
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptConfigureSandbox) SetTo(v ConfigureSandbox) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptConfigureSandbox) Get() (v ConfigureSandbox, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptConfigureSandbox) Or(d ConfigureSandbox) ConfigureSandbox {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptConfigureSandboxEnv returns new OptConfigureSandboxEnv with value set to v.
+func NewOptConfigureSandboxEnv(v ConfigureSandboxEnv) OptConfigureSandboxEnv {
+	return OptConfigureSandboxEnv{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptConfigureSandboxEnv is optional ConfigureSandboxEnv.
+type OptConfigureSandboxEnv struct {
+	Value ConfigureSandboxEnv
+	Set   bool
+}
+
+// IsSet returns true if OptConfigureSandboxEnv was set.
+func (o OptConfigureSandboxEnv) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptConfigureSandboxEnv) Reset() {
+	var v ConfigureSandboxEnv
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptConfigureSandboxEnv) SetTo(v ConfigureSandboxEnv) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptConfigureSandboxEnv) Get() (v ConfigureSandboxEnv, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptConfigureSandboxEnv) Or(d ConfigureSandboxEnv) ConfigureSandboxEnv {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -4310,52 +4492,6 @@ func (o OptSandboxConfigSourceCodeReferences) Get() (v SandboxConfigSourceCodeRe
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxConfigSourceCodeReferences) Or(d SandboxConfigSourceCodeReferences) SandboxConfigSourceCodeReferences {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptSandboxCreateConfig returns new OptSandboxCreateConfig with value set to v.
-func NewOptSandboxCreateConfig(v SandboxCreateConfig) OptSandboxCreateConfig {
-	return OptSandboxCreateConfig{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptSandboxCreateConfig is optional SandboxCreateConfig.
-type OptSandboxCreateConfig struct {
-	Value SandboxCreateConfig
-	Set   bool
-}
-
-// IsSet returns true if OptSandboxCreateConfig was set.
-func (o OptSandboxCreateConfig) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptSandboxCreateConfig) Reset() {
-	var v SandboxCreateConfig
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptSandboxCreateConfig) SetTo(v SandboxCreateConfig) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptSandboxCreateConfig) Get() (v SandboxCreateConfig, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptSandboxCreateConfig) Or(d SandboxCreateConfig) SandboxCreateConfig {
 	if v, ok := o.Get(); ok {
 		return v
 	}

@@ -351,6 +351,23 @@ func (a *App) newHarnessEnableCommand() *cobra.Command {
 	return cmd
 }
 
+// configureSandboxCreateConfig builds the sandbox create config that runs a
+// harness definition's configure step. The configure spec carries the ephemeral
+// sandbox's resources and inline harness; the caller fills in Name.
+func configureSandboxCreateConfig(spec apimodel.ConfigureSandbox) apimodel.SandboxCreateConfig {
+	config := apimodel.SandboxCreateConfig{
+		HarnessConfig: apiclientgen.NewOptInlineHarnessConfig(spec.HarnessConfig),
+		Image:         spec.Image,
+		CpuVcpus:      spec.CpuVcpus,
+		MemoryBytes:   spec.MemoryBytes,
+		StorageBytes:  spec.StorageBytes,
+	}
+	if env, ok := spec.Env.Get(); ok {
+		config.SetEnv(apiclientgen.NewOptSandboxCreateConfigEnv(apiclientgen.SandboxCreateConfigEnv(env)))
+	}
+	return config
+}
+
 const harnessConfigureOutputPath = "/run/discobox/harness-configure.json"
 
 type harnessConfigureOutput struct {
@@ -366,15 +383,16 @@ type harnessConfigureSecret struct {
 	Value   apimodel.SecretValue              `json:"value"`
 }
 
-func (a *App) runHarnessConfigure(cmd *cobra.Command, client *apiclientgen.Client, projectID string, configureSpec apimodel.SandboxCreateConfig) (*harnessConfigureOutput, error) {
+func (a *App) runHarnessConfigure(cmd *cobra.Command, client *apiclientgen.Client, projectID string, configureSpec apimodel.ConfigureSandbox) (*harnessConfigureOutput, error) {
 	ctx := cmd.Context()
 	stderr := cmd.ErrOrStderr()
 	runID, err := id.New(id.PrefixSandbox)
 	if err != nil {
 		return nil, err
 	}
-	configureSpec.Name = "configure-" + id.RandomPart(runID)[:8]
-	sandboxRes, err := client.CreateSandbox(ctx, &apimodel.CreateSandboxBody{Config: configureSpec}, apiclientgen.CreateSandboxParams{ProjectId: projectID})
+	config := configureSandboxCreateConfig(configureSpec)
+	config.Name = "configure-" + id.RandomPart(runID)[:8]
+	sandboxRes, err := client.CreateSandbox(ctx, &apimodel.CreateSandboxBody{Config: config}, apiclientgen.CreateSandboxParams{ProjectId: projectID})
 	if err != nil {
 		return nil, fmt.Errorf("create configure sandbox: %w", err)
 	}

@@ -343,7 +343,6 @@ func configureTestDefinition() map[string]any {
 		"name":       "configure-test",
 		"runCommand": []string{"true"},
 		"configure": map[string]any{
-			"name": "configure",
 			"harnessConfig": map[string]any{
 				"runCommand": []string{"sh", "configure.sh"},
 			},

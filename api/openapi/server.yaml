@@ -82,7 +82,7 @@ components:
                     readOnly: true
                     type: string
                 configure:
-                    $ref: '#/components/schemas/SandboxCreateConfig'
+                    $ref: '#/components/schemas/ConfigureSandbox'
                     description: Ephemeral sandbox definition run interactively to collect configuration before a HarnessConfig is created from this definition. Its primary terminal must exit 0; the sandbox is then expected to have written /run/discobox/harness-configure.json with secrets and files to apply to the new HarnessConfig.
                 description:
                     description: Harness config definition description
@@ -291,6 +291,36 @@ components:
                     type: string
             required:
                 - projectId
+            type: object
+        ConfigureSandbox:
+            additionalProperties: false
+            description: An ephemeral sandbox definition run interactively to collect configuration before a HarnessConfig is created from a HarnessDefinition.
+            properties:
+                cpuVcpus:
+                    description: Requested CPU capacity in vCPUs
+                    format: double
+                    type: number
+                env:
+                    additionalProperties:
+                        type: string
+                    description: Environment variables available to the configure sandbox
+                    type: object
+                harnessConfig:
+                    $ref: '#/components/schemas/InlineHarnessConfig'
+                    description: Harness process the configure sandbox runs as its primary terminal
+                image:
+                    description: Sandbox base image. Defaults to the server configured sandbox image when omitted.
+                    type: string
+                memoryBytes:
+                    description: Requested memory capacity in bytes
+                    format: int64
+                    type: integer
+                storageBytes:
+                    description: Requested storage capacity in bytes
+                    format: int64
+                    type: integer
+            required:
+                - harnessConfig
             type: object
         CreateHarnessConfigBody:
             additionalProperties: false

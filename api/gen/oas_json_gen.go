@@ -316,6 +316,241 @@ func (s *AssignSandboxHarnessSecretsBody) UnmarshalJSON(data []byte) error {
 }
 
 // Encode implements json.Marshaler.
+func (s *ConfigureSandbox) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields encodes fields.
+func (s *ConfigureSandbox) encodeFields(e *jx.Encoder) {
+	{
+		if s.CpuVcpus.Set {
+			e.FieldStart("cpuVcpus")
+			s.CpuVcpus.Encode(e)
+		}
+	}
+	{
+		if s.Env.Set {
+			e.FieldStart("env")
+			s.Env.Encode(e)
+		}
+	}
+	{
+		e.FieldStart("harnessConfig")
+		s.HarnessConfig.Encode(e)
+	}
+	{
+		if s.Image.Set {
+			e.FieldStart("image")
+			s.Image.Encode(e)
+		}
+	}
+	{
+		if s.MemoryBytes.Set {
+			e.FieldStart("memoryBytes")
+			s.MemoryBytes.Encode(e)
+		}
+	}
+	{
+		if s.StorageBytes.Set {
+			e.FieldStart("storageBytes")
+			s.StorageBytes.Encode(e)
+		}
+	}
+}
+
+var jsonFieldsNameOfConfigureSandbox = [6]string{
+	0: "cpuVcpus",
+	1: "env",
+	2: "harnessConfig",
+	3: "image",
+	4: "memoryBytes",
+	5: "storageBytes",
+}
+
+// Decode decodes ConfigureSandbox from json.
+func (s *ConfigureSandbox) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ConfigureSandbox to nil")
+	}
+	var requiredBitSet [1]uint8
+
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		switch string(k) {
+		case "cpuVcpus":
+			if err := func() error {
+				s.CpuVcpus.Reset()
+				if err := s.CpuVcpus.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"cpuVcpus\"")
+			}
+		case "env":
+			if err := func() error {
+				s.Env.Reset()
+				if err := s.Env.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"env\"")
+			}
+		case "harnessConfig":
+			requiredBitSet[0] |= 1 << 2
+			if err := func() error {
+				if err := s.HarnessConfig.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"harnessConfig\"")
+			}
+		case "image":
+			if err := func() error {
+				s.Image.Reset()
+				if err := s.Image.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"image\"")
+			}
+		case "memoryBytes":
+			if err := func() error {
+				s.MemoryBytes.Reset()
+				if err := s.MemoryBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"memoryBytes\"")
+			}
+		case "storageBytes":
+			if err := func() error {
+				s.StorageBytes.Reset()
+				if err := s.StorageBytes.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"storageBytes\"")
+			}
+		default:
+			return errors.Errorf("unexpected field %q", k)
+		}
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ConfigureSandbox")
+	}
+	// Validate required fields.
+	var failures []validate.FieldError
+	for i, mask := range [1]uint8{
+		0b00000100,
+	} {
+		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
+			// Mask only required fields and check equality to mask using XOR.
+			//
+			// If XOR result is not zero, result is not equal to expected, so some fields are missed.
+			// Bits of fields which would be set are actually bits of missed fields.
+			missed := bits.OnesCount8(result)
+			for bitN := 0; bitN < missed; bitN++ {
+				bitIdx := bits.TrailingZeros8(result)
+				fieldIdx := i*8 + bitIdx
+				var name string
+				if fieldIdx < len(jsonFieldsNameOfConfigureSandbox) {
+					name = jsonFieldsNameOfConfigureSandbox[fieldIdx]
+				} else {
+					name = strconv.Itoa(fieldIdx)
+				}
+				failures = append(failures, validate.FieldError{
+					Name:  name,
+					Error: validate.ErrFieldRequired,
+				})
+				// Reset bit.
+				result &^= 1 << bitIdx
+			}
+		}
+	}
+	if len(failures) > 0 {
+		return &validate.Error{Fields: failures}
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s *ConfigureSandbox) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ConfigureSandbox) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s ConfigureSandboxEnv) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s ConfigureSandboxEnv) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes ConfigureSandboxEnv from json.
+func (s *ConfigureSandboxEnv) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode ConfigureSandboxEnv to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode ConfigureSandboxEnv")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s ConfigureSandboxEnv) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *ConfigureSandboxEnv) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
 func (s *CreateHarnessConfigBody) Encode(e *jx.Encoder) {
 	e.ObjStart()
 	s.encodeFields(e)
@@ -6309,6 +6544,73 @@ func (s *OptBool) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes ConfigureSandbox as json.
+func (o OptConfigureSandbox) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes ConfigureSandbox from json.
+func (o *OptConfigureSandbox) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptConfigureSandbox to nil")
+	}
+	o.Set = true
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptConfigureSandbox) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptConfigureSandbox) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes ConfigureSandboxEnv as json.
+func (o OptConfigureSandboxEnv) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes ConfigureSandboxEnv from json.
+func (o *OptConfigureSandboxEnv) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptConfigureSandboxEnv to nil")
+	}
+	o.Set = true
+	o.Value = make(ConfigureSandboxEnv)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptConfigureSandboxEnv) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptConfigureSandboxEnv) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes CreateSandboxExecRequestEnv as json.
 func (o OptCreateSandboxExecRequestEnv) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -7485,39 +7787,6 @@ func (s OptSandboxConfigSourceCodeReferences) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *OptSandboxConfigSourceCodeReferences) UnmarshalJSON(data []byte) error {
-	d := jx.DecodeBytes(data)
-	return s.Decode(d)
-}
-
-// Encode encodes SandboxCreateConfig as json.
-func (o OptSandboxCreateConfig) Encode(e *jx.Encoder) {
-	if !o.Set {
-		return
-	}
-	o.Value.Encode(e)
-}
-
-// Decode decodes SandboxCreateConfig from json.
-func (o *OptSandboxCreateConfig) Decode(d *jx.Decoder) error {
-	if o == nil {
-		return errors.New("invalid: unable to decode OptSandboxCreateConfig to nil")
-	}
-	o.Set = true
-	if err := o.Value.Decode(d); err != nil {
-		return err
-	}
-	return nil
-}
-
-// MarshalJSON implements stdjson.Marshaler.
-func (s OptSandboxCreateConfig) MarshalJSON() ([]byte, error) {
-	e := jx.Encoder{}
-	s.Encode(&e)
-	return e.Bytes(), nil
-}
-
-// UnmarshalJSON implements stdjson.Unmarshaler.
-func (s *OptSandboxCreateConfig) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

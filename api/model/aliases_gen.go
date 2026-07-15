@@ -7,6 +7,7 @@ import apigen "github.com/obot-platform/discobox/api/gen"
 
 type ApproveSecretRequestBody = apigen.ApproveSecretRequestBody
 type AssignSandboxHarnessSecretsBody = apigen.AssignSandboxHarnessSecretsBody
+type ConfigureSandbox = apigen.ConfigureSandbox
 type CreateHarnessConfigBody = apigen.CreateHarnessConfigBody
 type CreateSandboxBody = apigen.CreateSandboxBody
 type CreateSandboxExecRequest = apigen.CreateSandboxExecRequest
