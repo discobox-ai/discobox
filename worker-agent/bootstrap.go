@@ -38,6 +38,15 @@ type Bootstrap struct {
 	HostMountPrefix string `json:"hostMountPrefix,omitempty"`
 }
 
+// MintBootstrap produces the registration credentials for a worker runtime.
+//
+// Minting is a WRITE: it persists a single-use bootstrap token. Worker providers
+// therefore take a mint function rather than a Bootstrap, and call it only when
+// they actually create a runtime — a drift check that finds a healthy container
+// needs no credentials and must not mint any. Minting eagerly on every reconcile
+// leaks a token row per reconcile.
+type MintBootstrap func(context.Context) (Bootstrap, error)
+
 // Validate checks the required worker bootstrap fields.
 func (b Bootstrap) Validate() error {
 	if strings.TrimSpace(b.ControlPlaneURL) == "" {

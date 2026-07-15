@@ -51,9 +51,9 @@ func TestDockerIntegrationWorkerLifecycle(t *testing.T) {
 	project := &model.Project{ID: "project-" + uuid.NewString()}
 	provider := &model.SandboxProviderInstance{ID: "provider-" + uuid.NewString(), ProjectID: project.ID}
 	worker := &model.Worker{ID: "worker-" + uuid.NewString(), ProjectID: project.ID, ProviderInstanceID: provider.ID}
-	bootstrap := workeragent.Bootstrap{ProjectID: project.ID, WorkerID: worker.ID, Token: "token-1", ControlPlaneKey: "key-1"}
+	mint := staticMint(workeragent.Bootstrap{ProjectID: project.ID, WorkerID: worker.ID, Token: "token-1", ControlPlaneKey: "key-1"})
 
-	if err := engine.EnsureWorker(ctx, project, provider, worker, bootstrap); err != nil {
+	if err := engine.EnsureWorker(ctx, project, provider, worker, mint); err != nil {
 		t.Fatalf("ensure worker: %v", err)
 	}
 	t.Cleanup(func() {
@@ -74,7 +74,7 @@ func TestDockerIntegrationWorkerLifecycle(t *testing.T) {
 	assertContainerRunning(ctx, t, state.ContainerID, true)
 
 	// EnsureWorker is idempotent: the healthy container is kept.
-	if err := engine.EnsureWorker(ctx, project, provider, worker, bootstrap); err != nil {
+	if err := engine.EnsureWorker(ctx, project, provider, worker, mint); err != nil {
 		t.Fatalf("re-ensure worker: %v", err)
 	}
 	nextState, err := dockerworker.DecodeRuntimeState(worker.RuntimeState)
@@ -86,7 +86,7 @@ func TestDockerIntegrationWorkerLifecycle(t *testing.T) {
 	}
 
 	// Repair replaces the container while preserving the worker identity.
-	if err := engine.RepairWorker(ctx, project, provider, worker, bootstrap, "integration test"); err != nil {
+	if err := engine.RepairWorker(ctx, project, provider, worker, mint, "integration test"); err != nil {
 		t.Fatalf("repair worker: %v", err)
 	}
 	repairedState, err := dockerworker.DecodeRuntimeState(worker.RuntimeState)
@@ -149,7 +149,7 @@ func TestDockerIntegrationSystemdWorker(t *testing.T) {
 	provider := &model.SandboxProviderInstance{ID: "provider-" + uuid.NewString(), ProjectID: project.ID}
 	worker := &model.Worker{ID: "worker-" + uuid.NewString(), ProjectID: project.ID, ProviderInstanceID: provider.ID}
 
-	if err := engine.EnsureWorker(ctx, project, provider, worker, workeragent.Bootstrap{ProjectID: project.ID, WorkerID: worker.ID, Token: "token-1"}); err != nil {
+	if err := engine.EnsureWorker(ctx, project, provider, worker, staticMint(workeragent.Bootstrap{ProjectID: project.ID, WorkerID: worker.ID, Token: "token-1"})); err != nil {
 		t.Fatalf("ensure systemd worker: %v", err)
 	}
 	t.Cleanup(func() {
@@ -231,4 +231,10 @@ func dockerBuildContext(dockerfilePath string) (io.Reader, error) {
 		return nil, err
 	}
 	return bytes.NewReader(buf.Bytes()), nil
+}
+
+// staticMint returns a minter that hands back a fixed bootstrap, standing in for
+// the control plane's single-use token minting.
+func staticMint(bootstrap workeragent.Bootstrap) workeragent.MintBootstrap {
+	return func(context.Context) (workeragent.Bootstrap, error) { return bootstrap, nil }
 }

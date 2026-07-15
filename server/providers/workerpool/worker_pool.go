@@ -234,20 +234,61 @@ func retainWorkerBefore(left, right model.Worker) bool {
 // that dies mid-run keeps its dirty row and is re-claimed after lease expiry,
 // and a never-created worker whose create fails is latched to a terminal
 // failure by the reconciler itself (failReconcile).
+// repairWorkersWithFailedJobs re-drives workers whose last reconcile failed but
+// whose runtime is recoverable. A repair is new intent, so it bumps the worker's
+// generation (see ControlPlane.ScheduleWorkerRepair): schedulers read the bump
+// as "a retry is pending" and keep waiting, rather than mistaking the still-
+// recorded failure for a settled one.
 func repairWorkersWithFailedJobs(ctx context.Context, manager WorkerManager, workers []model.Worker) ([]model.Worker, error) {
 	for i := range workers {
 		worker := &workers[i]
 		if worker.RevokedAt != nil || worker.DesiredState != model.WorkerDesiredStateActive {
 			continue
 		}
-		if worker.LastOperationStatus != model.OperationStatusFailed || !worker.EverCreated() {
+		if worker.LastOperationStatus != model.OperationStatusFailed {
 			continue
 		}
-		if err := manager.ScheduleWorkerReconciliation(ctx, worker.ID); err != nil {
+		if repairPending(worker) {
+			continue
+		}
+		if err := manager.ScheduleWorkerRepair(ctx, worker.ID, "repairing worker after failed reconcile"); err != nil {
 			return nil, err
 		}
+		worker.IncrementGeneration() // mirror the persisted bump on the local copy
 	}
 	return workers, nil
+}
+
+// repairPending reports whether the worker's latest intent has not been
+// attempted yet: a queued or in-flight reconcile that may still bring it up.
+func repairPending(worker *model.Worker) bool {
+	return worker.ObservedGeneration != worker.Generation
+}
+
+// settledWorkerFailure returns a worker whose failure is settled when the pool
+// cannot make progress: every worker carrying the provider's capacity has had
+// its latest intent attempted and failed, and none is pending or in flight.
+// Waiting longer cannot change that, so schedulers surface the failure instead
+// of blocking until their deadline.
+//
+// A worker with a repair pending (generation bumped, not yet attempted), one
+// still launching, or one that reconciled successfully but has not reported
+// ready yet all count as progress and suppress the verdict.
+func settledWorkerFailure(workers []model.Worker) *model.Worker {
+	var failed *model.Worker
+	for i := range workers {
+		worker := &workers[i]
+		if worker.RevokedAt != nil || worker.DesiredState != model.WorkerDesiredStateActive {
+			continue
+		}
+		if worker.LastOperationStatus != model.OperationStatusFailed || repairPending(worker) {
+			return nil
+		}
+		if failed == nil {
+			failed = worker
+		}
+	}
+	return failed
 }
 
 func repairExpiredRegisteringWorkers(ctx context.Context, manager WorkerManager, workers []model.Worker, now time.Time) ([]model.Worker, error) {
@@ -278,19 +319,27 @@ func repairExpiredRegisteringWorkers(ctx context.Context, manager WorkerManager,
 	return workers, nil
 }
 
+// activeWorker reports whether a worker occupies a slot in the pool. A FAILED
+// worker still occupies its slot: it is retried in place (see
+// repairWorkersWithFailedJobs), not replaced.
+//
+// Treating a failed worker as absent instead — as this once did for a worker
+// that never completed its initial create — makes the pool launch a
+// replacement, which fails the same way, forever: the failed rows are invisible
+// to the active count, so they never satisfy Min and never count against Max.
+// A provider with an unpullable image spawned hundreds of dead workers a minute
+// that way. healthyWorker still excludes a failed worker from schedulable
+// capacity via Ready/Schedulable, so nothing lands on it while it recovers.
+//
+// A worker whose runtime came up but never registered is a different case: it
+// is deleted and replaced on the registration timeout
+// (repairExpiredRegisteringWorkers), which is bounded.
 func activeWorker(worker *model.Worker) bool {
 	if worker == nil || worker.RevokedAt != nil {
 		return false
 	}
 	switch worker.DesiredState {
 	case model.WorkerDesiredStateDeleted, model.WorkerDesiredStateDrained:
-		return false
-	}
-	// A failed reconcile is terminal only for a worker that never completed its
-	// initial create. An already-created worker is stateful and stays active
-	// while it is reconciled back to health; healthyWorker still excludes it
-	// from schedulable capacity via Ready/Schedulable until it recovers.
-	if (worker.Phase == model.WorkerPhaseFailed || worker.LastOperationStatus == model.OperationStatusFailed) && !worker.EverCreated() {
 		return false
 	}
 	return true

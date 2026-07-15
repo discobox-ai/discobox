@@ -477,6 +477,20 @@ func (s *Store) PurgeDeletedWorkers(ctx context.Context, deletedBefore time.Time
 	return result.RowsAffected, result.Error
 }
 
+// PurgeSpentWorkerBootstrapTokens deletes bootstrap tokens that can no longer be
+// redeemed: expired, already used, or revoked. Tokens are single-use and minted
+// per worker-runtime creation, so nothing reads them once they are spent, and
+// without this they accumulate forever.
+func (s *Store) PurgeSpentWorkerBootstrapTokens(ctx context.Context, expiredBefore time.Time) (int64, error) {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return 0, err
+	}
+	result := write.Where("expires_at < ? OR used_at IS NOT NULL OR revoked_at IS NOT NULL", expiredBefore).
+		Delete(&model.WorkerBootstrapToken{})
+	return result.RowsAffected, result.Error
+}
+
 func workerResourceScore(worker model.Worker, cpuVCPUs float64, memoryBytes, storageBytes int64) float64 {
 	cpuRemainder := worker.AvailableCPUVCPUs - cpuVCPUs
 	memoryRemainder := float64(worker.AvailableMemoryBytes - memoryBytes)

@@ -27,6 +27,7 @@ type WorkerManager interface {
 	CountSandboxesForWorkers(ctx context.Context, workerIDs []string) (map[string]int64, error)
 	DeleteWorkerForExpiredRegistration(ctx context.Context, workerID string, generation int64, cutoff time.Time, message string) (bool, error)
 	ScheduleWorkerReconciliation(ctx context.Context, workerID string) error
+	ScheduleWorkerRepair(ctx context.Context, workerID, reason string) error
 	ScheduleWorkerProviderReconciliation(ctx context.Context, projectID, providerID string) error
 	ScheduleWorkerProviderReconciliationAt(ctx context.Context, projectID, providerID string, scheduledAt time.Time) error
 }

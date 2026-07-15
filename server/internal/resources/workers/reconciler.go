@@ -131,6 +131,7 @@ func (r *WorkerReconciler) reconcileDeleted(ctx context.Context, worker *model.W
 	}
 	if assigned > 0 {
 		message := fmt.Sprintf("worker has %d assigned sandbox(es)", assigned)
+		worker.ObservedGeneration = generation
 		worker.FailOperation(message)
 		if updateErr := r.update(ctx, worker, generation); updateErr != nil {
 			return updateErr
@@ -160,6 +161,7 @@ func (r *WorkerReconciler) reconcileDeleted(ctx context.Context, worker *model.W
 		return fmt.Errorf("sandbox provider %q does not reconcile workers", provider.ID)
 	}
 	if err := workerProvider.RemoveWorker(ctx, r.reconcileManager(), project, provider, worker); err != nil {
+		worker.ObservedGeneration = generation
 		worker.FailOperation(err.Error())
 		if updateErr := r.update(ctx, worker, generation); updateErr != nil {
 			return updateErr
@@ -209,7 +211,7 @@ func (r *WorkerReconciler) reconcileActive(ctx context.Context, worker *model.Wo
 	}
 	if err := workerProvider.ReconcileWorker(ctx, r.reconcileManager(), project, provider, worker); err != nil {
 		if repairErr := r.repairAssignedWorker(ctx, workerProvider, project, provider, worker, err); repairErr != nil {
-			r.failReconcile(worker, repairErr.Error())
+			r.failReconcile(worker, generation, repairErr.Error())
 			if updateErr := r.update(ctx, worker, generation); updateErr != nil {
 				return updateErr
 			}
@@ -238,18 +240,25 @@ func (r *WorkerReconciler) reconcileActive(ctx context.Context, worker *model.Wo
 	return r.update(ctx, current, generation)
 }
 
-// failReconcile records a failed active reconcile. A worker that never
-// completed its initial create fails terminally: there is no runtime to
-// recover. A worker that has already been created is stateful and must be
-// reconciled back to health, so it drops to a non-terminal offline phase
-// (unschedulable, not ready) and stays eligible for re-driven reconciliation.
-func (r *WorkerReconciler) failReconcile(worker *model.Worker, message string) {
+// failReconcile records a failed active reconcile. The worker keeps its slot in
+// the pool either way and is retried in place: a worker that never completed its
+// initial create reports the terminal-looking "failed" phase (there is no
+// runtime yet), and one that was already created drops to "offline" (its runtime
+// is stateful and must be reconciled back to health). Neither is schedulable
+// until it recovers.
+//
+// Either way the failure is attributed to the generation that produced it, so
+// a recorded failure with ObservedGeneration == Generation means "the latest
+// intent was attempted, and it lost". Schedulers rely on that to tell a settled
+// failure from one with a repair pending (which bumps the generation).
+func (r *WorkerReconciler) failReconcile(worker *model.Worker, generation int64, message string) {
+	worker.ObservedGeneration = generation
+	worker.Ready = false
+	worker.Schedulable = false
 	if !worker.EverCreated() {
 		worker.FailOperation(message)
 		return
 	}
-	worker.Ready = false
-	worker.Schedulable = false
 	worker.FailOperationRetryable(model.WorkerPhaseOffline, message)
 }
 

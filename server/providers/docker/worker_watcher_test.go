@@ -298,6 +298,11 @@ func (m *recordingWorkerReconcileManager) ScheduleWorkerReconciliation(_ context
 	return nil
 }
 
+func (m *recordingWorkerReconcileManager) ScheduleWorkerRepair(_ context.Context, workerID, _ string) error {
+	m.reconcileWorkerID = workerID
+	return nil
+}
+
 func (m *recordingWorkerReconcileManager) ScheduleWorkerProviderReconciliation(_ context.Context, projectID, providerID string) error {
 	m.reconcileProjectID = projectID
 	m.reconcileProviderID = providerID

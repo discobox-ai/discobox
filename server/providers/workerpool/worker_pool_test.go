@@ -63,7 +63,13 @@ func TestDesiredAdditionalWorkersHonorsMax(t *testing.T) {
 	}
 }
 
-func TestDesiredAdditionalWorkersIgnoresFailedWorkers(t *testing.T) {
+// TestDesiredAdditionalWorkersKeepsFailedWorkerInItsSlot pins the bound that
+// stops the pool from spawning workers without limit. A failed worker occupies
+// its slot and is retried in place, so a full pool launches no replacement.
+// Counting it as absent instead made the pool replace it, the replacement fail
+// identically, and the dead rows — invisible to both Min and Max — accumulate
+// forever (hundreds a minute against an unpullable image).
+func TestDesiredAdditionalWorkersKeepsFailedWorkerInItsSlot(t *testing.T) {
 	workers := []model.Worker{{
 		ResourceLifecycle: model.ResourceLifecycle{
 			DesiredState:        model.WorkerDesiredStateActive,
@@ -73,8 +79,25 @@ func TestDesiredAdditionalWorkersIgnoresFailedWorkers(t *testing.T) {
 	}}
 	cfg := WorkerPoolConfig{Min: 1, Max: 1, MinHealthy: 1}
 
+	if got := desiredAdditionalWorkers(workers, cfg); got != 0 {
+		t.Fatalf("additional workers = %d, want 0 for a full pool whose worker is retried in place", got)
+	}
+}
+
+// TestDesiredAdditionalWorkersReplacesFailedWorkerWithinMax keeps replacement
+// working where there is room for it: Max now genuinely bounds the launches.
+func TestDesiredAdditionalWorkersReplacesFailedWorkerWithinMax(t *testing.T) {
+	workers := []model.Worker{{
+		ResourceLifecycle: model.ResourceLifecycle{
+			DesiredState:        model.WorkerDesiredStateActive,
+			Phase:               model.WorkerPhaseFailed,
+			LastOperationStatus: model.OperationStatusFailed,
+		},
+	}}
+	cfg := WorkerPoolConfig{Min: 1, Max: 2, MinHealthy: 1}
+
 	if got := desiredAdditionalWorkers(workers, cfg); got != 1 {
-		t.Fatalf("additional workers = %d, want 1", got)
+		t.Fatalf("additional workers = %d, want 1 healthy replacement within Max", got)
 	}
 }
 
@@ -105,8 +128,8 @@ func TestEnsureWorkerPoolLeavesInFlightOperationsAlone(t *testing.T) {
 	if store.updated != nil {
 		t.Fatalf("updated worker = %#v, want untouched in-flight operation", store.updated)
 	}
-	if len(store.scheduledReconciliations) != 0 {
-		t.Fatalf("scheduled reconciliations = %v, want none for in-flight operation", store.scheduledReconciliations)
+	if len(store.scheduledReconciliations) != 0 || len(store.scheduledRepairs) != 0 {
+		t.Fatalf("scheduled reconciliations = %v, repairs = %v, want none for in-flight operation", store.scheduledReconciliations, store.scheduledRepairs)
 	}
 	if store.createdWorkers != 0 {
 		t.Fatalf("created workers = %d, want none while operation is in flight", store.createdWorkers)
@@ -136,15 +159,21 @@ func TestEnsureWorkerPoolReDrivesFailedCreatedWorker(t *testing.T) {
 		t.Fatalf("ensure worker pool: %v", err)
 	}
 
-	if len(store.scheduledReconciliations) != 1 || store.scheduledReconciliations[0] != "worker-1" {
-		t.Fatalf("scheduled reconciliations = %v, want [worker-1]", store.scheduledReconciliations)
+	// A repair is new intent, not a plain dirty mark: it must bump the worker's
+	// generation so schedulers can tell a pending retry from a settled failure.
+	if len(store.scheduledRepairs) != 1 || store.scheduledRepairs[0] != "worker-1" {
+		t.Fatalf("scheduled repairs = %v, want [worker-1]", store.scheduledRepairs)
 	}
 	if store.updated != nil {
 		t.Fatalf("updated worker = %#v, want no terminal failure for created worker", store.updated)
 	}
 }
 
-func TestActiveWorkerFailedIsTerminalOnlyBeforeCreate(t *testing.T) {
+// TestActiveWorkerKeepsFailedWorkersInThePool pins that a failed worker holds
+// its slot whether or not its runtime was ever created, so the pool retries it
+// rather than replacing it without bound. Neither counts as healthy capacity,
+// so nothing is scheduled onto it while it recovers.
+func TestActiveWorkerKeepsFailedWorkersInThePool(t *testing.T) {
 	registeredAt := time.Now().UTC()
 	created := &model.Worker{
 		RegisteredAt: &registeredAt,
@@ -154,13 +183,6 @@ func TestActiveWorkerFailedIsTerminalOnlyBeforeCreate(t *testing.T) {
 			LastOperationStatus: model.OperationStatusFailed,
 		},
 	}
-	if !activeWorker(created) {
-		t.Fatal("created worker recovering from a failed reconcile should stay active")
-	}
-	if healthyWorker(created) {
-		t.Fatal("recovering worker should not count as healthy capacity")
-	}
-
 	neverCreated := &model.Worker{
 		ResourceLifecycle: model.ResourceLifecycle{
 			DesiredState:        model.WorkerDesiredStateActive,
@@ -168,8 +190,16 @@ func TestActiveWorkerFailedIsTerminalOnlyBeforeCreate(t *testing.T) {
 			LastOperationStatus: model.OperationStatusFailed,
 		},
 	}
-	if activeWorker(neverCreated) {
-		t.Fatal("worker that never completed create should fail terminally")
+
+	for name, worker := range map[string]*model.Worker{"created": created, "never created": neverCreated} {
+		t.Run(name, func(t *testing.T) {
+			if !activeWorker(worker) {
+				t.Fatal("failed worker should keep its pool slot and be retried in place")
+			}
+			if healthyWorker(worker) {
+				t.Fatal("failed worker should not count as healthy capacity")
+			}
+		})
 	}
 }
 
@@ -309,6 +339,72 @@ func TestEnsureWorkerPoolSkipsExcessWorkersWithAssignedSandboxes(t *testing.T) {
 	if !reflect.DeepEqual(store.deletedWorkerIDs, []string{"worker-empty"}) {
 		t.Fatalf("deleted workers = %#v, want only empty worker", store.deletedWorkerIDs)
 	}
+}
+
+// TestWorkerPoolProviderReconcileWorkerSkipsTimeoutForRegisteredWorker pins the
+// bound on the busy loop. The provider reconcile drift-checks every healthy
+// worker through ReconcileWorker, so arming the registration timeout there
+// re-marks the provider row being reconciled: MarkDirtyAt keeps the row
+// immediately runnable, bumps its seq past the settle, and wakes the claim loop,
+// which re-runs the reconcile at once — hundreds of times a second. Only a
+// worker that has never registered can time out, so only it arms the timer.
+func TestWorkerPoolProviderReconcileWorkerSkipsTimeoutForRegisteredWorker(t *testing.T) {
+	oldTimeout := workerRegistrationTimeout
+	workerRegistrationTimeout = time.Minute
+	t.Cleanup(func() { workerRegistrationTimeout = oldTimeout })
+
+	registeredAt := time.Now().UTC()
+	workerManager := &recordingWorkerManager{}
+	pool := New(&testWorkerProvider{}, sandbox.ProviderDefinition{Name: "test"}, WorkerPoolConfig{}, workerManager)
+	project := &model.Project{ID: "project-1"}
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
+	worker := &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", RegisteredAt: &registeredAt}
+
+	if err := pool.ReconcileWorker(context.Background(), workerManager, project, provider, worker); err != nil {
+		t.Fatalf("reconcile worker: %v", err)
+	}
+
+	if !workerManager.scheduledProviderAt.IsZero() || workerManager.scheduledProviderID != "" {
+		t.Fatalf("scheduled provider reconcile at %s for %q, want none for an already-registered worker",
+			workerManager.scheduledProviderAt, workerManager.scheduledProviderID)
+	}
+}
+
+// TestWorkerPoolProviderMintsBootstrapOnlyWhenRuntimeIsCreated pins the fix for
+// an unbounded token leak. Minting persists a single-use bootstrap token, and
+// the provider reconcile drift-checks every healthy worker through
+// ReconcileWorker, so minting eagerly wrote one token row per reconcile — 9.7
+// million of them, and 3.4GB of database, on a pool of one worker.
+func TestWorkerPoolProviderMintsBootstrapOnlyWhenRuntimeIsCreated(t *testing.T) {
+	project := &model.Project{ID: "project-1"}
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1"}
+	worker := &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1"}
+
+	t.Run("drift check over a healthy runtime", func(t *testing.T) {
+		workerManager := &recordingWorkerManager{}
+		pool := New(&testWorkerProvider{}, sandbox.ProviderDefinition{Name: "test"}, WorkerPoolConfig{}, workerManager)
+
+		if err := pool.ReconcileWorker(context.Background(), workerManager, project, provider, worker); err != nil {
+			t.Fatalf("reconcile worker: %v", err)
+		}
+
+		if workerManager.mintedBootstrapTokens != 0 {
+			t.Fatalf("minted %d bootstrap tokens, want none when no runtime is created", workerManager.mintedBootstrapTokens)
+		}
+	})
+
+	t.Run("runtime creation", func(t *testing.T) {
+		workerManager := &recordingWorkerManager{}
+		pool := New(&testWorkerProvider{createsRuntime: true}, sandbox.ProviderDefinition{Name: "test"}, WorkerPoolConfig{}, workerManager)
+
+		if err := pool.ReconcileWorker(context.Background(), workerManager, project, provider, worker); err != nil {
+			t.Fatalf("reconcile worker: %v", err)
+		}
+
+		if workerManager.mintedBootstrapTokens != 1 {
+			t.Fatalf("minted %d bootstrap tokens, want exactly 1 for a created runtime", workerManager.mintedBootstrapTokens)
+		}
+	})
 }
 
 func TestNormalizeWorkerPoolConfigKeepsPoolSizeAsMinimumWithReplacementHeadroom(t *testing.T) {
@@ -804,11 +900,11 @@ func (d *workerHTTPOnlyDriver) Close() error {
 	return nil
 }
 
-func (d *workerHTTPOnlyDriver) EnsureWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker, workeragent.Bootstrap) error {
+func (d *workerHTTPOnlyDriver) EnsureWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker, workeragent.MintBootstrap) error {
 	return errors.New("EnsureWorker should not be called")
 }
 
-func (d *workerHTTPOnlyDriver) RepairWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker, workeragent.Bootstrap, string) error {
+func (d *workerHTTPOnlyDriver) RepairWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker, workeragent.MintBootstrap, string) error {
 	return errors.New("RepairWorker should not be called")
 }
 
@@ -855,17 +951,25 @@ type testWorkerProvider struct {
 	baseURL string
 	client  *http.Client
 	token   string
+	// createsRuntime makes EnsureWorker mint, standing in for a provider that
+	// actually creates a container. Left false, it stands in for a drift check
+	// that finds a healthy runtime and needs no credentials.
+	createsRuntime bool
 }
 
 func (p *testWorkerProvider) Close() error {
 	return nil
 }
 
-func (p *testWorkerProvider) EnsureWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker, workeragent.Bootstrap) error {
-	return nil
+func (p *testWorkerProvider) EnsureWorker(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, _ *model.Worker, mint workeragent.MintBootstrap) error {
+	if !p.createsRuntime {
+		return nil
+	}
+	_, err := mint(ctx)
+	return err
 }
 
-func (p *testWorkerProvider) RepairWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker, workeragent.Bootstrap, string) error {
+func (p *testWorkerProvider) RepairWorker(context.Context, *model.Project, *model.SandboxProviderInstance, *model.Worker, workeragent.MintBootstrap, string) error {
 	return nil
 }
 
@@ -887,6 +991,8 @@ type recordingWorkerManager struct {
 	findCalls                  int
 	listCalls                  int
 	scheduleWorkerCalls        int
+	scheduleRepairCalls        int
+	mintedBootstrapTokens      int
 	workerAgentTokenClaims     []workeragentauth.TokenClaims
 	sandboxAgentTokenClaims    []workeragentauth.TokenClaims
 	scheduledWorkerJobID       string
@@ -921,6 +1027,7 @@ func (s *recordingWorkerManager) DeleteWorker(context.Context, string) (*model.W
 }
 
 func (s *recordingWorkerManager) CreateWorkerBootstrapToken(context.Context, *model.WorkerBootstrapToken) error {
+	s.mintedBootstrapTokens++
 	return nil
 }
 
@@ -963,6 +1070,11 @@ func (s *recordingWorkerManager) ScheduleWorkerProviderReconciliationAt(_ contex
 
 func (s *recordingWorkerManager) ScheduleWorkerReconciliation(context.Context, string) error {
 	s.scheduleWorkerCalls++
+	return nil
+}
+
+func (s *recordingWorkerManager) ScheduleWorkerRepair(context.Context, string, string) error {
+	s.scheduleRepairCalls++
 	return nil
 }
 
@@ -1056,6 +1168,10 @@ func (s *capacityWaitWorkerManager) ScheduleWorkerReconciliation(context.Context
 	return nil
 }
 
+func (s *capacityWaitWorkerManager) ScheduleWorkerRepair(context.Context, string, string) error {
+	return nil
+}
+
 func (s *capacityWaitWorkerManager) CountSandboxesForWorkers(_ context.Context, workerIDs []string) (map[string]int64, error) {
 	return make(map[string]int64, len(workerIDs)), nil
 }
@@ -1076,6 +1192,7 @@ type repairingWorkerManager struct {
 	deletedWorkerIDs         []string
 	assignedSandboxes        map[string]int64
 	scheduledReconciliations []string
+	scheduledRepairs         []string
 }
 
 func (s *repairingWorkerManager) ListWorkers(context.Context, string, string) ([]model.Worker, error) {
@@ -1164,6 +1281,16 @@ func (s *repairingWorkerManager) ScheduleWorkerProviderReconciliationAt(context.
 
 func (s *repairingWorkerManager) ScheduleWorkerReconciliation(_ context.Context, workerID string) error {
 	s.scheduledReconciliations = append(s.scheduledReconciliations, workerID)
+	return nil
+}
+
+func (s *repairingWorkerManager) ScheduleWorkerRepair(_ context.Context, workerID, _ string) error {
+	s.scheduledRepairs = append(s.scheduledRepairs, workerID)
+	for i := range s.workers {
+		if s.workers[i].ID == workerID {
+			s.workers[i].IncrementGeneration()
+		}
+	}
 	return nil
 }
 

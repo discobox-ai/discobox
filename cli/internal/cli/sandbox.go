@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -504,7 +505,7 @@ func (a *App) waitForSandbox(cmd *cobra.Command, client *apiclientgen.Client, pr
 			return sandbox, nil
 		}
 		if sandbox.Runtime.Phase == "failed" || sandbox.Runtime.LastOperationStatus == "failed" {
-			return sandbox, fmt.Errorf("sandbox failed: phase=%s lastOperationStatus=%s", sandbox.Runtime.Phase, sandbox.Runtime.LastOperationStatus)
+			return sandbox, fmt.Errorf("sandbox failed: %s", sandboxFailureReason(sandbox))
 		}
 		select {
 		case <-ctx.Done():
@@ -512,6 +513,16 @@ func (a *App) waitForSandbox(cmd *cobra.Command, client *apiclientgen.Client, pr
 		case <-ticker.C:
 		}
 	}
+}
+
+// sandboxFailureReason reports why a sandbox failed, preferring the message the
+// server recorded on it. Phase and status alone are tautological ("it failed
+// because it failed"), so they are only the fallback when no message is set.
+func sandboxFailureReason(sandbox *apimodel.Sandbox) string {
+	if message, ok := sandbox.Runtime.ErrorMessage.Get(); ok && strings.TrimSpace(message) != "" {
+		return strings.TrimSpace(message)
+	}
+	return fmt.Sprintf("phase=%s lastOperationStatus=%s", sandbox.Runtime.Phase, sandbox.Runtime.LastOperationStatus)
 }
 
 func sourceCodeReferences(value string) (apiclientgen.SandboxCreateConfigSourceCodeReferences, error) {

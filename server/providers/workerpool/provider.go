@@ -36,10 +36,14 @@ type WorkerProvider interface {
 	// EnsureWorker creates or drift-corrects the worker runtime. It is
 	// idempotent and updates the worker row's runtime state and scheduling
 	// flags in place; the caller persists the row.
-	EnsureWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, bootstrap workeragent.Bootstrap) error
+	//
+	// mint is called ONLY when a runtime is actually created: minting persists a
+	// single-use bootstrap token, and a drift check that finds a healthy
+	// container needs no credentials.
+	EnsureWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, mint workeragent.MintBootstrap) error
 	// RepairWorker replaces an unhealthy worker runtime while preserving worker
 	// identity and worker-local state.
-	RepairWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, bootstrap workeragent.Bootstrap, reason string) error
+	RepairWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, mint workeragent.MintBootstrap, reason string) error
 	RemoveWorker(ctx context.Context, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error
 	// AcquireWorkerAgentClient returns an HTTP client lease that reaches the
 	// worker-agent API for the worker.
@@ -108,31 +112,35 @@ func (p *WorkerPoolProvider) ReconcileWorker(ctx context.Context, manager sandbo
 	if manager == nil {
 		return fmt.Errorf("worker manager is required")
 	}
-	bootstrap, err := workerBootstrap(ctx, manager, project, worker)
-	if err != nil {
+	if err := p.workerProvider.EnsureWorker(ctx, project, provider, worker, mintWorkerBootstrap(manager, project, worker)); err != nil {
 		return err
 	}
-	if err := p.workerProvider.EnsureWorker(ctx, project, provider, worker, bootstrap); err != nil {
-		return err
-	}
-	if workerRegistrationTimeout <= 0 {
-		return nil
-	}
-	return manager.ScheduleWorkerProviderReconciliationAt(ctx, provider.ProjectID, provider.ID, time.Now().UTC().Add(workerRegistrationTimeout))
+	return armRegistrationTimeout(ctx, manager, provider, worker)
 }
 
 func (p *WorkerPoolProvider) RepairWorker(ctx context.Context, manager sandbox.WorkerManager, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, reason string) error {
 	if manager == nil {
 		return fmt.Errorf("worker manager is required")
 	}
-	bootstrap, err := workerBootstrap(ctx, manager, project, worker)
-	if err != nil {
+	if err := p.workerProvider.RepairWorker(ctx, project, provider, worker, mintWorkerBootstrap(manager, project, worker), reason); err != nil {
 		return err
 	}
-	if err := p.workerProvider.RepairWorker(ctx, project, provider, worker, bootstrap, reason); err != nil {
-		return err
-	}
-	if workerRegistrationTimeout <= 0 {
+	return armRegistrationTimeout(ctx, manager, provider, worker)
+}
+
+// armRegistrationTimeout schedules the pool re-check that catches a worker whose
+// runtime came up but never registered (repairExpiredRegisteringWorkers).
+//
+// It arms ONLY for a worker that has never registered, because only such a
+// worker can time out. Arming it for an already-registered worker is not merely
+// useless, it is a busy loop: the provider reconcile drift-checks every healthy
+// worker through here, so the timer re-marks the very provider row being
+// reconciled. MarkDirtyAt pulls not_before forward but never pushes it back, so
+// the row stays immediately runnable, its seq bump defeats the settle, and the
+// wake re-claims it at once — hundreds of reconciles a second, each one a
+// container inspect and a freshly minted bootstrap token.
+func armRegistrationTimeout(ctx context.Context, manager sandbox.WorkerManager, provider *model.SandboxProviderInstance, worker *model.Worker) error {
+	if workerRegistrationTimeout <= 0 || worker.EverCreated() {
 		return nil
 	}
 	return manager.ScheduleWorkerProviderReconciliationAt(ctx, provider.ProjectID, provider.ID, time.Now().UTC().Add(workerRegistrationTimeout))
@@ -142,24 +150,27 @@ func (p *WorkerPoolProvider) RemoveWorker(ctx context.Context, _ sandbox.WorkerM
 	return p.workerProvider.RemoveWorker(ctx, project, provider, worker)
 }
 
-// workerBootstrap mints the registration credentials handed to a new worker
-// runtime. The worker provider fills runtime-specific fields such as the
-// control plane URL and harness port.
-func workerBootstrap(ctx context.Context, manager WorkerManager, project *model.Project, worker *model.Worker) (workeragent.Bootstrap, error) {
-	token, err := createWorkerBootstrap(ctx, manager, project, worker)
-	if err != nil {
-		return workeragent.Bootstrap{}, err
+// mintWorkerBootstrap returns the deferred minter handed to a worker provider.
+// The provider calls it only when it actually creates a runtime, so a drift
+// check over a healthy worker persists no bootstrap token. The worker provider
+// fills runtime-specific fields such as the control plane URL and harness port.
+func mintWorkerBootstrap(manager WorkerManager, project *model.Project, worker *model.Worker) workeragent.MintBootstrap {
+	return func(ctx context.Context) (workeragent.Bootstrap, error) {
+		token, err := createWorkerBootstrap(ctx, manager, project, worker)
+		if err != nil {
+			return workeragent.Bootstrap{}, err
+		}
+		controlPlanePublicKey, err := manager.EnsureWorkerAgentTrustKey(ctx)
+		if err != nil {
+			return workeragent.Bootstrap{}, err
+		}
+		return workeragent.Bootstrap{
+			ProjectID:       project.ID,
+			WorkerID:        worker.ID,
+			Token:           token,
+			ControlPlaneKey: controlPlanePublicKey,
+		}, nil
 	}
-	controlPlanePublicKey, err := manager.EnsureWorkerAgentTrustKey(ctx)
-	if err != nil {
-		return workeragent.Bootstrap{}, err
-	}
-	return workeragent.Bootstrap{
-		ProjectID:       project.ID,
-		WorkerID:        worker.ID,
-		Token:           token,
-		ControlPlaneKey: controlPlanePublicKey,
-	}, nil
 }
 
 func (p *WorkerPoolProvider) ensureActiveWorkers(ctx context.Context, manager WorkerManager, project *model.Project, provider *model.SandboxProviderInstance) error {
@@ -281,6 +292,10 @@ func (p *WorkerPoolProvider) ensureWorkerCapacity(ctx context.Context, sb *model
 	return p.ensureWorkerPool(ctx, p.manager, project, provider)
 }
 
+// waitForSchedulableWorker waits for the pool to produce a worker the sandbox
+// can land on. It gives up early when the pool has settled into failure: a
+// scheduling wait is only worth its deadline while some worker is still on its
+// way up, and a settled failure carries a cause the caller should see.
 func (p *WorkerPoolProvider) waitForSchedulableWorker(ctx context.Context, sb *model.Sandbox) (*model.Worker, error) {
 	deadline := time.Now().Add(workerCapacityWaitTimeout)
 	for {
@@ -289,6 +304,9 @@ func (p *WorkerPoolProvider) waitForSchedulableWorker(ctx context.Context, sb *m
 			return worker, nil
 		}
 		if !errors.Is(err, apperrors.ErrNotFound) {
+			return nil, err
+		}
+		if err := p.settledFailure(ctx, sb); err != nil {
 			return nil, err
 		}
 		if workerCapacityWaitTimeout <= 0 || !time.Now().Before(deadline) {
@@ -304,6 +322,29 @@ func (p *WorkerPoolProvider) waitForSchedulableWorker(ctx context.Context, sb *m
 		case <-timer.C:
 		}
 	}
+}
+
+// settledFailure returns the pool's failure once no worker can still bring
+// capacity up, and nil while any worker is pending, in flight, or awaiting
+// repair. The error carries the failed worker's recorded message so the cause —
+// a missing image, an unreachable daemon — reaches the sandbox.
+func (p *WorkerPoolProvider) settledFailure(ctx context.Context, sb *model.Sandbox) error {
+	if sb == nil || sb.ProviderInstanceID == nil || *sb.ProviderInstanceID == "" {
+		return nil
+	}
+	workers, err := p.manager.ListWorkers(ctx, sb.ProjectID, *sb.ProviderInstanceID)
+	if err != nil {
+		return err
+	}
+	failed := settledWorkerFailure(workers)
+	if failed == nil {
+		return nil
+	}
+	message := ""
+	if failed.ErrorMessage != nil {
+		message = *failed.ErrorMessage
+	}
+	return &sandbox.WorkerFailure{WorkerID: failed.ID, Message: message}
 }
 
 func (p *WorkerPoolProvider) Update(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.UpdateOptions) (*sandbox.Sandbox, []byte, error) {

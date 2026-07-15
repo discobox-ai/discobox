@@ -240,6 +240,44 @@ func (s *ControlPlane) DeleteWorkerForExpiredRegistration(ctx context.Context, w
 	return updated, nil
 }
 
+// ScheduleWorkerRepair re-drives a failed worker as NEW INTENT: it bumps the
+// generation and marks the worker dirty in one transaction.
+//
+// The generation bump is what makes a queued retry observable on the row.
+// Marking dirty alone leaves the retry in the reconcile engine's dirty set,
+// which schedulers cannot see, so a worker awaiting repair is indistinguishable
+// from one whose failure is settled. With the bump, a pending repair reads as
+// ObservedGeneration < Generation until the reconciler attempts it.
+//
+// Repair is idempotent: a worker whose latest generation has not been attempted
+// yet already has a repair pending, so it is only marked dirty.
+func (s *ControlPlane) ScheduleWorkerRepair(ctx context.Context, workerID, reason string) error {
+	if s.engine == nil {
+		return errors.New("reconcile engine is required")
+	}
+	return s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		worker, err := txStore.GetWorker(ctx, workerID)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if worker.LastOperationStatus == model.OperationStatusFailed && worker.ObservedGeneration == worker.Generation {
+			previousGeneration := worker.Generation
+			worker.IncrementGeneration()
+			worker.StatusMessage = &reason
+			if err := txStore.UpdateWorker(ctx, worker, store.WithWorkerGeneration(previousGeneration)); err != nil {
+				if errors.Is(err, store.ErrGenerationConflict) {
+					return nil // concurrent intent already re-drove the worker
+				}
+				return err
+			}
+		}
+		return s.engine.MarkDirtyTx(ctx, txDB, WorkerResourceType, worker.ID)
+	})
+}
+
 // ScheduleWorkerReconciliation marks the worker dirty (drift-driven reconcile,
 // no intent change).
 func (s *ControlPlane) ScheduleWorkerReconciliation(ctx context.Context, workerID string) error {

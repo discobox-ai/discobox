@@ -154,7 +154,7 @@ func configRevision(cfg Config) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (e *Engine) EnsureWorker(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, bootstrap workeragent.Bootstrap) error {
+func (e *Engine) EnsureWorker(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, mint workeragent.MintBootstrap) error {
 	vmInfo, err := e.driver.EnsureVM(ctx, worker.ID, e.vmSpec(provider, worker))
 	if err != nil {
 		return err
@@ -164,14 +164,14 @@ func (e *Engine) EnsureWorker(ctx context.Context, _ *model.Project, provider *m
 		return err
 	}
 	defer lease.Release()
-	inst, recreated, err := e.ensureWorkerContainer(ctx, lease.Client, provider, worker, bootstrap, false)
+	inst, recreated, err := e.ensureWorkerContainer(ctx, lease.Client, provider, worker, mint, false)
 	if err != nil {
 		return err
 	}
 	return e.recordWorkerRuntime(worker, vmInfo, inst, recreated)
 }
 
-func (e *Engine) RepairWorker(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, bootstrap workeragent.Bootstrap, _ string) error {
+func (e *Engine) RepairWorker(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, mint workeragent.MintBootstrap, _ string) error {
 	// Replace the VM only when it is missing or unhealthy; worker-local state
 	// such as named volumes survives container replacement on a healthy VM.
 	vmInfo, err := e.driver.InspectVM(ctx, worker.ID)
@@ -192,7 +192,7 @@ func (e *Engine) RepairWorker(ctx context.Context, _ *model.Project, provider *m
 		return err
 	}
 	defer lease.Release()
-	inst, _, err := e.ensureWorkerContainer(ctx, lease.Client, provider, worker, bootstrap, true)
+	inst, _, err := e.ensureWorkerContainer(ctx, lease.Client, provider, worker, mint, true)
 	if err != nil {
 		return err
 	}
@@ -298,7 +298,11 @@ func (e *Engine) acquireDockerReady(ctx context.Context, workerID string) (*Dock
 // ensureWorkerContainer creates or drift-corrects the worker-agent container
 // on the given Docker daemon and waits for it to be ready. It reports whether
 // the container was (re)created.
-func (e *Engine) ensureWorkerContainer(ctx context.Context, cli *client.Client, provider *model.SandboxProviderInstance, worker *model.Worker, bootstrap workeragent.Bootstrap, forceRecreate bool) (*container.InspectResponse, bool, error) {
+//
+// The bootstrap is minted lazily: the healthy-container path below returns
+// without calling mint, so a steady-state drift check persists no single-use
+// token. Only the create path needs credentials.
+func (e *Engine) ensureWorkerContainer(ctx context.Context, cli *client.Client, provider *model.SandboxProviderInstance, worker *model.Worker, mint workeragent.MintBootstrap, forceRecreate bool) (*container.InspectResponse, bool, error) {
 	name := ContainerName(worker.ID)
 	labels := e.containerLabels(provider, worker)
 	if existing, err := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{}); err == nil {
@@ -314,14 +318,21 @@ func (e *Engine) ensureWorkerContainer(ctx context.Context, cli *client.Client, 
 		return nil, false, err
 	}
 
-	inst, err := e.createWorkerContainer(ctx, cli, worker, name, labels, bootstrap)
+	inst, err := e.createWorkerContainer(ctx, cli, worker, name, labels, mint)
 	if err != nil {
 		return nil, false, err
 	}
 	return inst, true, nil
 }
 
-func (e *Engine) createWorkerContainer(ctx context.Context, cli *client.Client, worker *model.Worker, name string, labels map[string]string, bootstrap workeragent.Bootstrap) (*container.InspectResponse, error) {
+func (e *Engine) createWorkerContainer(ctx context.Context, cli *client.Client, worker *model.Worker, name string, labels map[string]string, mint workeragent.MintBootstrap) (*container.InspectResponse, error) {
+	if mint == nil {
+		return nil, fmt.Errorf("worker bootstrap minter is required")
+	}
+	bootstrap, err := mint(ctx)
+	if err != nil {
+		return nil, err
+	}
 	bootstrap.ControlPlaneURL = firstNonEmpty(bootstrap.ControlPlaneURL, e.cfg.ControlPlaneURL)
 	bootstrap.ProjectID = firstNonEmpty(bootstrap.ProjectID, worker.ProjectID)
 	bootstrap.WorkerID = firstNonEmpty(bootstrap.WorkerID, worker.ID)

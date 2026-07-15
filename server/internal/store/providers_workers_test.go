@@ -206,3 +206,38 @@ func sandboxForClaim(projectID, providerID string, cpuVCPUs float64, memoryBytes
 		StorageBytes:       storageBytes,
 	}
 }
+
+// TestPurgeSpentWorkerBootstrapTokens pins the bound on the bootstrap token
+// table: spent tokens (expired, used, or revoked) are collected, and a token
+// that can still be redeemed is left alone.
+func TestPurgeSpentWorkerBootstrapTokens(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: "project-1", Type: "docker", Name: "docker"}
+	if err := s.CreateSandboxProviderInstance(ctx, provider); err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	worker := &model.Worker{ID: "worker-1", ProjectID: "project-1", ProviderInstanceID: "provider-1", Identity: "worker-1"}
+	live := sha256.Sum256([]byte("live-token"))
+	if err := s.CreateWorkerWithBootstrapToken(ctx, worker, &model.WorkerBootstrapToken{WorkerID: worker.ID, TokenHash: live[:], ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+		t.Fatalf("create worker bootstrap: %v", err)
+	}
+	expired := sha256.Sum256([]byte("expired-token"))
+	if err := s.CreateWorkerBootstrapToken(ctx, &model.WorkerBootstrapToken{WorkerID: worker.ID, TokenHash: expired[:], ExpiresAt: time.Now().Add(-time.Hour)}); err != nil {
+		t.Fatalf("create expired bootstrap token: %v", err)
+	}
+
+	purged, err := s.PurgeSpentWorkerBootstrapTokens(ctx, time.Now())
+	if err != nil {
+		t.Fatalf("purge spent bootstrap tokens: %v", err)
+	}
+	if purged != 1 {
+		t.Fatalf("purged = %d, want 1 spent token", purged)
+	}
+
+	// The live token still redeems: purging must not touch it.
+	if _, err := s.RegisterWorker(ctx, worker.ID, live[:], "public", "ed25519"); err != nil {
+		t.Fatalf("register worker with surviving live token: %v", err)
+	}
+}
