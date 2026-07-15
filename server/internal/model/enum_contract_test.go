@@ -22,7 +22,7 @@ import (
 // so a value the OpenAPI schema omits is only rejected when the CLIENT decodes
 // the response — far from the model change that introduced it. That is exactly
 // how "deleting" reached the worker phase enum: added to the model, missing from
-// server.yaml, invisible until `discobox worker list` failed to decode.
+// server.yaml, invisible until `discobox worker ls` failed to decode.
 //
 // This test makes the two lists fail CI the moment they diverge, in either
 // direction. When it fails: a value in the model but not the schema means the

@@ -43,7 +43,7 @@ func (a *App) newSecretGrantCommand() *cobra.Command {
 
 func (a *App) newSecretGrantListCommand() *cobra.Command {
 	var secretRef string
-	cmd := &cobra.Command{Use: "list", Short: "List secret grants", RunE: func(cmd *cobra.Command, _ []string) error {
+	cmd := &cobra.Command{Use: "ls", Aliases: []string{"list"}, Short: "List secret grants", RunE: func(cmd *cobra.Command, _ []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -160,7 +160,7 @@ func createSecretGrantBodyScope(value string) (apiclientgen.CreateSecretGrantBod
 }
 
 func (a *App) newSecretListCommand() *cobra.Command {
-	cmd := &cobra.Command{Use: "list", Short: "List secrets", RunE: func(cmd *cobra.Command, _ []string) error {
+	cmd := &cobra.Command{Use: "ls", Aliases: []string{"list"}, Short: "List secrets", RunE: func(cmd *cobra.Command, _ []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err
@@ -321,7 +321,7 @@ func (a *App) newSecretRequestCommand() *cobra.Command {
 
 func (a *App) newSecretRequestListCommand() *cobra.Command {
 	var status string
-	cmd := &cobra.Command{Use: "list", Short: "List secret requests", RunE: func(cmd *cobra.Command, _ []string) error {
+	cmd := &cobra.Command{Use: "ls", Aliases: []string{"list"}, Short: "List secret requests", RunE: func(cmd *cobra.Command, _ []string) error {
 		client, err := a.apiClient()
 		if err != nil {
 			return err

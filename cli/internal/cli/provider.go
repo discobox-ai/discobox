@@ -45,7 +45,7 @@ func (a *App) newProviderCatalogCommand() *cobra.Command {
 }
 
 func (a *App) newProviderListCommand() *cobra.Command {
-	cmd := &cobra.Command{Use: "list", Short: "List provider instances", RunE: func(cmd *cobra.Command, _ []string) error {
+	cmd := &cobra.Command{Use: "ls", Aliases: []string{"list"}, Short: "List provider instances", RunE: func(cmd *cobra.Command, _ []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err

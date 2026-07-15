@@ -340,10 +340,52 @@ func TestProjectIDDefaultsToDefaultAlias(t *testing.T) {
 
 func TestRootCommandRejectsInvalidOutputFormat(t *testing.T) {
 	cmd := NewRootCommand()
-	cmd.SetArgs([]string{"--output", "yaml", "sandbox", "list"})
+	cmd.SetArgs([]string{"--output", "yaml", "sandbox", "ls"})
 
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("execute error = nil, want invalid output error")
+	}
+}
+
+func TestListSubcommandsUseLSWithListAlias(t *testing.T) {
+	root := NewRootCommand()
+	paths := [][]string{
+		{"sandbox", "ls"},
+		{"terminal", "ls"},
+		{"exec", "ls"},
+		{"worker", "ls"},
+		{"provider", "ls"},
+		{"job", "ls"},
+		{"secret", "ls"},
+		{"secret", "grant", "ls"},
+		{"secret", "request", "ls"},
+		{"harnesses", "ls"},
+		{"harnesses", "secrets", "ls"},
+	}
+
+	for _, path := range paths {
+		cmd, args, err := root.Find(path)
+		if err != nil {
+			t.Fatalf("find %v: %v", path, err)
+		}
+		if len(args) != 0 {
+			t.Fatalf("find %v returned args %v", path, args)
+		}
+		if cmd.Name() != "ls" {
+			t.Fatalf("find %v returned command %q, want ls", path, cmd.Name())
+		}
+
+		aliasPath := append(append([]string(nil), path[:len(path)-1]...), "list")
+		aliasCmd, aliasArgs, err := root.Find(aliasPath)
+		if err != nil {
+			t.Fatalf("find alias %v: %v", aliasPath, err)
+		}
+		if len(aliasArgs) != 0 {
+			t.Fatalf("find alias %v returned args %v", aliasPath, aliasArgs)
+		}
+		if aliasCmd != cmd {
+			t.Fatalf("find alias %v returned %q, want %q", aliasPath, aliasCmd.CommandPath(), cmd.CommandPath())
+		}
 	}
 }
 
@@ -386,7 +428,7 @@ func TestTerminalListUsesTopLevelCommand(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "terminal", "--sandbox-id", "sandbox-1", "list"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "terminal", "--sandbox-id", "sandbox-1", "ls"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute terminal list: %v", err)
@@ -632,7 +674,7 @@ func TestHarnessListShowsProjectDefault(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "harnesses", "list"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "harnesses", "ls"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute harnesses list: %v", err)
@@ -1275,7 +1317,7 @@ func TestWorkerListCommandFiltersByProvider(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "worker", "list", "--provider", providerID})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "worker", "ls", "--provider", providerID})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute worker list: %v", err)

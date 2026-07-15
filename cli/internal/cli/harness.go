@@ -65,7 +65,7 @@ func (a *App) newHarnessSecretsCommand() *cobra.Command {
 }
 
 func (a *App) newHarnessSecretsListCommand() *cobra.Command {
-	return &cobra.Command{Use: "list HARNESS_CONFIG_ID", Short: "List a harness config's declared secrets and their bindings", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
+	return &cobra.Command{Use: "ls HARNESS_CONFIG_ID", Aliases: []string{"list"}, Short: "List a harness config's declared secrets and their bindings", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
 		projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
 		if err != nil {
 			return err
@@ -180,7 +180,7 @@ func (a *App) newHarnessDefinitionsCommand() *cobra.Command {
 }
 
 func (a *App) newHarnessListCommand() *cobra.Command {
-	cmd := &cobra.Command{Use: "list", Short: "List harness configs", RunE: func(cmd *cobra.Command, _ []string) error {
+	cmd := &cobra.Command{Use: "ls", Aliases: []string{"list"}, Short: "List harness configs", RunE: func(cmd *cobra.Command, _ []string) error {
 		projectID, err := a.projectIDValue()
 		if err != nil {
 			return err

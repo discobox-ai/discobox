@@ -33,8 +33,9 @@ func (a *App) newWorkerCommand() *cobra.Command {
 func (a *App) newWorkerListCommand() *cobra.Command {
 	var opts workerListOptions
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List workers for the current project",
+		Use:     "ls",
+		Aliases: []string{"list"},
+		Short:   "List workers for the current project",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return a.runWorkerListWithOptions(cmd, opts)
 		},

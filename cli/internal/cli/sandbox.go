@@ -67,8 +67,9 @@ func (a *App) newSandboxCommand() *cobra.Command {
 
 func (a *App) newSandboxListCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List sandboxes",
+		Use:     "ls",
+		Aliases: []string{"list"},
+		Short:   "List sandboxes",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projectID, err := a.projectIDValue()
 			if err != nil {

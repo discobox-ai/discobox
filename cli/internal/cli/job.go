@@ -23,9 +23,10 @@ func (a *App) newJobCommand() *cobra.Command {
 
 func (a *App) newJobListCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List jobs for the current project",
-		RunE:  a.runJobList,
+		Use:     "ls",
+		Aliases: []string{"list"},
+		Short:   "List jobs for the current project",
+		RunE:    a.runJobList,
 	}
 	a.addQuietFlag(cmd)
 	return cmd

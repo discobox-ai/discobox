@@ -50,9 +50,10 @@ func (a *App) newSandboxTerminalsCommand() *cobra.Command {
 
 func (a *App) newSandboxTerminalListCommand(sandboxID *string) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List sandbox agent terminals",
-		Args:  cobra.NoArgs,
+		Use:     "ls",
+		Aliases: []string{"list"},
+		Short:   "List sandbox agent terminals",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projectID, resolvedSandboxID, _, err := a.sandboxTerminalRequest(cmd.Context(), *sandboxID)
 			if err != nil {

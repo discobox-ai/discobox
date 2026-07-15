@@ -93,9 +93,10 @@ func (a *App) newSandboxExecCreateCommand(sandboxID *string) *cobra.Command {
 
 func (a *App) newSandboxExecListCommand(sandboxID *string) *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "list",
-		Short: "List sandbox execs",
-		Args:  cobra.NoArgs,
+		Use:     "ls",
+		Aliases: []string{"list"},
+		Short:   "List sandbox execs",
+		Args:    cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projectID, resolvedSandboxID, _, err := a.sandboxExecRequest(cmd.Context(), *sandboxID)
 			if err != nil {

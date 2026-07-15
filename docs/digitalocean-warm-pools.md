@@ -21,7 +21,7 @@ Inspect provider support and manage instances:
 
 ```bash
 discobox provider catalog
-discobox provider list
+discobox provider ls
 discobox provider get <provider-id>
 discobox provider update <provider-id> --name do-warm-2 --do-size s-2vcpu-2gb
 discobox provider delete <provider-id>
