@@ -9,7 +9,6 @@ import (
 	"time"
 
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
-	"github.com/obot-platform/discobox/server/internal/harnessdefs"
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/reconcile"
 	"github.com/obot-platform/discobox/server/internal/store"
@@ -476,6 +475,7 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	opts.Name = sb.Name
 	opts.Description = sb.Description
 	opts.HarnessConfigID = sb.HarnessConfigID
+	opts.HarnessMode = sb.HarnessMode
 	opts.Model = sb.Model
 	opts.ModelServiceTier = sb.ModelServiceTier
 	opts.ModelReasoningLevel = sb.ModelReasoningLevel
@@ -502,49 +502,10 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	opts.UserUID = sb.UserUID
 	opts.UserGID = sb.UserGID
 	opts.HomeDirectory = sb.HomeDirectory
-	if sb.InlineHarnessConfig != nil {
-		inline := sb.InlineHarnessConfig
-		opts.ResolvedHarnessConfig = &ResolvedHarnessConfig{
-			ID:              "inline",
-			Name:            "inline",
-			InstallCommand:  inline.InstallCommand,
-			RunCommand:      inline.RunCommand,
-			RelaunchCommand: inline.RelaunchCommand,
-			Files:           inline.Files,
-		}
-	} else if sb.HarnessConfigID != nil && r.store != nil {
+	if sb.HarnessConfigID != nil && r.store != nil {
 		if cfg, err := r.store.GetHarnessConfig(ctx, sb.ProjectID, *sb.HarnessConfigID); err == nil {
-			// Resolve the sparse config against its built-in definition so the
-			// sandbox runs the effective (upgrade-propagated) commands and files.
-			cfg = harnessdefs.Resolve(cfg)
 			opts.ResolvedHarnessConfig = &ResolvedHarnessConfig{
-				ID:              cfg.ID,
-				Name:            cfg.Name,
-				InstallCommand:  cfg.InstallCommand,
-				RunCommand:      cfg.RunCommand,
-				RelaunchCommand: cfg.RelaunchCommand,
-				Files:           cfg.Files,
-			}
-		}
-	}
-	if r.store != nil {
-		if configs, err := r.store.ListHarnessConfigs(ctx, sb.ProjectID); err == nil {
-			opts.HarnessConfigs = make([]HarnessConfig, 0, len(configs))
-			defaultHarnessConfigID := ""
-			if sb.Project != nil {
-				defaultHarnessConfigID = sb.Project.DefaultHarnessConfigID
-			}
-			for i := range configs {
-				cfg := harnessdefs.Resolve(&configs[i])
-				opts.HarnessConfigs = append(opts.HarnessConfigs, HarnessConfig{
-					ID:              cfg.ID,
-					Name:            cfg.Name,
-					InstallCommand:  cfg.InstallCommand,
-					RunCommand:      cfg.RunCommand,
-					RelaunchCommand: cfg.RelaunchCommand,
-					IsDefault:       cfg.ID == defaultHarnessConfigID,
-					Files:           cfg.Files,
-				})
+				ID: cfg.ID, Name: cfg.Name, Files: cfg.Files,
 			}
 		}
 	}

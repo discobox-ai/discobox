@@ -1015,69 +1015,6 @@ func (o OptNilHarnessConfigFileArray) Or(d []HarnessConfigFile) []HarnessConfigF
 	return d
 }
 
-// NewOptNilSandboxHarnessConfigArray returns new OptNilSandboxHarnessConfigArray with value set to v.
-func NewOptNilSandboxHarnessConfigArray(v []SandboxHarnessConfig) OptNilSandboxHarnessConfigArray {
-	return OptNilSandboxHarnessConfigArray{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptNilSandboxHarnessConfigArray is optional nullable []SandboxHarnessConfig.
-type OptNilSandboxHarnessConfigArray struct {
-	Value []SandboxHarnessConfig
-	Set   bool
-	Null  bool
-}
-
-// IsSet returns true if OptNilSandboxHarnessConfigArray was set.
-func (o OptNilSandboxHarnessConfigArray) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptNilSandboxHarnessConfigArray) Reset() {
-	var v []SandboxHarnessConfig
-	o.Value = v
-	o.Set = false
-	o.Null = false
-}
-
-// SetTo sets value to v.
-func (o *OptNilSandboxHarnessConfigArray) SetTo(v []SandboxHarnessConfig) {
-	o.Set = true
-	o.Null = false
-	o.Value = v
-}
-
-// IsNull returns true if value is Null.
-func (o OptNilSandboxHarnessConfigArray) IsNull() bool { return o.Null }
-
-// SetToNull sets value to null.
-func (o *OptNilSandboxHarnessConfigArray) SetToNull() {
-	o.Set = true
-	o.Null = true
-	var v []SandboxHarnessConfig
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptNilSandboxHarnessConfigArray) Get() (v []SandboxHarnessConfig, ok bool) {
-	if o.Null {
-		return v, false
-	}
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptNilSandboxHarnessConfigArray) Or(d []SandboxHarnessConfig) []SandboxHarnessConfig {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptNilStringArray returns new OptNilStringArray with value set to v.
 func NewOptNilStringArray(v []string) OptNilStringArray {
 	return OptNilStringArray{
@@ -1227,6 +1164,52 @@ func (o OptSandboxConfigEnv) Get() (v SandboxConfigEnv, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxConfigEnv) Or(d SandboxConfigEnv) SandboxConfigEnv {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxConfigHarnessMode returns new OptSandboxConfigHarnessMode with value set to v.
+func NewOptSandboxConfigHarnessMode(v SandboxConfigHarnessMode) OptSandboxConfigHarnessMode {
+	return OptSandboxConfigHarnessMode{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxConfigHarnessMode is optional SandboxConfigHarnessMode.
+type OptSandboxConfigHarnessMode struct {
+	Value SandboxConfigHarnessMode
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxConfigHarnessMode was set.
+func (o OptSandboxConfigHarnessMode) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxConfigHarnessMode) Reset() {
+	var v SandboxConfigHarnessMode
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxConfigHarnessMode) SetTo(v SandboxConfigHarnessMode) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxConfigHarnessMode) Get() (v SandboxConfigHarnessMode, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxConfigHarnessMode) Or(d SandboxConfigHarnessMode) SandboxConfigHarnessMode {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -1557,12 +1540,9 @@ func (o OptWorkerSandboxResources) Or(d WorkerSandboxResources) WorkerSandboxRes
 
 // Ref: #/components/schemas/ResolvedHarnessConfig
 type ResolvedHarnessConfig struct {
-	Files           OptNilHarnessConfigFileArray `json:"files"`
-	ID              string                       `json:"id"`
-	InstallCommand  OptNilStringArray            `json:"installCommand"`
-	Name            string                       `json:"name"`
-	RelaunchCommand OptNilStringArray            `json:"relaunchCommand"`
-	RunCommand      []string                     `json:"runCommand"`
+	Files OptNilHarnessConfigFileArray `json:"files"`
+	ID    string                       `json:"id"`
+	Name  string                       `json:"name"`
 }
 
 // GetFiles returns the value of Files.
@@ -1575,24 +1555,9 @@ func (s *ResolvedHarnessConfig) GetID() string {
 	return s.ID
 }
 
-// GetInstallCommand returns the value of InstallCommand.
-func (s *ResolvedHarnessConfig) GetInstallCommand() OptNilStringArray {
-	return s.InstallCommand
-}
-
 // GetName returns the value of Name.
 func (s *ResolvedHarnessConfig) GetName() string {
 	return s.Name
-}
-
-// GetRelaunchCommand returns the value of RelaunchCommand.
-func (s *ResolvedHarnessConfig) GetRelaunchCommand() OptNilStringArray {
-	return s.RelaunchCommand
-}
-
-// GetRunCommand returns the value of RunCommand.
-func (s *ResolvedHarnessConfig) GetRunCommand() []string {
-	return s.RunCommand
 }
 
 // SetFiles sets the value of Files.
@@ -1605,29 +1570,15 @@ func (s *ResolvedHarnessConfig) SetID(val string) {
 	s.ID = val
 }
 
-// SetInstallCommand sets the value of InstallCommand.
-func (s *ResolvedHarnessConfig) SetInstallCommand(val OptNilStringArray) {
-	s.InstallCommand = val
-}
-
 // SetName sets the value of Name.
 func (s *ResolvedHarnessConfig) SetName(val string) {
 	s.Name = val
 }
 
-// SetRelaunchCommand sets the value of RelaunchCommand.
-func (s *ResolvedHarnessConfig) SetRelaunchCommand(val OptNilStringArray) {
-	s.RelaunchCommand = val
-}
-
-// SetRunCommand sets the value of RunCommand.
-func (s *ResolvedHarnessConfig) SetRunCommand(val []string) {
-	s.RunCommand = val
-}
-
 // Ref: #/components/schemas/SandboxConfig
 type SandboxConfig struct {
 	HarnessConfigId      OptString                            `json:"harnessConfigId"`
+	HarnessMode          OptSandboxConfigHarnessMode          `json:"harnessMode"`
 	Model                OptString                            `json:"model"`
 	ModelReasoningLevel  OptString                            `json:"modelReasoningLevel"`
 	ModelServiceTier     OptString                            `json:"modelServiceTier"`
@@ -1647,6 +1598,11 @@ type SandboxConfig struct {
 // GetHarnessConfigId returns the value of HarnessConfigId.
 func (s *SandboxConfig) GetHarnessConfigId() OptString {
 	return s.HarnessConfigId
+}
+
+// GetHarnessMode returns the value of HarnessMode.
+func (s *SandboxConfig) GetHarnessMode() OptSandboxConfigHarnessMode {
+	return s.HarnessMode
 }
 
 // GetModel returns the value of Model.
@@ -1722,6 +1678,11 @@ func (s *SandboxConfig) GetUser() OptSandboxUser {
 // SetHarnessConfigId sets the value of HarnessConfigId.
 func (s *SandboxConfig) SetHarnessConfigId(val OptString) {
 	s.HarnessConfigId = val
+}
+
+// SetHarnessMode sets the value of HarnessMode.
+func (s *SandboxConfig) SetHarnessMode(val OptSandboxConfigHarnessMode) {
+	s.HarnessMode = val
 }
 
 // SetModel sets the value of Model.
@@ -1805,6 +1766,47 @@ func (s *SandboxConfigEnv) init() SandboxConfigEnv {
 	return m
 }
 
+type SandboxConfigHarnessMode string
+
+const (
+	SandboxConfigHarnessModeRun    SandboxConfigHarnessMode = "run"
+	SandboxConfigHarnessModeConfig SandboxConfigHarnessMode = "config"
+)
+
+// AllValues returns all SandboxConfigHarnessMode values.
+func (SandboxConfigHarnessMode) AllValues() []SandboxConfigHarnessMode {
+	return []SandboxConfigHarnessMode{
+		SandboxConfigHarnessModeRun,
+		SandboxConfigHarnessModeConfig,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxConfigHarnessMode) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxConfigHarnessModeRun:
+		return []byte(s), nil
+	case SandboxConfigHarnessModeConfig:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxConfigHarnessMode) UnmarshalText(data []byte) error {
+	switch SandboxConfigHarnessMode(data) {
+	case SandboxConfigHarnessModeRun:
+		*s = SandboxConfigHarnessModeRun
+		return nil
+	case SandboxConfigHarnessModeConfig:
+		*s = SandboxConfigHarnessModeConfig
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 type SandboxConfigSourceCodeReferences map[string]GitSource
 
 func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeReferences {
@@ -1814,87 +1816,6 @@ func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeRefere
 		*s = m
 	}
 	return m
-}
-
-// Ref: #/components/schemas/SandboxHarnessConfig
-type SandboxHarnessConfig struct {
-	Files           OptNilHarnessConfigFileArray `json:"files"`
-	ID              string                       `json:"id"`
-	InstallCommand  OptNilStringArray            `json:"installCommand"`
-	IsDefault       bool                         `json:"isDefault"`
-	Name            string                       `json:"name"`
-	RelaunchCommand OptNilStringArray            `json:"relaunchCommand"`
-	RunCommand      []string                     `json:"runCommand"`
-}
-
-// GetFiles returns the value of Files.
-func (s *SandboxHarnessConfig) GetFiles() OptNilHarnessConfigFileArray {
-	return s.Files
-}
-
-// GetID returns the value of ID.
-func (s *SandboxHarnessConfig) GetID() string {
-	return s.ID
-}
-
-// GetInstallCommand returns the value of InstallCommand.
-func (s *SandboxHarnessConfig) GetInstallCommand() OptNilStringArray {
-	return s.InstallCommand
-}
-
-// GetIsDefault returns the value of IsDefault.
-func (s *SandboxHarnessConfig) GetIsDefault() bool {
-	return s.IsDefault
-}
-
-// GetName returns the value of Name.
-func (s *SandboxHarnessConfig) GetName() string {
-	return s.Name
-}
-
-// GetRelaunchCommand returns the value of RelaunchCommand.
-func (s *SandboxHarnessConfig) GetRelaunchCommand() OptNilStringArray {
-	return s.RelaunchCommand
-}
-
-// GetRunCommand returns the value of RunCommand.
-func (s *SandboxHarnessConfig) GetRunCommand() []string {
-	return s.RunCommand
-}
-
-// SetFiles sets the value of Files.
-func (s *SandboxHarnessConfig) SetFiles(val OptNilHarnessConfigFileArray) {
-	s.Files = val
-}
-
-// SetID sets the value of ID.
-func (s *SandboxHarnessConfig) SetID(val string) {
-	s.ID = val
-}
-
-// SetInstallCommand sets the value of InstallCommand.
-func (s *SandboxHarnessConfig) SetInstallCommand(val OptNilStringArray) {
-	s.InstallCommand = val
-}
-
-// SetIsDefault sets the value of IsDefault.
-func (s *SandboxHarnessConfig) SetIsDefault(val bool) {
-	s.IsDefault = val
-}
-
-// SetName sets the value of Name.
-func (s *SandboxHarnessConfig) SetName(val string) {
-	s.Name = val
-}
-
-// SetRelaunchCommand sets the value of RelaunchCommand.
-func (s *SandboxHarnessConfig) SetRelaunchCommand(val OptNilStringArray) {
-	s.RelaunchCommand = val
-}
-
-// SetRunCommand sets the value of RunCommand.
-func (s *SandboxHarnessConfig) SetRunCommand(val []string) {
-	s.RunCommand = val
 }
 
 // Ref: #/components/schemas/SandboxUpdateConfig
@@ -2057,12 +1978,11 @@ type WorkerDeleteSandboxNoContent struct{}
 // Ref: #/components/schemas/WorkerSandboxCreateRequest
 type WorkerSandboxCreateRequest struct {
 	// A URL to the JSON Schema for this object.
-	Schema                OptURI                          `json:"$schema"`
-	HarnessConfigs        OptNilSandboxHarnessConfigArray `json:"harnessConfigs"`
-	Config                SandboxConfig                   `json:"config"`
-	ResolvedHarnessConfig OptResolvedHarnessConfig        `json:"resolvedHarnessConfig"`
-	Resources             OptWorkerSandboxResources       `json:"resources"`
-	SandboxId             string                          `json:"sandboxId"`
+	Schema                OptURI                    `json:"$schema"`
+	Config                SandboxConfig             `json:"config"`
+	ResolvedHarnessConfig OptResolvedHarnessConfig  `json:"resolvedHarnessConfig"`
+	Resources             OptWorkerSandboxResources `json:"resources"`
+	SandboxId             string                    `json:"sandboxId"`
 	// Sentinel placeholder values injected into this sandbox. The worker registers them with the proxy
 	// so their real secret values are swapped at runtime.
 	Sentinels OptNilStringArray `json:"sentinels"`
@@ -2071,11 +1991,6 @@ type WorkerSandboxCreateRequest struct {
 // GetSchema returns the value of Schema.
 func (s *WorkerSandboxCreateRequest) GetSchema() OptURI {
 	return s.Schema
-}
-
-// GetHarnessConfigs returns the value of HarnessConfigs.
-func (s *WorkerSandboxCreateRequest) GetHarnessConfigs() OptNilSandboxHarnessConfigArray {
-	return s.HarnessConfigs
 }
 
 // GetConfig returns the value of Config.
@@ -2108,11 +2023,6 @@ func (s *WorkerSandboxCreateRequest) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetHarnessConfigs sets the value of HarnessConfigs.
-func (s *WorkerSandboxCreateRequest) SetHarnessConfigs(val OptNilSandboxHarnessConfigArray) {
-	s.HarnessConfigs = val
-}
-
 // SetConfig sets the value of Config.
 func (s *WorkerSandboxCreateRequest) SetConfig(val SandboxConfig) {
 	s.Config = val
@@ -2141,23 +2051,17 @@ func (s *WorkerSandboxCreateRequest) SetSentinels(val OptNilStringArray) {
 // Ref: #/components/schemas/WorkerSandboxInstance
 type WorkerSandboxInstance struct {
 	// A URL to the JSON Schema for this object.
-	Schema                OptURI                          `json:"$schema"`
-	HarnessConfigs        OptNilSandboxHarnessConfigArray `json:"harnessConfigs"`
-	Config                SandboxConfig                   `json:"config"`
-	ResolvedHarnessConfig OptResolvedHarnessConfig        `json:"resolvedHarnessConfig"`
-	Resources             OptWorkerSandboxResources       `json:"resources"`
-	Runtime               WorkerSandboxRuntime            `json:"runtime"`
-	SandboxId             string                          `json:"sandboxId"`
+	Schema                OptURI                    `json:"$schema"`
+	Config                SandboxConfig             `json:"config"`
+	ResolvedHarnessConfig OptResolvedHarnessConfig  `json:"resolvedHarnessConfig"`
+	Resources             OptWorkerSandboxResources `json:"resources"`
+	Runtime               WorkerSandboxRuntime      `json:"runtime"`
+	SandboxId             string                    `json:"sandboxId"`
 }
 
 // GetSchema returns the value of Schema.
 func (s *WorkerSandboxInstance) GetSchema() OptURI {
 	return s.Schema
-}
-
-// GetHarnessConfigs returns the value of HarnessConfigs.
-func (s *WorkerSandboxInstance) GetHarnessConfigs() OptNilSandboxHarnessConfigArray {
-	return s.HarnessConfigs
 }
 
 // GetConfig returns the value of Config.
@@ -2188,11 +2092,6 @@ func (s *WorkerSandboxInstance) GetSandboxId() string {
 // SetSchema sets the value of Schema.
 func (s *WorkerSandboxInstance) SetSchema(val OptURI) {
 	s.Schema = val
-}
-
-// SetHarnessConfigs sets the value of HarnessConfigs.
-func (s *WorkerSandboxInstance) SetHarnessConfigs(val OptNilSandboxHarnessConfigArray) {
-	s.HarnessConfigs = val
 }
 
 // SetConfig sets the value of Config.

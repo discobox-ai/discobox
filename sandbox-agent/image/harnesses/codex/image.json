@@ -1,5 +1,4 @@
 {
-
   "apiVersion": "discobox.dev/image/v1",
   "env": {
     "NIX_CONFIG": "experimental-features = nix-command flakes",
@@ -7,5 +6,19 @@
     "NPM_CONFIG_PREFIX": "%HOME%/.npm-global",
     "PATH": "%HOME%/.npm-global/bin:%HOME%/.cargo/bin:%HOME%/.nix-profile/bin:%HOME%/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "PNPM_HOME": "/var/lib/discobox/pnpm"
+  },
+  "harness": {
+    "id": "codex",
+    "name": "Codex",
+    "description": "OpenAI Codex coding harness.",
+    "runCommand": ["codex"],
+    "relaunchCommand": ["codex", "resume", "--last"],
+    "secrets": [
+      {"name": "OPENAI_API_KEY", "required": true}
+    ],
+    "config": {
+      "command": ["/usr/local/libexec/discobox/configure-codex"],
+      "resultPath": "/run/discobox/harness-configure.json"
+    }
   }
 }

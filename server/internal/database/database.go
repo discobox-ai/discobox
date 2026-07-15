@@ -55,9 +55,6 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := write.AutoMigrate(model.AllModels()...); err != nil {
 		return err
 	}
-	if err := dropHarnessConfigDeletedAt(write); err != nil {
-		return err
-	}
 	return dropJobQueueArtifacts(write)
 }
 
@@ -97,13 +94,6 @@ func dropJobQueueArtifacts(db *gorm.DB) error {
 		defer tx.Exec("PRAGMA foreign_keys = ON")
 		return drop(tx)
 	})
-}
-
-func dropHarnessConfigDeletedAt(db *gorm.DB) error {
-	if !db.Migrator().HasColumn(&model.HarnessConfig{}, "deleted_at") {
-		return nil
-	}
-	return db.Migrator().DropColumn(&model.HarnessConfig{}, "deleted_at")
 }
 
 // Close closes the underlying database pools.

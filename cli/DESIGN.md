@@ -32,13 +32,16 @@ the transport/session mechanics in `internal/cli/attach_session.go`.
 
 ## Harness Config Definition Configure Step
 
-`harnesses enable` (`internal/cli/harness.go`) runs a harness config definition's
-optional `configure` sandbox spec before creating the HarnessConfig, unless
-`--no-configure` is passed. It reuses the existing sandbox lifecycle and attach
+`harnesses enable` (`internal/cli/harness.go`) first registers the definition's
+image-backed HarnessConfig, then runs an optional sandbox with
+`harnessMode: config`, unless `--no-configure` is passed. It reuses the existing sandbox lifecycle and attach
 helpers rather than introducing new ones: `waitForSandbox`/`waitForPrimaryTerminal`
 (`run.go`) to launch and locate the primary terminal, `attachSandboxTerminal`
 to let the user answer prompts, and `createSandboxExec`/`attachSandboxExec`/
 `returnSandboxExecStatus` (`sandbox_execs.go`) to `cat` back
 `/run/discobox/harness-configure.json` once the primary terminal exits 0. This
-orchestration is entirely client-side; the server has no configure-specific
-API surface.
+orchestration is entirely client-side. Failures delete both the ephemeral
+sandbox and the not-yet-enabled HarnessConfig. Credential values returned by
+config mode become encrypted project secrets bound to the harness.
+Codex, Claude Code, and OpenCode definitions all enable this flow; the actual
+prompting and credential conversion commands are baked into their images.

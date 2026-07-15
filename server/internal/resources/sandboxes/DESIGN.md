@@ -25,22 +25,13 @@ flowchart LR
 - Provider runtime operations belong in reconciliation, not in handlers or raw
   stores.
 
-## Inline harness config
+## Image-backed harnesses
 
-A sandbox create request may carry an ad hoc `harnessConfig` (`model.InlineHarnessConfig`:
-install/run/relaunch commands, files, secret declarations) directly, instead of
-referencing a persisted `HarnessConfig` by ID. This lets a caller launch a sandbox
-whose primary terminal runs a fully specified, one-off harness process with no
-project-scoped HarnessConfig record — used by the harness config definition
-`configure` step (see
-[`../harnessconfigs/DESIGN.md`](../harnessconfigs/DESIGN.md)), and available to any
-other caller with the same need.
+A sandbox selects a persisted image-backed `HarnessConfig`. The selected image
+overrides a caller-supplied generic sandbox image. Providers receive only the
+harness identity and project-configured non-secret file overlay; run, relaunch,
+config, and static file metadata stay inside the image.
 
-`Sandbox.InlineHarnessConfig` takes precedence over `Sandbox.HarnessConfigID` when
-resolving the sandbox's primary terminal. Resolution happens once, centrally,
-in `createOptionsFromSandbox` (`reconciler.go`): inline configs build
-`ResolvedHarnessConfig` directly (no built-in definition to resolve against,
-since they are already fully specified) under the synthetic ID
-the synthetic ID `inline`; referenced configs resolve through `harnessdefs.Resolve`
-as before. Providers consume `CreateOptions.ResolvedHarnessConfig` uniformly and
-do not need their own inline-vs-referenced branching.
+`harnessMode` is persisted sandbox intent. Normal/omitted `run` mode applies the
+harness secret requirement gate before scheduling. `config` mode skips that
+gate so the image-owned interactive command can collect required credentials.

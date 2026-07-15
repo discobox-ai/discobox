@@ -18,7 +18,7 @@ runtime operations.
 | `server` | HTTP router, generated OpenAPI handler adapter, PASETO auth middleware, and identity/scope validation. |
 | `execs` | The sandbox runtime primitive: exec lifecycle, runtime metadata, systemd unit abstraction, stdout/stderr or PTY logging, shim launch, status socket, and attach. Harness terminals are execs. |
 | `execs` (`shim.go`) | Per-exec child process that owns the PTY/pipes and local Unix socket attach/status/start API, used by both plain execs and terminals. |
-| `terminal` | Harness-terminal layer built on top of `execs`: harness resolution, install (run as ephemeral execs), and primary-terminal lifecycle. A terminal is an exec created in harness mode, tagged `harnessId`/`primary` in exec metadata; all runtime mechanics belong to `execs`. |
+| `terminal` | Harness-terminal layer built on top of `execs`: image harness resolution, hook/file setup, and primary-terminal lifecycle. A terminal is an exec created in harness mode, tagged `harnessId`/`primary` in exec metadata; all runtime mechanics belong to `execs`. |
 | `terminal/frame` | Docker-exec-style binary stream framing shared by exec attach endpoints. |
 | `shimruntime` | Shared local shim attach runtime for Unix socket setup, HTTP upgrade handling, framed stream attachers, broadcast, exit frames, and pending resize state. |
 | `hooks` | Local Unix-socket collector and publisher protocol for coding-harness lifecycle hook payloads. |
@@ -36,6 +36,10 @@ runtime operations.
   module unless a shared contract belongs in the root module.
 - Do not call back to the worker-harness or server; resolved config is injected
   into the sandbox and read locally.
+- Load the single immutable harness contract from
+  `/usr/share/discobox/image.json`. Commands, static files, and config-mode
+  behavior are image-owned; the sandbox manifest contributes selection, mode,
+  and a non-secret project file overlay.
 - Render templated harness files locally at installation time against the public
   `SandboxConfig` object from the manifest. Keep API field names as the template
   surface and expose only deterministic, non-secret formatting helpers.
@@ -49,14 +53,21 @@ runtime operations.
   samples, but REST runtime state should be derived from runtime/systemd/shim
   observations instead of an in-memory cache.
 - A terminal is one primitive: an exec created in harness mode. The `terminal`
-  layer resolves the harness (explicit request, sandbox resolved config, local
-  repo `.discobox` config, default, then the `shell` fallback harness — a login
-  shell — when the sandbox has no harness at all), runs the harness's install command
-  as an ephemeral exec, injects the hook/terminal env, then calls `execs.Manager` with
+  layer resolves the image harness (or the `shell` fallback harness — a login
+  shell — when the image has no harness), applies image/project files and hooks,
+  injects the hook/terminal env, then calls `execs.Manager` with
   the resolved command, `TTY`, and `harnessId`/`primary` metadata. `execs.Manager`
   never learns what a harness is. Plain execs and terminals currently use
   separate `execs.Manager` instances (distinct runtime dirs); the API-level merge
   to a single `/execs` surface is pending.
+
+## Development Images
+
+`task dev` starts `cmd/discobox-docker-image-watch`, which initially builds the
+worker, base sandbox, Codex, Claude Code, and OpenCode images. It watches shared
+Docker/runtime inputs plus each harness's own `image.json` and configure script.
+Harness-specific changes rebuild only that harness target; shared changes rebuild
+all affected targets and reuse Docker's cached base layers.
 - Every sandbox has a default terminal: on sandbox start the harness always
   launches exactly one primary terminal (`terminal.Service.EnsurePrimary`), so
   clients such as `discobox run` can rely on one existing and attach to it. The

@@ -12,8 +12,6 @@ type SandboxManifest struct {
 	APIVersion string `json:"apiVersion"`
 	// Config Public sandbox configuration intent.
 	Config SandboxConfig `json:"config"`
-	// HarnessConfigs Non-secret harness configurations available inside the sandbox.
-	HarnessConfigs []SandboxManifestHarnessConfig `json:"harnessConfigs,omitempty"`
 	// Provider Non-secret provider context for the sandbox runtime.
 	Provider *SandboxManifestProvider `json:"provider,omitempty"`
 	// ResolvedHarnessConfig Non-secret resolved default harness configuration, when one has been selected.
@@ -38,24 +36,6 @@ type SandboxManifestAgentRuntime struct {
 	WorkingRoot string `json:"workingRoot,omitempty"`
 }
 
-// SandboxManifestHarnessConfig Non-secret harness configuration available inside a sandbox.
-type SandboxManifestHarnessConfig struct {
-	// Files Files to write into the harness's home directory when the harness is installed. This content must not contain credentials, tokens, private keys, or other secret material.
-	Files []HarnessConfigFile `json:"files,omitempty"`
-	// ID Stable harness config ID.
-	ID string `json:"id"`
-	// InstallCommand Argv used to install the harness. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
-	InstallCommand []string `json:"installCommand,omitempty"`
-	// IsDefault Whether this is the default harness configuration.
-	IsDefault bool `json:"isDefault,omitempty"`
-	// Name Harness config display name.
-	Name string `json:"name"`
-	// RelaunchCommand Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
-	RelaunchCommand []string `json:"relaunchCommand,omitempty"`
-	// RunCommand Argv used to run the harness. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
-	RunCommand []string `json:"runCommand"`
-}
-
 // SandboxManifestProvider Non-secret provider context. Secret material such as bearer tokens, bootstrap tokens, credentials, and private keys must be injected through a separate provider-owned channel, never through /etc/discobox/sandbox.json.
 type SandboxManifestProvider struct {
 	// Endpoints Non-secret provider endpoint hints keyed by provider-defined name.
@@ -78,14 +58,8 @@ type SandboxManifestResolvedHarnessConfig struct {
 	Files []HarnessConfigFile `json:"files,omitempty"`
 	// ID Stable harness config ID.
 	ID string `json:"id"`
-	// InstallCommand Argv used to install the harness. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
-	InstallCommand []string `json:"installCommand,omitempty"`
 	// Name Harness config display name.
 	Name string `json:"name"`
-	// RelaunchCommand Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
-	RelaunchCommand []string `json:"relaunchCommand,omitempty"`
-	// RunCommand Argv used to run the harness. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
-	RunCommand []string `json:"runCommand"`
 }
 
 // SandboxManifestResourceCollection Sandbox-agent resource collection settings.

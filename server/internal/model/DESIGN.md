@@ -12,9 +12,9 @@ internal conversions. Public REST API schema types live under the root
 | `User` | Authenticated person. Owns projects and creates sandboxes. |
 | `Project` | Group for sandboxes, provider configuration, harness configuration, workers, and project events. |
 | `ServerState` | Generic key/value state for server preferences and one-time initialization flags. |
-| `Sandbox` | Main managed runtime/session resource. Belongs to a project and is orchestrated. May carry an `InlineHarnessConfig` that takes precedence over `HarnessConfigID`. |
+| `Sandbox` | Main managed runtime/session resource. Belongs to a project, selects an image-backed `HarnessConfig`, and persists `harnessMode`. |
 | `HarnessConfig` | Project-scoped harness runtime configuration selected by sandboxes. |
-| `HarnessDefinition` | Non-persisted, well-known template used by API clients to create a `HarnessConfig`; definitions are not selectable by sandboxes and may include an interactive `ConfigureSandbox`. |
+| `HarnessDefinition` | Non-persisted catalog entry for an included harness image; definitions are not selectable until registered as a project HarnessConfig. |
 | `SandboxProviderInstance` | Project-scoped provider configuration for creating and managing sandboxes. |
 | `Worker` | Provider-backed runtime worker for launching sandboxes. Has its own identity and public key; private key stays on the worker. Workers belong to a provider instance/pool and can host many stateful sandboxes. Scheduling uses `ready`, `schedulable`, and `degraded` columns; detailed condition data is opaque JSON for display. |
 | `WorkerBootstrapToken` | Short-lived, one-time token used by a new worker to register its public key. |
@@ -128,9 +128,12 @@ erDiagram
         string id
         string project_id
         string name
-        string install_command
+        string image
+        string image_digest
         string run_command
-        json capabilities
+        string relaunch_command
+        json files
+        json secrets
     }
 
     SANDBOX_PROVIDER_INSTANCE {

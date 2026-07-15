@@ -42,10 +42,9 @@ func TestHarnessConfigResourceEvents(t *testing.T) {
 	s, db := newTestStoreWithDB(t, nil)
 
 	config := &model.HarnessConfig{
-		ProjectID:      "project-1",
-		Name:           "Codex",
-		InstallCommand: []string{"npm", "install", "-g", "@openai/codex"},
-		RunCommand:     []string{"codex", "exec"},
+		ProjectID:  "project-1",
+		Name:       "Codex",
+		RunCommand: []string{"codex", "exec"},
 	}
 	if err := s.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create harness config: %v", err)

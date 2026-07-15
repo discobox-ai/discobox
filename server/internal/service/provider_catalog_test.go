@@ -35,7 +35,7 @@ func reconcileSandbox(ctx context.Context, t *testing.T, svc *service.Service, e
 
 func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	ctx := context.Background()
-	svc, _ := newSandboxTestService(t, nil)
+	svc, _, _ := newSandboxTestService(t, nil)
 	provider := &recordingSandboxProvider{}
 	svc.RegisterSandboxProvider("recording", provider)
 	if got := svc.DefaultSandboxProviderName(); got != "recording" {
@@ -140,7 +140,7 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 
 func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
 	ctx := context.Background()
-	svc, _ := newSandboxTestService(t, nil)
+	svc, _, _ := newSandboxTestService(t, nil)
 	svc.SetDefaultSandboxImage("discobox-sandbox-agent:default")
 	provider := &recordingSandboxProvider{}
 	svc.RegisterSandboxProvider("recording", provider)
@@ -173,7 +173,7 @@ func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
 
 func TestCreateSandboxExplicitImageOverridesDefault(t *testing.T) {
 	ctx := context.Background()
-	svc, _ := newSandboxTestService(t, nil)
+	svc, _, _ := newSandboxTestService(t, nil)
 	svc.SetDefaultSandboxImage("discobox-sandbox-agent:default")
 	provider := &recordingSandboxProvider{}
 	svc.RegisterSandboxProvider("recording", provider)
@@ -262,7 +262,7 @@ func newProviderCatalogTestStore(t *testing.T) *store.Store {
 }
 
 func TestServiceSandboxProviderCatalog(t *testing.T) {
-	svc, _ := newSandboxTestService(t, nil)
+	svc, _, _ := newSandboxTestService(t, nil)
 	provider := &recordingSandboxProvider{}
 	svc.RegisterSandboxProvider("recording", provider)
 	svc.RegisterSandboxProviderDefinition("planned", sandboxes.ProviderDefinition{Name: "Planned"})
@@ -296,7 +296,7 @@ func TestServiceSandboxProviderCatalog(t *testing.T) {
 
 func TestCreateSandboxProviderInstanceAllowsMissingName(t *testing.T) {
 	ctx := context.Background()
-	svc, _ := newSandboxTestService(t, nil)
+	svc, _, _ := newSandboxTestService(t, nil)
 	svc.RegisterSandboxProvider("recording", &recordingSandboxProvider{})
 
 	provider, err := svc.CreateSandboxProviderInstance(ctx, service.DefaultProjectID, services.CreateSandboxProviderInstanceBody{
@@ -496,7 +496,7 @@ func existingDefaultHostMounts(t *testing.T) []string {
 
 func TestServiceResolvesDigitalOceanProviderInstance(t *testing.T) {
 	ctx := context.Background()
-	svc, _ := newSandboxTestService(t, nil)
+	svc, _, _ := newSandboxTestService(t, nil)
 	t.Setenv("TEST_DIGITALOCEAN_TOKEN", "token-1")
 
 	provider, err := svc.SandboxProviderManager().ResolveInstance(ctx, &model.SandboxProviderInstance{

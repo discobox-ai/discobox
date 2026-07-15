@@ -25,10 +25,7 @@ func TestBuiltInHarnessDefinitionsConvertToAPI(t *testing.T) {
 	}
 }
 
-// A sandbox's embedded harness config is stored sparse (definition-backed fields
-// unset). The response must resolve it so runCommand — required by the schema —
-// is present; otherwise clients fail to decode the sandbox.
-func TestSandboxToAPIResolvesEmbeddedHarnessConfig(t *testing.T) {
+func TestSandboxToAPIIncludesRegisteredHarnessConfig(t *testing.T) {
 	sandbox := &model.Sandbox{
 		ID:        "sb_1",
 		ProjectID: "p1",
@@ -38,7 +35,7 @@ func TestSandboxToAPIResolvesEmbeddedHarnessConfig(t *testing.T) {
 			Slug:         "codex",
 			DefinitionID: "codex",
 			Name:         "Codex",
-			// RunCommand/RelaunchCommand intentionally unset (sparse).
+			RunCommand:   []string{"codex"},
 		},
 	}
 	out, err := SandboxToAPI(sandbox)
@@ -50,6 +47,6 @@ func TestSandboxToAPIResolvesEmbeddedHarnessConfig(t *testing.T) {
 		t.Fatalf("expected embedded harness config")
 	}
 	if got := harnessConfig.RunCommand; len(got) != 1 || got[0] != "codex" {
-		t.Fatalf("runCommand = %#v, want [codex] resolved from the definition", got)
+		t.Fatalf("runCommand = %#v, want registered [codex]", got)
 	}
 }

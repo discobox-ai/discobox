@@ -381,41 +381,12 @@ func buildSandboxManifest(projectID, sandboxID, workerID, controlPlanePublicKey 
 		}
 		if resolved, ok := req.ResolvedHarnessConfig.Get(); ok {
 			resolvedConfig := apimodel.SandboxManifestResolvedHarnessConfig{
-				ID:         resolved.ID,
-				Name:       resolved.Name,
-				RunCommand: resolved.RunCommand,
-			}
-			if installCommand, ok := resolved.InstallCommand.Get(); ok {
-				resolvedConfig.InstallCommand = installCommand
-			}
-			if relaunchCommand, ok := resolved.RelaunchCommand.Get(); ok {
-				resolvedConfig.RelaunchCommand = relaunchCommand
+				ID: resolved.ID, Name: resolved.Name,
 			}
 			if files, ok := resolved.Files.Get(); ok {
 				resolvedConfig.Files = manifestHarnessConfigFiles(files)
 			}
 			manifest.ResolvedHarnessConfig = &resolvedConfig
-		}
-		if configs, ok := req.HarnessConfigs.Get(); ok {
-			manifest.HarnessConfigs = make([]apimodel.SandboxManifestHarnessConfig, 0, len(configs))
-			for _, config := range configs {
-				harnessConfig := apimodel.SandboxManifestHarnessConfig{
-					ID:         config.ID,
-					Name:       config.Name,
-					RunCommand: config.RunCommand,
-					IsDefault:  config.IsDefault,
-				}
-				if installCommand, ok := config.InstallCommand.Get(); ok {
-					harnessConfig.InstallCommand = installCommand
-				}
-				if relaunchCommand, ok := config.RelaunchCommand.Get(); ok {
-					harnessConfig.RelaunchCommand = relaunchCommand
-				}
-				if files, ok := config.Files.Get(); ok {
-					harnessConfig.Files = manifestHarnessConfigFiles(files)
-				}
-				manifest.HarnessConfigs = append(manifest.HarnessConfigs, harnessConfig)
-			}
 		}
 	}
 	// Inject the worker-proxy environment so sandbox-agent-spawned terminals and
@@ -449,6 +420,9 @@ func publicSandboxConfig(config workerapimodel.SandboxConfig) apimodel.SandboxCo
 		CpuVcpus:            optFloat64(config.CpuVcpus),
 		MemoryBytes:         optInt64(config.MemoryBytes),
 		StorageBytes:        optInt64(config.StorageBytes),
+	}
+	if mode, ok := config.HarnessMode.Get(); ok {
+		out.HarnessMode = apigen.NewOptSandboxConfigHarnessMode(apigen.SandboxConfigHarnessMode(mode))
 	}
 	if env, ok := config.Env.Get(); ok {
 		out.Env = apigen.NewOptSandboxConfigEnv(apigen.SandboxConfigEnv(env))

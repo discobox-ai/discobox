@@ -2,7 +2,6 @@ package registry
 
 import (
 	"context"
-	"path/filepath"
 	"strings"
 
 	"github.com/obot-platform/discobox/harness"
@@ -58,33 +57,14 @@ func (i Installer) InstallHooks(ctx context.Context, req harness.HookInstallRequ
 	return nil
 }
 
-// DriverForHarness selects the driver for the harness a terminal runs,
-// identified by the harness's run binary (argv[0]) matched exactly against each
-// driver's own definition. The harness's config ID is a random, project-scoped
-// identifier, not a harness identifier, so it is not used here. Falls back to
-// all drivers when the binary is unknown.
+// DriverForHarness selects the hook driver from the harness type baked into the
+// image. Falls back to all drivers for old or externally supplied harnesses.
 func DriverForHarness(h harness.Harness) []harness.Driver {
-	binary := commandBinary(h.Command)
-	if binary == "" {
-		return DefaultDrivers()
-	}
+	typeID := strings.TrimSpace(h.TypeID)
 	for _, driver := range DefaultDrivers() {
-		if binary == commandBinary(driver.Definition().RunCommand) {
+		if typeID != "" && typeID == driver.Definition().ID {
 			return []harness.Driver{driver}
 		}
 	}
 	return DefaultDrivers()
-}
-
-// commandBinary returns the lowercase base name of a command's executable
-// (argv[0]), which identifies the harness CLI a terminal runs.
-func commandBinary(command []string) string {
-	if len(command) == 0 {
-		return ""
-	}
-	first := strings.TrimSpace(command[0])
-	if first == "" {
-		return ""
-	}
-	return strings.ToLower(filepath.Base(first))
 }

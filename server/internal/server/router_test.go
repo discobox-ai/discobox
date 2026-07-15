@@ -132,7 +132,7 @@ func TestNewRouterCreateSandboxResolvesHarnessName(t *testing.T) {
 	createHarnessResp := httptest.NewRecorder()
 	router.ServeHTTP(createHarnessResp, jsonRequest(http.MethodPost, "/projects/"+service.DefaultProjectID+"/harness-configs", `{
 		"name": "Codex",
-		"runCommand": ["codex", "exec"]
+		"definitionId": "codex"
 	}`))
 	if createHarnessResp.Code != http.StatusOK {
 		t.Fatalf("POST /harness-configs status = %d, body = %s", createHarnessResp.Code, createHarnessResp.Body.String())

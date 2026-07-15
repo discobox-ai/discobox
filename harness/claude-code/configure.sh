@@ -52,9 +52,27 @@ if (settingsJSON !== null) {
 }
 
 const credentialsJSON = readIfExists(process.env.CLAUDE_CONFIGURE_CREDENTIALS_FILE || '');
+let capturedOAuth = false;
 if (credentialsJSON !== null) {
-	files.push({ path: '.claude/.credentials.json', content: credentialsJSON, createOnly: false });
-} else if (process.env.CLAUDE_CONFIGURE_API_KEY) {
+	let oauth = {};
+	try {
+		oauth = (JSON.parse(credentialsJSON) || {}).claudeAiOauth || {};
+	} catch (err) {
+		oauth = {};
+	}
+	if (oauth.accessToken) {
+		secrets.push({
+			envName: 'CLAUDE_CODE_OAUTH_TOKEN',
+			name: 'Claude Code OAuth token',
+			type: 'bearer',
+			value: { token: oauth.accessToken },
+		});
+		capturedOAuth = true;
+	}
+}
+// Fall back to an API key whenever no usable OAuth token was captured, including
+// when the credentials file exists but is malformed or lacks an access token.
+if (!capturedOAuth && process.env.CLAUDE_CONFIGURE_API_KEY) {
 	secrets.push({
 		envName: 'ANTHROPIC_API_KEY',
 		name: 'Anthropic API key',

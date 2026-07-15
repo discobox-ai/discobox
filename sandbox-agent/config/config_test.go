@@ -48,7 +48,7 @@ func TestLoadAppliesEnvironmentOverrides(t *testing.T) {
 	}
 }
 
-func TestLoadUsesHarnessConfigsAsLaunchableAgents(t *testing.T) {
+func TestLoadUsesSelectedHarnessOnlyAsImageOverlay(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sandbox.json")
 	if err := os.WriteFile(path, []byte(`{
 		"apiVersion": "discobox.dev/sandbox/v1",
@@ -59,6 +59,7 @@ func TestLoadUsesHarnessConfigsAsLaunchableAgents(t *testing.T) {
 			"cpuVcpus": 1,
 			"memoryBytes": 1024,
 			"storageBytes": 2048,
+			"harnessMode": "config",
 			"env": {
 				"BASE": "sandbox"
 			},
@@ -75,23 +76,8 @@ func TestLoadUsesHarnessConfigsAsLaunchableAgents(t *testing.T) {
 		"resolvedHarnessConfig": {
 			"id": "claude",
 			"name": "Claude",
-			"runCommand": ["claude"]
-		},
-		"harnessConfigs": [
-			{
-				"id": "codex",
-				"name": "Codex",
-				"installCommand": ["npm", "install", "-g", "@openai/codex"],
-				"runCommand": ["codex"],
-				"relaunchCommand": ["codex", "resume", "--last"],
-				"isDefault": true
-			},
-			{
-				"id": "claude",
-				"name": "Claude",
-				"runCommand": ["claude"]
-			}
-		]
+			"files": [{"path": ".claude.json", "content": "{}"}]
+		}
 	}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -100,17 +86,11 @@ func TestLoadUsesHarnessConfigsAsLaunchableAgents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if len(cfg.Harnesses) != 2 {
-		t.Fatalf("harnesses = %#v, want 2", cfg.Harnesses)
+	if cfg.ResolvedHarnessConfig == nil || cfg.ResolvedHarnessConfig.ID != "claude" || len(cfg.ResolvedHarnessConfig.Files) != 1 {
+		t.Fatalf("resolved harness = %#v, want claude file overlay", cfg.ResolvedHarnessConfig)
 	}
-	if cfg.Harnesses[0].ID != "codex" || !cfg.Harnesses[0].IsDefault || len(cfg.Harnesses[0].InstallCommand) == 0 {
-		t.Fatalf("first harness = %#v, want default codex with install command", cfg.Harnesses[0])
-	}
-	if got := cfg.Harnesses[0].RelaunchCommand; len(got) != 3 || got[0] != "codex" || got[1] != "resume" || got[2] != "--last" {
-		t.Fatalf("codex relaunch command = %#v, want [codex, resume, --last]", got)
-	}
-	if cfg.Harnesses[1].ID != "claude" {
-		t.Fatalf("second harness = %#v, want claude", cfg.Harnesses[1])
+	if cfg.HarnessMode != "config" {
+		t.Fatalf("harness mode = %q, want config", cfg.HarnessMode)
 	}
 	if cfg.Env["BASE"] != "sandbox" {
 		t.Fatalf("env = %#v, want sandbox config env", cfg.Env)

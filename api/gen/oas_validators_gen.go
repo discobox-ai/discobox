@@ -76,17 +76,6 @@ func (s *ConfigureSandbox) Validate() error {
 			Error: err,
 		})
 	}
-	if err := func() error {
-		if err := s.HarnessConfig.Validate(); err != nil {
-			return err
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "harnessConfig",
-			Error: err,
-		})
-	}
 	if len(failures) > 0 {
 		return &validate.Error{Fields: failures}
 	}
@@ -118,24 +107,6 @@ func (s *CreateHarnessConfigBody) Validate() error {
 		})
 	}
 	if err := func() error {
-		if value, ok := s.InstallCommand.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "installCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
 		if value, ok := s.Name.Get(); ok {
 			if err := func() error {
 				if err := (validate.String{
@@ -162,77 +133,6 @@ func (s *CreateHarnessConfigBody) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "name",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.RelaunchCommand.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "relaunchCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.RunCommand.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "runCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.Secrets.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				var failures []validate.FieldError
-				for i, elem := range value {
-					if err := func() error {
-						if err := elem.Validate(); err != nil {
-							return err
-						}
-						return nil
-					}(); err != nil {
-						failures = append(failures, validate.FieldError{
-							Name:  fmt.Sprintf("[%d]", i),
-							Error: err,
-						})
-					}
-				}
-				if len(failures) > 0 {
-					return &validate.Error{Fields: failures}
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "secrets",
 			Error: err,
 		})
 	}
@@ -751,24 +651,6 @@ func (s *HarnessConfig) Validate() error {
 		})
 	}
 	if err := func() error {
-		if value, ok := s.InstallCommand.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "installCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
 		if err := (validate.String{
 			MinLength:     0,
 			MinLengthSet:  false,
@@ -944,42 +826,6 @@ func (s *HarnessDefinition) Validate() error {
 		})
 	}
 	if err := func() error {
-		if value, ok := s.Files.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "files",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.InstallCommand.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "installCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
 		if err := (validate.String{
 			MinLength:     0,
 			MinLengthSet:  false,
@@ -999,70 +845,6 @@ func (s *HarnessDefinition) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "name",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.RelaunchCommand.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "relaunchCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if s.RunCommand == nil {
-			return errors.New("nil is invalid value")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "runCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.Secrets.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				var failures []validate.FieldError
-				for i, elem := range value {
-					if err := func() error {
-						if err := elem.Validate(); err != nil {
-							return err
-						}
-						return nil
-					}(); err != nil {
-						failures = append(failures, validate.FieldError{
-							Name:  fmt.Sprintf("[%d]", i),
-							Error: err,
-						})
-					}
-				}
-				if len(failures) > 0 {
-					return &validate.Error{Fields: failures}
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "secrets",
 			Error: err,
 		})
 	}
@@ -1086,118 +868,6 @@ func (s *HarnessHookLogsResponse) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "hooks",
-			Error: err,
-		})
-	}
-	if len(failures) > 0 {
-		return &validate.Error{Fields: failures}
-	}
-	return nil
-}
-
-func (s *InlineHarnessConfig) Validate() error {
-	if s == nil {
-		return validate.ErrNilPointer
-	}
-
-	var failures []validate.FieldError
-	if err := func() error {
-		if value, ok := s.Files.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "files",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.InstallCommand.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "installCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.RelaunchCommand.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "relaunchCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if s.RunCommand == nil {
-			return errors.New("nil is invalid value")
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "runCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.Secrets.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				var failures []validate.FieldError
-				for i, elem := range value {
-					if err := func() error {
-						if err := elem.Validate(); err != nil {
-							return err
-						}
-						return nil
-					}(); err != nil {
-						failures = append(failures, validate.FieldError{
-							Name:  fmt.Sprintf("[%d]", i),
-							Error: err,
-						})
-					}
-				}
-				if len(failures) > 0 {
-					return &validate.Error{Fields: failures}
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "secrets",
 			Error: err,
 		})
 	}
@@ -2080,7 +1750,7 @@ func (s *SandboxConfig) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if value, ok := s.HarnessConfig.Get(); ok {
+		if value, ok := s.HarnessMode.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
 					return err
@@ -2093,7 +1763,7 @@ func (s *SandboxConfig) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "harnessConfig",
+			Name:  "harnessMode",
 			Error: err,
 		})
 	}
@@ -2173,6 +1843,17 @@ func (s *SandboxConfig) Validate() error {
 	return nil
 }
 
+func (s SandboxConfigHarnessMode) Validate() error {
+	switch s {
+	case "run":
+		return nil
+	case "config":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
+}
+
 func (s SandboxConfigSourceCodeReferences) Validate() error {
 	var failures []validate.FieldError
 	for key, elem := range s {
@@ -2202,7 +1883,7 @@ func (s *SandboxCreateConfig) Validate() error {
 
 	var failures []validate.FieldError
 	if err := func() error {
-		if value, ok := s.HarnessConfig.Get(); ok {
+		if value, ok := s.HarnessMode.Get(); ok {
 			if err := func() error {
 				if err := value.Validate(); err != nil {
 					return err
@@ -2215,7 +1896,7 @@ func (s *SandboxCreateConfig) Validate() error {
 		return nil
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
-			Name:  "harnessConfig",
+			Name:  "harnessMode",
 			Error: err,
 		})
 	}
@@ -2300,6 +1981,17 @@ func (s *SandboxCreateConfig) Validate() error {
 		return &validate.Error{Fields: failures}
 	}
 	return nil
+}
+
+func (s SandboxCreateConfigHarnessMode) Validate() error {
+	switch s {
+	case "run":
+		return nil
+	case "config":
+		return nil
+	default:
+		return errors.Errorf("invalid value: %v", s)
+	}
 }
 
 func (s SandboxCreateConfigSourceCodeReferences) Validate() error {
@@ -3050,24 +2742,6 @@ func (s *UpdateHarnessConfigBody) Validate() error {
 		})
 	}
 	if err := func() error {
-		if value, ok := s.InstallCommand.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "installCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
 		if value, ok := s.Name.Get(); ok {
 			if err := func() error {
 				if err := (validate.String{
@@ -3094,77 +2768,6 @@ func (s *UpdateHarnessConfigBody) Validate() error {
 	}(); err != nil {
 		failures = append(failures, validate.FieldError{
 			Name:  "name",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.RelaunchCommand.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "relaunchCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.RunCommand.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "runCommand",
-			Error: err,
-		})
-	}
-	if err := func() error {
-		if value, ok := s.Secrets.Get(); ok {
-			if err := func() error {
-				if value == nil {
-					return errors.New("nil is invalid value")
-				}
-				var failures []validate.FieldError
-				for i, elem := range value {
-					if err := func() error {
-						if err := elem.Validate(); err != nil {
-							return err
-						}
-						return nil
-					}(); err != nil {
-						failures = append(failures, validate.FieldError{
-							Name:  fmt.Sprintf("[%d]", i),
-							Error: err,
-						})
-					}
-				}
-				if len(failures) > 0 {
-					return &validate.Error{Fields: failures}
-				}
-				return nil
-			}(); err != nil {
-				return err
-			}
-		}
-		return nil
-	}(); err != nil {
-		failures = append(failures, validate.FieldError{
-			Name:  "secrets",
 			Error: err,
 		})
 	}

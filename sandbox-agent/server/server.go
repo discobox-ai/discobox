@@ -38,6 +38,7 @@ type Config struct {
 	DatabasePath          string
 	Env                   map[string]string
 	Prompt                []string
+	HarnessMode           string
 	Resources             config.ResourceConfig
 	ResolvedHarnessConfig *config.Harness
 	Harnesses             []config.Harness
@@ -64,6 +65,7 @@ func ConfigFromHarnessConfig(cfg config.Config) Config {
 		DatabasePath:          cfg.DatabasePath,
 		Env:                   cfg.Env,
 		Prompt:                cfg.Prompt,
+		HarnessMode:           cfg.HarnessMode,
 		Resources:             cfg.Resources,
 		ResolvedHarnessConfig: cfg.ResolvedHarnessConfig,
 		Harnesses:             cfg.Harnesses,
@@ -131,6 +133,7 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		Units:                 cfg.ExecUnitManager,
 		Installer:             cfg.Installer,
 		PrimaryState:          localStore,
+		HarnessMode:           cfg.HarnessMode,
 	})
 	if err != nil {
 		return nil, nil, nil, nil, err

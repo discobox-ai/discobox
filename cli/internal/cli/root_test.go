@@ -702,7 +702,7 @@ func TestHarnessEnableCreatesDefinitionWhenMissing(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/harness-definitions":
-			_, _ = w.Write([]byte(`{"harnessDefinitions":[{"id":"codex","name":"Codex","description":"OpenAI Codex coding harness.","installCommand":["npm","install","-g","@openai/codex"],"runCommand":["codex"]}]}`))
+			_, _ = w.Write([]byte(`{"harnessDefinitions":[{"id":"codex","name":"Codex","description":"OpenAI Codex coding harness.","image":"discobox-harness-codex:local"}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/harness-configs":
 			_, _ = w.Write([]byte(`{"harnessConfigs":[]}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/harness-configs":
@@ -752,7 +752,7 @@ func TestHarnessEnableDoesNothingWhenDefinitionAlreadyEnabled(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/harness-definitions":
-			_, _ = w.Write([]byte(`{"harnessDefinitions":[{"id":"codex","name":"Codex","description":"OpenAI Codex coding harness.","installCommand":["npm","install","-g","@openai/codex"],"runCommand":["codex"]}]}`))
+			_, _ = w.Write([]byte(`{"harnessDefinitions":[{"id":"codex","name":"Codex","description":"OpenAI Codex coding harness.","image":"discobox-harness-codex:local"}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/harness-configs":
 			_, _ = w.Write([]byte(`{"harnessConfigs":[{"id":"` + harnessID + `","projectId":"project-1","slug":"codex","name":"Codex","runCommand":["codex"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`))
 		default:
@@ -789,7 +789,7 @@ func TestHarnessEnableDefaultFlagSetsExistingDefinitionHarnessDefault(t *testing
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/harness-definitions":
-			_, _ = w.Write([]byte(`{"harnessDefinitions":[{"id":"codex","name":"Codex","description":"OpenAI Codex coding harness.","installCommand":["npm","install","-g","@openai/codex"],"runCommand":["codex"]}]}`))
+			_, _ = w.Write([]byte(`{"harnessDefinitions":[{"id":"codex","name":"Codex","description":"OpenAI Codex coding harness.","image":"discobox-harness-codex:local"}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/harness-configs":
 			_, _ = w.Write([]byte(`{"harnessConfigs":[{"id":"` + harnessID + `","projectId":"project-1","slug":"codex","name":"Codex","runCommand":["codex"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`))
 		case r.Method == http.MethodPut && r.URL.Path == "/projects/project-1/harness-configs/"+harnessID+"/default":
@@ -828,7 +828,7 @@ func TestHarnessDisableDeletesDefinitionHarnessWhenPresent(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/harness-definitions":
-			_, _ = w.Write([]byte(`{"harnessDefinitions":[{"id":"codex","name":"Codex","description":"OpenAI Codex coding harness.","installCommand":["npm","install","-g","@openai/codex"],"runCommand":["codex"]}]}`))
+			_, _ = w.Write([]byte(`{"harnessDefinitions":[{"id":"codex","name":"Codex","description":"OpenAI Codex coding harness.","image":"discobox-harness-codex:local"}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/harness-configs":
 			_, _ = w.Write([]byte(`{"harnessConfigs":[{"id":"` + harnessID + `","projectId":"project-1","slug":"codex","name":"Codex","runCommand":["codex"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`))
 		case r.Method == http.MethodDelete && r.URL.Path == "/projects/project-1/harness-configs/"+harnessID:
@@ -863,7 +863,7 @@ func TestHarnessDisableDoesNothingWhenDefinitionHarnessMissing(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/harness-definitions":
-			_, _ = w.Write([]byte(`{"harnessDefinitions":[{"id":"codex","name":"Codex","description":"OpenAI Codex coding harness.","installCommand":["npm","install","-g","@openai/codex"],"runCommand":["codex"]}]}`))
+			_, _ = w.Write([]byte(`{"harnessDefinitions":[{"id":"codex","name":"Codex","description":"OpenAI Codex coding harness.","image":"discobox-harness-codex:local"}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/harness-configs":
 			_, _ = w.Write([]byte(`{"harnessConfigs":[]}`))
 		default:
@@ -971,7 +971,7 @@ func TestHarnessCreateSendsCreateOnlyFileFlag(t *testing.T) {
 	cmd.SetErr(io.Discard)
 	cmd.SetArgs([]string{
 		"--server", server.URL, "--project", "project-1", "harnesses", "create",
-		"--name", "Custom", "--run-command", "claude",
+		"--name", "Custom", "--image", "example.com/custom:latest",
 		"--file", `.claude/settings.json={"theme":"dark"}`,
 		"--create-only-file", ".claude/settings.json",
 		"--file", ".github/config=ok",
@@ -1024,7 +1024,7 @@ func TestHarnessCreateSendsFilesFlag(t *testing.T) {
 	cmd.SetErr(io.Discard)
 	cmd.SetArgs([]string{
 		"--server", server.URL, "--project", "project-1", "harnesses", "create",
-		"--name", "Custom", "--run-command", "claude",
+		"--name", "Custom", "--image", "example.com/custom:latest",
 		"--file", `.claude/settings.json={"theme":"dark"}`,
 	})
 

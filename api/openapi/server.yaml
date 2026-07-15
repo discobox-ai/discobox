@@ -14,10 +14,10 @@ components:
                     format: date-time
                     type: string
                 definitionId:
-                    description: Built-in harness definition this config extends. Unset fields are inherited from the definition at runtime, so definition upgrades propagate unless overridden. Empty for fully custom configs.
+                    description: Built-in harness definition used to select this image. Empty for custom images.
                     type: string
                 files:
-                    description: Override for files to write into the harness's home directory when the harness is installed. Unset inherits from the definition.
+                    description: Files declared by the registered image plus any non-secret configured file values.
                     items:
                         $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
@@ -25,12 +25,12 @@ components:
                 id:
                     description: Stable harness config ID
                     type: string
-                installCommand:
-                    description: Override for the argv used to install the harness. Unset inherits from the definition. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
+                image:
+                    description: Immutable harness sandbox image selected when this config was registered.
+                    type: string
+                imageDigest:
+                    description: Content digest observed when the harness image metadata was registered.
+                    type: string
                 name:
                     description: Harness config name
                     maxLength: 200
@@ -39,18 +39,18 @@ components:
                     description: Project ID
                     type: string
                 relaunchCommand:
-                    description: Override for the argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. Unset inherits from the definition. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    description: Argv declared by the registered image to resume a previous harness session.
                     items:
                         type: string
                     nullable: true
                     type: array
                 runCommand:
-                    description: Effective argv used to run the harness, resolved from the definition and any overrides. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
+                    description: Argv declared by the registered image to run the harness.
                     items:
                         type: string
                     type: array
                 secrets:
-                    description: Override for the environment-variable secrets the harness expects. Unset inherits from the definition.
+                    description: Environment-variable secrets declared by the registered image.
                     items:
                         $ref: '#/components/schemas/HarnessConfigSecret'
                     nullable: true
@@ -87,46 +87,19 @@ components:
                 description:
                     description: Harness config definition description
                     type: string
-                files:
-                    description: Files to write into the harness's home directory when the harness is installed
-                    items:
-                        $ref: '#/components/schemas/HarnessConfigFile'
-                    nullable: true
-                    type: array
                 id:
                     description: Stable definition ID
                     type: string
-                installCommand:
-                    description: Argv used to install the harness. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
+                image:
+                    description: Harness-specific sandbox image registered by this definition.
+                    type: string
                 name:
                     description: Harness config definition name
                     maxLength: 200
                     type: string
-                relaunchCommand:
-                    description: Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
-                runCommand:
-                    description: Argv used to run the harness. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-                    items:
-                        type: string
-                    type: array
-                secrets:
-                    description: Environment-variable secrets the harness expects.
-                    items:
-                        $ref: '#/components/schemas/HarnessConfigSecret'
-                    nullable: true
-                    type: array
             required:
                 - id
                 - name
-                - runCommand
             type: object
         HarnessConfigFile:
             additionalProperties: false
@@ -164,42 +137,6 @@ components:
                     type: string
             required:
                 - name
-            type: object
-        InlineHarnessConfig:
-            additionalProperties: false
-            description: An ad hoc harness process spec provided directly on a sandbox create request instead of by HarnessConfig reference.
-            properties:
-                files:
-                    description: Files to write into the harness's home directory when the harness is installed.
-                    items:
-                        $ref: '#/components/schemas/HarnessConfigFile'
-                    nullable: true
-                    type: array
-                installCommand:
-                    description: Argv used to install the harness. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
-                relaunchCommand:
-                    description: Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches.
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
-                runCommand:
-                    description: Argv used to run the harness. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-                    items:
-                        type: string
-                    type: array
-                secrets:
-                    description: Environment-variable secrets the harness expects.
-                    items:
-                        $ref: '#/components/schemas/HarnessConfigSecret'
-                    nullable: true
-                    type: array
-            required:
-                - runCommand
             type: object
         HarnessConfigSecretBinding:
             additionalProperties: false
@@ -305,9 +242,6 @@ components:
                         type: string
                     description: Environment variables available to the configure sandbox
                     type: object
-                harnessConfig:
-                    $ref: '#/components/schemas/InlineHarnessConfig'
-                    description: Harness process the configure sandbox runs as its primary terminal
                 image:
                     description: Sandbox base image. Defaults to the server configured sandbox image when omitted.
                     type: string
@@ -319,8 +253,6 @@ components:
                     description: Requested storage capacity in bytes
                     format: int64
                     type: integer
-            required:
-                - harnessConfig
             type: object
         CreateHarnessConfigBody:
             additionalProperties: false
@@ -332,42 +264,21 @@ components:
                     readOnly: true
                     type: string
                 definitionId:
-                    description: Built-in harness definition to extend. Unset command/file fields are inherited from the definition at runtime, so definition upgrades propagate unless overridden. Omit for a fully custom config, in which case runCommand is required.
+                    description: Built-in harness definition associated with this image.
                     type: string
                 files:
-                    description: Override for files to write into the harness's home directory. Unset inherits from the definition when definitionId is provided.
+                    description: Optional non-secret configured file values to associate with the registered harness.
                     items:
                         $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
                     type: array
-                installCommand:
-                    description: Override for the argv used to install the harness. Unset inherits from the definition when definitionId is provided. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
+                image:
+                    description: Harness sandbox image to register. The server validates its io.discobox.harness.v1 label and snapshots that metadata into the HarnessConfig.
+                    type: string
                 name:
                     description: Harness config name. Defaults to the definition name when definitionId is provided.
                     maxLength: 200
                     type: string
-                relaunchCommand:
-                    description: Override for the argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. Unset inherits from the definition when definitionId is provided. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
-                runCommand:
-                    description: Override for the argv used to run the harness. Unset inherits from the definition when definitionId is provided; required for a fully custom config. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
-                secrets:
-                    description: Override for the environment-variable secrets the harness expects. Unset inherits from the definition when definitionId is provided.
-                    items:
-                        $ref: '#/components/schemas/HarnessConfigSecret'
-                    nullable: true
-                    type: array
                 slug:
                     description: Stable, URL-safe identifier used to select the harness config (e.g. codex). Defaults to definitionId, or a slug derived from name. Unique within the project.
                     pattern: ^[a-z0-9][a-z0-9-]*$
@@ -514,8 +425,8 @@ components:
                 status:
                     description: |
                         Current observed exec runtime status. installing is a terminal-layer
-                        phase: the exec record exists and its harness install command is still
-                        running, before the harness process is launched (starting -> running).
+                        phase: the exec record exists and its hooks/files are still being
+                        prepared, before the harness process is launched (starting -> running).
                     enum:
                         - installing
                         - starting
@@ -1372,11 +1283,14 @@ components:
         SandboxConfig:
             additionalProperties: false
             properties:
-                harnessConfig:
-                    $ref: '#/components/schemas/InlineHarnessConfig'
-                    description: Ad hoc harness config running in this sandbox, provided inline instead of by reference. Takes precedence over harnessConfigId when both are set.
                 harnessConfigId:
                     description: Harness config ID
+                    type: string
+                harnessMode:
+                    description: Harness startup mode. Config runs the image-owned interactive configuration command instead of the normal harness command.
+                    enum:
+                        - run
+                        - config
                     type: string
                 model:
                     description: Model the harness should use
@@ -1447,12 +1361,6 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                harnessConfigs:
-                    description: Non-secret harness configurations available inside the sandbox.
-                    items:
-                        $ref: '#/components/schemas/SandboxManifestHarnessConfig'
-                    nullable: true
-                    type: array
                 agentRuntime:
                     $ref: '#/components/schemas/SandboxManifestAgentRuntime'
                     description: Sandbox-agent local runtime settings. These values must not contain credentials, tokens, private keys, or other secret material.
@@ -1482,47 +1390,6 @@ components:
                 - config
             type: object
             x-sandbox-agent-component: true
-        SandboxManifestHarnessConfig:
-            additionalProperties: false
-            description: Non-secret harness configuration available inside a sandbox.
-            properties:
-                files:
-                    description: Files to write into the harness's home directory when the harness is installed. This content must not contain credentials, tokens, private keys, or other secret material.
-                    items:
-                        $ref: '#/components/schemas/HarnessConfigFile'
-                    nullable: true
-                    type: array
-                id:
-                    description: Stable harness config ID.
-                    type: string
-                installCommand:
-                    description: Argv used to install the harness. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
-                isDefault:
-                    description: Whether this is the default harness configuration.
-                    type: boolean
-                name:
-                    description: Harness config display name.
-                    type: string
-                relaunchCommand:
-                    description: Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
-                runCommand:
-                    description: Argv used to run the harness. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
-                    items:
-                        type: string
-                    type: array
-            required:
-                - id
-                - name
-                - runCommand
-            type: object
         SandboxManifestAgentRuntime:
             additionalProperties: false
             description: Sandbox-agent daemon-local runtime settings. This object must not contain credentials, tokens, private keys, or other secret material.
@@ -1587,30 +1454,12 @@ components:
                 id:
                     description: Stable harness config ID.
                     type: string
-                installCommand:
-                    description: Argv used to install the harness. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
                 name:
                     description: Harness config display name.
                     type: string
-                relaunchCommand:
-                    description: Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
-                runCommand:
-                    description: Argv used to run the harness. This must not contain credentials, tokens, private keys, or other secret material. Not run through a shell.
-                    items:
-                        type: string
-                    type: array
             required:
                 - id
                 - name
-                - runCommand
             type: object
         SandboxManifestResourceCollection:
             additionalProperties: false
@@ -1653,11 +1502,14 @@ components:
         SandboxCreateConfig:
             additionalProperties: false
             properties:
-                harnessConfig:
-                    $ref: '#/components/schemas/InlineHarnessConfig'
-                    description: Ad hoc harness config to run in this sandbox, provided inline instead of by reference. Takes precedence over harnessConfigId when both are set.
                 harnessConfigId:
                     description: Harness config ID
+                    type: string
+                harnessMode:
+                    description: Harness startup mode. Config runs the image-owned interactive configuration command instead of the normal harness command.
+                    enum:
+                        - run
+                        - config
                     type: string
                 model:
                     description: Model the harness should use
@@ -2622,34 +2474,10 @@ components:
                         $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
                     type: array
-                installCommand:
-                    description: Argv used to install the harness. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
                 name:
                     description: Harness config name
                     maxLength: 200
                     type: string
-                relaunchCommand:
-                    description: Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
-                runCommand:
-                    description: Argv used to run the harness. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
-                secrets:
-                    description: Environment-variable secrets the harness expects.
-                    items:
-                        $ref: '#/components/schemas/HarnessConfigSecret'
-                    nullable: true
-                    type: array
             type: object
         UpdateSandboxBody:
             additionalProperties: false

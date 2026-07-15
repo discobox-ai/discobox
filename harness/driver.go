@@ -15,47 +15,59 @@ const (
 	TerminalIDEnv   = "DISCOBOX_TERMINAL_ID"
 	SocketEnv       = "DISCOBOX_HOOK_SOCKET"
 	ManagedFileMode = 0o644
+	// ImageLabel is the OCI image-config label containing the JSON-encoded,
+	// non-secret harness metadata used when a harness image is registered.
+	ImageLabel = "io.discobox.harness.v1"
 )
 
 type Harness struct {
 	ID      string
+	TypeID  string
 	Name    string
 	Command []string
 }
 
-// Definition is a harness's built-in harness-config template: how to install and
-// run the harness, how to resume its previous session on a restart, and any
-// files to seed into the harness's home directory. It is the single source of
-// truth for a harness's harness-specific defaults; the control plane converts it
-// into a project-scoped harness config.
-type Definition struct {
-	ID              string
-	Name            string
-	Description     string
-	InstallCommand  []string
-	RunCommand      []string
-	RelaunchCommand []string
-	Files           []File
-	Secrets         []Secret
-	Configure       *Configure
+// Image describes the immutable harness behavior baked into one sandbox image.
+// The same value is stored in /usr/share/discobox/image.json and projected into
+// ImageLabel so the control plane can validate an image without downloading its
+// filesystem layers.
+type Image struct {
+	ID              string     `json:"id"`
+	Name            string     `json:"name"`
+	Description     string     `json:"description,omitempty"`
+	RunCommand      []string   `json:"runCommand"`
+	RelaunchCommand []string   `json:"relaunchCommand,omitempty"`
+	Files           []File     `json:"files,omitempty"`
+	Secrets         []Secret   `json:"secrets,omitempty"`
+	Config          *ImageMode `json:"config,omitempty"`
 }
 
-// Configure is an ephemeral sandbox definition run interactively, before an
-// HarnessConfig is created from this Definition, to collect configuration such
-// as authentication. Its primary terminal (RunCommand) must exit 0; the
-// sandbox is then expected to have written /run/discobox/harness-configure.json
-// with the secrets and files to apply to the new HarnessConfig.
+// ImageMode describes the interactive configuration command supported by an
+// image. Config output is written to ResultPath and collected before the
+// ephemeral configuration sandbox is deleted.
+type ImageMode struct {
+	Command    []string `json:"command"`
+	ResultPath string   `json:"resultPath,omitempty"`
+}
+
+// Definition is a built-in shortcut for registering an included harness image.
+type Definition struct {
+	ID          string
+	Name        string
+	Description string
+	Image       string
+	Configure   *Configure
+}
+
+// Configure declares the provider resources and environment for an ephemeral
+// configuration sandbox. The image supplies the configuration command and is
+// expected to write /run/discobox/harness-configure.json before exiting.
 type Configure struct {
-	Image           string
-	Env             map[string]string
-	CPUVCPUs        float64
-	MemoryBytes     int64
-	StorageBytes    int64
-	InstallCommand  []string
-	RunCommand      []string
-	RelaunchCommand []string
-	Files           []File
-	Secrets         []Secret
+	Image        string
+	Env          map[string]string
+	CPUVCPUs     float64
+	MemoryBytes  int64
+	StorageBytes int64
 }
 
 // File is a file to write into the harness's home directory when the harness is
@@ -82,8 +94,6 @@ type Secret struct {
 }
 
 // HookInstallRequest is the input to installing a harness's hook integration.
-// It is unrelated to Definition.InstallCommand, which installs the harness CLI
-// itself.
 type HookInstallRequest struct {
 	Harness          Harness
 	Workdir          string
@@ -97,7 +107,7 @@ type Driver interface {
 	// Definition returns the harness's built-in harness-config template.
 	Definition() Definition
 	// InstallHooks wires the harness's lifecycle hook integration into its managed
-	// config. It does not install the harness CLI (see Definition.InstallCommand).
+	// config.
 	InstallHooks(context.Context, HookInstallRequest) error
 }
 

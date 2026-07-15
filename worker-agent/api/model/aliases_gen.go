@@ -14,7 +14,6 @@ type GitSourceWorkspace = workeragentapi.GitSourceWorkspace
 type HarnessConfigFile = workeragentapi.HarnessConfigFile
 type ResolvedHarnessConfig = workeragentapi.ResolvedHarnessConfig
 type SandboxConfig = workeragentapi.SandboxConfig
-type SandboxHarnessConfig = workeragentapi.SandboxHarnessConfig
 type SandboxUpdateConfig = workeragentapi.SandboxUpdateConfig
 type SandboxUser = workeragentapi.SandboxUser
 type WorkerSandboxCreateRequest = workeragentapi.WorkerSandboxCreateRequest

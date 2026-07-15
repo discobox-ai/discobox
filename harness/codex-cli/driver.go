@@ -26,15 +26,8 @@ func (Driver) ID() string { return "codex-cli" }
 
 func (Driver) Definition() harness.Definition {
 	return harness.Definition{
-		ID:              "codex",
-		Name:            "Codex",
-		Description:     "OpenAI Codex coding harness.",
-		InstallCommand:  []string{"npm", "install", "-g", "@openai/codex"},
-		RunCommand:      []string{"codex"},
-		RelaunchCommand: []string{"codex", "resume", "--last"},
-		Secrets: []harness.Secret{
-			{Name: "OPENAI_API_KEY", Required: true},
-		},
+		ID: "codex", Name: "Codex", Description: "OpenAI Codex coding harness.",
+		Image: "discobox-harness-codex:local", Configure: &harness.Configure{},
 	}
 }
 

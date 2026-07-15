@@ -26,8 +26,8 @@ type Config struct {
 	DatabasePath          string            `json:"databasePath"`
 	Env                   map[string]string `json:"env,omitempty"`
 	Prompt                []string          `json:"prompt,omitempty"`
+	HarnessMode           string            `json:"harnessMode,omitempty"`
 	ResolvedHarnessConfig *Harness          `json:"resolvedHarnessConfig,omitempty"`
-	HarnessConfigs        []Harness         `json:"harnessConfigs,omitempty"`
 	Harnesses             []Harness         `json:"harnesses"`
 	SandboxConfig         map[string]any    `json:"-"`
 	Resources             ResourceConfig    `json:"resources"`
@@ -49,8 +49,8 @@ type ExecDefaults struct {
 
 type Harness struct {
 	ID              string        `json:"id"`
+	TypeID          string        `json:"-"`
 	Name            string        `json:"name"`
-	InstallCommand  []string      `json:"installCommand,omitempty"`
 	Command         []string      `json:"command"`
 	RelaunchCommand []string      `json:"relaunchCommand,omitempty"`
 	IsDefault       bool          `json:"isDefault,omitempty"`
@@ -85,7 +85,6 @@ func Load(path string) (Config, error) {
 	}
 	applyEnv(&cfg)
 	applyDefaults(&cfg)
-	cfg.Harnesses = launchableAgents(cfg.Harnesses, cfg.ResolvedHarnessConfig, cfg.HarnessConfigs)
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
@@ -126,6 +125,9 @@ func configFromManifest(manifest model.SandboxManifest) Config {
 		cfg.Env = map[string]string(env)
 	}
 	cfg.Prompt = cloneCommand(manifest.Config.Prompt)
+	if mode, ok := manifest.Config.HarnessMode.Get(); ok {
+		cfg.HarnessMode = string(mode)
+	}
 	cfg.ExecDefaults = execDefaultsFromManifestConfig(manifest.Config)
 	if manifest.AgentRuntime != nil {
 		cfg.ListenAddress = manifest.AgentRuntime.ListenAddress
@@ -144,12 +146,6 @@ func configFromManifest(manifest model.SandboxManifest) Config {
 	if manifest.ResolvedHarnessConfig != nil {
 		resolved := agentFromResolvedManifest(*manifest.ResolvedHarnessConfig)
 		cfg.ResolvedHarnessConfig = &resolved
-	}
-	if len(manifest.HarnessConfigs) > 0 {
-		cfg.HarnessConfigs = make([]Harness, 0, len(manifest.HarnessConfigs))
-		for _, harnessConfig := range manifest.HarnessConfigs {
-			cfg.HarnessConfigs = append(cfg.HarnessConfigs, agentFromManifest(harnessConfig))
-		}
 	}
 	return cfg
 }
@@ -187,26 +183,9 @@ func publicKey(values map[string]string) string {
 	return strings.TrimSpace(values[ControlPlanePublicKeyName])
 }
 
-func agentFromManifest(in model.SandboxManifestHarnessConfig) Harness {
-	return Harness{
-		ID:              in.ID,
-		Name:            in.Name,
-		InstallCommand:  cloneCommand(in.InstallCommand),
-		Command:         cloneCommand(in.RunCommand),
-		RelaunchCommand: cloneCommand(in.RelaunchCommand),
-		IsDefault:       in.IsDefault,
-		Files:           harnessFilesFromManifest(in.Files),
-	}
-}
-
 func agentFromResolvedManifest(in model.SandboxManifestResolvedHarnessConfig) Harness {
 	return Harness{
-		ID:              in.ID,
-		Name:            in.Name,
-		InstallCommand:  cloneCommand(in.InstallCommand),
-		Command:         cloneCommand(in.RunCommand),
-		RelaunchCommand: cloneCommand(in.RelaunchCommand),
-		Files:           harnessFilesFromManifest(in.Files),
+		ID: in.ID, Name: in.Name, Files: harnessFilesFromManifest(in.Files),
 	}
 }
 
@@ -233,37 +212,6 @@ func cloneCommand(command []string) []string {
 	return append([]string{}, command...)
 }
 
-func launchableAgents(harnesses []Harness, resolved *Harness, configs []Harness) []Harness {
-	if len(configs) == 0 && resolved == nil {
-		return harnesses
-	}
-	seen := make(map[string]struct{}, len(harnesses)+len(configs)+1)
-	out := make([]Harness, 0, len(harnesses)+len(configs)+1)
-	for _, harness := range harnesses {
-		if strings.TrimSpace(harness.ID) == "" {
-			continue
-		}
-		seen[harness.ID] = struct{}{}
-		out = append(out, harness)
-	}
-	for _, harness := range configs {
-		if strings.TrimSpace(harness.ID) == "" {
-			continue
-		}
-		if _, ok := seen[harness.ID]; ok {
-			continue
-		}
-		seen[harness.ID] = struct{}{}
-		out = append(out, harness)
-	}
-	if resolved != nil && strings.TrimSpace(resolved.ID) != "" {
-		if _, ok := seen[resolved.ID]; !ok {
-			out = append(out, *resolved)
-		}
-	}
-	return out
-}
-
 func (c Config) Validate() error {
 	if strings.TrimSpace(c.Identity.ProjectID) == "" {
 		return fmt.Errorf("projectId is required")
@@ -273,6 +221,11 @@ func (c Config) Validate() error {
 	}
 	if strings.TrimSpace(c.ControlPlanePublicKey) == "" {
 		return fmt.Errorf("provider.publicKeys.%s is required", ControlPlanePublicKeyName)
+	}
+	switch c.HarnessMode {
+	case "", "run", "config":
+	default:
+		return fmt.Errorf("unsupported harnessMode %q", c.HarnessMode)
 	}
 	for _, harness := range c.Harnesses {
 		if strings.TrimSpace(harness.ID) == "" {

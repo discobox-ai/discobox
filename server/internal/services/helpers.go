@@ -12,7 +12,6 @@ import (
 	serverapi "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
-	"github.com/obot-platform/discobox/server/internal/harnessdefs"
 	"github.com/obot-platform/discobox/server/internal/model"
 )
 
@@ -84,25 +83,6 @@ func HarnessConfigSecretsToModel(secrets []apimodel.HarnessConfigSecret) ([]mode
 	return out, nil
 }
 
-func InlineHarnessConfigToModel(value OptInlineHarnessConfig) (*model.InlineHarnessConfig, error) {
-	config, ok := value.Get()
-	if !ok {
-		return nil, nil
-	}
-	files, _ := config.Files.Get()
-	secrets, _ := config.Secrets.Get()
-	convertedSecrets, err := HarnessConfigSecretsToModel(secrets)
-	if err != nil {
-		return nil, err
-	}
-	installCommand, _ := config.InstallCommand.Get()
-	relaunchCommand, _ := config.RelaunchCommand.Get()
-	return &model.InlineHarnessConfig{
-		InstallCommand: installCommand, RelaunchCommand: relaunchCommand,
-		RunCommand: config.RunCommand, Files: HarnessConfigFilesToModel(files), Secrets: convertedSecrets,
-	}, nil
-}
-
 func SandboxUserToModel(value OptSandboxUser) (name *string, uid *int, gid *int, homeDirectory *string) {
 	user, ok := value.Get()
 	if !ok {
@@ -145,8 +125,8 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 	if sandbox.HarnessConfigID != nil {
 		config["harnessConfigId"] = *sandbox.HarnessConfigID
 	}
-	if sandbox.InlineHarnessConfig != nil {
-		config["harnessConfig"] = sandbox.InlineHarnessConfig
+	if sandbox.HarnessMode != "" {
+		config["harnessMode"] = sandbox.HarnessMode
 	}
 	if sandbox.Model != nil {
 		config["model"] = *sandbox.Model
@@ -218,9 +198,7 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 		fields["providerInstance"] = sandbox.ProviderInstance
 	}
 	if sandbox.HarnessConfig != nil {
-		// Resolve the sparse stored config against its definition so the embedded
-		// harness config carries its effective commands (runCommand is required).
-		fields["harnessConfig"] = harnessdefs.Resolve(sandbox.HarnessConfig)
+		fields["harnessConfig"] = sandbox.HarnessConfig
 	}
 	return Convert[serverapi.Sandbox](fields)
 }

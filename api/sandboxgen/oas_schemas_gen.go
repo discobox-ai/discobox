@@ -893,8 +893,8 @@ type SandboxExec struct {
 	Primary   OptBool     `json:"primary"`
 	StartedAt OptDateTime `json:"startedAt"`
 	// Current observed exec runtime status. installing is a terminal-layer
-	// phase: the exec record exists and its harness install command is still
-	// running, before the harness process is launched (starting -> running).
+	// phase: the exec record exists and its hooks/files are still being
+	// prepared, before the harness process is launched (starting -> running).
 	Status SandboxExecStatus `json:"status"`
 	// Whether the exec process was started with a PTY.
 	Tty bool `json:"tty"`
@@ -1298,8 +1298,8 @@ func (s *SandboxExecMetadata) init() SandboxExecMetadata {
 }
 
 // Current observed exec runtime status. installing is a terminal-layer
-// phase: the exec record exists and its harness install command is still
-// running, before the harness process is launched (starting -> running).
+// phase: the exec record exists and its hooks/files are still being
+// prepared, before the harness process is launched (starting -> running).
 type SandboxExecStatus string
 
 const (

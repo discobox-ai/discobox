@@ -230,13 +230,6 @@ func newWorkerAgentClient(lease *transport.HTTPClientLease) (*workerclient.Clien
 	return workerclient.NewClient(strings.TrimRight(baseURL, "/"), workerSecuritySource{lease: lease}, workerclient.WithClient(httpClient))
 }
 
-func workerOptStringArray(values []string) workerclient.OptNilStringArray {
-	if len(values) == 0 {
-		return workerclient.OptNilStringArray{}
-	}
-	return workerclient.NewOptNilStringArray(values)
-}
-
 func workerHarnessConfigFiles(files []model.HarnessConfigFile) workerclient.OptNilHarnessConfigFileArray {
 	if len(files) == 0 {
 		return workerclient.OptNilHarnessConfigFileArray{}
@@ -274,31 +267,15 @@ func workerCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions
 	if opts.HarnessConfigID != nil {
 		config.HarnessConfigId = workerclient.NewOptString(*opts.HarnessConfigID)
 	}
+	if opts.HarnessMode != "" {
+		config.HarnessMode = workerclient.NewOptSandboxConfigHarnessMode(workerclient.SandboxConfigHarnessMode(opts.HarnessMode))
+	}
 	if opts.ResolvedHarnessConfig != nil {
 		resolved := workerapimodel.ResolvedHarnessConfig{
-			ID:              opts.ResolvedHarnessConfig.ID,
-			Name:            opts.ResolvedHarnessConfig.Name,
-			InstallCommand:  workerOptStringArray(opts.ResolvedHarnessConfig.InstallCommand),
-			RunCommand:      opts.ResolvedHarnessConfig.RunCommand,
-			RelaunchCommand: workerOptStringArray(opts.ResolvedHarnessConfig.RelaunchCommand),
-			Files:           workerHarnessConfigFiles(opts.ResolvedHarnessConfig.Files),
+			ID: opts.ResolvedHarnessConfig.ID, Name: opts.ResolvedHarnessConfig.Name,
+			Files: workerHarnessConfigFiles(opts.ResolvedHarnessConfig.Files),
 		}
 		out.ResolvedHarnessConfig = workerclient.NewOptResolvedHarnessConfig(resolved)
-	}
-	if len(opts.HarnessConfigs) > 0 {
-		configs := make([]workerapimodel.SandboxHarnessConfig, 0, len(opts.HarnessConfigs))
-		for _, config := range opts.HarnessConfigs {
-			configs = append(configs, workerapimodel.SandboxHarnessConfig{
-				ID:              config.ID,
-				Name:            config.Name,
-				InstallCommand:  workerOptStringArray(config.InstallCommand),
-				RunCommand:      config.RunCommand,
-				RelaunchCommand: workerOptStringArray(config.RelaunchCommand),
-				IsDefault:       config.IsDefault,
-				Files:           workerHarnessConfigFiles(config.Files),
-			})
-		}
-		out.HarnessConfigs = workerclient.NewOptNilSandboxHarnessConfigArray(configs)
 	}
 	if opts.Model != nil {
 		config.Model = workerclient.NewOptString(*opts.Model)

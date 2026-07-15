@@ -3,7 +3,6 @@ package claudecode
 import (
 	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
 	"fmt"
 	"os/exec"
@@ -12,17 +11,6 @@ import (
 )
 
 const ManagedSettingsPath = "/etc/claude-code/managed-settings.json"
-
-// configureScript runs as the primary terminal of the claude-code Configure
-// sandbox. See configure.sh for what it does.
-//
-//go:embed configure.sh
-var configureScript string
-
-// configureScriptPath is where configureScript is written in the configure
-// sandbox's home directory (see Definition().Configure.Files) and the path
-// its RunCommand executes.
-const configureScriptPath = ".discobox-configure.sh"
 
 var Events = []string{
 	"SessionStart", "Setup", "InstructionsLoaded", "UserPromptSubmit",
@@ -41,44 +29,8 @@ func (Driver) ID() string { return "claude-code" }
 
 func (Driver) Definition() harness.Definition {
 	return harness.Definition{
-		ID:              "claude-code",
-		Name:            "Claude Code",
-		Description:     "Anthropic Claude Code coding harness.",
-		InstallCommand:  []string{"npm", "install", "-g", "@anthropic-ai/claude-code"},
-		RunCommand:      []string{"claude"},
-		RelaunchCommand: []string{"claude", "--continue"},
-		Files: []harness.File{
-			{
-				Path:       ".claude.json",
-				CreateOnly: true,
-				Template:   true,
-				Content: `{
-  "hasCompletedOnboarding": true
-  {{- with .source }},
-  "projects": {
-    {{ .destination.directory | json }}: {
-      "hasTrustDialogAccepted": true
-    }
-  }
-  {{- end }}
-}`,
-			},
-			{Path: ".claude/settings.json", Content: `{"theme":"dark","skipDangerousModePermissionPrompt":true}`},
-		},
-		Secrets: []harness.Secret{
-			{Name: "ANTHROPIC_API_KEY", Required: true, OneOfGroup: "auth"},
-			{Name: "CLAUDE_CODE_OAUTH_TOKEN", Required: true, OneOfGroup: "auth"},
-		},
-		Configure: &harness.Configure{
-			InstallCommand: []string{"npm", "install", "-g", "@anthropic-ai/claude-code"},
-			// Harness files are installed relative to the resolved run user's home,
-			// while the terminal workdir is the sandbox workspace. Resolve the script
-			// through HOME instead of assuming those directories are the same.
-			RunCommand: []string{"sh", "-c", fmt.Sprintf(`exec sh "$HOME/%s"`, configureScriptPath)},
-			Files: []harness.File{
-				{Path: configureScriptPath, Content: configureScript},
-			},
-		},
+		ID: "claude-code", Name: "Claude Code", Description: "Anthropic Claude Code coding harness.",
+		Image: "discobox-harness-claude-code:local", Configure: &harness.Configure{},
 	}
 }
 

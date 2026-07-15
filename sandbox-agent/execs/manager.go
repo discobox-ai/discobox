@@ -445,7 +445,7 @@ var ErrNotFound = errors.New("sandbox exec not found")
 
 // WaitForExit polls an exec until it reaches a terminal status (exited or
 // failed) or the timeout elapses. It is used to run ephemeral execs, such as
-// harness install commands, to completion.
+// terminal setup operations, to completion.
 func (m *Manager) WaitForExit(ctx context.Context, id string, timeout, poll time.Duration) (Exec, error) {
 	if poll <= 0 {
 		poll = 100 * time.Millisecond

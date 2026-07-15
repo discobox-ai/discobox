@@ -24,7 +24,7 @@ import (
 
 func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {
 	ctx := context.Background()
-	svc, executor := newSandboxTestService(t, nil)
+	svc, executor, _ := newSandboxTestService(t, nil)
 
 	sandbox, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
 	if err != nil {
@@ -52,7 +52,7 @@ func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {
 
 func TestSandboxIntentCreatesGenerationScopedJobs(t *testing.T) {
 	ctx := context.Background()
-	svc, _ := newSandboxTestService(t, nil)
+	svc, _, _ := newSandboxTestService(t, nil)
 
 	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
 	if err != nil {
@@ -69,7 +69,7 @@ func TestSandboxIntentCreatesGenerationScopedJobs(t *testing.T) {
 
 func TestReconcileSandboxDoesNotChangeIntent(t *testing.T) {
 	ctx := context.Background()
-	svc, _ := newSandboxTestService(t, nil)
+	svc, _, _ := newSandboxTestService(t, nil)
 
 	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
 	if err != nil {
@@ -89,7 +89,7 @@ func TestReconcileSandboxDoesNotChangeIntent(t *testing.T) {
 
 func TestCreateSandboxDefaultsGitSourceSlugs(t *testing.T) {
 	ctx := context.Background()
-	svc, _ := newSandboxTestService(t, nil)
+	svc, _, _ := newSandboxTestService(t, nil)
 
 	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
 		Config: serverapi.SandboxCreateConfig{
@@ -134,7 +134,7 @@ func TestCreateSandboxDefaultsGitSourceSlugs(t *testing.T) {
 
 func TestCreateSandboxDerivesSourceRootFromPrimarySource(t *testing.T) {
 	ctx := context.Background()
-	svc, _ := newSandboxTestService(t, nil)
+	svc, _, _ := newSandboxTestService(t, nil)
 
 	remoteURL, err := url.Parse("https://github.com/obot-platform/discobox.git")
 	if err != nil {
@@ -193,14 +193,22 @@ func TestCreateSandboxDerivesSourceRootFromPrimarySource(t *testing.T) {
 
 func TestCreateSandboxPinsDefaultHarnessConfig(t *testing.T) {
 	ctx := context.Background()
-	svc, _ := newSandboxTestService(t, nil)
+	svc, _, st := newSandboxTestService(t, nil)
 
-	harness, err := svc.CreateHarnessConfig(ctx, service.DefaultProjectID, services.CreateHarnessConfigBody{
-		Name:       serverapi.NewOptString("Codex"),
-		RunCommand: serverapi.NewOptNilStringArray([]string{"codex", "exec"}),
-	})
-	if err != nil {
+	harness := &model.HarnessConfig{
+		ProjectID: service.DefaultProjectID,
+		Slug:      "opencode",
+		Name:      "OpenCode",
+		Image:     "discobox-harness-opencode:local",
+		RunCommand: []string{
+			"opencode",
+		},
+	}
+	if err := st.CreateHarnessConfig(ctx, harness); err != nil {
 		t.Fatalf("create harness config: %v", err)
+	}
+	if _, err := svc.SetDefaultHarnessConfig(ctx, service.DefaultProjectID, harness.ID); err != nil {
+		t.Fatalf("set default harness config: %v", err)
 	}
 	project, err := svc.GetProject(ctx, service.DefaultProjectID)
 	if err != nil {
@@ -360,7 +368,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	}
 }
 
-func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sandboxes.SandboxReconciler) {
+func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sandboxes.SandboxReconciler, *store.Store) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -400,7 +408,7 @@ func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sand
 			t.Fatalf("stop reconcile engine: %v", err)
 		}
 	})
-	return svc, svc.NewSandboxReconciler()
+	return svc, svc.NewSandboxReconciler(), appStore
 }
 
 func installDefaultSandboxProviderInstance(ctx context.Context, t *testing.T, appStore *store.Store, providerID, providerType string) {

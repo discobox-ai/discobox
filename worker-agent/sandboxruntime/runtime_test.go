@@ -280,7 +280,7 @@ func TestCompactLogTailTrimsBlankLinesAndJoins(t *testing.T) {
 	}
 }
 
-func TestBuildSandboxManifestIncludesProjectHarnessConfigs(t *testing.T) {
+func TestBuildSandboxManifestIncludesSelectedHarnessIdentityAndFiles(t *testing.T) {
 	req := &workerapimodel.WorkerSandboxCreateRequest{
 		Config: workerapimodel.SandboxConfig{
 			Env: workerclient.NewOptSandboxConfigEnv(workerclient.SandboxConfigEnv{
@@ -289,24 +289,10 @@ func TestBuildSandboxManifestIncludesProjectHarnessConfigs(t *testing.T) {
 			}),
 		},
 		ResolvedHarnessConfig: workerclient.NewOptResolvedHarnessConfig(workerapimodel.ResolvedHarnessConfig{
-			ID:             "claude",
-			Name:           "Claude",
-			InstallCommand: workerclient.NewOptNilStringArray([]string{"npm", "install", "-g", "@anthropic-ai/claude-code"}),
-			RunCommand:     []string{"claude"},
-		}),
-		HarnessConfigs: workerclient.NewOptNilSandboxHarnessConfigArray([]workerapimodel.SandboxHarnessConfig{
-			{
-				ID:             "codex",
-				Name:           "Codex",
-				InstallCommand: workerclient.NewOptNilStringArray([]string{"npm", "install", "-g", "@openai/codex"}),
-				RunCommand:     []string{"codex"},
-				IsDefault:      true,
-			},
-			{
-				ID:         "claude",
-				Name:       "Claude",
-				RunCommand: []string{"claude"},
-			},
+			ID: "claude", Name: "Claude",
+			Files: workerclient.NewOptNilHarnessConfigFileArray([]workerapimodel.HarnessConfigFile{
+				{Path: ".claude.json", Content: `{}`},
+			}),
 		}),
 	}
 
@@ -328,14 +314,8 @@ func TestBuildSandboxManifestIncludesProjectHarnessConfigs(t *testing.T) {
 	if !ok || env["BASE"] != "sandbox" || env["OVERRIDE"] != "sandbox" {
 		t.Fatalf("env = %#v, want sandbox env in manifest config", env)
 	}
-	if manifest.ResolvedHarnessConfig == nil || manifest.ResolvedHarnessConfig.ID != "claude" || len(manifest.ResolvedHarnessConfig.RunCommand) != 1 || manifest.ResolvedHarnessConfig.RunCommand[0] != "claude" {
+	if manifest.ResolvedHarnessConfig == nil || manifest.ResolvedHarnessConfig.ID != "claude" || len(manifest.ResolvedHarnessConfig.Files) != 1 {
 		t.Fatalf("resolved agent config = %#v, want claude", manifest.ResolvedHarnessConfig)
-	}
-	if len(manifest.HarnessConfigs) != 2 {
-		t.Fatalf("agent configs = %#v, want 2", manifest.HarnessConfigs)
-	}
-	if !manifest.HarnessConfigs[0].IsDefault || len(manifest.HarnessConfigs[0].InstallCommand) == 0 || len(manifest.HarnessConfigs[0].RunCommand) != 1 || manifest.HarnessConfigs[0].RunCommand[0] != "codex" {
-		t.Fatalf("default agent config = %#v, want default with install and run command", manifest.HarnessConfigs[0])
 	}
 }
 

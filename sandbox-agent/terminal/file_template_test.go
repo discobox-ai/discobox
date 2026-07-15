@@ -7,9 +7,21 @@ import (
 	"path/filepath"
 	"testing"
 
-	claudecode "github.com/obot-platform/discobox/harness/claude-code"
 	"github.com/obot-platform/discobox/sandbox-agent/config"
 )
+
+func claudeImageHarness(t *testing.T) config.Harness {
+	t.Helper()
+	image, err := config.LoadImage(filepath.Join("..", "image", "harnesses", "claude-code", "image.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	harness, ok, err := image.HarnessForMode("run")
+	if err != nil || !ok {
+		t.Fatalf("load Claude image harness: ok=%v err=%v", ok, err)
+	}
+	return harness
+}
 
 func TestFileInstallerRendersSandboxConfigTemplate(t *testing.T) {
 	home := t.TempDir()
@@ -21,15 +33,7 @@ func TestFileInstallerRendersSandboxConfigTemplate(t *testing.T) {
 			},
 		},
 	}
-	harness := config.Harness{ID: "claude-code"}
-	for _, file := range (claudecode.Driver{}).Definition().Files {
-		harness.Files = append(harness.Files, config.HarnessFile{
-			Path:       file.Path,
-			Content:    file.Content,
-			CreateOnly: file.CreateOnly,
-			Template:   file.Template,
-		})
-	}
+	harness := claudeImageHarness(t)
 
 	if err := installer.EnsureInstalled(context.Background(), harness, "", nil); err != nil {
 		t.Fatalf("install files: %v", err)
@@ -71,7 +75,7 @@ func TestFileInstallerDoesNotRenderLiteralFile(t *testing.T) {
 }
 
 func TestClaudeTemplateSupportsSandboxWithoutPrimarySource(t *testing.T) {
-	for _, file := range (claudecode.Driver{}).Definition().Files {
+	for _, file := range claudeImageHarness(t).Files {
 		if file.Path != ".claude.json" {
 			continue
 		}

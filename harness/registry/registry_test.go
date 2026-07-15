@@ -21,25 +21,15 @@ func TestDefinitionsCoverKnownHarnesses(t *testing.T) {
 	}
 	byID := map[string]harness.Definition{}
 	for _, definition := range definitions {
-		if definition.ID == "" || definition.Name == "" || len(definition.RunCommand) == 0 {
-			t.Fatalf("definition %#v must set id, name, and run command", definition)
+		if definition.ID == "" || definition.Name == "" || definition.Image == "" || definition.Configure == nil {
+			t.Fatalf("definition %#v must identify a configurable image", definition)
 		}
 		byID[definition.ID] = definition
 	}
-	for _, want := range []struct {
-		id       string
-		relaunch []string
-	}{
-		{id: "claude-code", relaunch: []string{"claude", "--continue"}},
-		{id: "codex", relaunch: []string{"codex", "resume", "--last"}},
-		{id: "opencode", relaunch: []string{"opencode", "--continue"}},
-	} {
-		got, ok := byID[want.id]
+	for _, id := range []string{"claude-code", "codex", "opencode"} {
+		_, ok := byID[id]
 		if !ok {
-			t.Fatalf("missing definition %q", want.id)
-		}
-		if !reflect.DeepEqual(got.RelaunchCommand, want.relaunch) {
-			t.Fatalf("%s relaunch = %#v, want %#v", want.id, got.RelaunchCommand, want.relaunch)
+			t.Fatalf("missing definition %q", id)
 		}
 	}
 }
@@ -147,16 +137,14 @@ func TestInstallerPreservesExistingConfigAndIsIdempotent(t *testing.T) {
 	}
 }
 
-func TestDriverForHarnessSelectsByRunBinary(t *testing.T) {
+func TestDriverForHarnessSelectsByImageType(t *testing.T) {
 	cases := []struct {
 		harness harness.Harness
 		want    string
 	}{
-		{harness: harness.Harness{Command: []string{"claude", "--dangerously-skip-permissions"}}, want: claudecode.Driver{}.ID()},
-		{harness: harness.Harness{Command: []string{"codex"}}, want: codexcli.Driver{}.ID()},
-		{harness: harness.Harness{Command: []string{"opencode"}}, want: opencode.Driver{}.ID()},
-		// A custom config ID does not affect selection; the run binary does.
-		{harness: harness.Harness{ID: "my-custom-harness", Command: []string{"/usr/local/bin/Claude"}}, want: claudecode.Driver{}.ID()},
+		{harness: harness.Harness{TypeID: "claude-code"}, want: claudecode.Driver{}.ID()},
+		{harness: harness.Harness{TypeID: "codex"}, want: codexcli.Driver{}.ID()},
+		{harness: harness.Harness{TypeID: "opencode"}, want: opencode.Driver{}.ID()},
 	}
 	for _, tc := range cases {
 		got := DriverForHarness(tc.harness)
@@ -166,10 +154,10 @@ func TestDriverForHarnessSelectsByRunBinary(t *testing.T) {
 	}
 }
 
-func TestDriverForHarnessFallsBackForUnknownBinary(t *testing.T) {
+func TestDriverForHarnessFallsBackForUnknownType(t *testing.T) {
 	for _, harness := range []harness.Harness{
 		{},
-		{Command: []string{"sh", "-c", "claude"}},
+		{TypeID: "unknown"},
 		{ID: "claude-code"},
 	} {
 		if got := DriverForHarness(harness); len(got) != len(DefaultDrivers()) {

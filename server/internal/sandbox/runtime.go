@@ -99,6 +99,7 @@ type CreateOptions struct {
 	Name                  string
 	Description           *string
 	HarnessConfigID       *string
+	HarnessMode           string
 	Model                 *string
 	ModelServiceTier      *string
 	ModelReasoningLevel   *string
@@ -110,7 +111,6 @@ type CreateOptions struct {
 	UserGID               *int
 	HomeDirectory         *string
 	ResolvedHarnessConfig *ResolvedHarnessConfig
-	HarnessConfigs        []HarnessConfig
 	AgentServerURL        string
 	OAuthRedirectBase     string
 	Resources             ResourceConfig
@@ -133,24 +133,9 @@ type UpdateOptions struct {
 // ResolvedHarnessConfig is the sandbox-local harness configuration captured
 // at sandbox create time.
 type ResolvedHarnessConfig struct {
-	ID              string
-	Name            string
-	InstallCommand  []string
-	RunCommand      []string
-	RelaunchCommand []string
-	Files           []model.HarnessConfigFile
-}
-
-// HarnessConfig is a project-scoped harness configuration made available to
-// the sandbox runtime.
-type HarnessConfig struct {
-	ID              string
-	Name            string
-	InstallCommand  []string
-	RunCommand      []string
-	RelaunchCommand []string
-	IsDefault       bool
-	Files           []model.HarnessConfigFile
+	ID    string
+	Name  string
+	Files []model.HarnessConfigFile
 }
 
 // WorkerProviderReconciler reconciles worker-provider state for a provider

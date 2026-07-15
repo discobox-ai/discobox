@@ -269,13 +269,14 @@ type HarnessConfig struct {
 	ID              string                `gorm:"primaryKey;type:text" json:"id" doc:"Stable harness config ID"`
 	ProjectID       string                `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_harness_config_project_name,priority:1" json:"projectId" doc:"Project ID"`
 	Slug            string                `gorm:"column:slug;not null;type:text;default:'';index" json:"slug" doc:"Stable, URL-safe identifier used to select the harness config (e.g. codex). Unique within the project." pattern:"^[a-z0-9][a-z0-9-]*$"`
-	DefinitionID    string                `gorm:"column:definition_id;type:text;default:''" json:"definitionId,omitempty" doc:"Built-in harness definition this config extends. Unset fields are inherited from the definition at runtime, so definition upgrades propagate unless overridden. Empty for fully custom configs."`
+	DefinitionID    string                `gorm:"column:definition_id;type:text;default:''" json:"definitionId,omitempty" doc:"Built-in harness definition used to select this image. Empty for custom images."`
 	Name            string                `gorm:"column:name;not null;type:text;uniqueIndex:idx_harness_config_project_name,priority:2" json:"name" doc:"Harness config name" maxLength:"200"`
-	InstallCommand  []string              `gorm:"column:install_command;type:text;serializer:json" json:"installCommand,omitempty" doc:"Override for the argv used to install the harness. Unset inherits from the definition. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	RunCommand      []string              `gorm:"column:run_command;type:text;serializer:json" json:"runCommand,omitempty" doc:"Override for the argv used to run the harness. Unset inherits from the definition. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	RelaunchCommand []string              `gorm:"column:relaunch_command;type:text;serializer:json" json:"relaunchCommand,omitempty" doc:"Override for the argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. Unset inherits from the definition. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	Files           []HarnessConfigFile   `gorm:"column:files;type:text;serializer:json" json:"files,omitempty" doc:"Override for files to write into the harness's home directory when the harness is installed. Unset inherits from the definition."`
-	Secrets         []HarnessConfigSecret `gorm:"column:secrets;type:text;serializer:json" json:"secrets,omitempty" doc:"Override for the environment-variable secrets the harness expects. Unset inherits from the definition."`
+	Image           string                `gorm:"column:image;not null;type:text;default:''" json:"image" doc:"Harness-specific sandbox image"`
+	ImageDigest     string                `gorm:"column:image_digest;not null;type:text;default:''" json:"imageDigest,omitempty" doc:"Content digest observed when the harness image was registered"`
+	RunCommand      []string              `gorm:"column:run_command;type:text;serializer:json" json:"runCommand,omitempty" doc:"Run argv snapshotted from the registered image label."`
+	RelaunchCommand []string              `gorm:"column:relaunch_command;type:text;serializer:json" json:"relaunchCommand,omitempty" doc:"Relaunch argv snapshotted from the registered image label."`
+	Files           []HarnessConfigFile   `gorm:"column:files;type:text;serializer:json" json:"files,omitempty" doc:"Non-secret files snapshotted from the image label plus configured file values."`
+	Secrets         []HarnessConfigSecret `gorm:"column:secrets;type:text;serializer:json" json:"secrets,omitempty" doc:"Environment-variable secret declarations snapshotted from the image label."`
 	CreatedAt       time.Time             `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt       time.Time             `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
@@ -308,15 +309,11 @@ func (a *HarnessConfig) BeforeCreate(_ *gorm.DB) error {
 // selected by sandboxes directly. They provide client-visible defaults for
 // creating real HarnessConfig records.
 type HarnessDefinition struct {
-	ID              string                `json:"id" doc:"Stable definition ID"`
-	Name            string                `json:"name" doc:"Harness config definition name" maxLength:"200"`
-	Description     string                `json:"description,omitempty" doc:"Harness config definition description"`
-	InstallCommand  []string              `json:"installCommand,omitempty" doc:"Argv used to install the harness. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	RunCommand      []string              `json:"runCommand" doc:"Argv used to run the harness. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	RelaunchCommand []string              `json:"relaunchCommand,omitempty" doc:"Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	Files           []HarnessConfigFile   `json:"files,omitempty" doc:"Files to write into the harness's home directory when the harness is installed"`
-	Secrets         []HarnessConfigSecret `json:"secrets,omitempty" doc:"Environment-variable secrets the harness expects"`
-	Configure       *ConfigureSandbox     `json:"configure,omitempty" doc:"Ephemeral sandbox definition run interactively to collect configuration (e.g. authentication) before a HarnessConfig is created from this definition. Its primary terminal must exit 0; the sandbox is then expected to have written /run/discobox/harness-configure.json with secrets and files to apply to the new HarnessConfig."`
+	ID          string            `json:"id" doc:"Stable definition ID"`
+	Name        string            `json:"name" doc:"Harness config definition name" maxLength:"200"`
+	Description string            `json:"description,omitempty" doc:"Harness config definition description"`
+	Image       string            `json:"image" doc:"Harness-specific sandbox image"`
+	Configure   *ConfigureSandbox `json:"configure,omitempty" doc:"Ephemeral sandbox resources used with the image-owned config command."`
 }
 
 // HarnessConfigSecretBinding binds one of a harness config's environment variables
@@ -370,27 +367,14 @@ type HarnessConfigSecret struct {
 	OneOfGroup string `json:"oneOfGroup,omitempty" doc:"Groups a required secret with alternatives; the requirement is satisfied when at least one member of the group is present"`
 }
 
-// InlineHarnessConfig is an ad hoc harness process spec provided directly on a
-// sandbox create request instead of by HarnessConfig reference. When set on a
-// Sandbox it takes precedence over any HarnessConfigID reference when resolving
-// the sandbox's primary terminal.
-type InlineHarnessConfig struct {
-	InstallCommand  []string              `json:"installCommand,omitempty" doc:"Argv used to install the harness. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	RunCommand      []string              `json:"runCommand" doc:"Argv used to run the harness. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	RelaunchCommand []string              `json:"relaunchCommand,omitempty" doc:"Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand for non-first launches. Not run through a shell; use [\"sh\", \"-c\", \"...\"] for shell semantics."`
-	Files           []HarnessConfigFile   `json:"files,omitempty" doc:"Files to write into the harness's home directory when the harness is installed"`
-	Secrets         []HarnessConfigSecret `json:"secrets,omitempty" doc:"Environment-variable secrets the harness expects"`
-}
-
 // ConfigureSandbox is an ephemeral sandbox definition run interactively
 // before a HarnessConfig is created from the owning HarnessDefinition.
 type ConfigureSandbox struct {
-	Image         string              `json:"image,omitempty" doc:"Sandbox base image. Defaults to the server configured sandbox image when omitted."`
-	Env           map[string]string   `json:"env,omitempty" doc:"Environment variables available to the configure sandbox"`
-	CPUVCPUs      float64             `json:"cpuVcpus,omitempty" doc:"Requested CPU capacity in vCPUs"`
-	MemoryBytes   int64               `json:"memoryBytes,omitempty" doc:"Requested memory capacity in bytes"`
-	StorageBytes  int64               `json:"storageBytes,omitempty" doc:"Requested storage capacity in bytes"`
-	HarnessConfig InlineHarnessConfig `json:"harnessConfig" doc:"Harness process the configure sandbox runs as its primary terminal"`
+	Image        string            `json:"image,omitempty" doc:"Sandbox base image. Defaults to the server configured sandbox image when omitted."`
+	Env          map[string]string `json:"env,omitempty" doc:"Environment variables available to the configure sandbox"`
+	CPUVCPUs     float64           `json:"cpuVcpus,omitempty" doc:"Requested CPU capacity in vCPUs"`
+	MemoryBytes  int64             `json:"memoryBytes,omitempty" doc:"Requested memory capacity in bytes"`
+	StorageBytes int64             `json:"storageBytes,omitempty" doc:"Requested storage capacity in bytes"`
 }
 
 // GitSource describes a Git source to materialize into a sandbox.
@@ -449,14 +433,14 @@ type SourceCodeReferences map[string]GitSource
 
 // Sandbox is the managed runtime/session unit.
 type Sandbox struct {
-	ID                   string               `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
-	ProjectID            string               `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	CreatedByUserID      string               `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
-	ProviderInstanceID   *string              `gorm:"column:provider_instance_id;type:text;index" json:"providerInstanceId,omitempty" doc:"Sandbox provider instance ID"`
-	HarnessConfigID      *string              `gorm:"column:harness_config_id;type:text;index" json:"harnessConfigId,omitempty" doc:"Harness config ID"`
-	InlineHarnessConfig  *InlineHarnessConfig `gorm:"column:inline_harness_config;type:text;serializer:json" json:"inlineHarnessConfig,omitempty" doc:"Ad hoc harness config running in this sandbox, provided inline instead of by reference. Takes precedence over HarnessConfigID when both are set."`
-	Name                 string               `gorm:"not null;type:text" json:"name" doc:"Sandbox name" maxLength:"200"`
-	Description          *string              `gorm:"type:text" json:"description,omitempty" doc:"Sandbox description"`
+	ID                   string  `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
+	ProjectID            string  `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	CreatedByUserID      string  `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
+	ProviderInstanceID   *string `gorm:"column:provider_instance_id;type:text;index" json:"providerInstanceId,omitempty" doc:"Sandbox provider instance ID"`
+	HarnessConfigID      *string `gorm:"column:harness_config_id;type:text;index" json:"harnessConfigId,omitempty" doc:"Harness config ID"`
+	HarnessMode          string  `gorm:"column:harness_mode;not null;type:text;default:'run'" json:"harnessMode,omitempty" doc:"Harness startup mode: run or config"`
+	Name                 string  `gorm:"not null;type:text" json:"name" doc:"Sandbox name" maxLength:"200"`
+	Description          *string `gorm:"type:text" json:"description,omitempty" doc:"Sandbox description"`
 	ResourceLifecycle    `gorm:"embedded"`
 	RestartGeneration    int64                `gorm:"column:restart_generation;not null;default:0" json:"restartGeneration" doc:"Requested restart generation"`
 	RestartedGeneration  int64                `gorm:"column:restarted_generation;not null;default:0" json:"restartedGeneration" doc:"Last restart generation completed by reconciliation"`

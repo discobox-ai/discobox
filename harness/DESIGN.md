@@ -1,28 +1,42 @@
 # Harness Design
 
-This package owns harness hook registration for sandbox terminals.
+This package owns the shared harness image contract and hook registration for
+sandbox terminals.
+
+## Image Contract
+
+- One sandbox image contains at most one harness. Its immutable identity,
+  run/relaunch commands, seed files, secret declarations, and optional config
+  command live in `/usr/share/discobox/image.json`.
+- The same non-secret harness object is published in the
+  `io.discobox.harness.v1` OCI image label for server-side registration.
+- Harness CLIs are installed at image build time. Runtime commands are never
+  supplied by the server or worker-agent.
+- `harnessMode: config` selects the image-owned interactive config command;
+  normal or omitted mode selects the image-owned run/relaunch commands.
 
 ## Driver Model
 
 - `harness.Driver` wires one harness provider's hook integration via
-  `InstallHooks` (writes managed hook config) and describes that harness's built-in
-  config via `Definition()` (install/run/relaunch argv and seed files). All
-  harness-specific defaults live with the driver, never in the control plane.
-- A `Definition` may set `Configure` to describe an ephemeral sandbox the CLI
-  runs interactively before creating a `HarnessConfig`. The configure process
+  `InstallHooks` and identifies its included image through `Definition()`. The
+  public definition catalog is an image shortcut; runtime metadata comes from
+  the registered image label and the copy inside that image.
+- A `Definition` sets `Configure` to enable an ephemeral sandbox the CLI
+  runs interactively after registering a `HarnessConfig`. The configure process
   writes files and collected secret values to
   `/run/discobox/harness-configure.json`; definitions without interactive setup
   leave it nil. Configure files use the same home-relative contract as all
   harness files; configure commands run from the sandbox workdir and must use
-  `$HOME` when invoking one of those files.
-- `InstallHooks` (hook wiring) is unrelated to `Definition.InstallCommand`, which
-  is the argv that installs the harness CLI itself.
+  `$HOME` when invoking one of those files. All three included harnesses support
+  config mode: Codex collects an OpenAI API key, OpenCode collects one or both
+  provider API keys, and Claude Code converts interactive credentials into
+  encrypted secret values.
 - Provider-specific implementations live in one folder per harness:
   - `claude-code`
   - `codex-cli`
   - `opencode`
-- `registry` selects the driver from the terminal's configured harness ID or
-  command, can install all drivers for image/bootstrap workflows, and exposes
+- `registry` selects the driver from the image harness type ID, can install all
+  drivers for hook/bootstrap workflows, and exposes
   `Definitions()` for the control plane to surface built-in harness configs.
 
 ## Managed Layers
@@ -40,9 +54,14 @@ subject to repo trust prompts or user/project override:
 Drivers must be idempotent and preserve unrelated settings where the harness uses
 a single shared JSON object.
 
-## Claude Code configure flow
+## Configure flows
 
 `claude-code/configure.sh` runs Claude Code's interactive onboarding, captures
-its settings and credentials, and writes the configure result contract. The
-CLI owns the ephemeral sandbox lifecycle and applies the returned files and
-secret bindings only after the configure terminal exits successfully.
+its non-secret settings, converts credentials into secret values, and writes the
+configure result contract. Credential files never become public harness files.
+The CLI applies returned files and encrypted secret bindings only after the
+configure terminal exits successfully.
+
+`codex-cli/configure.sh` and `opencode/configure.sh` collect API keys without
+echoing them and return the same secret result contract. No configure flow
+stores credentials in a public harness file.

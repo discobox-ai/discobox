@@ -1,6 +1,7 @@
 package claudecode
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -10,19 +11,11 @@ func TestDefinitionConfigure(t *testing.T) {
 	if def.Configure == nil {
 		t.Fatal("Configure = nil, want a configure spec")
 	}
-	configure := def.Configure
-
-	if len(configure.RunCommand) != 3 || configure.RunCommand[0] != "sh" || configure.RunCommand[1] != "-c" || !strings.Contains(configure.RunCommand[2], `$HOME/.discobox-configure.sh`) {
-		t.Fatalf("Configure.RunCommand = %#v, want home-relative configure script", configure.RunCommand)
+	scriptBytes, err := os.ReadFile("configure.sh")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if len(configure.InstallCommand) == 0 {
-		t.Fatal("Configure.InstallCommand is empty, want the claude-code npm install command")
-	}
-
-	if len(configure.Files) != 1 || configure.Files[0].Path != configureScriptPath {
-		t.Fatalf("Configure.Files = %#v, want one file at %s", configure.Files, configureScriptPath)
-	}
-	script := configure.Files[0].Content
+	script := string(scriptBytes)
 	if !strings.Contains(script, "claude ||") {
 		t.Fatalf("configure script does not run claude interactively: %s", script)
 	}
@@ -31,6 +24,12 @@ func TestDefinitionConfigure(t *testing.T) {
 	}
 	if !strings.Contains(script, ".claude/.credentials.json") {
 		t.Fatalf("configure script does not capture claude credentials: %s", script)
+	}
+	if strings.Contains(script, "files.push({ path: '.claude/.credentials.json'") {
+		t.Fatalf("configure script exposes credentials as a public harness file: %s", script)
+	}
+	if !strings.Contains(script, "CLAUDE_CODE_OAUTH_TOKEN") || !strings.Contains(script, "oauth.accessToken") {
+		t.Fatalf("configure script does not convert Claude credentials into an OAuth secret: %s", script)
 	}
 	if !strings.Contains(script, "ANTHROPIC_API_KEY") {
 		t.Fatalf("configure script does not fall back to an API key secret: %s", script)

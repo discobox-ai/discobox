@@ -51,6 +51,28 @@ tasks:
     cmds:
       - docker build -f sandbox-agent/Dockerfile -t discobox-sandbox-agent:local .
 
+  build:harness-images:
+    desc: Build one local sandbox image for each included harness
+    cmds:
+      - task: build:harness-image
+        vars: { HARNESS: codex }
+      - task: build:harness-image
+        vars: { HARNESS: claude-code }
+      - task: build:harness-image
+        vars: { HARNESS: opencode }
+
+  build:harness-image:
+    desc: Build one harness-specific sandbox image (HARNESS=codex|claude-code|opencode)
+    requires:
+      vars: [HARNESS]
+    vars:
+      IMAGE_CONFIG: sandbox-agent/image/harnesses/{{.HARNESS}}/image.json
+    cmds:
+      - >-
+        docker build -f sandbox-agent/Dockerfile --target {{.HARNESS}}
+        --build-arg HARNESS_METADATA="$(jq -c .harness {{.IMAGE_CONFIG}})"
+        -t discobox-harness-{{.HARNESS}}:local .
+
   compile:
     desc: Alias for build
     cmds:
@@ -94,7 +116,7 @@ tasks:
       - go tool air -c .air.cli.toml
 
   dev:docker-image-watch:
-    desc: Rebuild Docker development images when their Docker inputs change
+    desc: Build and continuously rebuild worker, sandbox, and harness development images
     cmds:
       - go run ./cmd/discobox-docker-image-watch
 

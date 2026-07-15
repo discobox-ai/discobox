@@ -18,15 +18,12 @@ import (
 	"strings"
 	"sync"
 	"text/template"
-	"time"
 
 	"github.com/obot-platform/discobox/harness"
 	"github.com/obot-platform/discobox/harness/registry"
 	"github.com/obot-platform/discobox/sandbox-agent/config"
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
 )
-
-const installStatusTimeout = 5 * time.Minute
 
 // ErrNotFound is returned when a terminal (exec) is not found. It aliases the
 // exec primitive's error so callers can match either.
@@ -79,12 +76,12 @@ type ServiceConfig struct {
 	Units                 execs.UnitManager
 	Installer             Installer
 	PrimaryState          PrimaryStateStore
+	HarnessMode           string
 }
 
 // Service is the harness-terminal layer over execs.Manager.
 type Service struct {
 	execs          *execs.Manager
-	installs       *execs.Manager
 	harnesses      map[string]config.Harness
 	resolvedID     string
 	defaultID      string
@@ -95,8 +92,9 @@ type Service struct {
 	hookSocketPath string
 	installer      Installer
 	primaryState   PrimaryStateStore
+	harnessMode    string
 
-	// installing tracks exec IDs whose harness install command is still running.
+	// installing tracks exec IDs whose hook and file setup is still running.
 	// The record exists (execs status "starting") before its process launches, so
 	// the mapper projects these as the "installing" phase to callers. Terminal is
 	// an exec plus this layer, so install belongs here rather than in execs.
@@ -111,12 +109,8 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	if cfg.Execs == nil {
 		return nil, errors.New("shared exec manager is required")
 	}
-	runtimeDir := strings.TrimSpace(cfg.RuntimeDir)
-	if runtimeDir == "" {
-		runtimeDir = "/run/discobox/execs"
-	}
 	imageConfig := cfg.ImageConfig
-	if len(imageConfig.Env) == 0 {
+	if imageConfig.APIVersion == "" && len(imageConfig.Env) == 0 && imageConfig.Harness == nil {
 		var err error
 		if imageConfig, err = config.LoadImage(cfg.ImageConfigPath); err != nil {
 			return nil, err
@@ -124,23 +118,8 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	}
 	defaultUser := terminalDefaultUser(cfg)
 
-	terminals := cfg.Execs
-	installs, err := execs.NewManagerWithConfig(execs.ManagerConfig{
-		WorkingRoot:    cfg.WorkingRoot,
-		DefaultWorkdir: cfg.ExecDefaults.Workdir,
-		DefaultUser:    defaultUser,
-		RuntimeDir:     filepath.Join(runtimeDir, "installs"),
-		Env:            cfg.Env,
-		ImageConfig:    imageConfig,
-		Units:          cfg.Units,
-	})
-	if err != nil {
-		return nil, err
-	}
-
 	s := &Service{
-		execs:        terminals,
-		installs:     installs,
+		execs:        cfg.Execs,
 		harnesses:    map[string]config.Harness{},
 		workingRoot:  filepath.Clean(cfg.WorkingRoot),
 		env:          cloneMap(cfg.Env),
@@ -148,11 +127,11 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		defaultUser:  defaultUser,
 		installer:    cfg.Installer,
 		primaryState: cfg.PrimaryState,
+		harnessMode:  strings.TrimSpace(cfg.HarnessMode),
 		installing:   map[string]struct{}{},
 	}
 	if s.installer == nil {
 		s.installer = CompositeInstaller{Installers: []Installer{
-			CommandInstaller{Execs: installs, User: defaultUser},
 			HookInstaller{},
 			FileInstaller{
 				Name:          cfg.ExecDefaults.Username,
@@ -162,6 +141,26 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 				SandboxConfig: cfg.SandboxConfig,
 			},
 		}}
+	}
+	if imageHarness, ok, err := imageConfig.HarnessForMode(s.harnessMode); err != nil {
+		return nil, err
+	} else if ok {
+		// An image contains exactly one harness. Commands are image-authoritative;
+		// the selected project config contributes only its stable identity and any
+		// non-secret files produced by config mode.
+		if cfg.ResolvedHarnessConfig != nil {
+			if id := strings.TrimSpace(cfg.ResolvedHarnessConfig.ID); id != "" {
+				imageHarness.ID = id
+			}
+			if name := strings.TrimSpace(cfg.ResolvedHarnessConfig.Name); name != "" {
+				imageHarness.Name = name
+			}
+			if cfg.ResolvedHarnessConfig.Files != nil {
+				imageHarness.Files = mergeHarnessFiles(imageHarness.Files, cfg.ResolvedHarnessConfig.Files)
+			}
+		}
+		cfg.Harnesses = []config.Harness{imageHarness}
+		cfg.ResolvedHarnessConfig = &imageHarness
 	}
 	for _, harness := range cfg.Harnesses {
 		if strings.TrimSpace(harness.ID) == "" {
@@ -203,8 +202,8 @@ func (s *Service) Logs(ctx context.Context, id string) ([]execs.LogEntry, error)
 
 // Create resolves the harness, creates a terminal-mode exec (an always-TTY exec
 // running the resolved harness command, tagged harnessId and optionally primary in
-// metadata), then runs the harness's install command. The exec record is created
-// before install so the install is observable: while EnsureInstalled runs, the
+// metadata), then prepares its hooks and files. The exec record is created
+// before setup so the work is observable: while EnsureInstalled runs, the
 // record exists and the mapper projects it as the "installing" phase. The unit
 // is only launched later by Start, so the record sits idle during install.
 func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, error) {
@@ -255,8 +254,8 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 		return execs.Exec{}, err
 	}
 	// Mark installing so the record surfaces as the "installing" phase while the
-	// (potentially slow) install command runs. On failure the record is removed so
-	// no half-installed terminal lingers, matching the pre-record behavior.
+	// hook/file setup runs. On failure the record is removed so no partially
+	// prepared terminal lingers.
 	s.markInstalling(created.ID)
 	defer s.unmarkInstalling(created.ID)
 	if err := s.installer.EnsureInstalled(ctx, harness, workdir, env); err != nil {
@@ -266,7 +265,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	return created, nil
 }
 
-// markInstalling records that an exec's harness install command is running.
+// markInstalling records that an exec's harness setup is running.
 func (s *Service) markInstalling(id string) {
 	s.installingMu.Lock()
 	s.installing[id] = struct{}{}
@@ -280,7 +279,7 @@ func (s *Service) unmarkInstalling(id string) {
 	s.installingMu.Unlock()
 }
 
-// IsInstalling reports whether an exec's harness install command is still running.
+// IsInstalling reports whether an exec's harness setup is still running.
 // The mapper uses it to project the terminal-layer "installing" phase.
 func (s *Service) IsInstalling(id string) bool {
 	s.installingMu.Lock()
@@ -334,7 +333,13 @@ func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 			return err
 		}
 	}
-	created, err := s.Create(ctx, primaryCreateRequest(harness, harnessID, prompt, launched))
+	request := primaryCreateRequest(harness, harnessID, prompt, launched)
+	if s.harnessMode == "config" {
+		// The image-owned config command is exact: never append the normal prompt
+		// and never replace it with the normal relaunch command.
+		request.command = append([]string{}, harness.Command...)
+	}
+	created, err := s.Create(ctx, request)
 	if err != nil {
 		return err
 	}
@@ -421,12 +426,11 @@ func (s *Service) shellPath() string {
 }
 
 type localHarnessConfig struct {
-	Harness        string    `json:"harness,omitempty"`
-	ID             string    `json:"id,omitempty"`
-	Name           string    `json:"name,omitempty"`
-	InstallCommand *[]string `json:"installCommand,omitempty"`
-	Command        *[]string `json:"command,omitempty"`
-	RunCommand     *[]string `json:"runCommand,omitempty"`
+	Harness    string    `json:"harness,omitempty"`
+	ID         string    `json:"id,omitempty"`
+	Name       string    `json:"name,omitempty"`
+	Command    *[]string `json:"command,omitempty"`
+	RunCommand *[]string `json:"runCommand,omitempty"`
 }
 
 func (s *Service) localHarnessConfig(workdir string) (config.Harness, bool, error) {
@@ -506,9 +510,6 @@ func applyLocalHarnessConfig(harness config.Harness, local localHarnessConfig) c
 	if strings.TrimSpace(local.Name) != "" {
 		harness.Name = strings.TrimSpace(local.Name)
 	}
-	if local.InstallCommand != nil {
-		harness.InstallCommand = append([]string{}, (*local.InstallCommand)...)
-	}
 	if local.Command != nil {
 		harness.Command = append([]string{}, (*local.Command)...)
 	}
@@ -572,65 +573,6 @@ func (i CompositeInstaller) EnsureInstalled(ctx context.Context, harness config.
 	return nil
 }
 
-// CommandInstaller runs a harness's install command to completion as an ephemeral
-// exec, once per distinct command.
-type CommandInstaller struct {
-	Execs         *execs.Manager
-	StatusTimeout time.Duration
-	PollInterval  time.Duration
-	User          *execs.User
-}
-
-var (
-	installedCommandsMu sync.Mutex
-	installedCommands   = map[string]struct{}{}
-)
-
-func (i CommandInstaller) EnsureInstalled(ctx context.Context, harness config.Harness, workdir string, env map[string]string) error {
-	if len(harness.InstallCommand) == 0 {
-		return nil
-	}
-	installKey := strings.Join(harness.InstallCommand, "\x00")
-	installedCommandsMu.Lock()
-	defer installedCommandsMu.Unlock()
-	if _, ok := installedCommands[installKey]; ok {
-		return nil
-	}
-	timeout := i.StatusTimeout
-	if timeout <= 0 {
-		timeout = installStatusTimeout
-	}
-	created, err := i.Execs.Create(ctx, execs.CreateRequest{
-		Command: append([]string{}, harness.InstallCommand...),
-		Workdir: workdir,
-		Env:     env,
-		User:    cloneUser(i.User),
-	})
-	if err != nil {
-		return fmt.Errorf("start install harness %q: %w", harness.ID, err)
-	}
-	defer func() { _ = i.Execs.Delete(context.Background(), created.ID) }()
-	if _, err := i.Execs.Start(ctx, created.ID); err != nil {
-		return fmt.Errorf("start install harness %q command: %w", harness.ID, err)
-	}
-	status, err := i.Execs.WaitForExit(ctx, created.ID, timeout, i.PollInterval)
-	if err != nil {
-		return fmt.Errorf("wait for install harness %q command: %w", harness.ID, err)
-	}
-	if status.ExitCode == nil || *status.ExitCode != 0 || status.Status == execs.StatusFailed {
-		detail := strings.TrimSpace(status.Error)
-		if detail == "" && status.ExitCode != nil {
-			detail = fmt.Sprintf("exit code %d", *status.ExitCode)
-		}
-		if detail == "" {
-			detail = "missing successful exit status"
-		}
-		return fmt.Errorf("install harness %q failed: %s", harness.ID, detail)
-	}
-	installedCommands[installKey] = struct{}{}
-	return nil
-}
-
 type HookInstaller struct {
 	ManagedRoot      string
 	PublisherCommand string
@@ -654,6 +596,7 @@ func (i HookInstaller) EnsureInstalled(ctx context.Context, h config.Harness, wo
 func harnessFromConfig(h config.Harness) harness.Harness {
 	return harness.Harness{
 		ID:      h.ID,
+		TypeID:  h.TypeID,
 		Name:    h.Name,
 		Command: append([]string{}, h.Command...),
 	}
@@ -831,9 +774,25 @@ func terminalDefaultUser(cfg ServiceConfig) *execs.User {
 func cloneHarness(in config.Harness) config.Harness {
 	out := in
 	out.Command = append([]string{}, in.Command...)
-	out.InstallCommand = append([]string{}, in.InstallCommand...)
 	out.RelaunchCommand = append([]string{}, in.RelaunchCommand...)
 	out.Files = append([]config.HarnessFile{}, in.Files...)
+	return out
+}
+
+func mergeHarnessFiles(base, overlay []config.HarnessFile) []config.HarnessFile {
+	out := append([]config.HarnessFile{}, base...)
+	positions := make(map[string]int, len(out))
+	for i, file := range out {
+		positions[file.Path] = i
+	}
+	for _, file := range overlay {
+		if i, ok := positions[file.Path]; ok {
+			out[i] = file
+			continue
+		}
+		positions[file.Path] = len(out)
+		out = append(out, file)
+	}
 	return out
 }
 

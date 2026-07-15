@@ -136,65 +136,21 @@ components:
                     type: array
                 id:
                     type: string
-                installCommand:
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
                 name:
                     type: string
-                relaunchCommand:
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
-                runCommand:
-                    items:
-                        type: string
-                    type: array
             required:
             - id
             - name
-            - runCommand
-            type: object
-        SandboxHarnessConfig:
-            additionalProperties: false
-            properties:
-                files:
-                    items:
-                        "$ref": "#/components/schemas/HarnessConfigFile"
-                    nullable: true
-                    type: array
-                id:
-                    type: string
-                installCommand:
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
-                isDefault:
-                    type: boolean
-                name:
-                    type: string
-                relaunchCommand:
-                    items:
-                        type: string
-                    nullable: true
-                    type: array
-                runCommand:
-                    items:
-                        type: string
-                    type: array
-            required:
-            - id
-            - name
-            - runCommand
-            - isDefault
             type: object
         SandboxConfig:
             additionalProperties: false
             properties:
                 harnessConfigId:
+                    type: string
+                harnessMode:
+                    enum:
+                        - run
+                        - config
                     type: string
                 model:
                     type: string
@@ -278,11 +234,6 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                harnessConfigs:
-                    items:
-                        "$ref": "#/components/schemas/SandboxHarnessConfig"
-                    nullable: true
-                    type: array
                 config:
                     "$ref": "#/components/schemas/SandboxConfig"
                 resolvedHarnessConfig:
@@ -310,11 +261,6 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                harnessConfigs:
-                    items:
-                        "$ref": "#/components/schemas/SandboxHarnessConfig"
-                    nullable: true
-                    type: array
                 config:
                     "$ref": "#/components/schemas/SandboxConfig"
                 resolvedHarnessConfig:

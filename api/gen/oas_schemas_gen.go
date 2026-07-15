@@ -178,8 +178,6 @@ type ConfigureSandbox struct {
 	CpuVcpus OptFloat64 `json:"cpuVcpus"`
 	// Environment variables available to the configure sandbox.
 	Env OptConfigureSandboxEnv `json:"env"`
-	// Harness process the configure sandbox runs as its primary terminal.
-	HarnessConfig InlineHarnessConfig `json:"harnessConfig"`
 	// Sandbox base image. Defaults to the server configured sandbox image when omitted.
 	Image OptString `json:"image"`
 	// Requested memory capacity in bytes.
@@ -196,11 +194,6 @@ func (s *ConfigureSandbox) GetCpuVcpus() OptFloat64 {
 // GetEnv returns the value of Env.
 func (s *ConfigureSandbox) GetEnv() OptConfigureSandboxEnv {
 	return s.Env
-}
-
-// GetHarnessConfig returns the value of HarnessConfig.
-func (s *ConfigureSandbox) GetHarnessConfig() InlineHarnessConfig {
-	return s.HarnessConfig
 }
 
 // GetImage returns the value of Image.
@@ -226,11 +219,6 @@ func (s *ConfigureSandbox) SetCpuVcpus(val OptFloat64) {
 // SetEnv sets the value of Env.
 func (s *ConfigureSandbox) SetEnv(val OptConfigureSandboxEnv) {
 	s.Env = val
-}
-
-// SetHarnessConfig sets the value of HarnessConfig.
-func (s *ConfigureSandbox) SetHarnessConfig(val InlineHarnessConfig) {
-	s.HarnessConfig = val
 }
 
 // SetImage sets the value of Image.
@@ -264,29 +252,15 @@ func (s *ConfigureSandboxEnv) init() ConfigureSandboxEnv {
 type CreateHarnessConfigBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Built-in harness definition to extend. Unset command/file fields are inherited from the definition
-	// at runtime, so definition upgrades propagate unless overridden. Omit for a fully custom config, in
-	// which case runCommand is required.
+	// Built-in harness definition associated with this image.
 	DefinitionId OptString `json:"definitionId"`
-	// Override for files to write into the harness's home directory. Unset inherits from the definition
-	// when definitionId is provided.
+	// Optional non-secret configured file values to associate with the registered harness.
 	Files OptNilHarnessConfigFileArray `json:"files"`
-	// Override for the argv used to install the harness. Unset inherits from the definition when
-	// definitionId is provided. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-	InstallCommand OptNilStringArray `json:"installCommand"`
+	// Harness sandbox image to register. The server validates its io.discobox.harness.v1 label and
+	// snapshots that metadata into the HarnessConfig.
+	Image OptString `json:"image"`
 	// Harness config name. Defaults to the definition name when definitionId is provided.
 	Name OptString `json:"name"`
-	// Override for the argv used to resume the previous harness session on subsequent sandbox starts.
-	// Replaces runCommand for non-first launches. Unset inherits from the definition when definitionId
-	// is provided. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-	RelaunchCommand OptNilStringArray `json:"relaunchCommand"`
-	// Override for the argv used to run the harness. Unset inherits from the definition when
-	// definitionId is provided; required for a fully custom config. Not run through a shell; use ["sh",
-	// "-c", "..."] for shell semantics.
-	RunCommand OptNilStringArray `json:"runCommand"`
-	// Override for the environment-variable secrets the harness expects. Unset inherits from the
-	// definition when definitionId is provided.
-	Secrets OptNilHarnessConfigSecretArray `json:"secrets"`
 	// Stable, URL-safe identifier used to select the harness config (e.g. codex). Defaults to
 	// definitionId, or a slug derived from name. Unique within the project.
 	Slug OptString `json:"slug"`
@@ -307,29 +281,14 @@ func (s *CreateHarnessConfigBody) GetFiles() OptNilHarnessConfigFileArray {
 	return s.Files
 }
 
-// GetInstallCommand returns the value of InstallCommand.
-func (s *CreateHarnessConfigBody) GetInstallCommand() OptNilStringArray {
-	return s.InstallCommand
+// GetImage returns the value of Image.
+func (s *CreateHarnessConfigBody) GetImage() OptString {
+	return s.Image
 }
 
 // GetName returns the value of Name.
 func (s *CreateHarnessConfigBody) GetName() OptString {
 	return s.Name
-}
-
-// GetRelaunchCommand returns the value of RelaunchCommand.
-func (s *CreateHarnessConfigBody) GetRelaunchCommand() OptNilStringArray {
-	return s.RelaunchCommand
-}
-
-// GetRunCommand returns the value of RunCommand.
-func (s *CreateHarnessConfigBody) GetRunCommand() OptNilStringArray {
-	return s.RunCommand
-}
-
-// GetSecrets returns the value of Secrets.
-func (s *CreateHarnessConfigBody) GetSecrets() OptNilHarnessConfigSecretArray {
-	return s.Secrets
 }
 
 // GetSlug returns the value of Slug.
@@ -352,29 +311,14 @@ func (s *CreateHarnessConfigBody) SetFiles(val OptNilHarnessConfigFileArray) {
 	s.Files = val
 }
 
-// SetInstallCommand sets the value of InstallCommand.
-func (s *CreateHarnessConfigBody) SetInstallCommand(val OptNilStringArray) {
-	s.InstallCommand = val
+// SetImage sets the value of Image.
+func (s *CreateHarnessConfigBody) SetImage(val OptString) {
+	s.Image = val
 }
 
 // SetName sets the value of Name.
 func (s *CreateHarnessConfigBody) SetName(val OptString) {
 	s.Name = val
-}
-
-// SetRelaunchCommand sets the value of RelaunchCommand.
-func (s *CreateHarnessConfigBody) SetRelaunchCommand(val OptNilStringArray) {
-	s.RelaunchCommand = val
-}
-
-// SetRunCommand sets the value of RunCommand.
-func (s *CreateHarnessConfigBody) SetRunCommand(val OptNilStringArray) {
-	s.RunCommand = val
-}
-
-// SetSecrets sets the value of Secrets.
-func (s *CreateHarnessConfigBody) SetSecrets(val OptNilHarnessConfigSecretArray) {
-	s.Secrets = val
 }
 
 // SetSlug sets the value of Slug.
@@ -1568,30 +1512,25 @@ type HarnessConfig struct {
 	Schema OptURI `json:"$schema"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
-	// Built-in harness definition this config extends. Unset fields are inherited from the definition at
-	// runtime, so definition upgrades propagate unless overridden. Empty for fully custom configs.
+	// Built-in harness definition used to select this image. Empty for custom images.
 	DefinitionId OptString `json:"definitionId"`
-	// Override for files to write into the harness's home directory when the harness is installed. Unset
-	// inherits from the definition.
+	// Files declared by the registered image plus any non-secret configured file values.
 	Files OptNilHarnessConfigFileArray `json:"files"`
 	// Stable harness config ID.
 	ID string `json:"id"`
-	// Override for the argv used to install the harness. Unset inherits from the definition. Not run
-	// through a shell; use ["sh", "-c", "..."] for shell semantics.
-	InstallCommand OptNilStringArray `json:"installCommand"`
+	// Immutable harness sandbox image selected when this config was registered.
+	Image OptString `json:"image"`
+	// Content digest observed when the harness image metadata was registered.
+	ImageDigest OptString `json:"imageDigest"`
 	// Harness config name.
 	Name string `json:"name"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
-	// Override for the argv used to resume the previous harness session on subsequent sandbox starts.
-	// Replaces runCommand for non-first launches. Unset inherits from the definition. Not run through a
-	// shell; use ["sh", "-c", "..."] for shell semantics.
+	// Argv declared by the registered image to resume a previous harness session.
 	RelaunchCommand OptNilStringArray `json:"relaunchCommand"`
-	// Effective argv used to run the harness, resolved from the definition and any overrides. Not run
-	// through a shell; use ["sh", "-c", "..."] for shell semantics.
+	// Argv declared by the registered image to run the harness.
 	RunCommand []string `json:"runCommand"`
-	// Override for the environment-variable secrets the harness expects. Unset inherits from the
-	// definition.
+	// Environment-variable secrets declared by the registered image.
 	Secrets OptNilHarnessConfigSecretArray `json:"secrets"`
 	// Stable, URL-safe identifier used to select the harness config (e.g. codex). Unique within the
 	// project.
@@ -1625,9 +1564,14 @@ func (s *HarnessConfig) GetID() string {
 	return s.ID
 }
 
-// GetInstallCommand returns the value of InstallCommand.
-func (s *HarnessConfig) GetInstallCommand() OptNilStringArray {
-	return s.InstallCommand
+// GetImage returns the value of Image.
+func (s *HarnessConfig) GetImage() OptString {
+	return s.Image
+}
+
+// GetImageDigest returns the value of ImageDigest.
+func (s *HarnessConfig) GetImageDigest() OptString {
+	return s.ImageDigest
 }
 
 // GetName returns the value of Name.
@@ -1690,9 +1634,14 @@ func (s *HarnessConfig) SetID(val string) {
 	s.ID = val
 }
 
-// SetInstallCommand sets the value of InstallCommand.
-func (s *HarnessConfig) SetInstallCommand(val OptNilStringArray) {
-	s.InstallCommand = val
+// SetImage sets the value of Image.
+func (s *HarnessConfig) SetImage(val OptString) {
+	s.Image = val
+}
+
+// SetImageDigest sets the value of ImageDigest.
+func (s *HarnessConfig) SetImageDigest(val OptString) {
+	s.ImageDigest = val
 }
 
 // SetName sets the value of Name.
@@ -1944,22 +1893,12 @@ type HarnessDefinition struct {
 	Configure OptConfigureSandbox `json:"configure"`
 	// Harness config definition description.
 	Description OptString `json:"description"`
-	// Files to write into the harness's home directory when the harness is installed.
-	Files OptNilHarnessConfigFileArray `json:"files"`
 	// Stable definition ID.
 	ID string `json:"id"`
-	// Argv used to install the harness. Not run through a shell; use ["sh", "-c", "..."] for shell
-	// semantics.
-	InstallCommand OptNilStringArray `json:"installCommand"`
+	// Harness-specific sandbox image registered by this definition.
+	Image OptString `json:"image"`
 	// Harness config definition name.
 	Name string `json:"name"`
-	// Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand
-	// for non-first launches. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-	RelaunchCommand OptNilStringArray `json:"relaunchCommand"`
-	// Argv used to run the harness. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-	RunCommand []string `json:"runCommand"`
-	// Environment-variable secrets the harness expects.
-	Secrets OptNilHarnessConfigSecretArray `json:"secrets"`
 }
 
 // GetSchema returns the value of Schema.
@@ -1977,39 +1916,19 @@ func (s *HarnessDefinition) GetDescription() OptString {
 	return s.Description
 }
 
-// GetFiles returns the value of Files.
-func (s *HarnessDefinition) GetFiles() OptNilHarnessConfigFileArray {
-	return s.Files
-}
-
 // GetID returns the value of ID.
 func (s *HarnessDefinition) GetID() string {
 	return s.ID
 }
 
-// GetInstallCommand returns the value of InstallCommand.
-func (s *HarnessDefinition) GetInstallCommand() OptNilStringArray {
-	return s.InstallCommand
+// GetImage returns the value of Image.
+func (s *HarnessDefinition) GetImage() OptString {
+	return s.Image
 }
 
 // GetName returns the value of Name.
 func (s *HarnessDefinition) GetName() string {
 	return s.Name
-}
-
-// GetRelaunchCommand returns the value of RelaunchCommand.
-func (s *HarnessDefinition) GetRelaunchCommand() OptNilStringArray {
-	return s.RelaunchCommand
-}
-
-// GetRunCommand returns the value of RunCommand.
-func (s *HarnessDefinition) GetRunCommand() []string {
-	return s.RunCommand
-}
-
-// GetSecrets returns the value of Secrets.
-func (s *HarnessDefinition) GetSecrets() OptNilHarnessConfigSecretArray {
-	return s.Secrets
 }
 
 // SetSchema sets the value of Schema.
@@ -2027,39 +1946,19 @@ func (s *HarnessDefinition) SetDescription(val OptString) {
 	s.Description = val
 }
 
-// SetFiles sets the value of Files.
-func (s *HarnessDefinition) SetFiles(val OptNilHarnessConfigFileArray) {
-	s.Files = val
-}
-
 // SetID sets the value of ID.
 func (s *HarnessDefinition) SetID(val string) {
 	s.ID = val
 }
 
-// SetInstallCommand sets the value of InstallCommand.
-func (s *HarnessDefinition) SetInstallCommand(val OptNilStringArray) {
-	s.InstallCommand = val
+// SetImage sets the value of Image.
+func (s *HarnessDefinition) SetImage(val OptString) {
+	s.Image = val
 }
 
 // SetName sets the value of Name.
 func (s *HarnessDefinition) SetName(val string) {
 	s.Name = val
-}
-
-// SetRelaunchCommand sets the value of RelaunchCommand.
-func (s *HarnessDefinition) SetRelaunchCommand(val OptNilStringArray) {
-	s.RelaunchCommand = val
-}
-
-// SetRunCommand sets the value of RunCommand.
-func (s *HarnessDefinition) SetRunCommand(val []string) {
-	s.RunCommand = val
-}
-
-// SetSecrets sets the value of Secrets.
-func (s *HarnessDefinition) SetSecrets(val OptNilHarnessConfigSecretArray) {
-	s.Secrets = val
 }
 
 func (*HarnessDefinition) getHarnessDefinitionRes() {}
@@ -2155,74 +2054,6 @@ func (s *HarnessHookLogsResponse) SetHooks(val []HarnessHookLog) {
 }
 
 func (*HarnessHookLogsResponse) listHarnessHooksRes() {}
-
-// An ad hoc harness process spec provided directly on a sandbox create request instead of by
-// HarnessConfig reference.
-// Ref: #/components/schemas/InlineHarnessConfig
-type InlineHarnessConfig struct {
-	// Files to write into the harness's home directory when the harness is installed.
-	Files OptNilHarnessConfigFileArray `json:"files"`
-	// Argv used to install the harness. Not run through a shell; use ["sh", "-c", "..."] for shell
-	// semantics.
-	InstallCommand OptNilStringArray `json:"installCommand"`
-	// Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand
-	// for non-first launches.
-	RelaunchCommand OptNilStringArray `json:"relaunchCommand"`
-	// Argv used to run the harness. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-	RunCommand []string `json:"runCommand"`
-	// Environment-variable secrets the harness expects.
-	Secrets OptNilHarnessConfigSecretArray `json:"secrets"`
-}
-
-// GetFiles returns the value of Files.
-func (s *InlineHarnessConfig) GetFiles() OptNilHarnessConfigFileArray {
-	return s.Files
-}
-
-// GetInstallCommand returns the value of InstallCommand.
-func (s *InlineHarnessConfig) GetInstallCommand() OptNilStringArray {
-	return s.InstallCommand
-}
-
-// GetRelaunchCommand returns the value of RelaunchCommand.
-func (s *InlineHarnessConfig) GetRelaunchCommand() OptNilStringArray {
-	return s.RelaunchCommand
-}
-
-// GetRunCommand returns the value of RunCommand.
-func (s *InlineHarnessConfig) GetRunCommand() []string {
-	return s.RunCommand
-}
-
-// GetSecrets returns the value of Secrets.
-func (s *InlineHarnessConfig) GetSecrets() OptNilHarnessConfigSecretArray {
-	return s.Secrets
-}
-
-// SetFiles sets the value of Files.
-func (s *InlineHarnessConfig) SetFiles(val OptNilHarnessConfigFileArray) {
-	s.Files = val
-}
-
-// SetInstallCommand sets the value of InstallCommand.
-func (s *InlineHarnessConfig) SetInstallCommand(val OptNilStringArray) {
-	s.InstallCommand = val
-}
-
-// SetRelaunchCommand sets the value of RelaunchCommand.
-func (s *InlineHarnessConfig) SetRelaunchCommand(val OptNilStringArray) {
-	s.RelaunchCommand = val
-}
-
-// SetRunCommand sets the value of RunCommand.
-func (s *InlineHarnessConfig) SetRunCommand(val []string) {
-	s.RunCommand = val
-}
-
-// SetSecrets sets the value of Secrets.
-func (s *InlineHarnessConfig) SetSecrets(val OptNilHarnessConfigSecretArray) {
-	s.Secrets = val
-}
 
 // Ref: #/components/schemas/Job
 type Job struct {
@@ -3529,52 +3360,6 @@ func (o OptHarnessConfig) Or(d HarnessConfig) HarnessConfig {
 	return d
 }
 
-// NewOptInlineHarnessConfig returns new OptInlineHarnessConfig with value set to v.
-func NewOptInlineHarnessConfig(v InlineHarnessConfig) OptInlineHarnessConfig {
-	return OptInlineHarnessConfig{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptInlineHarnessConfig is optional InlineHarnessConfig.
-type OptInlineHarnessConfig struct {
-	Value InlineHarnessConfig
-	Set   bool
-}
-
-// IsSet returns true if OptInlineHarnessConfig was set.
-func (o OptInlineHarnessConfig) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptInlineHarnessConfig) Reset() {
-	var v InlineHarnessConfig
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptInlineHarnessConfig) SetTo(v InlineHarnessConfig) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptInlineHarnessConfig) Get() (v InlineHarnessConfig, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptInlineHarnessConfig) Or(d InlineHarnessConfig) InlineHarnessConfig {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptInt returns new OptInt with value set to v.
 func NewOptInt(v int) OptInt {
 	return OptInt{
@@ -4452,6 +4237,52 @@ func (o OptSandboxConfigEnv) Or(d SandboxConfigEnv) SandboxConfigEnv {
 	return d
 }
 
+// NewOptSandboxConfigHarnessMode returns new OptSandboxConfigHarnessMode with value set to v.
+func NewOptSandboxConfigHarnessMode(v SandboxConfigHarnessMode) OptSandboxConfigHarnessMode {
+	return OptSandboxConfigHarnessMode{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxConfigHarnessMode is optional SandboxConfigHarnessMode.
+type OptSandboxConfigHarnessMode struct {
+	Value SandboxConfigHarnessMode
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxConfigHarnessMode was set.
+func (o OptSandboxConfigHarnessMode) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxConfigHarnessMode) Reset() {
+	var v SandboxConfigHarnessMode
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxConfigHarnessMode) SetTo(v SandboxConfigHarnessMode) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxConfigHarnessMode) Get() (v SandboxConfigHarnessMode, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxConfigHarnessMode) Or(d SandboxConfigHarnessMode) SandboxConfigHarnessMode {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxConfigSourceCodeReferences returns new OptSandboxConfigSourceCodeReferences with value set to v.
 func NewOptSandboxConfigSourceCodeReferences(v SandboxConfigSourceCodeReferences) OptSandboxConfigSourceCodeReferences {
 	return OptSandboxConfigSourceCodeReferences{
@@ -4538,6 +4369,52 @@ func (o OptSandboxCreateConfigEnv) Get() (v SandboxCreateConfigEnv, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptSandboxCreateConfigEnv) Or(d SandboxCreateConfigEnv) SandboxCreateConfigEnv {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxCreateConfigHarnessMode returns new OptSandboxCreateConfigHarnessMode with value set to v.
+func NewOptSandboxCreateConfigHarnessMode(v SandboxCreateConfigHarnessMode) OptSandboxCreateConfigHarnessMode {
+	return OptSandboxCreateConfigHarnessMode{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxCreateConfigHarnessMode is optional SandboxCreateConfigHarnessMode.
+type OptSandboxCreateConfigHarnessMode struct {
+	Value SandboxCreateConfigHarnessMode
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxCreateConfigHarnessMode was set.
+func (o OptSandboxCreateConfigHarnessMode) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxCreateConfigHarnessMode) Reset() {
+	var v SandboxCreateConfigHarnessMode
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxCreateConfigHarnessMode) SetTo(v SandboxCreateConfigHarnessMode) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxCreateConfigHarnessMode) Get() (v SandboxCreateConfigHarnessMode, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxCreateConfigHarnessMode) Or(d SandboxCreateConfigHarnessMode) SandboxCreateConfigHarnessMode {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -6260,11 +6137,11 @@ func (*Sandbox) updateSandboxRes()    {}
 
 // Ref: #/components/schemas/SandboxConfig
 type SandboxConfig struct {
-	// Ad hoc harness config running in this sandbox, provided inline instead of by reference. Takes
-	// precedence over harnessConfigId when both are set.
-	HarnessConfig OptInlineHarnessConfig `json:"harnessConfig"`
 	// Harness config ID.
 	HarnessConfigId OptString `json:"harnessConfigId"`
+	// Harness startup mode. Config runs the image-owned interactive configuration command instead of the
+	// normal harness command.
+	HarnessMode OptSandboxConfigHarnessMode `json:"harnessMode"`
 	// Model the harness should use.
 	Model OptString `json:"model"`
 	// Model reasoning level the harness should use.
@@ -6295,14 +6172,14 @@ type SandboxConfig struct {
 	User OptSandboxUser `json:"user"`
 }
 
-// GetHarnessConfig returns the value of HarnessConfig.
-func (s *SandboxConfig) GetHarnessConfig() OptInlineHarnessConfig {
-	return s.HarnessConfig
-}
-
 // GetHarnessConfigId returns the value of HarnessConfigId.
 func (s *SandboxConfig) GetHarnessConfigId() OptString {
 	return s.HarnessConfigId
+}
+
+// GetHarnessMode returns the value of HarnessMode.
+func (s *SandboxConfig) GetHarnessMode() OptSandboxConfigHarnessMode {
+	return s.HarnessMode
 }
 
 // GetModel returns the value of Model.
@@ -6375,14 +6252,14 @@ func (s *SandboxConfig) GetUser() OptSandboxUser {
 	return s.User
 }
 
-// SetHarnessConfig sets the value of HarnessConfig.
-func (s *SandboxConfig) SetHarnessConfig(val OptInlineHarnessConfig) {
-	s.HarnessConfig = val
-}
-
 // SetHarnessConfigId sets the value of HarnessConfigId.
 func (s *SandboxConfig) SetHarnessConfigId(val OptString) {
 	s.HarnessConfigId = val
+}
+
+// SetHarnessMode sets the value of HarnessMode.
+func (s *SandboxConfig) SetHarnessMode(val OptSandboxConfigHarnessMode) {
+	s.HarnessMode = val
 }
 
 // SetModel sets the value of Model.
@@ -6467,6 +6344,49 @@ func (s *SandboxConfigEnv) init() SandboxConfigEnv {
 	return m
 }
 
+// Harness startup mode. Config runs the image-owned interactive configuration command instead of the
+// normal harness command.
+type SandboxConfigHarnessMode string
+
+const (
+	SandboxConfigHarnessModeRun    SandboxConfigHarnessMode = "run"
+	SandboxConfigHarnessModeConfig SandboxConfigHarnessMode = "config"
+)
+
+// AllValues returns all SandboxConfigHarnessMode values.
+func (SandboxConfigHarnessMode) AllValues() []SandboxConfigHarnessMode {
+	return []SandboxConfigHarnessMode{
+		SandboxConfigHarnessModeRun,
+		SandboxConfigHarnessModeConfig,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxConfigHarnessMode) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxConfigHarnessModeRun:
+		return []byte(s), nil
+	case SandboxConfigHarnessModeConfig:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxConfigHarnessMode) UnmarshalText(data []byte) error {
+	switch SandboxConfigHarnessMode(data) {
+	case SandboxConfigHarnessModeRun:
+		*s = SandboxConfigHarnessModeRun
+		return nil
+	case SandboxConfigHarnessModeConfig:
+		*s = SandboxConfigHarnessModeConfig
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Additional Git sources to materialize in the sandbox.
 type SandboxConfigSourceCodeReferences map[string]GitSource
 
@@ -6481,11 +6401,11 @@ func (s *SandboxConfigSourceCodeReferences) init() SandboxConfigSourceCodeRefere
 
 // Ref: #/components/schemas/SandboxCreateConfig
 type SandboxCreateConfig struct {
-	// Ad hoc harness config to run in this sandbox, provided inline instead of by reference. Takes
-	// precedence over harnessConfigId when both are set.
-	HarnessConfig OptInlineHarnessConfig `json:"harnessConfig"`
 	// Harness config ID.
 	HarnessConfigId OptString `json:"harnessConfigId"`
+	// Harness startup mode. Config runs the image-owned interactive configuration command instead of the
+	// normal harness command.
+	HarnessMode OptSandboxCreateConfigHarnessMode `json:"harnessMode"`
 	// Model the harness should use.
 	Model OptString `json:"model"`
 	// Model reasoning level the harness should use.
@@ -6519,14 +6439,14 @@ type SandboxCreateConfig struct {
 	User OptSandboxUser `json:"user"`
 }
 
-// GetHarnessConfig returns the value of HarnessConfig.
-func (s *SandboxCreateConfig) GetHarnessConfig() OptInlineHarnessConfig {
-	return s.HarnessConfig
-}
-
 // GetHarnessConfigId returns the value of HarnessConfigId.
 func (s *SandboxCreateConfig) GetHarnessConfigId() OptString {
 	return s.HarnessConfigId
+}
+
+// GetHarnessMode returns the value of HarnessMode.
+func (s *SandboxCreateConfig) GetHarnessMode() OptSandboxCreateConfigHarnessMode {
+	return s.HarnessMode
 }
 
 // GetModel returns the value of Model.
@@ -6604,14 +6524,14 @@ func (s *SandboxCreateConfig) GetUser() OptSandboxUser {
 	return s.User
 }
 
-// SetHarnessConfig sets the value of HarnessConfig.
-func (s *SandboxCreateConfig) SetHarnessConfig(val OptInlineHarnessConfig) {
-	s.HarnessConfig = val
-}
-
 // SetHarnessConfigId sets the value of HarnessConfigId.
 func (s *SandboxCreateConfig) SetHarnessConfigId(val OptString) {
 	s.HarnessConfigId = val
+}
+
+// SetHarnessMode sets the value of HarnessMode.
+func (s *SandboxCreateConfig) SetHarnessMode(val OptSandboxCreateConfigHarnessMode) {
+	s.HarnessMode = val
 }
 
 // SetModel sets the value of Model.
@@ -6701,6 +6621,49 @@ func (s *SandboxCreateConfigEnv) init() SandboxCreateConfigEnv {
 	return m
 }
 
+// Harness startup mode. Config runs the image-owned interactive configuration command instead of the
+// normal harness command.
+type SandboxCreateConfigHarnessMode string
+
+const (
+	SandboxCreateConfigHarnessModeRun    SandboxCreateConfigHarnessMode = "run"
+	SandboxCreateConfigHarnessModeConfig SandboxCreateConfigHarnessMode = "config"
+)
+
+// AllValues returns all SandboxCreateConfigHarnessMode values.
+func (SandboxCreateConfigHarnessMode) AllValues() []SandboxCreateConfigHarnessMode {
+	return []SandboxCreateConfigHarnessMode{
+		SandboxCreateConfigHarnessModeRun,
+		SandboxCreateConfigHarnessModeConfig,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxCreateConfigHarnessMode) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxCreateConfigHarnessModeRun:
+		return []byte(s), nil
+	case SandboxCreateConfigHarnessModeConfig:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxCreateConfigHarnessMode) UnmarshalText(data []byte) error {
+	switch SandboxCreateConfigHarnessMode(data) {
+	case SandboxCreateConfigHarnessModeRun:
+		*s = SandboxCreateConfigHarnessModeRun
+		return nil
+	case SandboxCreateConfigHarnessModeConfig:
+		*s = SandboxCreateConfigHarnessModeConfig
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Additional Git sources to materialize in the sandbox.
 type SandboxCreateConfigSourceCodeReferences map[string]GitSource
 
@@ -6718,8 +6681,8 @@ type SandboxExec struct {
 	// Sandbox exec runtime ID.
 	ID string `json:"id"`
 	// Current observed exec runtime status. installing is a terminal-layer
-	// phase: the exec record exists and its harness install command is still
-	// running, before the harness process is launched (starting -> running).
+	// phase: the exec record exists and its hooks/files are still being
+	// prepared, before the harness process is launched (starting -> running).
 	Status SandboxExecStatus `json:"status"`
 	// Command argv executed in the sandbox.
 	Command []string `json:"command"`
@@ -7149,8 +7112,8 @@ func (s *SandboxExecMetadata) init() SandboxExecMetadata {
 }
 
 // Current observed exec runtime status. installing is a terminal-layer
-// phase: the exec record exists and its harness install command is still
-// running, before the harness process is launched (starting -> running).
+// phase: the exec record exists and its hooks/files are still being
+// prepared, before the harness process is launched (starting -> running).
 type SandboxExecStatus string
 
 const (
@@ -8996,18 +8959,8 @@ type UpdateHarnessConfigBody struct {
 	Schema OptURI `json:"$schema"`
 	// Files to write into the harness's home directory when the harness is installed.
 	Files OptNilHarnessConfigFileArray `json:"files"`
-	// Argv used to install the harness. Not run through a shell; use ["sh", "-c", "..."] for shell
-	// semantics.
-	InstallCommand OptNilStringArray `json:"installCommand"`
 	// Harness config name.
 	Name OptString `json:"name"`
-	// Argv used to resume the previous harness session on subsequent sandbox starts. Replaces runCommand
-	// for non-first launches. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-	RelaunchCommand OptNilStringArray `json:"relaunchCommand"`
-	// Argv used to run the harness. Not run through a shell; use ["sh", "-c", "..."] for shell semantics.
-	RunCommand OptNilStringArray `json:"runCommand"`
-	// Environment-variable secrets the harness expects.
-	Secrets OptNilHarnessConfigSecretArray `json:"secrets"`
 }
 
 // GetSchema returns the value of Schema.
@@ -9020,29 +8973,9 @@ func (s *UpdateHarnessConfigBody) GetFiles() OptNilHarnessConfigFileArray {
 	return s.Files
 }
 
-// GetInstallCommand returns the value of InstallCommand.
-func (s *UpdateHarnessConfigBody) GetInstallCommand() OptNilStringArray {
-	return s.InstallCommand
-}
-
 // GetName returns the value of Name.
 func (s *UpdateHarnessConfigBody) GetName() OptString {
 	return s.Name
-}
-
-// GetRelaunchCommand returns the value of RelaunchCommand.
-func (s *UpdateHarnessConfigBody) GetRelaunchCommand() OptNilStringArray {
-	return s.RelaunchCommand
-}
-
-// GetRunCommand returns the value of RunCommand.
-func (s *UpdateHarnessConfigBody) GetRunCommand() OptNilStringArray {
-	return s.RunCommand
-}
-
-// GetSecrets returns the value of Secrets.
-func (s *UpdateHarnessConfigBody) GetSecrets() OptNilHarnessConfigSecretArray {
-	return s.Secrets
 }
 
 // SetSchema sets the value of Schema.
@@ -9055,29 +8988,9 @@ func (s *UpdateHarnessConfigBody) SetFiles(val OptNilHarnessConfigFileArray) {
 	s.Files = val
 }
 
-// SetInstallCommand sets the value of InstallCommand.
-func (s *UpdateHarnessConfigBody) SetInstallCommand(val OptNilStringArray) {
-	s.InstallCommand = val
-}
-
 // SetName sets the value of Name.
 func (s *UpdateHarnessConfigBody) SetName(val OptString) {
 	s.Name = val
-}
-
-// SetRelaunchCommand sets the value of RelaunchCommand.
-func (s *UpdateHarnessConfigBody) SetRelaunchCommand(val OptNilStringArray) {
-	s.RelaunchCommand = val
-}
-
-// SetRunCommand sets the value of RunCommand.
-func (s *UpdateHarnessConfigBody) SetRunCommand(val OptNilStringArray) {
-	s.RunCommand = val
-}
-
-// SetSecrets sets the value of Secrets.
-func (s *UpdateHarnessConfigBody) SetSecrets(val OptNilHarnessConfigSecretArray) {
-	s.Secrets = val
 }
 
 // Ref: #/components/schemas/UpdateSandboxBody

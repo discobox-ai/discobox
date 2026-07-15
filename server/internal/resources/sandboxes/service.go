@@ -143,12 +143,21 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if root := source.Root(); root != "" {
 		sourceRoot = &root
 	}
-	inlineHarnessConfig, err := services.InlineHarnessConfigToModel(config.HarnessConfig)
-	if err != nil {
-		return nil, err
-	}
 	userName, userUID, userGID, homeDirectory := services.SandboxUserToModel(config.User)
+	harnessMode := "run"
+	if mode, ok := config.HarnessMode.Get(); ok {
+		harnessMode = string(mode)
+	}
 	image := strings.TrimSpace(config.Image.Or(""))
+	if harnessConfigID != nil && strings.TrimSpace(*harnessConfigID) != "" && harnessMode != "config" {
+		harnessConfig, err := s.store.GetHarnessConfig(ctx, projectID, strings.TrimSpace(*harnessConfigID))
+		if err != nil {
+			return nil, mapAPIError(err, "harness config not found")
+		}
+		if strings.TrimSpace(harnessConfig.Image) != "" {
+			image = strings.TrimSpace(harnessConfig.Image)
+		}
+	}
 	if image == "" {
 		image = s.defaultImage
 	}
@@ -158,7 +167,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		CreatedByUserID:      userID,
 		ProviderInstanceID:   providerID,
 		HarnessConfigID:      harnessConfigID,
-		InlineHarnessConfig:  inlineHarnessConfig,
+		HarnessMode:          harnessMode,
 		Name:                 config.Name,
 		Description:          services.OptStringPtr(config.Description),
 		ResourceLifecycle:    model.NewResourceLifecycle(model.SandboxCreateOperation),

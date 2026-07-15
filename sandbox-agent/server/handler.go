@@ -244,7 +244,7 @@ func (h *handler) NewError(_ context.Context, err error) *sandboxapi.ErrorRespon
 }
 
 func (h *handler) sandboxExec(in execs.Exec) sandboxapi.SandboxExec {
-	// A terminal-mode exec whose install command is still running is projected as
+	// A terminal-mode exec whose harness setup is still running is projected as
 	// the "installing" phase, overriding its underlying "starting" status. install
 	// is a terminal-layer step, so it stays out of the generic execs.Status enum.
 	status := sandboxapi.SandboxExecStatus(in.Status)

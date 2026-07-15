@@ -357,16 +357,9 @@ func (s *routerTestServices) CreateHarnessConfig(_ context.Context, projectID st
 	if name == "" && definition != nil {
 		name = definition.Name
 	}
-	installCommand, hasInstallCommand := input.InstallCommand.Get()
-	if !hasInstallCommand && definition != nil {
-		installCommand = definition.InstallCommand
-	}
-	runCommand, hasRunCommand := input.RunCommand.Get()
-	if !hasRunCommand && definition != nil {
-		runCommand = definition.RunCommand
-	}
+	runCommand := []string{"test-harness"}
 	now := time.Now().UTC()
-	config := model.HarnessConfig{ID: id.NewString(id.PrefixHarnessConfig), ProjectID: projectID, Name: name, InstallCommand: installCommand, RunCommand: runCommand, CreatedAt: now, UpdatedAt: now}
+	config := model.HarnessConfig{ID: id.NewString(id.PrefixHarnessConfig), ProjectID: projectID, Name: name, RunCommand: runCommand, CreatedAt: now, UpdatedAt: now}
 	s.harnessConfigs[config.ID] = config
 	if s.project.DefaultHarnessConfigID == "" {
 		s.project.DefaultHarnessConfigID = config.ID
@@ -399,12 +392,6 @@ func (s *routerTestServices) UpdateHarnessConfig(_ context.Context, projectID, c
 	}
 	if name, ok := input.Name.Get(); ok {
 		config.Name = name
-	}
-	if installCommand, ok := input.InstallCommand.Get(); ok {
-		config.InstallCommand = installCommand
-	}
-	if runCommand, ok := input.RunCommand.Get(); ok {
-		config.RunCommand = runCommand
 	}
 	config.UpdatedAt = time.Now().UTC()
 	s.harnessConfigs[config.ID] = config

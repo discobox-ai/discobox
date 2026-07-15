@@ -107,6 +107,9 @@ flowchart LR
   manifest even when the request omitted or partially specified `config.user`.
   The home mount, container environment, sandbox-agent exec defaults, and
   home-relative harness files must all use that same identity.
+- Keep harness behavior opaque. The worker transports only selected harness
+  identity, `harnessMode`, and the non-secret project file overlay. Commands and
+  the project harness catalog are image-owned and never interpreted here.
 - MITM CA trust is split by how tools find roots: the sandbox
   `discobox-trust-ca.service` runs `update-ca-certificates` early in boot so the
   system bundle (curl, git, wget, OpenSSL, and the `SSL_CERT_FILE` /

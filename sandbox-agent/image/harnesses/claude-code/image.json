@@ -1,0 +1,34 @@
+{
+  "apiVersion": "discobox.dev/image/v1",
+  "env": {
+    "NIX_CONFIG": "experimental-features = nix-command flakes",
+    "NIX_REMOTE": "daemon",
+    "NPM_CONFIG_PREFIX": "%HOME%/.npm-global",
+    "PATH": "%HOME%/.npm-global/bin:%HOME%/.cargo/bin:%HOME%/.nix-profile/bin:%HOME%/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+    "PNPM_HOME": "/var/lib/discobox/pnpm"
+  },
+  "harness": {
+    "id": "claude-code",
+    "name": "Claude Code",
+    "description": "Anthropic Claude Code coding harness.",
+    "runCommand": ["claude"],
+    "relaunchCommand": ["claude", "--continue"],
+    "files": [
+      {
+        "path": ".claude.json",
+        "createOnly": true,
+        "template": true,
+        "content": "{\n  \"hasCompletedOnboarding\": true\n  {{- with .source }},\n  \"projects\": {\n    {{ .destination.directory | json }}: {\n      \"hasTrustDialogAccepted\": true\n    }\n  }\n  {{- end }}\n}"
+      },
+      {"path": ".claude/settings.json", "content": "{\"theme\":\"dark\",\"skipDangerousModePermissionPrompt\":true}"}
+    ],
+    "secrets": [
+      {"name": "ANTHROPIC_API_KEY", "required": true, "oneOfGroup": "auth"},
+      {"name": "CLAUDE_CODE_OAUTH_TOKEN", "required": true, "oneOfGroup": "auth"}
+    ],
+    "config": {
+      "command": ["/usr/local/libexec/discobox/configure-claude-code"],
+      "resultPath": "/run/discobox/harness-configure.json"
+    }
+  }
+}

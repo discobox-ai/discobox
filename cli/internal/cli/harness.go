@@ -18,27 +18,18 @@ import (
 )
 
 type harnessCreateOptions struct {
-	name            string
-	slug            string
-	definitionID    string
-	installCommand  []string
-	runCommand      []string
-	relaunchCommand []string
-	files           []string
-	createOnlyFile  []string
-	requiredSecrets []string
-	optionalSecrets []string
+	name           string
+	slug           string
+	definitionID   string
+	image          string
+	files          []string
+	createOnlyFile []string
 }
 
 type harnessUpdateOptions struct {
-	name            string
-	installCommand  []string
-	runCommand      []string
-	relaunchCommand []string
-	files           []string
-	createOnlyFile  []string
-	requiredSecrets []string
-	optionalSecrets []string
+	name           string
+	files          []string
+	createOnlyFile []string
 }
 
 func (a *App) newHarnessCommand() *cobra.Command {
@@ -257,14 +248,10 @@ func (a *App) newHarnessCreateCommand() *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&opts.name, "name", "", "Harness config name")
 	cmd.Flags().StringVar(&opts.slug, "slug", "", "Stable, URL-safe identifier used to select this harness (e.g. codex); defaults to the definition ID or a slug derived from the name")
-	cmd.Flags().StringVar(&opts.definitionID, "definition", "", "Built-in harness definition to extend; unset fields are inherited and pick up definition upgrades")
-	cmd.Flags().StringArrayVar(&opts.installCommand, "install-command", nil, "Argv element used to install the harness (repeatable, e.g. --install-command npm --install-command install). Not run through a shell; pass sh -c yourself for shell semantics.")
-	cmd.Flags().StringArrayVar(&opts.runCommand, "run-command", nil, "Argv element used to run the harness (repeatable, e.g. --run-command claude --run-command --dangerously-skip-permissions). Not run through a shell; pass sh -c yourself for shell semantics.")
-	cmd.Flags().StringArrayVar(&opts.relaunchCommand, "relaunch-command", nil, "Argv element used to resume the previous harness session on subsequent sandbox starts (repeatable, e.g. --relaunch-command claude --relaunch-command --continue). Replaces the run command for non-first launches. Not run through a shell.")
+	cmd.Flags().StringVar(&opts.definitionID, "definition", "", "Built-in harness definition whose image should be registered")
+	cmd.Flags().StringVar(&opts.image, "image", "", "Harness Docker image to register; the server reads and validates its io.discobox.harness.v1 metadata label")
 	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the harness's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
-	cmd.Flags().StringArrayVar(&opts.requiredSecrets, "required-secret", nil, "Environment variable name of a required secret the harness expects (repeatable, e.g. --required-secret ANTHROPIC_API_KEY)")
-	cmd.Flags().StringArrayVar(&opts.optionalSecrets, "optional-secret", nil, "Environment variable name of an optional secret the harness uses when present (repeatable)")
 	_ = cmd.RegisterFlagCompletionFunc("definition", a.completeHarnessDefinitions)
 	return cmd
 }
@@ -298,31 +285,8 @@ func (a *App) newHarnessEnableCommand() *cobra.Command {
 			}
 			return a.writeHarness(cmd, existing)
 		}
-		var configured *harnessConfigureOutput
-		if configureSpec, ok := definition.Configure.Get(); ok && !noConfigure {
-			configured, err = a.runHarnessConfigure(cmd, client, projectID, configureSpec)
-			if err != nil {
-				return fmt.Errorf("harness configure: %w", err)
-			}
-		}
 		body := &apimodel.CreateHarnessConfigBody{}
 		body.SetDefinitionId(apiclientgen.NewOptString(definition.ID))
-		if configured != nil && len(configured.Files) > 0 {
-			body.SetFiles(apiclientgen.NewOptNilHarnessConfigFileArray(configured.Files))
-		}
-		if configured != nil {
-			declarations := make([]apimodel.HarnessConfigSecret, 0, len(configured.Secrets))
-			for _, secret := range configured.Secrets {
-				if strings.TrimSpace(secret.EnvName) == "" {
-					return fmt.Errorf("harness configure: configure secret is missing envName")
-				}
-				declarations = append(declarations, apimodel.HarnessConfigSecret{
-					Name:     strings.TrimSpace(secret.EnvName),
-					Required: apiclientgen.NewOptBool(true),
-				})
-			}
-			body.SetSecrets(apiclientgen.NewOptNilHarnessConfigSecretArray(declarations))
-		}
 		harnessRes, err := client.CreateHarnessConfig(cmd.Context(), body, apiclientgen.CreateHarnessConfigParams{ProjectId: projectID})
 		if err != nil {
 			return err
@@ -331,11 +295,30 @@ func (a *App) newHarnessEnableCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
+		var configured *harnessConfigureOutput
+		if configureSpec, ok := definition.Configure.Get(); ok && !noConfigure {
+			configured, err = a.runHarnessConfigure(cmd, client, projectID, harness.ID, configureSpec)
+			if err != nil {
+				a.deleteHarnessConfigQuietly(context.WithoutCancel(cmd.Context()), client, projectID, harness.ID)
+				return fmt.Errorf("harness configure: %w", err)
+			}
+		}
+		if configured != nil && len(configured.Files) > 0 {
+			update := &apimodel.UpdateHarnessConfigBody{}
+			update.SetFiles(apiclientgen.NewOptNilHarnessConfigFileArray(configured.Files))
+			updatedRes, updateErr := client.UpdateHarnessConfig(cmd.Context(), update, apiclientgen.UpdateHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harness.ID})
+			if updateErr != nil {
+				a.deleteHarnessConfigQuietly(context.WithoutCancel(cmd.Context()), client, projectID, harness.ID)
+				return fmt.Errorf("harness configure: apply files: %w", updateErr)
+			}
+			harness, err = expectResponse[apimodel.HarnessConfig](updatedRes)
+			if err != nil {
+				return err
+			}
+		}
 		if configured != nil {
 			if err := a.applyHarnessConfigureSecrets(cmd.Context(), client, projectID, harness.ID, configured.Secrets); err != nil {
-				if res, deleteErr := client.DeleteHarnessConfig(cmd.Context(), apiclientgen.DeleteHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harness.ID}); deleteErr == nil {
-					_ = expectNoContent[apiclientgen.DeleteHarnessConfigNoContent](res)
-				}
+				a.deleteHarnessConfigQuietly(context.WithoutCancel(cmd.Context()), client, projectID, harness.ID)
 				return fmt.Errorf("harness configure: apply secrets: %w", err)
 			}
 		}
@@ -352,15 +335,16 @@ func (a *App) newHarnessEnableCommand() *cobra.Command {
 }
 
 // configureSandboxCreateConfig builds the sandbox create config that runs a
-// harness definition's configure step. The configure spec carries the ephemeral
-// sandbox's resources and inline harness; the caller fills in Name.
-func configureSandboxCreateConfig(spec apimodel.ConfigureSandbox) apimodel.SandboxCreateConfig {
+// harness definition's configure step. The configure spec carries only generic
+// sandbox resources; harnessMode selects the image-owned config command.
+func configureSandboxCreateConfig(harnessConfigID string, spec apimodel.ConfigureSandbox) apimodel.SandboxCreateConfig {
 	config := apimodel.SandboxCreateConfig{
-		HarnessConfig: apiclientgen.NewOptInlineHarnessConfig(spec.HarnessConfig),
-		Image:         spec.Image,
-		CpuVcpus:      spec.CpuVcpus,
-		MemoryBytes:   spec.MemoryBytes,
-		StorageBytes:  spec.StorageBytes,
+		HarnessConfigId: apiclientgen.NewOptString(harnessConfigID),
+		HarnessMode:     apiclientgen.NewOptSandboxCreateConfigHarnessMode(apiclientgen.SandboxCreateConfigHarnessModeConfig),
+		Image:           spec.Image,
+		CpuVcpus:        spec.CpuVcpus,
+		MemoryBytes:     spec.MemoryBytes,
+		StorageBytes:    spec.StorageBytes,
 	}
 	if env, ok := spec.Env.Get(); ok {
 		config.SetEnv(apiclientgen.NewOptSandboxCreateConfigEnv(apiclientgen.SandboxCreateConfigEnv(env)))
@@ -383,14 +367,14 @@ type harnessConfigureSecret struct {
 	Value   apimodel.SecretValue              `json:"value"`
 }
 
-func (a *App) runHarnessConfigure(cmd *cobra.Command, client *apiclientgen.Client, projectID string, configureSpec apimodel.ConfigureSandbox) (*harnessConfigureOutput, error) {
+func (a *App) runHarnessConfigure(cmd *cobra.Command, client *apiclientgen.Client, projectID, harnessConfigID string, configureSpec apimodel.ConfigureSandbox) (*harnessConfigureOutput, error) {
 	ctx := cmd.Context()
 	stderr := cmd.ErrOrStderr()
 	runID, err := id.New(id.PrefixSandbox)
 	if err != nil {
 		return nil, err
 	}
-	config := configureSandboxCreateConfig(configureSpec)
+	config := configureSandboxCreateConfig(harnessConfigID, configureSpec)
 	config.Name = "configure-" + id.RandomPart(runID)[:8]
 	sandboxRes, err := client.CreateSandbox(ctx, &apimodel.CreateSandboxBody{Config: config}, apiclientgen.CreateSandboxParams{ProjectId: projectID})
 	if err != nil {
@@ -447,6 +431,13 @@ func (a *App) runHarnessConfigure(cmd *cobra.Command, client *apiclientgen.Clien
 		return nil, fmt.Errorf("%s is invalid: %w", harnessConfigureOutputPath, err)
 	}
 	return &out, nil
+}
+
+func (a *App) deleteHarnessConfigQuietly(ctx context.Context, client *apiclientgen.Client, projectID, harnessConfigID string) {
+	res, err := client.DeleteHarnessConfig(ctx, apiclientgen.DeleteHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harnessConfigID})
+	if err == nil {
+		_ = expectNoContent[apiclientgen.DeleteHarnessConfigNoContent](res)
+	}
 }
 
 func (a *App) applyHarnessConfigureSecrets(ctx context.Context, client *apiclientgen.Client, projectID, harnessConfigID string, secrets []harnessConfigureSecret) error {
@@ -540,13 +531,8 @@ func (a *App) newHarnessUpdateCommand() *cobra.Command {
 		return a.writeHarness(cmd, harness)
 	}}
 	cmd.Flags().StringVar(&opts.name, "name", "", "Harness config name")
-	cmd.Flags().StringArrayVar(&opts.installCommand, "install-command", nil, "Argv element used to install the harness (repeatable, e.g. --install-command npm --install-command install). Not run through a shell; pass sh -c yourself for shell semantics.")
-	cmd.Flags().StringArrayVar(&opts.runCommand, "run-command", nil, "Argv element used to run the harness (repeatable, e.g. --run-command claude --run-command --dangerously-skip-permissions). Not run through a shell; pass sh -c yourself for shell semantics.")
-	cmd.Flags().StringArrayVar(&opts.relaunchCommand, "relaunch-command", nil, "Argv element used to resume the previous harness session on subsequent sandbox starts (repeatable, e.g. --relaunch-command claude --relaunch-command --continue). Replaces the run command for non-first launches. Not run through a shell.")
 	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the harness's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
-	cmd.Flags().StringArrayVar(&opts.requiredSecrets, "required-secret", nil, "Environment variable name of a required secret the harness expects (repeatable). Replaces the existing secret set together with --optional-secret.")
-	cmd.Flags().StringArrayVar(&opts.optionalSecrets, "optional-secret", nil, "Environment variable name of an optional secret the harness uses when present (repeatable). Replaces the existing secret set together with --required-secret.")
 	return cmd
 }
 
@@ -713,24 +699,13 @@ func createHarnessBody(opts harnessCreateOptions) (*apimodel.CreateHarnessConfig
 	body.SetName(optString(opts.name))
 	body.SetSlug(optString(opts.slug))
 	body.SetDefinitionId(optString(opts.definitionID))
-	if len(opts.installCommand) > 0 {
-		body.SetInstallCommand(apiclientgen.NewOptNilStringArray(opts.installCommand))
-	}
-	if len(opts.runCommand) > 0 {
-		body.SetRunCommand(apiclientgen.NewOptNilStringArray(opts.runCommand))
-	}
-	if len(opts.relaunchCommand) > 0 {
-		body.SetRelaunchCommand(apiclientgen.NewOptNilStringArray(opts.relaunchCommand))
-	}
+	body.SetImage(optString(opts.image))
 	if len(opts.files) > 0 {
 		files, err := parseHarnessFileFlags(opts.files, opts.createOnlyFile)
 		if err != nil {
 			return nil, err
 		}
 		body.SetFiles(apiclientgen.NewOptNilHarnessConfigFileArray(files))
-	}
-	if len(opts.requiredSecrets) > 0 || len(opts.optionalSecrets) > 0 {
-		body.SetSecrets(apiclientgen.NewOptNilHarnessConfigSecretArray(parseHarnessSecretFlags(opts.requiredSecrets, opts.optionalSecrets)))
 	}
 	return body, nil
 }
@@ -740,15 +715,6 @@ func updateHarnessBody(cmd *cobra.Command, opts harnessUpdateOptions) (*apimodel
 	if cmd.Flags().Changed("name") {
 		body.SetName(apiclientgen.NewOptString(opts.name))
 	}
-	if cmd.Flags().Changed("install-command") {
-		body.SetInstallCommand(apiclientgen.NewOptNilStringArray(opts.installCommand))
-	}
-	if cmd.Flags().Changed("run-command") {
-		body.SetRunCommand(apiclientgen.NewOptNilStringArray(opts.runCommand))
-	}
-	if cmd.Flags().Changed("relaunch-command") {
-		body.SetRelaunchCommand(apiclientgen.NewOptNilStringArray(opts.relaunchCommand))
-	}
 	if cmd.Flags().Changed("file") {
 		files, err := parseHarnessFileFlags(opts.files, opts.createOnlyFile)
 		if err != nil {
@@ -756,27 +722,7 @@ func updateHarnessBody(cmd *cobra.Command, opts harnessUpdateOptions) (*apimodel
 		}
 		body.SetFiles(apiclientgen.NewOptNilHarnessConfigFileArray(files))
 	}
-	if cmd.Flags().Changed("required-secret") || cmd.Flags().Changed("optional-secret") {
-		body.SetSecrets(apiclientgen.NewOptNilHarnessConfigSecretArray(parseHarnessSecretFlags(opts.requiredSecrets, opts.optionalSecrets)))
-	}
 	return body, nil
-}
-
-func parseHarnessSecretFlags(required, optional []string) []apimodel.HarnessConfigSecret {
-	secrets := make([]apimodel.HarnessConfigSecret, 0, len(required)+len(optional))
-	for _, name := range required {
-		if name = strings.TrimSpace(name); name == "" {
-			continue
-		}
-		secrets = append(secrets, apimodel.HarnessConfigSecret{Name: name, Required: apiclientgen.NewOptBool(true)})
-	}
-	for _, name := range optional {
-		if name = strings.TrimSpace(name); name == "" {
-			continue
-		}
-		secrets = append(secrets, apimodel.HarnessConfigSecret{Name: name})
-	}
-	return secrets
 }
 
 func parseHarnessFileFlags(values []string, createOnlyFiles []string) ([]apimodel.HarnessConfigFile, error) {

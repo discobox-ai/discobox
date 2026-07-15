@@ -25,16 +25,8 @@ func (Driver) ID() string { return "opencode" }
 
 func (Driver) Definition() harness.Definition {
 	return harness.Definition{
-		ID:              "opencode",
-		Name:            "opencode",
-		Description:     "opencode terminal coding harness.",
-		InstallCommand:  []string{"npm", "install", "-g", "opencode-ai"},
-		RunCommand:      []string{"opencode"},
-		RelaunchCommand: []string{"opencode", "--continue"},
-		Secrets: []harness.Secret{
-			{Name: "ANTHROPIC_API_KEY", Required: false},
-			{Name: "OPENAI_API_KEY", Required: false},
-		},
+		ID: "opencode", Name: "opencode", Description: "opencode terminal coding harness.",
+		Image: "discobox-harness-opencode:local", Configure: &harness.Configure{},
 	}
 }
 

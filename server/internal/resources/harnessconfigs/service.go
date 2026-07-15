@@ -16,11 +16,12 @@ import (
 )
 
 type Service struct {
-	store *store.Store
+	store     *store.Store
+	inspector imageInspector
 }
 
 func NewService(store *store.Store) *Service {
-	return &Service{store: store}
+	return &Service{store: store, inspector: defaultImageInspector{}}
 }
 
 func (s *Service) ListHarnessConfigs(ctx context.Context, projectID string) ([]model.HarnessConfig, error) {
@@ -31,18 +32,18 @@ func (s *Service) ListHarnessConfigs(ctx context.Context, projectID string) ([]m
 	if err != nil {
 		return nil, err
 	}
-	for i := range configs {
-		configs[i] = *harnessdefs.Resolve(&configs[i])
-	}
 	return configs, nil
 }
 
 func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, input services.CreateHarnessConfigBody) (*model.HarnessConfig, error) {
-	project, err := s.store.GetProject(ctx, projectID)
+	_, err := s.store.GetProject(ctx, projectID)
 	if err != nil {
 		return nil, apiError(err, "project not found")
 	}
 	definitionID := ""
+	image, _ := input.Image.Get()
+	image = strings.TrimSpace(image)
+	imageDigest := ""
 	var definition *model.HarnessDefinition
 	if rawDefinitionID, isSet := input.DefinitionId.Get(); isSet && strings.TrimSpace(rawDefinitionID) != "" {
 		found, ok := harnessdefs.DefinitionByID(strings.TrimSpace(rawDefinitionID))
@@ -51,10 +52,34 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 		}
 		definition = found
 		definitionID = found.ID
+		if image == "" {
+			image = found.Image
+		}
+	}
+	var inspected *imageMetadata
+	if image != "" && s.inspector != nil {
+		metadata, inspectErr := s.inspector.Inspect(ctx, image)
+		if inspectErr != nil {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest, inspectErr.Error())
+		}
+		inspected = &metadata
+		imageDigest = metadata.Digest
+		if definition != nil && metadata.Harness.ID != definition.ID {
+			return nil, apperrors.NewStatusError(http.StatusBadRequest,
+				fmt.Sprintf("harness image declares id %q, expected %q", metadata.Harness.ID, definition.ID))
+		}
 	}
 
 	name := strings.TrimSpace(input.Name.Or(""))
 	slug := strings.TrimSpace(input.Slug.Or(""))
+	if inspected != nil {
+		if name == "" {
+			name = strings.TrimSpace(inspected.Harness.Name)
+		}
+		if slug == "" {
+			slug = strings.TrimSpace(inspected.Harness.ID)
+		}
+	}
 	explicitSlug := slug != ""
 
 	// Default the slug: an explicit slug wins, then the definition id, then a slug
@@ -82,6 +107,9 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 	if slug == "" || name == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config name or slug is required")
 	}
+	if image == "" {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness image is required")
+	}
 	if err := harnessdefs.ValidateSlug(slug); err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
 	}
@@ -96,20 +124,22 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 		return nil, err
 	}
 
-	// Store only the fields the caller explicitly set as overrides; unset fields
-	// (nil) are inherited from the definition at resolve time.
-	installCommand, _ := input.InstallCommand.Get()
-	runCommand, _ := input.RunCommand.Get()
-	relaunchCommand, _ := input.RelaunchCommand.Get()
+	var runCommand, relaunchCommand []string
 	var files []model.HarnessConfigFile
 	if apiFiles, ok := input.Files.Get(); ok {
 		files = services.HarnessConfigFilesToModel(apiFiles)
 	}
 	var secrets []model.HarnessConfigSecret
-	if apiSecrets, ok := input.Secrets.Get(); ok {
-		secrets, err = services.HarnessConfigSecretsToModel(apiSecrets)
-		if err != nil {
-			return nil, err
+	if inspected != nil {
+		runCommand = append([]string{}, inspected.Harness.RunCommand...)
+		relaunchCommand = append([]string{}, inspected.Harness.RelaunchCommand...)
+		files = make([]model.HarnessConfigFile, 0, len(inspected.Harness.Files))
+		for _, file := range inspected.Harness.Files {
+			files = append(files, model.HarnessConfigFile{Path: file.Path, Content: file.Content, CreateOnly: file.CreateOnly, Template: file.Template})
+		}
+		secrets = make([]model.HarnessConfigSecret, 0, len(inspected.Harness.Secrets))
+		for _, secret := range inspected.Harness.Secrets {
+			secrets = append(secrets, model.HarnessConfigSecret{Name: secret.Name, Required: secret.Required, OneOfGroup: secret.OneOfGroup})
 		}
 	}
 	if definitionID == "" && len(runCommand) == 0 {
@@ -121,29 +151,21 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 		Slug:            slug,
 		DefinitionID:    definitionID,
 		Name:            name,
-		InstallCommand:  installCommand,
+		Image:           image,
+		ImageDigest:     imageDigest,
 		RunCommand:      runCommand,
 		RelaunchCommand: relaunchCommand,
 		Files:           files,
 		Secrets:         secrets,
 	}
-	// Store only fields that differ from the definition so inherited fields keep
-	// tracking definition upgrades.
-	harnessdefs.Sparsify(config)
 	if err := s.store.CreateHarnessConfig(ctx, config); err != nil {
 		return nil, err
-	}
-	if project.DefaultHarnessConfigID == "" {
-		project.DefaultHarnessConfigID = config.ID
-		if err := s.store.UpsertProject(ctx, project); err != nil {
-			return nil, err
-		}
 	}
 	stored, err := s.store.GetHarnessConfig(ctx, projectID, config.ID)
 	if err != nil {
 		return nil, err
 	}
-	return harnessdefs.Resolve(stored), nil
+	return stored, nil
 }
 
 func (s *Service) GetHarnessConfig(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error) {
@@ -151,7 +173,7 @@ func (s *Service) GetHarnessConfig(ctx context.Context, projectID, configID stri
 	if err != nil {
 		return nil, apiError(err, "harness config not found")
 	}
-	return harnessdefs.Resolve(config), nil
+	return config, nil
 }
 
 func (s *Service) UpdateHarnessConfig(ctx context.Context, projectID, configID string, input services.UpdateHarnessConfigBody) (*model.HarnessConfig, error) {
@@ -166,32 +188,12 @@ func (s *Service) UpdateHarnessConfig(ctx context.Context, projectID, configID s
 		}
 		config.Name = name
 	}
-	if installCommand, ok := input.InstallCommand.Get(); ok {
-		config.InstallCommand = installCommand
-	}
-	if runCommand, ok := input.RunCommand.Get(); ok {
-		config.RunCommand = runCommand
-	}
-	if relaunchCommand, ok := input.RelaunchCommand.Get(); ok {
-		config.RelaunchCommand = relaunchCommand
-	}
 	if apiFiles, ok := input.Files.Get(); ok {
 		config.Files = services.HarnessConfigFilesToModel(apiFiles)
 	}
-	if apiSecrets, ok := input.Secrets.Get(); ok {
-		secrets, err := services.HarnessConfigSecretsToModel(apiSecrets)
-		if err != nil {
-			return nil, err
-		}
-		config.Secrets = secrets
-	}
-	// A fully custom config (no definition to inherit from) must keep a run command.
-	if config.DefinitionID == "" && len(config.RunCommand) == 0 {
+	if len(config.RunCommand) == 0 {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config run command is required when no definition is provided")
 	}
-	// Re-sparsify so a client that writes back the whole resolved object only
-	// pins fields it actually changed away from the definition.
-	harnessdefs.Sparsify(config)
 	if err := s.store.UpdateHarnessConfig(ctx, config); err != nil {
 		return nil, err
 	}
@@ -199,7 +201,7 @@ func (s *Service) UpdateHarnessConfig(ctx context.Context, projectID, configID s
 	if err != nil {
 		return nil, err
 	}
-	return harnessdefs.Resolve(stored), nil
+	return stored, nil
 }
 
 func (s *Service) SetDefaultHarnessConfig(ctx context.Context, projectID, configID string) (*model.Project, error) {

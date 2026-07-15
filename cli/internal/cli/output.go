@@ -339,8 +339,9 @@ func (a *App) writeHarnessDefinition(cmd *cobra.Command, definition *apimodel.Ha
 		return writeJSON(cmd.OutOrStdout(), definition)
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tSECRETS\tDESCRIPTION")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n", definition.ID, definition.Name, strings.Join(definition.RunCommand, " "), formatHarnessSecrets(definition.Secrets.Or(nil)), definition.Description.Or(""))
+	fmt.Fprintln(tw, "ID\tNAME\tIMAGE\tCONFIGURABLE\tDESCRIPTION")
+	_, configurable := definition.Configure.Get()
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\n", definition.ID, definition.Name, definition.Image.Or(""), configurable, definition.Description.Or(""))
 	return tw.Flush()
 }
 
@@ -352,9 +353,10 @@ func (a *App) writeHarnessDefinitions(cmd *cobra.Command, definitions []apimodel
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"harnessDefinitions": definitions})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tRUN COMMAND\tDESCRIPTION")
+	fmt.Fprintln(tw, "ID\tNAME\tIMAGE\tCONFIGURABLE\tDESCRIPTION")
 	for _, definition := range definitions {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", definition.ID, definition.Name, strings.Join(definition.RunCommand, " "), definition.Description.Or(""))
+		_, configurable := definition.Configure.Get()
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\n", definition.ID, definition.Name, definition.Image.Or(""), configurable, definition.Description.Or(""))
 	}
 	return tw.Flush()
 }

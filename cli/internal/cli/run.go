@@ -112,8 +112,8 @@ func (a *App) attachRunSandbox(cmd *cobra.Command, client *apiclientgen.Client, 
 
 // waitForPrimaryTerminal polls the sandbox terminals until the primary
 // (default) terminal launched by the sandbox-agent is ready to attach. The
-// primary appears in the "installing" phase while its harness install command
-// runs (often the slowest part of a cold start), so this reports that phase to
+// primary appears in the "installing" phase while its hooks and files are
+// prepared, so this reports that phase to
 // progress and only returns once the terminal is past installing.
 func (a *App) waitForPrimaryTerminal(ctx context.Context, progress io.Writer, projectID, sandboxID string, timeout time.Duration) (apimodel.SandboxExec, error) {
 	if timeout > 0 {
@@ -132,7 +132,7 @@ func (a *App) waitForPrimaryTerminal(ctx context.Context, progress io.Writer, pr
 			lastErr = nil
 			if terminal.Status == apiclientgen.SandboxExecStatusInstalling {
 				if !announcedInstalling && progress != nil {
-					fmt.Fprintf(progress, "Installing harness %s (this can take a while on first run)...\n", runHarnessLabel(terminal))
+					fmt.Fprintf(progress, "Preparing harness %s...\n", runHarnessLabel(terminal))
 					announcedInstalling = true
 				}
 			} else {
@@ -148,7 +148,7 @@ func (a *App) waitForPrimaryTerminal(ctx context.Context, progress io.Writer, pr
 			}
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				if announcedInstalling {
-					return apimodel.SandboxExec{}, errors.New("timed out while the harness was still installing; its install command may be slow or failing (see `discobox sandboxes terminals logs`)")
+					return apimodel.SandboxExec{}, errors.New("timed out while the harness was still preparing hooks and files (see `discobox sandboxes terminals logs`)")
 				}
 				return apimodel.SandboxExec{}, errors.New("timed out waiting for the sandbox's default terminal; it may have failed to start (see `discobox sandboxes terminals logs`)")
 			}

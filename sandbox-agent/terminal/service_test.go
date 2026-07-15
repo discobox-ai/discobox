@@ -233,3 +233,13 @@ func TestPrimaryCreateRequest(t *testing.T) {
 		t.Fatalf("shell = %#v", shell)
 	}
 }
+
+func TestMergeHarnessFilesOverlaysByPath(t *testing.T) {
+	merged := mergeHarnessFiles(
+		[]config.HarnessFile{{Path: "settings.json", Content: "default"}, {Path: "seed.json", Content: "seed"}},
+		[]config.HarnessFile{{Path: "settings.json", Content: "configured"}, {Path: "auth.json", Content: "public"}},
+	)
+	if len(merged) != 3 || merged[0].Content != "configured" || merged[1].Path != "seed.json" || merged[2].Path != "auth.json" {
+		t.Fatalf("merged files = %#v", merged)
+	}
+}

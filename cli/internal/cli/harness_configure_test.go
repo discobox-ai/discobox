@@ -102,7 +102,6 @@ func (fc *fakeConfigureControlPlane) server(t *testing.T) *httptest.Server {
 			"slug":            "configure-test",
 			"name":            "Configure Test",
 			"runCommand":      []string{"true"},
-			"installCommand":  body["installCommand"],
 			"relaunchCommand": body["relaunchCommand"],
 			"files":           body["files"],
 			"secrets":         body["secrets"],
@@ -110,6 +109,24 @@ func (fc *fakeConfigureControlPlane) server(t *testing.T) *httptest.Server {
 			"updatedAt":       testTimeRFC3339,
 		}
 		writeJSONBody(w, http.StatusOK, harness)
+	})
+
+	mux.HandleFunc("PATCH /projects/{project}/harness-configs/{id}", func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		fc.mu.Lock()
+		if len(fc.createdHarnessConfigs) > 0 {
+			for key, value := range body {
+				fc.createdHarnessConfigs[0][key] = value
+			}
+		}
+		fc.mu.Unlock()
+		fc.logEvent("update-harness-config")
+		writeJSONBody(w, http.StatusOK, map[string]any{
+			"id": "hnc-real", "projectId": fc.projectID, "slug": "configure-test", "name": "Configure Test",
+			"runCommand": []string{"true"}, "files": body["files"],
+			"createdAt": testTimeRFC3339, "updatedAt": testTimeRFC3339,
+		})
 	})
 
 	mux.HandleFunc("DELETE /projects/{project}/harness-configs/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -345,14 +362,10 @@ const testTimeRFC3339 = "2026-07-10T00:00:00Z"
 
 func configureTestDefinition() map[string]any {
 	return map[string]any{
-		"id":         "configure-test",
-		"name":       "configure-test",
-		"runCommand": []string{"true"},
-		"configure": map[string]any{
-			"harnessConfig": map[string]any{
-				"runCommand": []string{"sh", "configure.sh"},
-			},
-		},
+		"id":        "configure-test",
+		"name":      "configure-test",
+		"image":     "discobox-harness-configure-test:local",
+		"configure": map[string]any{"image": "discobox-harness-configure-test:local"},
 	}
 }
 
@@ -418,16 +431,16 @@ func TestHarnessEnableRunsConfigureHappyPath(t *testing.T) {
 		t.Fatalf("deletedHarnessConfigIDs = %#v, want no rollback on success", fc.deletedHarnessConfigIDs)
 	}
 
-	// The real HarnessConfig must only be created after the configure sandbox's
-	// primary terminal ran and its output was read back.
+	// The HarnessConfig is registered first so the configure sandbox can select
+	// its image; config mode then runs and applies its output to that object.
 	createSandboxIdx := indexOf(fc.events, "create-sandbox")
 	attachPrimaryIdx := indexOf(fc.events, "attach-primary")
 	createHarnessConfigIdx := indexOf(fc.events, "create-harness-config")
 	if createSandboxIdx < 0 || attachPrimaryIdx < 0 || createHarnessConfigIdx < 0 {
 		t.Fatalf("events = %#v, missing expected steps", fc.events)
 	}
-	if createSandboxIdx >= attachPrimaryIdx || attachPrimaryIdx >= createHarnessConfigIdx {
-		t.Fatalf("events = %#v, want create-sandbox < attach-primary < create-harness-config", fc.events)
+	if createHarnessConfigIdx >= createSandboxIdx || createSandboxIdx >= attachPrimaryIdx {
+		t.Fatalf("events = %#v, want create-harness-config < create-sandbox < attach-primary", fc.events)
 	}
 
 	files := fc.createdHarnessConfigs[0]["files"]
@@ -440,7 +453,7 @@ func TestHarnessEnableRunsConfigureHappyPath(t *testing.T) {
 	}
 }
 
-func TestHarnessEnableConfigureNonZeroExitAbortsBeforeCreatingHarnessConfig(t *testing.T) {
+func TestHarnessEnableConfigureNonZeroExitRollsBackHarnessConfig(t *testing.T) {
 	fc := newFakeConfigureControlPlane()
 	fc.definition = configureTestDefinition()
 	fc.primaryExitCode = 1
@@ -454,8 +467,11 @@ func TestHarnessEnableConfigureNonZeroExitAbortsBeforeCreatingHarnessConfig(t *t
 
 	fc.mu.Lock()
 	defer fc.mu.Unlock()
-	if len(fc.createdHarnessConfigs) != 0 {
-		t.Fatalf("createdHarnessConfigs = %#v, want none created when configure fails", fc.createdHarnessConfigs)
+	if len(fc.createdHarnessConfigs) != 1 {
+		t.Fatalf("createdHarnessConfigs = %#v, want registration before config mode", fc.createdHarnessConfigs)
+	}
+	if len(fc.deletedHarnessConfigIDs) != 1 || fc.deletedHarnessConfigIDs[0] != "hnc-real" {
+		t.Fatalf("deletedHarnessConfigIDs = %#v, want failed registration rolled back", fc.deletedHarnessConfigIDs)
 	}
 	if len(fc.deletedSandboxIDs) != 1 {
 		t.Fatalf("deletedSandboxIDs = %#v, want the ephemeral sandbox cleaned up even on failure", fc.deletedSandboxIDs)

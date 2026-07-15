@@ -4,12 +4,10 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/obot-platform/discobox/gormdb"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/model"
-	"gorm.io/gorm"
 )
 
 func TestNewCreatesSQLiteDatabase(t *testing.T) {
@@ -61,36 +59,6 @@ func TestMigrateMigratesSingleSchema(t *testing.T) {
 	}
 	if db.Write.Migrator().HasTable("organizations") {
 		t.Fatalf("schema unexpectedly has organizations table")
-	}
-}
-
-func TestMigrateDropsHarnessConfigDeletedAt(t *testing.T) {
-	ctx := context.Background()
-	db, err := database.New(database.Config{
-		Driver: gormdb.DriverSQLite,
-		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
-	})
-	if err != nil {
-		t.Fatalf("open database: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := db.Close(); err != nil {
-			t.Fatalf("close database: %v", err)
-		}
-	})
-
-	if err := db.Write.AutoMigrate(&legacyHarnessConfig{}); err != nil {
-		t.Fatalf("create legacy harness config table: %v", err)
-	}
-	if !db.Write.Migrator().HasColumn(&legacyHarnessConfig{}, "deleted_at") {
-		t.Fatalf("legacy schema missing deleted_at before migration")
-	}
-
-	if err := db.Migrate(ctx); err != nil {
-		t.Fatalf("migrate database: %v", err)
-	}
-	if db.Write.Migrator().HasColumn(&legacyHarnessConfig{}, "deleted_at") {
-		t.Fatalf("harness_configs still has deleted_at after migration")
 	}
 }
 
@@ -183,19 +151,6 @@ func TestMigrateDropsJobQueueArtifactsWithForeignKeys(t *testing.T) {
 		t.Fatalf("foreign_keys pragma = %d, want 1", fk)
 	}
 }
-
-type legacyHarnessConfig struct {
-	ID             string         `gorm:"primaryKey;type:text"`
-	ProjectID      string         `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_harness_config_project_name,priority:1"`
-	Name           string         `gorm:"column:name;not null;type:text;uniqueIndex:idx_harness_config_project_name,priority:2"`
-	InstallCommand string         `gorm:"column:install_command;type:text"`
-	RunCommand     string         `gorm:"column:run_command;not null;type:text"`
-	CreatedAt      time.Time      `gorm:"autoCreateTime"`
-	UpdatedAt      time.Time      `gorm:"autoUpdateTime"`
-	DeletedAt      gorm.DeletedAt `gorm:"index"`
-}
-
-func (legacyHarnessConfig) TableName() string { return "harness_configs" }
 
 func fileExists(path string) bool {
 	matches, err := filepath.Glob(path)

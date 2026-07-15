@@ -12,7 +12,6 @@ import (
 
 	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
-	"github.com/obot-platform/discobox/server/internal/harnessdefs"
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/secretformat"
 	services "github.com/obot-platform/discobox/server/internal/services"
@@ -74,7 +73,6 @@ func (s *Service) applyHarnessConfigSecrets(ctx context.Context, projectID strin
 	if err != nil {
 		return nil, mapAPIError(err, "harness config not found")
 	}
-	resolved := harnessdefs.Resolve(config)
 	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, projectID, harnessConfigID)
 	if err != nil {
 		return nil, err
@@ -90,7 +88,7 @@ func (s *Service) applyHarnessConfigSecrets(ctx context.Context, projectID strin
 	// A required declared secret must be satisfied by an inline secret, an
 	// harness-config binding, or a literal sandbox env var. OneOfGroup members are
 	// satisfied collectively (at least one present).
-	missing := missingRequiredSecrets(resolved.Secrets, func(name string) bool {
+	missing := missingRequiredSecrets(config.Secrets, func(name string) bool {
 		if _, ok := inlineEnvs[name]; ok {
 			return true
 		}
@@ -265,7 +263,6 @@ func (s *Service) AssignSandboxHarnessSecrets(ctx context.Context, projectID, sa
 	if err != nil {
 		return nil, mapAPIError(err, "harness config not found")
 	}
-	resolved := harnessdefs.Resolve(config)
 	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, projectID, harnessConfigID)
 	if err != nil {
 		return nil, err
@@ -313,7 +310,7 @@ func (s *Service) AssignSandboxHarnessSecrets(ctx context.Context, projectID, sa
 
 	// A required declared secret must be satisfied by an assignment. OneOfGroup
 	// members are satisfied collectively (at least one present).
-	missing := missingRequiredSecrets(resolved.Secrets, func(name string) bool {
+	missing := missingRequiredSecrets(config.Secrets, func(name string) bool {
 		_, ok := envSentinel[name]
 		return ok
 	})
