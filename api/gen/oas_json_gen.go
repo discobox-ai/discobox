@@ -17361,6 +17361,8 @@ func (s *WorkerPhase) Decode(d *jx.Decoder) error {
 		*s = WorkerPhaseActive
 	case WorkerPhaseDraining:
 		*s = WorkerPhaseDraining
+	case WorkerPhaseDeleting:
+		*s = WorkerPhaseDeleting
 	case WorkerPhaseOffline:
 		*s = WorkerPhaseOffline
 	case WorkerPhaseDeleted:

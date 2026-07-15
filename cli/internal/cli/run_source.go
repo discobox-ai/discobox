@@ -66,6 +66,27 @@ func resolveRunSource(ctx context.Context, sourceArg string) (resolvedRunSource,
 	return resolveLocalRunSource(ctx, source, ref, explicitRef)
 }
 
+// resolveSourceRoot resolves a source argument to the repository identity the
+// server records for a sandbox's primary source: the local Git repository root
+// for a local path, or the remote URL for a remote repository. Any @REF suffix
+// is dropped, so every sandbox run against a repository shares one root
+// regardless of the branch or commit it checked out.
+func resolveSourceRoot(ctx context.Context, sourceArg string) (string, error) {
+	source, _, _ := splitRunSourceRef(sourceArg)
+	source = strings.TrimSpace(source)
+	if source == "" {
+		return "", fmt.Errorf("source directory or Git repository is required")
+	}
+	if isRemoteGitSource(source) {
+		return source, nil
+	}
+	absSource, err := filepath.Abs(source)
+	if err != nil {
+		return "", fmt.Errorf("resolve source directory: %w", err)
+	}
+	return gitutil.Root(ctx, absSource)
+}
+
 func (s resolvedRunSource) apiGitSource() (*apimodel.GitSource, error) {
 	source := &apimodel.GitSource{Kind: apiclientgen.GitSourceKindGit}
 	if s.URL != "" {

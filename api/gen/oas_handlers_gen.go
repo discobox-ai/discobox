@@ -6088,6 +6088,10 @@ func (s *Server) handleListSandboxesRequest(args [1]string, argsEscaped bool, w 
 					Name: "projectId",
 					In:   "path",
 				}: params.ProjectId,
+				{
+					Name: "sourceRoot",
+					In:   "query",
+				}: params.SourceRoot,
 			},
 			Raw: r,
 		}

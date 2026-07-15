@@ -85,11 +85,11 @@ type SandboxProviderCatalogItem struct {
 	ConfigFields []ProviderConfigField
 }
 
-func (s *Service) ListSandboxes(ctx context.Context, projectID string) ([]model.Sandbox, error) {
+func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot string) ([]model.Sandbox, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, mapAPIError(err, "project not found")
 	}
-	return s.store.ListSandboxes(ctx, projectID)
+	return s.store.ListSandboxes(ctx, projectID, sourceRoot)
 }
 
 func (s *Service) CreateSandbox(ctx context.Context, projectID string, input services.CreateSandboxBody) (*model.Sandbox, error) {
@@ -139,6 +139,10 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		source = &converted
 	}
 	services.DefaultGitSourceSlugs(source, sourceCodeReferences)
+	var sourceRoot *string
+	if root := source.Root(); root != "" {
+		sourceRoot = &root
+	}
 	inlineHarnessConfig, err := services.InlineHarnessConfigToModel(config.HarnessConfig)
 	if err != nil {
 		return nil, err
@@ -165,6 +169,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		Image:                image,
 		Env:                  map[string]string(config.Env.Or(nil)),
 		Source:               source,
+		SourceRoot:           sourceRoot,
 		SourceCodeReferences: sourceCodeReferences,
 		UserName:             userName,
 		UserUID:              userUID,

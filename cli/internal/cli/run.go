@@ -46,6 +46,7 @@ detach). Pass -d to create the sandbox and print it without attaching.`,
   discobox run -- prompt starting with --flag-like text`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			opts.source = a.source
 			parsedOpts, err := parseRunOptions(opts, args)
 			if err != nil {
 				return err
@@ -76,7 +77,6 @@ detach). Pass -d to create the sandbox and print it without attaching.`,
 			return a.attachRunSandbox(cmd, client, projectID, sandbox)
 		},
 	}
-	cmd.Flags().StringVarP(&opts.source, "chdir", "C", ".", "Source directory or Git repository to run against, optionally with @REF")
 	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables")
 	cmd.Flags().StringVarP(&opts.harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
 	cmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "Create the sandbox and print it without attaching to its terminal")

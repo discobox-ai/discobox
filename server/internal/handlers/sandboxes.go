@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"strings"
 
 	serverapi "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
@@ -9,7 +10,7 @@ import (
 )
 
 func (h *Handler) ListSandboxes(ctx context.Context, params serverapi.ListSandboxesParams) (serverapi.ListSandboxesRes, error) {
-	sandboxes, err := h.services.Sandboxes.ListSandboxes(ctx, params.ProjectId)
+	sandboxes, err := h.services.Sandboxes.ListSandboxes(ctx, params.ProjectId, strings.TrimSpace(params.SourceRoot.Or("")))
 	if err != nil {
 		return apiError(err), nil
 	}

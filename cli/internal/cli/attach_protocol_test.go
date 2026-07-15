@@ -1,6 +1,10 @@
 package cli
 
-import "testing"
+import (
+	"fmt"
+	"os/exec"
+	"testing"
+)
 
 func TestAttachExitFrameReturnsExitCode(t *testing.T) {
 	err := attachExitErrorFromPayload("sandbox exec", []byte(`{"status":"failed","exitCode":7}`))
@@ -19,5 +23,19 @@ func TestAttachExitFrameReturnsExitCode(t *testing.T) {
 func TestAttachExitFrameZeroExitIsSuccess(t *testing.T) {
 	if err := attachExitErrorFromPayload("harness terminal", []byte(`{"status":"exited","exitCode":0}`)); err != nil {
 		t.Fatalf("exit frame error = %v, want nil", err)
+	}
+}
+
+// A failing helper subprocess, such as git rev-parse outside a repository,
+// reports an *exec.ExitError. Exiting silently with its status would hide the
+// error message, so only an attached process's exit status drives the CLI exit
+// code.
+func TestExitCodeIgnoresSubprocessExitErrors(t *testing.T) {
+	subprocessErr := exec.CommandContext(t.Context(), "false").Run()
+	if subprocessErr == nil {
+		t.Fatal("running false: got nil error, want failure")
+	}
+	if code, ok := ExitCode(fmt.Errorf("resolve git root: %w", subprocessErr)); ok {
+		t.Fatalf("ExitCode(subprocess error) = %d, true; want ok = false so the message is printed", code)
 	}
 }

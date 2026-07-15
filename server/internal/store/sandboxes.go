@@ -100,17 +100,23 @@ func (s *Store) ListSandboxIDsWithStaleOperations(ctx context.Context, cutoff ti
 	return refs, nil
 }
 
-func (s *Store) ListSandboxes(ctx context.Context, projectID string) ([]model.Sandbox, error) {
+// ListSandboxes lists a project's sandboxes. A non-empty sourceRoot restricts
+// the result to sandboxes whose primary source resolves to that repository root.
+func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string) ([]model.Sandbox, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
 	}
-	var sandboxes []model.Sandbox
-	err = read.
+	query := read.
 		Preload("Project").
 		Preload("ProviderInstance").
 		Preload("HarnessConfig").
-		Where("project_id = ?", projectID).
+		Where("project_id = ?", projectID)
+	if sourceRoot != "" {
+		query = query.Where("source_root = ?", sourceRoot)
+	}
+	var sandboxes []model.Sandbox
+	err = query.
 		Order("created_at ASC").
 		Find(&sandboxes).Error
 	return sandboxes, err

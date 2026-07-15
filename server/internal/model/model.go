@@ -7,6 +7,7 @@ package model
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -403,6 +404,26 @@ type GitSource struct {
 	Destination    *GitSourceDestination `json:"destination,omitempty" doc:"Sandbox destination paths for this source"`
 }
 
+// Root returns the normalized identity of the source repository, independent of
+// the checked out ref: the absolute local repository root for local sources, and
+// the canonical remote URL for remote ones. Sandboxes are grouped by this value
+// so a caller sitting in a Git repository can list the sandboxes that run
+// against it.
+func (s *GitSource) Root() string {
+	if s == nil {
+		return ""
+	}
+	if s.LocalDirectory != nil {
+		if root := strings.TrimSpace(*s.LocalDirectory); root != "" {
+			return root
+		}
+	}
+	if s.URL != nil {
+		return strings.TrimSpace(*s.URL)
+	}
+	return ""
+}
+
 // GitSourceCheckout identifies the immutable checkout and user-facing ref.
 type GitSourceCheckout struct {
 	Commit  *string `json:"commit,omitempty" doc:"Immutable commit SHA to materialize"`
@@ -446,6 +467,7 @@ type Sandbox struct {
 	Image                string               `gorm:"column:image;type:text" json:"image,omitempty" doc:"Sandbox base image"`
 	Env                  map[string]string    `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Environment variables available to sandbox-agent terminals and execs by default"`
 	Source               *GitSource           `gorm:"column:source;type:text;serializer:json" json:"source,omitempty" doc:"Primary Git source to materialize in the sandbox"`
+	SourceRoot           *string              `gorm:"column:source_root;type:text;index" json:"sourceRoot,omitempty" doc:"Normalized repository identity of the primary source: local repository root path, or remote URL. Derived from Source; used to list the sandboxes belonging to a repository."`
 	SourceCodeReferences SourceCodeReferences `gorm:"column:source_code_references;type:text;serializer:json" json:"sourceCodeReferences,omitempty" doc:"Additional Git sources to materialize in the sandbox"`
 	UserName             *string              `gorm:"column:user_name;type:text" json:"userName,omitempty" doc:"Username to use inside the sandbox"`
 	UserUID              *int                 `gorm:"column:user_uid" json:"userUid,omitempty" doc:"UID to use inside the sandbox"`

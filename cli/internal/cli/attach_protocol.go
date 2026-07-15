@@ -39,8 +39,13 @@ func (e exitCodeError) ExitCode() int {
 	return e.code
 }
 
+// ExitCode reports the exit status the CLI should exit with silently, which is
+// only ever the status of a process the caller attached to. It deliberately
+// matches exitCodeError alone: errors from helper subprocesses such as git also
+// carry an ExitCode, and exiting on those would replace their message with a
+// bare status code.
 func ExitCode(err error) (int, bool) {
-	var exit interface{ ExitCode() int }
+	var exit exitCodeError
 	if errors.As(err, &exit) {
 		code := exit.ExitCode()
 		if code < 0 {

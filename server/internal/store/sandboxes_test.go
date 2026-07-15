@@ -49,6 +49,55 @@ func TestGetSandboxWithGeneration(t *testing.T) {
 	}
 }
 
+func TestListSandboxesFiltersBySourceRoot(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	newSandbox := func(id, sourceRoot string) *model.Sandbox {
+		sandbox := &model.Sandbox{
+			ID:              id,
+			ProjectID:       "project-1",
+			CreatedByUserID: "user-1",
+			Name:            id,
+		}
+		if sourceRoot != "" {
+			sandbox.Source = &model.GitSource{Kind: "git", LocalDirectory: &sourceRoot}
+			sandbox.SourceRoot = &sourceRoot
+		}
+		if err := s.CreateSandbox(ctx, sandbox); err != nil {
+			t.Fatalf("create sandbox %s: %v", id, err)
+		}
+		return sandbox
+	}
+	newSandbox("sandbox-1", "/src/alpha")
+	newSandbox("sandbox-2", "/src/beta")
+	newSandbox("sandbox-3", "")
+
+	matching, err := s.ListSandboxes(ctx, "project-1", "/src/alpha")
+	if err != nil {
+		t.Fatalf("list sandboxes by source root: %v", err)
+	}
+	if len(matching) != 1 || matching[0].ID != "sandbox-1" {
+		t.Fatalf("sandboxes for /src/alpha = %v, want only sandbox-1", sandboxIDs(matching))
+	}
+
+	all, err := s.ListSandboxes(ctx, "project-1", "")
+	if err != nil {
+		t.Fatalf("list all sandboxes: %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("unfiltered sandboxes = %v, want all three", sandboxIDs(all))
+	}
+}
+
+func sandboxIDs(sandboxes []model.Sandbox) []string {
+	ids := make([]string, 0, len(sandboxes))
+	for _, sandbox := range sandboxes {
+		ids = append(ids, sandbox.ID)
+	}
+	return ids
+}
+
 func TestGetResourcesByShortIDPrefix(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)

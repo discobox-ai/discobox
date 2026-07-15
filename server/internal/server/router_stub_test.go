@@ -105,14 +105,24 @@ func (s *routerTestServices) ForceJob(_ context.Context, projectID, _ string) (*
 	return nil, apperrors.NewStatusError(http.StatusNotFound, "job not found")
 }
 
-func (s *routerTestServices) ListSandboxes(_ context.Context, projectID string) ([]model.Sandbox, error) {
+func (s *routerTestServices) ListSandboxes(_ context.Context, projectID, sourceRoot string) ([]model.Sandbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	if projectID != s.project.ID {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
-	return s.sortedSandboxes(), nil
+	sandboxes := s.sortedSandboxes()
+	if sourceRoot == "" {
+		return sandboxes, nil
+	}
+	filtered := make([]model.Sandbox, 0, len(sandboxes))
+	for _, sandbox := range sandboxes {
+		if sandbox.Source.Root() == sourceRoot {
+			filtered = append(filtered, sandbox)
+		}
+	}
+	return filtered, nil
 }
 
 func (s *routerTestServices) CreateSandbox(_ context.Context, projectID string, input services.CreateSandboxBody) (*model.Sandbox, error) {

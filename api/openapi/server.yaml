@@ -3735,6 +3735,13 @@ paths:
                     default: default
                     description: Project ID
                     type: string
+                - description: Only list sandboxes whose primary source resolves to this repository root, given as a local repository root path or a remote Git URL
+                  in: query
+                  name: sourceRoot
+                  required: false
+                  schema:
+                    description: Only list sandboxes whose primary source resolves to this repository root, given as a local repository root path or a remote Git URL
+                    type: string
             responses:
                 200:
                     content:

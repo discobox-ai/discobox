@@ -4697,6 +4697,9 @@ func decodeListSandboxProviderInstancesParams(args [1]string, argsEscaped bool, 
 type ListSandboxesParams struct {
 	// Project ID.
 	ProjectId string
+	// Only list sandboxes whose primary source resolves to this repository root, given as a local
+	// repository root path or a remote Git URL.
+	SourceRoot OptString `json:",omitempty,omitzero"`
 }
 
 func unpackListSandboxesParams(packed middleware.Parameters) (params ListSandboxesParams) {
@@ -4707,10 +4710,20 @@ func unpackListSandboxesParams(packed middleware.Parameters) (params ListSandbox
 		}
 		params.ProjectId = packed[key].(string)
 	}
+	{
+		key := middleware.ParameterKey{
+			Name: "sourceRoot",
+			In:   "query",
+		}
+		if v, ok := packed[key]; ok {
+			params.SourceRoot = v.(OptString)
+		}
+	}
 	return params
 }
 
 func decodeListSandboxesParams(args [1]string, argsEscaped bool, r *http.Request) (params ListSandboxesParams, _ error) {
+	q := uri.NewQueryDecoder(r.URL.Query())
 	// Set default value for path: projectId.
 	{
 		val := string("default")
@@ -4758,6 +4771,47 @@ func decodeListSandboxesParams(args [1]string, argsEscaped bool, r *http.Request
 		return params, &ogenerrors.DecodeParamError{
 			Name: "projectId",
 			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode query: sourceRoot.
+	if err := func() error {
+		cfg := uri.QueryParameterDecodingConfig{
+			Name:    "sourceRoot",
+			Style:   uri.QueryStyleForm,
+			Explode: true,
+		}
+
+		if err := q.HasParam(cfg); err == nil {
+			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
+				var paramsDotSourceRootVal string
+				if err := func() error {
+					val, err := d.DecodeValue()
+					if err != nil {
+						return err
+					}
+
+					c, err := conv.ToString(val)
+					if err != nil {
+						return err
+					}
+
+					paramsDotSourceRootVal = c
+					return nil
+				}(); err != nil {
+					return err
+				}
+				params.SourceRoot.SetTo(paramsDotSourceRootVal)
+				return nil
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "sourceRoot",
+			In:   "query",
 			Err:  err,
 		}
 	}

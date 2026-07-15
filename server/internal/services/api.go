@@ -66,7 +66,7 @@ type HarnessConfigService interface {
 
 // SandboxService manages sandboxes within a project.
 type SandboxService interface {
-	ListSandboxes(ctx context.Context, projectID string) ([]model.Sandbox, error)
+	ListSandboxes(ctx context.Context, projectID, sourceRoot string) ([]model.Sandbox, error)
 	CreateSandbox(ctx context.Context, projectID string, input CreateSandboxBody) (*model.Sandbox, error)
 	GetSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
 	UpdateSandbox(ctx context.Context, projectID, sandboxID string, input UpdateSandboxBody) (*model.Sandbox, error)

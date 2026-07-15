@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -128,6 +129,65 @@ func TestCreateSandboxDefaultsGitSourceSlugs(t *testing.T) {
 	tools := created.SourceCodeReferences["tools"]
 	if tools.Slug == nil || *tools.Slug != "custom-tools" {
 		t.Fatalf("tools ref slug = %v, want custom-tools", tools.Slug)
+	}
+}
+
+func TestCreateSandboxDerivesSourceRootFromPrimarySource(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := newSandboxTestService(t, nil)
+
+	remoteURL, err := url.Parse("https://github.com/obot-platform/discobox.git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range []struct {
+		name   string
+		source serverapi.GitSource
+		want   string
+	}{
+		{
+			name: "local repository root",
+			source: serverapi.GitSource{
+				Kind:           serverapi.GitSourceKindGit,
+				LocalDirectory: serverapi.NewOptString("/home/darren/src/disco2"),
+				Checkout:       serverapi.NewOptGitSourceCheckout(serverapi.GitSourceCheckout{Commit: serverapi.NewOptString("abc123")}),
+			},
+			want: "/home/darren/src/disco2",
+		},
+		{
+			name: "remote url",
+			source: serverapi.GitSource{
+				Kind:     serverapi.GitSourceKindGit,
+				URL:      serverapi.NewOptURI(*remoteURL),
+				Checkout: serverapi.NewOptGitSourceCheckout(serverapi.GitSourceCheckout{RefName: serverapi.NewOptString("main")}),
+			},
+			want: "https://github.com/obot-platform/discobox.git",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+				Config: serverapi.SandboxCreateConfig{
+					Name:   "alpha",
+					Source: serverapi.NewOptGitSource(tc.source),
+				},
+			})
+			if err != nil {
+				t.Fatalf("create sandbox: %v", err)
+			}
+			if created.SourceRoot == nil || *created.SourceRoot != tc.want {
+				t.Fatalf("source root = %v, want %q", created.SourceRoot, tc.want)
+			}
+		})
+	}
+
+	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+		Config: serverapi.SandboxCreateConfig{Name: "sourceless"},
+	})
+	if err != nil {
+		t.Fatalf("create sandbox without source: %v", err)
+	}
+	if created.SourceRoot != nil {
+		t.Fatalf("source root = %v, want nil for a sandbox with no source", created.SourceRoot)
 	}
 }
 
