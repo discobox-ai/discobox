@@ -63,6 +63,54 @@ const (
 	SandboxOperationStatusFailed  = OperationStatusFailed
 )
 
+// Enum registries. Each slice is the canonical set of values a string-typed
+// domain field may hold. They exist to be enumerated: the API layer serves
+// these values verbatim (see services.Convert), and TestModelEnumsMatchAPISchema
+// cross-checks every slice against the generated OpenAPI enum so the two lists
+// cannot silently drift. Keep each slice in sync with the consts directly above
+// it — a value present in one list but not the other is exactly the bug the test
+// catches.
+var (
+	WorkerDesiredStates = []string{
+		WorkerDesiredStateActive,
+		WorkerDesiredStateDrained,
+		WorkerDesiredStateDeleted,
+	}
+	WorkerPhases = []string{
+		WorkerPhasePending,
+		WorkerPhaseLaunching,
+		WorkerPhaseRegistering,
+		WorkerPhaseActive,
+		WorkerPhaseDraining,
+		WorkerPhaseDeleting,
+		WorkerPhaseOffline,
+		WorkerPhaseFailed,
+		WorkerPhaseDeleted,
+	}
+	SandboxDesiredStates = []string{
+		SandboxDesiredStateRunning,
+		SandboxDesiredStateStopped,
+		SandboxDesiredStateDeleted,
+	}
+	SandboxPhases = []string{
+		SandboxPhasePending,
+		SandboxPhaseProvisioning,
+		SandboxPhaseStarting,
+		SandboxPhaseRunning,
+		SandboxPhaseStopping,
+		SandboxPhaseStopped,
+		SandboxPhaseDeleting,
+		SandboxPhaseDeleted,
+		SandboxPhaseFailed,
+	}
+	OperationStatuses = []string{
+		OperationStatusPending,
+		OperationStatusRunning,
+		OperationStatusSuccess,
+		OperationStatusFailed,
+	}
+)
+
 var (
 	WorkerCreateOperation = OperationSpec{
 		Operation:    WorkerOperationCreate,

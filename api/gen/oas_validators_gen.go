@@ -3454,6 +3454,8 @@ func (s WorkerPhase) Validate() error {
 		return nil
 	case "draining":
 		return nil
+	case "deleting":
+		return nil
 	case "offline":
 		return nil
 	case "deleted":

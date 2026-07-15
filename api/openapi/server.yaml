@@ -2819,6 +2819,7 @@ components:
                         - registering
                         - active
                         - draining
+                        - deleting
                         - offline
                         - deleted
                         - failed

@@ -9800,6 +9800,7 @@ const (
 	WorkerPhaseRegistering WorkerPhase = "registering"
 	WorkerPhaseActive      WorkerPhase = "active"
 	WorkerPhaseDraining    WorkerPhase = "draining"
+	WorkerPhaseDeleting    WorkerPhase = "deleting"
 	WorkerPhaseOffline     WorkerPhase = "offline"
 	WorkerPhaseDeleted     WorkerPhase = "deleted"
 	WorkerPhaseFailed      WorkerPhase = "failed"
@@ -9813,6 +9814,7 @@ func (WorkerPhase) AllValues() []WorkerPhase {
 		WorkerPhaseRegistering,
 		WorkerPhaseActive,
 		WorkerPhaseDraining,
+		WorkerPhaseDeleting,
 		WorkerPhaseOffline,
 		WorkerPhaseDeleted,
 		WorkerPhaseFailed,
@@ -9831,6 +9833,8 @@ func (s WorkerPhase) MarshalText() ([]byte, error) {
 	case WorkerPhaseActive:
 		return []byte(s), nil
 	case WorkerPhaseDraining:
+		return []byte(s), nil
+	case WorkerPhaseDeleting:
 		return []byte(s), nil
 	case WorkerPhaseOffline:
 		return []byte(s), nil
@@ -9860,6 +9864,9 @@ func (s *WorkerPhase) UnmarshalText(data []byte) error {
 		return nil
 	case WorkerPhaseDraining:
 		*s = WorkerPhaseDraining
+		return nil
+	case WorkerPhaseDeleting:
+		*s = WorkerPhaseDeleting
 		return nil
 	case WorkerPhaseOffline:
 		*s = WorkerPhaseOffline
