@@ -337,7 +337,7 @@ func (a *App) writeSandboxExecs(cmd *cobra.Command, execs []apimodel.SandboxExec
 func (a *App) attachSandboxExec(ctx context.Context, projectID, sandboxID, execID string, interactive, tty bool, stdin io.Reader, stdout, stderr io.Writer) error {
 	conn, err := a.openSandboxExecAttach(ctx, projectID, sandboxID, execID, false)
 	if err != nil {
-		return err
+		return a.execAttachError(ctx, projectID, sandboxID, execID, err)
 	}
 	defer conn.Close()
 
@@ -363,6 +363,29 @@ func (a *App) attachSandboxExec(ctx context.Context, projectID, sandboxID, execI
 		return err
 	}
 	return session.run(ctx)
+}
+
+// execAttachError checks the authoritative exec record after an attach cannot
+// be opened. A missing shim socket commonly means the command already exited;
+// reporting only the transport error hides the command's actual result.
+func (a *App) execAttachError(ctx context.Context, projectID, sandboxID, execID string, attachErr error) error {
+	exec, err := a.getSandboxExec(ctx, projectID, sandboxID, execID)
+	if err != nil {
+		return attachErr
+	}
+	switch exec.Status {
+	case apiclientgen.SandboxExecStatusExited, apiclientgen.SandboxExecStatusFailed, apiclientgen.SandboxExecStatusLost:
+		detail := fmt.Sprintf("exec %s is %s", exec.ID, exec.Status)
+		if code, ok := exec.ExitCode.Get(); ok {
+			detail += fmt.Sprintf(" with exit code %d", code)
+		}
+		if message := strings.TrimSpace(exec.Error.Or("")); message != "" {
+			detail += ": " + message
+		}
+		return fmt.Errorf("%w; %s", attachErr, detail)
+	default:
+		return attachErr
+	}
 }
 
 func (a *App) openSandboxExecAttach(ctx context.Context, projectID, sandboxID, execID string, replay bool) (io.ReadWriteCloser, error) {

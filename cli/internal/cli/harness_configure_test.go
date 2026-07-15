@@ -35,8 +35,9 @@ type fakeConfigureControlPlane struct {
 	// SetDefaultHarnessConfig, an endpoint this fake doesn't implement).
 	existingHarnessConfigs []map[string]any
 
-	primaryExitCode int64
-	primaryStatus   string // "exited" or "failed"
+	primaryExitCode   int64
+	primaryStatus     string // "exited" or "failed"
+	failPrimaryAttach bool
 
 	configureOutput []byte // raw bytes the "cat" exec returns as output
 
@@ -230,7 +231,12 @@ func (fc *fakeConfigureControlPlane) server(t *testing.T) *httptest.Server {
 		execID := r.PathValue("exec")
 		fc.mu.Lock()
 		kind := fc.execKinds[execID]
+		failPrimaryAttach := fc.failPrimaryAttach
 		fc.mu.Unlock()
+		if kind == "primary" && failPrimaryAttach {
+			writeJSONBody(w, http.StatusInternalServerError, map[string]any{"error": "dial unix shim.sock: no such file or directory"})
+			return
+		}
 		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
@@ -453,6 +459,26 @@ func TestHarnessEnableConfigureNonZeroExitAbortsBeforeCreatingHarnessConfig(t *t
 	}
 	if len(fc.deletedSandboxIDs) != 1 {
 		t.Fatalf("deletedSandboxIDs = %#v, want the ephemeral sandbox cleaned up even on failure", fc.deletedSandboxIDs)
+	}
+}
+
+func TestHarnessEnableConfigureAttachFailureReportsExecStatus(t *testing.T) {
+	fc := newFakeConfigureControlPlane()
+	fc.definition = configureTestDefinition()
+	fc.primaryStatus = "failed"
+	fc.primaryExitCode = 23
+	fc.failPrimaryAttach = true
+
+	server := fc.server(t)
+	_, err := runEnableCommand(t, server, "harnesses", "enable", "configure-test")
+	if err == nil {
+		t.Fatal("harnesses enable = nil error, want attach failure")
+	}
+	message := err.Error()
+	for _, want := range []string{"no such file or directory", "exec exec-primary is failed", "exit code 23"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("error = %q, want %q", message, want)
+		}
 	}
 }
 

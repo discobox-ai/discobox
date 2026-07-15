@@ -393,7 +393,11 @@ func (r *shimRuntime) wait() {
 	status := r.status
 	attachers := r.stream.Attachers()
 	r.mu.Unlock()
+	// Do not publish terminal status until every byte has been read from the
+	// PTY/pipes and the asynchronous audit log has drained. Callers use terminal
+	// status as the signal that output and logs are complete.
 	r.outputWG.Wait()
+	r.logger.Close()
 	_ = r.writeStatusValue(status)
 	payload, _ := frame.EncodeExit(string(status.Status), status.ExitCode, status.Error)
 	for _, attach := range attachers {

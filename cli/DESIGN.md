@@ -22,6 +22,10 @@ the transport/session mechanics in `internal/cli/attach_session.go`.
 - Keep resource-specific behavior in the resource file: terminal detach
   filtering belongs with terminal commands, and exec interactive/non-interactive
   stdin behavior belongs with exec commands.
+- If the attach websocket cannot be opened, fetch the exec once more and report
+  terminal status, exit code, and runtime error when it already exited. A gone
+  shim socket commonly means the command finished before attach, so the
+  transport error alone is not the useful failure.
 - Do not fork a second terminal/exec attach loop for a new stream feature. Add
   an option or callback to the shared session when the behavior is protocol
   plumbing; add resource-specific code only when the semantics differ.

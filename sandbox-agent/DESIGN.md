@@ -72,7 +72,9 @@ runtime operations.
   socket setup, HTTP upgrade, attacher tracking, frame writes, output broadcast,
   exit frame emission, and pending resize handling in `shimruntime`; keep
   process startup, status persistence, stream logging, and stdin-close behavior
-  in `execs`. The exec shim serves both TTY (terminal, `exec -t`) and
+  in `execs`. Before publishing terminal status or an exit frame, drain the
+  PTY/pipes and flush the asynchronous log queue so status means all command
+  output is available. The exec shim serves both TTY (terminal, `exec -t`) and
   stdout/stderr-pipe (plain exec) modes.
 - Terminal attach supports `?replay=true`, which repaints the current screen
   before live output so a client that connects after a program has been running

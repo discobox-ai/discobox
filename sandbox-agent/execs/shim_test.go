@@ -99,6 +99,19 @@ done:
 	if err := <-errCh; err != nil {
 		t.Fatalf("run shim: %v", err)
 	}
+	logs, err := ReadLogs(ctx, filepath.Join(dir, "logs"), "exec_test")
+	if err != nil {
+		t.Fatalf("read logs: %v", err)
+	}
+	var logged []byte
+	for _, entry := range logs {
+		if entry.Stream == LogStreamStdout {
+			logged = append(logged, entry.Data...)
+		}
+	}
+	if string(logged) != "hi" {
+		t.Fatalf("logged output = %q, want hi", string(logged))
+	}
 }
 
 func TestRunShimUsesResizeFrameBeforeStart(t *testing.T) {
