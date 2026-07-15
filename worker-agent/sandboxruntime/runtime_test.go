@@ -320,6 +320,10 @@ func TestBuildSandboxManifestIncludesProjectHarnessConfigs(t *testing.T) {
 	if manifest.Provider.PublicKeys["controlPlane"] != "public-key" {
 		t.Fatalf("public keys = %#v, want control plane key", manifest.Provider.PublicKeys)
 	}
+	user, ok := manifest.Config.User.Get()
+	if !ok || user.Name.Or("") != "root" || user.UID.Or(-1) != 0 || user.Gid.Or(-1) != 0 || user.HomeDirectory.Or("") != "/home/root" {
+		t.Fatalf("manifest user = %#v, want resolved root identity at /home/root", user)
+	}
 	env, ok := manifest.Config.Env.Get()
 	if !ok || env["BASE"] != "sandbox" || env["OVERRIDE"] != "sandbox" {
 		t.Fatalf("env = %#v, want sandbox env in manifest config", env)

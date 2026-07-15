@@ -71,7 +71,10 @@ func (Driver) Definition() harness.Definition {
 		},
 		Configure: &harness.Configure{
 			InstallCommand: []string{"npm", "install", "-g", "@anthropic-ai/claude-code"},
-			RunCommand:     []string{"sh", configureScriptPath},
+			// Harness files are installed relative to the resolved run user's home,
+			// while the terminal workdir is the sandbox workspace. Resolve the script
+			// through HOME instead of assuming those directories are the same.
+			RunCommand: []string{"sh", "-c", fmt.Sprintf(`exec sh "$HOME/%s"`, configureScriptPath)},
 			Files: []harness.File{
 				{Path: configureScriptPath, Content: configureScript},
 			},

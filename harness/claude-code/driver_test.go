@@ -12,8 +12,8 @@ func TestDefinitionConfigure(t *testing.T) {
 	}
 	configure := def.Configure
 
-	if len(configure.RunCommand) != 2 || configure.RunCommand[0] != "sh" || configure.RunCommand[1] != configureScriptPath {
-		t.Fatalf("Configure.RunCommand = %#v, want [sh %s]", configure.RunCommand, configureScriptPath)
+	if len(configure.RunCommand) != 3 || configure.RunCommand[0] != "sh" || configure.RunCommand[1] != "-c" || !strings.Contains(configure.RunCommand[2], `$HOME/.discobox-configure.sh`) {
+		t.Fatalf("Configure.RunCommand = %#v, want home-relative configure script", configure.RunCommand)
 	}
 	if len(configure.InstallCommand) == 0 {
 		t.Fatal("Configure.InstallCommand is empty, want the claude-code npm install command")

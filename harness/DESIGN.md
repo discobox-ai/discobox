@@ -12,7 +12,9 @@ This package owns harness hook registration for sandbox terminals.
   runs interactively before creating a `HarnessConfig`. The configure process
   writes files and collected secret values to
   `/run/discobox/harness-configure.json`; definitions without interactive setup
-  leave it nil.
+  leave it nil. Configure files use the same home-relative contract as all
+  harness files; configure commands run from the sandbox workdir and must use
+  `$HOME` when invoking one of those files.
 - `InstallHooks` (hook wiring) is unrelated to `Definition.InstallCommand`, which
   is the argv that installs the harness CLI itself.
 - Provider-specific implementations live in one folder per harness:

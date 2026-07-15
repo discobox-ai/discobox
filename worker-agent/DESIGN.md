@@ -103,6 +103,10 @@ flowchart LR
 - Normalize provider-owned source destination defaults before both mounting
   sources and writing the public sandbox manifest so manifest consumers observe
   the paths actually used by the runtime.
+- Publish the worker-resolved sandbox user (name, UID, GID, and home) in the
+  manifest even when the request omitted or partially specified `config.user`.
+  The home mount, container environment, sandbox-agent exec defaults, and
+  home-relative harness files must all use that same identity.
 - MITM CA trust is split by how tools find roots: the sandbox
   `discobox-trust-ca.service` runs `update-ca-certificates` early in boot so the
   system bundle (curl, git, wget, OpenSSL, and the `SSL_CERT_FILE` /

@@ -359,6 +359,18 @@ func buildSandboxManifest(projectID, sandboxID, workerID, controlPlanePublicKey 
 	}
 	if req != nil {
 		manifest.Config = publicSandboxConfig(req.Config)
+		// The worker owns the effective sandbox user used for the home mount and
+		// container environment. Publish that fully resolved identity even when
+		// the request omitted or partially specified config.user, so the
+		// sandbox-agent installs harness files and launches commands against the
+		// same home directory.
+		user := resolveSandboxUser(req)
+		manifest.Config.User = apigen.NewOptSandboxUser(apigen.SandboxUser{
+			Name:          apigen.NewOptString(user.name),
+			UID:           apigen.NewOptInt64(int64(user.uid)),
+			Gid:           apigen.NewOptInt64(int64(user.gid)),
+			HomeDirectory: apigen.NewOptString(user.homeDirectory),
+		})
 		if resources, ok := req.Resources.Get(); ok {
 			manifest.Resources = &apimodel.SandboxResources{
 				CPUCores:       resources.CpuCores,
