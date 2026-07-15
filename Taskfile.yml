@@ -33,6 +33,7 @@ tasks:
     cmds:
       - mkdir -p build
       - cd cli && go build -o ../{{.CLI_BINARY}} {{.CLI_MAIN}}
+      - ln -sf discobox build/disco
 
   build:hooks:
     desc: Compile discobox-hooks CLI

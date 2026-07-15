@@ -5,7 +5,7 @@ tmp_dir = "build"
 [build]
   args_bin = []
   entrypoint = "./build/discobox"
-  cmd = "cd cli && go build -o ../build/discobox ./cmd/discobox"
+  cmd = "cd cli && go build -o ../build/discobox ./cmd/discobox && ln -sf discobox ../build/disco"
   delay = 1000
   exclude_dir = ["build", "vendor", "testdata", "node_modules"]
   exclude_file = []
