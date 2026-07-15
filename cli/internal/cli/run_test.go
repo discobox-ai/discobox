@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	apimodel "github.com/obot-platform/discobox/api/model"
 )
 
 func TestParseRunOptions(t *testing.T) {
@@ -215,5 +217,35 @@ func TestCreateRunSandboxBodyUsesSplitSourceRef(t *testing.T) {
 	checkout, ok := source.Checkout.Get()
 	if !ok || checkout.Commit.Value != commit || checkout.RefType.Value != runSourceRefTypeCommit {
 		t.Fatalf("checkout = %#v ok=%t, want commit %s", checkout, ok, commit)
+	}
+}
+
+func TestCreateRunSandboxBodySecrets(t *testing.T) {
+	repo := newRunSourceTestRepo(t)
+
+	body, err := createRunSandboxBody(t.Context(), runOptions{
+		source: repo,
+		env:    []string{"PLAIN=value"},
+		secret: []string{"OPENAI_API_KEY=sk-secret", "GITHUB_TOKEN=<sec_123>"},
+	})
+	if err != nil {
+		t.Fatalf("createRunSandboxBody: %v", err)
+	}
+	env, ok := body.Config.Env.Get()
+	if !ok || env["PLAIN"] != "value" {
+		t.Fatalf("env = %#v ok=%t, want PLAIN", env, ok)
+	}
+	if len(body.Config.Secrets) != 2 {
+		t.Fatalf("secrets = %#v, want 2 entries", body.Config.Secrets)
+	}
+	byEnv := map[string]apimodel.SandboxSecretInput{}
+	for _, s := range body.Config.Secrets {
+		byEnv[s.Env] = s
+	}
+	if got := byEnv["OPENAI_API_KEY"]; got.Value.Value != "sk-secret" || got.SecretId.Set {
+		t.Fatalf("OPENAI_API_KEY = %#v, want inline value", got)
+	}
+	if got := byEnv["GITHUB_TOKEN"]; got.SecretId.Value != "sec_123" || got.Value.Set {
+		t.Fatalf("GITHUB_TOKEN = %#v, want secret reference", got)
 	}
 }

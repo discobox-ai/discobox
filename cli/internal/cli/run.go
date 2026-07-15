@@ -19,6 +19,7 @@ type runOptions struct {
 	ref     string
 	prompt  []string
 	env     []string
+	secret  []string
 	harness string
 	detach  bool
 }
@@ -42,6 +43,7 @@ detach). Pass -d to create the sandbox and print it without attaching.`,
 		Example: `  discobox run fix the failing tests
   discobox run -C https://github.com/obot-platform/discobox.git@main summarize the CLI package
   discobox run -e GITHUB_TOKEN -e MODE=test fix the failing tests
+  discobox run -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> fix the failing tests
   discobox run -d fix the failing tests
   discobox run -- prompt starting with --flag-like text`,
 		Args: cobra.ArbitraryArgs,
@@ -77,7 +79,8 @@ detach). Pass -d to create the sandbox and print it without attaching.`,
 			return a.attachRunSandbox(cmd, client, projectID, sandbox)
 		},
 	}
-	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables")
+	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
+	cmd.Flags().StringArrayVarP(&opts.secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
 	cmd.Flags().StringVarP(&opts.harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
 	cmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "Create the sandbox and print it without attaching to its terminal")
 	return cmd
@@ -219,12 +222,15 @@ func createRunSandboxBody(ctx context.Context, opts runOptions) (*apimodel.Creat
 	if strings.TrimSpace(opts.harness) != "" {
 		body.SetHarnessName(optString(opts.harness))
 	}
-	env, err := keyValueMapFromShell(opts.env)
+	env, secrets, err := envAndSecretsFromOptions(opts.env, opts.secret)
 	if err != nil {
 		return nil, err
 	}
 	if len(env) > 0 {
 		body.Config.SetEnv(apiclientgen.NewOptSandboxCreateConfigEnv(apiclientgen.SandboxCreateConfigEnv(env)))
+	}
+	if len(secrets) > 0 {
+		body.Config.SetSecrets(secrets)
 	}
 	userIdentity, _, err := resolveRunUserIdentity()
 	if err != nil {
