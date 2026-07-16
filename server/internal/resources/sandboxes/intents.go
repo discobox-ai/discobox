@@ -74,3 +74,40 @@ func (s *Service) scheduleSandboxReconcile(ctx context.Context, projectID, sandb
 	}
 	return sandbox, nil
 }
+
+// ReportSandboxRemoved converts worker-observed runtime loss into stopped
+// intent. Duplicate reports, reports for a sandbox that has moved workers, and
+// reports superseded by delete intent are harmless no-ops.
+func (s *Service) ReportSandboxRemoved(ctx context.Context, workerID, sandboxID string) error {
+	if s.engine == nil {
+		return errors.New("reconcile engine is required")
+	}
+	return s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		worker, err := txStore.GetWorker(ctx, workerID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return nil
+			}
+			return err
+		}
+		sandbox, err := txStore.GetSandbox(ctx, worker.ProjectID, sandboxID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				return nil
+			}
+			return err
+		}
+		if sandbox.WorkerID == nil || *sandbox.WorkerID != workerID ||
+			sandbox.DesiredState == model.SandboxDesiredStateStopped ||
+			sandbox.DesiredState == model.SandboxDesiredStateDeleted {
+			return nil
+		}
+		previousGeneration := sandbox.Generation
+		sandbox.IncrementGeneration()
+		sandbox.BeginOperation(model.SandboxStopOperation)
+		if err := txStore.UpdateSandbox(ctx, sandbox, store.WithGeneration(previousGeneration)); err != nil {
+			return err
+		}
+		return s.engine.MarkDirtyTx(ctx, txDB, SandboxResourceType, SandboxDirtyID(sandbox.ProjectID, sandbox.ID))
+	})
+}

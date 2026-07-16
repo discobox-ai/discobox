@@ -4495,6 +4495,66 @@ func decodeRegisterWorkerResponse(resp *http.Response) (res RegisterWorkerRes, _
 	return res, nil
 }
 
+func decodeReportWorkerSandboxRemovedResponse(resp *http.Response) (res ReportWorkerSandboxRemovedRes, _ error) {
+	switch resp.StatusCode {
+	case 204:
+		// Code 204.
+		return &ReportWorkerSandboxRemovedNoContent{}, nil
+	}
+	// Default response.
+	res, err := func() (res ReportWorkerSandboxRemovedRes, err error) {
+		ct, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+		if err != nil {
+			return res, errors.Wrap(err, "parse media type")
+		}
+		switch {
+		case ct == "application/problem+json":
+			buf, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return res, err
+			}
+			d := jx.DecodeBytes(buf)
+
+			var response ErrorModel
+			if err := func() error {
+				if err := response.Decode(d); err != nil {
+					return err
+				}
+				if err := d.Skip(); err != io.EOF {
+					return errors.New("unexpected trailing data")
+				}
+				return nil
+			}(); err != nil {
+				err = &ogenerrors.DecodeBodyError{
+					ContentType: ct,
+					Body:        buf,
+					Err:         err,
+				}
+				return res, err
+			}
+			// Validate response.
+			if err := func() error {
+				if err := response.Validate(); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return res, errors.Wrap(err, "validate")
+			}
+			return &ErrorModelStatusCode{
+				StatusCode: resp.StatusCode,
+				Response:   response,
+			}, nil
+		default:
+			return res, validate.InvalidContentType(ct)
+		}
+	}()
+	if err != nil {
+		return res, errors.Wrapf(err, "default (code %d)", resp.StatusCode)
+	}
+	return res, nil
+}
+
 func decodeResolveSandboxSecretResponse(resp *http.Response) (res ResolveSandboxSecretRes, _ error) {
 	switch resp.StatusCode {
 	case 200:

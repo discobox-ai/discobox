@@ -54,6 +54,7 @@ const (
 	ReconcileSandboxOperation                 OperationName = "ReconcileSandbox"
 	ReconcileWorkerOperation                  OperationName = "ReconcileWorker"
 	RegisterWorkerOperation                   OperationName = "RegisterWorker"
+	ReportWorkerSandboxRemovedOperation       OperationName = "ReportWorkerSandboxRemoved"
 	ResolveSandboxSecretOperation             OperationName = "ResolveSandboxSecret"
 	RestartSandboxOperation                   OperationName = "RestartSandbox"
 	RevokeSecretGrantOperation                OperationName = "RevokeSecretGrant"

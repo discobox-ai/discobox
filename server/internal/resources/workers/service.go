@@ -17,8 +17,9 @@ import (
 )
 
 type Service struct {
-	store *store.Store
-	jobs  WorkerReconcileScheduler
+	store           *store.Store
+	jobs            WorkerReconcileScheduler
+	sandboxReporter SandboxRemovalReporter
 }
 
 // WorkerReconcileScheduler is the slice of the worker Manager the API service
@@ -27,12 +28,38 @@ type WorkerReconcileScheduler interface {
 	ScheduleWorkerReconciliation(context.Context, string) error
 }
 
-func NewService(store *store.Store, jobs ...WorkerReconcileScheduler) *Service {
+// SandboxRemovalReporter records worker-observed sandbox runtime loss as
+// lifecycle intent owned by the sandbox control plane.
+type SandboxRemovalReporter interface {
+	ReportSandboxRemoved(context.Context, string, string) error
+}
+
+func NewService(store *store.Store, jobs WorkerReconcileScheduler, reporters ...SandboxRemovalReporter) *Service {
 	svc := &Service{store: store}
-	if len(jobs) > 0 {
-		svc.jobs = jobs[0]
+	svc.jobs = jobs
+	if len(reporters) > 0 {
+		svc.sandboxReporter = reporters[0]
 	}
 	return svc
+}
+
+func (s *Service) ReportWorkerSandboxRemoved(ctx context.Context, workerID string, input services.ReportWorkerSandboxRemovedBody) error {
+	workerID = strings.TrimSpace(workerID)
+	sandboxID := strings.TrimSpace(input.SandboxId)
+	if workerID == "" || sandboxID == "" {
+		return apperrors.NewStatusError(http.StatusBadRequest, "workerId and sandboxId are required")
+	}
+	principal, ok := auth.PrincipalFromContext(ctx)
+	if !ok || principal.Type != auth.PrincipalTypeWorker || principal.WorkerID != workerID {
+		return apperrors.NewStatusError(http.StatusForbidden, "worker is not authorized to report sandbox removal")
+	}
+	if s.sandboxReporter == nil {
+		return errors.New("sandbox removal reporter is required")
+	}
+	if err := s.sandboxReporter.ReportSandboxRemoved(ctx, workerID, sandboxID); err != nil {
+		return apiError(err, "sandbox not found")
+	}
+	return nil
 }
 
 func (s *Service) RegisterWorker(ctx context.Context, input services.RegisterWorkerBody) (*services.RegisterWorkerResponseBody, error) {

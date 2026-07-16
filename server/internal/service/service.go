@@ -45,6 +45,7 @@ type Service struct {
 	jobs              *resourcejobs.Service
 	providerService   *providers.Service
 	workerManager     *workers.ControlPlane
+	harnessConfigs    *harnessconfigs.Service
 }
 
 type JobManagerOptions struct {
@@ -62,12 +63,13 @@ func New(store *store.Store, engine *reconcile.Engine, jobManagerOptions JobMana
 	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, engine, workerManager)
 	providerService := providers.NewService(store, sandboxService, workerManager)
 	jobsService := resourcejobs.NewService(store, engine)
+	harnessConfigService := harnessconfigs.NewService(store)
 	return &Service{
 		ProjectService:                 projects.NewService(store),
-		HarnessConfigService:           harnessconfigs.NewService(store),
+		HarnessConfigService:           harnessConfigService,
 		Service:                        sandboxService,
 		SandboxProviderInstanceService: providerService,
-		WorkerService:                  workers.NewService(store, workerManager),
+		WorkerService:                  workers.NewService(store, workerManager, sandboxService),
 		JobService:                     jobsService,
 		ProjectEventService:            resourceevents.NewService(store, b),
 		SecretService:                  secrets.NewService(store),
@@ -79,7 +81,20 @@ func New(store *store.Store, engine *reconcile.Engine, jobManagerOptions JobMana
 		engine:            engine,
 		jobManagerOptions: jobManagerOptions,
 		workerManager:     workerManager,
+		harnessConfigs:    harnessConfigService,
 	}
+}
+
+// SetHarnessImages installs per-definition harness image overrides (definition
+// ID → image), used by dev builds to inject freshly tagged images.
+func (s *Service) SetHarnessImages(images map[string]string) {
+	s.harnessConfigs.SetHarnessImages(images)
+}
+
+// ReconcileHarnessDefinitionImages refreshes stored definition-backed harness
+// configs whose image is stale relative to the resolved definition image.
+func (s *Service) ReconcileHarnessDefinitionImages(ctx context.Context) error {
+	return s.harnessConfigs.ReconcileDefinitionImages(ctx)
 }
 
 func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {

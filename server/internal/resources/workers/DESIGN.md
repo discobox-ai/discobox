@@ -30,9 +30,10 @@ two callers with incompatible expectations.
 
 ## Responsibilities
 
-- `service.go` — API behavior: worker registration, status updates (verifies
-  the calling **worker principal**), list with project validation, manual
-  reconcile requests.
+- `service.go` — API behavior: worker registration, status updates and sandbox
+  removal reports (verifies the calling **worker principal**), list with project
+  validation, manual reconcile requests. Sandbox lifecycle mutation is
+  delegated to the sandbox service rather than owned here.
 - `controlplane.go` — trusted operations: intent writes (create/drain/delete =
   generation bump + operation + `MarkDirtyTx`, one transaction), bootstrap and
   harness tokens, scheduling re-marks, expired-registration cleanup. Registers

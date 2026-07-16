@@ -50,6 +50,7 @@ type ProviderStatus = apigen.ProviderStatus
 type ProviderWorkerStatus = apigen.ProviderWorkerStatus
 type RegisterWorkerBody = apigen.RegisterWorkerBody
 type RegisterWorkerResponseBody = apigen.RegisterWorkerResponseBody
+type ReportWorkerSandboxRemovedBody = apigen.ReportWorkerSandboxRemovedBody
 type ResolveSandboxSecretBody = apigen.ResolveSandboxSecretBody
 type ResolveSandboxSecretResponse = apigen.ResolveSandboxSecretResponse
 type ResourceHistoryResponse = apigen.ResourceHistoryResponse

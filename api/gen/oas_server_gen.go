@@ -298,6 +298,12 @@ type Handler interface {
 	//
 	// POST /api/workers/register
 	RegisterWorker(ctx context.Context, req *RegisterWorkerBody) (RegisterWorkerRes, error)
+	// ReportWorkerSandboxRemoved implements report-worker-sandbox-removed operation.
+	//
+	// Report a worker-local sandbox runtime removed outside reconciliation.
+	//
+	// POST /api/workers/{workerId}/sandbox-removed
+	ReportWorkerSandboxRemoved(ctx context.Context, req *ReportWorkerSandboxRemovedBody, params ReportWorkerSandboxRemovedParams) (ReportWorkerSandboxRemovedRes, error)
 	// ResolveSandboxSecret implements resolve-sandbox-secret operation.
 	//
 	// Resolve a sandbox sentinel secret.

@@ -2,6 +2,7 @@ package workeragent
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"os"
 	"runtime"
@@ -78,7 +79,7 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 
 	startResolveTokenRefresher(ctx, logger, bootstrap, registration)
 
-	return Serve(ctx, logger, bootstrap, registration)
+	return Serve(ctx, logger, bootstrap, registration, client)
 }
 
 const (
@@ -127,7 +128,7 @@ func ExecSystemdChildIfRequested() error {
 }
 
 // Serve starts the worker-agent HTTP server.
-func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration) error {
+func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, reporters ...SandboxRemovalClient) error {
 	runtime, err := sandboxruntime.NewDockerSandboxRuntime(sandboxruntime.DockerSandboxRuntimeConfig{
 		ProjectID:             bootstrap.ProjectID,
 		WorkerID:              bootstrap.WorkerID,
@@ -137,10 +138,25 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 	if err != nil {
 		return err
 	}
-	// Reclaim proxy material for sandboxes deleted out of band or while the
-	// worker was down; DeleteSandbox only covers the in-process delete path.
-	// This reconciles at startup and then only on Docker destroy events.
-	go runtime.WatchProxyMaterial(ctx, logger)
+	var reporter SandboxRemovalClient
+	if len(reporters) > 0 {
+		reporter = reporters[0]
+	}
+	if reporter != nil && registration == nil {
+		return errors.New("worker registration is required for sandbox removal reporting")
+	}
+	go runtime.WatchSandboxRemovals(ctx, logger, func(reportCtx context.Context, sandboxID string) error {
+		if reporter == nil {
+			return nil
+		}
+		return reporter.ReportSandboxRemoved(reportCtx, SandboxRemovalRequest{
+			ControlPlaneURL: bootstrap.ControlPlaneURL,
+			ProjectID:       bootstrap.ProjectID,
+			WorkerID:        bootstrap.WorkerID,
+			PrivateKey:      registration.PrivateKey,
+			SandboxID:       sandboxID,
+		})
+	})
 	return ServeWithRuntime(ctx, logger, bootstrap, registration, runtime)
 }
 

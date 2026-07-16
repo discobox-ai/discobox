@@ -447,6 +447,15 @@ func (UnimplementedHandler) RegisterWorker(ctx context.Context, req *RegisterWor
 	return r, ht.ErrNotImplemented
 }
 
+// ReportWorkerSandboxRemoved implements report-worker-sandbox-removed operation.
+//
+// Report a worker-local sandbox runtime removed outside reconciliation.
+//
+// POST /api/workers/{workerId}/sandbox-removed
+func (UnimplementedHandler) ReportWorkerSandboxRemoved(ctx context.Context, req *ReportWorkerSandboxRemovedBody, params ReportWorkerSandboxRemovedParams) (r ReportWorkerSandboxRemovedRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ResolveSandboxSecret implements resolve-sandbox-secret operation.
 //
 // Resolve a sandbox sentinel secret.

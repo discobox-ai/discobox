@@ -42,6 +42,14 @@ pressure details. It sets `ready`, `schedulable`, and `degraded` booleans for
 control-plane scheduling. Richer pressure/condition details can be sent as an
 opaque JSON blob for display.
 
+The Docker sandbox runtime also watches managed-container destroy events. When
+a sandbox container is removed outside the worker API, the worker reports the
+sandbox ID through the authenticated control-plane worker route
+`/api/workers/{worker_id}/sandbox-removed` and retries until accepted. Persisted
+per-sandbox proxy material supplies the periodic level-triggered backstop for
+removals that happened while the worker was down; the material is reclaimed
+only after the report succeeds.
+
 ## Worker-Local HTTP Server
 
 After registration, the worker agent runs an HTTP server for provider runtime

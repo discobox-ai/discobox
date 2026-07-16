@@ -163,6 +163,49 @@ func TestHTTPClientUpdatesWorkerStatusByPath(t *testing.T) {
 	}
 }
 
+func TestHTTPClientReportsSandboxRemoved(t *testing.T) {
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+	publicKeyText, err := workerauth.EncodePublicKey(publicKey)
+	if err != nil {
+		t.Fatalf("encode public key: %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/workers/worker-1/sandbox-removed" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		_, token, ok := strings.Cut(r.Header.Get("Authorization"), " ")
+		if !ok {
+			t.Fatalf("authorization = %q", r.Header.Get("Authorization"))
+		}
+		claims, err := workerauth.VerifyToken(publicKeyText, token)
+		if err != nil {
+			t.Fatalf("verify token: %v", err)
+		}
+		if claims.ProjectID != "project-1" || claims.WorkerID != "worker-1" {
+			t.Fatalf("claims = %#v", claims)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode body: %v", err)
+		}
+		if body["sandboxId"] != "sandbox-1" {
+			t.Fatalf("body = %#v", body)
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	err = workeragent.NewHTTPClient(server.URL, workeragent.WithHTTPClient(server.Client())).ReportSandboxRemoved(context.Background(), workeragent.SandboxRemovalRequest{
+		ProjectID: "project-1", WorkerID: "worker-1", PrivateKey: privateKey, SandboxID: "sandbox-1",
+	})
+	if err != nil {
+		t.Fatalf("report sandbox removed: %v", err)
+	}
+}
+
 func TestWorkerSandboxHandlersValidateIdentityAndOperateOnRuntime(t *testing.T) {
 	runtime := workeragent.NewMemorySandboxRuntime()
 	controlPlaneKey, signToken := workerAgentTestSigner(t)

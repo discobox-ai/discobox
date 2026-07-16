@@ -46,6 +46,13 @@ func (h *Handler) UpdateWorkerStatus(ctx context.Context, req *apimodel.UpdateWo
 	return &body, nil
 }
 
+func (h *Handler) ReportWorkerSandboxRemoved(ctx context.Context, req *apimodel.ReportWorkerSandboxRemovedBody, params serverapi.ReportWorkerSandboxRemovedParams) (serverapi.ReportWorkerSandboxRemovedRes, error) {
+	if err := h.services.Workers.ReportWorkerSandboxRemoved(ctx, params.WorkerId, *req); err != nil {
+		return apiError(err), nil
+	}
+	return &serverapi.ReportWorkerSandboxRemovedNoContent{}, nil
+}
+
 func (h *Handler) ReconcileWorker(ctx context.Context, params serverapi.ReconcileWorkerParams) (serverapi.ReconcileWorkerRes, error) {
 	worker, err := h.services.Workers.ReconcileWorker(ctx, params.ProjectId, params.WorkerId)
 	if err != nil {

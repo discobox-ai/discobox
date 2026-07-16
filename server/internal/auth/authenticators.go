@@ -78,6 +78,7 @@ func bearerToken(authorization string) string {
 }
 
 var workerRuntimeActions = map[string]struct{}{
+	"sandbox-removed":        {},
 	"status":                 {},
 	"resolve-sandbox-secret": {},
 }

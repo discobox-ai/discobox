@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -251,10 +252,24 @@ func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, optio
 	return err
 }
 
-func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string) error {
+func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string, options ...SandboxGetOption) error {
+	var opts sandboxGetOptions
+	for _, option := range options {
+		if option != nil {
+			option(&opts)
+		}
+	}
+
 	_, err := withResourceEvent(ctx, s, model.EventActionDeleted, func(tx *gorm.DB) (*model.Sandbox, error) {
-		sandbox, err := firstByID[model.Sandbox](tx.Where("project_id = ?", projectID), "id", sandboxID)
+		query := tx.Where("project_id = ?", projectID)
+		if opts.generation != nil {
+			query = query.Where("generation = ?", *opts.generation)
+		}
+		sandbox, err := firstByID[model.Sandbox](query, "id", sandboxID)
 		if err != nil {
+			if opts.generation != nil && errors.Is(err, ErrNotFound) {
+				return nil, ErrGenerationConflict
+			}
 			return nil, err
 		}
 		if err := deleteSandboxSecretsTx(tx, projectID, sandboxID); err != nil {
@@ -266,18 +281,6 @@ func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string) 
 		return sandbox, nil
 	})
 	return err
-}
-
-// PurgeSandboxSecrets removes a sandbox's secret assignments and the anonymous
-// secrets created for them, independent of the sandbox row lifecycle. It is
-// called when a sandbox delete is finalized (the row is retained with phase
-// deleted). Safe to call more than once.
-func (s *Store) PurgeSandboxSecrets(ctx context.Context, projectID, sandboxID string) error {
-	write, err := s.getWrite(ctx)
-	if err != nil {
-		return err
-	}
-	return deleteSandboxSecretsTx(write, projectID, sandboxID)
 }
 
 // deleteSandboxSecretsTx removes a sandbox's secret assignments and the anonymous

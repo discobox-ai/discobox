@@ -104,6 +104,9 @@ service may use those body fields only to redeem the short-lived, one-time
 bootstrap token against the bootstrapped worker and issue the first runtime
 worker token. Subsequent worker authorization must use request metadata and the
 authenticated worker principal, such as `/api/workers/{workerId}/status`.
+Worker-observed sandbox container loss is reported at
+`/api/workers/{workerId}/sandbox-removed` under the same worker-principal rule;
+the sandbox ID is runtime evidence, not user authorization input.
 
 ## Runtime Observability
 

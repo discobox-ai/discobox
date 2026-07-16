@@ -32,6 +32,7 @@ type UpdateSandboxProviderInstanceBody = apimodel.UpdateSandboxProviderInstanceB
 type RegisterWorkerBody = apimodel.RegisterWorkerBody
 type RegisterWorkerResponseBody = apimodel.RegisterWorkerResponseBody
 type UpdateWorkerStatusBody = apimodel.UpdateWorkerStatusBody
+type ReportWorkerSandboxRemovedBody = apimodel.ReportWorkerSandboxRemovedBody
 type OptBool = serverapi.OptBool
 type OptString = serverapi.OptString
 type OptURI = serverapi.OptURI
@@ -91,6 +92,7 @@ type WorkerService interface {
 	ListWorkers(ctx context.Context, projectID, providerID string) ([]model.Worker, error)
 	RegisterWorker(ctx context.Context, input RegisterWorkerBody) (*RegisterWorkerResponseBody, error)
 	UpdateWorkerStatus(ctx context.Context, workerID string, input UpdateWorkerStatusBody) (*model.Worker, error)
+	ReportWorkerSandboxRemoved(ctx context.Context, workerID string, input ReportWorkerSandboxRemovedBody) error
 	ReconcileWorker(ctx context.Context, projectID, workerID string) (*model.Worker, error)
 }
 

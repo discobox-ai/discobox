@@ -47,6 +47,13 @@ func TestGetSandboxWithGeneration(t *testing.T) {
 	if err := s.UpdateSandbox(ctx, sandbox, store.WithGeneration(sandbox.Generation+1)); !errors.Is(err, store.ErrGenerationConflict) {
 		t.Fatalf("update stale generation error = %v, want ErrGenerationConflict", err)
 	}
+
+	if err := s.DeleteSandbox(ctx, sandbox.ProjectID, sandbox.ID, store.WithGeneration(sandbox.Generation+1)); !errors.Is(err, store.ErrGenerationConflict) {
+		t.Fatalf("delete stale generation error = %v, want ErrGenerationConflict", err)
+	}
+	if _, err := s.GetSandbox(ctx, sandbox.ProjectID, sandbox.ID); err != nil {
+		t.Fatalf("get sandbox after stale delete: %v", err)
+	}
 }
 
 func TestListSandboxesFiltersBySourceRoot(t *testing.T) {

@@ -77,6 +77,10 @@ type StatusClient interface {
 	UpdateWorkerStatus(ctx context.Context, req StatusRequest) error
 }
 
+type SandboxRemovalClient interface {
+	ReportSandboxRemoved(ctx context.Context, req SandboxRemovalRequest) error
+}
+
 // RegisterRequest is sent by the worker after generating its keypair.
 type RegisterRequest struct {
 	ControlPlaneURL string `json:"-"`
@@ -101,6 +105,16 @@ type StatusRequest struct {
 	AvailableMemoryBytes  int64              `json:"availableMemoryBytes"`
 	AvailableStorageBytes int64              `json:"availableStorageBytes"`
 	Conditions            any                `json:"conditions,omitempty"`
+}
+
+// SandboxRemovalRequest reports a worker-local runtime removed outside the
+// control plane's delete reconciliation.
+type SandboxRemovalRequest struct {
+	ControlPlaneURL string             `json:"-"`
+	ProjectID       string             `json:"-"`
+	WorkerID        string             `json:"-"`
+	PrivateKey      ed25519.PrivateKey `json:"-"`
+	SandboxID       string             `json:"sandboxId"`
 }
 
 // RegisterResponse is returned by the control plane after worker registration.

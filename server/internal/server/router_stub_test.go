@@ -564,6 +564,10 @@ func (s *routerTestServices) UpdateWorkerStatus(context.Context, string, service
 	return &model.Worker{}, nil
 }
 
+func (s *routerTestServices) ReportWorkerSandboxRemoved(context.Context, string, services.ReportWorkerSandboxRemovedBody) error {
+	return nil
+}
+
 func (s *routerTestServices) ReconcileWorker(context.Context, string, string) (*model.Worker, error) {
 	return &model.Worker{}, nil
 }

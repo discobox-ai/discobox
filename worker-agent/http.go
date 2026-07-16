@@ -16,6 +16,7 @@ import (
 const (
 	defaultRegisterPath = "/api/workers/register"
 	defaultStatusPath   = "/api/workers/{workerId}/status"
+	defaultRemovedPath  = "/api/workers/{workerId}/sandbox-removed"
 )
 
 // HTTPClient registers workers through the control plane HTTP API.
@@ -24,6 +25,7 @@ type HTTPClient struct {
 	client       *http.Client
 	registerPath string
 	statusPath   string
+	removedPath  string
 }
 
 type HTTPClientOption func(*HTTPClient)
@@ -35,6 +37,7 @@ func NewHTTPClient(baseURL string, opts ...HTTPClientOption) *HTTPClient {
 		client:       http.DefaultClient,
 		registerPath: defaultRegisterPath,
 		statusPath:   defaultStatusPath,
+		removedPath:  defaultRemovedPath,
 	}
 	for _, opt := range opts {
 		if opt != nil {
@@ -42,6 +45,48 @@ func NewHTTPClient(baseURL string, opts ...HTTPClientOption) *HTTPClient {
 		}
 	}
 	return c
+}
+
+// ReportSandboxRemoved reports a worker-local sandbox container deletion to
+// the control plane using the worker's signed runtime identity.
+func (c *HTTPClient) ReportSandboxRemoved(ctx context.Context, req SandboxRemovalRequest) error {
+	baseURL := firstNonEmpty(strings.TrimRight(req.ControlPlaneURL, "/"), c.baseURL)
+	if baseURL == "" {
+		return fmt.Errorf("control plane URL is required")
+	}
+	workerID := strings.TrimSpace(req.WorkerID)
+	if workerID == "" || strings.TrimSpace(req.SandboxID) == "" {
+		return fmt.Errorf("worker ID and sandbox ID are required")
+	}
+	projectID := strings.TrimSpace(req.ProjectID)
+	if projectID == "" {
+		return fmt.Errorf("project ID is required")
+	}
+	token, err := workerauth.CreateToken(req.PrivateKey, workerauth.Claims{ProjectID: projectID, WorkerID: workerID})
+	if err != nil {
+		return fmt.Errorf("create worker assertion: %w", err)
+	}
+	body, err := json.Marshal(req)
+	if err != nil {
+		return err
+	}
+	removedPath := strings.ReplaceAll(c.removedPath, "{workerId}", url.PathEscape(workerID))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+removedPath, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+token)
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("sandbox removal report failed: status %d: %s", resp.StatusCode, strings.TrimSpace(string(data)))
+	}
+	return nil
 }
 
 // WithHTTPClient overrides the HTTP client used for control plane requests.

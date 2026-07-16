@@ -157,6 +157,7 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 	}
 	runtime := map[string]any{
 		"desiredState":        sandbox.DesiredState,
+		"displayState":        SandboxDisplayState(sandbox),
 		"generation":          sandbox.Generation,
 		"lastOperationStatus": sandbox.LastOperationStatus,
 		"observedGeneration":  sandbox.ObservedGeneration,
@@ -201,6 +202,36 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 		fields["harnessConfig"] = sandbox.HarnessConfig
 	}
 	return Convert[serverapi.Sandbox](fields)
+}
+
+// SandboxDisplayState consolidates reconciliation intent and observation into
+// the small lifecycle vocabulary presented to API users. A steady state is
+// displayed only after the current generation has been fully observed.
+func SandboxDisplayState(sandbox *model.Sandbox) string {
+	if sandbox == nil || sandbox.Phase == model.SandboxPhaseFailed {
+		return "error"
+	}
+
+	observed := sandbox.Generation == sandbox.ObservedGeneration
+	switch sandbox.DesiredState {
+	case model.SandboxDesiredStateRunning:
+		if observed && sandbox.Phase == model.SandboxPhaseRunning {
+			return "running"
+		}
+		return "starting"
+	case model.SandboxDesiredStateStopped:
+		if observed && sandbox.Phase == model.SandboxPhaseStopped {
+			return "stopped"
+		}
+		return "stopping"
+	case model.SandboxDesiredStateDeleted:
+		if observed && sandbox.Phase == model.SandboxPhaseDeleted {
+			return "deleted"
+		}
+		return "deleting"
+	default:
+		return "error"
+	}
 }
 
 func SandboxesToAPI(sandboxes []model.Sandbox) ([]serverapi.Sandbox, error) {

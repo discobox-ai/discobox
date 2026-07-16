@@ -97,6 +97,60 @@ func TestReconcileSandboxMarksStopFailure(t *testing.T) {
 	assertSandboxFailed(t, appStore, sb.ProjectID, sb.ID, stopErr.Error())
 }
 
+func TestReconcileStoppedSandboxRecreatesMissingRuntimeThenStopsIt(t *testing.T) {
+	ctx := context.Background()
+	appStore := newExecutorTestStore(t)
+	sb := createSandboxForReconcile(t, appStore, model.ResourceLifecycle{
+		DesiredState:        model.SandboxDesiredStateStopped,
+		Phase:               model.SandboxPhaseStopping,
+		ActiveOperation:     stringPtr(model.SandboxOperationStop),
+		LastOperationStatus: model.SandboxOperationStatusPending,
+		Generation:          2,
+		ObservedGeneration:  1,
+	})
+	provider := &missingRuntimeProvider{}
+	reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider))
+
+	if err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
+		t.Fatalf("reconcile stopped sandbox: %v", err)
+	}
+	if provider.createCalls != 1 || provider.stopCalls != 2 || provider.startCalls != 0 {
+		t.Fatalf("provider calls create/stop/start = %d/%d/%d, want 1/2/0", provider.createCalls, provider.stopCalls, provider.startCalls)
+	}
+	updated, err := appStore.GetSandbox(ctx, sb.ProjectID, sb.ID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	if updated.Phase != model.SandboxPhaseStopped || updated.ObservedGeneration != updated.Generation {
+		t.Fatalf("sandbox phase/generations = %q/%d/%d, want stopped and observed", updated.Phase, updated.ObservedGeneration, updated.Generation)
+	}
+}
+
+type missingRuntimeProvider struct {
+	sandboxes.Provider
+	createCalls int
+	startCalls  int
+	stopCalls   int
+}
+
+func (p *missingRuntimeProvider) Create(context.Context, sandboxes.SandboxRef, []byte, sandboxes.CreateOptions) (*sandboxes.Sandbox, []byte, error) {
+	p.createCalls++
+	return &sandboxes.Sandbox{ID: "runtime-1", Status: sandboxes.StatusCreated}, []byte(`{"runtime":"created"}`), nil
+}
+
+func (p *missingRuntimeProvider) Start(context.Context, sandboxes.SandboxRef, []byte) (*sandboxes.Sandbox, []byte, error) {
+	p.startCalls++
+	return nil, nil, nil
+}
+
+func (p *missingRuntimeProvider) Stop(context.Context, sandboxes.SandboxRef, []byte, time.Duration) (*sandboxes.Sandbox, []byte, error) {
+	p.stopCalls++
+	if p.stopCalls == 1 {
+		return nil, nil, sandboxes.ErrNotFound
+	}
+	return &sandboxes.Sandbox{ID: "runtime-1", Status: "stopped"}, []byte(`{"runtime":"stopped"}`), nil
+}
+
 func TestReconcileSandboxMarksDeleteFailure(t *testing.T) {
 	ctx := context.Background()
 	appStore := newExecutorTestStore(t)
@@ -118,6 +172,40 @@ func TestReconcileSandboxMarksDeleteFailure(t *testing.T) {
 	}
 
 	assertSandboxFailed(t, appStore, sb.ProjectID, sb.ID, removeErr.Error())
+}
+
+func TestReconcileSandboxSoftDeletesAfterRuntimeRemoval(t *testing.T) {
+	ctx := context.Background()
+	appStore := newExecutorTestStore(t)
+	workerID := "worker-1"
+	sb := createSandboxForReconcile(t, appStore, model.ResourceLifecycle{
+		DesiredState:        model.SandboxDesiredStateDeleted,
+		Phase:               model.SandboxPhaseDeleting,
+		ActiveOperation:     stringPtr(model.SandboxOperationDelete),
+		LastOperationStatus: model.SandboxOperationStatusPending,
+		Generation:          2,
+		ObservedGeneration:  1,
+	})
+	sb.WorkerID = &workerID
+	if err := appStore.UpdateSandbox(ctx, sb); err != nil {
+		t.Fatalf("assign sandbox worker: %v", err)
+	}
+
+	reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(failingSandboxProvider{}))
+	if err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
+		t.Fatalf("reconcile delete: %v", err)
+	}
+
+	if _, err := appStore.GetSandbox(ctx, sb.ProjectID, sb.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("get deleted sandbox = %v, want not found", err)
+	}
+	assigned, err := appStore.CountSandboxesForWorker(ctx, workerID)
+	if err != nil {
+		t.Fatalf("count assigned sandboxes: %v", err)
+	}
+	if assigned != 0 {
+		t.Fatalf("assigned sandboxes = %d, want 0", assigned)
+	}
 }
 
 type noCapacityProvider struct {

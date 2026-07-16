@@ -362,10 +362,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	if err := svc.DeleteSandbox(ctx, service.DefaultProjectID, sandbox.ID); err != nil {
 		t.Fatalf("delete sandbox: %v", err)
 	}
-	sandbox = waitForSandboxPhase(ctx, t, svc, sandbox.ID, model.SandboxPhaseDeleted)
-	if sandbox.DesiredState != model.SandboxDesiredStateDeleted {
-		t.Fatalf("deleted desired state = %q, want %q", sandbox.DesiredState, model.SandboxDesiredStateDeleted)
-	}
+	waitForSandboxDeleted(ctx, t, svc, sandbox.ID)
 }
 
 func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sandboxes.SandboxReconciler, *store.Store) {
@@ -526,4 +523,29 @@ func waitForSandboxPhase(ctx context.Context, t *testing.T, svc *service.Service
 	}
 	t.Fatalf("sandbox phase = %q, want %q", sandbox.Phase, phase)
 	return nil
+}
+
+func waitForSandboxDeleted(ctx context.Context, t *testing.T, svc *service.Service, sandboxID string) {
+	t.Helper()
+
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		_, err := svc.GetSandbox(ctx, service.DefaultProjectID, sandboxID)
+		if isNotFoundStatus(err) {
+			return
+		}
+		if err != nil {
+			t.Fatalf("get sandbox: %v", err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	if _, err := svc.GetSandbox(ctx, service.DefaultProjectID, sandboxID); !isNotFoundStatus(err) {
+		t.Fatalf("get deleted sandbox = %v, want not found", err)
+	}
+}
+
+func isNotFoundStatus(err error) bool {
+	var statusErr apperrors.StatusError
+	return errors.As(err, &statusErr) && statusErr.StatusCode() == http.StatusNotFound
 }

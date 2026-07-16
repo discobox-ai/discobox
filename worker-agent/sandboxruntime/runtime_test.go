@@ -319,6 +319,23 @@ func TestBuildSandboxManifestIncludesSelectedHarnessIdentityAndFiles(t *testing.
 	}
 }
 
+func TestWriteSandboxManifestIsWorldReadable(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "sandbox.json")
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeSandboxManifest(path, []byte("new")); err != nil {
+		t.Fatalf("write sandbox manifest: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := info.Mode().Perm(), os.FileMode(0o644); got != want {
+		t.Fatalf("sandbox manifest mode = %04o, want %04o", got, want)
+	}
+}
+
 func TestRunGitWithSafeDirectoriesUsesTemporaryGlobalConfig(t *testing.T) {
 	ctx := context.Background()
 	repo := t.TempDir()
@@ -373,6 +390,81 @@ func TestCheckoutGitSourceChecksOutBranchAtPinnedCommit(t *testing.T) {
 	}
 	if head := gitOutput(t, repo, "rev-parse", "HEAD"); head != pinned {
 		t.Fatalf("HEAD after second checkout = %q, want pinned commit %q", head, pinned)
+	}
+}
+
+func TestMaterializeGitSourceRestoresDirtySnapshotAsUnstagedChanges(t *testing.T) {
+	ctx := context.Background()
+	sourceRepo := t.TempDir()
+	git(t, sourceRepo, "init", "-b", "main")
+	if err := os.WriteFile(filepath.Join(sourceRepo, "README.md"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceRepo, "deleted.txt"), []byte("delete me\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, sourceRepo, "add", "README.md", "deleted.txt")
+	git(t, sourceRepo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "base")
+	baseCommit := gitOutput(t, sourceRepo, "rev-parse", "HEAD")
+
+	if err := os.WriteFile(filepath.Join(sourceRepo, "README.md"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(filepath.Join(sourceRepo, "deleted.txt")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceRepo, "added.txt"), []byte("untracked\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, sourceRepo, "add", "-A")
+	git(t, sourceRepo, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "snapshot")
+	snapshotCommit := gitOutput(t, sourceRepo, "rev-parse", "HEAD")
+	snapshotRef := "refs/discobox/run/snap_test"
+	git(t, sourceRepo, "update-ref", snapshotRef, snapshotCommit)
+	git(t, sourceRepo, "reset", "--hard", baseCommit)
+
+	source := workerapimodel.GitSource{
+		Kind:           workerclient.GitSourceKindGit,
+		LocalDirectory: workerclient.NewOptString(sourceRepo),
+		Checkout: workerclient.NewOptGitSourceCheckout(workerapimodel.GitSourceCheckout{
+			Commit:  workerclient.NewOptString(baseCommit),
+			RefName: workerclient.NewOptString("main"),
+			RefType: workerclient.NewOptString("branch"),
+		}),
+		Workspace: workerclient.NewOptGitSourceWorkspace(workerapimodel.GitSourceWorkspace{
+			Mode:        workerclient.NewOptGitSourceWorkspaceMode(workerclient.GitSourceWorkspaceModeDirty),
+			BaseCommit:  workerclient.NewOptString(baseCommit),
+			SnapshotRef: workerclient.NewOptString(snapshotRef),
+		}),
+	}
+	target := filepath.Join(t.TempDir(), "target")
+	runtime := &DockerSandboxRuntime{}
+	for attempt := 1; attempt <= 2; attempt++ {
+		if err := runtime.materializeGitSource(ctx, source, target); err != nil {
+			t.Fatalf("materialize dirty git source attempt %d: %v", attempt, err)
+		}
+		if branch := gitOutput(t, target, "branch", "--show-current"); branch != "main" {
+			t.Fatalf("branch after attempt %d = %q, want main", attempt, branch)
+		}
+		if head := gitOutput(t, target, "rev-parse", "HEAD"); head != baseCommit {
+			t.Fatalf("HEAD after attempt %d = %q, want base commit %q", attempt, head, baseCommit)
+		}
+		if staged := gitOutput(t, target, "diff", "--cached", "--name-only"); staged != "" {
+			t.Fatalf("staged paths after attempt %d = %q, want none", attempt, staged)
+		}
+		status := gitOutput(t, target, "status", "--porcelain=v1", "--untracked-files=all")
+		for _, want := range []string{"README.md", " D deleted.txt", "?? added.txt"} {
+			if !strings.Contains(status, want) {
+				t.Fatalf("status after attempt %d = %q, want %q", attempt, status, want)
+			}
+		}
+		data, err := os.ReadFile(filepath.Join(target, "README.md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != "dirty\n" {
+			t.Fatalf("README after attempt %d = %q, want dirty content", attempt, data)
+		}
 	}
 }
 

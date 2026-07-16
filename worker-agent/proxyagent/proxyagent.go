@@ -13,6 +13,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -250,6 +251,27 @@ func RemoveSandboxMaterial(sandboxID string, hostDirFor HostPathResolver) error 
 // an orphan is only removed when its youngest on-disk file predates minAge. Pass
 // 0 to prune regardless of age.
 func PruneOrphanedMaterial(liveSandboxIDs []string, hostDirFor HostPathResolver, minAge time.Duration) error {
+	orphans, scanErr := OrphanedSandboxIDs(liveSandboxIDs, hostDirFor, minAge)
+	var errs []error
+	if scanErr != nil {
+		errs = append(errs, scanErr)
+	}
+	for _, id := range orphans {
+		if err := RemoveSandboxMaterial(id, hostDirFor); err != nil {
+			errs = append(errs, err)
+		}
+		if err := RemoveSandboxSentinels(hostDirFor, id); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// OrphanedSandboxIDs returns sandbox IDs with persisted worker-local material
+// but no live container. The material is the level-triggered record used to
+// recover removals whose Docker destroy event was missed while the worker was
+// down.
+func OrphanedSandboxIDs(liveSandboxIDs []string, hostDirFor HostPathResolver, minAge time.Duration) ([]string, error) {
 	if hostDirFor == nil {
 		hostDirFor = func(p string) string { return p }
 	}
@@ -286,6 +308,7 @@ func PruneOrphanedMaterial(liveSandboxIDs []string, hostDirFor HostPathResolver,
 	}
 
 	cutoff := time.Now().Add(-minAge)
+	var orphans []string
 	for id := range candidates {
 		if _, ok := live[id]; ok {
 			continue
@@ -303,14 +326,10 @@ func PruneOrphanedMaterial(liveSandboxIDs []string, hostDirFor HostPathResolver,
 				continue
 			}
 		}
-		if err := RemoveSandboxMaterial(id, hostDirFor); err != nil {
-			errs = append(errs, err)
-		}
-		if err := RemoveSandboxSentinels(hostDirFor, id); err != nil {
-			errs = append(errs, err)
-		}
+		orphans = append(orphans, id)
 	}
-	return errors.Join(errs...)
+	sort.Strings(orphans)
+	return orphans, errors.Join(errs...)
 }
 
 // materialModTime returns the newest modification time across a sandbox's staged

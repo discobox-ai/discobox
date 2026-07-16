@@ -25,6 +25,16 @@ flowchart LR
 - Provider runtime operations belong in reconciliation, not in handlers or raw
   stores.
 
+## Worker-observed runtime loss
+
+Worker-backed providers report an out-of-band container removal through the
+authenticated worker control-plane route. The sandbox service verifies the
+worker assignment, atomically records stopped intent (generation bump plus stop
+operation), and marks the sandbox dirty. Stop reconciliation treats a missing
+runtime as drift: it recreates the sandbox from persisted intent and state, then
+stops the retained runtime so observed and desired state converge on `stopped`.
+Duplicate, stale-worker, and already-deleting reports are no-ops.
+
 ## Image-backed harnesses
 
 A sandbox selects a persisted image-backed `HarnessConfig`. The selected image

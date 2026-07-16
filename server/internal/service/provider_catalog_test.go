@@ -126,15 +126,9 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	if provider.removeCalls != 1 {
 		t.Fatalf("remove calls = %d, want 1", provider.removeCalls)
 	}
-	sb, err = svc.GetSandbox(ctx, service.DefaultProjectID, sb.ID)
-	if err != nil {
-		t.Fatalf("get sandbox after delete: %v", err)
-	}
-	if sb.SecretState != nil {
-		t.Fatalf("secret state after delete = %q, want nil", string(sb.SecretState))
-	}
-	if sb.RuntimeState != nil {
-		t.Fatalf("runtime state after delete = %q, want nil", string(sb.RuntimeState))
+	_, err = svc.GetSandbox(ctx, service.DefaultProjectID, sb.ID)
+	if !isNotFoundStatus(err) {
+		t.Fatalf("get sandbox after delete = %v, want not found", err)
 	}
 }
 

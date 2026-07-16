@@ -1660,6 +1660,18 @@ components:
                         - stopped
                         - deleted
                     type: string
+                displayState:
+                    description: User-facing lifecycle state calculated from desired state, observed phase, and reconciliation generations
+                    enum:
+                        - starting
+                        - running
+                        - stopping
+                        - stopped
+                        - deleting
+                        - deleted
+                        - error
+                    readOnly: true
+                    type: string
                 errorMessage:
                     description: Latest error message
                     type: string
@@ -2552,6 +2564,21 @@ components:
                 - availableMemoryBytes
                 - availableStorageBytes
             type: object
+        ReportWorkerSandboxRemovedBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ReportWorkerSandboxRemovedBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                sandboxId:
+                    description: Sandbox whose worker-local runtime was removed outside control-plane reconciliation
+                    type: string
+            required:
+                - sandboxId
+            type: object
         User:
             additionalProperties: false
             properties:
@@ -2937,6 +2964,41 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Update worker status
+            tags:
+                - Workers
+    /api/workers/{workerId}/sandbox-removed:
+        post:
+            operationId: report-worker-sandbox-removed
+            parameters:
+                - description: Worker ID
+                  in: path
+                  name: workerId
+                  required: true
+                  schema:
+                    description: Worker ID
+                    type: string
+                - description: Bearer worker assertion signed with the registered worker private key
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer worker assertion signed with the registered worker private key
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ReportWorkerSandboxRemovedBody'
+                required: true
+            responses:
+                204:
+                    description: Sandbox removal accepted or already superseded
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Report a worker-local sandbox runtime removed outside reconciliation
             tags:
                 - Workers
     /api/workers/{workerId}/resolve-sandbox-secret:

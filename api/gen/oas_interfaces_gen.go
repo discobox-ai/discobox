@@ -193,6 +193,10 @@ type RegisterWorkerRes interface {
 	registerWorkerRes()
 }
 
+type ReportWorkerSandboxRemovedRes interface {
+	reportWorkerSandboxRemovedRes()
+}
+
 type ResolveSandboxSecretRes interface {
 	resolveSandboxSecretRes()
 }

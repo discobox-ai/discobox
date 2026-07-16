@@ -229,7 +229,7 @@ func (r *SandboxReconciler) stop(ctx context.Context, sandbox *model.Sandbox, ge
 
 func (r *SandboxReconciler) delete(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
 	if sandbox.Phase == model.SandboxPhaseDeleted && sandbox.ObservedGeneration == generation && sandbox.LastOperationStatus == model.SandboxOperationStatusSuccess {
-		return nil
+		return r.softDelete(ctx, sandbox, generation)
 	}
 
 	status := "deleting sandbox"
@@ -244,15 +244,22 @@ func (r *SandboxReconciler) delete(ctx context.Context, sandbox *model.Sandbox, 
 		}
 		return err
 	}
-	// Garbage-collect the sandbox's secret assignments and anonymous secrets now
-	// that the delete is finalized; the sandbox row itself is retained with phase
-	// deleted, so store.DeleteSandbox is not on this path.
-	if err := r.store.PurgeSandboxSecrets(ctx, sandbox.ProjectID, sandbox.ID); err != nil {
-		return err
-	}
 	sandbox.ObservedGeneration = generation
 	sandbox.CompleteOperation(model.SandboxPhaseDeleted, nil)
-	return r.update(ctx, sandbox, generation)
+	if err := r.update(ctx, sandbox, generation); err != nil {
+		return err
+	}
+	return r.softDelete(ctx, sandbox, generation)
+}
+
+func (r *SandboxReconciler) softDelete(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
+	if err := r.store.DeleteSandbox(ctx, sandbox.ProjectID, sandbox.ID, store.WithGeneration(generation)); err != nil {
+		if errors.Is(err, store.ErrGenerationConflict) {
+			return reconcile.Superseded("sandbox generation changed")
+		}
+		return err
+	}
+	return nil
 }
 
 func (r *SandboxReconciler) update(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
@@ -287,33 +294,15 @@ func (r *SandboxReconciler) startSandbox(ctx context.Context, sb *model.Sandbox)
 		sb.LastActiveAt = &now
 		return nil
 	}
-	ref := sandboxRefFromSandbox(sb)
-	createOpts := r.createOptionsFromSandbox(ctx, sb)
-	if err := r.applyTrustKey(ctx, sb, &createOpts); err != nil {
-		return err
-	}
-	if err := ensureSandboxImage(ctx, provider, &createOpts); err != nil {
-		return err
-	}
-
 	secretState, err := r.store.OpenSandboxSecretState(ctx, sb)
 	if err != nil {
 		return err
 	}
-	runtimeSandbox, state, err := provider.Create(ctx, ref, secretState, createOpts)
-	if err != nil && !errors.Is(err, ErrAlreadyExists) {
+	secretState, err = r.ensureSandboxCreated(ctx, sb, provider, secretState)
+	if err != nil {
 		return err
 	}
-	if len(state) > 0 || secretState != nil {
-		sb.SecretState = state
-		secretState = state
-	}
-	if runtimeSandbox != nil {
-		setRuntimeState(sb, runtimeSandbox)
-		setWorkerID(sb, runtimeSandbox)
-	}
-
-	runtimeSandbox, state, err = provider.Start(ctx, ref, secretState)
+	runtimeSandbox, state, err := provider.Start(ctx, sandboxRefFromSandbox(sb), secretState)
 	if err != nil && !errors.Is(err, ErrAlreadyRunning) {
 		return err
 	}
@@ -329,6 +318,30 @@ func (r *SandboxReconciler) startSandbox(ctx context.Context, sb *model.Sandbox)
 	return nil
 }
 
+func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.Sandbox, provider Provider, secretState []byte) ([]byte, error) {
+	ref := sandboxRefFromSandbox(sb)
+	createOpts := r.createOptionsFromSandbox(ctx, sb)
+	if err := r.applyTrustKey(ctx, sb, &createOpts); err != nil {
+		return secretState, err
+	}
+	if err := ensureSandboxImage(ctx, provider, &createOpts); err != nil {
+		return secretState, err
+	}
+	runtimeSandbox, state, err := provider.Create(ctx, ref, secretState, createOpts)
+	if err != nil && !errors.Is(err, ErrAlreadyExists) {
+		return secretState, err
+	}
+	if len(state) > 0 || secretState != nil {
+		sb.SecretState = state
+		secretState = state
+	}
+	if runtimeSandbox != nil {
+		setRuntimeState(sb, runtimeSandbox)
+		setWorkerID(sb, runtimeSandbox)
+	}
+	return secretState, nil
+}
+
 func (r *SandboxReconciler) stopSandbox(ctx context.Context, sb *model.Sandbox) error {
 	provider, err := r.resolveProvider(ctx, sb)
 	if err != nil {
@@ -342,7 +355,14 @@ func (r *SandboxReconciler) stopSandbox(ctx context.Context, sb *model.Sandbox) 
 		return err
 	}
 	runtimeSandbox, state, err := provider.Stop(ctx, sandboxRefFromSandbox(sb), secretState, defaultSandboxStopTimeout)
-	if err != nil && !errors.Is(err, ErrNotFound) && !errors.Is(err, ErrNotRunning) {
+	if errors.Is(err, ErrNotFound) {
+		secretState, err = r.ensureSandboxCreated(ctx, sb, provider, secretState)
+		if err != nil {
+			return err
+		}
+		runtimeSandbox, state, err = provider.Stop(ctx, sandboxRefFromSandbox(sb), secretState, defaultSandboxStopTimeout)
+	}
+	if err != nil && !errors.Is(err, ErrNotRunning) {
 		return err
 	}
 	if len(state) > 0 || secretState != nil {

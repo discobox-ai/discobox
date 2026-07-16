@@ -312,10 +312,20 @@ func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sa
 		return err
 	}
 	path := filepath.Join(configDir, "sandbox.json")
-	if err := os.WriteFile(path, data, 0o600); err != nil {
+	if err := writeSandboxManifest(path, data); err != nil {
 		return err
 	}
 	return chownRecursive(ctx, configDir, 0, 0)
+}
+
+func writeSandboxManifest(path string, data []byte) error {
+	//nolint:gosec // sandbox.json is a public runtime contract consumed by the unprivileged sandbox user.
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return err
+	}
+	// WriteFile applies its mode only when creating a file. Enforce the public
+	// manifest mode when replacing a sandbox.json previously created as 0600.
+	return os.Chmod(path, 0o644)
 }
 
 func manifestHarnessConfigFiles(files []workerapimodel.HarnessConfigFile) []apimodel.HarnessConfigFile {
@@ -582,15 +592,27 @@ const (
 	proxyMaterialEventDebounce = 5 * time.Second
 	// proxyMaterialWatchBackoff paces reconnection to the Docker event stream.
 	proxyMaterialWatchBackoff = 5 * time.Second
+	// proxyMaterialBackstopInterval rechecks persisted material so removals that
+	// happened while the worker was down are reported after the creation grace
+	// period, even when the Docker event stream remains healthy.
+	proxyMaterialBackstopInterval = time.Minute
 )
 
 // ReconcileProxyMaterial prunes proxy material for sandboxes whose containers no
 // longer exist. It is the recovery path for containers deleted out of band or
 // while the worker was down, which never run through DeleteSandbox.
 func (r *DockerSandboxRuntime) ReconcileProxyMaterial(ctx context.Context, minAge time.Duration) error {
-	sandboxes, err := r.ListSandboxes(ctx)
+	live, err := r.liveSandboxIDs(ctx)
 	if err != nil {
 		return err
+	}
+	return proxyagent.PruneOrphanedMaterial(live, r.workerHostPath, minAge)
+}
+
+func (r *DockerSandboxRuntime) liveSandboxIDs(ctx context.Context) ([]string, error) {
+	sandboxes, err := r.ListSandboxes(ctx)
+	if err != nil {
+		return nil, err
 	}
 	live := make([]string, 0, len(sandboxes))
 	for _, sb := range sandboxes {
@@ -598,18 +620,24 @@ func (r *DockerSandboxRuntime) ReconcileProxyMaterial(ctx context.Context, minAg
 			live = append(live, sb.SandboxID)
 		}
 	}
-	return proxyagent.PruneOrphanedMaterial(live, r.workerHostPath, minAge)
+	return live, nil
 }
 
 // WatchProxyMaterial reconciles orphaned proxy material after establishing a
-// Docker event subscription, and thereafter only when the event stream reports
-// a managed sandbox container being destroyed. It does not poll on a timer.
+// Docker event subscription, on managed sandbox destroy events, and on a slow
+// level-triggered backstop.
 func (r *DockerSandboxRuntime) WatchProxyMaterial(ctx context.Context, logger *slog.Logger) {
+	r.WatchSandboxRemovals(ctx, logger, nil)
+}
+
+// WatchSandboxRemovals watches Docker destroy events, reports the removed
+// sandbox to the control plane, and reclaims its worker-local proxy material.
+func (r *DockerSandboxRuntime) WatchSandboxRemovals(ctx context.Context, logger *slog.Logger, report func(context.Context, string) error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
 	for ctx.Err() == nil {
-		if err := r.watchProxyMaterialEvents(ctx, logger); err != nil && ctx.Err() == nil {
+		if err := r.watchProxyMaterialEvents(ctx, logger, report); err != nil && ctx.Err() == nil {
 			logger.Warn("watch sandbox container events", "error", err)
 		}
 		if ctx.Err() != nil {
@@ -629,6 +657,47 @@ func (r *DockerSandboxRuntime) reconcileProxyMaterial(ctx context.Context, logge
 	}
 }
 
+func (r *DockerSandboxRuntime) reconcileSandboxRemovals(ctx context.Context, logger *slog.Logger, report func(context.Context, string) error, minAge time.Duration) {
+	live, err := r.liveSandboxIDs(ctx)
+	if err != nil {
+		logger.Warn("list sandbox containers", "error", err)
+		return
+	}
+	orphans, err := proxyagent.OrphanedSandboxIDs(live, r.workerHostPath, minAge)
+	if err != nil {
+		logger.Warn("scan orphaned sandbox material", "error", err)
+	}
+	for _, sandboxID := range orphans {
+		if report != nil {
+			if err := r.reportSandboxRemoved(ctx, logger, report, sandboxID); err != nil {
+				return
+			}
+		}
+		if err := proxyagent.RemoveSandboxSentinels(r.workerHostPath, sandboxID); err != nil {
+			logger.Warn("remove sandbox proxy sentinels", "sandboxID", sandboxID, "error", err)
+		}
+		if err := proxyagent.RemoveSandboxMaterial(sandboxID, r.workerHostPath); err != nil {
+			logger.Warn("remove sandbox proxy material", "sandboxID", sandboxID, "error", err)
+		}
+	}
+}
+
+func (r *DockerSandboxRuntime) reportSandboxRemoved(ctx context.Context, logger *slog.Logger, report func(context.Context, string) error, sandboxID string) error {
+	for sandboxID != "" && ctx.Err() == nil {
+		err := report(ctx, sandboxID)
+		if err == nil {
+			return nil
+		}
+		logger.Warn("report removed sandbox", "sandboxID", sandboxID, "error", err)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(proxyMaterialWatchBackoff):
+		}
+	}
+	return ctx.Err()
+}
+
 // watchProxyMaterialEvents subscribes to the Docker event stream for managed
 // sandbox container destroy events, then reconciles, then blocks kicking a
 // debounced reconcile for each burst. It returns when the stream ends or errors
@@ -639,7 +708,7 @@ func (r *DockerSandboxRuntime) reconcileProxyMaterial(ctx context.Context, logge
 // destroy that occurs in the window between opening the stream and the reconcile
 // completing. This closes the race where a container deleted just after a
 // startup reconcile would otherwise be missed until the next reconnect.
-func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, logger *slog.Logger) error {
+func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, logger *slog.Logger, report func(context.Context, string) error) error {
 	since := time.Now()
 	filters := client.Filters{}
 	filters = filters.Add("type", string(events.ContainerEventType))
@@ -655,13 +724,15 @@ func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, log
 	// Reconcile once the subscription is established. Destroys from `since`
 	// onward are buffered by the daemon and delivered on the stream below, so the
 	// reconcile and the replayed events together cover every deletion.
-	r.reconcileProxyMaterial(ctx, logger)
+	r.reconcileSandboxRemovals(ctx, logger, report, proxyMaterialGracePeriod)
 
 	debounce := time.NewTimer(0)
 	if !debounce.Stop() {
 		<-debounce.C
 	}
 	defer debounce.Stop()
+	backstop := time.NewTicker(proxyMaterialBackstopInterval)
+	defer backstop.Stop()
 	pending := false
 	for {
 		select {
@@ -669,7 +740,13 @@ func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, log
 			return nil
 		case err := <-result.Err:
 			return err
-		case <-result.Messages:
+		case message := <-result.Messages:
+			if report != nil {
+				sandboxID := strings.TrimSpace(message.Actor.Attributes[sandboxLabelSandbox])
+				if err := r.reportSandboxRemoved(ctx, logger, report, sandboxID); err != nil {
+					return nil
+				}
+			}
 			if !pending {
 				pending = true
 				debounce.Reset(proxyMaterialEventDebounce)
@@ -677,6 +754,8 @@ func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, log
 		case <-debounce.C:
 			pending = false
 			r.reconcileProxyMaterial(ctx, logger)
+		case <-backstop.C:
+			r.reconcileSandboxRemovals(ctx, logger, report, proxyMaterialGracePeriod)
 		}
 	}
 }
@@ -1318,7 +1397,19 @@ func sandboxVolumesRoot(projectID, sandboxID string) string {
 
 func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source workerapimodel.GitSource, target string) error {
 	if _, err := os.Stat(filepath.Join(target, ".git")); err == nil {
-		return checkoutGitSource(ctx, target, source)
+		// A prior create attempt may have already restored a dirty workspace.
+		// Return the repository to a clean state before materializing the desired
+		// checkout again so this operation remains retry-safe.
+		if err := runGit(ctx, target, "reset", "--hard"); err != nil {
+			return err
+		}
+		if err := runGit(ctx, target, "clean", "-fd"); err != nil {
+			return err
+		}
+		if err := checkoutGitSource(ctx, target, source); err != nil {
+			return err
+		}
+		return r.restoreGitWorkspace(ctx, target, source)
 	} else if !os.IsNotExist(err) {
 		return err
 	}
@@ -1339,7 +1430,66 @@ func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source 
 	if err := runGitWithSafeDirectories(ctx, "", gitSafeDirectories(cloneURL, r.hostMountPrefix), args...); err != nil {
 		return err
 	}
-	return checkoutGitSource(ctx, target, source)
+	if err := checkoutGitSource(ctx, target, source); err != nil {
+		return err
+	}
+	return r.restoreGitWorkspace(ctx, target, source)
+}
+
+func (r *DockerSandboxRuntime) restoreGitWorkspace(ctx context.Context, repo string, source workerapimodel.GitSource) error {
+	workspace, ok := source.Workspace.Get()
+	if !ok || workspace.Mode.Or(workerclient.GitSourceWorkspaceModeClean) != workerclient.GitSourceWorkspaceModeDirty {
+		return nil
+	}
+	baseCommit := strings.TrimSpace(optString(workspace.BaseCommit))
+	snapshotRef := strings.TrimSpace(optString(workspace.SnapshotRef))
+	if baseCommit == "" || snapshotRef == "" {
+		return fmt.Errorf("dirty workspace requires baseCommit and snapshotRef")
+	}
+	if err := runGit(ctx, repo, "check-ref-format", snapshotRef); err != nil {
+		return fmt.Errorf("invalid workspace snapshot ref %q: %w", snapshotRef, err)
+	}
+
+	remoteURL, err := runGitOutput(ctx, repo, nil, "remote", "get-url", "origin")
+	if err != nil {
+		return err
+	}
+	remoteURL = bytes.TrimSpace(remoteURL)
+	refspec := "+" + snapshotRef + ":" + snapshotRef
+	if err := runGitWithSafeDirectories(ctx, repo, gitSafeDirectories(string(remoteURL), r.hostMountPrefix), "fetch", "origin", refspec); err != nil {
+		return fmt.Errorf("fetch workspace snapshot %q: %w", snapshotRef, err)
+	}
+
+	parent, err := runGitOutput(ctx, repo, nil, "rev-parse", "--verify", snapshotRef+"^")
+	if err != nil {
+		return fmt.Errorf("resolve workspace snapshot parent: %w", err)
+	}
+	resolvedBase, err := runGitOutput(ctx, repo, nil, "rev-parse", "--verify", baseCommit+"^{commit}")
+	if err != nil {
+		return fmt.Errorf("resolve workspace base commit: %w", err)
+	}
+	if strings.TrimSpace(string(parent)) != strings.TrimSpace(string(resolvedBase)) {
+		return fmt.Errorf("workspace snapshot %q is not based on %s", snapshotRef, baseCommit)
+	}
+
+	// Keep the branch selected by checkoutGitSource, but move it to the exact
+	// base commit before applying the snapshot tree diff to the worktree only.
+	// This deliberately leaves both originally staged and unstaged changes
+	// unstaged in the sandbox.
+	if err := runGit(ctx, repo, "reset", "--hard", baseCommit); err != nil {
+		return err
+	}
+	patch, err := runGitOutput(ctx, repo, nil, "diff", "--binary", "--full-index", baseCommit, snapshotRef, "--")
+	if err != nil {
+		return fmt.Errorf("create workspace snapshot patch: %w", err)
+	}
+	if len(patch) == 0 {
+		return nil
+	}
+	if _, err := runGitOutput(ctx, repo, patch, "apply", "--binary", "--whitespace=nowarn", "-"); err != nil {
+		return fmt.Errorf("apply workspace snapshot: %w", err)
+	}
+	return nil
 }
 
 func gitSourceCloneURL(source workerapimodel.GitSource, hostMountPrefix string) (string, error) {
@@ -1442,18 +1592,30 @@ func runGitWithSafeDirectories(ctx context.Context, dir string, safeDirectories 
 }
 
 func runGitWithEnv(ctx context.Context, dir string, env []string, args ...string) error {
+	_, err := runGitOutputWithEnv(ctx, dir, nil, env, args...)
+	return err
+}
+
+func runGitOutput(ctx context.Context, dir string, stdin []byte, args ...string) ([]byte, error) {
+	return runGitOutputWithEnv(ctx, dir, stdin, nil, args...)
+}
+
+func runGitOutputWithEnv(ctx context.Context, dir string, stdin []byte, env []string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	if dir != "" {
 		cmd.Dir = dir
+	}
+	if stdin != nil {
+		cmd.Stdin = bytes.NewReader(stdin)
 	}
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
+		return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
-	return nil
+	return out, nil
 }
 
 func chownRecursive(ctx context.Context, root string, uid, gid int) error {

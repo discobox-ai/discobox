@@ -1165,6 +1165,7 @@ func (*ErrorModelStatusCode) listWorkersRes()                      {}
 func (*ErrorModelStatusCode) reconcileSandboxRes()                 {}
 func (*ErrorModelStatusCode) reconcileWorkerRes()                  {}
 func (*ErrorModelStatusCode) registerWorkerRes()                   {}
+func (*ErrorModelStatusCode) reportWorkerSandboxRemovedRes()       {}
 func (*ErrorModelStatusCode) resolveSandboxSecretRes()             {}
 func (*ErrorModelStatusCode) restartSandboxRes()                   {}
 func (*ErrorModelStatusCode) revokeSecretGrantRes()                {}
@@ -4697,6 +4698,52 @@ func (o OptSandboxRuntimeActiveOperation) Or(d SandboxRuntimeActiveOperation) Sa
 	return d
 }
 
+// NewOptSandboxRuntimeDisplayState returns new OptSandboxRuntimeDisplayState with value set to v.
+func NewOptSandboxRuntimeDisplayState(v SandboxRuntimeDisplayState) OptSandboxRuntimeDisplayState {
+	return OptSandboxRuntimeDisplayState{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxRuntimeDisplayState is optional SandboxRuntimeDisplayState.
+type OptSandboxRuntimeDisplayState struct {
+	Value SandboxRuntimeDisplayState
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxRuntimeDisplayState was set.
+func (o OptSandboxRuntimeDisplayState) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxRuntimeDisplayState) Reset() {
+	var v SandboxRuntimeDisplayState
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxRuntimeDisplayState) SetTo(v SandboxRuntimeDisplayState) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxRuntimeDisplayState) Get() (v SandboxRuntimeDisplayState, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxRuntimeDisplayState) Or(d SandboxRuntimeDisplayState) SandboxRuntimeDisplayState {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxUpdateConfig returns new OptSandboxUpdateConfig with value set to v.
 func NewOptSandboxUpdateConfig(v SandboxUpdateConfig) OptSandboxUpdateConfig {
 	return OptSandboxUpdateConfig{
@@ -5716,6 +5763,39 @@ func (s *RegisterWorkerResponseBody) SetSchema(val OptURI) {
 }
 
 func (*RegisterWorkerResponseBody) registerWorkerRes() {}
+
+// Ref: #/components/schemas/ReportWorkerSandboxRemovedBody
+type ReportWorkerSandboxRemovedBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Sandbox whose worker-local runtime was removed outside control-plane reconciliation.
+	SandboxId string `json:"sandboxId"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ReportWorkerSandboxRemovedBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *ReportWorkerSandboxRemovedBody) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// SetSchema sets the value of Schema.
+func (s *ReportWorkerSandboxRemovedBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *ReportWorkerSandboxRemovedBody) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// ReportWorkerSandboxRemovedNoContent is response for ReportWorkerSandboxRemoved operation.
+type ReportWorkerSandboxRemovedNoContent struct{}
+
+func (*ReportWorkerSandboxRemovedNoContent) reportWorkerSandboxRemovedRes() {}
 
 // Worker request to resolve a sentinel placeholder observed by the proxy to its real secret value
 // for a destination host.
@@ -7627,6 +7707,9 @@ type SandboxRuntime struct {
 	ActiveOperation OptSandboxRuntimeActiveOperation `json:"activeOperation"`
 	// Requested steady state for reconciliation.
 	DesiredState SandboxRuntimeDesiredState `json:"desiredState"`
+	// User-facing lifecycle state calculated from desired state, observed phase, and reconciliation
+	// generations.
+	DisplayState OptSandboxRuntimeDisplayState `json:"displayState"`
 	// Latest error message.
 	ErrorMessage OptString `json:"errorMessage"`
 	// Latest desired-state generation.
@@ -7657,6 +7740,11 @@ func (s *SandboxRuntime) GetActiveOperation() OptSandboxRuntimeActiveOperation {
 // GetDesiredState returns the value of DesiredState.
 func (s *SandboxRuntime) GetDesiredState() SandboxRuntimeDesiredState {
 	return s.DesiredState
+}
+
+// GetDisplayState returns the value of DisplayState.
+func (s *SandboxRuntime) GetDisplayState() OptSandboxRuntimeDisplayState {
+	return s.DisplayState
 }
 
 // GetErrorMessage returns the value of ErrorMessage.
@@ -7717,6 +7805,11 @@ func (s *SandboxRuntime) SetActiveOperation(val OptSandboxRuntimeActiveOperation
 // SetDesiredState sets the value of DesiredState.
 func (s *SandboxRuntime) SetDesiredState(val SandboxRuntimeDesiredState) {
 	s.DesiredState = val
+}
+
+// SetDisplayState sets the value of DisplayState.
+func (s *SandboxRuntime) SetDisplayState(val OptSandboxRuntimeDisplayState) {
+	s.DisplayState = val
 }
 
 // SetErrorMessage sets the value of ErrorMessage.
@@ -7875,6 +7968,84 @@ func (s *SandboxRuntimeDesiredState) UnmarshalText(data []byte) error {
 		return nil
 	case SandboxRuntimeDesiredStateDeleted:
 		*s = SandboxRuntimeDesiredStateDeleted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// User-facing lifecycle state calculated from desired state, observed phase, and reconciliation
+// generations.
+type SandboxRuntimeDisplayState string
+
+const (
+	SandboxRuntimeDisplayStateStarting SandboxRuntimeDisplayState = "starting"
+	SandboxRuntimeDisplayStateRunning  SandboxRuntimeDisplayState = "running"
+	SandboxRuntimeDisplayStateStopping SandboxRuntimeDisplayState = "stopping"
+	SandboxRuntimeDisplayStateStopped  SandboxRuntimeDisplayState = "stopped"
+	SandboxRuntimeDisplayStateDeleting SandboxRuntimeDisplayState = "deleting"
+	SandboxRuntimeDisplayStateDeleted  SandboxRuntimeDisplayState = "deleted"
+	SandboxRuntimeDisplayStateError    SandboxRuntimeDisplayState = "error"
+)
+
+// AllValues returns all SandboxRuntimeDisplayState values.
+func (SandboxRuntimeDisplayState) AllValues() []SandboxRuntimeDisplayState {
+	return []SandboxRuntimeDisplayState{
+		SandboxRuntimeDisplayStateStarting,
+		SandboxRuntimeDisplayStateRunning,
+		SandboxRuntimeDisplayStateStopping,
+		SandboxRuntimeDisplayStateStopped,
+		SandboxRuntimeDisplayStateDeleting,
+		SandboxRuntimeDisplayStateDeleted,
+		SandboxRuntimeDisplayStateError,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxRuntimeDisplayState) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxRuntimeDisplayStateStarting:
+		return []byte(s), nil
+	case SandboxRuntimeDisplayStateRunning:
+		return []byte(s), nil
+	case SandboxRuntimeDisplayStateStopping:
+		return []byte(s), nil
+	case SandboxRuntimeDisplayStateStopped:
+		return []byte(s), nil
+	case SandboxRuntimeDisplayStateDeleting:
+		return []byte(s), nil
+	case SandboxRuntimeDisplayStateDeleted:
+		return []byte(s), nil
+	case SandboxRuntimeDisplayStateError:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxRuntimeDisplayState) UnmarshalText(data []byte) error {
+	switch SandboxRuntimeDisplayState(data) {
+	case SandboxRuntimeDisplayStateStarting:
+		*s = SandboxRuntimeDisplayStateStarting
+		return nil
+	case SandboxRuntimeDisplayStateRunning:
+		*s = SandboxRuntimeDisplayStateRunning
+		return nil
+	case SandboxRuntimeDisplayStateStopping:
+		*s = SandboxRuntimeDisplayStateStopping
+		return nil
+	case SandboxRuntimeDisplayStateStopped:
+		*s = SandboxRuntimeDisplayStateStopped
+		return nil
+	case SandboxRuntimeDisplayStateDeleting:
+		*s = SandboxRuntimeDisplayStateDeleting
+		return nil
+	case SandboxRuntimeDisplayStateDeleted:
+		*s = SandboxRuntimeDisplayStateDeleted
+		return nil
+	case SandboxRuntimeDisplayStateError:
+		*s = SandboxRuntimeDisplayStateError
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
