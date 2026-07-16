@@ -15,6 +15,7 @@ import (
 	"github.com/obot-platform/discobox/controlplane"
 	"github.com/obot-platform/discobox/gormdb"
 	"github.com/obot-platform/discobox/localipc"
+	"github.com/obot-platform/discobox/server/internal/harnessdefs"
 	"github.com/obot-platform/discobox/server/internal/sandbox"
 )
 
@@ -48,6 +49,11 @@ type Config struct {
 	// Sandbox settings.
 	DefaultSandboxImage string
 
+	// HarnessImages overrides built-in harness definition images, keyed by
+	// definition ID. Dev builds populate this from DISCOBOX_HARNESS_<ID>_IMAGE
+	// so freshly tagged harness images flow through on server restart.
+	HarnessImages map[string]string
+
 	// OpenTelemetry metrics settings.
 	OTelMetricsEnabled       bool
 	OTelMetricExportInterval time.Duration
@@ -74,6 +80,7 @@ func Load() (*Config, error) {
 	cfg.DispatcherPollInterval = getEnvDuration("DISPATCHER_POLL_INTERVAL", time.Second)
 	cfg.SandboxReconcileJobConcurrency = getEnvInt("SANDBOX_RECONCILE_JOB_CONCURRENCY", 4)
 	cfg.DefaultSandboxImage = getEnv("DISCOBOX_DEFAULT_SANDBOX_IMAGE", sandbox.DefaultSandboxImageName)
+	cfg.HarnessImages = harnessdefs.ImageOverridesFromEnv(os.Getenv)
 	cfg.OTelMetricsEnabled = strings.EqualFold(getEnv("OTEL_METRICS_EXPORTER", "none"), "otlp")
 	cfg.OTelMetricExportInterval = getEnvMillisecondsDuration("OTEL_METRIC_EXPORT_INTERVAL", time.Second)
 

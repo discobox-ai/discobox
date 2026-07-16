@@ -21,6 +21,22 @@ func (s *Store) ListHarnessConfigs(ctx context.Context, projectID string) ([]mod
 	return configs, err
 }
 
+// ListDefinitionBackedHarnessConfigs returns every harness config across all
+// projects that was created from a built-in definition. Used to refresh stored
+// images when a definition's resolved image changes.
+func (s *Store) ListDefinitionBackedHarnessConfigs(ctx context.Context) ([]model.HarnessConfig, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var configs []model.HarnessConfig
+	err = read.
+		Where("definition_id <> ''").
+		Order("created_at ASC").
+		Find(&configs).Error
+	return configs, err
+}
+
 func (s *Store) CreateHarnessConfig(ctx context.Context, config *model.HarnessConfig) error {
 	_, err := withResourceEvent(ctx, s, model.EventActionCreated, func(tx *gorm.DB) (*model.HarnessConfig, error) {
 		if err := tx.Create(config).Error; err != nil {

@@ -70,3 +70,32 @@ func TestSetHarnessConfigSecretBindingValidates(t *testing.T) {
 		t.Fatalf("binding = %#v", binding)
 	}
 }
+
+func TestDeleteDefaultHarnessConfigClearsProjectDefault(t *testing.T) {
+	ctx := context.Background()
+	svc, st, configID := newBindingService(t)
+
+	project, err := st.GetProject(ctx, "project-1")
+	if err != nil {
+		t.Fatalf("get project: %v", err)
+	}
+	project.DefaultHarnessConfigID = configID
+	if err := st.UpsertProject(ctx, project); err != nil {
+		t.Fatalf("set default harness config: %v", err)
+	}
+
+	if err := svc.DeleteHarnessConfig(ctx, project.ID, configID); err != nil {
+		t.Fatalf("delete default harness config: %v", err)
+	}
+
+	project, err = st.GetProject(ctx, project.ID)
+	if err != nil {
+		t.Fatalf("get project after delete: %v", err)
+	}
+	if project.DefaultHarnessConfigID != "" {
+		t.Fatalf("default harness config ID = %q, want empty", project.DefaultHarnessConfigID)
+	}
+	if _, err := st.GetHarnessConfig(ctx, project.ID, configID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("get deleted harness config = %v, want not found", err)
+	}
+}

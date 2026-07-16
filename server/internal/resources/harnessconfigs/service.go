@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
+	"github.com/obot-platform/discobox/harness"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/harnessdefs"
 
@@ -16,12 +18,21 @@ import (
 )
 
 type Service struct {
-	store     *store.Store
-	inspector imageInspector
+	store         *store.Store
+	inspector     imageInspector
+	harnessImages map[string]string
 }
 
 func NewService(store *store.Store) *Service {
 	return &Service{store: store, inspector: defaultImageInspector{}}
+}
+
+// SetHarnessImages installs per-definition image overrides (definition ID →
+// image). Dev builds use this so definition-backed configs resolve freshly
+// tagged harness images. Call ReconcileDefinitionImages afterward to refresh
+// already-stored configs.
+func (s *Service) SetHarnessImages(images map[string]string) {
+	s.harnessImages = images
 }
 
 func (s *Service) ListHarnessConfigs(ctx context.Context, projectID string) ([]model.HarnessConfig, error) {
@@ -46,7 +57,7 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 	imageDigest := ""
 	var definition *model.HarnessDefinition
 	if rawDefinitionID, isSet := input.DefinitionId.Get(); isSet && strings.TrimSpace(rawDefinitionID) != "" {
-		found, ok := harnessdefs.DefinitionByID(strings.TrimSpace(rawDefinitionID))
+		found, ok := s.definitionByID(strings.TrimSpace(rawDefinitionID))
 		if !ok {
 			return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config definition not found")
 		}
@@ -131,16 +142,7 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 	}
 	var secrets []model.HarnessConfigSecret
 	if inspected != nil {
-		runCommand = append([]string{}, inspected.Harness.RunCommand...)
-		relaunchCommand = append([]string{}, inspected.Harness.RelaunchCommand...)
-		files = make([]model.HarnessConfigFile, 0, len(inspected.Harness.Files))
-		for _, file := range inspected.Harness.Files {
-			files = append(files, model.HarnessConfigFile{Path: file.Path, Content: file.Content, CreateOnly: file.CreateOnly, Template: file.Template})
-		}
-		secrets = make([]model.HarnessConfigSecret, 0, len(inspected.Harness.Secrets))
-		for _, secret := range inspected.Harness.Secrets {
-			secrets = append(secrets, model.HarnessConfigSecret{Name: secret.Name, Required: secret.Required, OneOfGroup: secret.OneOfGroup})
-		}
+		runCommand, relaunchCommand, files, secrets = harnessMetadataFields(inspected.Harness)
 	}
 	if definitionID == "" && len(runCommand) == 0 {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config run command is required when no definition is provided")
@@ -221,16 +223,8 @@ func (s *Service) SetDefaultHarnessConfig(ctx context.Context, projectID, config
 }
 
 func (s *Service) DeleteHarnessConfig(ctx context.Context, projectID, configID string) error {
-	project, err := s.store.GetProject(ctx, projectID)
-	if err != nil {
+	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return apiError(err, "project not found")
-	}
-	config, err := s.store.GetHarnessConfig(ctx, projectID, configID)
-	if err != nil {
-		return apiError(err, "harness config not found")
-	}
-	if project.DefaultHarnessConfigID == config.ID {
-		return apperrors.NewStatusError(http.StatusConflict, "cannot delete the default harness config; set a different default first")
 	}
 	if err := s.store.DeleteHarnessConfig(ctx, projectID, configID); err != nil {
 		if errors.Is(err, store.ErrInUse) {
@@ -289,6 +283,64 @@ func (s *Service) DeleteHarnessConfigSecretBinding(ctx context.Context, projectI
 		return apiError(err, "harness config secret binding not found")
 	}
 	return nil
+}
+
+// ReconcileDefinitionImages re-points definition-backed harness configs at the
+// definition's currently resolved image and re-snapshots its label metadata when
+// the stored image is stale. Dev rebuilds bump DISCOBOX_HARNESS_<ID>_IMAGE and
+// restart the server; this refresh is what makes existing configs pick up the
+// freshly tagged image. Best-effort per config: one that cannot be inspected is
+// left as-is and logged, so an unavailable image never blocks startup.
+func (s *Service) ReconcileDefinitionImages(ctx context.Context) error {
+	if len(s.harnessImages) == 0 || s.inspector == nil {
+		return nil
+	}
+	configs, err := s.store.ListDefinitionBackedHarnessConfigs(ctx)
+	if err != nil {
+		return err
+	}
+	for i := range configs {
+		config := &configs[i]
+		definition, ok := s.definitionByID(config.DefinitionID)
+		if !ok {
+			continue
+		}
+		image := strings.TrimSpace(definition.Image)
+		if image == "" || image == config.Image {
+			continue
+		}
+		metadata, err := s.inspector.Inspect(ctx, image)
+		if err != nil {
+			slog.WarnContext(ctx, "skip stale harness config image refresh",
+				"harnessConfigId", config.ID, "image", image, "error", err)
+			continue
+		}
+		config.Image = image
+		config.ImageDigest = metadata.Digest
+		config.RunCommand, config.RelaunchCommand, config.Files, config.Secrets = harnessMetadataFields(metadata.Harness)
+		if err := s.store.UpdateHarnessConfig(ctx, config); err != nil {
+			return err
+		}
+		slog.InfoContext(ctx, "refreshed harness config image",
+			"harnessConfigId", config.ID, "image", image, "imageDigest", metadata.Digest)
+	}
+	return nil
+}
+
+// harnessMetadataFields snapshots the mutable config fields declared by a
+// harness image's label metadata.
+func harnessMetadataFields(image harness.Image) (runCommand, relaunchCommand []string, files []model.HarnessConfigFile, secrets []model.HarnessConfigSecret) {
+	runCommand = append([]string{}, image.RunCommand...)
+	relaunchCommand = append([]string{}, image.RelaunchCommand...)
+	files = make([]model.HarnessConfigFile, 0, len(image.Files))
+	for _, file := range image.Files {
+		files = append(files, model.HarnessConfigFile{Path: file.Path, Content: file.Content, CreateOnly: file.CreateOnly, Template: file.Template})
+	}
+	secrets = make([]model.HarnessConfigSecret, 0, len(image.Secrets))
+	for _, secret := range image.Secrets {
+		secrets = append(secrets, model.HarnessConfigSecret{Name: secret.Name, Required: secret.Required, OneOfGroup: secret.OneOfGroup})
+	}
+	return runCommand, relaunchCommand, files, secrets
 }
 
 func apiError(err error, notFoundMessage string) error {

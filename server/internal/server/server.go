@@ -75,6 +75,7 @@ func Run(ctx context.Context) error {
 		DispatcherPollInterval:         cfg.DispatcherPollInterval,
 		SandboxReconcileJobConcurrency: cfg.SandboxReconcileJobConcurrency,
 		DefaultSandboxImage:            cfg.DefaultSandboxImage,
+		HarnessImages:                  cfg.HarnessImages,
 	})
 	if err != nil {
 		return fmt.Errorf("initialize app: %w", err)
