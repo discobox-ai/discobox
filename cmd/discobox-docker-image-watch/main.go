@@ -196,6 +196,11 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 		specs = append(specs, imageSpec{
 			name: "harness-" + harnessName, baseImage: "discobox-harness-" + harnessName + ":local",
 			devPrefix: "discobox-harness-" + harnessName + ":dev-", buildDir: repoRoot,
+			// Mirror the worker/sandbox flow: write the hashed dev tag to .env so the
+			// server restarts and resolves the new harness image. The env key must
+			// match the server-side harnessdefs.ImageEnvVar mapping (definition id →
+			// DISCOBOX_HARNESS_<ID>_IMAGE); harnessName equals the definition id.
+			envImageKey: harnessImageEnvKey(harnessName),
 			harnessName: harnessName,
 			// HARNESS_METADATA is filled in from image.json by buildImage at build
 			// time; the placeholder marks where it lands.
@@ -205,6 +210,13 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 		})
 	}
 	return specs, nil
+}
+
+// harnessImageEnvKey returns the .env key the server reads to override a
+// harness definition's image. Keep in sync with the server-side
+// harnessdefs.ImageEnvVar mapping.
+func harnessImageEnvKey(harnessName string) string {
+	return "DISCOBOX_HARNESS_" + strings.ToUpper(strings.ReplaceAll(harnessName, "-", "_")) + "_IMAGE"
 }
 
 func harnessMetadata(repoRoot, harnessName string) (string, error) {
