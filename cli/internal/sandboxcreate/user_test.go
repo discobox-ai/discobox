@@ -1,4 +1,4 @@
-package cli
+package sandboxcreate
 
 import (
 	"os/user"

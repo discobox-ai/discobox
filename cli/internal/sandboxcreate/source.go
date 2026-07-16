@@ -1,4 +1,4 @@
-package cli
+package sandboxcreate
 
 import (
 	"context"
@@ -66,12 +66,12 @@ func resolveRunSource(ctx context.Context, sourceArg string) (resolvedRunSource,
 	return resolveLocalRunSource(ctx, source, ref, explicitRef)
 }
 
-// resolveSourceRoot resolves a source argument to the repository identity the
+// ResolveSourceRoot resolves a source argument to the repository identity the
 // server records for a sandbox's primary source: the local Git repository root
 // for a local path, or the remote URL for a remote repository. Any @REF suffix
 // is dropped, so every sandbox run against a repository shares one root
 // regardless of the branch or commit it checked out.
-func resolveSourceRoot(ctx context.Context, sourceArg string) (string, error) {
+func ResolveSourceRoot(ctx context.Context, sourceArg string) (string, error) {
 	source, _, _ := splitRunSourceRef(sourceArg)
 	source = strings.TrimSpace(source)
 	if source == "" {
@@ -96,11 +96,11 @@ func (s resolvedRunSource) apiGitSource() (*apimodel.GitSource, error) {
 		}
 		source.SetURL(apiclientgen.NewOptURI(*u))
 	}
-	source.SetLocalDirectory(optString(s.LocalDirectory))
+	source.SetLocalDirectory(optionalString(s.LocalDirectory))
 	checkout := apimodel.GitSourceCheckout{}
-	checkout.SetCommit(optString(s.Checkout.Commit))
-	checkout.SetRefName(optString(s.Checkout.RefName))
-	checkout.SetRefType(optString(s.Checkout.RefType))
+	checkout.SetCommit(optionalString(s.Checkout.Commit))
+	checkout.SetRefName(optionalString(s.Checkout.RefName))
+	checkout.SetRefType(optionalString(s.Checkout.RefType))
 	source.SetCheckout(apiclientgen.NewOptGitSourceCheckout(checkout))
 	workspace := apimodel.GitSourceWorkspace{}
 	switch s.Workspace.Mode {
@@ -109,12 +109,12 @@ func (s resolvedRunSource) apiGitSource() (*apimodel.GitSource, error) {
 	default:
 		workspace.SetMode(apiclientgen.NewOptGitSourceWorkspaceMode(apiclientgen.GitSourceWorkspaceModeClean))
 	}
-	workspace.SetSnapshotRef(optString(s.Workspace.SnapshotRef))
-	workspace.SetBaseCommit(optString(s.Workspace.BaseCommit))
+	workspace.SetSnapshotRef(optionalString(s.Workspace.SnapshotRef))
+	workspace.SetBaseCommit(optionalString(s.Workspace.BaseCommit))
 	source.SetWorkspace(apiclientgen.NewOptGitSourceWorkspace(workspace))
 	destination := apimodel.GitSourceDestination{}
-	destination.SetDirectory(optString(s.Destination.Directory))
-	destination.SetWorkingDirectory(optString(s.Destination.WorkingDirectory))
+	destination.SetDirectory(optionalString(s.Destination.Directory))
+	destination.SetWorkingDirectory(optionalString(s.Destination.WorkingDirectory))
 	source.SetDestination(apiclientgen.NewOptGitSourceDestination(destination))
 	return source, nil
 }
@@ -302,6 +302,17 @@ func isRemoteGitSource(value string) bool {
 		return err == nil && u.Scheme != "" && (u.Host != "" || u.Scheme == "file")
 	}
 	return strings.Contains(value, "@") && strings.Contains(value, ":") && !strings.HasPrefix(value, ".")
+}
+
+func splitRunSourceRef(value string) (string, string, bool) {
+	at := strings.LastIndex(value, "@")
+	if at <= 0 || at == len(value)-1 {
+		return value, "", false
+	}
+	if !strings.Contains(value[:at], "@") && strings.Contains(value[at+1:], ":") {
+		return value, "", false
+	}
+	return value[:at], value[at+1:], true
 }
 
 func defaultRunDestination() resolvedRunSourceDestination {

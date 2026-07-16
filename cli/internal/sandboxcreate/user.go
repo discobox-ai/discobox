@@ -1,4 +1,4 @@
-package cli
+package sandboxcreate
 
 import (
 	"fmt"
@@ -64,8 +64,8 @@ func validRunUnixUserName(value string) bool {
 
 func (u runUserIdentity) setCreateSandboxUser(body *apimodel.CreateSandboxBody) {
 	sandboxUser := apimodel.SandboxUser{}
-	sandboxUser.SetName(optString(u.Name))
-	sandboxUser.SetHomeDirectory(optString(u.HomeDirectory))
+	sandboxUser.SetName(optionalString(u.Name))
+	sandboxUser.SetHomeDirectory(optionalString(u.HomeDirectory))
 	if u.IDsUsable {
 		sandboxUser.SetUID(apiclientgen.NewOptInt64(u.UID))
 		sandboxUser.SetGid(apiclientgen.NewOptInt64(u.GID))

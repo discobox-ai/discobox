@@ -5,6 +5,7 @@ import (
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
+	"github.com/obot-platform/discobox/cli/internal/sandboxcreate"
 )
 
 // newListCommand lists the sandboxes of the current source repository, which is
@@ -30,7 +31,7 @@ are not listed; use "discobox debug sandbox ls" to list every sandbox in the pro
 			if err != nil {
 				return err
 			}
-			sourceRoot, err := resolveSourceRoot(cmd.Context(), a.source)
+			sourceRoot, err := sandboxcreate.ResolveSourceRoot(cmd.Context(), a.source)
 			if err != nil {
 				return err
 			}

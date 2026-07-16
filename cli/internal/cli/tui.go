@@ -14,6 +14,7 @@ import (
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
+	"github.com/obot-platform/discobox/cli/internal/sandboxcreate"
 	"github.com/obot-platform/discobox/cli/internal/tui"
 )
 
@@ -291,29 +292,17 @@ func (d *apiDataSource) DefaultPath() string {
 	return "."
 }
 
-// CreateSession builds the same run request the `run` command sends: it resolves
-// the source path (local Git repo or remote URL), attaches the harness and
-// prompt, and creates the sandbox.
+// CreateSession adapts TUI form values to the shared prompt sandbox creation
+// flow used by the Cobra command.
 func (d *apiDataSource) CreateSession(ctx context.Context, req tui.NewSessionRequest) (tui.Sandbox, error) {
-	opts := runOptions{source: strings.TrimSpace(req.Path), harness: strings.TrimSpace(req.Harness)}
-	if opts.source == "" {
-		opts.source = d.DefaultPath()
-	}
-	if source, ref, ok := splitRunSourceRef(opts.source); ok {
-		opts.source, opts.ref = source, ref
+	opts := sandboxcreate.PromptOptions{Source: strings.TrimSpace(req.Path), Harness: strings.TrimSpace(req.Harness)}
+	if opts.Source == "" {
+		opts.Source = d.DefaultPath()
 	}
 	if prompt := strings.TrimSpace(req.Prompt); prompt != "" {
-		opts.prompt = []string{prompt}
+		opts.Prompt = []string{prompt}
 	}
-	body, err := createRunSandboxBody(ctx, opts)
-	if err != nil {
-		return tui.Sandbox{}, err
-	}
-	res, err := d.client.CreateSandbox(ctx, body, apiclientgen.CreateSandboxParams{ProjectId: d.projectID})
-	if err != nil {
-		return tui.Sandbox{}, err
-	}
-	sandbox, err := expectResponse[apimodel.Sandbox](res)
+	sandbox, err := sandboxcreate.CreatePromptSandbox(ctx, d.client, d.projectID, opts)
 	if err != nil {
 		return tui.Sandbox{}, err
 	}

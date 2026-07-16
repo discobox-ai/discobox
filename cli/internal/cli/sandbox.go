@@ -12,6 +12,7 @@ import (
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
+	"github.com/obot-platform/discobox/cli/internal/sandboxcreate"
 )
 
 type sandboxCreateOptions struct {
@@ -391,7 +392,7 @@ func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, 
 	if len(opts.prompt) > 0 {
 		config.SetPrompt(append([]string(nil), opts.prompt...))
 	}
-	env, secrets, err := envAndSecretsFromOptions(opts.env, opts.secret)
+	env, secrets, err := sandboxcreate.EnvAndSecretsFromOptions(opts.env, opts.secret)
 	if err != nil {
 		return nil, err
 	}

@@ -10,22 +10,17 @@ import (
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
-	"github.com/obot-platform/discobox/randomname"
+	"github.com/obot-platform/discobox/cli/internal/sandboxcreate"
 	"github.com/spf13/cobra"
 )
 
-type runOptions struct {
-	source  string
-	ref     string
-	prompt  []string
-	env     []string
-	secret  []string
-	harness string
-	detach  bool
+type runCommandOptions struct {
+	prompt sandboxcreate.PromptOptions
+	detach bool
 }
 
 func (a *App) newRunCommand() *cobra.Command {
-	var opts runOptions
+	var opts runCommandOptions
 	cmd := &cobra.Command{
 		Use:   "run [flags] [PROMPT...]",
 		Short: "Run a prompt against a local directory or Git repository",
@@ -48,8 +43,8 @@ detach). Pass -d to create the sandbox and print it without attaching.`,
   discobox run -- prompt starting with --flag-like text`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts.source = a.source
-			parsedOpts, err := parseRunOptions(opts, args)
+			opts.prompt.Source = a.source
+			parsedOpts, err := sandboxcreate.ParsePromptOptions(opts.prompt, args)
 			if err != nil {
 				return err
 			}
@@ -61,15 +56,7 @@ detach). Pass -d to create the sandbox and print it without attaching.`,
 			if err != nil {
 				return err
 			}
-			body, err := createRunSandboxBody(cmd.Context(), parsedOpts)
-			if err != nil {
-				return err
-			}
-			sandboxRes, err := client.CreateSandbox(cmd.Context(), body, apiclientgen.CreateSandboxParams{ProjectId: projectID})
-			if err != nil {
-				return err
-			}
-			sandbox, err := expectResponse[apimodel.Sandbox](sandboxRes)
+			sandbox, err := sandboxcreate.CreatePromptSandbox(cmd.Context(), client, projectID, parsedOpts)
 			if err != nil {
 				return err
 			}
@@ -79,9 +66,9 @@ detach). Pass -d to create the sandbox and print it without attaching.`,
 			return a.attachRunSandbox(cmd, client, projectID, sandbox)
 		},
 	}
-	cmd.Flags().StringArrayVarP(&opts.env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
-	cmd.Flags().StringArrayVarP(&opts.secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
-	cmd.Flags().StringVarP(&opts.harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
+	cmd.Flags().StringArrayVarP(&opts.prompt.Env, "env", "e", nil, "Environment variable as KEY=VALUE or KEY from the local environment; repeat for multiple variables. A KEY whose name contains KEY, TOKEN, PASS, or SECRET is treated as a secret; use KEY!=VALUE to force it to be a plain environment variable")
+	cmd.Flags().StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
+	cmd.Flags().StringVarP(&opts.prompt.Harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
 	cmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "Create the sandbox and print it without attaching to its terminal")
 	return cmd
 }
@@ -183,72 +170,4 @@ func primaryTerminal(terminals []apimodel.SandboxExec) (apimodel.SandboxExec, bo
 		return *oldest, true
 	}
 	return apimodel.SandboxExec{}, false
-}
-
-// parseRunOptions combines the flag-provided options with the positional
-// prompt arguments and splits an optional @REF suffix off the source.
-func parseRunOptions(opts runOptions, args []string) (runOptions, error) {
-	opts.prompt = append([]string(nil), args...)
-	if strings.TrimSpace(opts.source) == "" {
-		return runOptions{}, errors.New("source directory or Git repository is required")
-	}
-	if source, ref, ok := splitRunSourceRef(opts.source); ok {
-		opts.source = source
-		opts.ref = ref
-	}
-	return opts, nil
-}
-
-func splitRunSourceRef(value string) (string, string, bool) {
-	at := strings.LastIndex(value, "@")
-	if at <= 0 || at == len(value)-1 {
-		return value, "", false
-	}
-	if !strings.Contains(value[:at], "@") && strings.Contains(value[at+1:], ":") {
-		return value, "", false
-	}
-	return value[:at], value[at+1:], true
-}
-
-func createRunSandboxBody(ctx context.Context, opts runOptions) (*apimodel.CreateSandboxBody, error) {
-	name, err := randomname.Generate()
-	if err != nil {
-		return nil, fmt.Errorf("generate sandbox name: %w", err)
-	}
-	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: name}}
-	if len(opts.prompt) > 0 {
-		body.Config.SetPrompt(append([]string(nil), opts.prompt...))
-	}
-	if strings.TrimSpace(opts.harness) != "" {
-		body.SetHarnessName(optString(opts.harness))
-	}
-	env, secrets, err := envAndSecretsFromOptions(opts.env, opts.secret)
-	if err != nil {
-		return nil, err
-	}
-	if len(env) > 0 {
-		body.Config.SetEnv(apiclientgen.NewOptSandboxCreateConfigEnv(apiclientgen.SandboxCreateConfigEnv(env)))
-	}
-	if len(secrets) > 0 {
-		body.Config.SetSecrets(secrets)
-	}
-	userIdentity, _, err := resolveRunUserIdentity()
-	if err != nil {
-		return nil, err
-	}
-	sourceArg := opts.source
-	if opts.ref != "" {
-		sourceArg += "@" + opts.ref
-	}
-	source, err := resolveRunSource(ctx, sourceArg)
-	if err != nil {
-		return nil, err
-	}
-	apiSource, err := source.apiGitSource()
-	if err != nil {
-		return nil, err
-	}
-	body.Config.SetSource(apiclientgen.NewOptGitSource(*apiSource))
-	userIdentity.setCreateSandboxUser(body)
-	return body, nil
 }

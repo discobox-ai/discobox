@@ -5,6 +5,9 @@ import (
 	"errors"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
@@ -22,6 +25,60 @@ func TestToTUISandboxUsesServerDisplayState(t *testing.T) {
 	})
 	if sandbox.State != "stopping" {
 		t.Fatalf("state = %q, want stopping", sandbox.State)
+	}
+}
+
+func TestAPIDataSourceCreateSessionUsesSharedRunCreation(t *testing.T) {
+	repo := newRunSourceTestRepo(t)
+	git := runSourceTestGit(t, repo)
+	commit := strings.TrimSpace(git("rev-parse", "HEAD"))
+	var posted map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/projects/project-1/sandboxes" {
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+		defer r.Body.Close()
+		if err := json.NewDecoder(r.Body).Decode(&posted); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = w.Write([]byte(`{"id":"sbx_9qk5n25t2hh2rv00","projectId":"project-1","createdByUserId":"user-1","config":{"name":"tui-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"pending","desiredState":"stopped","lastOperationStatus":"pending","generation":1,"observedGeneration":0,"restartGeneration":0,"restartedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := apiclientgen.NewClient(server.URL)
+	if err != nil {
+		t.Fatalf("new client: %v", err)
+	}
+	ds := &apiDataSource{
+		app:       &App{},
+		client:    client,
+		projectID: "project-1",
+	}
+	sandbox, err := ds.CreateSession(t.Context(), tui.NewSessionRequest{
+		Harness: "codex",
+		Path:    repo + "@HEAD",
+		Prompt:  "fix the failing tests",
+	})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	if sandbox.ID != "sbx_9qk5n25t2hh2rv00" {
+		t.Fatalf("sandbox ID = %q", sandbox.ID)
+	}
+	if posted["harnessName"] != "codex" {
+		t.Fatalf("harnessName = %#v, want codex", posted["harnessName"])
+	}
+	config := posted["config"].(map[string]any)
+	prompt := config["prompt"].([]any)
+	if len(prompt) != 1 || prompt[0] != "fix the failing tests" {
+		t.Fatalf("prompt = %#v", prompt)
+	}
+	source := config["source"].(map[string]any)
+	checkout := source["checkout"].(map[string]any)
+	if checkout["commit"] != commit || checkout["refType"] != "commit" {
+		t.Fatalf("checkout = %#v, want HEAD commit %s", checkout, commit)
 	}
 }
 

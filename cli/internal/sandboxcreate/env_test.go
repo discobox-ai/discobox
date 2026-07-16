@@ -1,4 +1,4 @@
-package cli
+package sandboxcreate
 
 import (
 	"testing"
@@ -32,7 +32,7 @@ func TestEnvAndSecretsFromOptions(t *testing.T) {
 	t.Setenv("SHELL_API_KEY", "from-shell")
 	t.Setenv("PLAIN_HOME", "/home/x")
 
-	env, secrets, err := envAndSecretsFromOptions(
+	env, secrets, err := EnvAndSecretsFromOptions(
 		[]string{"FOO=bar", "MY_API_KEY=inline-key", "DB_PASSWORD!=literal-pass", "SHELL_API_KEY", "PLAIN_HOME"},
 		[]string{"OPENAI_KEY=sk-inline", "GITHUB=<sec_123>"},
 	)
@@ -70,16 +70,16 @@ func TestEnvAndSecretsFromOptions(t *testing.T) {
 }
 
 func TestEnvAndSecretsDuplicateRejected(t *testing.T) {
-	if _, _, err := envAndSecretsFromOptions([]string{"API_KEY=a"}, []string{"API_KEY=b"}); err == nil {
+	if _, _, err := EnvAndSecretsFromOptions([]string{"API_KEY=a"}, []string{"API_KEY=b"}); err == nil {
 		t.Fatal("expected duplicate error across --env and --secret")
 	}
 }
 
 func TestEnvAndSecretsBadForms(t *testing.T) {
-	if _, _, err := envAndSecretsFromOptions(nil, []string{"NOEQUALS"}); err == nil {
+	if _, _, err := EnvAndSecretsFromOptions(nil, []string{"NOEQUALS"}); err == nil {
 		t.Fatal("expected error for --secret without =")
 	}
-	if _, _, err := envAndSecretsFromOptions([]string{"=novalue"}, nil); err == nil {
+	if _, _, err := EnvAndSecretsFromOptions([]string{"=novalue"}, nil); err == nil {
 		t.Fatal("expected error for --env with empty key")
 	}
 }

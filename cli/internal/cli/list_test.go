@@ -8,6 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/obot-platform/discobox/cli/internal/sandboxcreate"
 )
 
 func TestResolveSourceRootUsesRepoRootForSubdirectory(t *testing.T) {
@@ -18,7 +20,7 @@ func TestResolveSourceRootUsesRepoRootForSubdirectory(t *testing.T) {
 	}
 	t.Chdir(subdir)
 
-	root, err := resolveSourceRoot(context.Background(), ".")
+	root, err := sandboxcreate.ResolveSourceRoot(context.Background(), ".")
 	if err != nil {
 		t.Fatalf("resolveSourceRoot: %v", err)
 	}
@@ -28,7 +30,7 @@ func TestResolveSourceRootUsesRepoRootForSubdirectory(t *testing.T) {
 }
 
 func TestResolveSourceRootDropsRefFromRemoteURL(t *testing.T) {
-	root, err := resolveSourceRoot(context.Background(), "https://github.com/obot-platform/discobox.git@main")
+	root, err := sandboxcreate.ResolveSourceRoot(context.Background(), "https://github.com/obot-platform/discobox.git@main")
 	if err != nil {
 		t.Fatalf("resolveSourceRoot: %v", err)
 	}
@@ -40,7 +42,7 @@ func TestResolveSourceRootDropsRefFromRemoteURL(t *testing.T) {
 func TestResolveSourceRootOutsideRepositoryFails(t *testing.T) {
 	t.Chdir(t.TempDir())
 
-	if _, err := resolveSourceRoot(context.Background(), "."); err == nil {
+	if _, err := sandboxcreate.ResolveSourceRoot(context.Background(), "."); err == nil {
 		t.Fatal("resolveSourceRoot outside a git repository: got nil error, want failure")
 	}
 }

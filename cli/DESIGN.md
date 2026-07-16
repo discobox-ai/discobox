@@ -9,7 +9,18 @@ transport helpers where OpenAPI does not model the stream.
 | Package/path | Ownership |
 | --- | --- |
 | `cmd/discobox` | Binary entrypoint. |
-| `internal/cli` | Cobra command tree, output formatting, generated API client usage, local server auto-start, and stream attach clients. |
+| `internal/cli` | Cobra command tree, output formatting, local server auto-start, TUI API adapter, and stream attach clients. |
+| `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, and local user identity. |
+| `internal/tui` | Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. |
+
+## UI Dependency Direction
+
+- Keep reusable sandbox creation workflows out of `internal/cli`; place them in
+  `internal/sandboxcreate` so Cobra and TUI adapters consume the same behavior.
+- `internal/tui` must not import `internal/cli`. It owns presentation state and
+  frontend contracts only; API and terminal adapters belong outside it.
+- `internal/cli` may adapt generated API clients and terminal transports to the
+  TUI's interfaces, but must not become the owner of logic shared by frontends.
 
 Local server auto-launch is a release-only capability. Normal and development
 builds leave it disabled; release CLI binaries opt in at build time by setting

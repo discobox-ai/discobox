@@ -10,43 +10,44 @@ import (
 	"testing"
 
 	apimodel "github.com/obot-platform/discobox/api/model"
+	"github.com/obot-platform/discobox/cli/internal/sandboxcreate"
 )
 
 func TestParseRunOptions(t *testing.T) {
-	opts, err := parseRunOptions(runOptions{source: "https://example.com/repo.git@main"}, []string{"fix", "tests"})
+	opts, err := sandboxcreate.ParsePromptOptions(sandboxcreate.PromptOptions{Source: "https://example.com/repo.git@main"}, []string{"fix", "tests"})
 	if err != nil {
 		t.Fatalf("parseRunOptions: %v", err)
 	}
-	if opts.source != "https://example.com/repo.git" || opts.ref != "main" {
-		t.Fatalf("source/ref = %q/%q, want repo/main", opts.source, opts.ref)
+	if opts.Source != "https://example.com/repo.git" || opts.Ref != "main" {
+		t.Fatalf("source/ref = %q/%q, want repo/main", opts.Source, opts.Ref)
 	}
-	if len(opts.prompt) != 2 || opts.prompt[0] != "fix" || opts.prompt[1] != "tests" {
-		t.Fatalf("prompt = %#v, want fix tests", opts.prompt)
+	if len(opts.Prompt) != 2 || opts.Prompt[0] != "fix" || opts.Prompt[1] != "tests" {
+		t.Fatalf("prompt = %#v, want fix tests", opts.Prompt)
 	}
 }
 
 func TestParseRunOptionsKeepsSSHRepoWithoutRef(t *testing.T) {
-	opts, err := parseRunOptions(runOptions{source: "git@github.com:obot-platform/discobox.git"}, []string{"fix"})
+	opts, err := sandboxcreate.ParsePromptOptions(sandboxcreate.PromptOptions{Source: "git@github.com:obot-platform/discobox.git"}, []string{"fix"})
 	if err != nil {
 		t.Fatalf("parseRunOptions: %v", err)
 	}
-	if opts.source != "git@github.com:obot-platform/discobox.git" || opts.ref != "" {
-		t.Fatalf("source/ref = %q/%q, want SSH repo with empty ref", opts.source, opts.ref)
+	if opts.Source != "git@github.com:obot-platform/discobox.git" || opts.Ref != "" {
+		t.Fatalf("source/ref = %q/%q, want SSH repo with empty ref", opts.Source, opts.Ref)
 	}
 }
 
 func TestParseRunOptionsSplitsSSHRepoWithRef(t *testing.T) {
-	opts, err := parseRunOptions(runOptions{source: "git@github.com:obot-platform/discobox.git@main"}, []string{"fix"})
+	opts, err := sandboxcreate.ParsePromptOptions(sandboxcreate.PromptOptions{Source: "git@github.com:obot-platform/discobox.git@main"}, []string{"fix"})
 	if err != nil {
 		t.Fatalf("parseRunOptions: %v", err)
 	}
-	if opts.source != "git@github.com:obot-platform/discobox.git" || opts.ref != "main" {
-		t.Fatalf("source/ref = %q/%q, want SSH repo/main", opts.source, opts.ref)
+	if opts.Source != "git@github.com:obot-platform/discobox.git" || opts.Ref != "main" {
+		t.Fatalf("source/ref = %q/%q, want SSH repo/main", opts.Source, opts.Ref)
 	}
 }
 
 func TestParseRunOptionsRejectsEmptySource(t *testing.T) {
-	if _, err := parseRunOptions(runOptions{source: " "}, []string{"fix"}); err == nil {
+	if _, err := sandboxcreate.ParsePromptOptions(sandboxcreate.PromptOptions{Source: " "}, []string{"fix"}); err == nil {
 		t.Fatal("expected error for empty source")
 	}
 }
@@ -104,7 +105,7 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 		t.Fatalf("localDirectory = %q, want %s", source["localDirectory"], repo)
 	}
 	checkout := source["checkout"].(map[string]any)
-	if checkout["commit"] != commit || checkout["refType"] != runSourceRefTypeCommit {
+	if checkout["commit"] != commit || checkout["refType"] != "commit" {
 		t.Fatalf("checkout = %#v, want commit %s", checkout, commit)
 	}
 	destination := source["destination"].(map[string]any)
@@ -112,7 +113,7 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 		t.Fatalf("destination = %#v, want repo root", destination)
 	}
 	workspace := source["workspace"].(map[string]any)
-	if workspace["mode"] != runWorkspaceModeClean {
+	if workspace["mode"] != "clean" {
 		t.Fatalf("workspace = %#v, want clean", workspace)
 	}
 	if output := out.String(); !strings.Contains(output, sandboxID) {
@@ -192,11 +193,10 @@ func TestCreateRunSandboxBodyUsesSplitSourceRef(t *testing.T) {
 	git := runSourceTestGit(t, repo)
 	commit := strings.TrimSpace(git("rev-parse", "HEAD"))
 
-	body, err := createRunSandboxBody(t.Context(), runOptions{
-		source: repo,
-		ref:    "HEAD",
-		prompt: []string{"hello", "world"},
-		env:    []string{"RUN_BODY_ENV=value"},
+	body, err := sandboxcreate.BuildPromptSandboxBody(t.Context(), sandboxcreate.PromptOptions{
+		Source: repo + "@HEAD",
+		Prompt: []string{"hello", "world"},
+		Env:    []string{"RUN_BODY_ENV=value"},
 	})
 	if err != nil {
 		t.Fatalf("createRunSandboxBody: %v", err)
@@ -216,7 +216,7 @@ func TestCreateRunSandboxBodyUsesSplitSourceRef(t *testing.T) {
 		t.Fatalf("localDirectory = %q, want %s", source.LocalDirectory.Value, repo)
 	}
 	checkout, ok := source.Checkout.Get()
-	if !ok || checkout.Commit.Value != commit || checkout.RefType.Value != runSourceRefTypeCommit {
+	if !ok || checkout.Commit.Value != commit || checkout.RefType.Value != "commit" {
 		t.Fatalf("checkout = %#v ok=%t, want commit %s", checkout, ok, commit)
 	}
 }
@@ -224,10 +224,10 @@ func TestCreateRunSandboxBodyUsesSplitSourceRef(t *testing.T) {
 func TestCreateRunSandboxBodySecrets(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
 
-	body, err := createRunSandboxBody(t.Context(), runOptions{
-		source: repo,
-		env:    []string{"PLAIN=value"},
-		secret: []string{"OPENAI_API_KEY=sk-secret", "GITHUB_TOKEN=<sec_123>"},
+	body, err := sandboxcreate.BuildPromptSandboxBody(t.Context(), sandboxcreate.PromptOptions{
+		Source: repo,
+		Env:    []string{"PLAIN=value"},
+		Secret: []string{"OPENAI_API_KEY=sk-secret", "GITHUB_TOKEN=<sec_123>"},
 	})
 	if err != nil {
 		t.Fatalf("createRunSandboxBody: %v", err)

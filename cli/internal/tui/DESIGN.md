@@ -43,7 +43,9 @@ flowchart LR
   tab body (`switchTab(..., false)` / `goToList`).
 - **DataSource seam (`source.go`)** keeps this package free of the ogen client.
   The CLI (`cli/internal/cli/tui.go`) adapts the generated client to it and maps
-  `apimodel.Sandbox` → `tui.Sandbox`.
+  `apimodel.Sandbox` → `tui.Sandbox`. This package must not import
+  `cli/internal/cli`; frontend-independent workflows belong in sibling packages
+  such as `cli/internal/sandboxcreate` and are invoked by the adapter.
 - **Screens communicate by message**, not direct calls: `selectSandboxMsg`
   (enter → terminal), `fullscreenSandboxMsg` (f → fullscreen attach), `backMsg`
   (detach → list), `toggleHelpMsg`.
@@ -67,9 +69,9 @@ flowchart LR
 - `newSessionScreen` — the create-a-sandbox form: harness dropdown, path dropdown
   (cwd plus existing sandbox sources), and a prompt `textinput` focused by
   default. Enter in the prompt submits `CreateSession` (empty prompt is valid),
-  which reuses the CLI's `run` creation path. The "new" affordance lives at the
-  top of `sandboxesScreen` (`newSelected`); moving up off row 0 selects it, and
-  it is selected by default.
+  whose adapter uses the shared `internal/sandboxcreate` prompt creation path.
+  The "new" affordance lives at the top of `sandboxesScreen` (`newSelected`);
+  moving up off row 0 selects it, and it is selected by default.
 - `secretsScreen` — placeholder for the project secrets tab (no backend yet).
   Renders a centered "coming soon" panel and wires only the shared chrome keys
   plus Up (→ `focusTabsMsg`), so the tab bar has a real third destination.

@@ -1,4 +1,4 @@
-package cli
+package sandboxcreate
 
 import (
 	"fmt"
@@ -14,7 +14,7 @@ import (
 // variable. Use KEY!=VALUE to override.
 var secretNameHints = []string{"KEY", "TOKEN", "PASS", "SECRET"}
 
-// envAndSecretsFromOptions splits --env and --secret flags into the plain
+// EnvAndSecretsFromOptions splits --env and --secret flags into the plain
 // environment map and the secret assignment inputs.
 //
 //   - --secret KEY=VALUE injects an inline value (an anonymous secret is created).
@@ -22,7 +22,7 @@ var secretNameHints = []string{"KEY", "TOKEN", "PASS", "SECRET"}
 //   - --env KEY=VALUE / --env KEY is a plain variable, unless KEY looks sensitive
 //     (contains KEY, TOKEN, PASS, or SECRET), in which case it becomes a secret.
 //   - --env KEY!=VALUE forces a plain variable even when the name looks sensitive.
-func envAndSecretsFromOptions(envArgs, secretArgs []string) (map[string]string, []apimodel.SandboxSecretInput, error) {
+func EnvAndSecretsFromOptions(envArgs, secretArgs []string) (map[string]string, []apimodel.SandboxSecretInput, error) {
 	env := map[string]string{}
 	var secrets []apimodel.SandboxSecretInput
 	seen := map[string]bool{}
