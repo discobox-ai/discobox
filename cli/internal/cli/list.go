@@ -19,11 +19,10 @@ func (a *App) newListCommand() *cobra.Command {
 		Short:   "List the sandboxes running against the current repository",
 		Long: `List the sandboxes running against the current repository.
 
-The repository is the Git repository root of the current directory, or of -C when
-given. Sandboxes created from another repository, or from no repository at all,
-are not listed; use "disco box sandbox ls" to list every sandbox in the project.`,
+The repository is the Git repository root of the current directory. Sandboxes
+created from another repository, or from no repository at all, are not listed;
+use "disco box sandbox ls" to list every sandbox in the project.`,
 		Example: `  disco ls
-  disco -C ../other-repo ls
   disco ls -o json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {

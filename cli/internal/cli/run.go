@@ -25,19 +25,16 @@ func (a *App) newRunCommand() *cobra.Command {
 		Use:     "prompt [flags] [PROMPT...]",
 		Aliases: []string{"p"},
 		Short:   "Launch prompt in new sandbox",
-		Long: `Launch a prompt in a new sandbox against a local directory or Git repository.
+		Long: `Launch a prompt in a new sandbox against the current directory.
 
-The arguments are the prompt. The source defaults to the current directory;
-use -C to run against another directory or a Git repository (optionally with
-@REF). Use -- when the prompt needs to be separated from command flags
-explicitly.
+The arguments are the prompt. Use -- when the prompt needs to be separated from
+command flags explicitly.
 
 Every sandbox has one default terminal: the configured harness, or a shell when
 no harness is configured. By default prompt waits for the sandbox to start and
 attaches to that terminal, streaming it to your terminal (press Ctrl-P Ctrl-Q to
 detach). Pass -d to create the sandbox and print it without attaching.`,
 		Example: `  disco prompt fix the failing tests
-  disco prompt -C https://github.com/obot-platform/discobox.git@main summarize the CLI package
   disco prompt -e GITHUB_TOKEN -e MODE=test fix the failing tests
   disco prompt -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> fix the failing tests
   disco prompt -d fix the failing tests
