@@ -197,28 +197,4 @@ STOPSIGNAL SIGRTMIN+3
 ENTRYPOINT ["/opt/discobox/entrypoint.sh"]
 CMD ["/sbin/init"]
 
-FROM sandbox-base AS codex
-ARG HARNESS_METADATA
-LABEL io.discobox.harness.v1=${HARNESS_METADATA}
-RUN npm install -g @openai/codex \
-    && install -d -m 0755 /usr/local/libexec/discobox
-COPY --chmod=0755 harness/codex-cli/configure.sh /usr/local/libexec/discobox/configure-codex
-COPY sandbox-agent/image/harnesses/codex/image.json /usr/share/discobox/image.json
-
-FROM sandbox-base AS opencode
-ARG HARNESS_METADATA
-LABEL io.discobox.harness.v1=${HARNESS_METADATA}
-RUN npm install -g opencode-ai \
-    && install -d -m 0755 /usr/local/libexec/discobox
-COPY --chmod=0755 harness/opencode/configure.sh /usr/local/libexec/discobox/configure-opencode
-COPY sandbox-agent/image/harnesses/opencode/image.json /usr/share/discobox/image.json
-
-FROM sandbox-base AS claude-code
-ARG HARNESS_METADATA
-LABEL io.discobox.harness.v1=${HARNESS_METADATA}
-RUN npm install -g @anthropic-ai/claude-code \
-    && install -d -m 0755 /usr/local/libexec/discobox
-COPY --chmod=0755 harness/claude-code/configure.sh /usr/local/libexec/discobox/configure-claude-code
-COPY sandbox-agent/image/harnesses/claude-code/image.json /usr/share/discobox/image.json
-
 FROM sandbox-base AS sandbox-agent

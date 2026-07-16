@@ -16,11 +16,12 @@ tasks:
       - task --list
 
   build:
-    desc: Compile discobox-server, disco CLI, and hooks CLI
+    desc: Build binaries and all local Docker images
     cmds:
       - task: build:server
       - task: build:cli
       - task: build:hooks
+      - task: build:images
 
   build:server:
     desc: Compile discobox-server
@@ -51,9 +52,16 @@ tasks:
     cmds:
       - docker build -f sandbox-agent/Dockerfile -t discobox-sandbox-agent:local .
 
-  build:harness-images:
-    desc: Build one local sandbox image for each included harness
+  build:images:
+    desc: Build worker, sandbox base, and all included harness images
     cmds:
+      - task: build:worker-agent-image
+      - task: build:harness-images
+
+  build:harness-images:
+    desc: Build the sandbox base and one local image for each included harness
+    cmds:
+      - task: build:sandbox-agent-image
       - task: build:harness-image
         vars: { HARNESS: codex }
       - task: build:harness-image
@@ -62,16 +70,22 @@ tasks:
         vars: { HARNESS: opencode }
 
   build:harness-image:
-    desc: Build one harness-specific sandbox image (HARNESS=codex|claude-code|opencode)
+    desc: Build one harness-specific sandbox image (HARNESS=codex|claude-code|opencode, SANDBOX_AGENT_IMAGE defaults to the local base)
     requires:
       vars: [HARNESS]
     vars:
-      IMAGE_CONFIG: sandbox-agent/image/harnesses/{{.HARNESS}}/image.json
+      SANDBOX_AGENT_IMAGE: '{{default "discobox-sandbox-agent:local" .SANDBOX_AGENT_IMAGE}}'
+      HARNESS_DIR: '{{if eq .HARNESS "codex"}}codex-cli{{else}}{{.HARNESS}}{{end}}'
+      IMAGE_CONFIG: harness/{{.HARNESS_DIR}}/image.json
+    preconditions:
+      - sh: test -f harness/{{.HARNESS_DIR}}/Dockerfile
+        msg: "unknown harness: {{.HARNESS}}"
     cmds:
       - >-
-        docker build -f sandbox-agent/Dockerfile --target {{.HARNESS}}
+        docker build -f harness/{{.HARNESS_DIR}}/Dockerfile
+        --build-arg "SANDBOX_AGENT_IMAGE={{.SANDBOX_AGENT_IMAGE}}"
         --build-arg HARNESS_METADATA="$(jq -c .harness {{.IMAGE_CONFIG}})"
-        -t discobox-harness-{{.HARNESS}}:local .
+        -t discobox-harness-{{.HARNESS}}:local harness/{{.HARNESS_DIR}}
 
   compile:
     desc: Alias for build

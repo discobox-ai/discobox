@@ -34,6 +34,7 @@ sanitize_tag_part() {
 build_dockerfile() {
   local dockerfile="$1"
   local context tag_part tag
+  local -a build_args
 
   dockerfile="${dockerfile#./}"
   case "$dockerfile" in
@@ -56,9 +57,25 @@ build_dockerfile() {
 
   tag_part=$(sanitize_tag_part "$dockerfile")
   tag="discobot-dockerfile-test:${tag_part}"
+  build_args=(--pull=false --tag "$tag" --file "$dockerfile")
+
+  case "$dockerfile" in
+    harness/*/Dockerfile)
+      if ! docker image inspect discobox-sandbox-agent:local >/dev/null 2>&1; then
+        echo "[dockerfile-test-builds] building sandbox-agent base for $dockerfile"
+        DOCKER_BUILDKIT=1 docker build --pull=false --tag discobox-sandbox-agent:local --file sandbox-agent/Dockerfile .
+      fi
+      if ! command -v jq >/dev/null 2>&1; then
+        echo "jq is required to build harness image metadata" >&2
+        exit 1
+      fi
+      build_args+=(--build-arg "SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local")
+      build_args+=(--build-arg "HARNESS_METADATA=$(jq -c .harness "$context/image.json")")
+      ;;
+  esac
 
   echo "[dockerfile-test-builds] building $dockerfile with context $context"
-  DOCKER_BUILDKIT=1 docker build --pull=false --tag "$tag" --file "$dockerfile" "$context"
+  DOCKER_BUILDKIT=1 docker build "${build_args[@]}" "$context"
 }
 
 for file in $changed_files; do

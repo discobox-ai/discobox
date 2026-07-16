@@ -35,8 +35,12 @@ func TestHarnessForConfigModeUsesImageCommand(t *testing.T) {
 }
 
 func TestIncludedHarnessImagesSupportConfigMode(t *testing.T) {
-	for _, name := range []string{"codex", "claude-code", "opencode"} {
-		image, err := LoadImage(filepath.Join("..", "image", "harnesses", name, "image.json"))
+	for name, dir := range map[string]string{
+		"codex":       "codex-cli",
+		"claude-code": "claude-code",
+		"opencode":    "opencode",
+	} {
+		image, err := LoadImage(filepath.Join("..", "..", "harness", dir, "image.json"))
 		if err != nil {
 			t.Fatalf("load %s image: %v", name, err)
 		}

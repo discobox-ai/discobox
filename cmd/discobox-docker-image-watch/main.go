@@ -28,7 +28,18 @@ type imageSpec struct {
 	buildDir     string
 	buildArgs    []string
 	files        []string
-	harnessName  string
+	metadataFile string
+}
+
+type harnessImage struct {
+	name string
+	dir  string
+}
+
+var harnessImages = []harnessImage{
+	{name: "codex", dir: "codex-cli"},
+	{name: "claude-code", dir: "claude-code"},
+	{name: "opencode", dir: "opencode"},
 }
 
 func main() {
@@ -155,12 +166,9 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 	}
 	addFile(repoRoot, ".dockerignore", sandboxSeen)
 	commonSandboxSeen := copyFiles(sandboxSeen)
-	for file := range commonSandboxSeen {
-		if strings.Contains(file, filepath.Join("sandbox-agent", "image", "harnesses")+string(filepath.Separator)) ||
-			strings.HasSuffix(file, filepath.Join("harness", "codex-cli", "configure.sh")) ||
-			strings.HasSuffix(file, filepath.Join("harness", "claude-code", "configure.sh")) ||
-			strings.HasSuffix(file, filepath.Join("harness", "opencode", "configure.sh")) {
-			delete(commonSandboxSeen, file)
+	for _, harnessImage := range harnessImages {
+		for _, name := range []string{"Dockerfile", "configure.sh", "image.json"} {
+			delete(commonSandboxSeen, filepath.Join(repoRoot, "harness", harnessImage.dir, name))
 		}
 	}
 	specs := []imageSpec{
@@ -185,28 +193,27 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 			files:        sortedFiles(commonSandboxSeen),
 		},
 	}
-	for _, harnessName := range []string{"codex", "claude-code", "opencode"} {
+	for _, harnessImage := range harnessImages {
 		seen := copyFiles(commonSandboxSeen)
-		addFile(repoRoot, filepath.Join("sandbox-agent", "image", "harnesses", harnessName, "image.json"), seen)
-		configureDir := harnessName
-		if harnessName == "codex" {
-			configureDir = "codex-cli"
+		harnessDir := filepath.Join("harness", harnessImage.dir)
+		for _, name := range []string{"Dockerfile", "configure.sh", "image.json"} {
+			addFile(repoRoot, filepath.Join(harnessDir, name), seen)
 		}
-		addFile(repoRoot, filepath.Join("harness", configureDir, "configure.sh"), seen)
 		specs = append(specs, imageSpec{
-			name: "harness-" + harnessName, baseImage: "discobox-harness-" + harnessName + ":local",
-			devPrefix: "discobox-harness-" + harnessName + ":dev-", buildDir: repoRoot,
+			name: "harness-" + harnessImage.name, baseImage: "discobox-harness-" + harnessImage.name + ":local",
+			devPrefix: "discobox-harness-" + harnessImage.name + ":dev-", buildDir: repoRoot,
 			// Mirror the worker/sandbox flow: write the hashed dev tag to .env so the
 			// server restarts and resolves the new harness image. The env key must
 			// match the server-side harnessdefs.ImageEnvVar mapping (definition id →
-			// DISCOBOX_HARNESS_<ID>_IMAGE); harnessName equals the definition id.
-			envImageKey: harnessImageEnvKey(harnessName),
-			harnessName: harnessName,
+			// DISCOBOX_HARNESS_<ID>_IMAGE); the image name equals the definition id.
+			envImageKey: harnessImageEnvKey(harnessImage.name),
 			// HARNESS_METADATA is filled in from image.json by buildImage at build
 			// time; the placeholder marks where it lands.
-			buildArgs: []string{"build", "-f", "sandbox-agent/Dockerfile", "--target", harnessName,
-				"--build-arg", "HARNESS_METADATA=", "-t", "discobox-harness-" + harnessName + ":local", "."},
-			files: sortedFiles(seen),
+			buildArgs: []string{"build", "-f", filepath.Join(harnessDir, "Dockerfile"),
+				"--build-arg", "SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local",
+				"--build-arg", "HARNESS_METADATA=", "-t", "discobox-harness-" + harnessImage.name + ":local", harnessDir},
+			metadataFile: filepath.Join(repoRoot, harnessDir, "image.json"),
+			files:        sortedFiles(seen),
 		})
 	}
 	return specs, nil
@@ -219,8 +226,8 @@ func harnessImageEnvKey(harnessName string) string {
 	return "DISCOBOX_HARNESS_" + strings.ToUpper(strings.ReplaceAll(harnessName, "-", "_")) + "_IMAGE"
 }
 
-func harnessMetadata(repoRoot, harnessName string) (string, error) {
-	data, err := os.ReadFile(filepath.Join(repoRoot, "sandbox-agent", "image", "harnesses", harnessName, "image.json"))
+func harnessMetadata(path string) (string, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
@@ -228,10 +235,10 @@ func harnessMetadata(repoRoot, harnessName string) (string, error) {
 		Harness json.RawMessage `json:"harness"`
 	}
 	if err := json.Unmarshal(data, &image); err != nil {
-		return "", fmt.Errorf("read %s harness metadata: %w", harnessName, err)
+		return "", fmt.Errorf("read harness metadata from %s: %w", path, err)
 	}
 	if len(image.Harness) == 0 {
-		return "", fmt.Errorf("read %s harness metadata: missing harness object", harnessName)
+		return "", fmt.Errorf("read harness metadata from %s: missing harness object", path)
 	}
 	compact := bytes.Buffer{}
 	if err := json.Compact(&compact, image.Harness); err != nil {
@@ -376,8 +383,8 @@ func buildChangedImages(ctx context.Context, repoRoot string, allSpecs, changedS
 
 func buildImage(ctx context.Context, spec imageSpec) (string, string, error) {
 	buildArgs := append([]string{}, spec.buildArgs...)
-	if spec.harnessName != "" {
-		metadata, err := harnessMetadata(spec.buildDir, spec.harnessName)
+	if spec.metadataFile != "" {
+		metadata, err := harnessMetadata(spec.metadataFile)
 		if err != nil {
 			return "", "", err
 		}

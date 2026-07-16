@@ -24,7 +24,7 @@ runtime operations.
 | `hooks` | Local Unix-socket collector and publisher protocol for coding-harness lifecycle hook payloads. |
 | `resources` | Opaque cgroup/procfs/systemd-style resource snapshot collection for exec runtimes. |
 | `store` | Sandbox-local SQLite/GORM audit log, observed terminal state snapshots, and retained resource blobs. |
-| `Dockerfile` | Debian-based systemd sandbox runtime image with Docker, development tools, Chromium, socket-activated desktop access, code-server, and Nix tooling. |
+| `Dockerfile` | Debian-based base sandbox runtime image with Docker, development tools, Chromium, socket-activated desktop access, code-server, and Nix tooling. Harness image builds live in their owning `harness/<type>` folders. |
 
 ## Boundary Rules
 
@@ -63,11 +63,20 @@ runtime operations.
 
 ## Development Images
 
+`task build` is the no-argument build entry point for binaries and all local
+images. `task build:images` builds only the worker, sandbox base, and included
+harness images.
+
 `task dev` starts `cmd/discobox-docker-image-watch`, which initially builds the
-worker, base sandbox, Codex, Claude Code, and OpenCode images. It watches shared
-Docker/runtime inputs plus each harness's own `image.json` and configure script.
-Harness-specific changes rebuild only that harness target; shared changes rebuild
-all affected targets and reuse Docker's cached base layers.
+worker, base sandbox, Codex, Claude Code, and OpenCode images. Each harness
+Dockerfile extends `discobox-sandbox-agent:local` through its
+`SANDBOX_AGENT_IMAGE` argument. The watcher tracks shared Docker/runtime inputs
+plus each harness folder's Dockerfile, `image.json`, and configure script.
+Harness-specific changes rebuild only that harness image; shared changes rebuild
+the base and all affected harness images. Every successful build writes its
+content-addressed development image reference to `.env`; worker and sandbox base
+images also write their image digest.
+
 - Every sandbox has a default terminal: on sandbox start the harness always
   launches exactly one primary terminal (`terminal.Service.EnsurePrimary`), so
   clients such as `discobox run` can rely on one existing and attach to it. The
