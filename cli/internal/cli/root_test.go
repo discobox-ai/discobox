@@ -341,6 +341,20 @@ func TestRootCommandHelp(t *testing.T) {
 	}
 }
 
+func TestRootCommandDisablesCommandSorting(t *testing.T) {
+	previous := cobra.EnableCommandSorting
+	t.Cleanup(func() {
+		cobra.EnableCommandSorting = previous
+	})
+
+	cobra.EnableCommandSorting = true
+	NewRootCommand()
+
+	if cobra.EnableCommandSorting {
+		t.Fatal("Cobra command sorting is enabled")
+	}
+}
+
 func TestProjectIDDefaultsToDefaultAlias(t *testing.T) {
 	app := &App{projectID: defaultProjectAlias}
 

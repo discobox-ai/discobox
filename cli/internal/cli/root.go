@@ -34,6 +34,8 @@ type App struct {
 }
 
 func NewRootCommand() *cobra.Command {
+	cobra.EnableCommandSorting = false
+
 	app := &App{}
 	cmd := &cobra.Command{
 		Use:           "discobox",
