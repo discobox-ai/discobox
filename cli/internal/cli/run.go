@@ -22,9 +22,10 @@ type runCommandOptions struct {
 func (a *App) newRunCommand() *cobra.Command {
 	var opts runCommandOptions
 	cmd := &cobra.Command{
-		Use:   "run [flags] [PROMPT...]",
-		Short: "Run a prompt against a local directory or Git repository",
-		Long: `Run a prompt against a local directory or Git repository.
+		Use:     "prompt [flags] [PROMPT...]",
+		Aliases: []string{"p"},
+		Short:   "Launch prompt in new sandbox",
+		Long: `Launch a prompt in a new sandbox against a local directory or Git repository.
 
 The arguments are the prompt. The source defaults to the current directory;
 use -C to run against another directory or a Git repository (optionally with
@@ -32,15 +33,15 @@ use -C to run against another directory or a Git repository (optionally with
 explicitly.
 
 Every sandbox has one default terminal: the configured harness, or a shell when
-no harness is configured. By default run waits for the sandbox to start and
+no harness is configured. By default prompt waits for the sandbox to start and
 attaches to that terminal, streaming it to your terminal (press Ctrl-P Ctrl-Q to
 detach). Pass -d to create the sandbox and print it without attaching.`,
-		Example: `  discobox run fix the failing tests
-  discobox run -C https://github.com/obot-platform/discobox.git@main summarize the CLI package
-  discobox run -e GITHUB_TOKEN -e MODE=test fix the failing tests
-  discobox run -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> fix the failing tests
-  discobox run -d fix the failing tests
-  discobox run -- prompt starting with --flag-like text`,
+		Example: `  disco prompt fix the failing tests
+  disco prompt -C https://github.com/obot-platform/discobox.git@main summarize the CLI package
+  disco prompt -e GITHUB_TOKEN -e MODE=test fix the failing tests
+  disco prompt -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> fix the failing tests
+  disco prompt -d fix the failing tests
+  disco prompt -- prompt starting with --flag-like text`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.prompt.Source = a.source
