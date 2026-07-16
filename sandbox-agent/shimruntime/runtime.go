@@ -40,6 +40,10 @@ type Runtime struct {
 	// redraw jiggle. It outlives the screen: an emulator panic drops screen but
 	// keeps tty, so attach still forces a program redraw.
 	tty *os.File
+	// exitPayload holds the encoded exit frame once the process has exited, so a
+	// client that attaches after the exit still receives it (with the screen
+	// replay) rather than a bare disconnect. nil while the process runs.
+	exitPayload []byte
 }
 
 // EnableScreen turns on in-memory screen tracking for repaint-on-attach. It is
@@ -224,10 +228,33 @@ func (r *Runtime) HandleAttach(w http.ResponseWriter, repaintRequested bool) {
 		// the program's real screen right after attach.
 		r.redrawAfterReplay()
 	}
+	// If the process already exited (a late attacher, e.g. one that connected just
+	// after a fast exit), deliver the retained exit frame after the replay so the
+	// client sees the final screen and the exit code, then close.
+	if payload, ok := r.exitFrame(); ok {
+		_ = attach.WriteFrame(frame.Exit, payload)
+		return
+	}
 	select {
 	case <-attach.done:
 	case <-r.done:
 	}
+}
+
+// MarkExited records the process's encoded exit frame so late attachers receive
+// it after the screen replay. Call it once the process has exited and its output
+// has fully drained.
+func (r *Runtime) MarkExited(payload []byte) {
+	r.mu.Lock()
+	r.exitPayload = payload
+	r.mu.Unlock()
+}
+
+// exitFrame returns the retained exit payload, if the process has exited.
+func (r *Runtime) exitFrame() ([]byte, bool) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.exitPayload, r.exitPayload != nil
 }
 
 func (r *Runtime) hasScreen() bool {

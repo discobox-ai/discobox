@@ -40,10 +40,44 @@ func (h *handler) AttachSandboxExec(context.Context, sandboxapi.AttachSandboxExe
 	return nil, statusError{status: http.StatusNotImplemented, message: "sandbox exec attach is not implemented by generated handler"}
 }
 
+// resolveExecID maps the virtual primary exec id to the sandbox's current
+// primary terminal, relaunching it when it has stopped; every other id passes
+// through unchanged. Use it for attach/start, where resuming a stopped primary
+// is the goal.
+func (h *handler) resolveExecID(ctx context.Context, execID string) (string, error) {
+	if execID != terminal.PrimaryExecID {
+		return execID, nil
+	}
+	exec, err := h.terminals.ResolvePrimary(ctx)
+	if err != nil {
+		return "", err
+	}
+	return exec.ID, nil
+}
+
+// resolveExecIDReadOnly maps the virtual primary exec id to the current primary
+// terminal without relaunching it. Use it for status reads so a client's attach
+// done-check observes a real exit instead of triggering a resume.
+func (h *handler) resolveExecIDReadOnly(execID string) (string, error) {
+	if execID != terminal.PrimaryExecID {
+		return execID, nil
+	}
+	exec, ok := h.terminals.CurrentPrimary()
+	if !ok {
+		return "", execs.ErrNotFound
+	}
+	return exec.ID, nil
+}
+
 // attachExecHTTP proxies a websocket attach to the exec shim. replay=true (used
 // by terminal clients) replays the shim's buffered output on connect.
 func (h *handler) attachExecHTTP(w http.ResponseWriter, r *http.Request, execID string) {
 	replay, _ := strconv.ParseBool(r.URL.Query().Get("replay"))
+	execID, err := h.resolveExecID(r.Context(), execID)
+	if err != nil {
+		writeExecResolveError(w, err)
+		return
+	}
 	if err := h.execs.Attach(r.Context(), w, r, execID, replay); err != nil {
 		if errors.Is(err, execs.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, sandboxapi.ErrorResponse{Error: "sandbox exec not found"})
@@ -54,7 +88,22 @@ func (h *handler) attachExecHTTP(w http.ResponseWriter, r *http.Request, execID 
 	}
 }
 
+// writeExecResolveError renders a resolve failure as 404 for a missing primary
+// or 500 otherwise.
+func writeExecResolveError(w http.ResponseWriter, err error) {
+	if errors.Is(err, execs.ErrNotFound) {
+		writeJSON(w, http.StatusNotFound, sandboxapi.ErrorResponse{Error: "sandbox exec not found"})
+		return
+	}
+	writeJSON(w, http.StatusInternalServerError, sandboxapi.ErrorResponse{Error: err.Error()})
+}
+
 func (h *handler) startExecHTTP(w http.ResponseWriter, r *http.Request, execID string) {
+	execID, err := h.resolveExecID(r.Context(), execID)
+	if err != nil {
+		writeExecResolveError(w, err)
+		return
+	}
 	exec, err := h.execs.Start(r.Context(), execID)
 	if err != nil {
 		if errors.Is(err, execs.ErrNotFound) {
@@ -123,7 +172,11 @@ func (h *handler) DeleteSandboxExec(ctx context.Context, params sandboxapi.Delet
 }
 
 func (h *handler) GetSandboxExec(_ context.Context, params sandboxapi.GetSandboxExecParams) (*sandboxapi.SandboxExec, error) {
-	exec, ok := h.execs.Get(params.ExecId)
+	execID, err := h.resolveExecIDReadOnly(params.ExecId)
+	if err != nil {
+		return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
+	}
+	exec, ok := h.execs.Get(execID)
 	if !ok {
 		return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
 	}

@@ -134,6 +134,7 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		Installer:             cfg.Installer,
 		PrimaryState:          localStore,
 		HarnessMode:           cfg.HarnessMode,
+		Prompt:                cfg.Prompt,
 	})
 	if err != nil {
 		return nil, nil, nil, nil, err

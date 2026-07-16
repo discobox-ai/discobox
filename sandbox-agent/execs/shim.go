@@ -400,9 +400,27 @@ func (r *shimRuntime) wait() {
 	r.logger.Close()
 	_ = r.writeStatusValue(status)
 	payload, _ := frame.EncodeExit(string(status.Status), status.ExitCode, status.Error)
+	// Retain the exit frame so a client attaching after this point still receives
+	// the final screen replay and exit code, then notify current attachers.
+	r.stream.MarkExited(payload)
 	for _, attach := range attachers {
 		_ = attach.WriteFrame(frame.Exit, payload)
 		attach.Close()
+	}
+	// Linger so a late attacher (e.g. something that died immediately after start,
+	// before its client attached) can still replay the buffer and read the exit
+	// code, then shut the shim down.
+	go r.lingerThenFinish()
+}
+
+// exitLingerTimeout is how long the shim keeps serving after the process exits
+// so a late attacher can replay the final output and read the exit code.
+const exitLingerTimeout = 60 * time.Second
+
+func (r *shimRuntime) lingerThenFinish() {
+	select {
+	case <-time.After(exitLingerTimeout):
+	case <-r.done:
 	}
 	r.finish()
 }

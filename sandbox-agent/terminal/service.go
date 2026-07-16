@@ -77,6 +77,10 @@ type ServiceConfig struct {
 	Installer             Installer
 	PrimaryState          PrimaryStateStore
 	HarnessMode           string
+	// Prompt is the sandbox's initial prompt, retained so the primary terminal
+	// can be relaunched on demand (it is ignored once the primary has launched
+	// once and relaunch uses the harness's relaunch command instead).
+	Prompt []string
 }
 
 // Service is the harness-terminal layer over execs.Manager.
@@ -93,6 +97,7 @@ type Service struct {
 	installer      Installer
 	primaryState   PrimaryStateStore
 	harnessMode    string
+	bootPrompt     []string
 
 	// installing tracks exec IDs whose hook and file setup is still running.
 	// The record exists (execs status "starting") before its process launches, so
@@ -128,6 +133,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		installer:    cfg.Installer,
 		primaryState: cfg.PrimaryState,
 		harnessMode:  strings.TrimSpace(cfg.HarnessMode),
+		bootPrompt:   append([]string(nil), cfg.Prompt...),
 		installing:   map[string]struct{}{},
 	}
 	if s.installer == nil {
@@ -300,6 +306,58 @@ func HarnessID(e execs.Exec) string { return e.Metadata[metadataHarnessID] }
 
 // IsPrimary reports whether an exec is the sandbox's primary terminal.
 func IsPrimary(e execs.Exec) bool { return e.Metadata[metadataPrimary] == "true" }
+
+// PrimaryExecID is the virtual exec id that always resolves to the sandbox's
+// current primary terminal. Attaching or starting it relaunches a stopped
+// primary (see ResolvePrimary) rather than addressing a fixed, possibly dead
+// exec. The control plane proxies exec ids opaquely, so clients simply use this
+// value in place of a real exec id.
+const PrimaryExecID = "primary"
+
+// ResolvePrimary ensures the primary terminal is live — relaunching it with the
+// harness's relaunch command when it has stopped — and returns it. It prefers a
+// running/starting primary and otherwise falls back to the most recent primary
+// (e.g. one that just exited, so a late attacher can still replay it).
+func (s *Service) ResolvePrimary(ctx context.Context) (execs.Exec, error) {
+	if err := s.EnsurePrimary(ctx, s.bootPrompt); err != nil {
+		return execs.Exec{}, err
+	}
+	if exec, ok := selectLivePrimary(s.List()); ok {
+		return exec, nil
+	}
+	return execs.Exec{}, execs.ErrNotFound
+}
+
+// CurrentPrimary returns the sandbox's current primary terminal without
+// relaunching it. It is the read-only counterpart to ResolvePrimary, used for
+// status reads (e.g. a client's attach done-check) that must observe a genuine
+// exit rather than trigger a resume.
+func (s *Service) CurrentPrimary() (execs.Exec, bool) {
+	return selectLivePrimary(s.List())
+}
+
+// selectLivePrimary picks the primary terminal to attach to: a running/starting
+// one if present, else the most recently created primary (e.g. one that just
+// exited, so a late attacher can still replay it).
+func selectLivePrimary(list []execs.Exec) (execs.Exec, bool) {
+	var newest *execs.Exec
+	for i := range list {
+		e := &list[i]
+		if !IsPrimary(*e) {
+			continue
+		}
+		if e.Status == execs.StatusStarting || e.Status == execs.StatusRunning {
+			return *e, true
+		}
+		if newest == nil || e.CreatedAt.After(newest.CreatedAt) {
+			newest = e
+		}
+	}
+	if newest != nil {
+		return *newest, true
+	}
+	return execs.Exec{}, false
+}
 
 // ShellHarnessID names the fallback harness a terminal runs when no harness config
 // resolves: an interactive login shell. Every sandbox gets a default terminal,
