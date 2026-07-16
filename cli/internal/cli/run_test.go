@@ -81,8 +81,9 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 		t.Fatalf("execute run: %v", err)
 	}
 	config := posted["config"].(map[string]any)
-	if !strings.HasPrefix(config["name"].(string), "run-") {
-		t.Fatalf("name = %q, want run-*", config["name"])
+	nameParts := strings.Split(config["name"].(string), "_")
+	if len(nameParts) != 2 || nameParts[0] == "" || nameParts[1] == "" {
+		t.Fatalf("name = %q, want adjective_name", config["name"])
 	}
 	prompt, ok := config["prompt"].([]any)
 	if !ok || len(prompt) != 2 || prompt[0] != "fix" || prompt[1] != "tests" {

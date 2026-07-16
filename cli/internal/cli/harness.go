@@ -368,14 +368,23 @@ type harnessConfigureSecret struct {
 }
 
 func (a *App) runHarnessConfigure(cmd *cobra.Command, client *apiclientgen.Client, projectID, harnessConfigID string, configureSpec apimodel.ConfigureSandbox) (*harnessConfigureOutput, error) {
-	ctx := cmd.Context()
-	stderr := cmd.ErrOrStderr()
-	runID, err := id.New(id.PrefixSandbox)
-	if err != nil {
-		return nil, err
-	}
 	config := configureSandboxCreateConfig(harnessConfigID, configureSpec)
-	config.Name = "configure-" + id.RandomPart(runID)[:8]
+	return a.runConfigureSandbox(cmd.Context(), client, projectID, config, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+}
+
+// runConfigureSandbox creates a config-mode sandbox from the given create
+// config, attaches its primary terminal to the caller's streams so the harness's
+// interactive configure flow can run in the real terminal, and returns the
+// secrets and files it wrote to harnessConfigureOutputPath. The ephemeral
+// sandbox is always cleaned up.
+func (a *App) runConfigureSandbox(ctx context.Context, client *apiclientgen.Client, projectID string, config apimodel.SandboxCreateConfig, stdin io.Reader, stdout, stderr io.Writer) (*harnessConfigureOutput, error) {
+	if strings.TrimSpace(config.Name) == "" {
+		runID, err := id.New(id.PrefixSandbox)
+		if err != nil {
+			return nil, err
+		}
+		config.Name = "configure-" + id.RandomPart(runID)[:8]
+	}
 	sandboxRes, err := client.CreateSandbox(ctx, &apimodel.CreateSandboxBody{Config: config}, apiclientgen.CreateSandboxParams{ProjectId: projectID})
 	if err != nil {
 		return nil, fmt.Errorf("create configure sandbox: %w", err)
@@ -387,7 +396,7 @@ func (a *App) runHarnessConfigure(cmd *cobra.Command, client *apiclientgen.Clien
 	defer a.deleteConfigureSandboxQuietly(context.WithoutCancel(ctx), client, projectID, sandbox.ID, stderr)
 
 	fmt.Fprintf(stderr, "Running configure sandbox %s, waiting for it to start...\n", id.RandomPart(sandbox.ID))
-	if _, err := a.waitForSandbox(cmd, client, projectID, sandbox.ID, 2*time.Minute); err != nil {
+	if _, err := a.waitForSandboxCtx(ctx, client, projectID, sandbox.ID, 2*time.Minute); err != nil {
 		return nil, fmt.Errorf("configure sandbox failed to start: %w", err)
 	}
 	terminal, err := a.waitForPrimaryTerminal(ctx, stderr, projectID, sandbox.ID, 2*time.Minute)
@@ -395,7 +404,7 @@ func (a *App) runHarnessConfigure(cmd *cobra.Command, client *apiclientgen.Clien
 		return nil, fmt.Errorf("configure sandbox failed to launch: %w", err)
 	}
 	fmt.Fprintf(stderr, "Attaching to configure terminal %s (answer any prompts; Ctrl-P Ctrl-Q to detach)\n", id.RandomPart(terminal.ID))
-	if err := a.attachSandboxTerminal(ctx, projectID, sandbox.ID, terminal.ID, cmd.InOrStdin(), cmd.OutOrStdout(), stderr); err != nil {
+	if err := a.attachSandboxTerminal(ctx, projectID, sandbox.ID, terminal.ID, stdin, stdout, stderr); err != nil {
 		return nil, fmt.Errorf("attach configure terminal: %w", err)
 	}
 	finished, err := a.getSandboxExec(ctx, projectID, sandbox.ID, terminal.ID)
@@ -431,6 +440,25 @@ func (a *App) runHarnessConfigure(cmd *cobra.Command, client *apiclientgen.Clien
 		return nil, fmt.Errorf("%s is invalid: %w", harnessConfigureOutputPath, err)
 	}
 	return &out, nil
+}
+
+// applyHarnessConfigureOutput writes the configure flow's files and secret
+// bindings onto the harness config.
+func (a *App) applyHarnessConfigureOutput(ctx context.Context, client *apiclientgen.Client, projectID, harnessConfigID string, out *harnessConfigureOutput) error {
+	if out == nil {
+		return nil
+	}
+	if len(out.Files) > 0 {
+		update := &apimodel.UpdateHarnessConfigBody{}
+		update.SetFiles(apiclientgen.NewOptNilHarnessConfigFileArray(out.Files))
+		if _, err := client.UpdateHarnessConfig(ctx, update, apiclientgen.UpdateHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harnessConfigID}); err != nil {
+			return fmt.Errorf("apply files: %w", err)
+		}
+	}
+	if err := a.applyHarnessConfigureSecrets(ctx, client, projectID, harnessConfigID, out.Secrets); err != nil {
+		return fmt.Errorf("apply secrets: %w", err)
+	}
+	return nil
 }
 
 func (a *App) deleteHarnessConfigQuietly(ctx context.Context, client *apiclientgen.Client, projectID, harnessConfigID string) {

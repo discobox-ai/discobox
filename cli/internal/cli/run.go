@@ -10,7 +10,7 @@ import (
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
-	"github.com/obot-platform/discobox/id"
+	"github.com/obot-platform/discobox/randomname"
 	"github.com/spf13/cobra"
 )
 
@@ -148,9 +148,9 @@ func (a *App) waitForPrimaryTerminal(ctx context.Context, progress io.Writer, pr
 			}
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				if announcedInstalling {
-					return apimodel.SandboxExec{}, errors.New("timed out while the harness was still preparing hooks and files (see `discobox sandboxes terminals logs`)")
+					return apimodel.SandboxExec{}, errors.New("timed out while the harness was still preparing hooks and files (see `discobox debug terminal logs`)")
 				}
-				return apimodel.SandboxExec{}, errors.New("timed out waiting for the sandbox's default terminal; it may have failed to start (see `discobox sandboxes terminals logs`)")
+				return apimodel.SandboxExec{}, errors.New("timed out waiting for the sandbox's default terminal; it may have failed to start (see `discobox debug terminal logs`)")
 			}
 			return apimodel.SandboxExec{}, fmt.Errorf("waiting for sandbox terminal: %w", ctx.Err())
 		case <-ticker.C:
@@ -211,11 +211,11 @@ func splitRunSourceRef(value string) (string, string, bool) {
 }
 
 func createRunSandboxBody(ctx context.Context, opts runOptions) (*apimodel.CreateSandboxBody, error) {
-	runID, err := id.New(id.PrefixRun)
+	name, err := randomname.Generate()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("generate sandbox name: %w", err)
 	}
-	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: "run-" + id.RandomPart(runID)[:8]}}
+	body := &apimodel.CreateSandboxBody{Config: apimodel.SandboxCreateConfig{Name: name}}
 	if len(opts.prompt) > 0 {
 		body.Config.SetPrompt(append([]string(nil), opts.prompt...))
 	}

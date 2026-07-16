@@ -18,7 +18,7 @@ import (
 )
 
 type framedAttachSession struct {
-	conn       io.ReadWriteCloser
+	frames     attachFrameTransport
 	stdin      io.Reader
 	stdout     io.Writer
 	stderr     io.Writer
@@ -32,8 +32,30 @@ type framedAttachSession struct {
 	// signalReady sends a Ready frame once the output reader is running, telling
 	// the shim it is safe to stream replay history. Set for replay attaches.
 	signalReady bool
-	mu          sync.Mutex
 }
+
+type attachFrameTransport interface {
+	ReadFrame() (terminalFrame, error)
+	WriteFrame(typ byte, payload []byte) error
+	Close() error
+}
+
+type directAttachFrames struct {
+	conn io.ReadWriteCloser
+	mu   sync.Mutex
+}
+
+func (c *directAttachFrames) ReadFrame() (terminalFrame, error) {
+	return readTerminalFrame(c.conn)
+}
+
+func (c *directAttachFrames) WriteFrame(typ byte, payload []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return writeTerminalFrame(c.conn, typ, payload)
+}
+
+func (c *directAttachFrames) Close() error { return c.conn.Close() }
 
 func (s *framedAttachSession) run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
@@ -82,7 +104,7 @@ func (s *framedAttachSession) run(ctx context.Context) error {
 		select {
 		case err := <-outputErr:
 			cancel()
-			_ = s.conn.Close()
+			_ = s.frames.Close()
 			if errors.Is(err, io.EOF) {
 				return nil
 			}
@@ -94,17 +116,17 @@ func (s *framedAttachSession) run(ctx context.Context) error {
 					continue
 				}
 				cancel()
-				_ = s.conn.Close()
+				_ = s.frames.Close()
 				return out
 			}
 			cancel()
-			_ = s.conn.Close()
+			_ = s.frames.Close()
 			if isAttachDone(err) {
 				return nil
 			}
 			return err
 		case <-ctx.Done():
-			_ = s.conn.Close()
+			_ = s.frames.Close()
 			return ctx.Err()
 		}
 	}
@@ -121,7 +143,7 @@ func (s *framedAttachSession) writeInitialResize() error {
 
 func (s *framedAttachSession) copyOutput() error {
 	for {
-		frame, err := readTerminalFrame(s.conn)
+		frame, err := s.frames.ReadFrame()
 		if err != nil {
 			return err
 		}
@@ -208,9 +230,7 @@ func (s *framedAttachSession) writeResize(cols, rows int) error {
 }
 
 func (s *framedAttachSession) writeFrame(typ byte, payload []byte) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return writeTerminalFrame(s.conn, typ, payload)
+	return s.frames.WriteFrame(typ, payload)
 }
 
 func terminalSize(file *os.File) (cols, rows int, ok bool) {

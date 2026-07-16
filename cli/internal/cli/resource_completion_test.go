@@ -31,7 +31,7 @@ func TestSandboxPositionalCompletionListsSandboxes(t *testing.T) {
 	root := NewRootCommand()
 	setFlag(t, root, "server", server.URL)
 	setFlag(t, root, "project", "project-1")
-	cmd := findCommand(t, root, "sandbox", "get")
+	cmd := findCommand(t, root, "debug", "sandbox", "get")
 
 	completions, directive := cmd.ValidArgsFunction(cmd, nil, "sand")
 
@@ -48,7 +48,7 @@ func TestProviderFlagCompletionListsProviders(t *testing.T) {
 	root := NewRootCommand()
 	setFlag(t, root, "server", server.URL)
 	setFlag(t, root, "project", "project-1")
-	cmd := findCommand(t, root, "sandbox", "create")
+	cmd := findCommand(t, root, "debug", "sandbox", "create")
 
 	completions, directive := flagCompletions(t, cmd, "provider-instance", "")
 
@@ -65,9 +65,9 @@ func TestTerminalCompletionUsesSandboxScope(t *testing.T) {
 	root := NewRootCommand()
 	setFlag(t, root, "server", server.URL)
 	setFlag(t, root, "project", "project-1")
-	parent := findCommand(t, root, "terminal")
+	parent := findCommand(t, root, "debug", "terminal")
 	setFlag(t, parent, "sandbox-id", "sandbox-1")
-	cmd := findCommand(t, root, "terminal", "logs")
+	cmd := findCommand(t, root, "debug", "terminal", "logs")
 
 	completions, directive := cmd.ValidArgsFunction(cmd, nil, "")
 
@@ -84,9 +84,9 @@ func TestExecCompletionUsesSandboxScope(t *testing.T) {
 	root := NewRootCommand()
 	setFlag(t, root, "server", server.URL)
 	setFlag(t, root, "project", "project-1")
-	parent := findCommand(t, root, "exec")
+	parent := findCommand(t, root, "debug", "exec")
 	setFlag(t, parent, "sandbox-id", "sandbox-1")
-	cmd := findCommand(t, root, "exec", "logs")
+	cmd := findCommand(t, root, "debug", "exec", "logs")
 
 	completions, directive := cmd.ValidArgsFunction(cmd, nil, "")
 

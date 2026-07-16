@@ -316,14 +316,14 @@ func (a *App) writeSandboxTerminals(cmd *cobra.Command, terminals []apimodel.San
 // attachSandboxTerminal attaches to a terminal exec over the exec websocket with
 // scrollback replay and Ctrl-P Ctrl-Q detach handling.
 func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, terminalID string, stdin io.Reader, stdout, stderr io.Writer) error {
-	conn, err := a.openSandboxExecAttach(ctx, projectID, sandboxID, terminalID, true)
+	frames, err := a.openReconnectingSandboxExecAttach(ctx, projectID, sandboxID, terminalID, true, nil)
 	if err != nil {
 		return a.execAttachError(ctx, projectID, sandboxID, terminalID, err)
 	}
-	defer conn.Close()
+	defer frames.Close()
 
 	session := &framedAttachSession{
-		conn:        conn,
+		frames:      frames,
 		stdin:       stdin,
 		stdout:      stdout,
 		stderr:      stderr,

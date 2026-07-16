@@ -105,9 +105,9 @@ Provider-specific flags are loaded from the server catalog only when this
 subcommand runs. Use --help=<provider> to show provider-specific options.
 
 Examples:
-  discobox provider create --help
-  discobox provider create --help=digitalocean
-  discobox provider create --type digitalocean --control-plane-url https://example.com --token-env DIGITALOCEAN_ACCESS_TOKEN`,
+  discobox debug provider create --help
+  discobox debug provider create --help=digitalocean
+  discobox debug provider create --type digitalocean --control-plane-url https://example.com --token-env DIGITALOCEAN_ACCESS_TOKEN`,
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		DisableFlagParsing: true,
 		RunE:               a.runProviderCreate,
@@ -141,9 +141,9 @@ provider instance is loaded. Use --help=<provider> to show provider-specific
 options.
 
 Examples:
-  discobox provider update --help
-  discobox provider update --help=docker
-  discobox provider update my-provider --min-workers 1 --max-workers 2`,
+  discobox debug provider update --help
+  discobox debug provider update --help=docker
+  discobox debug provider update my-provider --min-workers 1 --max-workers 2`,
 		FParseErrWhitelist: cobra.FParseErrWhitelist{UnknownFlags: true},
 		DisableFlagParsing: true,
 		ValidArgsFunction:  a.completeProviders,

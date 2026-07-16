@@ -321,8 +321,23 @@ func TestRootCommandHelp(t *testing.T) {
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute help: %v", err)
 	}
-	if !bytes.Contains(out.Bytes(), []byte("sandbox")) || !bytes.Contains(out.Bytes(), []byte("terminal")) || !bytes.Contains(out.Bytes(), []byte("events")) {
-		t.Fatalf("help output = %q, want sandbox, terminal, and events commands", out.String())
+	if !bytes.Contains(out.Bytes(), []byte("events")) {
+		t.Fatalf("help output = %q, want events command", out.String())
+	}
+	if bytes.Contains(out.Bytes(), []byte("\n  debug ")) {
+		t.Fatalf("help output = %q, debug command should be hidden", out.String())
+	}
+	for _, unavailableAtRoot := range []string{"sandbox", "terminal", "exec", "provider", "worker", "job", "harnesses", "hooks", "status"} {
+		command, _, err := cmd.Find([]string{unavailableAtRoot})
+		if err == nil && command.Name() == unavailableAtRoot {
+			t.Fatalf("root command still exposes %q", unavailableAtRoot)
+		}
+	}
+	for _, child := range []string{"sandbox", "terminal", "exec", "provider", "worker", "job", "harnesses", "hooks"} {
+		command, args, err := cmd.Find([]string{"debug", child})
+		if err != nil || len(args) != 0 || command.Name() != child {
+			t.Fatalf("find debug child %q: command=%v args=%v err=%v", child, command, args, err)
+		}
 	}
 }
 
@@ -340,7 +355,7 @@ func TestProjectIDDefaultsToDefaultAlias(t *testing.T) {
 
 func TestRootCommandRejectsInvalidOutputFormat(t *testing.T) {
 	cmd := NewRootCommand()
-	cmd.SetArgs([]string{"--output", "yaml", "sandbox", "ls"})
+	cmd.SetArgs([]string{"--output", "yaml", "debug", "sandbox", "ls"})
 
 	if err := cmd.Execute(); err == nil {
 		t.Fatal("execute error = nil, want invalid output error")
@@ -350,17 +365,17 @@ func TestRootCommandRejectsInvalidOutputFormat(t *testing.T) {
 func TestListSubcommandsUseLSWithListAlias(t *testing.T) {
 	root := NewRootCommand()
 	paths := [][]string{
-		{"sandbox", "ls"},
-		{"terminal", "ls"},
-		{"exec", "ls"},
-		{"worker", "ls"},
-		{"provider", "ls"},
-		{"job", "ls"},
+		{"debug", "sandbox", "ls"},
+		{"debug", "terminal", "ls"},
+		{"debug", "exec", "ls"},
+		{"debug", "worker", "ls"},
+		{"debug", "provider", "ls"},
+		{"debug", "job", "ls"},
 		{"secret", "ls"},
 		{"secret", "grant", "ls"},
 		{"secret", "request", "ls"},
-		{"harnesses", "ls"},
-		{"harnesses", "secrets", "ls"},
+		{"debug", "harnesses", "ls"},
+		{"debug", "harnesses", "secrets", "ls"},
 	}
 
 	for _, path := range paths {
@@ -403,7 +418,7 @@ func TestSandboxListQuietCommandPrintsFullIDsOnly(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "sandbox", "list", "-q"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "sandbox", "list", "-q"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute sandbox list -q: %v", err)
@@ -413,7 +428,7 @@ func TestSandboxListQuietCommandPrintsFullIDsOnly(t *testing.T) {
 	}
 }
 
-func TestTerminalListUsesTopLevelCommand(t *testing.T) {
+func TestTerminalListUsesDebugCommand(t *testing.T) {
 	var requested bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requested = true
@@ -428,7 +443,7 @@ func TestTerminalListUsesTopLevelCommand(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "terminal", "--sandbox-id", "sandbox-1", "ls"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "terminal", "--sandbox-id", "sandbox-1", "ls"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute terminal list: %v", err)
@@ -466,7 +481,7 @@ func TestTerminalCreateFallsBackWhenStartResponseIsTruncated(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "terminal", "--sandbox-id", "sandbox-1", "create"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "terminal", "--sandbox-id", "sandbox-1", "create"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute terminal create: %v", err)
@@ -495,7 +510,7 @@ func TestTerminalCreateTextPlainErrorIncludesBody(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "terminal", "--sandbox-id", "sandbox-1", "create"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "terminal", "--sandbox-id", "sandbox-1", "create"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -534,7 +549,7 @@ func TestTerminalCreateEnvSupportsShortFlagAndShellLookup(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "terminal", "--sandbox-id", "sandbox-1", "create", "-e", "EXPLICIT=value", "-e", "SHELL_ENV_VALUE"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "terminal", "--sandbox-id", "sandbox-1", "create", "-e", "EXPLICIT=value", "-e", "SHELL_ENV_VALUE"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute terminal create: %v", err)
@@ -568,7 +583,7 @@ func TestHarnessSetDefaultCommand(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "harnesses", "set-default", harnessID})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "harnesses", "set-default", harnessID})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute set-default: %v", err)
@@ -674,7 +689,7 @@ func TestHarnessListShowsProjectDefault(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "harnesses", "ls"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "harnesses", "ls"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute harnesses list: %v", err)
@@ -728,7 +743,7 @@ func TestHarnessEnableCreatesDefinitionWhenMissing(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "harnesses", "enable", "Codex"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "harnesses", "enable", "Codex"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute harness enable: %v", err)
@@ -765,7 +780,7 @@ func TestHarnessEnableDoesNothingWhenDefinitionAlreadyEnabled(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "harnesses", "enabled", "codex"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "harnesses", "enabled", "codex"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute harness enabled: %v", err)
@@ -804,7 +819,7 @@ func TestHarnessEnableDefaultFlagSetsExistingDefinitionHarnessDefault(t *testing
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "harnesses", "enable", "-d", "codex"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "harnesses", "enable", "-d", "codex"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute harness enable -d: %v", err)
@@ -843,7 +858,7 @@ func TestHarnessDisableDeletesDefinitionHarnessWhenPresent(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "harnesses", "disable", "Codex"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "harnesses", "disable", "Codex"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute harness disable: %v", err)
@@ -876,7 +891,7 @@ func TestHarnessDisableDoesNothingWhenDefinitionHarnessMissing(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "harnesses", "disable", "Codex"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "harnesses", "disable", "Codex"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute harness disable: %v", err)
@@ -970,7 +985,7 @@ func TestHarnessCreateSendsCreateOnlyFileFlag(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 	cmd.SetArgs([]string{
-		"--server", server.URL, "--project", "project-1", "harnesses", "create",
+		"--server", server.URL, "--project", "project-1", "debug", "harnesses", "create",
 		"--name", "Custom", "--image", "example.com/custom:latest",
 		"--file", `.claude/settings.json={"theme":"dark"}`,
 		"--create-only-file", ".claude/settings.json",
@@ -1023,7 +1038,7 @@ func TestHarnessCreateSendsFilesFlag(t *testing.T) {
 	cmd.SetOut(&out)
 	cmd.SetErr(io.Discard)
 	cmd.SetArgs([]string{
-		"--server", server.URL, "--project", "project-1", "harnesses", "create",
+		"--server", server.URL, "--project", "project-1", "debug", "harnesses", "create",
 		"--name", "Custom", "--image", "example.com/custom:latest",
 		"--file", `.claude/settings.json={"theme":"dark"}`,
 	})
@@ -1050,6 +1065,7 @@ func TestWriteSandboxesTableIncludesErrorMessage(t *testing.T) {
 		Runtime: apimodel.SandboxRuntime{
 			Phase:               "failed",
 			DesiredState:        "running",
+			DisplayState:        apiclientgen.NewOptSandboxRuntimeDisplayState("error"),
 			LastOperationStatus: "failed",
 			ErrorMessage:        apiclientgen.NewOptString("worker-agent request failed: git clone failed"),
 			Generation:          1,
@@ -1060,9 +1076,14 @@ func TestWriteSandboxesTableIncludesErrorMessage(t *testing.T) {
 	}
 
 	output := out.String()
-	for _, want := range []string{"ERROR", "worker-agent request failed: git clone failed"} {
+	for _, want := range []string{"STATE", "error", "ERROR", "worker-agent request failed: git clone failed"} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("sandboxes output = %q, want %q", output, want)
+		}
+	}
+	for _, unwanted := range []string{"PHASE", "DESIRED", "GENERATION"} {
+		if strings.Contains(output, unwanted) {
+			t.Fatalf("sandboxes output = %q, did not want column %q", output, unwanted)
 		}
 	}
 }
@@ -1082,7 +1103,7 @@ func TestJobsCommandListsProjectJobs(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "jobs"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "jobs"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute jobs: %v", err)
@@ -1095,80 +1116,6 @@ func TestJobsCommandListsProjectJobs(t *testing.T) {
 	}
 	if strings.Contains(output, "UPDATED") || strings.Contains(output, "updatedAt") {
 		t.Fatalf("jobs output = %q, did not expect updated column", output)
-	}
-}
-
-func TestStatusCommandShowsNewestFiveOfEachResource(t *testing.T) {
-	requested := map[string]bool{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requested[r.URL.Path] = true
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/projects/project-1/sandboxes":
-			_, _ = w.Write([]byte(`{"sandboxes":[` +
-				testSandboxJSON("sandbox-old", "old-sandbox", "2026-06-17T00:00:00Z", "2026-06-17T00:00:01Z") + `,` +
-				testSandboxJSON("sandbox-1", "sandbox-1", "2026-06-17T00:01:00Z", "2026-06-17T00:01:01Z") + `,` +
-				testSandboxJSON("sandbox-2", "sandbox-2", "2026-06-17T00:02:00Z", "2026-06-17T00:02:01Z") + `,` +
-				testSandboxJSON("sandbox-3", "sandbox-3", "2026-06-17T00:03:00Z", "2026-06-17T00:03:01Z") + `,` +
-				testSandboxJSON("sandbox-4", "sandbox-4", "2026-06-17T00:04:00Z", "2026-06-17T00:04:01Z") + `,` +
-				testSandboxJSON("sandbox-5", "sandbox-5", "2026-06-17T00:05:00Z", "2026-06-17T00:05:01Z") +
-				`]}`))
-		case "/projects/project-1/workers":
-			_, _ = w.Write([]byte(`{"workers":[` +
-				`{"id":"worker-old","projectId":"project-1","providerInstanceId":"provider-1","identity":"old-worker","ready":false,"schedulable":false,"degraded":false,"availableCpuVcpus":0,"availableMemoryBytes":0,"availableStorageBytes":0,"desiredState":"active","phase":"active","lastOperationStatus":"success","generation":1,"observedGeneration":1,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"},` +
-				`{"id":"worker-1","projectId":"project-1","providerInstanceId":"provider-1","identity":"worker-1","ready":true,"schedulable":true,"degraded":false,"availableCpuVcpus":1,"availableMemoryBytes":1,"availableStorageBytes":1,"desiredState":"active","phase":"active","lastOperationStatus":"success","generation":1,"observedGeneration":1,"createdAt":"2026-06-17T00:01:00Z","updatedAt":"2026-06-17T00:01:01Z"},` +
-				`{"id":"worker-2","projectId":"project-1","providerInstanceId":"provider-1","identity":"worker-2","ready":true,"schedulable":true,"degraded":false,"availableCpuVcpus":1,"availableMemoryBytes":1,"availableStorageBytes":1,"desiredState":"active","phase":"active","lastOperationStatus":"success","generation":1,"observedGeneration":1,"createdAt":"2026-06-17T00:02:00Z","updatedAt":"2026-06-17T00:02:01Z"},` +
-				`{"id":"worker-3","projectId":"project-1","providerInstanceId":"provider-1","identity":"worker-3","ready":true,"schedulable":true,"degraded":false,"availableCpuVcpus":1,"availableMemoryBytes":1,"availableStorageBytes":1,"desiredState":"active","phase":"active","lastOperationStatus":"success","generation":1,"observedGeneration":1,"createdAt":"2026-06-17T00:03:00Z","updatedAt":"2026-06-17T00:03:01Z"},` +
-				`{"id":"worker-4","projectId":"project-1","providerInstanceId":"provider-1","identity":"worker-4","ready":true,"schedulable":true,"degraded":false,"availableCpuVcpus":1,"availableMemoryBytes":1,"availableStorageBytes":1,"desiredState":"active","phase":"active","lastOperationStatus":"success","generation":1,"observedGeneration":1,"createdAt":"2026-06-17T00:04:00Z","updatedAt":"2026-06-17T00:04:01Z"},` +
-				`{"id":"worker-5","projectId":"project-1","providerInstanceId":"provider-1","identity":"worker-5","ready":true,"schedulable":true,"degraded":false,"availableCpuVcpus":1,"availableMemoryBytes":1,"availableStorageBytes":1,"desiredState":"active","phase":"active","lastOperationStatus":"success","generation":1,"observedGeneration":1,"createdAt":"2026-06-17T00:05:00Z","updatedAt":"2026-06-17T00:05:01Z"}` +
-				`]}`))
-		case "/projects/project-1/providers":
-			_, _ = w.Write([]byte(`{"providers":[` +
-				`{"id":"provider-old","projectId":"project-1","name":"old-provider","type":"docker","builtIn":false,"disabled":false,"config":{},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"},` +
-				`{"id":"provider-1","projectId":"project-1","name":"provider-1","type":"docker","builtIn":false,"disabled":false,"config":{},"createdAt":"2026-06-17T00:01:00Z","updatedAt":"2026-06-17T00:01:01Z"},` +
-				`{"id":"provider-2","projectId":"project-1","name":"provider-2","type":"docker","builtIn":false,"disabled":false,"config":{},"createdAt":"2026-06-17T00:02:00Z","updatedAt":"2026-06-17T00:02:01Z"},` +
-				`{"id":"provider-3","projectId":"project-1","name":"provider-3","type":"docker","builtIn":false,"disabled":false,"config":{},"createdAt":"2026-06-17T00:03:00Z","updatedAt":"2026-06-17T00:03:01Z"},` +
-				`{"id":"provider-4","projectId":"project-1","name":"provider-4","type":"docker","builtIn":false,"disabled":false,"config":{},"createdAt":"2026-06-17T00:04:00Z","updatedAt":"2026-06-17T00:04:01Z"},` +
-				`{"id":"provider-5","projectId":"project-1","name":"provider-5","type":"docker","builtIn":false,"disabled":false,"config":{},"createdAt":"2026-06-17T00:05:00Z","updatedAt":"2026-06-17T00:05:01Z"}` +
-				`]}`))
-		case "/projects/project-1/jobs":
-			_, _ = w.Write([]byte(`{"jobs":[` +
-				`{"id":"job-old","type":"sandbox.reconcile","status":"pending","attempts":0,"maxAttempts":3,"resourceType":"sandbox","resourceId":"sandbox-old","scheduledAt":"2026-06-17T00:00:00Z","createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"},` +
-				`{"id":"job-1","type":"sandbox.reconcile","status":"pending","attempts":0,"maxAttempts":3,"resourceType":"sandbox","resourceId":"sandbox-1","scheduledAt":"2026-06-17T00:01:00Z","createdAt":"2026-06-17T00:01:00Z","updatedAt":"2026-06-17T00:01:01Z"},` +
-				`{"id":"job-2","type":"sandbox.reconcile","status":"pending","attempts":0,"maxAttempts":3,"resourceType":"sandbox","resourceId":"sandbox-2","scheduledAt":"2026-06-17T00:02:00Z","createdAt":"2026-06-17T00:02:00Z","updatedAt":"2026-06-17T00:02:01Z"},` +
-				`{"id":"job-3","type":"sandbox.reconcile","status":"pending","attempts":0,"maxAttempts":3,"resourceType":"sandbox","resourceId":"sandbox-3","scheduledAt":"2026-06-17T00:03:00Z","createdAt":"2026-06-17T00:03:00Z","updatedAt":"2026-06-17T00:03:01Z"},` +
-				`{"id":"job-4","type":"sandbox.reconcile","status":"pending","attempts":0,"maxAttempts":3,"resourceType":"sandbox","resourceId":"sandbox-4","scheduledAt":"2026-06-17T00:04:00Z","createdAt":"2026-06-17T00:04:00Z","updatedAt":"2026-06-17T00:04:01Z"},` +
-				`{"id":"job-5","type":"sandbox.reconcile","status":"pending","attempts":0,"maxAttempts":3,"resourceType":"sandbox","resourceId":"sandbox-5","scheduledAt":"2026-06-17T00:05:00Z","createdAt":"2026-06-17T00:05:00Z","updatedAt":"2026-06-17T00:05:01Z"}` +
-				`]}`))
-		default:
-			t.Fatalf("unexpected path %q", r.URL.Path)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	cmd := NewRootCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "status"})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("execute status: %v", err)
-	}
-	for _, path := range []string{"/projects/project-1/sandboxes", "/projects/project-1/workers", "/projects/project-1/providers", "/projects/project-1/jobs"} {
-		if !requested[path] {
-			t.Fatalf("status did not request %s", path)
-		}
-	}
-	output := out.String()
-	for _, want := range []string{"Sandboxes", "Workers", "Providers", "Jobs", "sandbox-5", "worker-5", "provider-5", "job-5"} {
-		if !strings.Contains(output, want) {
-			t.Fatalf("status output = %q, want %q", output, want)
-		}
-	}
-	for _, unexpected := range []string{"old-sandbox", "worker-old", "old-provider", "job-old"} {
-		if strings.Contains(output, unexpected) {
-			t.Fatalf("status output = %q, did not expect %q", output, unexpected)
-		}
 	}
 }
 
@@ -1186,7 +1133,7 @@ func TestJobsParentQuietCommandPrintsFullIDsOnly(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "jobs", "-q"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "jobs", "-q"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute jobs -q: %v", err)
@@ -1317,7 +1264,7 @@ func TestWorkerListCommandFiltersByProvider(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "worker", "ls", "--provider", providerID})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "worker", "ls", "--provider", providerID})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute worker list: %v", err)
@@ -1416,7 +1363,7 @@ func TestSandboxGetResolvesShortID(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "sandbox", "get", "sbx_9qk5"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "sandbox", "get", "sbx_9qk5"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute sandbox get: %v", err)
@@ -1471,7 +1418,7 @@ func TestSandboxDeleteContinuesAfterFailure(t *testing.T) {
 	var errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "sandbox", "delete", "sandbox-ok-1", "sandbox-fail", "sandbox-ok-2"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "sandbox", "delete", "sandbox-ok-1", "sandbox-fail", "sandbox-ok-2"})
 
 	err := cmd.Execute()
 	if err == nil {
@@ -1506,7 +1453,7 @@ func TestJobGetCommandShowsError(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "job", "get", "job-1"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "job", "get", "job-1"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute job get: %v", err)
@@ -1537,7 +1484,7 @@ func TestJobRunNowCommandForcesJob(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "job", "run-now", "job-1"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "debug", "job", "run-now", "job-1"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute job run-now: %v", err)
@@ -1867,5 +1814,5 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 func testSandboxJSON(id, name, createdAt, updatedAt string) string {
-	return `{"id":"` + id + `","projectId":"project-1","createdByUserId":"user-1","config":{"name":"` + name + `","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"running","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0},"createdAt":"` + createdAt + `","updatedAt":"` + updatedAt + `"}`
+	return `{"id":"` + id + `","projectId":"project-1","createdByUserId":"user-1","config":{"name":"` + name + `","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"running","desiredState":"running","displayState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0},"createdAt":"` + createdAt + `","updatedAt":"` + updatedAt + `"}`
 }

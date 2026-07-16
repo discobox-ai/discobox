@@ -40,13 +40,11 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 		return writeJSON(cmd.OutOrStdout(), sandbox)
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tPHASE\tDESIRED\tGENERATION\tERROR\tUPDATED")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
+	fmt.Fprintln(tw, "ID\tNAME\tSTATE\tERROR\tUPDATED")
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
 		sandbox.ID,
 		sandbox.Config.Name,
-		sandbox.Runtime.Phase,
-		sandbox.Runtime.DesiredState,
-		sandbox.Runtime.Generation,
+		sandboxDisplayState(*sandbox),
 		truncateTableValue(sandboxMessage(*sandbox), 80),
 		formatTime(sandbox.UpdatedAt),
 	)
@@ -63,14 +61,12 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox) e
 	}
 	sandboxes = sortedByCreatedAt(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return sandbox.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tPHASE\tDESIRED\tGENERATION\tERROR\tUPDATED")
+	fmt.Fprintln(tw, "ID\tNAME\tSTATE\tERROR\tUPDATED")
 	for _, sandbox := range sandboxes {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%d\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
 			sandbox.ID,
 			sandbox.Config.Name,
-			sandbox.Runtime.Phase,
-			sandbox.Runtime.DesiredState,
-			sandbox.Runtime.Generation,
+			sandboxDisplayState(sandbox),
 			truncateTableValue(sandboxMessage(sandbox), 80),
 			formatTime(sandbox.UpdatedAt),
 		)
@@ -83,6 +79,13 @@ func sandboxMessage(sandbox apimodel.Sandbox) string {
 		return message
 	}
 	return ""
+}
+
+func sandboxDisplayState(sandbox apimodel.Sandbox) string {
+	if state, ok := sandbox.Runtime.DisplayState.Get(); ok {
+		return string(state)
+	}
+	return "-"
 }
 
 func (a *App) writeProviderCatalog(cmd *cobra.Command, providers []apimodel.SandboxProviderCatalogItem) error {
@@ -504,130 +507,6 @@ func (a *App) writeJobs(cmd *cobra.Command, jobs []apimodel.Job) error {
 			row[6],
 			row[7],
 			truncateTableValue(errors[i], errorWidth),
-		)
-	}
-	return tw.Flush()
-}
-
-func (a *App) writeStatus(cmd *cobra.Command, status statusSnapshot) error {
-	if a.output == "json" {
-		return writeJSON(cmd.OutOrStdout(), status)
-	}
-	w := cmd.OutOrStdout()
-	if err := writeStatusSandboxes(w, status.Sandboxes); err != nil {
-		return err
-	}
-	if err := writeStatusWorkers(w, status.Workers); err != nil {
-		return err
-	}
-	if err := writeStatusProviders(w, status.Providers); err != nil {
-		return err
-	}
-	return writeStatusJobs(w, status.Jobs)
-}
-
-func writeStatusSandboxes(w io.Writer, sandboxes []apimodel.Sandbox) error {
-	if _, err := fmt.Fprintln(w, "Sandboxes"); err != nil {
-		return err
-	}
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tPHASE\tDESIRED\tUPDATED\tMESSAGE")
-	if len(sandboxes) == 0 {
-		fmt.Fprintln(tw, "-\t-\t-\t-\t-\t-")
-	}
-	for _, sandbox := range sandboxes {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
-			sandbox.ID,
-			sandbox.Config.Name,
-			sandbox.Runtime.Phase,
-			sandbox.Runtime.DesiredState,
-			formatTime(sandbox.UpdatedAt),
-			truncateTableValue(sandboxMessage(sandbox), 64),
-		)
-	}
-	if err := tw.Flush(); err != nil {
-		return err
-	}
-	_, err := fmt.Fprintln(w)
-	return err
-}
-
-func writeStatusWorkers(w io.Writer, workers []apimodel.Worker) error {
-	if _, err := fmt.Fprintln(w, "Workers"); err != nil {
-		return err
-	}
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tPROVIDER\tPHASE\tREADY\tSCHED\tUPDATED\tMESSAGE")
-	if len(workers) == 0 {
-		fmt.Fprintln(tw, "-\t-\t-\t-\t-\t-\t-")
-	}
-	for _, worker := range workers {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%t\t%s\t%s\n",
-			worker.ID,
-			worker.ProviderInstanceId,
-			worker.Phase,
-			worker.Ready,
-			worker.Schedulable,
-			formatTime(worker.UpdatedAt),
-			truncateTableValue(workerMessage(worker), 64),
-		)
-	}
-	if err := tw.Flush(); err != nil {
-		return err
-	}
-	_, err := fmt.Fprintln(w)
-	return err
-}
-
-func writeStatusProviders(w io.Writer, providers []apimodel.SandboxProviderInstance) error {
-	if _, err := fmt.Fprintln(w, "Providers"); err != nil {
-		return err
-	}
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tDISABLED\tWORKERS\tUPDATED\tERROR")
-	if len(providers) == 0 {
-		fmt.Fprintln(tw, "-\t-\t-\t-\t-\t-\t-")
-	}
-	for _, provider := range providers {
-		status, _ := compactProviderStatusFromProvider(provider)
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\t%s\t%s\n",
-			provider.ID,
-			provider.Name,
-			provider.Type,
-			provider.Disabled,
-			formatCompactProviderStatus(status),
-			formatTime(provider.UpdatedAt),
-			truncateTableValue(status.LastError, 64),
-		)
-	}
-	if err := tw.Flush(); err != nil {
-		return err
-	}
-	_, err := fmt.Fprintln(w)
-	return err
-}
-
-func writeStatusJobs(w io.Writer, jobs []apimodel.Job) error {
-	if _, err := fmt.Fprintln(w, "Jobs"); err != nil {
-		return err
-	}
-	now := time.Now()
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tTYPE\tSTATUS\tATTEMPTS\tRESOURCE\tNEXT\tMESSAGE\tERROR")
-	if len(jobs) == 0 {
-		fmt.Fprintln(tw, "-\t-\t-\t-\t-\t-\t-\t-")
-	}
-	for _, job := range jobs {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%d/%d\t%s\t%s\t%s\t%s\n",
-			job.ID,
-			job.Type,
-			job.Status,
-			job.Attempts,
-			job.MaxAttempts,
-			shortResourceID(job.ResourceType, job.ResourceId),
-			formatFutureTime(now, job.ScheduledAt),
-			truncateTableValue(job.Message.Or(""), 40),
-			truncateTableValue(job.Error.Or(""), 64),
 		)
 	}
 	return tw.Flush()

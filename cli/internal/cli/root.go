@@ -54,19 +54,12 @@ func NewRootCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&app.noStart, "no-start", false, "Do not start a local server when the endpoint is unavailable")
 	_ = cmd.RegisterFlagCompletionFunc("project", app.completeProjects)
 
-	cmd.AddCommand(app.newSandboxCommand())
 	cmd.AddCommand(app.newListCommand())
-	cmd.AddCommand(app.newSandboxTerminalsCommand())
-	cmd.AddCommand(app.newSandboxExecCommand())
-	cmd.AddCommand(app.newHooksCommand())
+	cmd.AddCommand(app.newDebugCommand())
 	cmd.AddCommand(app.newRunCommand())
-	cmd.AddCommand(app.newHarnessCommand())
-	cmd.AddCommand(app.newProviderCommand())
 	cmd.AddCommand(app.newSecretCommand())
-	cmd.AddCommand(app.newWorkerCommand())
 	cmd.AddCommand(app.newEventsCommand())
-	cmd.AddCommand(app.newJobCommand())
-	cmd.AddCommand(app.newStatusCommand())
+	cmd.AddCommand(app.newTUICommand())
 	cmd.AddCommand(app.newCompletionCommand())
 	cmd.AddCommand(app.newServerCommand())
 	return cmd
@@ -102,7 +95,11 @@ func (a *App) apiClient() (*apiclientgen.Client, error) {
 }
 
 func (a *App) httpClient() (string, *http.Client, error) {
-	return a.httpClientWithAutoStart(!a.noStart)
+	return a.httpClientWithAutoStart(shouldAutoLaunchServer(a.noStart))
+}
+
+func shouldAutoLaunchServer(noStart bool) bool {
+	return serverAutoLaunch == "true" && !noStart
 }
 
 func (a *App) httpClientWithAutoStart(autoStart bool) (string, *http.Client, error) {

@@ -16,7 +16,7 @@ import (
 
 // fakeConfigureControlPlane fakes just enough of the control-plane REST API
 // and the sandbox-agent exec/terminal attach protocol to drive
-// `discobox harnesses enable` through a full configure sandbox lifecycle:
+// `discobox debug harnesses enable` through a full configure sandbox lifecycle:
 // create the ephemeral sandbox, resolve/attach its primary terminal, read
 // back /run/discobox/harness-configure.json via a "cat" exec, then create the
 // real HarnessConfig plus its secrets/bindings. It intentionally does not run a
@@ -376,7 +376,7 @@ func runEnableCommand(t *testing.T, server *httptest.Server, args ...string) (*b
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetIn(strings.NewReader(""))
-	fullArgs := append([]string{"--server", server.URL, "--project", "project-1"}, args...)
+	fullArgs := append([]string{"--server", server.URL, "--project", "project-1", "debug"}, args...)
 	cmd.SetArgs(fullArgs)
 	err := cmd.Execute()
 	return &out, err

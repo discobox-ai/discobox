@@ -485,7 +485,10 @@ func updateSandboxBody(cmd *cobra.Command, opts sandboxUpdateOptions) (*apimodel
 }
 
 func (a *App) waitForSandbox(cmd *cobra.Command, client *apiclientgen.Client, projectID string, sandboxID string, timeout time.Duration) (*apimodel.Sandbox, error) {
-	ctx := cmd.Context()
+	return a.waitForSandboxCtx(cmd.Context(), client, projectID, sandboxID, timeout)
+}
+
+func (a *App) waitForSandboxCtx(ctx context.Context, client *apiclientgen.Client, projectID string, sandboxID string, timeout time.Duration) (*apimodel.Sandbox, error) {
 	if timeout > 0 {
 		var cancel func()
 		ctx, cancel = context.WithTimeout(ctx, timeout)

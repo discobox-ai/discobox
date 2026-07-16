@@ -342,7 +342,7 @@ func (a *App) attachSandboxExec(ctx context.Context, projectID, sandboxID, execI
 	defer conn.Close()
 
 	session := &framedAttachSession{
-		conn:    conn,
+		frames:  &directAttachFrames{conn: conn},
 		stdin:   stdin,
 		stdout:  stdout,
 		stderr:  stderr,
@@ -432,6 +432,49 @@ func (a *App) openSandboxExecAttach(ctx context.Context, projectID, sandboxID, e
 		}
 	}()
 	return netConn, nil
+}
+
+func (a *App) openReconnectingSandboxExecAttach(
+	ctx context.Context,
+	projectID, sandboxID, execID string,
+	replay bool,
+	event func(attachConnectionEvent),
+) (*reconnectingAttachFrames, error) {
+	dial := func(ctx context.Context) (io.ReadWriteCloser, error) {
+		return a.openSandboxExecAttach(ctx, projectID, sandboxID, execID, replay)
+	}
+	conn, err := dial(ctx)
+	if err != nil {
+		return nil, err
+	}
+	done := func(ctx context.Context) (bool, error) {
+		return a.sandboxExecAttachDone(ctx, projectID, sandboxID, execID)
+	}
+	return newReconnectingAttachFrames(ctx, conn, dial, done, event), nil
+}
+
+func (a *App) sandboxExecAttachDone(ctx context.Context, projectID, sandboxID, execID string) (bool, error) {
+	exec, err := a.getSandboxExec(ctx, projectID, sandboxID, execID)
+	if err != nil {
+		// A control-plane read failure does not prove that the terminal ended. Keep
+		// retrying the websocket until the status can be checked authoritatively.
+		return false, err
+	}
+	switch exec.Status {
+	case apiclientgen.SandboxExecStatusExited:
+		if code, ok := exec.ExitCode.Get(); ok && code != 0 {
+			return true, exitCodeError{code: int(code)}
+		}
+		return true, nil
+	case apiclientgen.SandboxExecStatusFailed, apiclientgen.SandboxExecStatusLost:
+		message := strings.TrimSpace(exec.Error.Or(""))
+		if message == "" {
+			message = fmt.Sprintf("terminal is %s", exec.Status)
+		}
+		return true, errors.New(message)
+	default:
+		return false, nil
+	}
 }
 
 // attachPingInterval paces websocket keepalive pings on an exec attach. The
