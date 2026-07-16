@@ -139,7 +139,7 @@ type Release {
           export GOOS=${t%/*} GOARCH=${t#*/}
           ext=''
           if [ "$GOOS" = windows ]; then ext=.exe; fi
-          go build -C cli -trimpath -ldflags='-s -w' -o /out/discobox-$GOOS-$GOARCH$ext ./cmd/discobox
+          go build -C cli -trimpath -ldflags='-s -w -X github.com/obot-platform/discobox/cli/internal/cli.serverAutoLaunch=true' -o /out/discobox-$GOOS-$GOARCH$ext ./cmd/discobox
         done
       """])
       .directory("/out")

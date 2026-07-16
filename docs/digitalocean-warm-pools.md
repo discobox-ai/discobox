@@ -8,7 +8,7 @@ Create a DigitalOcean provider and bootstrap its warm pool:
 
 ```bash
 export DIGITALOCEAN_ACCESS_TOKEN=...
-discobox provider create \
+discobox debug provider create \
   --name do-warm \
   --type digitalocean \
   --control-plane-url https://discobot.example.com \
@@ -20,17 +20,17 @@ discobox provider create \
 Inspect provider support and manage instances:
 
 ```bash
-discobox provider catalog
-discobox provider ls
-discobox provider get <provider-id>
-discobox provider update <provider-id> --name do-warm-2 --do-size s-2vcpu-2gb
-discobox provider delete <provider-id>
+discobox debug provider catalog
+discobox debug provider ls
+discobox debug provider get <provider-id>
+discobox debug provider update <provider-id> --name do-warm-2 --do-size s-2vcpu-2gb
+discobox debug provider delete <provider-id>
 ```
 
 Then create a sandbox against that provider and wait for reconciliation:
 
 ```bash
-discobox sandbox create --name dev --provider-instance <provider-id> --wait
+discobox debug sandbox create --name dev --provider-instance <provider-id> --wait
 ```
 
 If the project has no default provider, the first created provider instance becomes the default. Later sandbox creates can omit `--provider-instance`.
