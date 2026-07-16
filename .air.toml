@@ -5,7 +5,7 @@ tmp_dir = "build"
 [build]
   args_bin = []
   entrypoint = "./build/discobox-server"
-  cmd = "cd cli && go build -o ../build/discobox ./cmd/discobox && cd ../server && go build -gcflags=\"all=-N -l\" -o ../build/discobox-server ./cmd/discobox-server && cd .. && go tool task build:hooks"
+  cmd = "rm -f build/disco && cd cli && go build -o ../build/disco ./cmd/disco && cd ../server && go build -gcflags=\"all=-N -l\" -o ../build/discobox-server ./cmd/discobox-server && cd .. && go tool task build:hooks"
   delay = 1000
   exclude_dir = ["build", "vendor", "testdata", "node_modules"]
   exclude_file = []

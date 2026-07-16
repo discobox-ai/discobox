@@ -157,7 +157,7 @@ func (d *apiDataSource) ListHarnessDefinitions(ctx context.Context) ([]tui.Harne
 // updates an existing config's name. Choosing the project default is a separate
 // action (SetDefaultHarness) driven from the agents list. Definition-backed
 // creation skips the interactive configure step; a definition with a configure
-// flow should be enabled via `discobox debug harness enable` to answer its prompts.
+// flow should be enabled via `disco box harness enable` to answer its prompts.
 func (d *apiDataSource) SaveHarness(ctx context.Context, req tui.SaveHarnessRequest) (tui.HarnessConfig, error) {
 	var cfg *apimodel.HarnessConfig
 	if req.ID == "" {
@@ -361,7 +361,7 @@ func (d *apiDataSource) OpenTerminal(ctx context.Context, sandboxID string, cols
 }
 
 // AttachTerminal runs the same default-terminal attach flow as
-// `discobox debug terminal attach`, using the real terminal streams supplied while
+// `disco box terminal attach`, using the real terminal streams supplied while
 // Bubble Tea is suspended. It attaches the virtual primary terminal, so the
 // agent resumes a stopped session on attach.
 func (d *apiDataSource) AttachTerminal(ctx context.Context, sandboxID string, stdin io.Reader, stdout, stderr io.Writer) error {

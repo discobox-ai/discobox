@@ -92,7 +92,7 @@ func (a *App) resolveHarnessConfigID(ctx context.Context, client *apiclientgen.C
 	}
 	harnesses := body.GetHarnessConfigs()
 	// Prefer the stable slug (e.g. "codex"), then the display name, so the harness
-	// subcommands accept the same selectors as `debug sandbox create --harness` and `run -a`.
+	// subcommands accept the same selectors as `box sandbox create --harness` and `prompt -a`.
 	for _, harness := range harnesses {
 		if harness.Slug == value {
 			return harness.ID, nil

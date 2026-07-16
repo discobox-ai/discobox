@@ -1,6 +1,6 @@
 # tui
 
-Interactive terminal UI for the `discobox tui` command. k9s-style, keyboard-first.
+Interactive terminal UI for the `disco tui` command. k9s-style, keyboard-first.
 
 ## Architecture
 

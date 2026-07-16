@@ -4,15 +4,15 @@ tmp_dir = "build"
 
 [build]
   args_bin = []
-  entrypoint = "./build/discobox"
-  cmd = "cd cli && go build -o ../build/discobox ./cmd/discobox && ln -sf discobox ../build/disco"
+  entrypoint = "./build/disco"
+  cmd = "rm -f build/disco && cd cli && go build -o ../build/disco ./cmd/disco"
   delay = 1000
   exclude_dir = ["build", "vendor", "testdata", "node_modules"]
   exclude_file = []
   exclude_regex = ["_test.go"]
   exclude_unchanged = false
   follow_symlink = false
-  full_bin = "sh -c 'echo \"discobox CLI rebuilt: ./build/discobox\"; sleep 2147483647'"
+  full_bin = "sh -c 'echo \"disco CLI rebuilt: ./build/disco\"; sleep 2147483647'"
   include_dir = ["api", "apiclient", "apperrors", "cli", "id", "model", "sandboxprovider", "workerbootstrap"]
   include_ext = ["go", "tpl", "tmpl", "html", "sql"]
   include_file = []

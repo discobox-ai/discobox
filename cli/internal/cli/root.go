@@ -38,7 +38,7 @@ func NewRootCommand() *cobra.Command {
 
 	app := &App{}
 	cmd := &cobra.Command{
-		Use:           "discobox",
+		Use:           "disco",
 		Short:         "Discobox command line client",
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -49,7 +49,7 @@ func NewRootCommand() *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCOBOX_SERVER", localipc.DefaultEndpoint()), "Discobox API server endpoint")
 	cmd.PersistentFlags().StringVarP(&app.projectID, "project", "p", envOrDefault("DISCOBOX_PROJECT", defaultProjectAlias), "Project ID for this invocation; use default for the user's default project")
-	cmd.PersistentFlags().StringVarP(&app.source, "chdir", "C", ".", "Source directory or Git repository to act on, optionally with @REF; its Git repository root identifies the sandboxes ls lists and run creates")
+	cmd.PersistentFlags().StringVarP(&app.source, "chdir", "C", ".", "Source directory or Git repository to act on, optionally with @REF; its Git repository root identifies the sandboxes ls lists and prompt creates")
 	cmd.PersistentFlags().StringVar(&app.token, "token", os.Getenv("DISCOBOX_TOKEN"), "Bearer token for API requests")
 	cmd.PersistentFlags().StringVarP(&app.output, "output", "o", "table", "Output format: table or json")
 	cmd.PersistentFlags().BoolVar(&app.debug, "debug", false, "Print HTTP requests made by the API client")
@@ -57,7 +57,7 @@ func NewRootCommand() *cobra.Command {
 	_ = cmd.RegisterFlagCompletionFunc("project", app.completeProjects)
 
 	cmd.AddCommand(app.newListCommand())
-	cmd.AddCommand(app.newDebugCommand())
+	cmd.AddCommand(app.newBoxCommand())
 	cmd.AddCommand(app.newRunCommand())
 	cmd.AddCommand(app.newSecretCommand())
 	cmd.AddCommand(app.newEventsCommand())

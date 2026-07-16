@@ -2,7 +2,7 @@
 Release automation for discobox in two chainable phases:
 
   stage  — build everything into a local, inspectable directory: multi-arch
-           agent image tarballs, cross-compiled discobox CLI binaries, and the
+           agent image tarballs, cross-compiled disco CLI binaries, and the
            tag/commit the release was cut from.
   push   — publish a staged directory: create the tag on GitHub, push the
            staged images to the registry, and upload the binaries to the
@@ -122,7 +122,7 @@ type Release {
   }
 
   """
-  Cross-compiled discobox CLI binaries, named discobox-<os>-<arch>[.exe].
+  Cross-compiled disco CLI binaries, named disco-<os>-<arch>[.exe].
   """
   pub cliBinaries: Directory! {
     container
@@ -139,7 +139,7 @@ type Release {
           export GOOS=${t%/*} GOARCH=${t#*/}
           ext=''
           if [ "$GOOS" = windows ]; then ext=.exe; fi
-          go build -C cli -trimpath -ldflags='-s -w -X github.com/obot-platform/discobox/cli/internal/cli.serverAutoLaunch=true' -o /out/discobox-$GOOS-$GOARCH$ext ./cmd/discobox
+          go build -C cli -trimpath -ldflags='-s -w -X github.com/obot-platform/discobox/cli/internal/cli.serverAutoLaunch=true' -o /out/disco-$GOOS-$GOARCH$ext ./cmd/disco
         done
       """])
       .directory("/out")

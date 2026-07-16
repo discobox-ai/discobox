@@ -27,7 +27,8 @@ PY
   export DISCOBOX_BATS_SERVER="http://127.0.0.1:$DISCOBOX_BATS_PORT"
 
   (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
-  (cd cli && go build -o ../build/discobox ./cmd/discobox)
+  rm -f build/disco
+  (cd cli && go build -o ../build/disco ./cmd/disco)
   (docker build -f worker-agent/Dockerfile -t discobox-worker-agent:local .)
 
   PORT="$DISCOBOX_BATS_PORT" \
@@ -71,7 +72,7 @@ teardown_file() {
 }
 
 cli() {
-  "$REPO_ROOT/build/discobox" --server "$DISCOBOX_BATS_SERVER" --project local --output json "$@"
+  "$REPO_ROOT/build/disco" --server "$DISCOBOX_BATS_SERVER" --project local --output json "$@"
 }
 
 json_get() {

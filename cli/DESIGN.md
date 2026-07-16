@@ -1,6 +1,6 @@
 # CLI Design
 
-The CLI module owns the `discobox` command implementation and talks to the
+The CLI module owns the `disco` command implementation and talks to the
 control plane through generated root-module API clients plus a few handwritten
 transport helpers where OpenAPI does not model the stream.
 
@@ -8,7 +8,7 @@ transport helpers where OpenAPI does not model the stream.
 
 | Package/path | Ownership |
 | --- | --- |
-| `cmd/discobox` | Binary entrypoint. |
+| `cmd/disco` | Binary entrypoint. |
 | `internal/cli` | Cobra command tree, output formatting, local server auto-start, TUI API adapter, and stream attach clients. |
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, and local user identity. |
 | `internal/tui` | Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. |
@@ -27,8 +27,8 @@ builds leave it disabled; release CLI binaries opt in at build time by setting
 `cli.serverAutoLaunch` to `true` with the Go linker's `-X` flag. `--no-start`
 remains the runtime override for release binaries.
 
-Low-level inspection and control commands are grouped beneath the hidden
-`discobox debug` command: `sandbox`, `terminal`, `exec`, `provider`, `worker`,
+Advanced configuration and low-level resource commands are grouped beneath the
+visible `disco box` command: `sandbox`, `terminal`, `exec`, `provider`, `worker`,
 `job`, `harnesses`, and `hooks` are not root commands.
 
 ## Attach Stream Pattern
@@ -63,7 +63,7 @@ the transport/session mechanics in `internal/cli/attach_session.go`.
 
 ## Harness Config Definition Configure Step
 
-`discobox debug harnesses enable` (`internal/cli/harness.go`) first registers
+`disco box harnesses enable` (`internal/cli/harness.go`) first registers
 the definition's image-backed HarnessConfig, then runs an optional sandbox with
 `harnessMode: config`, unless `--no-configure` is passed. It reuses the existing sandbox lifecycle and attach
 helpers rather than introducing new ones: `waitForSandbox`/`waitForPrimaryTerminal`

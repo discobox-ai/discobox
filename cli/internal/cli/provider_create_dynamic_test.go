@@ -26,14 +26,14 @@ func TestProviderCreateHelpDoesNotHitAPI(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "debug", "provider", "create", "--help"})
+	cmd.SetArgs([]string{"--server", server.URL, "box", "provider", "create", "--help"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute help: %v", err)
 	}
 	if hit {
 		t.Fatalf("plain provider create --help hit API server")
 	}
-	if !strings.Contains(out.String(), "discobox debug provider catalog") || !strings.Contains(out.String(), "--help=PROVIDER") {
+	if !strings.Contains(out.String(), "disco box provider catalog") || !strings.Contains(out.String(), "--help=PROVIDER") {
 		t.Fatalf("help output = %q, want provider catalog and --help=PROVIDER hints", out.String())
 	}
 }
@@ -76,7 +76,7 @@ func TestProviderCreateHelpProviderLoadsDynamicFields(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "debug", "provider", "create", "--help=example"})
+	cmd.SetArgs([]string{"--server", server.URL, "box", "provider", "create", "--help=example"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute provider help: %v", err)
 	}
@@ -96,14 +96,14 @@ func TestProviderUpdateHelpDoesNotHitAPI(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "debug", "provider", "update", "--help"})
+	cmd.SetArgs([]string{"--server", server.URL, "box", "provider", "update", "--help"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute help: %v", err)
 	}
 	if hit {
 		t.Fatalf("plain provider update --help hit API server")
 	}
-	if !strings.Contains(out.String(), "discobox debug provider catalog") || !strings.Contains(out.String(), "--help=PROVIDER") {
+	if !strings.Contains(out.String(), "disco box provider catalog") || !strings.Contains(out.String(), "--help=PROVIDER") {
 		t.Fatalf("help output = %q, want provider catalog and --help=PROVIDER hints", out.String())
 	}
 }
@@ -145,7 +145,7 @@ func TestProviderUpdateHelpProviderLoadsDynamicFields(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "debug", "provider", "update", "--help=example"})
+	cmd.SetArgs([]string{"--server", server.URL, "box", "provider", "update", "--help=example"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute provider help: %v", err)
 	}
@@ -171,7 +171,7 @@ func TestDynamicProviderCreateBodyUsesCatalogFields(t *testing.T) {
 		Type:  "boolean",
 	}})
 	cmd := NewRootCommand()
-	createCmd, _, err := cmd.Find([]string{"debug", "provider", "create"})
+	createCmd, _, err := cmd.Find([]string{"box", "provider", "create"})
 	if err != nil {
 		t.Fatalf("find create command: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestDynamicProviderUpdateBodyMergesCatalogFields(t *testing.T) {
 	}})
 	current := &apimodel.SandboxProviderInstance{Config: jx.Raw(`{"controlPlaneUrl":"http://old","poolSize":1,"other":"kept"}`)}
 	cmd := NewRootCommand()
-	updateCmd, _, err := cmd.Find([]string{"debug", "provider", "update"})
+	updateCmd, _, err := cmd.Find([]string{"box", "provider", "update"})
 	if err != nil {
 		t.Fatalf("find update command: %v", err)
 	}
@@ -236,7 +236,7 @@ func TestDynamicProviderUpdateBodyMergesCatalogFields(t *testing.T) {
 func TestDynamicProviderCreateAllowsMissingName(t *testing.T) {
 	provider := apimodel.SandboxProviderCatalogItem{ID: "example", Name: "Example"}
 	cmd := NewRootCommand()
-	createCmd, _, err := cmd.Find([]string{"debug", "provider", "create"})
+	createCmd, _, err := cmd.Find([]string{"box", "provider", "create"})
 	if err != nil {
 		t.Fatalf("find create command: %v", err)
 	}
@@ -313,7 +313,7 @@ func TestProviderUpdateCommandSendsDynamicConfig(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "debug", "provider", "update", providerID, "--name", "renamed", "--pool-size", "2"})
+	cmd.SetArgs([]string{"--server", server.URL, "box", "provider", "update", providerID, "--name", "renamed", "--pool-size", "2"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute update: %v", err)
 	}
@@ -373,7 +373,7 @@ func TestProviderCreateCommandSendsDynamicConfig(t *testing.T) {
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "debug", "provider", "create", "--type", "example", "--name", "local", "--control-plane-url", "http://localhost:8080", "--pool-size", "2"})
+	cmd.SetArgs([]string{"--server", server.URL, "box", "provider", "create", "--type", "example", "--name", "local", "--control-plane-url", "http://localhost:8080", "--pool-size", "2"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute create: %v", err)
 	}
@@ -427,7 +427,7 @@ func TestProviderCreateCommandConsumesDebugGlobalFlag(t *testing.T) {
 	var errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"--server", server.URL, "debug", "provider", "create", "--debug", "--type", "example", "--name", "local"})
+	cmd.SetArgs([]string{"--server", server.URL, "box", "provider", "create", "--debug", "--type", "example", "--name", "local"})
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute create: %v", err)
 	}

@@ -10,7 +10,7 @@ import (
 
 // newListCommand lists the sandboxes of the current source repository, which is
 // the Git repository root of -C (the working directory by default). It is the
-// repository-scoped counterpart to `debug sandbox ls`, which lists every sandbox in
+// repository-scoped counterpart to `box sandbox ls`, which lists every sandbox in
 // the project regardless of what it runs against.
 func (a *App) newListCommand() *cobra.Command {
 	cmd := &cobra.Command{
@@ -21,10 +21,10 @@ func (a *App) newListCommand() *cobra.Command {
 
 The repository is the Git repository root of the current directory, or of -C when
 given. Sandboxes created from another repository, or from no repository at all,
-are not listed; use "discobox debug sandbox ls" to list every sandbox in the project.`,
-		Example: `  discobox ls
-  discobox -C ../other-repo ls
-  discobox ls -o json`,
+are not listed; use "disco box sandbox ls" to list every sandbox in the project.`,
+		Example: `  disco ls
+  disco -C ../other-repo ls
+  disco ls -o json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			projectID, err := a.projectIDValue()

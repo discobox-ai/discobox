@@ -136,9 +136,9 @@ func (a *App) waitForPrimaryTerminal(ctx context.Context, progress io.Writer, pr
 			}
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				if announcedInstalling {
-					return apimodel.SandboxExec{}, errors.New("timed out while the harness was still preparing hooks and files (see `discobox debug terminal logs`)")
+					return apimodel.SandboxExec{}, errors.New("timed out while the harness was still preparing hooks and files (see `disco box terminal logs`)")
 				}
-				return apimodel.SandboxExec{}, errors.New("timed out waiting for the sandbox's default terminal; it may have failed to start (see `discobox debug terminal logs`)")
+				return apimodel.SandboxExec{}, errors.New("timed out waiting for the sandbox's default terminal; it may have failed to start (see `disco box terminal logs`)")
 			}
 			return apimodel.SandboxExec{}, fmt.Errorf("waiting for sandbox terminal: %w", ctx.Err())
 		case <-ticker.C:

@@ -2,11 +2,10 @@ package cli
 
 import "github.com/spf13/cobra"
 
-func (a *App) newDebugCommand() *cobra.Command {
+func (a *App) newBoxCommand() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "debug",
-		Short:  "Inspect and manage low-level resources",
-		Hidden: true,
+		Use:   "box",
+		Short: "Manage advanced Discobox configuration",
 	}
 	cmd.AddCommand(a.newSandboxCommand())
 	cmd.AddCommand(a.newSandboxTerminalsCommand())

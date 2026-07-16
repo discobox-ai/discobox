@@ -3,8 +3,8 @@ version: "3"
 vars:
   BINARY: build/discobox-server
   SERVER_MAIN: ./cmd/discobox-server
-  CLI_BINARY: build/discobox
-  CLI_MAIN: ./cmd/discobox
+  CLI_BINARY: build/disco
+  CLI_MAIN: ./cmd/disco
   HOOKS_BINARY: build/discobox-hooks
   HOOKS_MAIN: ./cmd/discobox-hooks
   PACKAGES: ./...
@@ -16,7 +16,7 @@ tasks:
       - task --list
 
   build:
-    desc: Compile discobox-server, discobox CLI, and hooks CLI
+    desc: Compile discobox-server, disco CLI, and hooks CLI
     cmds:
       - task: build:server
       - task: build:cli
@@ -29,11 +29,11 @@ tasks:
       - cd server && go build -o ../{{.BINARY}} {{.SERVER_MAIN}}
 
   build:cli:
-    desc: Compile discobox CLI
+    desc: Compile disco CLI
     cmds:
       - mkdir -p build
+      - rm -f {{.CLI_BINARY}}
       - cd cli && go build -o ../{{.CLI_BINARY}} {{.CLI_MAIN}}
-      - ln -sf discobox build/disco
 
   build:hooks:
     desc: Compile discobox-hooks CLI
@@ -111,7 +111,7 @@ tasks:
       - go tool air
 
   dev:cli:
-    desc: Recompile the discobox CLI with Air hot reload
+    desc: Recompile the disco CLI with Air hot reload
     cmds:
       - go tool air -c .air.cli.toml
 

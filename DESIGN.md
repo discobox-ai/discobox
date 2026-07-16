@@ -91,9 +91,9 @@ flowchart TD
 - Root module: public API definitions, control-plane OpenAPI documents,
   generated API clients/scaffolds, cross-module sentinel errors, IDs, worker
   boot metadata contracts, and client-facing stream DTOs.
-- CLI module: `discobox` command implementation; depends on root generated
+- CLI module: `disco` command implementation; depends on root generated
   clients/contracts for normal user commands and talks to the control plane
-  through the Server REST API. Its `discobox server` subcommand embeds the
+  through the Server REST API. Its `disco server` subcommand embeds the
   server module's public runtime entrypoint so local auto-launch can re-exec the
   current CLI binary instead of depending on a separate `discobox-server`
   executable.
