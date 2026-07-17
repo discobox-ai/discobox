@@ -186,7 +186,7 @@ func (r *WorkerReconciler) reconcileActive(ctx context.Context, worker *model.Wo
 	if alreadySuccessful {
 		status = "checking worker"
 	} else {
-		worker.Phase = model.WorkerPhaseLaunching
+		worker.SetPhase(model.WorkerPhaseLaunching)
 	}
 	worker.MarkOperationRunning(&status)
 	if err := r.update(ctx, worker, generation); err != nil {

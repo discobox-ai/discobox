@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 const (
 	OperationStatusPending = "pending"
 	OperationStatusRunning = "running"
@@ -18,14 +20,15 @@ type OperationSpec struct {
 // ResourceLifecycle is embedded into resources that are reconciled by queued
 // operations. Embedding keeps DB/API fields flat while sharing transition code.
 type ResourceLifecycle struct {
-	DesiredState        string  `gorm:"column:desired_state;not null;type:text;index" json:"desiredState" doc:"Requested steady state for reconciliation" enum:"running,stopped,deleted"`
-	Phase               string  `gorm:"not null;type:text;index" json:"phase" doc:"Observed lifecycle phase" enum:"pending,provisioning,starting,running,stopping,stopped,deleting,deleted,failed"`
-	ActiveOperation     *string `gorm:"column:active_operation;type:text;index" json:"activeOperation,omitempty" doc:"Current queued or running operation" enum:"create,start,stop,restart,delete"`
-	LastOperationStatus string  `gorm:"column:last_operation_status;not null;type:text;index" json:"lastOperationStatus" doc:"Status of the most recent operation" enum:"pending,running,success,failed"`
-	Generation          int64   `gorm:"not null;default:0" json:"generation" doc:"Latest desired-state generation"`
-	ObservedGeneration  int64   `gorm:"column:observed_generation;not null;default:0" json:"observedGeneration" doc:"Latest generation fully observed by reconciliation"`
-	StatusMessage       *string `gorm:"column:status_message;type:text" json:"statusMessage,omitempty" doc:"Human-readable status detail"`
-	ErrorMessage        *string `gorm:"column:error_message;type:text" json:"errorMessage,omitempty" doc:"Latest error message"`
+	DesiredState        string    `gorm:"column:desired_state;not null;type:text;index" json:"desiredState" doc:"Requested steady state for reconciliation" enum:"running,stopped,deleted"`
+	Phase               string    `gorm:"not null;type:text;index" json:"phase" doc:"Observed lifecycle phase" enum:"pending,provisioning,starting,running,stopping,stopped,deleting,deleted,failed"`
+	ActiveOperation     *string   `gorm:"column:active_operation;type:text;index" json:"activeOperation,omitempty" doc:"Current queued or running operation" enum:"create,start,stop,restart,delete"`
+	LastOperationStatus string    `gorm:"column:last_operation_status;not null;type:text;index" json:"lastOperationStatus" doc:"Status of the most recent operation" enum:"pending,running,success,failed"`
+	Generation          int64     `gorm:"not null;default:0" json:"generation" doc:"Latest desired-state generation"`
+	ObservedGeneration  int64     `gorm:"column:observed_generation;not null;default:0" json:"observedGeneration" doc:"Latest generation fully observed by reconciliation"`
+	StatusMessage       *string   `gorm:"column:status_message;type:text" json:"statusMessage,omitempty" doc:"Human-readable status detail"`
+	PhaseChangedAt      time.Time `gorm:"column:phase_changed_at" json:"phaseChangedAt,omitempty" doc:"When Phase last changed to its current value. Anchors how long a resource has been in a phase, for timeouts that must not be reset by unrelated reconciles." format:"date-time"`
+	ErrorMessage        *string   `gorm:"column:error_message;type:text" json:"errorMessage,omitempty" doc:"Latest error message"`
 }
 
 func NewResourceLifecycle(spec OperationSpec) ResourceLifecycle {
@@ -34,9 +37,25 @@ func NewResourceLifecycle(spec OperationSpec) ResourceLifecycle {
 	return lifecycle
 }
 
+// SetPhase moves the resource to phase, stamping PhaseChangedAt only on an
+// actual change.
+//
+// The guard is the point: a caller that re-asserts the phase it is already in —
+// a reconcile that re-parks, re-drives, or simply converges again — must not
+// move the anchor. Timeouts derive their deadline from it, so restamping on
+// every write would push the deadline out each time anything looked at the
+// resource, and it could never expire.
+func (l *ResourceLifecycle) SetPhase(phase string) {
+	if l.Phase == phase {
+		return
+	}
+	l.Phase = phase
+	l.PhaseChangedAt = time.Now().UTC()
+}
+
 func (l *ResourceLifecycle) BeginOperation(spec OperationSpec) {
 	l.DesiredState = spec.DesiredState
-	l.Phase = spec.Phase
+	l.SetPhase(spec.Phase)
 	l.ActiveOperation = &spec.Operation
 	l.LastOperationStatus = OperationStatusPending
 	l.StatusMessage = nil
@@ -54,7 +73,7 @@ func (l *ResourceLifecycle) MarkOperationRunning(message *string) {
 }
 
 func (l *ResourceLifecycle) CompleteOperation(phase string, message *string) {
-	l.Phase = phase
+	l.SetPhase(phase)
 	l.ActiveOperation = nil
 	l.LastOperationStatus = OperationStatusSuccess
 	l.StatusMessage = message
@@ -62,7 +81,7 @@ func (l *ResourceLifecycle) CompleteOperation(phase string, message *string) {
 }
 
 func (l *ResourceLifecycle) FailOperation(message string) {
-	l.Phase = "failed"
+	l.SetPhase("failed")
 	l.ActiveOperation = nil
 	l.LastOperationStatus = OperationStatusFailed
 	l.StatusMessage = nil
@@ -75,7 +94,7 @@ func (l *ResourceLifecycle) FailOperation(message string) {
 // fails: the caller supplies a non-terminal phase (e.g. offline) so downstream
 // reconcilers continue to re-drive the resource rather than abandon it.
 func (l *ResourceLifecycle) FailOperationRetryable(phase string, message string) {
-	l.Phase = phase
+	l.SetPhase(phase)
 	l.ActiveOperation = nil
 	l.LastOperationStatus = OperationStatusFailed
 	l.StatusMessage = nil
@@ -87,7 +106,7 @@ func (l *ResourceLifecycle) SetDefaults(desiredState, phase string) {
 		l.DesiredState = desiredState
 	}
 	if l.Phase == "" {
-		l.Phase = phase
+		l.SetPhase(phase)
 	}
 	if l.LastOperationStatus == "" {
 		l.LastOperationStatus = OperationStatusPending

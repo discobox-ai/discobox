@@ -126,6 +126,8 @@ Root module package map:
 | [`api/model`](api/model) | Generated stable aliases for server REST API schema types. |
 | [`harness`](harness) | Harness hook registration drivers for sandbox terminals. |
 | [`id`](id) | Shared identifier helpers. |
+| [`internal/hostid`](internal/hostid) | This machine's generated, persisted Discobox identity. Shared because a CLI and a control plane on one machine must resolve the same value: that agreement is how the server knows a request came from its own filesystem. |
+| [`internal/originkey`](internal/originkey) | Derives the key identifying a sandbox origin. Shared so client and server cannot drift on it. |
 
 Submodule package docs belong in their owning module trees and are intentionally
 not listed here.

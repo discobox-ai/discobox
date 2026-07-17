@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/obot-platform/discobox/internal/hostid"
 	"github.com/obot-platform/discobox/cli/internal/sandboxcreate"
+	"github.com/obot-platform/discobox/internal/hostid"
 	"github.com/obot-platform/discobox/internal/originkey"
 )
 

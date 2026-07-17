@@ -62,7 +62,10 @@ func ProjectPath(ctx context.Context, dir string) (string, error) {
 	}
 	root, err := gitutil.Root(ctx, abs)
 	if err != nil {
-		return abs, nil
+		// Not a repository. The directory itself is then the project, so
+		// listing and creating still work here rather than failing; the error
+		// says only that there is no repo root to prefer.
+		return abs, nil //nolint:nilerr // absence of a repository is a fallback, not a failure
 	}
 	return root, nil
 }

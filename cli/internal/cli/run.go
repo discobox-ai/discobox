@@ -58,6 +58,10 @@ detach). Pass -d to create the sandbox and print it without attaching.`,
 			if err != nil {
 				return err
 			}
+			// A server that cannot reach this directory waits for us to push it.
+			if err := sandboxcreate.DeliverSource(cmd.Context(), client, projectID, sandbox, parsedOpts.Source, a.serverURL, a.token); err != nil {
+				return err
+			}
 			if opts.detach {
 				return a.writeSandbox(cmd, sandbox)
 			}

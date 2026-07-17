@@ -10,7 +10,8 @@ transport helpers where OpenAPI does not model the stream.
 | --- | --- |
 | `cmd/disco` | Binary entrypoint. |
 | `internal/cli` | Cobra command tree, output formatting, local server auto-start, TUI API adapter, and stream attach clients. |
-| `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, and local user identity. |
+| `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. |
+| `internal/origin` | Resolves the client host and project directory a sandbox is created from. Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/tui` | Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. |
 
 ## UI Dependency Direction
@@ -60,6 +61,33 @@ the transport/session mechanics in `internal/cli/attach_session.go`.
 - Connection lifecycle notifications are transport events, not terminal output.
   CLI attach ignores them; the TUI adapter maps them into its `TerminalEvent`
   stream.
+
+## Origin and Source Delivery
+
+Every create carries an **origin**: this client's host identity plus the project
+directory, which is the Git repository root of `-C` (the working directory by
+default), or that directory itself outside a repository. `disco ls` filters on
+its key rather than on the source root, because a local path identifies a
+repository only on the machine holding it — it means nothing once the server is
+remote, and collides across hosts and users.
+
+Host identity comes from `internal/hostid` in the root module, deliberately
+shared: a CLI and a server on the same machine must resolve the same value from
+the same file, which is how the server recognizes a request as coming from its
+own filesystem and binds the source instead of asking for a push.
+
+After create, `sandboxcreate.DeliverSource` is called unconditionally and is a
+no-op unless the server marked the source `delivery: push`. When it did, the
+client waits for the sandbox to reach `awaiting_source`, pushes the source's
+commit to its branch (plus the workspace snapshot ref, when the workspace is
+dirty — without it the sandbox comes up clean and the edits are lost), and then
+reports the push complete. It pushes the commit the server recorded at create,
+by explicit refspec, rather than whatever the local branch now points at.
+
+The push goes through the control plane's Git proxy, never directly to the
+sandbox, which sits on a network the client cannot reach.
+
+See [ADR 0001](../docs/adr/0001-sandbox-origin-and-remote-source-push.md).
 
 ## Harness Configure Step
 

@@ -349,7 +349,7 @@ func (s *Store) RegisterWorker(ctx context.Context, workerID string, tokenHash [
 		worker.Degraded = false
 		worker.RegisteredAt = &now
 		worker.LastSeenAt = &now
-		worker.Phase = model.WorkerPhaseActive
+		worker.SetPhase(model.WorkerPhaseActive)
 		worker.LastOperationStatus = model.OperationStatusSuccess
 		worker.ObservedGeneration = worker.Generation
 		if err := tx.Save(&worker).Error; err != nil {
@@ -395,7 +395,7 @@ func (s *Store) UpdateWorkerStatus(ctx context.Context, workerID string, ready, 
 		worker.Conditions = conditions
 		worker.LastSeenAt = &now
 		if ready {
-			worker.Phase = model.WorkerPhaseActive
+			worker.SetPhase(model.WorkerPhaseActive)
 		}
 		return tx.Save(&worker).Error
 	})

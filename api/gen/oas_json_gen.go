@@ -16887,6 +16887,12 @@ func (s *Worker) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.PhaseChangedAt.Set {
+			e.FieldStart("phaseChangedAt")
+			s.PhaseChangedAt.Encode(e, json.EncodeDateTime)
+		}
+	}
+	{
 		e.FieldStart("ready")
 		e.Bool(s.Ready)
 	}
@@ -16918,7 +16924,7 @@ func (s *Worker) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfWorker = [28]string{
+var jsonFieldsNameOfWorker = [29]string{
 	0:  "$schema",
 	1:  "activeOperation",
 	2:  "availableCpuVcpus",
@@ -16941,12 +16947,13 @@ var jsonFieldsNameOfWorker = [28]string{
 	19: "providerInstance",
 	20: "providerInstanceId",
 	21: "publicKey",
-	22: "ready",
-	23: "registeredAt",
-	24: "revokedAt",
-	25: "schedulable",
-	26: "statusMessage",
-	27: "updatedAt",
+	22: "phaseChangedAt",
+	23: "ready",
+	24: "registeredAt",
+	25: "revokedAt",
+	26: "schedulable",
+	27: "statusMessage",
+	28: "updatedAt",
 }
 
 // Decode decodes Worker from json.
@@ -17201,8 +17208,18 @@ func (s *Worker) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"publicKey\"")
 			}
+		case "phaseChangedAt":
+			if err := func() error {
+				s.PhaseChangedAt.Reset()
+				if err := s.PhaseChangedAt.Decode(d, json.DecodeDateTime); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"phaseChangedAt\"")
+			}
 		case "ready":
-			requiredBitSet[2] |= 1 << 6
+			requiredBitSet[2] |= 1 << 7
 			if err := func() error {
 				v, err := d.Bool()
 				s.Ready = bool(v)
@@ -17234,7 +17251,7 @@ func (s *Worker) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"revokedAt\"")
 			}
 		case "schedulable":
-			requiredBitSet[3] |= 1 << 1
+			requiredBitSet[3] |= 1 << 2
 			if err := func() error {
 				v, err := d.Bool()
 				s.Schedulable = bool(v)
@@ -17256,7 +17273,7 @@ func (s *Worker) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"statusMessage\"")
 			}
 		case "updatedAt":
-			requiredBitSet[3] |= 1 << 3
+			requiredBitSet[3] |= 1 << 4
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -17279,8 +17296,8 @@ func (s *Worker) Decode(d *jx.Decoder) error {
 	for i, mask := range [4]uint8{
 		0b11011100,
 		0b01011101,
-		0b01010111,
-		0b00001010,
+		0b10010111,
+		0b00010100,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

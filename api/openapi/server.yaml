@@ -2716,6 +2716,10 @@ components:
                 publicKey:
                     description: Worker public key
                     type: string
+                phaseChangedAt:
+                    description: When phase last changed to its current value. Anchors how long the resource has been in a phase, for timeouts that must not be reset by unrelated reconciles.
+                    format: date-time
+                    type: string
                 ready:
                     description: Whether the worker is alive and healthy
                     type: boolean

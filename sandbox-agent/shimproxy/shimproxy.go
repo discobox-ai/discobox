@@ -21,6 +21,46 @@ import (
 
 const defaultDialTimeout = 5 * time.Second
 
+// statusDialTimeout bounds a status probe's dial. Status reads are best-effort
+// refresh inputs on hot paths (exec list/get), so an unreachable shim must fail
+// fast rather than ride the generous retry used for start/attach.
+const statusDialTimeout = 250 * time.Millisecond
+
+// StatusJSON reads the shim's authoritative view of its exec. While the shim is
+// alive it is the source of truth for the command's status: the systemd unit
+// only mirrors the shim process, which deliberately outlives the command (it
+// lingers so late attachers can replay output), so unit liveness says nothing
+// about command liveness.
+func StatusJSON[T any](ctx context.Context, socketPath string) (T, error) {
+	var zero T
+	shimConn, err := Dial(ctx, socketPath, statusDialTimeout)
+	if err != nil {
+		return zero, err
+	}
+	defer shimConn.Close()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://unix/status", nil)
+	if err != nil {
+		return zero, err
+	}
+	if err := req.Write(shimConn); err != nil {
+		return zero, err
+	}
+	resp, err := http.ReadResponse(bufio.NewReader(shimConn), req)
+	if err != nil {
+		return zero, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
+		return zero, fmt.Errorf("shim status: %s: %s", resp.Status, strings.TrimSpace(string(body)))
+	}
+	var out T
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return zero, err
+	}
+	return out, nil
+}
+
 func StartJSON[T any](ctx context.Context, socketPath string) (T, error) {
 	var zero T
 	shimConn, err := Dial(ctx, socketPath, defaultDialTimeout)

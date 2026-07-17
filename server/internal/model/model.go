@@ -469,44 +469,43 @@ func (o *Origin) Key() string {
 
 // Sandbox is the managed runtime/session unit.
 type Sandbox struct {
-	ID                    string  `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
-	ProjectID             string  `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	CreatedByUserID       string  `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
-	ProviderInstanceID    *string `gorm:"column:provider_instance_id;type:text;index" json:"providerInstanceId,omitempty" doc:"Sandbox provider instance ID"`
-	HarnessConfigID       *string `gorm:"column:harness_config_id;type:text;index" json:"harnessConfigId,omitempty" doc:"Harness config ID"`
-	HarnessMode           string  `gorm:"column:harness_mode;not null;type:text;default:'run'" json:"harnessMode,omitempty" doc:"Harness startup mode: run or config"`
-	Name                  string  `gorm:"not null;type:text" json:"name" doc:"Sandbox name" maxLength:"200"`
-	Description           *string `gorm:"type:text" json:"description,omitempty" doc:"Sandbox description"`
-	ResourceLifecycle     `gorm:"embedded"`
-	RestartGeneration     int64                `gorm:"column:restart_generation;not null;default:0" json:"restartGeneration" doc:"Requested restart generation"`
-	RestartedGeneration   int64                `gorm:"column:restarted_generation;not null;default:0" json:"restartedGeneration" doc:"Last restart generation completed by reconciliation"`
-	Model                 *string              `gorm:"column:model;type:text" json:"model,omitempty" doc:"Model the harness should use"`
-	ModelServiceTier      *string              `gorm:"column:model_service_tier;type:text" json:"modelServiceTier,omitempty" doc:"Model service tier the harness should use"`
-	ModelReasoningLevel   *string              `gorm:"column:model_reasoning_level;type:text" json:"modelReasoningLevel,omitempty" doc:"Model reasoning level the harness should use"`
-	Prompt                []string             `gorm:"column:prompt;type:text;serializer:json" json:"prompt,omitempty" doc:"Prompt the harness should run, passed as argv to preserve the caller's exact tokens"`
-	Image                 string               `gorm:"column:image;type:text" json:"image,omitempty" doc:"Sandbox base image"`
-	Env                   map[string]string    `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Environment variables available to sandbox-agent terminals and execs by default"`
-	Source                *GitSource           `gorm:"column:source;type:text;serializer:json" json:"source,omitempty" doc:"Primary Git source to materialize in the sandbox"`
-	SourceRoot            *string              `gorm:"column:source_root;type:text;index" json:"sourceRoot,omitempty" doc:"Normalized repository identity of the primary source: local repository root path, or remote URL. Derived from Source; used to list the sandboxes belonging to a repository."`
-	SourceCodeReferences  SourceCodeReferences `gorm:"column:source_code_references;type:text;serializer:json" json:"sourceCodeReferences,omitempty" doc:"Additional Git sources to materialize in the sandbox"`
-	Origin                *Origin              `gorm:"column:origin;type:text;serializer:json" json:"origin,omitempty" doc:"Client host and project directory the sandbox was created from. Immutable after create."`
+	ID                   string  `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
+	ProjectID            string  `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	CreatedByUserID      string  `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
+	ProviderInstanceID   *string `gorm:"column:provider_instance_id;type:text;index" json:"providerInstanceId,omitempty" doc:"Sandbox provider instance ID"`
+	HarnessConfigID      *string `gorm:"column:harness_config_id;type:text;index" json:"harnessConfigId,omitempty" doc:"Harness config ID"`
+	HarnessMode          string  `gorm:"column:harness_mode;not null;type:text;default:'run'" json:"harnessMode,omitempty" doc:"Harness startup mode: run or config"`
+	Name                 string  `gorm:"not null;type:text" json:"name" doc:"Sandbox name" maxLength:"200"`
+	Description          *string `gorm:"type:text" json:"description,omitempty" doc:"Sandbox description"`
+	ResourceLifecycle    `gorm:"embedded"`
+	RestartGeneration    int64                `gorm:"column:restart_generation;not null;default:0" json:"restartGeneration" doc:"Requested restart generation"`
+	RestartedGeneration  int64                `gorm:"column:restarted_generation;not null;default:0" json:"restartedGeneration" doc:"Last restart generation completed by reconciliation"`
+	Model                *string              `gorm:"column:model;type:text" json:"model,omitempty" doc:"Model the harness should use"`
+	ModelServiceTier     *string              `gorm:"column:model_service_tier;type:text" json:"modelServiceTier,omitempty" doc:"Model service tier the harness should use"`
+	ModelReasoningLevel  *string              `gorm:"column:model_reasoning_level;type:text" json:"modelReasoningLevel,omitempty" doc:"Model reasoning level the harness should use"`
+	Prompt               []string             `gorm:"column:prompt;type:text;serializer:json" json:"prompt,omitempty" doc:"Prompt the harness should run, passed as argv to preserve the caller's exact tokens"`
+	Image                string               `gorm:"column:image;type:text" json:"image,omitempty" doc:"Sandbox base image"`
+	Env                  map[string]string    `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Environment variables available to sandbox-agent terminals and execs by default"`
+	Source               *GitSource           `gorm:"column:source;type:text;serializer:json" json:"source,omitempty" doc:"Primary Git source to materialize in the sandbox"`
+	SourceRoot           *string              `gorm:"column:source_root;type:text;index" json:"sourceRoot,omitempty" doc:"Normalized repository identity of the primary source: local repository root path, or remote URL. Derived from Source; used to list the sandboxes belonging to a repository."`
+	SourceCodeReferences SourceCodeReferences `gorm:"column:source_code_references;type:text;serializer:json" json:"sourceCodeReferences,omitempty" doc:"Additional Git sources to materialize in the sandbox"`
+	Origin               *Origin              `gorm:"column:origin;type:text;serializer:json" json:"origin,omitempty" doc:"Client host and project directory the sandbox was created from. Immutable after create."`
 	SourceDeliveredAt    *time.Time           `gorm:"column:source_delivered_at" json:"sourceDeliveredAt,omitempty" doc:"When the client reported its push complete for a push-delivered source. Empty while the sandbox is still awaiting it. The commit to check out is the source's Checkout.Commit, fixed at create." format:"date-time"`
-	SourceAwaitDeadline  *time.Time           `gorm:"column:source_await_deadline" json:"sourceAwaitDeadline,omitempty" doc:"When waiting for a push-delivered source stops and the sandbox fails. Set once, when the sandbox first parks, so that re-parking cannot extend it." format:"date-time"`
-	OriginKey             *string              `gorm:"column:origin_key;type:text;index" json:"-" doc:"Indexed identity of Origin. Derived from Origin; used to list the sandboxes created from one client project directory."`
-	UserName              *string              `gorm:"column:user_name;type:text" json:"userName,omitempty" doc:"Username to use inside the sandbox"`
-	UserUID               *int                 `gorm:"column:user_uid" json:"userUid,omitempty" doc:"UID to use inside the sandbox"`
-	UserGID               *int                 `gorm:"column:user_gid" json:"userGid,omitempty" doc:"GID to use inside the sandbox"`
-	HomeDirectory         *string              `gorm:"column:home_directory;type:text" json:"homeDirectory,omitempty" doc:"User home directory to use inside the sandbox"`
-	CPUVCPUs              float64              `gorm:"column:cpu_vcpus;not null;default:1" json:"cpuVcpus" doc:"Requested CPU capacity in vCPUs"`
-	MemoryBytes           int64                `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"Requested memory capacity in bytes"`
-	StorageBytes          int64                `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Requested storage capacity in bytes"`
-	WorkerID              *string              `gorm:"column:worker_id;type:text;index" json:"workerId,omitempty" doc:"Assigned worker ID, when scheduled through a worker-backed provider"`
-	RuntimeState          json.RawMessage      `gorm:"column:runtime_state;type:text" json:"runtimeState,omitempty" doc:"Non-secret provider runtime state"`
-	SecretState           []byte               `gorm:"column:secret_state" json:"-"`
-	LastActiveAt          *time.Time           `gorm:"column:last_active_at;index" json:"lastActiveAt,omitempty" doc:"Last observed activity timestamp" format:"date-time"`
-	CreatedAt             time.Time            `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt             time.Time            `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-	DeletedAt             gorm.DeletedAt       `gorm:"index" json:"-"`
+	OriginKey            *string              `gorm:"column:origin_key;type:text;index" json:"-" doc:"Indexed identity of Origin. Derived from Origin; used to list the sandboxes created from one client project directory."`
+	UserName             *string              `gorm:"column:user_name;type:text" json:"userName,omitempty" doc:"Username to use inside the sandbox"`
+	UserUID              *int                 `gorm:"column:user_uid" json:"userUid,omitempty" doc:"UID to use inside the sandbox"`
+	UserGID              *int                 `gorm:"column:user_gid" json:"userGid,omitempty" doc:"GID to use inside the sandbox"`
+	HomeDirectory        *string              `gorm:"column:home_directory;type:text" json:"homeDirectory,omitempty" doc:"User home directory to use inside the sandbox"`
+	CPUVCPUs             float64              `gorm:"column:cpu_vcpus;not null;default:1" json:"cpuVcpus" doc:"Requested CPU capacity in vCPUs"`
+	MemoryBytes          int64                `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"Requested memory capacity in bytes"`
+	StorageBytes         int64                `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Requested storage capacity in bytes"`
+	WorkerID             *string              `gorm:"column:worker_id;type:text;index" json:"workerId,omitempty" doc:"Assigned worker ID, when scheduled through a worker-backed provider"`
+	RuntimeState         json.RawMessage      `gorm:"column:runtime_state;type:text" json:"runtimeState,omitempty" doc:"Non-secret provider runtime state"`
+	SecretState          []byte               `gorm:"column:secret_state" json:"-"`
+	LastActiveAt         *time.Time           `gorm:"column:last_active_at;index" json:"lastActiveAt,omitempty" doc:"Last observed activity timestamp" format:"date-time"`
+	CreatedAt            time.Time            `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt            time.Time            `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	DeletedAt            gorm.DeletedAt       `gorm:"index" json:"-"`
 
 	Project          *Project                 `gorm:"foreignKey:ProjectID" json:"-"`
 	CreatedBy        *User                    `gorm:"-" json:"createdBy,omitempty" doc:"Creating user"`

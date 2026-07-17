@@ -36,7 +36,7 @@ func (s *Service) resolveSourceDelivery(source *model.GitSource, origin *model.O
 		// so no bind is ever attempted. Nothing here can be concluded about a
 		// provider that does come up later.
 		source.Delivery = model.GitSourceDeliveryClone
-		return nil
+		return nil //nolint:nilerr // an uninstantiated provider is not a create failure
 	}
 	if sourceNeedsPush(provider.Definition(), s.hostID, origin, source) {
 		source.Delivery = model.GitSourceDeliveryPush
@@ -61,20 +61,26 @@ const sourcePushTimeout = 30 * time.Minute
 // the caller reads the phase. An expired wait is the exception: it returns an
 // error, which the caller records as a failed operation.
 func parkForSourcePush(sb *model.Sandbox) error {
-	if sb.SourceAwaitDeadline != nil && !time.Now().Before(*sb.SourceAwaitDeadline) {
+	// Check before parking: once SetPhase is a no-op for an already-parked
+	// sandbox, the deadline below is the one set when it first parked.
+	if sb.Phase == model.SandboxPhaseAwaitingSource && !time.Now().Before(sourceAwaitDeadline(sb)) {
 		return fmt.Errorf("timed out after %s waiting for the client to push the source", sourcePushTimeout)
 	}
-	if sb.SourceAwaitDeadline == nil {
-		// Set once, on the first park. Re-deriving it on every reconcile would
-		// push the deadline out each time the sandbox was looked at, and it
-		// could never expire.
-		deadline := time.Now().UTC().Add(sourcePushTimeout)
-		sb.SourceAwaitDeadline = &deadline
-	}
-	sb.Phase = model.SandboxPhaseAwaitingSource
+	sb.SetPhase(model.SandboxPhaseAwaitingSource)
 	status := "waiting for the client to push the source"
 	sb.StatusMessage = &status
 	return nil
+}
+
+// sourceAwaitDeadline is when waiting for a client's push stops and the sandbox
+// fails.
+//
+// It is derived, not stored: PhaseChangedAt is stamped once, when the sandbox
+// parks, so every reconcile computes the same deadline and can re-arm the wake
+// for it. A stored deadline would instead be lost if the process died between
+// persisting it and scheduling the wake, and the sandbox would park forever.
+func sourceAwaitDeadline(sb *model.Sandbox) time.Time {
+	return sb.PhaseChangedAt.Add(sourcePushTimeout)
 }
 
 // scheduleSourceAwaitTimeout arranges the reconcile that enforces the deadline.
@@ -83,10 +89,10 @@ func parkForSourcePush(sb *model.Sandbox) error {
 // exactly at the deadline is why the engine's future-dated mark is used instead
 // of a periodic sweep over every sandbox.
 func (r *SandboxReconciler) scheduleSourceAwaitTimeout(ctx context.Context, sb *model.Sandbox) error {
-	if r.engine == nil || sb.SourceAwaitDeadline == nil {
+	if r.engine == nil || sb.PhaseChangedAt.IsZero() {
 		return nil
 	}
-	return r.engine.MarkDirtyAt(ctx, SandboxResourceType, SandboxDirtyID(sb.ProjectID, sb.ID), *sb.SourceAwaitDeadline)
+	return r.engine.MarkDirtyAt(ctx, SandboxResourceType, SandboxDirtyID(sb.ProjectID, sb.ID), sourceAwaitDeadline(sb))
 }
 
 // awaitingSourcePush reports whether a sandbox is provisioned but cannot start

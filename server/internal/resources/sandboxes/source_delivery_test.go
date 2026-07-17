@@ -1,6 +1,7 @@
 package sandboxes
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -146,48 +147,77 @@ func TestAwaitingSourcePush(t *testing.T) {
 	}
 }
 
-// The deadline anchors the timeout, so it must be written once and never
-// re-derived. Re-deriving it on each reconcile would push it out every time the
-// sandbox was looked at, and it could never expire.
-func TestSourceAwaitDeadlineIsSetOnceAndExpires(t *testing.T) {
+// The deadline is derived from PhaseChangedAt, so the anchor must be stamped
+// once and left alone. Restamping it on each reconcile would push the deadline
+// out every time the sandbox was looked at, and it could never expire.
+func TestParkForSourcePushAnchorsAndExpires(t *testing.T) {
 	source := func() *model.GitSource {
 		return &model.GitSource{Kind: "git", Delivery: model.GitSourceDeliveryPush}
 	}
 
-	t.Run("first park sets a future deadline", func(t *testing.T) {
+	t.Run("first park stamps the anchor and sets a future deadline", func(t *testing.T) {
 		sb := &model.Sandbox{Source: source()}
+		sb.SetPhase(model.SandboxPhaseStarting)
 		before := time.Now().UTC()
 		if err := parkForSourcePush(sb); err != nil {
 			t.Fatalf("park: %v", err)
 		}
-		if sb.SourceAwaitDeadline == nil {
-			t.Fatal("no deadline was set; the sandbox would wait forever")
+		if sb.Phase != model.SandboxPhaseAwaitingSource {
+			t.Fatalf("phase = %q, want awaiting_source", sb.Phase)
 		}
-		if !sb.SourceAwaitDeadline.After(before) {
-			t.Fatalf("deadline %v is not in the future", sb.SourceAwaitDeadline)
+		if sb.PhaseChangedAt.Before(before) {
+			t.Fatalf("anchor %v predates the park", sb.PhaseChangedAt)
+		}
+		if !sourceAwaitDeadline(sb).After(before) {
+			t.Fatalf("deadline %v is not in the future", sourceAwaitDeadline(sb))
 		}
 	})
 
-	t.Run("re-parking keeps the original deadline", func(t *testing.T) {
-		original := time.Now().UTC().Add(time.Minute)
-		sb := &model.Sandbox{Source: source(), SourceAwaitDeadline: &original}
-		if err := parkForSourcePush(sb); err != nil {
-			t.Fatalf("park: %v", err)
+	t.Run("re-parking keeps the original anchor", func(t *testing.T) {
+		sb := &model.Sandbox{Source: source()}
+		sb.SetPhase(model.SandboxPhaseAwaitingSource)
+		anchor := sb.PhaseChangedAt
+		deadline := sourceAwaitDeadline(sb)
+
+		// Whatever else reconciles this sandbox, the clock must not restart.
+		for range 3 {
+			if err := parkForSourcePush(sb); err != nil {
+				t.Fatalf("re-park: %v", err)
+			}
 		}
-		if !sb.SourceAwaitDeadline.Equal(original) {
-			t.Fatalf("deadline moved to %v, want it pinned at %v", sb.SourceAwaitDeadline, original)
+		if !sb.PhaseChangedAt.Equal(anchor) {
+			t.Fatalf("anchor moved to %v, want it pinned at %v", sb.PhaseChangedAt, anchor)
+		}
+		if !sourceAwaitDeadline(sb).Equal(deadline) {
+			t.Fatalf("deadline moved to %v, want %v", sourceAwaitDeadline(sb), deadline)
 		}
 	})
 
 	t.Run("a passed deadline fails instead of parking again", func(t *testing.T) {
-		passed := time.Now().UTC().Add(-time.Second)
-		sb := &model.Sandbox{Source: source(), SourceAwaitDeadline: &passed}
+		sb := &model.Sandbox{Source: source()}
+		sb.SetPhase(model.SandboxPhaseAwaitingSource)
+		// Parked longer ago than the timeout allows.
+		sb.PhaseChangedAt = time.Now().UTC().Add(-sourcePushTimeout - time.Second)
+
 		err := parkForSourcePush(sb)
 		if err == nil {
 			t.Fatal("expired wait: got nil error, want a timeout failure")
 		}
-		if sb.Phase == model.SandboxPhaseAwaitingSource {
-			t.Fatal("sandbox parked again after its deadline passed")
+		if !strings.Contains(err.Error(), "timed out") {
+			t.Fatalf("error = %v, want a timeout failure", err)
+		}
+	})
+
+	t.Run("a sandbox still inside its deadline keeps waiting", func(t *testing.T) {
+		sb := &model.Sandbox{Source: source()}
+		sb.SetPhase(model.SandboxPhaseAwaitingSource)
+		sb.PhaseChangedAt = time.Now().UTC().Add(-sourcePushTimeout / 2)
+
+		if err := parkForSourcePush(sb); err != nil {
+			t.Fatalf("park within the deadline: %v", err)
+		}
+		if sb.Phase != model.SandboxPhaseAwaitingSource {
+			t.Fatalf("phase = %q, want it still awaiting_source", sb.Phase)
 		}
 	})
 }

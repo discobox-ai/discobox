@@ -209,7 +209,8 @@ func (*AttachSandboxExecSwitchingProtocols) attachSandboxExecRes() {}
 type CompleteSandboxSourcePushBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Full 40-character SHA-1 of the commit the client pushed and expects the sandbox to check out.
+	// Full 40-character SHA-1 of the commit the client pushed. Confirms the push delivered the source's
+	// checkout commit, which was fixed at create; a value that does not match it is rejected.
 	Commit string `json:"commit"`
 }
 
@@ -9613,6 +9614,9 @@ type Worker struct {
 	ProviderInstanceId string `json:"providerInstanceId"`
 	// Worker public key.
 	PublicKey OptString `json:"publicKey"`
+	// When phase last changed to its current value. Anchors how long the resource has been in a phase,
+	// for timeouts that must not be reset by unrelated reconciles.
+	PhaseChangedAt OptDateTime `json:"phaseChangedAt"`
 	// Whether the worker is alive and healthy.
 	Ready bool `json:"ready"`
 	// Registration timestamp.
@@ -9735,6 +9739,11 @@ func (s *Worker) GetProviderInstanceId() string {
 // GetPublicKey returns the value of PublicKey.
 func (s *Worker) GetPublicKey() OptString {
 	return s.PublicKey
+}
+
+// GetPhaseChangedAt returns the value of PhaseChangedAt.
+func (s *Worker) GetPhaseChangedAt() OptDateTime {
+	return s.PhaseChangedAt
 }
 
 // GetReady returns the value of Ready.
@@ -9875,6 +9884,11 @@ func (s *Worker) SetProviderInstanceId(val string) {
 // SetPublicKey sets the value of PublicKey.
 func (s *Worker) SetPublicKey(val OptString) {
 	s.PublicKey = val
+}
+
+// SetPhaseChangedAt sets the value of PhaseChangedAt.
+func (s *Worker) SetPhaseChangedAt(val OptDateTime) {
+	s.PhaseChangedAt = val
 }
 
 // SetReady sets the value of Ready.

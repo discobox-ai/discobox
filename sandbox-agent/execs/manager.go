@@ -577,6 +577,23 @@ func (m *Manager) refreshExec(ctx context.Context, exec Exec, runtimePresent boo
 		exec.Status = StatusLost
 		exec.Error = "exec unit status is unavailable"
 	}
+	// The unit's main process is the shim, which deliberately outlives the
+	// command (it lingers so a late attacher can replay output and read the exit
+	// code). A live unit therefore does not mean a running command, and writing
+	// the unit-derived "running" below would stomp the exit status the shim
+	// records in this same file. While the shim is reachable it is the authority:
+	// overlay its status so a finished command reads exited here and the
+	// early-return above then pins it.
+	if exec.Status == StatusStarting || exec.Status == StatusRunning {
+		// The stat gate keeps refresh cheap on hot paths: no socket file means no
+		// shim to ask (not yet listening, or already torn down), and the probe's
+		// dial retry would otherwise charge its full timeout to every list/get.
+		if _, err := os.Stat(exec.SocketPath); err == nil {
+			if status, err := shimproxy.StatusJSON[Exec](ctx, exec.SocketPath); err == nil {
+				exec = mergeExecStatus(exec, status)
+			}
+		}
+	}
 	_ = writeRuntime(exec.RuntimePath, exec)
 	_ = m.observe(ctx, exec)
 	return exec
