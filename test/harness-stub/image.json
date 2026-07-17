@@ -1,0 +1,12 @@
+{
+  "apiVersion": "discobox.dev/image/v1",
+  "harness": {
+    "id": "stub",
+    "name": "Stub",
+    "description": "Test-only harness whose configure flow succeeds instantly without credentials.",
+    "runCommand": ["sh"],
+    "config": {
+      "command": ["/usr/local/libexec/discobox/configure-stub"]
+    }
+  }
+}

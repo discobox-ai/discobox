@@ -61,6 +61,8 @@ sequenceDiagram
 - Re-configuring is allowed and clobbers any in-flight attempt, so an abandoned
   run cannot wedge a harness. The reconciler is a **janitor only**: it reaps
   configure sandboxes left uncommitted past `configureTTL`, and touches no agent.
+- To exercise or troubleshoot this whole flow without a real credential, use the
+  stub harness fixture: `test/harness-stub/README.md`.
 
 ### Seeding the previous configuration
 

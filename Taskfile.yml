@@ -58,6 +58,15 @@ tasks:
       - task: build:worker-agent-image
       - task: build:harness-images
 
+  build:harness-stub-image:
+    desc: Build the test-only stub harness image (see test/harness-stub/README.md)
+    cmds:
+      - >-
+        docker build -f test/harness-stub/Dockerfile
+        --build-arg SANDBOX_AGENT_IMAGE="$(grep -s '^DISCOBOX_DEFAULT_SANDBOX_IMAGE=' .env | cut -d= -f2- | grep . || echo discobox-sandbox-agent:local)"
+        --build-arg HARNESS_METADATA="$(jq -c .harness test/harness-stub/image.json)"
+        -t discobox-harness-stub:local test/harness-stub
+
   build:harness-images:
     desc: Build the sandbox base and one local image for each included harness
     cmds:
