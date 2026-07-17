@@ -36,3 +36,6 @@ Use `Rejected` for decisions considered and declined; keep the file.
 | --- | --- | --- |
 | [0001](0001-sandbox-origin-and-remote-source-push.md) | Sandbox origin and remote source push | Proposed |
 | [0002](0002-harness-config-is-the-only-harness-concept.md) | Harness config is the only harness concept | Proposed |
+| [0003](0003-promote-pool-to-a-first-class-primitive.md) | Promote pool to a first-class primitive | Proposed |
+| [0004](0004-user-namespaces-are-the-default-isolation.md) | User namespaces are the default isolation | Proposed |
+| [0005](0005-kubernetes-backend-is-a-worker-driver.md) | Kubernetes backend is a worker driver | Proposed |
