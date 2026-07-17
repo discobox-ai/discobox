@@ -30,12 +30,31 @@ need one.
 
 Use `Rejected` for decisions considered and declined; keep the file.
 
+## Workflow
+
+Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
+
+1. **Decide first.** Draft the ADR as `Proposed` and land it on its own,
+   before implementation. Flipping it to `Accepted` is the decision gate —
+   with review, the ADR's PR is where the review happens, and merge means
+   accepted. Keep the status in the ADR header and the index table in sync.
+2. **The accepted ADR is the spec** while implementation is in flight.
+   `DESIGN.md` never describes in-progress or planned work — only what exists.
+3. **DESIGN.md rides the code.** Each change that alters the architecture
+   updates the affected `DESIGN.md` files in the same change, not as a
+   follow-up pass. When the ADR's work fully lands, the live design docs
+   describe the new state and the ADR keeps only the why.
+4. **Plans are not documents.** Sequencing, checklists, and rollout order live
+   in the task or branch driving the work; they are meant to go stale.
+5. **Wrong decisions:** an `Accepted` ADR may still be amended while nothing
+   has shipped against it. Once implementation has landed, supersede instead.
+
 ## Index
 
 | ADR | Title | Status |
 | --- | --- | --- |
-| [0001](0001-sandbox-origin-and-remote-source-push.md) | Sandbox origin and remote source push | Proposed |
-| [0002](0002-harness-config-is-the-only-harness-concept.md) | Harness config is the only harness concept | Proposed |
-| [0003](0003-promote-pool-to-a-first-class-primitive.md) | Promote pool to a first-class primitive | Proposed |
+| [0001](0001-sandbox-origin-and-remote-source-push.md) | Sandbox origin and remote source push | Accepted |
+| [0002](0002-harness-config-is-the-only-harness-concept.md) | Harness config is the only harness concept | Accepted |
+| [0003](0003-promote-pool-to-a-first-class-primitive.md) | Promote pool to a first-class primitive | Accepted |
 | [0004](0004-user-namespaces-are-the-default-isolation.md) | User namespaces are the default isolation | Proposed |
 | [0005](0005-kubernetes-backend-is-a-worker-driver.md) | Kubernetes backend is a worker driver | Proposed |

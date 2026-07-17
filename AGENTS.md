@@ -117,7 +117,21 @@ the relevant `DESIGN.md`; most changes need no ADR.
 
 ADRs are immutable once accepted — supersede, never edit. They live outside the
 `DESIGN.md`/`REVIEW.md` drill-down hierarchy and are not read root-down: they
-are history, while `DESIGN.md` is current state. When ADR work lands, update the
-live design docs to describe what now exists.
+are history, while `DESIGN.md` is current state.
+
+The process is Nygard-style ADRs plus current-state design docs:
+
+1. Draft the ADR as `Proposed` and land it on its own before implementation.
+   Flipping it to `Accepted` is the decision gate; implementation builds
+   against an accepted ADR.
+2. During implementation, the accepted ADR is the spec. `DESIGN.md` never
+   describes in-progress or planned work.
+3. Every change that alters the architecture updates the affected `DESIGN.md`
+   files in the same change as the code, so design docs and code are never out
+   of sync.
+4. Sequencing and implementation plans belong in the task/branch that does the
+   work, never in an ADR or `DESIGN.md`.
+5. If implementation proves a decision wrong: amend while nothing has shipped
+   against it, supersede after.
 
 See `docs/adr/README.md`.

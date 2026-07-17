@@ -1,6 +1,6 @@
 # 0002 — Harness config is the only harness concept
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-16
 
 ## Context

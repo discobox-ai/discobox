@@ -1,6 +1,6 @@
 # 0003 — Promote pool to a first-class primitive
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-07-17
 
 ## Context
