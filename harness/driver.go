@@ -18,6 +18,20 @@ const (
 	// ImageLabel is the OCI image-config label containing the JSON-encoded,
 	// non-secret harness metadata used when a harness image is registered.
 	ImageLabel = "io.discobox.harness.v1"
+
+	// ConfigureOutputPath is where a harness's configure command writes the
+	// secrets and files it collected, for the control plane to read back before
+	// the ephemeral configure sandbox is deleted.
+	//
+	// ConfigurePreviousConfigPath is where the control plane seeds the previous
+	// configuration before re-running configure, so a configure command may
+	// pre-fill from it. It is informational input only: secrets are never set up
+	// from it automatically.
+	//
+	// Both are fixed points of the image contract rather than per-image settings —
+	// the configure commands hardcode them too.
+	ConfigureOutputPath         = "/run/discobox/harness-configure.json"
+	ConfigurePreviousConfigPath = "/run/discobox/harness-previous-config.json"
 )
 
 type Harness struct {
@@ -43,11 +57,11 @@ type Image struct {
 }
 
 // ImageMode describes the interactive configuration command supported by an
-// image. Config output is written to ResultPath and collected before the
-// ephemeral configuration sandbox is deleted.
+// image. The command writes its result to ConfigureOutputPath and may read the
+// previous configuration from ConfigurePreviousConfigPath; both paths are part
+// of the contract, so the image only declares the command.
 type ImageMode struct {
-	Command    []string `json:"command"`
-	ResultPath string   `json:"resultPath,omitempty"`
+	Command []string `json:"command"`
 }
 
 // Definition is a built-in shortcut for registering an included harness image.

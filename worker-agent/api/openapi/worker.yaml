@@ -73,6 +73,12 @@ components:
             properties:
                 checkout:
                     "$ref": "#/components/schemas/GitSourceCheckout"
+                delivery:
+                    description: How the source reaches the sandbox. clone fetches from url or localDirectory; push initializes an empty repository for the client to push into. Defaults to clone.
+                    enum:
+                    - clone
+                    - push
+                    type: string
                 destination:
                     "$ref": "#/components/schemas/GitSourceDestination"
                 kind:

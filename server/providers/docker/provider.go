@@ -84,7 +84,32 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 		_ = engine.Close()
 		return nil, err
 	}
-	return workerpool.New(engine, Definition(), cfg.WorkerPoolConfig(), workerManager), nil
+	definition := Definition()
+	definition.LocalSourceBind = localSourceBindSupported(driver.DaemonHost())
+	return workerpool.New(engine, definition, cfg.WorkerPoolConfig(), workerManager), nil
+}
+
+// localSourceBindSupported reports whether containers on daemonHost share a
+// filesystem with this process, so a local source directory can be bind-mounted
+// into a sandbox.
+//
+// Only socket transports qualify. A socket means the daemon is on this machine,
+// including Docker Desktop, which shares host paths into its VM transparently.
+// ssh:// and remote tcp:// daemons cannot see these files at all, and a
+// tcp://localhost daemon may be forwarded anywhere, so none of them qualify:
+// binding a path the daemon cannot resolve fails at run time, while declining
+// costs only a source push.
+func localSourceBindSupported(daemonHost string) bool {
+	scheme, _, ok := strings.Cut(strings.TrimSpace(daemonHost), "://")
+	if !ok {
+		return false
+	}
+	switch scheme {
+	case "unix", "npipe":
+		return true
+	default:
+		return false
+	}
 }
 
 // engineConfig maps the docker provider configuration to the shared engine

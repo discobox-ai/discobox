@@ -358,15 +358,23 @@ func workerGitSource(in model.GitSource) (workerapimodel.GitSource, error) {
 	if out.Kind == "" {
 		out.Kind = workerclient.GitSourceKindGit
 	}
-	if in.URL != nil && *in.URL != "" {
-		parsed, err := url.Parse(*in.URL)
-		if err != nil {
-			return out, err
+	// A push-delivered source names a repository this worker cannot reach. Its
+	// URL and directory are deliberately not forwarded, so the worker cannot
+	// try; the client pushes the commits in instead.
+	push := in.Delivery == model.GitSourceDeliveryPush
+	if push {
+		out.Delivery = workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush)
+	} else {
+		if in.URL != nil && *in.URL != "" {
+			parsed, err := url.Parse(*in.URL)
+			if err != nil {
+				return out, err
+			}
+			out.URL = workerclient.NewOptURI(*parsed)
 		}
-		out.URL = workerclient.NewOptURI(*parsed)
-	}
-	if in.LocalDirectory != nil {
-		out.LocalDirectory = workerclient.NewOptString(*in.LocalDirectory)
+		if in.LocalDirectory != nil {
+			out.LocalDirectory = workerclient.NewOptString(*in.LocalDirectory)
+		}
 	}
 	if in.Checkout != nil {
 		checkout := workerapimodel.GitSourceCheckout{}
@@ -381,6 +389,10 @@ func workerGitSource(in model.GitSource) (workerapimodel.GitSource, error) {
 		}
 		out.Checkout = workerclient.NewOptGitSourceCheckout(checkout)
 	}
+	// A dirty workspace still has to be restored on the push path: its semantics
+	// are the base commit checked out with uncommitted changes on top, which the
+	// snapshot ref describes. Only the fetch differs — the client pushes the
+	// snapshot ref in, so the worker already has the objects.
 	if in.Workspace != nil {
 		workspace := workerapimodel.GitSourceWorkspace{}
 		if in.Workspace.Mode != "" {

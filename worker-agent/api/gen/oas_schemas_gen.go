@@ -172,7 +172,10 @@ func (s *ErrorModelStatusCode) SetResponse(val ErrorModel) {
 
 // Ref: #/components/schemas/GitSource
 type GitSource struct {
-	Checkout       OptGitSourceCheckout    `json:"checkout"`
+	Checkout OptGitSourceCheckout `json:"checkout"`
+	// How the source reaches the sandbox. clone fetches from url or localDirectory; push initializes an
+	// empty repository for the client to push into. Defaults to clone.
+	Delivery       OptGitSourceDelivery    `json:"delivery"`
 	Destination    OptGitSourceDestination `json:"destination"`
 	Kind           GitSourceKind           `json:"kind"`
 	LocalDirectory OptString               `json:"localDirectory"`
@@ -185,6 +188,11 @@ type GitSource struct {
 // GetCheckout returns the value of Checkout.
 func (s *GitSource) GetCheckout() OptGitSourceCheckout {
 	return s.Checkout
+}
+
+// GetDelivery returns the value of Delivery.
+func (s *GitSource) GetDelivery() OptGitSourceDelivery {
+	return s.Delivery
 }
 
 // GetDestination returns the value of Destination.
@@ -220,6 +228,11 @@ func (s *GitSource) GetWorkspace() OptGitSourceWorkspace {
 // SetCheckout sets the value of Checkout.
 func (s *GitSource) SetCheckout(val OptGitSourceCheckout) {
 	s.Checkout = val
+}
+
+// SetDelivery sets the value of Delivery.
+func (s *GitSource) SetDelivery(val OptGitSourceDelivery) {
+	s.Delivery = val
 }
 
 // SetDestination sets the value of Destination.
@@ -287,6 +300,49 @@ func (s *GitSourceCheckout) SetRefName(val OptString) {
 // SetRefType sets the value of RefType.
 func (s *GitSourceCheckout) SetRefType(val OptString) {
 	s.RefType = val
+}
+
+// How the source reaches the sandbox. clone fetches from url or localDirectory; push initializes an
+// empty repository for the client to push into. Defaults to clone.
+type GitSourceDelivery string
+
+const (
+	GitSourceDeliveryClone GitSourceDelivery = "clone"
+	GitSourceDeliveryPush  GitSourceDelivery = "push"
+)
+
+// AllValues returns all GitSourceDelivery values.
+func (GitSourceDelivery) AllValues() []GitSourceDelivery {
+	return []GitSourceDelivery{
+		GitSourceDeliveryClone,
+		GitSourceDeliveryPush,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s GitSourceDelivery) MarshalText() ([]byte, error) {
+	switch s {
+	case GitSourceDeliveryClone:
+		return []byte(s), nil
+	case GitSourceDeliveryPush:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *GitSourceDelivery) UnmarshalText(data []byte) error {
+	switch GitSourceDelivery(data) {
+	case GitSourceDeliveryClone:
+		*s = GitSourceDeliveryClone
+		return nil
+	case GitSourceDeliveryPush:
+		*s = GitSourceDeliveryPush
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Ref: #/components/schemas/GitSourceDestination
@@ -699,6 +755,52 @@ func (o OptGitSourceCheckout) Get() (v GitSourceCheckout, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptGitSourceCheckout) Or(d GitSourceCheckout) GitSourceCheckout {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptGitSourceDelivery returns new OptGitSourceDelivery with value set to v.
+func NewOptGitSourceDelivery(v GitSourceDelivery) OptGitSourceDelivery {
+	return OptGitSourceDelivery{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptGitSourceDelivery is optional GitSourceDelivery.
+type OptGitSourceDelivery struct {
+	Value GitSourceDelivery
+	Set   bool
+}
+
+// IsSet returns true if OptGitSourceDelivery was set.
+func (o OptGitSourceDelivery) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptGitSourceDelivery) Reset() {
+	var v GitSourceDelivery
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptGitSourceDelivery) SetTo(v GitSourceDelivery) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptGitSourceDelivery) Get() (v GitSourceDelivery, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptGitSourceDelivery) Or(d GitSourceDelivery) GitSourceDelivery {
 	if v, ok := o.Get(); ok {
 		return v
 	}

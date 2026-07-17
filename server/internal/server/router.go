@@ -39,6 +39,8 @@ type AppOptions struct {
 
 	SandboxReconcileJobConcurrency int
 	DefaultSandboxImage            string
+	// HostID identifies the machine this server runs on; see config.Config.
+	HostID string
 
 	// HarnessImages overrides built-in harness definition images, keyed by
 	// definition ID (dev builds inject freshly tagged images this way).
@@ -101,15 +103,13 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		SandboxReconcileJobConcurrency: opts.SandboxReconcileJobConcurrency,
 	}, broker)
 	appServices.SetDefaultSandboxImage(opts.DefaultSandboxImage)
+	appServices.SetHostID(opts.HostID)
 	appServices.SetHarnessImages(opts.HarnessImages)
 	if opts.SecretSealer != nil {
 		appServices.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.SecretSealer))
 	}
 	appServices.SetWorkerAgentAuthManager(workeragentauth.NewManager(appStore, opts.SecretSealer))
 	if err := appServices.InitializeDefaults(ctx, opts.UserID); err != nil {
-		return nil, err
-	}
-	if err := appServices.ReconcileHarnessDefinitionImages(ctx); err != nil {
 		return nil, err
 	}
 	if err := appServices.Start(ctx); err != nil {

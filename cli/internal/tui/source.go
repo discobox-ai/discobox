@@ -53,37 +53,17 @@ type HarnessConfig struct {
 	Name string
 	// Slug is the stable, URL-safe selector used with `run -H`.
 	Slug string
-	// Image is the resolved harness image (custom harnesses set it directly;
-	// definition-backed ones inherit it from the definition).
+	// Image is the harness image.
 	Image string
-	// DefinitionID names the built-in definition this config was created from;
-	// empty for custom images.
-	DefinitionID string
+	// BuiltIn marks one of the included harnesses the server seeds.
+	BuiltIn bool
+	// Configured reports whether the harness's configure flow has succeeded.
+	// Only configured harnesses can be run.
+	Configured bool
 	// Default marks the project's default harness.
 	Default bool
 	Created time.Time
 	Updated time.Time
-}
-
-// HarnessDefinition is a built-in harness definition offered as a starting point
-// when creating a new coding agent.
-type HarnessDefinition struct {
-	ID          string
-	Name        string
-	Description string
-	Image       string
-}
-
-// SaveHarnessRequest creates or updates a harness config. An empty ID creates a
-// new config; a non-empty ID updates that config's name. A non-empty
-// DefinitionID creates the config from a built-in definition; otherwise Image
-// (with Name/Slug) defines a custom harness.
-type SaveHarnessRequest struct {
-	ID           string
-	DefinitionID string
-	Name         string
-	Slug         string
-	Image        string
 }
 
 // DataSource is the set of operations the TUI performs against the control
@@ -114,13 +94,9 @@ type DataSource interface {
 	// ListHarnessConfigs returns the project's harness configs (coding agents),
 	// marking the project default.
 	ListHarnessConfigs(ctx context.Context) ([]HarnessConfig, error)
-	// ListHarnessDefinitions returns the built-in harness definitions offered as
-	// starting points when creating a new coding agent.
-	ListHarnessDefinitions(ctx context.Context) ([]HarnessDefinition, error)
-	// SaveHarness creates or updates a harness config and returns it.
-	SaveHarness(ctx context.Context, req SaveHarnessRequest) (HarnessConfig, error)
-	// DeleteHarness deletes a single harness config by ID.
-	DeleteHarness(ctx context.Context, id string) error
+	// DeconfigureHarness removes what the harness's configure flow created and
+	// marks it unconfigured. The harness itself is kept.
+	DeconfigureHarness(ctx context.Context, id string) error
 	// SetDefaultHarness makes the harness config the project default.
 	SetDefaultHarness(ctx context.Context, id string) error
 	// ConfigureHarness runs the agent's interactive configure flow against the

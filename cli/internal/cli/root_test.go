@@ -222,13 +222,6 @@ func TestQuietListWritersPrintFullIDsOnly(t *testing.T) {
 			want: "worker-full-id\n",
 		},
 		{
-			name: "harness definitions",
-			write: func(cmd *cobra.Command) error {
-				return app.writeHarnessDefinitions(cmd, []apimodel.HarnessDefinition{{ID: "definition-full-id"}})
-			},
-			want: "definition-full-id\n",
-		},
-		{
 			name: "harnesses",
 			write: func(cmd *cobra.Command) error {
 				return app.writeHarnesses(cmd, []apimodel.HarnessConfig{{ID: "harness-full-id"}})
@@ -697,8 +690,8 @@ func TestHarnessListShowsProjectDefault(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/harness-configs":
 			_, _ = w.Write([]byte(`{"harnessConfigs":[` +
-				`{"id":"harness-other-full-id","projectId":"project-1","slug":"other","name":"Other","runCommand":["other"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"},` +
-				`{"id":"` + defaultHarnessID + `","projectId":"project-1","slug":"codex","name":"Codex","runCommand":["codex"],"createdAt":"2026-01-01T00:01:00Z","updatedAt":"2026-01-01T00:01:00Z"}` +
+				`{"id":"harness-other-full-id","projectId":"project-1","slug":"other","name":"Other","builtIn":false,"configured":false,"runCommand":["other"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"},` +
+				`{"id":"` + defaultHarnessID + `","projectId":"project-1","slug":"codex","name":"Codex","builtIn":true,"configured":true,"runCommand":["codex"],"createdAt":"2026-01-01T00:01:00Z","updatedAt":"2026-01-01T00:01:00Z"}` +
 				`]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1":
 			_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","slug":"project-1","default":true,"defaultHarnessConfigId":"` + defaultHarnessID + `","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
@@ -729,201 +722,6 @@ func TestHarnessListShowsProjectDefault(t *testing.T) {
 	}
 	if strings.Contains(output, "Other  yes") {
 		t.Fatalf("output = %q, non-default harness marked default", output)
-	}
-}
-
-func TestHarnessEnableCreatesDefinitionWhenMissing(t *testing.T) {
-	const harnessID = "harness-full-id"
-	requested := map[string]int{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requested[r.Method+" "+r.URL.Path]++
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/harness-definitions":
-			_, _ = w.Write([]byte(`{"harnessDefinitions":[{"id":"codex","name":"Codex","description":"OpenAI Codex coding harness.","image":"discobox-harness-codex:local"}]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/harness-configs":
-			_, _ = w.Write([]byte(`{"harnessConfigs":[]}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/harness-configs":
-			var body struct {
-				DefinitionID string `json:"definitionId"`
-			}
-			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-				t.Fatalf("decode create body: %v", err)
-			}
-			if body.DefinitionID != "codex" {
-				t.Fatalf("definitionId = %q, want codex", body.DefinitionID)
-			}
-			_, _ = w.Write([]byte(`{"id":"` + harnessID + `","projectId":"project-1","slug":"codex","name":"Codex","runCommand":["codex"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
-		case r.Method == http.MethodPut && r.URL.Path == "/projects/project-1/harness-configs/"+harnessID+"/default":
-			_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","slug":"project-1","default":true,"defaultHarnessConfigId":"` + harnessID + `","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
-		default:
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	cmd := NewRootCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "harnesses", "enable", "Codex"})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("execute harness enable: %v", err)
-	}
-	if requested[http.MethodPost+" /projects/project-1/harness-configs"] != 1 {
-		t.Fatalf("create requests = %d, want 1", requested[http.MethodPost+" /projects/project-1/harness-configs"])
-	}
-	if requested[http.MethodPut+" /projects/project-1/harness-configs/"+harnessID+"/default"] != 1 {
-		t.Fatalf("set default requests = %d, want 1", requested[http.MethodPut+" /projects/project-1/harness-configs/"+harnessID+"/default"])
-	}
-	if output := out.String(); !strings.Contains(output, harnessID) || !strings.Contains(output, "Codex") {
-		t.Fatalf("output = %q, want created harness", output)
-	}
-}
-
-func TestHarnessEnableDoesNothingWhenDefinitionAlreadyEnabled(t *testing.T) {
-	const harnessID = "harness-full-id"
-	requested := map[string]int{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requested[r.Method+" "+r.URL.Path]++
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/harness-definitions":
-			_, _ = w.Write([]byte(`{"harnessDefinitions":[{"id":"codex","name":"Codex","description":"OpenAI Codex coding harness.","image":"discobox-harness-codex:local"}]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/harness-configs":
-			_, _ = w.Write([]byte(`{"harnessConfigs":[{"id":"` + harnessID + `","projectId":"project-1","slug":"codex","name":"Codex","runCommand":["codex"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`))
-		default:
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	cmd := NewRootCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "harnesses", "enabled", "codex"})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("execute harness enabled: %v", err)
-	}
-	if requested[http.MethodPost+" /projects/project-1/harness-configs"] != 0 {
-		t.Fatalf("create requests = %d, want 0", requested[http.MethodPost+" /projects/project-1/harness-configs"])
-	}
-	if requested[http.MethodPut+" /projects/project-1/harness-configs/"+harnessID+"/default"] != 0 {
-		t.Fatalf("set default requests = %d, want 0", requested[http.MethodPut+" /projects/project-1/harness-configs/"+harnessID+"/default"])
-	}
-	if output := out.String(); !strings.Contains(output, harnessID) || !strings.Contains(output, "Codex") {
-		t.Fatalf("output = %q, want existing harness", output)
-	}
-}
-
-func TestHarnessEnableDefaultFlagSetsExistingDefinitionHarnessDefault(t *testing.T) {
-	const harnessID = "harness-full-id"
-	requested := map[string]int{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requested[r.Method+" "+r.URL.Path]++
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/harness-definitions":
-			_, _ = w.Write([]byte(`{"harnessDefinitions":[{"id":"codex","name":"Codex","description":"OpenAI Codex coding harness.","image":"discobox-harness-codex:local"}]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/harness-configs":
-			_, _ = w.Write([]byte(`{"harnessConfigs":[{"id":"` + harnessID + `","projectId":"project-1","slug":"codex","name":"Codex","runCommand":["codex"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`))
-		case r.Method == http.MethodPut && r.URL.Path == "/projects/project-1/harness-configs/"+harnessID+"/default":
-			_, _ = w.Write([]byte(`{"id":"project-1","ownerUserId":"user-1","name":"Project","slug":"project-1","default":true,"defaultHarnessConfigId":"` + harnessID + `","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
-		default:
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	cmd := NewRootCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "harnesses", "enable", "-d", "codex"})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("execute harness enable -d: %v", err)
-	}
-	if requested[http.MethodPost+" /projects/project-1/harness-configs"] != 0 {
-		t.Fatalf("create requests = %d, want 0", requested[http.MethodPost+" /projects/project-1/harness-configs"])
-	}
-	if requested[http.MethodPut+" /projects/project-1/harness-configs/"+harnessID+"/default"] != 1 {
-		t.Fatalf("set default requests = %d, want 1", requested[http.MethodPut+" /projects/project-1/harness-configs/"+harnessID+"/default"])
-	}
-	if output := out.String(); !strings.Contains(output, harnessID) || !strings.Contains(output, "Codex") {
-		t.Fatalf("output = %q, want existing harness", output)
-	}
-}
-
-func TestHarnessDisableDeletesDefinitionHarnessWhenPresent(t *testing.T) {
-	const harnessID = "harness-full-id"
-	requested := map[string]int{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requested[r.Method+" "+r.URL.Path]++
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/harness-definitions":
-			_, _ = w.Write([]byte(`{"harnessDefinitions":[{"id":"codex","name":"Codex","description":"OpenAI Codex coding harness.","image":"discobox-harness-codex:local"}]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/harness-configs":
-			_, _ = w.Write([]byte(`{"harnessConfigs":[{"id":"` + harnessID + `","projectId":"project-1","slug":"codex","name":"Codex","runCommand":["codex"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`))
-		case r.Method == http.MethodDelete && r.URL.Path == "/projects/project-1/harness-configs/"+harnessID:
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	cmd := NewRootCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "harnesses", "disable", "Codex"})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("execute harness disable: %v", err)
-	}
-	if requested[http.MethodDelete+" /projects/project-1/harness-configs/"+harnessID] != 1 {
-		t.Fatalf("delete requests = %d, want 1", requested[http.MethodDelete+" /projects/project-1/harness-configs/"+harnessID])
-	}
-	if got, want := out.String(), harnessID+" deleted\n"; got != want {
-		t.Fatalf("output = %q, want %q", got, want)
-	}
-}
-
-func TestHarnessDisableDoesNothingWhenDefinitionHarnessMissing(t *testing.T) {
-	requested := map[string]int{}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requested[r.Method+" "+r.URL.Path]++
-		w.Header().Set("Content-Type", "application/json")
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/harness-definitions":
-			_, _ = w.Write([]byte(`{"harnessDefinitions":[{"id":"codex","name":"Codex","description":"OpenAI Codex coding harness.","image":"discobox-harness-codex:local"}]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/harness-configs":
-			_, _ = w.Write([]byte(`{"harnessConfigs":[]}`))
-		default:
-			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	cmd := NewRootCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(io.Discard)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "harnesses", "disable", "Codex"})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("execute harness disable: %v", err)
-	}
-	if requested[http.MethodDelete+" /projects/project-1/harness-configs/harness-full-id"] != 0 {
-		t.Fatalf("delete requests = %d, want 0", requested[http.MethodDelete+" /projects/project-1/harness-configs/harness-full-id"])
-	}
-	if got := out.String(); got != "" {
-		t.Fatalf("output = %q, want empty", got)
 	}
 }
 
@@ -999,7 +797,7 @@ func TestHarnessCreateSendsCreateOnlyFileFlag(t *testing.T) {
 		}
 		gotFiles = body.Files
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"` + harnessID + `","projectId":"project-1","slug":"custom","name":"Custom","runCommand":["claude"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+		_, _ = w.Write([]byte(`{"id":"` + harnessID + `","projectId":"project-1","slug":"custom","name":"Custom","builtIn":false,"configured":false,"runCommand":["claude"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	}))
 	t.Cleanup(server.Close)
 
@@ -1052,7 +850,7 @@ func TestHarnessCreateSendsFilesFlag(t *testing.T) {
 		}
 		gotFiles = body.Files
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"` + harnessID + `","projectId":"project-1","slug":"custom","name":"Custom","runCommand":["claude"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
+		_, _ = w.Write([]byte(`{"id":"` + harnessID + `","projectId":"project-1","slug":"custom","name":"Custom","builtIn":false,"configured":false,"runCommand":["claude"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}`))
 	}))
 	t.Cleanup(server.Close)
 

@@ -79,6 +79,21 @@ type ProviderDefinition struct {
 	Icon         string                `json:"icon,omitempty"`
 	Description  string                `json:"description,omitempty"`
 	ConfigFields []ProviderConfigField `json:"configFields,omitempty"`
+
+	// LocalSourceBind reports whether this provider instance runs its sandboxes
+	// on the control plane's own filesystem, so a client-local source directory
+	// can be bind-mounted and cloned in place.
+	//
+	// This is per instance, not per driver: the same driver is local or remote
+	// depending on its configuration, so instances decide it at construction
+	// rather than the package-level Definition doing so. It answers only "can
+	// this provider reach the control plane's files"; whether those are the
+	// *client's* files additionally requires the client to be on the same host,
+	// which the provider cannot know. Callers must check both.
+	//
+	// Default false: a wrong false costs a source push, a wrong true produces a
+	// sandbox bound to a path that does not exist.
+	LocalSourceBind bool `json:"localSourceBind,omitempty"`
 }
 
 // ProviderStatus describes runtime provider availability.

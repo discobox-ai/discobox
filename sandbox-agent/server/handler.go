@@ -40,6 +40,13 @@ func (h *handler) AttachSandboxExec(context.Context, sandboxapi.AttachSandboxExe
 	return nil, statusError{status: http.StatusNotImplemented, message: "sandbox exec attach is not implemented by generated handler"}
 }
 
+// AttachSandboxExecOnce is served by the chi route ahead of the generated
+// server (see oneShotExecHTTP), which streams the request body to the exec's
+// stdin rather than buffering it through a generated model.
+func (h *handler) AttachSandboxExecOnce(context.Context, sandboxapi.AttachSandboxExecOnceReq, sandboxapi.AttachSandboxExecOnceParams) (sandboxapi.AttachSandboxExecOnceOK, error) {
+	return sandboxapi.AttachSandboxExecOnceOK{}, statusError{status: http.StatusNotImplemented, message: "sandbox exec one-shot attach is not implemented by generated handler"}
+}
+
 // resolveExecID maps the virtual primary exec id to the sandbox's current
 // primary terminal, relaunching it when it has stopped; every other id passes
 // through unchanged. Use it for attach/start, where resuming a stopped primary
@@ -87,6 +94,62 @@ func (h *handler) attachExecHTTP(w http.ResponseWriter, r *http.Request, execID 
 		return
 	}
 }
+
+// oneShotExecHTTP runs a prepared exec to completion in a single request: the
+// request body is its stdin, and the response body is everything it emitted.
+//
+// This is the non-interactive counterpart to the websocket attach, for callers
+// that just want to feed a command bytes and read its output. It starts the exec
+// itself, so callers must not have started it: an attach has to be in place
+// before the process runs, or its output is lost. The exit status is read from
+// the exec record afterward rather than encoded here — the body is the output as
+// the exec produced it, nothing more.
+func (h *handler) oneShotExecHTTP(w http.ResponseWriter, r *http.Request, execID string) {
+	execID, err := h.resolveExecID(r.Context(), execID)
+	if err != nil {
+		writeExecResolveError(w, err)
+		return
+	}
+	stdin, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxOneShotStdinBytes))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, sandboxapi.ErrorResponse{Error: "read request body: " + err.Error()})
+		return
+	}
+	done := make(chan struct{})
+	var out []byte
+	var attachErr error
+	go func() {
+		defer close(done)
+		out, attachErr = h.execs.AttachOneShot(r.Context(), execID, stdin)
+	}()
+	// The attach must be connected before the process starts, so start only after
+	// AttachOneShot is under way.
+	if _, err := h.execs.Start(r.Context(), execID); err != nil {
+		<-done
+		if errors.Is(err, execs.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, sandboxapi.ErrorResponse{Error: "sandbox exec not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, sandboxapi.ErrorResponse{Error: err.Error()})
+		return
+	}
+	<-done
+	if attachErr != nil {
+		if errors.Is(attachErr, execs.ErrNotFound) {
+			writeJSON(w, http.StatusNotFound, sandboxapi.ErrorResponse{Error: "sandbox exec not found"})
+			return
+		}
+		writeJSON(w, http.StatusInternalServerError, sandboxapi.ErrorResponse{Error: attachErr.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(out)
+}
+
+// maxOneShotStdinBytes bounds a one-shot exec's stdin, matching the shim's
+// per-frame payload ceiling.
+const maxOneShotStdinBytes = 16 * 1024 * 1024
 
 // writeExecResolveError renders a resolve failure as 404 for a missing primary
 // or 500 otherwise.

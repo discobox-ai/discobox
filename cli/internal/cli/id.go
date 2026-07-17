@@ -113,26 +113,6 @@ func (a *App) resolveHarnessConfigID(ctx context.Context, client *apiclientgen.C
 	return resolveShortID(id, "harness config ID", ids)
 }
 
-func (a *App) resolveHarnessDefinitionID(ctx context.Context, client *apiclientgen.Client, value string) (string, error) {
-	id, err := parseIDArg(value, "harness definition ID")
-	if err != nil || !isResolvableShortID(id) {
-		return id, err
-	}
-	res, err := client.ListHarnessDefinitions(ctx)
-	if err != nil {
-		return "", err
-	}
-	body, err := expectResponse[apimodel.ListHarnessDefinitionsBody](res)
-	if err != nil {
-		return "", err
-	}
-	ids := make([]string, 0, len(body.GetHarnessDefinitions()))
-	for _, definition := range body.GetHarnessDefinitions() {
-		ids = append(ids, definition.ID)
-	}
-	return resolveShortID(id, "harness definition ID", ids)
-}
-
 func (a *App) resolveProviderID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
 	id, err := parseIDArg(value, "provider ID")
 	if err != nil || !isResolvableShortID(id) {

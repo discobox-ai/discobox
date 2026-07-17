@@ -189,6 +189,9 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 		"config":          config,
 		"runtime":         runtime,
 	}
+	if sandbox.Origin != nil {
+		fields["origin"] = sandbox.Origin
+	}
 	if sandbox.ProviderInstanceID != nil {
 		fields["providerInstanceId"] = *sandbox.ProviderInstanceID
 	}
@@ -244,6 +247,22 @@ func SandboxesToAPI(sandboxes []model.Sandbox) ([]serverapi.Sandbox, error) {
 		out = append(out, converted)
 	}
 	return out, nil
+}
+
+// OriginToModel converts a client-declared origin, or returns nil when the
+// client sent none. Origin is recorded verbatim: it is provenance, not intent,
+// and nothing here interprets or normalizes what the client reported.
+func OriginToModel(input serverapi.OptOrigin) *model.Origin {
+	value, ok := input.Get()
+	if !ok {
+		return nil
+	}
+	return &model.Origin{
+		HostID:      strings.TrimSpace(value.HostId),
+		Hostname:    strings.TrimSpace(value.Hostname.Or("")),
+		ProjectPath: strings.TrimSpace(value.ProjectPath),
+		User:        strings.TrimSpace(value.User.Or("")),
+	}
 }
 
 func GitSourceToModel(input serverapi.GitSource) model.GitSource {

@@ -21,16 +21,17 @@ type Service struct {
 	store         *store.Store
 	inspector     imageInspector
 	harnessImages map[string]string
+	sandboxes     SandboxRuntime
+	dirtier       Dirtier
 }
 
 func NewService(store *store.Store) *Service {
 	return &Service{store: store, inspector: defaultImageInspector{}}
 }
 
-// SetHarnessImages installs per-definition image overrides (definition ID →
-// image). Dev builds use this so definition-backed configs resolve freshly
-// tagged harness images. Call ReconcileDefinitionImages afterward to refresh
-// already-stored configs.
+// SetHarnessImages installs per-harness image overrides (built-in slug → image).
+// Dev builds use this so the seeded built-ins point at freshly tagged images.
+// Call SeedBuiltIns afterward to apply them.
 func (s *Service) SetHarnessImages(images map[string]string) {
 	s.harnessImages = images
 }
@@ -51,39 +52,26 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 	if err != nil {
 		return nil, apiError(err, "project not found")
 	}
-	definitionID := ""
-	image, _ := input.Image.Get()
-	image = strings.TrimSpace(image)
-	imageDigest := ""
-	var definition *model.HarnessDefinition
-	if rawDefinitionID, isSet := input.DefinitionId.Get(); isSet && strings.TrimSpace(rawDefinitionID) != "" {
-		found, ok := s.definitionByID(strings.TrimSpace(rawDefinitionID))
-		if !ok {
-			return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config definition not found")
-		}
-		definition = found
-		definitionID = found.ID
-		if image == "" {
-			image = found.Image
-		}
+	image := strings.TrimSpace(input.Image)
+	if image == "" {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness image is required")
 	}
+	// The image label is authoritative. Inspect it once here to snapshot the
+	// harness metadata onto the config; nothing re-reads it afterward.
 	var inspected *imageMetadata
-	if image != "" && s.inspector != nil {
+	if s.inspector != nil {
 		metadata, inspectErr := s.inspector.Inspect(ctx, image)
 		if inspectErr != nil {
 			return nil, apperrors.NewStatusError(http.StatusBadRequest, inspectErr.Error())
 		}
 		inspected = &metadata
-		imageDigest = metadata.Digest
-		if definition != nil && metadata.Harness.ID != definition.ID {
-			return nil, apperrors.NewStatusError(http.StatusBadRequest,
-				fmt.Sprintf("harness image declares id %q, expected %q", metadata.Harness.ID, definition.ID))
-		}
 	}
 
+	imageDigest := ""
 	name := strings.TrimSpace(input.Name.Or(""))
 	slug := strings.TrimSpace(input.Slug.Or(""))
 	if inspected != nil {
+		imageDigest = inspected.Digest
 		if name == "" {
 			name = strings.TrimSpace(inspected.Harness.Name)
 		}
@@ -91,35 +79,14 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 			slug = strings.TrimSpace(inspected.Harness.ID)
 		}
 	}
-	explicitSlug := slug != ""
-
-	// Default the slug: an explicit slug wins, then the definition id, then a slug
-	// derived from the name.
-	if slug == "" {
-		if definitionID != "" {
-			slug = definitionID
-		} else if name != "" {
-			slug = harnessdefs.Slugify(name)
-		}
+	if slug == "" && name != "" {
+		slug = harnessdefs.Slugify(name)
 	}
-	// Default the name: an explicit slug names the config so multiple configs can
-	// extend one definition without colliding on the definition's display name;
-	// otherwise fall back to the definition name, then the slug.
 	if name == "" {
-		switch {
-		case explicitSlug:
-			name = slug
-		case definition != nil:
-			name = definition.Name
-		default:
-			name = slug
-		}
+		name = slug
 	}
 	if slug == "" || name == "" {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config name or slug is required")
-	}
-	if image == "" {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness image is required")
 	}
 	if err := harnessdefs.ValidateSlug(slug); err != nil {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
@@ -144,14 +111,13 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 	if inspected != nil {
 		runCommand, relaunchCommand, files, secrets = harnessMetadataFields(inspected.Harness)
 	}
-	if definitionID == "" && len(runCommand) == 0 {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config run command is required when no definition is provided")
+	if len(runCommand) == 0 {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config run command is required")
 	}
 
 	config := &model.HarnessConfig{
 		ProjectID:       projectID,
 		Slug:            slug,
-		DefinitionID:    definitionID,
 		Name:            name,
 		Image:           image,
 		ImageDigest:     imageDigest,
@@ -226,6 +192,16 @@ func (s *Service) DeleteHarnessConfig(ctx context.Context, projectID, configID s
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return apiError(err, "project not found")
 	}
+	config, err := s.store.GetHarnessConfig(ctx, projectID, configID)
+	if err != nil {
+		return apiError(err, "harness config not found")
+	}
+	// Deleting a built-in is meaningless: the server seeds it again on the next
+	// start. Deconfiguring is the way to turn one off.
+	if config.BuiltIn {
+		return apperrors.NewStatusError(http.StatusConflict,
+			fmt.Sprintf("harness %q is built in and cannot be deleted; run `disco box harness deconfigure %s` to turn it off", config.Slug, config.Slug))
+	}
 	if err := s.store.DeleteHarnessConfig(ctx, projectID, configID); err != nil {
 		if errors.Is(err, store.ErrInUse) {
 			return apperrors.NewStatusError(http.StatusConflict, "harness config is in use by a sandbox")
@@ -285,44 +261,58 @@ func (s *Service) DeleteHarnessConfigSecretBinding(ctx context.Context, projectI
 	return nil
 }
 
-// ReconcileDefinitionImages re-points definition-backed harness configs at the
-// definition's currently resolved image and re-snapshots its label metadata when
-// the stored image is stale. Dev rebuilds bump DISCOBOX_HARNESS_<ID>_IMAGE and
-// restart the server; this refresh is what makes existing configs pick up the
-// freshly tagged image. Best-effort per config: one that cannot be inspected is
-// left as-is and logged, so an unavailable image never blocks startup.
-func (s *Service) ReconcileDefinitionImages(ctx context.Context) error {
-	if len(s.harnessImages) == 0 || s.inspector == nil {
+// SeedBuiltIns creates the included harness configs for a project and keeps their
+// images current. Built-in configs track their image unconditionally: a dev
+// rebuild bumps DISCOBOX_HARNESS_<SLUG>_IMAGE and restarts the server, and the
+// new image is clobbered in here along with a fresh snapshot of its label
+// metadata.
+//
+// Seeding never flips Configured — a re-imaged harness keeps whatever the
+// configure flow produced. Best-effort per harness: one whose image cannot be
+// inspected is logged and skipped so an unavailable image never blocks startup.
+func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
+	if s.inspector == nil {
 		return nil
 	}
-	configs, err := s.store.ListDefinitionBackedHarnessConfigs(ctx)
-	if err != nil {
-		return err
-	}
-	for i := range configs {
-		config := &configs[i]
-		definition, ok := s.definitionByID(config.DefinitionID)
-		if !ok {
+	for _, seed := range harnessdefs.Seeds(s.harnessImages) {
+		image := strings.TrimSpace(seed.Image)
+		if image == "" {
 			continue
 		}
-		image := strings.TrimSpace(definition.Image)
-		if image == "" || image == config.Image {
-			continue
-		}
-		metadata, err := s.inspector.Inspect(ctx, image)
-		if err != nil {
-			slog.WarnContext(ctx, "skip stale harness config image refresh",
-				"harnessConfigId", config.ID, "image", image, "error", err)
-			continue
-		}
-		config.Image = image
-		config.ImageDigest = metadata.Digest
-		config.RunCommand, config.RelaunchCommand, config.Files, config.Secrets = harnessMetadataFields(metadata.Harness)
-		if err := s.store.UpdateHarnessConfig(ctx, config); err != nil {
+		existing, err := s.store.GetHarnessConfigBySlug(ctx, projectID, seed.Slug)
+		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
-		slog.InfoContext(ctx, "refreshed harness config image",
-			"harnessConfigId", config.ID, "image", image, "imageDigest", metadata.Digest)
+		if existing != nil && existing.Image == image {
+			continue
+		}
+		metadata, inspectErr := s.inspector.Inspect(ctx, image)
+		if inspectErr != nil {
+			slog.WarnContext(ctx, "skip built-in harness seed; image unavailable",
+				"slug", seed.Slug, "image", image, "error", inspectErr)
+			continue
+		}
+		if existing == nil {
+			config := &model.HarnessConfig{
+				ProjectID: projectID, Slug: seed.Slug, Name: seed.Name,
+				BuiltIn: true, Configured: false, Image: image, ImageDigest: metadata.Digest,
+			}
+			config.RunCommand, config.RelaunchCommand, config.Files, config.Secrets = harnessMetadataFields(metadata.Harness)
+			if err := s.store.CreateHarnessConfig(ctx, config); err != nil {
+				return err
+			}
+			slog.InfoContext(ctx, "seeded built-in harness config",
+				"harnessConfigId", config.ID, "slug", seed.Slug, "image", image)
+			continue
+		}
+		existing.Image = image
+		existing.ImageDigest = metadata.Digest
+		existing.RunCommand, existing.RelaunchCommand, existing.Files, existing.Secrets = harnessMetadataFields(metadata.Harness)
+		if err := s.store.UpdateHarnessConfig(ctx, existing); err != nil {
+			return err
+		}
+		slog.InfoContext(ctx, "updated built-in harness config image",
+			"harnessConfigId", existing.ID, "slug", seed.Slug, "image", image)
 	}
 	return nil
 }

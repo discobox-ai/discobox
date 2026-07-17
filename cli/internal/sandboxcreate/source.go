@@ -10,6 +10,7 @@ import (
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
+	"github.com/obot-platform/discobox/cli/internal/origin"
 	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/internal/gitutil"
 )
@@ -66,25 +67,34 @@ func resolveRunSource(ctx context.Context, sourceArg string) (resolvedRunSource,
 	return resolveLocalRunSource(ctx, source, ref, explicitRef)
 }
 
-// ResolveSourceRoot resolves a source argument to the repository identity the
-// server records for a sandbox's primary source: the local Git repository root
-// for a local path, or the remote URL for a remote repository. Any @REF suffix
-// is dropped, so every sandbox run against a repository shares one root
-// regardless of the branch or commit it checked out.
-func ResolveSourceRoot(ctx context.Context, sourceArg string) (string, error) {
+// ResolveOrigin resolves the origin of a CLI invocation acting on sourceArg:
+// the client host, and the project directory the command was run against. Any
+// @REF suffix is dropped, so every sandbox from a directory shares one origin
+// regardless of the ref it checked out.
+//
+// A remote repository has no local project directory, so the origin falls back
+// to the working directory — the sandbox is still one you started from here,
+// and "disco ls" here should list it.
+func ResolveOrigin(ctx context.Context, sourceArg string) (apimodel.Origin, error) {
 	source, _, _ := splitRunSourceRef(sourceArg)
-	source = strings.TrimSpace(source)
-	if source == "" {
-		return "", fmt.Errorf("source directory or Git repository is required")
+	dir := strings.TrimSpace(source)
+	if dir == "" || isRemoteGitSource(dir) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return apimodel.Origin{}, fmt.Errorf("resolve working directory: %w", err)
+		}
+		dir = cwd
 	}
-	if isRemoteGitSource(source) {
-		return source, nil
-	}
-	absSource, err := filepath.Abs(source)
+	return origin.Resolve(ctx, dir)
+}
+
+// OriginKey is the listing filter matching ResolveOrigin's origin.
+func OriginKey(ctx context.Context, sourceArg string) (string, error) {
+	resolved, err := ResolveOrigin(ctx, sourceArg)
 	if err != nil {
-		return "", fmt.Errorf("resolve source directory: %w", err)
+		return "", err
 	}
-	return gitutil.Root(ctx, absSource)
+	return origin.Key(resolved), nil
 }
 
 func (s resolvedRunSource) apiGitSource() (*apimodel.GitSource, error) {

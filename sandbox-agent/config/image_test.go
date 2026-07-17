@@ -28,9 +28,17 @@ func TestHarnessForConfigModeUsesImageCommand(t *testing.T) {
 	if err != nil || !ok || normal.Command[0] != "claude" {
 		t.Fatalf("normal harness = %#v, ok=%t, err=%v", normal, ok, err)
 	}
+	if len(normal.RelaunchCommand) != 2 || normal.RelaunchCommand[1] != "--continue" {
+		t.Fatalf("normal relaunch = %#v, want the image's relaunch command", normal.RelaunchCommand)
+	}
 	configured, ok, err := image.HarnessForMode("config")
 	if err != nil || !ok || configured.Command[0] != "configure-claude" {
 		t.Fatalf("config harness = %#v, ok=%t, err=%v", configured, ok, err)
+	}
+	// Relaunch is untouched by config mode: the terminal service forces the config
+	// command there and never consults it.
+	if len(configured.RelaunchCommand) != 2 || configured.RelaunchCommand[1] != "--continue" {
+		t.Fatalf("config relaunch = %#v, want the image's relaunch command", configured.RelaunchCommand)
 	}
 }
 

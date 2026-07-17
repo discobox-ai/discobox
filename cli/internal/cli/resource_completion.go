@@ -52,18 +52,6 @@ func (a *App) completeHarnessConfigNames(cmd *cobra.Command, _ []string, toCompl
 	return a.completeProjectResource(cmd, toComplete, a.listHarnessConfigNameCompletions)
 }
 
-func (a *App) completeHarnessDefinitions(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	client, err := a.apiClient()
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-	completions, err := a.listHarnessDefinitionCompletions(commandContext(cmd), client)
-	if err != nil {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-	return filterCompletions(completions, toComplete), cobra.ShellCompDirectiveNoFileComp
-}
-
 func (a *App) completeJobs(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	return a.completeProjectResource(cmd, toComplete, a.listJobCompletions)
 }
@@ -180,25 +168,6 @@ func (a *App) listHarnessConfigNameCompletions(ctx context.Context, client *apic
 	completions := make([]string, 0, len(body.GetHarnessConfigs()))
 	for _, harness := range body.GetHarnessConfigs() {
 		completions = append(completions, completionItem(harness.Name, completionDescription(harness.ID, strings.Join(harness.RunCommand, " "))))
-	}
-	return completions, nil
-}
-
-func (a *App) listHarnessDefinitionCompletions(ctx context.Context, client *apiclientgen.Client) ([]string, error) {
-	res, err := client.ListHarnessDefinitions(ctx)
-	if err != nil {
-		return nil, err
-	}
-	body, err := expectResponse[apimodel.ListHarnessDefinitionsBody](res)
-	if err != nil {
-		return nil, err
-	}
-	completions := make([]string, 0, len(body.GetHarnessDefinitions())*2)
-	for _, definition := range body.GetHarnessDefinitions() {
-		completions = append(completions, completionItem(definition.ID, completionDescription(definition.Name, definition.Description.Or(""))))
-		if definition.Name != "" && !strings.EqualFold(definition.Name, definition.ID) {
-			completions = append(completions, completionItem(definition.Name, definition.ID))
-		}
 	}
 	return completions, nil
 }

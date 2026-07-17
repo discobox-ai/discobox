@@ -1,4 +1,9 @@
-// Package harnessdefs owns built-in shortcuts for included harness images.
+// Package harnessdefs owns the seed data for the included harness images.
+//
+// There is no user-facing "definition" concept: a harness config is the single
+// harness thing. This package only supplies what the server needs to seed the
+// three built-in harness configs, and the env-override mapping dev builds use to
+// point those configs at freshly tagged images.
 package harnessdefs
 
 import (
@@ -6,63 +11,46 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/obot-platform/discobox/harness"
 	"github.com/obot-platform/discobox/harness/registry"
-
-	"github.com/obot-platform/discobox/server/internal/model"
 )
 
-// Definitions returns the built-in harness-config templates. Each is owned by its
-// harness package under github.com/obot-platform/discobox/harness and surfaced
-// through the harness registry so all harness-specific defaults live with the
-// harness they describe.
-func Definitions() []model.HarnessDefinition {
-	harnessDefinitions := registry.Definitions()
-	out := make([]model.HarnessDefinition, 0, len(harnessDefinitions))
-	for _, definition := range harnessDefinitions {
-		out = append(out, fromHarness(definition))
-	}
-	return out
+// Seed describes a built-in harness config the server seeds into a project. It
+// is owned by the harness package under github.com/obot-platform/discobox/harness
+// and surfaced through the harness registry, so harness-specific defaults live
+// with the harness they describe.
+type Seed struct {
+	// Slug is the stable selector (e.g. codex) and the built-in's identity.
+	Slug string
+	Name string
+	// Image is the harness image, already resolved against any env override.
+	Image string
 }
 
-// DefinitionByID returns the built-in definition with the given ID.
-func DefinitionByID(definitionID string) (*model.HarnessDefinition, bool) {
-	return DefinitionByIDWithImages(definitionID, nil)
-}
-
-// DefinitionsWithImages returns the built-in definitions with each image
-// replaced by imageOverrides[id] when present. Dev builds inject freshly tagged
-// images this way (see ImageEnvVar); an empty map yields the baked-in images.
-func DefinitionsWithImages(imageOverrides map[string]string) []model.HarnessDefinition {
-	harnessDefinitions := registry.Definitions()
-	out := make([]model.HarnessDefinition, 0, len(harnessDefinitions))
-	for _, definition := range harnessDefinitions {
-		out = append(out, fromHarnessWithImage(definition, imageOverrides[definition.ID]))
-	}
-	return out
-}
-
-// DefinitionByIDWithImages returns the built-in definition with the given ID,
-// applying an image override when imageOverrides holds one for that ID.
-func DefinitionByIDWithImages(definitionID string, imageOverrides map[string]string) (*model.HarnessDefinition, bool) {
-	for _, definition := range registry.Definitions() {
-		if definition.ID == definitionID {
-			converted := fromHarnessWithImage(definition, imageOverrides[definitionID])
-			return &converted, true
+// Seeds returns the built-in harness configs to seed, with each image replaced
+// by imageOverrides[slug] when present. Dev builds inject freshly tagged images
+// this way (see ImageEnvVar); an empty map yields the baked-in images.
+func Seeds(imageOverrides map[string]string) []Seed {
+	definitions := registry.Definitions()
+	out := make([]Seed, 0, len(definitions))
+	for _, definition := range definitions {
+		image := definition.Image
+		if override := strings.TrimSpace(imageOverrides[definition.ID]); override != "" {
+			image = override
 		}
+		out = append(out, Seed{Slug: definition.ID, Name: definition.Name, Image: image})
 	}
-	return nil, false
+	return out
 }
 
-// ImageEnvVar returns the environment variable that overrides a harness
-// definition's image. The dev image watcher writes the same key; keep the two
+// ImageEnvVar returns the environment variable that overrides a built-in
+// harness's image. The dev image watcher writes the same key; keep the two
 // mappings in sync.
-func ImageEnvVar(definitionID string) string {
-	return "DISCOBOX_HARNESS_" + strings.ToUpper(strings.ReplaceAll(definitionID, "-", "_")) + "_IMAGE"
+func ImageEnvVar(slug string) string {
+	return "DISCOBOX_HARNESS_" + strings.ToUpper(strings.ReplaceAll(slug, "-", "_")) + "_IMAGE"
 }
 
-// ImageOverridesFromEnv reads per-definition image overrides from the
-// environment via getenv, keyed by definition ID.
+// ImageOverridesFromEnv reads per-harness image overrides from the environment
+// via getenv, keyed by built-in slug.
 func ImageOverridesFromEnv(getenv func(string) string) map[string]string {
 	overrides := map[string]string{}
 	for _, definition := range registry.Definitions() {
@@ -100,35 +88,4 @@ func Slugify(name string) string {
 		}
 	}
 	return strings.Trim(b.String(), "-")
-}
-
-func fromHarnessWithImage(definition harness.Definition, imageOverride string) model.HarnessDefinition {
-	if strings.TrimSpace(imageOverride) != "" {
-		definition.Image = imageOverride
-	}
-	return fromHarness(definition)
-}
-
-func fromHarness(definition harness.Definition) model.HarnessDefinition {
-	out := model.HarnessDefinition{
-		ID: definition.ID, Name: definition.Name, Description: definition.Description,
-		Image: definition.Image, Configure: configureFromHarness(definition.Configure),
-	}
-	if out.Configure != nil {
-		out.Configure.Image = definition.Image
-	}
-	return out
-}
-
-func configureFromHarness(configure *harness.Configure) *model.ConfigureSandbox {
-	if configure == nil {
-		return nil
-	}
-	return &model.ConfigureSandbox{
-		Image:        configure.Image,
-		Env:          configure.Env,
-		CPUVCPUs:     configure.CPUVCPUs,
-		MemoryBytes:  configure.MemoryBytes,
-		StorageBytes: configure.StorageBytes,
-	}
 }

@@ -18,12 +18,12 @@ flowchart LR
     List -->|enter row| Term["terminalScreen"]
     List -->|f| Fullscreen["tea.Exec: terminal attach"]
     List -->|n / enter on 'new'| Form["newSessionScreen"]
-    Agents -->|n / e| HForm["harnessFormScreen"]
-    Agents -->|c / create| Configure["tea.Exec: configure CLI"]
+    Agents -->|c| Configure["tea.Exec: configure CLI"]
+    Agents -->|C| Deconfigure["deconfigure"]
     Term -->|detach / EOF| Root
     Form -->|create / esc| Root
-    HForm -->|save / esc| Agents
     Configure -->|exit code| Agents
+    Deconfigure --> Agents
     Fullscreen -->|exit / detach| List
 ```
 
@@ -76,32 +76,28 @@ flowchart LR
   Renders a centered "coming soon" panel and wires only the shared chrome keys
   plus Up (→ `focusTabsMsg`), so the tab bar has a real third destination.
 - `harnessesScreen` — the "coding agents" tab, also reachable from the sandbox
-  list with `a` and returning with `esc` (`backMsg`). Styled to match
-  `sandboxesScreen`: a full-width "+ New agent" selector (`newSelected`,
-  focused by default) above a live `bubbles/table` (★ default, id, name, slug,
-  image, age) with the same nav-only `table.KeyMap` and focus-swap styling.
-  CRUD + set-default + configure over the table cursor: `n` create form, `e`
-  edit (rename), `c` configure, `d` confirm-delete, `enter` set default (create
-  when the selector holds focus). Set-default and delete open a y/n confirm
-  (`confirmKind`), rendered centered like the sandbox delete dialog. Cached on
-  the root (`m.harnesses`) so re-entering keeps the cursor. `dialogBox` (the ⅔-
-  screen bordered frame) lives here but is now used only by `harnessFormScreen`.
-- `harnessFormScreen` — creates or edits a coding agent, rendered as a centered
-  dialog box. Create is a `Source` dropdown of `ListHarnessDefinitions` plus a
-  trailing "Custom image" entry: a definition needs nothing else, a custom agent
-  takes only an image (name/slug come from the image's metadata). Its submit is
-  **Run configure** — `harnessSaved` creates the config, then the root runs the
-  agent's configure flow. Edit exposes only the name. The visible field set is
-  recomputed by `rebuildFields`; submit builds a `SaveHarnessRequest` (empty ID =
-  create).
-- **Configure run** — `runConfigureMsg` (list `c`, or a fresh create) makes the
-  root suspend the TUI via `tea.Exec` with `configureExec`, handing the real
-  terminal to `DataSource.ConfigureHarness`. The CLI adapter builds a config-mode
-  sandbox **from the agent config itself** (its own image + ID; the server uses
-  `config.Image` directly in config mode), attaches its primary terminal so the
-  harness drives the screen, applies the resulting files/secrets back onto the
-  config, and returns the exit status as `harnessConfiguredMsg` once the TUI
-  resumes.
+  list with `a` and returning with `esc` (`backMsg`). A live `bubbles/table`
+  (★ default, id, name, slug, configured, age) with the same nav-only
+  `table.KeyMap` as `sandboxesScreen`.
+
+  The three verbs are **configure / deconfigure / set default** — the harnesses
+  are the server's seeded built-ins, and `configured` is the enable flag, so the
+  tab is "turn an agent on, turn it off, pick a default": `c` configure, `C`
+  deconfigure (y/n confirm), `enter` set default (y/n confirm). Registering a
+  custom image is a CLI action (`disco box harness create --image`), not a list
+  action, so there is no create/edit form and no delete — deleting a built-in is
+  meaningless because the server re-seeds it. Cached on the root
+  (`m.harnesses`) so re-entering keeps the cursor.
+- **Configure run** — `runConfigureMsg` (list `c`) makes the root suspend the TUI
+  via `tea.Exec` with `configureExec`, handing the real terminal to
+  `DataSource.ConfigureHarness`. The CLI adapter delegates to the same
+  `runHarnessConfigure` the `disco box harness configure` command uses, which is
+  why it takes streams rather than a command. The server owns the flow and
+  applies the result; the TUI only surfaces the terminal and reports the outcome
+  as `harnessConfiguredMsg` once it resumes. See `cli/DESIGN.md`.
+- **Deconfigure** — `C` confirms, then `DataSource.DeconfigureHarness`; the
+  server removes what the configure flow created and the row re-renders
+  unconfigured (`harnessDeconfiguredMsg` re-selects it and refreshes).
 
 ## Conventions / pitfalls
 

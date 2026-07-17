@@ -10,6 +10,7 @@ import (
 	"time"
 
 	serverapi "github.com/obot-platform/discobox/api/gen"
+	"github.com/obot-platform/discobox/internal/originkey"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/events"
@@ -84,6 +85,55 @@ func TestReconcileSandboxDoesNotChangeIntent(t *testing.T) {
 	}
 	if reconciled.DesiredState != created.DesiredState || derefString(reconciled.ActiveOperation) != derefString(created.ActiveOperation) {
 		t.Fatalf("reconcile intent = %q/%q, want %q/%q", reconciled.DesiredState, derefString(reconciled.ActiveOperation), created.DesiredState, derefString(created.ActiveOperation))
+	}
+}
+
+func TestCreateSandboxRecordsOriginAndDerivesKey(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _ := newSandboxTestService(t, nil)
+
+	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+		Config: serverapi.SandboxCreateConfig{Name: "alpha"},
+		Origin: serverapi.NewOptOrigin(serverapi.Origin{
+			HostId:      "host_aaaaaaaaaaaaaaaa",
+			Hostname:    serverapi.NewOptString("laptop"),
+			ProjectPath: "/src/alpha",
+			User:        serverapi.NewOptString("darren"),
+		}),
+	})
+	if err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+
+	if created.Origin == nil {
+		t.Fatal("origin was not recorded")
+	}
+	if created.Origin.HostID != "host_aaaaaaaaaaaaaaaa" || created.Origin.ProjectPath != "/src/alpha" {
+		t.Fatalf("origin = %+v, want the client's host and project path", created.Origin)
+	}
+	if created.Origin.Hostname != "laptop" || created.Origin.User != "darren" {
+		t.Fatalf("origin display fields = %+v, want them recorded verbatim", created.Origin)
+	}
+	want := originkey.Of("host_aaaaaaaaaaaaaaaa", "/src/alpha")
+	if created.OriginKey == nil || *created.OriginKey != want {
+		t.Fatalf("origin key = %v, want %q", derefString(created.OriginKey), want)
+	}
+}
+
+// A client that reports no origin still creates a sandbox; it simply cannot be
+// listed by project directory.
+func TestCreateSandboxWithoutOriginLeavesKeyUnset(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _ := newSandboxTestService(t, nil)
+
+	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+		Config: serverapi.SandboxCreateConfig{Name: "alpha"},
+	})
+	if err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	if created.Origin != nil || created.OriginKey != nil {
+		t.Fatalf("origin = %+v, key = %v, want both unset", created.Origin, derefString(created.OriginKey))
 	}
 }
 
@@ -200,6 +250,8 @@ func TestCreateSandboxPinsDefaultHarnessConfig(t *testing.T) {
 		Slug:      "opencode",
 		Name:      "OpenCode",
 		Image:     "discobox-harness-opencode:local",
+		// Only configured harnesses are selectable, so a sandbox can pin this one.
+		Configured: true,
 		RunCommand: []string{
 			"opencode",
 		},
@@ -548,4 +600,146 @@ func waitForSandboxDeleted(ctx context.Context, t *testing.T, svc *service.Servi
 func isNotFoundStatus(err error) bool {
 	var statusErr apperrors.StatusError
 	return errors.As(err, &statusErr) && statusErr.StatusCode() == http.StatusNotFound
+}
+
+// parkedCommit is the commit a parked sandbox's source names, fixed at create.
+var parkedCommit = "0123456789abcdef0123456789abcdef01234567"
+
+// park puts an existing sandbox into the state the reconciler leaves it in
+// after provisioning a push-delivered source: waiting for the client's push.
+func park(t *testing.T, st *store.Store, sandboxID string) {
+	t.Helper()
+	ctx := context.Background()
+	sb, err := st.GetSandbox(ctx, service.DefaultProjectID, sandboxID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	sb.Source = &model.GitSource{
+		Kind:     "git",
+		Delivery: model.GitSourceDeliveryPush,
+		// The commit is resolved by the client at create, before any push.
+		Checkout: &model.GitSourceCheckout{Commit: &parkedCommit},
+	}
+	sb.Phase = model.SandboxPhaseAwaitingSource
+	if err := st.UpdateSandbox(ctx, sb); err != nil {
+		t.Fatalf("park sandbox: %v", err)
+	}
+}
+
+func TestCompleteSandboxSourcePushRecordsCommitAndResumes(t *testing.T) {
+	ctx := context.Background()
+	svc, _, st := newSandboxTestService(t, nil)
+
+	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+		Config: serverapi.SandboxCreateConfig{Name: "alpha"},
+	})
+	if err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	park(t, st, created.ID)
+
+	resumed, err := svc.CompleteSandboxSourcePush(ctx, service.DefaultProjectID, created.ID,
+		services.CompleteSandboxSourcePushBody{Commit: strings.ToUpper(parkedCommit)})
+	if err != nil {
+		t.Fatalf("complete source push: %v", err)
+	}
+	if resumed.SourceDeliveredAt == nil {
+		t.Fatal("push was not recorded as delivered")
+	}
+	// The commit is confirmed, never rewritten: what to check out was decided
+	// at create.
+	if resumed.Source == nil || resumed.Source.Checkout == nil || derefString(resumed.Source.Checkout.Commit) != parkedCommit {
+		t.Fatalf("source commit = %v, want it unchanged at %q", resumed.Source, parkedCommit)
+	}
+	// The sandbox must leave awaiting_source, or it would park forever.
+	if resumed.Phase == model.SandboxPhaseAwaitingSource {
+		t.Fatal("sandbox is still awaiting its source after the push completed")
+	}
+	if resumed.DesiredState != model.SandboxDesiredStateRunning {
+		t.Fatalf("desired state = %q, want running", resumed.DesiredState)
+	}
+}
+
+// A completion is only meaningful for a sandbox that is actually waiting.
+// Accepting one otherwise would restart a sandbox out from under whatever is
+// already running in it.
+func TestCompleteSandboxSourcePushRejectsSandboxNotAwaitingSource(t *testing.T) {
+	ctx := context.Background()
+	svc, _, st := newSandboxTestService(t, nil)
+
+	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+		Config: serverapi.SandboxCreateConfig{Name: "alpha"},
+	})
+	if err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+
+	// A clone-delivered sandbox has nothing to push.
+	_, err = svc.CompleteSandboxSourcePush(ctx, service.DefaultProjectID, created.ID,
+		services.CompleteSandboxSourcePushBody{Commit: parkedCommit})
+	if err == nil {
+		t.Fatal("completing a push for a clone-delivered sandbox: got nil error, want conflict")
+	}
+	assertStatusError(t, err, http.StatusConflict)
+
+	// A push-delivered sandbox that already started is past the point of
+	// accepting a source.
+	park(t, st, created.ID)
+	sb, err := st.GetSandbox(ctx, service.DefaultProjectID, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sb.Phase = model.SandboxPhaseRunning
+	if err := st.UpdateSandbox(ctx, sb); err != nil {
+		t.Fatal(err)
+	}
+	_, err = svc.CompleteSandboxSourcePush(ctx, service.DefaultProjectID, created.ID,
+		services.CompleteSandboxSourcePushBody{Commit: parkedCommit})
+	if err == nil {
+		t.Fatal("completing a push for a running sandbox: got nil error, want conflict")
+	}
+	assertStatusError(t, err, http.StatusConflict)
+}
+
+func assertStatusError(t *testing.T, err error, want int) {
+	t.Helper()
+	var statusErr interface{ StatusCode() int }
+	if !errors.As(err, &statusErr) {
+		t.Fatalf("error %v is not a status error, want %d", err, want)
+	}
+	if got := statusErr.StatusCode(); got != want {
+		t.Fatalf("status = %d, want %d (%v)", got, want, err)
+	}
+}
+
+// The commit is a confirmation, not an instruction. A client that pushed
+// something other than what the source names must not be able to resume the
+// sandbox onto it.
+func TestCompleteSandboxSourcePushRejectsMismatchedCommit(t *testing.T) {
+	ctx := context.Background()
+	svc, _, st := newSandboxTestService(t, nil)
+
+	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+		Config: serverapi.SandboxCreateConfig{Name: "alpha"},
+	})
+	if err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+	park(t, st, created.ID)
+
+	_, err = svc.CompleteSandboxSourcePush(ctx, service.DefaultProjectID, created.ID,
+		services.CompleteSandboxSourcePushBody{Commit: "fedcba9876543210fedcba9876543210fedcba98"})
+	if err == nil {
+		t.Fatal("completing a push with a different commit: got nil error, want conflict")
+	}
+	assertStatusError(t, err, http.StatusConflict)
+
+	// The sandbox must stay parked rather than resume on the wrong source.
+	sb, err := st.GetSandbox(ctx, service.DefaultProjectID, created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sb.SourceDeliveredAt != nil || sb.Phase != model.SandboxPhaseAwaitingSource {
+		t.Fatalf("sandbox resumed on a mismatched commit: delivered=%v phase=%q", sb.SourceDeliveredAt, sb.Phase)
+	}
 }

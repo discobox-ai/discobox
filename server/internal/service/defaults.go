@@ -75,6 +75,11 @@ func (s *Service) InitializeDefaults(ctx context.Context, userID string, options
 	}); err != nil {
 		return err
 	}
+	// Seed the included harnesses and keep their images current. They start
+	// unconfigured, so they are visible but not selectable until configured.
+	if err := s.harnessConfigs.SeedBuiltIns(ctx, DefaultProjectID); err != nil {
+		return err
+	}
 	if opts.skipProvider {
 		return nil
 	}

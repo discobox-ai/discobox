@@ -71,6 +71,12 @@ components:
                 checkout:
                     $ref: '#/components/schemas/GitSourceCheckout'
                     description: Immutable checkout target and optional user-facing ref identity
+                delivery:
+                    description: How the source reaches the sandbox. clone means the sandbox fetches it from url or localDirectory. push means the client pushes it into the sandbox's Git repository, for a local directory the provider cannot reach; the sandbox waits in the awaiting_source phase until the push is complete. Defaults to clone.
+                    enum:
+                        - clone
+                        - push
+                    type: string
                 destination:
                     $ref: '#/components/schemas/GitSourceDestination'
                     description: Sandbox destination paths for this source
@@ -804,6 +810,62 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Error response.
             summary: Attach to a sandbox exec stream.
+            tags:
+                - Sandbox Execs
+        post:
+            description: |-
+                Runs a prepared exec to completion in a single request: the request body is written to the exec's
+                stdin, stdin is then closed, and the response body is everything the exec emitted, with output and
+                error streams interleaved as produced. This is the non-interactive counterpart to the websocket
+                attach, for callers that only need to feed a command bytes and read its output; no frame encoding
+                is involved.
+
+                The exec must not be started beforehand — this starts it once the attach is connected, since output
+                produced before an attach exists is lost. The exit status is not encoded in the response: read it
+                from the exec record, which is authoritative.
+            operationId: attach-sandbox-exec-once
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox exec runtime ID.
+                  in: path
+                  name: execId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/octet-stream:
+                        schema:
+                            format: binary
+                            type: string
+                description: Bytes to write to the exec's stdin. May be empty for a command that reads no input.
+                required: false
+            responses:
+                "200":
+                    content:
+                        application/octet-stream:
+                            schema:
+                                format: binary
+                                type: string
+                    description: The exec ran to completion; the body is its output.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Run a sandbox exec to completion with a one-shot input.
             tags:
                 - Sandbox Execs
     /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/events:

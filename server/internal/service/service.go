@@ -64,6 +64,10 @@ func New(store *store.Store, engine *reconcile.Engine, jobManagerOptions JobMana
 	providerService := providers.NewService(store, sandboxService, workerManager)
 	jobsService := resourcejobs.NewService(store, engine)
 	harnessConfigService := harnessconfigs.NewService(store)
+	// The configure flow runs an ephemeral sandbox and watches it through the
+	// reconcile engine, so it needs both.
+	harnessConfigService.SetSandboxRuntime(sandboxService)
+	harnessConfigService.SetDirtier(engine)
 	return &Service{
 		ProjectService:                 projects.NewService(store),
 		HarnessConfigService:           harnessConfigService,
@@ -85,16 +89,10 @@ func New(store *store.Store, engine *reconcile.Engine, jobManagerOptions JobMana
 	}
 }
 
-// SetHarnessImages installs per-definition harness image overrides (definition
-// ID → image), used by dev builds to inject freshly tagged images.
+// SetHarnessImages installs per-harness image overrides (built-in slug → image),
+// used by dev builds to point the seeded built-ins at freshly tagged images.
 func (s *Service) SetHarnessImages(images map[string]string) {
 	s.harnessConfigs.SetHarnessImages(images)
-}
-
-// ReconcileHarnessDefinitionImages refreshes stored definition-backed harness
-// configs whose image is stale relative to the resolved definition image.
-func (s *Service) ReconcileHarnessDefinitionImages(ctx context.Context) error {
-	return s.harnessConfigs.ReconcileDefinitionImages(ctx)
 }
 
 func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
@@ -103,6 +101,10 @@ func (s *Service) SetSandboxAuthManager(manager *sandboxauth.Manager) {
 
 func (s *Service) SetDefaultSandboxImage(image string) {
 	s.Service.SetDefaultSandboxImage(image)
+}
+
+func (s *Service) SetHostID(hostID string) {
+	s.Service.SetHostID(hostID)
 }
 
 func (s *Service) SetWorkerAgentAuthManager(manager *workeragentauth.Manager) {
@@ -144,6 +146,11 @@ func (s *Service) registerReconcilers() error {
 		sandboxOptions = append(sandboxOptions, reconcile.WithConcurrency(concurrency))
 	}
 	if err := s.RegisterJobs(sandboxOptions...); err != nil {
+		return err
+	}
+	// Drives in-flight harness configure flows to completion, including ones that
+	// outlive a server restart.
+	if err := s.engine.Register(harnessconfigs.HarnessConfigResourceType, s.harnessConfigs); err != nil {
 		return err
 	}
 	return s.workerManager.RegisterJobs(s.SandboxProviderManager())

@@ -48,6 +48,17 @@ func NewLocalDriver(ctx context.Context, host string, agentPort int) (*LocalDriv
 	return &LocalDriver{client: cli, agentPort: agentPort}, nil
 }
 
+// DaemonHost returns the resolved Docker daemon endpoint. It is the configured
+// host when one was given, and otherwise whatever the environment selected, so
+// callers reasoning about where containers actually run must consult this
+// rather than the provider's configuration.
+func (d *LocalDriver) DaemonHost() string {
+	if d == nil || d.client == nil {
+		return ""
+	}
+	return d.client.DaemonHost()
+}
+
 func (d *LocalDriver) Close() error {
 	if d == nil {
 		return nil

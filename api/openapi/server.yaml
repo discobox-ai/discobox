@@ -9,15 +9,30 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                builtIn:
+                    description: True for the included harnesses seeded by the server. Built-in configs track their image and cannot be deleted.
+                    type: boolean
+                configureError:
+                    description: Why the last configure attempt failed. Cleared when a configure starts or succeeds.
+                    type: string
+                configureSandboxId:
+                    description: Sandbox running the configure flow, while one is in flight.
+                    type: string
+                configured:
+                    description: True once the configure flow completed successfully. Only configured harnesses can be selected to run.
+                    type: boolean
+                configuredFiles:
+                    description: Files written by the configure flow. These overlay the image-declared files when resolving a sandbox.
+                    items:
+                        $ref: '#/components/schemas/HarnessConfigFile'
+                    nullable: true
+                    type: array
                 createdAt:
                     description: Creation timestamp
                     format: date-time
                     type: string
-                definitionId:
-                    description: Built-in harness definition used to select this image. Empty for custom images.
-                    type: string
                 files:
-                    description: Files declared by the registered image plus any non-secret configured file values.
+                    description: Non-secret files declared by the registered image label.
                     items:
                         $ref: '#/components/schemas/HarnessConfigFile'
                     nullable: true
@@ -68,38 +83,11 @@ components:
                 - projectId
                 - slug
                 - name
+                - builtIn
+                - configured
                 - runCommand
                 - createdAt
                 - updatedAt
-            type: object
-        HarnessDefinition:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/HarnessDefinition.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                configure:
-                    $ref: '#/components/schemas/ConfigureSandbox'
-                    description: Ephemeral sandbox definition run interactively to collect configuration before a HarnessConfig is created from this definition. Its primary terminal must exit 0; the sandbox is then expected to have written /run/discobox/harness-configure.json with secrets and files to apply to the new HarnessConfig.
-                description:
-                    description: Harness config definition description
-                    type: string
-                id:
-                    description: Stable definition ID
-                    type: string
-                image:
-                    description: Harness-specific sandbox image registered by this definition.
-                    type: string
-                name:
-                    description: Harness config definition name
-                    maxLength: 200
-                    type: string
-            required:
-                - id
-                - name
             type: object
         HarnessConfigFile:
             additionalProperties: false
@@ -229,31 +217,6 @@ components:
             required:
                 - projectId
             type: object
-        ConfigureSandbox:
-            additionalProperties: false
-            description: An ephemeral sandbox definition run interactively to collect configuration before a HarnessConfig is created from a HarnessDefinition.
-            properties:
-                cpuVcpus:
-                    description: Requested CPU capacity in vCPUs
-                    format: double
-                    type: number
-                env:
-                    additionalProperties:
-                        type: string
-                    description: Environment variables available to the configure sandbox
-                    type: object
-                image:
-                    description: Sandbox base image. Defaults to the server configured sandbox image when omitted.
-                    type: string
-                memoryBytes:
-                    description: Requested memory capacity in bytes
-                    format: int64
-                    type: integer
-                storageBytes:
-                    description: Requested storage capacity in bytes
-                    format: int64
-                    type: integer
-            type: object
         CreateHarnessConfigBody:
             additionalProperties: false
             properties:
@@ -262,9 +225,6 @@ components:
                     example: https://example.com/schemas/CreateHarnessConfigBody.json
                     format: uri
                     readOnly: true
-                    type: string
-                definitionId:
-                    description: Built-in harness definition associated with this image.
                     type: string
                 files:
                     description: Optional non-secret configured file values to associate with the registered harness.
@@ -276,13 +236,33 @@ components:
                     description: Harness sandbox image to register. The server validates its io.discobox.harness.v1 label and snapshots that metadata into the HarnessConfig.
                     type: string
                 name:
-                    description: Harness config name. Defaults to the definition name when definitionId is provided.
+                    description: Harness config name. Defaults to the name declared by the image label.
                     maxLength: 200
                     type: string
                 slug:
-                    description: Stable, URL-safe identifier used to select the harness config (e.g. codex). Defaults to definitionId, or a slug derived from name. Unique within the project.
+                    description: Stable, URL-safe identifier used to select the harness config (e.g. codex). Defaults to the id declared by the image label, or a slug derived from name. Unique within the project.
                     pattern: ^[a-z0-9][a-z0-9-]*$
                     type: string
+            required:
+                - image
+            type: object
+        CompleteSandboxSourcePushBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/CompleteSandboxSourcePushBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                commit:
+                    description: Full 40-character SHA-1 of the commit the client pushed. Confirms the push delivered the source's checkout commit, which was fixed at create; a value that does not match it is rejected.
+                    maxLength: 40
+                    minLength: 40
+                    pattern: ^[0-9a-f]{40}$
+                    type: string
+            required:
+                - commit
             type: object
         CreateSandboxBody:
             additionalProperties: false
@@ -299,6 +279,9 @@ components:
                 config:
                     $ref: '#/components/schemas/SandboxCreateConfig'
                     description: Desired sandbox configuration.
+                origin:
+                    $ref: '#/components/schemas/Origin'
+                    description: Client host and project directory this sandbox is created from
                 providerInstanceId:
                     description: Sandbox provider instance ID
                     type: string
@@ -672,6 +655,12 @@ components:
                 checkout:
                     $ref: '#/components/schemas/GitSourceCheckout'
                     description: Immutable checkout target and optional user-facing ref identity
+                delivery:
+                    description: How the source reaches the sandbox. clone means the sandbox fetches it from url or localDirectory. push means the client pushes it into the sandbox's Git repository, for a local directory the provider cannot reach; the sandbox waits in the awaiting_source phase until the push is complete. Defaults to clone.
+                    enum:
+                        - clone
+                        - push
+                    type: string
                 destination:
                     $ref: '#/components/schemas/GitSourceDestination'
                     description: Sandbox destination paths for this source
@@ -737,24 +726,6 @@ components:
                 snapshotRef:
                     description: Discobox-owned hidden Git ref containing dirty workspace snapshot data
                     type: string
-            type: object
-        ListHarnessDefinitionsBody:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/ListHarnessDefinitionsBody.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                harnessDefinitions:
-                    description: Harness config definitions
-                    items:
-                        $ref: '#/components/schemas/HarnessDefinition'
-                    nullable: true
-                    type: array
-            required:
-                - harnessDefinitions
             type: object
         ListHarnessConfigsBody:
             additionalProperties: false
@@ -947,6 +918,26 @@ components:
                     type: array
             required:
                 - jobs
+            type: object
+        Origin:
+            additionalProperties: false
+            description: The client host and project directory a sandbox was created from. Client-declared provenance recorded verbatim; never used to materialize source.
+            properties:
+                hostId:
+                    description: Stable generated identity of the client host, unique per user per machine
+                    type: string
+                hostname:
+                    description: Client hostname, for display only. Not stable and not unique.
+                    type: string
+                projectPath:
+                    description: Absolute path of the project root on the client host, which is the Git repository root, or the working directory outside a repository
+                    type: string
+                user:
+                    description: Client OS username, for display only
+                    type: string
+            required:
+                - hostId
+                - projectPath
             type: object
         Project:
             additionalProperties: false
@@ -1700,6 +1691,7 @@ components:
                     enum:
                         - pending
                         - provisioning
+                        - awaiting_source
                         - starting
                         - running
                         - stopping
@@ -1759,6 +1751,9 @@ components:
                 id:
                     description: Stable sandbox ID
                     type: string
+                origin:
+                    $ref: '#/components/schemas/Origin'
+                    description: Client host and project directory the sandbox was created from. Immutable after create.
                 projectId:
                     description: Project ID
                     type: string
@@ -2856,52 +2851,6 @@ paths:
             summary: Force a pending or backoff job to run immediately
             tags:
                 - jobs
-    /harness-definitions:
-        get:
-            operationId: list-harness-definitions
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/ListHarnessDefinitionsBody'
-                    description: OK
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: List harness config definitions
-            tags:
-                - Harness Configs
-    /harness-definitions/{definitionId}:
-        get:
-            operationId: get-harness-definition
-            parameters:
-                - description: Harness config definition ID
-                  in: path
-                  name: definitionId
-                  required: true
-                  schema:
-                    description: Harness config definition ID
-                    type: string
-            responses:
-                200:
-                    content:
-                        application/json:
-                            schema:
-                                $ref: '#/components/schemas/HarnessDefinition'
-                    description: OK
-                default:
-                    content:
-                        application/problem+json:
-                            schema:
-                                $ref: '#/components/schemas/ErrorModel'
-                    description: Error
-            summary: Get a harness config definition
-            tags:
-                - Harness Configs
     /api/workers/register:
         post:
             operationId: register-worker
@@ -3251,6 +3200,164 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Update a harness config
+            tags:
+                - Harness Configs
+    /projects/{projectId}/harness-configs/{harnessConfigId}/configure:
+        post:
+            description: |-
+                Launch the harness's interactive configure flow and return the ephemeral sandbox running it.
+                The caller attaches to the returned sandbox's primary terminal. The server watches that terminal:
+                on exit 0 it reads /run/discobox/harness-configure.json from the sandbox, applies the secrets and
+                files it declares, and marks the harness configured; on a non-zero exit the harness is left
+                unconfigured and configureError is set. The sandbox is deleted either way.
+                Re-running configure on an already configured harness is allowed.
+            operationId: configure-harness-config
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Harness config ID
+                  in: path
+                  name: harnessConfigId
+                  required: true
+                  schema:
+                    description: Harness config ID
+                    type: string
+            responses:
+                202:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Sandbox'
+                    description: Accepted
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Run a harness config's configure flow
+            tags:
+                - Harness Configs
+    /projects/{projectId}/harness-configs/{harnessConfigId}/configure/attach:
+        post:
+            description: |-
+                Prepare the in-flight configure sandbox for attach, then attach to its primary terminal.
+                This seeds the previous configuration into the sandbox at a well-known path so the harness's
+                configure command may pre-fill from it; only secrets holding a live grant to this harness config
+                are included. The configure command is not launched until the primary terminal is attached, so
+                seeding always precedes it. Call this before attaching to exec id "primary".
+            operationId: attach-harness-config-configure
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Harness config ID
+                  in: path
+                  name: harnessConfigId
+                  required: true
+                  schema:
+                    description: Harness config ID
+                    type: string
+            responses:
+                204:
+                    description: No Content
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Seed the configure sandbox before attaching
+            tags:
+                - Harness Configs
+    /projects/{projectId}/harness-configs/{harnessConfigId}/configure/commit:
+        post:
+            description: |-
+                Finish the in-flight configure flow. The server verifies the configure command exited 0, reads the
+                result it wrote, applies the declared secrets and files to the harness config, and marks it
+                configured. A non-zero exit leaves the harness unconfigured with configureError set. The ephemeral
+                configure sandbox is deleted either way.
+            operationId: commit-harness-config-configure
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Harness config ID
+                  in: path
+                  name: harnessConfigId
+                  required: true
+                  schema:
+                    description: Harness config ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/HarnessConfig'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Commit a harness config's configure flow
+            tags:
+                - Harness Configs
+    /projects/{projectId}/harness-configs/{harnessConfigId}/deconfigure:
+        post:
+            description: |-
+                Remove the assets the configure flow created for this harness — the secrets it created and their
+                bindings, plus the files it wrote — and mark the harness unconfigured. The image-declared baseline
+                is left intact.
+            operationId: deconfigure-harness-config
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Harness config ID
+                  in: path
+                  name: harnessConfigId
+                  required: true
+                  schema:
+                    description: Harness config ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/HarnessConfig'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Undo a harness config's configure flow
             tags:
                 - Harness Configs
     /projects/{projectId}/harness-configs/{harnessConfigId}/default:
@@ -3662,6 +3769,13 @@ paths:
                   schema:
                     description: Only list sandboxes whose primary source resolves to this repository root, given as a local repository root path or a remote Git URL
                     type: string
+                - description: Only list sandboxes created from this client host and project directory, as the origin key reported by the client
+                  in: query
+                  name: originKey
+                  required: false
+                  schema:
+                    description: Only list sandboxes created from this client host and project directory, as the origin key reported by the client
+                    type: string
             responses:
                 200:
                     content:
@@ -3855,6 +3969,48 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Assign a harness config's bound secrets to a running sandbox and return their sentinel env
+            tags:
+                - Sandboxes
+    /projects/{projectId}/sandboxes/{sandboxId}/complete-source-push:
+        post:
+            operationId: complete-sandbox-source-push
+            description: Report that the client finished pushing a push-delivered source into the sandbox's Git repository, naming the commit it pushed. The sandbox leaves the awaiting_source phase and starts. Only valid while the sandbox is awaiting its source.
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Sandbox ID
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    description: Sandbox ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CompleteSandboxSourcePushBody'
+                required: true
+            responses:
+                202:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Sandbox'
+                    description: Accepted
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Complete a sandbox source push
             tags:
                 - Sandboxes
     /projects/{projectId}/sandboxes/{sandboxId}/restart:
@@ -4287,6 +4443,63 @@ paths:
                                 $ref: '#/components/schemas/ErrorResponse'
                     description: Error response.
             summary: Attach to a sandbox exec stream.
+            tags:
+                - Sandbox Execs
+            x-sandbox-agent: true
+        post:
+            description: |-
+                Runs a prepared exec to completion in a single request: the request body is written to the exec's
+                stdin, stdin is then closed, and the response body is everything the exec emitted, with output and
+                error streams interleaved as produced. This is the non-interactive counterpart to the websocket
+                attach, for callers that only need to feed a command bytes and read its output; no frame encoding
+                is involved.
+
+                The exec must not be started beforehand — this starts it once the attach is connected, since output
+                produced before an attach exists is lost. The exit status is not encoded in the response: read it
+                from the exec record, which is authoritative.
+            operationId: attach-sandbox-exec-once
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox exec runtime ID.
+                  in: path
+                  name: execId
+                  required: true
+                  schema:
+                    type: string
+            requestBody:
+                content:
+                    application/octet-stream:
+                        schema:
+                            format: binary
+                            type: string
+                description: Bytes to write to the exec's stdin. May be empty for a command that reads no input.
+                required: false
+            responses:
+                200:
+                    content:
+                        application/octet-stream:
+                            schema:
+                                format: binary
+                                type: string
+                    description: The exec ran to completion; the body is its output.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Run a sandbox exec to completion with a one-shot input.
             tags:
                 - Sandbox Execs
             x-sandbox-agent: true

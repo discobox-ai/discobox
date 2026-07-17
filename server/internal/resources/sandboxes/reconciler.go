@@ -96,6 +96,7 @@ type SandboxReconciler struct {
 	provider Provider
 	manager  *ProviderManager
 	auth     SandboxAuthenticator
+	engine   *reconcile.Engine
 }
 
 // SandboxReconcilerOption configures a sandbox reconciler.
@@ -124,6 +125,16 @@ func WithSandboxProvider(provider Provider) SandboxReconcilerOption {
 func WithSandboxProviderManager(manager *ProviderManager) SandboxReconcilerOption {
 	return func(reconciler *SandboxReconciler) {
 		reconciler.manager = manager
+	}
+}
+
+// WithSandboxReconcileEngine lets the reconciler schedule its own future wake-up.
+// A sandbox waiting for a client push has no other trigger: nothing changes on
+// the server when a client goes away mid-push, so without a timer it would wait
+// forever, holding its provider resources.
+func WithSandboxReconcileEngine(engine *reconcile.Engine) SandboxReconcilerOption {
+	return func(reconciler *SandboxReconciler) {
+		reconciler.engine = engine
 	}
 }
 
@@ -173,6 +184,17 @@ func (r *SandboxReconciler) start(ctx context.Context, sandbox *model.Sandbox, g
 			return updateErr
 		}
 		return err
+	}
+	if sandbox.Phase == model.SandboxPhaseAwaitingSource {
+		// Parked waiting for the client's push. The generation is fully handled
+		// — there is nothing further to do until the client acts — so record it
+		// as observed and leave the create operation running rather than
+		// completing it as running.
+		sandbox.ObservedGeneration = generation
+		if err := r.update(ctx, sandbox, generation); err != nil {
+			return err
+		}
+		return r.scheduleSourceAwaitTimeout(ctx, sandbox)
 	}
 	sandbox.ObservedGeneration = generation
 	sandbox.CompleteOperation(model.SandboxPhaseRunning, nil)
@@ -301,6 +323,12 @@ func (r *SandboxReconciler) startSandbox(ctx context.Context, sb *model.Sandbox)
 	secretState, err = r.ensureSandboxCreated(ctx, sb, provider, secretState)
 	if err != nil {
 		return err
+	}
+	if awaitingSourcePush(sb) {
+		if len(secretState) > 0 {
+			sb.SecretState = secretState
+		}
+		return parkForSourcePush(sb)
 	}
 	runtimeSandbox, state, err := provider.Start(ctx, sandboxRefFromSandbox(sb), secretState)
 	if err != nil && !errors.Is(err, ErrAlreadyRunning) {

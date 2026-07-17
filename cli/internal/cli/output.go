@@ -334,36 +334,6 @@ func workerMessage(worker apimodel.Worker) string {
 	return ""
 }
 
-func (a *App) writeHarnessDefinition(cmd *cobra.Command, definition *apimodel.HarnessDefinition) error {
-	if definition == nil {
-		return nil
-	}
-	if a.output == "json" {
-		return writeJSON(cmd.OutOrStdout(), definition)
-	}
-	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tIMAGE\tCONFIGURABLE\tDESCRIPTION")
-	_, configurable := definition.Configure.Get()
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\n", definition.ID, definition.Name, definition.Image.Or(""), configurable, definition.Description.Or(""))
-	return tw.Flush()
-}
-
-func (a *App) writeHarnessDefinitions(cmd *cobra.Command, definitions []apimodel.HarnessDefinition) error {
-	if a.quiet {
-		return writeResourceIDs(cmd.OutOrStdout(), definitions, func(definition apimodel.HarnessDefinition) string { return definition.ID })
-	}
-	if a.output == "json" {
-		return writeJSON(cmd.OutOrStdout(), map[string]any{"harnessDefinitions": definitions})
-	}
-	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tIMAGE\tCONFIGURABLE\tDESCRIPTION")
-	for _, definition := range definitions {
-		_, configurable := definition.Configure.Get()
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\n", definition.ID, definition.Name, definition.Image.Or(""), configurable, definition.Description.Or(""))
-	}
-	return tw.Flush()
-}
-
 func (a *App) writeHarness(cmd *cobra.Command, harness *apimodel.HarnessConfig) error {
 	if harness == nil {
 		return nil
@@ -372,8 +342,8 @@ func (a *App) writeHarness(cmd *cobra.Command, harness *apimodel.HarnessConfig) 
 		return writeJSON(cmd.OutOrStdout(), harness)
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tRUN COMMAND\tSECRETS\tUPDATED")
-	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", harness.ID, harness.Slug, harness.Name, strings.Join(harness.RunCommand, " "), formatHarnessSecrets(harness.Secrets.Or(nil)), formatTime(harness.UpdatedAt))
+	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tCONFIGURED\tRUN COMMAND\tSECRETS\tUPDATED")
+	fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", harness.ID, harness.Slug, harness.Name, formatConfigured(harness), strings.Join(harness.RunCommand, " "), formatHarnessSecrets(harness.Secrets.Or(nil)), formatTime(harness.UpdatedAt))
 	return tw.Flush()
 }
 
@@ -391,11 +361,24 @@ func (a *App) writeHarnesses(cmd *cobra.Command, harnesses []apimodel.HarnessCon
 	}
 	harnesses = sortedByCreatedAt(harnesses, func(harness apimodel.HarnessConfig) time.Time { return harness.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tDEFAULT\tRUN COMMAND\tUPDATED")
+	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tCONFIGURED\tDEFAULT\tRUN COMMAND\tUPDATED")
 	for _, harness := range harnesses {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n", harness.ID, harness.Slug, harness.Name, formatDefaultMarker(harness.ID == defaultID), strings.Join(harness.RunCommand, " "), formatTime(harness.UpdatedAt))
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", harness.ID, harness.Slug, harness.Name, formatConfigured(&harness), formatDefaultMarker(harness.ID == defaultID), strings.Join(harness.RunCommand, " "), formatTime(harness.UpdatedAt))
 	}
 	return tw.Flush()
+}
+
+// formatConfigured renders whether a harness has completed its configure flow.
+// Only a configured harness can be run, so this is the column that explains why
+// `disco prompt -H <slug>` is refused. A failed attempt shows its reason.
+func formatConfigured(harness *apimodel.HarnessConfig) string {
+	if harness.Configured {
+		return "yes"
+	}
+	if reason := strings.TrimSpace(harness.ConfigureError.Or("")); reason != "" {
+		return "no (failed)"
+	}
+	return "no"
 }
 
 func (a *App) writeHarnessSecretBindings(cmd *cobra.Command, declarations []apimodel.HarnessConfigSecret, bindings []apimodel.HarnessConfigSecretBinding) error {

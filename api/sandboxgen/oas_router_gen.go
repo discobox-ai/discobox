@@ -14,6 +14,9 @@ var (
 	rn8AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
+	rn7AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
 )
 
 func (s *Server) cutPrefix(path string) (string, bool) {
@@ -213,11 +216,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 												args[1],
 												args[2],
 											}, elemIsEscaped, w, r)
+										case "POST":
+											s.handleAttachSandboxExecOnceRequest([3]string{
+												args[0],
+												args[1],
+												args[2],
+											}, elemIsEscaped, w, r)
 										default:
 											s.notAllowed(w, r, notAllowedParams{
-												allowedMethods: "GET",
-												allowedHeaders: nil,
-												acceptPost:     "",
+												allowedMethods: "GET,POST",
+												allowedHeaders: rn7AllowedHeaders,
+												acceptPost:     "application/octet-stream",
 												acceptPatch:    "",
 											})
 										}
@@ -696,6 +705,15 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 											r.name = AttachSandboxExecOperation
 											r.summary = "Attach to a sandbox exec stream."
 											r.operationID = "attach-sandbox-exec"
+											r.operationGroup = ""
+											r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach"
+											r.args = args
+											r.count = 3
+											return r, true
+										case "POST":
+											r.name = AttachSandboxExecOnceOperation
+											r.summary = "Run a sandbox exec to completion with a one-shot input."
+											r.operationID = "attach-sandbox-exec-once"
 											r.operationGroup = ""
 											r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach"
 											r.args = args

@@ -155,6 +155,14 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		return nil, fmt.Errorf("sandbox ID is required")
 	}
 	if existing, err := r.GetSandbox(ctx, sandboxID); err == nil {
+		// The container already exists, but a push-delivered source is only
+		// materialized once the client has pushed, which necessarily happens
+		// after the container was created and parked. This create is that
+		// resume, so finish those sources rather than returning a sandbox whose
+		// workspace is still empty.
+		if err := r.materializePushedSources(ctx, sandboxID, req); err != nil {
+			return nil, err
+		}
 		return existing, nil
 	} else if !errors.Is(err, ErrNotFound) {
 		return nil, err
@@ -249,6 +257,33 @@ func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, imageNa
 	defer pull.Close()
 	if err := pull.Wait(ctx); err != nil {
 		return fmt.Errorf("pull image %q: %w", imageName, err)
+	}
+	return nil
+}
+
+// materializePushedSources completes the push-delivered sources of a sandbox
+// that already exists, checking out the commit the client pushed and restoring
+// its workspace.
+//
+// Only push-delivered sources are touched. A clone-delivered source was fully
+// materialized when the sandbox was created, and re-running it would reset and
+// clean a workspace the sandbox may have been using since.
+//
+// Materialization is idempotent, so a repeat create that has nothing new to
+// deliver is a no-op.
+func (r *DockerSandboxRuntime) materializePushedSources(ctx context.Context, sandboxID string, req *workerapimodel.WorkerSandboxCreateRequest) error {
+	if req == nil {
+		return nil
+	}
+	normalizeSandboxConfig(&req.Config)
+	for _, source := range sandboxSources(req) {
+		if !gitSourceAwaitsPush(source.git) {
+			continue
+		}
+		sourceWorkerPath := r.workerHostPath(filepath.Join(sandboxVolumesRoot(r.projectID, sandboxID), "source", source.slug))
+		if err := r.materializeGitSource(ctx, source.git, sourceWorkerPath); err != nil {
+			return fmt.Errorf("materialize pushed source %q: %w", source.slug, err)
+		}
 	}
 	return nil
 }
@@ -1397,6 +1432,12 @@ func sandboxVolumesRoot(projectID, sandboxID string) string {
 
 func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source workerapimodel.GitSource, target string) error {
 	if _, err := os.Stat(filepath.Join(target, ".git")); err == nil {
+		// A push-delivered repository with no commits is still waiting for the
+		// client. There is nothing to reset, clean, or check out yet, and every
+		// one of those fails against an unborn branch.
+		if gitSourceAwaitsPush(source) && !gitHasCommits(ctx, target) {
+			return nil
+		}
 		// A prior create attempt may have already restored a dirty workspace.
 		// Return the repository to a clean state before materializing the desired
 		// checkout again so this operation remains retry-safe.
@@ -1415,6 +1456,11 @@ func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source 
 	}
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		return err
+	}
+	if gitSourceAwaitsPush(source) {
+		// The client delivers the commits and, via updateInstead, the working
+		// tree. Nothing to clone or check out here.
+		return r.initGitSource(ctx, source, target)
 	}
 	cloneURL, err := gitSourceCloneURL(source, r.hostMountPrefix)
 	if err != nil {
@@ -1450,14 +1496,21 @@ func (r *DockerSandboxRuntime) restoreGitWorkspace(ctx context.Context, repo str
 		return fmt.Errorf("invalid workspace snapshot ref %q: %w", snapshotRef, err)
 	}
 
-	remoteURL, err := runGitOutput(ctx, repo, nil, "remote", "get-url", "origin")
-	if err != nil {
-		return err
-	}
-	remoteURL = bytes.TrimSpace(remoteURL)
-	refspec := "+" + snapshotRef + ":" + snapshotRef
-	if err := runGitWithSafeDirectories(ctx, repo, gitSafeDirectories(string(remoteURL), r.hostMountPrefix), "fetch", "origin", refspec); err != nil {
-		return fmt.Errorf("fetch workspace snapshot %q: %w", snapshotRef, err)
+	// A push-delivered source has no origin to fetch from: the client pushed the
+	// snapshot ref in alongside the branch, so the objects are already here.
+	// Everything below is local and applies to both delivery modes.
+	if !gitSourceAwaitsPush(source) {
+		remoteURL, err := runGitOutput(ctx, repo, nil, "remote", "get-url", "origin")
+		if err != nil {
+			return err
+		}
+		remoteURL = bytes.TrimSpace(remoteURL)
+		refspec := "+" + snapshotRef + ":" + snapshotRef
+		if err := runGitWithSafeDirectories(ctx, repo, gitSafeDirectories(string(remoteURL), r.hostMountPrefix), "fetch", "origin", refspec); err != nil {
+			return fmt.Errorf("fetch workspace snapshot %q: %w", snapshotRef, err)
+		}
+	} else if err := runGit(ctx, repo, "rev-parse", "--verify", "--quiet", snapshotRef+"^{commit}"); err != nil {
+		return fmt.Errorf("workspace snapshot %q was not pushed to the sandbox", snapshotRef)
 	}
 
 	parent, err := runGitOutput(ctx, repo, nil, "rev-parse", "--verify", snapshotRef+"^")
@@ -1500,6 +1553,65 @@ func gitSourceCloneURL(source workerapimodel.GitSource, hostMountPrefix string) 
 		return sourceURL.String(), nil
 	}
 	return "", fmt.Errorf("source URL or localDirectory is required")
+}
+
+// gitSourceAwaitsPush reports whether the client delivers this source by
+// pushing it in, rather than the sandbox fetching it.
+//
+// Delivery is read from the source, never inferred from a missing URL: a source
+// with nothing to clone from is a malformed request, and treating it as "wait
+// for a push" would turn that mistake into a sandbox that silently starts with
+// an empty workspace.
+func gitSourceAwaitsPush(source workerapimodel.GitSource) bool {
+	delivery, ok := source.Delivery.Get()
+	return ok && string(delivery) == string(workerclient.GitSourceDeliveryPush)
+}
+
+// initGitSource creates the empty repository a client pushes its source into.
+//
+// The repository must exist before git http-backend will serve it, so a source
+// with nothing to clone from is initialized rather than rejected.
+//
+// The initial branch matters: receive.denyCurrentBranch=updateInstead only
+// updates the working tree when the pushed branch is the checked-out one, so
+// initializing on the branch the client will push is what makes the pushed
+// commit appear in the sandbox rather than sitting in the object store.
+func (r *DockerSandboxRuntime) initGitSource(ctx context.Context, source workerapimodel.GitSource, target string) error {
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		return err
+	}
+	args := []string{"init"}
+	if branch := gitSourceInitialBranch(source); branch != "" {
+		args = append(args, "-b", branch)
+	}
+	args = append(args, target)
+	if err := runGit(ctx, "", args...); err != nil {
+		return fmt.Errorf("initialize source repository for push: %w", err)
+	}
+	return nil
+}
+
+// gitHasCommits reports whether repo has a resolvable HEAD. A repository that
+// was initialized for a push has none until the client delivers one.
+func gitHasCommits(ctx context.Context, repo string) bool {
+	return runGit(ctx, repo, "rev-parse", "--verify", "--quiet", "HEAD") == nil
+}
+
+// gitSourceInitialBranch returns the branch the client is expected to push, or
+// empty when the source does not name one and git's default should stand.
+func gitSourceInitialBranch(source workerapimodel.GitSource) string {
+	checkout, ok := source.Checkout.Get()
+	if !ok {
+		return ""
+	}
+	if strings.TrimSpace(optString(checkout.RefType)) != "branch" {
+		return ""
+	}
+	branch := strings.TrimSpace(optString(checkout.RefName))
+	if branch == "" || strings.HasPrefix(branch, "-") {
+		return ""
+	}
+	return branch
 }
 
 func hostMountedLocalDirectory(local, hostMountPrefix string) string {

@@ -118,138 +118,44 @@ func (d *apiDataSource) ListHarnessConfigs(ctx context.Context) ([]tui.HarnessCo
 	out := make([]tui.HarnessConfig, 0, len(configs))
 	for _, cfg := range configs {
 		out = append(out, tui.HarnessConfig{
-			ID:           cfg.ID,
-			Name:         cfg.Name,
-			Slug:         cfg.Slug,
-			Image:        cfg.Image.Or(""),
-			DefinitionID: cfg.DefinitionId.Or(""),
-			Default:      cfg.ID == defaultID,
-			Created:      cfg.CreatedAt,
-			Updated:      cfg.UpdatedAt,
+			ID:         cfg.ID,
+			Name:       cfg.Name,
+			Slug:       cfg.Slug,
+			Image:      cfg.Image.Or(""),
+			BuiltIn:    cfg.BuiltIn,
+			Configured: cfg.Configured,
+			Default:    cfg.ID == defaultID,
+			Created:    cfg.CreatedAt,
+			Updated:    cfg.UpdatedAt,
 		})
 	}
 	return out, nil
-}
-
-func (d *apiDataSource) ListHarnessDefinitions(ctx context.Context) ([]tui.HarnessDefinition, error) {
-	res, err := d.client.ListHarnessDefinitions(ctx)
-	if err != nil {
-		return nil, err
-	}
-	body, err := expectResponse[apimodel.ListHarnessDefinitionsBody](res)
-	if err != nil {
-		return nil, err
-	}
-	defs := body.GetHarnessDefinitions()
-	out := make([]tui.HarnessDefinition, 0, len(defs))
-	for _, def := range defs {
-		out = append(out, tui.HarnessDefinition{
-			ID:          def.ID,
-			Name:        def.Name,
-			Description: def.Description.Or(""),
-			Image:       def.Image.Or(""),
-		})
-	}
-	return out, nil
-}
-
-// SaveHarness creates a harness config (from a definition or a custom image) or
-// updates an existing config's name. Choosing the project default is a separate
-// action (SetDefaultHarness) driven from the agents list. Definition-backed
-// creation skips the interactive configure step; a definition with a configure
-// flow should be enabled via `disco box harness enable` to answer its prompts.
-func (d *apiDataSource) SaveHarness(ctx context.Context, req tui.SaveHarnessRequest) (tui.HarnessConfig, error) {
-	var cfg *apimodel.HarnessConfig
-	if req.ID == "" {
-		body, err := createHarnessBody(harnessCreateOptions{
-			name:         req.Name,
-			slug:         req.Slug,
-			definitionID: req.DefinitionID,
-			image:        req.Image,
-		})
-		if err != nil {
-			return tui.HarnessConfig{}, err
-		}
-		res, err := d.client.CreateHarnessConfig(ctx, body, apiclientgen.CreateHarnessConfigParams{ProjectId: d.projectID})
-		if err != nil {
-			return tui.HarnessConfig{}, err
-		}
-		if cfg, err = expectResponse[apimodel.HarnessConfig](res); err != nil {
-			return tui.HarnessConfig{}, err
-		}
-	} else {
-		body := &apimodel.UpdateHarnessConfigBody{}
-		body.SetName(apiclientgen.NewOptString(req.Name))
-		res, err := d.client.UpdateHarnessConfig(ctx, body, apiclientgen.UpdateHarnessConfigParams{ProjectId: d.projectID, HarnessConfigId: req.ID})
-		if err != nil {
-			return tui.HarnessConfig{}, err
-		}
-		if cfg, err = expectResponse[apimodel.HarnessConfig](res); err != nil {
-			return tui.HarnessConfig{}, err
-		}
-	}
-	return d.toTUIHarnessConfig(ctx, *cfg)
-}
-
-func (d *apiDataSource) DeleteHarness(ctx context.Context, id string) error {
-	res, err := d.client.DeleteHarnessConfig(ctx, apiclientgen.DeleteHarnessConfigParams{ProjectId: d.projectID, HarnessConfigId: id})
-	if err != nil {
-		return err
-	}
-	return expectNoContent[apiclientgen.DeleteHarnessConfigNoContent](res)
 }
 
 func (d *apiDataSource) SetDefaultHarness(ctx context.Context, id string) error {
 	return d.app.setDefaultHarnessConfig(ctx, d.client, d.projectID, id)
 }
 
-// ConfigureHarness runs the agent's interactive configure flow in the current
-// terminal. It spins up a config-mode sandbox based on the agent config itself
-// (its own image and ID), attaches the sandbox's primary terminal to the given
-// streams so the user answers prompts directly, then applies the resulting files
-// and secret bindings back onto the config.
+// ConfigureHarness runs the agent's interactive configure flow against the given
+// streams, which the TUI supplies via tea.Exec as the restored real terminal so
+// the user can answer prompts. The server owns applying the result.
 func (d *apiDataSource) ConfigureHarness(ctx context.Context, harnessID string, stdin io.Reader, stdout, stderr io.Writer) error {
-	res, err := d.client.GetHarnessConfig(ctx, apiclientgen.GetHarnessConfigParams{ProjectId: d.projectID, HarnessConfigId: harnessID})
-	if err != nil {
-		return err
-	}
-	cfg, err := expectResponse[apimodel.HarnessConfig](res)
-	if err != nil {
-		return err
-	}
-	config := apimodel.SandboxCreateConfig{
-		HarnessConfigId: apiclientgen.NewOptString(cfg.ID),
-		HarnessMode:     apiclientgen.NewOptSandboxCreateConfigHarnessMode(apiclientgen.SandboxCreateConfigHarnessModeConfig),
-		Image:           cfg.Image,
-	}
-	out, err := d.app.runConfigureSandbox(ctx, d.client, d.projectID, config, stdin, stdout, stderr)
-	if err != nil {
-		return err
-	}
-	return d.app.applyHarnessConfigureOutput(ctx, d.client, d.projectID, cfg.ID, out)
+	_, err := d.app.runHarnessConfigure(ctx, d.client, d.projectID, harnessID, stdin, stdout, stderr)
+	return err
 }
 
-// toTUIHarnessConfig maps an API harness config to the UI view, resolving the
-// project default so the saved row can render its marker.
-func (d *apiDataSource) toTUIHarnessConfig(ctx context.Context, cfg apimodel.HarnessConfig) (tui.HarnessConfig, error) {
-	defaultID, err := d.app.defaultHarnessConfigID(ctx, d.client, d.projectID)
+// DeconfigureHarness undoes what the agent's configure flow created, leaving the
+// agent in place but unrunnable until it is configured again.
+func (d *apiDataSource) DeconfigureHarness(ctx context.Context, harnessID string) error {
+	res, err := d.client.DeconfigureHarnessConfig(ctx, apiclientgen.DeconfigureHarnessConfigParams{
+		ProjectId: d.projectID, HarnessConfigId: harnessID,
+	})
 	if err != nil {
-		return tui.HarnessConfig{}, err
+		return err
 	}
-	return tui.HarnessConfig{
-		ID:           cfg.ID,
-		Name:         cfg.Name,
-		Slug:         cfg.Slug,
-		Image:        cfg.Image.Or(""),
-		DefinitionID: cfg.DefinitionId.Or(""),
-		Default:      cfg.ID == defaultID,
-		Created:      cfg.CreatedAt,
-		Updated:      cfg.UpdatedAt,
-	}, nil
+	_, err = expectResponse[apimodel.HarnessConfig](res)
+	return err
 }
-
-// PathOptions returns the distinct local directories and remote URLs that the
-// project's existing sandboxes were created from, most-recent first.
 func (d *apiDataSource) PathOptions(ctx context.Context) ([]string, error) {
 	res, err := d.client.ListSandboxes(ctx, apiclientgen.ListSandboxesParams{ProjectId: d.projectID})
 	if err != nil {

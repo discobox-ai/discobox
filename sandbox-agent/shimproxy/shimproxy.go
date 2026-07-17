@@ -1,6 +1,8 @@
 package shimproxy
 
 import (
+	"errors"
+
 	"bufio"
 	"context"
 	"encoding/json"
@@ -11,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/obot-platform/discobox/sandbox-agent/terminal/frame"
 
 	"github.com/coder/websocket"
 )
@@ -131,6 +135,58 @@ func AttachWebSocket(ctx context.Context, w http.ResponseWriter, r *http.Request
 	}()
 	wg.Wait()
 	return nil
+}
+
+// AttachOneShot runs a non-interactive attach to completion: it writes stdin,
+// closes the input side, and returns everything the exec emitted.
+//
+// A streaming attach is a raw byte tunnel — the frame protocol is spoken
+// end-to-end between the remote client and the shim, and this process is only a
+// pipe. A one-shot caller has no tunnel to speak over, so this is the one place
+// the agent speaks the frame protocol itself, keeping that protocol from leaking
+// into callers that only want "feed it bytes, give me its output".
+//
+// Output and error streams are returned interleaved, as the exec emitted them.
+// The exit status is not returned: the exec record is authoritative for that, and
+// the caller reads it there.
+func AttachOneShot(ctx context.Context, socketPath, protocol string, stdin []byte) ([]byte, error) {
+	shimConn, shimReader, err := attachShim(ctx, socketPath, protocol, false)
+	if err != nil {
+		return nil, err
+	}
+	defer shimConn.Close()
+
+	if len(stdin) > 0 {
+		if err := frame.Write(shimConn, frame.Input, stdin); err != nil {
+			return nil, fmt.Errorf("write exec stdin: %w", err)
+		}
+	}
+	// Close the input side so a command reading to EOF (cat, tee) terminates.
+	if err := frame.Write(shimConn, frame.CloseInput, nil); err != nil {
+		return nil, fmt.Errorf("close exec stdin: %w", err)
+	}
+
+	var out []byte
+	for {
+		if ctx.Err() != nil {
+			return out, ctx.Err()
+		}
+		f, err := frame.Read(shimReader)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				// The shim hung up without an explicit exit frame; whatever it
+				// emitted is still the exec's output.
+				return out, nil
+			}
+			return out, err
+		}
+		switch f.Type {
+		case frame.Output, frame.Error:
+			out = append(out, f.Payload...)
+		case frame.Exit:
+			return out, nil
+		}
+	}
 }
 
 func attachShim(ctx context.Context, socketPath, protocol string, replay bool) (net.Conn, *bufio.Reader, error) {

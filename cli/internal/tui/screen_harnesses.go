@@ -32,11 +32,10 @@ type harnessesScreen struct {
 	width  int
 	height int
 
-	loaded      bool
-	newSelected bool        // the "new agent" selector above the table has focus
-	selectID    string      // config to focus after the next load (e.g. just saved)
-	confirm     confirmKind // which action is awaiting a y/n confirmation
-	pending     string      // id the pending confirmation acts on
+	loaded   bool
+	selectID string      // config to focus after the next load (e.g. just saved)
+	confirm  confirmKind // which action is awaiting a y/n confirmation
+	pending  string      // id the pending confirmation acts on
 }
 
 // confirmKind is the action a confirmation dialog is gating.
@@ -44,7 +43,7 @@ type confirmKind int
 
 const (
 	confirmNone confirmKind = iota
-	confirmDelete
+	confirmDeconfigure
 	confirmSetDefault
 )
 
@@ -68,7 +67,6 @@ func newHarnessesScreen(ctx context.Context, ds DataSource, keys keyMap, st styl
 		table:         t,
 		tableActive:   active,
 		tableInactive: inactive,
-		newSelected:   true, // start on "new agent"
 	}
 }
 
@@ -85,9 +83,6 @@ func (s *harnessesScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
 	case harnessesLoadedMsg:
 		s.applyConfigs(msg.configs)
 		return s, nil
-
-	case harnessDeletedMsg:
-		return s, s.refreshCmd()
 
 	case tea.KeyPressMsg:
 		return s.handleKey(msg)
@@ -108,22 +103,16 @@ func (s *harnessesScreen) handleKey(msg tea.KeyPressMsg) (screen, tea.Cmd) {
 		return s, func() tea.Msg { return backMsg{} }
 	case key.Matches(msg, s.keys.Refresh):
 		return s, s.refreshCmd()
-	case key.Matches(msg, s.keys.New):
-		return s, func() tea.Msg { return openHarnessFormMsg{} }
-	case key.Matches(msg, s.keys.Edit):
-		if cfg, ok := s.cursorConfig(); ok {
-			c := cfg
-			return s, func() tea.Msg { return openHarnessFormMsg{edit: &c} }
-		}
-		return s, nil
-	case key.Matches(msg, s.keys.Delete):
-		s.beginDelete()
-		return s, nil
 	case key.Matches(msg, s.keys.Configure):
+		// Configure is the "enable" half: it runs the agent's interactive flow,
+		// and only a configured agent can be run.
 		if cfg, ok := s.cursorConfig(); ok {
 			c := cfg
 			return s, func() tea.Msg { return runConfigureMsg{harness: c} }
 		}
+		return s, nil
+	case key.Matches(msg, s.keys.Deconfigure):
+		s.beginDeconfigure()
 		return s, nil
 	case key.Matches(msg, s.keys.Up):
 		return s, s.moveUp()
@@ -131,17 +120,12 @@ func (s *harnessesScreen) handleKey(msg tea.KeyPressMsg) (screen, tea.Cmd) {
 		s.moveDown()
 		return s, nil
 	case key.Matches(msg, s.keys.Top):
-		s.selectNew()
+		s.table.GotoTop()
 		return s, nil
 	case key.Matches(msg, s.keys.Bottom):
-		s.selectRows()
 		s.table.GotoBottom()
 		return s, nil
 	case key.Matches(msg, s.keys.Default):
-		// enter: create from the selector, otherwise make the cursor agent default.
-		if s.newSelected {
-			return s, func() tea.Msg { return openHarnessFormMsg{} }
-		}
 		return s, s.beginSetDefault()
 	default:
 		var cmd tea.Cmd
@@ -161,8 +145,8 @@ func (s *harnessesScreen) handleConfirmKey(msg tea.KeyPressMsg) (screen, tea.Cmd
 		}
 		cfg, _ := s.configByID(id)
 		switch kind {
-		case confirmDelete:
-			return s, s.deleteCmd(id)
+		case confirmDeconfigure:
+			return s, s.deconfigureCmd(id)
 		case confirmSetDefault:
 			return s, s.setDefaultCmd(cfg)
 		}
@@ -175,13 +159,18 @@ func (s *harnessesScreen) handleConfirmKey(msg tea.KeyPressMsg) (screen, tea.Cmd
 	return s, nil
 }
 
-func (s *harnessesScreen) beginDelete() {
+// beginDeconfigure asks to confirm undoing an agent's configuration. An agent
+// that was never configured is a no-op reported on the status line.
+func (s *harnessesScreen) beginDeconfigure() {
 	cfg, ok := s.cursorConfig()
 	if !ok {
 		return
 	}
+	if !cfg.Configured {
+		return
+	}
 	s.pending = cfg.ID
-	s.confirm = confirmDelete
+	s.confirm = confirmDeconfigure
 }
 
 // beginSetDefault asks to confirm making the cursor agent the project default.
@@ -199,58 +188,25 @@ func (s *harnessesScreen) beginSetDefault() tea.Cmd {
 	return nil
 }
 
-// selectNew moves focus to the "new agent" selector above the table.
-func (s *harnessesScreen) selectNew() {
-	s.newSelected = true
-	s.applyTableFocus()
-}
-
-// selectRows moves focus into the table, unless it is empty.
-func (s *harnessesScreen) selectRows() {
-	if len(s.configs) == 0 {
-		return
-	}
-	s.newSelected = false
-	s.applyTableFocus()
-}
-
-// moveUp walks up the table, then off its top row onto the "new" selector, and
-// finally off the selector up onto the tab bar (via focusTabsCmd).
+// moveUp walks up the table, then off its top row onto the tab bar (via
+// focusTabsCmd).
 func (s *harnessesScreen) moveUp() tea.Cmd {
-	if s.newSelected {
-		return focusTabsCmd()
-	}
 	if s.table.Cursor() <= 0 {
-		s.selectNew()
-		return nil
+		return focusTabsCmd()
 	}
 	s.table.MoveUp(1)
 	return nil
 }
 
-// moveDown steps off the "new" selector into the table, then down its rows.
 func (s *harnessesScreen) moveDown() {
-	if s.newSelected {
-		s.selectRows()
-		return
-	}
 	s.table.MoveDown(1)
-}
-
-// applyTableFocus swaps the table styles so only the focused region highlights.
-func (s *harnessesScreen) applyTableFocus() {
-	if s.newSelected {
-		s.table.SetStyles(s.tableInactive)
-	} else {
-		s.table.SetStyles(s.tableActive)
-	}
 }
 
 func (s *harnessesScreen) title() string { return "coding agents" }
 
 func (s *harnessesScreen) helpBindings() []key.Binding {
 	return []key.Binding{
-		s.keys.Up, s.keys.Down, s.keys.New, s.keys.Edit, s.keys.Configure, s.keys.Default, s.keys.Delete, s.keys.Refresh, s.keys.Help, s.keys.Quit,
+		s.keys.Up, s.keys.Down, s.keys.Configure, s.keys.Deconfigure, s.keys.Default, s.keys.Refresh, s.keys.Help, s.keys.Quit,
 	}
 }
 
@@ -272,28 +228,13 @@ func (s *harnessesScreen) View(width, height int) string {
 	if s.confirm != confirmNone {
 		return s.centered(width, height, s.confirmDialog())
 	}
-	selector := s.newSelectorLine(width)
-	bodyHeight := height - 1 // the selector occupies the first row
-	var body string
 	switch {
 	case !s.loaded:
-		body = s.centered(width, bodyHeight, s.styles.status.Render("loading coding agents…"))
+		return s.centered(width, height, s.styles.status.Render("loading coding agents…"))
 	case len(s.configs) == 0:
-		body = s.centered(width, bodyHeight, s.styles.status.Render("no coding agents yet — press n or enter to create one"))
-	default:
-		body = s.table.View()
+		return s.centered(width, height, s.styles.status.Render("no coding agents"))
 	}
-	return selector + "\n" + body
-}
-
-// newSelectorLine renders the full-width "new agent" affordance above the table,
-// highlighted when it holds focus.
-func (s *harnessesScreen) newSelectorLine(width int) string {
-	label := "+ New agent"
-	if s.newSelected {
-		return s.styles.newActive.Width(width).Render(label)
-	}
-	return s.styles.newInactive.Render(label)
+	return s.table.View()
 }
 
 func (s *harnessesScreen) confirmDialog() string {
@@ -321,11 +262,16 @@ func (s *harnessesScreen) refreshCmd() tea.Cmd {
 	}
 }
 
-func (s *harnessesScreen) deleteCmd(id string) tea.Cmd {
+// deconfigureCmd undoes an agent's configuration: the secrets and files its
+// configure flow created are removed and it becomes unrunnable until configured
+// again. The agent itself stays.
+func (s *harnessesScreen) deconfigureCmd(id string) tea.Cmd {
 	ds, ctx := s.ds, s.ctx
 	return func() tea.Msg {
-		err := ds.DeleteHarness(ctx, id)
-		return harnessDeletedMsg{ids: []string{id}, errs: []error{err}}
+		if err := ds.DeconfigureHarness(ctx, id); err != nil {
+			return errMsg{context: "deconfigure agent", err: err}
+		}
+		return harnessDeconfiguredMsg{id: id}
 	}
 }
 
@@ -357,14 +303,13 @@ func (s *harnessesScreen) applyConfigs(list []HarnessConfig) {
 	if s.selectID != "" {
 		for i, cfg := range sorted {
 			if cfg.ID == s.selectID {
-				s.newSelected = false
 				s.table.SetCursor(i)
 				s.selectID = ""
 				break
 			}
 		}
 	}
-	s.applyTableFocus()
+	s.table.SetStyles(s.tableActive)
 }
 
 func (s *harnessesScreen) rebuildRows() {
@@ -384,18 +329,23 @@ func (s *harnessesScreen) rebuildRows() {
 	s.table.SetCursor(cursor)
 }
 
-// row renders one agent: a ★ default marker, id, display name, slug, image, age.
+// row renders one agent: a ★ default marker, id, display name, slug, whether it
+// is configured (an unconfigured agent cannot be run), and age.
 func (s *harnessesScreen) row(cfg HarnessConfig) table.Row {
 	star := ""
 	if cfg.Default {
 		star = lipgloss.NewStyle().Foreground(colorMark).Render("★")
+	}
+	configured := lipgloss.NewStyle().Foreground(colorMuted).Render("no")
+	if cfg.Configured {
+		configured = lipgloss.NewStyle().Foreground(colorMark).Render("yes")
 	}
 	return table.Row{
 		star,
 		cfg.ID,
 		harnessDisplayName(cfg),
 		cfg.Slug,
-		cfg.Image,
+		configured,
 		humanizeAge(cfg.Updated),
 	}
 }
@@ -407,30 +357,27 @@ func (s *harnessesScreen) columns(width int) []table.Column {
 		starW = 2
 		idW   = 22
 		slugW = 16
+		cfgW  = 10
 		ageW  = 12
 		// Each column carries 2 cells of horizontal padding from the Cell style.
 		padPerCol = 2
 		numCols   = 6
 	)
-	fixed := starW + idW + slugW + ageW + padPerCol*numCols
+	fixed := starW + idW + slugW + cfgW + ageW + padPerCol*numCols
 	remaining := width - fixed
 	if remaining < 20 {
 		remaining = 20
 	}
-	nameW := remaining / 2
+	nameW := remaining
 	if nameW < 12 {
 		nameW = 12
-	}
-	imageW := remaining - nameW
-	if imageW < 8 {
-		imageW = 8
 	}
 	return []table.Column{
 		{Title: "", Width: starW},
 		{Title: "ID", Width: idW},
 		{Title: "NAME", Width: nameW},
 		{Title: "SLUG", Width: slugW},
-		{Title: "IMAGE", Width: imageW},
+		{Title: "CONFIGURED", Width: cfgW},
 		{Title: "AGE", Width: ageW},
 	}
 }
@@ -452,12 +399,8 @@ func (s *harnessesScreen) setSize(width, height int) {
 	}
 }
 
-// cursorConfig returns the highlighted agent, or false when the "new" selector
-// holds focus or the list is empty.
+// cursorConfig returns the highlighted agent, or false when the list is empty.
 func (s *harnessesScreen) cursorConfig() (HarnessConfig, bool) {
-	if s.newSelected {
-		return HarnessConfig{}, false
-	}
 	i := s.table.Cursor()
 	if i < 0 || i >= len(s.configs) {
 		return HarnessConfig{}, false
@@ -480,23 +423,6 @@ func (s *harnessesScreen) centered(width, height int, content string) string {
 	}
 	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, content)
 }
-
-// dialogBox renders content inside the harness dialog frame at a stable width:
-// at least two-thirds of the screen, expanding only when the content is wider.
-// A fixed floor keeps the box from resizing as its contents change (e.g. the
-// form's fields or an open dropdown). Used by the harness create/edit form.
-func dialogBox(style lipgloss.Style, screenWidth int, content string) string {
-	// lipgloss Width sets the total rendered box width (border and padding
-	// included), so floor against the naturally-sized box.
-	natural := lipgloss.Width(style.Render(content))
-	target := screenWidth * 2 / 3
-	if target > natural {
-		return style.Width(target).Render(content)
-	}
-	return style.Render(content)
-}
-
-// harnessDisplayName prefers a config's name, then its slug, then its ID.
 func harnessDisplayName(cfg HarnessConfig) string {
 	if cfg.Name != "" {
 		return cfg.Name

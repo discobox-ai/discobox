@@ -14,6 +14,7 @@ import (
 
 	"github.com/obot-platform/discobox/controlplane"
 	"github.com/obot-platform/discobox/gormdb"
+	"github.com/obot-platform/discobox/internal/hostid"
 	"github.com/obot-platform/discobox/localipc"
 	"github.com/obot-platform/discobox/server/internal/harnessdefs"
 	"github.com/obot-platform/discobox/server/internal/sandbox"
@@ -33,6 +34,12 @@ type Config struct {
 	ConfigDir string
 	CacheDir  string
 	StateDir  string
+
+	// HostID identifies the machine this server runs on, resolved the same way
+	// a CLI on this machine resolves it. A create request whose origin reports
+	// this host ID came from this filesystem, which is what makes binding a
+	// client's local source directory possible.
+	HostID string
 
 	// Database settings.
 	DatabaseDSN     string
@@ -71,6 +78,11 @@ func Load() (*Config, error) {
 	cfg.ConfigDir = getEnv("DISCOBOX_CONFIG_DIR", filepath.Join(xdg.ConfigHome, appName))
 	cfg.CacheDir = getEnv("DISCOBOX_CACHE_DIR", filepath.Join(xdg.CacheHome, appName))
 	cfg.StateDir = getEnv("DISCOBOX_STATE_DIR", filepath.Join(xdg.StateHome, appName))
+	hostID, err := hostid.Get()
+	if err != nil {
+		return nil, fmt.Errorf("resolve host ID: %w", err)
+	}
+	cfg.HostID = hostID
 	cfg.DatabaseDSN = getEnv("DATABASE_DSN", defaultDatabaseDSN(cfg.DataDir))
 	cfg.DatabaseReadDSN = getEnv("DATABASE_READ_DSN", "")
 	cfg.DatabaseDriver = getEnvDriver("DATABASE_DRIVER", gormdb.DetectDriver(cfg.DatabaseDSN))

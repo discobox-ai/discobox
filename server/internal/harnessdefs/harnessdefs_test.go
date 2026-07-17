@@ -4,11 +4,16 @@ import (
 	"testing"
 )
 
-func TestIncludedDefinitionsAreConfigurableImages(t *testing.T) {
-	for _, id := range []string{"codex", "claude-code", "opencode"} {
-		definition, ok := DefinitionByID(id)
-		if !ok || definition.Image == "" || definition.Configure == nil {
-			t.Fatalf("definition %q = %#v, want configurable image", id, definition)
+func TestSeedsCoverIncludedHarnesses(t *testing.T) {
+	seeds := Seeds(nil)
+	bySlug := map[string]Seed{}
+	for _, seed := range seeds {
+		bySlug[seed.Slug] = seed
+	}
+	for _, slug := range []string{"codex", "claude-code", "opencode"} {
+		seed, ok := bySlug[slug]
+		if !ok || seed.Image == "" || seed.Name == "" {
+			t.Fatalf("seed %q = %#v, want a named seed with an image", slug, seed)
 		}
 	}
 }
@@ -26,27 +31,18 @@ func TestImageEnvVar(t *testing.T) {
 	}
 }
 
-func TestImageOverridesApplied(t *testing.T) {
+func TestSeedsApplyImageOverrides(t *testing.T) {
 	overrides := map[string]string{"codex": "discobox-harness-codex:dev-abc"}
-
-	definition, ok := DefinitionByIDWithImages("codex", overrides)
-	if !ok {
-		t.Fatal("codex definition not found")
+	bySlug := map[string]Seed{}
+	for _, seed := range Seeds(overrides) {
+		bySlug[seed.Slug] = seed
 	}
-	if definition.Image != "discobox-harness-codex:dev-abc" {
-		t.Fatalf("image = %q, want override applied", definition.Image)
+	if got := bySlug["codex"].Image; got != "discobox-harness-codex:dev-abc" {
+		t.Fatalf("codex image = %q, want override applied", got)
 	}
-	if definition.Configure == nil || definition.Configure.Image != "discobox-harness-codex:dev-abc" {
-		t.Fatalf("configure image = %#v, want override applied", definition.Configure)
-	}
-
-	// Definitions without an override keep their baked-in image.
-	other, ok := DefinitionByIDWithImages("opencode", overrides)
-	if !ok {
-		t.Fatal("opencode definition not found")
-	}
-	if other.Image == "discobox-harness-codex:dev-abc" || other.Image == "" {
-		t.Fatalf("opencode image = %q, want baked-in", other.Image)
+	// Harnesses without an override keep their baked-in image.
+	if got := bySlug["opencode"].Image; got == "discobox-harness-codex:dev-abc" || got == "" {
+		t.Fatalf("opencode image = %q, want baked-in", got)
 	}
 }
 

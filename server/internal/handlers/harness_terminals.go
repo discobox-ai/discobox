@@ -15,6 +15,10 @@ func (h *Handler) AttachSandboxExec(context.Context, serverapi.AttachSandboxExec
 	return sandboxAgentRuntimeNotImplemented(), nil
 }
 
+func (h *Handler) AttachSandboxExecOnce(context.Context, serverapi.AttachSandboxExecOnceReq, serverapi.AttachSandboxExecOnceParams) (serverapi.AttachSandboxExecOnceRes, error) {
+	return sandboxAgentRuntimeNotImplemented(), nil
+}
+
 func (h *Handler) CreateSandboxExec(context.Context, *serverapi.CreateSandboxExecRequest, serverapi.CreateSandboxExecParams) (serverapi.CreateSandboxExecRes, error) {
 	return sandboxAgentRuntimeNotImplemented(), nil
 }

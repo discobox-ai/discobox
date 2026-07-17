@@ -103,7 +103,10 @@ func (s *Store) ListSandboxIDsWithStaleOperations(ctx context.Context, cutoff ti
 
 // ListSandboxes lists a project's sandboxes. A non-empty sourceRoot restricts
 // the result to sandboxes whose primary source resolves to that repository root.
-func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string) ([]model.Sandbox, error) {
+// A non-empty originKey restricts it to sandboxes created from one client host
+// and project directory. The two filters are independent: sourceRoot asks what a
+// sandbox runs against, originKey asks where it was started from.
+func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot, originKey string) ([]model.Sandbox, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {
 		return nil, err
@@ -115,6 +118,9 @@ func (s *Store) ListSandboxes(ctx context.Context, projectID, sourceRoot string)
 		Where("project_id = ?", projectID)
 	if sourceRoot != "" {
 		query = query.Where("source_root = ?", sourceRoot)
+	}
+	if originKey != "" {
+		query = query.Where("origin_key = ?", originKey)
 	}
 	var sandboxes []model.Sandbox
 	err = query.

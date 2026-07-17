@@ -1,9 +1,7 @@
 package cli
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -20,7 +18,6 @@ import (
 type harnessCreateOptions struct {
 	name           string
 	slug           string
-	definitionID   string
 	image          string
 	files          []string
 	createOnlyFile []string
@@ -34,12 +31,11 @@ type harnessUpdateOptions struct {
 
 func (a *App) newHarnessCommand() *cobra.Command {
 	cmd := &cobra.Command{Use: "harnesses", Aliases: []string{"harness"}, Short: "Manage harness configs"}
-	cmd.AddCommand(a.newHarnessDefinitionsCommand())
 	cmd.AddCommand(a.newHarnessListCommand())
 	cmd.AddCommand(a.newHarnessGetCommand())
 	cmd.AddCommand(a.newHarnessCreateCommand())
-	cmd.AddCommand(a.newHarnessEnableCommand())
-	cmd.AddCommand(a.newHarnessDisableCommand())
+	cmd.AddCommand(a.newHarnessConfigureCommand())
+	cmd.AddCommand(a.newHarnessDeconfigureCommand())
 	cmd.AddCommand(a.newHarnessUpdateCommand())
 	cmd.AddCommand(a.newHarnessSetDefaultCommand())
 	cmd.AddCommand(a.newHarnessDeleteCommand())
@@ -134,42 +130,6 @@ func (a *App) listHarnessSecretBindings(ctx context.Context, client *apiclientge
 	return body.GetSecretBindings(), nil
 }
 
-func (a *App) newHarnessDefinitionsCommand() *cobra.Command {
-	cmd := &cobra.Command{Use: "definitions", Aliases: []string{"definition", "defs"}, Short: "List harness config definitions", ValidArgsFunction: a.completeHarnessDefinitions, RunE: func(cmd *cobra.Command, args []string) error {
-		client, err := a.apiClient()
-		if err != nil {
-			return err
-		}
-		if len(args) > 0 {
-			definitionID, err := a.resolveHarnessDefinitionID(cmd.Context(), client, args[0])
-			if err != nil {
-				return err
-			}
-			definitionRes, err := client.GetHarnessDefinition(cmd.Context(), apiclientgen.GetHarnessDefinitionParams{DefinitionId: definitionID})
-			if err != nil {
-				return err
-			}
-			definition, err := expectResponse[apimodel.HarnessDefinition](definitionRes)
-			if err != nil {
-				return err
-			}
-			return a.writeHarnessDefinition(cmd, definition)
-		}
-		bodyRes, err := client.ListHarnessDefinitions(cmd.Context())
-		if err != nil {
-			return err
-		}
-		body, err := expectResponse[apimodel.ListHarnessDefinitionsBody](bodyRes)
-		if err != nil {
-			return err
-		}
-		return a.writeHarnessDefinitions(cmd, body.GetHarnessDefinitions())
-	}}
-	cmd.Args = cobra.MaximumNArgs(1)
-	a.addQuietFlag(cmd)
-	return cmd
-}
-
 func (a *App) newHarnessListCommand() *cobra.Command {
 	cmd := &cobra.Command{Use: "ls", Aliases: []string{"list"}, Short: "List harness configs", RunE: func(cmd *cobra.Command, _ []string) error {
 		projectID, err := a.projectIDValue()
@@ -226,12 +186,6 @@ func (a *App) newHarnessCreateCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		if opts.definitionID != "" {
-			opts.definitionID, err = a.resolveHarnessDefinitionID(cmd.Context(), client, opts.definitionID)
-			if err != nil {
-				return err
-			}
-		}
 		body, err := createHarnessBody(opts)
 		if err != nil {
 			return err
@@ -248,293 +202,133 @@ func (a *App) newHarnessCreateCommand() *cobra.Command {
 	}}
 	cmd.Flags().StringVar(&opts.name, "name", "", "Harness config name")
 	cmd.Flags().StringVar(&opts.slug, "slug", "", "Stable, URL-safe identifier used to select this harness (e.g. codex); defaults to the definition ID or a slug derived from the name")
-	cmd.Flags().StringVar(&opts.definitionID, "definition", "", "Built-in harness definition whose image should be registered")
 	cmd.Flags().StringVar(&opts.image, "image", "", "Harness Docker image to register; the server reads and validates its io.discobox.harness.v1 metadata label")
 	cmd.Flags().StringArrayVar(&opts.files, "file", nil, "File to write into the harness's home directory, as PATH=CONTENT or PATH=@LOCALFILE (repeatable)")
 	cmd.Flags().StringArrayVar(&opts.createOnlyFile, "create-only-file", nil, "File path that should only be created if it does not already exist. Can be repeated and must match a --file PATH.")
-	_ = cmd.RegisterFlagCompletionFunc("definition", a.completeHarnessDefinitions)
 	return cmd
 }
 
-func (a *App) newHarnessEnableCommand() *cobra.Command {
+// newHarnessConfigureCommand runs a harness's configure flow. The server owns
+// applying the result: this drives the sequence and hands the terminal to the
+// user in between.
+//
+//	configure        create the ephemeral configure sandbox
+//	configure/attach seed the previous configuration into it
+//	attach "primary" launch the configure command and let the user drive it
+//	configure/commit verify it exited 0, apply what it wrote, delete the sandbox
+func (a *App) newHarnessConfigureCommand() *cobra.Command {
 	var setDefault bool
-	var noConfigure bool
-	cmd := &cobra.Command{Use: "enable DEFINITION_NAME", Aliases: []string{"enabled"}, Short: "Enable a harness config definition", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessDefinitions, RunE: func(cmd *cobra.Command, args []string) error {
-		projectID, err := a.projectIDValue()
-		if err != nil {
-			return err
-		}
-		client, err := a.apiClient()
-		if err != nil {
-			return err
-		}
-		definition, err := a.resolveHarnessDefinition(cmd.Context(), client, args[0])
-		if err != nil {
-			return err
-		}
-		harnesses, err := a.listHarnessConfigs(cmd.Context(), client, projectID)
-		if err != nil {
-			return err
-		}
-		existing := harnessConfigBySlug(harnesses, definition.ID)
-		if existing != nil {
+	cmd := &cobra.Command{
+		Use:               "configure HARNESS",
+		Short:             "Run a harness's interactive configure flow",
+		Long:              "Run a harness's interactive configure flow. Re-running reconfigures it, and the previous configuration is offered to the harness so it can pre-fill.",
+		Args:              cobra.ExactArgs(1),
+		Aliases:           []string{"enable", "reconfigure"},
+		ValidArgsFunction: a.completeHarnessConfigs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			harness, err := a.runHarnessConfigure(cmd.Context(), client, projectID, harnessID,
+				cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+			if err != nil {
+				return err
+			}
 			if setDefault {
-				if err := a.setDefaultHarnessConfig(cmd.Context(), client, projectID, existing.ID); err != nil {
+				if err := a.setDefaultHarnessConfig(cmd.Context(), client, projectID, harness.ID); err != nil {
 					return err
 				}
 			}
-			return a.writeHarness(cmd, existing)
-		}
-		body := &apimodel.CreateHarnessConfigBody{}
-		body.SetDefinitionId(apiclientgen.NewOptString(definition.ID))
-		harnessRes, err := client.CreateHarnessConfig(cmd.Context(), body, apiclientgen.CreateHarnessConfigParams{ProjectId: projectID})
-		if err != nil {
-			return err
-		}
-		harness, err := expectResponse[apimodel.HarnessConfig](harnessRes)
-		if err != nil {
-			return err
-		}
-		var configured *harnessConfigureOutput
-		if configureSpec, ok := definition.Configure.Get(); ok && !noConfigure {
-			configured, err = a.runHarnessConfigure(cmd, client, projectID, harness.ID, configureSpec)
-			if err != nil {
-				a.deleteHarnessConfigQuietly(context.WithoutCancel(cmd.Context()), client, projectID, harness.ID)
-				return fmt.Errorf("harness configure: %w", err)
-			}
-		}
-		if configured != nil && len(configured.Files) > 0 {
-			update := &apimodel.UpdateHarnessConfigBody{}
-			update.SetFiles(apiclientgen.NewOptNilHarnessConfigFileArray(configured.Files))
-			updatedRes, updateErr := client.UpdateHarnessConfig(cmd.Context(), update, apiclientgen.UpdateHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harness.ID})
-			if updateErr != nil {
-				a.deleteHarnessConfigQuietly(context.WithoutCancel(cmd.Context()), client, projectID, harness.ID)
-				return fmt.Errorf("harness configure: apply files: %w", updateErr)
-			}
-			harness, err = expectResponse[apimodel.HarnessConfig](updatedRes)
-			if err != nil {
-				return err
-			}
-		}
-		if configured != nil {
-			if err := a.applyHarnessConfigureSecrets(cmd.Context(), client, projectID, harness.ID, configured.Secrets); err != nil {
-				a.deleteHarnessConfigQuietly(context.WithoutCancel(cmd.Context()), client, projectID, harness.ID)
-				return fmt.Errorf("harness configure: apply secrets: %w", err)
-			}
-		}
-		if setDefault || len(harnesses) == 0 {
-			if err := a.setDefaultHarnessConfig(cmd.Context(), client, projectID, harness.ID); err != nil {
-				return err
-			}
-		}
-		return a.writeHarness(cmd, harness)
-	}}
-	cmd.Flags().BoolVarP(&setDefault, "default", "d", false, "Set the project default harness config")
-	cmd.Flags().BoolVar(&noConfigure, "no-configure", false, "Skip the definition's interactive configure step even if one is defined")
+			return a.writeHarness(cmd, harness)
+		},
+	}
+	cmd.Flags().BoolVar(&setDefault, "default", false, "Make this the project's default harness once configured")
 	return cmd
 }
 
-// configureSandboxCreateConfig builds the sandbox create config that runs a
-// harness definition's configure step. The configure spec carries only generic
-// sandbox resources; harnessMode selects the image-owned config command.
-func configureSandboxCreateConfig(harnessConfigID string, spec apimodel.ConfigureSandbox) apimodel.SandboxCreateConfig {
-	config := apimodel.SandboxCreateConfig{
-		HarnessConfigId: apiclientgen.NewOptString(harnessConfigID),
-		HarnessMode:     apiclientgen.NewOptSandboxCreateConfigHarnessMode(apiclientgen.SandboxCreateConfigHarnessModeConfig),
-		Image:           spec.Image,
-		CpuVcpus:        spec.CpuVcpus,
-		MemoryBytes:     spec.MemoryBytes,
-		StorageBytes:    spec.StorageBytes,
-	}
-	if env, ok := spec.Env.Get(); ok {
-		config.SetEnv(apiclientgen.NewOptSandboxCreateConfigEnv(apiclientgen.SandboxCreateConfigEnv(env)))
-	}
-	return config
-}
-
-const harnessConfigureOutputPath = "/run/discobox/harness-configure.json"
-
-type harnessConfigureOutput struct {
-	Secrets []harnessConfigureSecret     `json:"secrets"`
-	Files   []apimodel.HarnessConfigFile `json:"files"`
-}
-
-type harnessConfigureSecret struct {
-	EnvName string                            `json:"envName"`
-	Name    string                            `json:"name"`
-	Type    apiclientgen.CreateSecretBodyType `json:"type"`
-	Host    string                            `json:"host,omitempty"`
-	Value   apimodel.SecretValue              `json:"value"`
-}
-
-func (a *App) runHarnessConfigure(cmd *cobra.Command, client *apiclientgen.Client, projectID, harnessConfigID string, configureSpec apimodel.ConfigureSandbox) (*harnessConfigureOutput, error) {
-	config := configureSandboxCreateConfig(harnessConfigID, configureSpec)
-	return a.runConfigureSandbox(cmd.Context(), client, projectID, config, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
-}
-
-// runConfigureSandbox creates a config-mode sandbox from the given create
-// config, attaches its primary terminal to the caller's streams so the harness's
-// interactive configure flow can run in the real terminal, and returns the
-// secrets and files it wrote to harnessConfigureOutputPath. The ephemeral
-// sandbox is always cleaned up.
-func (a *App) runConfigureSandbox(ctx context.Context, client *apiclientgen.Client, projectID string, config apimodel.SandboxCreateConfig, stdin io.Reader, stdout, stderr io.Writer) (*harnessConfigureOutput, error) {
-	if strings.TrimSpace(config.Name) == "" {
-		runID, err := id.New(id.PrefixSandbox)
-		if err != nil {
-			return nil, err
-		}
-		config.Name = "configure-" + id.RandomPart(runID)[:8]
-	}
-	sandboxRes, err := client.CreateSandbox(ctx, &apimodel.CreateSandboxBody{Config: config}, apiclientgen.CreateSandboxParams{ProjectId: projectID})
+// runHarnessConfigure drives the configure sequence to completion. It takes the
+// streams rather than a command so the TUI can hand it the real terminal it
+// restores for the duration.
+func (a *App) runHarnessConfigure(ctx context.Context, client *apiclientgen.Client, projectID, harnessID string,
+	stdin io.Reader, stdout, stderr io.Writer,
+) (*apimodel.HarnessConfig, error) {
+	sandboxRes, err := client.ConfigureHarnessConfig(ctx, apiclientgen.ConfigureHarnessConfigParams{
+		ProjectId: projectID, HarnessConfigId: harnessID,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("create configure sandbox: %w", err)
+		return nil, fmt.Errorf("start configure: %w", err)
 	}
 	sandbox, err := expectResponse[apimodel.Sandbox](sandboxRes)
 	if err != nil {
-		return nil, fmt.Errorf("create configure sandbox: %w", err)
+		return nil, fmt.Errorf("start configure: %w", err)
 	}
-	defer a.deleteConfigureSandboxQuietly(context.WithoutCancel(ctx), client, projectID, sandbox.ID, stderr)
 
 	fmt.Fprintf(stderr, "Running configure sandbox %s, waiting for it to start...\n", id.RandomPart(sandbox.ID))
 	if _, err := a.waitForSandboxCtx(ctx, client, projectID, sandbox.ID, 2*time.Minute); err != nil {
 		return nil, fmt.Errorf("configure sandbox failed to start: %w", err)
 	}
-	terminal, err := a.waitForPrimaryTerminal(ctx, stderr, projectID, sandbox.ID, 2*time.Minute)
+	// Seeding must land before the configure command runs. It does: in config mode
+	// the sandbox-agent holds the primary terminal until it is attached, so nothing
+	// has started yet.
+	attachRes, err := client.AttachHarnessConfigConfigure(ctx, apiclientgen.AttachHarnessConfigConfigureParams{
+		ProjectId: projectID, HarnessConfigId: harnessID,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("configure sandbox failed to launch: %w", err)
+		return nil, fmt.Errorf("prepare configure: %w", err)
 	}
-	fmt.Fprintf(stderr, "Attaching to configure terminal %s (answer any prompts; Ctrl-P Ctrl-Q to detach)\n", id.RandomPart(terminal.ID))
-	if err := a.attachSandboxTerminal(ctx, projectID, sandbox.ID, terminal.ID, stdin, stdout, stderr); err != nil {
+	if err := expectNoContent[apiclientgen.AttachHarnessConfigConfigureNoContent](attachRes); err != nil {
+		return nil, fmt.Errorf("prepare configure: %w", err)
+	}
+
+	// Attaching the virtual primary exec is what launches the configure command,
+	// so there is no terminal to wait for first.
+	fmt.Fprintf(stderr, "Attaching to configure terminal (answer any prompts)\n")
+	if err := a.attachSandboxTerminal(ctx, projectID, sandbox.ID, primaryExecID, stdin, stdout, stderr); err != nil {
 		return nil, fmt.Errorf("attach configure terminal: %w", err)
 	}
-	finished, err := a.getSandboxExec(ctx, projectID, sandbox.ID, terminal.ID)
+
+	// The server checks the real exit status; detaching early surfaces as a
+	// commit error rather than a silent success.
+	committedRes, err := client.CommitHarnessConfigConfigure(ctx, apiclientgen.CommitHarnessConfigConfigureParams{
+		ProjectId: projectID, HarnessConfigId: harnessID,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("check configure terminal status: %w", err)
+		return nil, fmt.Errorf("configure: %w", err)
 	}
-	switch finished.Status {
-	case apiclientgen.SandboxExecStatusExited:
-		if code, ok := finished.ExitCode.Get(); !ok || code != 0 {
-			return nil, fmt.Errorf("configure sandbox exited with code %d", code)
-		}
-	case apiclientgen.SandboxExecStatusFailed, apiclientgen.SandboxExecStatusLost:
-		return nil, fmt.Errorf("configure sandbox %s: %s", finished.Status, finished.Error.Or(""))
-	default:
-		return nil, fmt.Errorf("detached before the configure sandbox finished; re-run to retry")
-	}
-
-	var buf bytes.Buffer
-	catBody := &apimodel.CreateSandboxExecRequest{}
-	catBody.SetCommand([]string{"cat", harnessConfigureOutputPath})
-	catExec, err := a.createSandboxExec(ctx, projectID, sandbox.ID, catBody)
+	committed, err := expectResponse[apimodel.HarnessConfig](committedRes)
 	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", harnessConfigureOutputPath, err)
+		return nil, fmt.Errorf("configure: %w", err)
 	}
-	if err := a.attachSandboxExec(ctx, projectID, sandbox.ID, catExec.ID, false, false, bytes.NewReader(nil), &buf, stderr); err != nil {
-		return nil, fmt.Errorf("read %s: %w", harnessConfigureOutputPath, err)
-	}
-	if err := a.returnSandboxExecStatus(ctx, projectID, sandbox.ID, catExec.ID); err != nil {
-		return nil, fmt.Errorf("read %s: %w", harnessConfigureOutputPath, err)
-	}
-	var out harnessConfigureOutput
-	if err := json.Unmarshal(buf.Bytes(), &out); err != nil {
-		return nil, fmt.Errorf("%s is invalid: %w", harnessConfigureOutputPath, err)
-	}
-	return &out, nil
+	return committed, nil
 }
 
-// applyHarnessConfigureOutput writes the configure flow's files and secret
-// bindings onto the harness config.
-func (a *App) applyHarnessConfigureOutput(ctx context.Context, client *apiclientgen.Client, projectID, harnessConfigID string, out *harnessConfigureOutput) error {
-	if out == nil {
-		return nil
+func (a *App) newHarnessDeconfigureCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:               "deconfigure HARNESS",
+		Short:             "Undo a harness's configure flow",
+		Long:              "Remove the secrets and files the configure flow created and mark the harness unconfigured. The harness itself is kept and can be configured again.",
+		Args:              cobra.ExactArgs(1),
+		Aliases:           []string{"disable"},
+		ValidArgsFunction: a.completeHarnessConfigs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			res, err := client.DeconfigureHarnessConfig(cmd.Context(), apiclientgen.DeconfigureHarnessConfigParams{
+				ProjectId: projectID, HarnessConfigId: harnessID,
+			})
+			if err != nil {
+				return err
+			}
+			harness, err := expectResponse[apimodel.HarnessConfig](res)
+			if err != nil {
+				return err
+			}
+			return a.writeHarness(cmd, harness)
+		},
 	}
-	if len(out.Files) > 0 {
-		update := &apimodel.UpdateHarnessConfigBody{}
-		update.SetFiles(apiclientgen.NewOptNilHarnessConfigFileArray(out.Files))
-		if _, err := client.UpdateHarnessConfig(ctx, update, apiclientgen.UpdateHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harnessConfigID}); err != nil {
-			return fmt.Errorf("apply files: %w", err)
-		}
-	}
-	if err := a.applyHarnessConfigureSecrets(ctx, client, projectID, harnessConfigID, out.Secrets); err != nil {
-		return fmt.Errorf("apply secrets: %w", err)
-	}
-	return nil
-}
-
-func (a *App) deleteHarnessConfigQuietly(ctx context.Context, client *apiclientgen.Client, projectID, harnessConfigID string) {
-	res, err := client.DeleteHarnessConfig(ctx, apiclientgen.DeleteHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harnessConfigID})
-	if err == nil {
-		_ = expectNoContent[apiclientgen.DeleteHarnessConfigNoContent](res)
-	}
-}
-
-func (a *App) applyHarnessConfigureSecrets(ctx context.Context, client *apiclientgen.Client, projectID, harnessConfigID string, secrets []harnessConfigureSecret) error {
-	for _, secret := range secrets {
-		envName := strings.TrimSpace(secret.EnvName)
-		if envName == "" {
-			return fmt.Errorf("configure secret is missing envName")
-		}
-		name := strings.TrimSpace(secret.Name)
-		if name == "" {
-			name = envName
-		}
-		body := &apimodel.CreateSecretBody{Name: name, Type: secret.Type, Value: secret.Value}
-		if secret.Host != "" {
-			body.SetHost(apiclientgen.NewOptString(secret.Host))
-		}
-		secretRes, err := client.CreateSecret(ctx, body, apiclientgen.CreateSecretParams{ProjectId: projectID})
-		if err != nil {
-			return err
-		}
-		created, err := expectResponse[apimodel.Secret](secretRes)
-		if err != nil {
-			return err
-		}
-		bindBody := &apimodel.SetHarnessConfigSecretBindingBody{SecretId: created.ID}
-		if _, err := client.SetHarnessConfigSecretBinding(ctx, bindBody, apiclientgen.SetHarnessConfigSecretBindingParams{ProjectId: projectID, HarnessConfigId: harnessConfigID, EnvName: envName}); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (a *App) deleteConfigureSandboxQuietly(ctx context.Context, client *apiclientgen.Client, projectID, sandboxID string, stderr io.Writer) {
-	if _, err := client.DeleteSandbox(ctx, apiclientgen.DeleteSandboxParams{ProjectId: projectID, SandboxId: sandboxID}); err != nil {
-		fmt.Fprintf(stderr, "warning: failed to delete configure sandbox %s: %v\n", id.RandomPart(sandboxID), err)
-	}
-}
-
-func (a *App) newHarnessDisableCommand() *cobra.Command {
-	return &cobra.Command{Use: "disable DEFINITION_NAME", Short: "Disable a harness config definition", Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessDefinitions, RunE: func(cmd *cobra.Command, args []string) error {
-		projectID, err := a.projectIDValue()
-		if err != nil {
-			return err
-		}
-		client, err := a.apiClient()
-		if err != nil {
-			return err
-		}
-		definition, err := a.resolveHarnessDefinition(cmd.Context(), client, args[0])
-		if err != nil {
-			return err
-		}
-		existing, err := a.harnessConfigBySlug(cmd.Context(), client, projectID, definition.ID)
-		if err != nil {
-			return err
-		}
-		if existing == nil {
-			return nil
-		}
-		res, err := client.DeleteHarnessConfig(cmd.Context(), apiclientgen.DeleteHarnessConfigParams{ProjectId: projectID, HarnessConfigId: existing.ID})
-		if err != nil {
-			return err
-		}
-		if err := expectNoContent[apiclientgen.DeleteHarnessConfigNoContent](res); err != nil {
-			return err
-		}
-		_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s deleted\n", existing.ID)
-		return err
-	}}
 }
 
 func (a *App) newHarnessUpdateCommand() *cobra.Command {
@@ -625,60 +419,6 @@ func (a *App) harnessRequest(ctx context.Context, harnessArg string) (projectID 
 	harnessID, err = a.resolveHarnessConfigID(ctx, client, projectID, harnessArg)
 	return projectID, harnessID, client, err
 }
-
-func (a *App) resolveHarnessDefinition(ctx context.Context, client *apiclientgen.Client, value string) (*apimodel.HarnessDefinition, error) {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return nil, fmt.Errorf("harness definition name is required")
-	}
-	res, err := client.ListHarnessDefinitions(ctx)
-	if err != nil {
-		return nil, err
-	}
-	body, err := expectResponse[apimodel.ListHarnessDefinitionsBody](res)
-	if err != nil {
-		return nil, err
-	}
-	var nameMatches []apimodel.HarnessDefinition
-	var ids []string
-	definitions := body.GetHarnessDefinitions()
-	for _, definition := range definitions {
-		ids = append(ids, definition.ID)
-		if definition.Name == value {
-			matched := definition
-			return &matched, nil
-		}
-		if strings.EqualFold(definition.Name, value) {
-			nameMatches = append(nameMatches, definition)
-		}
-	}
-	if len(nameMatches) == 1 {
-		return &nameMatches[0], nil
-	}
-	if len(nameMatches) > 1 {
-		return nil, fmt.Errorf("harness definition name %q is ambiguous", value)
-	}
-	definitionID, err := resolveShortID(value, "harness definition ID", ids)
-	if err != nil {
-		return nil, err
-	}
-	for _, definition := range definitions {
-		if definition.ID == definitionID {
-			matched := definition
-			return &matched, nil
-		}
-	}
-	return nil, fmt.Errorf("harness definition %q not found", value)
-}
-
-func (a *App) harnessConfigBySlug(ctx context.Context, client *apiclientgen.Client, projectID, slug string) (*apimodel.HarnessConfig, error) {
-	harnesses, err := a.listHarnessConfigs(ctx, client, projectID)
-	if err != nil {
-		return nil, err
-	}
-	return harnessConfigBySlug(harnesses, slug), nil
-}
-
 func (a *App) listHarnessConfigs(ctx context.Context, client *apiclientgen.Client, projectID string) ([]apimodel.HarnessConfig, error) {
 	res, err := client.ListHarnessConfigs(ctx, apiclientgen.ListHarnessConfigsParams{ProjectId: projectID})
 	if err != nil {
@@ -702,17 +442,6 @@ func (a *App) defaultHarnessConfigID(ctx context.Context, client *apiclientgen.C
 	}
 	return project.DefaultHarnessConfigId.Or(""), nil
 }
-
-func harnessConfigBySlug(harnesses []apimodel.HarnessConfig, slug string) *apimodel.HarnessConfig {
-	for _, harness := range harnesses {
-		if harness.Slug == slug {
-			matched := harness
-			return &matched
-		}
-	}
-	return nil
-}
-
 func (a *App) setDefaultHarnessConfig(ctx context.Context, client *apiclientgen.Client, projectID, harnessID string) error {
 	res, err := client.SetDefaultHarnessConfig(ctx, apiclientgen.SetDefaultHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harnessID})
 	if err != nil {
@@ -726,8 +455,7 @@ func createHarnessBody(opts harnessCreateOptions) (*apimodel.CreateHarnessConfig
 	body := &apimodel.CreateHarnessConfigBody{}
 	body.SetName(optString(opts.name))
 	body.SetSlug(optString(opts.slug))
-	body.SetDefinitionId(optString(opts.definitionID))
-	body.SetImage(optString(opts.image))
+	body.Image = strings.TrimSpace(opts.image)
 	if len(opts.files) > 0 {
 		files, err := parseHarnessFileFlags(opts.files, opts.createOnlyFile)
 		if err != nil {

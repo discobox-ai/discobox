@@ -12,7 +12,7 @@ import (
 
 func claudeImageHarness(t *testing.T) config.Harness {
 	t.Helper()
-	image, err := config.LoadImage(filepath.Join("..", "image", "harnesses", "claude-code", "image.json"))
+	image, err := config.LoadImage(filepath.Join("..", "..", "harness", "claude-code", "image.json"))
 	if err != nil {
 		t.Fatal(err)
 	}

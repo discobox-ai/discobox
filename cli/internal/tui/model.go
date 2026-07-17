@@ -85,13 +85,12 @@ type Model struct {
 	activeTab  tabID
 	tabFocused bool
 
-	active      screen
-	list        *sandboxesScreen
-	terminal    *terminalScreen
-	form        *newSessionScreen
-	harnesses   *harnessesScreen
-	harnessForm *harnessFormScreen
-	secrets     *secretsScreen
+	active    screen
+	list      *sandboxesScreen
+	terminal  *terminalScreen
+	form      *newSessionScreen
+	harnesses *harnessesScreen
+	secrets   *secretsScreen
 }
 
 // New builds the root model with the sandbox list as the initial screen.
@@ -159,23 +158,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case openHarnessesMsg:
 		return m, m.switchTab(tabAgents, false)
 
-	case openHarnessFormMsg:
-		return m, m.enterHarnessForm(msg.edit)
-
-	case harnessFormBackMsg:
-		return m, m.goToHarnesses()
-
-	case harnessSavedMsg:
-		return m, m.harnessSaved(msg)
-
 	case runConfigureMsg:
 		return m, m.runConfigure(msg.harness)
 
 	case harnessConfiguredMsg:
 		return m, m.harnessConfigured(msg)
 
-	case harnessDeletedMsg:
-		m.setHarnessDeleteStatus(msg)
+	case harnessDeconfiguredMsg:
+		return m, m.harnessDeconfigured(msg)
 
 	case statusMsg:
 		m.statusError = msg.err
@@ -278,8 +268,6 @@ func (m *Model) syncActive(s screen) {
 		m.form = v
 	case *harnessesScreen:
 		m.harnesses = v
-	case *harnessFormScreen:
-		m.harnessForm = v
 	case *secretsScreen:
 		m.secrets = v
 	}
@@ -366,14 +354,12 @@ func (m *Model) switchTab(t tabID, keepBarFocus bool) tea.Cmd {
 	var initCmd tea.Cmd
 	switch t {
 	case tabSandboxes:
-		m.harnessForm = nil
 		m.active = m.list
 	case tabAgents:
 		if m.harnesses == nil {
 			m.harnesses = newHarnessesScreen(m.ctx, m.ds, m.keys, m.styles)
 			initCmd = m.harnesses.Init()
 		}
-		m.harnessForm = nil
 		m.active = m.harnesses
 	case tabSecrets:
 		if m.secrets == nil {
@@ -401,49 +387,6 @@ func (m *Model) isTabScreen(s screen) bool {
 	}
 	return false
 }
-
-// enterHarnessForm opens the harness create/edit form. A nil edit target creates.
-func (m *Model) enterHarnessForm(edit *HarnessConfig) tea.Cmd {
-	form := newHarnessFormScreen(m.ctx, m.ds, m.keys, m.styles, edit)
-	m.harnessForm = form
-	m.active = form
-	m.tabFocused = false
-	m.statusError = false
-	m.statusText = ""
-	return tea.Batch(form.Init(), m.resizeActive())
-}
-
-// goToHarnesses returns to the coding-agents tab, tearing down the form.
-func (m *Model) goToHarnesses() tea.Cmd {
-	m.harnessForm = nil
-	if m.harnesses == nil {
-		m.harnesses = newHarnessesScreen(m.ctx, m.ds, m.keys, m.styles)
-	}
-	m.activeTab = tabAgents
-	m.tabFocused = false
-	m.active = m.harnesses
-	return tea.Batch(m.harnesses.refreshCmd(), m.resizeActive())
-}
-
-// harnessSaved returns to the coding-agents screen, queues the saved config for
-// selection, and refreshes so it appears. A freshly created agent then runs its
-// configure flow (the form's submit is "Run configure").
-func (m *Model) harnessSaved(msg harnessSavedMsg) tea.Cmd {
-	if m.harnesses != nil {
-		m.harnesses.selectID = msg.config.ID
-	}
-	cmd := m.goToHarnesses()
-	m.statusError = false
-	if msg.created {
-		m.statusText = fmt.Sprintf("created coding agent %s — running configure…", harnessDisplayName(msg.config))
-		return tea.Batch(cmd, m.runConfigureCmd(msg.config))
-	}
-	m.statusText = fmt.Sprintf("updated coding agent %s", harnessDisplayName(msg.config))
-	return cmd
-}
-
-// runConfigure makes the agents screen active and starts an agent's configure
-// flow (from the list's `c` key).
 func (m *Model) runConfigure(cfg HarnessConfig) tea.Cmd {
 	if m.harnesses != nil {
 		m.active = m.harnesses
@@ -479,34 +422,18 @@ func (m *Model) harnessConfigured(msg harnessConfiguredMsg) tea.Cmd {
 	return nil
 }
 
-func (m *Model) setHarnessDeleteStatus(msg harnessDeletedMsg) {
-	var failed int
-	var firstErr error
-	for _, err := range msg.errs {
-		if err != nil {
-			failed++
-			if firstErr == nil {
-				firstErr = err
-			}
-		}
+// harnessDeconfigured refreshes the list so the agent's configured state and
+// its lost default marker both re-render.
+func (m *Model) harnessDeconfigured(msg harnessDeconfiguredMsg) tea.Cmd {
+	m.statusError = false
+	m.statusText = "deconfigured coding agent"
+	if m.harnesses == nil {
+		return nil
 	}
-	if failed == 0 {
-		m.statusError = false
-		m.statusText = fmt.Sprintf("deleted %s", countLabel(len(msg.ids), "coding agent", "coding agents"))
-		return
-	}
-	m.statusError = true
-	if len(msg.ids) == 1 {
-		// A single delete surfaces the server's reason (e.g. the default agent
-		// cannot be deleted) rather than a bare count.
-		m.statusText = fmt.Sprintf("delete failed: %v", firstErr)
-		return
-	}
-	m.statusText = fmt.Sprintf("delete failed for %d of %d: %v", failed, len(msg.ids), firstErr)
+	m.harnesses.selectID = msg.id
+	return m.harnesses.refreshCmd()
 }
 
-// sessionCreated returns to the list, queues the new sandbox for selection, and
-// refreshes so it appears.
 func (m *Model) sessionCreated(sb Sandbox) tea.Cmd {
 	m.list.selectID = sb.ID
 	m.statusError = false
@@ -522,7 +449,6 @@ func (m *Model) goToList() tea.Cmd {
 		m.terminal = nil
 	}
 	m.form = nil
-	m.harnessForm = nil
 	m.activeTab = tabSandboxes
 	m.tabFocused = false
 	m.active = m.list

@@ -5,6 +5,7 @@ go 1.26.0
 require (
 	aidanwoods.dev/go-paseto v1.6.0
 	github.com/Microsoft/go-winio v0.6.2
+	github.com/adrg/xdg v0.5.3
 	github.com/coder/websocket v1.8.14
 	github.com/elazarl/goproxy v1.8.4
 	github.com/go-faster/errors v0.7.1

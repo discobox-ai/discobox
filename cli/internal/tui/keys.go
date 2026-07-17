@@ -7,29 +7,30 @@ import "charm.land/bubbles/v2/key"
 // move. Bindings double as the source of truth for the footer help, so every
 // user-facing key carries a help label.
 type keyMap struct {
-	Up         key.Binding
-	Down       key.Binding
-	Left       key.Binding
-	Right      key.Binding
-	Top        key.Binding
-	Bottom     key.Binding
-	Mark       key.Binding
-	SelectAll  key.Binding
-	Visual     key.Binding
-	Enter      key.Binding
-	Fullscreen key.Binding
-	New        key.Binding
-	Edit       key.Binding
-	Delete     key.Binding
-	Agents     key.Binding
-	Default    key.Binding
-	Configure  key.Binding
-	Refresh    key.Binding
-	Help       key.Binding
-	Back       key.Binding
-	Quit       key.Binding
-	Tab        key.Binding
-	ShiftTab   key.Binding
+	Up          key.Binding
+	Down        key.Binding
+	Left        key.Binding
+	Right       key.Binding
+	Top         key.Binding
+	Bottom      key.Binding
+	Mark        key.Binding
+	SelectAll   key.Binding
+	Visual      key.Binding
+	Enter       key.Binding
+	Fullscreen  key.Binding
+	New         key.Binding
+	Edit        key.Binding
+	Delete      key.Binding
+	Agents      key.Binding
+	Default     key.Binding
+	Configure   key.Binding
+	Deconfigure key.Binding
+	Refresh     key.Binding
+	Help        key.Binding
+	Back        key.Binding
+	Quit        key.Binding
+	Tab         key.Binding
+	ShiftTab    key.Binding
 }
 
 func defaultKeyMap() keyMap {
@@ -101,6 +102,10 @@ func defaultKeyMap() keyMap {
 		Configure: key.NewBinding(
 			key.WithKeys("c"),
 			key.WithHelp("c", "configure"),
+		),
+		Deconfigure: key.NewBinding(
+			key.WithKeys("C"),
+			key.WithHelp("C", "deconfigure"),
 		),
 		Refresh: key.NewBinding(
 			key.WithKeys("r"),

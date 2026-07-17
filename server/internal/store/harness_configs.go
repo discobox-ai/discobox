@@ -21,22 +21,6 @@ func (s *Store) ListHarnessConfigs(ctx context.Context, projectID string) ([]mod
 	return configs, err
 }
 
-// ListDefinitionBackedHarnessConfigs returns every harness config across all
-// projects that was created from a built-in definition. Used to refresh stored
-// images when a definition's resolved image changes.
-func (s *Store) ListDefinitionBackedHarnessConfigs(ctx context.Context) ([]model.HarnessConfig, error) {
-	read, err := s.getRead(ctx)
-	if err != nil {
-		return nil, err
-	}
-	var configs []model.HarnessConfig
-	err = read.
-		Where("definition_id <> ''").
-		Order("created_at ASC").
-		Find(&configs).Error
-	return configs, err
-}
-
 func (s *Store) CreateHarnessConfig(ctx context.Context, config *model.HarnessConfig) error {
 	_, err := withResourceEvent(ctx, s, model.EventActionCreated, func(tx *gorm.DB) (*model.HarnessConfig, error) {
 		if err := tx.Create(config).Error; err != nil {
@@ -53,6 +37,16 @@ func (s *Store) GetHarnessConfig(ctx context.Context, projectID, configID string
 		return nil, err
 	}
 	return firstByID[model.HarnessConfig](read.Where("project_id = ?", projectID), "id", configID)
+}
+
+// GetHarnessConfigByID looks a harness config up by ID alone, for reconcilers
+// that are handed a resource ID without its project scope.
+func (s *Store) GetHarnessConfigByID(ctx context.Context, configID string) (*model.HarnessConfig, error) {
+	read, err := s.getRead(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return firstByID[model.HarnessConfig](read, "id", configID)
 }
 
 func (s *Store) GetHarnessConfigByName(ctx context.Context, projectID, name string) (*model.HarnessConfig, error) {

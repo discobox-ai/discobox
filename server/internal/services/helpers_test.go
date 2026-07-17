@@ -3,27 +3,8 @@ package services
 import (
 	"testing"
 
-	apimodel "github.com/obot-platform/discobox/api/model"
-	"github.com/obot-platform/discobox/server/internal/harnessdefs"
 	"github.com/obot-platform/discobox/server/internal/model"
 )
-
-// The list-harness-definitions handler serves the built-in definitions through
-// Convert, which round-trips them through the generated API type's decoder and
-// its required-field validation. Every built-in definition — including its
-// optional configure block — must survive that decode, or the endpoint 500s.
-// This guards against the model and OpenAPI schema drifting apart.
-func TestBuiltInHarnessDefinitionsConvertToAPI(t *testing.T) {
-	definitions := harnessdefs.Definitions()
-	if len(definitions) == 0 {
-		t.Fatal("no built-in harness definitions to check")
-	}
-	if _, err := Convert[apimodel.ListHarnessDefinitionsBody](struct {
-		HarnessDefinitions any `json:"harnessDefinitions"`
-	}{HarnessDefinitions: definitions}); err != nil {
-		t.Fatalf("convert built-in harness definitions to API: %v", err)
-	}
-}
 
 func TestSandboxToAPIIncludesRegisteredHarnessConfig(t *testing.T) {
 	sandbox := &model.Sandbox{
@@ -35,12 +16,13 @@ func TestSandboxToAPIIncludesRegisteredHarnessConfig(t *testing.T) {
 			LastOperationStatus: model.SandboxOperationStatusSuccess,
 		},
 		HarnessConfig: &model.HarnessConfig{
-			ID:           "ac_1",
-			ProjectID:    "p1",
-			Slug:         "codex",
-			DefinitionID: "codex",
-			Name:         "Codex",
-			RunCommand:   []string{"codex"},
+			ID:         "ac_1",
+			ProjectID:  "p1",
+			Slug:       "codex",
+			BuiltIn:    true,
+			Configured: true,
+			Name:       "Codex",
+			RunCommand: []string{"codex"},
 		},
 	}
 	out, err := SandboxToAPI(sandbox)

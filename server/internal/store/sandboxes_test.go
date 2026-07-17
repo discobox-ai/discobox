@@ -6,6 +6,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/obot-platform/discobox/internal/originkey"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/secrets"
@@ -80,7 +81,7 @@ func TestListSandboxesFiltersBySourceRoot(t *testing.T) {
 	newSandbox("sandbox-2", "/src/beta")
 	newSandbox("sandbox-3", "")
 
-	matching, err := s.ListSandboxes(ctx, "project-1", "/src/alpha")
+	matching, err := s.ListSandboxes(ctx, "project-1", "/src/alpha", "")
 	if err != nil {
 		t.Fatalf("list sandboxes by source root: %v", err)
 	}
@@ -88,12 +89,92 @@ func TestListSandboxesFiltersBySourceRoot(t *testing.T) {
 		t.Fatalf("sandboxes for /src/alpha = %v, want only sandbox-1", sandboxIDs(matching))
 	}
 
-	all, err := s.ListSandboxes(ctx, "project-1", "")
+	all, err := s.ListSandboxes(ctx, "project-1", "", "")
 	if err != nil {
 		t.Fatalf("list all sandboxes: %v", err)
 	}
 	if len(all) != 3 {
 		t.Fatalf("unfiltered sandboxes = %v, want all three", sandboxIDs(all))
+	}
+}
+
+// Origin and source root are independent identities: the same project
+// directory on two machines is two origins, and one machine can start
+// sandboxes against repositories it does not hold.
+func TestListSandboxesFiltersByOriginKey(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	newSandbox := func(id, hostID, projectPath string) {
+		sandbox := &model.Sandbox{
+			ID:              id,
+			ProjectID:       "project-1",
+			CreatedByUserID: "user-1",
+			Name:            id,
+		}
+		if hostID != "" {
+			sandbox.Origin = &model.Origin{HostID: hostID, ProjectPath: projectPath}
+			key := sandbox.Origin.Key()
+			sandbox.OriginKey = &key
+		}
+		if err := s.CreateSandbox(ctx, sandbox); err != nil {
+			t.Fatalf("create sandbox %s: %v", id, err)
+		}
+	}
+	newSandbox("sandbox-1", "host_aaaaaaaaaaaaaaaa", "/src/alpha")
+	newSandbox("sandbox-2", "host_aaaaaaaaaaaaaaaa", "/src/beta")
+	// Same project path as sandbox-1, different machine.
+	newSandbox("sandbox-3", "host_bbbbbbbbbbbbbbbb", "/src/alpha")
+	newSandbox("sandbox-4", "", "")
+
+	key := originkey.Of("host_aaaaaaaaaaaaaaaa", "/src/alpha")
+	matching, err := s.ListSandboxes(ctx, "project-1", "", key)
+	if err != nil {
+		t.Fatalf("list sandboxes by origin key: %v", err)
+	}
+	if len(matching) != 1 || matching[0].ID != "sandbox-1" {
+		t.Fatalf("sandboxes for host_a /src/alpha = %v, want only sandbox-1", sandboxIDs(matching))
+	}
+
+	all, err := s.ListSandboxes(ctx, "project-1", "", "")
+	if err != nil {
+		t.Fatalf("list all sandboxes: %v", err)
+	}
+	if len(all) != 4 {
+		t.Fatalf("unfiltered sandboxes = %v, want all four", sandboxIDs(all))
+	}
+}
+
+// Origin survives the JSON round trip through the serializer column, so a
+// listing can show where a sandbox came from.
+func TestCreateSandboxPersistsOrigin(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	want := &model.Origin{
+		HostID:      "host_aaaaaaaaaaaaaaaa",
+		Hostname:    "laptop",
+		ProjectPath: "/src/alpha",
+		User:        "darren",
+	}
+	key := want.Key()
+	if err := s.CreateSandbox(ctx, &model.Sandbox{
+		ID:              "sandbox-1",
+		ProjectID:       "project-1",
+		CreatedByUserID: "user-1",
+		Name:            "sandbox-1",
+		Origin:          want,
+		OriginKey:       &key,
+	}); err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+
+	got, err := s.GetSandbox(ctx, "project-1", "sandbox-1")
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	if got.Origin == nil || *got.Origin != *want {
+		t.Fatalf("origin = %+v, want %+v", got.Origin, want)
 	}
 }
 

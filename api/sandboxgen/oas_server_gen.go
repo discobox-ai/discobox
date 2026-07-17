@@ -16,6 +16,20 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
 	AttachSandboxExec(ctx context.Context, params AttachSandboxExecParams) (*AttachSandboxExecSwitchingProtocols, error)
+	// AttachSandboxExecOnce implements attach-sandbox-exec-once operation.
+	//
+	// Runs a prepared exec to completion in a single request: the request body is written to the exec's
+	// stdin, stdin is then closed, and the response body is everything the exec emitted, with output and
+	// error streams interleaved as produced. This is the non-interactive counterpart to the websocket
+	// attach, for callers that only need to feed a command bytes and read its output; no frame encoding
+	// is involved.
+	// The exec must not be started beforehand — this starts it once the attach is connected, since
+	// output
+	// produced before an attach exists is lost. The exit status is not encoded in the response: read it
+	// from the exec record, which is authoritative.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
+	AttachSandboxExecOnce(ctx context.Context, req AttachSandboxExecOnceReq, params AttachSandboxExecOnceParams) (AttachSandboxExecOnceOK, error)
 	// CreateSandboxExec implements create-sandbox-exec operation.
 	//
 	// Create an exec runtime in a sandbox.

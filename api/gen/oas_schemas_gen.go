@@ -142,6 +142,41 @@ func (s *AssignSandboxHarnessSecretsBody) SetHarnessConfigId(val string) {
 	s.HarnessConfigId = val
 }
 
+// AttachHarnessConfigConfigureNoContent is response for AttachHarnessConfigConfigure operation.
+type AttachHarnessConfigConfigureNoContent struct{}
+
+func (*AttachHarnessConfigConfigureNoContent) attachHarnessConfigConfigureRes() {}
+
+type AttachSandboxExecOnceOK struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s AttachSandboxExecOnceOK) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
+func (*AttachSandboxExecOnceOK) attachSandboxExecOnceRes() {}
+
+type AttachSandboxExecOnceReq struct {
+	Data io.Reader
+}
+
+// Read reads data from the Data reader.
+//
+// Kept to satisfy the io.Reader interface.
+func (s AttachSandboxExecOnceReq) Read(p []byte) (n int, err error) {
+	if s.Data == nil {
+		return 0, io.EOF
+	}
+	return s.Data.Read(p)
+}
+
 // AttachSandboxExecSwitchingProtocols is response for AttachSandboxExec operation.
 type AttachSandboxExecSwitchingProtocols struct {
 	Connection OptString
@@ -170,99 +205,47 @@ func (s *AttachSandboxExecSwitchingProtocols) SetUpgrade(val OptString) {
 
 func (*AttachSandboxExecSwitchingProtocols) attachSandboxExecRes() {}
 
-// An ephemeral sandbox definition run interactively to collect configuration before a HarnessConfig
-// is created from a HarnessDefinition.
-// Ref: #/components/schemas/ConfigureSandbox
-type ConfigureSandbox struct {
-	// Requested CPU capacity in vCPUs.
-	CpuVcpus OptFloat64 `json:"cpuVcpus"`
-	// Environment variables available to the configure sandbox.
-	Env OptConfigureSandboxEnv `json:"env"`
-	// Sandbox base image. Defaults to the server configured sandbox image when omitted.
-	Image OptString `json:"image"`
-	// Requested memory capacity in bytes.
-	MemoryBytes OptInt64 `json:"memoryBytes"`
-	// Requested storage capacity in bytes.
-	StorageBytes OptInt64 `json:"storageBytes"`
+// Ref: #/components/schemas/CompleteSandboxSourcePushBody
+type CompleteSandboxSourcePushBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Full 40-character SHA-1 of the commit the client pushed and expects the sandbox to check out.
+	Commit string `json:"commit"`
 }
 
-// GetCpuVcpus returns the value of CpuVcpus.
-func (s *ConfigureSandbox) GetCpuVcpus() OptFloat64 {
-	return s.CpuVcpus
+// GetSchema returns the value of Schema.
+func (s *CompleteSandboxSourcePushBody) GetSchema() OptURI {
+	return s.Schema
 }
 
-// GetEnv returns the value of Env.
-func (s *ConfigureSandbox) GetEnv() OptConfigureSandboxEnv {
-	return s.Env
+// GetCommit returns the value of Commit.
+func (s *CompleteSandboxSourcePushBody) GetCommit() string {
+	return s.Commit
 }
 
-// GetImage returns the value of Image.
-func (s *ConfigureSandbox) GetImage() OptString {
-	return s.Image
+// SetSchema sets the value of Schema.
+func (s *CompleteSandboxSourcePushBody) SetSchema(val OptURI) {
+	s.Schema = val
 }
 
-// GetMemoryBytes returns the value of MemoryBytes.
-func (s *ConfigureSandbox) GetMemoryBytes() OptInt64 {
-	return s.MemoryBytes
-}
-
-// GetStorageBytes returns the value of StorageBytes.
-func (s *ConfigureSandbox) GetStorageBytes() OptInt64 {
-	return s.StorageBytes
-}
-
-// SetCpuVcpus sets the value of CpuVcpus.
-func (s *ConfigureSandbox) SetCpuVcpus(val OptFloat64) {
-	s.CpuVcpus = val
-}
-
-// SetEnv sets the value of Env.
-func (s *ConfigureSandbox) SetEnv(val OptConfigureSandboxEnv) {
-	s.Env = val
-}
-
-// SetImage sets the value of Image.
-func (s *ConfigureSandbox) SetImage(val OptString) {
-	s.Image = val
-}
-
-// SetMemoryBytes sets the value of MemoryBytes.
-func (s *ConfigureSandbox) SetMemoryBytes(val OptInt64) {
-	s.MemoryBytes = val
-}
-
-// SetStorageBytes sets the value of StorageBytes.
-func (s *ConfigureSandbox) SetStorageBytes(val OptInt64) {
-	s.StorageBytes = val
-}
-
-// Environment variables available to the configure sandbox.
-type ConfigureSandboxEnv map[string]string
-
-func (s *ConfigureSandboxEnv) init() ConfigureSandboxEnv {
-	m := *s
-	if m == nil {
-		m = map[string]string{}
-		*s = m
-	}
-	return m
+// SetCommit sets the value of Commit.
+func (s *CompleteSandboxSourcePushBody) SetCommit(val string) {
+	s.Commit = val
 }
 
 // Ref: #/components/schemas/CreateHarnessConfigBody
 type CreateHarnessConfigBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Built-in harness definition associated with this image.
-	DefinitionId OptString `json:"definitionId"`
 	// Optional non-secret configured file values to associate with the registered harness.
 	Files OptNilHarnessConfigFileArray `json:"files"`
 	// Harness sandbox image to register. The server validates its io.discobox.harness.v1 label and
 	// snapshots that metadata into the HarnessConfig.
-	Image OptString `json:"image"`
-	// Harness config name. Defaults to the definition name when definitionId is provided.
+	Image string `json:"image"`
+	// Harness config name. Defaults to the name declared by the image label.
 	Name OptString `json:"name"`
-	// Stable, URL-safe identifier used to select the harness config (e.g. codex). Defaults to
-	// definitionId, or a slug derived from name. Unique within the project.
+	// Stable, URL-safe identifier used to select the harness config (e.g. codex). Defaults to the id
+	// declared by the image label, or a slug derived from name. Unique within the project.
 	Slug OptString `json:"slug"`
 }
 
@@ -271,18 +254,13 @@ func (s *CreateHarnessConfigBody) GetSchema() OptURI {
 	return s.Schema
 }
 
-// GetDefinitionId returns the value of DefinitionId.
-func (s *CreateHarnessConfigBody) GetDefinitionId() OptString {
-	return s.DefinitionId
-}
-
 // GetFiles returns the value of Files.
 func (s *CreateHarnessConfigBody) GetFiles() OptNilHarnessConfigFileArray {
 	return s.Files
 }
 
 // GetImage returns the value of Image.
-func (s *CreateHarnessConfigBody) GetImage() OptString {
+func (s *CreateHarnessConfigBody) GetImage() string {
 	return s.Image
 }
 
@@ -301,18 +279,13 @@ func (s *CreateHarnessConfigBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-// SetDefinitionId sets the value of DefinitionId.
-func (s *CreateHarnessConfigBody) SetDefinitionId(val OptString) {
-	s.DefinitionId = val
-}
-
 // SetFiles sets the value of Files.
 func (s *CreateHarnessConfigBody) SetFiles(val OptNilHarnessConfigFileArray) {
 	s.Files = val
 }
 
 // SetImage sets the value of Image.
-func (s *CreateHarnessConfigBody) SetImage(val OptString) {
+func (s *CreateHarnessConfigBody) SetImage(val string) {
 	s.Image = val
 }
 
@@ -334,6 +307,8 @@ type CreateSandboxBody struct {
 	HarnessName OptString `json:"harnessName"`
 	// Desired sandbox configuration.
 	Config SandboxCreateConfig `json:"config"`
+	// Client host and project directory this sandbox is created from.
+	Origin OptOrigin `json:"origin"`
 	// Sandbox provider instance ID.
 	ProviderInstanceId OptString `json:"providerInstanceId"`
 }
@@ -351,6 +326,11 @@ func (s *CreateSandboxBody) GetHarnessName() OptString {
 // GetConfig returns the value of Config.
 func (s *CreateSandboxBody) GetConfig() SandboxCreateConfig {
 	return s.Config
+}
+
+// GetOrigin returns the value of Origin.
+func (s *CreateSandboxBody) GetOrigin() OptOrigin {
+	return s.Origin
 }
 
 // GetProviderInstanceId returns the value of ProviderInstanceId.
@@ -371,6 +351,11 @@ func (s *CreateSandboxBody) SetHarnessName(val OptString) {
 // SetConfig sets the value of Config.
 func (s *CreateSandboxBody) SetConfig(val SandboxCreateConfig) {
 	s.Config = val
+}
+
+// SetOrigin sets the value of Origin.
+func (s *CreateSandboxBody) SetOrigin(val OptOrigin) {
+	s.Origin = val
 }
 
 // SetProviderInstanceId sets the value of ProviderInstanceId.
@@ -1129,12 +1114,17 @@ func (s *ErrorModelStatusCode) SetResponse(val ErrorModel) {
 
 func (*ErrorModelStatusCode) approveSecretRequestRes()             {}
 func (*ErrorModelStatusCode) assignSandboxHarnessSecretsRes()      {}
+func (*ErrorModelStatusCode) attachHarnessConfigConfigureRes()     {}
+func (*ErrorModelStatusCode) commitHarnessConfigConfigureRes()     {}
+func (*ErrorModelStatusCode) completeSandboxSourcePushRes()        {}
+func (*ErrorModelStatusCode) configureHarnessConfigRes()           {}
 func (*ErrorModelStatusCode) createHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) createSandboxProviderInstanceRes()    {}
 func (*ErrorModelStatusCode) createSandboxRes()                    {}
 func (*ErrorModelStatusCode) createSecretGrantRes()                {}
 func (*ErrorModelStatusCode) createSecretRequestRes()              {}
 func (*ErrorModelStatusCode) createSecretRes()                     {}
+func (*ErrorModelStatusCode) deconfigureHarnessConfigRes()         {}
 func (*ErrorModelStatusCode) deleteHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) deleteHarnessConfigSecretBindingRes() {}
 func (*ErrorModelStatusCode) deleteSandboxProviderInstanceRes()    {}
@@ -1143,7 +1133,6 @@ func (*ErrorModelStatusCode) deleteSecretRes()                     {}
 func (*ErrorModelStatusCode) denySecretRequestRes()                {}
 func (*ErrorModelStatusCode) forceJobRes()                         {}
 func (*ErrorModelStatusCode) getHarnessConfigRes()                 {}
-func (*ErrorModelStatusCode) getHarnessDefinitionRes()             {}
 func (*ErrorModelStatusCode) getJobRes()                           {}
 func (*ErrorModelStatusCode) getProjectRes()                       {}
 func (*ErrorModelStatusCode) getSandboxProviderInstanceRes()       {}
@@ -1152,7 +1141,6 @@ func (*ErrorModelStatusCode) getSecretRequestRes()                 {}
 func (*ErrorModelStatusCode) getSecretRes()                        {}
 func (*ErrorModelStatusCode) listHarnessConfigSecretBindingsRes()  {}
 func (*ErrorModelStatusCode) listHarnessConfigsRes()               {}
-func (*ErrorModelStatusCode) listHarnessDefinitionsRes()           {}
 func (*ErrorModelStatusCode) listJobsRes()                         {}
 func (*ErrorModelStatusCode) listProjectsRes()                     {}
 func (*ErrorModelStatusCode) listSandboxProviderCatalogRes()       {}
@@ -1221,6 +1209,7 @@ func (s *ErrorResponseStatusCode) SetResponse(val ErrorResponse) {
 	s.Response = val
 }
 
+func (*ErrorResponseStatusCode) attachSandboxExecOnceRes()          {}
 func (*ErrorResponseStatusCode) attachSandboxExecRes()              {}
 func (*ErrorResponseStatusCode) createSandboxExecRes()              {}
 func (*ErrorResponseStatusCode) deleteSandboxExecRes()              {}
@@ -1238,6 +1227,11 @@ func (*ErrorResponseStatusCode) streamSandboxExecResourcesRes()     {}
 type GitSource struct {
 	// Immutable checkout target and optional user-facing ref identity.
 	Checkout OptGitSourceCheckout `json:"checkout"`
+	// How the source reaches the sandbox. clone means the sandbox fetches it from url or localDirectory.
+	// push means the client pushes it into the sandbox's Git repository, for a local directory the
+	// provider cannot reach; the sandbox waits in the awaiting_source phase until the push is complete.
+	// Defaults to clone.
+	Delivery OptGitSourceDelivery `json:"delivery"`
 	// Sandbox destination paths for this source.
 	Destination OptGitSourceDestination `json:"destination"`
 	// Source kind. Currently only git is supported.
@@ -1255,6 +1249,11 @@ type GitSource struct {
 // GetCheckout returns the value of Checkout.
 func (s *GitSource) GetCheckout() OptGitSourceCheckout {
 	return s.Checkout
+}
+
+// GetDelivery returns the value of Delivery.
+func (s *GitSource) GetDelivery() OptGitSourceDelivery {
+	return s.Delivery
 }
 
 // GetDestination returns the value of Destination.
@@ -1290,6 +1289,11 @@ func (s *GitSource) GetWorkspace() OptGitSourceWorkspace {
 // SetCheckout sets the value of Checkout.
 func (s *GitSource) SetCheckout(val OptGitSourceCheckout) {
 	s.Checkout = val
+}
+
+// SetDelivery sets the value of Delivery.
+func (s *GitSource) SetDelivery(val OptGitSourceDelivery) {
+	s.Delivery = val
 }
 
 // SetDestination sets the value of Destination.
@@ -1360,6 +1364,51 @@ func (s *GitSourceCheckout) SetRefName(val OptString) {
 // SetRefType sets the value of RefType.
 func (s *GitSourceCheckout) SetRefType(val OptString) {
 	s.RefType = val
+}
+
+// How the source reaches the sandbox. clone means the sandbox fetches it from url or localDirectory.
+// push means the client pushes it into the sandbox's Git repository, for a local directory the
+// provider cannot reach; the sandbox waits in the awaiting_source phase until the push is complete.
+// Defaults to clone.
+type GitSourceDelivery string
+
+const (
+	GitSourceDeliveryClone GitSourceDelivery = "clone"
+	GitSourceDeliveryPush  GitSourceDelivery = "push"
+)
+
+// AllValues returns all GitSourceDelivery values.
+func (GitSourceDelivery) AllValues() []GitSourceDelivery {
+	return []GitSourceDelivery{
+		GitSourceDeliveryClone,
+		GitSourceDeliveryPush,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s GitSourceDelivery) MarshalText() ([]byte, error) {
+	switch s {
+	case GitSourceDeliveryClone:
+		return []byte(s), nil
+	case GitSourceDeliveryPush:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *GitSourceDelivery) UnmarshalText(data []byte) error {
+	switch GitSourceDelivery(data) {
+	case GitSourceDeliveryClone:
+		*s = GitSourceDeliveryClone
+		return nil
+	case GitSourceDeliveryPush:
+		*s = GitSourceDeliveryPush
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Ref: #/components/schemas/GitSourceDestination
@@ -1511,11 +1560,22 @@ func (s *GitSourceWorkspaceMode) UnmarshalText(data []byte) error {
 type HarnessConfig struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// True for the included harnesses seeded by the server. Built-in configs track their image and
+	// cannot be deleted.
+	BuiltIn bool `json:"builtIn"`
+	// Why the last configure attempt failed. Cleared when a configure starts or succeeds.
+	ConfigureError OptString `json:"configureError"`
+	// Sandbox running the configure flow, while one is in flight.
+	ConfigureSandboxId OptString `json:"configureSandboxId"`
+	// True once the configure flow completed successfully. Only configured harnesses can be selected to
+	// run.
+	Configured bool `json:"configured"`
+	// Files written by the configure flow. These overlay the image-declared files when resolving a
+	// sandbox.
+	ConfiguredFiles OptNilHarnessConfigFileArray `json:"configuredFiles"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
-	// Built-in harness definition used to select this image. Empty for custom images.
-	DefinitionId OptString `json:"definitionId"`
-	// Files declared by the registered image plus any non-secret configured file values.
+	// Non-secret files declared by the registered image label.
 	Files OptNilHarnessConfigFileArray `json:"files"`
 	// Stable harness config ID.
 	ID string `json:"id"`
@@ -1545,14 +1605,34 @@ func (s *HarnessConfig) GetSchema() OptURI {
 	return s.Schema
 }
 
+// GetBuiltIn returns the value of BuiltIn.
+func (s *HarnessConfig) GetBuiltIn() bool {
+	return s.BuiltIn
+}
+
+// GetConfigureError returns the value of ConfigureError.
+func (s *HarnessConfig) GetConfigureError() OptString {
+	return s.ConfigureError
+}
+
+// GetConfigureSandboxId returns the value of ConfigureSandboxId.
+func (s *HarnessConfig) GetConfigureSandboxId() OptString {
+	return s.ConfigureSandboxId
+}
+
+// GetConfigured returns the value of Configured.
+func (s *HarnessConfig) GetConfigured() bool {
+	return s.Configured
+}
+
+// GetConfiguredFiles returns the value of ConfiguredFiles.
+func (s *HarnessConfig) GetConfiguredFiles() OptNilHarnessConfigFileArray {
+	return s.ConfiguredFiles
+}
+
 // GetCreatedAt returns the value of CreatedAt.
 func (s *HarnessConfig) GetCreatedAt() time.Time {
 	return s.CreatedAt
-}
-
-// GetDefinitionId returns the value of DefinitionId.
-func (s *HarnessConfig) GetDefinitionId() OptString {
-	return s.DefinitionId
 }
 
 // GetFiles returns the value of Files.
@@ -1615,14 +1695,34 @@ func (s *HarnessConfig) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
+// SetBuiltIn sets the value of BuiltIn.
+func (s *HarnessConfig) SetBuiltIn(val bool) {
+	s.BuiltIn = val
+}
+
+// SetConfigureError sets the value of ConfigureError.
+func (s *HarnessConfig) SetConfigureError(val OptString) {
+	s.ConfigureError = val
+}
+
+// SetConfigureSandboxId sets the value of ConfigureSandboxId.
+func (s *HarnessConfig) SetConfigureSandboxId(val OptString) {
+	s.ConfigureSandboxId = val
+}
+
+// SetConfigured sets the value of Configured.
+func (s *HarnessConfig) SetConfigured(val bool) {
+	s.Configured = val
+}
+
+// SetConfiguredFiles sets the value of ConfiguredFiles.
+func (s *HarnessConfig) SetConfiguredFiles(val OptNilHarnessConfigFileArray) {
+	s.ConfiguredFiles = val
+}
+
 // SetCreatedAt sets the value of CreatedAt.
 func (s *HarnessConfig) SetCreatedAt(val time.Time) {
 	s.CreatedAt = val
-}
-
-// SetDefinitionId sets the value of DefinitionId.
-func (s *HarnessConfig) SetDefinitionId(val OptString) {
-	s.DefinitionId = val
 }
 
 // SetFiles sets the value of Files.
@@ -1680,9 +1780,11 @@ func (s *HarnessConfig) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
 }
 
-func (*HarnessConfig) createHarnessConfigRes() {}
-func (*HarnessConfig) getHarnessConfigRes()    {}
-func (*HarnessConfig) updateHarnessConfigRes() {}
+func (*HarnessConfig) commitHarnessConfigConfigureRes() {}
+func (*HarnessConfig) createHarnessConfigRes()          {}
+func (*HarnessConfig) deconfigureHarnessConfigRes()     {}
+func (*HarnessConfig) getHarnessConfigRes()             {}
+func (*HarnessConfig) updateHarnessConfigRes()          {}
 
 // A file to write into a harness's home directory when the harness is installed.
 // Ref: #/components/schemas/HarnessConfigFile
@@ -1882,87 +1984,6 @@ func (s *HarnessConfigSecretBinding) SetUpdatedAt(val time.Time) {
 }
 
 func (*HarnessConfigSecretBinding) setHarnessConfigSecretBindingRes() {}
-
-// Ref: #/components/schemas/HarnessDefinition
-type HarnessDefinition struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Ephemeral sandbox definition run interactively to collect configuration before a HarnessConfig is
-	// created from this definition. Its primary terminal must exit 0; the sandbox is then expected to
-	// have written /run/discobox/harness-configure.json with secrets and files to apply to the new
-	// HarnessConfig.
-	Configure OptConfigureSandbox `json:"configure"`
-	// Harness config definition description.
-	Description OptString `json:"description"`
-	// Stable definition ID.
-	ID string `json:"id"`
-	// Harness-specific sandbox image registered by this definition.
-	Image OptString `json:"image"`
-	// Harness config definition name.
-	Name string `json:"name"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *HarnessDefinition) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetConfigure returns the value of Configure.
-func (s *HarnessDefinition) GetConfigure() OptConfigureSandbox {
-	return s.Configure
-}
-
-// GetDescription returns the value of Description.
-func (s *HarnessDefinition) GetDescription() OptString {
-	return s.Description
-}
-
-// GetID returns the value of ID.
-func (s *HarnessDefinition) GetID() string {
-	return s.ID
-}
-
-// GetImage returns the value of Image.
-func (s *HarnessDefinition) GetImage() OptString {
-	return s.Image
-}
-
-// GetName returns the value of Name.
-func (s *HarnessDefinition) GetName() string {
-	return s.Name
-}
-
-// SetSchema sets the value of Schema.
-func (s *HarnessDefinition) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetConfigure sets the value of Configure.
-func (s *HarnessDefinition) SetConfigure(val OptConfigureSandbox) {
-	s.Configure = val
-}
-
-// SetDescription sets the value of Description.
-func (s *HarnessDefinition) SetDescription(val OptString) {
-	s.Description = val
-}
-
-// SetID sets the value of ID.
-func (s *HarnessDefinition) SetID(val string) {
-	s.ID = val
-}
-
-// SetImage sets the value of Image.
-func (s *HarnessDefinition) SetImage(val OptString) {
-	s.Image = val
-}
-
-// SetName sets the value of Name.
-func (s *HarnessDefinition) SetName(val string) {
-	s.Name = val
-}
-
-func (*HarnessDefinition) getHarnessDefinitionRes() {}
 
 // Ref: #/components/schemas/HarnessHookLog
 type HarnessHookLog struct {
@@ -2384,36 +2405,6 @@ func (s *ListHarnessConfigsBody) SetHarnessConfigs(val []HarnessConfig) {
 
 func (*ListHarnessConfigsBody) listHarnessConfigsRes() {}
 
-// Ref: #/components/schemas/ListHarnessDefinitionsBody
-type ListHarnessDefinitionsBody struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Harness config definitions.
-	HarnessDefinitions []HarnessDefinition `json:"harnessDefinitions"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *ListHarnessDefinitionsBody) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetHarnessDefinitions returns the value of HarnessDefinitions.
-func (s *ListHarnessDefinitionsBody) GetHarnessDefinitions() []HarnessDefinition {
-	return s.HarnessDefinitions
-}
-
-// SetSchema sets the value of Schema.
-func (s *ListHarnessDefinitionsBody) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetHarnessDefinitions sets the value of HarnessDefinitions.
-func (s *ListHarnessDefinitionsBody) SetHarnessDefinitions(val []HarnessDefinition) {
-	s.HarnessDefinitions = val
-}
-
-func (*ListHarnessDefinitionsBody) listHarnessDefinitionsRes() {}
-
 // Ref: #/components/schemas/ListJobsBody
 type ListJobsBody struct {
 	Jobs []Job `json:"jobs"`
@@ -2809,98 +2800,6 @@ func (o OptBool) Or(d bool) bool {
 	return d
 }
 
-// NewOptConfigureSandbox returns new OptConfigureSandbox with value set to v.
-func NewOptConfigureSandbox(v ConfigureSandbox) OptConfigureSandbox {
-	return OptConfigureSandbox{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptConfigureSandbox is optional ConfigureSandbox.
-type OptConfigureSandbox struct {
-	Value ConfigureSandbox
-	Set   bool
-}
-
-// IsSet returns true if OptConfigureSandbox was set.
-func (o OptConfigureSandbox) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptConfigureSandbox) Reset() {
-	var v ConfigureSandbox
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptConfigureSandbox) SetTo(v ConfigureSandbox) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptConfigureSandbox) Get() (v ConfigureSandbox, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptConfigureSandbox) Or(d ConfigureSandbox) ConfigureSandbox {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptConfigureSandboxEnv returns new OptConfigureSandboxEnv with value set to v.
-func NewOptConfigureSandboxEnv(v ConfigureSandboxEnv) OptConfigureSandboxEnv {
-	return OptConfigureSandboxEnv{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptConfigureSandboxEnv is optional ConfigureSandboxEnv.
-type OptConfigureSandboxEnv struct {
-	Value ConfigureSandboxEnv
-	Set   bool
-}
-
-// IsSet returns true if OptConfigureSandboxEnv was set.
-func (o OptConfigureSandboxEnv) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptConfigureSandboxEnv) Reset() {
-	var v ConfigureSandboxEnv
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptConfigureSandboxEnv) SetTo(v ConfigureSandboxEnv) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptConfigureSandboxEnv) Get() (v ConfigureSandboxEnv, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptConfigureSandboxEnv) Or(d ConfigureSandboxEnv) ConfigureSandboxEnv {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptCreateSandboxExecRequestEnv returns new OptCreateSandboxExecRequestEnv with value set to v.
 func NewOptCreateSandboxExecRequestEnv(v CreateSandboxExecRequestEnv) OptCreateSandboxExecRequestEnv {
 	return OptCreateSandboxExecRequestEnv{
@@ -3171,6 +3070,52 @@ func (o OptGitSourceCheckout) Get() (v GitSourceCheckout, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptGitSourceCheckout) Or(d GitSourceCheckout) GitSourceCheckout {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptGitSourceDelivery returns new OptGitSourceDelivery with value set to v.
+func NewOptGitSourceDelivery(v GitSourceDelivery) OptGitSourceDelivery {
+	return OptGitSourceDelivery{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptGitSourceDelivery is optional GitSourceDelivery.
+type OptGitSourceDelivery struct {
+	Value GitSourceDelivery
+	Set   bool
+}
+
+// IsSet returns true if OptGitSourceDelivery was set.
+func (o OptGitSourceDelivery) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptGitSourceDelivery) Reset() {
+	var v GitSourceDelivery
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptGitSourceDelivery) SetTo(v GitSourceDelivery) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptGitSourceDelivery) Get() (v GitSourceDelivery, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptGitSourceDelivery) Or(d GitSourceDelivery) GitSourceDelivery {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -4192,6 +4137,52 @@ func (o OptNilWorkerArray) Or(d []Worker) []Worker {
 	return d
 }
 
+// NewOptOrigin returns new OptOrigin with value set to v.
+func NewOptOrigin(v Origin) OptOrigin {
+	return OptOrigin{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptOrigin is optional Origin.
+type OptOrigin struct {
+	Value Origin
+	Set   bool
+}
+
+// IsSet returns true if OptOrigin was set.
+func (o OptOrigin) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptOrigin) Reset() {
+	var v Origin
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptOrigin) SetTo(v Origin) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptOrigin) Get() (v Origin, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptOrigin) Or(d Origin) Origin {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxConfigEnv returns new OptSandboxConfigEnv with value set to v.
 func NewOptSandboxConfigEnv(v SandboxConfigEnv) OptSandboxConfigEnv {
 	return OptSandboxConfigEnv{
@@ -5064,6 +5055,61 @@ func (o OptWorkerActiveOperation) Or(d WorkerActiveOperation) WorkerActiveOperat
 		return v
 	}
 	return d
+}
+
+// The client host and project directory a sandbox was created from. Client-declared provenance
+// recorded verbatim; never used to materialize source.
+// Ref: #/components/schemas/Origin
+type Origin struct {
+	// Stable generated identity of the client host, unique per user per machine.
+	HostId string `json:"hostId"`
+	// Client hostname, for display only. Not stable and not unique.
+	Hostname OptString `json:"hostname"`
+	// Absolute path of the project root on the client host, which is the Git repository root, or the
+	// working directory outside a repository.
+	ProjectPath string `json:"projectPath"`
+	// Client OS username, for display only.
+	User OptString `json:"user"`
+}
+
+// GetHostId returns the value of HostId.
+func (s *Origin) GetHostId() string {
+	return s.HostId
+}
+
+// GetHostname returns the value of Hostname.
+func (s *Origin) GetHostname() OptString {
+	return s.Hostname
+}
+
+// GetProjectPath returns the value of ProjectPath.
+func (s *Origin) GetProjectPath() string {
+	return s.ProjectPath
+}
+
+// GetUser returns the value of User.
+func (s *Origin) GetUser() OptString {
+	return s.User
+}
+
+// SetHostId sets the value of HostId.
+func (s *Origin) SetHostId(val string) {
+	s.HostId = val
+}
+
+// SetHostname sets the value of Hostname.
+func (s *Origin) SetHostname(val OptString) {
+	s.Hostname = val
+}
+
+// SetProjectPath sets the value of ProjectPath.
+func (s *Origin) SetProjectPath(val string) {
+	s.ProjectPath = val
+}
+
+// SetUser sets the value of User.
+func (s *Origin) SetUser(val OptString) {
+	s.User = val
 }
 
 // Ref: #/components/schemas/Project
@@ -6075,6 +6121,8 @@ type Sandbox struct {
 	CreatedByUserId string `json:"createdByUserId"`
 	// Stable sandbox ID.
 	ID string `json:"id"`
+	// Client host and project directory the sandbox was created from. Immutable after create.
+	Origin OptOrigin `json:"origin"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
 	// Sandbox provider instance.
@@ -6120,6 +6168,11 @@ func (s *Sandbox) GetCreatedByUserId() string {
 // GetID returns the value of ID.
 func (s *Sandbox) GetID() string {
 	return s.ID
+}
+
+// GetOrigin returns the value of Origin.
+func (s *Sandbox) GetOrigin() OptOrigin {
+	return s.Origin
 }
 
 // GetProjectId returns the value of ProjectId.
@@ -6182,6 +6235,11 @@ func (s *Sandbox) SetID(val string) {
 	s.ID = val
 }
 
+// SetOrigin sets the value of Origin.
+func (s *Sandbox) SetOrigin(val OptOrigin) {
+	s.Origin = val
+}
+
 // SetProjectId sets the value of ProjectId.
 func (s *Sandbox) SetProjectId(val string) {
 	s.ProjectId = val
@@ -6207,13 +6265,15 @@ func (s *Sandbox) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
 }
 
-func (*Sandbox) createSandboxRes()    {}
-func (*Sandbox) getSandboxRes()       {}
-func (*Sandbox) reconcileSandboxRes() {}
-func (*Sandbox) restartSandboxRes()   {}
-func (*Sandbox) startSandboxRes()     {}
-func (*Sandbox) stopSandboxRes()      {}
-func (*Sandbox) updateSandboxRes()    {}
+func (*Sandbox) completeSandboxSourcePushRes() {}
+func (*Sandbox) configureHarnessConfigRes()    {}
+func (*Sandbox) createSandboxRes()             {}
+func (*Sandbox) getSandboxRes()                {}
+func (*Sandbox) reconcileSandboxRes()          {}
+func (*Sandbox) restartSandboxRes()            {}
+func (*Sandbox) startSandboxRes()              {}
+func (*Sandbox) stopSandboxRes()               {}
+func (*Sandbox) updateSandboxRes()             {}
 
 // Ref: #/components/schemas/SandboxConfig
 type SandboxConfig struct {
@@ -8112,15 +8172,16 @@ func (s *SandboxRuntimeLastOperationStatus) UnmarshalText(data []byte) error {
 type SandboxRuntimePhase string
 
 const (
-	SandboxRuntimePhasePending      SandboxRuntimePhase = "pending"
-	SandboxRuntimePhaseProvisioning SandboxRuntimePhase = "provisioning"
-	SandboxRuntimePhaseStarting     SandboxRuntimePhase = "starting"
-	SandboxRuntimePhaseRunning      SandboxRuntimePhase = "running"
-	SandboxRuntimePhaseStopping     SandboxRuntimePhase = "stopping"
-	SandboxRuntimePhaseStopped      SandboxRuntimePhase = "stopped"
-	SandboxRuntimePhaseDeleting     SandboxRuntimePhase = "deleting"
-	SandboxRuntimePhaseDeleted      SandboxRuntimePhase = "deleted"
-	SandboxRuntimePhaseFailed       SandboxRuntimePhase = "failed"
+	SandboxRuntimePhasePending        SandboxRuntimePhase = "pending"
+	SandboxRuntimePhaseProvisioning   SandboxRuntimePhase = "provisioning"
+	SandboxRuntimePhaseAwaitingSource SandboxRuntimePhase = "awaiting_source"
+	SandboxRuntimePhaseStarting       SandboxRuntimePhase = "starting"
+	SandboxRuntimePhaseRunning        SandboxRuntimePhase = "running"
+	SandboxRuntimePhaseStopping       SandboxRuntimePhase = "stopping"
+	SandboxRuntimePhaseStopped        SandboxRuntimePhase = "stopped"
+	SandboxRuntimePhaseDeleting       SandboxRuntimePhase = "deleting"
+	SandboxRuntimePhaseDeleted        SandboxRuntimePhase = "deleted"
+	SandboxRuntimePhaseFailed         SandboxRuntimePhase = "failed"
 )
 
 // AllValues returns all SandboxRuntimePhase values.
@@ -8128,6 +8189,7 @@ func (SandboxRuntimePhase) AllValues() []SandboxRuntimePhase {
 	return []SandboxRuntimePhase{
 		SandboxRuntimePhasePending,
 		SandboxRuntimePhaseProvisioning,
+		SandboxRuntimePhaseAwaitingSource,
 		SandboxRuntimePhaseStarting,
 		SandboxRuntimePhaseRunning,
 		SandboxRuntimePhaseStopping,
@@ -8144,6 +8206,8 @@ func (s SandboxRuntimePhase) MarshalText() ([]byte, error) {
 	case SandboxRuntimePhasePending:
 		return []byte(s), nil
 	case SandboxRuntimePhaseProvisioning:
+		return []byte(s), nil
+	case SandboxRuntimePhaseAwaitingSource:
 		return []byte(s), nil
 	case SandboxRuntimePhaseStarting:
 		return []byte(s), nil
@@ -8172,6 +8236,9 @@ func (s *SandboxRuntimePhase) UnmarshalText(data []byte) error {
 		return nil
 	case SandboxRuntimePhaseProvisioning:
 		*s = SandboxRuntimePhaseProvisioning
+		return nil
+	case SandboxRuntimePhaseAwaitingSource:
+		*s = SandboxRuntimePhaseAwaitingSource
 		return nil
 	case SandboxRuntimePhaseStarting:
 		*s = SandboxRuntimePhaseStarting

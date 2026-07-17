@@ -10,6 +10,16 @@ import (
 	ht "github.com/ogen-go/ogen/http"
 )
 
+func encodeAttachSandboxExecOnceRequest(
+	req AttachSandboxExecOnceReq,
+	r *http.Request,
+) error {
+	const contentType = "application/octet-stream"
+	body := req
+	ht.SetBody(r, body, contentType)
+	return nil
+}
+
 func encodeCreateSandboxExecRequest(
 	req *CreateSandboxExecRequest,
 	r *http.Request,

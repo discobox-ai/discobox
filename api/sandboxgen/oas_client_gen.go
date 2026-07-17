@@ -35,6 +35,20 @@ type Invoker interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
 	AttachSandboxExec(ctx context.Context, params AttachSandboxExecParams) (*AttachSandboxExecSwitchingProtocols, error)
+	// AttachSandboxExecOnce invokes attach-sandbox-exec-once operation.
+	//
+	// Runs a prepared exec to completion in a single request: the request body is written to the exec's
+	// stdin, stdin is then closed, and the response body is everything the exec emitted, with output and
+	// error streams interleaved as produced. This is the non-interactive counterpart to the websocket
+	// attach, for callers that only need to feed a command bytes and read its output; no frame encoding
+	// is involved.
+	// The exec must not be started beforehand — this starts it once the attach is connected, since
+	// output
+	// produced before an attach exists is lost. The exit status is not encoded in the response: read it
+	// from the exec record, which is authoritative.
+	//
+	// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
+	AttachSandboxExecOnce(ctx context.Context, request AttachSandboxExecOnceReq, params AttachSandboxExecOnceParams) (AttachSandboxExecOnceOK, error)
 	// CreateSandboxExec invokes create-sandbox-exec operation.
 	//
 	// Create an exec runtime in a sandbox.
@@ -268,6 +282,148 @@ func (c *Client) sendAttachSandboxExec(ctx context.Context, params AttachSandbox
 
 	stage = "DecodeResponse"
 	result, err := decodeAttachSandboxExecResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// AttachSandboxExecOnce invokes attach-sandbox-exec-once operation.
+//
+// Runs a prepared exec to completion in a single request: the request body is written to the exec's
+// stdin, stdin is then closed, and the response body is everything the exec emitted, with output and
+// error streams interleaved as produced. This is the non-interactive counterpart to the websocket
+// attach, for callers that only need to feed a command bytes and read its output; no frame encoding
+// is involved.
+// The exec must not be started beforehand — this starts it once the attach is connected, since
+// output
+// produced before an attach exists is lost. The exit status is not encoded in the response: read it
+// from the exec record, which is authoritative.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
+func (c *Client) AttachSandboxExecOnce(ctx context.Context, request AttachSandboxExecOnceReq, params AttachSandboxExecOnceParams) (AttachSandboxExecOnceOK, error) {
+	res, err := c.sendAttachSandboxExecOnce(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendAttachSandboxExecOnce(ctx context.Context, request AttachSandboxExecOnceReq, params AttachSandboxExecOnceParams) (res AttachSandboxExecOnceOK, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("attach-sandbox-exec-once"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, AttachSandboxExecOnceOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [7]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/execs/"
+	{
+		// Encode "execId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "execId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ExecId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[5] = encoded
+	}
+	pathParts[6] = "/attach"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeAttachSandboxExecOnceRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeAttachSandboxExecOnceResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

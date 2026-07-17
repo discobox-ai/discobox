@@ -9,8 +9,28 @@ type AssignSandboxHarnessSecretsRes interface {
 	assignSandboxHarnessSecretsRes()
 }
 
+type AttachHarnessConfigConfigureRes interface {
+	attachHarnessConfigConfigureRes()
+}
+
+type AttachSandboxExecOnceRes interface {
+	attachSandboxExecOnceRes()
+}
+
 type AttachSandboxExecRes interface {
 	attachSandboxExecRes()
+}
+
+type CommitHarnessConfigConfigureRes interface {
+	commitHarnessConfigConfigureRes()
+}
+
+type CompleteSandboxSourcePushRes interface {
+	completeSandboxSourcePushRes()
+}
+
+type ConfigureHarnessConfigRes interface {
+	configureHarnessConfigRes()
 }
 
 type CreateHarnessConfigRes interface {
@@ -39,6 +59,10 @@ type CreateSecretRequestRes interface {
 
 type CreateSecretRes interface {
 	createSecretRes()
+}
+
+type DeconfigureHarnessConfigRes interface {
+	deconfigureHarnessConfigRes()
 }
 
 type DeleteHarnessConfigRes interface {
@@ -75,10 +99,6 @@ type ForceJobRes interface {
 
 type GetHarnessConfigRes interface {
 	getHarnessConfigRes()
-}
-
-type GetHarnessDefinitionRes interface {
-	getHarnessDefinitionRes()
 }
 
 type GetJobRes interface {
@@ -119,10 +139,6 @@ type ListHarnessConfigSecretBindingsRes interface {
 
 type ListHarnessConfigsRes interface {
 	listHarnessConfigsRes()
-}
-
-type ListHarnessDefinitionsRes interface {
-	listHarnessDefinitionsRes()
 }
 
 type ListHarnessHooksRes interface {

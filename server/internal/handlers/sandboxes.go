@@ -10,7 +10,7 @@ import (
 )
 
 func (h *Handler) ListSandboxes(ctx context.Context, params serverapi.ListSandboxesParams) (serverapi.ListSandboxesRes, error) {
-	sandboxes, err := h.services.Sandboxes.ListSandboxes(ctx, params.ProjectId, strings.TrimSpace(params.SourceRoot.Or("")))
+	sandboxes, err := h.services.Sandboxes.ListSandboxes(ctx, params.ProjectId, strings.TrimSpace(params.SourceRoot.Or("")), strings.TrimSpace(params.OriginKey.Or("")))
 	if err != nil {
 		return apiError(err), nil
 	}
@@ -96,6 +96,18 @@ func (h *Handler) StopSandbox(ctx context.Context, req *apimodel.StopSandboxBody
 
 func (h *Handler) RestartSandbox(ctx context.Context, req *apimodel.RestartSandboxBody, params serverapi.RestartSandboxParams) (serverapi.RestartSandboxRes, error) {
 	sandbox, err := h.services.Sandboxes.RestartSandbox(ctx, params.ProjectId, params.SandboxId, *req)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.SandboxToAPI(sandbox)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+func (h *Handler) CompleteSandboxSourcePush(ctx context.Context, req *apimodel.CompleteSandboxSourcePushBody, params serverapi.CompleteSandboxSourcePushParams) (serverapi.CompleteSandboxSourcePushRes, error) {
+	sandbox, err := h.services.Sandboxes.CompleteSandboxSourcePush(ctx, params.ProjectId, params.SandboxId, *req)
 	if err != nil {
 		return apiError(err), nil
 	}

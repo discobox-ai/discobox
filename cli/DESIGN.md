@@ -61,18 +61,27 @@ the transport/session mechanics in `internal/cli/attach_session.go`.
   CLI attach ignores them; the TUI adapter maps them into its `TerminalEvent`
   stream.
 
-## Harness Config Definition Configure Step
+## Harness Configure Step
 
-`disco box harnesses enable` (`internal/cli/harness.go`) first registers
-the definition's image-backed HarnessConfig, then runs an optional sandbox with
-`harnessMode: config`, unless `--no-configure` is passed. It reuses the existing sandbox lifecycle and attach
-helpers rather than introducing new ones: `waitForSandbox`/`waitForPrimaryTerminal`
-(`run.go`) to launch and locate the primary terminal, `attachSandboxTerminal`
-to let the user answer prompts, and `createSandboxExec`/`attachSandboxExec`/
-`returnSandboxExecStatus` (`sandbox_execs.go`) to `cat` back
-`/run/discobox/harness-configure.json` once the primary terminal exits 0. This
-orchestration is entirely client-side. Failures delete both the ephemeral
-sandbox and the not-yet-enabled HarnessConfig. Credential values returned by
-config mode become encrypted project secrets bound to the harness.
-Codex, Claude Code, and OpenCode definitions all enable this flow; the actual
-prompting and credential conversion commands are baked into their images.
+`disco box harnesses configure` (`internal/cli/harness.go`) drives a harness's
+interactive configure flow. The server owns applying the result; the CLI only
+sequences the calls and hands the user the terminal in between:
+
+1. `POST .../configure` — the server creates the ephemeral `harnessMode: config`
+   sandbox and returns it.
+2. `POST .../configure/attach` — the server seeds the previous configuration into
+   it.
+3. attach to the virtual `"primary"` exec (`primaryExecID`) — **this is what
+   launches the configure command**, since the sandbox-agent defers the primary
+   terminal in config mode. That ordering is why seeding always lands first, and
+   why there is no `waitForPrimaryTerminal` here: no terminal exists until attach.
+4. `POST .../configure/commit` — the server reads the command's real exit status,
+   applies the secrets and files it wrote, and deletes the sandbox.
+
+`runHarnessConfigure` takes streams rather than a `*cobra.Command` so the TUI can
+share it, handing it the real terminal it restores via `tea.Exec`.
+
+Re-running reconfigures and clobbers any in-flight attempt. Nothing here parses
+the configure output or creates secrets: a client that crashes mid-flow cannot
+leave a half-applied harness, and an abandoned sandbox is reaped by the server.
+See `server/internal/resources/harnessconfigs/DESIGN.md`.

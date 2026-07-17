@@ -107,3 +107,17 @@ Lay out `DESIGN.md` files as a drill-down hierarchy:
   directive, and easy to scan.
 - Reference well-known patterns and project-specific decisions instead of
   explaining general concepts or restating code-level details.
+
+## Architecture Decision Records
+
+`docs/adr` records decisions and the alternatives rejected. Write an ADR only
+when a plausible alternative was rejected for a non-obvious reason, or something
+was deferred with a condition for revisiting it. Otherwise skip it and update
+the relevant `DESIGN.md`; most changes need no ADR.
+
+ADRs are immutable once accepted — supersede, never edit. They live outside the
+`DESIGN.md`/`REVIEW.md` drill-down hierarchy and are not read root-down: they
+are history, while `DESIGN.md` is current state. When ADR work lands, update the
+live design docs to describe what now exists.
+
+See `docs/adr/README.md`.

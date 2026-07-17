@@ -57,6 +57,22 @@ func encodeAttachSandboxExecResponse(response *AttachSandboxExecSwitchingProtoco
 	return nil
 }
 
+func encodeAttachSandboxExecOnceResponse(response AttachSandboxExecOnceOK, w http.ResponseWriter, span trace.Span) error {
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.WriteHeader(200)
+	span.SetStatus(codes.Ok, http.StatusText(200))
+
+	writer := w
+	if closer, ok := response.Data.(io.Closer); ok {
+		defer closer.Close()
+	}
+	if _, err := io.Copy(writer, response); err != nil {
+		return errors.Wrap(err, "write")
+	}
+
+	return nil
+}
+
 func encodeCreateSandboxExecResponse(response *CreateSandboxExecResponse, w http.ResponseWriter, span trace.Span) error {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(201)

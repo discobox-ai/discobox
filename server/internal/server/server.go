@@ -75,6 +75,7 @@ func Run(ctx context.Context) error {
 		DispatcherPollInterval:         cfg.DispatcherPollInterval,
 		SandboxReconcileJobConcurrency: cfg.SandboxReconcileJobConcurrency,
 		DefaultSandboxImage:            cfg.DefaultSandboxImage,
+		HostID:                         cfg.HostID,
 		HarnessImages:                  cfg.HarnessImages,
 	})
 	if err != nil {

@@ -112,37 +112,14 @@ type statusMsg struct {
 // openHarnessesMsg asks the root to switch to the coding-agents screen.
 type openHarnessesMsg struct{}
 
-// openHarnessFormMsg asks the root to open the harness create/edit form. A nil
-// edit target opens the create form; otherwise the form edits that config.
-type openHarnessFormMsg struct {
-	edit *HarnessConfig
-}
-
-// harnessFormBackMsg asks the root to return from the form to the coding-agents
-// screen.
-type harnessFormBackMsg struct{}
-
 // harnessesLoadedMsg carries a refreshed list of harness configs.
 type harnessesLoadedMsg struct {
 	configs []HarnessConfig
 }
 
-// harnessFormDataMsg delivers the form's async-loaded harness definitions.
-type harnessFormDataMsg struct {
-	definitions []HarnessDefinition
-	err         error
-}
-
-// harnessSavedMsg reports a harness config created or updated from the form.
-type harnessSavedMsg struct {
-	config  HarnessConfig
-	created bool
-}
-
-// harnessDeletedMsg reports the outcome of a harness config delete.
-type harnessDeletedMsg struct {
-	ids  []string
-	errs []error
+// harnessDeconfiguredMsg reports an agent's configuration was undone.
+type harnessDeconfiguredMsg struct {
+	id string
 }
 
 // runConfigureMsg asks the root to run an agent's interactive configure flow,

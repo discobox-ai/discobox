@@ -28,16 +28,12 @@ type fakeSource struct {
 	createErr   error
 	createOut   Sandbox
 
-	configs      []HarnessConfig
-	definitions  []HarnessDefinition
-	saved        []SaveHarnessRequest
-	saveErr      error
-	saveOut      HarnessConfig
-	deletedCfgs  []string
-	deleteCfgErr error
-	setDefaults  []string
-	configured   []string
-	configureErr error
+	configs        []HarnessConfig
+	setDefaults    []string
+	deconfigured   []string
+	deconfigureErr error
+	configured     []string
+	configureErr   error
 }
 
 func (f *fakeSource) ListSandboxes(context.Context) ([]Sandbox, error) {
@@ -124,27 +120,11 @@ func (f *fakeSource) ListHarnessConfigs(context.Context) ([]HarnessConfig, error
 	return append([]HarnessConfig(nil), f.configs...), nil
 }
 
-func (f *fakeSource) ListHarnessDefinitions(context.Context) ([]HarnessDefinition, error) {
+func (f *fakeSource) DeconfigureHarness(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]HarnessDefinition(nil), f.definitions...), nil
-}
-
-func (f *fakeSource) SaveHarness(_ context.Context, req SaveHarnessRequest) (HarnessConfig, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.saved = append(f.saved, req)
-	if f.saveErr != nil {
-		return HarnessConfig{}, f.saveErr
-	}
-	return f.saveOut, nil
-}
-
-func (f *fakeSource) DeleteHarness(_ context.Context, id string) error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.deletedCfgs = append(f.deletedCfgs, id)
-	return f.deleteCfgErr
+	f.deconfigured = append(f.deconfigured, id)
+	return f.deconfigureErr
 }
 
 func (f *fakeSource) SetDefaultHarness(_ context.Context, id string) error {
@@ -152,12 +132,6 @@ func (f *fakeSource) SetDefaultHarness(_ context.Context, id string) error {
 	defer f.mu.Unlock()
 	f.setDefaults = append(f.setDefaults, id)
 	return nil
-}
-
-func (f *fakeSource) savedReqs() []SaveHarnessRequest {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return append([]SaveHarnessRequest(nil), f.saved...)
 }
 
 func (f *fakeSource) ConfigureHarness(_ context.Context, id string, _ io.Reader, _, _ io.Writer) error {

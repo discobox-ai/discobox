@@ -89,6 +89,11 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 		return nil, err
 	}
 	body.Config.SetSource(apiclientgen.NewOptGitSource(*apiSource))
+	resolvedOrigin, err := ResolveOrigin(ctx, sourceArg)
+	if err != nil {
+		return nil, err
+	}
+	body.SetOrigin(apiclientgen.NewOptOrigin(resolvedOrigin))
 	userIdentity.setCreateSandboxUser(body)
 	return body, nil
 }

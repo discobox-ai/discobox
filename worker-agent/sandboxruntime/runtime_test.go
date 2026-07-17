@@ -504,3 +504,284 @@ func gitOutput(t *testing.T, dir string, args ...string) string {
 	}
 	return strings.TrimSpace(string(out))
 }
+
+// A push-delivered source must end up holding a real repository, because git
+// http-backend only serves a repository that already exists.
+func TestMaterializeGitSourceWithPushDeliveryInitializesRepository(t *testing.T) {
+	ctx := context.Background()
+	source := workerapimodel.GitSource{
+		Kind:     workerclient.GitSourceKindGit,
+		Delivery: workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush),
+		Checkout: workerclient.NewOptGitSourceCheckout(workerapimodel.GitSourceCheckout{
+			RefName: workerclient.NewOptString("main"),
+			RefType: workerclient.NewOptString("branch"),
+		}),
+	}
+	target := filepath.Join(t.TempDir(), "target")
+	runtime := &DockerSandboxRuntime{}
+
+	// Materializing twice must be safe: create is retried.
+	for attempt := 1; attempt <= 2; attempt++ {
+		if err := runtime.materializeGitSource(ctx, source, target); err != nil {
+			t.Fatalf("materialize push source attempt %d: %v", attempt, err)
+		}
+		if _, err := os.Stat(filepath.Join(target, ".git")); err != nil {
+			t.Fatalf("attempt %d: repository was not initialized: %v", attempt, err)
+		}
+		// The pushed branch must be the checked-out one, or
+		// receive.denyCurrentBranch=updateInstead leaves the working tree empty.
+		if branch := gitOutput(t, target, "branch", "--show-current"); branch != "main" {
+			t.Fatalf("initial branch after attempt %d = %q, want main", attempt, branch)
+		}
+	}
+}
+
+// The end state the push path depends on: a client pushing into the initialized
+// repository lands its commit *and* its files in the sandbox's working tree.
+func TestPushIntoInitializedSourceUpdatesWorkingTree(t *testing.T) {
+	ctx := context.Background()
+	source := workerapimodel.GitSource{
+		Kind:     workerclient.GitSourceKindGit,
+		Delivery: workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush),
+		Checkout: workerclient.NewOptGitSourceCheckout(workerapimodel.GitSourceCheckout{
+			RefName: workerclient.NewOptString("main"),
+			RefType: workerclient.NewOptString("branch"),
+		}),
+	}
+	target := filepath.Join(t.TempDir(), "target")
+	runtime := &DockerSandboxRuntime{}
+	if err := runtime.materializeGitSource(ctx, source, target); err != nil {
+		t.Fatalf("materialize push source: %v", err)
+	}
+	// git http-backend serves the repository with these settings; apply them
+	// here so this exercises the same receive behavior a real push gets.
+	git(t, target, "config", "http.receivepack", "true")
+	git(t, target, "config", "receive.denyCurrentBranch", "updateInstead")
+
+	client := t.TempDir()
+	git(t, client, "init", "-b", "main")
+	git(t, client, "config", "user.email", "test@example.com")
+	git(t, client, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(client, "README.md"), []byte("pushed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, client, "add", "README.md")
+	git(t, client, "commit", "-m", "pushed")
+	pushed := gitOutput(t, client, "rev-parse", "HEAD")
+	git(t, client, "push", target, "main")
+
+	if head := gitOutput(t, target, "rev-parse", "HEAD"); head != pushed {
+		t.Fatalf("sandbox HEAD = %q, want pushed commit %q", head, pushed)
+	}
+	data, err := os.ReadFile(filepath.Join(target, "README.md"))
+	if err != nil {
+		t.Fatalf("pushed file is not in the working tree: %v", err)
+	}
+	if string(data) != "pushed\n" {
+		t.Fatalf("pushed file = %q, want pushed content", data)
+	}
+}
+
+// Delivery is stated, not inferred. A clone-delivered source with nothing to
+// clone from is a malformed request and must fail, rather than silently
+// producing a sandbox with an empty workspace that waits for a push no client
+// will send.
+func TestMaterializeGitSourceWithoutDeliveryOrCloneSourceFails(t *testing.T) {
+	ctx := context.Background()
+	runtime := &DockerSandboxRuntime{}
+	target := filepath.Join(t.TempDir(), "target")
+
+	err := runtime.materializeGitSource(ctx, workerapimodel.GitSource{Kind: workerclient.GitSourceKindGit}, target)
+	if err == nil {
+		t.Fatal("materialize source with no url, no localDirectory, and no push delivery: got nil error, want failure")
+	}
+	if _, statErr := os.Stat(filepath.Join(target, ".git")); statErr == nil {
+		t.Fatal("a malformed source initialized a repository; absence must not imply push delivery")
+	}
+}
+
+// A dirty workspace must survive push delivery. Its semantics are the base
+// commit checked out with uncommitted changes on top, so dropping the workspace
+// on the push path would silently bring the sandbox up clean at the base commit
+// and lose the client's edits.
+func TestMaterializeGitSourceWithPushDeliveryRestoresDirtyWorkspace(t *testing.T) {
+	ctx := context.Background()
+
+	// The client's repository: a base commit plus uncommitted edits captured as
+	// a snapshot commit, exactly as resolveLocalRunSource builds them.
+	client := t.TempDir()
+	git(t, client, "init", "-b", "main")
+	git(t, client, "config", "user.email", "test@example.com")
+	git(t, client, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(client, "README.md"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, client, "add", "README.md")
+	git(t, client, "commit", "-m", "base")
+	baseCommit := gitOutput(t, client, "rev-parse", "HEAD")
+
+	if err := os.WriteFile(filepath.Join(client, "README.md"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, client, "add", "README.md")
+	git(t, client, "commit", "-m", "snapshot")
+	snapshotCommit := gitOutput(t, client, "rev-parse", "HEAD")
+	const snapshotRef = "refs/discobox/run/snap_test"
+	git(t, client, "update-ref", snapshotRef, snapshotCommit)
+	// The client's own branch stays at the base commit; the snapshot is a ref.
+	git(t, client, "reset", "--hard", baseCommit)
+
+	source := workerapimodel.GitSource{
+		Kind:     workerclient.GitSourceKindGit,
+		Delivery: workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush),
+		Checkout: workerclient.NewOptGitSourceCheckout(workerapimodel.GitSourceCheckout{
+			Commit:  workerclient.NewOptString(baseCommit),
+			RefName: workerclient.NewOptString("main"),
+			RefType: workerclient.NewOptString("branch"),
+		}),
+		Workspace: workerclient.NewOptGitSourceWorkspace(workerapimodel.GitSourceWorkspace{
+			Mode:        workerclient.NewOptGitSourceWorkspaceMode(workerclient.GitSourceWorkspaceModeDirty),
+			BaseCommit:  workerclient.NewOptString(baseCommit),
+			SnapshotRef: workerclient.NewOptString(snapshotRef),
+		}),
+	}
+
+	target := filepath.Join(t.TempDir(), "target")
+	runtime := &DockerSandboxRuntime{}
+
+	// Provision: an empty repository parked for the push.
+	if err := runtime.materializeGitSource(ctx, source, target); err != nil {
+		t.Fatalf("materialize push source: %v", err)
+	}
+	git(t, target, "config", "receive.denyCurrentBranch", "updateInstead")
+
+	// The client pushes its branch and the snapshot ref.
+	git(t, client, "push", target, "main", "+"+snapshotRef+":"+snapshotRef)
+
+	// Resume: the same call now finishes the checkout and restores the workspace.
+	if err := runtime.materializeGitSource(ctx, source, target); err != nil {
+		t.Fatalf("materialize after push: %v", err)
+	}
+
+	if head := gitOutput(t, target, "rev-parse", "HEAD"); head != baseCommit {
+		t.Fatalf("HEAD = %q, want the base commit %q", head, baseCommit)
+	}
+	data, err := os.ReadFile(filepath.Join(target, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The edit must be present and uncommitted, not folded into a commit.
+	if string(data) != "dirty\n" {
+		t.Fatalf("README = %q, want the client's uncommitted edit", data)
+	}
+	if status := gitOutput(t, target, "status", "--porcelain=v1"); !strings.Contains(status, "README.md") {
+		t.Fatalf("status = %q, want README.md modified but uncommitted", status)
+	}
+}
+
+// A push-delivered source is materialized only after the client pushes, which
+// happens after the container exists and parked. The create that resumes the
+// sandbox must therefore finish the source, not short-circuit on the existing
+// container and leave the workspace empty.
+func TestMaterializePushedSourcesCompletesExistingSandbox(t *testing.T) {
+	ctx := context.Background()
+	const projectID = "project-1"
+	const sandboxID = "sandbox-1"
+
+	client := t.TempDir()
+	git(t, client, "init", "-b", "main")
+	git(t, client, "config", "user.email", "test@example.com")
+	git(t, client, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(client, "README.md"), []byte("pushed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, client, "add", "README.md")
+	git(t, client, "commit", "-m", "pushed")
+	pushed := gitOutput(t, client, "rev-parse", "HEAD")
+
+	// hostMountPrefix relocates the sandbox volume tree under a writable root.
+	runtime := &DockerSandboxRuntime{projectID: projectID, hostMountPrefix: t.TempDir()}
+	source := workerapimodel.GitSource{
+		Kind:     workerclient.GitSourceKindGit,
+		Delivery: workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush),
+		Slug:     workerclient.NewOptString("primary"),
+		Checkout: workerclient.NewOptGitSourceCheckout(workerapimodel.GitSourceCheckout{
+			Commit:  workerclient.NewOptString(pushed),
+			RefName: workerclient.NewOptString("main"),
+			RefType: workerclient.NewOptString("branch"),
+		}),
+	}
+	req := &workerapimodel.WorkerSandboxCreateRequest{
+		SandboxId: sandboxID,
+		Config: workerapimodel.SandboxConfig{
+			Source: workerclient.NewOptGitSource(source),
+		},
+	}
+	target := runtime.workerHostPath(filepath.Join(sandboxVolumesRoot(projectID, sandboxID), "source", "primary"))
+
+	// Provision parks an empty repository.
+	if err := runtime.materializeGitSource(ctx, source, target); err != nil {
+		t.Fatalf("materialize push source: %v", err)
+	}
+	git(t, target, "config", "receive.denyCurrentBranch", "updateInstead")
+	git(t, client, "push", target, "main")
+
+	// The resume create.
+	if err := runtime.materializePushedSources(ctx, sandboxID, req); err != nil {
+		t.Fatalf("materialize pushed sources: %v", err)
+	}
+	if head := gitOutput(t, target, "rev-parse", "HEAD"); head != pushed {
+		t.Fatalf("HEAD = %q, want the pushed commit %q", head, pushed)
+	}
+	data, err := os.ReadFile(filepath.Join(target, "README.md"))
+	if err != nil {
+		t.Fatalf("pushed file is not in the workspace: %v", err)
+	}
+	if string(data) != "pushed\n" {
+		t.Fatalf("README = %q, want the pushed content", data)
+	}
+}
+
+// A clone-delivered source was fully materialized at create. Re-running it on a
+// repeat create would reset and clean a workspace the sandbox has been using.
+func TestMaterializePushedSourcesLeavesCloneDeliveredSourcesAlone(t *testing.T) {
+	ctx := context.Background()
+	const projectID = "project-1"
+	const sandboxID = "sandbox-1"
+
+	runtime := &DockerSandboxRuntime{projectID: projectID, hostMountPrefix: t.TempDir()}
+	target := runtime.workerHostPath(filepath.Join(sandboxVolumesRoot(projectID, sandboxID), "source", "primary"))
+	if err := os.MkdirAll(target, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	git(t, target, "init", "-b", "main")
+	git(t, target, "config", "user.email", "test@example.com")
+	git(t, target, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(target, "README.md"), []byte("committed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, target, "add", "README.md")
+	git(t, target, "commit", "-m", "committed")
+	// Work the sandbox has done since it started.
+	if err := os.WriteFile(filepath.Join(target, "scratch.txt"), []byte("in progress\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	req := &workerapimodel.WorkerSandboxCreateRequest{
+		SandboxId: sandboxID,
+		Config: workerapimodel.SandboxConfig{
+			Source: workerclient.NewOptGitSource(workerapimodel.GitSource{
+				Kind:           workerclient.GitSourceKindGit,
+				Delivery:       workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryClone),
+				Slug:           workerclient.NewOptString("primary"),
+				LocalDirectory: workerclient.NewOptString("/does/not/exist"),
+			}),
+		},
+	}
+	if err := runtime.materializePushedSources(ctx, sandboxID, req); err != nil {
+		t.Fatalf("materialize pushed sources: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "scratch.txt")); err != nil {
+		t.Fatalf("a clone-delivered source was re-materialized and lost in-progress work: %v", err)
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/reconcile"
@@ -31,6 +32,7 @@ type Service struct {
 	sandboxAuth      *sandboxauth.Manager
 	defaultUserID    string
 	defaultImage     string
+	hostID           string
 }
 
 func NewService(store *store.Store, manager *sandbox.ProviderManager, defaultUserID string, engine *reconcile.Engine, providerStore ...any) *Service {
@@ -66,6 +68,13 @@ func (s *Service) SetDefaultSandboxImage(image string) {
 	}
 }
 
+// SetHostID records the machine this server runs on, so a create request whose
+// origin reports the same host is known to come from this filesystem and can
+// bind its source directory instead of pushing it.
+func (s *Service) SetHostID(hostID string) {
+	s.hostID = strings.TrimSpace(hostID)
+}
+
 func mapAPIError(err error, notFoundMessage string) error {
 	if errors.Is(err, store.ErrNotFound) {
 		return apperrors.NewStatusError(http.StatusNotFound, notFoundMessage)
@@ -85,11 +94,11 @@ type SandboxProviderCatalogItem struct {
 	ConfigFields []ProviderConfigField
 }
 
-func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot string) ([]model.Sandbox, error) {
+func (s *Service) ListSandboxes(ctx context.Context, projectID, sourceRoot, originKey string) ([]model.Sandbox, error) {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, mapAPIError(err, "project not found")
 	}
-	return s.store.ListSandboxes(ctx, projectID, sourceRoot)
+	return s.store.ListSandboxes(ctx, projectID, sourceRoot, originKey)
 }
 
 func (s *Service) CreateSandbox(ctx context.Context, projectID string, input services.CreateSandboxBody) (*model.Sandbox, error) {
@@ -143,6 +152,14 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if root := source.Root(); root != "" {
 		sourceRoot = &root
 	}
+	origin := services.OriginToModel(input.Origin)
+	var originKey *string
+	if key := origin.Key(); key != "" {
+		originKey = &key
+	}
+	if err := s.resolveSourceDelivery(source, origin, *providerID); err != nil {
+		return nil, err
+	}
 	userName, userUID, userGID, homeDirectory := services.SandboxUserToModel(config.User)
 	harnessMode := "run"
 	if mode, ok := config.HarnessMode.Get(); ok {
@@ -153,6 +170,12 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		harnessConfig, err := s.store.GetHarnessConfig(ctx, projectID, strings.TrimSpace(*harnessConfigID))
 		if err != nil {
 			return nil, mapAPIError(err, "harness config not found")
+		}
+		// A harness is only selectable once its configure flow has succeeded.
+		// harnessMode "config" is exempt: that is the configure flow itself.
+		if !harnessConfig.Configured {
+			return nil, apperrors.NewStatusError(http.StatusConflict,
+				fmt.Sprintf("harness %q is not configured; run `disco box harness configure %s` first", harnessConfig.Slug, harnessConfig.Slug))
 		}
 		if strings.TrimSpace(harnessConfig.Image) != "" {
 			image = strings.TrimSpace(harnessConfig.Image)
@@ -180,6 +203,8 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		Source:               source,
 		SourceRoot:           sourceRoot,
 		SourceCodeReferences: sourceCodeReferences,
+		Origin:               origin,
+		OriginKey:            originKey,
 		UserName:             userName,
 		UserUID:              userUID,
 		UserGID:              userGID,
@@ -194,7 +219,11 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	}
 	// Materialize the harness config's secret bindings and enforce its required
 	// secrets. Inline per-sandbox secrets take precedence over bindings.
-	if harnessConfigID != nil && strings.TrimSpace(*harnessConfigID) != "" {
+	//
+	// harnessMode "config" is exempt: the configure flow is how a harness's
+	// secrets are obtained in the first place, so requiring them to already exist
+	// would make an unconfigured harness impossible to configure.
+	if harnessConfigID != nil && strings.TrimSpace(*harnessConfigID) != "" && harnessMode != "config" {
 		inlineEnvs := make(map[string]struct{}, len(config.Secrets))
 		for _, in := range config.Secrets {
 			inlineEnvs[strings.TrimSpace(in.Env)] = struct{}{}
@@ -377,6 +406,60 @@ func (s *Service) RestartSandbox(ctx context.Context, projectID, sandboxID strin
 	return sandbox, nil
 }
 
+// CompleteSandboxSourcePush reports that a client finished pushing into a
+// push-delivered sandbox's repository, resuming the sandbox that has been
+// parked in awaiting_source since it was provisioned.
+//
+// The commit is a confirmation, not an instruction. What to check out was fixed
+// at create, in the source's Checkout.Commit: the client resolved it from its
+// own repository before the sandbox existed, and the push only makes those
+// objects reachable. Accepting a different commit here would let a resumed
+// sandbox run something other than what its source says it runs, so a mismatch
+// is refused rather than recorded.
+//
+// The server does not verify the commit is present in the sandbox's repository:
+// that means a round trip to the worker, and the reconcile that follows fails
+// on a missing commit anyway, with a better message than this endpoint could
+// produce.
+func (s *Service) CompleteSandboxSourcePush(ctx context.Context, projectID, sandboxID string, input services.CompleteSandboxSourcePushBody) (*model.Sandbox, error) {
+	existing, err := s.store.GetSandbox(ctx, projectID, sandboxID)
+	if err != nil {
+		return nil, mapAPIError(err, "sandbox not found")
+	}
+	if existing.Source == nil || existing.Source.Delivery != model.GitSourceDeliveryPush {
+		return nil, apperrors.NewStatusError(http.StatusConflict,
+			"sandbox source is not push-delivered; nothing is waiting to be pushed")
+	}
+	// Reject anything but a sandbox that is actually waiting. A completion for
+	// an already-started sandbox would otherwise restart it out from under
+	// whatever is running in it.
+	if existing.Phase != model.SandboxPhaseAwaitingSource {
+		return nil, apperrors.NewStatusError(http.StatusConflict,
+			fmt.Sprintf("sandbox is not awaiting its source (phase %q)", existing.Phase))
+	}
+	expected := ""
+	if existing.Source.Checkout != nil && existing.Source.Checkout.Commit != nil {
+		expected = strings.ToLower(strings.TrimSpace(*existing.Source.Checkout.Commit))
+	}
+	if expected == "" {
+		return nil, apperrors.NewStatusError(http.StatusConflict,
+			"sandbox source does not name a commit to check out")
+	}
+	if reported := strings.ToLower(strings.TrimSpace(input.Commit)); reported != expected {
+		return nil, apperrors.NewStatusError(http.StatusConflict,
+			fmt.Sprintf("pushed commit %q does not match the source's commit %q", reported, expected))
+	}
+	now := time.Now().UTC()
+	sandbox, err := s.submitSandboxOperation(ctx, projectID, sandboxID, model.SandboxStartOperation, func(sb *model.Sandbox) {
+		sb.SourceDeliveredAt = &now
+		sb.StatusMessage = nil
+	})
+	if err != nil {
+		return nil, mapAPIError(err, "sandbox not found")
+	}
+	return sandbox, nil
+}
+
 func (s *Service) ReconcileSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error) {
 	sandbox, err := s.scheduleSandboxReconcile(ctx, projectID, sandboxID)
 	if err != nil {
@@ -403,6 +486,7 @@ func (s *Service) NewSandboxReconciler() *SandboxReconciler {
 		s.store,
 		WithSandboxProviderManager(s.sandboxProviders),
 		WithSandboxAuthenticator(s.sandboxAuth),
+		WithSandboxReconcileEngine(s.engine),
 	)
 }
 

@@ -19,6 +19,7 @@ type CreateSecretGrantBody = apimodel.CreateSecretGrantBody
 type UpdateHarnessConfigBody = apimodel.UpdateHarnessConfigBody
 type UpdateSecretBody = apimodel.UpdateSecretBody
 type CreateSandboxBody = apimodel.CreateSandboxBody
+type CompleteSandboxSourcePushBody = apimodel.CompleteSandboxSourcePushBody
 type SandboxSecretInput = apimodel.SandboxSecretInput
 type UpdateSandboxBody = apimodel.UpdateSandboxBody
 type StartSandboxBody = apimodel.StartSandboxBody
@@ -50,14 +51,27 @@ type ProjectService interface {
 
 // HarnessConfigService manages project-scoped harness configurations.
 type HarnessConfigService interface {
-	ListHarnessDefinitions(ctx context.Context) ([]model.HarnessDefinition, error)
-	GetHarnessDefinition(ctx context.Context, definitionID string) (*model.HarnessDefinition, error)
 	ListHarnessConfigs(ctx context.Context, projectID string) ([]model.HarnessConfig, error)
 	CreateHarnessConfig(ctx context.Context, projectID string, input CreateHarnessConfigBody) (*model.HarnessConfig, error)
 	GetHarnessConfig(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error)
 	UpdateHarnessConfig(ctx context.Context, projectID, configID string, input UpdateHarnessConfigBody) (*model.HarnessConfig, error)
 	SetDefaultHarnessConfig(ctx context.Context, projectID, configID string) (*model.Project, error)
 	DeleteHarnessConfig(ctx context.Context, projectID, configID string) error
+
+	// ConfigureHarnessConfig launches the harness's interactive configure sandbox
+	// and returns it. The caller seeds it via AttachHarnessConfigConfigure, attaches
+	// to its primary terminal, then calls CommitHarnessConfigConfigure. Re-running
+	// is allowed and clobbers any in-flight attempt.
+	ConfigureHarnessConfig(ctx context.Context, projectID, configID string) (*model.Sandbox, error)
+	// AttachHarnessConfigConfigure seeds the previous configuration into the
+	// in-flight configure sandbox. Call it before attaching to the primary terminal.
+	AttachHarnessConfigConfigure(ctx context.Context, projectID, configID string) error
+	// CommitHarnessConfigConfigure verifies the configure command exited 0, applies
+	// what it wrote, and deletes the configure sandbox.
+	CommitHarnessConfigConfigure(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error)
+	// DeconfigureHarnessConfig removes the assets the configure flow created and
+	// marks the config unconfigured.
+	DeconfigureHarnessConfig(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error)
 
 	ListHarnessConfigSecretBindings(ctx context.Context, projectID, configID string) ([]model.HarnessConfigSecretBinding, error)
 	SetHarnessConfigSecretBinding(ctx context.Context, projectID, configID, envName, secretID string) (*model.HarnessConfigSecretBinding, error)
@@ -66,7 +80,7 @@ type HarnessConfigService interface {
 
 // SandboxService manages sandboxes within a project.
 type SandboxService interface {
-	ListSandboxes(ctx context.Context, projectID, sourceRoot string) ([]model.Sandbox, error)
+	ListSandboxes(ctx context.Context, projectID, sourceRoot, originKey string) ([]model.Sandbox, error)
 	CreateSandbox(ctx context.Context, projectID string, input CreateSandboxBody) (*model.Sandbox, error)
 	GetSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
 	UpdateSandbox(ctx context.Context, projectID, sandboxID string, input UpdateSandboxBody) (*model.Sandbox, error)
@@ -74,6 +88,7 @@ type SandboxService interface {
 	StartSandbox(ctx context.Context, projectID, sandboxID string, input StartSandboxBody) (*model.Sandbox, error)
 	StopSandbox(ctx context.Context, projectID, sandboxID string, input StopSandboxBody) (*model.Sandbox, error)
 	RestartSandbox(ctx context.Context, projectID, sandboxID string, input RestartSandboxBody) (*model.Sandbox, error)
+	CompleteSandboxSourcePush(ctx context.Context, projectID, sandboxID string, input CompleteSandboxSourcePushBody) (*model.Sandbox, error)
 	ReconcileSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
 	AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*HTTPClientLease, *model.Sandbox, error)
 	AssignSandboxHarnessSecrets(ctx context.Context, projectID, sandboxID, harnessConfigID string) (map[string]string, error)

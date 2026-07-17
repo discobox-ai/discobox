@@ -173,6 +173,13 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		protected.Get("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach", func(w http.ResponseWriter, r *http.Request) {
 			handler.attachExecHTTP(w, r, chi.URLParam(r, "execId"))
 		})
+		// POST to the same path is the one-shot form: the body is the exec's
+		// stdin and the response is its output, for callers that want plain
+		// request/response instead of a duplex stream. GET remains the websocket
+		// attach.
+		protected.Post("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach", func(w http.ResponseWriter, r *http.Request) {
+			handler.oneShotExecHTTP(w, r, chi.URLParam(r, "execId"))
+		})
 		protected.Post("/api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/start", func(w http.ResponseWriter, r *http.Request) {
 			handler.startExecHTTP(w, r, chi.URLParam(r, "execId"))
 		})
@@ -213,13 +220,19 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	if err != nil {
 		return err
 	}
-	go func() {
-		switch err := manager.EnsurePrimary(ctx, cfg.Prompt); {
-		case err == nil, errors.Is(err, context.Canceled):
-		default:
-			logger.Error("launch primary terminal", "error", err)
-		}
-	}()
+	// Config mode defers the primary terminal to the first attach. The configure
+	// command is interactive and reads inputs seeded into the sandbox after it is
+	// running, so launching it at boot would race that seeding. Attaching to the
+	// virtual primary exec id launches it (see terminal.ResolvePrimary).
+	if cfg.HarnessMode != "config" {
+		go func() {
+			switch err := manager.EnsurePrimary(ctx, cfg.Prompt); {
+			case err == nil, errors.Is(err, context.Canceled):
+			default:
+				logger.Error("launch primary terminal", "error", err)
+			}
+		}()
+	}
 	go execReconcileLoop(ctx, logger, execManager)
 	go func() {
 		if err := harnesshooks.Serve(ctx, harnesshooks.SocketPath(cfg.RuntimeDir), localStore); err != nil && !errors.Is(err, context.Canceled) {

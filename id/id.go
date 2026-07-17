@@ -31,6 +31,7 @@ const (
 	PrefixExec                       = "ex"
 	PrefixRun                        = "run"
 	PrefixSnapshot                   = "snap"
+	PrefixHost                       = "host"
 )
 
 // RandomLength is the length of the random portion of a generated ID.

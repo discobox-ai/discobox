@@ -31,6 +31,19 @@ func (UnimplementedHandler) AssignSandboxHarnessSecrets(ctx context.Context, req
 	return r, ht.ErrNotImplemented
 }
 
+// AttachHarnessConfigConfigure implements attach-harness-config-configure operation.
+//
+// Prepare the in-flight configure sandbox for attach, then attach to its primary terminal.
+// This seeds the previous configuration into the sandbox at a well-known path so the harness's
+// configure command may pre-fill from it; only secrets holding a live grant to this harness config
+// are included. The configure command is not launched until the primary terminal is attached, so
+// seeding always precedes it. Call this before attaching to exec id "primary".
+//
+// POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure/attach
+func (UnimplementedHandler) AttachHarnessConfigConfigure(ctx context.Context, params AttachHarnessConfigConfigureParams) (r AttachHarnessConfigConfigureRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // AttachSandboxExec implements attach-sandbox-exec operation.
 //
 // Opens a websocket carrying the framed bidirectional stream for a running sandbox exec. Input
@@ -39,6 +52,60 @@ func (UnimplementedHandler) AssignSandboxHarnessSecrets(ctx context.Context, req
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
 func (UnimplementedHandler) AttachSandboxExec(ctx context.Context, params AttachSandboxExecParams) (r AttachSandboxExecRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// AttachSandboxExecOnce implements attach-sandbox-exec-once operation.
+//
+// Runs a prepared exec to completion in a single request: the request body is written to the exec's
+// stdin, stdin is then closed, and the response body is everything the exec emitted, with output and
+// error streams interleaved as produced. This is the non-interactive counterpart to the websocket
+// attach, for callers that only need to feed a command bytes and read its output; no frame encoding
+// is involved.
+// The exec must not be started beforehand — this starts it once the attach is connected, since
+// output
+// produced before an attach exists is lost. The exit status is not encoded in the response: read it
+// from the exec record, which is authoritative.
+//
+// POST /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/attach
+func (UnimplementedHandler) AttachSandboxExecOnce(ctx context.Context, req AttachSandboxExecOnceReq, params AttachSandboxExecOnceParams) (r AttachSandboxExecOnceRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// CommitHarnessConfigConfigure implements commit-harness-config-configure operation.
+//
+// Finish the in-flight configure flow. The server verifies the configure command exited 0, reads the
+// result it wrote, applies the declared secrets and files to the harness config, and marks it
+// configured. A non-zero exit leaves the harness unconfigured with configureError set. The ephemeral
+// configure sandbox is deleted either way.
+//
+// POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure/commit
+func (UnimplementedHandler) CommitHarnessConfigConfigure(ctx context.Context, params CommitHarnessConfigConfigureParams) (r CommitHarnessConfigConfigureRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// CompleteSandboxSourcePush implements complete-sandbox-source-push operation.
+//
+// Report that the client finished pushing a push-delivered source into the sandbox's Git repository,
+// naming the commit it pushed. The sandbox leaves the awaiting_source phase and starts. Only valid
+// while the sandbox is awaiting its source.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/complete-source-push
+func (UnimplementedHandler) CompleteSandboxSourcePush(ctx context.Context, req *CompleteSandboxSourcePushBody, params CompleteSandboxSourcePushParams) (r CompleteSandboxSourcePushRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ConfigureHarnessConfig implements configure-harness-config operation.
+//
+// Launch the harness's interactive configure flow and return the ephemeral sandbox running it.
+// The caller attaches to the returned sandbox's primary terminal. The server watches that terminal:
+// on exit 0 it reads /run/discobox/harness-configure.json from the sandbox, applies the secrets and
+// files it declares, and marks the harness configured; on a non-zero exit the harness is left
+// unconfigured and configureError is set. The sandbox is deleted either way.
+// Re-running configure on an already configured harness is allowed.
+//
+// POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure
+func (UnimplementedHandler) ConfigureHarnessConfig(ctx context.Context, params ConfigureHarnessConfigParams) (r ConfigureHarnessConfigRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -102,6 +169,18 @@ func (UnimplementedHandler) CreateSecretGrant(ctx context.Context, req *CreateSe
 //
 // POST /projects/{projectId}/secret-requests
 func (UnimplementedHandler) CreateSecretRequest(ctx context.Context, req *CreateSecretRequestBody, params CreateSecretRequestParams) (r CreateSecretRequestRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// DeconfigureHarnessConfig implements deconfigure-harness-config operation.
+//
+// Remove the assets the configure flow created for this harness — the secrets it created and their
+// bindings, plus the files it wrote — and mark the harness unconfigured. The image-declared
+// baseline
+// is left intact.
+//
+// POST /projects/{projectId}/harness-configs/{harnessConfigId}/deconfigure
+func (UnimplementedHandler) DeconfigureHarnessConfig(ctx context.Context, params DeconfigureHarnessConfigParams) (r DeconfigureHarnessConfigRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -183,15 +262,6 @@ func (UnimplementedHandler) ForceJob(ctx context.Context, params ForceJobParams)
 //
 // GET /projects/{projectId}/harness-configs/{harnessConfigId}
 func (UnimplementedHandler) GetHarnessConfig(ctx context.Context, params GetHarnessConfigParams) (r GetHarnessConfigRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// GetHarnessDefinition implements get-harness-definition operation.
-//
-// Get a harness config definition.
-//
-// GET /harness-definitions/{definitionId}
-func (UnimplementedHandler) GetHarnessDefinition(ctx context.Context, params GetHarnessDefinitionParams) (r GetHarnessDefinitionRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -282,15 +352,6 @@ func (UnimplementedHandler) ListHarnessConfigSecretBindings(ctx context.Context,
 //
 // GET /projects/{projectId}/harness-configs
 func (UnimplementedHandler) ListHarnessConfigs(ctx context.Context, params ListHarnessConfigsParams) (r ListHarnessConfigsRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// ListHarnessDefinitions implements list-harness-definitions operation.
-//
-// List harness config definitions.
-//
-// GET /harness-definitions
-func (UnimplementedHandler) ListHarnessDefinitions(ctx context.Context) (r ListHarnessDefinitionsRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

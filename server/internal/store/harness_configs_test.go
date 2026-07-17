@@ -13,10 +13,10 @@ func TestGetHarnessConfigBySlug(t *testing.T) {
 	s, _ := newTestStoreWithDB(t, nil)
 
 	config := &model.HarnessConfig{
-		ProjectID:    "project-1",
-		Slug:         "codex",
-		DefinitionID: "codex",
-		Name:         "Codex",
+		ProjectID: "project-1",
+		Slug:      "codex",
+		BuiltIn:   true,
+		Name:      "Codex",
 	}
 	if err := s.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create harness config: %v", err)
@@ -25,7 +25,7 @@ func TestGetHarnessConfigBySlug(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get by slug: %v", err)
 	}
-	if got.ID != config.ID || got.DefinitionID != "codex" {
+	if got.ID != config.ID || !got.BuiltIn {
 		t.Fatalf("get by slug = %#v", got)
 	}
 	if _, err := s.GetHarnessConfigBySlug(ctx, "project-1", "missing"); err == nil {

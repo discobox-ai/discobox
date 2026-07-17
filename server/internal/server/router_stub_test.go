@@ -12,7 +12,6 @@ import (
 
 	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/server/internal/model"
-	"github.com/obot-platform/discobox/server/internal/resources/harnessconfigs"
 	appservice "github.com/obot-platform/discobox/server/internal/service"
 	services "github.com/obot-platform/discobox/server/internal/services"
 )
@@ -105,7 +104,7 @@ func (s *routerTestServices) ForceJob(_ context.Context, projectID, _ string) (*
 	return nil, apperrors.NewStatusError(http.StatusNotFound, "job not found")
 }
 
-func (s *routerTestServices) ListSandboxes(_ context.Context, projectID, sourceRoot string) ([]model.Sandbox, error) {
+func (s *routerTestServices) ListSandboxes(_ context.Context, projectID, sourceRoot, _ string) ([]model.Sandbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -237,6 +236,10 @@ func (s *routerTestServices) RestartSandbox(_ context.Context, projectID, sandbo
 	return s.beginSandboxOperation(projectID, sandboxID, model.SandboxRestartOperation)
 }
 
+func (s *routerTestServices) CompleteSandboxSourcePush(_ context.Context, projectID, sandboxID string, _ services.CompleteSandboxSourcePushBody) (*model.Sandbox, error) {
+	return s.beginSandboxOperation(projectID, sandboxID, model.SandboxStartOperation)
+}
+
 func (s *routerTestServices) ReconcileSandbox(_ context.Context, projectID, sandboxID string) (*model.Sandbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -305,16 +308,63 @@ func (s *routerTestServices) SubscribeProjectEvents(ctx context.Context, project
 	return ch, unsubscribe, nil
 }
 
-func (s *routerTestServices) ListHarnessDefinitions(context.Context) ([]model.HarnessDefinition, error) {
-	return harnessconfigs.Definitions(), nil
+func (s *routerTestServices) ConfigureHarnessConfig(_ context.Context, projectID, configID string) (*model.Sandbox, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	if _, ok := s.harnessConfigs[configID]; !ok {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
+	}
+	now := time.Now().UTC()
+	return &model.Sandbox{
+		ID: id.NewString(id.PrefixSandbox), ProjectID: projectID, Name: "configure-test",
+		ResourceLifecycle: model.NewResourceLifecycle(model.SandboxCreateOperation),
+		CreatedAt:         now, UpdatedAt: now,
+	}, nil
 }
 
-func (s *routerTestServices) GetHarnessDefinition(_ context.Context, definitionID string) (*model.HarnessDefinition, error) {
-	definition, ok := harnessconfigs.DefinitionByID(definitionID)
-	if !ok {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config definition not found")
+func (s *routerTestServices) AttachHarnessConfigConfigure(_ context.Context, projectID, configID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
-	return definition, nil
+	if _, ok := s.harnessConfigs[configID]; !ok {
+		return apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
+	}
+	return nil
+}
+
+func (s *routerTestServices) CommitHarnessConfigConfigure(_ context.Context, projectID, configID string) (*model.HarnessConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	config, ok := s.harnessConfigs[configID]
+	if !ok {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
+	}
+	config.Configured = true
+	s.harnessConfigs[configID] = config
+	return &config, nil
+}
+
+func (s *routerTestServices) DeconfigureHarnessConfig(_ context.Context, projectID, configID string) (*model.HarnessConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	config, ok := s.harnessConfigs[configID]
+	if !ok {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
+	}
+	config.Configured = false
+	s.harnessConfigs[configID] = config
+	return &config, nil
 }
 
 func (s *routerTestServices) ListHarnessConfigs(_ context.Context, projectID string) ([]model.HarnessConfig, error) {
@@ -345,18 +395,7 @@ func (s *routerTestServices) CreateHarnessConfig(_ context.Context, projectID st
 	if projectID != s.project.ID {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
-	var definition *model.HarnessDefinition
-	if definitionID, isSet := input.DefinitionId.Get(); isSet {
-		var found bool
-		definition, found = harnessconfigs.DefinitionByID(definitionID)
-		if !found {
-			return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config definition not found")
-		}
-	}
 	name := strings.TrimSpace(input.Name.Or(""))
-	if name == "" && definition != nil {
-		name = definition.Name
-	}
 	runCommand := []string{"test-harness"}
 	now := time.Now().UTC()
 	config := model.HarnessConfig{ID: id.NewString(id.PrefixHarnessConfig), ProjectID: projectID, Name: name, RunCommand: runCommand, CreatedAt: now, UpdatedAt: now}

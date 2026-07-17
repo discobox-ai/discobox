@@ -8,26 +8,51 @@ import (
 	services "github.com/obot-platform/discobox/server/internal/services"
 )
 
-func (h *Handler) ListHarnessDefinitions(ctx context.Context) (serverapi.ListHarnessDefinitionsRes, error) {
-	definitions, err := h.services.HarnessConfigs.ListHarnessDefinitions(ctx)
+// ConfigureHarnessConfig starts the harness's configure flow and returns the
+// sandbox running it, which the caller attaches to. The server watches that
+// sandbox and applies the result; see harnessconfigs.ConfigureHarnessConfig.
+func (h *Handler) ConfigureHarnessConfig(ctx context.Context, params serverapi.ConfigureHarnessConfigParams) (serverapi.ConfigureHarnessConfigRes, error) {
+	sandbox, err := h.services.HarnessConfigs.ConfigureHarnessConfig(ctx, params.ProjectId, params.HarnessConfigId)
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[apimodel.ListHarnessDefinitionsBody](struct {
-		HarnessDefinitions any `json:"harnessDefinitions"`
-	}{HarnessDefinitions: definitions})
+	// Sandbox needs its dedicated mapper, not a raw Convert: the API shape embeds
+	// the harness config rather than carrying the model's harnessConfigId.
+	body, err := services.SandboxToAPI(sandbox)
 	if err != nil {
 		return nil, err
 	}
 	return &body, nil
 }
 
-func (h *Handler) GetHarnessDefinition(ctx context.Context, params serverapi.GetHarnessDefinitionParams) (serverapi.GetHarnessDefinitionRes, error) {
-	definition, err := h.services.HarnessConfigs.GetHarnessDefinition(ctx, params.DefinitionId)
+// AttachHarnessConfigConfigure seeds the configure sandbox with the previous
+// configuration. The caller then attaches to the virtual "primary" exec, which is
+// what launches the configure command.
+func (h *Handler) AttachHarnessConfigConfigure(ctx context.Context, params serverapi.AttachHarnessConfigConfigureParams) (serverapi.AttachHarnessConfigConfigureRes, error) {
+	if err := h.services.HarnessConfigs.AttachHarnessConfigConfigure(ctx, params.ProjectId, params.HarnessConfigId); err != nil {
+		return apiError(err), nil
+	}
+	return &serverapi.AttachHarnessConfigConfigureNoContent{}, nil
+}
+
+func (h *Handler) CommitHarnessConfigConfigure(ctx context.Context, params serverapi.CommitHarnessConfigConfigureParams) (serverapi.CommitHarnessConfigConfigureRes, error) {
+	config, err := h.services.HarnessConfigs.CommitHarnessConfigConfigure(ctx, params.ProjectId, params.HarnessConfigId)
 	if err != nil {
 		return apiError(err), nil
 	}
-	body, err := services.Convert[apimodel.HarnessDefinition](definition)
+	body, err := services.Convert[apimodel.HarnessConfig](config)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+func (h *Handler) DeconfigureHarnessConfig(ctx context.Context, params serverapi.DeconfigureHarnessConfigParams) (serverapi.DeconfigureHarnessConfigRes, error) {
+	config, err := h.services.HarnessConfigs.DeconfigureHarnessConfig(ctx, params.ProjectId, params.HarnessConfigId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[apimodel.HarnessConfig](config)
 	if err != nil {
 		return nil, err
 	}

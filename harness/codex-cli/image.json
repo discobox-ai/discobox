@@ -11,14 +11,24 @@
     "id": "codex",
     "name": "Codex",
     "description": "OpenAI Codex coding harness.",
-    "runCommand": ["codex"],
-    "relaunchCommand": ["codex", "resume", "--last"],
+    "runCommand": [
+      "codex"
+    ],
+    "relaunchCommand": [
+      "codex",
+      "resume",
+      "--last"
+    ],
     "secrets": [
-      {"name": "OPENAI_API_KEY", "required": true}
+      {
+        "name": "OPENAI_API_KEY",
+        "required": true
+      }
     ],
     "config": {
-      "command": ["/usr/local/libexec/discobox/configure-codex"],
-      "resultPath": "/run/discobox/harness-configure.json"
+      "command": [
+        "/usr/local/libexec/discobox/configure-codex"
+      ]
     }
   }
 }

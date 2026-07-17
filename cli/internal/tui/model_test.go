@@ -69,17 +69,10 @@ func TestRootRoutesToCodingAgentsAndBack(t *testing.T) {
 		t.Fatalf("active = %T, want *harnessesScreen", m.active)
 	}
 
-	// Opening the form, then saving, returns to the coding-agents dialog.
-	m.Update(openHarnessFormMsg{})
-	if _, ok := m.active.(*harnessFormScreen); !ok {
-		t.Fatalf("active = %T, want *harnessFormScreen", m.active)
-	}
-	m.Update(harnessSavedMsg{config: HarnessConfig{ID: "hc_new"}, created: true})
+	// Deconfiguring re-selects the agent so its changed state re-renders.
+	m.Update(harnessDeconfiguredMsg{id: "hc_new"})
 	if _, ok := m.active.(*harnessesScreen); !ok {
-		t.Fatalf("active after save = %T, want *harnessesScreen", m.active)
-	}
-	if m.harnessForm != nil {
-		t.Fatal("harness form not released after save")
+		t.Fatalf("active = %T, want *harnessesScreen", m.active)
 	}
 	if m.harnesses.selectID != "hc_new" {
 		t.Fatalf("selectID = %q, want hc_new", m.harnesses.selectID)

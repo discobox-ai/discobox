@@ -11,15 +11,25 @@
     "id": "opencode",
     "name": "opencode",
     "description": "opencode terminal coding harness.",
-    "runCommand": ["opencode"],
-    "relaunchCommand": ["opencode", "--continue"],
+    "runCommand": [
+      "opencode"
+    ],
+    "relaunchCommand": [
+      "opencode",
+      "--continue"
+    ],
     "secrets": [
-      {"name": "ANTHROPIC_API_KEY"},
-      {"name": "OPENAI_API_KEY"}
+      {
+        "name": "ANTHROPIC_API_KEY"
+      },
+      {
+        "name": "OPENAI_API_KEY"
+      }
     ],
     "config": {
-      "command": ["/usr/local/libexec/discobox/configure-opencode"],
-      "resultPath": "/run/discobox/harness-configure.json"
+      "command": [
+        "/usr/local/libexec/discobox/configure-opencode"
+      ]
     }
   }
 }
