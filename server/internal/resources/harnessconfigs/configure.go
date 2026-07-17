@@ -327,11 +327,21 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 		if name == "" {
 			name = envName
 		}
+		secretID, err := id.New(id.PrefixSecret)
+		if err != nil {
+			return err
+		}
 		created := &model.Secret{
-			ProjectID:      config.ProjectID,
-			Name:           name,
-			Type:           strings.TrimSpace(secret.Type),
-			Host:           secret.Host,
+			ID:        secretID,
+			ProjectID: config.ProjectID,
+			Name:      name,
+			Type:      strings.TrimSpace(secret.Type),
+			Host:      secret.Host,
+			// A configure-created secret belongs to this harness (bound, granted,
+			// and deleted with it), so it must not occupy the shared
+			// (project,type,host) uniqueness slot: two harnesses may each hold,
+			// say, a hostless bearer token.
+			UniqueKey:      secretID,
 			EncryptedValue: []byte(secret.Value),
 		}
 		if err := s.store.CreateSecret(ctx, created); err != nil {
@@ -356,6 +366,25 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 			Host:      secret.Host,
 		}); err != nil {
 			return fmt.Errorf("grant configured secret %q: %w", envName, err)
+		}
+	}
+	// Reconfiguring replaces the previous generation of configure-created
+	// secrets: their bindings were just overwritten above, so keeping the rows
+	// would leak one orphaned secret per reconfigure.
+	replaced := map[string]struct{}{}
+	for _, secretID := range createdSecretIDs {
+		replaced[secretID] = struct{}{}
+	}
+	for _, secretID := range config.ConfiguredSecretIDs {
+		secretID = strings.TrimSpace(secretID)
+		if secretID == "" {
+			continue
+		}
+		if _, ok := replaced[secretID]; ok {
+			continue
+		}
+		if err := s.store.DeleteSecret(ctx, config.ProjectID, secretID); err != nil && !errors.Is(err, store.ErrNotFound) {
+			return err
 		}
 	}
 	config.ConfiguredFiles = out.Files

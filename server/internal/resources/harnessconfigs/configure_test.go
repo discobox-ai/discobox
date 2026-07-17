@@ -283,3 +283,51 @@ func TestDeleteBuiltInHarnessIsRefused(t *testing.T) {
 		t.Fatalf("delete custom harness: %v", err)
 	}
 }
+
+// Reconfiguring replaces the previous generation of configure-created secrets;
+// without the replacement, every reconfigure would orphan one secret.
+func TestApplyConfigureOutputReplacesPreviousGeneration(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeBearer, UniqueKey: "old", EncryptedValue: []byte(`{"token":"old"}`)}
+	if err := st.CreateSecret(ctx, previous); err != nil {
+		t.Fatalf("create previous secret: %v", err)
+	}
+	config := &model.HarnessConfig{
+		ProjectID: "project-1", Slug: "codex", Name: "Codex",
+		Image: "img:1", RunCommand: []string{"codex"},
+		Configured: true, ConfiguredSecretIDs: []string{previous.ID},
+	}
+	if err := st.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create config: %v", err)
+	}
+
+	svc := &Service{store: st, inspector: &stubInspector{}}
+	out := &configureOutput{Secrets: []configureSecret{{
+		EnvName: "TOKEN", Name: "new-token", Type: "bearer", Value: []byte(`{"token":"new"}`),
+	}}}
+	if err := svc.applyConfigureOutput(ctx, config, out); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	if _, err := st.GetSecret(ctx, "project-1", previous.ID); err == nil {
+		t.Fatal("previous generation secret still exists, want replaced")
+	}
+	if len(config.ConfiguredSecretIDs) != 1 || config.ConfiguredSecretIDs[0] == previous.ID {
+		t.Fatalf("configured secrets = %v, want one new id", config.ConfiguredSecretIDs)
+	}
+	created, err := st.GetSecret(ctx, "project-1", config.ConfiguredSecretIDs[0])
+	if err != nil {
+		t.Fatalf("get new secret: %v", err)
+	}
+	// The new row must carry its own unique key so two harnesses can each hold a
+	// hostless secret of the same type.
+	if created.UniqueKey != created.ID {
+		t.Fatalf("unique key = %q, want the secret's own id", created.UniqueKey)
+	}
+	grant, err := st.FindLiveGrant(ctx, "project-1", created.ID, "", []store.GrantScope{{Scope: model.SecretGrantScopeHarnessConfig, ScopeKey: config.ID}})
+	if err != nil || grant == nil {
+		t.Fatalf("grant = %v err = %v, want a live harnessConfig grant", grant, err)
+	}
+}

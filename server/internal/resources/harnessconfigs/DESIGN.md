@@ -31,7 +31,7 @@ sequenceDiagram
     participant S as Server
     participant B as Configure sandbox
     C->>S: POST .../configure
-    S->>B: create (harnessMode=config; primary NOT launched)
+    S->>B: create (harnessMode=config, primary NOT launched)
     S-->>C: 202 Sandbox
     C->>S: POST .../configure/attach
     S->>B: seed previous config (granted secrets only)
