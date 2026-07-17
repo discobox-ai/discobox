@@ -266,10 +266,18 @@ tasks:
             print("no Mermaid diagrams found")
         PY
         PUPPETEER_SKIP_DOWNLOAD=true pnpm install --frozen-lockfile --ignore-scripts
+        if [[ -z "${PUPPETEER_EXECUTABLE_PATH:-}" ]]; then
+            for browser in chromium chromium-browser google-chrome google-chrome-stable; do
+                if path="$(command -v "$browser")"; then
+                    export PUPPETEER_EXECUTABLE_PATH="$path"
+                    break
+                fi
+            done
+        fi
         shopt -s nullglob
         for diagram in "$out_dir"/*.mmd; do
             echo "validating ${diagram}"
-            PUPPETEER_EXECUTABLE_PATH=${PUPPETEER_EXECUTABLE_PATH:-/usr/bin/chromium} pnpm exec mmdc -i "$diagram" -o "${diagram}.svg" >/dev/null
+            pnpm exec mmdc -i "$diagram" -o "${diagram}.svg" >/dev/null
         done
         '
 

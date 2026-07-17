@@ -7,13 +7,7 @@
 
 set -euo pipefail
 
-if [[ -z "${PUPPETEER_EXECUTABLE_PATH:-}" ]]; then
-	for browser in chromium chromium-browser google-chrome google-chrome-stable; do
-		if path="$(command -v "$browser")"; then
-			export PUPPETEER_EXECUTABLE_PATH="$path"
-			break
-		fi
-	done
-fi
-
+# Browser detection lives in the check:mermaid task, so it applies whether the
+# validation runs from this hook or from the task directly. A caller that
+# exports PUPPETEER_EXECUTABLE_PATH still overrides it.
 go tool task check:mermaid
