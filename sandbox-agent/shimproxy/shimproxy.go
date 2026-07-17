@@ -177,41 +177,62 @@ func AttachWebSocket(ctx context.Context, w http.ResponseWriter, r *http.Request
 	return nil
 }
 
-// AttachOneShot runs a non-interactive attach to completion: it writes stdin,
-// closes the input side, and returns everything the exec emitted.
+// OneShot is a connected non-interactive attach. Connecting and running are
+// split so a caller can guarantee ordering: the attach must be connected before
+// the exec starts, or a fast command's output is broadcast to nobody and lost.
+type OneShot struct {
+	conn   net.Conn
+	reader *bufio.Reader
+}
+
+// ConnectOneShot opens the attach for a one-shot run. The caller starts the exec
+// only after this returns, then calls Run.
 //
 // A streaming attach is a raw byte tunnel — the frame protocol is spoken
 // end-to-end between the remote client and the shim, and this process is only a
 // pipe. A one-shot caller has no tunnel to speak over, so this is the one place
 // the agent speaks the frame protocol itself, keeping that protocol from leaking
 // into callers that only want "feed it bytes, give me its output".
-//
-// Output and error streams are returned interleaved, as the exec emitted them.
-// The exit status is not returned: the exec record is authoritative for that, and
-// the caller reads it there.
-func AttachOneShot(ctx context.Context, socketPath, protocol string, stdin []byte) ([]byte, error) {
+func ConnectOneShot(ctx context.Context, socketPath, protocol string) (*OneShot, error) {
 	shimConn, shimReader, err := attachShim(ctx, socketPath, protocol, false)
 	if err != nil {
 		return nil, err
 	}
-	defer shimConn.Close()
+	return &OneShot{conn: shimConn, reader: shimReader}, nil
+}
 
+func (o *OneShot) Close() { _ = o.conn.Close() }
+
+// Run writes stdin, closes the input side, and returns everything the exec
+// emitted, output and error streams interleaved as produced. The exit status is
+// not returned: the exec record is authoritative for that, and the caller reads
+// it there.
+func (o *OneShot) Run(ctx context.Context, stdin []byte) ([]byte, error) {
+	// Write failures here are benign when the command has already finished: a
+	// fast-exiting command leads the shim to send the exit frame and close the
+	// attach before these writes land, and the output is still buffered on the
+	// socket for the read loop below. A command that actually needed the input
+	// surfaces through its exit status, which the caller checks.
 	if len(stdin) > 0 {
-		if err := frame.Write(shimConn, frame.Input, stdin); err != nil {
-			return nil, fmt.Errorf("write exec stdin: %w", err)
+		if err := frame.Write(o.conn, frame.Input, stdin); err != nil {
+			return o.drain(ctx)
 		}
 	}
 	// Close the input side so a command reading to EOF (cat, tee) terminates.
-	if err := frame.Write(shimConn, frame.CloseInput, nil); err != nil {
-		return nil, fmt.Errorf("close exec stdin: %w", err)
+	if err := frame.Write(o.conn, frame.CloseInput, nil); err != nil {
+		return o.drain(ctx)
 	}
+	return o.drain(ctx)
+}
 
+// drain reads attach frames to completion, returning the exec's output.
+func (o *OneShot) drain(ctx context.Context) ([]byte, error) {
 	var out []byte
 	for {
 		if ctx.Err() != nil {
 			return out, ctx.Err()
 		}
-		f, err := frame.Read(shimReader)
+		f, err := frame.Read(o.reader)
 		if err != nil {
 			if errors.Is(err, io.EOF) {
 				// The shim hung up without an explicit exit frame; whatever it

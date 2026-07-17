@@ -441,20 +441,23 @@ func (m *Manager) Attach(ctx context.Context, w http.ResponseWriter, r *http.Req
 	return shimproxy.AttachWebSocket(ctx, w, r, exec.SocketPath, "discobox-sandbox-exec", replay)
 }
 
-// AttachOneShot feeds stdin to an exec and returns its output once it finishes,
-// for callers that want plain request/response rather than a duplex stream (a
-// `cat` in, a `cat` out). The exit status is left to the exec record, which is
+// ConnectOneShot opens a one-shot attach to an exec, for callers that want plain
+// request/response rather than a duplex stream (a `cat` in, a `cat` out). The
+// caller must connect before starting the exec — a fast command's output is
+// broadcast at exit and an unconnected attach misses it — then call Run, and
+// Close when done. The exit status is left to the exec record, which is
 // authoritative.
-func (m *Manager) AttachOneShot(ctx context.Context, id string, stdin []byte) ([]byte, error) {
+func (m *Manager) ConnectOneShot(ctx context.Context, id string) (*shimproxy.OneShot, error) {
 	exec, ok := m.Get(id)
 	if !ok {
 		return nil, ErrNotFound
 	}
+	oneShot, err := shimproxy.ConnectOneShot(ctx, exec.SocketPath, "discobox-sandbox-exec")
+	if err != nil {
+		return nil, err
+	}
 	_ = m.recordEvent(ctx, id, "exec.attach.opened", "exec one-shot attach opened", map[string]any{"unit": exec.Unit})
-	defer func() {
-		_ = m.recordEvent(context.Background(), id, "exec.attach.closed", "exec one-shot attach closed", map[string]any{"unit": exec.Unit})
-	}()
-	return shimproxy.AttachOneShot(ctx, exec.SocketPath, "discobox-sandbox-exec", stdin)
+	return oneShot, nil
 }
 
 var ErrNotFound = errors.New("sandbox exec not found")

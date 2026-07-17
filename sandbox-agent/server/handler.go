@@ -115,17 +115,12 @@ func (h *handler) oneShotExecHTTP(w http.ResponseWriter, r *http.Request, execID
 		writeJSON(w, http.StatusBadRequest, sandboxapi.ErrorResponse{Error: "read request body: " + err.Error()})
 		return
 	}
-	done := make(chan struct{})
-	var out []byte
-	var attachErr error
-	go func() {
-		defer close(done)
-		out, attachErr = h.execs.AttachOneShot(r.Context(), execID, stdin)
-	}()
-	// The attach must be connected before the process starts, so start only after
-	// AttachOneShot is under way.
-	if _, err := h.execs.Start(r.Context(), execID); err != nil {
-		<-done
+	// The attach must be fully connected before the process starts: output is
+	// broadcast as it happens, and a fast command finishes (and broadcasts its
+	// exit) before a late attacher would register, losing it. Connect first,
+	// start second, then run the attach to completion.
+	oneShot, err := h.execs.ConnectOneShot(r.Context(), execID)
+	if err != nil {
 		if errors.Is(err, execs.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, sandboxapi.ErrorResponse{Error: "sandbox exec not found"})
 			return
@@ -133,13 +128,18 @@ func (h *handler) oneShotExecHTTP(w http.ResponseWriter, r *http.Request, execID
 		writeJSON(w, http.StatusInternalServerError, sandboxapi.ErrorResponse{Error: err.Error()})
 		return
 	}
-	<-done
-	if attachErr != nil {
-		if errors.Is(attachErr, execs.ErrNotFound) {
+	defer oneShot.Close()
+	if _, err := h.execs.Start(r.Context(), execID); err != nil {
+		if errors.Is(err, execs.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, sandboxapi.ErrorResponse{Error: "sandbox exec not found"})
 			return
 		}
-		writeJSON(w, http.StatusInternalServerError, sandboxapi.ErrorResponse{Error: attachErr.Error()})
+		writeJSON(w, http.StatusInternalServerError, sandboxapi.ErrorResponse{Error: err.Error()})
+		return
+	}
+	out, err := oneShot.Run(r.Context(), stdin)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, sandboxapi.ErrorResponse{Error: err.Error()})
 		return
 	}
 	w.Header().Set("Content-Type", "application/octet-stream")
