@@ -105,6 +105,12 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/harness-configs
 	CreateHarnessConfig(ctx context.Context, request *CreateHarnessConfigBody, params CreateHarnessConfigParams) (CreateHarnessConfigRes, error)
+	// CreatePool invokes create-pool operation.
+	//
+	// Create a pool.
+	//
+	// POST /projects/{projectId}/pools
+	CreatePool(ctx context.Context, request *CreatePoolBody, params CreatePoolParams) (CreatePoolRes, error)
 	// CreateSandbox invokes create-sandbox operation.
 	//
 	// Create a sandbox.
@@ -162,6 +168,12 @@ type Invoker interface {
 	//
 	// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
 	DeleteHarnessConfigSecretBinding(ctx context.Context, params DeleteHarnessConfigSecretBindingParams) (DeleteHarnessConfigSecretBindingRes, error)
+	// DeletePool invokes delete-pool operation.
+	//
+	// Delete a pool.
+	//
+	// DELETE /projects/{projectId}/pools/{poolId}
+	DeletePool(ctx context.Context, params DeletePoolParams) (DeletePoolRes, error)
 	// DeleteSandbox invokes delete-sandbox operation.
 	//
 	// Delete a sandbox.
@@ -210,6 +222,12 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/jobs/{jobId}
 	GetJob(ctx context.Context, params GetJobParams) (GetJobRes, error)
+	// GetPool invokes get-pool operation.
+	//
+	// Get a pool.
+	//
+	// GET /projects/{projectId}/pools/{poolId}
+	GetPool(ctx context.Context, params GetPoolParams) (GetPoolRes, error)
 	// GetProject invokes get-project operation.
 	//
 	// Get a project.
@@ -276,6 +294,12 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/jobs
 	ListJobs(ctx context.Context, params ListJobsParams) (ListJobsRes, error)
+	// ListPools invokes list-pools operation.
+	//
+	// List pools.
+	//
+	// GET /projects/{projectId}/pools
+	ListPools(ctx context.Context, params ListPoolsParams) (ListPoolsRes, error)
 	// ListProjects invokes list-projects operation.
 	//
 	// List projects.
@@ -342,41 +366,35 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/secrets
 	ListSecrets(ctx context.Context, params ListSecretsParams) (ListSecretsRes, error)
-	// ListWorkers invokes list-workers operation.
+	// ReconcilePool invokes reconcile-pool operation.
 	//
-	// List workers.
+	// Reconcile a pool.
 	//
-	// GET /projects/{projectId}/workers
-	ListWorkers(ctx context.Context, params ListWorkersParams) (ListWorkersRes, error)
+	// POST /projects/{projectId}/pools/{poolId}/reconcile
+	ReconcilePool(ctx context.Context, params ReconcilePoolParams) (ReconcilePoolRes, error)
 	// ReconcileSandbox invokes reconcile-sandbox operation.
 	//
 	// Reconcile a sandbox.
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/reconcile
 	ReconcileSandbox(ctx context.Context, params ReconcileSandboxParams) (ReconcileSandboxRes, error)
-	// ReconcileWorker invokes reconcile-worker operation.
+	// RegisterPool invokes register-pool operation.
 	//
-	// Reconcile a worker.
+	// Register a bootstrapped pool agent.
 	//
-	// POST /projects/{projectId}/workers/{workerId}/reconcile
-	ReconcileWorker(ctx context.Context, params ReconcileWorkerParams) (ReconcileWorkerRes, error)
-	// RegisterWorker invokes register-worker operation.
+	// POST /api/pools/register
+	RegisterPool(ctx context.Context, request *RegisterPoolBody) (RegisterPoolRes, error)
+	// ReportPoolSandboxRemoved invokes report-pool-sandbox-removed operation.
 	//
-	// Register a bootstrapped worker.
+	// Report a pool-local sandbox runtime removed outside reconciliation.
 	//
-	// POST /api/workers/register
-	RegisterWorker(ctx context.Context, request *RegisterWorkerBody) (RegisterWorkerRes, error)
-	// ReportWorkerSandboxRemoved invokes report-worker-sandbox-removed operation.
-	//
-	// Report a worker-local sandbox runtime removed outside reconciliation.
-	//
-	// POST /api/workers/{workerId}/sandbox-removed
-	ReportWorkerSandboxRemoved(ctx context.Context, request *ReportWorkerSandboxRemovedBody, params ReportWorkerSandboxRemovedParams) (ReportWorkerSandboxRemovedRes, error)
+	// POST /api/pools/{poolId}/sandbox-removed
+	ReportPoolSandboxRemoved(ctx context.Context, request *ReportPoolSandboxRemovedBody, params ReportPoolSandboxRemovedParams) (ReportPoolSandboxRemovedRes, error)
 	// ResolveSandboxSecret invokes resolve-sandbox-secret operation.
 	//
 	// Resolve a sandbox sentinel secret.
 	//
-	// POST /api/workers/{workerId}/resolve-sandbox-secret
+	// POST /api/pools/{poolId}/resolve-sandbox-secret
 	ResolveSandboxSecret(ctx context.Context, request *ResolveSandboxSecretBody, params ResolveSandboxSecretParams) (ResolveSandboxSecretRes, error)
 	// RestartSandbox invokes restart-sandbox operation.
 	//
@@ -432,6 +450,18 @@ type Invoker interface {
 	//
 	// PATCH /projects/{projectId}/harness-configs/{harnessConfigId}
 	UpdateHarnessConfig(ctx context.Context, request *UpdateHarnessConfigBody, params UpdateHarnessConfigParams) (UpdateHarnessConfigRes, error)
+	// UpdatePool invokes update-pool operation.
+	//
+	// Update a pool.
+	//
+	// PATCH /projects/{projectId}/pools/{poolId}
+	UpdatePool(ctx context.Context, request *UpdatePoolBody, params UpdatePoolParams) (UpdatePoolRes, error)
+	// UpdatePoolStatus invokes update-pool-status operation.
+	//
+	// Update pool status.
+	//
+	// POST /api/pools/{poolId}/status
+	UpdatePoolStatus(ctx context.Context, request *UpdatePoolStatusBody, params UpdatePoolStatusParams) (UpdatePoolStatusRes, error)
 	// UpdateSandbox invokes update-sandbox operation.
 	//
 	// Update a sandbox.
@@ -450,12 +480,6 @@ type Invoker interface {
 	//
 	// PUT /projects/{projectId}/secrets/{secretId}
 	UpdateSecret(ctx context.Context, request *UpdateSecretBody, params UpdateSecretParams) (UpdateSecretRes, error)
-	// UpdateWorkerStatus invokes update-worker-status operation.
-	//
-	// Update worker status.
-	//
-	// POST /api/workers/{workerId}/status
-	UpdateWorkerStatus(ctx context.Context, request *UpdateWorkerStatusBody, params UpdateWorkerStatusParams) (UpdateWorkerStatusRes, error)
 }
 
 // Client implements OAS client.
@@ -1563,6 +1587,102 @@ func (c *Client) sendCreateHarnessConfig(ctx context.Context, request *CreateHar
 	return result, nil
 }
 
+// CreatePool invokes create-pool operation.
+//
+// Create a pool.
+//
+// POST /projects/{projectId}/pools
+func (c *Client) CreatePool(ctx context.Context, request *CreatePoolBody, params CreatePoolParams) (CreatePoolRes, error) {
+	res, err := c.sendCreatePool(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendCreatePool(ctx context.Context, request *CreatePoolBody, params CreatePoolParams) (res CreatePoolRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("create-pool"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/pools"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, CreatePoolOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/pools"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeCreatePoolRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeCreatePoolResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // CreateSandbox invokes create-sandbox operation.
 //
 // Create a sandbox.
@@ -2514,6 +2634,117 @@ func (c *Client) sendDeleteHarnessConfigSecretBinding(ctx context.Context, param
 	return result, nil
 }
 
+// DeletePool invokes delete-pool operation.
+//
+// Delete a pool.
+//
+// DELETE /projects/{projectId}/pools/{poolId}
+func (c *Client) DeletePool(ctx context.Context, params DeletePoolParams) (DeletePoolRes, error) {
+	res, err := c.sendDeletePool(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendDeletePool(ctx context.Context, params DeletePoolParams) (res DeletePoolRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("delete-pool"),
+		semconv.HTTPRequestMethodKey.String("DELETE"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/pools/{poolId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, DeletePoolOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "DELETE", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeDeletePoolResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // DeleteSandbox invokes delete-sandbox operation.
 //
 // Delete a sandbox.
@@ -3416,6 +3647,117 @@ func (c *Client) sendGetJob(ctx context.Context, params GetJobParams) (res GetJo
 
 	stage = "DecodeResponse"
 	result, err := decodeGetJobResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// GetPool invokes get-pool operation.
+//
+// Get a pool.
+//
+// GET /projects/{projectId}/pools/{poolId}
+func (c *Client) GetPool(ctx context.Context, params GetPoolParams) (GetPoolRes, error) {
+	res, err := c.sendGetPool(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetPool(ctx context.Context, params GetPoolParams) (res GetPoolRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-pool"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/pools/{poolId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetPoolOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetPoolResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -4668,6 +5010,99 @@ func (c *Client) sendListJobs(ctx context.Context, params ListJobsParams) (res L
 	return result, nil
 }
 
+// ListPools invokes list-pools operation.
+//
+// List pools.
+//
+// GET /projects/{projectId}/pools
+func (c *Client) ListPools(ctx context.Context, params ListPoolsParams) (ListPoolsRes, error) {
+	res, err := c.sendListPools(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendListPools(ctx context.Context, params ListPoolsParams) (res ListPoolsRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("list-pools"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/pools"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ListPoolsOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/pools"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeListPoolsResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // ListProjects invokes list-projects operation.
 //
 // List projects.
@@ -5908,21 +6343,21 @@ func (c *Client) sendListSecrets(ctx context.Context, params ListSecretsParams) 
 	return result, nil
 }
 
-// ListWorkers invokes list-workers operation.
+// ReconcilePool invokes reconcile-pool operation.
 //
-// List workers.
+// Reconcile a pool.
 //
-// GET /projects/{projectId}/workers
-func (c *Client) ListWorkers(ctx context.Context, params ListWorkersParams) (ListWorkersRes, error) {
-	res, err := c.sendListWorkers(ctx, params)
+// POST /projects/{projectId}/pools/{poolId}/reconcile
+func (c *Client) ReconcilePool(ctx context.Context, params ReconcilePoolParams) (ReconcilePoolRes, error) {
+	res, err := c.sendReconcilePool(ctx, params)
 	return res, err
 }
 
-func (c *Client) sendListWorkers(ctx context.Context, params ListWorkersParams) (res ListWorkersRes, err error) {
+func (c *Client) sendReconcilePool(ctx context.Context, params ReconcilePoolParams) (res ReconcilePoolRes, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("list-workers"),
-		semconv.HTTPRequestMethodKey.String("GET"),
-		semconv.URLTemplateKey.String("/projects/{projectId}/workers"),
+		otelogen.OperationID("reconcile-pool"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/pools/{poolId}/reconcile"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -5938,7 +6373,7 @@ func (c *Client) sendListWorkers(ctx context.Context, params ListWorkersParams) 
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, ListWorkersOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, ReconcilePoolOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -5955,7 +6390,7 @@ func (c *Client) sendListWorkers(ctx context.Context, params ListWorkersParams) 
 
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [3]string
+	var pathParts [5]string
 	pathParts[0] = "/projects/"
 	{
 		// Encode "projectId" parameter.
@@ -5975,32 +6410,30 @@ func (c *Client) sendListWorkers(ctx context.Context, params ListWorkersParams) 
 		}
 		pathParts[1] = encoded
 	}
-	pathParts[2] = "/workers"
+	pathParts[2] = "/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/reconcile"
 	uri.AddPathParts(u, pathParts[:]...)
 
-	stage = "EncodeQueryParams"
-	q := uri.NewQueryEncoder()
-	{
-		// Encode "provider" parameter.
-		cfg := uri.QueryParameterEncodingConfig{
-			Name:    "provider",
-			Style:   uri.QueryStyleForm,
-			Explode: true,
-		}
-
-		if err := q.EncodeParam(cfg, func(e uri.Encoder) error {
-			if val, ok := params.Provider.Get(); ok {
-				return e.EncodeValue(conv.StringToString(val))
-			}
-			return nil
-		}); err != nil {
-			return res, errors.Wrap(err, "encode query")
-		}
-	}
-	u.RawQuery = q.Values().Encode()
-
 	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "GET", u)
+	r, err := ht.NewRequest(ctx, "POST", u)
 	if err != nil {
 		return res, errors.Wrap(err, "create request")
 	}
@@ -6014,7 +6447,7 @@ func (c *Client) sendListWorkers(ctx context.Context, params ListWorkersParams) 
 	defer body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeListWorkersResponse(resp)
+	result, err := decodeReconcilePoolResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -6134,21 +6567,21 @@ func (c *Client) sendReconcileSandbox(ctx context.Context, params ReconcileSandb
 	return result, nil
 }
 
-// ReconcileWorker invokes reconcile-worker operation.
+// RegisterPool invokes register-pool operation.
 //
-// Reconcile a worker.
+// Register a bootstrapped pool agent.
 //
-// POST /projects/{projectId}/workers/{workerId}/reconcile
-func (c *Client) ReconcileWorker(ctx context.Context, params ReconcileWorkerParams) (ReconcileWorkerRes, error) {
-	res, err := c.sendReconcileWorker(ctx, params)
+// POST /api/pools/register
+func (c *Client) RegisterPool(ctx context.Context, request *RegisterPoolBody) (RegisterPoolRes, error) {
+	res, err := c.sendRegisterPool(ctx, request)
 	return res, err
 }
 
-func (c *Client) sendReconcileWorker(ctx context.Context, params ReconcileWorkerParams) (res ReconcileWorkerRes, err error) {
+func (c *Client) sendRegisterPool(ctx context.Context, request *RegisterPoolBody) (res RegisterPoolRes, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("reconcile-worker"),
+		otelogen.OperationID("register-pool"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/projects/{projectId}/workers/{workerId}/reconcile"),
+		semconv.URLTemplateKey.String("/api/pools/register"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -6164,119 +6597,7 @@ func (c *Client) sendReconcileWorker(ctx context.Context, params ReconcileWorker
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, ReconcileWorkerOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [5]string
-	pathParts[0] = "/projects/"
-	{
-		// Encode "projectId" parameter.
-		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "projectId",
-			Style:   uri.PathStyleSimple,
-			Explode: false,
-		})
-		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.ProjectId))
-		}(); err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		encoded, err := e.Result()
-		if err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		pathParts[1] = encoded
-	}
-	pathParts[2] = "/workers/"
-	{
-		// Encode "workerId" parameter.
-		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "workerId",
-			Style:   uri.PathStyleSimple,
-			Explode: false,
-		})
-		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.WorkerId))
-		}(); err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		encoded, err := e.Result()
-		if err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		pathParts[3] = encoded
-	}
-	pathParts[4] = "/reconcile"
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "POST", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	body := resp.Body
-	defer body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeReconcileWorkerResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
-// RegisterWorker invokes register-worker operation.
-//
-// Register a bootstrapped worker.
-//
-// POST /api/workers/register
-func (c *Client) RegisterWorker(ctx context.Context, request *RegisterWorkerBody) (RegisterWorkerRes, error) {
-	res, err := c.sendRegisterWorker(ctx, request)
-	return res, err
-}
-
-func (c *Client) sendRegisterWorker(ctx context.Context, request *RegisterWorkerBody) (res RegisterWorkerRes, err error) {
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("register-worker"),
-		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/workers/register"),
-	}
-	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, RegisterWorkerOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, RegisterPoolOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -6294,7 +6615,7 @@ func (c *Client) sendRegisterWorker(ctx context.Context, request *RegisterWorker
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [1]string
-	pathParts[0] = "/api/workers/register"
+	pathParts[0] = "/api/pools/register"
 	uri.AddPathParts(u, pathParts[:]...)
 
 	stage = "EncodeRequest"
@@ -6302,7 +6623,7 @@ func (c *Client) sendRegisterWorker(ctx context.Context, request *RegisterWorker
 	if err != nil {
 		return res, errors.Wrap(err, "create request")
 	}
-	if err := encodeRegisterWorkerRequest(request, r); err != nil {
+	if err := encodeRegisterPoolRequest(request, r); err != nil {
 		return res, errors.Wrap(err, "encode request")
 	}
 
@@ -6315,7 +6636,7 @@ func (c *Client) sendRegisterWorker(ctx context.Context, request *RegisterWorker
 	defer body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeRegisterWorkerResponse(resp)
+	result, err := decodeRegisterPoolResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -6323,21 +6644,21 @@ func (c *Client) sendRegisterWorker(ctx context.Context, request *RegisterWorker
 	return result, nil
 }
 
-// ReportWorkerSandboxRemoved invokes report-worker-sandbox-removed operation.
+// ReportPoolSandboxRemoved invokes report-pool-sandbox-removed operation.
 //
-// Report a worker-local sandbox runtime removed outside reconciliation.
+// Report a pool-local sandbox runtime removed outside reconciliation.
 //
-// POST /api/workers/{workerId}/sandbox-removed
-func (c *Client) ReportWorkerSandboxRemoved(ctx context.Context, request *ReportWorkerSandboxRemovedBody, params ReportWorkerSandboxRemovedParams) (ReportWorkerSandboxRemovedRes, error) {
-	res, err := c.sendReportWorkerSandboxRemoved(ctx, request, params)
+// POST /api/pools/{poolId}/sandbox-removed
+func (c *Client) ReportPoolSandboxRemoved(ctx context.Context, request *ReportPoolSandboxRemovedBody, params ReportPoolSandboxRemovedParams) (ReportPoolSandboxRemovedRes, error) {
+	res, err := c.sendReportPoolSandboxRemoved(ctx, request, params)
 	return res, err
 }
 
-func (c *Client) sendReportWorkerSandboxRemoved(ctx context.Context, request *ReportWorkerSandboxRemovedBody, params ReportWorkerSandboxRemovedParams) (res ReportWorkerSandboxRemovedRes, err error) {
+func (c *Client) sendReportPoolSandboxRemoved(ctx context.Context, request *ReportPoolSandboxRemovedBody, params ReportPoolSandboxRemovedParams) (res ReportPoolSandboxRemovedRes, err error) {
 	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("report-worker-sandbox-removed"),
+		otelogen.OperationID("report-pool-sandbox-removed"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/workers/{workerId}/sandbox-removed"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-removed"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -6353,7 +6674,7 @@ func (c *Client) sendReportWorkerSandboxRemoved(ctx context.Context, request *Re
 	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
 
 	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, ReportWorkerSandboxRemovedOperation,
+	ctx, span := c.cfg.Tracer.Start(ctx, ReportPoolSandboxRemovedOperation,
 		trace.WithAttributes(otelAttrs...),
 		clientSpanKind,
 	)
@@ -6371,16 +6692,16 @@ func (c *Client) sendReportWorkerSandboxRemoved(ctx context.Context, request *Re
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/workers/"
+	pathParts[0] = "/api/pools/"
 	{
-		// Encode "workerId" parameter.
+		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "workerId",
+			Param:   "poolId",
 			Style:   uri.PathStyleSimple,
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.WorkerId))
+			return e.EncodeValue(conv.StringToString(params.PoolId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -6398,7 +6719,7 @@ func (c *Client) sendReportWorkerSandboxRemoved(ctx context.Context, request *Re
 	if err != nil {
 		return res, errors.Wrap(err, "create request")
 	}
-	if err := encodeReportWorkerSandboxRemovedRequest(request, r); err != nil {
+	if err := encodeReportPoolSandboxRemovedRequest(request, r); err != nil {
 		return res, errors.Wrap(err, "encode request")
 	}
 
@@ -6411,7 +6732,7 @@ func (c *Client) sendReportWorkerSandboxRemoved(ctx context.Context, request *Re
 	defer body.Close()
 
 	stage = "DecodeResponse"
-	result, err := decodeReportWorkerSandboxRemovedResponse(resp)
+	result, err := decodeReportPoolSandboxRemovedResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}
@@ -6423,7 +6744,7 @@ func (c *Client) sendReportWorkerSandboxRemoved(ctx context.Context, request *Re
 //
 // Resolve a sandbox sentinel secret.
 //
-// POST /api/workers/{workerId}/resolve-sandbox-secret
+// POST /api/pools/{poolId}/resolve-sandbox-secret
 func (c *Client) ResolveSandboxSecret(ctx context.Context, request *ResolveSandboxSecretBody, params ResolveSandboxSecretParams) (ResolveSandboxSecretRes, error) {
 	res, err := c.sendResolveSandboxSecret(ctx, request, params)
 	return res, err
@@ -6433,7 +6754,7 @@ func (c *Client) sendResolveSandboxSecret(ctx context.Context, request *ResolveS
 	otelAttrs := []attribute.KeyValue{
 		otelogen.OperationID("resolve-sandbox-secret"),
 		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/workers/{workerId}/resolve-sandbox-secret"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/resolve-sandbox-secret"),
 	}
 	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
 
@@ -6467,16 +6788,16 @@ func (c *Client) sendResolveSandboxSecret(ctx context.Context, request *ResolveS
 	stage = "BuildURL"
 	u := uri.Clone(c.requestURL(ctx))
 	var pathParts [3]string
-	pathParts[0] = "/api/workers/"
+	pathParts[0] = "/api/pools/"
 	{
-		// Encode "workerId" parameter.
+		// Encode "poolId" parameter.
 		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "workerId",
+			Param:   "poolId",
 			Style:   uri.PathStyleSimple,
 			Explode: false,
 		})
 		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.WorkerId))
+			return e.EncodeValue(conv.StringToString(params.PoolId))
 		}(); err != nil {
 			return res, errors.Wrap(err, "encode path")
 		}
@@ -7592,6 +7913,216 @@ func (c *Client) sendUpdateHarnessConfig(ctx context.Context, request *UpdateHar
 	return result, nil
 }
 
+// UpdatePool invokes update-pool operation.
+//
+// Update a pool.
+//
+// PATCH /projects/{projectId}/pools/{poolId}
+func (c *Client) UpdatePool(ctx context.Context, request *UpdatePoolBody, params UpdatePoolParams) (UpdatePoolRes, error) {
+	res, err := c.sendUpdatePool(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendUpdatePool(ctx context.Context, request *UpdatePoolBody, params UpdatePoolParams) (res UpdatePoolRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("update-pool"),
+		semconv.HTTPRequestMethodKey.String("PATCH"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/pools/{poolId}"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, UpdatePoolOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [4]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "PATCH", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeUpdatePoolRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeUpdatePoolResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// UpdatePoolStatus invokes update-pool-status operation.
+//
+// Update pool status.
+//
+// POST /api/pools/{poolId}/status
+func (c *Client) UpdatePoolStatus(ctx context.Context, request *UpdatePoolStatusBody, params UpdatePoolStatusParams) (UpdatePoolStatusRes, error) {
+	res, err := c.sendUpdatePoolStatus(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendUpdatePoolStatus(ctx context.Context, request *UpdatePoolStatusBody, params UpdatePoolStatusParams) (res UpdatePoolStatusRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("update-pool-status"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/status"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, UpdatePoolStatusOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/status"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeUpdatePoolStatusRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeUpdatePoolStatusResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // UpdateSandbox invokes update-sandbox operation.
 //
 // Update a sandbox.
@@ -7927,102 +8458,6 @@ func (c *Client) sendUpdateSecret(ctx context.Context, request *UpdateSecretBody
 
 	stage = "DecodeResponse"
 	result, err := decodeUpdateSecretResponse(resp)
-	if err != nil {
-		return res, errors.Wrap(err, "decode response")
-	}
-
-	return result, nil
-}
-
-// UpdateWorkerStatus invokes update-worker-status operation.
-//
-// Update worker status.
-//
-// POST /api/workers/{workerId}/status
-func (c *Client) UpdateWorkerStatus(ctx context.Context, request *UpdateWorkerStatusBody, params UpdateWorkerStatusParams) (UpdateWorkerStatusRes, error) {
-	res, err := c.sendUpdateWorkerStatus(ctx, request, params)
-	return res, err
-}
-
-func (c *Client) sendUpdateWorkerStatus(ctx context.Context, request *UpdateWorkerStatusBody, params UpdateWorkerStatusParams) (res UpdateWorkerStatusRes, err error) {
-	otelAttrs := []attribute.KeyValue{
-		otelogen.OperationID("update-worker-status"),
-		semconv.HTTPRequestMethodKey.String("POST"),
-		semconv.URLTemplateKey.String("/api/workers/{workerId}/status"),
-	}
-	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
-
-	// Run stopwatch.
-	startTime := time.Now()
-	defer func() {
-		// Use floating point division here for higher precision (instead of Millisecond method).
-		elapsedDuration := time.Since(startTime)
-		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
-	}()
-
-	// Increment request counter.
-	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-
-	// Start a span for this request.
-	ctx, span := c.cfg.Tracer.Start(ctx, UpdateWorkerStatusOperation,
-		trace.WithAttributes(otelAttrs...),
-		clientSpanKind,
-	)
-	// Track stage for error reporting.
-	var stage string
-	defer func() {
-		if err != nil {
-			span.RecordError(err)
-			span.SetStatus(codes.Error, stage)
-			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
-		}
-		span.End()
-	}()
-
-	stage = "BuildURL"
-	u := uri.Clone(c.requestURL(ctx))
-	var pathParts [3]string
-	pathParts[0] = "/api/workers/"
-	{
-		// Encode "workerId" parameter.
-		e := uri.NewPathEncoder(uri.PathEncoderConfig{
-			Param:   "workerId",
-			Style:   uri.PathStyleSimple,
-			Explode: false,
-		})
-		if err := func() error {
-			return e.EncodeValue(conv.StringToString(params.WorkerId))
-		}(); err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		encoded, err := e.Result()
-		if err != nil {
-			return res, errors.Wrap(err, "encode path")
-		}
-		pathParts[1] = encoded
-	}
-	pathParts[2] = "/status"
-	uri.AddPathParts(u, pathParts[:]...)
-
-	stage = "EncodeRequest"
-	r, err := ht.NewRequest(ctx, "POST", u)
-	if err != nil {
-		return res, errors.Wrap(err, "create request")
-	}
-	if err := encodeUpdateWorkerStatusRequest(request, r); err != nil {
-		return res, errors.Wrap(err, "encode request")
-	}
-
-	stage = "SendRequest"
-	resp, err := c.cfg.Client.Do(r)
-	if err != nil {
-		return res, errors.Wrap(err, "do request")
-	}
-	body := resp.Body
-	defer body.Close()
-
-	stage = "DecodeResponse"
-	result, err := decodeUpdateWorkerStatusResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

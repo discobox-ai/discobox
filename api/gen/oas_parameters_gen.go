@@ -1183,6 +1183,77 @@ func decodeCreateHarnessConfigParams(args [1]string, argsEscaped bool, r *http.R
 	return params, nil
 }
 
+// CreatePoolParams is parameters of create-pool operation.
+type CreatePoolParams struct {
+	// Project ID.
+	ProjectId string
+}
+
+func unpackCreatePoolParams(packed middleware.Parameters) (params CreatePoolParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeCreatePoolParams(args [1]string, argsEscaped bool, r *http.Request) (params CreatePoolParams, _ error) {
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // CreateSandboxParams is parameters of create-sandbox operation.
 type CreateSandboxParams struct {
 	// Project ID.
@@ -2080,6 +2151,131 @@ func decodeDeleteHarnessConfigSecretBindingParams(args [3]string, argsEscaped bo
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "envName",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// DeletePoolParams is parameters of delete-pool operation.
+type DeletePoolParams struct {
+	// Project ID.
+	ProjectId string
+	// Pool ID.
+	PoolId string
+}
+
+func unpackDeletePoolParams(packed middleware.Parameters) (params DeletePoolParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "poolId",
+			In:   "path",
+		}
+		params.PoolId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeDeletePoolParams(args [2]string, argsEscaped bool, r *http.Request) (params DeletePoolParams, _ error) {
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: poolId.
+	if err := func() error {
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "poolId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.PoolId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "poolId",
 			In:   "path",
 			Err:  err,
 		}
@@ -3119,6 +3315,131 @@ func decodeGetJobParams(args [2]string, argsEscaped bool, r *http.Request) (para
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "jobId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// GetPoolParams is parameters of get-pool operation.
+type GetPoolParams struct {
+	// Project ID.
+	ProjectId string
+	// Pool ID.
+	PoolId string
+}
+
+func unpackGetPoolParams(packed middleware.Parameters) (params GetPoolParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "poolId",
+			In:   "path",
+		}
+		params.PoolId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeGetPoolParams(args [2]string, argsEscaped bool, r *http.Request) (params GetPoolParams, _ error) {
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: poolId.
+	if err := func() error {
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "poolId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.PoolId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "poolId",
 			In:   "path",
 			Err:  err,
 		}
@@ -4557,6 +4878,77 @@ func decodeListJobsParams(args [1]string, argsEscaped bool, r *http.Request) (pa
 	return params, nil
 }
 
+// ListPoolsParams is parameters of list-pools operation.
+type ListPoolsParams struct {
+	// Project ID.
+	ProjectId string
+}
+
+func unpackListPoolsParams(packed middleware.Parameters) (params ListPoolsParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeListPoolsParams(args [1]string, argsEscaped bool, r *http.Request) (params ListPoolsParams, _ error) {
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // ListSandboxExecEventsParams is parameters of list-sandbox-exec-events operation.
 type ListSandboxExecEventsParams struct {
 	// Project that owns the sandbox.
@@ -5938,15 +6330,15 @@ func decodeListSecretsParams(args [1]string, argsEscaped bool, r *http.Request) 
 	return params, nil
 }
 
-// ListWorkersParams is parameters of list-workers operation.
-type ListWorkersParams struct {
+// ReconcilePoolParams is parameters of reconcile-pool operation.
+type ReconcilePoolParams struct {
 	// Project ID.
 	ProjectId string
-	// Provider instance ID.
-	Provider OptString `json:",omitempty,omitzero"`
+	// Pool ID.
+	PoolId string
 }
 
-func unpackListWorkersParams(packed middleware.Parameters) (params ListWorkersParams) {
+func unpackReconcilePoolParams(packed middleware.Parameters) (params ReconcilePoolParams) {
 	{
 		key := middleware.ParameterKey{
 			Name: "projectId",
@@ -5956,18 +6348,15 @@ func unpackListWorkersParams(packed middleware.Parameters) (params ListWorkersPa
 	}
 	{
 		key := middleware.ParameterKey{
-			Name: "provider",
-			In:   "query",
+			Name: "poolId",
+			In:   "path",
 		}
-		if v, ok := packed[key]; ok {
-			params.Provider = v.(OptString)
-		}
+		params.PoolId = packed[key].(string)
 	}
 	return params
 }
 
-func decodeListWorkersParams(args [1]string, argsEscaped bool, r *http.Request) (params ListWorkersParams, _ error) {
-	q := uri.NewQueryDecoder(r.URL.Query())
+func decodeReconcilePoolParams(args [2]string, argsEscaped bool, r *http.Request) (params ReconcilePoolParams, _ error) {
 	// Set default value for path: projectId.
 	{
 		val := string("default")
@@ -6018,44 +6407,48 @@ func decodeListWorkersParams(args [1]string, argsEscaped bool, r *http.Request) 
 			Err:  err,
 		}
 	}
-	// Decode query: provider.
+	// Decode path: poolId.
 	if err := func() error {
-		cfg := uri.QueryParameterDecodingConfig{
-			Name:    "provider",
-			Style:   uri.QueryStyleForm,
-			Explode: true,
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
 		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "poolId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
 
-		if err := q.HasParam(cfg); err == nil {
-			if err := q.DecodeParam(cfg, func(d uri.Decoder) error {
-				var paramsDotProviderVal string
-				if err := func() error {
-					val, err := d.DecodeValue()
-					if err != nil {
-						return err
-					}
-
-					c, err := conv.ToString(val)
-					if err != nil {
-						return err
-					}
-
-					paramsDotProviderVal = c
-					return nil
-				}(); err != nil {
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
 					return err
 				}
-				params.Provider.SetTo(paramsDotProviderVal)
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.PoolId = c
 				return nil
-			}); err != nil {
+			}(); err != nil {
 				return err
 			}
+		} else {
+			return validate.ErrFieldRequired
 		}
 		return nil
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
-			Name: "provider",
-			In:   "query",
+			Name: "poolId",
+			In:   "path",
 			Err:  err,
 		}
 	}
@@ -6187,39 +6580,25 @@ func decodeReconcileSandboxParams(args [2]string, argsEscaped bool, r *http.Requ
 	return params, nil
 }
 
-// ReconcileWorkerParams is parameters of reconcile-worker operation.
-type ReconcileWorkerParams struct {
-	// Project ID.
-	ProjectId string
-	// Worker ID.
-	WorkerId string
+// ReportPoolSandboxRemovedParams is parameters of report-pool-sandbox-removed operation.
+type ReportPoolSandboxRemovedParams struct {
+	// Pool ID.
+	PoolId string
 }
 
-func unpackReconcileWorkerParams(packed middleware.Parameters) (params ReconcileWorkerParams) {
+func unpackReportPoolSandboxRemovedParams(packed middleware.Parameters) (params ReportPoolSandboxRemovedParams) {
 	{
 		key := middleware.ParameterKey{
-			Name: "projectId",
+			Name: "poolId",
 			In:   "path",
 		}
-		params.ProjectId = packed[key].(string)
-	}
-	{
-		key := middleware.ParameterKey{
-			Name: "workerId",
-			In:   "path",
-		}
-		params.WorkerId = packed[key].(string)
+		params.PoolId = packed[key].(string)
 	}
 	return params
 }
 
-func decodeReconcileWorkerParams(args [2]string, argsEscaped bool, r *http.Request) (params ReconcileWorkerParams, _ error) {
-	// Set default value for path: projectId.
-	{
-		val := string("default")
-		params.ProjectId = val
-	}
-	// Decode path: projectId.
+func decodeReportPoolSandboxRemovedParams(args [1]string, argsEscaped bool, r *http.Request) (params ReportPoolSandboxRemovedParams, _ error) {
+	// Decode path: poolId.
 	if err := func() error {
 		param := args[0]
 		if argsEscaped {
@@ -6231,7 +6610,7 @@ func decodeReconcileWorkerParams(args [2]string, argsEscaped bool, r *http.Reque
 		}
 		if len(param) > 0 {
 			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "projectId",
+				Param:   "poolId",
 				Value:   param,
 				Style:   uri.PathStyleSimple,
 				Explode: false,
@@ -6248,7 +6627,7 @@ func decodeReconcileWorkerParams(args [2]string, argsEscaped bool, r *http.Reque
 					return err
 				}
 
-				params.ProjectId = c
+				params.PoolId = c
 				return nil
 			}(); err != nil {
 				return err
@@ -6259,118 +6638,7 @@ func decodeReconcileWorkerParams(args [2]string, argsEscaped bool, r *http.Reque
 		return nil
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
-			Name: "projectId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	// Decode path: workerId.
-	if err := func() error {
-		param := args[1]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[1])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "workerId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.WorkerId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "workerId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
-// ReportWorkerSandboxRemovedParams is parameters of report-worker-sandbox-removed operation.
-type ReportWorkerSandboxRemovedParams struct {
-	// Worker ID.
-	WorkerId string
-}
-
-func unpackReportWorkerSandboxRemovedParams(packed middleware.Parameters) (params ReportWorkerSandboxRemovedParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "workerId",
-			In:   "path",
-		}
-		params.WorkerId = packed[key].(string)
-	}
-	return params
-}
-
-func decodeReportWorkerSandboxRemovedParams(args [1]string, argsEscaped bool, r *http.Request) (params ReportWorkerSandboxRemovedParams, _ error) {
-	// Decode path: workerId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "workerId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.WorkerId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "workerId",
+			Name: "poolId",
 			In:   "path",
 			Err:  err,
 		}
@@ -6380,23 +6648,23 @@ func decodeReportWorkerSandboxRemovedParams(args [1]string, argsEscaped bool, r 
 
 // ResolveSandboxSecretParams is parameters of resolve-sandbox-secret operation.
 type ResolveSandboxSecretParams struct {
-	// Worker ID.
-	WorkerId string
+	// Pool ID.
+	PoolId string
 }
 
 func unpackResolveSandboxSecretParams(packed middleware.Parameters) (params ResolveSandboxSecretParams) {
 	{
 		key := middleware.ParameterKey{
-			Name: "workerId",
+			Name: "poolId",
 			In:   "path",
 		}
-		params.WorkerId = packed[key].(string)
+		params.PoolId = packed[key].(string)
 	}
 	return params
 }
 
 func decodeResolveSandboxSecretParams(args [1]string, argsEscaped bool, r *http.Request) (params ResolveSandboxSecretParams, _ error) {
-	// Decode path: workerId.
+	// Decode path: poolId.
 	if err := func() error {
 		param := args[0]
 		if argsEscaped {
@@ -6408,7 +6676,7 @@ func decodeResolveSandboxSecretParams(args [1]string, argsEscaped bool, r *http.
 		}
 		if len(param) > 0 {
 			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "workerId",
+				Param:   "poolId",
 				Value:   param,
 				Style:   uri.PathStyleSimple,
 				Explode: false,
@@ -6425,7 +6693,7 @@ func decodeResolveSandboxSecretParams(args [1]string, argsEscaped bool, r *http.
 					return err
 				}
 
-				params.WorkerId = c
+				params.PoolId = c
 				return nil
 			}(); err != nil {
 				return err
@@ -6436,7 +6704,7 @@ func decodeResolveSandboxSecretParams(args [1]string, argsEscaped bool, r *http.
 		return nil
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
-			Name: "workerId",
+			Name: "poolId",
 			In:   "path",
 			Err:  err,
 		}
@@ -7721,6 +7989,197 @@ func decodeUpdateHarnessConfigParams(args [2]string, argsEscaped bool, r *http.R
 	return params, nil
 }
 
+// UpdatePoolParams is parameters of update-pool operation.
+type UpdatePoolParams struct {
+	// Project ID.
+	ProjectId string
+	// Pool ID.
+	PoolId string
+}
+
+func unpackUpdatePoolParams(packed middleware.Parameters) (params UpdatePoolParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "poolId",
+			In:   "path",
+		}
+		params.PoolId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeUpdatePoolParams(args [2]string, argsEscaped bool, r *http.Request) (params UpdatePoolParams, _ error) {
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: poolId.
+	if err := func() error {
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "poolId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.PoolId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "poolId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// UpdatePoolStatusParams is parameters of update-pool-status operation.
+type UpdatePoolStatusParams struct {
+	// Pool ID.
+	PoolId string
+}
+
+func unpackUpdatePoolStatusParams(packed middleware.Parameters) (params UpdatePoolStatusParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "poolId",
+			In:   "path",
+		}
+		params.PoolId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeUpdatePoolStatusParams(args [1]string, argsEscaped bool, r *http.Request) (params UpdatePoolStatusParams, _ error) {
+	// Decode path: poolId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "poolId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.PoolId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "poolId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // UpdateSandboxParams is parameters of update-sandbox operation.
 type UpdateSandboxParams struct {
 	// Project ID.
@@ -8089,72 +8548,6 @@ func decodeUpdateSecretParams(args [2]string, argsEscaped bool, r *http.Request)
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "secretId",
-			In:   "path",
-			Err:  err,
-		}
-	}
-	return params, nil
-}
-
-// UpdateWorkerStatusParams is parameters of update-worker-status operation.
-type UpdateWorkerStatusParams struct {
-	// Worker ID.
-	WorkerId string
-}
-
-func unpackUpdateWorkerStatusParams(packed middleware.Parameters) (params UpdateWorkerStatusParams) {
-	{
-		key := middleware.ParameterKey{
-			Name: "workerId",
-			In:   "path",
-		}
-		params.WorkerId = packed[key].(string)
-	}
-	return params
-}
-
-func decodeUpdateWorkerStatusParams(args [1]string, argsEscaped bool, r *http.Request) (params UpdateWorkerStatusParams, _ error) {
-	// Decode path: workerId.
-	if err := func() error {
-		param := args[0]
-		if argsEscaped {
-			unescaped, err := url.PathUnescape(args[0])
-			if err != nil {
-				return errors.Wrap(err, "unescape path")
-			}
-			param = unescaped
-		}
-		if len(param) > 0 {
-			d := uri.NewPathDecoder(uri.PathDecoderConfig{
-				Param:   "workerId",
-				Value:   param,
-				Style:   uri.PathStyleSimple,
-				Explode: false,
-			})
-
-			if err := func() error {
-				val, err := d.DecodeValue()
-				if err != nil {
-					return err
-				}
-
-				c, err := conv.ToString(val)
-				if err != nil {
-					return err
-				}
-
-				params.WorkerId = c
-				return nil
-			}(); err != nil {
-				return err
-			}
-		} else {
-			return validate.ErrFieldRequired
-		}
-		return nil
-	}(); err != nil {
-		return params, &ogenerrors.DecodeParamError{
-			Name: "workerId",
 			In:   "path",
 			Err:  err,
 		}

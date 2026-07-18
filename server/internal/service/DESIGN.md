@@ -12,7 +12,7 @@ flowchart LR
     service --> projects[internal/resources/projects.Service]
     service --> harnessconfigs[internal/resources/harnessconfigs.Service]
     service --> sandboxes[internal/resources/sandboxes.Service]
-    service --> workers[internal/resources/workers.Service]
+    service --> pools[internal/resources/pools.Service]
     service --> providers[internal/resources/providers.Service]
     service --> events[internal/resources/events.Service]
     service --> jobsvc[internal/resources/jobs.Service]
@@ -43,9 +43,9 @@ Resource packages expose their own service/manager/executor types:
 ```text
 internal/resources/sandboxes.Service
 internal/resources/sandboxes.SandboxReconcileExecutor
-internal/resources/workers.Service
-internal/resources/workers.Manager
-internal/resources/workers.WorkerReconcileExecutor
+internal/resources/pools.Service
+internal/resources/pools.Manager
+internal/resources/pools.WorkerReconcileExecutor
 internal/resources/providers.Service
 internal/resources/providers.WorkerProviderReconcileExecutor
 internal/resources/harnessconfigs.Service
@@ -126,15 +126,15 @@ Operation intent mapping:
 Restart is not a steady desired state. It increments `restartGeneration` while
 keeping `desiredState=running`.
 
-## Provider Catalog and Worker Wiring
+## Provider Catalog and Pool Wiring
 
-`internal/service` may compose provider catalogs and worker managers because it
+`internal/service` may compose provider catalogs and pool managers because it
 sits at the application boundary. Provider implementations must receive narrow
 interfaces or root contracts; they must not depend on `server/internal` packages.
 
-Worker-backed provider support should go through
-`internal/resources/workers.Manager`, which adapts `internal/store` and typed
-worker job-manager methods to the narrow interfaces expected by provider code.
+Pool-backed provider support should go through
+`internal/resources/pools.Manager`, which adapts `internal/store` and typed
+pool job-manager methods to the narrow interfaces expected by provider code.
 
 ## Error Mapping
 

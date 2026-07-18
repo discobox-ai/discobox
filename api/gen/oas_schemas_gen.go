@@ -300,6 +300,94 @@ func (s *CreateHarnessConfigBody) SetSlug(val OptString) {
 	s.Slug = val
 }
 
+// Ref: #/components/schemas/CreatePoolBody
+type CreatePoolBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Whether sandboxes in the pool mount the shared pool cache volume. Defaults to true.
+	CacheEnabled OptBool `json:"cacheEnabled"`
+	// Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host.
+	CpuVcpus OptFloat64 `json:"cpuVcpus"`
+	// Total memory capacity of the pool envelope in bytes. Zero sizes the envelope by the host.
+	MemoryBytes OptInt64 `json:"memoryBytes"`
+	// Pool display name.
+	Name string `json:"name"`
+	// Backing sandbox provider instance ID. Immutable after create.
+	ProviderInstanceId string `json:"providerInstanceId"`
+	// Total storage capacity of the pool envelope in bytes. Zero sizes the envelope by the host.
+	StorageBytes OptInt64 `json:"storageBytes"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *CreatePoolBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetCacheEnabled returns the value of CacheEnabled.
+func (s *CreatePoolBody) GetCacheEnabled() OptBool {
+	return s.CacheEnabled
+}
+
+// GetCpuVcpus returns the value of CpuVcpus.
+func (s *CreatePoolBody) GetCpuVcpus() OptFloat64 {
+	return s.CpuVcpus
+}
+
+// GetMemoryBytes returns the value of MemoryBytes.
+func (s *CreatePoolBody) GetMemoryBytes() OptInt64 {
+	return s.MemoryBytes
+}
+
+// GetName returns the value of Name.
+func (s *CreatePoolBody) GetName() string {
+	return s.Name
+}
+
+// GetProviderInstanceId returns the value of ProviderInstanceId.
+func (s *CreatePoolBody) GetProviderInstanceId() string {
+	return s.ProviderInstanceId
+}
+
+// GetStorageBytes returns the value of StorageBytes.
+func (s *CreatePoolBody) GetStorageBytes() OptInt64 {
+	return s.StorageBytes
+}
+
+// SetSchema sets the value of Schema.
+func (s *CreatePoolBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetCacheEnabled sets the value of CacheEnabled.
+func (s *CreatePoolBody) SetCacheEnabled(val OptBool) {
+	s.CacheEnabled = val
+}
+
+// SetCpuVcpus sets the value of CpuVcpus.
+func (s *CreatePoolBody) SetCpuVcpus(val OptFloat64) {
+	s.CpuVcpus = val
+}
+
+// SetMemoryBytes sets the value of MemoryBytes.
+func (s *CreatePoolBody) SetMemoryBytes(val OptInt64) {
+	s.MemoryBytes = val
+}
+
+// SetName sets the value of Name.
+func (s *CreatePoolBody) SetName(val string) {
+	s.Name = val
+}
+
+// SetProviderInstanceId sets the value of ProviderInstanceId.
+func (s *CreatePoolBody) SetProviderInstanceId(val string) {
+	s.ProviderInstanceId = val
+}
+
+// SetStorageBytes sets the value of StorageBytes.
+func (s *CreatePoolBody) SetStorageBytes(val OptInt64) {
+	s.StorageBytes = val
+}
+
 // Ref: #/components/schemas/CreateSandboxBody
 type CreateSandboxBody struct {
 	// A URL to the JSON Schema for this object.
@@ -310,8 +398,8 @@ type CreateSandboxBody struct {
 	Config SandboxCreateConfig `json:"config"`
 	// Client host and project directory this sandbox is created from.
 	Origin OptOrigin `json:"origin"`
-	// Sandbox provider instance ID.
-	ProviderInstanceId OptString `json:"providerInstanceId"`
+	// Pool to schedule the sandbox into. Defaults to the project's default pool.
+	PoolId OptString `json:"poolId"`
 }
 
 // GetSchema returns the value of Schema.
@@ -334,9 +422,9 @@ func (s *CreateSandboxBody) GetOrigin() OptOrigin {
 	return s.Origin
 }
 
-// GetProviderInstanceId returns the value of ProviderInstanceId.
-func (s *CreateSandboxBody) GetProviderInstanceId() OptString {
-	return s.ProviderInstanceId
+// GetPoolId returns the value of PoolId.
+func (s *CreateSandboxBody) GetPoolId() OptString {
+	return s.PoolId
 }
 
 // SetSchema sets the value of Schema.
@@ -359,9 +447,9 @@ func (s *CreateSandboxBody) SetOrigin(val OptOrigin) {
 	s.Origin = val
 }
 
-// SetProviderInstanceId sets the value of ProviderInstanceId.
-func (s *CreateSandboxBody) SetProviderInstanceId(val OptString) {
-	s.ProviderInstanceId = val
+// SetPoolId sets the value of PoolId.
+func (s *CreateSandboxBody) SetPoolId(val OptString) {
+	s.PoolId = val
 }
 
 // Create an exec. Provide command for a plain exec, or harnessId (with optional args) to run a
@@ -933,6 +1021,11 @@ type DeleteHarnessConfigSecretBindingNoContent struct{}
 
 func (*DeleteHarnessConfigSecretBindingNoContent) deleteHarnessConfigSecretBindingRes() {}
 
+// DeletePoolNoContent is response for DeletePool operation.
+type DeletePoolNoContent struct{}
+
+func (*DeletePoolNoContent) deletePoolRes() {}
+
 // DeleteSandboxAccepted is response for DeleteSandbox operation.
 type DeleteSandboxAccepted struct{}
 
@@ -1120,6 +1213,7 @@ func (*ErrorModelStatusCode) commitHarnessConfigConfigureRes()     {}
 func (*ErrorModelStatusCode) completeSandboxSourcePushRes()        {}
 func (*ErrorModelStatusCode) configureHarnessConfigRes()           {}
 func (*ErrorModelStatusCode) createHarnessConfigRes()              {}
+func (*ErrorModelStatusCode) createPoolRes()                       {}
 func (*ErrorModelStatusCode) createSandboxProviderInstanceRes()    {}
 func (*ErrorModelStatusCode) createSandboxRes()                    {}
 func (*ErrorModelStatusCode) createSecretGrantRes()                {}
@@ -1128,6 +1222,7 @@ func (*ErrorModelStatusCode) createSecretRes()                     {}
 func (*ErrorModelStatusCode) deconfigureHarnessConfigRes()         {}
 func (*ErrorModelStatusCode) deleteHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) deleteHarnessConfigSecretBindingRes() {}
+func (*ErrorModelStatusCode) deletePoolRes()                       {}
 func (*ErrorModelStatusCode) deleteSandboxProviderInstanceRes()    {}
 func (*ErrorModelStatusCode) deleteSandboxRes()                    {}
 func (*ErrorModelStatusCode) deleteSecretRes()                     {}
@@ -1135,6 +1230,7 @@ func (*ErrorModelStatusCode) denySecretRequestRes()                {}
 func (*ErrorModelStatusCode) forceJobRes()                         {}
 func (*ErrorModelStatusCode) getHarnessConfigRes()                 {}
 func (*ErrorModelStatusCode) getJobRes()                           {}
+func (*ErrorModelStatusCode) getPoolRes()                          {}
 func (*ErrorModelStatusCode) getProjectRes()                       {}
 func (*ErrorModelStatusCode) getSandboxProviderInstanceRes()       {}
 func (*ErrorModelStatusCode) getSandboxRes()                       {}
@@ -1143,6 +1239,7 @@ func (*ErrorModelStatusCode) getSecretRes()                        {}
 func (*ErrorModelStatusCode) listHarnessConfigSecretBindingsRes()  {}
 func (*ErrorModelStatusCode) listHarnessConfigsRes()               {}
 func (*ErrorModelStatusCode) listJobsRes()                         {}
+func (*ErrorModelStatusCode) listPoolsRes()                        {}
 func (*ErrorModelStatusCode) listProjectsRes()                     {}
 func (*ErrorModelStatusCode) listSandboxProviderCatalogRes()       {}
 func (*ErrorModelStatusCode) listSandboxProviderInstancesRes()     {}
@@ -1150,11 +1247,10 @@ func (*ErrorModelStatusCode) listSandboxesRes()                    {}
 func (*ErrorModelStatusCode) listSecretGrantsRes()                 {}
 func (*ErrorModelStatusCode) listSecretRequestsRes()               {}
 func (*ErrorModelStatusCode) listSecretsRes()                      {}
-func (*ErrorModelStatusCode) listWorkersRes()                      {}
+func (*ErrorModelStatusCode) reconcilePoolRes()                    {}
 func (*ErrorModelStatusCode) reconcileSandboxRes()                 {}
-func (*ErrorModelStatusCode) reconcileWorkerRes()                  {}
-func (*ErrorModelStatusCode) registerWorkerRes()                   {}
-func (*ErrorModelStatusCode) reportWorkerSandboxRemovedRes()       {}
+func (*ErrorModelStatusCode) registerPoolRes()                     {}
+func (*ErrorModelStatusCode) reportPoolSandboxRemovedRes()         {}
 func (*ErrorModelStatusCode) resolveSandboxSecretRes()             {}
 func (*ErrorModelStatusCode) restartSandboxRes()                   {}
 func (*ErrorModelStatusCode) revokeSecretGrantRes()                {}
@@ -1163,10 +1259,11 @@ func (*ErrorModelStatusCode) setHarnessConfigSecretBindingRes()    {}
 func (*ErrorModelStatusCode) startSandboxRes()                     {}
 func (*ErrorModelStatusCode) stopSandboxRes()                      {}
 func (*ErrorModelStatusCode) updateHarnessConfigRes()              {}
+func (*ErrorModelStatusCode) updatePoolRes()                       {}
+func (*ErrorModelStatusCode) updatePoolStatusRes()                 {}
 func (*ErrorModelStatusCode) updateSandboxProviderInstanceRes()    {}
 func (*ErrorModelStatusCode) updateSandboxRes()                    {}
 func (*ErrorModelStatusCode) updateSecretRes()                     {}
-func (*ErrorModelStatusCode) updateWorkerStatusRes()               {}
 
 // Ref: #/components/schemas/ErrorResponse
 type ErrorResponse struct {
@@ -2423,6 +2520,36 @@ func (s *ListJobsBody) SetJobs(val []Job) {
 
 func (*ListJobsBody) listJobsRes() {}
 
+// Ref: #/components/schemas/ListPoolsBody
+type ListPoolsBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Pools.
+	Pools []Pool `json:"pools"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ListPoolsBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetPools returns the value of Pools.
+func (s *ListPoolsBody) GetPools() []Pool {
+	return s.Pools
+}
+
+// SetSchema sets the value of Schema.
+func (s *ListPoolsBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetPools sets the value of Pools.
+func (s *ListPoolsBody) SetPools(val []Pool) {
+	s.Pools = val
+}
+
+func (*ListPoolsBody) listPoolsRes() {}
+
 // Ref: #/components/schemas/ListProjectsBody
 type ListProjectsBody struct {
 	// A URL to the JSON Schema for this object.
@@ -2678,36 +2805,6 @@ func (s *ListSecretsBody) SetSecrets(val []Secret) {
 }
 
 func (*ListSecretsBody) listSecretsRes() {}
-
-// Ref: #/components/schemas/ListWorkersBody
-type ListWorkersBody struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Workers.
-	Workers []Worker `json:"workers"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *ListWorkersBody) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetWorkers returns the value of Workers.
-func (s *ListWorkersBody) GetWorkers() []Worker {
-	return s.Workers
-}
-
-// SetSchema sets the value of Schema.
-func (s *ListWorkersBody) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetWorkers sets the value of Workers.
-func (s *ListWorkersBody) SetWorkers(val []Worker) {
-	s.Workers = val
-}
-
-func (*ListWorkersBody) listWorkersRes() {}
 
 // NewOptApproveSecretRequestBodyScope returns new OptApproveSecretRequestBodyScope with value set to v.
 func NewOptApproveSecretRequestBodyScope(v ApproveSecretRequestBodyScope) OptApproveSecretRequestBodyScope {
@@ -3697,6 +3794,69 @@ func (o OptNilHarnessConfigSecretArray) Or(d []HarnessConfigSecret) []HarnessCon
 	return d
 }
 
+// NewOptNilPoolArray returns new OptNilPoolArray with value set to v.
+func NewOptNilPoolArray(v []Pool) OptNilPoolArray {
+	return OptNilPoolArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilPoolArray is optional nullable []Pool.
+type OptNilPoolArray struct {
+	Value []Pool
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilPoolArray was set.
+func (o OptNilPoolArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilPoolArray) Reset() {
+	var v []Pool
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilPoolArray) SetTo(v []Pool) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilPoolArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilPoolArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []Pool
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilPoolArray) Get() (v []Pool, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilPoolArray) Or(d []Pool) []Pool {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptNilProjectMemberArray returns new OptNilProjectMemberArray with value set to v.
 func NewOptNilProjectMemberArray(v []ProjectMember) OptNilProjectMemberArray {
 	return OptNilProjectMemberArray{
@@ -3817,69 +3977,6 @@ func (o OptNilProviderConfigFieldArray) Get() (v []ProviderConfigField, ok bool)
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilProviderConfigFieldArray) Or(d []ProviderConfigField) []ProviderConfigField {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
-// NewOptNilProviderWorkerStatusArray returns new OptNilProviderWorkerStatusArray with value set to v.
-func NewOptNilProviderWorkerStatusArray(v []ProviderWorkerStatus) OptNilProviderWorkerStatusArray {
-	return OptNilProviderWorkerStatusArray{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptNilProviderWorkerStatusArray is optional nullable []ProviderWorkerStatus.
-type OptNilProviderWorkerStatusArray struct {
-	Value []ProviderWorkerStatus
-	Set   bool
-	Null  bool
-}
-
-// IsSet returns true if OptNilProviderWorkerStatusArray was set.
-func (o OptNilProviderWorkerStatusArray) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptNilProviderWorkerStatusArray) Reset() {
-	var v []ProviderWorkerStatus
-	o.Value = v
-	o.Set = false
-	o.Null = false
-}
-
-// SetTo sets value to v.
-func (o *OptNilProviderWorkerStatusArray) SetTo(v []ProviderWorkerStatus) {
-	o.Set = true
-	o.Null = false
-	o.Value = v
-}
-
-// IsNull returns true if value is Null.
-func (o OptNilProviderWorkerStatusArray) IsNull() bool { return o.Null }
-
-// SetToNull sets value to null.
-func (o *OptNilProviderWorkerStatusArray) SetToNull() {
-	o.Set = true
-	o.Null = true
-	var v []ProviderWorkerStatus
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptNilProviderWorkerStatusArray) Get() (v []ProviderWorkerStatus, ok bool) {
-	if o.Null {
-		return v, false
-	}
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptNilProviderWorkerStatusArray) Or(d []ProviderWorkerStatus) []ProviderWorkerStatus {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -4075,69 +4172,6 @@ func (o OptNilStringArray) Or(d []string) []string {
 	return d
 }
 
-// NewOptNilWorkerArray returns new OptNilWorkerArray with value set to v.
-func NewOptNilWorkerArray(v []Worker) OptNilWorkerArray {
-	return OptNilWorkerArray{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptNilWorkerArray is optional nullable []Worker.
-type OptNilWorkerArray struct {
-	Value []Worker
-	Set   bool
-	Null  bool
-}
-
-// IsSet returns true if OptNilWorkerArray was set.
-func (o OptNilWorkerArray) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptNilWorkerArray) Reset() {
-	var v []Worker
-	o.Value = v
-	o.Set = false
-	o.Null = false
-}
-
-// SetTo sets value to v.
-func (o *OptNilWorkerArray) SetTo(v []Worker) {
-	o.Set = true
-	o.Null = false
-	o.Value = v
-}
-
-// IsNull returns true if value is Null.
-func (o OptNilWorkerArray) IsNull() bool { return o.Null }
-
-// SetToNull sets value to null.
-func (o *OptNilWorkerArray) SetToNull() {
-	o.Set = true
-	o.Null = true
-	var v []Worker
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptNilWorkerArray) Get() (v []Worker, ok bool) {
-	if o.Null {
-		return v, false
-	}
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptNilWorkerArray) Or(d []Worker) []Worker {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptOrigin returns new OptOrigin with value set to v.
 func NewOptOrigin(v Origin) OptOrigin {
 	return OptOrigin{
@@ -4178,6 +4212,98 @@ func (o OptOrigin) Get() (v Origin, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptOrigin) Or(d Origin) Origin {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptPool returns new OptPool with value set to v.
+func NewOptPool(v Pool) OptPool {
+	return OptPool{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPool is optional Pool.
+type OptPool struct {
+	Value Pool
+	Set   bool
+}
+
+// IsSet returns true if OptPool was set.
+func (o OptPool) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPool) Reset() {
+	var v Pool
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPool) SetTo(v Pool) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPool) Get() (v Pool, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPool) Or(d Pool) Pool {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptPoolActiveOperation returns new OptPoolActiveOperation with value set to v.
+func NewOptPoolActiveOperation(v PoolActiveOperation) OptPoolActiveOperation {
+	return OptPoolActiveOperation{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptPoolActiveOperation is optional PoolActiveOperation.
+type OptPoolActiveOperation struct {
+	Value PoolActiveOperation
+	Set   bool
+}
+
+// IsSet returns true if OptPoolActiveOperation was set.
+func (o OptPoolActiveOperation) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptPoolActiveOperation) Reset() {
+	var v PoolActiveOperation
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptPoolActiveOperation) SetTo(v PoolActiveOperation) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptPoolActiveOperation) Get() (v PoolActiveOperation, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptPoolActiveOperation) Or(d PoolActiveOperation) PoolActiveOperation {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -4598,52 +4724,6 @@ func (o OptSandboxProviderInstance) Or(d SandboxProviderInstance) SandboxProvide
 	return d
 }
 
-// NewOptSandboxProviderInstanceStatus returns new OptSandboxProviderInstanceStatus with value set to v.
-func NewOptSandboxProviderInstanceStatus(v SandboxProviderInstanceStatus) OptSandboxProviderInstanceStatus {
-	return OptSandboxProviderInstanceStatus{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptSandboxProviderInstanceStatus is optional SandboxProviderInstanceStatus.
-type OptSandboxProviderInstanceStatus struct {
-	Value SandboxProviderInstanceStatus
-	Set   bool
-}
-
-// IsSet returns true if OptSandboxProviderInstanceStatus was set.
-func (o OptSandboxProviderInstanceStatus) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptSandboxProviderInstanceStatus) Reset() {
-	var v SandboxProviderInstanceStatus
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptSandboxProviderInstanceStatus) SetTo(v SandboxProviderInstanceStatus) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptSandboxProviderInstanceStatus) Get() (v SandboxProviderInstanceStatus, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptSandboxProviderInstanceStatus) Or(d SandboxProviderInstanceStatus) SandboxProviderInstanceStatus {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // NewOptSandboxRuntimeActiveOperation returns new OptSandboxRuntimeActiveOperation with value set to v.
 func NewOptSandboxRuntimeActiveOperation(v SandboxRuntimeActiveOperation) OptSandboxRuntimeActiveOperation {
 	return OptSandboxRuntimeActiveOperation{
@@ -5012,52 +5092,6 @@ func (o OptUser) Or(d User) User {
 	return d
 }
 
-// NewOptWorkerActiveOperation returns new OptWorkerActiveOperation with value set to v.
-func NewOptWorkerActiveOperation(v WorkerActiveOperation) OptWorkerActiveOperation {
-	return OptWorkerActiveOperation{
-		Value: v,
-		Set:   true,
-	}
-}
-
-// OptWorkerActiveOperation is optional WorkerActiveOperation.
-type OptWorkerActiveOperation struct {
-	Value WorkerActiveOperation
-	Set   bool
-}
-
-// IsSet returns true if OptWorkerActiveOperation was set.
-func (o OptWorkerActiveOperation) IsSet() bool { return o.Set }
-
-// Reset unsets value.
-func (o *OptWorkerActiveOperation) Reset() {
-	var v WorkerActiveOperation
-	o.Value = v
-	o.Set = false
-}
-
-// SetTo sets value to v.
-func (o *OptWorkerActiveOperation) SetTo(v WorkerActiveOperation) {
-	o.Set = true
-	o.Value = v
-}
-
-// Get returns value and boolean that denotes whether value was set.
-func (o OptWorkerActiveOperation) Get() (v WorkerActiveOperation, ok bool) {
-	if !o.Set {
-		return v, false
-	}
-	return o.Value, true
-}
-
-// Or returns value if set, or given parameter if does not.
-func (o OptWorkerActiveOperation) Or(d WorkerActiveOperation) WorkerActiveOperation {
-	if v, ok := o.Get(); ok {
-		return v
-	}
-	return d
-}
-
 // The client host and project directory a sandbox was created from. Client-declared provenance
 // recorded verbatim; never used to materialize source.
 // Ref: #/components/schemas/Origin
@@ -5113,6 +5147,649 @@ func (s *Origin) SetUser(val OptString) {
 	s.User = val
 }
 
+// Ref: #/components/schemas/Pool
+type Pool struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// True for the default pool seeded by the server; built-in pools cannot be deleted.
+	BuiltIn bool `json:"builtIn"`
+	// Whether sandboxes in the pool mount the shared pool cache volume.
+	CacheEnabled bool `json:"cacheEnabled"`
+	// Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host.
+	CpuVcpus float64 `json:"cpuVcpus"`
+	// Creation timestamp.
+	CreatedAt time.Time `json:"createdAt"`
+	// Stable pool ID.
+	ID string `json:"id"`
+	// Total memory capacity of the pool envelope in bytes. Zero sizes the envelope by the host.
+	MemoryBytes int64 `json:"memoryBytes"`
+	// Pool display name.
+	Name string `json:"name"`
+	// Project ID.
+	ProjectId string `json:"projectId"`
+	// Backing sandbox provider instance.
+	ProviderInstance OptSandboxProviderInstance `json:"providerInstance"`
+	// Backing sandbox provider instance ID. Immutable after create.
+	ProviderInstanceId string `json:"providerInstanceId"`
+	// Total storage capacity of the pool envelope in bytes. Zero sizes the envelope by the host.
+	StorageBytes int64 `json:"storageBytes"`
+	// Whether the pool host is alive and healthy.
+	Ready bool `json:"ready"`
+	// Whether the pool accepts new sandboxes.
+	Schedulable bool `json:"schedulable"`
+	// Whether the pool should be used only as fallback capacity.
+	Degraded bool `json:"degraded"`
+	// Agent-reported available CPU capacity in vCPUs.
+	AvailableCpuVcpus float64 `json:"availableCpuVcpus"`
+	// Agent-reported available memory capacity in bytes.
+	AvailableMemoryBytes int64 `json:"availableMemoryBytes"`
+	// Agent-reported available storage capacity in bytes.
+	AvailableStorageBytes int64 `json:"availableStorageBytes"`
+	// Opaque agent-reported condition details for display.
+	Conditions jx.Raw `json:"conditions"`
+	// Requested pool state.
+	DesiredState PoolDesiredState `json:"desiredState"`
+	// Observed pool lifecycle phase.
+	Phase PoolPhase `json:"phase"`
+	// Current queued or running operation.
+	ActiveOperation OptPoolActiveOperation `json:"activeOperation"`
+	// Status of the most recent operation.
+	LastOperationStatus PoolLastOperationStatus `json:"lastOperationStatus"`
+	// Latest desired-state generation.
+	Generation int64 `json:"generation"`
+	// Latest generation fully observed by reconciliation.
+	ObservedGeneration int64 `json:"observedGeneration"`
+	// Human-readable status detail.
+	StatusMessage OptString `json:"statusMessage"`
+	// Latest error message.
+	ErrorMessage OptString `json:"errorMessage"`
+	// When phase last changed to its current value. Anchors how long the resource has been in a phase,
+	// for timeouts that must not be reset by unrelated reconciles.
+	PhaseChangedAt OptDateTime `json:"phaseChangedAt"`
+	// Pool agent key type.
+	KeyType OptString `json:"keyType"`
+	// Pool agent public key.
+	PublicKey OptString `json:"publicKey"`
+	// Registration timestamp.
+	RegisteredAt OptDateTime `json:"registeredAt"`
+	// Last heartbeat timestamp.
+	LastSeenAt OptDateTime `json:"lastSeenAt"`
+	// Revocation timestamp.
+	RevokedAt OptDateTime `json:"revokedAt"`
+	// Last update timestamp.
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *Pool) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetBuiltIn returns the value of BuiltIn.
+func (s *Pool) GetBuiltIn() bool {
+	return s.BuiltIn
+}
+
+// GetCacheEnabled returns the value of CacheEnabled.
+func (s *Pool) GetCacheEnabled() bool {
+	return s.CacheEnabled
+}
+
+// GetCpuVcpus returns the value of CpuVcpus.
+func (s *Pool) GetCpuVcpus() float64 {
+	return s.CpuVcpus
+}
+
+// GetCreatedAt returns the value of CreatedAt.
+func (s *Pool) GetCreatedAt() time.Time {
+	return s.CreatedAt
+}
+
+// GetID returns the value of ID.
+func (s *Pool) GetID() string {
+	return s.ID
+}
+
+// GetMemoryBytes returns the value of MemoryBytes.
+func (s *Pool) GetMemoryBytes() int64 {
+	return s.MemoryBytes
+}
+
+// GetName returns the value of Name.
+func (s *Pool) GetName() string {
+	return s.Name
+}
+
+// GetProjectId returns the value of ProjectId.
+func (s *Pool) GetProjectId() string {
+	return s.ProjectId
+}
+
+// GetProviderInstance returns the value of ProviderInstance.
+func (s *Pool) GetProviderInstance() OptSandboxProviderInstance {
+	return s.ProviderInstance
+}
+
+// GetProviderInstanceId returns the value of ProviderInstanceId.
+func (s *Pool) GetProviderInstanceId() string {
+	return s.ProviderInstanceId
+}
+
+// GetStorageBytes returns the value of StorageBytes.
+func (s *Pool) GetStorageBytes() int64 {
+	return s.StorageBytes
+}
+
+// GetReady returns the value of Ready.
+func (s *Pool) GetReady() bool {
+	return s.Ready
+}
+
+// GetSchedulable returns the value of Schedulable.
+func (s *Pool) GetSchedulable() bool {
+	return s.Schedulable
+}
+
+// GetDegraded returns the value of Degraded.
+func (s *Pool) GetDegraded() bool {
+	return s.Degraded
+}
+
+// GetAvailableCpuVcpus returns the value of AvailableCpuVcpus.
+func (s *Pool) GetAvailableCpuVcpus() float64 {
+	return s.AvailableCpuVcpus
+}
+
+// GetAvailableMemoryBytes returns the value of AvailableMemoryBytes.
+func (s *Pool) GetAvailableMemoryBytes() int64 {
+	return s.AvailableMemoryBytes
+}
+
+// GetAvailableStorageBytes returns the value of AvailableStorageBytes.
+func (s *Pool) GetAvailableStorageBytes() int64 {
+	return s.AvailableStorageBytes
+}
+
+// GetConditions returns the value of Conditions.
+func (s *Pool) GetConditions() jx.Raw {
+	return s.Conditions
+}
+
+// GetDesiredState returns the value of DesiredState.
+func (s *Pool) GetDesiredState() PoolDesiredState {
+	return s.DesiredState
+}
+
+// GetPhase returns the value of Phase.
+func (s *Pool) GetPhase() PoolPhase {
+	return s.Phase
+}
+
+// GetActiveOperation returns the value of ActiveOperation.
+func (s *Pool) GetActiveOperation() OptPoolActiveOperation {
+	return s.ActiveOperation
+}
+
+// GetLastOperationStatus returns the value of LastOperationStatus.
+func (s *Pool) GetLastOperationStatus() PoolLastOperationStatus {
+	return s.LastOperationStatus
+}
+
+// GetGeneration returns the value of Generation.
+func (s *Pool) GetGeneration() int64 {
+	return s.Generation
+}
+
+// GetObservedGeneration returns the value of ObservedGeneration.
+func (s *Pool) GetObservedGeneration() int64 {
+	return s.ObservedGeneration
+}
+
+// GetStatusMessage returns the value of StatusMessage.
+func (s *Pool) GetStatusMessage() OptString {
+	return s.StatusMessage
+}
+
+// GetErrorMessage returns the value of ErrorMessage.
+func (s *Pool) GetErrorMessage() OptString {
+	return s.ErrorMessage
+}
+
+// GetPhaseChangedAt returns the value of PhaseChangedAt.
+func (s *Pool) GetPhaseChangedAt() OptDateTime {
+	return s.PhaseChangedAt
+}
+
+// GetKeyType returns the value of KeyType.
+func (s *Pool) GetKeyType() OptString {
+	return s.KeyType
+}
+
+// GetPublicKey returns the value of PublicKey.
+func (s *Pool) GetPublicKey() OptString {
+	return s.PublicKey
+}
+
+// GetRegisteredAt returns the value of RegisteredAt.
+func (s *Pool) GetRegisteredAt() OptDateTime {
+	return s.RegisteredAt
+}
+
+// GetLastSeenAt returns the value of LastSeenAt.
+func (s *Pool) GetLastSeenAt() OptDateTime {
+	return s.LastSeenAt
+}
+
+// GetRevokedAt returns the value of RevokedAt.
+func (s *Pool) GetRevokedAt() OptDateTime {
+	return s.RevokedAt
+}
+
+// GetUpdatedAt returns the value of UpdatedAt.
+func (s *Pool) GetUpdatedAt() time.Time {
+	return s.UpdatedAt
+}
+
+// SetSchema sets the value of Schema.
+func (s *Pool) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetBuiltIn sets the value of BuiltIn.
+func (s *Pool) SetBuiltIn(val bool) {
+	s.BuiltIn = val
+}
+
+// SetCacheEnabled sets the value of CacheEnabled.
+func (s *Pool) SetCacheEnabled(val bool) {
+	s.CacheEnabled = val
+}
+
+// SetCpuVcpus sets the value of CpuVcpus.
+func (s *Pool) SetCpuVcpus(val float64) {
+	s.CpuVcpus = val
+}
+
+// SetCreatedAt sets the value of CreatedAt.
+func (s *Pool) SetCreatedAt(val time.Time) {
+	s.CreatedAt = val
+}
+
+// SetID sets the value of ID.
+func (s *Pool) SetID(val string) {
+	s.ID = val
+}
+
+// SetMemoryBytes sets the value of MemoryBytes.
+func (s *Pool) SetMemoryBytes(val int64) {
+	s.MemoryBytes = val
+}
+
+// SetName sets the value of Name.
+func (s *Pool) SetName(val string) {
+	s.Name = val
+}
+
+// SetProjectId sets the value of ProjectId.
+func (s *Pool) SetProjectId(val string) {
+	s.ProjectId = val
+}
+
+// SetProviderInstance sets the value of ProviderInstance.
+func (s *Pool) SetProviderInstance(val OptSandboxProviderInstance) {
+	s.ProviderInstance = val
+}
+
+// SetProviderInstanceId sets the value of ProviderInstanceId.
+func (s *Pool) SetProviderInstanceId(val string) {
+	s.ProviderInstanceId = val
+}
+
+// SetStorageBytes sets the value of StorageBytes.
+func (s *Pool) SetStorageBytes(val int64) {
+	s.StorageBytes = val
+}
+
+// SetReady sets the value of Ready.
+func (s *Pool) SetReady(val bool) {
+	s.Ready = val
+}
+
+// SetSchedulable sets the value of Schedulable.
+func (s *Pool) SetSchedulable(val bool) {
+	s.Schedulable = val
+}
+
+// SetDegraded sets the value of Degraded.
+func (s *Pool) SetDegraded(val bool) {
+	s.Degraded = val
+}
+
+// SetAvailableCpuVcpus sets the value of AvailableCpuVcpus.
+func (s *Pool) SetAvailableCpuVcpus(val float64) {
+	s.AvailableCpuVcpus = val
+}
+
+// SetAvailableMemoryBytes sets the value of AvailableMemoryBytes.
+func (s *Pool) SetAvailableMemoryBytes(val int64) {
+	s.AvailableMemoryBytes = val
+}
+
+// SetAvailableStorageBytes sets the value of AvailableStorageBytes.
+func (s *Pool) SetAvailableStorageBytes(val int64) {
+	s.AvailableStorageBytes = val
+}
+
+// SetConditions sets the value of Conditions.
+func (s *Pool) SetConditions(val jx.Raw) {
+	s.Conditions = val
+}
+
+// SetDesiredState sets the value of DesiredState.
+func (s *Pool) SetDesiredState(val PoolDesiredState) {
+	s.DesiredState = val
+}
+
+// SetPhase sets the value of Phase.
+func (s *Pool) SetPhase(val PoolPhase) {
+	s.Phase = val
+}
+
+// SetActiveOperation sets the value of ActiveOperation.
+func (s *Pool) SetActiveOperation(val OptPoolActiveOperation) {
+	s.ActiveOperation = val
+}
+
+// SetLastOperationStatus sets the value of LastOperationStatus.
+func (s *Pool) SetLastOperationStatus(val PoolLastOperationStatus) {
+	s.LastOperationStatus = val
+}
+
+// SetGeneration sets the value of Generation.
+func (s *Pool) SetGeneration(val int64) {
+	s.Generation = val
+}
+
+// SetObservedGeneration sets the value of ObservedGeneration.
+func (s *Pool) SetObservedGeneration(val int64) {
+	s.ObservedGeneration = val
+}
+
+// SetStatusMessage sets the value of StatusMessage.
+func (s *Pool) SetStatusMessage(val OptString) {
+	s.StatusMessage = val
+}
+
+// SetErrorMessage sets the value of ErrorMessage.
+func (s *Pool) SetErrorMessage(val OptString) {
+	s.ErrorMessage = val
+}
+
+// SetPhaseChangedAt sets the value of PhaseChangedAt.
+func (s *Pool) SetPhaseChangedAt(val OptDateTime) {
+	s.PhaseChangedAt = val
+}
+
+// SetKeyType sets the value of KeyType.
+func (s *Pool) SetKeyType(val OptString) {
+	s.KeyType = val
+}
+
+// SetPublicKey sets the value of PublicKey.
+func (s *Pool) SetPublicKey(val OptString) {
+	s.PublicKey = val
+}
+
+// SetRegisteredAt sets the value of RegisteredAt.
+func (s *Pool) SetRegisteredAt(val OptDateTime) {
+	s.RegisteredAt = val
+}
+
+// SetLastSeenAt sets the value of LastSeenAt.
+func (s *Pool) SetLastSeenAt(val OptDateTime) {
+	s.LastSeenAt = val
+}
+
+// SetRevokedAt sets the value of RevokedAt.
+func (s *Pool) SetRevokedAt(val OptDateTime) {
+	s.RevokedAt = val
+}
+
+// SetUpdatedAt sets the value of UpdatedAt.
+func (s *Pool) SetUpdatedAt(val time.Time) {
+	s.UpdatedAt = val
+}
+
+func (*Pool) createPoolRes()       {}
+func (*Pool) getPoolRes()          {}
+func (*Pool) reconcilePoolRes()    {}
+func (*Pool) updatePoolRes()       {}
+func (*Pool) updatePoolStatusRes() {}
+
+// Current queued or running operation.
+type PoolActiveOperation string
+
+const (
+	PoolActiveOperationCreate PoolActiveOperation = "create"
+	PoolActiveOperationDelete PoolActiveOperation = "delete"
+)
+
+// AllValues returns all PoolActiveOperation values.
+func (PoolActiveOperation) AllValues() []PoolActiveOperation {
+	return []PoolActiveOperation{
+		PoolActiveOperationCreate,
+		PoolActiveOperationDelete,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s PoolActiveOperation) MarshalText() ([]byte, error) {
+	switch s {
+	case PoolActiveOperationCreate:
+		return []byte(s), nil
+	case PoolActiveOperationDelete:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *PoolActiveOperation) UnmarshalText(data []byte) error {
+	switch PoolActiveOperation(data) {
+	case PoolActiveOperationCreate:
+		*s = PoolActiveOperationCreate
+		return nil
+	case PoolActiveOperationDelete:
+		*s = PoolActiveOperationDelete
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Requested pool state.
+type PoolDesiredState string
+
+const (
+	PoolDesiredStateActive  PoolDesiredState = "active"
+	PoolDesiredStateDeleted PoolDesiredState = "deleted"
+)
+
+// AllValues returns all PoolDesiredState values.
+func (PoolDesiredState) AllValues() []PoolDesiredState {
+	return []PoolDesiredState{
+		PoolDesiredStateActive,
+		PoolDesiredStateDeleted,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s PoolDesiredState) MarshalText() ([]byte, error) {
+	switch s {
+	case PoolDesiredStateActive:
+		return []byte(s), nil
+	case PoolDesiredStateDeleted:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *PoolDesiredState) UnmarshalText(data []byte) error {
+	switch PoolDesiredState(data) {
+	case PoolDesiredStateActive:
+		*s = PoolDesiredStateActive
+		return nil
+	case PoolDesiredStateDeleted:
+		*s = PoolDesiredStateDeleted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Status of the most recent operation.
+type PoolLastOperationStatus string
+
+const (
+	PoolLastOperationStatusPending PoolLastOperationStatus = "pending"
+	PoolLastOperationStatusRunning PoolLastOperationStatus = "running"
+	PoolLastOperationStatusSuccess PoolLastOperationStatus = "success"
+	PoolLastOperationStatusFailed  PoolLastOperationStatus = "failed"
+)
+
+// AllValues returns all PoolLastOperationStatus values.
+func (PoolLastOperationStatus) AllValues() []PoolLastOperationStatus {
+	return []PoolLastOperationStatus{
+		PoolLastOperationStatusPending,
+		PoolLastOperationStatusRunning,
+		PoolLastOperationStatusSuccess,
+		PoolLastOperationStatusFailed,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s PoolLastOperationStatus) MarshalText() ([]byte, error) {
+	switch s {
+	case PoolLastOperationStatusPending:
+		return []byte(s), nil
+	case PoolLastOperationStatusRunning:
+		return []byte(s), nil
+	case PoolLastOperationStatusSuccess:
+		return []byte(s), nil
+	case PoolLastOperationStatusFailed:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *PoolLastOperationStatus) UnmarshalText(data []byte) error {
+	switch PoolLastOperationStatus(data) {
+	case PoolLastOperationStatusPending:
+		*s = PoolLastOperationStatusPending
+		return nil
+	case PoolLastOperationStatusRunning:
+		*s = PoolLastOperationStatusRunning
+		return nil
+	case PoolLastOperationStatusSuccess:
+		*s = PoolLastOperationStatusSuccess
+		return nil
+	case PoolLastOperationStatusFailed:
+		*s = PoolLastOperationStatusFailed
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Observed pool lifecycle phase.
+type PoolPhase string
+
+const (
+	PoolPhasePending     PoolPhase = "pending"
+	PoolPhaseLaunching   PoolPhase = "launching"
+	PoolPhaseRegistering PoolPhase = "registering"
+	PoolPhaseActive      PoolPhase = "active"
+	PoolPhaseDeleting    PoolPhase = "deleting"
+	PoolPhaseOffline     PoolPhase = "offline"
+	PoolPhaseFailed      PoolPhase = "failed"
+	PoolPhaseDeleted     PoolPhase = "deleted"
+)
+
+// AllValues returns all PoolPhase values.
+func (PoolPhase) AllValues() []PoolPhase {
+	return []PoolPhase{
+		PoolPhasePending,
+		PoolPhaseLaunching,
+		PoolPhaseRegistering,
+		PoolPhaseActive,
+		PoolPhaseDeleting,
+		PoolPhaseOffline,
+		PoolPhaseFailed,
+		PoolPhaseDeleted,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s PoolPhase) MarshalText() ([]byte, error) {
+	switch s {
+	case PoolPhasePending:
+		return []byte(s), nil
+	case PoolPhaseLaunching:
+		return []byte(s), nil
+	case PoolPhaseRegistering:
+		return []byte(s), nil
+	case PoolPhaseActive:
+		return []byte(s), nil
+	case PoolPhaseDeleting:
+		return []byte(s), nil
+	case PoolPhaseOffline:
+		return []byte(s), nil
+	case PoolPhaseFailed:
+		return []byte(s), nil
+	case PoolPhaseDeleted:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *PoolPhase) UnmarshalText(data []byte) error {
+	switch PoolPhase(data) {
+	case PoolPhasePending:
+		*s = PoolPhasePending
+		return nil
+	case PoolPhaseLaunching:
+		*s = PoolPhaseLaunching
+		return nil
+	case PoolPhaseRegistering:
+		*s = PoolPhaseRegistering
+		return nil
+	case PoolPhaseActive:
+		*s = PoolPhaseActive
+		return nil
+	case PoolPhaseDeleting:
+		*s = PoolPhaseDeleting
+		return nil
+	case PoolPhaseOffline:
+		*s = PoolPhaseOffline
+		return nil
+	case PoolPhaseFailed:
+		*s = PoolPhaseFailed
+		return nil
+	case PoolPhaseDeleted:
+		*s = PoolPhaseDeleted
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // Ref: #/components/schemas/Project
 type Project struct {
 	// A URL to the JSON Schema for this object.
@@ -5123,8 +5800,8 @@ type Project struct {
 	CreatedAt time.Time `json:"createdAt"`
 	// Whether this is the user's default project.
 	Default bool `json:"default"`
-	// Default sandbox provider instance ID.
-	DefaultSandboxProviderId OptString `json:"defaultSandboxProviderId"`
+	// Default pool ID for new sandboxes.
+	DefaultPoolId OptString `json:"defaultPoolId"`
 	// Default harness config ID.
 	DefaultHarnessConfigId OptString `json:"defaultHarnessConfigId"`
 	// Stable project ID.
@@ -5137,6 +5814,8 @@ type Project struct {
 	Owner OptUser `json:"owner"`
 	// Owning user ID.
 	OwnerUserId string `json:"ownerUserId"`
+	// Project pools.
+	Pools OptNilPoolArray `json:"pools"`
 	// Sandbox provider instances.
 	SandboxProviderInstances OptNilSandboxProviderInstanceArray `json:"sandboxProviderInstances"`
 	// Project sandboxes.
@@ -5167,9 +5846,9 @@ func (s *Project) GetDefault() bool {
 	return s.Default
 }
 
-// GetDefaultSandboxProviderId returns the value of DefaultSandboxProviderId.
-func (s *Project) GetDefaultSandboxProviderId() OptString {
-	return s.DefaultSandboxProviderId
+// GetDefaultPoolId returns the value of DefaultPoolId.
+func (s *Project) GetDefaultPoolId() OptString {
+	return s.DefaultPoolId
 }
 
 // GetDefaultHarnessConfigId returns the value of DefaultHarnessConfigId.
@@ -5200,6 +5879,11 @@ func (s *Project) GetOwner() OptUser {
 // GetOwnerUserId returns the value of OwnerUserId.
 func (s *Project) GetOwnerUserId() string {
 	return s.OwnerUserId
+}
+
+// GetPools returns the value of Pools.
+func (s *Project) GetPools() OptNilPoolArray {
+	return s.Pools
 }
 
 // GetSandboxProviderInstances returns the value of SandboxProviderInstances.
@@ -5242,9 +5926,9 @@ func (s *Project) SetDefault(val bool) {
 	s.Default = val
 }
 
-// SetDefaultSandboxProviderId sets the value of DefaultSandboxProviderId.
-func (s *Project) SetDefaultSandboxProviderId(val OptString) {
-	s.DefaultSandboxProviderId = val
+// SetDefaultPoolId sets the value of DefaultPoolId.
+func (s *Project) SetDefaultPoolId(val OptString) {
+	s.DefaultPoolId = val
 }
 
 // SetDefaultHarnessConfigId sets the value of DefaultHarnessConfigId.
@@ -5275,6 +5959,11 @@ func (s *Project) SetOwner(val OptUser) {
 // SetOwnerUserId sets the value of OwnerUserId.
 func (s *Project) SetOwnerUserId(val string) {
 	s.OwnerUserId = val
+}
+
+// SetPools sets the value of Pools.
+func (s *Project) SetPools(val OptNilPoolArray) {
+	s.Pools = val
 }
 
 // SetSandboxProviderInstances sets the value of SandboxProviderInstances.
@@ -5515,334 +6204,127 @@ func (s *ProviderStatus) SetState(val string) {
 	s.State = val
 }
 
-// Ref: #/components/schemas/ProviderWorkerStatus
-type ProviderWorkerStatus struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Worker-reported available CPU capacity in vCPUs.
-	AvailableCpuVcpus float64 `json:"availableCpuVcpus"`
-	// Worker-reported available memory capacity in bytes.
-	AvailableMemoryBytes int64 `json:"availableMemoryBytes"`
-	// Worker-reported available storage capacity in bytes.
-	AvailableStorageBytes int64 `json:"availableStorageBytes"`
-	// Whether the worker is degraded.
-	Degraded bool `json:"degraded"`
-	// Requested worker state.
-	DesiredState string `json:"desiredState"`
-	// Latest worker error message.
-	ErrorMessage OptString `json:"errorMessage"`
-	// Worker ID.
-	ID string `json:"id"`
-	// Worker identity.
-	Identity OptString `json:"identity"`
-	// Status of the latest worker operation.
-	LastOperationStatus string `json:"lastOperationStatus"`
-	// Last heartbeat timestamp.
-	LastSeenAt OptDateTime `json:"lastSeenAt"`
-	// Observed worker lifecycle phase.
-	Phase string `json:"phase"`
-	// Whether the worker is alive and healthy.
-	Ready bool `json:"ready"`
-	// Sanitized backend runtime ID, such as a VM or container ID.
-	RuntimeId OptString `json:"runtimeId"`
-	// Whether the worker accepts new sandboxes.
-	Schedulable bool `json:"schedulable"`
-	// Human-readable status detail.
-	StatusMessage OptString `json:"statusMessage"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *ProviderWorkerStatus) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetAvailableCpuVcpus returns the value of AvailableCpuVcpus.
-func (s *ProviderWorkerStatus) GetAvailableCpuVcpus() float64 {
-	return s.AvailableCpuVcpus
-}
-
-// GetAvailableMemoryBytes returns the value of AvailableMemoryBytes.
-func (s *ProviderWorkerStatus) GetAvailableMemoryBytes() int64 {
-	return s.AvailableMemoryBytes
-}
-
-// GetAvailableStorageBytes returns the value of AvailableStorageBytes.
-func (s *ProviderWorkerStatus) GetAvailableStorageBytes() int64 {
-	return s.AvailableStorageBytes
-}
-
-// GetDegraded returns the value of Degraded.
-func (s *ProviderWorkerStatus) GetDegraded() bool {
-	return s.Degraded
-}
-
-// GetDesiredState returns the value of DesiredState.
-func (s *ProviderWorkerStatus) GetDesiredState() string {
-	return s.DesiredState
-}
-
-// GetErrorMessage returns the value of ErrorMessage.
-func (s *ProviderWorkerStatus) GetErrorMessage() OptString {
-	return s.ErrorMessage
-}
-
-// GetID returns the value of ID.
-func (s *ProviderWorkerStatus) GetID() string {
-	return s.ID
-}
-
-// GetIdentity returns the value of Identity.
-func (s *ProviderWorkerStatus) GetIdentity() OptString {
-	return s.Identity
-}
-
-// GetLastOperationStatus returns the value of LastOperationStatus.
-func (s *ProviderWorkerStatus) GetLastOperationStatus() string {
-	return s.LastOperationStatus
-}
-
-// GetLastSeenAt returns the value of LastSeenAt.
-func (s *ProviderWorkerStatus) GetLastSeenAt() OptDateTime {
-	return s.LastSeenAt
-}
-
-// GetPhase returns the value of Phase.
-func (s *ProviderWorkerStatus) GetPhase() string {
-	return s.Phase
-}
-
-// GetReady returns the value of Ready.
-func (s *ProviderWorkerStatus) GetReady() bool {
-	return s.Ready
-}
-
-// GetRuntimeId returns the value of RuntimeId.
-func (s *ProviderWorkerStatus) GetRuntimeId() OptString {
-	return s.RuntimeId
-}
-
-// GetSchedulable returns the value of Schedulable.
-func (s *ProviderWorkerStatus) GetSchedulable() bool {
-	return s.Schedulable
-}
-
-// GetStatusMessage returns the value of StatusMessage.
-func (s *ProviderWorkerStatus) GetStatusMessage() OptString {
-	return s.StatusMessage
-}
-
-// SetSchema sets the value of Schema.
-func (s *ProviderWorkerStatus) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetAvailableCpuVcpus sets the value of AvailableCpuVcpus.
-func (s *ProviderWorkerStatus) SetAvailableCpuVcpus(val float64) {
-	s.AvailableCpuVcpus = val
-}
-
-// SetAvailableMemoryBytes sets the value of AvailableMemoryBytes.
-func (s *ProviderWorkerStatus) SetAvailableMemoryBytes(val int64) {
-	s.AvailableMemoryBytes = val
-}
-
-// SetAvailableStorageBytes sets the value of AvailableStorageBytes.
-func (s *ProviderWorkerStatus) SetAvailableStorageBytes(val int64) {
-	s.AvailableStorageBytes = val
-}
-
-// SetDegraded sets the value of Degraded.
-func (s *ProviderWorkerStatus) SetDegraded(val bool) {
-	s.Degraded = val
-}
-
-// SetDesiredState sets the value of DesiredState.
-func (s *ProviderWorkerStatus) SetDesiredState(val string) {
-	s.DesiredState = val
-}
-
-// SetErrorMessage sets the value of ErrorMessage.
-func (s *ProviderWorkerStatus) SetErrorMessage(val OptString) {
-	s.ErrorMessage = val
-}
-
-// SetID sets the value of ID.
-func (s *ProviderWorkerStatus) SetID(val string) {
-	s.ID = val
-}
-
-// SetIdentity sets the value of Identity.
-func (s *ProviderWorkerStatus) SetIdentity(val OptString) {
-	s.Identity = val
-}
-
-// SetLastOperationStatus sets the value of LastOperationStatus.
-func (s *ProviderWorkerStatus) SetLastOperationStatus(val string) {
-	s.LastOperationStatus = val
-}
-
-// SetLastSeenAt sets the value of LastSeenAt.
-func (s *ProviderWorkerStatus) SetLastSeenAt(val OptDateTime) {
-	s.LastSeenAt = val
-}
-
-// SetPhase sets the value of Phase.
-func (s *ProviderWorkerStatus) SetPhase(val string) {
-	s.Phase = val
-}
-
-// SetReady sets the value of Ready.
-func (s *ProviderWorkerStatus) SetReady(val bool) {
-	s.Ready = val
-}
-
-// SetRuntimeId sets the value of RuntimeId.
-func (s *ProviderWorkerStatus) SetRuntimeId(val OptString) {
-	s.RuntimeId = val
-}
-
-// SetSchedulable sets the value of Schedulable.
-func (s *ProviderWorkerStatus) SetSchedulable(val bool) {
-	s.Schedulable = val
-}
-
-// SetStatusMessage sets the value of StatusMessage.
-func (s *ProviderWorkerStatus) SetStatusMessage(val OptString) {
-	s.StatusMessage = val
-}
-
-// Ref: #/components/schemas/RegisterWorkerBody
-type RegisterWorkerBody struct {
+// Ref: #/components/schemas/RegisterPoolBody
+type RegisterPoolBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema         OptURI    `json:"$schema"`
 	BootstrapToken string    `json:"bootstrapToken"`
 	KeyType        OptString `json:"keyType"`
+	PoolId         string    `json:"poolId"`
 	ProjectId      string    `json:"projectId"`
 	PublicKey      string    `json:"publicKey"`
-	SandboxId      OptString `json:"sandboxId"`
-	WorkerId       OptString `json:"workerId"`
 }
 
 // GetSchema returns the value of Schema.
-func (s *RegisterWorkerBody) GetSchema() OptURI {
+func (s *RegisterPoolBody) GetSchema() OptURI {
 	return s.Schema
 }
 
 // GetBootstrapToken returns the value of BootstrapToken.
-func (s *RegisterWorkerBody) GetBootstrapToken() string {
+func (s *RegisterPoolBody) GetBootstrapToken() string {
 	return s.BootstrapToken
 }
 
 // GetKeyType returns the value of KeyType.
-func (s *RegisterWorkerBody) GetKeyType() OptString {
+func (s *RegisterPoolBody) GetKeyType() OptString {
 	return s.KeyType
 }
 
+// GetPoolId returns the value of PoolId.
+func (s *RegisterPoolBody) GetPoolId() string {
+	return s.PoolId
+}
+
 // GetProjectId returns the value of ProjectId.
-func (s *RegisterWorkerBody) GetProjectId() string {
+func (s *RegisterPoolBody) GetProjectId() string {
 	return s.ProjectId
 }
 
 // GetPublicKey returns the value of PublicKey.
-func (s *RegisterWorkerBody) GetPublicKey() string {
+func (s *RegisterPoolBody) GetPublicKey() string {
 	return s.PublicKey
 }
 
-// GetSandboxId returns the value of SandboxId.
-func (s *RegisterWorkerBody) GetSandboxId() OptString {
-	return s.SandboxId
-}
-
-// GetWorkerId returns the value of WorkerId.
-func (s *RegisterWorkerBody) GetWorkerId() OptString {
-	return s.WorkerId
-}
-
 // SetSchema sets the value of Schema.
-func (s *RegisterWorkerBody) SetSchema(val OptURI) {
+func (s *RegisterPoolBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
 // SetBootstrapToken sets the value of BootstrapToken.
-func (s *RegisterWorkerBody) SetBootstrapToken(val string) {
+func (s *RegisterPoolBody) SetBootstrapToken(val string) {
 	s.BootstrapToken = val
 }
 
 // SetKeyType sets the value of KeyType.
-func (s *RegisterWorkerBody) SetKeyType(val OptString) {
+func (s *RegisterPoolBody) SetKeyType(val OptString) {
 	s.KeyType = val
 }
 
+// SetPoolId sets the value of PoolId.
+func (s *RegisterPoolBody) SetPoolId(val string) {
+	s.PoolId = val
+}
+
 // SetProjectId sets the value of ProjectId.
-func (s *RegisterWorkerBody) SetProjectId(val string) {
+func (s *RegisterPoolBody) SetProjectId(val string) {
 	s.ProjectId = val
 }
 
 // SetPublicKey sets the value of PublicKey.
-func (s *RegisterWorkerBody) SetPublicKey(val string) {
+func (s *RegisterPoolBody) SetPublicKey(val string) {
 	s.PublicKey = val
 }
 
-// SetSandboxId sets the value of SandboxId.
-func (s *RegisterWorkerBody) SetSandboxId(val OptString) {
-	s.SandboxId = val
-}
-
-// SetWorkerId sets the value of WorkerId.
-func (s *RegisterWorkerBody) SetWorkerId(val OptString) {
-	s.WorkerId = val
-}
-
-// Ref: #/components/schemas/RegisterWorkerResponseBody
-type RegisterWorkerResponseBody struct {
+// Ref: #/components/schemas/RegisterPoolResponseBody
+type RegisterPoolResponseBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
 }
 
 // GetSchema returns the value of Schema.
-func (s *RegisterWorkerResponseBody) GetSchema() OptURI {
+func (s *RegisterPoolResponseBody) GetSchema() OptURI {
 	return s.Schema
 }
 
 // SetSchema sets the value of Schema.
-func (s *RegisterWorkerResponseBody) SetSchema(val OptURI) {
+func (s *RegisterPoolResponseBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
-func (*RegisterWorkerResponseBody) registerWorkerRes() {}
+func (*RegisterPoolResponseBody) registerPoolRes() {}
 
-// Ref: #/components/schemas/ReportWorkerSandboxRemovedBody
-type ReportWorkerSandboxRemovedBody struct {
+// Ref: #/components/schemas/ReportPoolSandboxRemovedBody
+type ReportPoolSandboxRemovedBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Sandbox whose worker-local runtime was removed outside control-plane reconciliation.
+	// Sandbox whose pool-local runtime was removed outside control-plane reconciliation.
 	SandboxId string `json:"sandboxId"`
 }
 
 // GetSchema returns the value of Schema.
-func (s *ReportWorkerSandboxRemovedBody) GetSchema() OptURI {
+func (s *ReportPoolSandboxRemovedBody) GetSchema() OptURI {
 	return s.Schema
 }
 
 // GetSandboxId returns the value of SandboxId.
-func (s *ReportWorkerSandboxRemovedBody) GetSandboxId() string {
+func (s *ReportPoolSandboxRemovedBody) GetSandboxId() string {
 	return s.SandboxId
 }
 
 // SetSchema sets the value of Schema.
-func (s *ReportWorkerSandboxRemovedBody) SetSchema(val OptURI) {
+func (s *ReportPoolSandboxRemovedBody) SetSchema(val OptURI) {
 	s.Schema = val
 }
 
 // SetSandboxId sets the value of SandboxId.
-func (s *ReportWorkerSandboxRemovedBody) SetSandboxId(val string) {
+func (s *ReportPoolSandboxRemovedBody) SetSandboxId(val string) {
 	s.SandboxId = val
 }
 
-// ReportWorkerSandboxRemovedNoContent is response for ReportWorkerSandboxRemoved operation.
-type ReportWorkerSandboxRemovedNoContent struct{}
+// ReportPoolSandboxRemovedNoContent is response for ReportPoolSandboxRemoved operation.
+type ReportPoolSandboxRemovedNoContent struct{}
 
-func (*ReportWorkerSandboxRemovedNoContent) reportWorkerSandboxRemovedRes() {}
+func (*ReportPoolSandboxRemovedNoContent) reportPoolSandboxRemovedRes() {}
 
 // Worker request to resolve a sentinel placeholder observed by the proxy to its real secret value
 // for a destination host.
@@ -6126,10 +6608,10 @@ type Sandbox struct {
 	Origin OptOrigin `json:"origin"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
-	// Sandbox provider instance.
-	ProviderInstance OptSandboxProviderInstance `json:"providerInstance"`
-	// Sandbox provider instance ID.
-	ProviderInstanceId OptString `json:"providerInstanceId"`
+	// Pool the sandbox is scheduled into.
+	Pool OptPool `json:"pool"`
+	// Pool the sandbox is scheduled into. Resolved at create, immutable after.
+	PoolId OptString `json:"poolId"`
 	// Observed sandbox runtime state.
 	Runtime SandboxRuntime `json:"runtime"`
 	// Last update timestamp.
@@ -6181,14 +6663,14 @@ func (s *Sandbox) GetProjectId() string {
 	return s.ProjectId
 }
 
-// GetProviderInstance returns the value of ProviderInstance.
-func (s *Sandbox) GetProviderInstance() OptSandboxProviderInstance {
-	return s.ProviderInstance
+// GetPool returns the value of Pool.
+func (s *Sandbox) GetPool() OptPool {
+	return s.Pool
 }
 
-// GetProviderInstanceId returns the value of ProviderInstanceId.
-func (s *Sandbox) GetProviderInstanceId() OptString {
-	return s.ProviderInstanceId
+// GetPoolId returns the value of PoolId.
+func (s *Sandbox) GetPoolId() OptString {
+	return s.PoolId
 }
 
 // GetRuntime returns the value of Runtime.
@@ -6246,14 +6728,14 @@ func (s *Sandbox) SetProjectId(val string) {
 	s.ProjectId = val
 }
 
-// SetProviderInstance sets the value of ProviderInstance.
-func (s *Sandbox) SetProviderInstance(val OptSandboxProviderInstance) {
-	s.ProviderInstance = val
+// SetPool sets the value of Pool.
+func (s *Sandbox) SetPool(val OptPool) {
+	s.Pool = val
 }
 
-// SetProviderInstanceId sets the value of ProviderInstanceId.
-func (s *Sandbox) SetProviderInstanceId(val OptString) {
-	s.ProviderInstanceId = val
+// SetPoolId sets the value of PoolId.
+func (s *Sandbox) SetPoolId(val OptString) {
+	s.PoolId = val
 }
 
 // SetRuntime sets the value of Runtime.
@@ -7504,16 +7986,12 @@ type SandboxProviderInstance struct {
 	Name string `json:"name"`
 	// Project ID.
 	ProjectId string `json:"projectId"`
-	// Sandboxes using this provider.
-	Sandboxes OptNilSandboxArray `json:"sandboxes"`
-	// Observed provider status derived from persisted worker state.
-	Status OptSandboxProviderInstanceStatus `json:"status"`
+	// Pools backed by this provider instance.
+	Pools OptNilPoolArray `json:"pools"`
 	// Provider type.
 	Type string `json:"type"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
-	// Workers using this provider.
-	Workers OptNilWorkerArray `json:"workers"`
 }
 
 // GetSchema returns the value of Schema.
@@ -7556,14 +8034,9 @@ func (s *SandboxProviderInstance) GetProjectId() string {
 	return s.ProjectId
 }
 
-// GetSandboxes returns the value of Sandboxes.
-func (s *SandboxProviderInstance) GetSandboxes() OptNilSandboxArray {
-	return s.Sandboxes
-}
-
-// GetStatus returns the value of Status.
-func (s *SandboxProviderInstance) GetStatus() OptSandboxProviderInstanceStatus {
-	return s.Status
+// GetPools returns the value of Pools.
+func (s *SandboxProviderInstance) GetPools() OptNilPoolArray {
+	return s.Pools
 }
 
 // GetType returns the value of Type.
@@ -7574,11 +8047,6 @@ func (s *SandboxProviderInstance) GetType() string {
 // GetUpdatedAt returns the value of UpdatedAt.
 func (s *SandboxProviderInstance) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
-}
-
-// GetWorkers returns the value of Workers.
-func (s *SandboxProviderInstance) GetWorkers() OptNilWorkerArray {
-	return s.Workers
 }
 
 // SetSchema sets the value of Schema.
@@ -7621,14 +8089,9 @@ func (s *SandboxProviderInstance) SetProjectId(val string) {
 	s.ProjectId = val
 }
 
-// SetSandboxes sets the value of Sandboxes.
-func (s *SandboxProviderInstance) SetSandboxes(val OptNilSandboxArray) {
-	s.Sandboxes = val
-}
-
-// SetStatus sets the value of Status.
-func (s *SandboxProviderInstance) SetStatus(val OptSandboxProviderInstanceStatus) {
-	s.Status = val
+// SetPools sets the value of Pools.
+func (s *SandboxProviderInstance) SetPools(val OptNilPoolArray) {
+	s.Pools = val
 }
 
 // SetType sets the value of Type.
@@ -7641,126 +8104,9 @@ func (s *SandboxProviderInstance) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
 }
 
-// SetWorkers sets the value of Workers.
-func (s *SandboxProviderInstance) SetWorkers(val OptNilWorkerArray) {
-	s.Workers = val
-}
-
 func (*SandboxProviderInstance) createSandboxProviderInstanceRes() {}
 func (*SandboxProviderInstance) getSandboxProviderInstanceRes()    {}
 func (*SandboxProviderInstance) updateSandboxProviderInstanceRes() {}
-
-// Ref: #/components/schemas/SandboxProviderInstanceStatus
-type SandboxProviderInstanceStatus struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Workers reporting degraded health.
-	DegradedWorkers int64 `json:"degradedWorkers"`
-	// Workers whose last lifecycle operation failed.
-	FailedWorkers int64 `json:"failedWorkers"`
-	// Provider-specific observed status details.
-	Details jx.Raw `json:"details"`
-	// Most recent worker error message, if any.
-	LastError OptString `json:"lastError"`
-	// Workers currently reporting ready.
-	ReadyWorkers int64 `json:"readyWorkers"`
-	// Workers currently accepting new sandboxes.
-	SchedulableWorkers int64 `json:"schedulableWorkers"`
-	// Total persisted workers for this provider.
-	WorkerCount int64 `json:"workerCount"`
-	// Observed worker details.
-	Workers OptNilProviderWorkerStatusArray `json:"workers"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *SandboxProviderInstanceStatus) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetDegradedWorkers returns the value of DegradedWorkers.
-func (s *SandboxProviderInstanceStatus) GetDegradedWorkers() int64 {
-	return s.DegradedWorkers
-}
-
-// GetFailedWorkers returns the value of FailedWorkers.
-func (s *SandboxProviderInstanceStatus) GetFailedWorkers() int64 {
-	return s.FailedWorkers
-}
-
-// GetDetails returns the value of Details.
-func (s *SandboxProviderInstanceStatus) GetDetails() jx.Raw {
-	return s.Details
-}
-
-// GetLastError returns the value of LastError.
-func (s *SandboxProviderInstanceStatus) GetLastError() OptString {
-	return s.LastError
-}
-
-// GetReadyWorkers returns the value of ReadyWorkers.
-func (s *SandboxProviderInstanceStatus) GetReadyWorkers() int64 {
-	return s.ReadyWorkers
-}
-
-// GetSchedulableWorkers returns the value of SchedulableWorkers.
-func (s *SandboxProviderInstanceStatus) GetSchedulableWorkers() int64 {
-	return s.SchedulableWorkers
-}
-
-// GetWorkerCount returns the value of WorkerCount.
-func (s *SandboxProviderInstanceStatus) GetWorkerCount() int64 {
-	return s.WorkerCount
-}
-
-// GetWorkers returns the value of Workers.
-func (s *SandboxProviderInstanceStatus) GetWorkers() OptNilProviderWorkerStatusArray {
-	return s.Workers
-}
-
-// SetSchema sets the value of Schema.
-func (s *SandboxProviderInstanceStatus) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetDegradedWorkers sets the value of DegradedWorkers.
-func (s *SandboxProviderInstanceStatus) SetDegradedWorkers(val int64) {
-	s.DegradedWorkers = val
-}
-
-// SetFailedWorkers sets the value of FailedWorkers.
-func (s *SandboxProviderInstanceStatus) SetFailedWorkers(val int64) {
-	s.FailedWorkers = val
-}
-
-// SetDetails sets the value of Details.
-func (s *SandboxProviderInstanceStatus) SetDetails(val jx.Raw) {
-	s.Details = val
-}
-
-// SetLastError sets the value of LastError.
-func (s *SandboxProviderInstanceStatus) SetLastError(val OptString) {
-	s.LastError = val
-}
-
-// SetReadyWorkers sets the value of ReadyWorkers.
-func (s *SandboxProviderInstanceStatus) SetReadyWorkers(val int64) {
-	s.ReadyWorkers = val
-}
-
-// SetSchedulableWorkers sets the value of SchedulableWorkers.
-func (s *SandboxProviderInstanceStatus) SetSchedulableWorkers(val int64) {
-	s.SchedulableWorkers = val
-}
-
-// SetWorkerCount sets the value of WorkerCount.
-func (s *SandboxProviderInstanceStatus) SetWorkerCount(val int64) {
-	s.WorkerCount = val
-}
-
-// SetWorkers sets the value of Workers.
-func (s *SandboxProviderInstanceStatus) SetWorkers(val OptNilProviderWorkerStatusArray) {
-	s.Workers = val
-}
 
 // Ref: #/components/schemas/SandboxRuntime
 type SandboxRuntime struct {
@@ -7789,8 +8135,6 @@ type SandboxRuntime struct {
 	RestartedGeneration int64 `json:"restartedGeneration"`
 	// Human-readable status detail.
 	StatusMessage OptString `json:"statusMessage"`
-	// Assigned worker ID, when scheduled through a worker-backed provider.
-	WorkerId OptString `json:"workerId"`
 }
 
 // GetActiveOperation returns the value of ActiveOperation.
@@ -7853,11 +8197,6 @@ func (s *SandboxRuntime) GetStatusMessage() OptString {
 	return s.StatusMessage
 }
 
-// GetWorkerId returns the value of WorkerId.
-func (s *SandboxRuntime) GetWorkerId() OptString {
-	return s.WorkerId
-}
-
 // SetActiveOperation sets the value of ActiveOperation.
 func (s *SandboxRuntime) SetActiveOperation(val OptSandboxRuntimeActiveOperation) {
 	s.ActiveOperation = val
@@ -7916,11 +8255,6 @@ func (s *SandboxRuntime) SetRestartedGeneration(val int64) {
 // SetStatusMessage sets the value of StatusMessage.
 func (s *SandboxRuntime) SetStatusMessage(val OptString) {
 	s.StatusMessage = val
-}
-
-// SetWorkerId sets the value of WorkerId.
-func (s *SandboxRuntime) SetWorkerId(val OptString) {
-	s.WorkerId = val
 }
 
 // Current queued or running operation.
@@ -9232,6 +9566,175 @@ func (s *UpdateHarnessConfigBody) SetName(val OptString) {
 	s.Name = val
 }
 
+// Ref: #/components/schemas/UpdatePoolBody
+type UpdatePoolBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Whether sandboxes in the pool mount the shared pool cache volume.
+	CacheEnabled OptBool `json:"cacheEnabled"`
+	// Total CPU capacity of the pool envelope in vCPUs.
+	CpuVcpus OptFloat64 `json:"cpuVcpus"`
+	// Total memory capacity of the pool envelope in bytes.
+	MemoryBytes OptInt64 `json:"memoryBytes"`
+	// Pool display name.
+	Name OptString `json:"name"`
+	// Total storage capacity of the pool envelope in bytes.
+	StorageBytes OptInt64 `json:"storageBytes"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *UpdatePoolBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetCacheEnabled returns the value of CacheEnabled.
+func (s *UpdatePoolBody) GetCacheEnabled() OptBool {
+	return s.CacheEnabled
+}
+
+// GetCpuVcpus returns the value of CpuVcpus.
+func (s *UpdatePoolBody) GetCpuVcpus() OptFloat64 {
+	return s.CpuVcpus
+}
+
+// GetMemoryBytes returns the value of MemoryBytes.
+func (s *UpdatePoolBody) GetMemoryBytes() OptInt64 {
+	return s.MemoryBytes
+}
+
+// GetName returns the value of Name.
+func (s *UpdatePoolBody) GetName() OptString {
+	return s.Name
+}
+
+// GetStorageBytes returns the value of StorageBytes.
+func (s *UpdatePoolBody) GetStorageBytes() OptInt64 {
+	return s.StorageBytes
+}
+
+// SetSchema sets the value of Schema.
+func (s *UpdatePoolBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetCacheEnabled sets the value of CacheEnabled.
+func (s *UpdatePoolBody) SetCacheEnabled(val OptBool) {
+	s.CacheEnabled = val
+}
+
+// SetCpuVcpus sets the value of CpuVcpus.
+func (s *UpdatePoolBody) SetCpuVcpus(val OptFloat64) {
+	s.CpuVcpus = val
+}
+
+// SetMemoryBytes sets the value of MemoryBytes.
+func (s *UpdatePoolBody) SetMemoryBytes(val OptInt64) {
+	s.MemoryBytes = val
+}
+
+// SetName sets the value of Name.
+func (s *UpdatePoolBody) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetStorageBytes sets the value of StorageBytes.
+func (s *UpdatePoolBody) SetStorageBytes(val OptInt64) {
+	s.StorageBytes = val
+}
+
+// Ref: #/components/schemas/UpdatePoolStatusBody
+type UpdatePoolStatusBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema                OptURI  `json:"$schema"`
+	AvailableCpuVcpus     float64 `json:"availableCpuVcpus"`
+	AvailableMemoryBytes  int64   `json:"availableMemoryBytes"`
+	AvailableStorageBytes int64   `json:"availableStorageBytes"`
+	Conditions            jx.Raw  `json:"conditions"`
+	Degraded              bool    `json:"degraded"`
+	Ready                 bool    `json:"ready"`
+	Schedulable           bool    `json:"schedulable"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *UpdatePoolStatusBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetAvailableCpuVcpus returns the value of AvailableCpuVcpus.
+func (s *UpdatePoolStatusBody) GetAvailableCpuVcpus() float64 {
+	return s.AvailableCpuVcpus
+}
+
+// GetAvailableMemoryBytes returns the value of AvailableMemoryBytes.
+func (s *UpdatePoolStatusBody) GetAvailableMemoryBytes() int64 {
+	return s.AvailableMemoryBytes
+}
+
+// GetAvailableStorageBytes returns the value of AvailableStorageBytes.
+func (s *UpdatePoolStatusBody) GetAvailableStorageBytes() int64 {
+	return s.AvailableStorageBytes
+}
+
+// GetConditions returns the value of Conditions.
+func (s *UpdatePoolStatusBody) GetConditions() jx.Raw {
+	return s.Conditions
+}
+
+// GetDegraded returns the value of Degraded.
+func (s *UpdatePoolStatusBody) GetDegraded() bool {
+	return s.Degraded
+}
+
+// GetReady returns the value of Ready.
+func (s *UpdatePoolStatusBody) GetReady() bool {
+	return s.Ready
+}
+
+// GetSchedulable returns the value of Schedulable.
+func (s *UpdatePoolStatusBody) GetSchedulable() bool {
+	return s.Schedulable
+}
+
+// SetSchema sets the value of Schema.
+func (s *UpdatePoolStatusBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetAvailableCpuVcpus sets the value of AvailableCpuVcpus.
+func (s *UpdatePoolStatusBody) SetAvailableCpuVcpus(val float64) {
+	s.AvailableCpuVcpus = val
+}
+
+// SetAvailableMemoryBytes sets the value of AvailableMemoryBytes.
+func (s *UpdatePoolStatusBody) SetAvailableMemoryBytes(val int64) {
+	s.AvailableMemoryBytes = val
+}
+
+// SetAvailableStorageBytes sets the value of AvailableStorageBytes.
+func (s *UpdatePoolStatusBody) SetAvailableStorageBytes(val int64) {
+	s.AvailableStorageBytes = val
+}
+
+// SetConditions sets the value of Conditions.
+func (s *UpdatePoolStatusBody) SetConditions(val jx.Raw) {
+	s.Conditions = val
+}
+
+// SetDegraded sets the value of Degraded.
+func (s *UpdatePoolStatusBody) SetDegraded(val bool) {
+	s.Degraded = val
+}
+
+// SetReady sets the value of Ready.
+func (s *UpdatePoolStatusBody) SetReady(val bool) {
+	s.Ready = val
+}
+
+// SetSchedulable sets the value of Schedulable.
+func (s *UpdatePoolStatusBody) SetSchedulable(val bool) {
+	s.Schedulable = val
+}
+
 // Ref: #/components/schemas/UpdateSandboxBody
 type UpdateSandboxBody struct {
 	// A URL to the JSON Schema for this object.
@@ -9375,99 +9878,6 @@ func (s *UpdateSecretBody) SetValue(val OptSecretValue) {
 	s.Value = val
 }
 
-// Ref: #/components/schemas/UpdateWorkerStatusBody
-type UpdateWorkerStatusBody struct {
-	// A URL to the JSON Schema for this object.
-	Schema                OptURI  `json:"$schema"`
-	AvailableCpuVcpus     float64 `json:"availableCpuVcpus"`
-	AvailableMemoryBytes  int64   `json:"availableMemoryBytes"`
-	AvailableStorageBytes int64   `json:"availableStorageBytes"`
-	Conditions            jx.Raw  `json:"conditions"`
-	Degraded              bool    `json:"degraded"`
-	Ready                 bool    `json:"ready"`
-	Schedulable           bool    `json:"schedulable"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *UpdateWorkerStatusBody) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetAvailableCpuVcpus returns the value of AvailableCpuVcpus.
-func (s *UpdateWorkerStatusBody) GetAvailableCpuVcpus() float64 {
-	return s.AvailableCpuVcpus
-}
-
-// GetAvailableMemoryBytes returns the value of AvailableMemoryBytes.
-func (s *UpdateWorkerStatusBody) GetAvailableMemoryBytes() int64 {
-	return s.AvailableMemoryBytes
-}
-
-// GetAvailableStorageBytes returns the value of AvailableStorageBytes.
-func (s *UpdateWorkerStatusBody) GetAvailableStorageBytes() int64 {
-	return s.AvailableStorageBytes
-}
-
-// GetConditions returns the value of Conditions.
-func (s *UpdateWorkerStatusBody) GetConditions() jx.Raw {
-	return s.Conditions
-}
-
-// GetDegraded returns the value of Degraded.
-func (s *UpdateWorkerStatusBody) GetDegraded() bool {
-	return s.Degraded
-}
-
-// GetReady returns the value of Ready.
-func (s *UpdateWorkerStatusBody) GetReady() bool {
-	return s.Ready
-}
-
-// GetSchedulable returns the value of Schedulable.
-func (s *UpdateWorkerStatusBody) GetSchedulable() bool {
-	return s.Schedulable
-}
-
-// SetSchema sets the value of Schema.
-func (s *UpdateWorkerStatusBody) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetAvailableCpuVcpus sets the value of AvailableCpuVcpus.
-func (s *UpdateWorkerStatusBody) SetAvailableCpuVcpus(val float64) {
-	s.AvailableCpuVcpus = val
-}
-
-// SetAvailableMemoryBytes sets the value of AvailableMemoryBytes.
-func (s *UpdateWorkerStatusBody) SetAvailableMemoryBytes(val int64) {
-	s.AvailableMemoryBytes = val
-}
-
-// SetAvailableStorageBytes sets the value of AvailableStorageBytes.
-func (s *UpdateWorkerStatusBody) SetAvailableStorageBytes(val int64) {
-	s.AvailableStorageBytes = val
-}
-
-// SetConditions sets the value of Conditions.
-func (s *UpdateWorkerStatusBody) SetConditions(val jx.Raw) {
-	s.Conditions = val
-}
-
-// SetDegraded sets the value of Degraded.
-func (s *UpdateWorkerStatusBody) SetDegraded(val bool) {
-	s.Degraded = val
-}
-
-// SetReady sets the value of Ready.
-func (s *UpdateWorkerStatusBody) SetReady(val bool) {
-	s.Ready = val
-}
-
-// SetSchedulable sets the value of Schedulable.
-func (s *UpdateWorkerStatusBody) SetSchedulable(val bool) {
-	s.Schedulable = val
-}
-
 // Ref: #/components/schemas/User
 type User struct {
 	// Avatar image URL.
@@ -9566,619 +9976,4 @@ func (s *User) SetSubject(val string) {
 // SetUpdatedAt sets the value of UpdatedAt.
 func (s *User) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
-}
-
-// Ref: #/components/schemas/Worker
-type Worker struct {
-	// A URL to the JSON Schema for this object.
-	Schema OptURI `json:"$schema"`
-	// Current queued or running operation.
-	ActiveOperation OptWorkerActiveOperation `json:"activeOperation"`
-	// Worker-reported available CPU capacity in vCPUs.
-	AvailableCpuVcpus float64 `json:"availableCpuVcpus"`
-	// Worker-reported available memory capacity in bytes.
-	AvailableMemoryBytes int64 `json:"availableMemoryBytes"`
-	// Worker-reported available storage capacity in bytes.
-	AvailableStorageBytes int64 `json:"availableStorageBytes"`
-	// Opaque worker-reported condition details for display.
-	Conditions jx.Raw `json:"conditions"`
-	// Creation timestamp.
-	CreatedAt time.Time `json:"createdAt"`
-	// Whether the worker should be used only as fallback capacity.
-	Degraded bool `json:"degraded"`
-	// Requested worker state.
-	DesiredState WorkerDesiredState `json:"desiredState"`
-	// Latest error message.
-	ErrorMessage OptString `json:"errorMessage"`
-	// Latest desired-state generation.
-	Generation int64 `json:"generation"`
-	// Stable worker ID.
-	ID string `json:"id"`
-	// Worker identity.
-	Identity string `json:"identity"`
-	// Worker key type.
-	KeyType OptString `json:"keyType"`
-	// Status of the most recent operation.
-	LastOperationStatus WorkerLastOperationStatus `json:"lastOperationStatus"`
-	// Last heartbeat timestamp.
-	LastSeenAt OptDateTime `json:"lastSeenAt"`
-	// Latest generation fully observed by reconciliation.
-	ObservedGeneration int64 `json:"observedGeneration"`
-	// Observed lifecycle phase.
-	Phase WorkerPhase `json:"phase"`
-	// Project ID.
-	ProjectId string `json:"projectId"`
-	// Sandbox provider instance.
-	ProviderInstance OptSandboxProviderInstance `json:"providerInstance"`
-	// Sandbox provider instance ID.
-	ProviderInstanceId string `json:"providerInstanceId"`
-	// Worker public key.
-	PublicKey OptString `json:"publicKey"`
-	// When phase last changed to its current value. Anchors how long the resource has been in a phase,
-	// for timeouts that must not be reset by unrelated reconciles.
-	PhaseChangedAt OptDateTime `json:"phaseChangedAt"`
-	// Whether the worker is alive and healthy.
-	Ready bool `json:"ready"`
-	// Registration timestamp.
-	RegisteredAt OptDateTime `json:"registeredAt"`
-	// Revocation timestamp.
-	RevokedAt OptDateTime `json:"revokedAt"`
-	// Whether the worker is willing to pull new work.
-	Schedulable bool `json:"schedulable"`
-	// Human-readable status detail.
-	StatusMessage OptString `json:"statusMessage"`
-	// Last update timestamp.
-	UpdatedAt time.Time `json:"updatedAt"`
-}
-
-// GetSchema returns the value of Schema.
-func (s *Worker) GetSchema() OptURI {
-	return s.Schema
-}
-
-// GetActiveOperation returns the value of ActiveOperation.
-func (s *Worker) GetActiveOperation() OptWorkerActiveOperation {
-	return s.ActiveOperation
-}
-
-// GetAvailableCpuVcpus returns the value of AvailableCpuVcpus.
-func (s *Worker) GetAvailableCpuVcpus() float64 {
-	return s.AvailableCpuVcpus
-}
-
-// GetAvailableMemoryBytes returns the value of AvailableMemoryBytes.
-func (s *Worker) GetAvailableMemoryBytes() int64 {
-	return s.AvailableMemoryBytes
-}
-
-// GetAvailableStorageBytes returns the value of AvailableStorageBytes.
-func (s *Worker) GetAvailableStorageBytes() int64 {
-	return s.AvailableStorageBytes
-}
-
-// GetConditions returns the value of Conditions.
-func (s *Worker) GetConditions() jx.Raw {
-	return s.Conditions
-}
-
-// GetCreatedAt returns the value of CreatedAt.
-func (s *Worker) GetCreatedAt() time.Time {
-	return s.CreatedAt
-}
-
-// GetDegraded returns the value of Degraded.
-func (s *Worker) GetDegraded() bool {
-	return s.Degraded
-}
-
-// GetDesiredState returns the value of DesiredState.
-func (s *Worker) GetDesiredState() WorkerDesiredState {
-	return s.DesiredState
-}
-
-// GetErrorMessage returns the value of ErrorMessage.
-func (s *Worker) GetErrorMessage() OptString {
-	return s.ErrorMessage
-}
-
-// GetGeneration returns the value of Generation.
-func (s *Worker) GetGeneration() int64 {
-	return s.Generation
-}
-
-// GetID returns the value of ID.
-func (s *Worker) GetID() string {
-	return s.ID
-}
-
-// GetIdentity returns the value of Identity.
-func (s *Worker) GetIdentity() string {
-	return s.Identity
-}
-
-// GetKeyType returns the value of KeyType.
-func (s *Worker) GetKeyType() OptString {
-	return s.KeyType
-}
-
-// GetLastOperationStatus returns the value of LastOperationStatus.
-func (s *Worker) GetLastOperationStatus() WorkerLastOperationStatus {
-	return s.LastOperationStatus
-}
-
-// GetLastSeenAt returns the value of LastSeenAt.
-func (s *Worker) GetLastSeenAt() OptDateTime {
-	return s.LastSeenAt
-}
-
-// GetObservedGeneration returns the value of ObservedGeneration.
-func (s *Worker) GetObservedGeneration() int64 {
-	return s.ObservedGeneration
-}
-
-// GetPhase returns the value of Phase.
-func (s *Worker) GetPhase() WorkerPhase {
-	return s.Phase
-}
-
-// GetProjectId returns the value of ProjectId.
-func (s *Worker) GetProjectId() string {
-	return s.ProjectId
-}
-
-// GetProviderInstance returns the value of ProviderInstance.
-func (s *Worker) GetProviderInstance() OptSandboxProviderInstance {
-	return s.ProviderInstance
-}
-
-// GetProviderInstanceId returns the value of ProviderInstanceId.
-func (s *Worker) GetProviderInstanceId() string {
-	return s.ProviderInstanceId
-}
-
-// GetPublicKey returns the value of PublicKey.
-func (s *Worker) GetPublicKey() OptString {
-	return s.PublicKey
-}
-
-// GetPhaseChangedAt returns the value of PhaseChangedAt.
-func (s *Worker) GetPhaseChangedAt() OptDateTime {
-	return s.PhaseChangedAt
-}
-
-// GetReady returns the value of Ready.
-func (s *Worker) GetReady() bool {
-	return s.Ready
-}
-
-// GetRegisteredAt returns the value of RegisteredAt.
-func (s *Worker) GetRegisteredAt() OptDateTime {
-	return s.RegisteredAt
-}
-
-// GetRevokedAt returns the value of RevokedAt.
-func (s *Worker) GetRevokedAt() OptDateTime {
-	return s.RevokedAt
-}
-
-// GetSchedulable returns the value of Schedulable.
-func (s *Worker) GetSchedulable() bool {
-	return s.Schedulable
-}
-
-// GetStatusMessage returns the value of StatusMessage.
-func (s *Worker) GetStatusMessage() OptString {
-	return s.StatusMessage
-}
-
-// GetUpdatedAt returns the value of UpdatedAt.
-func (s *Worker) GetUpdatedAt() time.Time {
-	return s.UpdatedAt
-}
-
-// SetSchema sets the value of Schema.
-func (s *Worker) SetSchema(val OptURI) {
-	s.Schema = val
-}
-
-// SetActiveOperation sets the value of ActiveOperation.
-func (s *Worker) SetActiveOperation(val OptWorkerActiveOperation) {
-	s.ActiveOperation = val
-}
-
-// SetAvailableCpuVcpus sets the value of AvailableCpuVcpus.
-func (s *Worker) SetAvailableCpuVcpus(val float64) {
-	s.AvailableCpuVcpus = val
-}
-
-// SetAvailableMemoryBytes sets the value of AvailableMemoryBytes.
-func (s *Worker) SetAvailableMemoryBytes(val int64) {
-	s.AvailableMemoryBytes = val
-}
-
-// SetAvailableStorageBytes sets the value of AvailableStorageBytes.
-func (s *Worker) SetAvailableStorageBytes(val int64) {
-	s.AvailableStorageBytes = val
-}
-
-// SetConditions sets the value of Conditions.
-func (s *Worker) SetConditions(val jx.Raw) {
-	s.Conditions = val
-}
-
-// SetCreatedAt sets the value of CreatedAt.
-func (s *Worker) SetCreatedAt(val time.Time) {
-	s.CreatedAt = val
-}
-
-// SetDegraded sets the value of Degraded.
-func (s *Worker) SetDegraded(val bool) {
-	s.Degraded = val
-}
-
-// SetDesiredState sets the value of DesiredState.
-func (s *Worker) SetDesiredState(val WorkerDesiredState) {
-	s.DesiredState = val
-}
-
-// SetErrorMessage sets the value of ErrorMessage.
-func (s *Worker) SetErrorMessage(val OptString) {
-	s.ErrorMessage = val
-}
-
-// SetGeneration sets the value of Generation.
-func (s *Worker) SetGeneration(val int64) {
-	s.Generation = val
-}
-
-// SetID sets the value of ID.
-func (s *Worker) SetID(val string) {
-	s.ID = val
-}
-
-// SetIdentity sets the value of Identity.
-func (s *Worker) SetIdentity(val string) {
-	s.Identity = val
-}
-
-// SetKeyType sets the value of KeyType.
-func (s *Worker) SetKeyType(val OptString) {
-	s.KeyType = val
-}
-
-// SetLastOperationStatus sets the value of LastOperationStatus.
-func (s *Worker) SetLastOperationStatus(val WorkerLastOperationStatus) {
-	s.LastOperationStatus = val
-}
-
-// SetLastSeenAt sets the value of LastSeenAt.
-func (s *Worker) SetLastSeenAt(val OptDateTime) {
-	s.LastSeenAt = val
-}
-
-// SetObservedGeneration sets the value of ObservedGeneration.
-func (s *Worker) SetObservedGeneration(val int64) {
-	s.ObservedGeneration = val
-}
-
-// SetPhase sets the value of Phase.
-func (s *Worker) SetPhase(val WorkerPhase) {
-	s.Phase = val
-}
-
-// SetProjectId sets the value of ProjectId.
-func (s *Worker) SetProjectId(val string) {
-	s.ProjectId = val
-}
-
-// SetProviderInstance sets the value of ProviderInstance.
-func (s *Worker) SetProviderInstance(val OptSandboxProviderInstance) {
-	s.ProviderInstance = val
-}
-
-// SetProviderInstanceId sets the value of ProviderInstanceId.
-func (s *Worker) SetProviderInstanceId(val string) {
-	s.ProviderInstanceId = val
-}
-
-// SetPublicKey sets the value of PublicKey.
-func (s *Worker) SetPublicKey(val OptString) {
-	s.PublicKey = val
-}
-
-// SetPhaseChangedAt sets the value of PhaseChangedAt.
-func (s *Worker) SetPhaseChangedAt(val OptDateTime) {
-	s.PhaseChangedAt = val
-}
-
-// SetReady sets the value of Ready.
-func (s *Worker) SetReady(val bool) {
-	s.Ready = val
-}
-
-// SetRegisteredAt sets the value of RegisteredAt.
-func (s *Worker) SetRegisteredAt(val OptDateTime) {
-	s.RegisteredAt = val
-}
-
-// SetRevokedAt sets the value of RevokedAt.
-func (s *Worker) SetRevokedAt(val OptDateTime) {
-	s.RevokedAt = val
-}
-
-// SetSchedulable sets the value of Schedulable.
-func (s *Worker) SetSchedulable(val bool) {
-	s.Schedulable = val
-}
-
-// SetStatusMessage sets the value of StatusMessage.
-func (s *Worker) SetStatusMessage(val OptString) {
-	s.StatusMessage = val
-}
-
-// SetUpdatedAt sets the value of UpdatedAt.
-func (s *Worker) SetUpdatedAt(val time.Time) {
-	s.UpdatedAt = val
-}
-
-func (*Worker) reconcileWorkerRes()    {}
-func (*Worker) updateWorkerStatusRes() {}
-
-// Current queued or running operation.
-type WorkerActiveOperation string
-
-const (
-	WorkerActiveOperationCreate  WorkerActiveOperation = "create"
-	WorkerActiveOperationStart   WorkerActiveOperation = "start"
-	WorkerActiveOperationStop    WorkerActiveOperation = "stop"
-	WorkerActiveOperationRestart WorkerActiveOperation = "restart"
-	WorkerActiveOperationDelete  WorkerActiveOperation = "delete"
-)
-
-// AllValues returns all WorkerActiveOperation values.
-func (WorkerActiveOperation) AllValues() []WorkerActiveOperation {
-	return []WorkerActiveOperation{
-		WorkerActiveOperationCreate,
-		WorkerActiveOperationStart,
-		WorkerActiveOperationStop,
-		WorkerActiveOperationRestart,
-		WorkerActiveOperationDelete,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s WorkerActiveOperation) MarshalText() ([]byte, error) {
-	switch s {
-	case WorkerActiveOperationCreate:
-		return []byte(s), nil
-	case WorkerActiveOperationStart:
-		return []byte(s), nil
-	case WorkerActiveOperationStop:
-		return []byte(s), nil
-	case WorkerActiveOperationRestart:
-		return []byte(s), nil
-	case WorkerActiveOperationDelete:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *WorkerActiveOperation) UnmarshalText(data []byte) error {
-	switch WorkerActiveOperation(data) {
-	case WorkerActiveOperationCreate:
-		*s = WorkerActiveOperationCreate
-		return nil
-	case WorkerActiveOperationStart:
-		*s = WorkerActiveOperationStart
-		return nil
-	case WorkerActiveOperationStop:
-		*s = WorkerActiveOperationStop
-		return nil
-	case WorkerActiveOperationRestart:
-		*s = WorkerActiveOperationRestart
-		return nil
-	case WorkerActiveOperationDelete:
-		*s = WorkerActiveOperationDelete
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Requested worker state.
-type WorkerDesiredState string
-
-const (
-	WorkerDesiredStateActive  WorkerDesiredState = "active"
-	WorkerDesiredStateDrained WorkerDesiredState = "drained"
-	WorkerDesiredStateDeleted WorkerDesiredState = "deleted"
-)
-
-// AllValues returns all WorkerDesiredState values.
-func (WorkerDesiredState) AllValues() []WorkerDesiredState {
-	return []WorkerDesiredState{
-		WorkerDesiredStateActive,
-		WorkerDesiredStateDrained,
-		WorkerDesiredStateDeleted,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s WorkerDesiredState) MarshalText() ([]byte, error) {
-	switch s {
-	case WorkerDesiredStateActive:
-		return []byte(s), nil
-	case WorkerDesiredStateDrained:
-		return []byte(s), nil
-	case WorkerDesiredStateDeleted:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *WorkerDesiredState) UnmarshalText(data []byte) error {
-	switch WorkerDesiredState(data) {
-	case WorkerDesiredStateActive:
-		*s = WorkerDesiredStateActive
-		return nil
-	case WorkerDesiredStateDrained:
-		*s = WorkerDesiredStateDrained
-		return nil
-	case WorkerDesiredStateDeleted:
-		*s = WorkerDesiredStateDeleted
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Status of the most recent operation.
-type WorkerLastOperationStatus string
-
-const (
-	WorkerLastOperationStatusPending WorkerLastOperationStatus = "pending"
-	WorkerLastOperationStatusRunning WorkerLastOperationStatus = "running"
-	WorkerLastOperationStatusSuccess WorkerLastOperationStatus = "success"
-	WorkerLastOperationStatusFailed  WorkerLastOperationStatus = "failed"
-)
-
-// AllValues returns all WorkerLastOperationStatus values.
-func (WorkerLastOperationStatus) AllValues() []WorkerLastOperationStatus {
-	return []WorkerLastOperationStatus{
-		WorkerLastOperationStatusPending,
-		WorkerLastOperationStatusRunning,
-		WorkerLastOperationStatusSuccess,
-		WorkerLastOperationStatusFailed,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s WorkerLastOperationStatus) MarshalText() ([]byte, error) {
-	switch s {
-	case WorkerLastOperationStatusPending:
-		return []byte(s), nil
-	case WorkerLastOperationStatusRunning:
-		return []byte(s), nil
-	case WorkerLastOperationStatusSuccess:
-		return []byte(s), nil
-	case WorkerLastOperationStatusFailed:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *WorkerLastOperationStatus) UnmarshalText(data []byte) error {
-	switch WorkerLastOperationStatus(data) {
-	case WorkerLastOperationStatusPending:
-		*s = WorkerLastOperationStatusPending
-		return nil
-	case WorkerLastOperationStatusRunning:
-		*s = WorkerLastOperationStatusRunning
-		return nil
-	case WorkerLastOperationStatusSuccess:
-		*s = WorkerLastOperationStatusSuccess
-		return nil
-	case WorkerLastOperationStatusFailed:
-		*s = WorkerLastOperationStatusFailed
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
-}
-
-// Observed lifecycle phase.
-type WorkerPhase string
-
-const (
-	WorkerPhasePending     WorkerPhase = "pending"
-	WorkerPhaseLaunching   WorkerPhase = "launching"
-	WorkerPhaseRegistering WorkerPhase = "registering"
-	WorkerPhaseActive      WorkerPhase = "active"
-	WorkerPhaseDraining    WorkerPhase = "draining"
-	WorkerPhaseDeleting    WorkerPhase = "deleting"
-	WorkerPhaseOffline     WorkerPhase = "offline"
-	WorkerPhaseDeleted     WorkerPhase = "deleted"
-	WorkerPhaseFailed      WorkerPhase = "failed"
-)
-
-// AllValues returns all WorkerPhase values.
-func (WorkerPhase) AllValues() []WorkerPhase {
-	return []WorkerPhase{
-		WorkerPhasePending,
-		WorkerPhaseLaunching,
-		WorkerPhaseRegistering,
-		WorkerPhaseActive,
-		WorkerPhaseDraining,
-		WorkerPhaseDeleting,
-		WorkerPhaseOffline,
-		WorkerPhaseDeleted,
-		WorkerPhaseFailed,
-	}
-}
-
-// MarshalText implements encoding.TextMarshaler.
-func (s WorkerPhase) MarshalText() ([]byte, error) {
-	switch s {
-	case WorkerPhasePending:
-		return []byte(s), nil
-	case WorkerPhaseLaunching:
-		return []byte(s), nil
-	case WorkerPhaseRegistering:
-		return []byte(s), nil
-	case WorkerPhaseActive:
-		return []byte(s), nil
-	case WorkerPhaseDraining:
-		return []byte(s), nil
-	case WorkerPhaseDeleting:
-		return []byte(s), nil
-	case WorkerPhaseOffline:
-		return []byte(s), nil
-	case WorkerPhaseDeleted:
-		return []byte(s), nil
-	case WorkerPhaseFailed:
-		return []byte(s), nil
-	default:
-		return nil, errors.Errorf("invalid value: %q", s)
-	}
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler.
-func (s *WorkerPhase) UnmarshalText(data []byte) error {
-	switch WorkerPhase(data) {
-	case WorkerPhasePending:
-		*s = WorkerPhasePending
-		return nil
-	case WorkerPhaseLaunching:
-		*s = WorkerPhaseLaunching
-		return nil
-	case WorkerPhaseRegistering:
-		*s = WorkerPhaseRegistering
-		return nil
-	case WorkerPhaseActive:
-		*s = WorkerPhaseActive
-		return nil
-	case WorkerPhaseDraining:
-		*s = WorkerPhaseDraining
-		return nil
-	case WorkerPhaseDeleting:
-		*s = WorkerPhaseDeleting
-		return nil
-	case WorkerPhaseOffline:
-		*s = WorkerPhaseOffline
-		return nil
-	case WorkerPhaseDeleted:
-		*s = WorkerPhaseDeleted
-		return nil
-	case WorkerPhaseFailed:
-		*s = WorkerPhaseFailed
-		return nil
-	default:
-		return errors.Errorf("invalid value: %q", data)
-	}
 }

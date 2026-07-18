@@ -33,13 +33,13 @@ func TestReportSandboxRemovedRecordsStoppedIntent(t *testing.T) {
 	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
-	worker := &model.Worker{ID: "worker-1", ProjectID: project.ID, ProviderInstanceID: provider.ID}
-	if err := appStore.CreateWorker(ctx, worker); err != nil {
-		t.Fatalf("create worker: %v", err)
+	pool := &model.Pool{ID: "pool-1", ProjectID: project.ID, Name: "pool-1", ProviderInstanceID: provider.ID}
+	if err := appStore.CreatePool(ctx, pool); err != nil {
+		t.Fatalf("create pool: %v", err)
 	}
 	sandbox := &model.Sandbox{
 		ID: "sandbox-1", ProjectID: project.ID, CreatedByUserID: "user-1", Name: "Sandbox",
-		ProviderInstanceID: &provider.ID, WorkerID: &worker.ID,
+		PoolID: pool.ID,
 		ResourceLifecycle: model.ResourceLifecycle{
 			DesiredState: model.SandboxDesiredStateRunning, Phase: model.SandboxPhaseRunning,
 			LastOperationStatus: model.SandboxOperationStatusSuccess, Generation: 3, ObservedGeneration: 3,
@@ -50,7 +50,7 @@ func TestReportSandboxRemovedRecordsStoppedIntent(t *testing.T) {
 	}
 	service := NewService(appStore, nil, "user-1", engine)
 
-	if err := service.ReportSandboxRemoved(ctx, worker.ID, sandbox.ID); err != nil {
+	if err := service.ReportSandboxRemoved(ctx, pool.ID, sandbox.ID); err != nil {
 		t.Fatalf("report sandbox removed: %v", err)
 	}
 	updated, err := appStore.GetSandbox(ctx, project.ID, sandbox.ID)
@@ -64,7 +64,7 @@ func TestReportSandboxRemovedRecordsStoppedIntent(t *testing.T) {
 		t.Fatalf("operation status = %q, want pending", updated.LastOperationStatus)
 	}
 
-	if err := service.ReportSandboxRemoved(ctx, worker.ID, sandbox.ID); err != nil {
+	if err := service.ReportSandboxRemoved(ctx, pool.ID, sandbox.ID); err != nil {
 		t.Fatalf("duplicate report: %v", err)
 	}
 	duplicate, err := appStore.GetSandbox(ctx, project.ID, sandbox.ID)

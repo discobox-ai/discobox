@@ -20,14 +20,17 @@ func TestReconcileSandboxNoCapacityFailsFast(t *testing.T) {
 	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
-	providerID := provider.ID
+	pool := &model.Pool{ID: "pool-1", ProjectID: "project-1", Name: "pool-1", ProviderInstanceID: provider.ID}
+	if err := appStore.CreatePool(ctx, pool); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
 	sb := &model.Sandbox{
-		ID:                 "sandbox-1",
-		ProjectID:          "project-1",
-		CreatedByUserID:    "user-1",
-		ProviderInstanceID: &providerID,
-		Name:               "alpha",
-		ResourceLifecycle:  model.NewResourceLifecycle(model.SandboxCreateOperation),
+		ID:                "sandbox-1",
+		ProjectID:         "project-1",
+		PoolID:            pool.ID,
+		CreatedByUserID:   "user-1",
+		Name:              "alpha",
+		ResourceLifecycle: model.NewResourceLifecycle(model.SandboxCreateOperation),
 	}
 	sb.IncrementGeneration()
 	if err := appStore.CreateSandbox(ctx, sb); err != nil {
@@ -177,7 +180,6 @@ func TestReconcileSandboxMarksDeleteFailure(t *testing.T) {
 func TestReconcileSandboxSoftDeletesAfterRuntimeRemoval(t *testing.T) {
 	ctx := context.Background()
 	appStore := newExecutorTestStore(t)
-	workerID := "worker-1"
 	sb := createSandboxForReconcile(t, appStore, model.ResourceLifecycle{
 		DesiredState:        model.SandboxDesiredStateDeleted,
 		Phase:               model.SandboxPhaseDeleting,
@@ -186,10 +188,6 @@ func TestReconcileSandboxSoftDeletesAfterRuntimeRemoval(t *testing.T) {
 		Generation:          2,
 		ObservedGeneration:  1,
 	})
-	sb.WorkerID = &workerID
-	if err := appStore.UpdateSandbox(ctx, sb); err != nil {
-		t.Fatalf("assign sandbox worker: %v", err)
-	}
 
 	reconciler := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(failingSandboxProvider{}))
 	if err := reconciler.ReconcileSandbox(ctx, sb); err != nil {
@@ -199,7 +197,7 @@ func TestReconcileSandboxSoftDeletesAfterRuntimeRemoval(t *testing.T) {
 	if _, err := appStore.GetSandbox(ctx, sb.ProjectID, sb.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("get deleted sandbox = %v, want not found", err)
 	}
-	assigned, err := appStore.CountSandboxesForWorker(ctx, workerID)
+	assigned, err := appStore.CountSandboxesForPool(ctx, sb.ProjectID, sb.PoolID)
 	if err != nil {
 		t.Fatalf("count assigned sandboxes: %v", err)
 	}
@@ -261,14 +259,17 @@ func createSandboxForReconcile(t *testing.T, appStore *store.Store, lifecycle mo
 	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
-	providerID := provider.ID
+	pool := &model.Pool{ID: "pool-1", ProjectID: "project-1", Name: "pool-1", ProviderInstanceID: provider.ID}
+	if err := appStore.CreatePool(ctx, pool); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
 	sb := &model.Sandbox{
-		ID:                 "sandbox-1",
-		ProjectID:          "project-1",
-		CreatedByUserID:    "user-1",
-		ProviderInstanceID: &providerID,
-		Name:               "alpha",
-		ResourceLifecycle:  lifecycle,
+		ID:                "sandbox-1",
+		ProjectID:         "project-1",
+		PoolID:            pool.ID,
+		CreatedByUserID:   "user-1",
+		Name:              "alpha",
+		ResourceLifecycle: lifecycle,
 	}
 	if err := appStore.CreateSandbox(ctx, sb); err != nil {
 		t.Fatalf("create sandbox: %v", err)

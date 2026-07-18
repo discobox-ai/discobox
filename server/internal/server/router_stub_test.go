@@ -22,6 +22,7 @@ type routerTestServices struct {
 	project        model.Project
 	harnessConfigs map[string]model.HarnessConfig
 	providers      map[string]model.SandboxProviderInstance
+	pools          map[string]model.Pool
 	sandboxes      map[string]model.Sandbox
 	sandboxLease   *services.HTTPClientLease
 	sandboxScopes  []string
@@ -148,7 +149,7 @@ func (s *routerTestServices) CreateSandbox(_ context.Context, projectID string, 
 		ID:                   id.NewString(id.PrefixProject),
 		ProjectID:            s.project.ID,
 		CreatedByUserID:      s.user.ID,
-		ProviderInstanceID:   services.OptStringPtr(input.ProviderInstanceId),
+		PoolID:               input.PoolId.Or(""),
 		HarnessConfigID:      harnessConfigID,
 		Name:                 config.Name,
 		Description:          services.OptStringPtr(config.Description),
@@ -525,10 +526,78 @@ func (s *routerTestServices) CreateSandboxProviderInstance(_ context.Context, pr
 	now := time.Now().UTC()
 	provider := model.SandboxProviderInstance{ID: id.NewString(id.PrefixSandboxProvider), ProjectID: projectID, Type: input.Type, Name: input.Name, Config: services.RawMessage(input.Config), CreatedAt: now, UpdatedAt: now}
 	s.providers[provider.ID] = provider
-	if s.project.DefaultSandboxProviderID == "" {
-		s.project.DefaultSandboxProviderID = provider.ID
-	}
 	return &provider, nil
+}
+
+func (s *routerTestServices) ListPools(_ context.Context, projectID string) ([]model.Pool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	pools := make([]model.Pool, 0, len(s.pools))
+	for _, pool := range s.pools {
+		pools = append(pools, pool)
+	}
+	return pools, nil
+}
+
+func (s *routerTestServices) CreatePool(_ context.Context, projectID string, input services.CreatePoolBody) (*model.Pool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	now := time.Now().UTC()
+	pool := model.Pool{ID: id.NewString(id.PrefixPool), ProjectID: projectID, Name: input.Name, ProviderInstanceID: input.ProviderInstanceId, CacheEnabled: input.CacheEnabled.Or(true), CreatedAt: now, UpdatedAt: now}
+	if s.pools == nil {
+		s.pools = map[string]model.Pool{}
+	}
+	s.pools[pool.ID] = pool
+	return &pool, nil
+}
+
+func (s *routerTestServices) GetPool(_ context.Context, projectID, poolID string) (*model.Pool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	pool, ok := s.pools[poolID]
+	if !ok {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "pool not found")
+	}
+	return &pool, nil
+}
+
+func (s *routerTestServices) UpdatePool(_ context.Context, projectID, poolID string, input services.UpdatePoolBody) (*model.Pool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	pool, ok := s.pools[poolID]
+	if !ok {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "pool not found")
+	}
+	if name, ok := input.Name.Get(); ok {
+		pool.Name = name
+	}
+	s.pools[poolID] = pool
+	return &pool, nil
+}
+
+func (s *routerTestServices) DeletePool(_ context.Context, projectID, poolID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	if _, ok := s.pools[poolID]; !ok {
+		return apperrors.NewStatusError(http.StatusNotFound, "pool not found")
+	}
+	delete(s.pools, poolID)
+	return nil
 }
 
 func (s *routerTestServices) GetSandboxProviderInstance(_ context.Context, projectID, providerID string) (*model.SandboxProviderInstance, error) {
@@ -581,34 +650,20 @@ func (s *routerTestServices) DeleteSandboxProviderInstance(_ context.Context, pr
 	return nil
 }
 
-func (s *routerTestServices) ListWorkers(_ context.Context, projectID, providerID string) ([]model.Worker, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if projectID != s.project.ID {
-		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
-	}
-	if providerID != "" {
-		if _, ok := s.providers[providerID]; !ok {
-			return nil, apperrors.NewStatusError(http.StatusNotFound, "provider instance not found")
-		}
-	}
-	return nil, nil
+func (s *routerTestServices) ReconcilePool(_ context.Context, projectID, poolID string) (*model.Pool, error) {
+	return s.GetPool(context.Background(), projectID, poolID)
 }
 
-func (s *routerTestServices) RegisterWorker(context.Context, services.RegisterWorkerBody) (*services.RegisterWorkerResponseBody, error) {
-	return &services.RegisterWorkerResponseBody{}, nil
+func (s *routerTestServices) RegisterPool(context.Context, services.RegisterPoolBody) (*services.RegisterPoolResponseBody, error) {
+	return &services.RegisterPoolResponseBody{}, nil
 }
 
-func (s *routerTestServices) UpdateWorkerStatus(context.Context, string, services.UpdateWorkerStatusBody) (*model.Worker, error) {
-	return &model.Worker{}, nil
+func (s *routerTestServices) UpdatePoolStatus(context.Context, string, services.UpdatePoolStatusBody) (*model.Pool, error) {
+	return &model.Pool{}, nil
 }
 
-func (s *routerTestServices) ReportWorkerSandboxRemoved(context.Context, string, services.ReportWorkerSandboxRemovedBody) error {
+func (s *routerTestServices) ReportPoolSandboxRemoved(context.Context, string, services.ReportPoolSandboxRemovedBody) error {
 	return nil
-}
-
-func (s *routerTestServices) ReconcileWorker(context.Context, string, string) (*model.Worker, error) {
-	return &model.Worker{}, nil
 }
 
 func (s *routerTestServices) beginSandboxOperation(projectID, sandboxID string, spec model.OperationSpec) (*model.Sandbox, error) {

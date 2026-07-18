@@ -98,8 +98,8 @@ func (a *App) newProviderCreateCommand() *cobra.Command {
 	helpFlag := &providerCreateHelpFlag{}
 	cmd := &cobra.Command{
 		Use:   "create --type PROVIDER",
-		Short: "Create a provider instance and bootstrap its warm worker pool",
-		Long: `Create a provider instance and bootstrap its warm worker pool.
+		Short: "Create a provider instance",
+		Long: `Create a provider instance. Pools bind to it to get runtime capacity.
 
 Provider-specific flags are loaded from the server catalog only when this
 subcommand runs. Use --help=<provider> to show provider-specific options.

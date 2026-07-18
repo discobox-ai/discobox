@@ -16,10 +16,12 @@ import (
 func TestGetSandboxWithGeneration(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
 
 	sandbox := &model.Sandbox{
 		ID:              "sandbox-1",
 		ProjectID:       "project-1",
+		PoolID:          "pool-1",
 		CreatedByUserID: "user-1",
 		Name:            "alpha",
 	}
@@ -60,11 +62,13 @@ func TestGetSandboxWithGeneration(t *testing.T) {
 func TestListSandboxesFiltersBySourceRoot(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
 
 	newSandbox := func(id, sourceRoot string) *model.Sandbox {
 		sandbox := &model.Sandbox{
 			ID:              id,
 			ProjectID:       "project-1",
+			PoolID:          "pool-1",
 			CreatedByUserID: "user-1",
 			Name:            id,
 		}
@@ -104,11 +108,13 @@ func TestListSandboxesFiltersBySourceRoot(t *testing.T) {
 func TestListSandboxesFiltersByOriginKey(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
 
 	newSandbox := func(id, hostID, projectPath string) {
 		sandbox := &model.Sandbox{
 			ID:              id,
 			ProjectID:       "project-1",
+			PoolID:          "pool-1",
 			CreatedByUserID: "user-1",
 			Name:            id,
 		}
@@ -150,6 +156,7 @@ func TestListSandboxesFiltersByOriginKey(t *testing.T) {
 func TestCreateSandboxPersistsOrigin(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
 
 	want := &model.Origin{
 		HostID:      "host_aaaaaaaaaaaaaaaa",
@@ -161,6 +168,7 @@ func TestCreateSandboxPersistsOrigin(t *testing.T) {
 	if err := s.CreateSandbox(ctx, &model.Sandbox{
 		ID:              "sandbox-1",
 		ProjectID:       "project-1",
+		PoolID:          "pool-1",
 		CreatedByUserID: "user-1",
 		Name:            "sandbox-1",
 		Origin:          want,
@@ -189,6 +197,7 @@ func sandboxIDs(sandboxes []model.Sandbox) []string {
 func TestGetResourcesByShortIDPrefix(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
 	project := &model.Project{ID: "proj_abc12345000000p1", OwnerUserID: "user-1", Name: "Project", Slug: "project-short-id"}
 	if err := s.UpsertProject(ctx, project); err != nil {
 		t.Fatalf("create project: %v", err)
@@ -200,13 +209,9 @@ func TestGetResourcesByShortIDPrefix(t *testing.T) {
 	if err := s.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
-	sandbox := &model.Sandbox{ID: "sbx_abc12345000000p3", ProjectID: project.ID, CreatedByUserID: "user-1", Name: "sandbox"}
+	sandbox := &model.Sandbox{ID: "sbx_abc12345000000p3", ProjectID: project.ID, PoolID: "pool-1", CreatedByUserID: "user-1", Name: "sandbox"}
 	if err := s.CreateSandbox(ctx, sandbox); err != nil {
 		t.Fatalf("create sandbox: %v", err)
-	}
-	worker := &model.Worker{ID: "wrk_abc12345000000p4", ProjectID: project.ID, ProviderInstanceID: provider.ID}
-	if err := s.CreateWorker(ctx, worker); err != nil {
-		t.Fatalf("create worker: %v", err)
 	}
 	gotProject, err := s.GetProject(ctx, "proj_abc12345")
 	if err != nil || gotProject.ID != project.ID {
@@ -220,11 +225,11 @@ func TestGetResourcesByShortIDPrefix(t *testing.T) {
 	if err != nil || gotSandbox.ID != sandbox.ID {
 		t.Fatalf("short sandbox = %#v err=%v", gotSandbox, err)
 	}
-	gotWorker, err := s.GetWorker(ctx, "wrk_abc12345")
-	if err != nil || gotWorker.ID != worker.ID {
-		t.Fatalf("short worker = %#v err=%v", gotWorker, err)
+	gotPool, err := s.GetPoolByID(ctx, "pool-1")
+	if err != nil || gotPool.ID != "pool-1" {
+		t.Fatalf("pool by id = %#v err=%v", gotPool, err)
 	}
-	ambiguous := &model.Sandbox{ID: "sbx_abc12345000000p5", ProjectID: project.ID, CreatedByUserID: "user-1", Name: "ambiguous"}
+	ambiguous := &model.Sandbox{ID: "sbx_abc12345000000p5", ProjectID: project.ID, PoolID: "pool-1", CreatedByUserID: "user-1", Name: "ambiguous"}
 	if err := s.CreateSandbox(ctx, ambiguous); err != nil {
 		t.Fatalf("create ambiguous sandbox: %v", err)
 	}
@@ -244,10 +249,12 @@ func TestSandboxSecretStateEncryptedAtRest(t *testing.T) {
 		t.Fatalf("new sealer: %v", err)
 	}
 	s, db := newTestStoreWithDB(t, sealer)
+	createTestPool(t, s, "project-1", "pool-1")
 	plaintext := []byte("provider secret state")
 	sandbox := &model.Sandbox{
 		ID:              "sandbox-secret",
 		ProjectID:       "project-1",
+		PoolID:          "pool-1",
 		CreatedByUserID: "user-1",
 		Name:            "secret",
 		SecretState:     plaintext,

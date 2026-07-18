@@ -177,9 +177,6 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 	if sandbox.StatusMessage != nil {
 		runtime["statusMessage"] = *sandbox.StatusMessage
 	}
-	if sandbox.WorkerID != nil {
-		runtime["workerId"] = *sandbox.WorkerID
-	}
 	fields := map[string]any{
 		"id":              sandbox.ID,
 		"projectId":       sandbox.ProjectID,
@@ -192,14 +189,14 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 	if sandbox.Origin != nil {
 		fields["origin"] = sandbox.Origin
 	}
-	if sandbox.ProviderInstanceID != nil {
-		fields["providerInstanceId"] = *sandbox.ProviderInstanceID
+	if sandbox.PoolID != "" {
+		fields["poolId"] = sandbox.PoolID
 	}
 	if sandbox.CreatedBy != nil {
 		fields["createdBy"] = sandbox.CreatedBy
 	}
-	if sandbox.ProviderInstance != nil {
-		fields["providerInstance"] = sandbox.ProviderInstance
+	if sandbox.Pool != nil {
+		fields["pool"] = sandbox.Pool
 	}
 	if sandbox.HarnessConfig != nil {
 		fields["harnessConfig"] = sandbox.HarnessConfig

@@ -44,6 +44,10 @@ func (a *App) completeProviders(cmd *cobra.Command, _ []string, toComplete strin
 	return a.completeProjectResource(cmd, toComplete, a.listProviderCompletions)
 }
 
+func (a *App) completePools(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return a.completeProjectResource(cmd, toComplete, a.listPoolCompletions)
+}
+
 func (a *App) completeHarnessConfigs(cmd *cobra.Command, _ []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	return a.completeProjectResource(cmd, toComplete, a.listHarnessConfigCompletions)
 }
@@ -136,6 +140,22 @@ func (a *App) listProviderCompletions(ctx context.Context, client *apiclientgen.
 	completions := make([]string, 0, len(body.GetProviders()))
 	for _, provider := range body.GetProviders() {
 		completions = append(completions, completionItem(provider.ID, completionDescription(provider.Name, provider.Type)))
+	}
+	return completions, nil
+}
+
+func (a *App) listPoolCompletions(ctx context.Context, client *apiclientgen.Client, projectID string) ([]string, error) {
+	res, err := client.ListPools(ctx, apiclientgen.ListPoolsParams{ProjectId: projectID})
+	if err != nil {
+		return nil, err
+	}
+	body, err := expectResponse[apimodel.ListPoolsBody](res)
+	if err != nil {
+		return nil, err
+	}
+	completions := make([]string, 0, len(body.GetPools()))
+	for _, pool := range body.GetPools() {
+		completions = append(completions, completionItem(pool.ID, completionDescription(pool.Name, pool.ProviderInstanceId)))
 	}
 	return completions, nil
 }

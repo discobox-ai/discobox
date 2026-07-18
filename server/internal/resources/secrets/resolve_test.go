@@ -30,22 +30,32 @@ func newResolveFixture(t *testing.T) (*resourcesecrets.Service, *store.Store) {
 		t.Fatalf("create project: %v", err)
 	}
 	st := store.New(db.Write, db.Read)
+	if err := st.CreateSandboxProviderInstance(ctx, &model.SandboxProviderInstance{
+		ID: "prov-1", ProjectID: "project-1", Type: "test", Name: "test",
+	}); err != nil {
+		t.Fatalf("create provider instance: %v", err)
+	}
+	if err := st.CreatePool(ctx, &model.Pool{
+		ID: "pool-1", ProjectID: "project-1", Name: "pool-1", ProviderInstanceID: "prov-1",
+	}); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
 	return resourcesecrets.NewService(st), st
 }
 
-func createSandbox(t *testing.T, st *store.Store, sandboxID, workerID string) {
+func createSandbox(t *testing.T, st *store.Store, sandboxID, poolID string) {
 	t.Helper()
-	createSandboxWithHarness(t, st, sandboxID, workerID, "")
+	createSandboxWithHarness(t, st, sandboxID, poolID, "")
 }
 
-func createSandboxWithHarness(t *testing.T, st *store.Store, sandboxID, workerID, harnessConfigID string) {
+func createSandboxWithHarness(t *testing.T, st *store.Store, sandboxID, poolID, harnessConfigID string) {
 	t.Helper()
 	sb := &model.Sandbox{
 		ID:              sandboxID,
 		ProjectID:       "project-1",
+		PoolID:          poolID,
 		CreatedByUserID: "user-1",
 		Name:            sandboxID,
-		WorkerID:        &workerID,
 	}
 	if harnessConfigID != "" {
 		sb.HarnessConfigID = &harnessConfigID
@@ -101,10 +111,10 @@ func TestResolveSandboxSecretProjectGrantReturnsValue(t *testing.T) {
 
 	sec := mustSecret(t, st, "prj", "real-token")
 	mustGrant(t, st, sec.ID, model.SecretGrantScopeProject, "project-1")
-	createSandbox(t, st, "sb-1", "worker-1")
+	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-A")
 
-	res, err := svc.ResolveSandboxSecret(ctx, "worker-1", "sb-1", "SENTINEL-A", "api.example.com")
+	res, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", "SENTINEL-A", "api.example.com")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -136,10 +146,10 @@ func TestResolveSandboxSecretHarnessConfigGrantReturnsValue(t *testing.T) {
 		t.Fatalf("create harness config: %v", err)
 	}
 	mustGrant(t, st, sec.ID, model.SecretGrantScopeHarnessConfig, "ac-1")
-	createSandboxWithHarness(t, st, "sb-1", "worker-1", "ac-1")
+	createSandboxWithHarness(t, st, "sb-1", "pool-1", "ac-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-C")
 
-	res, err := svc.ResolveSandboxSecret(ctx, "worker-1", "sb-1", "SENTINEL-C", "api.example.com")
+	res, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", "SENTINEL-C", "api.example.com")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -153,10 +163,10 @@ func TestResolveSandboxSecretPendingWithoutGrant(t *testing.T) {
 	svc, st := newResolveFixture(t)
 
 	sec := mustSecret(t, st, "manual", "real-token")
-	createSandbox(t, st, "sb-1", "worker-1")
+	createSandbox(t, st, "sb-1", "pool-1")
 	mustAssign(t, st, "sb-1", sec.ID, "SENTINEL-B")
 
-	res, err := svc.ResolveSandboxSecret(ctx, "worker-1", "sb-1", "SENTINEL-B", "api.example.com")
+	res, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", "SENTINEL-B", "api.example.com")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -169,7 +179,7 @@ func TestResolveSandboxSecretPendingWithoutGrant(t *testing.T) {
 
 	// A second resolve for the same host reuses the pending request rather than
 	// piling up duplicates.
-	if _, err := svc.ResolveSandboxSecret(ctx, "worker-1", "sb-1", "SENTINEL-B", "api.example.com"); err != nil {
+	if _, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", "SENTINEL-B", "api.example.com"); err != nil {
 		t.Fatalf("resolve again: %v", err)
 	}
 	pending, err := st.ListSecretRequests(ctx, "project-1", model.SecretRequestStatusPending)
@@ -190,10 +200,10 @@ func TestResolveSandboxSecretSandboxGrantDoesNotLeakToOtherSandbox(t *testing.T)
 
 	sec := mustSecret(t, st, "iso", "real-token")
 	mustGrant(t, st, sec.ID, model.SecretGrantScopeSandbox, "sb-1")
-	createSandbox(t, st, "sb-2", "worker-1")
+	createSandbox(t, st, "sb-2", "pool-1")
 	mustAssign(t, st, "sb-2", sec.ID, "SENTINEL-D")
 
-	res, err := svc.ResolveSandboxSecret(ctx, "worker-1", "sb-2", "SENTINEL-D", "api.example.com")
+	res, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-2", "SENTINEL-D", "api.example.com")
 	if err != nil {
 		t.Fatalf("resolve: %v", err)
 	}
@@ -206,7 +216,7 @@ func TestResolveSandboxSecretUnknownSentinel(t *testing.T) {
 	ctx := context.Background()
 	svc, _ := newResolveFixture(t)
 
-	_, err := svc.ResolveSandboxSecret(ctx, "worker-1", "sb-1", "NOPE", "api.example.com")
+	_, err := svc.ResolveSandboxSecret(ctx, "pool-1", "sb-1", "NOPE", "api.example.com")
 	if !errors.Is(err, apperrors.ErrNotFound) && !isNotFoundStatus(err) {
 		t.Fatalf("err = %v, want not found", err)
 	}

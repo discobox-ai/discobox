@@ -8,11 +8,11 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
+	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
 	services "github.com/obot-platform/discobox/server/internal/services"
 )
 
-var sandboxHTTPProxyScopes = []string{workeragentauth.ScopeSandboxHTTP}
+var sandboxHTTPProxyScopes = []string{poolagentauth.ScopeSandboxHTTP}
 
 func registerSandboxHTTPRoutes(router chi.Router, service services.SandboxService) {
 	router.Handle("/projects/{projectId}/sandboxes/{sandboxId}/http/{port}", sandboxHTTPProxyHandler(service))
@@ -43,17 +43,17 @@ func sandboxHTTPProxyHandler(service services.SandboxService) http.Handler {
 			return
 		}
 		defer lease.Release()
-		if sandboxModel == nil || sandboxModel.WorkerID == nil || strings.TrimSpace(*sandboxModel.WorkerID) == "" {
-			http.Error(w, "sandbox worker is not assigned", http.StatusConflict)
+		if sandboxModel == nil || strings.TrimSpace(sandboxModel.PoolID) == "" {
+			http.Error(w, "sandbox pool is not assigned", http.StatusConflict)
 			return
 		}
 
-		target, err := sandboxHTTPProxyTargetURL(lease.BaseURL, sandboxModel.ProjectID, strings.TrimSpace(*sandboxModel.WorkerID), sandboxModel.ID, port, chi.URLParam(r, "*"))
+		target, err := sandboxHTTPProxyTargetURL(lease.BaseURL, sandboxModel.ProjectID, strings.TrimSpace(sandboxModel.PoolID), sandboxModel.ID, port, chi.URLParam(r, "*"))
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		proxy := sandboxWorkerReverseProxy(target, lease)
+		proxy := sandboxPoolReverseProxy(target, lease)
 		proxy.ServeHTTP(w, r)
 	})
 }
@@ -66,9 +66,9 @@ func parseSandboxHTTPPort(value string) (int, bool) {
 	return port, true
 }
 
-func sandboxHTTPProxyTargetURL(baseURL, projectID, workerID, sandboxID string, port int, suffix string) (*url.URL, error) {
+func sandboxHTTPProxyTargetURL(baseURL, projectID, poolID, sandboxID string, port int, suffix string) (*url.URL, error) {
 	if strings.TrimSpace(baseURL) == "" {
-		baseURL = defaultSandboxWorkerBaseURL
+		baseURL = defaultSandboxPoolBaseURL
 	}
 	target, err := url.Parse(strings.TrimRight(baseURL, "/"))
 	if err != nil {
@@ -81,9 +81,9 @@ func sandboxHTTPProxyTargetURL(baseURL, projectID, workerID, sandboxID string, p
 		suffix = "/" + suffix
 	}
 	target.Path = fmt.Sprintf(
-		"/api/project/%s/worker/%s/sandboxes/%s/http/%d%s",
+		"/api/project/%s/pool/%s/sandboxes/%s/http/%d%s",
 		url.PathEscape(projectID),
-		url.PathEscape(workerID),
+		url.PathEscape(poolID),
 		url.PathEscape(sandboxID),
 		port,
 		suffix,

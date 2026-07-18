@@ -6,18 +6,18 @@ import (
 	"errors"
 	"time"
 
+	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
-	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	eventbroker "github.com/obot-platform/discobox/server/internal/events"
 	"github.com/obot-platform/discobox/server/internal/reconcile"
 	resourceevents "github.com/obot-platform/discobox/server/internal/resources/events"
 	"github.com/obot-platform/discobox/server/internal/resources/harnessconfigs"
 	resourcejobs "github.com/obot-platform/discobox/server/internal/resources/jobs"
+	"github.com/obot-platform/discobox/server/internal/resources/pools"
 	"github.com/obot-platform/discobox/server/internal/resources/projects"
 	"github.com/obot-platform/discobox/server/internal/resources/providers"
 	sandboxes "github.com/obot-platform/discobox/server/internal/resources/sandboxes"
 	"github.com/obot-platform/discobox/server/internal/resources/secrets"
-	workers "github.com/obot-platform/discobox/server/internal/resources/workers"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
@@ -34,7 +34,7 @@ type Service struct {
 	services.HarnessConfigService
 	*sandboxes.Service
 	services.SandboxProviderInstanceService
-	services.WorkerService
+	services.PoolService
 	services.JobService
 	services.ProjectEventService
 	services.SecretService
@@ -44,7 +44,7 @@ type Service struct {
 	jobManagerOptions JobManagerOptions
 	jobs              *resourcejobs.Service
 	providerService   *providers.Service
-	workerManager     *workers.ControlPlane
+	poolControlPlane  *pools.ControlPlane
 	harnessConfigs    *harnessconfigs.Service
 }
 
@@ -58,10 +58,12 @@ func New(store *store.Store, engine *reconcile.Engine, jobManagerOptions JobMana
 		b = broker[0]
 	}
 	manager := sandbox.NewProviderManager()
-	workerManager := workers.NewControlPlane(store, engine)
-	providerregistry.RegisterBuiltInSandboxProviderFactories(manager, workerManager)
-	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, engine, workerManager)
-	providerService := providers.NewService(store, sandboxService, workerManager)
+	poolControlPlane := pools.NewControlPlane(store, engine)
+	providerregistry.RegisterBuiltInSandboxProviderFactories(manager, poolControlPlane)
+	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, engine, poolControlPlane)
+	providerService := providers.NewService(store, sandboxService, poolControlPlane)
+	poolService := pools.NewService(store, poolControlPlane)
+	poolService.SetSandboxRemovalReporter(sandboxService)
 	jobsService := resourcejobs.NewService(store, engine)
 	harnessConfigService := harnessconfigs.NewService(store)
 	// The configure flow runs an ephemeral sandbox and watches it through the
@@ -73,7 +75,7 @@ func New(store *store.Store, engine *reconcile.Engine, jobManagerOptions JobMana
 		HarnessConfigService:           harnessConfigService,
 		Service:                        sandboxService,
 		SandboxProviderInstanceService: providerService,
-		WorkerService:                  workers.NewService(store, workerManager, sandboxService),
+		PoolService:                    poolService,
 		JobService:                     jobsService,
 		ProjectEventService:            resourceevents.NewService(store, b),
 		SecretService:                  secrets.NewService(store),
@@ -84,7 +86,7 @@ func New(store *store.Store, engine *reconcile.Engine, jobManagerOptions JobMana
 		store:             store,
 		engine:            engine,
 		jobManagerOptions: jobManagerOptions,
-		workerManager:     workerManager,
+		poolControlPlane:  poolControlPlane,
 		harnessConfigs:    harnessConfigService,
 	}
 }
@@ -107,8 +109,8 @@ func (s *Service) SetHostID(hostID string) {
 	s.Service.SetHostID(hostID)
 }
 
-func (s *Service) SetWorkerAgentAuthManager(manager *workeragentauth.Manager) {
-	s.workerManager.SetWorkerAgentAuthManager(manager)
+func (s *Service) SetWorkerAgentAuthManager(manager *poolagentauth.Manager) {
+	s.poolControlPlane.SetAgentAuthManager(manager)
 }
 
 func (s *Service) Start(ctx context.Context) error {
@@ -121,7 +123,7 @@ func (s *Service) Start(ctx context.Context) error {
 	if err := s.engine.Start(ctx); err != nil {
 		return err
 	}
-	s.workerManager.StartDeletedWorkerCleanup(ctx)
+	s.poolControlPlane.StartBootstrapTokenCleanup(ctx)
 	if err := s.EnsureExistingSandboxProviderInstances(ctx); err != nil {
 		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 		defer cancel()
@@ -153,7 +155,7 @@ func (s *Service) registerReconcilers() error {
 	if err := s.engine.Register(harnessconfigs.HarnessConfigResourceType, s.harnessConfigs); err != nil {
 		return err
 	}
-	return s.workerManager.RegisterJobs(s.SandboxProviderManager())
+	return s.poolControlPlane.RegisterJobs(s.SandboxProviderManager())
 }
 
 func (s *Service) SandboxProviderManager() *sandbox.ProviderManager {

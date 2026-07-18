@@ -114,11 +114,13 @@ type CreateOptions struct {
 	AgentServerURL        string
 	OAuthRedirectBase     string
 	Resources             ResourceConfig
-	ProviderInstanceID    string
-	WorkerID              string
-	CPUVCPUs              float64
-	MemoryBytes           int64
-	StorageBytes          int64
+	PoolID                string
+	// PoolCacheEnabled mounts the pool's shared cache volume into the sandbox
+	// at the well-known cache path.
+	PoolCacheEnabled bool
+	CPUVCPUs         float64
+	MemoryBytes      int64
+	StorageBytes     int64
 }
 
 // UpdateOptions carries the mutable subset of CreateOptions that can be applied
@@ -138,20 +140,15 @@ type ResolvedHarnessConfig struct {
 	Files []model.HarnessConfigFile
 }
 
-// WorkerProviderReconciler reconciles worker-provider state for a provider
-// instance, such as maintaining a worker pool.
-type WorkerProviderReconciler interface {
-	ReconcileWorkerProvider(ctx context.Context, manager WorkerManager, project *model.Project, provider *model.SandboxProviderInstance) error
-}
-
-// WorkerRuntimeReconciler reconciles provider-owned runtime state for a worker
-// resource. The caller owns worker lifecycle persistence and job semantics.
-// RepairWorker is only for preserving repair of active assigned workers; delete
-// reconciliation must use RemoveWorker and must not fall back to repair.
-type WorkerRuntimeReconciler interface {
-	ReconcileWorker(ctx context.Context, manager WorkerManager, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error
-	RepairWorker(ctx context.Context, manager WorkerManager, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, reason string) error
-	RemoveWorker(ctx context.Context, manager WorkerManager, project *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker) error
+// PoolRuntimeReconciler reconciles provider-owned runtime state for a Pool:
+// the pool is its own runtime host, so these converge one container/VM/pod.
+// The caller owns pool lifecycle persistence and job semantics. RepairPool is
+// only for preserving in-place repair of pools with assigned sandboxes;
+// delete reconciliation must use RemovePool and must not fall back to repair.
+type PoolRuntimeReconciler interface {
+	ReconcilePool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error
+	RepairPool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, reason string) error
+	RemovePool(ctx context.Context, manager PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool) error
 }
 
 // ResourceConfig defines runtime resource limits.

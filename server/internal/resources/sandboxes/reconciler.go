@@ -339,7 +339,6 @@ func (r *SandboxReconciler) startSandbox(ctx context.Context, sb *model.Sandbox)
 	}
 	if runtimeSandbox != nil {
 		setRuntimeState(sb, runtimeSandbox)
-		setWorkerID(sb, runtimeSandbox)
 	}
 	now := time.Now().UTC()
 	sb.LastActiveAt = &now
@@ -365,7 +364,6 @@ func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.
 	}
 	if runtimeSandbox != nil {
 		setRuntimeState(sb, runtimeSandbox)
-		setWorkerID(sb, runtimeSandbox)
 	}
 	return secretState, nil
 }
@@ -421,7 +419,6 @@ func (r *SandboxReconciler) deleteSandbox(ctx context.Context, sb *model.Sandbox
 	sb.SecretState = state
 	if len(state) == 0 {
 		sb.RuntimeState = nil
-		sb.WorkerID = nil
 	}
 	return nil
 }
@@ -514,11 +511,9 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 		},
 	}
 	opts.Image = ImageRef{Name: sb.Image}
-	if sb.ProviderInstanceID != nil {
-		opts.ProviderInstanceID = *sb.ProviderInstanceID
-	}
-	if sb.WorkerID != nil {
-		opts.WorkerID = *sb.WorkerID
+	opts.PoolID = sb.PoolID
+	if sb.Pool != nil {
+		opts.PoolCacheEnabled = sb.Pool.CacheEnabled
 	}
 	opts.Name = sb.Name
 	opts.Description = sb.Description
@@ -558,15 +553,6 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 		}
 	}
 	return opts
-}
-
-func setWorkerID(sb *model.Sandbox, runtimeSandbox *Sandbox) {
-	if runtimeSandbox == nil || runtimeSandbox.Metadata == nil {
-		return
-	}
-	if workerID := runtimeSandbox.Metadata["worker_id"]; workerID != "" {
-		sb.WorkerID = &workerID
-	}
 }
 
 func setRuntimeState(sb *model.Sandbox, runtimeSandbox *Sandbox) {

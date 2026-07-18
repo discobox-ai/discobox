@@ -292,7 +292,7 @@ func newTestReconcileEngine(t *testing.T, db *gorm.DB) *reconcile.Engine {
 	return engine
 }
 
-func TestCreateSandboxRequiresResolvedProviderInstance(t *testing.T) {
+func TestCreateSandboxRequiresResolvedPool(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.New(database.Config{DSN: ":memory:"})
 	if err != nil {
@@ -329,8 +329,8 @@ func TestCreateSandboxRequiresResolvedProviderInstance(t *testing.T) {
 	if !errors.As(err, &statusErr) {
 		t.Fatalf("create sandbox error = %v, want status error", err)
 	}
-	if statusErr.Status != http.StatusBadRequest || statusErr.Message != "sandbox provider instance is required" {
-		t.Fatalf("status error = %d %q, want 400 provider required", statusErr.Status, statusErr.Message)
+	if statusErr.Status != http.StatusBadRequest || statusErr.Message != "sandbox pool is required" {
+		t.Fatalf("status error = %d %q, want 400 pool required", statusErr.Status, statusErr.Message)
 	}
 }
 
@@ -471,13 +471,22 @@ func installDefaultSandboxProviderInstance(ctx context.Context, t *testing.T, ap
 	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatalf("create test provider: %v", err)
 	}
+	pool := &model.Pool{
+		ID:                 service.DefaultPoolID,
+		ProjectID:          service.DefaultProjectID,
+		Name:               "Default",
+		ProviderInstanceID: provider.ID,
+	}
+	if err := appStore.CreatePool(ctx, pool); err != nil {
+		t.Fatalf("create test pool: %v", err)
+	}
 	project, err := appStore.GetProject(ctx, service.DefaultProjectID)
 	if err != nil {
 		t.Fatalf("get default project: %v", err)
 	}
-	project.DefaultSandboxProviderID = provider.ID
+	project.DefaultPoolID = pool.ID
 	if err := appStore.UpsertProject(ctx, project); err != nil {
-		t.Fatalf("set default provider: %v", err)
+		t.Fatalf("set default pool: %v", err)
 	}
 }
 

@@ -41,21 +41,21 @@ func TestSandboxPositionalCompletionListsSandboxes(t *testing.T) {
 	assertCompletionValues(t, completions, "sandbox-1")
 }
 
-func TestProviderFlagCompletionListsProviders(t *testing.T) {
+func TestPoolFlagCompletionListsPools(t *testing.T) {
 	server := completionServer(t, map[string]string{
-		"/projects/project-1/providers": `{"providers":[{"id":"provider-1","projectId":"project-1","type":"docker","name":"Docker","builtIn":false,"disabled":false,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`,
+		"/projects/project-1/pools": `{"pools":[{"id":"pool-1","projectId":"project-1","name":"Default","providerInstanceId":"provider-1","builtIn":true,"cacheEnabled":true,"cpuVcpus":0,"memoryBytes":0,"storageBytes":0,"ready":true,"schedulable":true,"degraded":false,"availableCpuVcpus":0,"availableMemoryBytes":0,"availableStorageBytes":0,"desiredState":"active","phase":"active","lastOperationStatus":"success","generation":1,"observedGeneration":1,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"}]}`,
 	})
 	root := NewRootCommand()
 	setFlag(t, root, "server", server.URL)
 	setFlag(t, root, "project", "project-1")
 	cmd := findCommand(t, root, "box", "sandbox", "create")
 
-	completions, directive := flagCompletions(t, cmd, "provider-instance", "")
+	completions, directive := flagCompletions(t, cmd, "pool", "")
 
 	if directive&cobra.ShellCompDirectiveNoFileComp == 0 {
 		t.Fatalf("directive = %v, want no file completion", directive)
 	}
-	assertCompletionValues(t, completions, "provider-1")
+	assertCompletionValues(t, completions, "pool-1")
 }
 
 func TestTerminalCompletionUsesSandboxScope(t *testing.T) {

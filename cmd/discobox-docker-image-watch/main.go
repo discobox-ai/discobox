@@ -110,7 +110,7 @@ func findRepoRoot() (string, error) {
 	}
 	for dir := wd; ; dir = filepath.Dir(dir) {
 		if _, err := os.Stat(filepath.Join(dir, "Taskfile.yml")); err == nil {
-			if _, err := os.Stat(filepath.Join(dir, "worker-agent", "go.mod")); err == nil {
+			if _, err := os.Stat(filepath.Join(dir, "pool-agent", "go.mod")); err == nil {
 				return dir, nil
 			}
 		}
@@ -122,7 +122,7 @@ func findRepoRoot() (string, error) {
 }
 
 func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error) {
-	workerRoot := filepath.Join(repoRoot, "worker-agent")
+	workerRoot := filepath.Join(repoRoot, "pool-agent")
 	workerFiles, err := workerAgentFiles(ctx, workerRoot)
 	if err != nil {
 		return nil, err
@@ -173,13 +173,13 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 	}
 	specs := []imageSpec{
 		{
-			name:         "worker-agent",
-			baseImage:    "discobox-worker-agent:local",
-			devPrefix:    "discobox-worker-agent:dev-",
-			envImageKey:  "DISCOBOX_DOCKER_WORKER_IMAGE",
-			envDigestKey: "DISCOBOX_DOCKER_WORKER_IMAGE_DIGEST",
+			name:         "pool-agent",
+			baseImage:    "discobox-pool-agent:local",
+			devPrefix:    "discobox-pool-agent:dev-",
+			envImageKey:  "DISCOBOX_DOCKER_POOL_IMAGE",
+			envDigestKey: "DISCOBOX_DOCKER_POOL_IMAGE_DIGEST",
 			buildDir:     repoRoot,
-			buildArgs:    []string{"build", "-f", "worker-agent/Dockerfile", "-t", "discobox-worker-agent:local", "."},
+			buildArgs:    []string{"build", "-f", "pool-agent/Dockerfile", "-t", "discobox-pool-agent:local", "."},
 			files:        sortedFiles(workerSeen),
 		},
 		{
@@ -256,11 +256,11 @@ func copyFiles(in map[string]struct{}) map[string]struct{} {
 }
 
 func workerAgentFiles(ctx context.Context, root string) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "go", "list", "-deps", "-f", "{{if not .Standard}}{{.Dir}}{{end}}", "./cmd/discobox-worker-agent")
+	cmd := exec.CommandContext(ctx, "go", "list", "-deps", "-f", "{{if not .Standard}}{{.Dir}}{{end}}", "./cmd/discobox-pool-agent")
 	cmd.Dir = root
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("go list worker-agent deps: %w", err)
+		return nil, fmt.Errorf("go list pool-agent deps: %w", err)
 	}
 	seen := map[string]struct{}{}
 	scanner := bufio.NewScanner(bytes.NewReader(out))

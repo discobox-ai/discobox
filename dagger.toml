@@ -18,7 +18,7 @@ source = "github.com/dagger/go"
 includeExtraFiles = "**"
 
 # Debian-based image so test containers have git (several hooks/ and
-# worker-agent/ tests shell out to it); the default alpine base does not.
+# pool-agent/ tests shell out to it); the default alpine base does not.
 base = "golang:1.26"
 
 [modules.dagger-dang-sdk]

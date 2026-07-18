@@ -19,6 +19,7 @@ import (
 const (
 	DefaultProjectID                 = "prj_default"
 	DefaultProviderInstanceID        = "prv_default"
+	DefaultPoolID                    = "pool_default"
 	defaultProviderInstalledStateKey = "defaults.default_sandbox_provider.installed"
 )
 
@@ -89,20 +90,25 @@ func (s *Service) InitializeDefaults(ctx context.Context, userID string, options
 func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context) error {
 	defaultProvider := defaultSandboxProviderForOS()
 	if _, err := s.store.GetServerState(ctx, defaultProviderInstalledStateKey); err == nil {
-		return s.ensureDefaultSandboxProviderConfig(ctx, defaultProvider)
+		if err := s.ensureDefaultSandboxProviderConfig(ctx, defaultProvider); err != nil {
+			return err
+		}
+		return ensureDefaultPool(ctx, s.store, defaultProvider)
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
 
 	return s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
 		if _, err := txStore.GetServerState(ctx, defaultProviderInstalledStateKey); err == nil {
-			return ensureDefaultSandboxProviderConfig(ctx, txStore, defaultProvider)
+			if err := ensureDefaultSandboxProviderConfig(ctx, txStore, defaultProvider); err != nil {
+				return err
+			}
+			return ensureDefaultPool(ctx, txStore, defaultProvider)
 		} else if !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
 
-		project, err := txStore.GetProject(ctx, DefaultProjectID)
-		if err != nil {
+		if _, err := txStore.GetProject(ctx, DefaultProjectID); err != nil {
 			return err
 		}
 		if _, err := txStore.GetSandboxProviderInstance(ctx, DefaultProjectID, defaultProvider.ID); err != nil {
@@ -118,11 +124,8 @@ func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context) err
 				}
 			}
 		}
-		if project.DefaultSandboxProviderID == "" {
-			project.DefaultSandboxProviderID = defaultProvider.ID
-			if err := txStore.UpsertProject(ctx, project); err != nil {
-				return err
-			}
+		if err := ensureDefaultPool(ctx, txStore, defaultProvider); err != nil {
+			return err
 		}
 
 		value, err := json.Marshal(map[string]any{
@@ -139,6 +142,39 @@ func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context) err
 			Value: value,
 		})
 	})
+}
+
+// ensureDefaultPool seeds the project's default pool against the built-in
+// provider instance and points the project's DefaultPoolID at it, so `disco
+// run` works with zero configuration.
+func ensureDefaultPool(ctx context.Context, appStore *store.Store, defaultProvider *model.SandboxProviderInstance) error {
+	if _, err := appStore.GetPool(ctx, DefaultProjectID, DefaultPoolID); err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		pool := &model.Pool{
+			ID:                 DefaultPoolID,
+			ProjectID:          DefaultProjectID,
+			Name:               "Default",
+			ProviderInstanceID: defaultProvider.ID,
+			BuiltIn:            true,
+			CacheEnabled:       true,
+		}
+		if err := appStore.CreatePool(ctx, pool); err != nil {
+			return err
+		}
+	}
+	project, err := appStore.GetProject(ctx, DefaultProjectID)
+	if err != nil {
+		return err
+	}
+	if project.DefaultPoolID == "" {
+		project.DefaultPoolID = DefaultPoolID
+		if err := appStore.UpsertProject(ctx, project); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Service) ensureDefaultSandboxProviderConfig(ctx context.Context, defaultProvider *model.SandboxProviderInstance) error {
@@ -206,12 +242,9 @@ func defaultSandboxProviderForOS() *model.SandboxProviderInstance {
 func defaultDockerProviderConfig() json.RawMessage {
 	systemd := true
 	config := map[string]any{
-		"bindDockerSocket":  "/var/run/docker.sock",
-		"agentPort":         providerdocker.DefaultAgentPort(),
-		"systemd":           systemd,
-		"minWorkers":        1,
-		"maxWorkers":        1,
-		"minHealthyWorkers": 1,
+		"bindDockerSocket": "/var/run/docker.sock",
+		"agentPort":        providerdocker.DefaultAgentPort(),
+		"systemd":          systemd,
 	}
 	if hostMounts := defaultDockerHostMounts(); len(hostMounts) > 0 {
 		config["hostMounts"] = hostMounts

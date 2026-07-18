@@ -22,7 +22,7 @@ import (
 // so a value the OpenAPI schema omits is only rejected when the CLIENT decodes
 // the response — far from the model change that introduced it. That is exactly
 // how "deleting" reached the worker phase enum: added to the model, missing from
-// server.yaml, invisible until `discobox worker ls` failed to decode.
+// server.yaml, invisible until `discobox pool ls` failed to decode.
 //
 // This test makes the two lists fail CI the moment they diverge, in either
 // direction. When it fails: a value in the model but not the schema means the
@@ -34,9 +34,9 @@ func TestModelEnumsMatchAPISchema(t *testing.T) {
 		model []string
 		api   []string
 	}{
-		{"worker phase", model.WorkerPhases, values(apigen.WorkerPhase("").AllValues())},
-		{"worker desired state", model.WorkerDesiredStates, values(apigen.WorkerDesiredState("").AllValues())},
-		{"worker operation status", model.OperationStatuses, values(apigen.WorkerLastOperationStatus("").AllValues())},
+		{"pool phase", model.PoolPhases, values(apigen.PoolPhase("").AllValues())},
+		{"pool desired state", model.PoolDesiredStates, values(apigen.PoolDesiredState("").AllValues())},
+		{"pool operation status", model.OperationStatuses, values(apigen.PoolLastOperationStatus("").AllValues())},
 		{"sandbox phase", model.SandboxPhases, values(apigen.SandboxRuntimePhase("").AllValues())},
 		{"sandbox desired state", model.SandboxDesiredStates, values(apigen.SandboxRuntimeDesiredState("").AllValues())},
 		{"sandbox operation status", model.OperationStatuses, values(apigen.SandboxRuntimeLastOperationStatus("").AllValues())},
@@ -65,15 +65,15 @@ func TestModelEnumsMatchAPISchema(t *testing.T) {
 // source for every enum const by name prefix and asserts its value is in the
 // matching registry slice, so adding a const without registering it fails here.
 //
-// It relies only on the naming convention (WorkerPhaseFoo = "foo"), which the
+// It relies only on the naming convention (PoolPhaseFoo = "foo"), which the
 // whole enum family already follows; a const named off-pattern would not be
 // caught, but that is a far more visible mistake than a missing slice entry.
 func TestModelEnumConstsAreRegistered(t *testing.T) {
 	// Prefix → registry slice. No prefix here is a prefix of another, so each
 	// const matches at most one.
 	registries := map[string][]string{
-		"WorkerPhase":         model.WorkerPhases,
-		"WorkerDesiredState":  model.WorkerDesiredStates,
+		"PoolPhase":           model.PoolPhases,
+		"PoolDesiredState":    model.PoolDesiredStates,
 		"SandboxPhase":        model.SandboxPhases,
 		"SandboxDesiredState": model.SandboxDesiredStates,
 		"OperationStatus":     model.OperationStatuses,

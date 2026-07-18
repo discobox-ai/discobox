@@ -96,9 +96,9 @@ harness can simply be configured again.
 - The configure flow reaches the sandbox agent through `SandboxRuntime`
   (`AcquireSandboxHTTPClient`), which authorizes the caller's scopes — so it only
   works from inside a user request, which is the point.
-- That lease addresses the **worker**, not the sandbox: the worker passes exec
-  routes through to the agent under `/api/project/{p}/worker/{w}/sandboxes/{s}/…`,
-  and requests carry two tokens — the worker's on `Authorization`, the agent's on
-  `X-Discobox-Sandbox-Agent-Authorization` for the worker to forward inward. The
+- That lease addresses the **pool host**, not the sandbox: the pool agent passes
+  exec routes through to the agent under `/api/project/{p}/pool/{p}/sandboxes/{s}/…`,
+  and requests carry two tokens — the pool's on `Authorization`, the agent's on
+  `X-Discobox-Sandbox-Agent-Authorization` for the pool agent to forward inward. The
   generated sandbox client cannot express that route shape, so `oneShotRunner`
   makes those calls directly.

@@ -57,12 +57,12 @@ func activeDroplet(id int64, ip string) droplet {
 	}
 }
 
-func TestEnsureVMCreatesDropletWithDockerCloudInitAndWorkerTag(t *testing.T) {
+func TestEnsureVMCreatesDropletWithDockerCloudInitAndPoolTag(t *testing.T) {
 	var createReq createDropletRequest
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/v2/droplets":
-			if got := r.URL.Query().Get("tag_name"); got != "discobox-worker-worker-1" {
+			if got := r.URL.Query().Get("tag_name"); got != "discobox-pool-pool-1" {
 				t.Fatalf("tag lookup = %q", got)
 			}
 			encodeJSON(t, w, dropletsResponse{})
@@ -80,7 +80,7 @@ func TestEnsureVMCreatesDropletWithDockerCloudInitAndWorkerTag(t *testing.T) {
 	})
 	driver := newTestDriver(t, handler, nil)
 
-	info, err := driver.EnsureVM(context.Background(), "worker-1", dockerworker.VMSpec{Name: "discobox-vm-worker-1"})
+	info, err := driver.EnsureVM(context.Background(), "pool-1", dockerworker.VMSpec{Name: "discobox-vm-worker-1"})
 	if err != nil {
 		t.Fatalf("ensure vm: %v", err)
 	}
@@ -93,10 +93,10 @@ func TestEnsureVMCreatesDropletWithDockerCloudInitAndWorkerTag(t *testing.T) {
 	if !strings.Contains(createReq.UserData, "docker.io") || !strings.Contains(createReq.UserData, "#cloud-config") {
 		t.Fatalf("user data = %q, want docker install cloud-init", createReq.UserData)
 	}
-	if strings.Contains(createReq.UserData, "discobox-worker-agent") {
+	if strings.Contains(createReq.UserData, "discobox-pool-agent") {
 		t.Fatalf("user data = %q, worker agent is launched by the engine, not cloud-init", createReq.UserData)
 	}
-	wantTags := map[string]bool{"custom": true, "discobox": true, "discobox-worker-worker-1": true}
+	wantTags := map[string]bool{"custom": true, "discobox": true, "discobox-pool-pool-1": true}
 	for _, tag := range createReq.Tags {
 		delete(wantTags, tag)
 	}
@@ -115,7 +115,7 @@ func TestEnsureVMReturnsExistingDroplet(t *testing.T) {
 	})
 	driver := newTestDriver(t, handler, nil)
 
-	info, err := driver.EnsureVM(context.Background(), "worker-1", dockerworker.VMSpec{})
+	info, err := driver.EnsureVM(context.Background(), "pool-1", dockerworker.VMSpec{})
 	if err != nil {
 		t.Fatalf("ensure vm: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestInspectVMReportsNotFound(t *testing.T) {
 	})
 	driver := newTestDriver(t, handler, nil)
 
-	if _, err := driver.InspectVM(context.Background(), "worker-1"); !errors.Is(err, sandbox.ErrNotFound) {
+	if _, err := driver.InspectVM(context.Background(), "pool-1"); !errors.Is(err, sandbox.ErrNotFound) {
 		t.Fatalf("inspect err = %v, want ErrNotFound", err)
 	}
 }
@@ -150,7 +150,7 @@ func TestDeleteVMDeletesDropletByWorkerTag(t *testing.T) {
 	})
 	driver := newTestDriver(t, handler, nil)
 
-	if err := driver.DeleteVM(context.Background(), "worker-1"); err != nil {
+	if err := driver.DeleteVM(context.Background(), "pool-1"); err != nil {
 		t.Fatalf("delete vm: %v", err)
 	}
 	if deleted != "7" {
@@ -164,18 +164,18 @@ func TestDeleteVMSucceedsWhenDropletIsGone(t *testing.T) {
 	})
 	driver := newTestDriver(t, handler, nil)
 
-	if err := driver.DeleteVM(context.Background(), "worker-1"); err != nil {
+	if err := driver.DeleteVM(context.Background(), "pool-1"); err != nil {
 		t.Fatalf("delete missing vm: %v", err)
 	}
 }
 
-func TestAcquireWorkerAgentClientUsesPublicIPAndAgentPort(t *testing.T) {
+func TestAcquirePoolAgentClientUsesPublicIPAndAgentPort(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		encodeJSON(t, w, dropletsResponse{Droplets: []droplet{activeDroplet(7, "203.0.113.5")}})
 	})
 	driver := newTestDriver(t, handler, nil)
 
-	lease, err := driver.AcquireWorkerAgentClient(context.Background(), "worker-1")
+	lease, err := driver.AcquirePoolAgentClient(context.Background(), "pool-1")
 	if err != nil {
 		t.Fatalf("acquire worker agent client: %v", err)
 	}
@@ -191,7 +191,7 @@ func TestAcquireDockerClientRequiresSSHKey(t *testing.T) {
 	})
 	driver := newTestDriver(t, handler, nil)
 
-	_, err := driver.AcquireDockerClient(context.Background(), "worker-1")
+	_, err := driver.AcquireDockerClient(context.Background(), "pool-1")
 	if err == nil || !strings.Contains(err.Error(), "sshPrivateKey") {
 		t.Fatalf("acquire docker client err = %v, want missing ssh key error", err)
 	}

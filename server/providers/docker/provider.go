@@ -15,7 +15,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/providers/dockerworker"
-	"github.com/obot-platform/discobox/server/providers/workerpool"
+	"github.com/obot-platform/discobox/server/providers/poolruntime"
 )
 
 const (
@@ -27,7 +27,7 @@ const (
 )
 
 // DefaultImage returns the default Docker worker image.
-func DefaultImage() string { return dockerworker.DefaultWorkerImage }
+func DefaultImage() string { return dockerworker.DefaultPoolImage }
 
 // DefaultAgentPort returns the default worker-agent port exposed by Docker workers.
 func DefaultAgentPort() int { return defaultAgentPort }
@@ -42,17 +42,16 @@ type Config struct {
 	Systemd         *bool                    `json:"systemd,omitempty"`
 	Privileged      *bool                    `json:"privileged,omitempty"`
 	CgroupNSMode    string                   `json:"cgroupNsMode,omitempty"`
-	Command         workerpool.StringList    `json:"command,omitempty"`
+	Command         poolruntime.StringList   `json:"command,omitempty"`
 	DockerSocket    string                   `json:"bindDockerSocket,omitempty"`
 	HostMounts      []dockerworker.HostMount `json:"hostMounts,omitempty"`
-	workerpool.WorkerPoolConfigFields
 }
 
 // HostMount aliases the engine host mount type for provider configuration.
 type HostMount = dockerworker.HostMount
 
 func Decode(data json.RawMessage) (Config, error) {
-	return workerpool.DecodeConfig[Config](data, ProviderType)
+	return poolruntime.DecodeConfig[Config](data, ProviderType)
 }
 
 func Validate(data json.RawMessage) error {
@@ -60,13 +59,13 @@ func Validate(data json.RawMessage) error {
 	return err
 }
 
-func FactoryWithWorkerManager(workerManager workerpool.WorkerManager) sandbox.ProviderFactory {
+func FactoryWithPoolManager(poolManager poolruntime.PoolManager) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
-		return newFromInstance(ctx, instance, workerManager)
+		return newFromInstance(ctx, instance, poolManager)
 	}
 }
 
-func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, workerManager workerpool.WorkerManager) (sandbox.Provider, error) {
+func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager) (sandbox.Provider, error) {
 	cfg, err := Decode(instance.Config)
 	if err != nil {
 		return nil, err
@@ -80,13 +79,13 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 		_ = driver.Close()
 		return nil, err
 	}
-	if err := startWorkerWatcher(driver, engine, workerManager, instance); err != nil {
+	if err := startPoolWatcher(driver, engine, poolManager, instance); err != nil {
 		_ = engine.Close()
 		return nil, err
 	}
 	definition := Definition()
 	definition.LocalSourceBind = localSourceBindSupported(driver.DaemonHost())
-	return workerpool.New(engine, definition, cfg.WorkerPoolConfig(), workerManager), nil
+	return poolruntime.New(engine, definition, poolManager), nil
 }
 
 // localSourceBindSupported reports whether containers on daemonHost share a
@@ -126,7 +125,7 @@ func engineConfig(cfg Config) dockerworker.Config {
 	}
 	return dockerworker.Config{
 		ControlPlaneURL: controlPlaneURL,
-		Image:           dockerworker.EffectiveWorkerImage(cfg.Image),
+		Image:           dockerworker.EffectivePoolImage(cfg.Image),
 		Network:         cfg.Network,
 		AgentPort:       effectiveAgentPort(cfg.AgentPort),
 		Systemd:         cfg.systemdValue(),
@@ -166,12 +165,12 @@ func controlPlaneURLUsesHostGateway(value string) bool {
 	return strings.Contains(value, "://"+dockerHostGateway) || strings.HasPrefix(value, dockerHostGateway+":")
 }
 
-func EffectiveWorkerImage(image string) string {
-	return dockerworker.EffectiveWorkerImage(image)
+func EffectivePoolImage(image string) string {
+	return dockerworker.EffectivePoolImage(image)
 }
 
-func WorkerImageSource(image string) string {
-	return dockerworker.WorkerImageSource(image)
+func PoolImageSource(image string) string {
+	return dockerworker.PoolImageSource(image)
 }
 
 // Definition describes the Docker provider for provider catalogs.
@@ -183,12 +182,8 @@ func Definition() sandbox.ProviderDefinition {
 		ConfigFields: []sandbox.ProviderConfigField{
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: controlplane.DefaultURL(dockerHostGateway, controlplane.DefaultPort), Advanced: true},
 			{Key: "host", Label: "Docker Host", Type: "string", Advanced: true},
-			{Key: "image", Label: "Image", Type: "string", Placeholder: dockerworker.DefaultWorkerImage},
+			{Key: "image", Label: "Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage},
 			{Key: "network", Label: "Docker Network", Type: "string", Advanced: true},
-			{Key: "minWorkers", Label: "Minimum Workers", Type: "number", Placeholder: "1", Description: "Minimum active VM workers to keep in the pool."},
-			{Key: "maxWorkers", Label: "Maximum Workers", Type: "number", Placeholder: "2", Description: "Maximum active VM workers allowed in the pool."},
-			{Key: "minHealthyWorkers", Label: "Minimum Healthy Workers", Type: "number", Placeholder: "1", Description: "Minimum ready, schedulable, non-degraded workers before launching replacements."},
-			{Key: "poolSize", Label: "Pool Size", Type: "number", Placeholder: "1", Description: "Deprecated alias for minimum workers.", Advanced: true},
 			{Key: "systemd", Label: "Run systemd", Type: "boolean", Advanced: true},
 			{Key: "privileged", Label: "Privileged", Type: "boolean", Advanced: true},
 			{Key: "cgroupNsMode", Label: "Cgroup Namespace", Type: "string", Advanced: true},

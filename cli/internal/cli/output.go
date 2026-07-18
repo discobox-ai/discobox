@@ -118,12 +118,6 @@ func (a *App) writeProvider(cmd *cobra.Command, provider *apimodel.SandboxProvid
 	fmt.Fprintf(tw, "DISABLED\t%t\n", provider.Disabled)
 	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(provider.UpdatedAt))
 	fmt.Fprintf(tw, "CONFIG\t%s\n", formatRedactedRawJSON(provider.GetConfig()))
-	if status, ok := compactProviderStatusFromProvider(*provider); ok {
-		fmt.Fprintf(tw, "STATUS\t%s\n", formatCompactProviderStatus(status))
-		if status.LastError != "" {
-			fmt.Fprintf(tw, "ERROR\t%s\n", truncateTableValue(status.LastError, 120))
-		}
-	}
 	return tw.Flush()
 }
 
@@ -137,20 +131,107 @@ func (a *App) writeProviders(cmd *cobra.Command, providers []apimodel.SandboxPro
 	}
 	providers = sortedByCreatedAt(providers, func(provider apimodel.SandboxProviderInstance) time.Time { return provider.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tDISABLED\tSTATUS\tERROR\tUPDATED")
+	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tDISABLED\tUPDATED")
 	for _, provider := range providers {
-		status, _ := compactProviderStatusFromProvider(provider)
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%s\n",
 			provider.ID,
 			provider.Name,
 			provider.Type,
 			provider.Disabled,
-			formatCompactProviderStatus(status),
-			truncateTableValue(status.LastError, 80),
 			formatTime(provider.UpdatedAt),
 		)
 	}
 	return tw.Flush()
+}
+
+func (a *App) writePool(cmd *cobra.Command, pool *apimodel.Pool) error {
+	if pool == nil {
+		return nil
+	}
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), pool)
+	}
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "FIELD\tVALUE")
+	fmt.Fprintf(tw, "ID\t%s\n", pool.ID)
+	fmt.Fprintf(tw, "NAME\t%s\n", pool.Name)
+	fmt.Fprintf(tw, "PROVIDER\t%s\n", pool.ProviderInstanceId)
+	fmt.Fprintf(tw, "CACHE\t%t\n", pool.CacheEnabled)
+	fmt.Fprintf(tw, "ENVELOPE CPU\t%s\n", formatPoolCPU(pool.CpuVcpus))
+	fmt.Fprintf(tw, "ENVELOPE MEMORY\t%s\n", formatPoolBytes(pool.MemoryBytes))
+	fmt.Fprintf(tw, "ENVELOPE STORAGE\t%s\n", formatPoolBytes(pool.StorageBytes))
+	fmt.Fprintf(tw, "PHASE\t%s\n", pool.Phase)
+	fmt.Fprintf(tw, "READY\t%t\n", pool.Ready)
+	fmt.Fprintf(tw, "SCHEDULABLE\t%t\n", pool.Schedulable)
+	fmt.Fprintf(tw, "CAPACITY\t%s\n", formatPoolCapacity(*pool))
+	fmt.Fprintf(tw, "UPDATED\t%s\n", formatTime(pool.UpdatedAt))
+	if message := poolMessage(*pool); message != "" {
+		fmt.Fprintf(tw, "MESSAGE\t%s\n", truncateTableValue(message, 120))
+	}
+	return tw.Flush()
+}
+
+func (a *App) writePools(cmd *cobra.Command, pools []apimodel.Pool) error {
+	if a.quiet {
+		pools = sortedByCreatedAt(pools, func(pool apimodel.Pool) time.Time { return pool.CreatedAt })
+		return writeResourceIDs(cmd.OutOrStdout(), pools, func(pool apimodel.Pool) string { return pool.ID })
+	}
+	if a.output == "json" {
+		return writeJSON(cmd.OutOrStdout(), map[string]any{"pools": pools})
+	}
+	pools = sortedByCreatedAt(pools, func(pool apimodel.Pool) time.Time { return pool.CreatedAt })
+	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	fmt.Fprintln(tw, "ID\tNAME\tPROVIDER\tPHASE\tREADY\tCACHE\tCPU\tMEMORY\tSTORAGE\tUPDATED\tMESSAGE")
+	for _, pool := range pools {
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%t\t%t\t%s\t%s\t%s\t%s\t%s\n",
+			pool.ID,
+			pool.Name,
+			pool.ProviderInstanceId,
+			pool.Phase,
+			pool.Ready,
+			pool.CacheEnabled,
+			formatPoolCPU(pool.CpuVcpus),
+			formatPoolBytes(pool.MemoryBytes),
+			formatPoolBytes(pool.StorageBytes),
+			formatTime(pool.UpdatedAt),
+			truncateTableValue(poolMessage(pool), 80),
+		)
+	}
+	return tw.Flush()
+}
+
+// formatPoolCPU renders a pool envelope CPU value, where zero means the
+// envelope is sized by the host.
+func formatPoolCPU(value float64) string {
+	if value <= 0 {
+		return "host"
+	}
+	return fmt.Sprintf("%.2f", value)
+}
+
+// formatPoolBytes renders a pool envelope byte value, where zero means the
+// envelope is sized by the host.
+func formatPoolBytes(value int64) string {
+	if value <= 0 {
+		return "host"
+	}
+	return formatBytes(value)
+}
+
+// formatPoolCapacity renders agent-reported available capacity.
+func formatPoolCapacity(pool apimodel.Pool) string {
+	return fmt.Sprintf("%.2f vCPU, %s memory, %s storage", pool.AvailableCpuVcpus, formatBytes(pool.AvailableMemoryBytes), formatBytes(pool.AvailableStorageBytes))
+}
+
+// poolMessage surfaces the most relevant human-readable detail on the pool.
+func poolMessage(pool apimodel.Pool) string {
+	if message, ok := pool.ErrorMessage.Get(); ok && strings.TrimSpace(message) != "" {
+		return message
+	}
+	if message, ok := pool.StatusMessage.Get(); ok && strings.TrimSpace(message) != "" {
+		return message
+	}
+	return ""
 }
 
 func (a *App) writeSecret(cmd *cobra.Command, secret *apimodel.Secret) error {
@@ -293,45 +374,6 @@ func (a *App) writeSecretRequests(cmd *cobra.Command, requests []apimodel.Secret
 		)
 	}
 	return tw.Flush()
-}
-
-func (a *App) writeWorkers(cmd *cobra.Command, workers []apimodel.Worker) error {
-	if a.quiet {
-		workers = sortedByCreatedAt(workers, func(worker apimodel.Worker) time.Time { return worker.CreatedAt })
-		return writeResourceIDs(cmd.OutOrStdout(), workers, func(worker apimodel.Worker) string { return worker.ID })
-	}
-	if a.output == "json" {
-		return writeJSON(cmd.OutOrStdout(), map[string]any{"workers": workers})
-	}
-	workers = sortedByCreatedAt(workers, func(worker apimodel.Worker) time.Time { return worker.CreatedAt })
-	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tPROVIDER\tPHASE\tREADY\tSCHEDULABLE\tDEGRADED\tCPU\tMEMORY\tSTORAGE\tUPDATED\tMESSAGE")
-	for _, worker := range workers {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%t\t%t\t%t\t%.2f\t%s\t%s\t%s\t%s\n",
-			worker.ID,
-			worker.ProviderInstanceId,
-			worker.Phase,
-			worker.Ready,
-			worker.Schedulable,
-			worker.Degraded,
-			worker.AvailableCpuVcpus,
-			formatBytes(worker.AvailableMemoryBytes),
-			formatBytes(worker.AvailableStorageBytes),
-			formatTime(worker.UpdatedAt),
-			truncateTableValue(workerMessage(worker), 80),
-		)
-	}
-	return tw.Flush()
-}
-
-func workerMessage(worker apimodel.Worker) string {
-	if message, ok := worker.ErrorMessage.Get(); ok && strings.TrimSpace(message) != "" {
-		return message
-	}
-	if message, ok := worker.StatusMessage.Get(); ok && strings.TrimSpace(message) != "" {
-		return message
-	}
-	return ""
 }
 
 func (a *App) writeHarness(cmd *cobra.Command, harness *apimodel.HarnessConfig) error {
@@ -729,109 +771,6 @@ func formatRedactedRawJSON(raw []byte) string {
 		return "[invalid JSON config redacted]"
 	}
 	return string(data)
-}
-
-type compactProviderStatus struct {
-	WorkerCount        int
-	ReadyWorkers       int
-	SchedulableWorkers int
-	DegradedWorkers    int
-	FailedWorkers      int
-	LastError          string
-}
-
-func compactProviderStatusFromProvider(provider apimodel.SandboxProviderInstance) (compactProviderStatus, bool) {
-	if status, ok := provider.GetStatus().Get(); ok {
-		return compactProviderStatusFromInstanceStatus(status), true
-	}
-	if workers, ok := provider.GetWorkers().Get(); ok {
-		return compactProviderStatusFromWorkers(workers), true
-	}
-	return compactProviderStatus{}, false
-}
-
-func compactProviderStatusFromInstanceStatus(status apimodel.SandboxProviderInstanceStatus) compactProviderStatus {
-	out := compactProviderStatus{
-		WorkerCount:        int(status.WorkerCount),
-		ReadyWorkers:       int(status.ReadyWorkers),
-		SchedulableWorkers: int(status.SchedulableWorkers),
-		DegradedWorkers:    int(status.DegradedWorkers),
-		FailedWorkers:      int(status.FailedWorkers),
-	}
-	if lastError, ok := status.LastError.Get(); ok {
-		out.LastError = strings.TrimSpace(lastError)
-	}
-	if out.LastError == "" {
-		if workers, ok := status.Workers.Get(); ok {
-			for _, worker := range workers {
-				if message := providerWorkerStatusMessage(worker); message != "" {
-					out.LastError = message
-					break
-				}
-			}
-		}
-	}
-	return out
-}
-
-func compactProviderStatusFromWorkers(workers []apimodel.Worker) compactProviderStatus {
-	var out compactProviderStatus
-	for _, worker := range workers {
-		if providerWorkerDeleted(worker) {
-			if out.LastError == "" {
-				out.LastError = workerMessage(worker)
-			}
-			continue
-		}
-		out.WorkerCount++
-		if worker.Ready {
-			out.ReadyWorkers++
-		}
-		if worker.Schedulable {
-			out.SchedulableWorkers++
-		}
-		if worker.Degraded {
-			out.DegradedWorkers++
-		}
-		if string(worker.Phase) == "failed" || string(worker.LastOperationStatus) == "failed" || worker.ErrorMessage.Set {
-			out.FailedWorkers++
-		}
-		if out.LastError == "" {
-			out.LastError = workerMessage(worker)
-		}
-	}
-	return out
-}
-
-func providerWorkerDeleted(worker apimodel.Worker) bool {
-	return string(worker.DesiredState) == "deleted" || string(worker.Phase) == "deleted"
-}
-
-func providerWorkerStatusMessage(worker apimodel.ProviderWorkerStatus) string {
-	if message, ok := worker.ErrorMessage.Get(); ok && strings.TrimSpace(message) != "" {
-		return strings.TrimSpace(message)
-	}
-	if message, ok := worker.StatusMessage.Get(); ok && strings.TrimSpace(message) != "" {
-		return strings.TrimSpace(message)
-	}
-	return ""
-}
-
-func formatCompactProviderStatus(status compactProviderStatus) string {
-	if status.WorkerCount == 0 {
-		return "0 workers"
-	}
-	parts := []string{fmt.Sprintf("%d/%d ready", status.ReadyWorkers, status.WorkerCount)}
-	if status.SchedulableWorkers != status.ReadyWorkers {
-		parts = append(parts, fmt.Sprintf("%d sched", status.SchedulableWorkers))
-	}
-	if status.DegradedWorkers > 0 {
-		parts = append(parts, fmt.Sprintf("%d degraded", status.DegradedWorkers))
-	}
-	if status.FailedWorkers > 0 {
-		parts = append(parts, fmt.Sprintf("%d failed", status.FailedWorkers))
-	}
-	return strings.Join(parts, ", ")
 }
 
 func redactSensitiveJSON(value any) {

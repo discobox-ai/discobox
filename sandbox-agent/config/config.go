@@ -36,7 +36,7 @@ type Config struct {
 type Identity struct {
 	ProjectID string `json:"projectId"`
 	SandboxID string `json:"sandboxId"`
-	WorkerID  string `json:"workerId"`
+	PoolID    string `json:"poolId"`
 }
 
 type ExecDefaults struct {
@@ -118,7 +118,7 @@ func configFromManifest(manifest model.SandboxManifest) Config {
 	}
 	if manifest.Provider != nil {
 		cfg.Identity.ProjectID = manifest.Provider.ProjectID
-		cfg.Identity.WorkerID = manifest.Provider.WorkerID
+		cfg.Identity.PoolID = manifest.Provider.PoolId
 		cfg.ControlPlanePublicKey = publicKey(manifest.Provider.PublicKeys)
 	}
 	if env, ok := manifest.Config.Env.Get(); ok {
@@ -241,7 +241,7 @@ func (c Config) Validate() error {
 func applyEnv(cfg *Config) {
 	cfg.Identity.ProjectID = getenv("DISCOBOX_PROJECT_ID", cfg.Identity.ProjectID)
 	cfg.Identity.SandboxID = getenv("DISCOBOX_SANDBOX_ID", cfg.Identity.SandboxID)
-	cfg.Identity.WorkerID = getenv("DISCOBOX_WORKER_ID", cfg.Identity.WorkerID)
+	cfg.Identity.PoolID = getenv("DISCOBOX_POOL_ID", cfg.Identity.PoolID)
 	cfg.ControlPlanePublicKey = getenv("DISCOBOX_CONTROL_PLANE_PUBLIC_KEY", cfg.ControlPlanePublicKey)
 	cfg.ListenAddress = getenv("DISCOBOX_SANDBOX_AGENT_ADDR", cfg.ListenAddress)
 	cfg.WorkingRoot = getenv("DISCOBOX_WORKING_ROOT", cfg.WorkingRoot)

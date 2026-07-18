@@ -29,7 +29,7 @@ PY
   (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
   rm -f build/disco
   (cd cli && go build -o ../build/disco ./cmd/disco)
-  (docker build -f worker-agent/Dockerfile -t discobox-worker-agent:local .)
+  (docker build -f pool-agent/Dockerfile -t discobox-pool-agent:local .)
 
   PORT="$DISCOBOX_BATS_PORT" \
   DATABASE_DSN="$DISCOBOX_BATS_DB" \
@@ -66,7 +66,7 @@ teardown_file() {
   fi
 
   docker rm -f $(docker ps -aq \
-    --filter "ancestor=discobox-worker-agent:local" \
+    --filter "ancestor=discobox-pool-agent:local" \
     --filter "label=discobox.provider_type=docker" \
     --filter "label=discobox.project_id=prj_default") >/dev/null 2>&1 || true
 }
@@ -79,14 +79,14 @@ json_get() {
   python3 -c 'import json,sys; print(json.load(sys.stdin).get(sys.argv[1], ""))' "$1"
 }
 
-wait_for_worker_ready() {
-  local provider_id="$1"
-  if python3 - "$DISCOBOX_BATS_DB" "$provider_id" <<'PY'
+wait_for_pool_ready() {
+  local pool_id="$1"
+  if python3 - "$DISCOBOX_BATS_DB" "$pool_id" <<'PY'
 import sqlite3
 import sys
 import time
 
-db, provider_id = sys.argv[1:]
+db, pool_id = sys.argv[1:]
 deadline = time.time() + 90
 last = None
 while time.time() < deadline:
@@ -95,11 +95,10 @@ while time.time() < deadline:
     rows = con.execute(
         """
         SELECT id, ready, schedulable, phase, last_operation_status
-        FROM workers
-        WHERE project_id = ? AND provider_instance_id = ?
-        ORDER BY created_at ASC
+        FROM pools
+        WHERE project_id = ? AND id = ?
         """,
-        ("prj_default", provider_id),
+        ("prj_default", pool_id),
     ).fetchall()
     con.close()
     last = [dict(row) for row in rows]
@@ -107,7 +106,7 @@ while time.time() < deadline:
         print(rows[0]["id"])
         sys.exit(0)
     time.sleep(1)
-print(f"worker did not become ready for provider {provider_id}: {last}", file=sys.stderr)
+print(f"pool did not become ready {pool_id}: {last}", file=sys.stderr)
 sys.exit(1)
 PY
   then
@@ -115,17 +114,17 @@ PY
   fi
   echo "server log:" >&2
   tail -200 "$DISCOBOX_BATS_SERVER_LOG" >&2 || true
-  echo "docker provider containers:" >&2
+  echo "docker pool containers:" >&2
   docker ps -a \
-    --filter "label=discobox.provider_instance_id=$provider_id" \
+    --filter "label=discobox.pool_id=$pool_id" \
     --format 'table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Names}}' >&2 || true
-  for container in $(docker ps -aq --filter "label=discobox.provider_instance_id=$provider_id"); do
+  for container in $(docker ps -aq --filter "label=discobox.pool_id=$pool_id"); do
     echo "logs for $container:" >&2
     docker logs "$container" >&2 || true
     echo "systemctl status for $container:" >&2
-    docker exec "$container" systemctl --no-pager status discobox-worker-agent.service >&2 || true
+    docker exec "$container" systemctl --no-pager status discobox-pool-agent.service >&2 || true
     echo "journal for $container:" >&2
-    docker exec "$container" journalctl --no-pager -u discobox-worker-agent.service >&2 || true
+    docker exec "$container" journalctl --no-pager -u discobox-pool-agent.service >&2 || true
   done
   return 1
 }
@@ -139,19 +138,17 @@ host_gateway() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"Create a Docker provider instance"* ]]
   [[ "$output" == *"--control-plane-url"* ]]
-  [[ "$output" == *"--pool-size"* ]]
 }
 
 @test "provider create and sandbox create work with docker" {
-  local gateway control_plane config provider_json provider_id sandbox_json sandbox_id worker_id
+  local gateway control_plane config provider_json provider_id pool_json pool_id sandbox_json sandbox_id
   gateway="$(host_gateway)"
   control_plane="http://$gateway:$DISCOBOX_BATS_PORT"
   config="$(python3 - <<PY
 import json
 print(json.dumps({
     "controlPlaneUrl": "$control_plane",
-    "image": "discobox-worker-agent:local",
-    "poolSize": 1,
+    "image": "discobox-pool-agent:local",
     "systemd": True,
     "privileged": True,
     "cgroupNsMode": "host",
@@ -167,16 +164,21 @@ PY
   [ -n "$provider_id" ]
   [ "$(printf '%s' "$provider_json" | json_get type)" = "docker" ]
 
-  worker_id="$(wait_for_worker_ready "$provider_id")"
-  [ -n "$worker_id" ]
+  run cli pool create bats-docker-pool --provider "$provider_id"
+  [ "$status" -eq 0 ]
+  pool_json="$output"
+  pool_id="$(printf '%s' "$pool_json" | json_get id)"
+  [ -n "$pool_id" ]
 
-  run cli sandbox create --name bats-docker-sandbox --provider-instance "$provider_id" --wait --wait-timeout 90s
+  pool_id="$(wait_for_pool_ready "$pool_id")"
+  [ -n "$pool_id" ]
+
+  run cli sandbox create --name bats-docker-sandbox --pool "$pool_id" --wait --wait-timeout 90s
   [ "$status" -eq 0 ]
   sandbox_json="$output"
   sandbox_id="$(printf '%s' "$sandbox_json" | json_get id)"
   [ -n "$sandbox_id" ]
-  [ "$(printf '%s' "$sandbox_json" | json_get providerInstanceId)" = "$provider_id" ]
+  [ "$(printf '%s' "$sandbox_json" | json_get poolId)" = "$pool_id" ]
   [ "$(printf '%s' "$sandbox_json" | json_get phase)" = "running" ]
   [ "$(printf '%s' "$sandbox_json" | json_get lastOperationStatus)" = "success" ]
-  [[ "$sandbox_json" == *"warm-worker"* ]]
 }

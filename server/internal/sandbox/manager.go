@@ -8,7 +8,6 @@ import (
 	"maps"
 	"runtime"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -222,18 +221,20 @@ func (m *ProviderManager) ValidateProviderConfig(providerType string, config jso
 	return validator(config)
 }
 
-// ResolveForSandbox returns the provider for a sandbox record.
+// ResolveForSandbox returns the provider for a sandbox record. Provider
+// resolution is sandbox → pool → provider instance, so the caller must attach
+// the sandbox's pool with its provider instance loaded.
 func (m *ProviderManager) ResolveForSandbox(ctx context.Context, sandbox *model.Sandbox) (Provider, error) {
 	if sandbox == nil {
 		return nil, fmt.Errorf("sandbox is nil")
 	}
-	if sandbox.ProviderInstance != nil {
-		return m.ResolveInstance(ctx, sandbox.ProviderInstance)
+	if sandbox.Pool == nil {
+		return nil, fmt.Errorf("sandbox %s has no pool attached; load the pool before resolving a provider", sandbox.ID)
 	}
-	if sandbox.ProviderInstanceID != nil && strings.TrimSpace(*sandbox.ProviderInstanceID) != "" {
-		return m.GetProvider(strings.TrimSpace(*sandbox.ProviderInstanceID))
+	if sandbox.Pool.ProviderInstance == nil {
+		return nil, fmt.Errorf("pool %s has no provider instance attached; load it before resolving a provider", sandbox.Pool.ID)
 	}
-	return m.GetProvider("")
+	return m.ResolveInstance(ctx, sandbox.Pool.ProviderInstance)
 }
 
 // ResolveInstance returns the provider for a configured provider instance.

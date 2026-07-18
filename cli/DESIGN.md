@@ -29,7 +29,7 @@ builds leave it disabled; release CLI binaries opt in at build time by setting
 remains the runtime override for release binaries.
 
 Advanced configuration and low-level resource commands are grouped beneath the
-visible `disco box` command: `sandbox`, `terminal`, `exec`, `provider`, `worker`,
+visible `disco box` command: `sandbox`, `terminal`, `exec`, `provider`, `pool`,
 `job`, `harnesses`, and `hooks` are not root commands.
 
 ## Attach Stream Pattern

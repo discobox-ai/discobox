@@ -16,12 +16,12 @@
 - `server/internal/database`: database setup and resolution.
 - `server/internal/projectstream`: project event streaming websocket and SSE routes.
 - `server/internal/events`: project event broker.
-- `server/internal/auth/sandbox`: sandbox and worker authentication helpers.
-- `server/providers`: Docker, VM, cloud, and worker-backed provider implementations.
-- `worker-agent`: nested Go module for the worker agent implementation.
+- `server/internal/auth/sandbox`: sandbox and pool agent authentication helpers.
+- `server/providers`: Docker, VM, cloud, and pool-backed provider implementations.
+- `pool-agent`: nested Go module for the pool agent implementation.
 - `sandbox-agent`: nested Go module and image context for the sandbox agent runtime environment.
-- `worker-agent/cmd/discobox-worker-agent`: worker agent entrypoint.
-- `cmd/discobox-docker-image-watch`: local Docker image rebuild watcher for worker-agent and sandbox-agent images.
+- `pool-agent/cmd/discobox-pool-agent`: pool agent entrypoint.
+- `cmd/discobox-docker-image-watch`: local Docker image rebuild watcher for pool-agent and sandbox-agent images.
 - `docs`: user/developer documentation.
 - `test`: integration and Bats tests.
 - `gormdb`: nested Go module for DB setup helpers.

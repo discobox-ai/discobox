@@ -15,12 +15,13 @@ import (
 // resolveSourceDelivery records how a sandbox's source reaches it, so every
 // later stage reads a stated intent instead of re-deriving it. The decision
 // needs the provider, the client's origin, and this server's identity together,
-// and only create has all three.
+// and only create has all three. The provider instance is the one backing the
+// sandbox's pool, resolved by the caller.
 //
 // A client may not ask for push delivery: whether a bind is possible is the
 // server's to know, and a client claiming otherwise would either force a
 // needless push or assert a reachability it cannot verify.
-func (s *Service) resolveSourceDelivery(source *model.GitSource, origin *model.Origin, providerInstanceID string) error {
+func (s *Service) resolveSourceDelivery(ctx context.Context, source *model.GitSource, origin *model.Origin, providerInstance *model.SandboxProviderInstance) error {
 	if source == nil {
 		return nil
 	}
@@ -28,7 +29,7 @@ func (s *Service) resolveSourceDelivery(source *model.GitSource, origin *model.O
 		return apperrors.NewStatusError(http.StatusBadRequest,
 			"source delivery is decided by the server and cannot be requested")
 	}
-	provider, err := s.sandboxProviders.GetProvider(providerInstanceID)
+	provider, err := s.sandboxProviders.ResolveInstance(ctx, providerInstance)
 	if err != nil {
 		// The instance exists in the store but has not been instantiated, so its
 		// reachability is unknown. Leaving delivery at clone is safe only

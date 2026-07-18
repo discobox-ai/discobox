@@ -14,8 +14,8 @@ import (
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/reconcile"
+	"github.com/obot-platform/discobox/server/internal/resources/pools"
 	"github.com/obot-platform/discobox/server/internal/resources/sandboxes"
-	"github.com/obot-platform/discobox/server/internal/resources/workers"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
@@ -63,13 +63,9 @@ func (s *Service) ListJobs(ctx context.Context, projectID string) ([]model.Job, 
 	if err != nil {
 		return nil, err
 	}
-	projectWorkers, err := s.projectWorkerIDs(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
 	out := make([]model.Job, 0, len(marks))
 	for _, mark := range marks {
-		if !markInProject(mark, projectID, projectWorkers) {
+		if !markInProject(mark, projectID, nil) {
 			continue
 		}
 		out = append(out, jobFromMark(mark))
@@ -124,40 +120,20 @@ func (s *Service) findMark(ctx context.Context, projectID, jobID string) (*recon
 	if err != nil {
 		return nil, err
 	}
-	projectWorkers, err := s.projectWorkerIDs(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
 	for _, mark := range marks {
-		if mark.ResourceID == resourceID && markInProject(mark, projectID, projectWorkers) {
+		if mark.ResourceID == resourceID && markInProject(mark, projectID, nil) {
 			return &mark, nil
 		}
 	}
 	return nil, apperrors.NewStatusError(http.StatusNotFound, "job not found")
 }
 
-func (s *Service) projectWorkerIDs(ctx context.Context, projectID string) (map[string]struct{}, error) {
-	list, err := s.store.ListWorkers(ctx, projectID, "")
-	if err != nil {
-		return nil, err
-	}
-	ids := make(map[string]struct{}, len(list))
-	for i := range list {
-		ids[list[i].ID] = struct{}{}
-	}
-	return ids, nil
-}
-
-// markInProject scopes marks to a project: sandbox and workerprovider ids
-// carry a "projectID/" prefix; worker ids resolve through the project's
-// worker set.
-func markInProject(mark reconcile.DirtyResource, projectID string, projectWorkers map[string]struct{}) bool {
+// markInProject scopes marks to a project: sandbox and pool ids carry a
+// "projectID/" prefix.
+func markInProject(mark reconcile.DirtyResource, projectID string, _ map[string]struct{}) bool {
 	switch mark.ResourceType {
-	case sandboxes.SandboxResourceType, workers.WorkerProviderResourceType:
+	case sandboxes.SandboxResourceType, pools.PoolResourceType:
 		return strings.HasPrefix(mark.ResourceID, projectID+"/")
-	case workers.WorkerResourceType:
-		_, ok := projectWorkers[mark.ResourceID]
-		return ok
 	default:
 		return false
 	}

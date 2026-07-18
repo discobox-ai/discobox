@@ -60,18 +60,20 @@ func TestProviderManagerResolveForSandbox(t *testing.T) {
 	manager.RegisterProvider("custom", instanceProvider)
 	manager.SetDefault("default")
 
-	provider, err := manager.ResolveForSandbox(ctx, &model.Sandbox{ID: "s1"})
-	if err != nil {
-		t.Fatalf("resolve default: %v", err)
-	}
-	if provider != defaultProvider {
-		t.Fatal("expected default provider")
+	// Provider resolution is sandbox → pool → provider instance: a sandbox
+	// without its pool attached cannot resolve.
+	if _, err := manager.ResolveForSandbox(ctx, &model.Sandbox{ID: "s1"}); err == nil {
+		t.Fatal("expected error resolving a sandbox without a pool")
 	}
 
-	providerID := "custom"
-	provider, err = manager.ResolveForSandbox(ctx, &model.Sandbox{ID: "s1", ProviderInstanceID: &providerID})
+	_ = defaultProvider
+	pool := &model.Pool{
+		ID:               "pool-1",
+		ProviderInstance: &model.SandboxProviderInstance{ID: "inst-1", Type: "custom"},
+	}
+	provider, err := manager.ResolveForSandbox(ctx, &model.Sandbox{ID: "s1", PoolID: pool.ID, Pool: pool})
 	if err != nil {
-		t.Fatalf("resolve direct provider id: %v", err)
+		t.Fatalf("resolve via pool provider instance: %v", err)
 	}
 	if provider != instanceProvider {
 		t.Fatal("expected custom provider")

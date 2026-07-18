@@ -5,32 +5,32 @@ import (
 	"strings"
 )
 
-// DefaultWorkerImage is the default worker-agent container image launched by
-// the engine on every backend.
-const DefaultWorkerImage = "ghcr.io/obot-platform/discobox-systemd:latest"
+// DefaultPoolImage is the default pool-agent container image launched by the
+// engine on every backend.
+const DefaultPoolImage = "ghcr.io/obot-platform/discobox-systemd:latest"
 
-// WorkerImageEnv globally overrides the default worker-agent image, primarily
-// for local development against freshly built images.
-const WorkerImageEnv = "DISCOBOX_DOCKER_WORKER_IMAGE"
+// PoolImageEnv globally overrides the default pool-agent image, primarily for
+// local development against freshly built images.
+const PoolImageEnv = "DISCOBOX_DOCKER_POOL_IMAGE"
 
-// EffectiveWorkerImage resolves the worker-agent image from provider
+// EffectivePoolImage resolves the pool-agent image from provider
 // configuration, the global override, or the static default.
-func EffectiveWorkerImage(image string) string {
+func EffectivePoolImage(image string) string {
 	if image = strings.TrimSpace(image); image != "" {
 		return image
 	}
-	if value := strings.TrimSpace(os.Getenv(WorkerImageEnv)); value != "" {
+	if value := strings.TrimSpace(os.Getenv(PoolImageEnv)); value != "" {
 		return value
 	}
-	return DefaultWorkerImage
+	return DefaultPoolImage
 }
 
-// WorkerImageSource reports where the effective worker image came from.
-func WorkerImageSource(image string) string {
+// PoolImageSource reports where the effective pool image came from.
+func PoolImageSource(image string) string {
 	if strings.TrimSpace(image) != "" {
 		return "provider"
 	}
-	if strings.TrimSpace(os.Getenv(WorkerImageEnv)) != "" {
+	if strings.TrimSpace(os.Getenv(PoolImageEnv)) != "" {
 		return "global"
 	}
 	return "default"

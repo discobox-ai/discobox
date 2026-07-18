@@ -10,18 +10,17 @@ import (
 
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/obot-platform/discobox/server/internal/resources/pools"
 	sandboxesvc "github.com/obot-platform/discobox/server/internal/resources/sandboxes"
-	"github.com/obot-platform/discobox/server/internal/resources/workers"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
-	providerdocker "github.com/obot-platform/discobox/server/providers/docker"
 )
 
 type Service struct {
 	store     *store.Store
 	sandboxes SandboxCatalogService
-	workers   *workers.ControlPlane
+	pools     *pools.ControlPlane
 }
 
 type SandboxCatalogService interface {
@@ -31,8 +30,8 @@ type SandboxCatalogService interface {
 
 type SandboxProviderCatalogItem = sandboxesvc.SandboxProviderCatalogItem
 
-func NewService(store *store.Store, sandboxes SandboxCatalogService, workerManager *workers.ControlPlane) *Service {
-	return &Service{store: store, sandboxes: sandboxes, workers: workerManager}
+func NewService(store *store.Store, sandboxes SandboxCatalogService, poolManager *pools.ControlPlane) *Service {
+	return &Service{store: store, sandboxes: sandboxes, pools: poolManager}
 }
 
 func mapAPIError(err error, notFoundMessage string) error {
@@ -122,20 +121,11 @@ func (s *Service) ListSandboxProviderInstances(ctx context.Context, projectID st
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, mapAPIError(err, "project not found")
 	}
-	providers, err := s.store.ListSandboxProviderInstancesWithWorkers(ctx, projectID)
-	if err != nil {
-		return nil, err
-	}
-	for i := range providers {
-		providers[i].Status = providerStatusFromWorkers(providers[i].Workers)
-		attachProviderStatusDetails(&providers[i])
-	}
-	return providers, nil
+	return s.store.ListSandboxProviderInstances(ctx, projectID)
 }
 
 func (s *Service) CreateSandboxProviderInstance(ctx context.Context, projectID string, input services.CreateSandboxProviderInstanceBody) (*model.SandboxProviderInstance, error) {
-	project, err := s.store.GetProject(ctx, projectID)
-	if err != nil {
+	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return nil, mapAPIError(err, "project not found")
 	}
 	if strings.TrimSpace(input.Type) == "" {
@@ -148,10 +138,6 @@ func (s *Service) CreateSandboxProviderInstance(ctx context.Context, projectID s
 	if err := s.store.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		return nil, err
 	}
-	if project.DefaultSandboxProviderID == "" {
-		project.DefaultSandboxProviderID = provider.ID
-		_ = s.store.UpsertProject(ctx, project)
-	}
 	if _, err := s.sandboxes.SandboxProviderManager().ResolveInstance(ctx, provider); err != nil {
 		return nil, err
 	}
@@ -163,158 +149,7 @@ func (s *Service) GetSandboxProviderInstance(ctx context.Context, projectID, pro
 	if err != nil {
 		return nil, mapAPIError(err, "provider instance not found")
 	}
-	if err := s.attachProviderStatus(ctx, projectID, provider); err != nil {
-		return nil, err
-	}
 	return provider, nil
-}
-
-func (s *Service) attachProviderStatus(ctx context.Context, projectID string, provider *model.SandboxProviderInstance) error {
-	if provider == nil {
-		return nil
-	}
-	workers, err := s.store.ListWorkers(ctx, projectID, provider.ID)
-	if err != nil {
-		return err
-	}
-	provider.Status = providerStatusFromWorkers(workers)
-	attachProviderStatusDetails(provider)
-	return nil
-}
-
-func attachProviderStatusDetails(provider *model.SandboxProviderInstance) {
-	if provider == nil || provider.Status == nil {
-		return
-	}
-	switch provider.Type {
-	case providerdocker.ProviderType:
-		details, err := dockerProviderStatusDetails(provider.Config)
-		if err == nil && len(details) > 0 {
-			provider.Status.Details = details
-		}
-	}
-}
-
-func dockerProviderStatusDetails(config json.RawMessage) (json.RawMessage, error) {
-	cfg, err := providerdocker.Decode(config)
-	if err != nil {
-		return nil, err
-	}
-	image := strings.TrimSpace(cfg.Image)
-	return json.Marshal(map[string]any{
-		"image": map[string]any{
-			"configured": image,
-			"effective":  providerdocker.EffectiveWorkerImage(image),
-			"source":     providerdocker.WorkerImageSource(image),
-		},
-	})
-}
-
-func providerStatusFromWorkers(workers []model.Worker) *model.SandboxProviderInstanceStatus {
-	statusWorkers := providerStatusWorkers(workers)
-	status := &model.SandboxProviderInstanceStatus{
-		Workers: make([]model.ProviderWorkerStatus, 0, len(statusWorkers)),
-	}
-	for i := range statusWorkers {
-		worker := statusWorkers[i]
-		if !providerWorkerTerminalDeleted(worker) {
-			status.WorkerCount++
-			if worker.Ready {
-				status.ReadyWorkers++
-			}
-			if worker.Schedulable {
-				status.SchedulableWorkers++
-			}
-			if worker.Degraded {
-				status.DegradedWorkers++
-			}
-			if providerWorkerHasError(worker) {
-				status.FailedWorkers++
-			}
-		}
-		if worker.ErrorMessage != nil {
-			status.LastError = worker.ErrorMessage
-		} else if providerWorkerCleanupError(worker) {
-			status.LastError = worker.StatusMessage
-		}
-		status.Workers = append(status.Workers, model.ProviderWorkerStatus{
-			ID:                    worker.ID,
-			Identity:              worker.Identity,
-			DesiredState:          worker.DesiredState,
-			Phase:                 worker.Phase,
-			Ready:                 worker.Ready,
-			Schedulable:           worker.Schedulable,
-			Degraded:              worker.Degraded,
-			LastOperationStatus:   worker.LastOperationStatus,
-			StatusMessage:         worker.StatusMessage,
-			ErrorMessage:          worker.ErrorMessage,
-			AvailableCPUVCPUs:     worker.AvailableCPUVCPUs,
-			AvailableMemoryBytes:  worker.AvailableMemoryBytes,
-			AvailableStorageBytes: worker.AvailableStorageBytes,
-			RuntimeID:             providerWorkerRuntimeID(worker.RuntimeState),
-			LastSeenAt:            worker.LastSeenAt,
-		})
-	}
-	return status
-}
-
-func providerStatusWorkers(workers []model.Worker) []model.Worker {
-	active := make([]model.Worker, 0, len(workers))
-	for i := range workers {
-		worker := workers[i]
-		if providerWorkerActiveForStatus(worker) {
-			active = append(active, worker)
-		}
-	}
-	if len(active) > 0 {
-		return active
-	}
-	return workers
-}
-
-func providerWorkerActiveForStatus(worker model.Worker) bool {
-	if worker.RevokedAt != nil {
-		return false
-	}
-	if worker.Phase == model.WorkerPhaseFailed || worker.LastOperationStatus == model.OperationStatusFailed {
-		return false
-	}
-	switch worker.DesiredState {
-	case model.WorkerDesiredStateDeleted, model.WorkerDesiredStateDrained:
-		return false
-	default:
-		return true
-	}
-}
-
-func providerWorkerTerminalDeleted(worker model.Worker) bool {
-	return worker.DesiredState == model.WorkerDesiredStateDeleted ||
-		worker.Phase == model.WorkerPhaseDeleted
-}
-
-func providerWorkerHasError(worker model.Worker) bool {
-	return worker.LastOperationStatus == model.OperationStatusFailed ||
-		worker.ErrorMessage != nil ||
-		providerWorkerCleanupError(worker)
-}
-
-func providerWorkerCleanupError(worker model.Worker) bool {
-	return worker.DesiredState == model.WorkerDesiredStateDeleted &&
-		worker.LastOperationStatus == model.OperationStatusPending &&
-		worker.StatusMessage != nil
-}
-
-func providerWorkerRuntimeID(state []byte) string {
-	if len(state) == 0 {
-		return ""
-	}
-	var data struct {
-		InstanceID string `json:"instanceId"`
-	}
-	if err := json.Unmarshal(state, &data); err != nil || data.InstanceID == "" {
-		return ""
-	}
-	return data.InstanceID
 }
 
 func (s *Service) UpdateSandboxProviderInstance(ctx context.Context, projectID, providerID string, input services.UpdateSandboxProviderInstanceBody) (*model.SandboxProviderInstance, error) {
@@ -342,21 +177,14 @@ func (s *Service) UpdateSandboxProviderInstance(ctx context.Context, projectID, 
 }
 
 func (s *Service) DeleteSandboxProviderInstance(ctx context.Context, projectID, providerID string) error {
-	workers, err := s.store.ListWorkers(ctx, projectID, providerID)
+	// Pools bind to a provider instance immutably, so a provider instance with
+	// pools cannot be deleted; workers and sandboxes hang off the pools.
+	pools, err := s.store.ListPoolsForProviderInstance(ctx, projectID, providerID)
 	if err != nil {
 		return err
 	}
-	for i := range workers {
-		if workers[i].RevokedAt == nil {
-			return apperrors.NewStatusError(http.StatusConflict, "provider instance has workers")
-		}
-	}
-	sandboxCount, err := s.store.CountSandboxesForProvider(ctx, projectID, providerID)
-	if err != nil {
-		return err
-	}
-	if sandboxCount > 0 {
-		return apperrors.NewStatusError(http.StatusConflict, "provider instance has sandboxes")
+	if len(pools) > 0 {
+		return apperrors.NewStatusError(http.StatusConflict, "provider instance has pools")
 	}
 	return mapAPIError(s.store.DeleteSandboxProviderInstance(ctx, projectID, providerID), "provider instance not found")
 }
@@ -387,13 +215,13 @@ func (s *Service) EnsureExistingSandboxProviderInstances(ctx context.Context) er
 	return nil
 }
 
-func (s *Service) EnqueueProviderWorkers(ctx context.Context, projectID, providerID string) error {
-	workers, err := s.store.ListWorkers(ctx, projectID, providerID)
+func (s *Service) EnqueueProviderPools(ctx context.Context, projectID, providerID string) error {
+	poolRows, err := s.store.ListPoolsForProviderInstance(ctx, projectID, providerID)
 	if err != nil {
 		return err
 	}
-	for i := range workers {
-		if err := s.workers.ScheduleWorkerReconciliation(ctx, workers[i].ID); err != nil {
+	for i := range poolRows {
+		if err := s.pools.SchedulePoolReconciliation(ctx, projectID, poolRows[i].ID); err != nil {
 			return err
 		}
 	}

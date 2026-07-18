@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/obot-platform/discobox/server/internal/auth"
-	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
+	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
 )
 
 func TestAuthorizeRequestedScopesRequiresHeldScopes(t *testing.T) {
@@ -15,15 +15,15 @@ func TestAuthorizeRequestedScopesRequiresHeldScopes(t *testing.T) {
 		Type:   auth.PrincipalTypeUser,
 		UserID: "user-1",
 		Scopes: []string{
-			workeragentauth.ScopeSandboxRead,
+			poolagentauth.ScopeSandboxRead,
 		},
 	})
 
-	if err := authorizeRequestedScopes(ctx, []string{workeragentauth.ScopeSandboxRead}); err != nil {
+	if err := authorizeRequestedScopes(ctx, []string{poolagentauth.ScopeSandboxRead}); err != nil {
 		t.Fatalf("authorize read scope: %v", err)
 	}
 
-	err := authorizeRequestedScopes(ctx, []string{workeragentauth.ScopeSandboxWrite})
+	err := authorizeRequestedScopes(ctx, []string{poolagentauth.ScopeSandboxWrite})
 	if err == nil {
 		t.Fatal("authorize write scope succeeded, want failure")
 	}
@@ -42,7 +42,7 @@ func TestAuthorizeRequestedScopesAllowsAllScope(t *testing.T) {
 		},
 	})
 
-	if err := authorizeRequestedScopes(ctx, []string{workeragentauth.ScopeSandboxRead, workeragentauth.ScopeSandboxWrite, workeragentauth.ScopeSandboxHTTP, workeragentauth.ScopeTerminalRead, workeragentauth.ScopeTerminalWrite, workeragentauth.ScopeExecRead, workeragentauth.ScopeExecWrite}); err != nil {
+	if err := authorizeRequestedScopes(ctx, []string{poolagentauth.ScopeSandboxRead, poolagentauth.ScopeSandboxWrite, poolagentauth.ScopeSandboxHTTP, poolagentauth.ScopeTerminalRead, poolagentauth.ScopeTerminalWrite, poolagentauth.ScopeExecRead, poolagentauth.ScopeExecWrite}); err != nil {
 		t.Fatalf("authorize all scopes: %v", err)
 	}
 }

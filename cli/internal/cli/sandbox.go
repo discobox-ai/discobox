@@ -19,7 +19,7 @@ type sandboxCreateOptions struct {
 	name                 string
 	description          string
 	image                string
-	providerInstanceID   string
+	poolID               string
 	harnessConfigID      string
 	harnessName          string
 	model                string
@@ -133,8 +133,8 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if opts.providerInstanceID != "" {
-				opts.providerInstanceID, err = a.resolveProviderID(cmd.Context(), client, projectID, opts.providerInstanceID)
+			if opts.poolID != "" {
+				opts.poolID, err = a.resolvePoolID(cmd.Context(), client, projectID, opts.poolID)
 				if err != nil {
 					return err
 				}
@@ -167,7 +167,7 @@ func (a *App) newSandboxCreateCommand() *cobra.Command {
 		},
 	}
 	addCreateFlags(cmd, &opts)
-	_ = cmd.RegisterFlagCompletionFunc("provider-instance", a.completeProviders)
+	_ = cmd.RegisterFlagCompletionFunc("pool", a.completePools)
 	_ = cmd.RegisterFlagCompletionFunc("harness-config", a.completeHarnessConfigs)
 	_ = cmd.RegisterFlagCompletionFunc("harness", a.completeHarnessConfigNames)
 	_ = cmd.MarkFlagRequired("name")
@@ -348,7 +348,7 @@ func addCreateFlags(cmd *cobra.Command, opts *sandboxCreateOptions) {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Sandbox name")
 	cmd.Flags().StringVar(&opts.description, "description", "", "Sandbox description")
 	cmd.Flags().StringVar(&opts.image, "image", "", "Sandbox base image")
-	cmd.Flags().StringVar(&opts.providerInstanceID, "provider-instance", "", "Sandbox provider instance ID")
+	cmd.Flags().StringVar(&opts.poolID, "pool", "", "Pool to schedule the sandbox into")
 	cmd.Flags().StringVar(&opts.harnessConfigID, "harness-config", "", "Harness config ID")
 	cmd.Flags().StringVar(&opts.harnessName, "harness", "", "Harness config name to resolve at create time")
 	cmd.Flags().StringVar(&opts.model, "model", "", "Model the harness should use")
@@ -383,7 +383,7 @@ func createSandboxBody(opts sandboxCreateOptions) (*apimodel.CreateSandboxBody, 
 	config := &body.Config
 	config.SetDescription(optString(opts.description))
 	config.SetImage(optString(opts.image))
-	body.SetProviderInstanceId(optString(opts.providerInstanceID))
+	body.SetPoolId(optString(opts.poolID))
 	config.SetHarnessConfigId(optString(opts.harnessConfigID))
 	body.SetHarnessName(optString(opts.harnessName))
 	config.SetModel(optString(opts.model))

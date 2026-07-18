@@ -1,8 +1,9 @@
 # Providers Design
 
-`internal/resources/providers` owns provider-instance API behavior, startup
-reconciliation, provider-instance job payloads, and provider-instance
-reconciliation.
+`internal/resources/providers` owns provider-instance API behavior and startup
+reconciliation. A provider instance is backend identity only — type,
+credentials, connection config. Capacity, sharing policy, and observed runtime
+status belong to `Pool` (`internal/resources/pools`).
 
 ## Boundaries
 
@@ -11,28 +12,20 @@ flowchart LR
     api[internal/handlers] --> service[Service]
     service --> store[internal/store]
     service --> sandboxCatalog[internal/resources/sandboxes.Service]
-    service --> workers[internal/resources/workers.Manager]
-    service --> jobs[internal/resources/jobs.Manager]
-    dispatcher[orchestration.Dispatcher] --> executor[WorkerProviderReconcileExecutor]
-    executor --> store
-    executor --> sandboxCatalog
-    executor --> workers
+    service --> pools[internal/resources/pools.ControlPlane]
 ```
 
 - `Service` validates provider instance API requests and coordinates provider
   runtime ensure behavior.
 - Simple provider CRUD may call store directly.
-- Startup reconciliation and worker enqueue behavior must go through the job
-  manager when durable jobs are enabled.
-- Provider instance deletion must refuse deletion while sandboxes or workers are
-  still associated with the provider. Disable or drain first; worker and sandbox
-  reconciliation owns clearing those stateful references.
-- `WorkerProviderReconcileExecutor` owns payload decode and provider-instance
-  reconciliation. Keep provider job execution logic in the executor unless a
-  dependency has clear ownership elsewhere.
-- Provider-instance reconciliation sizes the worker pool. Runtime drift
-  detection is owned by provider drivers and should enqueue affected worker
-  reconcile jobs directly when it detects mismatches.
-- Provider status reports availability only. Do not infer or expose sandbox
-  "capabilities" from optional interface assertions; callers that need a
-  feature-specific provider operation should depend on that operation directly.
+- Provider instance deletion must refuse deletion while pools are still bound
+  to the instance: pools bind immutably at create, and sandboxes and runtimes
+  hang off the pools. Delete the pools first.
+- Startup reconciliation (`EnsureExistingSandboxProviderInstances`) resolves
+  every enabled instance so each registered provider can schedule its pools'
+  reconciles.
+- Provider status reports availability only. Worker-derived status summaries
+  are pool status, computed by `internal/resources/pools`. Do not infer or
+  expose sandbox "capabilities" from optional interface assertions; callers
+  that need a feature-specific provider operation should depend on that
+  operation directly.

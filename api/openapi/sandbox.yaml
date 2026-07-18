@@ -532,6 +532,9 @@ components:
                         type: string
                     description: Non-secret provider-specific metadata keyed by provider-defined name.
                     type: object
+                poolId:
+                    description: Pool ID hosting the sandbox.
+                    type: string
                 projectId:
                     description: Project ID when known to the provider.
                     type: string
@@ -540,9 +543,6 @@ components:
                         type: string
                     description: Public verification keys keyed by provider-defined name. This map must contain public keys only.
                     type: object
-                workerId:
-                    description: Worker ID when the sandbox is hosted by a worker-backed provider.
-                    type: string
             required:
                 - kind
             type: object

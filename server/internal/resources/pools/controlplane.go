@@ -1,0 +1,202 @@
+package pools
+
+import (
+	"context"
+	"errors"
+	"log"
+	"time"
+
+	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
+	"github.com/obot-platform/discobox/server/internal/model"
+	"github.com/obot-platform/discobox/server/internal/reconcile"
+	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
+	"github.com/obot-platform/discobox/server/internal/store"
+	"gorm.io/gorm"
+)
+
+// ControlPlane is the TRUSTED pool surface: it owns pool lifecycle intent
+// (generation bumps + dirty marks, atomically) and implements
+// sandbox.PoolManager, the narrow interface handed to provider drivers.
+// Unlike pools.Service (the HTTP-facing API surface, which validates
+// untrusted input and speaks apperrors), the control plane takes ids from
+// persisted rows at face value and returns plain domain errors.
+type ControlPlane struct {
+	store     *store.Store
+	engine    *reconcile.Engine
+	agentAuth *poolagentauth.Manager
+}
+
+func NewControlPlane(appStore *store.Store, engine *reconcile.Engine) *ControlPlane {
+	return &ControlPlane{store: appStore, engine: engine}
+}
+
+func (s *ControlPlane) SetAgentAuthManager(manager *poolagentauth.Manager) {
+	s.agentAuth = manager
+}
+
+// RegisterJobs installs the pool reconciler on the level-triggered reconcile
+// engine.
+func (s *ControlPlane) RegisterJobs(providerManager *sandbox.ProviderManager) error {
+	if s.engine == nil {
+		return errors.New("reconcile engine is required")
+	}
+	return s.engine.Register(PoolResourceType, NewPoolReconciler(s.store, providerManager, s))
+}
+
+func (s *ControlPlane) GetPool(ctx context.Context, projectID, poolID string) (*model.Pool, error) {
+	return s.store.GetPool(ctx, projectID, poolID)
+}
+
+func (s *ControlPlane) ListPoolsForProviderInstance(ctx context.Context, projectID, providerID string) ([]model.Pool, error) {
+	return s.store.ListPoolsForProviderInstance(ctx, projectID, providerID)
+}
+
+func (s *ControlPlane) SchedulablePoolForSandbox(ctx context.Context, sb *model.Sandbox) (*model.Pool, error) {
+	return s.store.SchedulablePoolForSandbox(ctx, sb)
+}
+
+func (s *ControlPlane) GetProject(ctx context.Context, projectID string) (*model.Project, error) {
+	return s.store.GetProject(ctx, projectID)
+}
+
+func (s *ControlPlane) GetSandboxProviderInstance(ctx context.Context, projectID, providerID string) (*model.SandboxProviderInstance, error) {
+	return s.store.GetSandboxProviderInstance(ctx, projectID, providerID)
+}
+
+func (s *ControlPlane) CountSandboxesForPool(ctx context.Context, projectID, poolID string) (int64, error) {
+	return s.store.CountSandboxesForPool(ctx, projectID, poolID)
+}
+
+func (s *ControlPlane) CreatePoolBootstrapToken(ctx context.Context, token *model.PoolBootstrapToken) error {
+	return s.store.CreatePoolBootstrapToken(ctx, token)
+}
+
+func (s *ControlPlane) EnsureAgentTrustKey(ctx context.Context) (string, error) {
+	if s.agentAuth == nil {
+		return "", nil
+	}
+	return s.agentAuth.EnsureTrustKey(ctx)
+}
+
+func (s *ControlPlane) CreateAgentToken(ctx context.Context, claims poolagentauth.TokenClaims) (string, error) {
+	if s.agentAuth == nil {
+		return "", nil
+	}
+	return s.agentAuth.CreateToken(ctx, claims)
+}
+
+func (s *ControlPlane) CreateSandboxAgentToken(ctx context.Context, claims poolagentauth.TokenClaims) (string, error) {
+	if s.agentAuth == nil {
+		return "", nil
+	}
+	return s.agentAuth.CreateSandboxAgentToken(ctx, claims)
+}
+
+// SchedulePoolReconciliation marks the pool dirty (drift-driven reconcile, no
+// intent change).
+func (s *ControlPlane) SchedulePoolReconciliation(ctx context.Context, projectID, poolID string) error {
+	if s.engine == nil {
+		return errors.New("reconcile engine is required")
+	}
+	return s.engine.MarkDirty(ctx, PoolResourceType, PoolDirtyID(projectID, poolID))
+}
+
+// SchedulePoolReconciliationAt marks the pool dirty no earlier than
+// scheduledAt (the timer form: "re-check the pool at T").
+func (s *ControlPlane) SchedulePoolReconciliationAt(ctx context.Context, projectID, poolID string, scheduledAt time.Time) error {
+	if s.engine == nil {
+		return errors.New("reconcile engine is required")
+	}
+	if scheduledAt.IsZero() {
+		scheduledAt = time.Now()
+	}
+	return s.engine.MarkDirtyAt(ctx, PoolResourceType, PoolDirtyID(projectID, poolID), scheduledAt)
+}
+
+// SchedulePoolRepair re-drives a failed pool as NEW INTENT: it bumps the
+// generation and marks the pool dirty in one transaction.
+//
+// The generation bump is what makes a queued retry observable on the row:
+// with it, a pending repair reads as ObservedGeneration < Generation until the
+// reconciler attempts it, so schedulers can tell a pending retry from a
+// settled failure. Repair is idempotent: a pool whose latest generation has
+// not been attempted yet is only marked dirty.
+func (s *ControlPlane) SchedulePoolRepair(ctx context.Context, poolID, reason string) error {
+	if s.engine == nil {
+		return errors.New("reconcile engine is required")
+	}
+	return s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		pool, err := txStore.GetPoolByID(ctx, poolID)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if pool.LastOperationStatus == model.OperationStatusFailed && pool.ObservedGeneration == pool.Generation {
+			previousGeneration := pool.Generation
+			pool.IncrementGeneration()
+			pool.StatusMessage = &reason
+			if err := txStore.UpdatePoolWithGeneration(ctx, pool, previousGeneration); err != nil {
+				if errors.Is(err, store.ErrGenerationConflict) {
+					return nil // concurrent intent already re-drove the pool
+				}
+				return err
+			}
+		}
+		return s.engine.MarkDirtyTx(ctx, txDB, PoolResourceType, PoolDirtyID(pool.ProjectID, pool.ID))
+	})
+}
+
+// SubmitPoolDelete records delete intent for the pool: generation bump,
+// delete operation, and dirty mark, atomically. The reconciler removes the
+// runtime and then the row.
+func (s *ControlPlane) SubmitPoolDelete(ctx context.Context, projectID, poolID string) (*model.Pool, error) {
+	if s.engine == nil {
+		return nil, errors.New("reconcile engine is required")
+	}
+	if err := s.store.Transaction(ctx, func(txStore *store.Store, txDB *gorm.DB) error {
+		pool, err := txStore.GetPool(ctx, projectID, poolID)
+		if err != nil {
+			return err
+		}
+		if pool.DesiredState == model.PoolDesiredStateDeleted {
+			return s.engine.MarkDirtyTx(ctx, txDB, PoolResourceType, PoolDirtyID(pool.ProjectID, pool.ID))
+		}
+		previousGeneration := pool.Generation
+		pool.IncrementGeneration()
+		pool.BeginOperation(model.PoolDeleteOperation)
+		if err := txStore.UpdatePoolWithGeneration(ctx, pool, previousGeneration); err != nil {
+			return err
+		}
+		return s.engine.MarkDirtyTx(ctx, txDB, PoolResourceType, PoolDirtyID(pool.ProjectID, pool.ID))
+	}); err != nil {
+		return nil, err
+	}
+	return s.store.GetPool(ctx, projectID, poolID)
+}
+
+const bootstrapTokenPurgeInterval = time.Hour
+
+// StartBootstrapTokenCleanup bounds the bootstrap token table: tokens are
+// single-use and minted per runtime creation; once expired, used, or revoked,
+// nothing reads them again, and nothing else deletes them.
+func (s *ControlPlane) StartBootstrapTokenCleanup(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(bootstrapTokenPurgeInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				n, err := s.store.PurgeSpentPoolBootstrapTokens(ctx, time.Now())
+				if err != nil {
+					log.Printf("pool bootstrap token cleanup: %v", err)
+				} else if n > 0 {
+					log.Printf("pool bootstrap token cleanup: purged %d spent token(s)", n)
+				}
+			}
+		}
+	}()
+}

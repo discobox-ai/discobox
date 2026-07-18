@@ -52,7 +52,7 @@ func TestMigrateMigratesSingleSchema(t *testing.T) {
 		t.Fatalf("migrate database: %v", err)
 	}
 
-	for _, table := range []string{"users", "projects", "sandboxes", "sandbox_provider_instances", "workers", "project_events"} {
+	for _, table := range []string{"users", "projects", "sandboxes", "sandbox_provider_instances", "pools", "project_events"} {
 		if !db.Write.Migrator().HasTable(table) {
 			t.Fatalf("schema missing table %s", table)
 		}
@@ -63,8 +63,8 @@ func TestMigrateMigratesSingleSchema(t *testing.T) {
 }
 
 // TestMigrateDropsJobQueueArtifactsWithForeignKeys reproduces upgrading a
-// database from the job-queue era: workers/sandboxes still carry last_job_id
-// and jobqueue tables exist, with live FK-linked rows. SQLite drops columns by
+// database from the job-queue era: sandboxes still carry last_job_id and
+// jobqueue tables exist, with live FK-linked rows. SQLite drops columns by
 // rebuilding the table, which fails under foreign_keys=ON unless the migration
 // disables the pragma around the rebuild.
 func TestMigrateDropsJobQueueArtifactsWithForeignKeys(t *testing.T) {
@@ -87,7 +87,6 @@ func TestMigrateDropsJobQueueArtifactsWithForeignKeys(t *testing.T) {
 		t.Fatalf("initial migrate: %v", err)
 	}
 	for _, stmt := range []string{
-		"ALTER TABLE workers ADD COLUMN `last_job_id` text",
 		"ALTER TABLE sandboxes ADD COLUMN `last_job_id` text",
 		"CREATE TABLE jobqueue_jobs (id text PRIMARY KEY)",
 		"CREATE TABLE jobqueue_leaders (id text PRIMARY KEY)",
@@ -106,12 +105,11 @@ func TestMigrateDropsJobQueueArtifactsWithForeignKeys(t *testing.T) {
 	if err := db.Write.Create(provider).Error; err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
-	worker := &model.Worker{ID: "worker-1", ProjectID: project.ID, ProviderInstanceID: provider.ID, Identity: "worker-1"}
-	if err := db.Write.Create(worker).Error; err != nil {
-		t.Fatalf("create worker: %v", err)
+	pool := &model.Pool{ID: "pool-1", ProjectID: project.ID, Name: "pool", ProviderInstanceID: provider.ID}
+	if err := db.Write.Create(pool).Error; err != nil {
+		t.Fatalf("create pool: %v", err)
 	}
-	workerID := worker.ID
-	sandbox := &model.Sandbox{ID: "sandbox-1", ProjectID: project.ID, CreatedByUserID: "user-1", Name: "sandbox", WorkerID: &workerID}
+	sandbox := &model.Sandbox{ID: "sandbox-1", ProjectID: project.ID, PoolID: pool.ID, CreatedByUserID: "user-1", Name: "sandbox"}
 	if err := db.Write.Create(sandbox).Error; err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
@@ -125,7 +123,7 @@ func TestMigrateDropsJobQueueArtifactsWithForeignKeys(t *testing.T) {
 			t.Fatalf("%s still exists after migration", table)
 		}
 	}
-	for _, m := range []any{&model.Sandbox{}, &model.Worker{}} {
+	for _, m := range []any{&model.Sandbox{}} {
 		if db.Write.Migrator().HasColumn(m, "last_job_id") {
 			t.Fatalf("%T still has last_job_id after migration", m)
 		}
@@ -135,12 +133,12 @@ func TestMigrateDropsJobQueueArtifactsWithForeignKeys(t *testing.T) {
 	if err := db.Write.First(&got, "id = ?", sandbox.ID).Error; err != nil {
 		t.Fatalf("sandbox lost in rebuild: %v", err)
 	}
-	if got.WorkerID == nil || *got.WorkerID != worker.ID {
-		t.Fatalf("sandbox worker link = %v, want %s", got.WorkerID, worker.ID)
+	if got.PoolID != pool.ID {
+		t.Fatalf("sandbox pool link = %q, want %s", got.PoolID, pool.ID)
 	}
-	var keptWorker model.Worker
-	if err := db.Write.First(&keptWorker, "id = ?", worker.ID).Error; err != nil {
-		t.Fatalf("worker lost in rebuild: %v", err)
+	var keptPool model.Pool
+	if err := db.Write.First(&keptPool, "id = ?", pool.ID).Error; err != nil {
+		t.Fatalf("pool lost in rebuild: %v", err)
 	}
 	// FK enforcement must remain on for normal connections afterwards.
 	var fk int

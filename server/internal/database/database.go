@@ -70,7 +70,7 @@ func dropJobQueueArtifacts(db *gorm.DB) error {
 				}
 			}
 		}
-		for _, m := range []any{&model.Sandbox{}, &model.Worker{}} {
+		for _, m := range []any{&model.Sandbox{}} {
 			if tx.Migrator().HasColumn(m, "last_job_id") {
 				if err := tx.Migrator().DropColumn(m, "last_job_id"); err != nil {
 					return err

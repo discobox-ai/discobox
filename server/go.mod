@@ -14,7 +14,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/moby/moby/api v1.54.2
 	github.com/moby/moby/client v0.4.1
-	github.com/obot-platform/discobox/worker-agent v0.0.0-00010101000000-000000000000
+	github.com/obot-platform/discobox/pool-agent v0.0.0-00010101000000-000000000000
 	github.com/ogen-go/ogen v1.20.3
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.62.0
 	go.opentelemetry.io/otel v1.43.0
@@ -390,4 +390,4 @@ tool (
 
 replace github.com/obot-platform/discobox => ..
 
-replace github.com/obot-platform/discobox/worker-agent => ../worker-agent
+replace github.com/obot-platform/discobox/pool-agent => ../pool-agent

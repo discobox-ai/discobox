@@ -12,7 +12,7 @@ flowchart LR
     handlers[internal/handlers] --> jobs[jobs.Service]
     jobs --> engine["reconcile.Engine (dirty set)"]
     jobs --> store[internal/store]
-    intents["resource packages (sandboxes, workers)"] --> engine
+    intents["resource packages (sandboxes, pools)"] --> engine
 ```
 
 - A "job" is a pending reconcile mark: id `type:resource-id`, status derived
@@ -24,5 +24,5 @@ flowchart LR
   project events.
 - Lifecycle **intent** does not live here either: each resource package owns
   its intent writes (generation bump + operation + `MarkDirtyTx`, one
-  transaction) — sandboxes in `resources/sandboxes/intents.go`, workers in
-  `resources/workers/manager.go`.
+  transaction) — sandboxes in `resources/sandboxes/intents.go`, pools in
+  `resources/pools/controlplane.go`.

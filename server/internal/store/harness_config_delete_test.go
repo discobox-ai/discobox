@@ -12,6 +12,7 @@ import (
 func TestDeleteHarnessConfigSandboxReferences(t *testing.T) {
 	ctx := context.Background()
 	s, db := newTestStoreWithDB(t, nil)
+	createTestPool(t, s, "project-1", "pool-1")
 
 	newConfig := func(slug string) *model.HarnessConfig {
 		cfg := &model.HarnessConfig{ProjectID: "project-1", Slug: slug, Name: slug, RunCommand: []string{"x"}}
@@ -22,7 +23,7 @@ func TestDeleteHarnessConfigSandboxReferences(t *testing.T) {
 	}
 	newSandbox := func(id, harnessConfigID string) {
 		if err := s.CreateSandbox(ctx, &model.Sandbox{
-			ID: id, ProjectID: "project-1", CreatedByUserID: "user-1", Name: id, HarnessConfigID: &harnessConfigID,
+			ID: id, ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: id, HarnessConfigID: &harnessConfigID,
 		}); err != nil {
 			t.Fatalf("create sandbox: %v", err)
 		}

@@ -9,7 +9,7 @@ import (
 
 // RuntimeState is the engine-owned worker runtime state persisted on the
 // worker row. InstanceID identifies the driver's VM (empty for the local
-// driver); ContainerID identifies the worker-agent container in that VM's
+// driver); ContainerID identifies the pool-agent container in that VM's
 // Docker daemon.
 type RuntimeState struct {
 	InstanceID  string `json:"instanceId,omitempty"`

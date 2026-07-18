@@ -40,13 +40,13 @@ func TestDockerImageSpecsBuildAllDevImagesAndUpdateEnv(t *testing.T) {
 			gotEnvKeys[spec.envDigestKey] = true
 		}
 	}
-	wantNames := []string{"worker-agent", "sandbox-agent", "harness-codex", "harness-claude-code", "harness-opencode"}
+	wantNames := []string{"pool-agent", "sandbox-agent", "harness-codex", "harness-claude-code", "harness-opencode"}
 	if !reflect.DeepEqual(gotNames, wantNames) {
 		t.Fatalf("image build order = %#v, want %#v", gotNames, wantNames)
 	}
 	for _, key := range []string{
-		"DISCOBOX_DOCKER_WORKER_IMAGE",
-		"DISCOBOX_DOCKER_WORKER_IMAGE_DIGEST",
+		"DISCOBOX_DOCKER_POOL_IMAGE",
+		"DISCOBOX_DOCKER_POOL_IMAGE_DIGEST",
 		"DISCOBOX_DEFAULT_SANDBOX_IMAGE",
 		"DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST",
 		"DISCOBOX_HARNESS_CODEX_IMAGE",
@@ -96,8 +96,8 @@ func TestUpdateEnvUpdatesAllImageReferencesWithoutDroppingUserValues(t *testing.
 		t.Fatal(err)
 	}
 	values := map[string]string{
-		"DISCOBOX_DOCKER_WORKER_IMAGE":          "discobox-worker-agent:dev-worker",
-		"DISCOBOX_DOCKER_WORKER_IMAGE_DIGEST":   "sha256:worker",
+		"DISCOBOX_DOCKER_POOL_IMAGE":            "discobox-pool-agent:dev-worker",
+		"DISCOBOX_DOCKER_POOL_IMAGE_DIGEST":     "sha256:worker",
 		"DISCOBOX_DEFAULT_SANDBOX_IMAGE":        "discobox-sandbox-agent:dev-sandbox",
 		"DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST": "sha256:sandbox",
 		"DISCOBOX_HARNESS_CODEX_IMAGE":          "discobox-harness-codex:dev-codex",

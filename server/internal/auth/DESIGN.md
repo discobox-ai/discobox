@@ -27,11 +27,11 @@ try. Returning an error rejects the request as unauthenticated.
 
 Current authenticators:
 
-- `WorkerAuthenticator` applies only to worker runtime status routes. It loads
-  the route worker, verifies the bearer PASETO assertion with that worker's
+- `PoolAuthenticator` applies only to pool agent runtime routes. It loads
+  the route pool, verifies the bearer PASETO assertion with that pool's
   stored Ed25519 public key, and requires the signed `project_id` and
-  `worker_id` claims to match the route worker. It must not trust the URL or
-  body alone for worker identity.
+  `pool_id` claims to match the route pool. It must not trust the URL or
+  body alone for pool identity.
 - `DefaultUserAuthenticator` authenticates requests as the configured default
   user in the current single-user server mode.
 
@@ -46,10 +46,10 @@ Current authorizers:
 - `ProjectAuthorizer` authorizes project-scoped routes by authenticated user
   membership. It resolves `/projects/default` and `/api/projects/default` to the
   user's default project before the handler sees the request.
-- `WorkerRouteAuthorizer` authorizes authenticated worker principals for worker
+- `PoolRouteAuthorizer` authorizes authenticated pool principals for pool
   runtime status routes. Operation handlers still verify resource-specific
-  authorization, such as matching the authenticated worker ID to the path
-  `workerId`.
+  authorization, such as matching the authenticated pool ID to the path
+  `poolId`.
 - `AuthenticatedAuthorizer` authorizes explicitly allow-listed routes for any
   authenticated principal. It exists for routes that require authentication but
   do not have a resource-specific authorizer.
@@ -60,18 +60,18 @@ path equality:
 
 - `/harness-definitions`
 - `/harness-definitions/`
-- `/api/workers/register`
+- `/api/pools/register`
 - `/projects`
 - `/providers/catalog`
 
-`/api/workers/register` is allowed here only as a bootstrap credential
-redemption route. It has no authenticated worker principal yet; the service
-redeems a short-lived, one-time bootstrap token for a preassigned worker and
-binds that worker to its self-generated public key. Do not model ordinary
+`/api/pools/register` is allowed here only as a bootstrap credential
+redemption route. It has no authenticated pool principal yet; the service
+redeems a short-lived, one-time bootstrap token for a preassigned pool and
+binds that pool to its self-generated public key. Do not model ordinary
 resource authorization on this route.
 
 Do not authorize by broad exclusion, such as "any route that is not project or
-worker scoped." Add an exact path or prefix to the allow-list only when the
+pool scoped." Add an exact path or prefix to the allow-list only when the
 route intentionally has no narrower resource authorizer.
 
 Authorization must be decidable from request attributes available before body
@@ -79,8 +79,8 @@ interpretation: authenticated principal, method, route/path parameters, query
 parameters, headers, and resource ownership loaded from those attributes. If a
 body field is needed to identify the resource being authorized, move that
 identity into the URL or another request attribute. The only exception is
-worker bootstrap registration described above; after bootstrap, worker
-authorization must use the authenticated worker principal and request metadata.
+pool bootstrap registration described above; after bootstrap, pool
+authorization must use the authenticated pool principal and request metadata.
 
 ## Principal Context
 
@@ -98,5 +98,5 @@ Rules:
   but should not parse credentials.
 - User context means a `Principal{Type: PrincipalTypeUser, UserID: ...}`. Use
   `UserID(ctx)` when service logic needs the authenticated user.
-- Worker context means a `Principal{Type: PrincipalTypeWorker, WorkerID: ...}`.
-  Worker IDs come from validated credentials, not path or body fields.
+- Pool context means a `Principal{Type: PrincipalTypePool, WorkerID: ...}`.
+  Pool IDs come from validated credentials, not path or body fields.

@@ -51,8 +51,9 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	executor := svc.NewSandboxReconciler()
 
 	sourceURL := mustParseURL(t, "https://example.com/repo.git")
+	poolID := createPoolForInstance(ctx, t, svc, providerInstance.ID)
 	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
-		ProviderInstanceId: serverapi.NewOptString(providerInstance.ID),
+		PoolId: serverapi.NewOptString(poolID),
 		Config: serverapi.SandboxCreateConfig{
 			Name: "sandbox-1",
 			Source: serverapi.NewOptGitSource(serverapi.GitSource{
@@ -91,10 +92,6 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	if sb.LastActiveAt == nil {
 		t.Fatal("expected last active time")
 	}
-	if sb.WorkerID == nil || *sb.WorkerID != "worker-1" {
-		t.Fatalf("worker id = %v, want worker-1", sb.WorkerID)
-	}
-
 	sb, err = svc.StopSandbox(ctx, service.DefaultProjectID, sb.ID, services.StopSandboxBody{})
 	if err != nil {
 		t.Fatalf("stop sandbox: %v", err)
@@ -147,9 +144,10 @@ func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
 	}
 	executor := svc.NewSandboxReconciler()
 
+	poolID := createPoolForInstance(ctx, t, svc, providerInstance.ID)
 	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
-		ProviderInstanceId: serverapi.NewOptString(providerInstance.ID),
-		Config:             serverapi.SandboxCreateConfig{Name: "sandbox-default-image"},
+		PoolId: serverapi.NewOptString(poolID),
+		Config: serverapi.SandboxCreateConfig{Name: "sandbox-default-image"},
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
@@ -180,8 +178,9 @@ func TestCreateSandboxExplicitImageOverridesDefault(t *testing.T) {
 	}
 	executor := svc.NewSandboxReconciler()
 
+	poolID := createPoolForInstance(ctx, t, svc, providerInstance.ID)
 	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
-		ProviderInstanceId: serverapi.NewOptString(providerInstance.ID),
+		PoolId: serverapi.NewOptString(poolID),
 		Config: serverapi.SandboxCreateConfig{
 			Name:  "sandbox-explicit-image",
 			Image: serverapi.NewOptString("custom:sandbox"),
@@ -207,9 +206,16 @@ func TestSandboxReconcileExecutorInjectsTrustKey(t *testing.T) {
 	provider := &recordingSandboxProvider{}
 	auth := &recordingSandboxAuth{trustKey: "public-key"}
 	executor := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider), sandboxes.WithSandboxAuthenticator(auth))
+	if err := appStore.CreateSandboxProviderInstance(ctx, &model.SandboxProviderInstance{ID: "prov-trust", ProjectID: service.DefaultProjectID, Type: "recording", Name: "recording"}); err != nil {
+		t.Fatalf("create provider instance: %v", err)
+	}
+	if err := appStore.CreatePool(ctx, &model.Pool{ID: "pool-trust", ProjectID: service.DefaultProjectID, Name: "pool-trust", ProviderInstanceID: "prov-trust"}); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
 	sb := &model.Sandbox{
 		ID:                "sandbox-1",
 		ProjectID:         service.DefaultProjectID,
+		PoolID:            "pool-trust",
 		CreatedByUserID:   service.DefaultUserID,
 		Name:              "sandbox-1",
 		ResourceLifecycle: model.NewResourceLifecycle(model.SandboxCreateOperation),
@@ -332,32 +338,37 @@ func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
 		t.Fatalf("get install state: %v", err)
 	}
 
-	if err := svc.DeleteSandboxProviderInstance(ctx, service.DefaultProjectID, service.DefaultProviderInstanceID); err != nil {
-		t.Fatalf("delete provider: %v", err)
-	}
-	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
-		t.Fatalf("initialize defaults after provider delete: %v", err)
-	}
-	providers, err = svc.ListSandboxProviderInstances(ctx, service.DefaultProjectID)
-	if err != nil {
-		t.Fatalf("list providers after delete: %v", err)
-	}
-	if len(providers) != 0 {
-		t.Fatalf("providers len after delete = %d, want 0", len(providers))
+	// The default pool binds to the built-in provider instance, so the
+	// provider cannot be deleted out from under it.
+	if err := svc.DeleteSandboxProviderInstance(ctx, service.DefaultProjectID, service.DefaultProviderInstanceID); err == nil {
+		t.Fatal("expected default provider delete to conflict with the default pool")
 	}
 
-	if err := appStore.DeleteServerState(ctx, "defaults.default_sandbox_provider.installed"); err != nil {
-		t.Fatalf("delete install state: %v", err)
-	}
-	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
-		t.Fatalf("initialize defaults after state clear: %v", err)
-	}
-	providers, err = svc.ListSandboxProviderInstances(ctx, service.DefaultProjectID)
+	// The default pool is seeded exactly once and the project points at it.
+	pool, err := svc.GetPool(ctx, service.DefaultProjectID, service.DefaultPoolID)
 	if err != nil {
-		t.Fatalf("list providers after state clear: %v", err)
+		t.Fatalf("get default pool: %v", err)
 	}
-	if len(providers) != 1 || providers[0].ID != service.DefaultProviderInstanceID {
-		t.Fatalf("providers after state clear = %#v, want recreated default", providers)
+	if !pool.BuiltIn || pool.ProviderInstanceID != service.DefaultProviderInstanceID {
+		t.Fatalf("default pool = %#v, want built-in pool on the default provider", pool)
+	}
+	project, err := appStore.GetProject(ctx, service.DefaultProjectID)
+	if err != nil {
+		t.Fatalf("get default project: %v", err)
+	}
+	if project.DefaultPoolID != service.DefaultPoolID {
+		t.Fatalf("project default pool = %q, want %q", project.DefaultPoolID, service.DefaultPoolID)
+	}
+
+	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
+		t.Fatalf("initialize defaults again: %v", err)
+	}
+	pools, err := svc.ListPools(ctx, service.DefaultProjectID)
+	if err != nil {
+		t.Fatalf("list pools: %v", err)
+	}
+	if len(pools) != 1 {
+		t.Fatalf("pools len = %d, want 1 after re-init", len(pools))
 	}
 }
 
@@ -396,7 +407,7 @@ func TestInitializeDefaultsDoesNotPersistBuiltInDockerProviderImageFromEnv(t *te
 	if runtime.GOOS != "linux" {
 		t.Skip("default docker provider is installed on linux")
 	}
-	t.Setenv("DISCOBOX_DOCKER_WORKER_IMAGE", "discobox-worker-agent:test")
+	t.Setenv("DISCOBOX_DOCKER_POOL_IMAGE", "discobox-pool-agent:test")
 
 	ctx := context.Background()
 	appStore := newProviderCatalogTestStore(t)
@@ -438,17 +449,28 @@ func TestInitializeDefaultsDoesNotPersistBuiltInDockerProviderImageFromEnv(t *te
 	assertDefaultDockerProviderConfig(t, provider.Config, "")
 }
 
+// createPoolForInstance creates a pool bound to the provider instance so a
+// sandbox can be scheduled into it (sandboxes bind to pools, not providers).
+func createPoolForInstance(ctx context.Context, t *testing.T, svc *service.Service, providerInstanceID string) string {
+	t.Helper()
+	pool, err := svc.CreatePool(ctx, service.DefaultProjectID, services.CreatePoolBody{
+		Name:               "pool-" + providerInstanceID,
+		ProviderInstanceId: providerInstanceID,
+	})
+	if err != nil {
+		t.Fatalf("create pool for %s: %v", providerInstanceID, err)
+	}
+	return pool.ID
+}
+
 func assertDefaultDockerProviderConfig(t *testing.T, data []byte, expectedImage string) {
 	t.Helper()
 	var cfg struct {
-		Image             string   `json:"image"`
-		AgentPort         int      `json:"agentPort"`
-		Systemd           bool     `json:"systemd"`
-		MinWorkers        int      `json:"minWorkers"`
-		MaxWorkers        int      `json:"maxWorkers"`
-		MinHealthyWorkers int      `json:"minHealthyWorkers"`
-		BindDockerSocket  string   `json:"bindDockerSocket"`
-		HostMounts        []string `json:"hostMounts"`
+		Image            string   `json:"image"`
+		AgentPort        int      `json:"agentPort"`
+		Systemd          bool     `json:"systemd"`
+		BindDockerSocket string   `json:"bindDockerSocket"`
+		HostMounts       []string `json:"hostMounts"`
 	}
 	if err := json.Unmarshal(data, &cfg); err != nil {
 		t.Fatalf("decode provider config %s: %v", data, err)
@@ -459,8 +481,8 @@ func assertDefaultDockerProviderConfig(t *testing.T, data []byte, expectedImage 
 	if cfg.AgentPort != providerdocker.DefaultAgentPort() {
 		t.Fatalf("config agentPort = %d, want %d", cfg.AgentPort, providerdocker.DefaultAgentPort())
 	}
-	if !cfg.Systemd || cfg.MinWorkers != 1 || cfg.MaxWorkers != 1 || cfg.MinHealthyWorkers != 1 {
-		t.Fatalf("provider config = %+v, want systemd and worker pool defaults", cfg)
+	if !cfg.Systemd {
+		t.Fatalf("provider config = %+v, want systemd", cfg)
 	}
 	if cfg.BindDockerSocket != "/var/run/docker.sock" {
 		t.Fatalf("bindDockerSocket = %q, want /var/run/docker.sock", cfg.BindDockerSocket)
@@ -569,7 +591,7 @@ func (p *recordingSandboxProvider) Create(_ context.Context, ref sandboxes.Sandb
 		Status:    sandboxes.StatusCreated,
 		Image:     "recording:latest",
 		CreatedAt: time.Now().UTC(),
-		Metadata:  map[string]string{"worker_id": "worker-1"},
+		Metadata:  map[string]string{"pool_id": "pool-1"},
 	}, []byte("created"), nil
 }
 func (p *recordingSandboxProvider) Update(context.Context, sandboxes.SandboxRef, []byte, sandboxes.UpdateOptions) (*sandboxes.Sandbox, []byte, error) {

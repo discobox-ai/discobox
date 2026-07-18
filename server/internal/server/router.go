@@ -8,8 +8,8 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/obot-platform/discobox/server/internal/auth"
+	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
-	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
 	"github.com/obot-platform/discobox/server/internal/events"
 	"github.com/obot-platform/discobox/server/internal/handlers"
 	"github.com/obot-platform/discobox/server/internal/projectstream"
@@ -108,7 +108,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	if opts.SecretSealer != nil {
 		appServices.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.SecretSealer))
 	}
-	appServices.SetWorkerAgentAuthManager(workeragentauth.NewManager(appStore, opts.SecretSealer))
+	appServices.SetWorkerAgentAuthManager(poolagentauth.NewManager(appStore, opts.SecretSealer))
 	if err := appServices.InitializeDefaults(ctx, opts.UserID); err != nil {
 		return nil, err
 	}
@@ -117,12 +117,12 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	}
 	router := chi.NewRouter()
 	router.Use(auth.Authentication(
-		auth.WorkerAuthenticator{Store: appStore},
+		auth.PoolAuthenticator{Store: appStore},
 		auth.DefaultUserAuthenticator{UserID: opts.UserID},
 	))
 	router.Use(auth.Authorization(
 		auth.ProjectAuthorizer{Store: appStore},
-		auth.WorkerRouteAuthorizer{},
+		auth.PoolRouteAuthorizer{},
 		auth.AuthenticatedAuthorizer{},
 	))
 	RegisterHealthRoutes(router)
@@ -136,7 +136,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		HarnessConfigs: appServices,
 		Sandboxes:      appServices,
 		Providers:      appServices,
-		Workers:        appServices,
+		Pools:          appServices,
 		Jobs:           appServices,
 		Events:         appServices,
 		Secrets:        appServices,

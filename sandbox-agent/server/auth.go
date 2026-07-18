@@ -26,7 +26,7 @@ type signedTokenClaimsContextKey struct{}
 type SignedTokenClaims struct {
 	ProjectID string
 	SandboxID string
-	WorkerID  string
+	PoolID    string
 	Scopes    []string
 }
 
@@ -122,7 +122,7 @@ func signedTokenClaimsFromToken(token *paseto.Token) (SignedTokenClaims, error) 
 		return SignedTokenClaims{}, fmt.Errorf("read sandbox_id claim: %w", err)
 	}
 	var workerID string
-	_ = token.Get("worker_id", &workerID)
+	_ = token.Get("pool_id", &workerID)
 	var scopes []string
 	if err := token.Get("scopes", &scopes); err != nil {
 		return SignedTokenClaims{}, fmt.Errorf("read scopes claim: %w", err)
@@ -130,7 +130,7 @@ func signedTokenClaimsFromToken(token *paseto.Token) (SignedTokenClaims, error) 
 	return SignedTokenClaims{
 		ProjectID: projectID,
 		SandboxID: sandboxID,
-		WorkerID:  workerID,
+		PoolID:    workerID,
 		Scopes:    scopes,
 	}, nil
 }
@@ -139,7 +139,7 @@ func (a *SignedTokenAuthenticator) authorizeRequest(r *http.Request, claims Sign
 	if claims.ProjectID != a.identity.ProjectID || claims.SandboxID != a.identity.SandboxID {
 		return errors.New("sandbox-agent token identity does not match this sandbox")
 	}
-	if claims.WorkerID != "" && claims.WorkerID != a.identity.WorkerID {
+	if claims.PoolID != "" && claims.PoolID != a.identity.PoolID {
 		return errors.New("sandbox-agent token worker does not match this sandbox")
 	}
 	projectID, sandboxID, ok := routeIdentity(r.URL.Path)

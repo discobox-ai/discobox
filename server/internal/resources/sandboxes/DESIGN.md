@@ -32,7 +32,7 @@ and decided by the server. Delivery is never inferred from which source fields
 are set: a source with nothing to clone from is a malformed request and fails.
 
 - `clone` — the sandbox fetches the source itself, from a remote URL or from a
-  local directory bind-mounted into the worker.
+  local directory bind-mounted into the pool host.
 - `push` — the client pushes the source into the sandbox's own Git repository.
 
 `sourceNeedsPush` requires **both** that the provider instance runs sandboxes on
@@ -60,7 +60,7 @@ sequenceDiagram
 ```
 
 The push transport is the pre-existing sandbox Git proxy
-(`internal/server/sandbox_git_proxy.go` → `worker-agent/githttp`); delivery adds
+(`internal/server/sandbox_git_proxy.go` → `pool-agent/githttp`); delivery adds
 no transport. The commit is fixed at create in `Checkout.Commit`;
 `complete-source-push` only confirms it, and a mismatch is refused.
 
@@ -73,12 +73,12 @@ See [ADR 0001](../../../../docs/adr/0001-sandbox-origin-and-remote-source-push.m
 ## Worker-observed runtime loss
 
 Worker-backed providers report an out-of-band container removal through the
-authenticated worker control-plane route. The sandbox service verifies the
-worker assignment, atomically records stopped intent (generation bump plus stop
+authenticated pool control-plane route. The sandbox service verifies the
+pool assignment, atomically records stopped intent (generation bump plus stop
 operation), and marks the sandbox dirty. Stop reconciliation treats a missing
 runtime as drift: it recreates the sandbox from persisted intent and state, then
 stops the retained runtime so observed and desired state converge on `stopped`.
-Duplicate, stale-worker, and already-deleting reports are no-ops.
+Duplicate, stale-pool, and already-deleting reports are no-ops.
 
 ## Image-backed harnesses
 

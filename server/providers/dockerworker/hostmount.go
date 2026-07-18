@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// HostMount describes a host path mounted into worker-agent containers under
+// HostMount describes a host path mounted into pool-agent containers under
 // the host-mount target root.
 type HostMount struct {
 	Source   string `json:"source,omitempty"`

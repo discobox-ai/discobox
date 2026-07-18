@@ -1,0 +1,17 @@
+[Unit]
+Description=Discobox Worker Proxy
+Documentation=https://github.com/obot-platform/discobox
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/discobox/proxy.env
+ExecStartPre=/usr/bin/install -d -m 0700 /var/lib/discobox/proxy
+ExecStart=/usr/local/bin/discobox-pool-agent proxy
+Restart=on-failure
+RestartSec=2s
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

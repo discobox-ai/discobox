@@ -86,6 +86,12 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/harness-configs
 	CreateHarnessConfig(ctx context.Context, req *CreateHarnessConfigBody, params CreateHarnessConfigParams) (CreateHarnessConfigRes, error)
+	// CreatePool implements create-pool operation.
+	//
+	// Create a pool.
+	//
+	// POST /projects/{projectId}/pools
+	CreatePool(ctx context.Context, req *CreatePoolBody, params CreatePoolParams) (CreatePoolRes, error)
 	// CreateSandbox implements create-sandbox operation.
 	//
 	// Create a sandbox.
@@ -143,6 +149,12 @@ type Handler interface {
 	//
 	// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings/{envName}
 	DeleteHarnessConfigSecretBinding(ctx context.Context, params DeleteHarnessConfigSecretBindingParams) (DeleteHarnessConfigSecretBindingRes, error)
+	// DeletePool implements delete-pool operation.
+	//
+	// Delete a pool.
+	//
+	// DELETE /projects/{projectId}/pools/{poolId}
+	DeletePool(ctx context.Context, params DeletePoolParams) (DeletePoolRes, error)
 	// DeleteSandbox implements delete-sandbox operation.
 	//
 	// Delete a sandbox.
@@ -191,6 +203,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/jobs/{jobId}
 	GetJob(ctx context.Context, params GetJobParams) (GetJobRes, error)
+	// GetPool implements get-pool operation.
+	//
+	// Get a pool.
+	//
+	// GET /projects/{projectId}/pools/{poolId}
+	GetPool(ctx context.Context, params GetPoolParams) (GetPoolRes, error)
 	// GetProject implements get-project operation.
 	//
 	// Get a project.
@@ -257,6 +275,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/jobs
 	ListJobs(ctx context.Context, params ListJobsParams) (ListJobsRes, error)
+	// ListPools implements list-pools operation.
+	//
+	// List pools.
+	//
+	// GET /projects/{projectId}/pools
+	ListPools(ctx context.Context, params ListPoolsParams) (ListPoolsRes, error)
 	// ListProjects implements list-projects operation.
 	//
 	// List projects.
@@ -323,41 +347,35 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/secrets
 	ListSecrets(ctx context.Context, params ListSecretsParams) (ListSecretsRes, error)
-	// ListWorkers implements list-workers operation.
+	// ReconcilePool implements reconcile-pool operation.
 	//
-	// List workers.
+	// Reconcile a pool.
 	//
-	// GET /projects/{projectId}/workers
-	ListWorkers(ctx context.Context, params ListWorkersParams) (ListWorkersRes, error)
+	// POST /projects/{projectId}/pools/{poolId}/reconcile
+	ReconcilePool(ctx context.Context, params ReconcilePoolParams) (ReconcilePoolRes, error)
 	// ReconcileSandbox implements reconcile-sandbox operation.
 	//
 	// Reconcile a sandbox.
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/reconcile
 	ReconcileSandbox(ctx context.Context, params ReconcileSandboxParams) (ReconcileSandboxRes, error)
-	// ReconcileWorker implements reconcile-worker operation.
+	// RegisterPool implements register-pool operation.
 	//
-	// Reconcile a worker.
+	// Register a bootstrapped pool agent.
 	//
-	// POST /projects/{projectId}/workers/{workerId}/reconcile
-	ReconcileWorker(ctx context.Context, params ReconcileWorkerParams) (ReconcileWorkerRes, error)
-	// RegisterWorker implements register-worker operation.
+	// POST /api/pools/register
+	RegisterPool(ctx context.Context, req *RegisterPoolBody) (RegisterPoolRes, error)
+	// ReportPoolSandboxRemoved implements report-pool-sandbox-removed operation.
 	//
-	// Register a bootstrapped worker.
+	// Report a pool-local sandbox runtime removed outside reconciliation.
 	//
-	// POST /api/workers/register
-	RegisterWorker(ctx context.Context, req *RegisterWorkerBody) (RegisterWorkerRes, error)
-	// ReportWorkerSandboxRemoved implements report-worker-sandbox-removed operation.
-	//
-	// Report a worker-local sandbox runtime removed outside reconciliation.
-	//
-	// POST /api/workers/{workerId}/sandbox-removed
-	ReportWorkerSandboxRemoved(ctx context.Context, req *ReportWorkerSandboxRemovedBody, params ReportWorkerSandboxRemovedParams) (ReportWorkerSandboxRemovedRes, error)
+	// POST /api/pools/{poolId}/sandbox-removed
+	ReportPoolSandboxRemoved(ctx context.Context, req *ReportPoolSandboxRemovedBody, params ReportPoolSandboxRemovedParams) (ReportPoolSandboxRemovedRes, error)
 	// ResolveSandboxSecret implements resolve-sandbox-secret operation.
 	//
 	// Resolve a sandbox sentinel secret.
 	//
-	// POST /api/workers/{workerId}/resolve-sandbox-secret
+	// POST /api/pools/{poolId}/resolve-sandbox-secret
 	ResolveSandboxSecret(ctx context.Context, req *ResolveSandboxSecretBody, params ResolveSandboxSecretParams) (ResolveSandboxSecretRes, error)
 	// RestartSandbox implements restart-sandbox operation.
 	//
@@ -413,6 +431,18 @@ type Handler interface {
 	//
 	// PATCH /projects/{projectId}/harness-configs/{harnessConfigId}
 	UpdateHarnessConfig(ctx context.Context, req *UpdateHarnessConfigBody, params UpdateHarnessConfigParams) (UpdateHarnessConfigRes, error)
+	// UpdatePool implements update-pool operation.
+	//
+	// Update a pool.
+	//
+	// PATCH /projects/{projectId}/pools/{poolId}
+	UpdatePool(ctx context.Context, req *UpdatePoolBody, params UpdatePoolParams) (UpdatePoolRes, error)
+	// UpdatePoolStatus implements update-pool-status operation.
+	//
+	// Update pool status.
+	//
+	// POST /api/pools/{poolId}/status
+	UpdatePoolStatus(ctx context.Context, req *UpdatePoolStatusBody, params UpdatePoolStatusParams) (UpdatePoolStatusRes, error)
 	// UpdateSandbox implements update-sandbox operation.
 	//
 	// Update a sandbox.
@@ -431,12 +461,6 @@ type Handler interface {
 	//
 	// PUT /projects/{projectId}/secrets/{secretId}
 	UpdateSecret(ctx context.Context, req *UpdateSecretBody, params UpdateSecretParams) (UpdateSecretRes, error)
-	// UpdateWorkerStatus implements update-worker-status operation.
-	//
-	// Update worker status.
-	//
-	// POST /api/workers/{workerId}/status
-	UpdateWorkerStatus(ctx context.Context, req *UpdateWorkerStatusBody, params UpdateWorkerStatusParams) (UpdateWorkerStatusRes, error)
 }
 
 // Server implements http server based on OpenAPI v3 specification and

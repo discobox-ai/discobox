@@ -97,17 +97,17 @@ func (d *LocalDriver) AcquireDockerClient(context.Context, string) (*dockerworke
 	return dockerworker.NewDockerClientLease(d.client, nil), nil
 }
 
-func (d *LocalDriver) AcquireWorkerAgentClient(ctx context.Context, workerID string) (*transport.HTTPClientLease, error) {
-	if strings.TrimSpace(workerID) == "" {
+func (d *LocalDriver) AcquirePoolAgentClient(ctx context.Context, poolID string) (*transport.HTTPClientLease, error) {
+	if strings.TrimSpace(poolID) == "" {
 		return nil, fmt.Errorf("worker ID is required")
 	}
-	inspect, err := d.client.ContainerInspect(ctx, dockerworker.ContainerName(workerID), client.ContainerInspectOptions{})
+	inspect, err := d.client.ContainerInspect(ctx, dockerworker.ContainerName(poolID), client.ContainerInspectOptions{})
 	if err != nil {
 		return nil, mapDockerNotFound(err)
 	}
 	host, port := dockerworker.AssignedAgentEndpoint(inspect.Container.NetworkSettings.Ports, d.agentPort)
 	if host == "" || port <= 0 {
-		return nil, fmt.Errorf("worker %q does not expose a harness URL", workerID)
+		return nil, fmt.Errorf("pool %q does not expose a harness URL", poolID)
 	}
 	baseURL := "http://" + net.JoinHostPort(host, strconv.Itoa(port))
 	return transport.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, baseURL, nil), nil

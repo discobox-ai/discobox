@@ -133,20 +133,17 @@ store.Transaction(ctx, func(tx *gorm.DB) error {
 })
 
 // Watcher (drift): one line.
-engine.MarkDirty(ctx, "worker", workerID)
+engine.MarkDirty(ctx, "sandbox", sandboxID)
 
-// Cross-resource chaining: end of the worker reconciler.
-engine.MarkDirty(ctx, "workerprovider", providerID)
-
-// Timer: workerpool registration timeout.
-engine.MarkDirtyAt(ctx, "workerprovider", providerID, time.Now().Add(timeout))
+// Cross-resource chaining and timers: the pool registration timeout.
+engine.MarkDirtyAt(ctx, "pool", poolID, time.Now().Add(timeout))
 ```
 
 ## Migration order
 
-1. `workerprovider.reconcile` (no generation guard; exercises MarkDirtyAt and
+1. `pool.reconcile` (no generation guard; exercises MarkDirtyAt and
    chaining-target).
-2. `worker.reconcile` (generation guard, watcher call sites).
+2. `sandbox.reconcile` (generation guard, watcher call sites).
 3. `sandbox.reconcile` (largest; deletes the `resources/jobs` submit plumbing).
 4. Remove `orchestration/`, `store/jobs.go`, `resources/jobs/`.
 

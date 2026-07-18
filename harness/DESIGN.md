@@ -11,7 +11,7 @@ sandbox terminals.
 - The same non-secret harness object is published in the
   `io.discobox.harness.v1` OCI image label for server-side registration.
 - Harness CLIs are installed at image build time. Runtime commands are never
-  supplied by the server or worker-agent.
+  supplied by the server or pool-agent.
 - Each provider folder owns its `Dockerfile`, `image.json`, configure script,
   and other image-specific assets. Harness images extend the sandbox-agent base
   selected by the `SANDBOX_AGENT_IMAGE` build argument.

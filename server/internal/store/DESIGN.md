@@ -19,7 +19,7 @@ flowchart LR
 
 - Accept database handles directly during construction.
 - Keep GORM types and query details inside this package.
-- Scope resource queries by project/user/worker IDs as appropriate.
+- Scope resource queries by project/user/pool IDs as appropriate.
 - Return root/shared sentinel errors through package aliases for compatibility.
 
 ## Transaction Rules
@@ -49,13 +49,13 @@ queue after-commit events instead of publishing immediately.
 
 Every resource query must use the store-owned GORM handles rather than opening or
 resolving databases itself. Project-owned resources should filter by `project_id`;
-worker credentials should filter by `worker_id`; user-owned resources should
+pool credentials should filter by `pool_id`; user-owned resources should
 filter by `user_id`.
 
-Worker deletion guards depend on sandbox assignment checks. Store methods that
-accept worker delete intent or purge terminal workers must treat non-deleted
-`sandboxes.worker_id` rows as authoritative stateful assignments; do not infer
-emptiness from worker health, driver drift detection, or runtime state.
+Pool deletion guards depend on sandbox assignment checks. Store methods that
+accept pool delete intent must treat non-deleted `sandboxes.pool_id` rows as
+authoritative stateful assignments; do not infer emptiness from pool health,
+driver drift detection, or runtime state.
 
 Do not add database-routing or request-context identity assumptions to store
 methods. Pass the resource boundary explicitly through method parameters or use
@@ -86,7 +86,8 @@ Keep files split by resource area:
 | `projects.go`, `users.go` | Project/user lookup and defaults. |
 | `harness_configs.go` | Harness config definition and instance persistence. |
 | `sandboxes.go` | Sandbox desired/observed lifecycle persistence. |
-| `providers_workers.go` | Provider instance, worker, token, and scheduling persistence. |
+| `providers.go` | Provider instance persistence. |
+| `pools.go` | Pool persistence: CRUD, agent registration and heartbeats, bootstrap tokens, the schedulable-pool placement gate, and pool-scoped sandbox counts. |
 | `events.go`, `resource_events.go` | Project event rows and event snapshots. |
 | `jobs.go` | Durable orchestration job models. |
 | `transactions.go` | Transaction helpers and after-commit behavior. |

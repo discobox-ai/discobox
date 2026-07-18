@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/obot-platform/discobox/pool-agent/poolauth"
 	"github.com/obot-platform/discobox/server/internal/store"
-	"github.com/obot-platform/discobox/worker-agent/workerauth"
 )
 
 // Authenticator authenticates a request and returns the matched principal.
@@ -15,41 +15,42 @@ type Authenticator interface {
 	Authenticate(*http.Request) (Principal, bool, error)
 }
 
-// WorkerAuthenticator authenticates worker runtime requests from signed worker assertions.
-type WorkerAuthenticator struct {
+// PoolAuthenticator authenticates pool agent runtime requests from signed
+// agent assertions verified against the pool's registered public key.
+type PoolAuthenticator struct {
 	Store *store.Store
 }
 
-func (a WorkerAuthenticator) Authenticate(r *http.Request) (Principal, bool, error) {
-	if !isWorkerRuntimePath(r.URL.Path) {
+func (a PoolAuthenticator) Authenticate(r *http.Request) (Principal, bool, error) {
+	if !isPoolRuntimePath(r.URL.Path) {
 		return Principal{}, false, nil
 	}
 	token := bearerToken(r.Header.Get("Authorization"))
 	if token == "" {
-		return Principal{}, false, errors.New("worker assertion required")
+		return Principal{}, false, errors.New("pool agent assertion required")
 	}
-	routeWorkerID, err := workerIDFromRuntimePath(r.URL.Path)
+	routePoolID, err := poolIDFromRuntimePath(r.URL.Path)
 	if err != nil {
 		return Principal{}, false, err
 	}
-	worker, err := a.Store.GetWorker(r.Context(), routeWorkerID)
+	pool, err := a.Store.GetPoolByID(r.Context(), routePoolID)
 	if err != nil {
-		return Principal{}, false, errors.New("worker not found")
+		return Principal{}, false, errors.New("pool not found")
 	}
-	if worker.RevokedAt != nil {
-		return Principal{}, false, errors.New("worker is revoked")
+	if pool.RevokedAt != nil {
+		return Principal{}, false, errors.New("pool is revoked")
 	}
-	if worker.KeyType != workerauth.KeyType {
-		return Principal{}, false, errors.New("unsupported worker key type")
+	if pool.KeyType != poolauth.KeyType {
+		return Principal{}, false, errors.New("unsupported pool key type")
 	}
-	claims, err := workerauth.VerifyToken(worker.PublicKey, token)
+	claims, err := poolauth.VerifyToken(pool.PublicKey, token)
 	if err != nil {
-		return Principal{}, false, errors.New("invalid worker assertion")
+		return Principal{}, false, errors.New("invalid pool agent assertion")
 	}
-	if claims.WorkerID != worker.ID || claims.WorkerID != routeWorkerID || claims.ProjectID != worker.ProjectID {
-		return Principal{}, false, errors.New("worker assertion identity does not match route")
+	if claims.PoolID != pool.ID || claims.PoolID != routePoolID || claims.ProjectID != pool.ProjectID {
+		return Principal{}, false, errors.New("pool agent assertion identity does not match route")
 	}
-	return Principal{Type: PrincipalTypeWorker, WorkerID: claims.WorkerID, Scopes: claims.Scopes}, true, nil
+	return Principal{Type: PrincipalTypePool, PoolID: claims.PoolID, Scopes: claims.Scopes}, true, nil
 }
 
 // DefaultUserAuthenticator authenticates every request as the configured user.
@@ -77,39 +78,39 @@ func bearerToken(authorization string) string {
 	return ""
 }
 
-var workerRuntimeActions = map[string]struct{}{
+var poolRuntimeActions = map[string]struct{}{
 	"sandbox-removed":        {},
 	"status":                 {},
 	"resolve-sandbox-secret": {},
 }
 
-func isWorkerRuntimePath(path string) bool {
-	if !strings.HasPrefix(path, "/api/workers/") {
+func isPoolRuntimePath(path string) bool {
+	if !strings.HasPrefix(path, "/api/pools/") {
 		return false
 	}
 	segments := strings.Split(strings.Trim(path, "/"), "/")
 	if len(segments) != 4 {
 		return false
 	}
-	_, ok := workerRuntimeActions[segments[3]]
+	_, ok := poolRuntimeActions[segments[3]]
 	return ok
 }
 
-func workerIDFromRuntimePath(path string) (string, error) {
+func poolIDFromRuntimePath(path string) (string, error) {
 	segments := strings.Split(strings.Trim(path, "/"), "/")
-	if len(segments) != 4 || segments[0] != "api" || segments[1] != "workers" {
-		return "", errors.New("worker runtime path is invalid")
+	if len(segments) != 4 || segments[0] != "api" || segments[1] != "pools" {
+		return "", errors.New("pool runtime path is invalid")
 	}
-	if _, ok := workerRuntimeActions[segments[3]]; !ok {
-		return "", errors.New("worker runtime path is invalid")
+	if _, ok := poolRuntimeActions[segments[3]]; !ok {
+		return "", errors.New("pool runtime path is invalid")
 	}
-	workerID, err := url.PathUnescape(segments[2])
+	poolID, err := url.PathUnescape(segments[2])
 	if err != nil {
 		return "", err
 	}
-	workerID = strings.TrimSpace(workerID)
-	if workerID == "" {
-		return "", errors.New("worker ID is required")
+	poolID = strings.TrimSpace(poolID)
+	if poolID == "" {
+		return "", errors.New("pool ID is required")
 	}
-	return workerID, nil
+	return poolID, nil
 }

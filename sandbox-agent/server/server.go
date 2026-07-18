@@ -25,7 +25,7 @@ import (
 type Identity struct {
 	ProjectID string
 	SandboxID string
-	WorkerID  string
+	PoolID    string
 }
 
 type Config struct {
@@ -55,7 +55,7 @@ func ConfigFromHarnessConfig(cfg config.Config) Config {
 		Identity: Identity{
 			ProjectID: cfg.Identity.ProjectID,
 			SandboxID: cfg.Identity.SandboxID,
-			WorkerID:  cfg.Identity.WorkerID,
+			PoolID:    cfg.Identity.PoolID,
 		},
 		ControlPlanePublicKey: cfg.ControlPlanePublicKey,
 		ListenAddress:         cfg.ListenAddress,
@@ -165,7 +165,7 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		writeJSON(w, http.StatusOK, map[string]any{
 			"projectId": cfg.Identity.ProjectID,
 			"sandboxId": cfg.Identity.SandboxID,
-			"workerId":  cfg.Identity.WorkerID,
+			"poolId":    cfg.Identity.PoolID,
 		})
 	})
 	router.Group(func(protected chi.Router) {

@@ -30,10 +30,12 @@ type ProviderConfigField = apimodel.ProviderConfigField
 type ProviderStatus = apimodel.ProviderStatus
 type CreateSandboxProviderInstanceBody = apimodel.CreateSandboxProviderInstanceBody
 type UpdateSandboxProviderInstanceBody = apimodel.UpdateSandboxProviderInstanceBody
-type RegisterWorkerBody = apimodel.RegisterWorkerBody
-type RegisterWorkerResponseBody = apimodel.RegisterWorkerResponseBody
-type UpdateWorkerStatusBody = apimodel.UpdateWorkerStatusBody
-type ReportWorkerSandboxRemovedBody = apimodel.ReportWorkerSandboxRemovedBody
+type CreatePoolBody = apimodel.CreatePoolBody
+type UpdatePoolBody = apimodel.UpdatePoolBody
+type RegisterPoolBody = apimodel.RegisterPoolBody
+type RegisterPoolResponseBody = apimodel.RegisterPoolResponseBody
+type UpdatePoolStatusBody = apimodel.UpdatePoolStatusBody
+type ReportPoolSandboxRemovedBody = apimodel.ReportPoolSandboxRemovedBody
 type OptBool = serverapi.OptBool
 type OptString = serverapi.OptString
 type OptURI = serverapi.OptURI
@@ -103,12 +105,20 @@ type SandboxProviderInstanceService interface {
 	DeleteSandboxProviderInstance(ctx context.Context, projectID, providerID string) error
 }
 
-type WorkerService interface {
-	ListWorkers(ctx context.Context, projectID, providerID string) ([]model.Worker, error)
-	RegisterWorker(ctx context.Context, input RegisterWorkerBody) (*RegisterWorkerResponseBody, error)
-	UpdateWorkerStatus(ctx context.Context, workerID string, input UpdateWorkerStatusBody) (*model.Worker, error)
-	ReportWorkerSandboxRemoved(ctx context.Context, workerID string, input ReportWorkerSandboxRemovedBody) error
-	ReconcileWorker(ctx context.Context, projectID, workerID string) (*model.Worker, error)
+// PoolService manages project-scoped pools: the user-visible sharing boundary
+// sandboxes are scheduled into, each its own runtime host. It also carries the
+// pool agent surface: registration, heartbeats, and sandbox-removal reports.
+type PoolService interface {
+	ListPools(ctx context.Context, projectID string) ([]model.Pool, error)
+	CreatePool(ctx context.Context, projectID string, input CreatePoolBody) (*model.Pool, error)
+	GetPool(ctx context.Context, projectID, poolID string) (*model.Pool, error)
+	UpdatePool(ctx context.Context, projectID, poolID string, input UpdatePoolBody) (*model.Pool, error)
+	DeletePool(ctx context.Context, projectID, poolID string) error
+	ReconcilePool(ctx context.Context, projectID, poolID string) (*model.Pool, error)
+
+	RegisterPool(ctx context.Context, input RegisterPoolBody) (*RegisterPoolResponseBody, error)
+	UpdatePoolStatus(ctx context.Context, poolID string, input UpdatePoolStatusBody) (*model.Pool, error)
+	ReportPoolSandboxRemoved(ctx context.Context, poolID string, input ReportPoolSandboxRemovedBody) error
 }
 
 // JobService provides project-scoped durable job visibility.
@@ -136,7 +146,7 @@ type SecretService interface {
 	CreateSecretGrant(ctx context.Context, projectID string, input CreateSecretGrantBody) (*model.SecretGrant, error)
 	RevokeSecretGrant(ctx context.Context, projectID, grantID string) error
 
-	ResolveSandboxSecret(ctx context.Context, workerID, sandboxID, sentinel, host string) (*model.SandboxSecretResolution, error)
+	ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, sentinel, host string) (*model.SandboxSecretResolution, error)
 }
 
 // ProjectEventService provides project-scoped resource snapshots and live subscription.
@@ -153,7 +163,7 @@ type Services struct {
 	HarnessConfigs HarnessConfigService
 	Sandboxes      SandboxService
 	Providers      SandboxProviderInstanceService
-	Workers        WorkerService
+	Pools          PoolService
 	Jobs           JobService
 	Events         ProjectEventService
 	Secrets        SecretService

@@ -36,7 +36,7 @@ func TestEnsureVMParsesJSONAndPassesEnv(t *testing.T) {
 	driver := newScriptDriver(t, `
 case "$op" in
 ensure-vm)
-	if [ "$DISCOBOX_WORKER_ID" != "$worker" ]; then
+	if [ "$DISCOBOX_POOL_ID" != "$worker" ]; then
 		echo "worker env mismatch" >&2
 		exit 1
 	fi
@@ -94,12 +94,12 @@ exit 1
 	}
 }
 
-func TestAcquireWorkerAgentClientUsesEndpointLine(t *testing.T) {
+func TestAcquirePoolAgentClientUsesEndpointLine(t *testing.T) {
 	driver := newScriptDriver(t, `
 [ "$op" = "harness-endpoint" ] && { echo "http://203.0.113.9:3002"; exit 0; }
 exit 1
 `)
-	lease, err := driver.AcquireWorkerAgentClient(context.Background(), "worker-1")
+	lease, err := driver.AcquirePoolAgentClient(context.Background(), "worker-1")
 	if err != nil {
 		t.Fatalf("acquire worker agent client: %v", err)
 	}
@@ -109,11 +109,11 @@ exit 1
 	}
 }
 
-func TestAcquireWorkerAgentClientRejectsNonHTTPEndpoint(t *testing.T) {
+func TestAcquirePoolAgentClientRejectsNonHTTPEndpoint(t *testing.T) {
 	driver := newScriptDriver(t, `
 echo "203.0.113.9:3002"
 `)
-	if _, err := driver.AcquireWorkerAgentClient(context.Background(), "worker-1"); err == nil || !strings.Contains(err.Error(), "http") {
+	if _, err := driver.AcquirePoolAgentClient(context.Background(), "worker-1"); err == nil || !strings.Contains(err.Error(), "http") {
 		t.Fatalf("acquire err = %v, want http endpoint error", err)
 	}
 }

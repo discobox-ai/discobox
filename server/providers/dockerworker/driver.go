@@ -1,8 +1,8 @@
 // Package dockerworker implements the shared worker runtime engine. Every
-// worker backend ends the same way: run the worker-agent container in some
+// worker backend ends the same way: run the pool-agent container in some
 // Docker daemon. The engine owns that container management uniformly; a
 // Driver owns only VM lifecycle and how to reach the VM's Docker daemon and
-// worker-agent API.
+// pool-agent API.
 package dockerworker
 
 import (
@@ -29,21 +29,21 @@ type Driver interface {
 	// EnsureVM idempotently creates and starts the VM for a worker. The local
 	// driver is a no-op that resolves every worker to the host. Instance
 	// sizing, region, and image come from driver configuration, not the spec.
-	EnsureVM(ctx context.Context, workerID string, spec VMSpec) (*VMInfo, error)
+	EnsureVM(ctx context.Context, poolID string, spec VMSpec) (*VMInfo, error)
 	// DeleteVM removes the worker's VM and its local resources. It must
 	// succeed when the VM is already gone.
-	DeleteVM(ctx context.Context, workerID string) error
+	DeleteVM(ctx context.Context, poolID string) error
 	// InspectVM reports the worker's VM state. It returns sandbox.ErrNotFound
 	// when no VM exists for the worker.
-	InspectVM(ctx context.Context, workerID string) (*VMInfo, error)
+	InspectVM(ctx context.Context, poolID string) (*VMInfo, error)
 
 	// AcquireDockerClient returns a Docker API client for the daemon that
 	// hosts this worker's containers: the host daemon for the local driver, or
 	// the in-VM daemon (for example dialed over SSH or vsock) for VM drivers.
-	AcquireDockerClient(ctx context.Context, workerID string) (*DockerClientLease, error)
-	// AcquireWorkerAgentClient returns an HTTP client lease that reaches the
-	// worker-agent API inside the worker container.
-	AcquireWorkerAgentClient(ctx context.Context, workerID string) (*transport.HTTPClientLease, error)
+	AcquireDockerClient(ctx context.Context, poolID string) (*DockerClientLease, error)
+	// AcquirePoolAgentClient returns an HTTP client lease that reaches the
+	// pool-agent API inside the worker container.
+	AcquirePoolAgentClient(ctx context.Context, poolID string) (*transport.HTTPClientLease, error)
 }
 
 // VMSpec is the driver-neutral VM launch request for one worker.

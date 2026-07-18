@@ -116,5 +116,5 @@ flowchart LR
   shifts rows and desyncs the hardware cursor from the emulator grid. Every inner
   row is truncated/padded to exactly `innerW` cells so the cursor offsets in
   `cursor()` stay exact. `TestTerminalPaneNeverWraps` guards this.
-- The `cli` module cannot `go mod tidy` on its own (it reaches `worker-agent`/
+- The `cli` module cannot `go mod tidy` on its own (it reaches `pool-agent`/
   `gormdb`, resolved only through `go.work`); add deps with `go get`.

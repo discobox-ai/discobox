@@ -22,7 +22,7 @@ func TestLoadAppliesEnvironmentOverrides(t *testing.T) {
 		"provider": {
 			"kind": "discobox-worker",
 			"projectId": "project-file",
-			"workerId": "worker-file",
+			"poolId": "worker-file",
 			"publicKeys": {
 				"controlPlane": "file-key"
 			}
@@ -68,7 +68,7 @@ func TestLoadUsesSelectedHarnessOnlyAsImageOverlay(t *testing.T) {
 		"provider": {
 			"kind": "discobox-worker",
 			"projectId": "project-1",
-			"workerId": "worker-1",
+			"poolId": "worker-1",
 			"publicKeys": {
 				"controlPlane": "`+base64.StdEncoding.EncodeToString(make([]byte, 32))+`"
 			}
@@ -127,7 +127,7 @@ func TestLoadDerivesExecDefaultsFromSandboxManifest(t *testing.T) {
 		"provider": {
 			"kind": "discobox-worker",
 			"projectId": "project-1",
-			"workerId": "worker-1",
+			"poolId": "worker-1",
 			"publicKeys": {
 				"controlPlane": "`+base64.StdEncoding.EncodeToString(make([]byte, 32))+`"
 			}

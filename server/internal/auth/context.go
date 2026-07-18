@@ -11,15 +11,15 @@ type principalKey struct{}
 
 // Principal identifies the authenticated caller.
 type Principal struct {
-	Type     string
-	UserID   string
-	WorkerID string
-	Scopes   []string
+	Type   string
+	UserID string
+	PoolID string
+	Scopes []string
 }
 
 const (
-	PrincipalTypeUser   = "user"
-	PrincipalTypeWorker = "worker"
+	PrincipalTypeUser = "user"
+	PrincipalTypePool = "pool"
 
 	ScopeAll = "*"
 )
@@ -28,7 +28,7 @@ const (
 func WithPrincipal(ctx context.Context, principal Principal) context.Context {
 	principal.Type = strings.TrimSpace(principal.Type)
 	principal.UserID = strings.TrimSpace(principal.UserID)
-	principal.WorkerID = strings.TrimSpace(principal.WorkerID)
+	principal.PoolID = strings.TrimSpace(principal.PoolID)
 	principal.Scopes = normalizeScopes(principal.Scopes)
 	return context.WithValue(ctx, principalKey{}, principal)
 }

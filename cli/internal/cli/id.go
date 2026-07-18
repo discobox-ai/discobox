@@ -133,6 +133,41 @@ func (a *App) resolveProviderID(ctx context.Context, client *apiclientgen.Client
 	return resolveShortID(id, "provider ID", ids)
 }
 
+func (a *App) resolvePoolID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
+	id, err := parseIDArg(value, "pool ID")
+	if err != nil {
+		return "", err
+	}
+	// A full generated pool ID needs no lookup; anything else may be a display
+	// name or short ID and resolves against the pool listing.
+	if idpkg.IsGenerated(id) {
+		return id, nil
+	}
+	res, err := client.ListPools(ctx, apiclientgen.ListPoolsParams{ProjectId: projectID})
+	if err != nil {
+		return "", err
+	}
+	body, err := expectResponse[apimodel.ListPoolsBody](res)
+	if err != nil {
+		return "", err
+	}
+	pools := body.GetPools()
+	// Accept the pool's display name as a selector alongside its ID.
+	for _, pool := range pools {
+		if pool.Name == value {
+			return pool.ID, nil
+		}
+	}
+	if !isResolvableShortID(id) {
+		return id, nil
+	}
+	ids := make([]string, 0, len(pools))
+	for _, pool := range pools {
+		ids = append(ids, pool.ID)
+	}
+	return resolveShortID(id, "pool ID", ids)
+}
+
 func (a *App) resolveSecretID(ctx context.Context, client *apiclientgen.Client, projectID, value string) (string, error) {
 	id, err := parseIDArg(value, "secret ID")
 	if err != nil || !isResolvableShortID(id) {

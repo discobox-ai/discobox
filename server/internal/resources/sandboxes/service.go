@@ -107,15 +107,19 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if err != nil {
 		return nil, mapAPIError(err, "project not found")
 	}
-	providerID := services.OptStringPtr(input.ProviderInstanceId)
-	if providerID == nil && project.DefaultSandboxProviderID != "" {
-		id := project.DefaultSandboxProviderID
-		providerID = &id
+	poolID := services.OptStringPtr(input.PoolId)
+	if poolID == nil && project.DefaultPoolID != "" {
+		id := project.DefaultPoolID
+		poolID = &id
 	}
-	if providerID == nil {
-		return nil, apperrors.NewStatusError(http.StatusBadRequest, "sandbox provider instance is required")
+	if poolID == nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "sandbox pool is required")
 	}
-	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, *providerID)
+	pool, err := s.store.GetPool(ctx, projectID, *poolID)
+	if err != nil {
+		return nil, mapAPIError(err, "pool not found")
+	}
+	provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, pool.ProviderInstanceID)
 	if err != nil {
 		return nil, mapAPIError(err, "provider instance not found")
 	}
@@ -157,7 +161,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	if key := origin.Key(); key != "" {
 		originKey = &key
 	}
-	if err := s.resolveSourceDelivery(source, origin, *providerID); err != nil {
+	if err := s.resolveSourceDelivery(ctx, source, origin, provider); err != nil {
 		return nil, err
 	}
 	userName, userUID, userGID, homeDirectory := services.SandboxUserToModel(config.User)
@@ -188,7 +192,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		ID:                   sandboxID,
 		ProjectID:            projectID,
 		CreatedByUserID:      userID,
-		ProviderInstanceID:   providerID,
+		PoolID:               pool.ID,
 		HarnessConfigID:      harnessConfigID,
 		HarnessMode:          harnessMode,
 		Name:                 config.Name,
@@ -307,25 +311,15 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 	if sandboxModel.Phase != model.SandboxPhaseRunning {
 		return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("sandbox is not running: phase=%s", sandboxModel.Phase))
 	}
-	if sandboxModel.WorkerID == nil || strings.TrimSpace(*sandboxModel.WorkerID) == "" {
-		return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, "sandbox worker is not assigned")
-	}
-	worker, err := s.store.GetWorker(ctx, strings.TrimSpace(*sandboxModel.WorkerID))
+	pool, err := s.store.GetPool(ctx, projectID, sandboxModel.PoolID)
 	if err != nil {
-		return nil, sandboxModel, mapAPIError(err, "sandbox worker not found")
+		return nil, sandboxModel, mapAPIError(err, "sandbox pool not found")
 	}
-	if worker.Phase != model.WorkerPhaseActive || !worker.Ready {
-		return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("sandbox worker is not active: worker=%s phase=%s ready=%t", worker.ID, worker.Phase, worker.Ready))
+	if pool.Phase != model.PoolPhaseActive || !pool.Ready {
+		return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("sandbox pool is not active: pool=%s phase=%s ready=%t", pool.ID, pool.Phase, pool.Ready))
 	}
 	if s.sandboxProviders == nil {
 		return nil, nil, fmt.Errorf("sandbox provider manager is required")
-	}
-	if sandboxModel.ProviderInstanceID != nil && strings.TrimSpace(*sandboxModel.ProviderInstanceID) != "" {
-		provider, err := s.store.GetSandboxProviderInstance(ctx, projectID, *sandboxModel.ProviderInstanceID)
-		if err != nil {
-			return nil, nil, mapAPIError(err, "provider instance not found")
-		}
-		sandboxModel.ProviderInstance = provider
 	}
 	provider, err := s.sandboxProviders.ResolveForSandbox(ctx, sandboxModel)
 	if err != nil {

@@ -32,9 +32,9 @@ runtime operations.
   canonical route and DTO definitions live in `api/openapi/server.yaml`.
 - Depend on root contracts and generated API types only for cross-module data.
 - Do not import server internals or provider implementation packages.
-- Keep worker registration and control-plane bootstrapping in the `worker-harness`
+- Keep pool registration and control-plane bootstrapping in the `pool-harness`
   module unless a shared contract belongs in the root module.
-- Do not call back to the worker-harness or server; resolved config is injected
+- Do not call back to the pool host-harness or server; resolved config is injected
   into the sandbox and read locally.
 - Load the single immutable harness contract from
   `/usr/share/discobox/image.json`. Commands, static files, and config-mode
@@ -64,17 +64,17 @@ runtime operations.
 ## Development Images
 
 `task build` is the no-argument build entry point for binaries and all local
-images. `task build:images` builds only the worker, sandbox base, and included
+images. `task build:images` builds only the pool host, sandbox base, and included
 harness images.
 
 `task dev` starts `cmd/discobox-docker-image-watch`, which initially builds the
-worker, base sandbox, Codex, Claude Code, and OpenCode images. Each harness
+pool, base sandbox, Codex, Claude Code, and OpenCode images. Each harness
 Dockerfile extends `discobox-sandbox-agent:local` through its
 `SANDBOX_AGENT_IMAGE` argument. The watcher tracks shared Docker/runtime inputs
 plus each harness folder's Dockerfile, `image.json`, and configure script.
 Harness-specific changes rebuild only that harness image; shared changes rebuild
 the base and all affected harness images. Every successful build writes its
-content-addressed development image reference to `.env`; worker and sandbox base
+content-addressed development image reference to `.env`; pool and sandbox base
 images also write their image digest.
 
 - Every sandbox has a default terminal: on sandbox start the harness always

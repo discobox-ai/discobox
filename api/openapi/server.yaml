@@ -282,8 +282,8 @@ components:
                 origin:
                     $ref: '#/components/schemas/Origin'
                     description: Client host and project directory this sandbox is created from
-                providerInstanceId:
-                    description: Sandbox provider instance ID
+                poolId:
+                    description: Pool to schedule the sandbox into. Defaults to the project's default pool.
                     type: string
             required:
                 - config
@@ -817,24 +817,6 @@ components:
             required:
                 - sandboxes
             type: object
-        ListWorkersBody:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/ListWorkersBody.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                workers:
-                    description: Workers
-                    items:
-                        $ref: '#/components/schemas/Worker'
-                    nullable: true
-                    type: array
-            required:
-                - workers
-            type: object
         Job:
             additionalProperties: false
             properties:
@@ -939,6 +921,254 @@ components:
                 - hostId
                 - projectPath
             type: object
+        Pool:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/Pool.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                builtIn:
+                    description: True for the default pool seeded by the server; built-in pools cannot be deleted
+                    type: boolean
+                cacheEnabled:
+                    description: Whether sandboxes in the pool mount the shared pool cache volume
+                    type: boolean
+                cpuVcpus:
+                    description: Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host.
+                    format: double
+                    type: number
+                createdAt:
+                    description: Creation timestamp
+                    format: date-time
+                    type: string
+                id:
+                    description: Stable pool ID
+                    type: string
+                memoryBytes:
+                    description: Total memory capacity of the pool envelope in bytes. Zero sizes the envelope by the host.
+                    format: int64
+                    type: integer
+                name:
+                    description: Pool display name
+                    maxLength: 200
+                    type: string
+                projectId:
+                    description: Project ID
+                    type: string
+                providerInstance:
+                    $ref: '#/components/schemas/SandboxProviderInstance'
+                    description: Backing sandbox provider instance
+                providerInstanceId:
+                    description: Backing sandbox provider instance ID. Immutable after create.
+                    type: string
+                storageBytes:
+                    description: Total storage capacity of the pool envelope in bytes. Zero sizes the envelope by the host.
+                    format: int64
+                    type: integer
+                ready:
+                    description: Whether the pool host is alive and healthy
+                    type: boolean
+                schedulable:
+                    description: Whether the pool accepts new sandboxes
+                    type: boolean
+                degraded:
+                    description: Whether the pool should be used only as fallback capacity
+                    type: boolean
+                availableCpuVcpus:
+                    description: Agent-reported available CPU capacity in vCPUs
+                    format: double
+                    type: number
+                availableMemoryBytes:
+                    description: Agent-reported available memory capacity in bytes
+                    format: int64
+                    type: integer
+                availableStorageBytes:
+                    description: Agent-reported available storage capacity in bytes
+                    format: int64
+                    type: integer
+                conditions:
+                    description: Opaque agent-reported condition details for display
+                desiredState:
+                    description: Requested pool state
+                    enum:
+                        - active
+                        - deleted
+                    type: string
+                phase:
+                    description: Observed pool lifecycle phase
+                    enum:
+                        - pending
+                        - launching
+                        - registering
+                        - active
+                        - deleting
+                        - offline
+                        - failed
+                        - deleted
+                    type: string
+                activeOperation:
+                    description: Current queued or running operation
+                    enum:
+                        - create
+                        - delete
+                    type: string
+                lastOperationStatus:
+                    description: Status of the most recent operation
+                    enum:
+                        - pending
+                        - running
+                        - success
+                        - failed
+                    type: string
+                generation:
+                    description: Latest desired-state generation
+                    format: int64
+                    type: integer
+                observedGeneration:
+                    description: Latest generation fully observed by reconciliation
+                    format: int64
+                    type: integer
+                statusMessage:
+                    description: Human-readable status detail
+                    type: string
+                errorMessage:
+                    description: Latest error message
+                    type: string
+                phaseChangedAt:
+                    description: When phase last changed to its current value. Anchors how long the resource has been in a phase, for timeouts that must not be reset by unrelated reconciles.
+                    format: date-time
+                    type: string
+                keyType:
+                    description: Pool agent key type
+                    type: string
+                publicKey:
+                    description: Pool agent public key
+                    type: string
+                registeredAt:
+                    description: Registration timestamp
+                    format: date-time
+                    type: string
+                lastSeenAt:
+                    description: Last heartbeat timestamp
+                    format: date-time
+                    type: string
+                revokedAt:
+                    description: Revocation timestamp
+                    format: date-time
+                    type: string
+                updatedAt:
+                    description: Last update timestamp
+                    format: date-time
+                    type: string
+            required:
+                - id
+                - projectId
+                - name
+                - providerInstanceId
+                - builtIn
+                - cpuVcpus
+                - memoryBytes
+                - storageBytes
+                - cacheEnabled
+                - ready
+                - schedulable
+                - degraded
+                - availableCpuVcpus
+                - availableMemoryBytes
+                - availableStorageBytes
+                - desiredState
+                - phase
+                - lastOperationStatus
+                - generation
+                - observedGeneration
+                - createdAt
+                - updatedAt
+            type: object
+        CreatePoolBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/CreatePoolBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                cacheEnabled:
+                    description: Whether sandboxes in the pool mount the shared pool cache volume. Defaults to true.
+                    type: boolean
+                cpuVcpus:
+                    description: Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host.
+                    format: double
+                    type: number
+                memoryBytes:
+                    description: Total memory capacity of the pool envelope in bytes. Zero sizes the envelope by the host.
+                    format: int64
+                    type: integer
+                name:
+                    description: Pool display name
+                    maxLength: 200
+                    type: string
+                providerInstanceId:
+                    description: Backing sandbox provider instance ID. Immutable after create.
+                    type: string
+                storageBytes:
+                    description: Total storage capacity of the pool envelope in bytes. Zero sizes the envelope by the host.
+                    format: int64
+                    type: integer
+            required:
+                - name
+                - providerInstanceId
+            type: object
+        UpdatePoolBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/UpdatePoolBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                cacheEnabled:
+                    description: Whether sandboxes in the pool mount the shared pool cache volume
+                    type: boolean
+                cpuVcpus:
+                    description: Total CPU capacity of the pool envelope in vCPUs
+                    format: double
+                    type: number
+                memoryBytes:
+                    description: Total memory capacity of the pool envelope in bytes
+                    format: int64
+                    type: integer
+                name:
+                    description: Pool display name
+                    maxLength: 200
+                    type: string
+                storageBytes:
+                    description: Total storage capacity of the pool envelope in bytes
+                    format: int64
+                    type: integer
+            type: object
+        ListPoolsBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ListPoolsBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                pools:
+                    description: Pools
+                    items:
+                        $ref: '#/components/schemas/Pool'
+                    nullable: true
+                    type: array
+            required:
+                - pools
+            type: object
         Project:
             additionalProperties: false
             properties:
@@ -961,8 +1191,8 @@ components:
                 default:
                     description: Whether this is the user's default project
                     type: boolean
-                defaultSandboxProviderId:
-                    description: Default sandbox provider instance ID
+                defaultPoolId:
+                    description: Default pool ID for new sandboxes
                     type: string
                 defaultHarnessConfigId:
                     description: Default harness config ID
@@ -986,6 +1216,12 @@ components:
                 ownerUserId:
                     description: Owning user ID
                     type: string
+                pools:
+                    description: Project pools
+                    items:
+                        $ref: '#/components/schemas/Pool'
+                    nullable: true
+                    type: array
                 sandboxProviderInstances:
                     description: Sandbox provider instances
                     items:
@@ -1082,12 +1318,12 @@ components:
                 - available
                 - state
             type: object
-        RegisterWorkerBody:
+        RegisterPoolBody:
             additionalProperties: false
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/RegisterWorkerBody.json
+                    example: https://example.com/schemas/RegisterPoolBody.json
                     format: uri
                     readOnly: true
                     type: string
@@ -1095,25 +1331,24 @@ components:
                     type: string
                 keyType:
                     type: string
+                poolId:
+                    type: string
                 projectId:
                     type: string
                 publicKey:
                     type: string
-                sandboxId:
-                    type: string
-                workerId:
-                    type: string
             required:
                 - projectId
+                - poolId
                 - bootstrapToken
                 - publicKey
             type: object
-        RegisterWorkerResponseBody:
+        RegisterPoolResponseBody:
             additionalProperties: false
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/RegisterWorkerResponseBody.json
+                    example: https://example.com/schemas/RegisterPoolResponseBody.json
                     format: uri
                     readOnly: true
                     type: string
@@ -1426,8 +1661,8 @@ components:
                         type: string
                     description: Public verification keys keyed by provider-defined name. This map must contain public keys only.
                     type: object
-                workerId:
-                    description: Worker ID when the sandbox is hosted by a worker-backed provider.
+                poolId:
+                    description: Pool ID hosting the sandbox.
                     type: string
             required:
                 - kind
@@ -1711,9 +1946,6 @@ components:
                 statusMessage:
                     description: Human-readable status detail
                     type: string
-                workerId:
-                    description: Assigned worker ID, when scheduled through a worker-backed provider
-                    type: string
             required:
                 - desiredState
                 - phase
@@ -1757,11 +1989,11 @@ components:
                 projectId:
                     description: Project ID
                     type: string
-                providerInstance:
-                    $ref: '#/components/schemas/SandboxProviderInstance'
-                    description: Sandbox provider instance
-                providerInstanceId:
-                    description: Sandbox provider instance ID
+                pool:
+                    $ref: '#/components/schemas/Pool'
+                    description: Pool the sandbox is scheduled into
+                poolId:
+                    description: Pool the sandbox is scheduled into. Resolved at create, immutable after.
                     type: string
                 runtime:
                     $ref: '#/components/schemas/SandboxRuntime'
@@ -1865,15 +2097,12 @@ components:
                 projectId:
                     description: Project ID
                     type: string
-                sandboxes:
-                    description: Sandboxes using this provider
+                pools:
+                    description: Pools backed by this provider instance
                     items:
-                        $ref: '#/components/schemas/Sandbox'
+                        $ref: '#/components/schemas/Pool'
                     nullable: true
                     type: array
-                status:
-                    $ref: '#/components/schemas/SandboxProviderInstanceStatus'
-                    description: Observed provider status derived from persisted worker state
                 type:
                     description: Provider type
                     type: string
@@ -1881,12 +2110,6 @@ components:
                     description: Last update timestamp
                     format: date-time
                     type: string
-                workers:
-                    description: Workers using this provider
-                    items:
-                        $ref: '#/components/schemas/Worker'
-                    nullable: true
-                    type: array
             required:
                 - id
                 - projectId
@@ -1896,122 +2119,6 @@ components:
                 - disabled
                 - createdAt
                 - updatedAt
-            type: object
-        SandboxProviderInstanceStatus:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/SandboxProviderInstanceStatus.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                degradedWorkers:
-                    description: Workers reporting degraded health
-                    format: int64
-                    type: integer
-                failedWorkers:
-                    description: Workers whose last lifecycle operation failed
-                    format: int64
-                    type: integer
-                details:
-                    description: Provider-specific observed status details
-                lastError:
-                    description: Most recent worker error message, if any
-                    type: string
-                readyWorkers:
-                    description: Workers currently reporting ready
-                    format: int64
-                    type: integer
-                schedulableWorkers:
-                    description: Workers currently accepting new sandboxes
-                    format: int64
-                    type: integer
-                workerCount:
-                    description: Total persisted workers for this provider
-                    format: int64
-                    type: integer
-                workers:
-                    description: Observed worker details
-                    items:
-                        $ref: '#/components/schemas/ProviderWorkerStatus'
-                    nullable: true
-                    type: array
-            required:
-                - workerCount
-                - readyWorkers
-                - schedulableWorkers
-                - degradedWorkers
-                - failedWorkers
-            type: object
-        ProviderWorkerStatus:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/ProviderWorkerStatus.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                availableCpuVcpus:
-                    description: Worker-reported available CPU capacity in vCPUs
-                    type: number
-                availableMemoryBytes:
-                    description: Worker-reported available memory capacity in bytes
-                    format: int64
-                    type: integer
-                availableStorageBytes:
-                    description: Worker-reported available storage capacity in bytes
-                    format: int64
-                    type: integer
-                degraded:
-                    description: Whether the worker is degraded
-                    type: boolean
-                desiredState:
-                    description: Requested worker state
-                    type: string
-                errorMessage:
-                    description: Latest worker error message
-                    type: string
-                id:
-                    description: Worker ID
-                    type: string
-                identity:
-                    description: Worker identity
-                    type: string
-                lastOperationStatus:
-                    description: Status of the latest worker operation
-                    type: string
-                lastSeenAt:
-                    description: Last heartbeat timestamp
-                    format: date-time
-                    type: string
-                phase:
-                    description: Observed worker lifecycle phase
-                    type: string
-                ready:
-                    description: Whether the worker is alive and healthy
-                    type: boolean
-                runtimeId:
-                    description: Sanitized backend runtime ID, such as a VM or container ID
-                    type: string
-                schedulable:
-                    description: Whether the worker accepts new sandboxes
-                    type: boolean
-                statusMessage:
-                    description: Human-readable status detail
-                    type: string
-            required:
-                - id
-                - desiredState
-                - phase
-                - ready
-                - schedulable
-                - degraded
-                - lastOperationStatus
-                - availableCpuVcpus
-                - availableMemoryBytes
-                - availableStorageBytes
             type: object
         AssignSandboxHarnessSecretsBody:
             additionalProperties: false
@@ -2526,12 +2633,12 @@ components:
                     maxLength: 200
                     type: string
             type: object
-        UpdateWorkerStatusBody:
+        UpdatePoolStatusBody:
             additionalProperties: false
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/UpdateWorkerStatusBody.json
+                    example: https://example.com/schemas/UpdatePoolStatusBody.json
                     format: uri
                     readOnly: true
                     type: string
@@ -2559,17 +2666,17 @@ components:
                 - availableMemoryBytes
                 - availableStorageBytes
             type: object
-        ReportWorkerSandboxRemovedBody:
+        ReportPoolSandboxRemovedBody:
             additionalProperties: false
             properties:
                 $schema:
                     description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/ReportWorkerSandboxRemovedBody.json
+                    example: https://example.com/schemas/ReportPoolSandboxRemovedBody.json
                     format: uri
                     readOnly: true
                     type: string
                 sandboxId:
-                    description: Sandbox whose worker-local runtime was removed outside control-plane reconciliation
+                    description: Sandbox whose pool-local runtime was removed outside control-plane reconciliation
                     type: string
             required:
                 - sandboxId
@@ -2612,153 +2719,6 @@ components:
                 - subject
                 - createdAt
                 - updatedAt
-            type: object
-        Worker:
-            additionalProperties: false
-            properties:
-                $schema:
-                    description: A URL to the JSON Schema for this object.
-                    example: https://example.com/schemas/Worker.json
-                    format: uri
-                    readOnly: true
-                    type: string
-                activeOperation:
-                    description: Current queued or running operation
-                    enum:
-                        - create
-                        - start
-                        - stop
-                        - restart
-                        - delete
-                    type: string
-                availableCpuVcpus:
-                    description: Worker-reported available CPU capacity in vCPUs
-                    format: double
-                    type: number
-                availableMemoryBytes:
-                    description: Worker-reported available memory capacity in bytes
-                    format: int64
-                    type: integer
-                availableStorageBytes:
-                    description: Worker-reported available storage capacity in bytes
-                    format: int64
-                    type: integer
-                conditions:
-                    description: Opaque worker-reported condition details for display
-                createdAt:
-                    description: Creation timestamp
-                    format: date-time
-                    type: string
-                degraded:
-                    description: Whether the worker should be used only as fallback capacity
-                    type: boolean
-                desiredState:
-                    description: Requested worker state
-                    enum:
-                        - active
-                        - drained
-                        - deleted
-                    type: string
-                errorMessage:
-                    description: Latest error message
-                    type: string
-                generation:
-                    description: Latest desired-state generation
-                    format: int64
-                    type: integer
-                id:
-                    description: Stable worker ID
-                    type: string
-                identity:
-                    description: Worker identity
-                    type: string
-                keyType:
-                    description: Worker key type
-                    type: string
-                lastOperationStatus:
-                    description: Status of the most recent operation
-                    enum:
-                        - pending
-                        - running
-                        - success
-                        - failed
-                    type: string
-                lastSeenAt:
-                    description: Last heartbeat timestamp
-                    format: date-time
-                    type: string
-                observedGeneration:
-                    description: Latest generation fully observed by reconciliation
-                    format: int64
-                    type: integer
-                phase:
-                    description: Observed lifecycle phase
-                    enum:
-                        - pending
-                        - launching
-                        - registering
-                        - active
-                        - draining
-                        - deleting
-                        - offline
-                        - deleted
-                        - failed
-                    type: string
-                projectId:
-                    description: Project ID
-                    type: string
-                providerInstance:
-                    $ref: '#/components/schemas/SandboxProviderInstance'
-                    description: Sandbox provider instance
-                providerInstanceId:
-                    description: Sandbox provider instance ID
-                    type: string
-                publicKey:
-                    description: Worker public key
-                    type: string
-                phaseChangedAt:
-                    description: When phase last changed to its current value. Anchors how long the resource has been in a phase, for timeouts that must not be reset by unrelated reconciles.
-                    format: date-time
-                    type: string
-                ready:
-                    description: Whether the worker is alive and healthy
-                    type: boolean
-                registeredAt:
-                    description: Registration timestamp
-                    format: date-time
-                    type: string
-                revokedAt:
-                    description: Revocation timestamp
-                    format: date-time
-                    type: string
-                schedulable:
-                    description: Whether the worker is willing to pull new work
-                    type: boolean
-                statusMessage:
-                    description: Human-readable status detail
-                    type: string
-                updatedAt:
-                    description: Last update timestamp
-                    format: date-time
-                    type: string
-            required:
-                - id
-                - projectId
-                - providerInstanceId
-                - identity
-                - ready
-                - schedulable
-                - degraded
-                - availableCpuVcpus
-                - availableMemoryBytes
-                - availableStorageBytes
-                - createdAt
-                - updatedAt
-                - desiredState
-                - phase
-                - lastOperationStatus
-                - generation
-                - observedGeneration
             type: object
 info:
     title: Discobox Sandbox Manager
@@ -2855,21 +2815,21 @@ paths:
             summary: Force a pending or backoff job to run immediately
             tags:
                 - jobs
-    /api/workers/register:
+    /api/pools/register:
         post:
-            operationId: register-worker
+            operationId: register-pool
             requestBody:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/RegisterWorkerBody'
+                            $ref: '#/components/schemas/RegisterPoolBody'
                 required: true
             responses:
                 200:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/RegisterWorkerResponseBody'
+                                $ref: '#/components/schemas/RegisterPoolResponseBody'
                     description: OK
                 default:
                     content:
@@ -2877,38 +2837,38 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Register a bootstrapped worker
+            summary: Register a bootstrapped pool agent
             tags:
-                - Workers
-    /api/workers/{workerId}/status:
+                - Pools
+    /api/pools/{poolId}/status:
         post:
-            operationId: update-worker-status
+            operationId: update-pool-status
             parameters:
-                - description: Worker ID
+                - description: Pool ID
                   in: path
-                  name: workerId
+                  name: poolId
                   required: true
                   schema:
-                    description: Worker ID
+                    description: Pool ID
                     type: string
-                - description: Bearer worker assertion signed with the registered worker private key
+                - description: Bearer pool agent assertion signed with the registered pool agent private key
                   in: header
                   name: Authorization
                   schema:
-                    description: Bearer worker assertion signed with the registered worker private key
+                    description: Bearer pool agent assertion signed with the registered pool agent private key
                     type: string
             requestBody:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/UpdateWorkerStatusBody'
+                            $ref: '#/components/schemas/UpdatePoolStatusBody'
                 required: true
             responses:
                 200:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Worker'
+                                $ref: '#/components/schemas/Pool'
                     description: OK
                 default:
                     content:
@@ -2916,31 +2876,31 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Update worker status
+            summary: Update pool status
             tags:
-                - Workers
-    /api/workers/{workerId}/sandbox-removed:
+                - Pools
+    /api/pools/{poolId}/sandbox-removed:
         post:
-            operationId: report-worker-sandbox-removed
+            operationId: report-pool-sandbox-removed
             parameters:
-                - description: Worker ID
+                - description: Pool ID
                   in: path
-                  name: workerId
+                  name: poolId
                   required: true
                   schema:
-                    description: Worker ID
+                    description: Pool ID
                     type: string
-                - description: Bearer worker assertion signed with the registered worker private key
+                - description: Bearer pool agent assertion signed with the registered pool agent private key
                   in: header
                   name: Authorization
                   schema:
-                    description: Bearer worker assertion signed with the registered worker private key
+                    description: Bearer pool agent assertion signed with the registered pool agent private key
                     type: string
             requestBody:
                 content:
                     application/json:
                         schema:
-                            $ref: '#/components/schemas/ReportWorkerSandboxRemovedBody'
+                            $ref: '#/components/schemas/ReportPoolSandboxRemovedBody'
                 required: true
             responses:
                 204:
@@ -2951,19 +2911,19 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Report a worker-local sandbox runtime removed outside reconciliation
+            summary: Report a pool-local sandbox runtime removed outside reconciliation
             tags:
-                - Workers
-    /api/workers/{workerId}/resolve-sandbox-secret:
+                - Pools
+    /api/pools/{poolId}/resolve-sandbox-secret:
         post:
             operationId: resolve-sandbox-secret
             parameters:
-                - description: Worker ID
+                - description: Pool ID
                   in: path
-                  name: workerId
+                  name: poolId
                   required: true
                   schema:
-                    description: Worker ID
+                    description: Pool ID
                     type: string
                 - description: Bearer worker assertion with the secret:resolve scope
                   in: header
@@ -2992,7 +2952,7 @@ paths:
                     description: Error
             summary: Resolve a sandbox sentinel secret
             tags:
-                - Workers
+                - Pools
     /projects:
         get:
             operationId: list-projects
@@ -3685,9 +3645,9 @@ paths:
             summary: Update a sandbox provider instance
             tags:
                 - Providers
-    /projects/{projectId}/workers:
+    /projects/{projectId}/pools:
         get:
-            operationId: list-workers
+            operationId: list-pools
             parameters:
                 - description: Project ID
                   in: path
@@ -3697,18 +3657,12 @@ paths:
                     default: default
                     description: Project ID
                     type: string
-                - description: Provider instance ID
-                  in: query
-                  name: provider
-                  schema:
-                    description: Provider instance ID
-                    type: string
             responses:
                 200:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/ListWorkersBody'
+                                $ref: '#/components/schemas/ListPoolsBody'
                     description: OK
                 default:
                     content:
@@ -3716,12 +3670,11 @@ paths:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: List workers
+            summary: List pools
             tags:
-                - Workers
-    /projects/{projectId}/workers/{workerId}/reconcile:
+                - Pools
         post:
-            operationId: reconcile-worker
+            operationId: create-pool
             parameters:
                 - description: Project ID
                   in: path
@@ -3731,29 +3684,168 @@ paths:
                     default: default
                     description: Project ID
                     type: string
-                - description: Worker ID
-                  in: path
-                  name: workerId
-                  required: true
-                  schema:
-                    description: Worker ID
-                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CreatePoolBody'
+                required: true
             responses:
-                202:
+                200:
                     content:
                         application/json:
                             schema:
-                                $ref: '#/components/schemas/Worker'
-                    description: Accepted
+                                $ref: '#/components/schemas/Pool'
+                    description: OK
                 default:
                     content:
                         application/problem+json:
                             schema:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
-            summary: Reconcile a worker
+            summary: Create a pool
             tags:
-                - Workers
+                - Pools
+    /projects/{projectId}/pools/{poolId}:
+        delete:
+            operationId: delete-pool
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+            responses:
+                204:
+                    description: No Content
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Delete a pool
+            tags:
+                - Pools
+        get:
+            operationId: get-pool
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Pool'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Get a pool
+            tags:
+                - Pools
+        patch:
+            operationId: update-pool
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UpdatePoolBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Pool'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Update a pool
+            tags:
+                - Pools
+    /projects/{projectId}/pools/{poolId}/reconcile:
+        post:
+            operationId: reconcile-pool
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Pool'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Reconcile a pool
+            tags:
+                - Pools
     /projects/{projectId}/sandboxes:
         get:
             operationId: list-sandboxes

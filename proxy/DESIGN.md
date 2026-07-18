@@ -2,12 +2,12 @@
 
 ## Package Role
 
-`proxy` is the reusable worker-scoped network proxy component. The worker-agent
+`proxy` is the reusable pool-scoped network proxy component. The pool-agent
 will run it and use its certificate preparation output when launching sandboxes,
 but the proxy package owns certificates, traffic policy, HTTP/SOCKS handling,
 disk response caching, and audit persistence.
 
-The component lives in the root module so worker-agent and future launch wiring
+The component lives in the root module so pool-agent and future launch wiring
 can share stable configuration and certificate material contracts without
 depending on server internals.
 
@@ -16,31 +16,31 @@ depending on server internals.
 ```mermaid
 flowchart LR
     sandbox["Sandbox processes"] -->|"HTTP_PROXY / HTTPS_PROXY / ALL_PROXY"| local["sandbox-local proxy"]
-    local -->|"mTLS client cert"| worker["worker proxy"]
-    worker --> mitm["HTTP/HTTPS MITM"]
-    worker --> socks["SOCKS5"]
+    local -->|"mTLS client cert"| pool["pool proxy"]
+    pool --> mitm["HTTP/HTTPS MITM"]
+    pool --> socks["SOCKS5"]
     mitm --> cache["disk cache"]
     mitm --> audit["async audit writer"]
     socks --> audit
     audit --> sqlite["gormdb SQLite"]
 ```
 
-The worker proxy requires client certificates. Client identity is derived from
+The pool proxy requires client certificates. Client identity is derived from
 the verified mTLS certificate and is attached to every HTTP audit row, SOCKS
 connect row, header injection decision, destination policy decision, cache event,
 and upgraded-stream audit row. The sandbox-local proxy is the intended place to
-accept localhost traffic from sandbox processes and forward to the shared worker
+accept localhost traffic from sandbox processes and forward to the shared pool
 proxy with the sandbox's client certificate.
 
 The sandbox-local forwarder lives in the dependency-light `proxy/bridge`
 subpackage so the `sandbox-agent` binary can embed it without pulling in the
-full worker proxy stack (goproxy, gormdb, cache, audit). Worker-agent wiring
-(`worker-agent/proxyagent`) runs the worker proxy as a systemd unit, prepares
+full pool proxy stack (goproxy, gormdb, cache, audit). Pool-agent wiring
+(`pool-agent/proxyagent`) runs the pool host proxy as a systemd unit, prepares
 certificates, and stages per-sandbox client material.
 
 Client identity is the tenant boundary. Rules that can expose or restrict data
 must support `ClientIDs`, and audit reads must support querying by client ID so
-worker-agent code can retrieve data for a specific sandbox without scanning or
+pool-agent code can retrieve data for a specific sandbox without scanning or
 mixing unrelated sandbox traffic.
 
 ## Certificate Model
@@ -48,9 +48,9 @@ mixing unrelated sandbox traffic.
 Certificate preparation is independent of running the proxy:
 
 - MITM CA: signs per-host certificates for intercepted HTTPS.
-- mTLS CA: signs the worker proxy server certificate and per-client
+- mTLS CA: signs the pool host proxy server certificate and per-client
   certificates.
-- Worker server certificate: presented by the worker proxy listener.
+- Pool server certificate: presented by the pool host proxy listener.
 - Client certificates: issued per sandbox/client identity and distributed with
   sandbox launch metadata.
 
@@ -106,7 +106,7 @@ Key properties:
   provider key format. Sentinels are non-secret and carry no embedded identifier.
 - **The proxy stays server-agnostic.** It owns detection, substitution, TTL
   caching, and audit redaction. The real value comes from an injected
-  `secrets.Resolver` (implemented by worker-agent, which calls the server). A nil
+  `secrets.Resolver` (implemented by pool-agent, which calls the server). A nil
   resolver disables swapping.
 - **Host authorization happens at resolve time.** The sentinel carries no host;
   each distinct destination triggers an on-demand resolution the server maps to a
@@ -142,13 +142,13 @@ Header audit redaction covers both credential-like header names and every header
 name touched by a rewrite rule. This prevents injected secret values from being
 persisted even when a configured header name does not look sensitive.
 
-The control API is read-only and exists for worker-agent audit retrieval. It
+The control API is read-only and exists for pool-agent audit retrieval. It
 lists HTTP and SOCKS audit rows by client ID, reports dropped audit counters,
 and serves body and upgraded-stream spool files only through the owning HTTP
 audit row and client ID. When `Control.TrustPublicKey` is configured, every
 control request must use a PASETO v4.public bearer token for audience
 `discobox-proxy-control` with `audit:read` scope. The proxy stores only the
-public verification key; worker-agent owns the private signing key.
+public verification key; pool-agent owns the private signing key.
 
 SOCKS5 remains a TCP tunnel. It is authenticated by the same mTLS listener and
 records connect attempts, destination, allow/deny, and client identity, but it

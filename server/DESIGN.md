@@ -68,12 +68,12 @@ Current proxy routes:
 
 - `/projects/{projectId}/sandboxes/{sandboxId}/git-repositories/{repository}.git...`
   is exposed as `/projects/{projectId}/sandboxes/{sandboxId}/git-repositories/*`
-  and forwards to the worker-agent git route
-  `/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/git-repositories/{repository}.git...`.
+  and forwards to the pool-agent git route
+  `/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/git-repositories/{repository}.git...`.
 - `/projects/{projectId}/sandboxes/{sandboxId}/http/{port}/{path...}` forwards
-  to the worker-agent route
-  `/api/project/{projectId}/worker/{workerId}/sandboxes/{sandboxId}/http/{port}/{path...}`.
-  The future worker-agent implementation owns translating that worker-local
+  to the pool-agent route
+  `/api/project/{projectId}/pool/{poolId}/sandboxes/{sandboxId}/http/{port}/{path...}`.
+  The future pool-agent implementation owns translating that pool-local
   route to `http://localhost:{port}/{path...}` inside the sandbox.
 - `/api/projects/{projectId}/sandboxes/{sandboxId}/harness-terminals...` forwards
   to the sandbox-agent terminal runtime API with the same path. The worker-agent
@@ -164,8 +164,9 @@ and runtime operation progress. `internal/resources/jobs` owns dispatcher infras
 | `internal/resources/events` | Project event query and subscription service behavior. |
 | `internal/resources/projects` | Project read service behavior. |
 | `internal/resources/sandboxes` | Sandbox API service behavior, sandbox reconcile executor/payload, sandbox runtime reconciliation, and sandbox provider catalog helpers. |
-| `internal/resources/workers` | Worker API service behavior, provider-facing worker manager, worker reconcile executor/payload, and worker runtime reconciliation. |
-| `internal/resources/providers` | Provider-instance API service behavior, startup reconciliation, worker provider reconcile executor/payload, and provider-runtime ensure coordination. |
+| `internal/resources/workers` | Worker API service behavior, provider-facing worker manager, worker and pool reconcilers, and worker runtime reconciliation. |
+| `internal/resources/pools` | Pool resource API behavior and observed pool status derived from worker rows. |
+| `internal/resources/providers` | Provider-instance API service behavior (backend identity only) and startup reconciliation. |
 | `internal/database` | Database config, connection setup, and migrations. |
 | `internal/store` | Persistence methods, resource transactions, project events, and durable job records. |
 | `internal/events` | In-process project event broker for committed resource events. |
@@ -205,6 +206,7 @@ and runtime operation progress. `internal/resources/jobs` owns dispatcher infras
 | `internal/resources/harnessconfigs` | [`internal/resources/harnessconfigs/DESIGN.md`](internal/resources/harnessconfigs/DESIGN.md) |
 | `internal/resources/events` | [`internal/resources/events/DESIGN.md`](internal/resources/events/DESIGN.md) |
 | `internal/resources/jobs` | [`internal/resources/jobs/DESIGN.md`](internal/resources/jobs/DESIGN.md) |
+| `internal/resources/pools` | [`internal/resources/pools/DESIGN.md`](internal/resources/pools/DESIGN.md) |
 | `internal/resources/providers` | [`internal/resources/providers/DESIGN.md`](internal/resources/providers/DESIGN.md) |
 | `internal/resources/projects` | [`internal/resources/projects/DESIGN.md`](internal/resources/projects/DESIGN.md) |
 | `internal/resources/sandboxes` | [`internal/resources/sandboxes/DESIGN.md`](internal/resources/sandboxes/DESIGN.md) |

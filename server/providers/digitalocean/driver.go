@@ -110,8 +110,8 @@ func (d *Driver) Close() error {
 	return nil
 }
 
-func (d *Driver) EnsureVM(ctx context.Context, workerID string, spec dockerworker.VMSpec) (*dockerworker.VMInfo, error) {
-	existing, err := d.findWorkerDroplet(ctx, workerID)
+func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.VMSpec) (*dockerworker.VMInfo, error) {
+	existing, err := d.findPoolDroplet(ctx, poolID)
 	if err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 		return nil, err
 	}
@@ -127,7 +127,7 @@ func (d *Driver) EnsureVM(ctx context.Context, workerID string, spec dockerworke
 		Backups:    d.backups,
 		IPv6:       d.ipv6,
 		Monitoring: d.monitoring,
-		Tags:       dropletTags(d.tags, workerID),
+		Tags:       dropletTags(d.tags, poolID),
 		UserData:   dockerInstallUserData,
 		VPCUUID:    d.vpcUUID,
 	}
@@ -138,8 +138,8 @@ func (d *Driver) EnsureVM(ctx context.Context, workerID string, spec dockerworke
 	return vmInfoFromDroplet(out.Droplet), nil
 }
 
-func (d *Driver) DeleteVM(ctx context.Context, workerID string) error {
-	droplet, err := d.findWorkerDroplet(ctx, workerID)
+func (d *Driver) DeleteVM(ctx context.Context, poolID string) error {
+	droplet, err := d.findPoolDroplet(ctx, poolID)
 	if err != nil {
 		if errors.Is(err, sandbox.ErrNotFound) {
 			return nil
@@ -153,8 +153,8 @@ func (d *Driver) DeleteVM(ctx context.Context, workerID string) error {
 	return err
 }
 
-func (d *Driver) InspectVM(ctx context.Context, workerID string) (*dockerworker.VMInfo, error) {
-	droplet, err := d.findWorkerDroplet(ctx, workerID)
+func (d *Driver) InspectVM(ctx context.Context, poolID string) (*dockerworker.VMInfo, error) {
+	droplet, err := d.findPoolDroplet(ctx, poolID)
 	if err != nil {
 		return nil, err
 	}
@@ -164,37 +164,37 @@ func (d *Driver) InspectVM(ctx context.Context, workerID string) (*dockerworker.
 // AcquireDockerClient reaches the droplet's Docker daemon by dialing its Unix
 // socket over SSH. The engine owns readiness waiting, so failures while the
 // droplet boots or installs Docker are expected and retried by the caller.
-func (d *Driver) AcquireDockerClient(ctx context.Context, workerID string) (*dockerworker.DockerClientLease, error) {
-	droplet, err := d.findWorkerDroplet(ctx, workerID)
+func (d *Driver) AcquireDockerClient(ctx context.Context, poolID string) (*dockerworker.DockerClientLease, error) {
+	droplet, err := d.findPoolDroplet(ctx, poolID)
 	if err != nil {
 		return nil, err
 	}
 	host := publicIPv4(droplet.Networks)
 	if host == "" {
-		return nil, fmt.Errorf("droplet for worker %s has no public IPv4 address yet", workerID)
+		return nil, fmt.Errorf("droplet for worker %s has no public IPv4 address yet", poolID)
 	}
 	return d.ssh.AcquireDockerClient(ctx, sshdocker.Target{Host: host})
 }
 
-func (d *Driver) AcquireWorkerAgentClient(ctx context.Context, workerID string) (*transport.HTTPClientLease, error) {
-	droplet, err := d.findWorkerDroplet(ctx, workerID)
+func (d *Driver) AcquirePoolAgentClient(ctx context.Context, poolID string) (*transport.HTTPClientLease, error) {
+	droplet, err := d.findPoolDroplet(ctx, poolID)
 	if err != nil {
 		return nil, err
 	}
 	host := publicIPv4(droplet.Networks)
 	if host == "" {
-		return nil, fmt.Errorf("droplet for worker %s has no public IPv4 address", workerID)
+		return nil, fmt.Errorf("droplet for worker %s has no public IPv4 address", poolID)
 	}
 	baseURL := "http://" + net.JoinHostPort(host, strconv.Itoa(d.agentPort))
 	return transport.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, baseURL, nil), nil
 }
 
-func (d *Driver) findWorkerDroplet(ctx context.Context, workerID string) (*droplet, error) {
-	if strings.TrimSpace(workerID) == "" {
+func (d *Driver) findPoolDroplet(ctx context.Context, poolID string) (*droplet, error) {
+	if strings.TrimSpace(poolID) == "" {
 		return nil, sandbox.ErrNotFound
 	}
 	var out dropletsResponse
-	if err := d.do(ctx, http.MethodGet, "/v2/droplets?tag_name="+url.QueryEscape(workerTag(workerID)), nil, &out); err != nil {
+	if err := d.do(ctx, http.MethodGet, "/v2/droplets?tag_name="+url.QueryEscape(workerTag(poolID)), nil, &out); err != nil {
 		return nil, err
 	}
 	if len(out.Droplets) == 0 {
@@ -266,9 +266,9 @@ func publicIPv4(networks dropletNetworks) string {
 	return ""
 }
 
-func dropletTags(defaultTags []string, workerID string) []string {
+func dropletTags(defaultTags []string, poolID string) []string {
 	tags := append([]string(nil), defaultTags...)
-	for _, tag := range []string{"discobox", workerTag(workerID)} {
+	for _, tag := range []string{"discobox", workerTag(poolID)} {
 		if tag == "" || strings.HasSuffix(tag, "-") {
 			continue
 		}
@@ -279,8 +279,8 @@ func dropletTags(defaultTags []string, workerID string) []string {
 	return tags
 }
 
-func workerTag(workerID string) string {
-	return "discobox-worker-" + safeTag(workerID)
+func workerTag(poolID string) string {
+	return "discobox-pool-" + safeTag(poolID)
 }
 
 func safeTag(value string) string {

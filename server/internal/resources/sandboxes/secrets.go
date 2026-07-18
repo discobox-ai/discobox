@@ -341,13 +341,6 @@ func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.
 	for _, assignment := range assignments {
 		sentinels = append(sentinels, assignment.Sentinel)
 	}
-	if sandboxModel.ProviderInstanceID != nil && strings.TrimSpace(*sandboxModel.ProviderInstanceID) != "" {
-		provider, err := s.store.GetSandboxProviderInstance(ctx, sandboxModel.ProjectID, *sandboxModel.ProviderInstanceID)
-		if err != nil {
-			return mapAPIError(err, "provider instance not found")
-		}
-		sandboxModel.ProviderInstance = provider
-	}
 	provider, err := s.sandboxProviders.ResolveForSandbox(ctx, sandboxModel)
 	if err != nil {
 		return err

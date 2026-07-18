@@ -42,10 +42,10 @@ tasks:
       - mkdir -p build
       - cd hooks && go build -o ../{{.HOOKS_BINARY}} {{.HOOKS_MAIN}}
 
-  build:worker-agent-image:
-    desc: Build the systemd Docker worker image
+  build:pool-agent-image:
+    desc: Build the systemd Docker pool image
     cmds:
-      - docker build -f worker-agent/Dockerfile -t discobox-worker-agent:local .
+      - docker build -f pool-agent/Dockerfile -t discobox-pool-agent:local .
 
   build:sandbox-agent-image:
     desc: Build the Debian sandbox agent image
@@ -53,9 +53,9 @@ tasks:
       - docker build -f sandbox-agent/Dockerfile -t discobox-sandbox-agent:local .
 
   build:images:
-    desc: Build worker, sandbox base, and all included harness images
+    desc: Build pool, sandbox base, and all included harness images
     cmds:
-      - task: build:worker-agent-image
+      - task: build:pool-agent-image
       - task: build:harness-images
 
   build:harness-stub-image:
@@ -139,11 +139,11 @@ tasks:
       - go tool air -c .air.cli.toml
 
   dev:docker-image-watch:
-    desc: Build and continuously rebuild worker, sandbox, and harness development images
+    desc: Build and continuously rebuild pool, sandbox, and harness development images
     cmds:
       - go run ./cmd/discobox-docker-image-watch
 
-  dev:worker-agent-image-watch:
+  dev:pool-agent-image-watch:
     desc: Alias for dev:docker-image-watch
     cmds:
       - task: dev:docker-image-watch
@@ -179,7 +179,7 @@ tasks:
       - go test {{.PACKAGES}}
       - cd cli && go test ./...
       - cd server && go test ./...
-      - cd worker-agent && go test ./...
+      - cd pool-agent && go test ./...
       - cd gormdb && go test ./...
       - cd hooks && go test ./...
       - cd sandbox-agent && go test ./...
@@ -190,7 +190,7 @@ tasks:
       - go tool golangci-lint run
       - cd cli && "$(go -C .. tool -n golangci-lint)" run
       - cd server && "$(go -C .. tool -n golangci-lint)" run
-      - cd worker-agent && "$(go -C .. tool -n golangci-lint)" run
+      - cd pool-agent && "$(go -C .. tool -n golangci-lint)" run
       - cd gormdb && "$(go -C .. tool -n golangci-lint)" run
       - cd hooks && "$(go -C .. tool -n golangci-lint)" run
       - cd sandbox-agent && "$(go -C .. tool -n golangci-lint)" run
@@ -287,7 +287,7 @@ tasks:
       - go tool golangci-lint run --fix
       - cd cli && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd server && "$(go -C .. tool -n golangci-lint)" run --fix
-      - cd worker-agent && "$(go -C .. tool -n golangci-lint)" run --fix
+      - cd pool-agent && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd gormdb && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd hooks && "$(go -C .. tool -n golangci-lint)" run --fix
       - cd sandbox-agent && "$(go -C .. tool -n golangci-lint)" run --fix

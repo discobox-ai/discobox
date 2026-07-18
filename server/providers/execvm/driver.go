@@ -8,7 +8,7 @@
 //
 // with the environment of the control plane plus:
 //
-//	DISCOBOX_WORKER_ID    the worker ID (same as argv)
+//	DISCOBOX_POOL_ID    the worker ID (same as argv)
 //	DISCOBOX_VM_NAME      suggested instance name (ensure-vm only)
 //	DISCOBOX_VM_METADATA  JSON object of labels/tags (ensure-vm only)
 //
@@ -100,12 +100,12 @@ func (d *Driver) Close() error {
 	return nil
 }
 
-func (d *Driver) EnsureVM(ctx context.Context, workerID string, spec dockerworker.VMSpec) (*dockerworker.VMInfo, error) {
+func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.VMSpec) (*dockerworker.VMInfo, error) {
 	metadata, err := json.Marshal(spec.Metadata)
 	if err != nil {
 		return nil, err
 	}
-	out, err := d.run(ctx, opEnsureVM, workerID,
+	out, err := d.run(ctx, opEnsureVM, poolID,
 		"DISCOBOX_VM_NAME="+spec.Name,
 		"DISCOBOX_VM_METADATA="+string(metadata),
 	)
@@ -115,21 +115,21 @@ func (d *Driver) EnsureVM(ctx context.Context, workerID string, spec dockerworke
 	return parseVMInfo(opEnsureVM, out)
 }
 
-func (d *Driver) DeleteVM(ctx context.Context, workerID string) error {
-	_, err := d.run(ctx, opDeleteVM, workerID)
+func (d *Driver) DeleteVM(ctx context.Context, poolID string) error {
+	_, err := d.run(ctx, opDeleteVM, poolID)
 	return err
 }
 
-func (d *Driver) InspectVM(ctx context.Context, workerID string) (*dockerworker.VMInfo, error) {
-	out, err := d.run(ctx, opInspectVM, workerID)
+func (d *Driver) InspectVM(ctx context.Context, poolID string) (*dockerworker.VMInfo, error) {
+	out, err := d.run(ctx, opInspectVM, poolID)
 	if err != nil {
 		return nil, err
 	}
 	return parseVMInfo(opInspectVM, out)
 }
 
-func (d *Driver) AcquireDockerClient(ctx context.Context, workerID string) (*dockerworker.DockerClientLease, error) {
-	out, err := d.run(ctx, opDockerEndpoint, workerID)
+func (d *Driver) AcquireDockerClient(ctx context.Context, poolID string) (*dockerworker.DockerClientLease, error) {
+	out, err := d.run(ctx, opDockerEndpoint, poolID)
 	if err != nil {
 		return nil, err
 	}
@@ -151,8 +151,8 @@ func (d *Driver) AcquireDockerClient(ctx context.Context, workerID string) (*doc
 	return dockerworker.NewDockerClientLease(cli, func() { _ = cli.Close() }), nil
 }
 
-func (d *Driver) AcquireWorkerAgentClient(ctx context.Context, workerID string) (*transport.HTTPClientLease, error) {
-	out, err := d.run(ctx, opAgentEndpoint, workerID)
+func (d *Driver) AcquirePoolAgentClient(ctx context.Context, poolID string) (*transport.HTTPClientLease, error) {
+	out, err := d.run(ctx, opAgentEndpoint, poolID)
 	if err != nil {
 		return nil, err
 	}
@@ -163,13 +163,13 @@ func (d *Driver) AcquireWorkerAgentClient(ctx context.Context, workerID string) 
 	return transport.NewHTTPClientLeaseWithBaseURL(http.DefaultClient, endpoint, nil), nil
 }
 
-func (d *Driver) run(ctx context.Context, op, workerID string, extraEnv ...string) ([]byte, error) {
-	if strings.TrimSpace(workerID) == "" {
+func (d *Driver) run(ctx context.Context, op, poolID string, extraEnv ...string) ([]byte, error) {
+	if strings.TrimSpace(poolID) == "" {
 		return nil, errors.New("worker ID is required")
 	}
-	args := append(append([]string(nil), d.command[1:]...), op, workerID)
+	args := append(append([]string(nil), d.command[1:]...), op, poolID)
 	cmd := exec.CommandContext(ctx, d.command[0], args...) //nolint:gosec // Running an operator-configured command is this driver's purpose; it comes from provider config, not request input.
-	cmd.Env = append(os.Environ(), "DISCOBOX_WORKER_ID="+workerID)
+	cmd.Env = append(os.Environ(), "DISCOBOX_POOL_ID="+poolID)
 	cmd.Env = append(cmd.Env, extraEnv...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = newLimitedWriter(&stdout)

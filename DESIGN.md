@@ -16,10 +16,16 @@ At the system boundary, Discobot is three cooperating concepts:
 
 - **Server**: the control plane and API surface. It stores desired state and
   coordinates reconciliation.
+- **Pool**: the user-visible sharing boundary sandboxes are scheduled into,
+  and its own runtime host (ADR-0003, ADR-0006). Sandboxes in one pool share a
+  cache volume, a resource envelope, and a kernel/host; a pool binds immutably
+  to one provider instance, and its host runtime (container/VM/pod) is
+  replaceable in place under the pool's identity.
 - **Sandbox provider**: the Go-level runtime integration interface implemented
-  by provider backends.
+  by provider backends. A provider instance is backend identity only —
+  capacity and sharing policy live on pools.
 - **Worker-local sandbox operations API**: the REST/OpenAPI runtime-operation
-  interface exposed by a worker agent for sandboxes hosted on that worker.
+  interface exposed by a pool agent for sandboxes hosted on that pool.
 - **Sandbox agent API**: the future in-sandbox REST/OpenAPI interface exposed
   from inside an individual sandbox environment.
 
@@ -42,7 +48,7 @@ Use contract-first REST API development for public and provider-delegated REST
 surfaces:
 
 - Server REST API: control plane API consumed by the CLI and external clients.
-- Worker-local sandbox operations API: runtime operations exposed by worker
+- Pool-local sandbox operations API: runtime operations exposed by pool
   harnesses and reached through provider-delegated access.
 - Sandbox agent API: in-sandbox API exposed by the sandbox-agent runtime.
 
@@ -52,10 +58,10 @@ the contract from Go handler code. Current contracts are intentionally split by
 surface:
 
 - `api/openapi/server.yaml` is the canonical control-plane REST API contract.
-- `worker-agent/api/openapi/worker.yaml` is the canonical worker-local sandbox
-  operations API contract. `worker-agent/generate.go` generates combined
-  client/server transport code into `worker-agent/api/gen` and stable schema
-  aliases into `worker-agent/api/model`; `worker-agent/server` adapts the
+- `pool-agent/api/openapi/pool.yaml` is the canonical pool-local sandbox
+  operations API contract. `pool-agent/generate.go` generates combined
+  client/server transport code into `pool-agent/api/gen` and stable schema
+  aliases into `pool-agent/api/model`; `pool-agent/server` adapts the
   generated server scaffold to local runtime operations.
 - Sandbox-agent terminal routes are canonical in `api/openapi/server.yaml` and
   marked for sandbox-agent subset generation. `api/openapi/sandbox.yaml` is
@@ -83,13 +89,13 @@ flowchart TD
     hooks --> root
     hooks --> gormdb
     providers --> serverInternal["github.com/obot-platform/discobox/server/internal"]
-    providers --> workerAgent["github.com/obot-platform/discobox/worker-agent"]
-    workerAgent --> root
+    providers --> poolAgent["github.com/obot-platform/discobox/pool-agent"]
+    poolAgent --> root
     sandboxAgent["github.com/obot-platform/discobox/sandbox-agent"] --> root
 ```
 
 - Root module: public API definitions, control-plane OpenAPI documents,
-  generated API clients/scaffolds, cross-module sentinel errors, IDs, worker
+  generated API clients/scaffolds, cross-module sentinel errors, IDs, pool
   boot metadata contracts, and client-facing stream DTOs.
 - CLI module: `disco` command implementation; depends on root generated
   clients/contracts for normal user commands and talks to the control plane
@@ -98,16 +104,16 @@ flowchart TD
   current CLI binary instead of depending on a separate `discobox-server`
   executable.
 - Server module: control plane implementation, persistence models, sandbox
-  provider Go interfaces, provider manager, and Docker/VM/cloud/worker-backed
+  provider Go interfaces, provider manager, and Docker/VM/cloud/pool-backed
   provider implementations.
 - Hooks module: standalone hook discovery, watch, execution, daemon, and status
   primitives. It depends inward on stable contracts and shared infrastructure
   helpers such as `gormdb`, but must not depend on server internals. See
   [`hooks/DESIGN.md`](hooks/DESIGN.md).
-- Worker-agent module: in-guest worker process, worker-local runtime DTOs, and
-  generated worker-local sandbox operations API server adapter; depends on root
-  worker boot contracts and OpenAPI contracts.
-- Root module: local Docker development image watcher for worker-agent and
+- Pool-agent module: in-guest pool host process, pool-local runtime DTOs, and
+  generated pool-local sandbox operations API server adapter; depends on root
+  pool boot contracts and OpenAPI contracts.
+- Root module: local Docker development image watcher for pool-agent and
   sandbox-agent images.
 - Sandbox-agent module: in-sandbox agent REST API runtime environment and harness
   implementation; depends on root contracts and generated API types.
@@ -120,7 +126,7 @@ Root module package map:
 
 | Package/path | Ownership |
 | --- | --- |
-| [`api/openapi`](api/openapi) | Canonical OpenAPI source contracts owned by the root module: the server REST API, plus generated sandbox-agent subset output. Worker-agent-owned contracts live under `worker-agent/api/openapi`. |
+| [`api/openapi`](api/openapi) | Canonical OpenAPI source contracts owned by the root module: the server REST API, plus generated sandbox-agent subset output. Pool-agent-owned contracts live under `pool-agent/api/openapi`. |
 | [`api/gen`](api/gen) | Generated client/server API scaffold from `api/openapi/server.yaml`, plus handwritten client helpers for transports OpenAPI generation cannot own. |
 | [`api/sandboxgen`](api/sandboxgen) | Generated client/server API scaffold from generated `api/openapi/sandbox.yaml`, the sandbox-agent subset of the server contract. |
 | [`api/model`](api/model) | Generated stable aliases for server REST API schema types. |

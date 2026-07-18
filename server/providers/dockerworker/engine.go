@@ -20,11 +20,11 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
+	poolagent "github.com/obot-platform/discobox/pool-agent"
+	"github.com/obot-platform/discobox/pool-agent/proxyagent"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/transport"
-	workeragent "github.com/obot-platform/discobox/worker-agent"
-	"github.com/obot-platform/discobox/worker-agent/proxyagent"
 )
 
 const (
@@ -44,18 +44,22 @@ const (
 
 	LabelManaged            = "discobox.vm.managed"
 	LabelProjectID          = "discobox.project_id"
-	LabelWorkerAgent        = "discobox.worker_agent"
-	LabelWorkerID           = "discobox.worker_id"
-	LabelWorkerConfig       = "discobox.worker_agent.config_revision"
+	LabelPoolAgent          = "discobox.pool_agent"
+	LabelPoolConfig         = "discobox.pool_agent.config_revision"
 	LabelProviderInstanceID = "discobox.provider_instance_id"
+	LabelPoolID             = "discobox.pool_id"
+	// LabelPoolEnvelope records the pool envelope applied to the worker
+	// container, so an envelope change recreates the container through the
+	// normal label drift check.
+	LabelPoolEnvelope = "discobox.pool_envelope"
 )
 
-// Config configures the worker runtime engine. It describes the worker-agent
+// Config configures the worker runtime engine. It describes the pool-agent
 // container, not the VM: VM settings belong to the Driver.
 type Config struct {
 	// ControlPlaneURL is the URL the in-container worker agent registers with.
 	ControlPlaneURL string
-	// Image is the worker-agent container image.
+	// Image is the pool-agent container image.
 	Image string
 	// Network is an optional additional Docker network for worker containers.
 	Network string
@@ -88,7 +92,7 @@ type Config struct {
 	DockerReadyTimeout time.Duration
 }
 
-// Engine runs worker-agent containers over Driver-provided Docker access. It
+// Engine runs pool-agent containers over Driver-provided Docker access. It
 // implements the worker provider surface consumed by the worker pool.
 type Engine struct {
 	driver         Driver
@@ -111,7 +115,7 @@ func New(cfg Config, driver Driver) (*Engine, error) {
 		cfg.DockerSocket = dockerSocketPath
 	}
 	if len(cfg.Command) == 0 && cfg.Systemd {
-		cfg.Command = []string{"/usr/local/bin/discobox-worker-agent"}
+		cfg.Command = []string{"/usr/local/bin/discobox-pool-agent"}
 	}
 	cfg.CgroupNSMode = strings.TrimSpace(cfg.CgroupNSMode)
 	cfg.HostMounts = NormalizeHostMounts(cfg.HostMounts)
@@ -125,7 +129,7 @@ func (e *Engine) Close() error {
 	return e.driver.Close()
 }
 
-// Image returns the worker-agent container image the engine launches.
+// Image returns the pool-agent container image the engine launches.
 func (e *Engine) Image() string { return e.cfg.Image }
 
 // ConfigRevision identifies the desired worker container configuration. It is
@@ -154,84 +158,84 @@ func configRevision(cfg Config) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func (e *Engine) EnsureWorker(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, mint workeragent.MintBootstrap) error {
-	vmInfo, err := e.driver.EnsureVM(ctx, worker.ID, e.vmSpec(provider, worker))
+func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap) error {
+	vmInfo, err := e.driver.EnsureVM(ctx, pool.ID, e.vmSpec(provider, pool))
 	if err != nil {
 		return err
 	}
-	lease, err := e.acquireDockerReady(ctx, worker.ID)
+	lease, err := e.acquireDockerReady(ctx, pool.ID)
 	if err != nil {
 		return err
 	}
 	defer lease.Release()
-	inst, recreated, err := e.ensureWorkerContainer(ctx, lease.Client, provider, worker, mint, false)
+	inst, recreated, err := e.ensurePoolContainer(ctx, lease.Client, provider, pool, mint, false)
 	if err != nil {
 		return err
 	}
-	return e.recordWorkerRuntime(worker, vmInfo, inst, recreated)
+	return e.recordPoolRuntime(pool, vmInfo, inst, recreated)
 }
 
-func (e *Engine) RepairWorker(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, worker *model.Worker, mint workeragent.MintBootstrap, _ string) error {
+func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, _ string) error {
 	// Replace the VM only when it is missing or unhealthy; worker-local state
 	// such as named volumes survives container replacement on a healthy VM.
-	vmInfo, err := e.driver.InspectVM(ctx, worker.ID)
+	vmInfo, err := e.driver.InspectVM(ctx, pool.ID)
 	if err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 		return err
 	}
 	if vmInfo == nil || vmInfo.Status != sandbox.StatusRunning {
-		if err := e.driver.DeleteVM(ctx, worker.ID); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+		if err := e.driver.DeleteVM(ctx, pool.ID); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 			return err
 		}
 	}
-	vmInfo, err = e.driver.EnsureVM(ctx, worker.ID, e.vmSpec(provider, worker))
+	vmInfo, err = e.driver.EnsureVM(ctx, pool.ID, e.vmSpec(provider, pool))
 	if err != nil {
 		return err
 	}
-	lease, err := e.acquireDockerReady(ctx, worker.ID)
+	lease, err := e.acquireDockerReady(ctx, pool.ID)
 	if err != nil {
 		return err
 	}
 	defer lease.Release()
-	inst, _, err := e.ensureWorkerContainer(ctx, lease.Client, provider, worker, mint, true)
+	inst, _, err := e.ensurePoolContainer(ctx, lease.Client, provider, pool, mint, true)
 	if err != nil {
 		return err
 	}
-	return e.recordWorkerRuntime(worker, vmInfo, inst, true)
+	return e.recordPoolRuntime(pool, vmInfo, inst, true)
 }
 
-func (e *Engine) RemoveWorker(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, worker *model.Worker) error {
-	lease, err := e.driver.AcquireDockerClient(ctx, worker.ID)
+func (e *Engine) RemovePool(ctx context.Context, _ *model.Project, _ *model.SandboxProviderInstance, pool *model.Pool) error {
+	lease, err := e.driver.AcquireDockerClient(ctx, pool.ID)
 	if err != nil {
 		// Tolerate unreachable Docker only when the VM itself is gone; the
 		// local driver's Docker must always be reachable.
-		if _, inspectErr := e.driver.InspectVM(ctx, worker.ID); !errors.Is(inspectErr, sandbox.ErrNotFound) {
+		if _, inspectErr := e.driver.InspectVM(ctx, pool.ID); !errors.Is(inspectErr, sandbox.ErrNotFound) {
 			return err
 		}
 	} else {
-		removeErr := e.removeWorkerContainer(ctx, lease.Client, worker.ID)
+		removeErr := e.removePoolContainer(ctx, lease.Client, pool.ID)
 		lease.Release()
 		if removeErr != nil {
 			return removeErr
 		}
 	}
-	if err := e.driver.DeleteVM(ctx, worker.ID); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+	if err := e.driver.DeleteVM(ctx, pool.ID); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 		return err
 	}
-	worker.RuntimeState = nil
-	worker.Ready = false
-	worker.Schedulable = false
-	worker.Degraded = false
+	pool.RuntimeState = nil
+	pool.Ready = false
+	pool.Schedulable = false
+	pool.Degraded = false
 	return nil
 }
 
-func (e *Engine) AcquireWorkerAgentClient(ctx context.Context, worker *model.Worker) (*transport.HTTPClientLease, error) {
-	if worker == nil || strings.TrimSpace(worker.ID) == "" {
-		return nil, errors.New("worker is required")
+func (e *Engine) AcquirePoolAgentClient(ctx context.Context, pool *model.Pool) (*transport.HTTPClientLease, error) {
+	if pool == nil || strings.TrimSpace(pool.ID) == "" {
+		return nil, errors.New("pool is required")
 	}
-	return e.driver.AcquireWorkerAgentClient(ctx, worker.ID)
+	return e.driver.AcquirePoolAgentClient(ctx, pool.ID)
 }
 
-func (e *Engine) recordWorkerRuntime(worker *model.Worker, vmInfo *VMInfo, inst *container.InspectResponse, recreated bool) error {
+func (e *Engine) recordPoolRuntime(pool *model.Pool, vmInfo *VMInfo, inst *container.InspectResponse, recreated bool) error {
 	instanceID := ""
 	if vmInfo != nil {
 		instanceID = vmInfo.ID
@@ -240,30 +244,30 @@ func (e *Engine) recordWorkerRuntime(worker *model.Worker, vmInfo *VMInfo, inst 
 	if err != nil {
 		return err
 	}
-	worker.RuntimeState = state
+	pool.RuntimeState = state
 	if recreated {
-		worker.Ready = false
-		worker.Schedulable = false
-		worker.Degraded = false
-		worker.Phase = model.WorkerPhaseRegistering
+		pool.Ready = false
+		pool.Schedulable = false
+		pool.Degraded = false
+		pool.Phase = model.PoolPhaseRegistering
 	}
 	return nil
 }
 
-func (e *Engine) vmSpec(provider *model.SandboxProviderInstance, worker *model.Worker) VMSpec {
+func (e *Engine) vmSpec(provider *model.SandboxProviderInstance, pool *model.Pool) VMSpec {
 	metadata := map[string]string{
-		LabelWorkerID:           worker.ID,
-		LabelWorkerAgent:        "true",
-		LabelProjectID:          worker.ProjectID,
+		LabelPoolID:             pool.ID,
+		LabelPoolAgent:          "true",
+		LabelProjectID:          pool.ProjectID,
 		LabelProviderInstanceID: provider.ID,
 	}
-	return VMSpec{Name: ContainerName(worker.ID), Metadata: metadata}
+	return VMSpec{Name: ContainerName(pool.ID), Metadata: metadata}
 }
 
 // acquireDockerReady acquires the worker's Docker client and waits for the
 // daemon to answer pings, bounding the time a freshly booted VM gets to bring
 // Docker up. Drivers do not implement readiness waiting themselves.
-func (e *Engine) acquireDockerReady(ctx context.Context, workerID string) (*DockerClientLease, error) {
+func (e *Engine) acquireDockerReady(ctx context.Context, poolID string) (*DockerClientLease, error) {
 	timeout := e.cfg.DockerReadyTimeout
 	if timeout <= 0 {
 		timeout = defaultDockerReadyWait
@@ -271,7 +275,7 @@ func (e *Engine) acquireDockerReady(ctx context.Context, workerID string) (*Dock
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 	for {
-		lease, err := e.driver.AcquireDockerClient(ctx, workerID)
+		lease, err := e.driver.AcquireDockerClient(ctx, poolID)
 		if err == nil {
 			_, pingErr := lease.Client.Ping(ctx, client.PingOptions{})
 			if pingErr == nil {
@@ -283,7 +287,7 @@ func (e *Engine) acquireDockerReady(ctx context.Context, workerID string) (*Dock
 			lastErr = err
 		}
 		if !time.Now().Before(deadline) {
-			return nil, fmt.Errorf("worker %s docker daemon not ready: %w", workerID, lastErr)
+			return nil, fmt.Errorf("worker %s docker daemon not ready: %w", poolID, lastErr)
 		}
 		timer := time.NewTimer(dockerReadyPollDelay)
 		select {
@@ -295,16 +299,16 @@ func (e *Engine) acquireDockerReady(ctx context.Context, workerID string) (*Dock
 	}
 }
 
-// ensureWorkerContainer creates or drift-corrects the worker-agent container
+// ensureWorkerContainer creates or drift-corrects the pool-agent container
 // on the given Docker daemon and waits for it to be ready. It reports whether
 // the container was (re)created.
 //
 // The bootstrap is minted lazily: the healthy-container path below returns
 // without calling mint, so a steady-state drift check persists no single-use
 // token. Only the create path needs credentials.
-func (e *Engine) ensureWorkerContainer(ctx context.Context, cli *client.Client, provider *model.SandboxProviderInstance, worker *model.Worker, mint workeragent.MintBootstrap, forceRecreate bool) (*container.InspectResponse, bool, error) {
-	name := ContainerName(worker.ID)
-	labels := e.containerLabels(provider, worker)
+func (e *Engine) ensurePoolContainer(ctx context.Context, cli *client.Client, provider *model.SandboxProviderInstance, pool *model.Pool, mint poolagent.MintBootstrap, forceRecreate bool) (*container.InspectResponse, bool, error) {
+	name := ContainerName(pool.ID)
+	labels := e.containerLabels(provider, pool)
 	if existing, err := cli.ContainerInspect(ctx, name, client.ContainerInspectOptions{}); err == nil {
 		if forceRecreate || shouldRemoveExistingContainer(existing.Container, e.cfg.Image, labels) {
 			if _, err := cli.ContainerRemove(ctx, existing.Container.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil {
@@ -318,14 +322,14 @@ func (e *Engine) ensureWorkerContainer(ctx context.Context, cli *client.Client, 
 		return nil, false, err
 	}
 
-	inst, err := e.createWorkerContainer(ctx, cli, worker, name, labels, mint)
+	inst, err := e.createPoolContainer(ctx, cli, pool, name, labels, mint)
 	if err != nil {
 		return nil, false, err
 	}
 	return inst, true, nil
 }
 
-func (e *Engine) createWorkerContainer(ctx context.Context, cli *client.Client, worker *model.Worker, name string, labels map[string]string, mint workeragent.MintBootstrap) (*container.InspectResponse, error) {
+func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, pool *model.Pool, name string, labels map[string]string, mint poolagent.MintBootstrap) (*container.InspectResponse, error) {
 	if mint == nil {
 		return nil, fmt.Errorf("worker bootstrap minter is required")
 	}
@@ -334,8 +338,8 @@ func (e *Engine) createWorkerContainer(ctx context.Context, cli *client.Client, 
 		return nil, err
 	}
 	bootstrap.ControlPlaneURL = firstNonEmpty(bootstrap.ControlPlaneURL, e.cfg.ControlPlaneURL)
-	bootstrap.ProjectID = firstNonEmpty(bootstrap.ProjectID, worker.ProjectID)
-	bootstrap.WorkerID = firstNonEmpty(bootstrap.WorkerID, worker.ID)
+	bootstrap.ProjectID = firstNonEmpty(bootstrap.ProjectID, pool.ProjectID)
+	bootstrap.PoolID = firstNonEmpty(bootstrap.PoolID, pool.ID)
 	if bootstrap.AgentPort == 0 {
 		bootstrap.AgentPort = e.cfg.AgentPort
 	}
@@ -360,6 +364,17 @@ func (e *Engine) createWorkerContainer(ctx context.Context, cli *client.Client, 
 		PortBindings: network.PortMap{exposedPort: []network.PortBinding{e.agentPortBinding()}},
 		ExtraHosts:   append([]string(nil), e.cfg.ExtraHosts...),
 	}
+	// The pool envelope is the worker container limit: per-sandbox limits nest
+	// inside it, so overcommit falls out of the runtime hierarchy rather than
+	// scheduler arithmetic. Zero values leave the container host-sized.
+	if pool != nil {
+		if pool.CPUVCPUs > 0 {
+			hostConfig.NanoCPUs = int64(pool.CPUVCPUs * 1_000_000_000)
+		}
+		if pool.MemoryBytes > 0 {
+			hostConfig.Memory = pool.MemoryBytes
+		}
+	}
 	if e.cfg.CgroupNSMode != "" {
 		hostConfig.CgroupnsMode = container.CgroupnsMode(e.cfg.CgroupNSMode)
 	} else if e.cfg.Systemd {
@@ -370,7 +385,7 @@ func (e *Engine) createWorkerContainer(ctx context.Context, cli *client.Client, 
 		// 255 before it can even log.
 		hostConfig.CgroupnsMode = container.CgroupnsMode("private")
 	}
-	hostConfig.Mounts = e.containerMounts(worker.ID, worker.ProjectID)
+	hostConfig.Mounts = e.containerMounts(pool.ID, pool.ProjectID)
 	if e.cfg.Systemd {
 		hostConfig.Tmpfs = map[string]string{"/run": "rw,noexec,nosuid,size=64m", "/run/lock": "rw,noexec,nosuid,size=64m", "/tmp": "rw,size=64m"}
 	}
@@ -381,14 +396,14 @@ func (e *Engine) createWorkerContainer(ctx context.Context, cli *client.Client, 
 	// Workers run the shared proxy that their sandboxes route through. Create
 	// the per-worker internal network so the worker can be aliased as the proxy
 	// server name on it and sandboxes can reach only the proxy.
-	if err := e.ensureSandboxNetwork(ctx, cli, worker.ID); err != nil {
+	if err := e.ensureSandboxNetwork(ctx, cli, pool.ID); err != nil {
 		return nil, err
 	}
 	created, err := cli.ContainerCreate(ctx, client.ContainerCreateOptions{Config: config, HostConfig: hostConfig, NetworkingConfig: networkConfig, Name: name})
 	if err != nil {
 		return nil, err
 	}
-	if _, err := cli.NetworkConnect(ctx, proxyagent.SandboxNetworkName(worker.ID), client.NetworkConnectOptions{
+	if _, err := cli.NetworkConnect(ctx, proxyagent.SandboxNetworkName(pool.ID), client.NetworkConnectOptions{
 		Container:      created.ID,
 		EndpointConfig: &network.EndpointSettings{Aliases: []string{proxyagent.ServerName}},
 	}); err != nil {
@@ -407,21 +422,21 @@ func (e *Engine) agentPortBinding() network.PortBinding {
 	return network.PortBinding{HostIP: netip.MustParseAddr("127.0.0.1")}
 }
 
-func (e *Engine) removeWorkerContainer(ctx context.Context, cli *client.Client, workerID string) error {
-	name := ContainerName(workerID)
+func (e *Engine) removePoolContainer(ctx context.Context, cli *client.Client, poolID string) error {
+	name := ContainerName(poolID)
 	if _, err := cli.ContainerRemove(ctx, name, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 		return err
 	}
-	// Best-effort remove the per-worker sandbox network once the worker (and
+	// Best-effort remove the per-pool sandbox network once the pool host (and
 	// its sandboxes) are gone. It fails harmlessly if sandboxes are still
 	// attached.
-	_, _ = cli.NetworkRemove(ctx, proxyagent.SandboxNetworkName(workerID), client.NetworkRemoveOptions{})
+	_, _ = cli.NetworkRemove(ctx, proxyagent.SandboxNetworkName(poolID), client.NetworkRemoveOptions{})
 	return nil
 }
 
 // ensureSandboxNetwork creates the per-worker internal bridge network if absent.
-func (e *Engine) ensureSandboxNetwork(ctx context.Context, cli *client.Client, workerID string) error {
-	name := proxyagent.SandboxNetworkName(workerID)
+func (e *Engine) ensureSandboxNetwork(ctx context.Context, cli *client.Client, poolID string) error {
+	name := proxyagent.SandboxNetworkName(poolID)
 	if _, err := cli.NetworkInspect(ctx, name, client.NetworkInspectOptions{}); err == nil {
 		return nil
 	} else if !cerrdefs.IsNotFound(err) {
@@ -430,7 +445,7 @@ func (e *Engine) ensureSandboxNetwork(ctx context.Context, cli *client.Client, w
 	_, err := cli.NetworkCreate(ctx, name, client.NetworkCreateOptions{
 		Driver:   "bridge",
 		Internal: true,
-		Labels:   map[string]string{LabelManaged: "true", LabelWorkerID: workerID},
+		Labels:   map[string]string{LabelManaged: "true", LabelPoolID: poolID},
 	})
 	if err != nil && !cerrdefs.IsConflict(err) && !cerrdefs.IsAlreadyExists(err) {
 		return err
@@ -438,18 +453,26 @@ func (e *Engine) ensureSandboxNetwork(ctx context.Context, cli *client.Client, w
 	return nil
 }
 
-func (e *Engine) containerLabels(provider *model.SandboxProviderInstance, worker *model.Worker) map[string]string {
-	labels := make(map[string]string, len(e.cfg.Labels)+6)
+func (e *Engine) containerLabels(provider *model.SandboxProviderInstance, pool *model.Pool) map[string]string {
+	labels := make(map[string]string, len(e.cfg.Labels)+8)
 	for key, value := range e.cfg.Labels {
 		labels[key] = value
 	}
 	labels[LabelManaged] = "true"
-	labels[LabelWorkerAgent] = "true"
-	labels[LabelWorkerID] = worker.ID
-	labels[LabelProjectID] = worker.ProjectID
+	labels[LabelPoolAgent] = "true"
+	labels[LabelPoolID] = pool.ID
+	labels[LabelProjectID] = pool.ProjectID
 	labels[LabelProviderInstanceID] = provider.ID
-	labels[LabelWorkerConfig] = e.configRevision
+	labels[LabelPoolConfig] = e.configRevision
+	labels[LabelPoolEnvelope] = poolEnvelopeRevision(pool)
 	return labels
+}
+
+// poolEnvelopeRevision encodes the envelope values applied to the worker
+// container, compared through the label drift check so envelope changes
+// recreate the container.
+func poolEnvelopeRevision(pool *model.Pool) string {
+	return fmt.Sprintf("cpu=%.3f,mem=%d", pool.CPUVCPUs, pool.MemoryBytes)
 }
 
 // ShouldReconcileWorkerContainer reports whether a worker container drifted
@@ -459,7 +482,7 @@ func (e *Engine) ShouldReconcileWorkerContainer(image string, labels map[string]
 	if image != e.cfg.Image {
 		return true
 	}
-	return labels[LabelWorkerConfig] != e.configRevision
+	return labels[LabelPoolConfig] != e.configRevision
 }
 
 func shouldRemoveExistingContainer(existing container.InspectResponse, desiredImage string, desiredLabels map[string]string) bool {
@@ -483,7 +506,7 @@ func shouldRemoveExistingContainer(existing container.InspectResponse, desiredIm
 	return false
 }
 
-func (e *Engine) containerMounts(workerID, projectID string) []mount.Mount {
+func (e *Engine) containerMounts(poolID, projectID string) []mount.Mount {
 	mounts := []mount.Mount{{Type: mount.TypeBind, Source: e.cfg.DockerSocket, Target: dockerSocketPath}}
 	if !hasHostMountSource(e.cfg.HostMounts, workerHostSandboxRoot) {
 		mounts = append(mounts, mount.Mount{
@@ -515,7 +538,7 @@ func (e *Engine) containerMounts(workerID, projectID string) []mount.Mount {
 		// which systemd requires. The host bind mount would shadow it with the
 		// read-only host cgroup root.
 		mounts = append(mounts,
-			mount.Mount{Type: mount.TypeVolume, Source: workerScopedVolumeName(workerID, "docker"), Target: "/var/lib/docker"},
+			mount.Mount{Type: mount.TypeVolume, Source: poolScopedVolumeName(poolID, "docker"), Target: "/var/lib/docker"},
 			mount.Mount{Type: mount.TypeVolume, Source: projectScopedVolumeName(projectID, "discobox"), Target: "/var/lib/discobox"},
 		)
 	}
@@ -641,9 +664,9 @@ func mapDockerNotFound(err error) error {
 
 var invalidContainerName = regexp.MustCompile(`[^a-zA-Z0-9_.-]+`)
 
-// ContainerName is the deterministic worker-agent container name for a worker.
-func ContainerName(workerID string) string {
-	name := invalidContainerName.ReplaceAllString(workerID, "-")
+// ContainerName is the deterministic pool-agent container name for a worker.
+func ContainerName(poolID string) string {
+	name := invalidContainerName.ReplaceAllString(poolID, "-")
 	name = strings.Trim(name, "-_.")
 	if name == "" {
 		name = "vm"
@@ -651,8 +674,8 @@ func ContainerName(workerID string) string {
 	return "discobox-vm-" + name
 }
 
-func workerScopedVolumeName(workerID, suffix string) string {
-	return scopedVolumeName("worker", workerID, suffix)
+func poolScopedVolumeName(poolID, suffix string) string {
+	return scopedVolumeName("pool", poolID, suffix)
 }
 
 func projectScopedVolumeName(projectID, suffix string) string {

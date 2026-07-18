@@ -17,27 +17,20 @@ import (
 )
 
 const (
-	WorkerSchedulingPreferred   = "preferred"
-	WorkerSchedulingDegraded    = "degraded"
-	WorkerSchedulingUnavailable = "unavailable"
+	PoolDesiredStateActive  = "active"
+	PoolDesiredStateDeleted = "deleted"
 
-	WorkerDesiredStateActive  = "active"
-	WorkerDesiredStateDrained = "drained"
-	WorkerDesiredStateDeleted = "deleted"
+	PoolPhasePending     = "pending"
+	PoolPhaseLaunching   = "launching"
+	PoolPhaseRegistering = "registering"
+	PoolPhaseActive      = "active"
+	PoolPhaseDeleting    = "deleting"
+	PoolPhaseOffline     = "offline"
+	PoolPhaseFailed      = "failed"
+	PoolPhaseDeleted     = "deleted"
 
-	WorkerPhasePending     = "pending"
-	WorkerPhaseLaunching   = "launching"
-	WorkerPhaseRegistering = "registering"
-	WorkerPhaseActive      = "active"
-	WorkerPhaseDraining    = "draining"
-	WorkerPhaseDeleting    = "deleting"
-	WorkerPhaseOffline     = "offline"
-	WorkerPhaseFailed      = "failed"
-	WorkerPhaseDeleted     = "deleted"
-
-	WorkerOperationCreate = "create"
-	WorkerOperationDrain  = "drain"
-	WorkerOperationDelete = "delete"
+	PoolOperationCreate = "create"
+	PoolOperationDelete = "delete"
 
 	SandboxDesiredStateRunning = "running"
 	SandboxDesiredStateStopped = "stopped"
@@ -85,21 +78,19 @@ const (
 // it — a value present in one list but not the other is exactly the bug the test
 // catches.
 var (
-	WorkerDesiredStates = []string{
-		WorkerDesiredStateActive,
-		WorkerDesiredStateDrained,
-		WorkerDesiredStateDeleted,
+	PoolDesiredStates = []string{
+		PoolDesiredStateActive,
+		PoolDesiredStateDeleted,
 	}
-	WorkerPhases = []string{
-		WorkerPhasePending,
-		WorkerPhaseLaunching,
-		WorkerPhaseRegistering,
-		WorkerPhaseActive,
-		WorkerPhaseDraining,
-		WorkerPhaseDeleting,
-		WorkerPhaseOffline,
-		WorkerPhaseFailed,
-		WorkerPhaseDeleted,
+	PoolPhases = []string{
+		PoolPhasePending,
+		PoolPhaseLaunching,
+		PoolPhaseRegistering,
+		PoolPhaseActive,
+		PoolPhaseDeleting,
+		PoolPhaseOffline,
+		PoolPhaseFailed,
+		PoolPhaseDeleted,
 	}
 	SandboxDesiredStates = []string{
 		SandboxDesiredStateRunning,
@@ -131,20 +122,15 @@ var (
 )
 
 var (
-	WorkerCreateOperation = OperationSpec{
-		Operation:    WorkerOperationCreate,
-		DesiredState: WorkerDesiredStateActive,
-		Phase:        WorkerPhasePending,
+	PoolCreateOperation = OperationSpec{
+		Operation:    PoolOperationCreate,
+		DesiredState: PoolDesiredStateActive,
+		Phase:        PoolPhasePending,
 	}
-	WorkerDrainOperation = OperationSpec{
-		Operation:    WorkerOperationDrain,
-		DesiredState: WorkerDesiredStateDrained,
-		Phase:        WorkerPhaseDraining,
-	}
-	WorkerDeleteOperation = OperationSpec{
-		Operation:    WorkerOperationDelete,
-		DesiredState: WorkerDesiredStateDeleted,
-		Phase:        WorkerPhaseDeleting,
+	PoolDeleteOperation = OperationSpec{
+		Operation:    PoolOperationDelete,
+		DesiredState: PoolDesiredStateDeleted,
+		Phase:        PoolPhaseDeleting,
 	}
 
 	SandboxCreateOperation = OperationSpec{
@@ -202,18 +188,19 @@ func (u *User) BeforeCreate(_ *gorm.DB) error {
 
 // Project groups sandboxes and provider configuration.
 type Project struct {
-	ID                       string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable project ID"`
-	OwnerUserID              string         `gorm:"column:owner_user_id;not null;type:text;index" json:"ownerUserId" doc:"Owning user ID"`
-	Name                     string         `gorm:"not null;type:text" json:"name" doc:"Project display name" maxLength:"200"`
-	Slug                     string         `gorm:"uniqueIndex;not null;type:text" json:"slug" doc:"URL-safe project slug" pattern:"^[a-z0-9][a-z0-9-]*$"`
-	Default                  bool           `gorm:"column:default_project;not null;default:false;index" json:"default" doc:"Whether this is the user's default project"`
-	DefaultSandboxProviderID string         `gorm:"column:default_sandbox_provider_id;type:text;default:''" json:"defaultSandboxProviderId,omitempty" doc:"Default sandbox provider instance ID"`
-	DefaultHarnessConfigID   string         `gorm:"column:default_harness_config_id;type:text;default:''" json:"defaultHarnessConfigId,omitempty" doc:"Default harness config ID"`
-	CreatedAt                time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt                time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-	DeletedAt                gorm.DeletedAt `gorm:"index" json:"-"`
+	ID                     string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable project ID"`
+	OwnerUserID            string         `gorm:"column:owner_user_id;not null;type:text;index" json:"ownerUserId" doc:"Owning user ID"`
+	Name                   string         `gorm:"not null;type:text" json:"name" doc:"Project display name" maxLength:"200"`
+	Slug                   string         `gorm:"uniqueIndex;not null;type:text" json:"slug" doc:"URL-safe project slug" pattern:"^[a-z0-9][a-z0-9-]*$"`
+	Default                bool           `gorm:"column:default_project;not null;default:false;index" json:"default" doc:"Whether this is the user's default project"`
+	DefaultPoolID          string         `gorm:"column:default_pool_id;type:text;default:''" json:"defaultPoolId,omitempty" doc:"Default pool ID for new sandboxes"`
+	DefaultHarnessConfigID string         `gorm:"column:default_harness_config_id;type:text;default:''" json:"defaultHarnessConfigId,omitempty" doc:"Default harness config ID"`
+	CreatedAt              time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt              time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	DeletedAt              gorm.DeletedAt `gorm:"index" json:"-"`
 
 	Owner                    *User                     `gorm:"-" json:"owner,omitempty" doc:"Project owner"`
+	Pools                    []Pool                    `gorm:"foreignKey:ProjectID" json:"pools,omitempty" doc:"Project pools"`
 	Members                  []ProjectMember           `gorm:"foreignKey:ProjectID" json:"members,omitempty" doc:"Project members"`
 	Sandboxes                []Sandbox                 `gorm:"foreignKey:ProjectID" json:"sandboxes,omitempty" doc:"Project sandboxes"`
 	SandboxProviderInstances []SandboxProviderInstance `gorm:"foreignKey:ProjectID" json:"sandboxProviderInstances,omitempty" doc:"Sandbox provider instances"`
@@ -467,12 +454,98 @@ func (o *Origin) Key() string {
 	return originkey.Of(o.HostID, o.ProjectPath)
 }
 
+// Pool is the user-visible sharing boundary sandboxes are scheduled into,
+// and its own runtime host (ADR-0006).
+//
+// Sandboxes in the same pool share a cache volume, a resource envelope, and a
+// weaker isolation boundary (same kernel/host); cross-tenant or mutually
+// untrusted work belongs in different pools. A pool binds to exactly one
+// provider instance at create time, immutably: the provider instance is
+// backend identity (type, credentials, connection config), while everything
+// about capacity and sharing lives here.
+//
+// One host per pool is an invariant: the pool row carries the runtime
+// lifecycle directly — registration identity, scheduling flags, reported
+// capacity, heartbeat, and provider runtime state. Recovery replaces the
+// runtime in place under the same pool identity; pool-local state survives in
+// named volumes.
+type Pool struct {
+	ID                 string `gorm:"primaryKey;type:text" json:"id" doc:"Stable pool ID"`
+	ProjectID          string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_pool_project_name,priority:1" json:"projectId" doc:"Project ID"`
+	Name               string `gorm:"column:name;not null;type:text;uniqueIndex:idx_pool_project_name,priority:2" json:"name" doc:"Pool display name" maxLength:"200"`
+	ProviderInstanceID string `gorm:"column:provider_instance_id;not null;type:text;index" json:"providerInstanceId" doc:"Backing sandbox provider instance ID. Immutable after create."`
+	BuiltIn            bool   `gorm:"column:built_in;not null;default:false" json:"builtIn" doc:"True for the default pool seeded by the server; built-in pools cannot be deleted"`
+	// Envelope: total capacity available to the pool. Sandbox resource requests
+	// are scheduled against the envelope and may overcommit it. Zero means the
+	// envelope is sized by the pool's host.
+	CPUVCPUs     float64 `gorm:"column:cpu_vcpus;not null;default:0" json:"cpuVcpus" doc:"Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host."`
+	MemoryBytes  int64   `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"Total memory capacity of the pool envelope in bytes. Zero sizes the envelope by the host."`
+	StorageBytes int64   `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Total storage capacity of the pool envelope in bytes. Zero sizes the envelope by the host."`
+	// Cache: every sandbox in the pool mounts the shared pool cache volume at a
+	// well-known path when enabled.
+	CacheEnabled bool `gorm:"column:cache_enabled;not null;default:true" json:"cacheEnabled" doc:"Whether sandboxes in the pool mount the shared pool cache volume"`
+
+	// Runtime host state, reported by the pool agent and the provider.
+	PublicKey             string          `gorm:"column:public_key;type:text" json:"publicKey,omitempty" doc:"Pool agent public key"`
+	KeyType               string          `gorm:"column:key_type;type:text;default:'ed25519'" json:"keyType,omitempty" doc:"Pool agent key type"`
+	Ready                 bool            `gorm:"column:ready;not null;default:false;index" json:"ready" doc:"Whether the pool host is alive and healthy"`
+	Schedulable           bool            `gorm:"column:schedulable;not null;default:false;index" json:"schedulable" doc:"Whether the pool accepts new sandboxes"`
+	Degraded              bool            `gorm:"column:degraded;not null;default:false;index" json:"degraded" doc:"Whether the pool should be used only as fallback capacity"`
+	AvailableCPUVCPUs     float64         `gorm:"column:available_cpu_vcpus;not null;default:0" json:"availableCpuVcpus" doc:"Agent-reported available CPU capacity in vCPUs"`
+	AvailableMemoryBytes  int64           `gorm:"column:available_memory_bytes;not null;default:0" json:"availableMemoryBytes" doc:"Agent-reported available memory capacity in bytes"`
+	AvailableStorageBytes int64           `gorm:"column:available_storage_bytes;not null;default:0" json:"availableStorageBytes" doc:"Agent-reported available storage capacity in bytes"`
+	Conditions            json.RawMessage `gorm:"column:conditions;type:text" json:"conditions,omitempty" doc:"Opaque agent-reported condition details for display"`
+	RuntimeState          json.RawMessage `gorm:"column:runtime_state;type:text" json:"-" doc:"Internal provider runtime state; may contain boot material and must not be serialized"`
+	ResourceLifecycle     `gorm:"embedded"`
+	RegisteredAt          *time.Time     `gorm:"column:registered_at" json:"registeredAt,omitempty" doc:"Registration timestamp" format:"date-time"`
+	LastSeenAt            *time.Time     `gorm:"column:last_seen_at;index" json:"lastSeenAt,omitempty" doc:"Last heartbeat timestamp" format:"date-time"`
+	RevokedAt             *time.Time     `gorm:"column:revoked_at;index" json:"revokedAt,omitempty" doc:"Revocation timestamp" format:"date-time"`
+	CreatedAt             time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt             time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	DeletedAt             gorm.DeletedAt `gorm:"index" json:"-"`
+
+	Project          *Project                 `gorm:"foreignKey:ProjectID" json:"-"`
+	ProviderInstance *SandboxProviderInstance `gorm:"foreignKey:ProviderInstanceID" json:"providerInstance,omitempty" doc:"Backing sandbox provider instance"`
+	Sandboxes        []Sandbox                `gorm:"foreignKey:PoolID" json:"-"`
+	BootstrapTokens  []PoolBootstrapToken     `gorm:"foreignKey:PoolID" json:"-" doc:"Pool bootstrap tokens"`
+}
+
+func (Pool) TableName() string { return "pools" }
+
+func (p *Pool) EventProjectID() string    { return p.ProjectID }
+func (p *Pool) EventResourceType() string { return "pool" }
+func (p *Pool) EventResourceID() string   { return p.ID }
+
+func (p *Pool) BeforeCreate(_ *gorm.DB) error {
+	if p.ID == "" {
+		var err error
+		p.ID, err = id.New(id.PrefixPool)
+		if err != nil {
+			return err
+		}
+	}
+	p.SetDefaults(PoolDesiredStateActive, PoolPhasePending)
+	if p.KeyType == "" {
+		p.KeyType = "ed25519"
+	}
+	return nil
+}
+
+// EverCreated reports whether the pool's runtime completed its initial create
+// and registered at least once. Such pools are stateful (they own runtime
+// volumes and assigned sandboxes), so a failed reconcile must be driven back
+// to health rather than latched to a terminal failure. Only a pool whose
+// runtime never registered may fail terminally.
+func (p *Pool) EverCreated() bool {
+	return p != nil && p.RegisteredAt != nil
+}
+
 // Sandbox is the managed runtime/session unit.
 type Sandbox struct {
 	ID                   string  `gorm:"primaryKey;type:text" json:"id" doc:"Stable sandbox ID"`
 	ProjectID            string  `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
 	CreatedByUserID      string  `gorm:"column:created_by_user_id;not null;type:text;index" json:"createdByUserId" doc:"Creating user ID"`
-	ProviderInstanceID   *string `gorm:"column:provider_instance_id;type:text;index" json:"providerInstanceId,omitempty" doc:"Sandbox provider instance ID"`
+	PoolID               string  `gorm:"column:pool_id;not null;type:text;index" json:"poolId" doc:"Pool the sandbox is scheduled into. Resolved at create, immutable after."`
 	HarnessConfigID      *string `gorm:"column:harness_config_id;type:text;index" json:"harnessConfigId,omitempty" doc:"Harness config ID"`
 	HarnessMode          string  `gorm:"column:harness_mode;not null;type:text;default:'run'" json:"harnessMode,omitempty" doc:"Harness startup mode: run or config"`
 	Name                 string  `gorm:"not null;type:text" json:"name" doc:"Sandbox name" maxLength:"200"`
@@ -499,7 +572,6 @@ type Sandbox struct {
 	CPUVCPUs             float64              `gorm:"column:cpu_vcpus;not null;default:1" json:"cpuVcpus" doc:"Requested CPU capacity in vCPUs"`
 	MemoryBytes          int64                `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"Requested memory capacity in bytes"`
 	StorageBytes         int64                `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Requested storage capacity in bytes"`
-	WorkerID             *string              `gorm:"column:worker_id;type:text;index" json:"workerId,omitempty" doc:"Assigned worker ID, when scheduled through a worker-backed provider"`
 	RuntimeState         json.RawMessage      `gorm:"column:runtime_state;type:text" json:"runtimeState,omitempty" doc:"Non-secret provider runtime state"`
 	SecretState          []byte               `gorm:"column:secret_state" json:"-"`
 	LastActiveAt         *time.Time           `gorm:"column:last_active_at;index" json:"lastActiveAt,omitempty" doc:"Last observed activity timestamp" format:"date-time"`
@@ -507,10 +579,10 @@ type Sandbox struct {
 	UpdatedAt            time.Time            `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 	DeletedAt            gorm.DeletedAt       `gorm:"index" json:"-"`
 
-	Project          *Project                 `gorm:"foreignKey:ProjectID" json:"-"`
-	CreatedBy        *User                    `gorm:"-" json:"createdBy,omitempty" doc:"Creating user"`
-	ProviderInstance *SandboxProviderInstance `gorm:"foreignKey:ProviderInstanceID" json:"providerInstance,omitempty" doc:"Sandbox provider instance"`
-	HarnessConfig    *HarnessConfig           `gorm:"foreignKey:HarnessConfigID" json:"harnessConfig,omitempty" doc:"Harness config"`
+	Project       *Project       `gorm:"foreignKey:ProjectID" json:"-"`
+	CreatedBy     *User          `gorm:"-" json:"createdBy,omitempty" doc:"Creating user"`
+	Pool          *Pool          `gorm:"foreignKey:PoolID" json:"pool,omitempty" doc:"Pool the sandbox is scheduled into"`
+	HarnessConfig *HarnessConfig `gorm:"foreignKey:HarnessConfigID" json:"harnessConfig,omitempty" doc:"Harness config"`
 }
 
 func (Sandbox) TableName() string { return "sandboxes" }
@@ -559,10 +631,8 @@ type SandboxProviderInstance struct {
 	UpdatedAt       time.Time       `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 	DeletedAt       gorm.DeletedAt  `gorm:"index" json:"-"`
 
-	Project   *Project                       `gorm:"foreignKey:ProjectID" json:"-"`
-	Sandboxes []Sandbox                      `gorm:"foreignKey:ProviderInstanceID" json:"sandboxes,omitempty" doc:"Sandboxes using this provider"`
-	Workers   []Worker                       `gorm:"foreignKey:ProviderInstanceID" json:"workers,omitempty" doc:"Workers using this provider"`
-	Status    *SandboxProviderInstanceStatus `gorm:"-" json:"status,omitempty" doc:"Observed provider status derived from persisted worker state"`
+	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
+	Pools   []Pool   `gorm:"foreignKey:ProviderInstanceID" json:"pools,omitempty" doc:"Pools backed by this provider instance"`
 }
 
 func (SandboxProviderInstance) TableName() string { return "sandbox_provider_instances" }
@@ -578,125 +648,11 @@ func (p *SandboxProviderInstance) BeforeCreate(_ *gorm.DB) error {
 	return nil
 }
 
-// SandboxProviderInstanceStatus is observed provider state for display. It is
-// derived from persisted worker rows and does not trigger provider-side reads or
-// mutations.
-type SandboxProviderInstanceStatus struct {
-	WorkerCount        int                    `json:"workerCount" doc:"Workers included in the current provider status summary"`
-	ReadyWorkers       int                    `json:"readyWorkers" doc:"Workers currently reporting ready"`
-	SchedulableWorkers int                    `json:"schedulableWorkers" doc:"Workers currently accepting new sandboxes"`
-	DegradedWorkers    int                    `json:"degradedWorkers" doc:"Workers reporting degraded health"`
-	FailedWorkers      int                    `json:"failedWorkers" doc:"Workers whose last lifecycle operation failed"`
-	LastError          *string                `json:"lastError,omitempty" doc:"Most recent worker error message, if any"`
-	Details            json.RawMessage        `json:"details,omitempty" doc:"Provider-specific observed status details"`
-	Workers            []ProviderWorkerStatus `json:"workers,omitempty" doc:"Observed worker details"`
-}
-
-type ProviderWorkerStatus struct {
-	ID                    string     `json:"id" doc:"Worker ID"`
-	Identity              string     `json:"identity,omitempty" doc:"Worker identity"`
-	DesiredState          string     `json:"desiredState" doc:"Requested worker state"`
-	Phase                 string     `json:"phase" doc:"Observed worker lifecycle phase"`
-	Ready                 bool       `json:"ready" doc:"Whether the worker is alive and healthy"`
-	Schedulable           bool       `json:"schedulable" doc:"Whether the worker accepts new sandboxes"`
-	Degraded              bool       `json:"degraded" doc:"Whether the worker is degraded"`
-	LastOperationStatus   string     `json:"lastOperationStatus" doc:"Status of the latest worker operation"`
-	StatusMessage         *string    `json:"statusMessage,omitempty" doc:"Human-readable status detail"`
-	ErrorMessage          *string    `json:"errorMessage,omitempty" doc:"Latest worker error message"`
-	AvailableCPUVCPUs     float64    `json:"availableCpuVcpus" doc:"Worker-reported available CPU capacity in vCPUs"`
-	AvailableMemoryBytes  int64      `json:"availableMemoryBytes" doc:"Worker-reported available memory capacity in bytes"`
-	AvailableStorageBytes int64      `json:"availableStorageBytes" doc:"Worker-reported available storage capacity in bytes"`
-	RuntimeID             string     `json:"runtimeId,omitempty" doc:"Sanitized backend runtime ID, such as a VM or container ID"`
-	LastSeenAt            *time.Time `json:"lastSeenAt,omitempty" doc:"Last heartbeat timestamp" format:"date-time"`
-}
-
-// Worker is a provider-backed runtime worker that can launch sandboxes.
-type Worker struct {
-	ID                    string          `gorm:"primaryKey;type:text" json:"id" doc:"Stable worker ID"`
-	ProjectID             string          `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	ProviderInstanceID    string          `gorm:"column:provider_instance_id;not null;type:text;index" json:"providerInstanceId" doc:"Sandbox provider instance ID"`
-	Identity              string          `gorm:"column:identity;not null;type:text;uniqueIndex" json:"identity" doc:"Worker identity"`
-	PublicKey             string          `gorm:"column:public_key;type:text" json:"publicKey,omitempty" doc:"Worker public key"`
-	KeyType               string          `gorm:"column:key_type;type:text;default:'ed25519'" json:"keyType,omitempty" doc:"Worker key type"`
-	Ready                 bool            `gorm:"column:ready;not null;default:false;index" json:"ready" doc:"Whether the worker is alive and healthy"`
-	Schedulable           bool            `gorm:"column:schedulable;not null;default:false;index" json:"schedulable" doc:"Whether the worker is willing to pull new work"`
-	Degraded              bool            `gorm:"column:degraded;not null;default:false;index" json:"degraded" doc:"Whether the worker should be used only as fallback capacity"`
-	AvailableCPUVCPUs     float64         `gorm:"column:available_cpu_vcpus;not null;default:0;index" json:"availableCpuVcpus" doc:"Worker-reported available CPU capacity in vCPUs"`
-	AvailableMemoryBytes  int64           `gorm:"column:available_memory_bytes;not null;default:0;index" json:"availableMemoryBytes" doc:"Worker-reported available memory capacity in bytes"`
-	AvailableStorageBytes int64           `gorm:"column:available_storage_bytes;not null;default:0;index" json:"availableStorageBytes" doc:"Worker-reported available storage capacity in bytes"`
-	Conditions            json.RawMessage `gorm:"column:conditions;type:text" json:"conditions,omitempty" doc:"Opaque worker-reported condition details for display"`
-	RuntimeState          json.RawMessage `gorm:"column:runtime_state;type:text" json:"-" doc:"Internal provider runtime state; may contain boot material and must not be serialized"`
-	ResourceLifecycle     `gorm:"embedded"`
-	RegisteredAt          *time.Time     `gorm:"column:registered_at" json:"registeredAt,omitempty" doc:"Registration timestamp" format:"date-time"`
-	LastSeenAt            *time.Time     `gorm:"column:last_seen_at;index" json:"lastSeenAt,omitempty" doc:"Last heartbeat timestamp" format:"date-time"`
-	RevokedAt             *time.Time     `gorm:"column:revoked_at;index" json:"revokedAt,omitempty" doc:"Revocation timestamp" format:"date-time"`
-	CreatedAt             time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt             time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-	DeletedAt             gorm.DeletedAt `gorm:"index" json:"-"`
-
-	Project          *Project                 `gorm:"foreignKey:ProjectID" json:"-"`
-	ProviderInstance *SandboxProviderInstance `gorm:"foreignKey:ProviderInstanceID" json:"providerInstance,omitempty" doc:"Sandbox provider instance"`
-	BootstrapTokens  []WorkerBootstrapToken   `gorm:"foreignKey:WorkerID" json:"-" doc:"Worker bootstrap tokens"`
-	AuthTokens       []WorkerAuthToken        `gorm:"foreignKey:WorkerID" json:"-" doc:"Legacy worker auth tokens"`
-}
-
-func (Worker) TableName() string { return "workers" }
-
-func (w *Worker) EventProjectID() string { return w.ProjectID }
-
-func (w *Worker) EventResourceType() string { return "worker" }
-
-func (w *Worker) EventResourceID() string { return w.ID }
-
-func (w *Worker) BeforeCreate(_ *gorm.DB) error {
-	if w.ID == "" {
-		var err error
-		w.ID, err = id.New(id.PrefixWorker)
-		if err != nil {
-			return err
-		}
-	}
-	w.SetDefaults(WorkerDesiredStateActive, WorkerPhasePending)
-	if w.Identity == "" {
-		w.Identity = "worker:" + w.ID
-	}
-	if w.KeyType == "" {
-		w.KeyType = "ed25519"
-	}
-	return nil
-}
-
-// EverCreated reports whether the worker completed its initial create and
-// registered at least once. Such workers are stateful (they may own runtime
-// state and assigned sandboxes), so a failed reconcile of an already-created
-// worker must be reconciled back to health rather than latched to a terminal
-// failure. Only a worker that never registered may fail terminally, since its
-// initial create never produced anything to recover.
-func (w *Worker) EverCreated() bool {
-	return w != nil && w.RegisteredAt != nil
-}
-
-// SchedulingPreference returns the coarse scheduling bucket for pull-based
-// workers. Degraded workers may be used as fallback when preferred workers do
-// not claim pending work.
-func (w *Worker) SchedulingPreference() string {
-	if w == nil || w.RevokedAt != nil || w.DesiredState == WorkerDesiredStateDeleted || w.DesiredState == WorkerDesiredStateDrained {
-		return WorkerSchedulingUnavailable
-	}
-	if !w.Ready || !w.Schedulable {
-		return WorkerSchedulingUnavailable
-	}
-	if w.Degraded {
-		return WorkerSchedulingDegraded
-	}
-	return WorkerSchedulingPreferred
-}
-
-// WorkerBootstrapToken stores a short-lived, one-time worker registration token.
-// Only the token hash is persisted.
-type WorkerBootstrapToken struct {
+// PoolBootstrapToken stores a short-lived, one-time pool agent registration
+// token. Only the token hash is persisted.
+type PoolBootstrapToken struct {
 	ID        string     `gorm:"primaryKey;type:text" json:"id" doc:"Stable bootstrap token ID"`
-	WorkerID  string     `gorm:"column:worker_id;not null;type:text;index" json:"workerId" doc:"Worker ID"`
+	PoolID    string     `gorm:"column:pool_id;not null;type:text;index" json:"poolId" doc:"Pool ID"`
 	TokenHash []byte     `gorm:"column:token_hash;not null;uniqueIndex" json:"-"`
 	ExpiresAt time.Time  `gorm:"column:expires_at;not null;index" json:"expiresAt" doc:"Expiration timestamp" format:"date-time"`
 	UsedAt    *time.Time `gorm:"column:used_at;index" json:"usedAt,omitempty" doc:"Use timestamp" format:"date-time"`
@@ -704,55 +660,18 @@ type WorkerBootstrapToken struct {
 	CreatedAt time.Time  `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt time.Time  `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
-	Worker *Worker `gorm:"foreignKey:WorkerID" json:"-"`
+	Pool *Pool `gorm:"foreignKey:PoolID" json:"-"`
 }
 
-func (WorkerBootstrapToken) TableName() string { return "worker_bootstrap_tokens" }
+func (PoolBootstrapToken) TableName() string { return "pool_bootstrap_tokens" }
 
-func (t *WorkerBootstrapToken) BeforeCreate(_ *gorm.DB) error {
+func (t *PoolBootstrapToken) BeforeCreate(_ *gorm.DB) error {
 	if t.ID == "" {
 		var err error
-		t.ID, err = id.New(id.PrefixWorkerBootstrapToken)
+		t.ID, err = id.New(id.PrefixPoolBootstrapToken)
 		if err != nil {
 			return err
 		}
-	}
-	return nil
-}
-
-// WorkerAuthToken stores legacy runtime token metadata for registered workers.
-// Active worker runtime auth verifies signed assertions against Worker.PublicKey.
-type WorkerAuthToken struct {
-	ID         string     `gorm:"primaryKey;type:text" json:"id" doc:"Stable auth token ID"`
-	WorkerID   string     `gorm:"column:worker_id;not null;type:text;index" json:"workerId" doc:"Worker ID"`
-	TokenHash  []byte     `gorm:"column:token_hash;uniqueIndex" json:"-"`
-	IssuedAt   time.Time  `gorm:"column:issued_at;not null;index" json:"issuedAt" doc:"Issue timestamp" format:"date-time"`
-	ExpiresAt  time.Time  `gorm:"column:expires_at;not null;index" json:"expiresAt" doc:"Expiration timestamp" format:"date-time"`
-	LastUsedAt *time.Time `gorm:"column:last_used_at;index" json:"lastUsedAt,omitempty" doc:"Last use timestamp" format:"date-time"`
-	RevokedAt  *time.Time `gorm:"column:revoked_at;index" json:"revokedAt,omitempty" doc:"Revocation timestamp" format:"date-time"`
-	CreatedAt  time.Time  `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt  time.Time  `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-
-	Worker *Worker `gorm:"foreignKey:WorkerID" json:"-"`
-}
-
-func (WorkerAuthToken) TableName() string { return "worker_auth_tokens" }
-
-func (t *WorkerAuthToken) BeforeCreate(_ *gorm.DB) error {
-	if t.ID == "" {
-		var err error
-		t.ID, err = id.New(id.PrefixWorkerAuthToken)
-		if err != nil {
-			return err
-		}
-	}
-	if t.IssuedAt.IsZero() {
-		t.IssuedAt = time.Now().UTC()
-	} else {
-		t.IssuedAt = t.IssuedAt.UTC()
-	}
-	if !t.ExpiresAt.IsZero() {
-		t.ExpiresAt = t.ExpiresAt.UTC()
 	}
 	return nil
 }
@@ -986,9 +905,8 @@ func AllModels() []any {
 		&HarnessConfigSecretBinding{},
 		&Sandbox{},
 		&SandboxProviderInstance{},
-		&Worker{},
-		&WorkerBootstrapToken{},
-		&WorkerAuthToken{},
+		&Pool{},
+		&PoolBootstrapToken{},
 		&ProjectEvent{},
 		&Secret{},
 		&SecretRequest{},

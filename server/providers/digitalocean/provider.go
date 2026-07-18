@@ -16,7 +16,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/providers/dockerworker"
-	"github.com/obot-platform/discobox/server/providers/workerpool"
+	"github.com/obot-platform/discobox/server/providers/poolruntime"
 )
 
 const (
@@ -32,29 +32,28 @@ const (
 
 // Config is the persisted provider instance configuration.
 type Config struct {
-	Token            string                `json:"token,omitempty"`
-	TokenEnv         string                `json:"tokenEnv,omitempty"`
-	ControlPlaneURL  string                `json:"controlPlaneUrl,omitempty"`
-	APIBaseURL       string                `json:"apiBaseUrl,omitempty"`
-	Region           string                `json:"region,omitempty"`
-	Size             string                `json:"size,omitempty"`
-	Image            string                `json:"image,omitempty"`
-	WorkerImage      string                `json:"workerImage,omitempty"`
-	SSHKeys          workerpool.StringList `json:"sshKeys,omitempty"`
-	SSHUser          string                `json:"sshUser,omitempty"`
-	SSHPrivateKey    string                `json:"sshPrivateKey,omitempty"`
-	SSHPrivateKeyEnv string                `json:"sshPrivateKeyEnv,omitempty"`
-	VPCUUID          string                `json:"vpcUuid,omitempty"`
-	Tags             workerpool.StringList `json:"tags,omitempty"`
-	Backups          bool                  `json:"backups,omitempty"`
-	IPv6             bool                  `json:"ipv6,omitempty"`
-	Monitoring       bool                  `json:"monitoring,omitempty"`
-	AgentPort        int                   `json:"agentPort,omitempty"`
-	workerpool.WorkerPoolConfigFields
+	Token            string                 `json:"token,omitempty"`
+	TokenEnv         string                 `json:"tokenEnv,omitempty"`
+	ControlPlaneURL  string                 `json:"controlPlaneUrl,omitempty"`
+	APIBaseURL       string                 `json:"apiBaseUrl,omitempty"`
+	Region           string                 `json:"region,omitempty"`
+	Size             string                 `json:"size,omitempty"`
+	Image            string                 `json:"image,omitempty"`
+	WorkerImage      string                 `json:"workerImage,omitempty"`
+	SSHKeys          poolruntime.StringList `json:"sshKeys,omitempty"`
+	SSHUser          string                 `json:"sshUser,omitempty"`
+	SSHPrivateKey    string                 `json:"sshPrivateKey,omitempty"`
+	SSHPrivateKeyEnv string                 `json:"sshPrivateKeyEnv,omitempty"`
+	VPCUUID          string                 `json:"vpcUuid,omitempty"`
+	Tags             poolruntime.StringList `json:"tags,omitempty"`
+	Backups          bool                   `json:"backups,omitempty"`
+	IPv6             bool                   `json:"ipv6,omitempty"`
+	Monitoring       bool                   `json:"monitoring,omitempty"`
+	AgentPort        int                    `json:"agentPort,omitempty"`
 }
 
 func Decode(data json.RawMessage) (Config, error) {
-	return workerpool.DecodeConfig[Config](data, ProviderType)
+	return poolruntime.DecodeConfig[Config](data, ProviderType)
 }
 
 func Validate(data json.RawMessage) error {
@@ -68,16 +67,16 @@ func Validate(data json.RawMessage) error {
 	if accessSecret(cfg.SSHPrivateKey, cfg.SSHPrivateKeyEnv, "") == "" {
 		return fmt.Errorf("digitalocean sshPrivateKey or sshPrivateKeyEnv is required to reach worker Docker daemons")
 	}
-	return workerpool.RequireControlPlaneURL(ProviderType, cfg.ControlPlaneURL)
+	return poolruntime.RequireControlPlaneURL(ProviderType, cfg.ControlPlaneURL)
 }
 
-func FactoryWithWorkerManager(workerManager workerpool.WorkerManager) sandbox.ProviderFactory {
+func FactoryWithPoolManager(poolManager poolruntime.PoolManager) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
-		return newFromInstance(ctx, instance, workerManager)
+		return newFromInstance(ctx, instance, poolManager)
 	}
 }
 
-func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance, workerManager workerpool.WorkerManager) (sandbox.Provider, error) {
+func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager) (sandbox.Provider, error) {
 	cfg, err := Decode(instance.Config)
 	if err != nil {
 		return nil, err
@@ -91,7 +90,7 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 		_ = driver.Close()
 		return nil, err
 	}
-	return workerpool.New(engine, Definition(), cfg.WorkerPoolConfig(), workerManager), nil
+	return poolruntime.New(engine, Definition(), poolManager), nil
 }
 
 func driverConfigFrom(cfg Config) DriverConfig {
@@ -119,7 +118,7 @@ func driverConfigFrom(cfg Config) DriverConfig {
 func engineConfig(cfg Config) dockerworker.Config {
 	return dockerworker.Config{
 		ControlPlaneURL: cfg.ControlPlaneURL,
-		Image:           dockerworker.EffectiveWorkerImage(cfg.WorkerImage),
+		Image:           dockerworker.EffectivePoolImage(cfg.WorkerImage),
 		AgentPort:       effectiveAgentPort(cfg.AgentPort),
 		PublicAgentPort: true,
 		Systemd:         true,
@@ -164,14 +163,10 @@ func Definition() sandbox.ProviderDefinition {
 			{Key: "sshPrivateKey", Label: "SSH Private Key", Type: "password", Description: "PEM private key used to reach the Droplet's Docker daemon over SSH."},
 			{Key: "sshPrivateKeyEnv", Label: "SSH Private Key Environment Variable", Type: "string", Description: "Environment variable containing the SSH private key; use instead of sshPrivateKey."},
 			{Key: "sshUser", Label: "SSH User", Type: "string", Placeholder: defaultSSHUser, Advanced: true},
-			{Key: "minWorkers", Label: "Minimum Workers", Type: "number", Placeholder: "1", Description: "Minimum active VM workers to keep in the pool."},
-			{Key: "maxWorkers", Label: "Maximum Workers", Type: "number", Placeholder: "2", Description: "Maximum active VM workers allowed in the pool."},
-			{Key: "minHealthyWorkers", Label: "Minimum Healthy Workers", Type: "number", Placeholder: "1", Description: "Minimum ready, schedulable, non-degraded workers before launching replacements."},
-			{Key: "poolSize", Label: "Pool Size", Type: "number", Placeholder: "1", Description: "Deprecated alias for minimum workers.", Advanced: true},
 			{Key: "region", Label: "Region", Type: "string", Placeholder: defaultRegion},
 			{Key: "size", Label: "Droplet Size", Type: "string", Placeholder: defaultSize},
 			{Key: "image", Label: "Droplet Image", Type: "string", Placeholder: defaultImage},
-			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultWorkerImage, Description: "Worker-agent container image launched in the Droplet's Docker daemon.", Advanced: true},
+			{Key: "workerImage", Label: "Worker Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage, Description: "Worker-agent container image launched in the Droplet's Docker daemon.", Advanced: true},
 			{Key: "vpcUuid", Label: "VPC UUID", Type: "string", Advanced: true},
 			{Key: "tags", Label: "Tags", Type: "string", Advanced: true},
 			{Key: "backups", Label: "Backups", Type: "boolean", Advanced: true},

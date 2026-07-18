@@ -10,7 +10,7 @@
 # dev (the go.work workspace) and per-module builds (Docker/CI, which run with
 # GOWORK=off and -mod=readonly) never drift apart. The workspace papers over a
 # stale module go.mod, so drift only surfaces in a no-workspace build (e.g. the
-# worker-agent / sandbox-agent Docker images). Tidying each affected module with
+# pool-agent / sandbox-agent Docker images). Tidying each affected module with
 # work off *and* on, then syncing the workspace checksums, closes that gap.
 
 set -euo pipefail

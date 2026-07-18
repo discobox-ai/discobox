@@ -55,18 +55,18 @@ func (a ProjectAuthorizer) Authorize(r *http.Request) (bool, error) {
 	return true, nil
 }
 
-// WorkerRouteAuthorizer authorizes authenticated workers for worker-scoped API
-// routes. Operation-specific handlers still verify resource identity, such as
-// matching the authenticated worker principal to a path worker ID.
-type WorkerRouteAuthorizer struct{}
+// PoolRouteAuthorizer authorizes authenticated pool agents for pool-scoped
+// API routes. Operation-specific handlers still verify resource identity, such
+// as matching the authenticated pool principal to a path pool ID.
+type PoolRouteAuthorizer struct{}
 
-func (WorkerRouteAuthorizer) Authorize(r *http.Request) (bool, error) {
-	if !isWorkerRuntimePath(r.URL.Path) {
+func (PoolRouteAuthorizer) Authorize(r *http.Request) (bool, error) {
+	if !isPoolRuntimePath(r.URL.Path) {
 		return false, nil
 	}
 	principal, ok := PrincipalFromContext(r.Context())
-	if !ok || principal.Type != PrincipalTypeWorker {
-		return false, authorizationError{status: http.StatusForbidden, err: errors.New("worker access required")}
+	if !ok || principal.Type != PrincipalTypePool {
+		return false, authorizationError{status: http.StatusForbidden, err: errors.New("pool agent access required")}
 	}
 	return true, nil
 }

@@ -22,7 +22,7 @@ func TestDefinitionIncludesSystemdConfig(t *testing.T) {
 			controlPlaneAdvanced = field.Advanced
 		}
 	}
-	for _, key := range []string{"controlPlaneUrl", "image", "systemd", "privileged", "poolSize"} {
+	for _, key := range []string{"controlPlaneUrl", "image", "systemd", "privileged"} {
 		if !keys[key] {
 			t.Fatalf("definition missing config key %q", key)
 		}

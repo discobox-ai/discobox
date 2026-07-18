@@ -33,16 +33,8 @@ func TestWriteProviderTableIncludesConfig(t *testing.T) {
 		ID:       "provider-1",
 		Name:     "Docker",
 		Type:     "docker",
-		Config:   jx.Raw(`{"poolSize":1,"socketPath":"/var/run/docker.sock","token":"do-secret","nested":{"apiKey":"api-secret"},"items":[{"password":"password-secret"}]}`),
+		Config:   jx.Raw(`{"socketPath":"/var/run/docker.sock","token":"do-secret","nested":{"apiKey":"api-secret"},"items":[{"password":"password-secret"}]}`),
 		Disabled: true,
-		Workers: apiclientgen.NewOptNilWorkerArray([]apimodel.Worker{{
-			ID:                  "worker-1",
-			Phase:               "registering",
-			LastOperationStatus: "success",
-			Identity:            "container-1",
-			Ready:               true,
-			Schedulable:         true,
-		}}),
 	})
 	if err != nil {
 		t.Fatalf("writeProvider: %v", err)
@@ -52,13 +44,10 @@ func TestWriteProviderTableIncludesConfig(t *testing.T) {
 	for _, want := range []string{
 		"FIELD",
 		"CONFIG",
-		`"poolSize":1`,
 		`"socketPath":"/var/run/docker.sock"`,
 		`"token":"[REDACTED]"`,
 		`"apiKey":"[REDACTED]"`,
 		`"password":"[REDACTED]"`,
-		"STATUS",
-		"1/1 ready",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("provider output = %q, want %q", output, want)
@@ -71,117 +60,58 @@ func TestWriteProviderTableIncludesConfig(t *testing.T) {
 	}
 }
 
-func TestWriteProviderTableExcludesDeletedWorkersFromCompactStatus(t *testing.T) {
+func TestWritePoolTableIncludesRuntimeState(t *testing.T) {
 	app := &App{output: "table"}
 	cmd := &cobra.Command{}
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 
-	err := app.writeProvider(cmd, &apimodel.SandboxProviderInstance{
-		ID:   "provider-1",
-		Name: "Docker",
-		Type: "docker",
-		Workers: apiclientgen.NewOptNilWorkerArray([]apimodel.Worker{
-			{
-				ID:                  "worker-deleted",
-				DesiredState:        "deleted",
-				Phase:               "deleted",
-				LastOperationStatus: "success",
-			},
-			{
-				ID:                  "worker-failed",
-				DesiredState:        "active",
-				Phase:               "failed",
-				LastOperationStatus: "failed",
-				ErrorMessage:        apiclientgen.NewOptString("worker image missing"),
-			},
-		}),
+	err := app.writePool(cmd, &apimodel.Pool{
+		ID:                 "pool-1",
+		Name:               "Default",
+		ProviderInstanceId: "provider-1",
+		CacheEnabled:       true,
+		Phase:              "failed",
+		ErrorMessage:       apiclientgen.NewOptString("docker create failed"),
 	})
 	if err != nil {
-		t.Fatalf("writeProvider: %v", err)
-	}
-
-	output := out.String()
-	for _, want := range []string{"0/1 ready", "1 failed", "worker image missing"} {
-		if !strings.Contains(output, want) {
-			t.Fatalf("provider output = %q, want %q", output, want)
-		}
-	}
-	if strings.Contains(output, "0/2 ready") {
-		t.Fatalf("provider output = %q, did not expect deleted worker in readiness count", output)
-	}
-}
-
-func TestWriteProviderTableIncludesDerivedStatus(t *testing.T) {
-	app := &App{output: "table"}
-	cmd := &cobra.Command{}
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-
-	err := app.writeProvider(cmd, &apimodel.SandboxProviderInstance{
-		ID:   "provider-1",
-		Name: "Docker",
-		Type: "docker",
-		Status: apiclientgen.NewOptSandboxProviderInstanceStatus(apimodel.SandboxProviderInstanceStatus{
-			WorkerCount:        1,
-			FailedWorkers:      1,
-			ReadyWorkers:       0,
-			SchedulableWorkers: 0,
-			DegradedWorkers:    0,
-			LastError:          apiclientgen.NewOptString("docker create failed"),
-			Workers: apiclientgen.NewOptNilProviderWorkerStatusArray([]apimodel.ProviderWorkerStatus{{
-				ID:                  "worker-1",
-				DesiredState:        "active",
-				Phase:               "failed",
-				LastOperationStatus: "failed",
-				ErrorMessage:        apiclientgen.NewOptString("docker create failed"),
-			}}),
-		}),
-	})
-	if err != nil {
-		t.Fatalf("writeProvider: %v", err)
+		t.Fatalf("writePool: %v", err)
 	}
 
 	output := out.String()
 	for _, want := range []string{
-		"STATUS",
-		"0/1 ready",
-		"1 failed",
-		"ERROR",
+		"PHASE",
+		"failed",
+		"MESSAGE",
 		"docker create failed",
 	} {
 		if !strings.Contains(output, want) {
-			t.Fatalf("provider output = %q, want %q", output, want)
+			t.Fatalf("pool output = %q, want %q", output, want)
 		}
 	}
 }
 
-func TestWriteProvidersTableIncludesCompactStatus(t *testing.T) {
+func TestWritePoolsTableIncludesPhaseAndMessage(t *testing.T) {
 	app := &App{output: "table"}
 	cmd := &cobra.Command{}
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 
-	err := app.writeProviders(cmd, []apimodel.SandboxProviderInstance{{
-		ID:   "provider-1",
-		Name: "Docker",
-		Type: "docker",
-		Status: apiclientgen.NewOptSandboxProviderInstanceStatus(apimodel.SandboxProviderInstanceStatus{
-			WorkerCount:        2,
-			ReadyWorkers:       1,
-			SchedulableWorkers: 1,
-			FailedWorkers:      1,
-			LastError:          apiclientgen.NewOptString("worker did not register before timeout"),
-		}),
+	err := app.writePools(cmd, []apimodel.Pool{{
+		ID:                 "pool-1",
+		Name:               "Default",
+		ProviderInstanceId: "provider-1",
+		Phase:              "registering",
+		StatusMessage:      apiclientgen.NewOptString("pool agent did not register before timeout"),
 	}})
 	if err != nil {
-		t.Fatalf("writeProviders: %v", err)
+		t.Fatalf("writePools: %v", err)
 	}
 
 	output := out.String()
-	for _, want := range []string{"STATUS", "ERROR", "1/2 ready", "1 failed", "worker did not register before timeout"} {
+	for _, want := range []string{"PHASE", "registering", "pool agent did not register before timeout"} {
 		if !strings.Contains(output, want) {
-			t.Fatalf("providers output = %q, want %q", output, want)
+			t.Fatalf("pools output = %q, want %q", output, want)
 		}
 	}
 }
@@ -215,11 +145,11 @@ func TestQuietListWritersPrintFullIDsOnly(t *testing.T) {
 			want: "provider-full-id\n",
 		},
 		{
-			name: "workers",
+			name: "pools",
 			write: func(cmd *cobra.Command) error {
-				return app.writeWorkers(cmd, []apimodel.Worker{{ID: "worker-full-id"}})
+				return app.writePools(cmd, []apimodel.Pool{{ID: "pool-full-id"}})
 			},
-			want: "worker-full-id\n",
+			want: "pool-full-id\n",
 		},
 		{
 			name: "harnesses",
@@ -326,13 +256,13 @@ func TestRootCommandHelp(t *testing.T) {
 	if !bytes.Contains(out.Bytes(), []byte("Manage advanced Discobox configuration")) {
 		t.Fatalf("help output = %q, want box command description", out.String())
 	}
-	for _, unavailableAtRoot := range []string{"sandbox", "terminal", "exec", "provider", "worker", "job", "harnesses", "hooks", "status"} {
+	for _, unavailableAtRoot := range []string{"sandbox", "terminal", "exec", "provider", "job", "harnesses", "hooks", "status"} {
 		command, _, err := cmd.Find([]string{unavailableAtRoot})
 		if err == nil && command.Name() == unavailableAtRoot {
 			t.Fatalf("root command still exposes %q", unavailableAtRoot)
 		}
 	}
-	for _, child := range []string{"sandbox", "terminal", "exec", "provider", "worker", "job", "harnesses", "hooks"} {
+	for _, child := range []string{"sandbox", "terminal", "exec", "provider", "job", "harnesses", "hooks"} {
 		command, args, err := cmd.Find([]string{"box", child})
 		if err != nil || len(args) != 0 || command.Name() != child {
 			t.Fatalf("find box child %q: command=%v args=%v err=%v", child, command, args, err)
@@ -384,7 +314,7 @@ func TestListSubcommandsUseLSWithListAlias(t *testing.T) {
 		{"box", "sandbox", "ls"},
 		{"box", "terminal", "ls"},
 		{"box", "exec", "ls"},
-		{"box", "worker", "ls"},
+		{"box", "pool", "ls"},
 		{"box", "provider", "ls"},
 		{"box", "job", "ls"},
 		{"secret", "ls"},
@@ -1062,42 +992,6 @@ func TestJobsJSONPreservesResponseOrder(t *testing.T) {
 	olderIndex := strings.Index(output, olderID)
 	if newerIndex < 0 || olderIndex < 0 || newerIndex > olderIndex {
 		t.Fatalf("jobs json output = %q, want response order preserved", output)
-	}
-}
-
-func TestWorkerListCommandFiltersByProvider(t *testing.T) {
-	const workerID = "wrk_9qk5n25t2hh2rv00"
-	const providerID = "provider-1"
-	var sawWorkerList bool
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.URL.Path; got != "/projects/project-1/workers" {
-			t.Fatalf("path = %q, want project workers path", got)
-		}
-		if got := r.URL.Query().Get("provider"); got != providerID {
-			t.Fatalf("provider query = %q, want %q", got, providerID)
-		}
-		sawWorkerList = true
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"workers":[{"id":"` + workerID + `","projectId":"project-1","providerInstanceId":"` + providerID + `","identity":"worker-1","ready":true,"schedulable":true,"degraded":false,"availableCpuVcpus":2,"availableMemoryBytes":1073741824,"availableStorageBytes":2147483648,"desiredState":"active","phase":"active","lastOperationStatus":"failed","statusMessage":"waiting for registration","errorMessage":"worker registration expired","generation":1,"observedGeneration":1,"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}]}`))
-	}))
-	t.Cleanup(server.Close)
-
-	cmd := NewRootCommand()
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "worker", "ls", "--provider", providerID})
-
-	if err := cmd.Execute(); err != nil {
-		t.Fatalf("execute worker list: %v", err)
-	}
-	if !sawWorkerList {
-		t.Fatal("worker list endpoint was not called")
-	}
-	output := out.String()
-	for _, want := range []string{"ID", "PROVIDER", "MESSAGE", workerID, providerID, "active", "true", "2.00", "1.0GiB", "worker registration expired"} {
-		if !strings.Contains(output, want) {
-			t.Fatalf("worker output = %q, want %q", output, want)
-		}
 	}
 }
 

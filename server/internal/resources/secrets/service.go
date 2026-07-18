@@ -161,7 +161,7 @@ func (s *Service) CreateSecretRequest(ctx context.Context, projectID string, inp
 	}
 	requestedBy := principal.UserID
 	if requestedBy == "" {
-		requestedBy = principal.WorkerID
+		requestedBy = principal.PoolID
 	}
 	if requestedBy == "" {
 		return nil, apperrors.NewStatusError(http.StatusUnauthorized, "could not determine requesting principal")
@@ -290,17 +290,17 @@ func (s *Service) DenySecretRequest(ctx context.Context, projectID, requestID st
 // any scope (its own ID, its harness config, or the project). A match returns the
 // decrypted value; otherwise a single pending request is created (or reused) and
 // the proxy leaves the sentinel in place until a grant exists.
-func (s *Service) ResolveSandboxSecret(ctx context.Context, workerID, sandboxID, sentinel, host string) (*model.SandboxSecretResolution, error) {
+func (s *Service) ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, sentinel, host string) (*model.SandboxSecretResolution, error) {
 	assignment, err := s.store.GetSandboxSecretBySentinel(ctx, sandboxID, sentinel)
 	if err != nil {
 		return nil, apiError(err, "sandbox secret not found")
 	}
-	// The calling worker must own the sandbox the sentinel belongs to.
+	// The calling pool agent must own the sandbox the sentinel belongs to.
 	sandbox, err := s.store.GetSandbox(ctx, assignment.ProjectID, assignment.SandboxID)
 	if err != nil {
 		return nil, apiError(err, "sandbox not found")
 	}
-	if sandbox.WorkerID == nil || strings.TrimSpace(*sandbox.WorkerID) != strings.TrimSpace(workerID) {
+	if strings.TrimSpace(sandbox.PoolID) != strings.TrimSpace(poolID) {
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "sandbox secret not found")
 	}
 	secret, err := s.store.GetSecret(ctx, assignment.ProjectID, assignment.SecretID)
@@ -435,7 +435,7 @@ func (s *Service) mintGrant(ctx context.Context, projectID, secretID, scope, sco
 	principal, _ := auth.PrincipalFromContext(ctx)
 	grantedBy := principal.UserID
 	if grantedBy == "" {
-		grantedBy = principal.WorkerID
+		grantedBy = principal.PoolID
 	}
 	grant := &model.SecretGrant{
 		ProjectID: projectID,

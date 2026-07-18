@@ -44,12 +44,12 @@ type SandboxManifestProvider struct {
 	Kind string `json:"kind"`
 	// Metadata Non-secret provider-specific metadata keyed by provider-defined name.
 	Metadata map[string]string `json:"metadata,omitempty"`
+	// PoolId Pool ID hosting the sandbox.
+	PoolId string `json:"poolId,omitempty"`
 	// ProjectID Project ID when known to the provider.
 	ProjectID string `json:"projectId,omitempty"`
 	// PublicKeys Public verification keys keyed by provider-defined name. This map must contain public keys only.
 	PublicKeys map[string]string `json:"publicKeys,omitempty"`
-	// WorkerID Worker ID when the sandbox is hosted by a worker-backed provider.
-	WorkerID string `json:"workerId,omitempty"`
 }
 
 // SandboxManifestResolvedHarnessConfig Non-secret resolved harness configuration selected for a sandbox.

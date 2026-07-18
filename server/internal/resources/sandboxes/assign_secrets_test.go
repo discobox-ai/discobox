@@ -62,10 +62,20 @@ func newAssignFixture(t *testing.T) (*Service, *recordingProvider) {
 	manager.RegisterProvider("test", rec)
 	manager.SetDefault("test")
 	svc.sandboxProviders = manager
-	// A sandbox with no provider instance resolves to the provider registered
-	// under the empty id.
+	// Provider resolution is sandbox → pool → provider instance, so the fixture
+	// pool's backing instance carries the registered "test" provider type.
+	if err := svc.store.CreateSandboxProviderInstance(context.Background(), &model.SandboxProviderInstance{
+		ID: "prov-1", ProjectID: "project-1", Type: "test", Name: "test",
+	}); err != nil {
+		t.Fatalf("create provider instance: %v", err)
+	}
+	if err := svc.store.CreatePool(context.Background(), &model.Pool{
+		ID: "pool-1", ProjectID: "project-1", Name: "pool-1", ProviderInstanceID: "prov-1",
+	}); err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
 	if err := svc.store.CreateSandbox(context.Background(), &model.Sandbox{
-		ID: "sb-1", ProjectID: "project-1", CreatedByUserID: "user-1", Name: "sb-1",
+		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "sb-1",
 	}); err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}

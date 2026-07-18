@@ -15,9 +15,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/moby/moby/client"
 
+	poolagent "github.com/obot-platform/discobox/pool-agent"
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/providers/dockerworker"
-	workeragent "github.com/obot-platform/discobox/worker-agent"
 )
 
 const dockerIntegrationEnv = "DISCOBOX_DOCKER_INTEGRATION"
@@ -50,34 +50,34 @@ func TestDockerIntegrationWorkerLifecycle(t *testing.T) {
 
 	project := &model.Project{ID: "project-" + uuid.NewString()}
 	provider := &model.SandboxProviderInstance{ID: "provider-" + uuid.NewString(), ProjectID: project.ID}
-	worker := &model.Worker{ID: "worker-" + uuid.NewString(), ProjectID: project.ID, ProviderInstanceID: provider.ID}
-	mint := staticMint(workeragent.Bootstrap{ProjectID: project.ID, WorkerID: worker.ID, Token: "token-1", ControlPlaneKey: "key-1"})
+	pool := &model.Pool{ID: "pool-" + uuid.NewString(), ProjectID: project.ID, Name: "pool", ProviderInstanceID: provider.ID}
+	mint := staticMint(poolagent.Bootstrap{ProjectID: project.ID, PoolID: pool.ID, Token: "token-1", ControlPlaneKey: "key-1"})
 
-	if err := engine.EnsureWorker(ctx, project, provider, worker, mint); err != nil {
-		t.Fatalf("ensure worker: %v", err)
+	if err := engine.EnsurePool(ctx, project, provider, pool, mint); err != nil {
+		t.Fatalf("ensure pool: %v", err)
 	}
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cleanupCancel()
-		_ = engine.RemoveWorker(cleanupCtx, project, provider, worker)
+		_ = engine.RemovePool(cleanupCtx, project, provider, pool)
 	})
-	state, err := dockerworker.DecodeRuntimeState(worker.RuntimeState)
+	state, err := dockerworker.DecodeRuntimeState(pool.RuntimeState)
 	if err != nil {
 		t.Fatalf("decode runtime state: %v", err)
 	}
 	if state.ContainerID == "" {
 		t.Fatalf("runtime state = %#v, want container ID", state)
 	}
-	if worker.Phase != model.WorkerPhaseRegistering {
-		t.Fatalf("worker phase = %q, want registering", worker.Phase)
+	if pool.Phase != model.PoolPhaseRegistering {
+		t.Fatalf("pool phase = %q, want registering", pool.Phase)
 	}
 	assertContainerRunning(ctx, t, state.ContainerID, true)
 
-	// EnsureWorker is idempotent: the healthy container is kept.
-	if err := engine.EnsureWorker(ctx, project, provider, worker, mint); err != nil {
-		t.Fatalf("re-ensure worker: %v", err)
+	// EnsurePool is idempotent: the healthy container is kept.
+	if err := engine.EnsurePool(ctx, project, provider, pool, mint); err != nil {
+		t.Fatalf("re-ensure pool: %v", err)
 	}
-	nextState, err := dockerworker.DecodeRuntimeState(worker.RuntimeState)
+	nextState, err := dockerworker.DecodeRuntimeState(pool.RuntimeState)
 	if err != nil {
 		t.Fatalf("decode runtime state: %v", err)
 	}
@@ -85,11 +85,11 @@ func TestDockerIntegrationWorkerLifecycle(t *testing.T) {
 		t.Fatalf("container replaced on idempotent ensure: %q != %q", nextState.ContainerID, state.ContainerID)
 	}
 
-	// Repair replaces the container while preserving the worker identity.
-	if err := engine.RepairWorker(ctx, project, provider, worker, mint, "integration test"); err != nil {
-		t.Fatalf("repair worker: %v", err)
+	// Repair replaces the container while preserving the pool identity.
+	if err := engine.RepairPool(ctx, project, provider, pool, mint, "integration test"); err != nil {
+		t.Fatalf("repair pool: %v", err)
 	}
-	repairedState, err := dockerworker.DecodeRuntimeState(worker.RuntimeState)
+	repairedState, err := dockerworker.DecodeRuntimeState(pool.RuntimeState)
 	if err != nil {
 		t.Fatalf("decode repaired runtime state: %v", err)
 	}
@@ -98,21 +98,21 @@ func TestDockerIntegrationWorkerLifecycle(t *testing.T) {
 	}
 	assertContainerRunning(ctx, t, repairedState.ContainerID, true)
 
-	// The worker-agent client resolves the published loopback endpoint.
-	lease, err := engine.AcquireWorkerAgentClient(ctx, worker)
+	// The pool-agent client resolves the published loopback endpoint.
+	lease, err := engine.AcquirePoolAgentClient(ctx, pool)
 	if err != nil {
-		t.Fatalf("acquire worker agent client: %v", err)
+		t.Fatalf("acquire pool agent client: %v", err)
 	}
 	if lease.BaseURL == "" {
-		t.Fatalf("worker agent lease has no base URL")
+		t.Fatalf("pool agent lease has no base URL")
 	}
 	lease.Release()
 
-	if err := engine.RemoveWorker(ctx, project, provider, worker); err != nil {
-		t.Fatalf("remove worker: %v", err)
+	if err := engine.RemovePool(ctx, project, provider, pool); err != nil {
+		t.Fatalf("remove pool: %v", err)
 	}
-	if worker.RuntimeState != nil {
-		t.Fatalf("runtime state after remove = %s, want nil", worker.RuntimeState)
+	if pool.RuntimeState != nil {
+		t.Fatalf("runtime state after remove = %s, want nil", pool.RuntimeState)
 	}
 	assertContainerAbsent(ctx, t, repairedState.ContainerID)
 }
@@ -147,17 +147,16 @@ func TestDockerIntegrationSystemdWorker(t *testing.T) {
 
 	project := &model.Project{ID: "project-" + uuid.NewString()}
 	provider := &model.SandboxProviderInstance{ID: "provider-" + uuid.NewString(), ProjectID: project.ID}
-	worker := &model.Worker{ID: "worker-" + uuid.NewString(), ProjectID: project.ID, ProviderInstanceID: provider.ID}
-
-	if err := engine.EnsureWorker(ctx, project, provider, worker, staticMint(workeragent.Bootstrap{ProjectID: project.ID, WorkerID: worker.ID, Token: "token-1"})); err != nil {
-		t.Fatalf("ensure systemd worker: %v", err)
+	pool := &model.Pool{ID: "pool-" + uuid.NewString(), ProjectID: project.ID, Name: "pool", ProviderInstanceID: provider.ID}
+	if err := engine.EnsurePool(ctx, project, provider, pool, staticMint(poolagent.Bootstrap{ProjectID: project.ID, PoolID: pool.ID, Token: "token-1"})); err != nil {
+		t.Fatalf("ensure systemd pool: %v", err)
 	}
 	t.Cleanup(func() {
 		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cleanupCancel()
-		_ = engine.RemoveWorker(cleanupCtx, project, provider, worker)
+		_ = engine.RemovePool(cleanupCtx, project, provider, pool)
 	})
-	state, err := dockerworker.DecodeRuntimeState(worker.RuntimeState)
+	state, err := dockerworker.DecodeRuntimeState(pool.RuntimeState)
 	if err != nil {
 		t.Fatalf("decode runtime state: %v", err)
 	}
@@ -235,6 +234,6 @@ func dockerBuildContext(dockerfilePath string) (io.Reader, error) {
 
 // staticMint returns a minter that hands back a fixed bootstrap, standing in for
 // the control plane's single-use token minting.
-func staticMint(bootstrap workeragent.Bootstrap) workeragent.MintBootstrap {
-	return func(context.Context) (workeragent.Bootstrap, error) { return bootstrap, nil }
+func staticMint(bootstrap poolagent.Bootstrap) poolagent.MintBootstrap {
+	return func(context.Context) (poolagent.Bootstrap, error) { return bootstrap, nil }
 }

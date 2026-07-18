@@ -11,7 +11,7 @@ Global review expectations:
 - Do not let provider/runtime code depend on public control-plane API DTOs from
   `internal/api`; use provider/domain-owned types at that boundary. Worker-local
   generated client/DTO packages are not public control-plane API DTOs and may be
-  used where worker-agent HTTP API calls or worker-local runtime contracts are
+  used where pool-agent HTTP API calls or pool-local runtime contracts are
   the package responsibility.
 - Prefer short-lived tokens and explicit key ownership for auth flows.
 - Update package-local design docs when changing architecture or data model.

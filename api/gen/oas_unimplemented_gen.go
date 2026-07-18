@@ -118,6 +118,15 @@ func (UnimplementedHandler) CreateHarnessConfig(ctx context.Context, req *Create
 	return r, ht.ErrNotImplemented
 }
 
+// CreatePool implements create-pool operation.
+//
+// Create a pool.
+//
+// POST /projects/{projectId}/pools
+func (UnimplementedHandler) CreatePool(ctx context.Context, req *CreatePoolBody, params CreatePoolParams) (r CreatePoolRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // CreateSandbox implements create-sandbox operation.
 //
 // Create a sandbox.
@@ -202,6 +211,15 @@ func (UnimplementedHandler) DeleteHarnessConfigSecretBinding(ctx context.Context
 	return r, ht.ErrNotImplemented
 }
 
+// DeletePool implements delete-pool operation.
+//
+// Delete a pool.
+//
+// DELETE /projects/{projectId}/pools/{poolId}
+func (UnimplementedHandler) DeletePool(ctx context.Context, params DeletePoolParams) (r DeletePoolRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // DeleteSandbox implements delete-sandbox operation.
 //
 // Delete a sandbox.
@@ -271,6 +289,15 @@ func (UnimplementedHandler) GetHarnessConfig(ctx context.Context, params GetHarn
 //
 // GET /projects/{projectId}/jobs/{jobId}
 func (UnimplementedHandler) GetJob(ctx context.Context, params GetJobParams) (r GetJobRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// GetPool implements get-pool operation.
+//
+// Get a pool.
+//
+// GET /projects/{projectId}/pools/{poolId}
+func (UnimplementedHandler) GetPool(ctx context.Context, params GetPoolParams) (r GetPoolRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -373,6 +400,15 @@ func (UnimplementedHandler) ListJobs(ctx context.Context, params ListJobsParams)
 	return r, ht.ErrNotImplemented
 }
 
+// ListPools implements list-pools operation.
+//
+// List pools.
+//
+// GET /projects/{projectId}/pools
+func (UnimplementedHandler) ListPools(ctx context.Context, params ListPoolsParams) (r ListPoolsRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // ListProjects implements list-projects operation.
 //
 // List projects.
@@ -472,12 +508,12 @@ func (UnimplementedHandler) ListSecrets(ctx context.Context, params ListSecretsP
 	return r, ht.ErrNotImplemented
 }
 
-// ListWorkers implements list-workers operation.
+// ReconcilePool implements reconcile-pool operation.
 //
-// List workers.
+// Reconcile a pool.
 //
-// GET /projects/{projectId}/workers
-func (UnimplementedHandler) ListWorkers(ctx context.Context, params ListWorkersParams) (r ListWorkersRes, _ error) {
+// POST /projects/{projectId}/pools/{poolId}/reconcile
+func (UnimplementedHandler) ReconcilePool(ctx context.Context, params ReconcilePoolParams) (r ReconcilePoolRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -490,30 +526,21 @@ func (UnimplementedHandler) ReconcileSandbox(ctx context.Context, params Reconci
 	return r, ht.ErrNotImplemented
 }
 
-// ReconcileWorker implements reconcile-worker operation.
+// RegisterPool implements register-pool operation.
 //
-// Reconcile a worker.
+// Register a bootstrapped pool agent.
 //
-// POST /projects/{projectId}/workers/{workerId}/reconcile
-func (UnimplementedHandler) ReconcileWorker(ctx context.Context, params ReconcileWorkerParams) (r ReconcileWorkerRes, _ error) {
+// POST /api/pools/register
+func (UnimplementedHandler) RegisterPool(ctx context.Context, req *RegisterPoolBody) (r RegisterPoolRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
-// RegisterWorker implements register-worker operation.
+// ReportPoolSandboxRemoved implements report-pool-sandbox-removed operation.
 //
-// Register a bootstrapped worker.
+// Report a pool-local sandbox runtime removed outside reconciliation.
 //
-// POST /api/workers/register
-func (UnimplementedHandler) RegisterWorker(ctx context.Context, req *RegisterWorkerBody) (r RegisterWorkerRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// ReportWorkerSandboxRemoved implements report-worker-sandbox-removed operation.
-//
-// Report a worker-local sandbox runtime removed outside reconciliation.
-//
-// POST /api/workers/{workerId}/sandbox-removed
-func (UnimplementedHandler) ReportWorkerSandboxRemoved(ctx context.Context, req *ReportWorkerSandboxRemovedBody, params ReportWorkerSandboxRemovedParams) (r ReportWorkerSandboxRemovedRes, _ error) {
+// POST /api/pools/{poolId}/sandbox-removed
+func (UnimplementedHandler) ReportPoolSandboxRemoved(ctx context.Context, req *ReportPoolSandboxRemovedBody, params ReportPoolSandboxRemovedParams) (r ReportPoolSandboxRemovedRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 
@@ -521,7 +548,7 @@ func (UnimplementedHandler) ReportWorkerSandboxRemoved(ctx context.Context, req 
 //
 // Resolve a sandbox sentinel secret.
 //
-// POST /api/workers/{workerId}/resolve-sandbox-secret
+// POST /api/pools/{poolId}/resolve-sandbox-secret
 func (UnimplementedHandler) ResolveSandboxSecret(ctx context.Context, req *ResolveSandboxSecretBody, params ResolveSandboxSecretParams) (r ResolveSandboxSecretRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
@@ -607,6 +634,24 @@ func (UnimplementedHandler) UpdateHarnessConfig(ctx context.Context, req *Update
 	return r, ht.ErrNotImplemented
 }
 
+// UpdatePool implements update-pool operation.
+//
+// Update a pool.
+//
+// PATCH /projects/{projectId}/pools/{poolId}
+func (UnimplementedHandler) UpdatePool(ctx context.Context, req *UpdatePoolBody, params UpdatePoolParams) (r UpdatePoolRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// UpdatePoolStatus implements update-pool-status operation.
+//
+// Update pool status.
+//
+// POST /api/pools/{poolId}/status
+func (UnimplementedHandler) UpdatePoolStatus(ctx context.Context, req *UpdatePoolStatusBody, params UpdatePoolStatusParams) (r UpdatePoolStatusRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // UpdateSandbox implements update-sandbox operation.
 //
 // Update a sandbox.
@@ -631,14 +676,5 @@ func (UnimplementedHandler) UpdateSandboxProviderInstance(ctx context.Context, r
 //
 // PUT /projects/{projectId}/secrets/{secretId}
 func (UnimplementedHandler) UpdateSecret(ctx context.Context, req *UpdateSecretBody, params UpdateSecretParams) (r UpdateSecretRes, _ error) {
-	return r, ht.ErrNotImplemented
-}
-
-// UpdateWorkerStatus implements update-worker-status operation.
-//
-// Update worker status.
-//
-// POST /api/workers/{workerId}/status
-func (UnimplementedHandler) UpdateWorkerStatus(ctx context.Context, req *UpdateWorkerStatusBody, params UpdateWorkerStatusParams) (r UpdateWorkerStatusRes, _ error) {
 	return r, ht.ErrNotImplemented
 }

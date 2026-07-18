@@ -313,7 +313,7 @@ func testConfig(publicKey string) Config {
 		Identity: Identity{
 			ProjectID: "project-1",
 			SandboxID: "sandbox-1",
-			WorkerID:  "worker-1",
+			PoolID:    "worker-1",
 		},
 		ControlPlanePublicKey: publicKey,
 		ListenAddress:         ":0",
@@ -356,7 +356,7 @@ func sandboxAgentTestSigner(t *testing.T) (string, func(projectID, sandboxID, wo
 		token.SetString("project_id", projectID)
 		token.SetString("sandbox_id", sandboxID)
 		if workerID != "" {
-			token.SetString("worker_id", workerID)
+			token.SetString("pool_id", workerID)
 		}
 		if err := token.Set("scopes", scopes); err != nil {
 			t.Fatalf("set scopes: %v", err)

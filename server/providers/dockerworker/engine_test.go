@@ -10,10 +10,10 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 
+	poolagent "github.com/obot-platform/discobox/pool-agent"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/transport"
-	workeragent "github.com/obot-platform/discobox/worker-agent"
 )
 
 type nopDriver struct{}
@@ -29,7 +29,7 @@ func (nopDriver) InspectVM(context.Context, string) (*VMInfo, error) {
 func (nopDriver) AcquireDockerClient(context.Context, string) (*DockerClientLease, error) {
 	return nil, errors.New("no docker in unit tests")
 }
-func (nopDriver) AcquireWorkerAgentClient(context.Context, string) (*transport.HTTPClientLease, error) {
+func (nopDriver) AcquirePoolAgentClient(context.Context, string) (*transport.HTTPClientLease, error) {
 	return nil, errors.New("no worker agent in unit tests")
 }
 
@@ -66,7 +66,7 @@ func TestNewSystemdDefaults(t *testing.T) {
 	if !engine.privileged() {
 		t.Fatalf("privileged = false, want true for systemd")
 	}
-	if len(engine.cfg.Command) != 1 || engine.cfg.Command[0] != "/usr/local/bin/discobox-worker-agent" {
+	if len(engine.cfg.Command) != 1 || engine.cfg.Command[0] != "/usr/local/bin/discobox-pool-agent" {
 		t.Fatalf("command = %#v", engine.cfg.Command)
 	}
 }
@@ -80,23 +80,23 @@ func TestNewHonorsPrivilegedOverride(t *testing.T) {
 }
 
 func TestBootEnvRendersBootstrapContract(t *testing.T) {
-	env := BootEnv(workeragent.Bootstrap{
+	env := BootEnv(poolagent.Bootstrap{
 		ControlPlaneURL: "http://control.example",
 		ProjectID:       "project-1",
-		WorkerID:        "worker-1",
+		PoolID:          "pool-1",
 		Token:           "token-1",
 		ControlPlaneKey: "key-1",
 		AgentPort:       3002,
 		HostMountPrefix: "/host",
 	})
 	want := map[string]string{
-		workeragent.EnvControlPlaneURL: "http://control.example",
-		workeragent.EnvProjectID:       "project-1",
-		workeragent.EnvWorkerID:        "worker-1",
-		workeragent.EnvBootstrapToken:  "token-1",
-		workeragent.EnvControlPlaneKey: "key-1",
-		workeragent.EnvAgentPort:       "3002",
-		workeragent.EnvHostMountPrefix: "/host",
+		poolagent.EnvControlPlaneURL: "http://control.example",
+		poolagent.EnvProjectID:       "project-1",
+		poolagent.EnvPoolID:          "pool-1",
+		poolagent.EnvBootstrapToken:  "token-1",
+		poolagent.EnvControlPlaneKey: "key-1",
+		poolagent.EnvAgentPort:       "3002",
+		poolagent.EnvHostMountPrefix: "/host",
 	}
 	for key, value := range want {
 		if env[key] != value {
@@ -109,35 +109,35 @@ func TestBootEnvRendersBootstrapContract(t *testing.T) {
 }
 
 func TestBootEnvOmitsEmptyValues(t *testing.T) {
-	env := BootEnv(workeragent.Bootstrap{WorkerID: "worker-1"})
-	if _, ok := env[workeragent.EnvControlPlaneURL]; ok {
+	env := BootEnv(poolagent.Bootstrap{PoolID: "pool-1"})
+	if _, ok := env[poolagent.EnvControlPlaneURL]; ok {
 		t.Fatalf("env = %#v, want no empty control plane URL", env)
 	}
-	if _, ok := env[workeragent.EnvAgentPort]; ok {
+	if _, ok := env[poolagent.EnvAgentPort]; ok {
 		t.Fatalf("env = %#v, want no zero harness port", env)
 	}
 }
 
-func TestContainerLabelsIdentifyWorker(t *testing.T) {
+func TestContainerLabelsIdentifyPool(t *testing.T) {
 	engine := newTestEngine(t, Config{Labels: map[string]string{"discobox.provider_type": "docker"}})
 	labels := engine.containerLabels(
 		&model.SandboxProviderInstance{ID: "provider-1"},
-		&model.Worker{ID: "worker-1", ProjectID: "project-1"},
+		&model.Pool{ID: "pool-1", ProjectID: "project-1"},
 	)
 	for key, want := range map[string]string{
 		LabelManaged:             "true",
-		LabelWorkerAgent:         "true",
-		LabelWorkerID:            "worker-1",
+		LabelPoolAgent:           "true",
 		LabelProjectID:           "project-1",
 		LabelProviderInstanceID:  "provider-1",
+		LabelPoolID:              "pool-1",
 		"discobox.provider_type": "docker",
 	} {
 		if labels[key] != want {
 			t.Fatalf("labels[%q] = %q, want %q", key, labels[key], want)
 		}
 	}
-	if labels[LabelWorkerConfig] != engine.ConfigRevision() {
-		t.Fatalf("config revision label = %q, want %q", labels[LabelWorkerConfig], engine.ConfigRevision())
+	if labels[LabelPoolConfig] != engine.ConfigRevision() {
+		t.Fatalf("config revision label = %q, want %q", labels[LabelPoolConfig], engine.ConfigRevision())
 	}
 }
 
@@ -197,8 +197,8 @@ func TestSystemdContainerMountsScopeVolumes(t *testing.T) {
 	engine := newTestEngine(t, Config{Systemd: true})
 	mounts := engine.containerMounts("worker:one", "project:one")
 
-	if !hasVolumeMount(mounts, "discobox-worker-worker-one-docker", "/var/lib/docker") {
-		t.Fatalf("mounts = %#v, missing worker-scoped Docker volume", mounts)
+	if !hasVolumeMount(mounts, "discobox-pool-worker-one-docker", "/var/lib/docker") {
+		t.Fatalf("mounts = %#v, missing pool-scoped Docker volume", mounts)
 	}
 	if !hasVolumeMount(mounts, "discobox-project-project-one-discobox", "/var/lib/discobox") {
 		t.Fatalf("mounts = %#v, missing project-scoped Discobox volume", mounts)
@@ -247,7 +247,7 @@ func TestHostMountJSONAcceptsDockerStyleStrings(t *testing.T) {
 	}
 }
 
-func TestContainerNameUsesWorkerID(t *testing.T) {
+func TestContainerNameUsesPoolID(t *testing.T) {
 	if got := ContainerName("worker:one"); got != "discobox-vm-worker-one" {
 		t.Fatalf("container name = %q", got)
 	}
@@ -257,13 +257,13 @@ func TestContainerNameUsesWorkerID(t *testing.T) {
 }
 
 func TestScopedVolumeNames(t *testing.T) {
-	if got := workerScopedVolumeName("worker:one", "docker"); got != "discobox-worker-worker-one-docker" {
-		t.Fatalf("worker volume name = %q", got)
+	if got := poolScopedVolumeName("worker:one", "docker"); got != "discobox-pool-worker-one-docker" {
+		t.Fatalf("pool volume name = %q", got)
 	}
 	if got := projectScopedVolumeName("project:one", "discobox"); got != "discobox-project-project-one-discobox" {
 		t.Fatalf("project volume name = %q", got)
 	}
-	if got := workerScopedVolumeName("", "docker"); got != "discobox-worker-unknown-docker" {
+	if got := poolScopedVolumeName("", "docker"); got != "discobox-pool-unknown-docker" {
 		t.Fatalf("worker fallback volume name = %q", got)
 	}
 }
@@ -287,17 +287,17 @@ func TestShouldRemoveExistingContainerDetectsDrift(t *testing.T) {
 	existing := container.InspectResponse{
 		Config: &container.Config{
 			Image:  "worker-image",
-			Labels: map[string]string{LabelWorkerConfig: "old"},
+			Labels: map[string]string{LabelPoolConfig: "old"},
 		},
 		State: &container.State{Running: true},
 	}
-	desired := map[string]string{LabelWorkerAgent: "true", LabelWorkerConfig: "new"}
+	desired := map[string]string{LabelPoolAgent: "true", LabelPoolConfig: "new"}
 
 	if !shouldRemoveExistingContainer(existing, "worker-image", desired) {
 		t.Fatalf("shouldRemoveExistingContainer = false, want true for stale worker config")
 	}
-	existing.Config.Labels[LabelWorkerConfig] = "new"
-	existing.Config.Labels[LabelWorkerAgent] = "true"
+	existing.Config.Labels[LabelPoolConfig] = "new"
+	existing.Config.Labels[LabelPoolAgent] = "true"
 	if shouldRemoveExistingContainer(existing, "worker-image", desired) {
 		t.Fatalf("shouldRemoveExistingContainer = true, want false for matching config")
 	}
@@ -309,13 +309,13 @@ func TestShouldRemoveExistingContainerDetectsDrift(t *testing.T) {
 
 func TestShouldReconcileWorkerContainer(t *testing.T) {
 	engine := newTestEngine(t, Config{})
-	if engine.ShouldReconcileWorkerContainer("worker-image", map[string]string{LabelWorkerConfig: engine.ConfigRevision()}) {
+	if engine.ShouldReconcileWorkerContainer("worker-image", map[string]string{LabelPoolConfig: engine.ConfigRevision()}) {
 		t.Fatalf("ShouldReconcileWorkerContainer = true, want false for matching container")
 	}
-	if !engine.ShouldReconcileWorkerContainer("other-image", map[string]string{LabelWorkerConfig: engine.ConfigRevision()}) {
+	if !engine.ShouldReconcileWorkerContainer("other-image", map[string]string{LabelPoolConfig: engine.ConfigRevision()}) {
 		t.Fatalf("ShouldReconcileWorkerContainer = false, want true for image drift")
 	}
-	if !engine.ShouldReconcileWorkerContainer("worker-image", map[string]string{LabelWorkerConfig: "old"}) {
+	if !engine.ShouldReconcileWorkerContainer("worker-image", map[string]string{LabelPoolConfig: "old"}) {
 		t.Fatalf("ShouldReconcileWorkerContainer = false, want true for config drift")
 	}
 }

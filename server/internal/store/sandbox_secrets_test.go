@@ -12,9 +12,10 @@ import (
 func TestDeleteSandboxGCsSecretsAndAnonymous(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
 
 	if err := s.CreateSandbox(ctx, &model.Sandbox{
-		ID: "sb-1", ProjectID: "project-1", CreatedByUserID: "user-1", Name: "sb-1",
+		ID: "sb-1", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "sb-1",
 	}); err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}

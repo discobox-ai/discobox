@@ -17,7 +17,7 @@ import (
 	"github.com/obot-platform/discobox/harness"
 	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
-	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
+	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
 	"github.com/obot-platform/discobox/server/internal/model"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
@@ -468,7 +468,7 @@ func (s *Service) Reconcile(ctx context.Context, configID string) error {
 // caller's credentials.
 func (s *Service) sandboxAgentClient(ctx context.Context, projectID, sandboxID string) (*oneShotRunner, func(), error) {
 	lease, sandboxModel, err := s.sandboxes.AcquireSandboxHTTPClient(ctx, projectID, sandboxID,
-		[]string{workeragentauth.ScopeExecRead, workeragentauth.ScopeExecWrite})
+		[]string{poolagentauth.ScopeExecRead, poolagentauth.ScopeExecWrite})
 	if err != nil {
 		return nil, nil, err
 	}
@@ -476,9 +476,9 @@ func (s *Service) sandboxAgentClient(ctx context.Context, projectID, sandboxID s
 		lease.Release()
 		return nil, nil, errors.New("sandbox agent lease has no HTTP client")
 	}
-	if sandboxModel == nil || sandboxModel.WorkerID == nil || strings.TrimSpace(*sandboxModel.WorkerID) == "" {
+	if sandboxModel == nil || strings.TrimSpace(sandboxModel.PoolID) == "" {
 		lease.Release()
-		return nil, nil, errors.New("sandbox has no worker to reach its agent through")
+		return nil, nil, errors.New("sandbox has no pool to reach its agent through")
 	}
 	return &oneShotRunner{
 		httpClient: &http.Client{
@@ -487,7 +487,7 @@ func (s *Service) sandboxAgentClient(ctx context.Context, projectID, sandboxID s
 		},
 		baseURL:   lease.BaseURL,
 		projectID: projectID,
-		workerID:  strings.TrimSpace(*sandboxModel.WorkerID),
+		poolID:    strings.TrimSpace(sandboxModel.PoolID),
 		sandboxID: sandboxID,
 	}, lease.Release, nil
 }
@@ -629,14 +629,14 @@ type oneShotRunner struct {
 	httpClient *http.Client
 	baseURL    string
 	projectID  string
-	workerID   string
+	poolID     string
 	sandboxID  string
 }
 
 func (r *oneShotRunner) url(suffix string) string {
-	return fmt.Sprintf("%s/api/project/%s/worker/%s/sandboxes/%s%s",
+	return fmt.Sprintf("%s/api/project/%s/pool/%s/sandboxes/%s%s",
 		strings.TrimRight(r.baseURL, "/"),
-		neturl.PathEscape(r.projectID), neturl.PathEscape(r.workerID), neturl.PathEscape(r.sandboxID), suffix)
+		neturl.PathEscape(r.projectID), neturl.PathEscape(r.poolID), neturl.PathEscape(r.sandboxID), suffix)
 }
 
 // do runs command with stdin as its input and returns its output. A non-zero exit

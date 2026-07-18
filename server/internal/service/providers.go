@@ -10,13 +10,13 @@ func (s *Service) EnsureExistingSandboxProviderInstances(ctx context.Context) er
 	return s.providers().EnsureExistingSandboxProviderInstances(ctx)
 }
 
-func (s *Service) enqueueProviderWorkers(ctx context.Context, projectID, providerID string) error {
-	return s.providers().EnqueueProviderWorkers(ctx, projectID, providerID)
+func (s *Service) enqueueProviderPools(ctx context.Context, projectID, providerID string) error {
+	return s.providers().EnqueueProviderPools(ctx, projectID, providerID)
 }
 
 func (s *Service) providers() *providers.Service {
 	if s.providerService == nil {
-		return providers.NewService(s.store, nil, s.workerManager)
+		return providers.NewService(s.store, nil, s.poolControlPlane)
 	}
 	return s.providerService
 }

@@ -9,7 +9,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
+	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
 	services "github.com/obot-platform/discobox/server/internal/services"
 )
 
@@ -55,17 +55,17 @@ func sandboxAgentTerminalProxyHandler(service services.SandboxService) http.Hand
 			return
 		}
 		defer lease.Release()
-		if sandboxModel == nil || sandboxModel.WorkerID == nil || strings.TrimSpace(*sandboxModel.WorkerID) == "" {
-			writeSandboxAgentProxyError(w, http.StatusConflict, "sandbox worker is not assigned")
+		if sandboxModel == nil || strings.TrimSpace(sandboxModel.PoolID) == "" {
+			writeSandboxAgentProxyError(w, http.StatusConflict, "sandbox pool is not assigned")
 			return
 		}
 
-		target, err := sandboxAgentTerminalProxyTargetURL(lease.BaseURL, projectID, sandboxModel.ProjectID, strings.TrimSpace(*sandboxModel.WorkerID), sandboxID, sandboxModel.ID, r.URL.Path)
+		target, err := sandboxAgentTerminalProxyTargetURL(lease.BaseURL, projectID, sandboxModel.ProjectID, strings.TrimSpace(sandboxModel.PoolID), sandboxID, sandboxModel.ID, r.URL.Path)
 		if err != nil {
 			writeSandboxAgentProxyError(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		proxy := sandboxWorkerReverseProxy(target, lease)
+		proxy := sandboxPoolReverseProxy(target, lease)
 		proxy.ServeHTTP(w, r)
 	})
 }
@@ -86,19 +86,19 @@ func writeSandboxAgentProxyError(w http.ResponseWriter, status int, message stri
 func sandboxAgentTerminalProxyScopes(r *http.Request) []string {
 	if strings.Contains(r.URL.Path, "/harness-hooks") {
 		if r.Method == http.MethodGet {
-			return []string{workeragentauth.ScopeExecRead}
+			return []string{poolagentauth.ScopeExecRead}
 		}
 		return nil
 	}
 	if strings.Contains(r.URL.Path, "/execs") {
 		if strings.HasSuffix(r.URL.Path, "/attach") {
-			return []string{workeragentauth.ScopeExecWrite, workeragentauth.ScopeExecRead}
+			return []string{poolagentauth.ScopeExecWrite, poolagentauth.ScopeExecRead}
 		}
 		switch r.Method {
 		case http.MethodGet:
-			return []string{workeragentauth.ScopeExecRead}
+			return []string{poolagentauth.ScopeExecRead}
 		case http.MethodPost, http.MethodDelete:
-			return []string{workeragentauth.ScopeExecWrite}
+			return []string{poolagentauth.ScopeExecWrite}
 		default:
 			return nil
 		}
@@ -106,7 +106,7 @@ func sandboxAgentTerminalProxyScopes(r *http.Request) []string {
 	return nil
 }
 
-func sandboxAgentTerminalProxyTargetURL(baseURL, routeProjectID, projectID, workerID, routeSandboxID, sandboxID, path string) (*url.URL, error) {
+func sandboxAgentTerminalProxyTargetURL(baseURL, routeProjectID, projectID, poolID, routeSandboxID, sandboxID, path string) (*url.URL, error) {
 	if strings.TrimSpace(baseURL) == "" {
 		baseURL = defaultSandboxAgentBaseURL
 	}
@@ -125,9 +125,9 @@ func sandboxAgentTerminalProxyTargetURL(baseURL, routeProjectID, projectID, work
 		return nil, fmt.Errorf("sandbox agent-terminal proxy path identity does not match route")
 	}
 	target.Path = fmt.Sprintf(
-		"/api/project/%s/worker/%s/sandboxes/%s%s",
+		"/api/project/%s/pool/%s/sandboxes/%s%s",
 		url.PathEscape(projectID),
-		url.PathEscape(workerID),
+		url.PathEscape(poolID),
 		url.PathEscape(sandboxID),
 		suffix,
 	)

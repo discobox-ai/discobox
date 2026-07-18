@@ -76,6 +76,20 @@ func encodeCreateHarnessConfigRequest(
 	return nil
 }
 
+func encodeCreatePoolRequest(
+	req *CreatePoolBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeCreateSandboxRequest(
 	req *CreateSandboxBody,
 	r *http.Request,
@@ -160,8 +174,8 @@ func encodeCreateSecretRequestRequest(
 	return nil
 }
 
-func encodeRegisterWorkerRequest(
-	req *RegisterWorkerBody,
+func encodeRegisterPoolRequest(
+	req *RegisterPoolBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"
@@ -174,8 +188,8 @@ func encodeRegisterWorkerRequest(
 	return nil
 }
 
-func encodeReportWorkerSandboxRemovedRequest(
-	req *ReportWorkerSandboxRemovedBody,
+func encodeReportPoolSandboxRemovedRequest(
+	req *ReportPoolSandboxRemovedBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"
@@ -272,6 +286,34 @@ func encodeUpdateHarnessConfigRequest(
 	return nil
 }
 
+func encodeUpdatePoolRequest(
+	req *UpdatePoolBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
+func encodeUpdatePoolStatusRequest(
+	req *UpdatePoolStatusBody,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodeUpdateSandboxRequest(
 	req *UpdateSandboxBody,
 	r *http.Request,
@@ -302,20 +344,6 @@ func encodeUpdateSandboxProviderInstanceRequest(
 
 func encodeUpdateSecretRequest(
 	req *UpdateSecretBody,
-	r *http.Request,
-) error {
-	const contentType = "application/json"
-	e := new(jx.Encoder)
-	{
-		req.Encode(e)
-	}
-	encoded := e.Bytes()
-	ht.SetBody(r, bytes.NewReader(encoded), contentType)
-	return nil
-}
-
-func encodeUpdateWorkerStatusRequest(
-	req *UpdateWorkerStatusBody,
 	r *http.Request,
 ) error {
 	const contentType = "application/json"

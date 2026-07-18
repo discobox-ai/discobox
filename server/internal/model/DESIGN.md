@@ -10,15 +10,14 @@ internal conversions. Public REST API schema types live under the root
 | Entity | Description |
 | --- | --- |
 | `User` | Authenticated person. Owns projects and creates sandboxes. |
-| `Project` | Group for sandboxes, provider configuration, harness configuration, workers, and project events. |
+| `Project` | Group for sandboxes, provider configuration, harness configuration, pools, and project events. |
 | `ServerState` | Generic key/value state for server preferences and one-time initialization flags. |
 | `Sandbox` | Main managed runtime/session resource. Belongs to a project, selects an image-backed `HarnessConfig`, and persists `harnessMode`. |
 | `HarnessConfig` | Project-scoped harness runtime configuration selected by sandboxes. |
 | `HarnessDefinition` | Non-persisted catalog entry for an included harness image; definitions are not selectable until registered as a project HarnessConfig. |
-| `SandboxProviderInstance` | Project-scoped provider configuration for creating and managing sandboxes. |
-| `Worker` | Provider-backed runtime worker for launching sandboxes. Has its own identity and public key; private key stays on the worker. Workers belong to a provider instance/pool and can host many stateful sandboxes. Scheduling uses `ready`, `schedulable`, and `degraded` columns; detailed condition data is opaque JSON for display. |
-| `WorkerBootstrapToken` | Short-lived, one-time token used by a new worker to register its public key. |
-| `WorkerAuthToken` | Legacy runtime token table retained for migration compatibility; active worker runtime auth uses signed assertions against `Worker.PublicKey`. |
+| `SandboxProviderInstance` | Project-scoped backend identity: provider type, credentials, and connection config. Capacity and sharing policy live on `Pool`. |
+| `Pool` | User-visible sharing boundary sandboxes are scheduled into, and its own runtime host (ADR-0006). Binds immutably to one provider instance; carries the resource envelope, shared-cache flag, the full runtime lifecycle (desired state/phase/generation), agent identity and public key, `ready`/`schedulable`/`degraded` scheduling flags, reported capacity, and heartbeat. Sandboxes in one pool share a cache, an envelope, and a kernel/host. |
+| `PoolBootstrapToken` | Short-lived, one-time token used by a starting pool agent to register its public key. |
 | `SandboxAccessIssuerKey` | Design-level name for the current `ProjectUserKey`: per-project, per-user issuer key used by the control plane to sign sandbox access tokens. |
 | `ProjectEvent` | Append-only project-scoped resource event for list/watch sync. |
 
@@ -60,7 +59,7 @@ Orchestrated resources embed `ResourceLifecycle`.
 Current/proposed orchestrated resources:
 
 - `Sandbox`
-- `Worker`
+- `Pool`
 
 Lifecycle fields include:
 
@@ -81,17 +80,17 @@ erDiagram
 
     PROJECT ||--o{ SANDBOX : contains
     PROJECT ||--o{ SANDBOX_PROVIDER_INSTANCE : configures
+    PROJECT ||--o{ POOL : contains
     PROJECT ||--o{ HARNESS_CONFIG : configures
     PROJECT ||--o{ PROJECT_EVENT : emits
     PROJECT ||--o{ SANDBOX_ACCESS_ISSUER_KEY : has
-    PROJECT ||--o| SANDBOX_PROVIDER_INSTANCE : default_provider
+    PROJECT ||--o| POOL : default_pool
     PROJECT ||--o| HARNESS_CONFIG : default_harness
 
     HARNESS_CONFIG ||--o{ SANDBOX : runs
-    SANDBOX_PROVIDER_INSTANCE ||--o{ SANDBOX : manages
-    SANDBOX_PROVIDER_INSTANCE ||--o{ WORKER : runs
-    WORKER ||--o{ WORKER_BOOTSTRAP_TOKEN : registers_with
-    WORKER ||--o{ WORKER_AUTH_TOKEN : authenticates_with
+    SANDBOX_PROVIDER_INSTANCE ||--o{ POOL : backs
+    POOL ||--o{ SANDBOX : schedules
+    POOL ||--o{ POOL_BOOTSTRAP_TOKEN : registers_with
 
     USER {
         string id
@@ -105,7 +104,7 @@ erDiagram
         string owner_user_id
         string name
         string slug
-        string default_sandbox_provider_id
+        string default_pool_id
         string default_harness_config_id
     }
 
@@ -118,7 +117,7 @@ erDiagram
         string id
         string project_id
         string created_by_user_id
-        string provider_instance_id
+        string pool_id
         string harness_config_id
         json source
         json source_code_references
@@ -145,38 +144,26 @@ erDiagram
         bytes encrypted_config
     }
 
-    WORKER {
+    POOL {
         string id
         string project_id
+        string name
         string provider_instance_id
-        string identity
-        string public_key
-        string key_type
+        bool cache_enabled
+        float cpu_vcpus
+        int memory_bytes
+        int storage_bytes
         bool ready
         bool schedulable
         bool degraded
-        json conditions
-        datetime registered_at
-        datetime last_seen_at
-        datetime revoked_at
     }
 
-    WORKER_BOOTSTRAP_TOKEN {
+    POOL_BOOTSTRAP_TOKEN {
         string id
-        string worker_id
+        string pool_id
         bytes token_hash
         datetime expires_at
         datetime used_at
-        datetime revoked_at
-    }
-
-    WORKER_AUTH_TOKEN {
-        string id
-        string worker_id
-        bytes token_hash
-        datetime issued_at
-        datetime expires_at
-        datetime last_used_at
         datetime revoked_at
     }
 
@@ -203,39 +190,33 @@ erDiagram
 Auth flows are documented in `server/internal/sandboxauth/DESIGN.md`.
 Database resolution is documented in `server/internal/database/DESIGN.md`.
 
-## Worker Scheduling Status
+## Pool Scheduling Status
 
-Workers report three scheduling-relevant booleans directly on the worker row:
+The pool agent reports three scheduling-relevant booleans directly on the pool
+row:
 
-- `ready`: the worker agent/runtime is healthy.
-- `schedulable`: the worker is willing to pull new sandbox work.
-- `degraded`: the worker can still accept fallback work but should not be
+- `ready`: the pool host/runtime is healthy.
+- `schedulable`: the pool is willing to accept new sandbox work.
+- `degraded`: the pool can still accept fallback work but should not be
   preferred.
 
 Any richer Kubernetes-style conditions or pressure details are stored as an
 opaque `conditions` JSON blob for display and diagnostics. The control plane
-does not interpret that blob for scheduling.
+does not interpret that blob for scheduling. Placement is a gate, not a
+search: the sandbox's pool must be ready, schedulable, and fit the request
+within its reported capacity.
 
-The worker decides when local compute/storage/memory pressure should change
-`schedulable` or `degraded`. The control plane uses a coarse preference:
+## Pool Deletion
 
-- preferred: `ready=true`, `schedulable=true`, `degraded=false`.
-- degraded: `ready=true`, `schedulable=true`, `degraded=true`.
+Pool rows are stateful runtime records. A pool must not be deleted or have its
+runtime removed while any non-deleted sandbox row still has `pool_id` pointing
+at it. Failed pool reconciliation marks the pool failed (never created) or
+offline (created); it does not convert the pool to deleted.
 
-## Worker Deletion
+Pool delete is intent-based: `phase=deleting` until runtime cleanup succeeds.
+Only successful cleanup may set `phase=deleted`, revoke the pool, clear
+runtime state, and soft-delete the row.
 
-Worker rows are stateful placement records. A worker must not be deleted or have
-its runtime removed while any non-deleted sandbox row still has `worker_id`
-pointing at that worker. Failed worker reconciliation marks the worker failed or
-unschedulable; it does not convert the worker to deleted. The narrow automatic
-delete case is an unregistered worker that never hosted a sandbox.
-
-Worker delete intent uses `phase=deleting` until runtime cleanup succeeds. Only
-successful cleanup may set `phase=deleted`, revoke the worker, and clear runtime
-state. Purge logic may remove only terminal deleted workers that were
-successfully revoked.
-
-Worker repair is not delete. Repair is an active-worker recovery operation for
-assigned workers and must preserve the worker row, worker ID, and worker-local
-state.
-- unavailable: not ready, not schedulable, drained, deleted, or revoked.
+Pool repair is not delete. Repair is an in-place recovery operation that
+replaces the runtime under the same pool identity and must preserve the pool
+row and pool-local state (named volumes).

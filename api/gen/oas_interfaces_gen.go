@@ -37,6 +37,10 @@ type CreateHarnessConfigRes interface {
 	createHarnessConfigRes()
 }
 
+type CreatePoolRes interface {
+	createPoolRes()
+}
+
 type CreateSandboxExecRes interface {
 	createSandboxExecRes()
 }
@@ -73,6 +77,10 @@ type DeleteHarnessConfigSecretBindingRes interface {
 	deleteHarnessConfigSecretBindingRes()
 }
 
+type DeletePoolRes interface {
+	deletePoolRes()
+}
+
 type DeleteSandboxExecRes interface {
 	deleteSandboxExecRes()
 }
@@ -103,6 +111,10 @@ type GetHarnessConfigRes interface {
 
 type GetJobRes interface {
 	getJobRes()
+}
+
+type GetPoolRes interface {
+	getPoolRes()
 }
 
 type GetProjectRes interface {
@@ -149,6 +161,10 @@ type ListJobsRes interface {
 	listJobsRes()
 }
 
+type ListPoolsRes interface {
+	listPoolsRes()
+}
+
 type ListProjectsRes interface {
 	listProjectsRes()
 }
@@ -193,24 +209,20 @@ type ListSecretsRes interface {
 	listSecretsRes()
 }
 
-type ListWorkersRes interface {
-	listWorkersRes()
+type ReconcilePoolRes interface {
+	reconcilePoolRes()
 }
 
 type ReconcileSandboxRes interface {
 	reconcileSandboxRes()
 }
 
-type ReconcileWorkerRes interface {
-	reconcileWorkerRes()
+type RegisterPoolRes interface {
+	registerPoolRes()
 }
 
-type RegisterWorkerRes interface {
-	registerWorkerRes()
-}
-
-type ReportWorkerSandboxRemovedRes interface {
-	reportWorkerSandboxRemovedRes()
+type ReportPoolSandboxRemovedRes interface {
+	reportPoolSandboxRemovedRes()
 }
 
 type ResolveSandboxSecretRes interface {
@@ -253,6 +265,14 @@ type UpdateHarnessConfigRes interface {
 	updateHarnessConfigRes()
 }
 
+type UpdatePoolRes interface {
+	updatePoolRes()
+}
+
+type UpdatePoolStatusRes interface {
+	updatePoolStatusRes()
+}
+
 type UpdateSandboxProviderInstanceRes interface {
 	updateSandboxProviderInstanceRes()
 }
@@ -263,8 +283,4 @@ type UpdateSandboxRes interface {
 
 type UpdateSecretRes interface {
 	updateSecretRes()
-}
-
-type UpdateWorkerStatusRes interface {
-	updateWorkerStatusRes()
 }

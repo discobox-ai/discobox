@@ -6,7 +6,7 @@
 - The proxied request path must never synchronously wait on SQLite audit writes.
   New audit data must go through the bounded async recorder or an equivalent
   non-blocking spool.
-- Preserve mTLS as the worker proxy client identity boundary. Do not accept
+- Preserve mTLS as the pool host proxy client identity boundary. Do not accept
   client identity from sandbox-supplied headers.
 - Policy and audit behavior must remain client-scoped. Destination rules,
   header injection rules, upgraded-stream metadata, and audit query surfaces
@@ -27,7 +27,7 @@
   rule. Never persist injected secret values in audit rows.
 - Keep certificate preparation callable without starting the proxy listener.
 - Header rewrite rule evaluation must remain deterministic across process runs.
-- Avoid importing server internals; this package is consumed by worker-agent
+- Avoid importing server internals; this package is consumed by pool-agent
   and launch wiring through root-module contracts.
 - Never persist a swapped secret value. Any header whose value was
   secret-swapped must be added to the audit redaction set, and a query-param

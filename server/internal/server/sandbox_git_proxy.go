@@ -10,12 +10,12 @@ import (
 	"strings"
 
 	"github.com/go-chi/chi/v5"
-	workeragentauth "github.com/obot-platform/discobox/server/internal/auth/workeragent"
+	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
-const defaultSandboxWorkerBaseURL = "https://worker"
+const defaultSandboxPoolBaseURL = "https://pool"
 
 func registerSandboxGitRoutes(router chi.Router, service services.SandboxService) {
 	router.Handle("/projects/{projectId}/sandboxes/{sandboxId}/git-repositories/*", sandboxGitProxyHandler(service))
@@ -32,11 +32,11 @@ func sandboxGitProxyHandler(service services.SandboxService) http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		workerScopes := sandboxGitProxyScopes(r)
+		agentScopes := sandboxGitProxyScopes(r)
 
 		projectID := chi.URLParam(r, "projectId")
 		sandboxID := chi.URLParam(r, "sandboxId")
-		lease, sandboxModel, err := service.AcquireSandboxHTTPClient(r.Context(), projectID, sandboxID, workerScopes)
+		lease, sandboxModel, err := service.AcquireSandboxHTTPClient(r.Context(), projectID, sandboxID, agentScopes)
 		if err != nil {
 			http.Error(w, err.Error(), statusCodeForProxyError(err))
 			return
@@ -46,17 +46,17 @@ func sandboxGitProxyHandler(service services.SandboxService) http.Handler {
 			return
 		}
 		defer lease.Release()
-		if sandboxModel == nil || sandboxModel.WorkerID == nil || strings.TrimSpace(*sandboxModel.WorkerID) == "" {
-			http.Error(w, "sandbox worker is not assigned", http.StatusConflict)
+		if sandboxModel == nil || strings.TrimSpace(sandboxModel.PoolID) == "" {
+			http.Error(w, "sandbox pool is not assigned", http.StatusConflict)
 			return
 		}
 
-		target, err := sandboxGitProxyTargetURL(lease.BaseURL, sandboxModel.ProjectID, strings.TrimSpace(*sandboxModel.WorkerID), sandboxModel.ID, repositoryID, suffix)
+		target, err := sandboxGitProxyTargetURL(lease.BaseURL, sandboxModel.ProjectID, strings.TrimSpace(sandboxModel.PoolID), sandboxModel.ID, repositoryID, suffix)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		proxy := sandboxWorkerReverseProxy(target, lease)
+		proxy := sandboxPoolReverseProxy(target, lease)
 		proxy.ServeHTTP(w, r)
 	})
 }
@@ -64,11 +64,11 @@ func sandboxGitProxyHandler(service services.SandboxService) http.Handler {
 func sandboxGitProxyScopes(r *http.Request) []string {
 	switch {
 	case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/git-receive-pack"):
-		return []string{workeragentauth.ScopeSandboxWrite}
+		return []string{poolagentauth.ScopeSandboxWrite}
 	case r.URL.Query().Get("service") == "git-receive-pack":
-		return []string{workeragentauth.ScopeSandboxWrite}
+		return []string{poolagentauth.ScopeSandboxWrite}
 	default:
-		return []string{workeragentauth.ScopeSandboxRead}
+		return []string{poolagentauth.ScopeSandboxRead}
 	}
 }
 
@@ -99,9 +99,9 @@ func validSandboxGitRepositoryID(value string) bool {
 	return true
 }
 
-func sandboxGitProxyTargetURL(baseURL, projectID, workerID, sandboxID, repositoryID, suffix string) (*url.URL, error) {
+func sandboxGitProxyTargetURL(baseURL, projectID, poolID, sandboxID, repositoryID, suffix string) (*url.URL, error) {
 	if strings.TrimSpace(baseURL) == "" {
-		baseURL = defaultSandboxWorkerBaseURL
+		baseURL = defaultSandboxPoolBaseURL
 	}
 	target, err := url.Parse(strings.TrimRight(baseURL, "/"))
 	if err != nil {
@@ -111,9 +111,9 @@ func sandboxGitProxyTargetURL(baseURL, projectID, workerID, sandboxID, repositor
 		return nil, fmt.Errorf("sandbox git proxy target %q must include scheme and host", baseURL)
 	}
 	target.Path = fmt.Sprintf(
-		"/api/project/%s/worker/%s/sandboxes/%s/git-repositories/%s.git%s",
+		"/api/project/%s/pool/%s/sandboxes/%s/git-repositories/%s.git%s",
 		url.PathEscape(projectID),
-		url.PathEscape(workerID),
+		url.PathEscape(poolID),
 		url.PathEscape(sandboxID),
 		url.PathEscape(repositoryID),
 		suffix,
@@ -123,7 +123,7 @@ func sandboxGitProxyTargetURL(baseURL, projectID, workerID, sandboxID, repositor
 	return target, nil
 }
 
-func sandboxWorkerReverseProxy(target *url.URL, lease *services.HTTPClientLease) *httputil.ReverseProxy {
+func sandboxPoolReverseProxy(target *url.URL, lease *services.HTTPClientLease) *httputil.ReverseProxy {
 	proxy := &httputil.ReverseProxy{
 		Rewrite: func(req *httputil.ProxyRequest) {
 			rawQuery := req.In.URL.RawQuery
@@ -139,16 +139,16 @@ func sandboxWorkerReverseProxy(target *url.URL, lease *services.HTTPClientLease)
 	if lease.Client != nil && lease.Client.Transport != nil {
 		baseTransport = lease.Client.Transport
 	}
-	proxy.Transport = workerAgentAuthTransport{base: baseTransport, lease: lease}
+	proxy.Transport = poolAgentAuthTransport{base: baseTransport, lease: lease}
 	return proxy
 }
 
-type workerAgentAuthTransport struct {
+type poolAgentAuthTransport struct {
 	base  http.RoundTripper
 	lease *services.HTTPClientLease
 }
 
-func (t workerAgentAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t poolAgentAuthTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	authToken, err := t.lease.AuthorizationToken(req.Context())
 	if err != nil {
 		return nil, err

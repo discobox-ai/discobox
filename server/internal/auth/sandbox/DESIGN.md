@@ -1,13 +1,13 @@
 # Sandbox Auth Design
 
 `internal/auth/sandbox` owns token and key helpers for sandbox access delegation
-and worker identity flows. It should not decide API authorization policy; it
+and pool identity flows. It should not decide API authorization policy; it
 issues or validates credentials that other server layers scope to projects,
-sandboxes, and workers.
+sandboxes, and pools.
 
 ## Auth Shape
 
-Both sandbox access and worker identity follow the same pattern:
+Both sandbox access and pool identity follow the same pattern:
 
 ```text
 long-lived key identity -> proof or issuer use -> short-lived scoped token
@@ -17,7 +17,7 @@ Authentication must establish the caller identity before resource access:
 
 - User auth maps a user/session to a user ID.
 - Sandbox auth maps a sandbox token to project, sandbox, and user identity.
-- Worker auth maps bootstrap/runtime credentials to a worker ID.
+- Pool auth maps bootstrap/runtime credentials to a pool ID.
 
 Authorization should be possible from request attributes without inspecting the
 request body. Use the authenticated principal plus method, route/path
@@ -25,13 +25,13 @@ parameters, query parameters, headers, and resource ownership loaded from those
 attributes. If a body field is needed to identify the resource being authorized,
 move that identity into the URL or another request attribute.
 
-The only intentional exception is worker bootstrap registration. A booting
-worker has no runtime principal yet, so `POST /api/workers/register` redeems a
+The only intentional exception is pool bootstrap registration. A booting
+pool has no runtime principal yet, so `POST /api/pools/register` redeems a
 body-provided project ID, sandbox ID, one-time bootstrap token, and public key
-for the first worker runtime token. This is safe only because the control plane
-created the bootstrap token for a preassigned sandbox worker, stores it as a
+for the first pool runtime token. This is safe only because the control plane
+created the bootstrap token for a preassigned sandbox pool, stores it as a
 short-lived one-time hash, and validates it before issuing runtime credentials.
-After registration, worker authorization must use the authenticated worker
+After registration, pool authorization must use the authenticated pool
 principal and request attributes, not body fields.
 
 ## Sandbox Auth: Access Delegation
@@ -63,19 +63,19 @@ Current details:
 - Encryption associated data binds ciphertext to the `projectID/userID` identity.
 - Issued sandbox access tokens include `project_id`, `sandbox_id`, and `user_id` claims.
 
-## Worker Auth: Workload Identity
+## Pool Auth: Workload Identity
 
-Workers have their own identity. The worker private key stays on the worker.
+Workers have their own identity. The pool private key stays on the pool host.
 
 ```text
-1. Control plane creates Worker + one-time WorkerBootstrapToken.
-2. Worker boots with project ID, sandbox ID, bootstrap token, control plane URL, and the assigned worker ID for subsequent worker-scoped routes.
-3. Worker generates a keypair locally.
-4. Worker registers its public key using project ID, sandbox ID, and the bootstrap token in the registration body; the control plane derives the worker ID from the sandbox assignment.
-5. Control plane validates the token for that assigned worker, stores the public key, and marks the bootstrap token used.
-6. Worker signs each worker-to-control-plane runtime request with its private key.
+1. Control plane creates Pool + one-time WorkerBootstrapToken.
+2. Pool boots with project ID, sandbox ID, bootstrap token, control plane URL, and the assigned pool ID for subsequent pool-scoped routes.
+3. Pool generates a keypair locally.
+4. Pool registers its public key using project ID, sandbox ID, and the bootstrap token in the registration body; the control plane derives the pool ID from the sandbox assignment.
+5. Control plane validates the token for that assigned pool, stores the public key, and marks the bootstrap token used.
+6. Pool signs each pool-to-control-plane runtime request with its private key.
 7. Control plane validates the short-lived assertion against the stored public
-   key, project ID, worker ID, route worker ID, and worker revocation state.
+   key, project ID, pool ID, route pool ID, and pool revocation state.
 ```
 
 Rules:
@@ -83,27 +83,27 @@ Rules:
 - Bootstrap tokens are short-lived, one-time use, and stored only as hashes.
 - Runtime assertions use PASETO v4.public with Ed25519, a short TTL, and a
   backwards `nbf` skew allowance for local VM clocks.
-- Worker authorization should be scoped to assigned work and provider/sandbox
+- Pool authorization should be scoped to assigned work and provider/sandbox
   scope.
 
-## Worker-Agent Request Tokens
+## Pool-Agent Request Tokens
 
-Control-plane calls to a worker agent use a separate server-owned issuer key.
-The public key is delivered to the worker in bootstrap metadata as
+Control-plane calls to a pool host agent use a separate server-owned issuer key.
+The public key is delivered to the pool host in bootstrap metadata as
 `DISCOBOX_CONTROL_PLANE_PUBLIC_KEY`; the private key remains on the control
 plane and is stored in `server_state` as encrypted-at-rest key material when a
 sealer is configured.
 
 The workerpool layer mints short-lived PASETO v4.public bearer tokens when it
-builds worker-agent clients or reverse-proxy requests. Tokens are audience-bound
-to `worker-agent`, include `project_id`, `worker_id`, optional `sandbox_id`, and
+builds pool-agent clients or reverse-proxy requests. Tokens are audience-bound
+to `pool-agent`, include `project_id`, `worker_id`, optional `sandbox_id`, and
 operation scopes, and backdate `nbf` to tolerate local VM clock skew. Driver
 HTTP leases should carry routing/connectivity only; they should not cache or
-persist worker-agent request tokens.
+persist pool-agent request tokens.
 
 ## Key Ownership
 
 | Flow | Private key owner | Purpose |
 | --- | --- | --- |
-| Worker auth | Worker | Proves workload identity to the control plane. |
+| Pool auth | Pool | Proves workload identity to the control plane. |
 | Sandbox auth | Control plane | Issues delegated sandbox access tokens. |
