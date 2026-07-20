@@ -18,7 +18,6 @@ import (
 const (
 	EnvControlPlaneURL = "DISCOBOX_CONTROL_PLANE_URL"
 	EnvProjectID       = "DISCOBOX_PROJECT_ID"
-	EnvSandboxID       = "DISCOBOX_SANDBOX_ID"
 	EnvPoolID          = "DISCOBOX_POOL_ID"
 	EnvBootstrapToken  = "DISCOBOX_POOL_BOOTSTRAP_TOKEN" //nolint:gosec // Environment variable name, not a credential value.
 	EnvControlPlaneKey = "DISCOBOX_CONTROL_PLANE_PUBLIC_KEY"
@@ -30,7 +29,6 @@ const (
 type Bootstrap struct {
 	ControlPlaneURL string `json:"controlPlaneUrl,omitempty"`
 	ProjectID       string `json:"projectId,omitempty"`
-	SandboxID       string `json:"sandboxId,omitempty"`
 	PoolID          string `json:"poolId,omitempty"`
 	Token           string `json:"token,omitempty"`
 	ControlPlaneKey string `json:"controlPlanePublicKey,omitempty"`
@@ -85,7 +83,6 @@ type SandboxRemovalClient interface {
 type RegisterRequest struct {
 	ControlPlaneURL string `json:"-"`
 	ProjectID       string `json:"projectId"`
-	SandboxID       string `json:"sandboxId"`
 	PoolID          string `json:"poolId,omitempty"`
 	BootstrapToken  string `json:"bootstrapToken"`
 	PublicKey       string `json:"publicKey"`
@@ -153,7 +150,6 @@ func Run(ctx context.Context, cfg Config) (*Registration, error) {
 	resp, err := client.RegisterPool(ctx, RegisterRequest{
 		ControlPlaneURL: bootstrap.ControlPlaneURL,
 		ProjectID:       bootstrap.ProjectID,
-		SandboxID:       bootstrap.SandboxID,
 		PoolID:          bootstrap.PoolID,
 		BootstrapToken:  bootstrap.Token,
 		PublicKey:       publicKey,
@@ -178,7 +174,6 @@ func FromEnv() Bootstrap {
 	return Bootstrap{
 		ControlPlaneURL: controlPlaneURLFromEnv(),
 		ProjectID:       strings.TrimSpace(os.Getenv(EnvProjectID)),
-		SandboxID:       strings.TrimSpace(os.Getenv(EnvSandboxID)),
 		PoolID:          strings.TrimSpace(os.Getenv(EnvPoolID)),
 		Token:           strings.TrimSpace(os.Getenv(EnvBootstrapToken)),
 		ControlPlaneKey: strings.TrimSpace(os.Getenv(EnvControlPlaneKey)),

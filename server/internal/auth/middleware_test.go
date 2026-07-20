@@ -87,7 +87,7 @@ func TestAuthenticatedAuthorizerAllowsOnlyExplicitPaths(t *testing.T) {
 	for _, path := range []string{
 		"/harness-definitions",
 		"/harness-definitions/example",
-		"/api/workers/register",
+		"/api/pools/register",
 		"/projects",
 		"/providers/catalog",
 		"/shutdown",

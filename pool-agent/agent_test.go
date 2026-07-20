@@ -34,7 +34,6 @@ func TestRunRegistersPoolWithGeneratedPublicKey(t *testing.T) {
 		Bootstrap: poolagent.Bootstrap{
 			ControlPlaneURL: "https://control.example",
 			ProjectID:       "project-1",
-			SandboxID:       "sandbox-1",
 			PoolID:          "pool-1",
 			Token:           "bootstrap-token",
 		},
@@ -92,7 +91,7 @@ func TestHTTPClientRegistersPool(t *testing.T) {
 
 	resp, err := poolagent.NewHTTPClient(server.URL, poolagent.WithHTTPClient(server.Client())).RegisterPool(context.Background(), poolagent.RegisterRequest{
 		ProjectID:      "project-1",
-		SandboxID:      "sandbox-1",
+		PoolID:         "pool-1",
 		BootstrapToken: "bootstrap-token",
 		PublicKey:      "public-key",
 		KeyType:        "ed25519",
@@ -106,11 +105,8 @@ func TestHTTPClientRegistersPool(t *testing.T) {
 	if got.ProjectID != "project-1" {
 		t.Fatalf("project ID = %q", got.ProjectID)
 	}
-	if got.SandboxID != "sandbox-1" {
-		t.Fatalf("sandbox ID = %q", got.SandboxID)
-	}
-	if got.PoolID != "" {
-		t.Fatalf("pool ID = %q, want empty", got.PoolID)
+	if got.PoolID != "pool-1" {
+		t.Fatalf("pool ID = %q", got.PoolID)
 	}
 }
 

@@ -15,7 +15,6 @@ import (
 
 type Identity struct {
 	ProjectID string
-	SandboxID string
 	PoolID    string
 }
 

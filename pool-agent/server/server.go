@@ -44,7 +44,6 @@ func NewRouter(cfg Config) (*chi.Mux, error) {
 		w.Header().Set("Content-Type", "application/json")
 		metadata := map[string]any{
 			"projectId": cfg.Identity.ProjectID,
-			"sandboxId": cfg.Identity.SandboxID,
 			"poolId":    cfg.Identity.PoolID,
 		}
 		if cfg.Registration != nil {

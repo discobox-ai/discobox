@@ -165,7 +165,6 @@ func ServeWithRuntime(ctx context.Context, logger *slog.Logger, bootstrap Bootst
 	return poolserver.Serve(ctx, logger, poolserver.Config{
 		Identity: poolserver.Identity{
 			ProjectID: bootstrap.ProjectID,
-			SandboxID: bootstrap.SandboxID,
 			PoolID:    bootstrap.PoolID,
 		},
 		Registration:          serverRegistration(registration),

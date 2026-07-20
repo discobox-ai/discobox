@@ -153,10 +153,13 @@ func (r *PoolReconciler) reconcileActive(ctx context.Context, pool *model.Pool, 
 	if current.LastOperationStatus == model.OperationStatusFailed {
 		return nil
 	}
+	// Ready/Schedulable/Degraded are agent-reported fields, written by
+	// RegisterPool/UpdatePoolStatus over their own HTTP calls, which can land
+	// concurrently with EnsurePool/RepairPool waiting on container health.
+	// Only RuntimeState is safe to copy from the pre-call local object; copying
+	// the others would stomp a registration that already landed in the DB with
+	// the stale pre-call value.
 	current.RuntimeState = pool.RuntimeState
-	current.Ready = pool.Ready
-	current.Schedulable = pool.Schedulable
-	current.Degraded = pool.Degraded
 	current.ObservedGeneration = generation
 	phase := model.PoolPhaseRegistering
 	if alreadySuccessful {

@@ -24,7 +24,6 @@ func NewSandboxHandler(bootstrap Bootstrap, runtime SandboxRuntime) http.Handler
 	router, _ := poolserver.NewRouter(poolserver.Config{
 		Identity: poolserver.Identity{
 			ProjectID: bootstrap.ProjectID,
-			SandboxID: bootstrap.SandboxID,
 			PoolID:    bootstrap.PoolID,
 		},
 		Runtime:               runtime,

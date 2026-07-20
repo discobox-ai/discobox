@@ -107,7 +107,7 @@ func (e authorizationError) StatusCode() int {
 var authenticatedAllowedPaths = []string{
 	"/harness-definitions",
 	"/harness-definitions/",
-	"/api/workers/register",
+	"/api/pools/register",
 	"/projects",
 	"/providers/catalog",
 	"/shutdown",
