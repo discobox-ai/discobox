@@ -115,12 +115,9 @@ type CreateOptions struct {
 	OAuthRedirectBase     string
 	Resources             ResourceConfig
 	PoolID                string
-	// PoolCacheEnabled mounts the pool's shared cache volume into the sandbox
-	// at the well-known cache path.
-	PoolCacheEnabled bool
-	CPUVCPUs         float64
-	MemoryBytes      int64
-	StorageBytes     int64
+	CPUVCPUs              float64
+	MemoryBytes           int64
+	StorageBytes          int64
 }
 
 // UpdateOptions carries the mutable subset of CreateOptions that can be applied

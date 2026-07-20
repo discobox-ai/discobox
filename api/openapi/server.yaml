@@ -933,9 +933,6 @@ components:
                 builtIn:
                     description: True for the default pool seeded by the server; built-in pools cannot be deleted
                     type: boolean
-                cacheEnabled:
-                    description: Whether sandboxes in the pool mount the shared pool cache volume
-                    type: boolean
                 cpuVcpus:
                     description: Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host.
                     format: double
@@ -1072,7 +1069,6 @@ components:
                 - cpuVcpus
                 - memoryBytes
                 - storageBytes
-                - cacheEnabled
                 - ready
                 - schedulable
                 - degraded
@@ -1096,9 +1092,6 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                cacheEnabled:
-                    description: Whether sandboxes in the pool mount the shared pool cache volume. Defaults to true.
-                    type: boolean
                 cpuVcpus:
                     description: Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host.
                     format: double
@@ -1131,9 +1124,6 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                cacheEnabled:
-                    description: Whether sandboxes in the pool mount the shared pool cache volume
-                    type: boolean
                 cpuVcpus:
                     description: Total CPU capacity of the pool envelope in vCPUs
                     format: double

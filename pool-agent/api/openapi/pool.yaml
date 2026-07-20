@@ -242,9 +242,6 @@ components:
                     type: string
                 config:
                     "$ref": "#/components/schemas/SandboxConfig"
-                poolCacheEnabled:
-                    description: Whether to mount the pool's shared pool cache volume into the sandbox at the well-known cache path.
-                    type: boolean
                 resolvedHarnessConfig:
                     "$ref": "#/components/schemas/ResolvedHarnessConfig"
                 resources:

@@ -64,7 +64,6 @@ func (s *Service) CreatePool(ctx context.Context, projectID string, input servic
 		CPUVCPUs:           input.CpuVcpus.Or(0),
 		MemoryBytes:        input.MemoryBytes.Or(0),
 		StorageBytes:       input.StorageBytes.Or(0),
-		CacheEnabled:       input.CacheEnabled.Or(true),
 	}
 	if err := s.store.CreatePool(ctx, pool); err != nil {
 		return nil, err
@@ -105,9 +104,6 @@ func (s *Service) UpdatePool(ctx context.Context, projectID, poolID string, inpu
 	}
 	if value, ok := input.StorageBytes.Get(); ok {
 		pool.StorageBytes = value
-	}
-	if value, ok := input.CacheEnabled.Get(); ok {
-		pool.CacheEnabled = value
 	}
 	if err := s.store.UpdatePool(ctx, pool); err != nil {
 		return nil, err

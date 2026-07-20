@@ -304,8 +304,6 @@ func (s *CreateHarnessConfigBody) SetSlug(val OptString) {
 type CreatePoolBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Whether sandboxes in the pool mount the shared pool cache volume. Defaults to true.
-	CacheEnabled OptBool `json:"cacheEnabled"`
 	// Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host.
 	CpuVcpus OptFloat64 `json:"cpuVcpus"`
 	// Total memory capacity of the pool envelope in bytes. Zero sizes the envelope by the host.
@@ -321,11 +319,6 @@ type CreatePoolBody struct {
 // GetSchema returns the value of Schema.
 func (s *CreatePoolBody) GetSchema() OptURI {
 	return s.Schema
-}
-
-// GetCacheEnabled returns the value of CacheEnabled.
-func (s *CreatePoolBody) GetCacheEnabled() OptBool {
-	return s.CacheEnabled
 }
 
 // GetCpuVcpus returns the value of CpuVcpus.
@@ -356,11 +349,6 @@ func (s *CreatePoolBody) GetStorageBytes() OptInt64 {
 // SetSchema sets the value of Schema.
 func (s *CreatePoolBody) SetSchema(val OptURI) {
 	s.Schema = val
-}
-
-// SetCacheEnabled sets the value of CacheEnabled.
-func (s *CreatePoolBody) SetCacheEnabled(val OptBool) {
-	s.CacheEnabled = val
 }
 
 // SetCpuVcpus sets the value of CpuVcpus.
@@ -5153,8 +5141,6 @@ type Pool struct {
 	Schema OptURI `json:"$schema"`
 	// True for the default pool seeded by the server; built-in pools cannot be deleted.
 	BuiltIn bool `json:"builtIn"`
-	// Whether sandboxes in the pool mount the shared pool cache volume.
-	CacheEnabled bool `json:"cacheEnabled"`
 	// Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host.
 	CpuVcpus float64 `json:"cpuVcpus"`
 	// Creation timestamp.
@@ -5228,11 +5214,6 @@ func (s *Pool) GetSchema() OptURI {
 // GetBuiltIn returns the value of BuiltIn.
 func (s *Pool) GetBuiltIn() bool {
 	return s.BuiltIn
-}
-
-// GetCacheEnabled returns the value of CacheEnabled.
-func (s *Pool) GetCacheEnabled() bool {
-	return s.CacheEnabled
 }
 
 // GetCpuVcpus returns the value of CpuVcpus.
@@ -5398,11 +5379,6 @@ func (s *Pool) SetSchema(val OptURI) {
 // SetBuiltIn sets the value of BuiltIn.
 func (s *Pool) SetBuiltIn(val bool) {
 	s.BuiltIn = val
-}
-
-// SetCacheEnabled sets the value of CacheEnabled.
-func (s *Pool) SetCacheEnabled(val bool) {
-	s.CacheEnabled = val
 }
 
 // SetCpuVcpus sets the value of CpuVcpus.
@@ -9570,8 +9546,6 @@ func (s *UpdateHarnessConfigBody) SetName(val OptString) {
 type UpdatePoolBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Whether sandboxes in the pool mount the shared pool cache volume.
-	CacheEnabled OptBool `json:"cacheEnabled"`
 	// Total CPU capacity of the pool envelope in vCPUs.
 	CpuVcpus OptFloat64 `json:"cpuVcpus"`
 	// Total memory capacity of the pool envelope in bytes.
@@ -9585,11 +9559,6 @@ type UpdatePoolBody struct {
 // GetSchema returns the value of Schema.
 func (s *UpdatePoolBody) GetSchema() OptURI {
 	return s.Schema
-}
-
-// GetCacheEnabled returns the value of CacheEnabled.
-func (s *UpdatePoolBody) GetCacheEnabled() OptBool {
-	return s.CacheEnabled
 }
 
 // GetCpuVcpus returns the value of CpuVcpus.
@@ -9615,11 +9584,6 @@ func (s *UpdatePoolBody) GetStorageBytes() OptInt64 {
 // SetSchema sets the value of Schema.
 func (s *UpdatePoolBody) SetSchema(val OptURI) {
 	s.Schema = val
-}
-
-// SetCacheEnabled sets the value of CacheEnabled.
-func (s *UpdatePoolBody) SetCacheEnabled(val OptBool) {
-	s.CacheEnabled = val
 }
 
 // SetCpuVcpus sets the value of CpuVcpus.

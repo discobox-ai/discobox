@@ -171,7 +171,6 @@ func ensureDefaultPool(ctx context.Context, appStore *store.Store, defaultProvid
 		Name:               "Default",
 		ProviderInstanceID: defaultProvider.ID,
 		BuiltIn:            true,
-		CacheEnabled:       true,
 	}
 	if err := appStore.CreatePool(ctx, pool); err != nil {
 		return err

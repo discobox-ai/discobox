@@ -1921,12 +1921,6 @@ func (s *PoolSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 		s.Config.Encode(e)
 	}
 	{
-		if s.PoolCacheEnabled.Set {
-			e.FieldStart("poolCacheEnabled")
-			s.PoolCacheEnabled.Encode(e)
-		}
-	}
-	{
 		if s.ResolvedHarnessConfig.Set {
 			e.FieldStart("resolvedHarnessConfig")
 			s.ResolvedHarnessConfig.Encode(e)
@@ -1950,14 +1944,13 @@ func (s *PoolSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPoolSandboxCreateRequest = [7]string{
+var jsonFieldsNameOfPoolSandboxCreateRequest = [6]string{
 	0: "$schema",
 	1: "config",
-	2: "poolCacheEnabled",
-	3: "resolvedHarnessConfig",
-	4: "resources",
-	5: "sandboxId",
-	6: "sentinels",
+	2: "resolvedHarnessConfig",
+	3: "resources",
+	4: "sandboxId",
+	5: "sentinels",
 }
 
 // Decode decodes PoolSandboxCreateRequest from json.
@@ -1989,16 +1982,6 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"config\"")
 			}
-		case "poolCacheEnabled":
-			if err := func() error {
-				s.PoolCacheEnabled.Reset()
-				if err := s.PoolCacheEnabled.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"poolCacheEnabled\"")
-			}
 		case "resolvedHarnessConfig":
 			if err := func() error {
 				s.ResolvedHarnessConfig.Reset()
@@ -2020,7 +2003,7 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"resources\"")
 			}
 		case "sandboxId":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.SandboxId = string(v)
@@ -2051,7 +2034,7 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00100010,
+		0b00010010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

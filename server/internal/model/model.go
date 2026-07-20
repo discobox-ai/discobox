@@ -481,9 +481,6 @@ type Pool struct {
 	CPUVCPUs     float64 `gorm:"column:cpu_vcpus;not null;default:0" json:"cpuVcpus" doc:"Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host."`
 	MemoryBytes  int64   `gorm:"column:memory_bytes;not null;default:0" json:"memoryBytes" doc:"Total memory capacity of the pool envelope in bytes. Zero sizes the envelope by the host."`
 	StorageBytes int64   `gorm:"column:storage_bytes;not null;default:0" json:"storageBytes" doc:"Total storage capacity of the pool envelope in bytes. Zero sizes the envelope by the host."`
-	// Cache: every sandbox in the pool mounts the shared pool cache volume at a
-	// well-known path when enabled.
-	CacheEnabled bool `gorm:"column:cache_enabled;not null;default:true" json:"cacheEnabled" doc:"Whether sandboxes in the pool mount the shared pool cache volume"`
 
 	// Runtime host state, reported by the pool agent and the provider.
 	PublicKey             string          `gorm:"column:public_key;type:text" json:"publicKey,omitempty" doc:"Pool agent public key"`

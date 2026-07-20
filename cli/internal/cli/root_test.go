@@ -70,7 +70,6 @@ func TestWritePoolTableIncludesRuntimeState(t *testing.T) {
 		ID:                 "pool-1",
 		Name:               "Default",
 		ProviderInstanceId: "provider-1",
-		CacheEnabled:       true,
 		Phase:              "failed",
 		ErrorMessage:       apiclientgen.NewOptString("docker create failed"),
 	})

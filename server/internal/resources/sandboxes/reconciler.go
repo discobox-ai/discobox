@@ -512,9 +512,6 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	}
 	opts.Image = ImageRef{Name: sb.Image}
 	opts.PoolID = sb.PoolID
-	if sb.Pool != nil {
-		opts.PoolCacheEnabled = sb.Pool.CacheEnabled
-	}
 	opts.Name = sb.Name
 	opts.Description = sb.Description
 	opts.HarnessConfigID = sb.HarnessConfigID

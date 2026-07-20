@@ -156,7 +156,6 @@ func (a *App) writePool(cmd *cobra.Command, pool *apimodel.Pool) error {
 	fmt.Fprintf(tw, "ID\t%s\n", pool.ID)
 	fmt.Fprintf(tw, "NAME\t%s\n", pool.Name)
 	fmt.Fprintf(tw, "PROVIDER\t%s\n", pool.ProviderInstanceId)
-	fmt.Fprintf(tw, "CACHE\t%t\n", pool.CacheEnabled)
 	fmt.Fprintf(tw, "ENVELOPE CPU\t%s\n", formatPoolCPU(pool.CpuVcpus))
 	fmt.Fprintf(tw, "ENVELOPE MEMORY\t%s\n", formatPoolBytes(pool.MemoryBytes))
 	fmt.Fprintf(tw, "ENVELOPE STORAGE\t%s\n", formatPoolBytes(pool.StorageBytes))
@@ -181,15 +180,14 @@ func (a *App) writePools(cmd *cobra.Command, pools []apimodel.Pool) error {
 	}
 	pools = sortedByCreatedAt(pools, func(pool apimodel.Pool) time.Time { return pool.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tPROVIDER\tPHASE\tREADY\tCACHE\tCPU\tMEMORY\tSTORAGE\tUPDATED\tMESSAGE")
+	fmt.Fprintln(tw, "ID\tNAME\tPROVIDER\tPHASE\tREADY\tCPU\tMEMORY\tSTORAGE\tUPDATED\tMESSAGE")
 	for _, pool := range pools {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%t\t%t\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%t\t%s\t%s\t%s\t%s\t%s\n",
 			pool.ID,
 			pool.Name,
 			pool.ProviderInstanceId,
 			pool.Phase,
 			pool.Ready,
-			pool.CacheEnabled,
 			formatPoolCPU(pool.CpuVcpus),
 			formatPoolBytes(pool.MemoryBytes),
 			formatPoolBytes(pool.StorageBytes),

@@ -1671,10 +1671,8 @@ type PoolDeleteSandboxNoContent struct{}
 // Ref: #/components/schemas/PoolSandboxCreateRequest
 type PoolSandboxCreateRequest struct {
 	// A URL to the JSON Schema for this object.
-	Schema OptURI        `json:"$schema"`
-	Config SandboxConfig `json:"config"`
-	// Whether to mount the pool's shared pool cache volume into the sandbox at the well-known cache path.
-	PoolCacheEnabled      OptBool                  `json:"poolCacheEnabled"`
+	Schema                OptURI                   `json:"$schema"`
+	Config                SandboxConfig            `json:"config"`
 	ResolvedHarnessConfig OptResolvedHarnessConfig `json:"resolvedHarnessConfig"`
 	Resources             OptPoolSandboxResources  `json:"resources"`
 	SandboxId             string                   `json:"sandboxId"`
@@ -1691,11 +1689,6 @@ func (s *PoolSandboxCreateRequest) GetSchema() OptURI {
 // GetConfig returns the value of Config.
 func (s *PoolSandboxCreateRequest) GetConfig() SandboxConfig {
 	return s.Config
-}
-
-// GetPoolCacheEnabled returns the value of PoolCacheEnabled.
-func (s *PoolSandboxCreateRequest) GetPoolCacheEnabled() OptBool {
-	return s.PoolCacheEnabled
 }
 
 // GetResolvedHarnessConfig returns the value of ResolvedHarnessConfig.
@@ -1726,11 +1719,6 @@ func (s *PoolSandboxCreateRequest) SetSchema(val OptURI) {
 // SetConfig sets the value of Config.
 func (s *PoolSandboxCreateRequest) SetConfig(val SandboxConfig) {
 	s.Config = val
-}
-
-// SetPoolCacheEnabled sets the value of PoolCacheEnabled.
-func (s *PoolSandboxCreateRequest) SetPoolCacheEnabled(val OptBool) {
-	s.PoolCacheEnabled = val
 }
 
 // SetResolvedHarnessConfig sets the value of ResolvedHarnessConfig.

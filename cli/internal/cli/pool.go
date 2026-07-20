@@ -13,7 +13,6 @@ type poolOptions struct {
 	cpuVCPUs     float64
 	memoryBytes  int64
 	storageBytes int64
-	cacheEnabled bool
 }
 
 func (a *App) newPoolCommand() *cobra.Command {
@@ -106,9 +105,6 @@ time and cannot be moved.`, Args: cobra.ExactArgs(1), RunE: func(cmd *cobra.Comm
 		if cmd.Flags().Changed("storage-bytes") {
 			body.SetStorageBytes(apiclientgen.NewOptInt64(opts.storageBytes))
 		}
-		if cmd.Flags().Changed("cache") {
-			body.SetCacheEnabled(apiclientgen.NewOptBool(opts.cacheEnabled))
-		}
 		poolRes, err := client.CreatePool(cmd.Context(), body, apiclientgen.CreatePoolParams{ProjectId: projectID})
 		if err != nil {
 			return err
@@ -154,9 +150,6 @@ func (a *App) newPoolUpdateCommand() *cobra.Command {
 		if cmd.Flags().Changed("storage-bytes") {
 			body.SetStorageBytes(apiclientgen.NewOptInt64(opts.storageBytes))
 		}
-		if cmd.Flags().Changed("cache") {
-			body.SetCacheEnabled(apiclientgen.NewOptBool(opts.cacheEnabled))
-		}
 		poolRes, err := client.UpdatePool(cmd.Context(), body, apiclientgen.UpdatePoolParams{ProjectId: projectID, PoolId: poolID})
 		if err != nil {
 			return err
@@ -176,7 +169,6 @@ func addPoolAttributeFlags(cmd *cobra.Command, opts *poolOptions) {
 	cmd.Flags().Float64Var(&opts.cpuVCPUs, "cpu-vcpus", 0, "Total CPU capacity of the pool envelope in vCPUs (0 = host-sized)")
 	cmd.Flags().Int64Var(&opts.memoryBytes, "memory-bytes", 0, "Total memory capacity of the pool envelope in bytes (0 = host-sized)")
 	cmd.Flags().Int64Var(&opts.storageBytes, "storage-bytes", 0, "Total storage capacity of the pool envelope in bytes (0 = host-sized)")
-	cmd.Flags().BoolVar(&opts.cacheEnabled, "cache", true, "Mount the shared pool cache volume into sandboxes")
 }
 
 func (a *App) newPoolDeleteCommand() *cobra.Command {

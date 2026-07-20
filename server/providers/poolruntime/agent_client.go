@@ -322,9 +322,6 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 	if opts.StorageBytes != 0 {
 		config.StorageBytes = poolclient.NewOptInt64(opts.StorageBytes)
 	}
-	if opts.PoolCacheEnabled {
-		out.PoolCacheEnabled = poolclient.NewOptBool(true)
-	}
 	return out
 }
 

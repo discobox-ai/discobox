@@ -608,12 +608,6 @@ func (s *CreatePoolBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.CacheEnabled.Set {
-			e.FieldStart("cacheEnabled")
-			s.CacheEnabled.Encode(e)
-		}
-	}
-	{
 		if s.CpuVcpus.Set {
 			e.FieldStart("cpuVcpus")
 			s.CpuVcpus.Encode(e)
@@ -641,14 +635,13 @@ func (s *CreatePoolBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCreatePoolBody = [7]string{
+var jsonFieldsNameOfCreatePoolBody = [6]string{
 	0: "$schema",
-	1: "cacheEnabled",
-	2: "cpuVcpus",
-	3: "memoryBytes",
-	4: "name",
-	5: "providerInstanceId",
-	6: "storageBytes",
+	1: "cpuVcpus",
+	2: "memoryBytes",
+	3: "name",
+	4: "providerInstanceId",
+	5: "storageBytes",
 }
 
 // Decode decodes CreatePoolBody from json.
@@ -669,16 +662,6 @@ func (s *CreatePoolBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
-			}
-		case "cacheEnabled":
-			if err := func() error {
-				s.CacheEnabled.Reset()
-				if err := s.CacheEnabled.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"cacheEnabled\"")
 			}
 		case "cpuVcpus":
 			if err := func() error {
@@ -701,7 +684,7 @@ func (s *CreatePoolBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"memoryBytes\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -713,7 +696,7 @@ func (s *CreatePoolBody) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "providerInstanceId":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.ProviderInstanceId = string(v)
@@ -744,7 +727,7 @@ func (s *CreatePoolBody) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b00110000,
+		0b00011000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -8061,10 +8044,6 @@ func (s *Pool) encodeFields(e *jx.Encoder) {
 		e.Bool(s.BuiltIn)
 	}
 	{
-		e.FieldStart("cacheEnabled")
-		e.Bool(s.CacheEnabled)
-	}
-	{
 		e.FieldStart("cpuVcpus")
 		e.Float64(s.CpuVcpus)
 	}
@@ -8212,41 +8191,40 @@ func (s *Pool) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPool = [34]string{
+var jsonFieldsNameOfPool = [33]string{
 	0:  "$schema",
 	1:  "builtIn",
-	2:  "cacheEnabled",
-	3:  "cpuVcpus",
-	4:  "createdAt",
-	5:  "id",
-	6:  "memoryBytes",
-	7:  "name",
-	8:  "projectId",
-	9:  "providerInstance",
-	10: "providerInstanceId",
-	11: "storageBytes",
-	12: "ready",
-	13: "schedulable",
-	14: "degraded",
-	15: "availableCpuVcpus",
-	16: "availableMemoryBytes",
-	17: "availableStorageBytes",
-	18: "conditions",
-	19: "desiredState",
-	20: "phase",
-	21: "activeOperation",
-	22: "lastOperationStatus",
-	23: "generation",
-	24: "observedGeneration",
-	25: "statusMessage",
-	26: "errorMessage",
-	27: "phaseChangedAt",
-	28: "keyType",
-	29: "publicKey",
-	30: "registeredAt",
-	31: "lastSeenAt",
-	32: "revokedAt",
-	33: "updatedAt",
+	2:  "cpuVcpus",
+	3:  "createdAt",
+	4:  "id",
+	5:  "memoryBytes",
+	6:  "name",
+	7:  "projectId",
+	8:  "providerInstance",
+	9:  "providerInstanceId",
+	10: "storageBytes",
+	11: "ready",
+	12: "schedulable",
+	13: "degraded",
+	14: "availableCpuVcpus",
+	15: "availableMemoryBytes",
+	16: "availableStorageBytes",
+	17: "conditions",
+	18: "desiredState",
+	19: "phase",
+	20: "activeOperation",
+	21: "lastOperationStatus",
+	22: "generation",
+	23: "observedGeneration",
+	24: "statusMessage",
+	25: "errorMessage",
+	26: "phaseChangedAt",
+	27: "keyType",
+	28: "publicKey",
+	29: "registeredAt",
+	30: "lastSeenAt",
+	31: "revokedAt",
+	32: "updatedAt",
 }
 
 // Decode decodes Pool from json.
@@ -8280,20 +8258,8 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"builtIn\"")
 			}
-		case "cacheEnabled":
-			requiredBitSet[0] |= 1 << 2
-			if err := func() error {
-				v, err := d.Bool()
-				s.CacheEnabled = bool(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"cacheEnabled\"")
-			}
 		case "cpuVcpus":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				v, err := d.Float64()
 				s.CpuVcpus = float64(v)
@@ -8305,7 +8271,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"cpuVcpus\"")
 			}
 		case "createdAt":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -8317,7 +8283,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"createdAt\"")
 			}
 		case "id":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -8329,7 +8295,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"id\"")
 			}
 		case "memoryBytes":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Int64()
 				s.MemoryBytes = int64(v)
@@ -8341,7 +8307,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"memoryBytes\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -8353,7 +8319,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "projectId":
-			requiredBitSet[1] |= 1 << 0
+			requiredBitSet[0] |= 1 << 7
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -8375,7 +8341,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"providerInstance\"")
 			}
 		case "providerInstanceId":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Str()
 				s.ProviderInstanceId = string(v)
@@ -8387,7 +8353,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"providerInstanceId\"")
 			}
 		case "storageBytes":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				v, err := d.Int64()
 				s.StorageBytes = int64(v)
@@ -8399,7 +8365,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"storageBytes\"")
 			}
 		case "ready":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Bool()
 				s.Ready = bool(v)
@@ -8411,7 +8377,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"ready\"")
 			}
 		case "schedulable":
-			requiredBitSet[1] |= 1 << 5
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				v, err := d.Bool()
 				s.Schedulable = bool(v)
@@ -8423,7 +8389,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"schedulable\"")
 			}
 		case "degraded":
-			requiredBitSet[1] |= 1 << 6
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				v, err := d.Bool()
 				s.Degraded = bool(v)
@@ -8435,7 +8401,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"degraded\"")
 			}
 		case "availableCpuVcpus":
-			requiredBitSet[1] |= 1 << 7
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				v, err := d.Float64()
 				s.AvailableCpuVcpus = float64(v)
@@ -8447,7 +8413,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"availableCpuVcpus\"")
 			}
 		case "availableMemoryBytes":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[1] |= 1 << 7
 			if err := func() error {
 				v, err := d.Int64()
 				s.AvailableMemoryBytes = int64(v)
@@ -8459,7 +8425,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"availableMemoryBytes\"")
 			}
 		case "availableStorageBytes":
-			requiredBitSet[2] |= 1 << 1
+			requiredBitSet[2] |= 1 << 0
 			if err := func() error {
 				v, err := d.Int64()
 				s.AvailableStorageBytes = int64(v)
@@ -8482,7 +8448,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"conditions\"")
 			}
 		case "desiredState":
-			requiredBitSet[2] |= 1 << 3
+			requiredBitSet[2] |= 1 << 2
 			if err := func() error {
 				if err := s.DesiredState.Decode(d); err != nil {
 					return err
@@ -8492,7 +8458,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"desiredState\"")
 			}
 		case "phase":
-			requiredBitSet[2] |= 1 << 4
+			requiredBitSet[2] |= 1 << 3
 			if err := func() error {
 				if err := s.Phase.Decode(d); err != nil {
 					return err
@@ -8512,7 +8478,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"activeOperation\"")
 			}
 		case "lastOperationStatus":
-			requiredBitSet[2] |= 1 << 6
+			requiredBitSet[2] |= 1 << 5
 			if err := func() error {
 				if err := s.LastOperationStatus.Decode(d); err != nil {
 					return err
@@ -8522,7 +8488,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"lastOperationStatus\"")
 			}
 		case "generation":
-			requiredBitSet[2] |= 1 << 7
+			requiredBitSet[2] |= 1 << 6
 			if err := func() error {
 				v, err := d.Int64()
 				s.Generation = int64(v)
@@ -8534,7 +8500,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"generation\"")
 			}
 		case "observedGeneration":
-			requiredBitSet[3] |= 1 << 0
+			requiredBitSet[2] |= 1 << 7
 			if err := func() error {
 				v, err := d.Int64()
 				s.ObservedGeneration = int64(v)
@@ -8626,7 +8592,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"revokedAt\"")
 			}
 		case "updatedAt":
-			requiredBitSet[4] |= 1 << 1
+			requiredBitSet[4] |= 1 << 0
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -8648,10 +8614,10 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 	var failures []validate.FieldError
 	for i, mask := range [5]uint8{
 		0b11111110,
-		0b11111101,
-		0b11011011,
+		0b11111110,
+		0b11101101,
+		0b00000000,
 		0b00000001,
-		0b00000010,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -16364,12 +16330,6 @@ func (s *UpdatePoolBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		if s.CacheEnabled.Set {
-			e.FieldStart("cacheEnabled")
-			s.CacheEnabled.Encode(e)
-		}
-	}
-	{
 		if s.CpuVcpus.Set {
 			e.FieldStart("cpuVcpus")
 			s.CpuVcpus.Encode(e)
@@ -16395,13 +16355,12 @@ func (s *UpdatePoolBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfUpdatePoolBody = [6]string{
+var jsonFieldsNameOfUpdatePoolBody = [5]string{
 	0: "$schema",
-	1: "cacheEnabled",
-	2: "cpuVcpus",
-	3: "memoryBytes",
-	4: "name",
-	5: "storageBytes",
+	1: "cpuVcpus",
+	2: "memoryBytes",
+	3: "name",
+	4: "storageBytes",
 }
 
 // Decode decodes UpdatePoolBody from json.
@@ -16421,16 +16380,6 @@ func (s *UpdatePoolBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
-			}
-		case "cacheEnabled":
-			if err := func() error {
-				s.CacheEnabled.Reset()
-				if err := s.CacheEnabled.Decode(d); err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"cacheEnabled\"")
 			}
 		case "cpuVcpus":
 			if err := func() error {

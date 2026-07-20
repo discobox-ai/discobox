@@ -149,7 +149,6 @@ erDiagram
         string project_id
         string name
         string provider_instance_id
-        bool cache_enabled
         float cpu_vcpus
         int memory_bytes
         int storage_bytes

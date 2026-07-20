@@ -554,7 +554,7 @@ func (s *routerTestServices) CreatePool(_ context.Context, projectID string, inp
 		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
 	}
 	now := time.Now().UTC()
-	pool := model.Pool{ID: id.NewString(id.PrefixPool), ProjectID: projectID, Name: input.Name, ProviderInstanceID: input.ProviderInstanceId, CacheEnabled: input.CacheEnabled.Or(true), CreatedAt: now, UpdatedAt: now}
+	pool := model.Pool{ID: id.NewString(id.PrefixPool), ProjectID: projectID, Name: input.Name, ProviderInstanceID: input.ProviderInstanceId, CreatedAt: now, UpdatedAt: now}
 	if s.pools == nil {
 		s.pools = map[string]model.Pool{}
 	}
