@@ -649,6 +649,14 @@ const (
 	// happened while the pool was down are reported after the creation grace
 	// period, even when the Docker event stream remains healthy.
 	proxyMaterialBackstopInterval = time.Minute
+	// sandboxVolumeRetention is how long a dead sandbox's persistent volume tree
+	// (data/config/sources) is kept before reclamation, so its data survives an
+	// accidental or transient removal and a same-day recreate.
+	sandboxVolumeRetention = 24 * time.Hour
+	// sandboxVolumeTombstone records, inside a sandbox's volume tree, when the
+	// sandbox was first observed dead. The tree is reaped once the tombstone
+	// predates sandboxVolumeRetention.
+	sandboxVolumeTombstone = ".discobox-orphaned-at"
 )
 
 // ReconcileProxyMaterial prunes proxy material for sandboxes whose containers no
@@ -735,6 +743,87 @@ func (r *DockerSandboxRuntime) reconcileSandboxRemovals(ctx context.Context, log
 	}
 }
 
+// reconcileSandboxVolumes reaps the persistent volume trees
+// (pools/{poolID}/sandboxes/{sandboxID}/{data,config,sources}) of this pool's
+// dead sandboxes. It is scoped to this pool's own subtree and this pool's live
+// containers, so pools sharing a host never reap each other's data.
+//
+// Each dead tree is kept for retention after it is first observed dead (a
+// tombstone starts the clock), so persistent data survives an accidental or
+// out-of-band removal and a same-day recreate. A tree whose sandbox is live
+// again has its tombstone cleared.
+func (r *DockerSandboxRuntime) reconcileSandboxVolumes(ctx context.Context, logger *slog.Logger, retention time.Duration) {
+	live, err := r.liveSandboxIDs(ctx)
+	if err != nil {
+		logger.Warn("list sandbox containers for volume reconcile", "error", err)
+		return
+	}
+	liveSet := make(map[string]struct{}, len(live))
+	for _, id := range live {
+		liveSet[id] = struct{}{}
+	}
+	reapDeadSandboxVolumes(r.workerHostPath(r.sandboxesRoot()), liveSet, retention, time.Now(), logger)
+}
+
+// reapDeadSandboxVolumes is the pool-scoped core of the volume reaper: root is
+// this pool's own sandboxes directory, liveSet is this pool's live containers,
+// so it only ever tombstones and reaps this pool's data. A dead tree is kept
+// for retention after it is first observed dead.
+func reapDeadSandboxVolumes(root string, liveSet map[string]struct{}, retention time.Duration, now time.Time, logger *slog.Logger) {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			logger.Warn("scan sandbox volume root", "root", root, "error", err)
+		}
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		sandboxID := entry.Name()
+		dir := filepath.Join(root, sandboxID)
+		tombstone := filepath.Join(dir, sandboxVolumeTombstone)
+		if _, ok := liveSet[sandboxID]; ok {
+			// The sandbox is alive (or came back): clear any stale tombstone.
+			_ = os.Remove(tombstone)
+			continue
+		}
+		diedAt, ok := readSandboxTombstone(tombstone)
+		if !ok {
+			// First time seen dead: start the retention clock.
+			writeSandboxTombstone(tombstone, now, logger)
+			continue
+		}
+		if now.Sub(diedAt) < retention {
+			continue
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			logger.Warn("reap dead sandbox volume", "sandboxID", sandboxID, "error", err)
+			continue
+		}
+		logger.Info("reaped dead sandbox volume", "sandboxID", sandboxID, "deadFor", now.Sub(diedAt).Truncate(time.Minute).String())
+	}
+}
+
+func readSandboxTombstone(path string) (time.Time, bool) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return time.Time{}, false
+	}
+	t, err := time.Parse(time.RFC3339, strings.TrimSpace(string(data)))
+	if err != nil {
+		return time.Time{}, false
+	}
+	return t, true
+}
+
+func writeSandboxTombstone(path string, at time.Time, logger *slog.Logger) {
+	if err := os.WriteFile(path, []byte(at.UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
+		logger.Warn("stamp sandbox volume tombstone", "path", path, "error", err)
+	}
+}
+
 func (r *DockerSandboxRuntime) reportSandboxRemoved(ctx context.Context, logger *slog.Logger, report func(context.Context, string) error, sandboxID string) error {
 	for sandboxID != "" && ctx.Err() == nil {
 		err := report(ctx, sandboxID)
@@ -778,6 +867,7 @@ func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, log
 	// onward are buffered by the daemon and delivered on the stream below, so the
 	// reconcile and the replayed events together cover every deletion.
 	r.reconcileSandboxRemovals(ctx, logger, report, proxyMaterialGracePeriod)
+	r.reconcileSandboxVolumes(ctx, logger, sandboxVolumeRetention)
 
 	debounce := time.NewTimer(0)
 	if !debounce.Stop() {
@@ -809,6 +899,7 @@ func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, log
 			r.reconcileProxyMaterial(ctx, logger)
 		case <-backstop.C:
 			r.reconcileSandboxRemovals(ctx, logger, report, proxyMaterialGracePeriod)
+			r.reconcileSandboxVolumes(ctx, logger, sandboxVolumeRetention)
 		}
 	}
 }
@@ -1203,8 +1294,15 @@ func (r *DockerSandboxRuntime) poolCacheRoot() string {
 	return filepath.Join(r.sandboxPoolRoot(), "cache")
 }
 
+// sandboxesRoot is the parent of every sandbox's per-sandbox volume tree for
+// this pool. The volume reaper scans only under here, which is why it can never
+// touch another pool's data.
+func (r *DockerSandboxRuntime) sandboxesRoot() string {
+	return filepath.Join(r.sandboxPoolRoot(), "sandboxes")
+}
+
 func (r *DockerSandboxRuntime) sandboxRoot(sandboxID string) string {
-	return filepath.Join(r.sandboxPoolRoot(), "sandboxes", sandboxID)
+	return filepath.Join(r.sandboxesRoot(), sandboxID)
 }
 
 func (r *DockerSandboxRuntime) sandboxDataRootPath(sandboxID string) string {
