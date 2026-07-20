@@ -3829,6 +3829,75 @@ paths:
             summary: Update a pool
             tags:
                 - Pools
+    /projects/{projectId}/pools/{poolId}/default:
+        put:
+            operationId: set-default-pool
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Project'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Set the project default pool
+            tags:
+                - Pools
+        delete:
+            operationId: unset-default-pool
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Project'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Clear the project default pool
+            tags:
+                - Pools
     /projects/{projectId}/pools/{poolId}/reconcile:
         post:
             operationId: reconcile-pool

@@ -170,7 +170,7 @@ func (a *App) writePool(cmd *cobra.Command, pool *apimodel.Pool) error {
 	return tw.Flush()
 }
 
-func (a *App) writePools(cmd *cobra.Command, pools []apimodel.Pool) error {
+func (a *App) writePools(cmd *cobra.Command, pools []apimodel.Pool, defaultPoolID ...string) error {
 	if a.quiet {
 		pools = sortedByCreatedAt(pools, func(pool apimodel.Pool) time.Time { return pool.CreatedAt })
 		return writeResourceIDs(cmd.OutOrStdout(), pools, func(pool apimodel.Pool) string { return pool.ID })
@@ -178,14 +178,19 @@ func (a *App) writePools(cmd *cobra.Command, pools []apimodel.Pool) error {
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"pools": pools})
 	}
+	defaultID := ""
+	if len(defaultPoolID) > 0 {
+		defaultID = defaultPoolID[0]
+	}
 	pools = sortedByCreatedAt(pools, func(pool apimodel.Pool) time.Time { return pool.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tPROVIDER\tPHASE\tREADY\tCPU\tMEMORY\tSTORAGE\tUPDATED\tMESSAGE")
+	fmt.Fprintln(tw, "ID\tNAME\tPROVIDER\tDEFAULT\tPHASE\tREADY\tCPU\tMEMORY\tSTORAGE\tUPDATED\tMESSAGE")
 	for _, pool := range pools {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%t\t%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%t\t%s\t%s\t%s\t%s\t%s\n",
 			pool.ID,
 			pool.Name,
 			pool.ProviderInstanceId,
+			formatDefaultMarker(pool.ID == defaultID),
 			pool.Phase,
 			pool.Ready,
 			formatPoolCPU(pool.CpuVcpus),

@@ -659,6 +659,30 @@ func (s *routerTestServices) ReconcilePool(_ context.Context, projectID, poolID 
 	return s.GetPool(context.Background(), projectID, poolID)
 }
 
+func (s *routerTestServices) SetDefaultPool(ctx context.Context, projectID, poolID string) (*model.Project, error) {
+	if _, err := s.GetPool(ctx, projectID, poolID); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	s.project.DefaultPoolID = poolID
+	s.mu.Unlock()
+	return s.GetProject(ctx, projectID)
+}
+
+func (s *routerTestServices) UnsetDefaultPool(ctx context.Context, projectID, poolID string) (*model.Project, error) {
+	if _, err := s.GetPool(ctx, projectID, poolID); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	if s.project.DefaultPoolID != poolID {
+		s.mu.Unlock()
+		return nil, apperrors.NewStatusError(http.StatusConflict, "pool is not the project default")
+	}
+	s.project.DefaultPoolID = ""
+	s.mu.Unlock()
+	return s.GetProject(ctx, projectID)
+}
+
 func (s *routerTestServices) RegisterPool(context.Context, services.RegisterPoolBody) (*services.RegisterPoolResponseBody, error) {
 	return &services.RegisterPoolResponseBody{}, nil
 }

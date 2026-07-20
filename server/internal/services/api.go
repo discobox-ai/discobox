@@ -114,6 +114,8 @@ type PoolService interface {
 	GetPool(ctx context.Context, projectID, poolID string) (*model.Pool, error)
 	UpdatePool(ctx context.Context, projectID, poolID string, input UpdatePoolBody) (*model.Pool, error)
 	DeletePool(ctx context.Context, projectID, poolID string) error
+	SetDefaultPool(ctx context.Context, projectID, poolID string) (*model.Project, error)
+	UnsetDefaultPool(ctx context.Context, projectID, poolID string) (*model.Project, error)
 	ReconcilePool(ctx context.Context, projectID, poolID string) (*model.Pool, error)
 
 	RegisterPool(ctx context.Context, input RegisterPoolBody) (*RegisterPoolResponseBody, error)

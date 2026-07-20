@@ -117,14 +117,63 @@ func (s *Service) UpdatePool(ctx context.Context, projectID, poolID string, inpu
 	return s.GetPool(ctx, projectID, poolID)
 }
 
-// DeletePool submits delete intent for an empty pool, including the built-in
-// default pool. A pool with sandboxes cannot be deleted (pool assignment is
-// immutable, so there is nothing to drain to). The reconciler removes the
-// runtime host, then the row.
+// SetDefaultPool points the project's default pool at poolID, so new sandboxes
+// created without an explicit pool are scheduled into it.
+func (s *Service) SetDefaultPool(ctx context.Context, projectID, poolID string) (*model.Project, error) {
+	project, err := s.store.GetProject(ctx, projectID)
+	if err != nil {
+		return nil, mapAPIError(err, "project not found")
+	}
+	pool, err := s.store.GetPool(ctx, projectID, poolID)
+	if err != nil {
+		return nil, mapAPIError(err, "pool not found")
+	}
+	project.DefaultPoolID = pool.ID
+	if err := s.store.UpsertProject(ctx, project); err != nil {
+		return nil, err
+	}
+	return s.store.GetProject(ctx, projectID)
+}
+
+// UnsetDefaultPool clears the project's default pool when it currently points
+// at poolID, leaving the project with no default. New sandboxes must then name
+// a pool explicitly. Clearing a pool that is not the default is rejected so the
+// intent is unambiguous.
+func (s *Service) UnsetDefaultPool(ctx context.Context, projectID, poolID string) (*model.Project, error) {
+	project, err := s.store.GetProject(ctx, projectID)
+	if err != nil {
+		return nil, mapAPIError(err, "project not found")
+	}
+	pool, err := s.store.GetPool(ctx, projectID, poolID)
+	if err != nil {
+		return nil, mapAPIError(err, "pool not found")
+	}
+	if project.DefaultPoolID != pool.ID {
+		return nil, apperrors.NewStatusError(http.StatusConflict, "pool is not the project default")
+	}
+	project.DefaultPoolID = ""
+	if err := s.store.UpsertProject(ctx, project); err != nil {
+		return nil, err
+	}
+	return s.store.GetProject(ctx, projectID)
+}
+
+// DeletePool submits delete intent for an empty pool that is not the project
+// default. A pool with sandboxes cannot be deleted (pool assignment is
+// immutable, so there is nothing to drain to), and the default pool must first
+// be unset or replaced so new sandboxes retain a scheduling target. The
+// reconciler removes the runtime host, then the row.
 func (s *Service) DeletePool(ctx context.Context, projectID, poolID string) error {
+	project, err := s.store.GetProject(ctx, projectID)
+	if err != nil {
+		return mapAPIError(err, "project not found")
+	}
 	pool, err := s.store.GetPool(ctx, projectID, poolID)
 	if err != nil {
 		return mapAPIError(err, "pool not found")
+	}
+	if project.DefaultPoolID == pool.ID {
+		return apperrors.NewStatusError(http.StatusConflict, "pool is the project default; set a different default or unset it before deleting")
 	}
 	sandboxCount, err := s.store.CountSandboxesForPool(ctx, projectID, pool.ID)
 	if err != nil {

@@ -65,6 +65,30 @@ func (h *Handler) DeletePool(ctx context.Context, params serverapi.DeletePoolPar
 	return &serverapi.DeletePoolNoContent{}, nil
 }
 
+func (h *Handler) SetDefaultPool(ctx context.Context, params serverapi.SetDefaultPoolParams) (serverapi.SetDefaultPoolRes, error) {
+	project, err := h.services.Pools.SetDefaultPool(ctx, params.ProjectId, params.PoolId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[apimodel.Project](project)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
+func (h *Handler) UnsetDefaultPool(ctx context.Context, params serverapi.UnsetDefaultPoolParams) (serverapi.UnsetDefaultPoolRes, error) {
+	project, err := h.services.Pools.UnsetDefaultPool(ctx, params.ProjectId, params.PoolId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[apimodel.Project](project)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
 func (h *Handler) ReconcilePool(ctx context.Context, params serverapi.ReconcilePoolParams) (serverapi.ReconcilePoolRes, error) {
 	pool, err := h.services.Pools.ReconcilePool(ctx, params.ProjectId, params.PoolId)
 	if err != nil {

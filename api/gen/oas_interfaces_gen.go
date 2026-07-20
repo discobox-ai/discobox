@@ -241,6 +241,10 @@ type SetDefaultHarnessConfigRes interface {
 	setDefaultHarnessConfigRes()
 }
 
+type SetDefaultPoolRes interface {
+	setDefaultPoolRes()
+}
+
 type SetHarnessConfigSecretBindingRes interface {
 	setHarnessConfigSecretBindingRes()
 }
@@ -259,6 +263,10 @@ type StopSandboxRes interface {
 
 type StreamSandboxExecResourcesRes interface {
 	streamSandboxExecResourcesRes()
+}
+
+type UnsetDefaultPoolRes interface {
+	unsetDefaultPoolRes()
 }
 
 type UpdateHarnessConfigRes interface {

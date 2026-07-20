@@ -580,6 +580,15 @@ func (UnimplementedHandler) SetDefaultHarnessConfig(ctx context.Context, params 
 	return r, ht.ErrNotImplemented
 }
 
+// SetDefaultPool implements set-default-pool operation.
+//
+// Set the project default pool.
+//
+// PUT /projects/{projectId}/pools/{poolId}/default
+func (UnimplementedHandler) SetDefaultPool(ctx context.Context, params SetDefaultPoolParams) (r SetDefaultPoolRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // SetHarnessConfigSecretBinding implements set-harness-config-secret-binding operation.
 //
 // Bind a harness config environment variable to a secret.
@@ -622,6 +631,15 @@ func (UnimplementedHandler) StopSandbox(ctx context.Context, req *StopSandboxBod
 //
 // GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream
 func (UnimplementedHandler) StreamSandboxExecResources(ctx context.Context, params StreamSandboxExecResourcesParams) (r StreamSandboxExecResourcesRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// UnsetDefaultPool implements unset-default-pool operation.
+//
+// Clear the project default pool.
+//
+// DELETE /projects/{projectId}/pools/{poolId}/default
+func (UnimplementedHandler) UnsetDefaultPool(ctx context.Context, params UnsetDefaultPoolParams) (r UnsetDefaultPoolRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

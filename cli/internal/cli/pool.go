@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"context"
+
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
@@ -21,6 +23,8 @@ func (a *App) newPoolCommand() *cobra.Command {
 	cmd.AddCommand(a.newPoolGetCommand())
 	cmd.AddCommand(a.newPoolCreateCommand())
 	cmd.AddCommand(a.newPoolUpdateCommand())
+	cmd.AddCommand(a.newPoolSetDefaultCommand())
+	cmd.AddCommand(a.newPoolUnsetDefaultCommand())
 	cmd.AddCommand(a.newPoolDeleteCommand())
 	return cmd
 }
@@ -43,7 +47,11 @@ func (a *App) newPoolListCommand() *cobra.Command {
 		if err != nil {
 			return err
 		}
-		return a.writePools(cmd, body.GetPools())
+		defaultPoolID, err := a.defaultPoolID(cmd.Context(), client, projectID)
+		if err != nil {
+			return err
+		}
+		return a.writePools(cmd, body.GetPools(), defaultPoolID)
 	}}
 	a.addQuietFlag(cmd)
 	return cmd
@@ -163,6 +171,87 @@ func (a *App) newPoolUpdateCommand() *cobra.Command {
 	cmd.Flags().StringVar(&opts.name, "name", "", "Pool display name")
 	addPoolAttributeFlags(cmd, &opts)
 	return cmd
+}
+
+func (a *App) newPoolSetDefaultCommand() *cobra.Command {
+	return &cobra.Command{Use: "set-default POOL_ID", Short: "Set the project default pool", Long: `Set the project default pool.
+
+New sandboxes created without an explicit --pool are scheduled into the
+project's default pool.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
+		projectID, err := a.projectIDValue()
+		if err != nil {
+			return err
+		}
+		client, err := a.apiClient()
+		if err != nil {
+			return err
+		}
+		poolID, err := a.resolvePoolID(cmd.Context(), client, projectID, args[0])
+		if err != nil {
+			return err
+		}
+		res, err := client.SetDefaultPool(cmd.Context(), apiclientgen.SetDefaultPoolParams{ProjectId: projectID, PoolId: poolID})
+		if err != nil {
+			return err
+		}
+		project, err := expectResponse[apimodel.Project](res)
+		if err != nil {
+			return err
+		}
+		if a.output == "json" {
+			return writeJSON(cmd.OutOrStdout(), project)
+		}
+		_, err = cmd.OutOrStdout().Write([]byte("default pool set to " + poolID + "\n"))
+		return err
+	}}
+}
+
+func (a *App) newPoolUnsetDefaultCommand() *cobra.Command {
+	return &cobra.Command{Use: "unset-default POOL_ID", Short: "Clear the project default pool", Long: `Clear the project default pool.
+
+Leaves the project with no default pool, so new sandboxes must name a pool
+explicitly with --pool. POOL_ID must be the current default; this is also how
+you release the default before deleting that pool.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completePools, RunE: func(cmd *cobra.Command, args []string) error {
+		projectID, err := a.projectIDValue()
+		if err != nil {
+			return err
+		}
+		client, err := a.apiClient()
+		if err != nil {
+			return err
+		}
+		poolID, err := a.resolvePoolID(cmd.Context(), client, projectID, args[0])
+		if err != nil {
+			return err
+		}
+		res, err := client.UnsetDefaultPool(cmd.Context(), apiclientgen.UnsetDefaultPoolParams{ProjectId: projectID, PoolId: poolID})
+		if err != nil {
+			return err
+		}
+		project, err := expectResponse[apimodel.Project](res)
+		if err != nil {
+			return err
+		}
+		if a.output == "json" {
+			return writeJSON(cmd.OutOrStdout(), project)
+		}
+		_, err = cmd.OutOrStdout().Write([]byte("default pool cleared\n"))
+		return err
+	}}
+}
+
+// defaultPoolID returns the project's configured default pool ID, or "" when
+// none is set.
+func (a *App) defaultPoolID(ctx context.Context, client *apiclientgen.Client, projectID string) (string, error) {
+	res, err := client.GetProject(ctx, apiclientgen.GetProjectParams{ProjectId: projectID})
+	if err != nil {
+		return "", err
+	}
+	project, err := expectResponse[apimodel.Project](res)
+	if err != nil {
+		return "", err
+	}
+	return project.DefaultPoolId.Or(""), nil
 }
 
 func addPoolAttributeFlags(cmd *cobra.Command, opts *poolOptions) {

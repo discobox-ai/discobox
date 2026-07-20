@@ -20,7 +20,7 @@ var (
 	rn71AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn87AllowedHeaders = map[string]string{
+	rn89AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn30AllowedHeaders = map[string]string{
@@ -65,10 +65,10 @@ var (
 	rn75AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn80AllowedHeaders = map[string]string{
+	rn82AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn83AllowedHeaders = map[string]string{
+	rn85AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn36AllowedHeaders = map[string]string{
@@ -299,7 +299,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "POST",
-											allowedHeaders: rn87AllowedHeaders,
+											allowedHeaders: rn89AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
 										})
@@ -1322,32 +1322,79 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 											return
 										}
 										switch elem[0] {
-										case '/': // Prefix: "/reconcile"
+										case '/': // Prefix: "/"
 
-											if l := len("/reconcile"); len(elem) >= l && elem[0:l] == "/reconcile" {
+											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 												elem = elem[l:]
 											} else {
 												break
 											}
 
 											if len(elem) == 0 {
-												// Leaf node.
-												switch r.Method {
-												case "POST":
-													s.handleReconcilePoolRequest([2]string{
-														args[0],
-														args[1],
-													}, elemIsEscaped, w, r)
-												default:
-													s.notAllowed(w, r, notAllowedParams{
-														allowedMethods: "POST",
-														allowedHeaders: nil,
-														acceptPost:     "",
-														acceptPatch:    "",
-													})
+												break
+											}
+											switch elem[0] {
+											case 'd': // Prefix: "default"
+
+												if l := len("default"); len(elem) >= l && elem[0:l] == "default" {
+													elem = elem[l:]
+												} else {
+													break
 												}
 
-												return
+												if len(elem) == 0 {
+													// Leaf node.
+													switch r.Method {
+													case "DELETE":
+														s.handleUnsetDefaultPoolRequest([2]string{
+															args[0],
+															args[1],
+														}, elemIsEscaped, w, r)
+													case "PUT":
+														s.handleSetDefaultPoolRequest([2]string{
+															args[0],
+															args[1],
+														}, elemIsEscaped, w, r)
+													default:
+														s.notAllowed(w, r, notAllowedParams{
+															allowedMethods: "DELETE,PUT",
+															allowedHeaders: nil,
+															acceptPost:     "",
+															acceptPatch:    "",
+														})
+													}
+
+													return
+												}
+
+											case 'r': // Prefix: "reconcile"
+
+												if l := len("reconcile"); len(elem) >= l && elem[0:l] == "reconcile" {
+													elem = elem[l:]
+												} else {
+													break
+												}
+
+												if len(elem) == 0 {
+													// Leaf node.
+													switch r.Method {
+													case "POST":
+														s.handleReconcilePoolRequest([2]string{
+															args[0],
+															args[1],
+														}, elemIsEscaped, w, r)
+													default:
+														s.notAllowed(w, r, notAllowedParams{
+															allowedMethods: "POST",
+															allowedHeaders: nil,
+															acceptPost:     "",
+															acceptPatch:    "",
+														})
+													}
+
+													return
+												}
+
 											}
 
 										}
@@ -1692,7 +1739,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 														default:
 															s.notAllowed(w, r, notAllowedParams{
 																allowedMethods: "POST",
-																allowedHeaders: rn80AllowedHeaders,
+																allowedHeaders: rn82AllowedHeaders,
 																acceptPost:     "application/json",
 																acceptPatch:    "",
 															})
@@ -1720,7 +1767,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 														default:
 															s.notAllowed(w, r, notAllowedParams{
 																allowedMethods: "POST",
-																allowedHeaders: rn83AllowedHeaders,
+																allowedHeaders: rn85AllowedHeaders,
 																acceptPost:     "application/json",
 																acceptPatch:    "",
 															})
@@ -3324,29 +3371,77 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 											}
 										}
 										switch elem[0] {
-										case '/': // Prefix: "/reconcile"
+										case '/': // Prefix: "/"
 
-											if l := len("/reconcile"); len(elem) >= l && elem[0:l] == "/reconcile" {
+											if l := len("/"); len(elem) >= l && elem[0:l] == "/" {
 												elem = elem[l:]
 											} else {
 												break
 											}
 
 											if len(elem) == 0 {
-												// Leaf node.
-												switch method {
-												case "POST":
-													r.name = ReconcilePoolOperation
-													r.summary = "Reconcile a pool"
-													r.operationID = "reconcile-pool"
-													r.operationGroup = ""
-													r.pathPattern = "/projects/{projectId}/pools/{poolId}/reconcile"
-													r.args = args
-													r.count = 2
-													return r, true
-												default:
-													return
+												break
+											}
+											switch elem[0] {
+											case 'd': // Prefix: "default"
+
+												if l := len("default"); len(elem) >= l && elem[0:l] == "default" {
+													elem = elem[l:]
+												} else {
+													break
 												}
+
+												if len(elem) == 0 {
+													// Leaf node.
+													switch method {
+													case "DELETE":
+														r.name = UnsetDefaultPoolOperation
+														r.summary = "Clear the project default pool"
+														r.operationID = "unset-default-pool"
+														r.operationGroup = ""
+														r.pathPattern = "/projects/{projectId}/pools/{poolId}/default"
+														r.args = args
+														r.count = 2
+														return r, true
+													case "PUT":
+														r.name = SetDefaultPoolOperation
+														r.summary = "Set the project default pool"
+														r.operationID = "set-default-pool"
+														r.operationGroup = ""
+														r.pathPattern = "/projects/{projectId}/pools/{poolId}/default"
+														r.args = args
+														r.count = 2
+														return r, true
+													default:
+														return
+													}
+												}
+
+											case 'r': // Prefix: "reconcile"
+
+												if l := len("reconcile"); len(elem) >= l && elem[0:l] == "reconcile" {
+													elem = elem[l:]
+												} else {
+													break
+												}
+
+												if len(elem) == 0 {
+													// Leaf node.
+													switch method {
+													case "POST":
+														r.name = ReconcilePoolOperation
+														r.summary = "Reconcile a pool"
+														r.operationID = "reconcile-pool"
+														r.operationGroup = ""
+														r.pathPattern = "/projects/{projectId}/pools/{poolId}/reconcile"
+														r.args = args
+														r.count = 2
+														return r, true
+													default:
+														return
+													}
+												}
+
 											}
 
 										}

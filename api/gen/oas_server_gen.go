@@ -395,6 +395,12 @@ type Handler interface {
 	//
 	// PUT /projects/{projectId}/harness-configs/{harnessConfigId}/default
 	SetDefaultHarnessConfig(ctx context.Context, params SetDefaultHarnessConfigParams) (SetDefaultHarnessConfigRes, error)
+	// SetDefaultPool implements set-default-pool operation.
+	//
+	// Set the project default pool.
+	//
+	// PUT /projects/{projectId}/pools/{poolId}/default
+	SetDefaultPool(ctx context.Context, params SetDefaultPoolParams) (SetDefaultPoolRes, error)
 	// SetHarnessConfigSecretBinding implements set-harness-config-secret-binding operation.
 	//
 	// Bind a harness config environment variable to a secret.
@@ -425,6 +431,12 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream
 	StreamSandboxExecResources(ctx context.Context, params StreamSandboxExecResourcesParams) (StreamSandboxExecResourcesRes, error)
+	// UnsetDefaultPool implements unset-default-pool operation.
+	//
+	// Clear the project default pool.
+	//
+	// DELETE /projects/{projectId}/pools/{poolId}/default
+	UnsetDefaultPool(ctx context.Context, params UnsetDefaultPoolParams) (UnsetDefaultPoolRes, error)
 	// UpdateHarnessConfig implements update-harness-config operation.
 	//
 	// Update a harness config.
