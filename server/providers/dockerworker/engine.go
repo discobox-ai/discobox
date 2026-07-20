@@ -427,10 +427,30 @@ func (e *Engine) removePoolContainer(ctx context.Context, cli *client.Client, po
 	if _, err := cli.ContainerRemove(ctx, name, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
 		return err
 	}
-	// Best-effort remove the per-pool sandbox network once the pool host (and
-	// its sandboxes) are gone. It fails harmlessly if sandboxes are still
-	// attached.
-	_, _ = cli.NetworkRemove(ctx, proxyagent.SandboxNetworkName(poolID), client.NetworkRemoveOptions{})
+	return e.removeSandboxNetwork(ctx, cli, poolID)
+}
+
+// removeSandboxNetwork removes the per-pool internal network. Any container
+// still attached — a sandbox that outlived the pool teardown race, or a stale
+// endpoint — makes Docker refuse the removal with "network has active
+// endpoints", which previously leaked the network and its scarce address block.
+// Force-disconnect every endpoint first, then remove; surface a persistent
+// failure so the level-triggered pool reconcile retries instead of leaking.
+func (e *Engine) removeSandboxNetwork(ctx context.Context, cli *client.Client, poolID string) error {
+	name := proxyagent.SandboxNetworkName(poolID)
+	result, err := cli.NetworkInspect(ctx, name, client.NetworkInspectOptions{})
+	if err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("inspect sandbox network %s: %w", name, err)
+	}
+	for containerID := range result.Network.Containers {
+		_, _ = cli.NetworkDisconnect(ctx, name, client.NetworkDisconnectOptions{Container: containerID, Force: true})
+	}
+	if _, err := cli.NetworkRemove(ctx, name, client.NetworkRemoveOptions{}); err != nil && !cerrdefs.IsNotFound(err) {
+		return fmt.Errorf("remove sandbox network %s: %w", name, err)
+	}
 	return nil
 }
 
