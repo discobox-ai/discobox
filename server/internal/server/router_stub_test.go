@@ -16,6 +16,11 @@ import (
 	services "github.com/obot-platform/discobox/server/internal/services"
 )
 
+// testDefaultProjectID is a fixture project ID for tests that stub out the
+// service layer instead of going through InitializeDefaults, which now
+// generates a real ID at first boot rather than using a fixed one.
+var testDefaultProjectID = id.NewString(id.PrefixProject)
+
 type routerTestServices struct {
 	mu             sync.Mutex
 	user           model.User
@@ -39,7 +44,7 @@ func newRouterTestServices() *routerTestServices {
 		UpdatedAt: now,
 	}
 	project := model.Project{
-		ID:          appservice.DefaultProjectID,
+		ID:          testDefaultProjectID,
 		OwnerUserID: user.ID,
 		Name:        "Default Project",
 		Slug:        "default",

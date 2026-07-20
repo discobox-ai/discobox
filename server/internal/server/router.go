@@ -109,7 +109,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		appServices.SetSandboxAuthManager(sandboxauth.NewManager(appStore, opts.SecretSealer))
 	}
 	appServices.SetWorkerAgentAuthManager(poolagentauth.NewManager(appStore, opts.SecretSealer))
-	if err := appServices.InitializeDefaults(ctx, opts.UserID); err != nil {
+	if _, err := appServices.InitializeDefaults(ctx, opts.UserID); err != nil {
 		return nil, err
 	}
 	if err := appServices.Start(ctx); err != nil {

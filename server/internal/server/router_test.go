@@ -17,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	serverapi "github.com/obot-platform/discobox/api/gen"
 	"github.com/obot-platform/discobox/gormdb"
+	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/server/internal/auth"
 	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
 	"github.com/obot-platform/discobox/server/internal/database"
@@ -130,7 +131,7 @@ func TestNewRouterCreateSandboxResolvesHarnessName(t *testing.T) {
 	router := newStubRouterForTest()
 
 	createHarnessResp := httptest.NewRecorder()
-	router.ServeHTTP(createHarnessResp, jsonRequest(http.MethodPost, "/projects/"+service.DefaultProjectID+"/harness-configs", `{
+	router.ServeHTTP(createHarnessResp, jsonRequest(http.MethodPost, "/projects/"+testDefaultProjectID+"/harness-configs", `{
 		"name": "Codex",
 		"image": "discobox-harness-codex:local"
 	}`))
@@ -143,7 +144,7 @@ func TestNewRouterCreateSandboxResolvesHarnessName(t *testing.T) {
 	}
 
 	createSandboxResp := httptest.NewRecorder()
-	router.ServeHTTP(createSandboxResp, jsonRequest(http.MethodPost, "/projects/"+service.DefaultProjectID+"/sandboxes", `{
+	router.ServeHTTP(createSandboxResp, jsonRequest(http.MethodPost, "/projects/"+testDefaultProjectID+"/sandboxes", `{
 		"harnessName": "Codex",
 		"config": {
 			"name": "sandbox",
@@ -171,7 +172,7 @@ func TestNewRouterGeneratedErrorsUseProblemJSON(t *testing.T) {
 	router := newStubRouterForTest()
 
 	resp := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/projects/"+service.DefaultProjectID+"/sandboxes", strings.NewReader(`{"name":`))
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/projects/"+testDefaultProjectID+"/sandboxes", strings.NewReader(`{"name":`))
 	req.Header.Set("Content-Type", "application/json")
 	router.ServeHTTP(resp, req)
 
@@ -200,13 +201,13 @@ func TestSandboxGitRepositoryRouteProxiesToPool(t *testing.T) {
 	stubs := newRouterTestServices()
 	stubs.sandboxes["sandbox-1"] = model.Sandbox{
 		ID:              "sandbox-1",
-		ProjectID:       service.DefaultProjectID,
+		ProjectID:       testDefaultProjectID,
 		CreatedByUserID: service.DefaultUserID,
 		Name:            "sandbox",
 		PoolID:          "pool-1",
 	}
 	var released bool
-	projectID := service.DefaultProjectID
+	projectID := testDefaultProjectID
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wantPath := "/api/project/" + projectID + "/pool/pool-1/sandboxes/sandbox-1/git-repositories/primary.git/info/refs"
 		if r.URL.Path != wantPath {
@@ -262,12 +263,12 @@ func TestSandboxGitRepositoryRouteUsesWriteScopeForReceivePack(t *testing.T) {
 	stubs := newRouterTestServices()
 	stubs.sandboxes["sandbox-1"] = model.Sandbox{
 		ID:              "sandbox-1",
-		ProjectID:       service.DefaultProjectID,
+		ProjectID:       testDefaultProjectID,
 		CreatedByUserID: service.DefaultUserID,
 		Name:            "sandbox",
 		PoolID:          "pool-1",
 	}
-	projectID := service.DefaultProjectID
+	projectID := testDefaultProjectID
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.RawQuery != "service=git-receive-pack" {
 			t.Fatalf("upstream query = %q", r.URL.RawQuery)
@@ -307,13 +308,13 @@ func TestSandboxHTTPRouteProxiesPortToWorker(t *testing.T) {
 	stubs := newRouterTestServices()
 	stubs.sandboxes["sandbox-1"] = model.Sandbox{
 		ID:              "sandbox-1",
-		ProjectID:       service.DefaultProjectID,
+		ProjectID:       testDefaultProjectID,
 		CreatedByUserID: service.DefaultUserID,
 		Name:            "sandbox",
 		PoolID:          "pool-1",
 	}
 	var released bool
-	projectID := service.DefaultProjectID
+	projectID := testDefaultProjectID
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wantPath := "/api/project/" + projectID + "/pool/pool-1/sandboxes/sandbox-1/http/8080/api/status"
 		if r.URL.Path != wantPath {
@@ -369,13 +370,13 @@ func TestSandboxExecListRouteProxiesToSandboxAgent(t *testing.T) {
 	stubs := newRouterTestServices()
 	stubs.sandboxes["sandbox-1"] = model.Sandbox{
 		ID:              "sandbox-1",
-		ProjectID:       service.DefaultProjectID,
+		ProjectID:       testDefaultProjectID,
 		CreatedByUserID: service.DefaultUserID,
 		Name:            "sandbox",
 		PoolID:          "pool-1",
 	}
 	var released bool
-	projectID := service.DefaultProjectID
+	projectID := testDefaultProjectID
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wantPath := "/api/project/" + projectID + "/pool/pool-1/sandboxes/sandbox-1/execs"
 		if r.URL.Path != wantPath {
@@ -433,12 +434,12 @@ func TestSandboxExecProxyErrorUsesJSON(t *testing.T) {
 	stubs := newRouterTestServices()
 	stubs.sandboxes["sandbox-1"] = model.Sandbox{
 		ID:              "sandbox-1",
-		ProjectID:       service.DefaultProjectID,
+		ProjectID:       testDefaultProjectID,
 		CreatedByUserID: service.DefaultUserID,
 		Name:            "sandbox",
 		PoolID:          "pool-1",
 	}
-	projectID := service.DefaultProjectID
+	projectID := testDefaultProjectID
 
 	router, err := NewRouter(services.Services{
 		Projects:       stubs,
@@ -476,12 +477,12 @@ func TestSandboxExecAttachRouteUsesWriteScope(t *testing.T) {
 	stubs := newRouterTestServices()
 	stubs.sandboxes["sandbox-1"] = model.Sandbox{
 		ID:              "sandbox-1",
-		ProjectID:       service.DefaultProjectID,
+		ProjectID:       testDefaultProjectID,
 		CreatedByUserID: service.DefaultUserID,
 		Name:            "sandbox",
 		PoolID:          "pool-1",
 	}
-	projectID := service.DefaultProjectID
+	projectID := testDefaultProjectID
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wantPath := "/api/project/" + projectID + "/pool/pool-1/sandboxes/sandbox-1/execs/exec-1/attach"
 		if r.URL.Path != wantPath {
@@ -530,12 +531,12 @@ func TestSandboxHarnessHookRouteUsesExecReadScope(t *testing.T) {
 	stubs := newRouterTestServices()
 	stubs.sandboxes["sandbox-1"] = model.Sandbox{
 		ID:              "sandbox-1",
-		ProjectID:       service.DefaultProjectID,
+		ProjectID:       testDefaultProjectID,
 		CreatedByUserID: service.DefaultUserID,
 		Name:            "sandbox",
 		PoolID:          "pool-1",
 	}
-	projectID := service.DefaultProjectID
+	projectID := testDefaultProjectID
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wantPath := "/api/project/" + projectID + "/pool/pool-1/sandboxes/sandbox-1/harness-hooks"
 		if r.URL.Path != wantPath {
@@ -578,12 +579,12 @@ func TestSandboxExecRoutesUseExecScopes(t *testing.T) {
 	stubs := newRouterTestServices()
 	stubs.sandboxes["sandbox-1"] = model.Sandbox{
 		ID:              "sandbox-1",
-		ProjectID:       service.DefaultProjectID,
+		ProjectID:       testDefaultProjectID,
 		CreatedByUserID: service.DefaultUserID,
 		Name:            "sandbox",
 		PoolID:          "pool-1",
 	}
-	projectID := service.DefaultProjectID
+	projectID := testDefaultProjectID
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wantPath := "/api/project/" + projectID + "/pool/pool-1/sandboxes/sandbox-1/execs"
 		if r.URL.Path != wantPath {
@@ -626,12 +627,12 @@ func TestSandboxExecAttachRouteUsesExecWriteScope(t *testing.T) {
 	stubs := newRouterTestServices()
 	stubs.sandboxes["sandbox-1"] = model.Sandbox{
 		ID:              "sandbox-1",
-		ProjectID:       service.DefaultProjectID,
+		ProjectID:       testDefaultProjectID,
 		CreatedByUserID: service.DefaultUserID,
 		Name:            "sandbox",
 		PoolID:          "pool-1",
 	}
-	projectID := service.DefaultProjectID
+	projectID := testDefaultProjectID
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		wantPath := "/api/project/" + projectID + "/pool/pool-1/sandboxes/sandbox-1/execs/exec-1/attach"
 		if r.URL.Path != wantPath {
@@ -694,8 +695,8 @@ func TestNewAppStartsWithDefaults(t *testing.T) {
 	if len(body.Projects) != 1 {
 		t.Fatalf("projects len = %d, want 1", len(body.Projects))
 	}
-	if body.Projects[0].ID != service.DefaultProjectID {
-		t.Fatalf("project ID = %q, want %q", body.Projects[0].ID, service.DefaultProjectID)
+	if !id.IsGenerated(body.Projects[0].ID) || !strings.HasPrefix(body.Projects[0].ID, id.PrefixProject+"_") {
+		t.Fatalf("project ID = %q, want a generated proj_ id", body.Projects[0].ID)
 	}
 }
 
@@ -719,8 +720,8 @@ func TestNewAppResolvesDefaultProjectAlias(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &project); err != nil {
 		t.Fatalf("decode project: %v", err)
 	}
-	if project.ID != service.DefaultProjectID {
-		t.Fatalf("project ID = %q, want %q", project.ID, service.DefaultProjectID)
+	if !id.IsGenerated(project.ID) || !strings.HasPrefix(project.ID, id.PrefixProject+"_") {
+		t.Fatalf("project ID = %q, want a generated proj_ id", project.ID)
 	}
 	if !project.Default {
 		t.Fatal("expected default project flag")

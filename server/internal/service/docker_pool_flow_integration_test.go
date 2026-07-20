@@ -66,7 +66,8 @@ func TestDockerProviderPoolCreateFlowE2E(t *testing.T) {
 	appStore := store.New(db.Write, db.Read, store.WithPublisher(broker))
 	engine := newTestReconcileEngine(t, db.Write)
 	svc := service.New(appStore, engine, service.JobManagerOptions{}, broker)
-	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
+	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID)
+	if err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
 	if err := svc.Start(ctx); err != nil {
@@ -89,7 +90,7 @@ func TestDockerProviderPoolCreateFlowE2E(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal provider config: %v", err)
 	}
-	provider, err := svc.CreateSandboxProviderInstance(ctx, service.DefaultProjectID, services.CreateSandboxProviderInstanceBody{
+	provider, err := svc.CreateSandboxProviderInstance(ctx, project.ID, services.CreateSandboxProviderInstanceBody{
 		Type:   "docker",
 		Name:   "docker e2e",
 		Config: providerConfig,
@@ -99,11 +100,11 @@ func TestDockerProviderPoolCreateFlowE2E(t *testing.T) {
 	}
 	t.Cleanup(func() { cleanupDockerProviderContainers(t, dockerClient, provider.ID) })
 
-	pool, err := svc.CreatePool(ctx, service.DefaultProjectID, services.CreatePoolBody{Name: "docker-e2e", ProviderInstanceId: provider.ID})
+	pool, err := svc.CreatePool(ctx, project.ID, services.CreatePoolBody{Name: "docker-e2e", ProviderInstanceId: provider.ID})
 	if err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	pool = waitForRegisteringPool(ctx, t, appStore, pool.ID)
+	pool = waitForRegisteringPool(ctx, t, appStore, project.ID, pool.ID)
 	if pool.Phase != model.PoolPhaseRegistering {
 		t.Fatalf("pool phase = %q, want %q", pool.Phase, model.PoolPhaseRegistering)
 	}
@@ -133,12 +134,12 @@ func TestDockerProviderPoolCreateFlowE2E(t *testing.T) {
 	}
 }
 
-func waitForRegisteringPool(ctx context.Context, t *testing.T, appStore *store.Store, poolID string) *model.Pool {
+func waitForRegisteringPool(ctx context.Context, t *testing.T, appStore *store.Store, projectID, poolID string) *model.Pool {
 	t.Helper()
 	deadline := time.Now().Add(30 * time.Second)
 	var last *model.Pool
 	for time.Now().Before(deadline) {
-		pool, err := appStore.GetPool(ctx, service.DefaultProjectID, poolID)
+		pool, err := appStore.GetPool(ctx, projectID, poolID)
 		if err != nil {
 			t.Fatalf("get pool: %v", err)
 		}

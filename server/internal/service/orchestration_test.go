@@ -10,6 +10,7 @@ import (
 	"time"
 
 	serverapi "github.com/obot-platform/discobox/api/gen"
+	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/internal/originkey"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/database"
@@ -25,9 +26,9 @@ import (
 
 func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {
 	ctx := context.Background()
-	svc, executor, _ := newSandboxTestService(t, nil)
+	svc, executor, _, projectID := newSandboxTestService(t, nil)
 
-	sandbox, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
+	sandbox, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
@@ -35,7 +36,7 @@ func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {
 		t.Fatalf("create generation = %d, want 1", sandbox.Generation)
 	}
 
-	stopped, err := svc.StopSandbox(ctx, service.DefaultProjectID, sandbox.ID, services.StopSandboxBody{})
+	stopped, err := svc.StopSandbox(ctx, projectID, sandbox.ID, services.StopSandboxBody{})
 	if err != nil {
 		t.Fatalf("stop sandbox: %v", err)
 	}
@@ -53,13 +54,13 @@ func TestSandboxReconcileCancelsWhenGenerationChanges(t *testing.T) {
 
 func TestSandboxIntentCreatesGenerationScopedJobs(t *testing.T) {
 	ctx := context.Background()
-	svc, _, _ := newSandboxTestService(t, nil)
+	svc, _, _, projectID := newSandboxTestService(t, nil)
 
-	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
+	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	started, err := svc.StartSandbox(ctx, service.DefaultProjectID, created.ID, services.StartSandboxBody{})
+	started, err := svc.StartSandbox(ctx, projectID, created.ID, services.StartSandboxBody{})
 	if err != nil {
 		t.Fatalf("start sandbox: %v", err)
 	}
@@ -70,13 +71,13 @@ func TestSandboxIntentCreatesGenerationScopedJobs(t *testing.T) {
 
 func TestReconcileSandboxDoesNotChangeIntent(t *testing.T) {
 	ctx := context.Background()
-	svc, _, _ := newSandboxTestService(t, nil)
+	svc, _, _, projectID := newSandboxTestService(t, nil)
 
-	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
+	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	reconciled, err := svc.ReconcileSandbox(ctx, service.DefaultProjectID, created.ID)
+	reconciled, err := svc.ReconcileSandbox(ctx, projectID, created.ID)
 	if err != nil {
 		t.Fatalf("reconcile sandbox: %v", err)
 	}
@@ -90,9 +91,9 @@ func TestReconcileSandboxDoesNotChangeIntent(t *testing.T) {
 
 func TestCreateSandboxRecordsOriginAndDerivesKey(t *testing.T) {
 	ctx := context.Background()
-	svc, _, _ := newSandboxTestService(t, nil)
+	svc, _, _, projectID := newSandboxTestService(t, nil)
 
-	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		Config: serverapi.SandboxCreateConfig{Name: "alpha"},
 		Origin: serverapi.NewOptOrigin(serverapi.Origin{
 			HostId:      "host_aaaaaaaaaaaaaaaa",
@@ -124,9 +125,9 @@ func TestCreateSandboxRecordsOriginAndDerivesKey(t *testing.T) {
 // listed by project directory.
 func TestCreateSandboxWithoutOriginLeavesKeyUnset(t *testing.T) {
 	ctx := context.Background()
-	svc, _, _ := newSandboxTestService(t, nil)
+	svc, _, _, projectID := newSandboxTestService(t, nil)
 
-	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		Config: serverapi.SandboxCreateConfig{Name: "alpha"},
 	})
 	if err != nil {
@@ -139,9 +140,9 @@ func TestCreateSandboxWithoutOriginLeavesKeyUnset(t *testing.T) {
 
 func TestCreateSandboxDefaultsGitSourceSlugs(t *testing.T) {
 	ctx := context.Background()
-	svc, _, _ := newSandboxTestService(t, nil)
+	svc, _, _, projectID := newSandboxTestService(t, nil)
 
-	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		Config: serverapi.SandboxCreateConfig{
 			Name: "alpha",
 			Source: serverapi.NewOptGitSource(serverapi.GitSource{
@@ -184,7 +185,7 @@ func TestCreateSandboxDefaultsGitSourceSlugs(t *testing.T) {
 
 func TestCreateSandboxDerivesSourceRootFromPrimarySource(t *testing.T) {
 	ctx := context.Background()
-	svc, _, _ := newSandboxTestService(t, nil)
+	svc, _, _, projectID := newSandboxTestService(t, nil)
 
 	remoteURL, err := url.Parse("https://github.com/obot-platform/discobox.git")
 	if err != nil {
@@ -215,7 +216,7 @@ func TestCreateSandboxDerivesSourceRootFromPrimarySource(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+			created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 				Config: serverapi.SandboxCreateConfig{
 					Name:   "alpha",
 					Source: serverapi.NewOptGitSource(tc.source),
@@ -230,7 +231,7 @@ func TestCreateSandboxDerivesSourceRootFromPrimarySource(t *testing.T) {
 		})
 	}
 
-	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		Config: serverapi.SandboxCreateConfig{Name: "sourceless"},
 	})
 	if err != nil {
@@ -243,10 +244,10 @@ func TestCreateSandboxDerivesSourceRootFromPrimarySource(t *testing.T) {
 
 func TestCreateSandboxPinsDefaultHarnessConfig(t *testing.T) {
 	ctx := context.Background()
-	svc, _, st := newSandboxTestService(t, nil)
+	svc, _, st, projectID := newSandboxTestService(t, nil)
 
 	harness := &model.HarnessConfig{
-		ProjectID: service.DefaultProjectID,
+		ProjectID: projectID,
 		Slug:      "opencode",
 		Name:      "OpenCode",
 		Image:     "discobox-harness-opencode:local",
@@ -259,10 +260,10 @@ func TestCreateSandboxPinsDefaultHarnessConfig(t *testing.T) {
 	if err := st.CreateHarnessConfig(ctx, harness); err != nil {
 		t.Fatalf("create harness config: %v", err)
 	}
-	if _, err := svc.SetDefaultHarnessConfig(ctx, service.DefaultProjectID, harness.ID); err != nil {
+	if _, err := svc.SetDefaultHarnessConfig(ctx, projectID, harness.ID); err != nil {
 		t.Fatalf("set default harness config: %v", err)
 	}
-	project, err := svc.GetProject(ctx, service.DefaultProjectID)
+	project, err := svc.GetProject(ctx, projectID)
 	if err != nil {
 		t.Fatalf("get project: %v", err)
 	}
@@ -272,7 +273,7 @@ func TestCreateSandboxPinsDefaultHarnessConfig(t *testing.T) {
 
 	// With no explicit harness selector, the sandbox pins the project default so its
 	// required-secret gate and binding materialization resolve at create time.
-	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
+	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
@@ -310,9 +311,11 @@ func TestCreateSandboxRequiresResolvedPool(t *testing.T) {
 	appStore := store.New(db.Write, db.Read)
 	engine := newTestReconcileEngine(t, db.Write)
 	svc := service.New(appStore, engine, service.JobManagerOptions{})
-	if err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
+	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation())
+	if err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
+	projectID := project.ID
 	if err := engine.Start(ctx); err != nil {
 		t.Fatalf("start reconcile engine: %v", err)
 	}
@@ -324,7 +327,7 @@ func TestCreateSandboxRequiresResolvedPool(t *testing.T) {
 		}
 	})
 
-	_, err = svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
+	_, err = svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
 	var statusErr apperrors.StatusError
 	if !errors.As(err, &statusErr) {
 		t.Fatalf("create sandbox error = %v, want status error", err)
@@ -356,11 +359,13 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	engine := newTestReconcileEngine(t, db.Write)
 	svc := service.New(appStore, engine, service.JobManagerOptions{}, broker)
 
-	if err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
+	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation())
+	if err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
+	projectID := project.ID
 	svc.RegisterSandboxProvider("test", noopSandboxProvider{})
-	installDefaultSandboxProviderInstance(ctx, t, appStore, "provider-test", "test")
+	installDefaultSandboxProviderInstance(ctx, t, appStore, projectID, "provider-test", "test")
 	if err := svc.Start(ctx); err != nil {
 		t.Fatalf("start service: %v", err)
 	}
@@ -372,11 +377,11 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 		}
 	})
 
-	sandbox, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
+	sandbox, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{Config: serverapi.SandboxCreateConfig{Name: "alpha"}})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	sandbox = waitForSandboxPhase(ctx, t, svc, sandbox.ID, model.SandboxPhaseRunning)
+	sandbox = waitForSandboxPhase(ctx, t, svc, projectID, sandbox.ID, model.SandboxPhaseRunning)
 	if sandbox.DesiredState != model.SandboxDesiredStateRunning {
 		t.Fatalf("created desired state = %q, want %q", sandbox.DesiredState, model.SandboxDesiredStateRunning)
 	}
@@ -384,26 +389,26 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 		t.Fatalf("created active operation = %v, want nil", *sandbox.ActiveOperation)
 	}
 
-	if _, err := svc.StopSandbox(ctx, service.DefaultProjectID, sandbox.ID, services.StopSandboxBody{}); err != nil {
+	if _, err := svc.StopSandbox(ctx, projectID, sandbox.ID, services.StopSandboxBody{}); err != nil {
 		t.Fatalf("stop sandbox: %v", err)
 	}
-	sandbox = waitForSandboxPhase(ctx, t, svc, sandbox.ID, model.SandboxPhaseStopped)
+	sandbox = waitForSandboxPhase(ctx, t, svc, projectID, sandbox.ID, model.SandboxPhaseStopped)
 	if sandbox.DesiredState != model.SandboxDesiredStateStopped {
 		t.Fatalf("stopped desired state = %q, want %q", sandbox.DesiredState, model.SandboxDesiredStateStopped)
 	}
 
-	if _, err := svc.StartSandbox(ctx, service.DefaultProjectID, sandbox.ID, services.StartSandboxBody{}); err != nil {
+	if _, err := svc.StartSandbox(ctx, projectID, sandbox.ID, services.StartSandboxBody{}); err != nil {
 		t.Fatalf("start sandbox: %v", err)
 	}
-	sandbox = waitForSandboxPhase(ctx, t, svc, sandbox.ID, model.SandboxPhaseRunning)
+	sandbox = waitForSandboxPhase(ctx, t, svc, projectID, sandbox.ID, model.SandboxPhaseRunning)
 	if sandbox.DesiredState != model.SandboxDesiredStateRunning {
 		t.Fatalf("started desired state = %q, want %q", sandbox.DesiredState, model.SandboxDesiredStateRunning)
 	}
 
-	if _, err := svc.RestartSandbox(ctx, service.DefaultProjectID, sandbox.ID, services.RestartSandboxBody{}); err != nil {
+	if _, err := svc.RestartSandbox(ctx, projectID, sandbox.ID, services.RestartSandboxBody{}); err != nil {
 		t.Fatalf("restart sandbox: %v", err)
 	}
-	sandbox = waitForSandboxPhase(ctx, t, svc, sandbox.ID, model.SandboxPhaseRunning)
+	sandbox = waitForSandboxPhase(ctx, t, svc, projectID, sandbox.ID, model.SandboxPhaseRunning)
 	if sandbox.RestartGeneration != 1 {
 		t.Fatalf("restart generation = %d, want 1", sandbox.RestartGeneration)
 	}
@@ -411,13 +416,13 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 		t.Fatalf("restarted generation = %d, want %d", sandbox.RestartedGeneration, sandbox.RestartGeneration)
 	}
 
-	if err := svc.DeleteSandbox(ctx, service.DefaultProjectID, sandbox.ID); err != nil {
+	if err := svc.DeleteSandbox(ctx, projectID, sandbox.ID); err != nil {
 		t.Fatalf("delete sandbox: %v", err)
 	}
-	waitForSandboxDeleted(ctx, t, svc, sandbox.ID)
+	waitForSandboxDeleted(ctx, t, svc, projectID, sandbox.ID)
 }
 
-func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sandboxes.SandboxReconciler, *store.Store) {
+func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sandboxes.SandboxReconciler, *store.Store, string) {
 	t.Helper()
 
 	ctx := context.Background()
@@ -443,10 +448,11 @@ func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sand
 	_ = notifyContext
 	engine := newTestReconcileEngine(t, db.Write)
 	svc := service.New(appStore, engine, service.JobManagerOptions{}, broker)
-	if err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation()); err != nil {
+	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation())
+	if err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
-	installDefaultSandboxProviderInstance(ctx, t, appStore, "provider-test", "test")
+	installDefaultSandboxProviderInstance(ctx, t, appStore, project.ID, "provider-test", "test")
 	if err := engine.Start(ctx); err != nil {
 		t.Fatalf("start reconcile engine: %v", err)
 	}
@@ -457,14 +463,14 @@ func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sand
 			t.Fatalf("stop reconcile engine: %v", err)
 		}
 	})
-	return svc, svc.NewSandboxReconciler(), appStore
+	return svc, svc.NewSandboxReconciler(), appStore, project.ID
 }
 
-func installDefaultSandboxProviderInstance(ctx context.Context, t *testing.T, appStore *store.Store, providerID, providerType string) {
+func installDefaultSandboxProviderInstance(ctx context.Context, t *testing.T, appStore *store.Store, projectID, providerID, providerType string) {
 	t.Helper()
 	provider := &model.SandboxProviderInstance{
 		ID:        providerID,
-		ProjectID: service.DefaultProjectID,
+		ProjectID: projectID,
 		Type:      providerType,
 		Name:      "Test",
 	}
@@ -472,15 +478,15 @@ func installDefaultSandboxProviderInstance(ctx context.Context, t *testing.T, ap
 		t.Fatalf("create test provider: %v", err)
 	}
 	pool := &model.Pool{
-		ID:                 service.DefaultPoolID,
-		ProjectID:          service.DefaultProjectID,
+		ID:                 id.NewString(id.PrefixPool),
+		ProjectID:          projectID,
 		Name:               "Default",
 		ProviderInstanceID: provider.ID,
 	}
 	if err := appStore.CreatePool(ctx, pool); err != nil {
 		t.Fatalf("create test pool: %v", err)
 	}
-	project, err := appStore.GetProject(ctx, service.DefaultProjectID)
+	project, err := appStore.GetProject(ctx, projectID)
 	if err != nil {
 		t.Fatalf("get default project: %v", err)
 	}
@@ -563,12 +569,12 @@ func runtimeSandbox(ref sandboxes.SandboxRef, status sandboxes.Status) *sandboxe
 	}
 }
 
-func waitForSandboxPhase(ctx context.Context, t *testing.T, svc *service.Service, sandboxID, phase string) *model.Sandbox {
+func waitForSandboxPhase(ctx context.Context, t *testing.T, svc *service.Service, projectID, sandboxID, phase string) *model.Sandbox {
 	t.Helper()
 
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		sandbox, err := svc.GetSandbox(ctx, service.DefaultProjectID, sandboxID)
+		sandbox, err := svc.GetSandbox(ctx, projectID, sandboxID)
 		if err != nil {
 			t.Fatalf("get sandbox: %v", err)
 		}
@@ -578,7 +584,7 @@ func waitForSandboxPhase(ctx context.Context, t *testing.T, svc *service.Service
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	sandbox, err := svc.GetSandbox(ctx, service.DefaultProjectID, sandboxID)
+	sandbox, err := svc.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
 		t.Fatalf("get sandbox after timeout: %v", err)
 	}
@@ -586,12 +592,12 @@ func waitForSandboxPhase(ctx context.Context, t *testing.T, svc *service.Service
 	return nil
 }
 
-func waitForSandboxDeleted(ctx context.Context, t *testing.T, svc *service.Service, sandboxID string) {
+func waitForSandboxDeleted(ctx context.Context, t *testing.T, svc *service.Service, projectID, sandboxID string) {
 	t.Helper()
 
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		_, err := svc.GetSandbox(ctx, service.DefaultProjectID, sandboxID)
+		_, err := svc.GetSandbox(ctx, projectID, sandboxID)
 		if isNotFoundStatus(err) {
 			return
 		}
@@ -601,7 +607,7 @@ func waitForSandboxDeleted(ctx context.Context, t *testing.T, svc *service.Servi
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	if _, err := svc.GetSandbox(ctx, service.DefaultProjectID, sandboxID); !isNotFoundStatus(err) {
+	if _, err := svc.GetSandbox(ctx, projectID, sandboxID); !isNotFoundStatus(err) {
 		t.Fatalf("get deleted sandbox = %v, want not found", err)
 	}
 }
@@ -616,10 +622,10 @@ var parkedCommit = "0123456789abcdef0123456789abcdef01234567"
 
 // park puts an existing sandbox into the state the reconciler leaves it in
 // after provisioning a push-delivered source: waiting for the client's push.
-func park(t *testing.T, st *store.Store, sandboxID string) {
+func park(t *testing.T, st *store.Store, projectID, sandboxID string) {
 	t.Helper()
 	ctx := context.Background()
-	sb, err := st.GetSandbox(ctx, service.DefaultProjectID, sandboxID)
+	sb, err := st.GetSandbox(ctx, projectID, sandboxID)
 	if err != nil {
 		t.Fatalf("get sandbox: %v", err)
 	}
@@ -637,17 +643,17 @@ func park(t *testing.T, st *store.Store, sandboxID string) {
 
 func TestCompleteSandboxSourcePushRecordsCommitAndResumes(t *testing.T) {
 	ctx := context.Background()
-	svc, _, st := newSandboxTestService(t, nil)
+	svc, _, st, projectID := newSandboxTestService(t, nil)
 
-	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		Config: serverapi.SandboxCreateConfig{Name: "alpha"},
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	park(t, st, created.ID)
+	park(t, st, projectID, created.ID)
 
-	resumed, err := svc.CompleteSandboxSourcePush(ctx, service.DefaultProjectID, created.ID,
+	resumed, err := svc.CompleteSandboxSourcePush(ctx, projectID, created.ID,
 		services.CompleteSandboxSourcePushBody{Commit: strings.ToUpper(parkedCommit)})
 	if err != nil {
 		t.Fatalf("complete source push: %v", err)
@@ -674,9 +680,9 @@ func TestCompleteSandboxSourcePushRecordsCommitAndResumes(t *testing.T) {
 // already running in it.
 func TestCompleteSandboxSourcePushRejectsSandboxNotAwaitingSource(t *testing.T) {
 	ctx := context.Background()
-	svc, _, st := newSandboxTestService(t, nil)
+	svc, _, st, projectID := newSandboxTestService(t, nil)
 
-	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		Config: serverapi.SandboxCreateConfig{Name: "alpha"},
 	})
 	if err != nil {
@@ -684,7 +690,7 @@ func TestCompleteSandboxSourcePushRejectsSandboxNotAwaitingSource(t *testing.T) 
 	}
 
 	// A clone-delivered sandbox has nothing to push.
-	_, err = svc.CompleteSandboxSourcePush(ctx, service.DefaultProjectID, created.ID,
+	_, err = svc.CompleteSandboxSourcePush(ctx, projectID, created.ID,
 		services.CompleteSandboxSourcePushBody{Commit: parkedCommit})
 	if err == nil {
 		t.Fatal("completing a push for a clone-delivered sandbox: got nil error, want conflict")
@@ -693,8 +699,8 @@ func TestCompleteSandboxSourcePushRejectsSandboxNotAwaitingSource(t *testing.T) 
 
 	// A push-delivered sandbox that already started is past the point of
 	// accepting a source.
-	park(t, st, created.ID)
-	sb, err := st.GetSandbox(ctx, service.DefaultProjectID, created.ID)
+	park(t, st, projectID, created.ID)
+	sb, err := st.GetSandbox(ctx, projectID, created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -702,7 +708,7 @@ func TestCompleteSandboxSourcePushRejectsSandboxNotAwaitingSource(t *testing.T) 
 	if err := st.UpdateSandbox(ctx, sb); err != nil {
 		t.Fatal(err)
 	}
-	_, err = svc.CompleteSandboxSourcePush(ctx, service.DefaultProjectID, created.ID,
+	_, err = svc.CompleteSandboxSourcePush(ctx, projectID, created.ID,
 		services.CompleteSandboxSourcePushBody{Commit: parkedCommit})
 	if err == nil {
 		t.Fatal("completing a push for a running sandbox: got nil error, want conflict")
@@ -726,17 +732,17 @@ func assertStatusError(t *testing.T, err error, want int) {
 // sandbox onto it.
 func TestCompleteSandboxSourcePushRejectsMismatchedCommit(t *testing.T) {
 	ctx := context.Background()
-	svc, _, st := newSandboxTestService(t, nil)
+	svc, _, st, projectID := newSandboxTestService(t, nil)
 
-	created, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+	created, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		Config: serverapi.SandboxCreateConfig{Name: "alpha"},
 	})
 	if err != nil {
 		t.Fatalf("create sandbox: %v", err)
 	}
-	park(t, st, created.ID)
+	park(t, st, projectID, created.ID)
 
-	_, err = svc.CompleteSandboxSourcePush(ctx, service.DefaultProjectID, created.ID,
+	_, err = svc.CompleteSandboxSourcePush(ctx, projectID, created.ID,
 		services.CompleteSandboxSourcePushBody{Commit: "fedcba9876543210fedcba9876543210fedcba98"})
 	if err == nil {
 		t.Fatal("completing a push with a different commit: got nil error, want conflict")
@@ -744,7 +750,7 @@ func TestCompleteSandboxSourcePushRejectsMismatchedCommit(t *testing.T) {
 	assertStatusError(t, err, http.StatusConflict)
 
 	// The sandbox must stay parked rather than resume on the wrong source.
-	sb, err := st.GetSandbox(ctx, service.DefaultProjectID, created.ID)
+	sb, err := st.GetSandbox(ctx, projectID, created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}

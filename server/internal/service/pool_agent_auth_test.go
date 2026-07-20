@@ -25,9 +25,9 @@ import (
 
 func TestUpdatePoolStatusRequiresValidAgentAssertion(t *testing.T) {
 	ctx := context.Background()
-	svc, appStore, _ := newPoolAgentTestService(t)
-	privateKey := registerTestPool(ctx, t, svc, appStore, "pool-auth")
-	token := signTestAgentAssertion(t, service.DefaultProjectID, "pool-auth", privateKey)
+	svc, appStore, _, projectID := newPoolAgentTestService(t)
+	privateKey := registerTestPool(ctx, t, svc, appStore, projectID, "pool-auth")
+	token := signTestAgentAssertion(t, projectID, "pool-auth", privateKey)
 
 	if _, err := updateTestPoolStatus(ctx, svc, appStore, "Bearer "+token, "pool-auth", services.UpdatePoolStatusBody{Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err != nil {
 		t.Fatalf("update pool status with valid assertion: %v", err)
@@ -39,15 +39,15 @@ func TestUpdatePoolStatusRequiresValidAgentAssertion(t *testing.T) {
 
 func TestUpdatePoolStatusRejectsCrossPoolAssertion(t *testing.T) {
 	ctx := context.Background()
-	svc, appStore, _ := newPoolAgentTestService(t)
-	registerTestPool(ctx, t, svc, appStore, "pool-auth")
+	svc, appStore, _, projectID := newPoolAgentTestService(t)
+	registerTestPool(ctx, t, svc, appStore, projectID, "pool-auth")
 
-	otherPool := &model.Pool{ID: "pool-other", ProjectID: service.DefaultProjectID, Name: "other", ProviderInstanceID: "provider-auth"}
+	otherPool := &model.Pool{ID: "pool-other", ProjectID: projectID, Name: "other", ProviderInstanceID: "provider-auth"}
 	if err := appStore.CreatePool(ctx, otherPool); err != nil {
 		t.Fatalf("create other pool: %v", err)
 	}
-	otherPrivateKey := registerTestPool(ctx, t, svc, appStore, "pool-other")
-	otherToken := signTestAgentAssertion(t, service.DefaultProjectID, "pool-other", otherPrivateKey)
+	otherPrivateKey := registerTestPool(ctx, t, svc, appStore, projectID, "pool-other")
+	otherToken := signTestAgentAssertion(t, projectID, "pool-other", otherPrivateKey)
 
 	// A valid assertion for pool-other must not authenticate the pool-auth route.
 	if _, err := updateTestPoolStatus(ctx, svc, appStore, "Bearer "+otherToken, "pool-auth", services.UpdatePoolStatusBody{Ready: true, Schedulable: true, AvailableCpuVcpus: 1}); err == nil {
@@ -57,9 +57,9 @@ func TestUpdatePoolStatusRejectsCrossPoolAssertion(t *testing.T) {
 
 func TestGetPoolIncludesAgentReportedStatus(t *testing.T) {
 	ctx := context.Background()
-	svc, appStore, db := newPoolAgentTestService(t)
-	privateKey := registerTestPool(ctx, t, svc, appStore, "pool-auth")
-	token := signTestAgentAssertion(t, service.DefaultProjectID, "pool-auth", privateKey)
+	svc, appStore, db, projectID := newPoolAgentTestService(t)
+	privateKey := registerTestPool(ctx, t, svc, appStore, projectID, "pool-auth")
+	token := signTestAgentAssertion(t, projectID, "pool-auth", privateKey)
 	if _, err := updateTestPoolStatus(ctx, svc, appStore, "Bearer "+token, "pool-auth", services.UpdatePoolStatusBody{
 		Ready:                 true,
 		Schedulable:           true,
@@ -74,7 +74,7 @@ func TestGetPoolIncludesAgentReportedStatus(t *testing.T) {
 		t.Fatalf("update runtime state: %v", err)
 	}
 
-	pool, err := svc.GetPool(ctx, service.DefaultProjectID, "pool-auth")
+	pool, err := svc.GetPool(ctx, projectID, "pool-auth")
 	if err != nil {
 		t.Fatalf("get pool: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestGetPoolIncludesAgentReportedStatus(t *testing.T) {
 	}
 }
 
-func newPoolAgentTestService(t *testing.T) (*service.Service, *store.Store, *database.DB) {
+func newPoolAgentTestService(t *testing.T) (*service.Service, *store.Store, *database.DB, string) {
 	t.Helper()
 	ctx := context.Background()
 	db, err := database.New(database.Config{DSN: ":memory:"})
@@ -107,17 +107,18 @@ func newPoolAgentTestService(t *testing.T) (*service.Service, *store.Store, *dat
 	broker := events.NewBroker()
 	appStore := store.New(db.Write, db.Read, store.WithPublisher(broker))
 	svc := service.New(appStore, nil, service.JobManagerOptions{}, broker)
-	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
+	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID)
+	if err != nil {
 		t.Fatalf("init defaults: %v", err)
 	}
-	provider := &model.SandboxProviderInstance{ID: "provider-auth", ProjectID: service.DefaultProjectID, Type: "digitalocean", Name: "do"}
+	provider := &model.SandboxProviderInstance{ID: "provider-auth", ProjectID: project.ID, Type: "digitalocean", Name: "do"}
 	if err := appStore.CreateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatalf("create provider: %v", err)
 	}
-	if err := appStore.CreatePool(ctx, &model.Pool{ID: "pool-auth", ProjectID: service.DefaultProjectID, Name: "pool-auth", ProviderInstanceID: provider.ID}); err != nil {
+	if err := appStore.CreatePool(ctx, &model.Pool{ID: "pool-auth", ProjectID: project.ID, Name: "pool-auth", ProviderInstanceID: provider.ID}); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
-	return svc, appStore, db
+	return svc, appStore, db, project.ID
 }
 
 func updateTestPoolStatus(ctx context.Context, svc *service.Service, appStore *store.Store, authorization, poolID string, input services.UpdatePoolStatusBody) (*model.Pool, error) {
@@ -144,7 +145,7 @@ func authenticateTestPoolAgent(ctx context.Context, appStore *store.Store, autho
 	return auth.WithPrincipal(ctx, principal), nil
 }
 
-func registerTestPool(ctx context.Context, t *testing.T, svc *service.Service, appStore *store.Store, poolID string) ed25519.PrivateKey {
+func registerTestPool(ctx context.Context, t *testing.T, svc *service.Service, appStore *store.Store, projectID, poolID string) ed25519.PrivateKey {
 	t.Helper()
 	bootstrap := "bootstrap-" + poolID
 	h := sha256.Sum256([]byte(bootstrap))
@@ -159,7 +160,7 @@ func registerTestPool(ctx context.Context, t *testing.T, svc *service.Service, a
 	if err != nil {
 		t.Fatalf("encode public key: %v", err)
 	}
-	if _, err := svc.RegisterPool(ctx, services.RegisterPoolBody{ProjectId: service.DefaultProjectID, PoolId: poolID, BootstrapToken: bootstrap, PublicKey: publicKeyText}); err != nil {
+	if _, err := svc.RegisterPool(ctx, services.RegisterPoolBody{ProjectId: projectID, PoolId: poolID, BootstrapToken: bootstrap, PublicKey: publicKeyText}); err != nil {
 		t.Fatalf("register pool: %v", err)
 	}
 	return privateKey

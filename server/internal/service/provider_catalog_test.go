@@ -11,6 +11,7 @@ import (
 	"time"
 
 	serverapi "github.com/obot-platform/discobox/api/gen"
+	"github.com/obot-platform/discobox/id"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/model"
@@ -35,13 +36,13 @@ func reconcileSandbox(ctx context.Context, t *testing.T, svc *service.Service, e
 
 func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	ctx := context.Background()
-	svc, _, _ := newSandboxTestService(t, nil)
+	svc, _, _, projectID := newSandboxTestService(t, nil)
 	provider := &recordingSandboxProvider{}
 	svc.RegisterSandboxProvider("recording", provider)
 	if got := svc.DefaultSandboxProviderName(); got != "recording" {
 		t.Fatalf("default provider = %q, want recording", got)
 	}
-	providerInstance, err := svc.CreateSandboxProviderInstance(ctx, service.DefaultProjectID, services.CreateSandboxProviderInstanceBody{
+	providerInstance, err := svc.CreateSandboxProviderInstance(ctx, projectID, services.CreateSandboxProviderInstanceBody{
 		Type: "recording",
 		Name: "recording",
 	})
@@ -51,8 +52,8 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	executor := svc.NewSandboxReconciler()
 
 	sourceURL := mustParseURL(t, "https://example.com/repo.git")
-	poolID := createPoolForInstance(ctx, t, svc, providerInstance.ID)
-	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+	poolID := createPoolForInstance(ctx, t, svc, projectID, providerInstance.ID)
+	sb, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		PoolId: serverapi.NewOptString(poolID),
 		Config: serverapi.SandboxCreateConfig{
 			Name: "sandbox-1",
@@ -76,10 +77,10 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	if provider.createCalls != 1 || provider.startCalls != 1 {
 		t.Fatalf("create/start calls = %d/%d, want 1/1", provider.createCalls, provider.startCalls)
 	}
-	if provider.createRef.ProjectID != service.DefaultProjectID || provider.createOptions.Source == nil || provider.createOptions.Source.URL == nil || *provider.createOptions.Source.URL != "https://example.com/repo.git" || provider.createOptions.Source.Checkout == nil || provider.createOptions.Source.Checkout.RefName == nil || *provider.createOptions.Source.Checkout.RefName != "main" {
+	if provider.createRef.ProjectID != projectID || provider.createOptions.Source == nil || provider.createOptions.Source.URL == nil || *provider.createOptions.Source.URL != "https://example.com/repo.git" || provider.createOptions.Source.Checkout == nil || provider.createOptions.Source.Checkout.RefName == nil || *provider.createOptions.Source.Checkout.RefName != "main" {
 		t.Fatalf("create ref/options = %#v %#v", provider.createRef, provider.createOptions)
 	}
-	sb, err = svc.GetSandbox(ctx, service.DefaultProjectID, sb.ID)
+	sb, err = svc.GetSandbox(ctx, projectID, sb.ID)
 	if err != nil {
 		t.Fatalf("get sandbox after start: %v", err)
 	}
@@ -92,7 +93,7 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	if sb.LastActiveAt == nil {
 		t.Fatal("expected last active time")
 	}
-	sb, err = svc.StopSandbox(ctx, service.DefaultProjectID, sb.ID, services.StopSandboxBody{})
+	sb, err = svc.StopSandbox(ctx, projectID, sb.ID, services.StopSandboxBody{})
 	if err != nil {
 		t.Fatalf("stop sandbox: %v", err)
 	}
@@ -102,7 +103,7 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	if provider.stopCalls != 1 {
 		t.Fatalf("stop calls = %d, want 1", provider.stopCalls)
 	}
-	sb, err = svc.GetSandbox(ctx, service.DefaultProjectID, sb.ID)
+	sb, err = svc.GetSandbox(ctx, projectID, sb.ID)
 	if err != nil {
 		t.Fatalf("get sandbox after stop: %v", err)
 	}
@@ -110,10 +111,10 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 		t.Fatalf("secret state after stop = %q, want stopped", string(sb.SecretState))
 	}
 
-	if err := svc.DeleteSandbox(ctx, service.DefaultProjectID, sb.ID); err != nil {
+	if err := svc.DeleteSandbox(ctx, projectID, sb.ID); err != nil {
 		t.Fatalf("delete sandbox: %v", err)
 	}
-	sb, err = svc.GetSandbox(ctx, service.DefaultProjectID, sb.ID)
+	sb, err = svc.GetSandbox(ctx, projectID, sb.ID)
 	if err != nil {
 		t.Fatalf("get sandbox after delete intent: %v", err)
 	}
@@ -123,7 +124,7 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 	if provider.removeCalls != 1 {
 		t.Fatalf("remove calls = %d, want 1", provider.removeCalls)
 	}
-	_, err = svc.GetSandbox(ctx, service.DefaultProjectID, sb.ID)
+	_, err = svc.GetSandbox(ctx, projectID, sb.ID)
 	if !isNotFoundStatus(err) {
 		t.Fatalf("get sandbox after delete = %v, want not found", err)
 	}
@@ -131,11 +132,11 @@ func TestSandboxReconcileExecutorDelegatesToProvider(t *testing.T) {
 
 func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
 	ctx := context.Background()
-	svc, _, _ := newSandboxTestService(t, nil)
+	svc, _, _, projectID := newSandboxTestService(t, nil)
 	svc.SetDefaultSandboxImage("discobox-sandbox-agent:default")
 	provider := &recordingSandboxProvider{}
 	svc.RegisterSandboxProvider("recording", provider)
-	providerInstance, err := svc.CreateSandboxProviderInstance(ctx, service.DefaultProjectID, services.CreateSandboxProviderInstanceBody{
+	providerInstance, err := svc.CreateSandboxProviderInstance(ctx, projectID, services.CreateSandboxProviderInstanceBody{
 		Type: "recording",
 		Name: "recording",
 	})
@@ -144,8 +145,8 @@ func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
 	}
 	executor := svc.NewSandboxReconciler()
 
-	poolID := createPoolForInstance(ctx, t, svc, providerInstance.ID)
-	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+	poolID := createPoolForInstance(ctx, t, svc, projectID, providerInstance.ID)
+	sb, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		PoolId: serverapi.NewOptString(poolID),
 		Config: serverapi.SandboxCreateConfig{Name: "sandbox-default-image"},
 	})
@@ -165,11 +166,11 @@ func TestCreateSandboxUsesDefaultSandboxImage(t *testing.T) {
 
 func TestCreateSandboxExplicitImageOverridesDefault(t *testing.T) {
 	ctx := context.Background()
-	svc, _, _ := newSandboxTestService(t, nil)
+	svc, _, _, projectID := newSandboxTestService(t, nil)
 	svc.SetDefaultSandboxImage("discobox-sandbox-agent:default")
 	provider := &recordingSandboxProvider{}
 	svc.RegisterSandboxProvider("recording", provider)
-	providerInstance, err := svc.CreateSandboxProviderInstance(ctx, service.DefaultProjectID, services.CreateSandboxProviderInstanceBody{
+	providerInstance, err := svc.CreateSandboxProviderInstance(ctx, projectID, services.CreateSandboxProviderInstanceBody{
 		Type: "recording",
 		Name: "recording",
 	})
@@ -178,8 +179,8 @@ func TestCreateSandboxExplicitImageOverridesDefault(t *testing.T) {
 	}
 	executor := svc.NewSandboxReconciler()
 
-	poolID := createPoolForInstance(ctx, t, svc, providerInstance.ID)
-	sb, err := svc.CreateSandbox(ctx, service.DefaultProjectID, services.CreateSandboxBody{
+	poolID := createPoolForInstance(ctx, t, svc, projectID, providerInstance.ID)
+	sb, err := svc.CreateSandbox(ctx, projectID, services.CreateSandboxBody{
 		PoolId: serverapi.NewOptString(poolID),
 		Config: serverapi.SandboxCreateConfig{
 			Name:  "sandbox-explicit-image",
@@ -202,19 +203,19 @@ func TestCreateSandboxExplicitImageOverridesDefault(t *testing.T) {
 
 func TestSandboxReconcileExecutorInjectsTrustKey(t *testing.T) {
 	ctx := context.Background()
-	appStore := newProviderCatalogTestStore(t)
+	appStore, projectID := newProviderCatalogTestStore(t)
 	provider := &recordingSandboxProvider{}
 	auth := &recordingSandboxAuth{trustKey: "public-key"}
 	executor := sandboxes.NewSandboxReconciler(appStore, sandboxes.WithSandboxProvider(provider), sandboxes.WithSandboxAuthenticator(auth))
-	if err := appStore.CreateSandboxProviderInstance(ctx, &model.SandboxProviderInstance{ID: "prov-trust", ProjectID: service.DefaultProjectID, Type: "recording", Name: "recording"}); err != nil {
+	if err := appStore.CreateSandboxProviderInstance(ctx, &model.SandboxProviderInstance{ID: "prov-trust", ProjectID: projectID, Type: "recording", Name: "recording"}); err != nil {
 		t.Fatalf("create provider instance: %v", err)
 	}
-	if err := appStore.CreatePool(ctx, &model.Pool{ID: "pool-trust", ProjectID: service.DefaultProjectID, Name: "pool-trust", ProviderInstanceID: "prov-trust"}); err != nil {
+	if err := appStore.CreatePool(ctx, &model.Pool{ID: "pool-trust", ProjectID: projectID, Name: "pool-trust", ProviderInstanceID: "prov-trust"}); err != nil {
 		t.Fatalf("create pool: %v", err)
 	}
 	sb := &model.Sandbox{
 		ID:                "sandbox-1",
-		ProjectID:         service.DefaultProjectID,
+		ProjectID:         projectID,
 		PoolID:            "pool-trust",
 		CreatedByUserID:   service.DefaultUserID,
 		Name:              "sandbox-1",
@@ -230,15 +231,18 @@ func TestSandboxReconcileExecutorInjectsTrustKey(t *testing.T) {
 	if auth.userID != service.DefaultUserID {
 		t.Fatalf("auth user id = %q, want %q", auth.userID, service.DefaultUserID)
 	}
-	if auth.projectID != service.DefaultProjectID {
-		t.Fatalf("auth project id = %q, want %q", auth.projectID, service.DefaultProjectID)
+	if auth.projectID != projectID {
+		t.Fatalf("auth project id = %q, want %q", auth.projectID, projectID)
 	}
 	if got := provider.createOptions.Env["DISCOBOX_TRUST_KEY"]; got != "public-key" {
 		t.Fatalf("trust key env = %q, want public-key", got)
 	}
 }
 
-func newProviderCatalogTestStore(t *testing.T) *store.Store {
+// newProviderCatalogTestStore builds a store and seeds the default identity
+// and project via InitializeDefaults, without installing the built-in
+// provider, so callers control provider/pool setup themselves.
+func newProviderCatalogTestStore(t *testing.T) (*store.Store, string) {
 	t.Helper()
 	ctx := context.Background()
 	db, err := database.New(database.Config{DSN: ":memory:"})
@@ -254,15 +258,16 @@ func newProviderCatalogTestStore(t *testing.T) *store.Store {
 		t.Fatalf("migrate db: %v", err)
 	}
 	appStore := store.New(db.Write, db.Read)
-	project := &model.Project{ID: service.DefaultProjectID, OwnerUserID: service.DefaultUserID, Name: "Default Project", Slug: "default"}
-	if err := db.Write.WithContext(ctx).Create(project).Error; err != nil {
-		t.Fatalf("create project: %v", err)
+	svc := service.New(appStore, nil, service.JobManagerOptions{})
+	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation())
+	if err != nil {
+		t.Fatalf("initialize defaults: %v", err)
 	}
-	return appStore
+	return appStore, project.ID
 }
 
 func TestServiceSandboxProviderCatalog(t *testing.T) {
-	svc, _, _ := newSandboxTestService(t, nil)
+	svc, _, _, _ := newSandboxTestService(t, nil)
 	provider := &recordingSandboxProvider{}
 	svc.RegisterSandboxProvider("recording", provider)
 	svc.RegisterSandboxProviderDefinition("planned", sandboxes.ProviderDefinition{Name: "Planned"})
@@ -296,10 +301,10 @@ func TestServiceSandboxProviderCatalog(t *testing.T) {
 
 func TestCreateSandboxProviderInstanceAllowsMissingName(t *testing.T) {
 	ctx := context.Background()
-	svc, _, _ := newSandboxTestService(t, nil)
+	svc, _, _, projectID := newSandboxTestService(t, nil)
 	svc.RegisterSandboxProvider("recording", &recordingSandboxProvider{})
 
-	provider, err := svc.CreateSandboxProviderInstance(ctx, service.DefaultProjectID, services.CreateSandboxProviderInstanceBody{
+	provider, err := svc.CreateSandboxProviderInstance(ctx, projectID, services.CreateSandboxProviderInstanceBody{
 		Type: "recording",
 	})
 	if err != nil {
@@ -312,22 +317,23 @@ func TestCreateSandboxProviderInstanceAllowsMissingName(t *testing.T) {
 
 func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
 	ctx := context.Background()
-	appStore := newProviderCatalogTestStore(t)
+	appStore, projectID := newProviderCatalogTestStore(t)
 	svc := service.New(appStore, nil, service.JobManagerOptions{})
 
-	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
+	if _, err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
-	providers, err := svc.ListSandboxProviderInstances(ctx, service.DefaultProjectID)
+	providers, err := svc.ListSandboxProviderInstances(ctx, projectID)
 	if err != nil {
 		t.Fatalf("list providers: %v", err)
 	}
 	if len(providers) != 1 {
 		t.Fatalf("providers len = %d, want 1", len(providers))
 	}
-	if providers[0].ID != service.DefaultProviderInstanceID || !providers[0].BuiltIn {
-		t.Fatalf("provider = %#v, want built-in default id", providers[0])
+	if !id.IsGenerated(providers[0].ID) || !providers[0].BuiltIn {
+		t.Fatalf("provider = %#v, want generated built-in id", providers[0])
 	}
+	defaultProviderID := providers[0].ID
 	if runtime.GOOS == "linux" {
 		if providers[0].Type != "docker" || providers[0].Disabled {
 			t.Fatalf("linux provider = %#v, want enabled docker", providers[0])
@@ -338,37 +344,67 @@ func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
 		t.Fatalf("get install state: %v", err)
 	}
 
-	// The default pool binds to the built-in provider instance, so the
-	// provider cannot be deleted out from under it.
-	if err := svc.DeleteSandboxProviderInstance(ctx, service.DefaultProjectID, service.DefaultProviderInstanceID); err == nil {
-		t.Fatal("expected default provider delete to conflict with the default pool")
-	}
-
 	// The default pool is seeded exactly once and the project points at it.
-	pool, err := svc.GetPool(ctx, service.DefaultProjectID, service.DefaultPoolID)
+	pools, err := svc.ListPools(ctx, projectID)
 	if err != nil {
-		t.Fatalf("get default pool: %v", err)
+		t.Fatalf("list pools: %v", err)
 	}
-	if !pool.BuiltIn || pool.ProviderInstanceID != service.DefaultProviderInstanceID {
-		t.Fatalf("default pool = %#v, want built-in pool on the default provider", pool)
+	if len(pools) != 1 {
+		t.Fatalf("pools len = %d, want 1", len(pools))
 	}
-	project, err := appStore.GetProject(ctx, service.DefaultProjectID)
+	pool := pools[0]
+	if !pool.BuiltIn || pool.ProviderInstanceID != defaultProviderID || !id.IsGenerated(pool.ID) {
+		t.Fatalf("default pool = %#v, want generated built-in pool on the default provider", pool)
+	}
+	project, err := appStore.GetProject(ctx, projectID)
 	if err != nil {
 		t.Fatalf("get default project: %v", err)
 	}
-	if project.DefaultPoolID != service.DefaultPoolID {
-		t.Fatalf("project default pool = %q, want %q", project.DefaultPoolID, service.DefaultPoolID)
+	if project.DefaultPoolID != pool.ID {
+		t.Fatalf("project default pool = %q, want %q", project.DefaultPoolID, pool.ID)
 	}
 
-	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
+	if _, err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults again: %v", err)
 	}
-	pools, err := svc.ListPools(ctx, service.DefaultProjectID)
+	pools, err = svc.ListPools(ctx, projectID)
 	if err != nil {
 		t.Fatalf("list pools: %v", err)
 	}
 	if len(pools) != 1 {
 		t.Fatalf("pools len = %d, want 1 after re-init", len(pools))
+	}
+
+	// Deleting the default pool is a normal, permanent user action: a later
+	// restart (another InitializeDefaults call) must not recreate it.
+	if err := appStore.DeletePool(ctx, projectID, pool.ID); err != nil {
+		t.Fatalf("delete default pool: %v", err)
+	}
+	if _, err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
+		t.Fatalf("initialize defaults after pool delete: %v", err)
+	}
+	pools, err = svc.ListPools(ctx, projectID)
+	if err != nil {
+		t.Fatalf("list pools after delete: %v", err)
+	}
+	if len(pools) != 0 {
+		t.Fatalf("pools len = %d after delete + re-init, want 0 (deleted pool must not be recreated)", len(pools))
+	}
+
+	// The provider is likewise not protected once it has no pools, and is not
+	// recreated on restart either.
+	if err := svc.DeleteSandboxProviderInstance(ctx, projectID, defaultProviderID); err != nil {
+		t.Fatalf("delete default provider: %v", err)
+	}
+	if _, err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
+		t.Fatalf("initialize defaults after provider delete: %v", err)
+	}
+	providers, err = svc.ListSandboxProviderInstances(ctx, projectID)
+	if err != nil {
+		t.Fatalf("list providers after delete: %v", err)
+	}
+	if len(providers) != 0 {
+		t.Fatalf("providers len = %d after delete + re-init, want 0 (deleted provider must not be recreated)", len(providers))
 	}
 }
 
@@ -378,13 +414,14 @@ func TestInitializeDefaultsRepairsEmptyBuiltInDockerProviderConfig(t *testing.T)
 	}
 
 	ctx := context.Background()
-	appStore := newProviderCatalogTestStore(t)
+	appStore, projectID := newProviderCatalogTestStore(t)
 	svc := service.New(appStore, nil, service.JobManagerOptions{})
 
-	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
+	if _, err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
-	provider, err := appStore.GetSandboxProviderInstance(ctx, service.DefaultProjectID, service.DefaultProviderInstanceID)
+	providerID := defaultProviderID(ctx, t, appStore, projectID)
+	provider, err := appStore.GetSandboxProviderInstance(ctx, projectID, providerID)
 	if err != nil {
 		t.Fatalf("get default provider: %v", err)
 	}
@@ -393,14 +430,28 @@ func TestInitializeDefaultsRepairsEmptyBuiltInDockerProviderConfig(t *testing.T)
 		t.Fatalf("clear default provider config: %v", err)
 	}
 
-	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
+	if _, err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults after config clear: %v", err)
 	}
-	provider, err = appStore.GetSandboxProviderInstance(ctx, service.DefaultProjectID, service.DefaultProviderInstanceID)
+	provider, err = appStore.GetSandboxProviderInstance(ctx, projectID, providerID)
 	if err != nil {
 		t.Fatalf("get repaired default provider: %v", err)
 	}
 	assertDefaultDockerProviderConfig(t, provider.Config, "")
+}
+
+// defaultProviderID returns the ID of the (single) provider instance seeded
+// for the project, since InitializeDefaults no longer uses a fixed ID.
+func defaultProviderID(ctx context.Context, t *testing.T, appStore *store.Store, projectID string) string {
+	t.Helper()
+	providers, err := appStore.ListSandboxProviderInstances(ctx, projectID)
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	if len(providers) != 1 {
+		t.Fatalf("providers len = %d, want 1", len(providers))
+	}
+	return providers[0].ID
 }
 
 func TestInitializeDefaultsDoesNotPersistBuiltInDockerProviderImageFromEnv(t *testing.T) {
@@ -410,13 +461,14 @@ func TestInitializeDefaultsDoesNotPersistBuiltInDockerProviderImageFromEnv(t *te
 	t.Setenv("DISCOBOX_DOCKER_POOL_IMAGE", "discobox-pool-agent:test")
 
 	ctx := context.Background()
-	appStore := newProviderCatalogTestStore(t)
+	appStore, projectID := newProviderCatalogTestStore(t)
 	svc := service.New(appStore, nil, service.JobManagerOptions{})
 
-	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
+	if _, err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
 	}
-	provider, err := appStore.GetSandboxProviderInstance(ctx, service.DefaultProjectID, service.DefaultProviderInstanceID)
+	providerID := defaultProviderID(ctx, t, appStore, projectID)
+	provider, err := appStore.GetSandboxProviderInstance(ctx, projectID, providerID)
 	if err != nil {
 		t.Fatalf("get default provider: %v", err)
 	}
@@ -426,10 +478,10 @@ func TestInitializeDefaultsDoesNotPersistBuiltInDockerProviderImageFromEnv(t *te
 	if err := appStore.UpdateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatalf("reset default provider config: %v", err)
 	}
-	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
+	if _, err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults after static image reset: %v", err)
 	}
-	provider, err = appStore.GetSandboxProviderInstance(ctx, service.DefaultProjectID, service.DefaultProviderInstanceID)
+	provider, err = appStore.GetSandboxProviderInstance(ctx, projectID, providerID)
 	if err != nil {
 		t.Fatalf("get repaired default provider: %v", err)
 	}
@@ -439,10 +491,10 @@ func TestInitializeDefaultsDoesNotPersistBuiltInDockerProviderImageFromEnv(t *te
 	if err := appStore.UpdateSandboxProviderInstance(ctx, provider); err != nil {
 		t.Fatalf("reset default provider config to legacy dev image: %v", err)
 	}
-	if err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
+	if _, err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults after legacy dev image reset: %v", err)
 	}
-	provider, err = appStore.GetSandboxProviderInstance(ctx, service.DefaultProjectID, service.DefaultProviderInstanceID)
+	provider, err = appStore.GetSandboxProviderInstance(ctx, projectID, providerID)
 	if err != nil {
 		t.Fatalf("get repaired default provider: %v", err)
 	}
@@ -451,9 +503,9 @@ func TestInitializeDefaultsDoesNotPersistBuiltInDockerProviderImageFromEnv(t *te
 
 // createPoolForInstance creates a pool bound to the provider instance so a
 // sandbox can be scheduled into it (sandboxes bind to pools, not providers).
-func createPoolForInstance(ctx context.Context, t *testing.T, svc *service.Service, providerInstanceID string) string {
+func createPoolForInstance(ctx context.Context, t *testing.T, svc *service.Service, projectID, providerInstanceID string) string {
 	t.Helper()
-	pool, err := svc.CreatePool(ctx, service.DefaultProjectID, services.CreatePoolBody{
+	pool, err := svc.CreatePool(ctx, projectID, services.CreatePoolBody{
 		Name:               "pool-" + providerInstanceID,
 		ProviderInstanceId: providerInstanceID,
 	})
@@ -512,7 +564,7 @@ func existingDefaultHostMounts(t *testing.T) []string {
 
 func TestServiceResolvesDigitalOceanProviderInstance(t *testing.T) {
 	ctx := context.Background()
-	svc, _, _ := newSandboxTestService(t, nil)
+	svc, _, _, _ := newSandboxTestService(t, nil)
 	t.Setenv("TEST_DIGITALOCEAN_TOKEN", "token-1")
 
 	provider, err := svc.SandboxProviderManager().ResolveInstance(ctx, &model.SandboxProviderInstance{

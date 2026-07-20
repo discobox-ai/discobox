@@ -11,17 +11,13 @@ import (
 
 	"gorm.io/gorm"
 
+	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/store"
 	providerdocker "github.com/obot-platform/discobox/server/providers/docker"
 )
 
-const (
-	DefaultProjectID                 = "prj_default"
-	DefaultProviderInstanceID        = "prv_default"
-	DefaultPoolID                    = "pool_default"
-	defaultProviderInstalledStateKey = "defaults.default_sandbox_provider.installed"
-)
+const defaultProviderInstalledStateKey = "defaults.default_sandbox_provider.installed"
 
 type InitializeDefaultsOption func(*initializeDefaultsOptions)
 
@@ -36,8 +32,11 @@ func WithoutDefaultProviderInstallation() InitializeDefaultsOption {
 }
 
 // InitializeDefaults creates the built-in local identity and the single default
-// project used before user/project management APIs exist.
-func (s *Service) InitializeDefaults(ctx context.Context, userID string, options ...InitializeDefaultsOption) error {
+// project used before user/project management APIs exist. It returns the
+// default project, creating it with a generated ID on first boot and
+// resolving the existing row (by user membership + the Default flag, not by a
+// fixed ID) on subsequent boots.
+func (s *Service) InitializeDefaults(ctx context.Context, userID string, options ...InitializeDefaultsOption) (*model.Project, error) {
 	var opts initializeDefaultsOptions
 	for _, option := range options {
 		if option != nil {
@@ -53,76 +52,92 @@ func (s *Service) InitializeDefaults(ctx context.Context, userID string, options
 		CreatedAt: now,
 		UpdatedAt: now,
 	}); err != nil {
-		return err
+		return nil, err
 	}
-	project := &model.Project{
-		ID:          DefaultProjectID,
-		OwnerUserID: userID,
-		Name:        "Default Project",
-		Slug:        "default",
-		Default:     true,
-		CreatedAt:   now,
-		UpdatedAt:   now,
-	}
-	if _, err := s.store.CreateProjectIfNotExists(ctx, project); err != nil {
-		return err
+	project, err := s.store.GetDefaultProjectForUser(ctx, userID)
+	if err != nil {
+		if !errors.Is(err, store.ErrNotFound) {
+			return nil, err
+		}
+		project, err = s.store.CreateProjectIfNotExists(ctx, &model.Project{
+			ID:          id.NewString(id.PrefixProject),
+			OwnerUserID: userID,
+			Name:        "Default Project",
+			Slug:        "default",
+			Default:     true,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		})
+		if err != nil {
+			return nil, err
+		}
 	}
 	if _, err := s.store.CreateProjectMemberIfNotExists(ctx, &model.ProjectMember{
-		ProjectID: DefaultProjectID,
+		ProjectID: project.ID,
 		UserID:    userID,
 		Role:      "owner",
 		CreatedAt: now,
 		UpdatedAt: now,
 	}); err != nil {
-		return err
+		return nil, err
 	}
 	// Seed the included harnesses and keep their images current. They start
 	// unconfigured, so they are visible but not selectable until configured.
-	if err := s.harnessConfigs.SeedBuiltIns(ctx, DefaultProjectID); err != nil {
-		return err
+	if err := s.harnessConfigs.SeedBuiltIns(ctx, project.ID); err != nil {
+		return nil, err
 	}
 	if opts.skipProvider {
-		return nil
+		return project, nil
 	}
-	return s.ensureDefaultSandboxProviderInstalled(ctx)
+	if err := s.ensureDefaultSandboxProviderInstalled(ctx, project.ID); err != nil {
+		return nil, err
+	}
+	return project, nil
 }
 
-func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context) error {
-	defaultProvider := defaultSandboxProviderForOS()
-	if _, err := s.store.GetServerState(ctx, defaultProviderInstalledStateKey); err == nil {
-		if err := s.ensureDefaultSandboxProviderConfig(ctx, defaultProvider); err != nil {
+// defaultProviderInstalledState is the server_state payload recorded the one
+// time the built-in provider (and its default pool) are created, so restarts
+// never recreate them. Deleting either is a normal, permanent user action.
+type defaultProviderInstalledState struct {
+	ProviderInstanceID string `json:"providerInstanceId"`
+}
+
+func parseDefaultProviderInstalledState(raw json.RawMessage) (defaultProviderInstalledState, error) {
+	var state defaultProviderInstalledState
+	err := json.Unmarshal(raw, &state)
+	return state, err
+}
+
+func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context, projectID string) error {
+	if state, err := s.store.GetServerState(ctx, defaultProviderInstalledStateKey); err == nil {
+		info, err := parseDefaultProviderInstalledState(state.Value)
+		if err != nil {
 			return err
 		}
-		return ensureDefaultPool(ctx, s.store, defaultProvider)
+		defaultProvider := defaultSandboxProviderForOS(projectID, info.ProviderInstanceID)
+		return s.ensureDefaultSandboxProviderConfig(ctx, defaultProvider)
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
 
 	return s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
-		if _, err := txStore.GetServerState(ctx, defaultProviderInstalledStateKey); err == nil {
-			if err := ensureDefaultSandboxProviderConfig(ctx, txStore, defaultProvider); err != nil {
+		if state, err := txStore.GetServerState(ctx, defaultProviderInstalledStateKey); err == nil {
+			info, err := parseDefaultProviderInstalledState(state.Value)
+			if err != nil {
 				return err
 			}
-			return ensureDefaultPool(ctx, txStore, defaultProvider)
+			defaultProvider := defaultSandboxProviderForOS(projectID, info.ProviderInstanceID)
+			return ensureDefaultSandboxProviderConfig(ctx, txStore, defaultProvider)
 		} else if !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
 
-		if _, err := txStore.GetProject(ctx, DefaultProjectID); err != nil {
+		if _, err := txStore.GetProject(ctx, projectID); err != nil {
 			return err
 		}
-		if _, err := txStore.GetSandboxProviderInstance(ctx, DefaultProjectID, defaultProvider.ID); err != nil {
-			if !errors.Is(err, store.ErrNotFound) {
-				return err
-			}
-			if err := txStore.RestoreSandboxProviderInstance(ctx, defaultProvider); err != nil {
-				if !errors.Is(err, store.ErrNotFound) {
-					return err
-				}
-				if err := txStore.CreateSandboxProviderInstance(ctx, defaultProvider); err != nil {
-					return err
-				}
-			}
+		defaultProvider := defaultSandboxProviderForOS(projectID, id.NewString(id.PrefixSandboxProvider))
+		if err := txStore.CreateSandboxProviderInstance(ctx, defaultProvider); err != nil {
+			return err
 		}
 		if err := ensureDefaultPool(ctx, txStore, defaultProvider); err != nil {
 			return err
@@ -146,35 +161,27 @@ func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context) err
 
 // ensureDefaultPool seeds the project's default pool against the built-in
 // provider instance and points the project's DefaultPoolID at it, so `disco
-// run` works with zero configuration.
+// run` works with zero configuration. It runs exactly once, in the same
+// transaction that installs the default provider — if the user later deletes
+// the pool (or the provider), it is not recreated.
 func ensureDefaultPool(ctx context.Context, appStore *store.Store, defaultProvider *model.SandboxProviderInstance) error {
-	if _, err := appStore.GetPool(ctx, DefaultProjectID, DefaultPoolID); err != nil {
-		if !errors.Is(err, store.ErrNotFound) {
-			return err
-		}
-		pool := &model.Pool{
-			ID:                 DefaultPoolID,
-			ProjectID:          DefaultProjectID,
-			Name:               "Default",
-			ProviderInstanceID: defaultProvider.ID,
-			BuiltIn:            true,
-			CacheEnabled:       true,
-		}
-		if err := appStore.CreatePool(ctx, pool); err != nil {
-			return err
-		}
+	pool := &model.Pool{
+		ID:                 id.NewString(id.PrefixPool),
+		ProjectID:          defaultProvider.ProjectID,
+		Name:               "Default",
+		ProviderInstanceID: defaultProvider.ID,
+		BuiltIn:            true,
+		CacheEnabled:       true,
 	}
-	project, err := appStore.GetProject(ctx, DefaultProjectID)
+	if err := appStore.CreatePool(ctx, pool); err != nil {
+		return err
+	}
+	project, err := appStore.GetProject(ctx, defaultProvider.ProjectID)
 	if err != nil {
 		return err
 	}
-	if project.DefaultPoolID == "" {
-		project.DefaultPoolID = DefaultPoolID
-		if err := appStore.UpsertProject(ctx, project); err != nil {
-			return err
-		}
-	}
-	return nil
+	project.DefaultPoolID = pool.ID
+	return appStore.UpsertProject(ctx, project)
 }
 
 func (s *Service) ensureDefaultSandboxProviderConfig(ctx context.Context, defaultProvider *model.SandboxProviderInstance) error {
@@ -212,10 +219,10 @@ func ensureDefaultSandboxProviderConfig(ctx context.Context, appStore *store.Sto
 	return appStore.UpdateSandboxProviderInstance(ctx, provider)
 }
 
-func defaultSandboxProviderForOS() *model.SandboxProviderInstance {
+func defaultSandboxProviderForOS(projectID, providerID string) *model.SandboxProviderInstance {
 	provider := &model.SandboxProviderInstance{
-		ID:        DefaultProviderInstanceID,
-		ProjectID: DefaultProjectID,
+		ID:        providerID,
+		ProjectID: projectID,
 		BuiltIn:   true,
 	}
 	switch runtime.GOOS {

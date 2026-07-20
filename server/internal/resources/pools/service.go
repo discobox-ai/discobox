@@ -121,16 +121,14 @@ func (s *Service) UpdatePool(ctx context.Context, projectID, poolID string, inpu
 	return s.GetPool(ctx, projectID, poolID)
 }
 
-// DeletePool submits delete intent for an empty pool. A pool with sandboxes
-// cannot be deleted (pool assignment is immutable, so there is nothing to
-// drain to). The reconciler removes the runtime host, then the row.
+// DeletePool submits delete intent for an empty pool, including the built-in
+// default pool. A pool with sandboxes cannot be deleted (pool assignment is
+// immutable, so there is nothing to drain to). The reconciler removes the
+// runtime host, then the row.
 func (s *Service) DeletePool(ctx context.Context, projectID, poolID string) error {
 	pool, err := s.store.GetPool(ctx, projectID, poolID)
 	if err != nil {
 		return mapAPIError(err, "pool not found")
-	}
-	if pool.BuiltIn {
-		return apperrors.NewStatusError(http.StatusConflict, "built-in pool cannot be deleted")
 	}
 	sandboxCount, err := s.store.CountSandboxesForPool(ctx, projectID, pool.ID)
 	if err != nil {
