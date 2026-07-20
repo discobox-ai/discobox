@@ -1,12 +1,72 @@
 package config
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/obot-platform/discobox/harness"
 )
+
+func TestResolveVolumesExpandsTokens(t *testing.T) {
+	const doc = `{
+	  "apiVersion": "discobox.dev/image/v1",
+	  "volumes": [
+	    { "path": "%HOME%", "volume": "data", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
+	    { "path": "/var/lib/docker", "volume": "data", "uid": 0, "gid": 0, "mode": "0711" },
+	    { "path": "/var/lib/discobox/pnpm", "volume": "cache" }
+	  ]
+	}`
+	var cfg ImageConfig
+	if err := json.Unmarshal([]byte(doc), &cfg); err != nil {
+		t.Fatalf("unmarshal image config: %v", err)
+	}
+	resolved, err := cfg.ResolveVolumes(VolumeRuntime{Home: "/home/dev", UID: 1000, GID: 2000})
+	if err != nil {
+		t.Fatalf("resolve volumes: %v", err)
+	}
+	if len(resolved) != 3 {
+		t.Fatalf("resolved %d volumes, want 3", len(resolved))
+	}
+	home := resolved[0]
+	if home.Path != "/home/dev" || home.Kind != VolumeData {
+		t.Fatalf("home = %#v", home)
+	}
+	if home.UID == nil || *home.UID != 1000 || home.GID == nil || *home.GID != 2000 {
+		t.Fatalf("home uid/gid = %v/%v, want 1000/2000", home.UID, home.GID)
+	}
+	if home.Mode == nil || *home.Mode != 0o755 {
+		t.Fatalf("home mode = %v, want 0755", home.Mode)
+	}
+	docker := resolved[1]
+	if docker.UID == nil || *docker.UID != 0 || docker.Mode == nil || *docker.Mode != 0o711 {
+		t.Fatalf("docker = %#v", docker)
+	}
+	cache := resolved[2]
+	if cache.Kind != VolumeCache || cache.UID != nil || cache.GID != nil || cache.Mode != nil {
+		t.Fatalf("cache = %#v, want unset ownership", cache)
+	}
+}
+
+func TestResolveVolumesRejectsBadInput(t *testing.T) {
+	for name, doc := range map[string]string{
+		"unknown kind":  `{"volumes":[{"path":"/a","volume":"scratch"}]}`,
+		"relative path": `{"volumes":[{"path":"a/b","volume":"data"}]}`,
+		"bad mode":      `{"volumes":[{"path":"/a","volume":"data","mode":"garbage"}]}`,
+		"bad uid value": `{"volumes":[{"path":"/a","volume":"data","uid":"%NOPE%"}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			var cfg ImageConfig
+			if err := json.Unmarshal([]byte(doc), &cfg); err != nil {
+				t.Fatalf("unmarshal: %v", err)
+			}
+			if _, err := cfg.ResolveVolumes(VolumeRuntime{Home: "/home/dev"}); err == nil {
+				t.Fatalf("expected error for %s", name)
+			}
+		})
+	}
+}
 
 func TestLoadImageMissingFileReturnsEmptyConfig(t *testing.T) {
 	cfg, err := LoadImage(filepath.Join(t.TempDir(), "missing.json"))

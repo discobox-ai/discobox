@@ -717,7 +717,7 @@ func TestMaterializePushedSourcesCompletesExistingSandbox(t *testing.T) {
 			Source: workerclient.NewOptGitSource(source),
 		},
 	}
-	target := runtime.workerHostPath(filepath.Join(sandboxVolumesRoot(projectID, sandboxID), "source", "primary"))
+	target := runtime.workerHostPath(runtime.sandboxSourcePath(sandboxID, "primary"))
 
 	// Provision parks an empty repository.
 	if err := runtime.materializeGitSource(ctx, source, target); err != nil {
@@ -750,7 +750,7 @@ func TestMaterializePushedSourcesLeavesCloneDeliveredSourcesAlone(t *testing.T) 
 	const sandboxID = "sandbox-1"
 
 	runtime := &DockerSandboxRuntime{projectID: projectID, hostMountPrefix: t.TempDir()}
-	target := runtime.workerHostPath(filepath.Join(sandboxVolumesRoot(projectID, sandboxID), "source", "primary"))
+	target := runtime.workerHostPath(runtime.sandboxSourcePath(sandboxID, "primary"))
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		t.Fatal(err)
 	}

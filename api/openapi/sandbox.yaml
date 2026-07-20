@@ -490,6 +490,12 @@ components:
                 sandboxId:
                     description: Stable sandbox ID.
                     type: string
+                sources:
+                    description: Worker-materialized sources the sandbox-agent bind-mounts from /.discobox/sources onto their in-sandbox targets.
+                    items:
+                        $ref: '#/components/schemas/SandboxManifestSource'
+                    nullable: true
+                    type: array
             required:
                 - apiVersion
                 - sandboxId
@@ -577,6 +583,28 @@ components:
                 sampleInterval:
                     description: Resource sampling interval as a Go-style duration string, for example 1s.
                     type: string
+            type: object
+        SandboxManifestSource:
+            additionalProperties: false
+            description: A worker-materialized source the sandbox-agent bind-mounts from /.discobox/sources/<slug> onto its in-sandbox target.
+            properties:
+                gid:
+                    description: Owner GID to apply to the source mount.
+                    format: int64
+                    type: integer
+                slug:
+                    description: Source slug, matching the /.discobox/sources/<slug> directory the worker populated.
+                    type: string
+                target:
+                    description: Absolute path inside the sandbox to bind the source onto.
+                    type: string
+                uid:
+                    description: Owner UID to apply to the source mount.
+                    format: int64
+                    type: integer
+            required:
+                - slug
+                - target
             type: object
         SandboxResources:
             additionalProperties: false

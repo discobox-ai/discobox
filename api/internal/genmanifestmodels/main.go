@@ -22,6 +22,7 @@ var generatedSchemaNames = map[string]bool{
 	"SandboxManifestProvider":              true,
 	"SandboxManifestResolvedHarnessConfig": true,
 	"SandboxManifestResourceCollection":    true,
+	"SandboxManifestSource":                true,
 	"SandboxResources":                     true,
 }
 

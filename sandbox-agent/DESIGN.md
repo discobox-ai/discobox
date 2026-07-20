@@ -13,8 +13,9 @@ runtime operations.
 
 | Package/path | Ownership |
 | --- | --- |
-| `cmd/discobox-sandbox-agent` | Binary entrypoint, config loading, signal handling, and server startup. |
-| `config` | Local boot/config file parsing, environment overrides, defaults, and validation. |
+| `cmd/discobox-sandbox-agent` | Binary entrypoint, config loading, signal handling, and server startup. Also dispatches the `init` PID-1 subcommand. |
+| `boot` | The PID-1 `init` flow: resolves the sandbox user (replacing the retired `entrypoint.sh`), wires image-declared data/cache volumes and manifest sources from the primary volumes, binds the config volume onto `/etc/discobox`, writes desktop drop-ins, then execs the container's real init (systemd). See ADR 0007. |
+| `config` | Local boot/config file parsing, environment overrides, defaults, and validation. Owns `image.json` parsing, including the `volumes` declaration and `%HOME%`/`%UID%`/`%GID%` token resolution. |
 | `server` | HTTP router, generated OpenAPI handler adapter, PASETO auth middleware, and identity/scope validation. |
 | `execs` | The sandbox runtime primitive: exec lifecycle, runtime metadata, systemd unit abstraction, stdout/stderr or PTY logging, shim launch, status socket, and attach. Harness terminals are execs. |
 | `execs` (`shim.go`) | Per-exec child process that owns the PTY/pipes and local Unix socket attach/status/start API, used by both plain execs and terminals. |
@@ -40,6 +41,15 @@ runtime operations.
   `/usr/share/discobox/image.json`. Commands, static files, and config-mode
   behavior are image-owned; the sandbox manifest contributes selection, mode,
   and a non-secret project file overlay.
+- Volume wiring is declarative and image-owned. `image.json` lists the paths the
+  image needs persisted (`data`) or shared across the pool's sandboxes
+  (`cache`); the pool host mounts four primary volumes (`/.discobox/{data,cache,config,sources}`)
+  and the `boot` init flow wires each declared path onto its backing volume —
+  bind when the target is empty, overlay (lower = image content) when it ships
+  content. Cache paths are always a direct shared bind, never an overlay, because
+  the cache volume is shared across concurrently running sandboxes. Sources are
+  bind-mounted from `/.discobox/sources/<slug>` onto the targets named in the
+  manifest. See ADR 0007.
 - Render templated harness files locally at installation time against the public
   `SandboxConfig` object from the manifest. Keep API field names as the template
   surface and expose only deterministic, non-secret formatting helpers.

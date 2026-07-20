@@ -18,7 +18,7 @@ from the future in-sandbox `sandbox-agent` API.
 | `cmd/discobox-pool-agent` | Pool agent binary entrypoint. |
 | `.` | Root `poolagent` Go package: boot contract, registration flow, status reporting, and high-level command orchestration. |
 | `server` | Pool-local HTTP server, health/metadata endpoints, and generated sandbox API route/auth adapter. |
-| `sandboxruntime` | Local sandbox runtime implementations used by the pool host server. Mounts the pool-local shared pool cache at `/discobox/cache` into every sandbox whose create request enables it (one pool hosts one pool, so the cache is a single sticky world-writable directory shared by its sandboxes). |
+| `sandboxruntime` | Local sandbox runtime implementations used by the pool host server. Provisions the four primary volumes (`/.discobox/{data,cache,config,sources}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. In-sandbox path wiring is delegated to the sandbox-agent init flow (ADR 0007). |
 | `proxyagent` | Worker-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, and per-sandbox client material staging. |
 | `systemd` | Linux/systemd namespace startup and child reaping helpers, with non-Linux stubs. |
 
@@ -104,17 +104,30 @@ flowchart LR
   `discobox-pool-proxy:host-gateway` entry so the mTLS `ServerName` check stays
   valid regardless of the runtime gateway IP.
 - `sandboxruntime.CreateSandbox` issues a per-sandbox client certificate
-  (client ID = sandbox ID, the proxy tenant boundary), bind-mounts only the
-  public CAs and that sandbox's keypair at `/etc/discobox/proxy` (read-only), and
-  injects the `HTTP(S)_PROXY`/CA environment into both the container and the
-  sandbox manifest so `sandbox-agent`-spawned terminals and execs are proxied.
+  (client ID = sandbox ID, the proxy tenant boundary), mounts the public CAs and
+  that sandbox's keypair (read-only) nested inside the config volume at
+  `/.discobox/config/proxy`, and injects the `HTTP(S)_PROXY`/CA environment into
+  both the container and the sandbox manifest so `sandbox-agent`-spawned
+  terminals and execs are proxied. The sandbox-agent's PID-1 init recursively
+  rebinds the config volume onto `/etc/discobox`, so the proxy material lands at
+  its documented `/etc/discobox/proxy` path.
+- The pool host provisions four host-backed primary volumes and mounts them at
+  `/.discobox/{data,cache,config,sources}`; it no longer decides in-sandbox paths
+  (home, `/var/lib/docker`, source targets). `data`, `config`, and `sources` are
+  per-sandbox; `cache` is shared across the pool's sandboxes in this project. The
+  host layout is
+  `/var/lib/discobox/projects/{project}/pools/{pool}/{cache,sandboxes/{sandbox}/{data,config,sources}}`.
+  The sandbox-agent wires everything else from the image's declarative volume
+  list and the manifest source list. See ADR 0007.
 - Normalize provider-owned source destination defaults before both mounting
   sources and writing the public sandbox manifest so manifest consumers observe
   the paths actually used by the runtime.
 - Publish the pool host-resolved sandbox user (name, UID, GID, and home) in the
   manifest even when the request omitted or partially specified `config.user`.
   The home mount, container environment, sandbox-agent exec defaults, and
-  home-relative harness files must all use that same identity.
+  home-relative harness files must all use that same identity. The home
+  directory is now wired by the sandbox-agent from the `data` volume against the
+  `%HOME%`/`%UID%`/`%GID%` tokens the manifest identity resolves.
 - Keep harness behavior opaque. The pool host transports only selected harness
   identity, `harnessMode`, and the non-secret project file overlay. Commands and
   the project harness catalog are image-owned and never interpreted here.

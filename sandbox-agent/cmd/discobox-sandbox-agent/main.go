@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/proxy/bridge"
+	"github.com/obot-platform/discobox/sandbox-agent/boot"
 	"github.com/obot-platform/discobox/sandbox-agent/config"
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
 	harnesshooks "github.com/obot-platform/discobox/sandbox-agent/hooks"
@@ -37,6 +38,9 @@ func run(args []string) int {
 	}
 	if len(args) > 0 && args[0] == "proxy-bridge" {
 		return runProxyBridge(args[1:])
+	}
+	if len(args) > 0 && args[0] == "init" {
+		return boot.Init(slog.Default(), args[1:])
 	}
 	var configPath string
 	flags := flag.NewFlagSet("discobox-sandbox-agent", flag.ContinueOnError)

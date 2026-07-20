@@ -41,10 +41,14 @@ const (
 	sandboxAgentReadyTimeout = 30 * time.Second
 	sandboxAgentPollInterval = 100 * time.Millisecond
 	sandboxDataRoot          = "/var/lib/discobox/projects"
-	// PoolCacheMountPath is the well-known path where every sandbox in a pool
-	// sees the pool's shared cache volume. The pool hosts exactly one pool,
-	// so the cache is a single pool-local directory shared by its sandboxes.
-	PoolCacheMountPath       = "/discobox/cache"
+
+	// The pool host provisions four host-backed roots and mounts them at these
+	// fixed container paths. The sandbox-agent (running as PID 1) wires
+	// everything else from these primary volumes; see ADR 0007.
+	sandboxDataMount         = "/.discobox/data"
+	sandboxCacheMount        = "/.discobox/cache"
+	sandboxConfigMount       = "/.discobox/config"
+	sandboxSourcesMount      = "/.discobox/sources"
 	sandboxLabelManaged      = "discobox.sandbox.managed"
 	sandboxLabelProject      = "discobox.project_id"
 	sandboxLabelPool         = "discobox.pool_id"
@@ -193,10 +197,13 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	if err := proxyagent.UpsertSandboxSentinels(r.workerHostPath, sandboxID, sentinels); err != nil {
 		return nil, err
 	}
+	// Nest the proxy material inside the config volume at /.discobox/config/proxy
+	// so it rides along when the sandbox-agent recursively rebinds the config
+	// volume onto /etc/discobox; the in-sandbox path stays proxyagent.SandboxProxyMount.
 	mounts = append(mounts, mount.Mount{
 		Type:     mount.TypeBind,
 		Source:   proxyMaterial.MountSource,
-		Target:   proxyagent.SandboxProxyMount,
+		Target:   filepath.Join(sandboxConfigMount, "proxy"),
 		ReadOnly: true,
 	})
 	if err := r.writeSandboxHarnessConfig(ctx, sandboxID, req, proxyMaterial.Env); err != nil {
@@ -284,7 +291,7 @@ func (r *DockerSandboxRuntime) materializePushedSources(ctx context.Context, san
 		if !gitSourceAwaitsPush(source.git) {
 			continue
 		}
-		sourcePoolPath := r.workerHostPath(filepath.Join(sandboxVolumesRoot(r.projectID, sandboxID), "source", source.slug))
+		sourcePoolPath := r.workerHostPath(r.sandboxSourcePath(sandboxID, source.slug))
 		if err := r.materializeGitSource(ctx, source.git, sourcePoolPath); err != nil {
 			return fmt.Errorf("materialize pushed source %q: %w", source.slug, err)
 		}
@@ -292,84 +299,53 @@ func (r *DockerSandboxRuntime) materializePushedSources(ctx context.Context, san
 	return nil
 }
 
+// prepareSandboxVolumes provisions the four host-backed roots and returns their
+// container mounts. The pool host no longer decides in-sandbox paths (home,
+// /var/lib/docker, sources targets); it only supplies the primary volumes. The
+// sandbox-agent wires everything else from the image's declarative volume list
+// and the manifest's source list (ADR 0007).
 func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest, user sandboxUserIdentity) ([]mount.Mount, error) {
-	sources := sandboxSources(req)
-	mounts := make([]mount.Mount, 0, len(sources)+1)
-	homeHostPath := filepath.Join(sandboxVolumesRoot(r.projectID, sandboxID), "home")
-	homePoolPath := r.workerHostPath(homeHostPath)
-	if err := prepareOwnedDirectory(ctx, homePoolPath, user.uid, user.gid); err != nil {
-		return nil, fmt.Errorf("set home ownership: %w", err)
+	dataHostPath := r.sandboxDataRootPath(sandboxID)
+	if err := prepareOwnedDirectory(ctx, r.workerHostPath(dataHostPath), 0, 0); err != nil {
+		return nil, fmt.Errorf("prepare sandbox data volume: %w", err)
 	}
-	mounts = append(mounts, mount.Mount{
-		Type:   mount.TypeBind,
-		Source: homeHostPath,
-		Target: user.homeDirectory,
-	})
-	configHostPath := sandboxConfigRoot(r.projectID, sandboxID)
-	configPoolPath := r.workerHostPath(configHostPath)
-	if err := prepareOwnedDirectory(ctx, configPoolPath, 0, 0); err != nil {
-		return nil, fmt.Errorf("prepare sandbox config directory: %w", err)
+	cacheHostPath := r.poolCacheRoot()
+	if err := prepareOwnedDirectory(ctx, r.workerHostPath(cacheHostPath), 0, 0); err != nil {
+		return nil, fmt.Errorf("prepare pool cache volume: %w", err)
 	}
-	mounts = append(mounts, mount.Mount{
-		Type:     mount.TypeBind,
-		Source:   configHostPath,
-		Target:   "/etc/discobox",
-		ReadOnly: true,
-	})
-	for _, source := range sources {
-		sourceHostPath := filepath.Join(sandboxVolumesRoot(r.projectID, sandboxID), "source", source.slug)
-		sourcePoolPath := r.workerHostPath(sourceHostPath)
+	configHostPath := r.sandboxConfigRoot(sandboxID)
+	if err := prepareOwnedDirectory(ctx, r.workerHostPath(configHostPath), 0, 0); err != nil {
+		return nil, fmt.Errorf("prepare sandbox config volume: %w", err)
+	}
+	sourcesHostPath := r.sandboxSourcesRoot(sandboxID)
+	if err := prepareOwnedDirectory(ctx, r.workerHostPath(sourcesHostPath), 0, 0); err != nil {
+		return nil, fmt.Errorf("prepare sandbox sources volume: %w", err)
+	}
+	for _, source := range sandboxSources(req) {
+		sourcePoolPath := r.workerHostPath(r.sandboxSourcePath(sandboxID, source.slug))
 		if err := r.materializeGitSource(ctx, source.git, sourcePoolPath); err != nil {
 			return nil, fmt.Errorf("materialize source %q: %w", source.slug, err)
 		}
 		if err := prepareOwnedDirectory(ctx, sourcePoolPath, user.uid, user.gid); err != nil {
 			return nil, fmt.Errorf("set source ownership %q: %w", source.slug, err)
 		}
-		mounts = append(mounts, mount.Mount{
-			Type:   mount.TypeBind,
-			Source: sourceHostPath,
-			Target: source.target,
-		})
 	}
-	if req.PoolCacheEnabled.Or(false) {
-		cacheHostPath := poolCacheRoot(r.projectID)
-		if err := preparePoolCacheDirectory(r.workerHostPath(cacheHostPath)); err != nil {
-			return nil, fmt.Errorf("prepare pool cache directory: %w", err)
-		}
-		mounts = append(mounts, mount.Mount{
-			Type:   mount.TypeBind,
-			Source: cacheHostPath,
-			Target: PoolCacheMountPath,
-		})
-	}
-	return mounts, nil
-}
-
-// poolCacheRoot is the pool-local shared pool cache directory. It is shared
-// by every sandbox on the pool, which is exactly the pool's cache contract:
-// one pool hosts one pool.
-func poolCacheRoot(projectID string) string {
-	return filepath.Join(sandboxDataRoot, projectID, "pool-cache")
-}
-
-// preparePoolCacheDirectory creates the shared cache with /tmp-style sticky
-// world-writable permissions, because sandboxes in the pool may run as
-// different users but all write the shared cache.
-func preparePoolCacheDirectory(dir string) error {
-	if err := os.MkdirAll(dir, 0o777); err != nil {
-		return err
-	}
-	return os.Chmod(dir, 0o1777)
+	return []mount.Mount{
+		{Type: mount.TypeBind, Source: dataHostPath, Target: sandboxDataMount},
+		{Type: mount.TypeBind, Source: cacheHostPath, Target: sandboxCacheMount},
+		{Type: mount.TypeBind, Source: configHostPath, Target: sandboxConfigMount},
+		{Type: mount.TypeBind, Source: sourcesHostPath, Target: sandboxSourcesMount},
+	}, nil
 }
 
 func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string) error {
-	configDir := r.workerHostPath(sandboxConfigRoot(r.projectID, sandboxID))
+	configDir := r.workerHostPath(r.sandboxConfigRoot(sandboxID))
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return err
 	}
-	// The proxy material is bind-mounted at /etc/discobox/proxy, nested under the
-	// read-only /etc/discobox config mount. Pre-create the mountpoint here so the
-	// container runtime does not have to create it inside the read-only parent.
+	// The proxy material is bind-mounted at /.discobox/config/proxy, nested under
+	// the config volume. Pre-create the mountpoint here so the container runtime
+	// does not have to create it inside the read-only parent.
 	if err := os.MkdirAll(filepath.Join(configDir, "proxy"), 0o755); err != nil {
 		return err
 	}
@@ -448,6 +424,16 @@ func buildSandboxManifest(projectID, sandboxID, poolID, controlPlanePublicKey st
 			Gid:           apigen.NewOptInt64(int64(user.gid)),
 			HomeDirectory: apigen.NewOptString(user.homeDirectory),
 		})
+		// The sandbox-agent bind-mounts each worker-materialized source from
+		// /.discobox/sources/<slug> onto its target as this same user (ADR 0007).
+		for _, source := range sandboxSources(req) {
+			manifest.Sources = append(manifest.Sources, apimodel.SandboxManifestSource{
+				Slug:   source.slug,
+				Target: source.target,
+				Uid:    int64(user.uid),
+				Gid:    int64(user.gid),
+			})
+		}
 		if resources, ok := req.Resources.Get(); ok {
 			manifest.Resources = &apimodel.SandboxResources{
 				CPUCores:       resources.CpuCores,
@@ -860,7 +846,7 @@ func (r *DockerSandboxRuntime) GitRepositoryPath(ctx context.Context, sandboxID,
 	if _, err := r.GetSandbox(ctx, sandboxID); err != nil {
 		return "", err
 	}
-	repoPath := r.workerHostPath(filepath.Join(sandboxVolumesRoot(r.projectID, sandboxID), "source", repositoryID))
+	repoPath := r.workerHostPath(r.sandboxSourcePath(sandboxID, repositoryID))
 	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err != nil {
 		if os.IsNotExist(err) {
 			return "", ErrNotFound
@@ -1203,8 +1189,38 @@ func sandboxContainerName(poolID, sandboxID string) string {
 	return strings.Trim(name, "-_.")
 }
 
-func sandboxConfigRoot(projectID, sandboxID string) string {
-	return filepath.Join(sandboxVolumesRoot(projectID, sandboxID), "config")
+// sandboxPoolRoot is the per-project, per-pool host root. The cache lives
+// directly under it (shared across the pool's sandboxes in this project);
+// each sandbox's data/config/sources live under sandboxes/<sandbox_id>.
+func (r *DockerSandboxRuntime) sandboxPoolRoot() string {
+	return filepath.Join(sandboxDataRoot, r.projectID, "pools", r.poolID)
+}
+
+// poolCacheRoot is the shared cache directory for every sandbox this pool runs
+// in this project (ADR 0007). It is mounted at /.discobox/cache and the image
+// declares which paths back onto it.
+func (r *DockerSandboxRuntime) poolCacheRoot() string {
+	return filepath.Join(r.sandboxPoolRoot(), "cache")
+}
+
+func (r *DockerSandboxRuntime) sandboxRoot(sandboxID string) string {
+	return filepath.Join(r.sandboxPoolRoot(), "sandboxes", sandboxID)
+}
+
+func (r *DockerSandboxRuntime) sandboxDataRootPath(sandboxID string) string {
+	return filepath.Join(r.sandboxRoot(sandboxID), "data")
+}
+
+func (r *DockerSandboxRuntime) sandboxConfigRoot(sandboxID string) string {
+	return filepath.Join(r.sandboxRoot(sandboxID), "config")
+}
+
+func (r *DockerSandboxRuntime) sandboxSourcesRoot(sandboxID string) string {
+	return filepath.Join(r.sandboxRoot(sandboxID), "sources")
+}
+
+func (r *DockerSandboxRuntime) sandboxSourcePath(sandboxID, slug string) string {
+	return filepath.Join(r.sandboxSourcesRoot(sandboxID), slug)
 }
 
 func containerIPAddress(inspect container.InspectResponse) string {
@@ -1456,10 +1472,6 @@ func (r *DockerSandboxRuntime) workerHostPath(hostPath string) string {
 		return hostPath
 	}
 	return filepath.Join(r.hostMountPrefix, strings.TrimPrefix(hostPath, string(filepath.Separator)))
-}
-
-func sandboxVolumesRoot(projectID, sandboxID string) string {
-	return filepath.Join(sandboxDataRoot, projectID, "sandboxes", sandboxID, "volumes")
 }
 
 func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source workerapimodel.GitSource, target string) error {

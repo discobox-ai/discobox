@@ -20,6 +20,8 @@ type SandboxManifest struct {
 	Resources *SandboxResources `json:"resources,omitempty"`
 	// SandboxID Stable sandbox ID.
 	SandboxID string `json:"sandboxId"`
+	// Sources Worker-materialized sources the sandbox-agent bind-mounts from /.discobox/sources onto their in-sandbox targets.
+	Sources []SandboxManifestSource `json:"sources,omitempty"`
 }
 
 // SandboxManifestAgentRuntime Sandbox-agent daemon-local runtime settings. This object must not contain credentials, tokens, private keys, or other secret material.
@@ -68,6 +70,18 @@ type SandboxManifestResourceCollection struct {
 	RetentionCount int64 `json:"retentionCount,omitempty"`
 	// SampleInterval Resource sampling interval as a Go-style duration string, for example 1s.
 	SampleInterval string `json:"sampleInterval,omitempty"`
+}
+
+// SandboxManifestSource A worker-materialized source the sandbox-agent bind-mounts from /.discobox/sources/<slug> onto its in-sandbox target.
+type SandboxManifestSource struct {
+	// Gid Owner GID to apply to the source mount.
+	Gid int64 `json:"gid,omitempty"`
+	// Slug Source slug, matching the /.discobox/sources/<slug> directory the worker populated.
+	Slug string `json:"slug"`
+	// Target Absolute path inside the sandbox to bind the source onto.
+	Target string `json:"target"`
+	// Uid Owner UID to apply to the source mount.
+	Uid int64 `json:"uid,omitempty"`
 }
 
 // SandboxResources Provider-normalized sandbox resource allocation.

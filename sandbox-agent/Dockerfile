@@ -187,14 +187,13 @@ RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
         x11vnc.socket \
         websockify-proxy.socket
 
-COPY sandbox-agent/image/entrypoint.sh /opt/discobox/entrypoint.sh
-RUN chmod 0755 /opt/discobox/entrypoint.sh
-
 WORKDIR /workspace
-VOLUME ["/var/lib/docker", "/var/lib/discobox", "/workspace"]
+# No VOLUME directives: the sandbox-agent init flow (PID 1) wires all persistent
+# and cached paths from the primary volumes the worker mounts, per ADR 0007.
+# Anonymous volumes here would only shadow those binds.
 EXPOSE 6080
 STOPSIGNAL SIGRTMIN+3
-ENTRYPOINT ["/opt/discobox/entrypoint.sh"]
+ENTRYPOINT ["/usr/local/bin/discobox-sandbox-agent", "init"]
 CMD ["/sbin/init"]
 
 FROM sandbox-base AS sandbox-agent
