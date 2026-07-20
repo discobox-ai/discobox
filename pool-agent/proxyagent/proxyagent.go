@@ -36,12 +36,10 @@ const (
 	// process and the proxy systemd unit observe the same files.
 	Root = "/var/lib/discobox/proxy"
 
-	// CertDir holds the proxy CA bundle and pool server certificate.
+	// CertDir holds the proxy CA bundle and pool server certificate. It is a
+	// single per-host trust root; client certificates are issued under
+	// CertDir/clients/<sandboxID> keyed by the globally unique sandbox ID.
 	CertDir = Root + "/certs"
-
-	// SandboxMaterialRoot holds per-sandbox client certificate material that is
-	// bind-mounted read-only into sandbox containers.
-	SandboxMaterialRoot = Root + "/sandboxes"
 
 	// ListenAddress is where the pool proxy accepts mTLS connections. It binds
 	// all interfaces so sandbox containers can reach it through the Docker host
@@ -74,6 +72,14 @@ const (
 	// environment, sees the same host-mount prefix.
 	UnitEnvironmentFile = "/etc/discobox/proxy.env"
 )
+
+// PoolSandboxMaterialRoot is the per-pool root under which each sandbox's
+// bind-mounted proxy material is staged. It is pool-scoped so that, on a host
+// daemon shared by multiple pools, a pool's orphan scan only ever sees — and
+// reaps — its own sandboxes' material, never another pool's live material.
+func PoolSandboxMaterialRoot(poolID string) string {
+	return Root + "/pools/" + poolID + "/sandboxes"
+}
 
 // SandboxNetworkName is the per-pool internal Docker network that carries
 // sandbox egress to the pool proxy. Sandboxes join it (and only it) and
@@ -222,7 +228,7 @@ func validateSandboxID(sandboxID string) error {
 
 // RemoveSandboxMaterial deletes the staged proxy material and client certificate
 // for sandboxID. It is idempotent: absent directories are not an error.
-func RemoveSandboxMaterial(sandboxID string, hostDirFor HostPathResolver) error {
+func RemoveSandboxMaterial(poolID, sandboxID string, hostDirFor HostPathResolver) error {
 	if err := validateSandboxID(sandboxID); err != nil {
 		return err
 	}
@@ -230,10 +236,12 @@ func RemoveSandboxMaterial(sandboxID string, hostDirFor HostPathResolver) error 
 		hostDirFor = func(p string) string { return p }
 	}
 	var errs []error
-	materialDir := hostDirFor(filepath.Join(SandboxMaterialRoot, sandboxID))
+	materialDir := hostDirFor(filepath.Join(PoolSandboxMaterialRoot(poolID), sandboxID))
 	if err := os.RemoveAll(materialDir); err != nil {
 		errs = append(errs, fmt.Errorf("remove sandbox proxy material: %w", err))
 	}
+	// The client certificate is keyed by the globally unique sandbox ID, so
+	// removing it by ID never touches another pool's material.
 	clientCertDir := hostDirFor(filepath.Join(CertDir, "clients", sandboxID))
 	if err := os.RemoveAll(clientCertDir); err != nil {
 		errs = append(errs, fmt.Errorf("remove sandbox proxy client certificate: %w", err))
@@ -250,14 +258,14 @@ func RemoveSandboxMaterial(sandboxID string, hostDirFor HostPathResolver) error 
 // minAge protects material that was just staged for an in-flight CreateSandbox:
 // an orphan is only removed when its youngest on-disk file predates minAge. Pass
 // 0 to prune regardless of age.
-func PruneOrphanedMaterial(liveSandboxIDs []string, hostDirFor HostPathResolver, minAge time.Duration) error {
-	orphans, scanErr := OrphanedSandboxIDs(liveSandboxIDs, hostDirFor, minAge)
+func PruneOrphanedMaterial(poolID string, liveSandboxIDs []string, hostDirFor HostPathResolver, minAge time.Duration) error {
+	orphans, scanErr := OrphanedSandboxIDs(poolID, liveSandboxIDs, hostDirFor, minAge)
 	var errs []error
 	if scanErr != nil {
 		errs = append(errs, scanErr)
 	}
 	for _, id := range orphans {
-		if err := RemoveSandboxMaterial(id, hostDirFor); err != nil {
+		if err := RemoveSandboxMaterial(poolID, id, hostDirFor); err != nil {
 			errs = append(errs, err)
 		}
 		if err := RemoveSandboxSentinels(hostDirFor, id); err != nil {
@@ -271,7 +279,7 @@ func PruneOrphanedMaterial(liveSandboxIDs []string, hostDirFor HostPathResolver,
 // but no live container. The material is the level-triggered record used to
 // recover removals whose Docker destroy event was missed while the pool was
 // down.
-func OrphanedSandboxIDs(liveSandboxIDs []string, hostDirFor HostPathResolver, minAge time.Duration) ([]string, error) {
+func OrphanedSandboxIDs(poolID string, liveSandboxIDs []string, hostDirFor HostPathResolver, minAge time.Duration) ([]string, error) {
 	if hostDirFor == nil {
 		hostDirFor = func(p string) string { return p }
 	}
@@ -282,28 +290,23 @@ func OrphanedSandboxIDs(liveSandboxIDs []string, hostDirFor HostPathResolver, mi
 
 	var errs []error
 	candidates := map[string]struct{}{}
-	for _, base := range []string{SandboxMaterialRoot, filepath.Join(CertDir, "clients")} {
-		entries, err := os.ReadDir(hostDirFor(base))
-		if err != nil {
-			if !os.IsNotExist(err) {
-				errs = append(errs, fmt.Errorf("scan %s: %w", base, err))
-			}
-			continue
-		}
-		for _, entry := range entries {
-			if entry.IsDir() {
-				candidates[entry.Name()] = struct{}{}
-			}
+	// Only the pool-scoped material root is scanned. Client certs
+	// (CertDir/clients) and sentinel registrations live in per-host shared
+	// locations keyed by sandbox ID; scanning those would surface other pools'
+	// sandboxes as candidates on a shared daemon. Every sandbox always has a
+	// material dir here, so it is a complete record of this pool's sandboxes;
+	// the shared cert/sentinel entries are reclaimed by ID when their material
+	// orphan is pruned.
+	base := PoolSandboxMaterialRoot(poolID)
+	entries, err := os.ReadDir(hostDirFor(base))
+	if err != nil {
+		if !os.IsNotExist(err) {
+			errs = append(errs, fmt.Errorf("scan %s: %w", base, err))
 		}
 	}
-	// Sentinel registrations live in a shared file, not a per-sandbox directory,
-	// so gather them separately to reclaim entries whose material was already
-	// removed.
-	if doc, err := readSecretsDoc(hostDirFor(SecretsFile)); err != nil {
-		errs = append(errs, err)
-	} else {
-		for id := range doc.Clients {
-			candidates[id] = struct{}{}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			candidates[entry.Name()] = struct{}{}
 		}
 	}
 
@@ -322,7 +325,7 @@ func OrphanedSandboxIDs(liveSandboxIDs []string, hostDirFor HostPathResolver, mi
 		// CreateSandbox. Only staged directories carry a grace window; a
 		// sentinel-only leftover (its material already gone) is always eligible.
 		if minAge > 0 {
-			if modTime, hasDirs := materialModTime(id, hostDirFor); hasDirs && modTime.After(cutoff) {
+			if modTime, hasDir := materialModTime(poolID, id, hostDirFor); hasDir && modTime.After(cutoff) {
 				continue
 			}
 		}
@@ -332,22 +335,14 @@ func OrphanedSandboxIDs(liveSandboxIDs []string, hostDirFor HostPathResolver, mi
 	return orphans, errors.Join(errs...)
 }
 
-// materialModTime returns the newest modification time across a sandbox's staged
-// material and client certificate directories.
-func materialModTime(id string, hostDirFor HostPathResolver) (time.Time, bool) {
-	var newest time.Time
-	found := false
-	for _, base := range []string{SandboxMaterialRoot, filepath.Join(CertDir, "clients")} {
-		info, err := os.Stat(hostDirFor(filepath.Join(base, id)))
-		if err != nil {
-			continue
-		}
-		if info.ModTime().After(newest) {
-			newest = info.ModTime()
-		}
-		found = true
+// materialModTime returns the modification time of a sandbox's staged material
+// directory, used to protect material still being staged for an in-flight create.
+func materialModTime(poolID, id string, hostDirFor HostPathResolver) (time.Time, bool) {
+	info, err := os.Stat(hostDirFor(filepath.Join(PoolSandboxMaterialRoot(poolID), id)))
+	if err != nil {
+		return time.Time{}, false
 	}
-	return newest, found
+	return info.ModTime(), true
 }
 
 // EnsureSandboxMaterial issues (or reuses) a client certificate for sandboxID
@@ -355,7 +350,7 @@ func materialModTime(id string, hostDirFor HostPathResolver) (time.Time, bool) {
 // directory. hostDirFor maps a pool container path into the path the pool
 // agent process can actually write to; the returned MountSource is the
 // un-resolved path handed to the container runtime as the bind-mount source.
-func EnsureSandboxMaterial(sandboxID string, hostDirFor HostPathResolver) (*SandboxMaterial, error) {
+func EnsureSandboxMaterial(poolID, sandboxID string, hostDirFor HostPathResolver) (*SandboxMaterial, error) {
 	if err := validateSandboxID(sandboxID); err != nil {
 		return nil, err
 	}
@@ -371,7 +366,7 @@ func EnsureSandboxMaterial(sandboxID string, hostDirFor HostPathResolver) (*Sand
 		return nil, fmt.Errorf("ensure sandbox proxy certificate: %w", err)
 	}
 
-	mountSource := filepath.Join(SandboxMaterialRoot, sandboxID)
+	mountSource := filepath.Join(PoolSandboxMaterialRoot(poolID), sandboxID)
 	writeDir := hostDirFor(mountSource)
 	if err := os.MkdirAll(writeDir, 0o755); err != nil {
 		return nil, fmt.Errorf("create sandbox proxy material dir: %w", err)
