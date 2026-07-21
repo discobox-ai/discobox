@@ -14,6 +14,7 @@ setup_file() {
   export DISCOBOX_BATS_STATE_DIR="$DISCOBOX_BATS_TMP/state"
   export DISCOBOX_BATS_DB="$DISCOBOX_BATS_TMP/discobox.sqlite"
   export DISCOBOX_BATS_SERVER_LOG="$DISCOBOX_BATS_TMP/server.log"
+  export DISCOBOX_BATS_POOL_FILE="$DISCOBOX_BATS_TMP/pool-id"
   mkdir -p "$DISCOBOX_BATS_DATA_DIR" "$DISCOBOX_BATS_CONFIG_DIR" "$DISCOBOX_BATS_CACHE_DIR" "$DISCOBOX_BATS_STATE_DIR"
 
   export DISCOBOX_BATS_PORT="$(python3 - <<'PY'
@@ -60,23 +61,61 @@ PY
 
 teardown_file() {
   cd "$REPO_ROOT"
+
+  # Delete every pool through the API first, while the server is still up: the
+  # control plane owns each pool's Docker network, and nothing else removes it.
+  # Leaked networks exhaust Docker's predefined address pools, at which point
+  # every later pool fails to reconcile. This sweeps all pools, not just the one
+  # this file created, because the server also seeds a default pool at startup.
+  local pool_ids=""
+  if [ -f "$DISCOBOX_BATS_DB" ]; then
+    pool_ids="$(python3 -c '
+import sqlite3, sys
+con = sqlite3.connect(sys.argv[1])
+print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
+' "$DISCOBOX_BATS_DB" 2>/dev/null || true)"
+  fi
+  local pool_id
+  for pool_id in $pool_ids; do
+    cli box pool delete "$pool_id" >/dev/null 2>&1 || true
+  done
+  for _ in {1..30}; do
+    local pending=0
+    for pool_id in $pool_ids; do
+      docker network inspect "discobox-sbnet-$pool_id" >/dev/null 2>&1 && pending=1
+    done
+    [ "$pending" -eq 0 ] && break
+    sleep 1
+  done
+
   if [ -n "${DISCOBOX_BATS_SERVER_PID:-}" ] && kill -0 "$DISCOBOX_BATS_SERVER_PID" 2>/dev/null; then
     kill "$DISCOBOX_BATS_SERVER_PID" 2>/dev/null || true
     wait "$DISCOBOX_BATS_SERVER_PID" 2>/dev/null || true
   fi
 
-  docker rm -f $(docker ps -aq \
-    --filter "ancestor=discobox-pool-agent:local" \
-    --filter "label=discobox.provider_type=docker" \
-    --filter "label=discobox.project_id=prj_default") >/dev/null 2>&1 || true
+  # Backstop, scoped to this run's pools. Filtering on the ancestor image
+  # instead is both too narrow (the project id is generated, never prj_default,
+  # so the old filter matched nothing and leaked every pool) and too broad
+  # (discobox-pool-agent:local can share an image ID with a developer's own dev
+  # tag, so it would reap their running pools).
+  for pool_id in $pool_ids; do
+    docker rm -f $(docker ps -aq --filter "label=discobox.pool_id=$pool_id") >/dev/null 2>&1 || true
+    docker network rm "discobox-sbnet-$pool_id" >/dev/null 2>&1 || true
+  done
 }
 
 cli() {
-  "$REPO_ROOT/build/disco" --server "$DISCOBOX_BATS_SERVER" --project local --output json "$@"
+  "$REPO_ROOT/build/disco" --server "$DISCOBOX_BATS_SERVER" --project default --output json "$@"
 }
 
 json_get() {
-  python3 -c 'import json,sys; print(json.load(sys.stdin).get(sys.argv[1], ""))' "$1"
+  python3 -c '
+import json, sys
+value = json.load(sys.stdin)
+for part in sys.argv[1].split("."):
+    value = value.get(part) if isinstance(value, dict) else None
+print("" if value is None else value)
+' "$1"
 }
 
 wait_for_pool_ready() {
@@ -96,9 +135,9 @@ while time.time() < deadline:
         """
         SELECT id, ready, schedulable, phase, last_operation_status
         FROM pools
-        WHERE project_id = ? AND id = ?
+        WHERE id = ?
         """,
-        ("prj_default", pool_id),
+        (pool_id,),
     ).fetchall()
     con.close()
     last = [dict(row) for row in rows]
@@ -134,7 +173,7 @@ host_gateway() {
 }
 
 @test "provider create help exposes docker dynamic flags" {
-  run cli provider create --help=docker
+  run cli box provider create --help=docker
   [ "$status" -eq 0 ]
   [[ "$output" == *"Create a Docker provider instance"* ]]
   [[ "$output" == *"--control-plane-url"* ]]
@@ -157,28 +196,29 @@ print(json.dumps({
 PY
 )"
 
-  run cli provider create --type docker --name bats-docker --config "$config"
+  run cli box provider create --type docker --name bats-docker --config "$config"
   [ "$status" -eq 0 ]
   provider_json="$output"
   provider_id="$(printf '%s' "$provider_json" | json_get id)"
   [ -n "$provider_id" ]
   [ "$(printf '%s' "$provider_json" | json_get type)" = "docker" ]
 
-  run cli pool create bats-docker-pool --provider "$provider_id"
+  run cli box pool create bats-docker-pool --provider "$provider_id"
   [ "$status" -eq 0 ]
   pool_json="$output"
   pool_id="$(printf '%s' "$pool_json" | json_get id)"
   [ -n "$pool_id" ]
+  printf '%s' "$pool_id" >"$DISCOBOX_BATS_POOL_FILE"
 
   pool_id="$(wait_for_pool_ready "$pool_id")"
   [ -n "$pool_id" ]
 
-  run cli sandbox create --name bats-docker-sandbox --pool "$pool_id" --wait --wait-timeout 90s
+  run cli box sandbox create --name bats-docker-sandbox --pool "$pool_id" --wait --wait-timeout 90s
   [ "$status" -eq 0 ]
   sandbox_json="$output"
   sandbox_id="$(printf '%s' "$sandbox_json" | json_get id)"
   [ -n "$sandbox_id" ]
   [ "$(printf '%s' "$sandbox_json" | json_get poolId)" = "$pool_id" ]
-  [ "$(printf '%s' "$sandbox_json" | json_get phase)" = "running" ]
-  [ "$(printf '%s' "$sandbox_json" | json_get lastOperationStatus)" = "success" ]
+  [ "$(printf '%s' "$sandbox_json" | json_get runtime.phase)" = "running" ]
+  [ "$(printf '%s' "$sandbox_json" | json_get runtime.lastOperationStatus)" = "success" ]
 }

@@ -159,18 +159,20 @@ tasks:
       - cd server && DISCOBOX_DOCKER_INTEGRATION=1 go test ./providers/docker -run Integration -count=1 -v
 
   test:docker:bats:
-    desc: Run Docker provider CLI Bats integration test
+    desc: Run Docker-backed CLI Bats integration tests (BATS_SUITE=<path> for one file)
+    vars:
+      BATS_SUITE: '{{.BATS_SUITE | default "test/bats"}}'
     cmds:
       - |
         if command -v bats >/dev/null 2>&1; then
-          bats test/bats/docker_cli.bats
+          bats {{.BATS_SUITE}}
         else
           if [ ! -x build/bats/bin/bats ]; then
             rm -rf build/bats-core build/bats
             git clone --depth 1 https://github.com/bats-core/bats-core.git build/bats-core
             ./build/bats-core/install.sh "$PWD/build/bats"
           fi
-          build/bats/bin/bats test/bats/docker_cli.bats
+          build/bats/bin/bats {{.BATS_SUITE}}
         fi
 
   test:all:
