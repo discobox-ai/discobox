@@ -29,6 +29,16 @@ the previous generation instead of leaking it).
 Set `STUB_CONFIGURE_KEEP=1` in the configure sandbox to exercise the other half
 of that path: the command returns `usePrevious` instead of a value, and the
 secret from the first run must survive with its ID, binding, and grant intact.
+It only keeps when there is something to keep — claiming `usePrevious` on a
+first run is a commit error, and a real harness makes the same check before
+offering to keep a credential.
+
+`test/bats/harness_configure.bats` automates all of the above; run it with
+`go tool task test:docker:bats BATS_SUITE=test/bats/harness_configure.bats`.
+Note how it sets the toggle: `STUB_CONFIGURE_KEEP` is baked into a derived image
+as a wrapper around this script, not as an image `ENV`. The configure command is
+started by systemd inside the sandbox, and systemd does not pass the container's
+environment through to its services, so an image `ENV` never reaches it.
 
 ## Usage
 
