@@ -35,10 +35,11 @@ offering to keep a credential.
 
 `test/bats/harness_configure.bats` automates all of the above; run it with
 `go tool task test:docker:bats BATS_SUITE=test/bats/harness_configure.bats`.
-Note how it sets the toggle: `STUB_CONFIGURE_KEEP` is baked into a derived image
-as a wrapper around this script, not as an image `ENV`. The configure command is
-started by systemd inside the sandbox, and systemd does not pass the container's
-environment through to its services, so an image `ENV` never reaches it.
+It sets the toggle through `image.json`'s `env` block in a derived image, which
+is how a sandbox process gets its environment: the sandbox-agent applies image
+env and the manifest's env when it starts the command. A Dockerfile `ENV` would
+not work — that belongs to the container, whose PID 1 is systemd, and systemd
+does not pass its own environment to the services it starts.
 
 ## Usage
 

@@ -123,23 +123,33 @@ print(" ".join(row[0] for row in con.execute("SELECT id FROM pools")))
 # because STUB_CONFIGURE_KEEP can only be set at build time: a HarnessConfig
 # carries no env, and `harness update` cannot swap an image.
 #
-# The toggle is wrapped around the real script rather than set as an image ENV.
-# The configure command is started by systemd inside the sandbox, which does not
-# pass the container's environment through to its services, so an image ENV
-# never reaches it. Wrapping also keeps the shipped stub script itself under
-# test rather than forking a second copy of it.
+# The toggle is declared in image.json's env, which is how a sandbox process gets
+# its environment: the sandbox-agent reads image.json and applies its env when it
+# starts the command (config.ApplyImageEnvDefaults). A Dockerfile ENV is not that
+# path — it belongs to the container, whose PID 1 is systemd, and systemd does
+# not pass its own environment to the services it starts.
 #
-# The harness metadata is inherited unchanged; the two register side by side
-# because `harness create` takes an explicit --slug and --name, both of which
-# are unique per project.
+# Only image.json changes; the harness metadata label lives outside the env block
+# and is inherited. The two images register side by side because `harness create`
+# takes an explicit --slug and --name, both unique per project.
 build_keep_stub_image() {
-  docker build -t discobox-harness-stub-keep:local - <<'DOCKERFILE'
+  local ctx="$DISCOBOX_BATS_TMP/keep-stub"
+  mkdir -p "$ctx"
+  python3 - "$REPO_ROOT/test/harness-stub/image.json" "$ctx/image.json" <<'KEEPIMAGE'
+import json
+import sys
+
+source, target = sys.argv[1:]
+with open(source) as fh:
+    image = json.load(fh)
+image.setdefault("env", {})["STUB_CONFIGURE_KEEP"] = "1"
+with open(target, "w") as fh:
+    json.dump(image, fh)
+KEEPIMAGE
+  docker build -t discobox-harness-stub-keep:local -f - "$ctx" <<'DOCKERFILE'
 # syntax=docker/dockerfile:1.7
 FROM discobox-harness-stub:local
-RUN mv /usr/local/libexec/discobox/configure-stub /usr/local/libexec/discobox/configure-stub-real \
- && printf '#!/bin/sh\nSTUB_CONFIGURE_KEEP=1 exec /usr/local/libexec/discobox/configure-stub-real "$@"\n' \
-      > /usr/local/libexec/discobox/configure-stub \
- && chmod 0755 /usr/local/libexec/discobox/configure-stub
+COPY image.json /usr/share/discobox/image.json
 DOCKERFILE
 }
 
@@ -216,12 +226,14 @@ PY
 }
 
 # ensure_pool waits for the pool the server seeds at startup and remembers its
-# id for teardown. This file deliberately does not create its own provider: the
-# configure sandbox is scheduled by the control plane, which picks the seeded
-# default pool, so that is the pool that has to be healthy. Its provider already
-# binds the host Docker socket (so locally built harness images are visible) and
-# reads PORT for its control-plane URL; DISCOBOX_DOCKER_POOL_IMAGE points it at
-# the locally built pool-agent instead of an unpublished ghcr tag.
+# id for teardown. Nothing here picks a pool: a sandbox goes on the pool it names
+# or on the project's default pool, and the configure flow names none, so the
+# project default is where the configure sandbox lands. That makes the seeded
+# default pool the one that has to be healthy, so this file uses it rather than
+# creating a second provider. Its provider already binds the host Docker socket
+# (so locally built harness images are visible) and reads PORT for its
+# control-plane URL; DISCOBOX_DOCKER_POOL_IMAGE points it at the locally built
+# pool-agent instead of an unpublished ghcr tag.
 ensure_pool() {
   if [ -s "$DISCOBOX_BATS_POOL_FILE" ]; then
     cat "$DISCOBOX_BATS_POOL_FILE"
