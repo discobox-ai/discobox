@@ -58,4 +58,6 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0003](0003-promote-pool-to-a-first-class-primitive.md) | Promote pool to a first-class primitive | Accepted |
 | [0004](0004-user-namespaces-are-the-default-isolation.md) | User namespaces are the default isolation | Proposed |
 | [0005](0005-kubernetes-backend-is-a-worker-driver.md) | Kubernetes backend is a worker driver | Proposed |
+| [0006](0006-pool-is-the-runtime-host.md) | Pool is the runtime host; the worker resource is removed | Accepted |
 | [0007](0007-declarative-sandbox-volumes-wired-by-the-sandbox-agent.md) | Declarative sandbox volumes wired by the sandbox-agent | Proposed |
+| [0009](0009-previous-configure-secrets-are-prefixed-sentinels.md) | Previous configure secrets are offered as prefixed sentinels | Proposed |
