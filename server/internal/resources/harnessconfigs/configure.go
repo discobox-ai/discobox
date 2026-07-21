@@ -149,9 +149,11 @@ func (s *Service) ConfigureHarnessConfig(ctx context.Context, projectID, configI
 // from. It must be called before attaching to the primary terminal, which is
 // what launches that command.
 //
-// Only secrets holding a live grant to this harness config are included: the
-// seed hands back what the harness is already authorized to hold, so it cannot
-// become a way to read secrets it has lost access to.
+// The seed names the secrets a previous run created but carries no value for
+// any of them, so it cannot be a way to read a secret. The values are offered
+// separately as PREV_-prefixed sentinels, which resolve only while a live grant
+// covers them — enforcement stays at use, in ResolveSandboxSecret, rather than
+// being repeated here. See ADR 0009.
 func (s *Service) AttachHarnessConfigConfigure(ctx context.Context, projectID, configID string) error {
 	if s.sandboxes == nil {
 		return errors.New("harness configure requires the sandbox runtime")
