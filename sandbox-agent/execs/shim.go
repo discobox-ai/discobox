@@ -424,7 +424,7 @@ func (r *shimRuntime) wait() {
 		r.status.Error = err.Error()
 	}
 	if state := r.cmd.ProcessState; state != nil {
-		code := int64(state.ExitCode())
+		code := exitCodeFromState(state)
 		r.status.ExitCode = &code
 	}
 	status := r.status

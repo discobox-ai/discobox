@@ -4,6 +4,7 @@ package execs
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	osuser "os/user"
 	"strconv"
@@ -131,4 +132,15 @@ func signalProcess(cmd *exec.Cmd, name string) error {
 	default:
 		return nil
 	}
+}
+
+// exitCodeFromState reports the exit status a shell would report. Go's
+// ExitCode returns -1 for a process killed by a signal, which loses which
+// signal it was and reads as a generic failure; the shell convention of
+// 128+signum keeps it, so an interrupted command exits 130 as it does locally.
+func exitCodeFromState(state *os.ProcessState) int64 {
+	if status, ok := state.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+		return int64(128 + status.Signal())
+	}
+	return int64(state.ExitCode())
 }

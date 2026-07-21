@@ -123,6 +123,9 @@ images also write their image digest.
   those pipes race the readers and silently discard a fast command's entire
   output. The shim also closes its copies of the write ends right after `Start`,
   so the readers see EOF at exit.
+- Exit status uses the shell convention for signal deaths: `128+signum`, so an
+  interrupted command reports 130 rather than Go's `ExitCode() == -1`, which
+  loses the signal and reads as a generic failure.
 - Terminal attach supports `?replay=true`, which repaints the current screen
   before live output so a client that connects after a program has been running
   sees its state, not just output produced from the attach onward. The repaint

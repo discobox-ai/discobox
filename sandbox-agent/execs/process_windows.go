@@ -4,6 +4,7 @@ package execs
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"syscall"
 )
@@ -41,4 +42,10 @@ func signalProcess(cmd *exec.Cmd, _ string) error {
 		return nil
 	}
 	return cmd.Process.Kill()
+}
+
+// exitCodeFromState reports the process's exit status. Windows has no signal
+// exit convention to translate, so this is the raw code.
+func exitCodeFromState(state *os.ProcessState) int64 {
+	return int64(state.ExitCode())
 }
