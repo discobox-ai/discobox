@@ -1,1 +1,6 @@
-.claude/worktrees/**
+# Agent worktrees are throwaway checkouts of this same repo living inside the
+# repo root. Changes in them must never trigger hooks against the main tree.
+# Covers any agent that follows the convention (.claude, .codex, .cursor, ...).
+# Scoped to dot-directories on purpose: a plain **/worktrees/** would also
+# swallow a real source package named "worktrees".
+.*/worktrees/**

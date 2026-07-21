@@ -50,6 +50,14 @@ linters:
           disabled: true
   exclusions:
     generated: lax
+    # Agent worktrees are throwaway checkouts of this same repo. Linting them
+    # duplicates every finding, and a worktree deleted between runs leaves the
+    # cache pointing at files that no longer exist, which breaks the
+    # generated-file filter (see .discobox/hooks/90-review-lint.sh).
+    # Matches any agent following the convention (.claude, .codex, .cursor, ...);
+    # scoped to dot-directories so a real "worktrees" package is still linted.
+    paths:
+      - (^|/)\.[^/]+/worktrees/
     presets:
       - comments
       - common-false-positives
@@ -80,6 +88,9 @@ formatters:
   enable:
     - gofmt
     - goimports
+  exclusions:
+    paths:
+      - (^|/)\.[^/]+/worktrees/
 
 issues:
   max-issues-per-linter: 0
