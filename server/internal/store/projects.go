@@ -71,7 +71,7 @@ func (s *Store) ListProjectsForUser(ctx context.Context, userID string) ([]model
 	}
 	var projects []model.Project
 	err = read.
-		Joins("JOIN project_members ON project_members.project_id = projects.id AND project_members.deleted_at IS NULL").
+		Joins("JOIN project_members ON project_members.project_id = projects.id").
 		Where("project_members.user_id = ?", userID).
 		Order("projects.default_project DESC, projects.created_at ASC").
 		Find(&projects).Error
@@ -93,7 +93,7 @@ func (s *Store) GetDefaultProjectForUser(ctx context.Context, userID string) (*m
 	}
 	var project model.Project
 	err = read.
-		Joins("JOIN project_members ON project_members.project_id = projects.id AND project_members.deleted_at IS NULL").
+		Joins("JOIN project_members ON project_members.project_id = projects.id").
 		Preload("SandboxProviderInstances").
 		Where("project_members.user_id = ? AND projects.default_project = ?", userID, true).
 		Order("projects.created_at ASC").

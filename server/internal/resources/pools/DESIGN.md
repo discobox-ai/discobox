@@ -30,7 +30,7 @@ flowchart LR
   envelope changes converge. Delete requires the pool to be empty of
   sandboxes (assignment is immutable, so there is nothing to drain to),
   refuses built-in pools, and submits delete intent; the reconciler removes
-  the runtime, then soft-deletes the row.
+  the runtime, then deletes the row.
 - `agent_service.go` — the pool agent surface: bootstrap-token registration
   (`RegisterPool`), heartbeats (`UpdatePoolStatus`), and sandbox-removal
   reports, each verifying the authenticated **pool principal**.

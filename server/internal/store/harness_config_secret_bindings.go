@@ -21,7 +21,7 @@ func (s *Store) UpsertHarnessConfigSecretBinding(ctx context.Context, binding *m
 		}
 		if err := tx.Clauses(clause.OnConflict{
 			Columns:   []clause.Column{{Name: "harness_config_id"}, {Name: "env_name"}},
-			DoUpdates: clause.AssignmentColumns([]string{"secret_id", "updated_at", "deleted_at"}),
+			DoUpdates: clause.AssignmentColumns([]string{"secret_id", "updated_at"}),
 		}).Create(binding).Error; err != nil {
 			return nil, err
 		}

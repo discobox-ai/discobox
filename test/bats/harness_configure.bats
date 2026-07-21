@@ -170,10 +170,6 @@ print("" if value is None else value)
 # query runs one SQL statement against the server's database and prints the rows
 # as tab-separated values, so assertions can reach state the API does not expose
 # (secret IDs, bindings, grants).
-#
-# Secrets, bindings, and grants are soft-deleted (gorm.DeletedAt), so every
-# statement here has to say "AND deleted_at IS NULL" itself. Without it a
-# reconfigure looks like it leaked the secret it actually replaced.
 query() {
   python3 - "$DISCOBOX_BATS_DB" "$1" <<'PY'
 import sqlite3
@@ -293,17 +289,17 @@ configure_stub() {
 
   # The secret, its binding, and the harnessConfig-scoped grant that makes it
   # usable at run time. A binding alone is not a grant.
-  run query "SELECT COUNT(*) FROM secrets WHERE name = 'stub-token' AND deleted_at IS NULL"
+  run query "SELECT COUNT(*) FROM secrets WHERE name = 'stub-token'"
   [ "$output" = "1" ]
-  run query "SELECT env_name FROM harness_config_secret_bindings WHERE harness_config_id = '$harness_id' AND deleted_at IS NULL"
+  run query "SELECT env_name FROM harness_config_secret_bindings WHERE harness_config_id = '$harness_id'"
   [ "$output" = "STUB_TOKEN" ]
-  run query "SELECT COUNT(*) FROM secret_grants g JOIN secrets s ON s.id = g.secret_id WHERE s.name = 'stub-token' AND g.deleted_at IS NULL AND s.deleted_at IS NULL"
+  run query "SELECT COUNT(*) FROM secret_grants g JOIN secrets s ON s.id = g.secret_id WHERE s.name = 'stub-token'"
   [ "$output" = "1" ]
 }
 
 @test "reconfigure seeds the previous config without values and offers PREV_" {
   local before_id after_id
-  before_id="$(query "SELECT id FROM secrets WHERE name = 'stub-token' AND deleted_at IS NULL")"
+  before_id="$(query "SELECT id FROM secrets WHERE name = 'stub-token'")"
   [ -n "$before_id" ]
 
   run configure_stub stub
@@ -322,9 +318,9 @@ configure_stub() {
 
   # This run returned a fresh value, so it replaces the previous generation
   # rather than leaking an orphan alongside it.
-  run query "SELECT COUNT(*) FROM secrets WHERE name = 'stub-token' AND deleted_at IS NULL"
+  run query "SELECT COUNT(*) FROM secrets WHERE name = 'stub-token'"
   [ "$output" = "1" ]
-  after_id="$(query "SELECT id FROM secrets WHERE name = 'stub-token' AND deleted_at IS NULL")"
+  after_id="$(query "SELECT id FROM secrets WHERE name = 'stub-token'")"
   [ "$after_id" != "$before_id" ]
 }
 
@@ -341,9 +337,9 @@ configure_stub() {
   run configure_stub stub-keep
   [ "$status" -eq 0 ]
   [[ "$output" == *"stub configure: PREV_STUB_TOKEN is unset"* ]]
-  before_id="$(query "SELECT s.id FROM secrets s JOIN harness_config_secret_bindings b ON b.secret_id = s.id WHERE b.harness_config_id = '$harness_id' AND b.deleted_at IS NULL AND s.deleted_at IS NULL")"
+  before_id="$(query "SELECT s.id FROM secrets s JOIN harness_config_secret_bindings b ON b.secret_id = s.id WHERE b.harness_config_id = '$harness_id'")"
   [ -n "$before_id" ]
-  before_grant="$(query "SELECT id FROM secret_grants WHERE secret_id = '$before_id' AND deleted_at IS NULL")"
+  before_grant="$(query "SELECT id FROM secret_grants WHERE secret_id = '$before_id'")"
   [ -n "$before_grant" ]
 
   # Second run returns usePrevious and no value at all.
@@ -357,11 +353,11 @@ configure_stub() {
 
   # The same secret row survives, with its binding and grant intact — a kept
   # secret is carried over, not recreated, and not swept as a stale generation.
-  after_id="$(query "SELECT s.id FROM secrets s JOIN harness_config_secret_bindings b ON b.secret_id = s.id WHERE b.harness_config_id = '$harness_id' AND b.deleted_at IS NULL AND s.deleted_at IS NULL")"
+  after_id="$(query "SELECT s.id FROM secrets s JOIN harness_config_secret_bindings b ON b.secret_id = s.id WHERE b.harness_config_id = '$harness_id'")"
   [ "$after_id" = "$before_id" ]
-  after_grant="$(query "SELECT id FROM secret_grants WHERE secret_id = '$before_id' AND deleted_at IS NULL")"
+  after_grant="$(query "SELECT id FROM secret_grants WHERE secret_id = '$before_id'")"
   [ "$after_grant" = "$before_grant" ]
-  run query "SELECT COUNT(*) FROM secrets WHERE id = '$before_id' AND deleted_at IS NULL"
+  run query "SELECT COUNT(*) FROM secrets WHERE id = '$before_id'"
   [ "$output" = "1" ]
 }
 
@@ -374,10 +370,10 @@ configure_stub() {
   [ "$status" -eq 0 ]
   [ "$(printf '%s' "$output" | json_get configured)" = "False" ]
 
-  run query "SELECT COUNT(*) FROM harness_config_secret_bindings WHERE harness_config_id = '$harness_id' AND deleted_at IS NULL"
+  run query "SELECT COUNT(*) FROM harness_config_secret_bindings WHERE harness_config_id = '$harness_id'"
   [ "$output" = "0" ]
   # The stub-keep harness still holds its own, so this counts only the one the
   # deconfigured harness created.
-  run query "SELECT COUNT(*) FROM secrets s JOIN harness_config_secret_bindings b ON b.secret_id = s.id WHERE b.harness_config_id = '$harness_id' AND b.deleted_at IS NULL AND s.deleted_at IS NULL"
+  run query "SELECT COUNT(*) FROM secrets s JOIN harness_config_secret_bindings b ON b.secret_id = s.id WHERE b.harness_config_id = '$harness_id'"
   [ "$output" = "0" ]
 }
