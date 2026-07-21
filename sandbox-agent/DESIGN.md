@@ -117,6 +117,12 @@ images also write their image digest.
   nothing should. Only `frame.Stdout` is screen state.
 - Frame types take the file descriptor numbers they carry — `Input` 0, `Stdout`
   1, `Stderr` 2 — with control frames (`Resize` 3 … `Ready` 8) after them.
+- A pipe exec's output pipes are created by the shim (`os.Pipe`), never by
+  `cmd.StdoutPipe`/`StderrPipe`. `cmd.Wait` closes the pipes it made as soon as
+  the process exits, and the shim waits in a goroutine alongside the readers, so
+  those pipes race the readers and silently discard a fast command's entire
+  output. The shim also closes its copies of the write ends right after `Start`,
+  so the readers see EOF at exit.
 - Terminal attach supports `?replay=true`, which repaints the current screen
   before live output so a client that connects after a program has been running
   sees its state, not just output produced from the attach onward. The repaint

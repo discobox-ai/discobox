@@ -154,23 +154,49 @@ func (r *shimRuntime) startPipes(cmd *exec.Cmd) error {
 	if err != nil {
 		return err
 	}
-	stdout, err := cmd.StdoutPipe()
+	// Own the output pipes instead of using cmd.StdoutPipe/StderrPipe. Wait closes
+	// those the moment the process exits — the os/exec docs call it incorrect to
+	// Wait while reads are outstanding — and r.wait runs concurrently with the
+	// readers below, so a fast command's output was raced away and lost entirely.
+	// Pipes we create are never touched by Wait, so the readers always drain to
+	// EOF.
+	stdout, stdoutIn, err := os.Pipe()
 	if err != nil {
 		return err
 	}
-	stderr, err := cmd.StderrPipe()
+	stderr, stderrIn, err := os.Pipe()
 	if err != nil {
+		closeAll(stdout, stdoutIn)
 		return err
 	}
+	cmd.Stdout = stdoutIn
+	cmd.Stderr = stderrIn
 	if err := cmd.Start(); err != nil {
+		closeAll(stdout, stdoutIn, stderr, stderrIn)
 		return err
 	}
+	// The child holds its own descriptors now; drop the shim's copies of the write
+	// ends so the readers see EOF when the process exits.
+	closeAll(stdoutIn, stderrIn)
 	r.stdin = stdin
 	r.status.PID = int64(cmd.Process.Pid)
 	r.outputWG.Add(2)
-	go r.copyOutput(LogStreamStdout, stdout)
-	go r.copyOutput(LogStreamStderr, stderr)
+	go r.copyPipe(LogStreamStdout, stdout)
+	go r.copyPipe(LogStreamStderr, stderr)
 	return nil
+}
+
+// copyPipe drains one of the shim-owned output pipes and closes it once the
+// process is done writing.
+func (r *shimRuntime) copyPipe(stream LogStream, pipe *os.File) {
+	defer pipe.Close()
+	r.copyOutput(stream, pipe)
+}
+
+func closeAll(files ...*os.File) {
+	for _, file := range files {
+		_ = file.Close()
+	}
 }
 
 func (r *shimRuntime) handler() http.Handler {

@@ -433,3 +433,51 @@ func TestRunShimTTYReportsEverythingAsStdout(t *testing.T) {
 	}
 }
 
+// A client that attaches and then starts the process must receive everything it
+// wrote, including output produced in the instant between the 101 response and
+// the shim joining the attacher to the broadcast set. A fast command's entire
+// output lives in that window.
+func TestRunShimDoesNotLoseOutputRacingAttach(t *testing.T) {
+	for i := range 25 {
+		dir := t.TempDir()
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		socketPath := filepath.Join(dir, "shim.sock")
+		errCh := make(chan error, 1)
+		go func() {
+			errCh <- RunShim(ctx, ShimConfig{
+				ExecID:      "exec_race",
+				Command:     []string{"printf", "hi"},
+				Workdir:     dir,
+				SocketPath:  socketPath,
+				RuntimePath: filepath.Join(dir, "runtime.json"),
+				LogDir:      filepath.Join(dir, "logs"),
+			})
+		}()
+
+		reader := attachShimForTest(ctx, t, socketPath)
+		if _, err := shimproxy.StartJSON[Exec](ctx, socketPath); err != nil {
+			t.Fatalf("start shim: %v", err)
+		}
+		var stdout []byte
+		for done := false; !done; {
+			next, err := frame.Read(reader)
+			if err != nil {
+				t.Fatalf("read frame: %v", err)
+			}
+			switch next.Type {
+			case frame.Stdout:
+				stdout = append(stdout, next.Payload...)
+			case frame.Exit:
+				done = true
+			}
+		}
+		if string(stdout) != "hi" {
+			t.Fatalf("run %d: stdout = %q, want hi (output lost in the attach window)", i, string(stdout))
+		}
+		cancel()
+		if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+			t.Fatalf("run shim: %v", err)
+		}
+	}
+}
+
