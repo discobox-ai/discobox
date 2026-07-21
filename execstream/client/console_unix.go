@@ -1,6 +1,6 @@
 //go:build !windows
 
-package cli
+package client
 
 import (
 	"os"
@@ -9,7 +9,7 @@ import (
 )
 
 // proxiedSignals are the signals handled here and delivered to the remote
-// process rather than acted on locally. They matter only when this terminal is
+// process rather than acted on locally. They matter only when the terminal is
 // not in raw mode: a raw terminal passes Ctrl-C and Ctrl-Z through as the bytes
 // 0x03 and 0x1a, and the remote line discipline turns those into signals for
 // the remote foreground job — which is why an attached terminal never sees them
@@ -18,7 +18,17 @@ func proxiedSignals() []os.Signal {
 	return []os.Signal{os.Interrupt, syscall.SIGTERM, syscall.SIGHUP, syscall.SIGQUIT, syscall.SIGTSTP}
 }
 
-func signalName(sig os.Signal) (string, bool) {
+func (c *OSConsole) NotifySignals(ch chan<- os.Signal) { signal.Notify(ch, proxiedSignals()...) }
+
+func (c *OSConsole) StopSignals(ch chan<- os.Signal) { signal.Stop(ch) }
+
+// IsSuspendSignal reports whether sig means "stop this job" (Ctrl-Z). Suspend is
+// handled rather than merely forwarded: the remote job stops *and* this process
+// stops, so the user gets their shell back and fg resumes both, exactly as a
+// local command behaves.
+func (c *OSConsole) IsSuspendSignal(sig os.Signal) bool { return sig == syscall.SIGTSTP }
+
+func (c *OSConsole) SignalName(sig os.Signal) (string, bool) {
 	switch sig {
 	case os.Interrupt:
 		return "INT", true
@@ -37,15 +47,7 @@ func signalName(sig os.Signal) (string, bool) {
 	}
 }
 
-// isSuspendSignal reports whether sig means "stop this job" (Ctrl-Z). Suspend is
-// handled rather than merely forwarded: the remote job stops *and* this process
-// stops, so the user gets their shell back and fg resumes both, exactly as a
-// local command behaves.
-func isSuspendSignal(sig os.Signal) bool {
-	return sig == syscall.SIGTSTP
-}
-
-// suspendSelf stops this process and returns once SIGCONT resumes it.
+// Suspend stops this process and returns once SIGCONT resumes it.
 //
 // It stops with SIGSTOP rather than by restoring SIGTSTP's default disposition
 // and re-raising it. That dance does not work: a Go process that has notified
@@ -59,7 +61,7 @@ func isSuspendSignal(sig os.Signal) bool {
 // shared — a script that did not set up job control — stopping it would take
 // the script down with us, and where it is not shared (an interactive shell's
 // foreground job) the two are equivalent.
-func suspendSelf() {
+func (c *OSConsole) Suspend() {
 	// Arm the resume watch before stopping; SIGCONT is what fg delivers.
 	cont := make(chan os.Signal, 1)
 	signal.Notify(cont, syscall.SIGCONT)

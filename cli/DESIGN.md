@@ -9,7 +9,7 @@ transport helpers where OpenAPI does not model the stream.
 | Package/path | Ownership |
 | --- | --- |
 | `cmd/disco` | Binary entrypoint. |
-| `internal/cli` | Cobra command tree, output formatting, local server auto-start, TUI API adapter, and stream attach clients. |
+| `internal/cli` | Cobra command tree, output formatting, local server auto-start, TUI API adapter, and the attach transports and policy layered on `execstream/client`. |
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. |
 | `internal/origin` | Resolves the client host and project directory a sandbox is created from. Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/tui` | Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. |
@@ -58,17 +58,24 @@ back to `selectSandbox` (`internal/cli/picker.go`), never to a guess:
 
 ## Attach Stream Pattern
 
-Terminal and exec attach use the same framed stream protocol and should share
-the transport/session mechanics in `internal/cli/attach_session.go`.
+Terminal and exec attach use the same framed stream protocol and the same
+session, `execstream/client`.
 
-- The wire format is not defined here. Frame types and the codec live in the
-  root module's `execstream/frame`, shared with the sandbox-agent; this module
-  imports them. Never re-declare a frame constant locally — the compiler cannot
-  catch a mirror that has drifted, and a corrupted stream is the first symptom.
+- The session is not defined here either. `execstream/client` owns the attach
+  session — output demux, resize tracking, signal forwarding, suspend — and
+  `execstream/frame` owns the wire format. This module supplies transports
+  (`directAttachFrames`, the reconnecting frames) and policy, and never
+  re-declares a frame constant: the compiler cannot catch a mirror that has
+  drifted, and a corrupted stream is the first symptom.
   See [ADR 0008](../docs/adr/0008-attach-stream-packages.md).
+- Everything the session does to this machine goes through `client.Console`:
+  raw mode, terminal size, signal delivery, and stopping and resuming. The real
+  one is `client.OSConsole`; it is the seam that lets suspend ordering and the
+  signal set be tested without a PTY, including on platforms this repository
+  cannot run.
 - Keep frame read/write, output frames, resize frames, signal forwarding,
-  raw-terminal setup, close-input frames, and attach teardown in the shared
-  framed attach session.
+  raw-terminal setup, close-input frames, and attach teardown in that session,
+  never in a caller.
 - Keep resource-specific behavior in the resource file: terminal detach
   filtering belongs with terminal commands, and exec interactive/non-interactive
   stdin behavior belongs with exec commands.
@@ -105,15 +112,15 @@ whether the attach has a PTY — not by which command is running:
   cooked, so those keys raise real signals here. `proxySignals` catches them and
   sends a Signal frame instead of acting on them.
 
-Ctrl-Z is handled, not merely forwarded: `suspend` stops the remote job, hands
+Ctrl-Z is handled, not merely forwarded: `Session.suspend` stops the remote job, hands
 the terminal back in its pre-attach mode, stops this process, and on resume
 takes the terminal back, sends CONT, and re-sends the window size (which may
 have changed while stopped). Forwarding alone would leave the user attached to a
 stopped job with no way to resume it; stopping alone would leave the remote
 running unattended.
 
-`suspendSelf` stops with **SIGSTOP**, not by resetting SIGTSTP's disposition and
-re-raising it. A Go process that has notified SIGTSTP keeps a handler installed,
+`OSConsole.Suspend` stops with **SIGSTOP**, not by resetting SIGTSTP's
+disposition and re-raising it. A Go process that has notified SIGTSTP keeps a handler installed,
 and the re-raised signal comes back to the handler instead of stopping — once
 per suspend under job control, and in a livelock without it. SIGSTOP cannot be
 caught and is never discarded for an orphaned process group. Only this process

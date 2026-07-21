@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"os/exec"
 	"testing"
+
+	"github.com/obot-platform/discobox/execstream/client"
 )
 
 func TestAttachExitFrameReturnsExitCode(t *testing.T) {
-	err := attachExitErrorFromPayload("sandbox exec", []byte(`{"status":"failed","exitCode":7}`))
+	err := client.ExitErrorFromPayload("sandbox exec", []byte(`{"status":"failed","exitCode":7}`))
 	if err == nil {
 		t.Fatal("exit frame error = nil")
 	}
@@ -21,7 +23,7 @@ func TestAttachExitFrameReturnsExitCode(t *testing.T) {
 }
 
 func TestAttachExitFrameZeroExitIsSuccess(t *testing.T) {
-	if err := attachExitErrorFromPayload("harness terminal", []byte(`{"status":"exited","exitCode":0}`)); err != nil {
+	if err := client.ExitErrorFromPayload("harness terminal", []byte(`{"status":"exited","exitCode":0}`)); err != nil {
 		t.Fatalf("exit frame error = %v, want nil", err)
 	}
 }

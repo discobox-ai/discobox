@@ -10,6 +10,9 @@ import (
 	"sync"
 	"time"
 
+	"github.com/obot-platform/discobox/execstream"
+	"github.com/obot-platform/discobox/execstream/client"
+
 	"github.com/obot-platform/discobox/execstream/frame"
 
 	"github.com/spf13/cobra"
@@ -285,7 +288,7 @@ func (d *apiDataSource) AttachTerminal(ctx context.Context, sandboxID string, st
 // plus Resize: Read yields terminal output payloads, Write sends input frames,
 // and Resize sends a resize frame.
 type framedTerminal struct {
-	frames  attachFrameTransport
+	frames  execstream.Conn
 	events  <-chan tui.TerminalEvent
 	readBuf []byte // leftover output bytes from a partially consumed frame
 
@@ -323,7 +326,7 @@ func (t *framedTerminal) Read(p []byte) (int, error) {
 			}
 			return n, nil
 		case frame.Exit:
-			if err := attachExitErrorFromPayload("terminal", f.Payload); err != nil {
+			if err := client.ExitErrorFromPayload("terminal", f.Payload); err != nil {
 				return 0, err
 			}
 			return 0, io.EOF
