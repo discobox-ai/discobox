@@ -67,6 +67,15 @@ func (UnimplementedHandler) PoolStopSandbox(ctx context.Context, req *PoolSandbo
 	return r, ht.ErrNotImplemented
 }
 
+// PoolSync implements pool-sync operation.
+//
+// Reconcile the set of pools this host should have, reaping any others.
+//
+// POST /api/project/{projectId}/pool/{poolId}/pool-sync
+func (UnimplementedHandler) PoolSync(ctx context.Context, req *PoolSyncRequest, params PoolSyncParams) error {
+	return ht.ErrNotImplemented
+}
+
 // PoolUpdateSandbox implements pool-update-sandbox operation.
 //
 // Update pool sandbox.

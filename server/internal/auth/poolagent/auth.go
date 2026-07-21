@@ -31,6 +31,7 @@ const (
 	ScopeTerminalWrite   = "terminal:write"
 	ScopeExecRead        = "exec:read"
 	ScopeExecWrite       = "exec:write"
+	ScopePoolSync        = "pool:sync"
 
 	TokenTTL  = 15 * time.Minute
 	ClockSkew = 5 * time.Minute

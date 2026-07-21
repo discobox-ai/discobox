@@ -24,6 +24,9 @@ const (
 	ScopeTerminalWrite = "terminal:write"
 	ScopeExecRead      = "exec:read"
 	ScopeExecWrite     = "exec:write"
+	// ScopePoolSync authorizes host-wide pool reconciliation (reaping pools not
+	// in the known set). Only the control-plane provider driver carries it.
+	ScopePoolSync = "pool:sync"
 )
 
 type signedTokenClaimsContextKey struct{}
@@ -193,6 +196,8 @@ func requiredPoolOperationScope(operation workerapi.OperationName) string {
 		workerapi.PoolStartSandboxOperation,
 		workerapi.PoolStopSandboxOperation:
 		return ScopeSandboxWrite
+	case workerapi.PoolSyncOperation:
+		return ScopePoolSync
 	default:
 		return ""
 	}

@@ -73,12 +73,25 @@ const (
 	UnitEnvironmentFile = "/etc/discobox/proxy.env"
 )
 
+// PoolsRoot is the parent of every pool's proxy subtree on the host. It is
+// enumerated by the pool-sync reaper to find pools whose material lingers with
+// no live pool.
+func PoolsRoot() string {
+	return Root + "/pools"
+}
+
+// PoolProxyRoot is one pool's entire proxy subtree (material for all its
+// sandboxes). Reaping it removes that pool's proxy footprint in one shot.
+func PoolProxyRoot(poolID string) string {
+	return PoolsRoot() + "/" + poolID
+}
+
 // PoolSandboxMaterialRoot is the per-pool root under which each sandbox's
 // bind-mounted proxy material is staged. It is pool-scoped so that, on a host
 // daemon shared by multiple pools, a pool's orphan scan only ever sees — and
 // reaps — its own sandboxes' material, never another pool's live material.
 func PoolSandboxMaterialRoot(poolID string) string {
-	return Root + "/pools/" + poolID + "/sandboxes"
+	return PoolProxyRoot(poolID) + "/sandboxes"
 }
 
 // SandboxNetworkName is the per-pool internal Docker network that carries

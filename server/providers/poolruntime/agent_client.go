@@ -60,6 +60,22 @@ func (p *poolAgentClient) Create(ctx context.Context, ref sandbox.SandboxRef, st
 	return runtimeSandbox, state, nil
 }
 
+// SyncKnownPools tells the pool-agent the authoritative set of pools this host
+// should have, so it can reap the agent-created footprint of any other pool it
+// observes on a shared daemon. It is a no-op on backends where each pool has its
+// own isolated daemon (the agent simply sees no other pools).
+func (p *poolAgentClient) SyncKnownPools(ctx context.Context, projectID string, knownPoolIDs []string) error {
+	client, release, err := p.poolClient(sandbox.SandboxRef{ProjectID: projectID}, poolagentauth.ScopePoolSync)
+	if err != nil {
+		return err
+	}
+	defer release()
+	if err := client.PoolSync(ctx, &poolapimodel.PoolSyncRequest{KnownPoolIds: knownPoolIDs}, poolclient.PoolSyncParams{ProjectId: projectID, PoolId: p.poolID}); err != nil {
+		return mapPoolClientError(err)
+	}
+	return nil
+}
+
 func (p *poolAgentClient) Update(ctx context.Context, ref sandbox.SandboxRef, state []byte, opts sandbox.UpdateOptions) (*sandbox.Sandbox, []byte, error) {
 	client, release, err := p.poolClient(ref, poolagentauth.ScopeSandboxWrite)
 	if err != nil {

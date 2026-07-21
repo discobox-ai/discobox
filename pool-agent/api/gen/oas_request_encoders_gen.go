@@ -52,6 +52,20 @@ func encodePoolStopSandboxRequest(
 	return nil
 }
 
+func encodePoolSyncRequest(
+	req *PoolSyncRequest,
+	r *http.Request,
+) error {
+	const contentType = "application/json"
+	e := new(jx.Encoder)
+	{
+		req.Encode(e)
+	}
+	encoded := e.Bytes()
+	ht.SetBody(r, bytes.NewReader(encoded), contentType)
+	return nil
+}
+
 func encodePoolUpdateSandboxRequest(
 	req *PoolSandboxUpdateRequest,
 	r *http.Request,

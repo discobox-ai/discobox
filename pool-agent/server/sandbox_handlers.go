@@ -99,6 +99,16 @@ func (s *sandboxService) PoolDeleteSandbox(ctx context.Context, params workerapi
 	return nil
 }
 
+func (s *sandboxService) PoolSync(ctx context.Context, req *workerapimodel.PoolSyncRequest, params workerapi.PoolSyncParams) error {
+	if err := s.authorize(params.ProjectId, params.PoolId); err != nil {
+		return err
+	}
+	if err := s.runtime.SyncKnownPools(ctx, req.KnownPoolIds); err != nil {
+		return mapRuntimeError(err)
+	}
+	return nil
+}
+
 func (s *sandboxService) PoolStartSandbox(ctx context.Context, req *workerapimodel.PoolSandboxOperationRequest, params workerapi.PoolStartSandboxParams) (*workerapimodel.PoolSandboxInstance, error) {
 	if err := s.authorize(params.ProjectId, params.PoolId); err != nil {
 		return nil, err

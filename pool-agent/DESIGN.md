@@ -50,6 +50,20 @@ per-sandbox proxy material supplies the periodic level-triggered backstop for
 removals that happened while the pool host was down; the material is reclaimed
 only after the report succeeds.
 
+The runtime reaps its own dead sandboxes' persistent volume trees
+(`pools/{pool_id}/sandboxes/{sandbox_id}`) on the same backstop, keeping each for
+a 24h retention window after it is first seen dead (a tombstone starts the
+clock). All per-sandbox state is pool-scoped by path — sandbox volume trees and
+proxy material both live under `pools/{pool_id}/` — so pool agents sharing a
+host daemon never reap each other's data.
+
+`pool-sync` (scope `pool:sync`) is how a shared host daemon reclaims *whole*
+orphaned pools, which no single pool agent can do alone (it dies with its pool).
+The control plane POSTs the authoritative set of known pool IDs; the agent reaps
+the agent-created footprint — sandbox containers and `pools/{X}` /
+`proxy/pools/{X}` subtrees — of any other pool it observes. It is a no-op where
+each pool has its own isolated daemon.
+
 ## Worker-Local HTTP Server
 
 After registration, the pool agent runs an HTTP server for provider runtime

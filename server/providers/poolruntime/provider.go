@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -114,7 +115,31 @@ func (p *Provider) ReconcilePool(ctx context.Context, manager sandbox.PoolManage
 	if err := p.runtimeProvider.EnsurePool(ctx, project, provider, pool, mintPoolBootstrap(manager, project, pool)); err != nil {
 		return err
 	}
+	// Best-effort: hand the now-ready pool-agent the authoritative pool set so it
+	// reaps any orphaned pools sharing its host daemon. A no-op on isolated
+	// per-pool daemons, and never fatal to the reconcile.
+	if err := p.syncKnownPools(ctx, manager, provider, pool); err != nil {
+		slog.Warn("pool-sync failed", "pool", pool.ID, "error", err)
+	}
 	return armRegistrationTimeout(ctx, manager, pool)
+}
+
+// syncKnownPools sends the pool-agent the full set of pools this provider
+// instance owns, so it can reclaim any others it observes on a shared host.
+func (p *Provider) syncKnownPools(ctx context.Context, manager sandbox.PoolManager, provider *model.SandboxProviderInstance, pool *model.Pool) error {
+	pools, err := manager.ListPoolsForProviderInstance(ctx, provider.ProjectID, provider.ID)
+	if err != nil {
+		return err
+	}
+	known := make([]string, 0, len(pools))
+	for i := range pools {
+		known = append(known, pools[i].ID)
+	}
+	client, err := p.agentClientForPool(ctx, pool)
+	if err != nil {
+		return err
+	}
+	return client.SyncKnownPools(ctx, provider.ProjectID, known)
 }
 
 func (p *Provider) RepairPool(ctx context.Context, manager sandbox.PoolManager, project *model.Project, provider *model.SandboxProviderInstance, pool *model.Pool, reason string) error {

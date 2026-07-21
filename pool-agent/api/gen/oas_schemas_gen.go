@@ -2149,6 +2149,39 @@ func (s *PoolSandboxUpdateRequest) SetSentinels(val OptNilStringArray) {
 	s.Sentinels = val
 }
 
+// PoolSyncNoContent is response for PoolSync operation.
+type PoolSyncNoContent struct{}
+
+// The set of pools the control plane knows this host should have. The pool agent reaps the
+// agent-created footprint of any other pool it observes.
+// Ref: #/components/schemas/PoolSyncRequest
+type PoolSyncRequest struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// IDs of the pools that should exist on this host.
+	KnownPoolIds []string `json:"knownPoolIds"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *PoolSyncRequest) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetKnownPoolIds returns the value of KnownPoolIds.
+func (s *PoolSyncRequest) GetKnownPoolIds() []string {
+	return s.KnownPoolIds
+}
+
+// SetSchema sets the value of Schema.
+func (s *PoolSyncRequest) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetKnownPoolIds sets the value of KnownPoolIds.
+func (s *PoolSyncRequest) SetKnownPoolIds(val []string) {
+	s.KnownPoolIds = val
+}
+
 // Ref: #/components/schemas/ResolvedHarnessConfig
 type ResolvedHarnessConfig struct {
 	Files OptNilHarnessConfigFileArray `json:"files"`

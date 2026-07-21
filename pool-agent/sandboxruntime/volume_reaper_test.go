@@ -67,6 +67,55 @@ func TestReapDeadSandboxVolumesKeepsLiveAndClearsTombstone(t *testing.T) {
 	}
 }
 
+func TestReapUnknownPoolsRetainsThenReapsData(t *testing.T) {
+	dataRoot := t.TempDir()
+	proxyRoot := t.TempDir()
+	// A known pool and an orphan pool, each with data + proxy subtrees.
+	for _, root := range []string{dataRoot, proxyRoot} {
+		for _, pool := range []string{"pool_known", "pool_orphan"} {
+			if err := os.MkdirAll(filepath.Join(root, pool, "sandboxes"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	known := map[string]struct{}{"pool_known": {}}
+	retention := 24 * time.Hour
+	now := time.Now()
+
+	// First pass: orphan is tombstoned, nothing deleted.
+	reapUnknownPools(dataRoot, proxyRoot, known, retention, now, quietLogger())
+	for _, pool := range []string{"pool_known", "pool_orphan"} {
+		if _, err := os.Stat(filepath.Join(dataRoot, pool)); err != nil {
+			t.Fatalf("%s data removed too early: %v", pool, err)
+		}
+	}
+
+	// Past retention: only the orphan's data AND proxy subtrees are reaped.
+	reapUnknownPools(dataRoot, proxyRoot, known, retention, now.Add(retention+time.Minute), quietLogger())
+	if _, err := os.Stat(filepath.Join(dataRoot, "pool_orphan")); !os.IsNotExist(err) {
+		t.Fatalf("orphan pool data not reaped: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(proxyRoot, "pool_orphan")); !os.IsNotExist(err) {
+		t.Fatalf("orphan pool proxy not reaped: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dataRoot, "pool_known")); err != nil {
+		t.Fatalf("known pool must survive: %v", err)
+	}
+}
+
+func TestReapUnknownPoolsReapsProxyOnlyLeftoverImmediately(t *testing.T) {
+	dataRoot := t.TempDir()
+	proxyRoot := t.TempDir()
+	// Proxy material lingering with no data subtree (regenerable) is reaped now.
+	if err := os.MkdirAll(filepath.Join(proxyRoot, "pool_gone", "sandboxes"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reapUnknownPools(dataRoot, proxyRoot, map[string]struct{}{}, 24*time.Hour, time.Now(), quietLogger())
+	if _, err := os.Stat(filepath.Join(proxyRoot, "pool_gone")); !os.IsNotExist(err) {
+		t.Fatalf("proxy-only leftover not reaped immediately: %v", err)
+	}
+}
+
 // The reaper only ever scans the root it is given (this pool's own
 // sandboxes dir), so a sibling pool's tree is untouched.
 func TestReapDeadSandboxVolumesIsScopedToItsRoot(t *testing.T) {

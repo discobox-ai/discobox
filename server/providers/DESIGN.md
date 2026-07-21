@@ -100,8 +100,16 @@ watcher over the shared daemon: it lists managed pool containers, compares
 them with pool rows, and uses the engine's config revision
 (`Engine.ShouldReconcileWorkerContainer`) for drift. For pool rows that still
 exist it marks the pool dirty; the only direct side effect allowed is deleting
-an orphan managed runtime with no pool row. VM-per-pool backends get drift
-detection through `InspectVM` during normal reconciliation.
+an orphan managed runtime (the pool container) with no pool row. VM-per-pool
+backends get drift detection through `InspectVM` during normal reconciliation.
+
+The server-created runtime (pool container, network, named volume) is the
+watcher's / `RemovePool`'s job; the *agent-created* footprint (sandbox
+containers and host data/proxy subtrees) is reaped by the pool agent itself.
+On each successful `ReconcilePool`, the provider hands the now-ready agent the
+authoritative pool set via the `pool-sync` API, so a shared host daemon reclaims
+whole orphaned pools without the control plane re-deriving the agent's teardown
+logic. This is a no-op on isolated per-pool daemons.
 
 The watcher's initial drift scan and its event loop both run in the
 background: provider initialization starts the watcher and returns

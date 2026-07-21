@@ -20,6 +20,7 @@ type PoolSandboxPort = poolagentapi.PoolSandboxPort
 type PoolSandboxResources = poolagentapi.PoolSandboxResources
 type PoolSandboxRuntime = poolagentapi.PoolSandboxRuntime
 type PoolSandboxUpdateRequest = poolagentapi.PoolSandboxUpdateRequest
+type PoolSyncRequest = poolagentapi.PoolSyncRequest
 type ResolvedHarnessConfig = poolagentapi.ResolvedHarnessConfig
 type SandboxConfig = poolagentapi.SandboxConfig
 type SandboxUpdateConfig = poolagentapi.SandboxUpdateConfig

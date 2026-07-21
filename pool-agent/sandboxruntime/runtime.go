@@ -102,6 +102,12 @@ type Runtime interface {
 	CreateSandbox(ctx context.Context, req *workerapimodel.PoolSandboxCreateRequest) (*Sandbox, error)
 	UpdateSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxUpdateRequest) (*Sandbox, error)
 	DeleteSandbox(ctx context.Context, sandboxID string) error
+	// SyncKnownPools reaps the agent-created footprint (sandbox containers and
+	// host data/proxy subtrees) of any pool on this shared host daemon whose ID
+	// is not in knownPoolIDs. It is how a shared-daemon (local docker) setup
+	// reclaims whole orphaned pools; the caller is the control plane, which owns
+	// the authoritative pool set.
+	SyncKnownPools(ctx context.Context, knownPoolIDs []string) error
 	StartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) (*Sandbox, error)
 	StopSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) (*Sandbox, error)
 	GitRepositoryPath(ctx context.Context, sandboxID, repositoryID string) (string, error)
@@ -765,6 +771,102 @@ func (r *DockerSandboxRuntime) reconcileSandboxVolumes(ctx context.Context, logg
 	reapDeadSandboxVolumes(r.workerHostPath(r.sandboxesRoot()), liveSet, retention, time.Now(), logger)
 }
 
+// SyncKnownPools reaps whole orphaned pools on this shared host daemon: any pool
+// whose ID is not in knownPoolIDs (and is not this agent's own pool) has its
+// sandbox containers removed and its data/proxy subtrees reclaimed. Sandbox
+// containers are ephemeral and removed immediately; the persistent data subtree
+// is kept for the retention window (via a tombstone) like the sandbox reaper.
+func (r *DockerSandboxRuntime) SyncKnownPools(ctx context.Context, knownPoolIDs []string) error {
+	logger := slog.Default()
+	known := make(map[string]struct{}, len(knownPoolIDs)+1)
+	for _, id := range knownPoolIDs {
+		if id = strings.TrimSpace(id); id != "" {
+			known[id] = struct{}{}
+		}
+	}
+	// Never reap this agent's own pool, even if the caller omitted it.
+	known[r.poolID] = struct{}{}
+
+	containers, err := r.client.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: r.projectFilters()})
+	if err != nil {
+		return err
+	}
+	for _, ctr := range containers.Items {
+		poolID := strings.TrimSpace(ctr.Labels[sandboxLabelPool])
+		if poolID == "" {
+			continue
+		}
+		if _, ok := known[poolID]; ok {
+			continue
+		}
+		if _, err := r.client.ContainerRemove(ctx, ctr.ID, client.ContainerRemoveOptions{Force: true, RemoveVolumes: true}); err != nil && !cerrdefs.IsNotFound(err) {
+			logger.Warn("remove orphan pool sandbox container", "poolID", poolID, "container", ctr.ID, "error", err)
+		}
+	}
+
+	reapUnknownPools(
+		r.workerHostPath(r.poolsRoot()),
+		r.workerHostPath(proxyagent.PoolsRoot()),
+		known, sandboxVolumeRetention, time.Now(), logger,
+	)
+	return nil
+}
+
+// reapUnknownPools reclaims the data and proxy subtrees of pools not in the
+// known set. Data subtrees hold persistent sandbox data, so they get the same
+// tombstone-based retention as the sandbox reaper; proxy material is
+// regenerable, so a proxy subtree with no surviving data is reaped at once.
+func reapUnknownPools(dataPoolsRoot, proxyPoolsRoot string, known map[string]struct{}, retention time.Duration, now time.Time, logger *slog.Logger) {
+	for _, poolID := range unknownPoolDirs(dataPoolsRoot, known, logger) {
+		dir := filepath.Join(dataPoolsRoot, poolID)
+		tombstone := filepath.Join(dir, sandboxVolumeTombstone)
+		diedAt, ok := readSandboxTombstone(tombstone)
+		if !ok {
+			writeSandboxTombstone(tombstone, now, logger)
+			continue
+		}
+		if now.Sub(diedAt) < retention {
+			continue
+		}
+		if err := os.RemoveAll(dir); err != nil {
+			logger.Warn("reap orphan pool data", "poolID", poolID, "error", err)
+			continue
+		}
+		_ = os.RemoveAll(filepath.Join(proxyPoolsRoot, poolID))
+		logger.Info("reaped orphan pool", "poolID", poolID, "deadFor", now.Sub(diedAt).Truncate(time.Minute).String())
+	}
+	// Proxy leftovers whose data subtree is already gone are regenerable: reap now.
+	for _, poolID := range unknownPoolDirs(proxyPoolsRoot, known, logger) {
+		if _, err := os.Stat(filepath.Join(dataPoolsRoot, poolID)); err == nil {
+			continue // its retention is tracked on the data side above
+		}
+		_ = os.RemoveAll(filepath.Join(proxyPoolsRoot, poolID))
+	}
+}
+
+// unknownPoolDirs returns the pool-ID subdirectories under root that are not in
+// the known set.
+func unknownPoolDirs(root string, known map[string]struct{}, logger *slog.Logger) []string {
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			logger.Warn("scan pools root", "root", root, "error", err)
+		}
+		return nil
+	}
+	var out []string
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		if _, ok := known[entry.Name()]; ok {
+			continue
+		}
+		out = append(out, entry.Name())
+	}
+	return out
+}
+
 // reapDeadSandboxVolumes is the pool-scoped core of the volume reaper: root is
 // this pool's own sandboxes directory, liveSet is this pool's live containers,
 // so it only ever tombstones and reaps this pool's data. A dead tree is kept
@@ -1214,6 +1316,10 @@ func (r *MemorySandboxRuntime) DeleteSandbox(_ context.Context, sandboxID string
 	return nil
 }
 
+func (r *MemorySandboxRuntime) SyncKnownPools(context.Context, []string) error {
+	return nil
+}
+
 func (r *MemorySandboxRuntime) StartSandbox(_ context.Context, sandboxID string, _ *workerapimodel.PoolSandboxOperationRequest) (*Sandbox, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -1299,6 +1405,21 @@ func (r *DockerSandboxRuntime) poolCacheRoot() string {
 // touch another pool's data.
 func (r *DockerSandboxRuntime) sandboxesRoot() string {
 	return filepath.Join(r.sandboxPoolRoot(), "sandboxes")
+}
+
+// poolsRoot is the parent of every pool's data subtree for this project on the
+// shared host. The pool-sync reaper enumerates it to find orphaned pools.
+func (r *DockerSandboxRuntime) poolsRoot() string {
+	return filepath.Join(sandboxDataRoot, r.projectID, "pools")
+}
+
+// projectFilters matches every managed sandbox container for this project
+// across all pools (unlike filters, which is scoped to this agent's own pool).
+func (r *DockerSandboxRuntime) projectFilters() client.Filters {
+	args := client.Filters{}
+	args = args.Add("label", sandboxLabelManaged+"=true")
+	args = args.Add("label", sandboxLabelProject+"="+r.projectID)
+	return args
 }
 
 func (r *DockerSandboxRuntime) sandboxRoot(sandboxID string) string {

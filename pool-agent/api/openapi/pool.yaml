@@ -311,6 +311,24 @@ components:
                 force:
                     type: boolean
             type: object
+        PoolSyncRequest:
+            additionalProperties: false
+            description: The set of pools the control plane knows this host should have. The pool agent reaps the agent-created footprint of any other pool it observes.
+            properties:
+                "$schema":
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/PoolSyncRequest.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                knownPoolIds:
+                    description: IDs of the pools that should exist on this host.
+                    items:
+                        type: string
+                    type: array
+            required:
+                - knownPoolIds
+            type: object
         PoolSandboxUpdateRequest:
             additionalProperties: false
             properties:
@@ -730,5 +748,43 @@ paths:
             security:
             -   poolBearerAuth: []
             summary: Stop pool sandbox
+            tags:
+            - Pool Sandboxes
+    "/api/project/{projectId}/pool/{poolId}/pool-sync":
+        post:
+            operationId: pool-sync
+            parameters:
+            -   description: Project ID
+                in: path
+                name: projectId
+                required: true
+                schema:
+                    description: Project ID
+                    type: string
+            -   description: Pool ID
+                in: path
+                name: poolId
+                required: true
+                schema:
+                    description: Pool ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            "$ref": "#/components/schemas/PoolSyncRequest"
+                required: true
+            responses:
+                '204':
+                    description: No Content
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                "$ref": "#/components/schemas/ErrorModel"
+                    description: Error
+            security:
+            -   poolBearerAuth: []
+            summary: Reconcile the set of pools this host should have, reaping any others
             tags:
             - Pool Sandboxes
