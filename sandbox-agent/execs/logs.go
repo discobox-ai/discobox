@@ -19,9 +19,12 @@ const logBucketDuration = 15 * time.Second
 
 type LogStream string
 
+// Log streams, matching the attach frames they are recorded alongside. A TTY
+// exec records its single merged stream as stdout and never records stderr,
+// exactly as it does on the wire: a reader should not be able to tell a TTY exec
+// from a pipe exec that wrote nothing to stderr.
 const (
 	LogStreamInput  LogStream = "input"
-	LogStreamOutput LogStream = "output"
 	LogStreamStdout LogStream = "stdout"
 	LogStreamStderr LogStream = "stderr"
 )

@@ -2315,8 +2315,6 @@ func (s *SandboxExecLogEntryStream) Decode(d *jx.Decoder) error {
 	switch SandboxExecLogEntryStream(v) {
 	case SandboxExecLogEntryStreamInput:
 		*s = SandboxExecLogEntryStreamInput
-	case SandboxExecLogEntryStreamOutput:
-		*s = SandboxExecLogEntryStreamOutput
 	case SandboxExecLogEntryStreamStdout:
 		*s = SandboxExecLogEntryStreamStdout
 	case SandboxExecLogEntryStreamStderr:

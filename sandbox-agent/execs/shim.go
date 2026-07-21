@@ -145,7 +145,7 @@ func (r *shimRuntime) startPTY(cmd *exec.Cmd) error {
 	r.stream.EnableScreen(winsize.Rows, winsize.Cols, shimruntime.DefaultScrollbackLines, tty)
 	r.status.PID = int64(cmd.Process.Pid)
 	r.outputWG.Add(1)
-	go r.copyOutput(LogStreamOutput, tty)
+	go r.copyOutput(LogStreamStdout, tty)
 	return nil
 }
 
@@ -294,18 +294,29 @@ func (r *shimRuntime) markStartFailed(err error) {
 
 func (r *shimRuntime) copyOutput(stream LogStream, reader io.Reader) {
 	defer r.outputWG.Done()
+	frameType := attachFrameType(stream)
 	buf := make([]byte, 32*1024)
 	for {
 		n, err := reader.Read(buf)
 		if n > 0 {
 			chunk := append([]byte(nil), buf[:n]...)
 			r.logger.Record(stream, chunk)
-			r.stream.Broadcast(chunk)
+			r.stream.Broadcast(frameType, chunk)
 		}
 		if err != nil {
 			return
 		}
 	}
+}
+
+// attachFrameType is the attach frame a log stream is broadcast as, keeping the
+// live stream and the audit log labeled identically. A TTY exec's single merged
+// stream is stdout in both.
+func attachFrameType(stream LogStream) byte {
+	if stream == LogStreamStderr {
+		return frame.Stderr
+	}
+	return frame.Stdout
 }
 
 func (r *shimRuntime) handleAttachFrame(attach *shimruntime.Attacher, next frame.Frame) {

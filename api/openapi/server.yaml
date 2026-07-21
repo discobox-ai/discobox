@@ -518,10 +518,9 @@ components:
                     format: date-time
                     type: string
                 stream:
-                    description: Exec stream this chunk came from.
+                    description: Exec stream this chunk came from. A TTY exec merges its output at the PTY and reports it all as stdout.
                     enum:
                         - input
-                        - output
                         - stdout
                         - stderr
                     type: string

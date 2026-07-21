@@ -377,7 +377,11 @@ func (r *Runtime) WaitForResize(ctx context.Context) {
 	}
 }
 
-func (r *Runtime) Broadcast(payload []byte) {
+// Broadcast delivers one chunk of the process's output to every attacher as a
+// frame of typ, which is frame.Stdout or frame.Stderr. Only the screen-bearing
+// TTY path produces frame.Stdout through a PTY; pipe execs label each chunk with
+// the stream it came from.
+func (r *Runtime) Broadcast(typ byte, payload []byte) {
 	// Feed the screen and snapshot the attacher set under one lock so a
 	// concurrently registering repaint attacher falls cleanly on one side of this
 	// chunk: either the screen absorbs it before the attacher's snapshot is taken
@@ -386,13 +390,15 @@ func (r *Runtime) Broadcast(payload []byte) {
 	// The network writes stay outside the lock so a slow client cannot stall the
 	// PTY reader.
 	r.mu.Lock()
-	if r.screen != nil {
+	// Only the merged PTY stream is screen state. A pipe exec has no screen, so
+	// this never fires for stderr; the check keeps that true by construction.
+	if r.screen != nil && typ == frame.Stdout {
 		r.runScreenLocked(func(screen *screenBuffer) { screen.write(payload) })
 	}
 	attachers := r.snapshotAttachersLocked()
 	r.mu.Unlock()
 	for _, attach := range attachers {
-		if err := attach.WriteFrame(frame.Output, payload); err != nil {
+		if err := attach.WriteFrame(typ, payload); err != nil {
 			r.removeAttacher(attach)
 		}
 	}
@@ -480,7 +486,7 @@ func (a *Attacher) writeSnapshot(payload []byte) error {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return a.writeLocked(frame.Output, payload)
+	return a.writeLocked(frame.Stdout, payload)
 }
 
 // flushBuffer writes the buffered live frames in order and switches the attacher

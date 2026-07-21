@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/obot-platform/discobox/sandbox-agent/terminal/frame"
 )
 
 // screenPipe returns a pipe standing in for the PTY master: EnableScreen
@@ -68,7 +69,7 @@ func TestBroadcastTerminalQueryDoesNotDeadlock(t *testing.T) {
 
 	finished := make(chan struct{})
 	go func() {
-		r.Broadcast([]byte("hello\x1b[>0q\x1b[c"))
+		r.Broadcast(frame.Stdout, []byte("hello\x1b[>0q\x1b[c"))
 		close(finished)
 	}()
 	select {
@@ -100,7 +101,7 @@ func TestScreenQueryResponsesDroppedWhileAttached(t *testing.T) {
 	r.addAttacher(attach)
 	defer r.removeAttacher(attach)
 
-	r.Broadcast([]byte("hello\x1b[c"))
+	r.Broadcast(frame.Stdout, []byte("hello\x1b[c"))
 
 	// Delivery is asynchronous; give a misrouted response time to show up.
 	if got := readWithTimeout(input, 300*time.Millisecond); got != nil {
@@ -136,7 +137,7 @@ func TestScreenPanicDropsScreenAndKeepsStreaming(t *testing.T) {
 	}
 	r.addAttacher(attach)
 	defer r.removeAttacher(attach)
-	r.Broadcast([]byte("still alive"))
+	r.Broadcast(frame.Stdout, []byte("still alive"))
 	if !bytes.Contains(out.Bytes(), []byte("still alive")) {
 		t.Fatalf("live streaming broken after screen drop, wire = %q", out.Bytes())
 	}

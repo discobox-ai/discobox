@@ -91,7 +91,7 @@ func TestFramedTerminalRead(t *testing.T) {
 
 	go func() {
 		_, _ = readTerminalFrame(server)
-		_ = writeTerminalFrame(server, attachFrameOutput, []byte("abc"))
+		_ = writeTerminalFrame(server, attachFrameStdout, []byte("abc"))
 	}()
 
 	buf := make([]byte, 2)

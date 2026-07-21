@@ -2,6 +2,7 @@ package execs
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -72,7 +73,7 @@ func TestRunShimSendsOutputBeforeExitFrame(t *testing.T) {
 			t.Fatalf("read frame: %v", err)
 		}
 		switch next.Type {
-		case frame.Output:
+		case frame.Stdout:
 			output = append(output, next.Payload...)
 		case frame.Exit:
 			var decodeErr error
@@ -278,3 +279,157 @@ func TestRunShimLingersForLateAttach(t *testing.T) {
 		t.Fatalf("run shim: %v", err)
 	}
 }
+
+// A pipe exec keeps its streams apart: stdout arrives as frame.Stdout and
+// stderr as frame.Stderr, so a client can route each the way a local command
+// does. A TTY exec has no such split — the PTY merges them before the shim.
+func TestRunShimSeparatesStderrFrames(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	socketPath := filepath.Join(dir, "shim.sock")
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RunShim(ctx, ShimConfig{
+			ExecID:      "exec_streams",
+			Command:     []string{"sh", "-c", "printf out; printf err >&2"},
+			Workdir:     dir,
+			SocketPath:  socketPath,
+			RuntimePath: filepath.Join(dir, "runtime.json"),
+			LogDir:      filepath.Join(dir, "logs"),
+		})
+	}()
+
+	reader := attachShimForTest(ctx, t, socketPath)
+	if _, err := shimproxy.StartJSON[Exec](ctx, socketPath); err != nil {
+		t.Fatalf("start shim: %v", err)
+	}
+
+	var stdout, stderr []byte
+	for done := false; !done; {
+		next, err := frame.Read(reader)
+		if err != nil {
+			t.Fatalf("read frame: %v", err)
+		}
+		switch next.Type {
+		case frame.Stdout:
+			stdout = append(stdout, next.Payload...)
+		case frame.Stderr:
+			stderr = append(stderr, next.Payload...)
+		case frame.Exit:
+			done = true
+		default:
+			t.Fatalf("unexpected frame type %d", next.Type)
+		}
+	}
+	if string(stdout) != "out" {
+		t.Fatalf("stdout frames = %q, want out", string(stdout))
+	}
+	if string(stderr) != "err" {
+		t.Fatalf("stderr frames = %q, want err", string(stderr))
+	}
+
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("run shim: %v", err)
+	}
+}
+
+// attachShimForTest opens an attach stream to the shim and returns its frame
+// reader.
+func attachShimForTest(ctx context.Context, t *testing.T, socketPath string) *bufio.Reader {
+	t.Helper()
+	conn, err := shimproxy.Dial(ctx, socketPath, 5*time.Second)
+	if err != nil {
+		t.Fatalf("dial shim: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://unix/attach", nil)
+	if err != nil {
+		t.Fatalf("new attach request: %v", err)
+	}
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "discobox-sandbox-exec")
+	if err := req.Write(conn); err != nil {
+		t.Fatalf("write attach request: %v", err)
+	}
+	reader := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(reader, req)
+	if err != nil {
+		t.Fatalf("read attach response: %v", err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("attach status = %s", resp.Status)
+	}
+	return reader
+}
+
+// A TTY exec writes everything to one PTY, so both of its streams arrive as
+// frame.Stdout and frame.Stderr is simply never used. Nothing on the wire — or
+// in the log — lets a client tell this apart from a pipe exec that wrote
+// nothing to stderr, which is the point: clients do not special-case TTYs.
+func TestRunShimTTYReportsEverythingAsStdout(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	socketPath := filepath.Join(dir, "shim.sock")
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RunShim(ctx, ShimConfig{
+			ExecID:      "exec_tty_streams",
+			Command:     []string{"sh", "-c", "printf out; printf err >&2"},
+			Workdir:     dir,
+			SocketPath:  socketPath,
+			RuntimePath: filepath.Join(dir, "runtime.json"),
+			LogDir:      filepath.Join(dir, "logs"),
+			Rows:        24,
+			Cols:        80,
+			TTY:         true,
+		})
+	}()
+
+	reader := attachShimForTest(ctx, t, socketPath)
+	if _, err := shimproxy.StartJSON[Exec](ctx, socketPath); err != nil {
+		t.Fatalf("start shim: %v", err)
+	}
+
+	var stdout []byte
+	for done := false; !done; {
+		next, err := frame.Read(reader)
+		if err != nil {
+			t.Fatalf("read frame: %v", err)
+		}
+		switch next.Type {
+		case frame.Stdout:
+			stdout = append(stdout, next.Payload...)
+		case frame.Stderr:
+			t.Fatal("a TTY exec must never send a stderr frame")
+		case frame.Exit:
+			done = true
+		default:
+			t.Fatalf("unexpected frame type %d", next.Type)
+		}
+	}
+	// The PTY interleaves both writes; order is the process's business, so assert
+	// only that everything arrived on stdout.
+	if !bytes.Contains(stdout, []byte("out")) || !bytes.Contains(stdout, []byte("err")) {
+		t.Fatalf("stdout frames = %q, want both writes merged onto stdout", string(stdout))
+	}
+
+	logs, err := ReadLogs(ctx, filepath.Join(dir, "logs"), "exec_tty_streams")
+	if err != nil {
+		t.Fatalf("read logs: %v", err)
+	}
+	for _, entry := range logs {
+		if entry.Stream == LogStreamStderr {
+			t.Fatalf("a TTY exec must not log a stderr stream, got %q", entry.Data)
+		}
+	}
+
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("run shim: %v", err)
+	}
+}
+

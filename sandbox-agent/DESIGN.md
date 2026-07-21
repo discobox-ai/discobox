@@ -106,6 +106,17 @@ images also write their image digest.
   PTY/pipes and flush the asynchronous log queue so status means all command
   output is available. The exec shim serves both TTY (terminal, `exec -t`) and
   stdout/stderr-pipe (plain exec) modes.
+- stdout and stderr are separate frames, never merged by the shim: `frame.Stdout`
+  and `frame.Stderr` (and the matching `LogStream` values on the audit log), so a
+  client can route each the way a local command does — `disco exec cmd
+  2>/dev/null` drops only stderr. Merging is the client's to do and loses no
+  information; merging in the shim is irreversible. A TTY exec has nothing to
+  split, since the kernel merges both onto the PTY before the shim reads them, so
+  it emits `frame.Stdout` only and simply never uses `frame.Stderr`. Nothing on
+  the wire distinguishes that from a pipe exec that wrote nothing to stderr, and
+  nothing should. Only `frame.Stdout` is screen state.
+- Frame types take the file descriptor numbers they carry — `Input` 0, `Stdout`
+  1, `Stderr` 2 — with control frames (`Resize` 3 … `Ready` 8) after them.
 - Terminal attach supports `?replay=true`, which repaints the current screen
   before live output so a client that connects after a program has been running
   sees its state, not just output produced from the attach onward. The repaint

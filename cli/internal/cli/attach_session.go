@@ -148,8 +148,12 @@ func (s *framedAttachSession) copyOutput() error {
 			return err
 		}
 		switch frame.typ {
-		case attachFrameOutput:
+		case attachFrameStdout:
 			if _, err := s.stdout.Write(frame.payload); err != nil {
+				return err
+			}
+		case attachFrameStderr:
+			if _, err := s.stderr.Write(frame.payload); err != nil {
 				return err
 			}
 		case attachFrameError:

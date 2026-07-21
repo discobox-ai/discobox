@@ -308,7 +308,10 @@ func (t *framedTerminal) Read(p []byte) (int, error) {
 			return 0, err
 		}
 		switch frame.typ {
-		case attachFrameOutput:
+		// A pane is one visual stream, so stderr is shown inline with stdout the
+		// way a terminal shows it. (Terminals are TTY execs and never send it;
+		// this keeps a pane over a pipe exec from dropping the stream.)
+		case attachFrameStdout, attachFrameStderr:
 			if len(frame.payload) == 0 {
 				continue
 			}

@@ -40,13 +40,13 @@ func TestReconnectingAttachFramesResumesReads(t *testing.T) {
 	}()
 
 	_ = firstServer.Close()
-	go func() { _ = writeTerminalFrame(secondServer, attachFrameOutput, []byte("after reconnect")) }()
+	go func() { _ = writeTerminalFrame(secondServer, attachFrameStdout, []byte("after reconnect")) }()
 
 	select {
 	case err := <-errResult:
 		t.Fatalf("ReadFrame: %v", err)
 	case frame := <-result:
-		if frame.typ != attachFrameOutput || string(frame.payload) != "after reconnect" {
+		if frame.typ != attachFrameStdout || string(frame.payload) != "after reconnect" {
 			t.Fatalf("frame = %#v, want output after reconnect", frame)
 		}
 	case <-time.After(time.Second):
@@ -139,7 +139,7 @@ func TestReconnectingAttachFramesRestoresResizeAndReady(t *testing.T) {
 			got = append(got, frame)
 		}
 		restored <- got
-		_ = writeTerminalFrame(secondServer, attachFrameOutput, []byte("repainted"))
+		_ = writeTerminalFrame(secondServer, attachFrameStdout, []byte("repainted"))
 	}()
 
 	_ = firstServer.Close()
