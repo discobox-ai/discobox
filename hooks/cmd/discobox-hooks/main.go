@@ -166,7 +166,7 @@ func (a *app) newDaemonCommand() *cobra.Command {
 			return daemon.Run(cmd.Context(), cfg)
 		},
 	}
-	cmd.Flags().DurationVar(&idle, "idle-timeout", 0, "daemon idle timeout")
+	cmd.Flags().DurationVar(&idle, "idle-timeout", 0, "daemon idle timeout (0 uses the 30m default; a negative value disables idle shutdown)")
 	cmd.Flags().DurationVar(&debounce, "debounce", 0, "file-change debounce duration")
 	cmd.Flags().DurationVar(&snapshotDebounce, "snapshot-debounce", 0, "workspace snapshot quiet duration")
 	cmd.Flags().DurationVar(&snapshotMinInterval, "snapshot-min-interval", 0, "minimum time between workspace snapshot captures")

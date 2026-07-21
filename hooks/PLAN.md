@@ -68,7 +68,6 @@ Start small and split only when code pressure justifies it:
 
 ## Open Design Questions
 
-- Exact idle timeout default.
 - Whether continuous writes use only a quiet-period debounce or also a maximum
   batch window.
 - How pre-commit should select a session when more than one session exists for a

@@ -1338,3 +1338,97 @@ func tryJSON(client *http.Client, method, url string, body any, out any) error {
 	}
 	return nil
 }
+
+func TestIdleTimeoutShutsDownDaemon(t *testing.T) {
+	repo := t.TempDir()
+	stateDir := t.TempDir()
+	socketPath := filepath.Join(os.TempDir(), fmt.Sprintf("discobox-hooks-idle-%d.sock", time.Now().UnixNano()))
+	defer os.Remove(socketPath)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- Run(ctx, Config{
+			SessionID:   "idle-session",
+			RepoRoot:    repo,
+			DBPath:      filepath.Join(stateDir, "hooks.db"),
+			SocketPath:  socketPath,
+			Debounce:    20 * time.Millisecond,
+			IdleTimeout: 100 * time.Millisecond,
+		})
+	}()
+
+	client := unixHTTPClient(socketPath)
+	var ping PingResponse
+	waitForJSON(t, client, http.MethodGet, "http://unix/ping", nil, &ping)
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("idle shutdown returned error: %v", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("daemon did not shut down after the idle timeout")
+	}
+}
+
+func TestNegativeIdleTimeoutKeepsDaemonRunning(t *testing.T) {
+	repo := t.TempDir()
+	stateDir := t.TempDir()
+	socketPath := filepath.Join(os.TempDir(), fmt.Sprintf("discobox-hooks-noidle-%d.sock", time.Now().UnixNano()))
+	defer os.Remove(socketPath)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- Run(ctx, Config{
+			SessionID:   "no-idle-session",
+			RepoRoot:    repo,
+			DBPath:      filepath.Join(stateDir, "hooks.db"),
+			SocketPath:  socketPath,
+			Debounce:    20 * time.Millisecond,
+			IdleTimeout: -1,
+		})
+	}()
+
+	client := unixHTTPClient(socketPath)
+	var ping PingResponse
+	waitForJSON(t, client, http.MethodGet, "http://unix/ping", nil, &ping)
+
+	select {
+	case err := <-errCh:
+		t.Fatalf("daemon exited with idle shutdown disabled: %v", err)
+	case <-time.After(2 * time.Second):
+	}
+	doJSON(t, client, http.MethodGet, "http://unix/ping", nil, &ping)
+}
+
+func TestNewRuntimeAppliesDefaultIdleTimeout(t *testing.T) {
+	repo := t.TempDir()
+	stateDir := t.TempDir()
+	base := Config{
+		SessionID:  "defaults-session",
+		RepoRoot:   repo,
+		DBPath:     filepath.Join(stateDir, "hooks.db"),
+		SocketPath: filepath.Join(stateDir, "daemon.sock"),
+	}
+	r, err := newRuntime(context.Background(), base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { r.cancel(); _ = r.store.Close() }()
+	if r.cfg.IdleTimeout != defaultIdleTimeout {
+		t.Fatalf("unset idle timeout = %s, want %s", r.cfg.IdleTimeout, defaultIdleTimeout)
+	}
+
+	base.DBPath = filepath.Join(t.TempDir(), "hooks.db")
+	base.IdleTimeout = -1
+	disabled, err := newRuntime(context.Background(), base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { disabled.cancel(); _ = disabled.store.Close() }()
+	if disabled.cfg.IdleTimeout != -1 {
+		t.Fatalf("negative idle timeout = %s, want it preserved", disabled.cfg.IdleTimeout)
+	}
+}

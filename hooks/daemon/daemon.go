@@ -35,6 +35,7 @@ const defaultSnapshotDebounce = 15 * time.Second
 const defaultSnapshotMinInterval = time.Minute
 const defaultLSPDiagnosticsGrace = 5 * time.Second
 const defaultMaxParallelHooks = 3
+const defaultIdleTimeout = 30 * time.Minute
 
 // daemonMatcherOptions disables matcher-level Git-ignore checks because the
 // daemon already applies and audits Git-ignore filtering in filterIgnoredChanges.
@@ -55,8 +56,11 @@ type Config struct {
 	Debounce            time.Duration
 	SnapshotDebounce    time.Duration
 	SnapshotMinInterval time.Duration
-	IdleTimeout         time.Duration
-	MaxParallelHooks    int
+	// IdleTimeout bounds how long the daemon runs without activity before it
+	// shuts down. Zero selects defaultIdleTimeout; negative disables idle
+	// shutdown so the daemon runs until it is stopped explicitly.
+	IdleTimeout      time.Duration
+	MaxParallelHooks int
 }
 
 type PingResponse = model.PingResponse
@@ -151,6 +155,9 @@ func newRuntime(ctx context.Context, cfg Config) (*runtimeState, error) {
 	}
 	if cfg.MaxParallelHooks <= 0 {
 		cfg.MaxParallelHooks = defaultMaxParallelHooks
+	}
+	if cfg.IdleTimeout == 0 {
+		cfg.IdleTimeout = defaultIdleTimeout
 	}
 
 	st, err := store.Open(ctx, store.Options{Path: cfg.DBPath, Logger: logger.Default.LogMode(logger.Silent)})

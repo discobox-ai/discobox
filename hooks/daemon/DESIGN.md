@@ -243,6 +243,11 @@ define transport DTOs in daemon handlers.
 
 ## Idle Shutdown
 
+The idle window is `Config.IdleTimeout`, defaulting to 30 minutes. A negative
+value disables idle shutdown for daemons meant to run until stopped explicitly;
+because zero selects the default, an auto-started daemon always has the timeout
+armed.
+
 Idle means:
 
 - no active socket request

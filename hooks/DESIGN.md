@@ -210,9 +210,10 @@ CLI commands resolve Git root and session ID, compute session paths, and connect
 to the Unix socket. If the socket is unavailable, the CLI acquires a startup
 lock, starts the daemon detached, waits for readiness, and retries the command.
 
-The daemon exits after a reasonable idle timeout when there are no active client
+The daemon exits after a 30-minute idle timeout when there are no active client
 requests, no running hook, no queued hook, no pending/running snapshot, and no
-file changes within the idle window.
+file changes within the idle window. `daemon --idle-timeout` overrides the
+window; a negative value disables idle shutdown.
 
 ## Pre-Commit Integration
 
