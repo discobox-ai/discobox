@@ -106,8 +106,16 @@ sequences the calls and hands the user the terminal in between:
 4. `POST .../configure/commit` — the server reads the command's real exit status,
    applies the secrets and files it wrote, and deletes the sandbox.
 
-`runHarnessConfigure` takes streams rather than a `*cobra.Command` so the TUI can
-share it, handing it the real terminal it restores via `tea.Exec`.
+`runHarnessConfigure` takes streams rather than a `*cobra.Command` so its callers
+can share it: the full `tui` dashboard and the inline `disco configure` menu
+(`internal/cli/configure.go`) both hand it the real terminal via `tea.Exec`.
+
+`disco configure` (aliases `config`, `conf`, `c`, `init`) is a small inline (no
+alternate screen) Bubble Tea menu over the project's harnesses for the common
+enable/reconfigure, disable, and set-default actions. Enable/reconfigure reuses
+`runHarnessConfigure` through `tea.Exec`; disable and set-default are plain API
+calls. Disable confirms first, since deconfigure deletes the agent's secrets and
+files. It is the focused counterpart to the `box harnesses` subcommands.
 
 Re-running reconfigures and clobbers any in-flight attempt. Nothing here parses
 the configure output or creates secrets: a client that crashes mid-flow cannot
