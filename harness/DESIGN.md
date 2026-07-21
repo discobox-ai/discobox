@@ -122,9 +122,25 @@ it as a secret:
   snapshot of the ephemeral configure sandbox would override them — including
   the per-sandbox trust template — for every later sandbox.
 
-### Codex CLI and opencode
+### Codex CLI
 
-`codex-cli/configure.sh` and `opencode/configure.sh` collect API keys without
-echoing them — an OpenAI key for Codex, one or both provider keys for opencode —
-and return the same secret result contract. Neither reads the seed yet, so both
-re-prompt on reconfigure.
+`codex-cli/configure.sh` collects one OpenAI API key without echoing it. When the
+seed lists `OPENAI_API_KEY` and its `PREV_` variable is set, keeping the existing
+key is the default choice. Every path ends in a `codex exec` check with the
+chosen key in the environment; a failed check returns to the prompt. Nothing in
+this flow performs a ChatGPT login, so there is no auth file to move aside as the
+claude-code flow does.
+
+### opencode
+
+`opencode/configure.sh` settles the two providers independently — Anthropic and
+OpenAI — and requires at least one. Each provider offers keep / replace / remove
+when the seed lists it, and a skippable prompt when it does not. Because output
+is authoritative, a provider left out is removed from the harness config.
+
+Each key is checked alone, with the other provider's variable unset, so a key
+cannot pass on the strength of the other one. The verification model is
+discovered rather than hardcoded: `opencode models` lists only the providers
+whose credential is present in the environment, so asking with just the one key
+set both picks a model that exists in this image's opencode and proves the key is
+wired to the expected provider.
