@@ -5,10 +5,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 
@@ -481,3 +484,101 @@ func TestRunShimDoesNotLoseOutputRacingAttach(t *testing.T) {
 	}
 }
 
+// A suspend request must actually stop the process. Every exec runs with Setsid,
+// which by definition orphans its process group, and the kernel discards
+// SIGTSTP sent to an orphaned group — so the obvious mapping silently does
+// nothing. This pins the stop and the resume.
+func TestRunShimSuspendAndResume(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("process state is read from /proc")
+	}
+	dir := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	socketPath := filepath.Join(dir, "shim.sock")
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RunShim(ctx, ShimConfig{
+			ExecID:      "exec_suspend",
+			Command:     []string{"sleep", "30"},
+			Workdir:     dir,
+			SocketPath:  socketPath,
+			RuntimePath: filepath.Join(dir, "runtime.json"),
+			LogDir:      filepath.Join(dir, "logs"),
+		})
+	}()
+
+	conn, reader := attachShimConnForTest(ctx, t, socketPath)
+	started, err := shimproxy.StartJSON[Exec](ctx, socketPath)
+	if err != nil {
+		t.Fatalf("start shim: %v", err)
+	}
+	pid := int(started.PID)
+	waitForProcessState(t, pid, "S", "process never started running")
+
+	if err := frame.Write(conn, frame.Signal, []byte("TSTP")); err != nil {
+		t.Fatalf("write suspend frame: %v", err)
+	}
+	waitForProcessState(t, pid, "T", "suspend did not stop the process")
+
+	if err := frame.Write(conn, frame.Signal, []byte("CONT")); err != nil {
+		t.Fatalf("write resume frame: %v", err)
+	}
+	waitForProcessState(t, pid, "S", "resume did not restart the process")
+
+	_ = reader
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("run shim: %v", err)
+	}
+}
+
+// waitForProcessState polls /proc until the process reaches want ("S" running
+// or sleeping, "T" stopped).
+func waitForProcessState(t *testing.T, pid int, want, message string) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	var got string
+	for time.Now().Before(deadline) {
+		data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
+		if err == nil {
+			// The state field follows the parenthesized comm, which may itself
+			// contain spaces or parentheses.
+			if idx := bytes.LastIndexByte(data, ')'); idx >= 0 && idx+2 < len(data) {
+				got = string(data[idx+2 : idx+3])
+				if got == want {
+					return
+				}
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	t.Fatalf("%s: state = %q, want %q", message, got, want)
+}
+
+// attachShimConnForTest opens an attach stream and returns both ends so the
+// caller can write client frames as well as read.
+func attachShimConnForTest(ctx context.Context, t *testing.T, socketPath string) (net.Conn, *bufio.Reader) {
+	t.Helper()
+	conn, err := shimproxy.Dial(ctx, socketPath, 5*time.Second)
+	if err != nil {
+		t.Fatalf("dial shim: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://unix/attach", nil)
+	if err != nil {
+		t.Fatalf("new attach request: %v", err)
+	}
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "discobox-sandbox-exec")
+	if err := req.Write(conn); err != nil {
+		t.Fatalf("write attach request: %v", err)
+	}
+	reader := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(reader, req)
+	if err != nil {
+		t.Fatalf("read attach response: %v", err)
+	}
+	_ = resp.Body.Close()
+	return conn, reader
+}

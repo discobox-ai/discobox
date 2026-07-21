@@ -32,6 +32,12 @@ type framedAttachSession struct {
 	// signalReady sends a Ready frame once the output reader is running, telling
 	// the shim it is safe to stream replay history. Set for replay attaches.
 	signalReady bool
+	// rawFile and rawState record the terminal put into raw mode by run, so a
+	// suspend can hand it back in the mode the shell expects and take it again on
+	// resume. rawState is always the mode from before the attach, so the deferred
+	// restore in run stays correct across any number of suspends.
+	rawFile  *os.File
+	rawState *term.State
 }
 
 type attachFrameTransport interface {
@@ -67,6 +73,7 @@ func (s *framedAttachSession) run(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		s.rawFile, s.rawState = resizeFile, state
 		defer func() { _ = term.Restore(int(resizeFile.Fd()), state) }()
 	}
 
@@ -208,6 +215,12 @@ func (s *framedAttachSession) proxySignals(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case sig := <-signals:
+			if isSuspendSignal(sig) {
+				if err := s.suspend(); err != nil {
+					return err
+				}
+				continue
+			}
 			name, ok := signalName(sig)
 			if !ok {
 				continue
@@ -217,6 +230,38 @@ func (s *framedAttachSession) proxySignals(ctx context.Context) error {
 			}
 		}
 	}
+}
+
+// suspend gives Ctrl-Z its local meaning across the connection: the remote job
+// stops, this process stops, and fg resumes both. Forwarding alone would leave
+// the user attached to a stopped job with no way to resume it, and stopping
+// alone would leave the remote running unattended — which is the bug this
+// avoids.
+//
+// The terminal is handed back in its pre-attach mode before stopping, since the
+// shell that regains it expects cooked mode, and taken again on resume. The
+// remote may also have missed resizes while this process was stopped, so the
+// current size is re-sent.
+func (s *framedAttachSession) suspend() error {
+	if err := s.writeFrame(attachFrameSignal, []byte("TSTP")); err != nil {
+		return err
+	}
+	if s.rawFile != nil && s.rawState != nil {
+		_ = term.Restore(int(s.rawFile.Fd()), s.rawState)
+	}
+	suspendSelf()
+	if s.rawFile != nil && s.rawState != nil {
+		// Discard the returned state: s.rawState must stay the pre-attach mode so
+		// the final restore in run leaves the terminal as the user handed it over.
+		_, _ = term.MakeRaw(int(s.rawFile.Fd()))
+	}
+	if err := s.writeFrame(attachFrameSignal, []byte("CONT")); err != nil {
+		return err
+	}
+	if s.resize {
+		return s.writeInitialResize()
+	}
+	return nil
 }
 
 func (s *framedAttachSession) writeResize(cols, rows int) error {

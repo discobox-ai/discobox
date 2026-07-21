@@ -62,6 +62,39 @@ the transport/session mechanics in `internal/cli/attach_session.go`.
   CLI attach ignores them; the TUI adapter maps them into its `TerminalEvent`
   stream.
 
+## Signals and Job Control
+
+Keystrokes reach the remote job, never this process. Two mechanisms, chosen by
+whether the attach has a PTY — not by which command is running:
+
+- **Raw mode (any TTY attach: `run`, `box terminal attach`, `configure`,
+  `exec`/`box exec create` with a PTY).** `MakeRaw` turns off ISIG, so Ctrl-C,
+  Ctrl-Z, and Ctrl-\ are never signals here — they travel as the bytes 0x03,
+  0x1a, 0x1c and the *remote* line discipline signals the remote foreground job.
+  Nothing to forward, and the local CLI is never the target.
+- **No PTY (`disco exec` into a pipe or redirect).** The local terminal is still
+  cooked, so those keys raise real signals here. `proxySignals` catches them and
+  sends a Signal frame instead of acting on them.
+
+Ctrl-Z is handled, not merely forwarded: `suspend` stops the remote job, hands
+the terminal back in its pre-attach mode, stops this process, and on resume
+takes the terminal back, sends CONT, and re-sends the window size (which may
+have changed while stopped). Forwarding alone would leave the user attached to a
+stopped job with no way to resume it; stopping alone would leave the remote
+running unattended.
+
+`suspendSelf` stops with **SIGSTOP**, not by resetting SIGTSTP's disposition and
+re-raising it. A Go process that has notified SIGTSTP keeps a handler installed,
+and the re-raised signal comes back to the handler instead of stopping — once
+per suspend under job control, and in a livelock without it. SIGSTOP cannot be
+caught and is never discarded for an orphaned process group. Only this process
+is stopped, not the group, so a script that shares its process group is not
+taken down with it.
+
+Exit status follows the shell convention: a signal-killed command exits 128+N
+(130 for Ctrl-C), decided by the sandbox-agent — see its `DESIGN.md` for why a
+suspend request maps to SIGSTOP there too.
+
 ## Origin and Source Delivery
 
 Every create carries an **origin**: this client's host identity plus the project

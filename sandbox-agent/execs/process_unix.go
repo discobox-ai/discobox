@@ -129,6 +129,20 @@ func signalProcess(cmd *exec.Cmd, name string) error {
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGHUP)
 	case "QUIT":
 		return syscall.Kill(-cmd.Process.Pid, syscall.SIGQUIT)
+	case "TSTP":
+		// SIGSTOP, not SIGTSTP. Every exec is started with Setsid, so its process
+		// group is by definition orphaned — no member has a parent in the same
+		// session — and the kernel discards SIGTSTP, SIGTTIN, and SIGTTOU sent to
+		// an orphaned group. SIGTSTP here would silently do nothing; SIGSTOP is
+		// never discarded, so a suspend from the client always lands.
+		//
+		// This is only the client asking to stop a whole exec. Ctrl-Z typed into a
+		// TTY exec is a byte, and the remote line discipline delivers SIGTSTP to
+		// the foreground job — which is a child group of the shell, not orphaned,
+		// so it stops normally with its handler intact.
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGSTOP)
+	case "CONT":
+		return syscall.Kill(-cmd.Process.Pid, syscall.SIGCONT)
 	default:
 		return nil
 	}

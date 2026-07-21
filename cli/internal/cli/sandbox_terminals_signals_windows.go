@@ -14,3 +14,9 @@ func signalName(sig os.Signal) (string, bool) {
 	}
 	return "", false
 }
+
+// Windows has no job control, so nothing suspends and suspendSelf is never
+// reached.
+func isSuspendSignal(os.Signal) bool { return false }
+
+func suspendSelf() {}

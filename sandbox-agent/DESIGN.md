@@ -123,6 +123,16 @@ images also write their image digest.
   those pipes race the readers and silently discard a fast command's entire
   output. The shim also closes its copies of the write ends right after `Start`,
   so the readers see EOF at exit.
+- Signal frames act on the exec's process group (`kill(-pgid)`), which is its own
+  session because every exec starts with `Setsid`. That also means the group is
+  permanently *orphaned* — no member has a parent in the same session — and the
+  kernel discards SIGTSTP, SIGTTIN, and SIGTTOU sent to an orphaned group. A
+  `TSTP` frame therefore maps to **SIGSTOP**, which is never discarded; mapping
+  it to SIGTSTP silently does nothing. Ctrl-Z typed into a TTY exec is unaffected
+  because it is a byte, not a frame: the remote line discipline signals the
+  foreground job, which is a child group of the shell and not orphaned. A command
+  that *is* the session leader (`disco exec -t sleep 30`) cannot be stopped by
+  Ctrl-Z for the same orphan rule — `ssh host sleep 30` behaves identically.
 - Exit status uses the shell convention for signal deaths: `128+signum`, so an
   interrupted command reports 130 rather than Go's `ExitCode() == -1`, which
   loses the signal and reads as a generic failure.
