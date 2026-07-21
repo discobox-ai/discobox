@@ -38,6 +38,7 @@ func (a *App) newHarnessCommand() *cobra.Command {
 	cmd.AddCommand(a.newHarnessDeconfigureCommand())
 	cmd.AddCommand(a.newHarnessUpdateCommand())
 	cmd.AddCommand(a.newHarnessSetDefaultCommand())
+	cmd.AddCommand(a.newHarnessUnsetDefaultCommand())
 	cmd.AddCommand(a.newHarnessDeleteCommand())
 	cmd.AddCommand(a.newHarnessSecretsCommand())
 	return cmd
@@ -376,6 +377,32 @@ func (a *App) newHarnessSetDefaultCommand() *cobra.Command {
 			return writeJSON(cmd.OutOrStdout(), project)
 		}
 		_, err = cmd.OutOrStdout().Write([]byte("default harness config set to " + harnessID + "\n"))
+		return err
+	}}
+}
+
+func (a *App) newHarnessUnsetDefaultCommand() *cobra.Command {
+	return &cobra.Command{Use: "unset-default HARNESS_CONFIG_ID", Short: "Clear the project default harness config", Long: `Clear the project default harness config.
+
+Leaves the project with no default, so new sandboxes created without an explicit
+harness run agent-less. HARNESS_CONFIG_ID must be the current default; this is
+also how you release the default before disabling that harness.`, Args: cobra.ExactArgs(1), ValidArgsFunction: a.completeHarnessConfigs, RunE: func(cmd *cobra.Command, args []string) error {
+		projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
+		if err != nil {
+			return err
+		}
+		res, err := client.UnsetDefaultHarnessConfig(cmd.Context(), apiclientgen.UnsetDefaultHarnessConfigParams{ProjectId: projectID, HarnessConfigId: harnessID})
+		if err != nil {
+			return err
+		}
+		project, err := expectResponse[apimodel.Project](res)
+		if err != nil {
+			return err
+		}
+		if a.output == "json" {
+			return writeJSON(cmd.OutOrStdout(), project)
+		}
+		_, err = cmd.OutOrStdout().Write([]byte("default harness config cleared\n"))
 		return err
 	}}
 }

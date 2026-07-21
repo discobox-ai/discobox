@@ -58,6 +58,7 @@ type HarnessConfigService interface {
 	GetHarnessConfig(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error)
 	UpdateHarnessConfig(ctx context.Context, projectID, configID string, input UpdateHarnessConfigBody) (*model.HarnessConfig, error)
 	SetDefaultHarnessConfig(ctx context.Context, projectID, configID string) (*model.Project, error)
+	UnsetDefaultHarnessConfig(ctx context.Context, projectID, configID string) (*model.Project, error)
 	DeleteHarnessConfig(ctx context.Context, projectID, configID string) error
 
 	// ConfigureHarnessConfig launches the harness's interactive configure sandbox

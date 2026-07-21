@@ -121,6 +121,18 @@ func (h *Handler) SetDefaultHarnessConfig(ctx context.Context, params serverapi.
 	return &body, nil
 }
 
+func (h *Handler) UnsetDefaultHarnessConfig(ctx context.Context, params serverapi.UnsetDefaultHarnessConfigParams) (serverapi.UnsetDefaultHarnessConfigRes, error) {
+	project, err := h.services.HarnessConfigs.UnsetDefaultHarnessConfig(ctx, params.ProjectId, params.HarnessConfigId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[apimodel.Project](project)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
 func (h *Handler) DeleteHarnessConfig(ctx context.Context, params serverapi.DeleteHarnessConfigParams) (serverapi.DeleteHarnessConfigRes, error) {
 	if err := h.services.HarnessConfigs.DeleteHarnessConfig(ctx, params.ProjectId, params.HarnessConfigId); err != nil {
 		return apiError(err), nil

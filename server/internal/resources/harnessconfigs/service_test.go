@@ -44,6 +44,67 @@ func badRequest(t *testing.T, err error) {
 	}
 }
 
+func conflict(t *testing.T, err error) {
+	t.Helper()
+	var statusErr interface{ StatusCode() int }
+	if !errors.As(err, &statusErr) || statusErr.StatusCode() != http.StatusConflict {
+		t.Fatalf("err = %v, want 409", err)
+	}
+}
+
+// The project default must always point at a configured harness, so disabling
+// (deconfiguring) it in place is refused; the client unsets the default first.
+func TestDeconfigureDefaultHarnessConfigIsRefused(t *testing.T) {
+	ctx := context.Background()
+	svc, st, configID := newBindingService(t)
+
+	config, err := st.GetHarnessConfig(ctx, "project-1", configID)
+	if err != nil {
+		t.Fatalf("get harness config: %v", err)
+	}
+	config.Configured = true
+	if err := st.UpdateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("mark configured: %v", err)
+	}
+	if _, err := svc.SetDefaultHarnessConfig(ctx, "project-1", configID); err != nil {
+		t.Fatalf("set default: %v", err)
+	}
+
+	_, err = svc.DeconfigureHarnessConfig(ctx, "project-1", configID)
+	conflict(t, err)
+
+	// Still configured and still the default: the refused call changed nothing.
+	config, err = st.GetHarnessConfig(ctx, "project-1", configID)
+	if err != nil {
+		t.Fatalf("get harness config after refusal: %v", err)
+	}
+	if !config.Configured {
+		t.Fatal("harness config should remain configured after a refused deconfigure")
+	}
+
+	// Unsetting the default releases it, after which deconfigure succeeds.
+	project, err := svc.UnsetDefaultHarnessConfig(ctx, "project-1", configID)
+	if err != nil {
+		t.Fatalf("unset default: %v", err)
+	}
+	if project.DefaultHarnessConfigID != "" {
+		t.Fatalf("default = %q, want empty", project.DefaultHarnessConfigID)
+	}
+	if _, err := svc.DeconfigureHarnessConfig(ctx, "project-1", configID); err != nil {
+		t.Fatalf("deconfigure after unset: %v", err)
+	}
+}
+
+// Unsetting a config that is not the project default is refused so the intent is
+// unambiguous.
+func TestUnsetDefaultHarnessConfigRequiresDefault(t *testing.T) {
+	ctx := context.Background()
+	svc, _, configID := newBindingService(t)
+
+	_, err := svc.UnsetDefaultHarnessConfig(ctx, "project-1", configID)
+	conflict(t, err)
+}
+
 func TestSetHarnessConfigSecretBindingValidates(t *testing.T) {
 	ctx := context.Background()
 	svc, st, configID := newBindingService(t)

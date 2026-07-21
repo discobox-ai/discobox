@@ -634,6 +634,15 @@ func (UnimplementedHandler) StreamSandboxExecResources(ctx context.Context, para
 	return r, ht.ErrNotImplemented
 }
 
+// UnsetDefaultHarnessConfig implements unset-default-harness-config operation.
+//
+// Clear the project default harness config.
+//
+// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}/default
+func (UnimplementedHandler) UnsetDefaultHarnessConfig(ctx context.Context, params UnsetDefaultHarnessConfigParams) (r UnsetDefaultHarnessConfigRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // UnsetDefaultPool implements unset-default-pool operation.
 //
 // Clear the project default pool.

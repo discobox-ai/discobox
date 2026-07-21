@@ -1247,6 +1247,7 @@ func (*ErrorModelStatusCode) setDefaultPoolRes()                   {}
 func (*ErrorModelStatusCode) setHarnessConfigSecretBindingRes()    {}
 func (*ErrorModelStatusCode) startSandboxRes()                     {}
 func (*ErrorModelStatusCode) stopSandboxRes()                      {}
+func (*ErrorModelStatusCode) unsetDefaultHarnessConfigRes()        {}
 func (*ErrorModelStatusCode) unsetDefaultPoolRes()                 {}
 func (*ErrorModelStatusCode) updateHarnessConfigRes()              {}
 func (*ErrorModelStatusCode) updatePoolRes()                       {}
@@ -5964,10 +5965,11 @@ func (s *Project) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
 }
 
-func (*Project) getProjectRes()              {}
-func (*Project) setDefaultHarnessConfigRes() {}
-func (*Project) setDefaultPoolRes()          {}
-func (*Project) unsetDefaultPoolRes()        {}
+func (*Project) getProjectRes()                {}
+func (*Project) setDefaultHarnessConfigRes()   {}
+func (*Project) setDefaultPoolRes()            {}
+func (*Project) unsetDefaultHarnessConfigRes() {}
+func (*Project) unsetDefaultPoolRes()          {}
 
 // Ref: #/components/schemas/ProjectMember
 type ProjectMember struct {

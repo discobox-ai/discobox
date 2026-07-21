@@ -265,6 +265,10 @@ type StreamSandboxExecResourcesRes interface {
 	streamSandboxExecResourcesRes()
 }
 
+type UnsetDefaultHarnessConfigRes interface {
+	unsetDefaultHarnessConfigRes()
+}
+
 type UnsetDefaultPoolRes interface {
 	unsetDefaultPoolRes()
 }

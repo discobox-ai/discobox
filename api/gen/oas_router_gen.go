@@ -1042,6 +1042,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 												if len(elem) == 0 {
 													// Leaf node.
 													switch r.Method {
+													case "DELETE":
+														s.handleUnsetDefaultHarnessConfigRequest([2]string{
+															args[0],
+															args[1],
+														}, elemIsEscaped, w, r)
 													case "PUT":
 														s.handleSetDefaultHarnessConfigRequest([2]string{
 															args[0],
@@ -1049,7 +1054,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 														}, elemIsEscaped, w, r)
 													default:
 														s.notAllowed(w, r, notAllowedParams{
-															allowedMethods: "PUT",
+															allowedMethods: "DELETE,PUT",
 															allowedHeaders: nil,
 															acceptPost:     "",
 															acceptPatch:    "",
@@ -3098,6 +3103,15 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 												if len(elem) == 0 {
 													// Leaf node.
 													switch method {
+													case "DELETE":
+														r.name = UnsetDefaultHarnessConfigOperation
+														r.summary = "Clear the project default harness config"
+														r.operationID = "unset-default-harness-config"
+														r.operationGroup = ""
+														r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/default"
+														r.args = args
+														r.count = 2
+														return r, true
 													case "PUT":
 														r.name = SetDefaultHarnessConfigOperation
 														r.summary = "Set the project default harness config"

@@ -188,6 +188,30 @@ func (s *Service) SetDefaultHarnessConfig(ctx context.Context, projectID, config
 	return s.store.GetProject(ctx, projectID)
 }
 
+// UnsetDefaultHarnessConfig clears the project's default harness config when it
+// currently points at configID, leaving the project with no default. New
+// sandboxes created without an explicit harness then run agent-less. Clearing a
+// config that is not the default is rejected so the intent is unambiguous; this
+// is also how a client releases the default before disabling that harness.
+func (s *Service) UnsetDefaultHarnessConfig(ctx context.Context, projectID, configID string) (*model.Project, error) {
+	project, err := s.store.GetProject(ctx, projectID)
+	if err != nil {
+		return nil, apiError(err, "project not found")
+	}
+	config, err := s.store.GetHarnessConfig(ctx, projectID, configID)
+	if err != nil {
+		return nil, apiError(err, "harness config not found")
+	}
+	if project.DefaultHarnessConfigID != config.ID {
+		return nil, apperrors.NewStatusError(http.StatusConflict, "harness config is not the project default")
+	}
+	project.DefaultHarnessConfigID = ""
+	if err := s.store.UpsertProject(ctx, project); err != nil {
+		return nil, err
+	}
+	return s.store.GetProject(ctx, projectID)
+}
+
 func (s *Service) DeleteHarnessConfig(ctx context.Context, projectID, configID string) error {
 	if _, err := s.store.GetProject(ctx, projectID); err != nil {
 		return apiError(err, "project not found")

@@ -457,6 +457,23 @@ func (s *routerTestServices) SetDefaultHarnessConfig(_ context.Context, projectI
 	return &project, nil
 }
 
+func (s *routerTestServices) UnsetDefaultHarnessConfig(_ context.Context, projectID, configID string) (*model.Project, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	if _, ok := s.harnessConfigs[configID]; !ok {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
+	}
+	if s.project.DefaultHarnessConfigID != configID {
+		return nil, apperrors.NewStatusError(http.StatusConflict, "harness config is not the project default")
+	}
+	s.project.DefaultHarnessConfigID = ""
+	project := s.projectWithSandboxes()
+	return &project, nil
+}
+
 func (s *routerTestServices) DeleteHarnessConfig(_ context.Context, projectID, configID string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

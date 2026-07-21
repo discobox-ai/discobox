@@ -3377,6 +3377,40 @@ paths:
             summary: Set the project default harness config
             tags:
                 - Harness Configs
+        delete:
+            operationId: unset-default-harness-config
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Harness config ID
+                  in: path
+                  name: harnessConfigId
+                  required: true
+                  schema:
+                    description: Harness config ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Project'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Clear the project default harness config
+            tags:
+                - Harness Configs
     /projects/{projectId}/harness-configs/{harnessConfigId}/secret-bindings:
         get:
             operationId: list-harness-config-secret-bindings

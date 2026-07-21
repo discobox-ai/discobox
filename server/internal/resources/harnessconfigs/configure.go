@@ -402,6 +402,18 @@ func (s *Service) DeconfigureHarnessConfig(ctx context.Context, projectID, confi
 	if err != nil {
 		return nil, apiError(err, "harness config not found")
 	}
+	// The project default must always point at a configured harness, so the
+	// default cannot be turned off in place: the client unsets or switches the
+	// default first. Deconfiguring it here would leave `run` with no explicit
+	// harness resolving to an unconfigured one, which the create path rejects.
+	project, err := s.store.GetProject(ctx, projectID)
+	if err != nil {
+		return nil, apiError(err, "project not found")
+	}
+	if project.DefaultHarnessConfigID == config.ID {
+		return nil, apperrors.NewStatusError(http.StatusConflict,
+			fmt.Sprintf("harness %q is the project default; set a different default or unset it before disabling", config.Slug))
+	}
 	for _, secretID := range config.ConfiguredSecretIDs {
 		secretID = strings.TrimSpace(secretID)
 		if secretID == "" {

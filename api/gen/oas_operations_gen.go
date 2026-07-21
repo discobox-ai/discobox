@@ -72,6 +72,7 @@ const (
 	StartSandboxExecOperation                 OperationName = "StartSandboxExec"
 	StopSandboxOperation                      OperationName = "StopSandbox"
 	StreamSandboxExecResourcesOperation       OperationName = "StreamSandboxExecResources"
+	UnsetDefaultHarnessConfigOperation        OperationName = "UnsetDefaultHarnessConfig"
 	UnsetDefaultPoolOperation                 OperationName = "UnsetDefaultPool"
 	UpdateHarnessConfigOperation              OperationName = "UpdateHarnessConfig"
 	UpdatePoolOperation                       OperationName = "UpdatePool"

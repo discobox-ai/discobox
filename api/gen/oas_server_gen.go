@@ -431,6 +431,12 @@ type Handler interface {
 	//
 	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}/resources/stream
 	StreamSandboxExecResources(ctx context.Context, params StreamSandboxExecResourcesParams) (StreamSandboxExecResourcesRes, error)
+	// UnsetDefaultHarnessConfig implements unset-default-harness-config operation.
+	//
+	// Clear the project default harness config.
+	//
+	// DELETE /projects/{projectId}/harness-configs/{harnessConfigId}/default
+	UnsetDefaultHarnessConfig(ctx context.Context, params UnsetDefaultHarnessConfigParams) (UnsetDefaultHarnessConfigRes, error)
 	// UnsetDefaultPool implements unset-default-pool operation.
 	//
 	// Clear the project default pool.
