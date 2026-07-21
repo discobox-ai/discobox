@@ -18,7 +18,8 @@ runtime operations.
 | `config` | Local boot/config file parsing, environment overrides, defaults, and validation. Owns `image.json` parsing, including the `volumes` declaration and `%HOME%`/`%UID%`/`%GID%` token resolution. |
 | `server` | HTTP router, generated OpenAPI handler adapter, PASETO auth middleware, and identity/scope validation. |
 | `execs` | The sandbox runtime primitive: exec lifecycle, runtime metadata, systemd unit abstraction, stdout/stderr or PTY logging, shim launch, status socket, and attach. Harness terminals are execs. |
-| `execs` (`shim.go`) | Per-exec child process that owns the PTY/pipes and local Unix socket attach/status/start API, used by both plain execs and terminals. |
+| `execs` (`shim.go`) | Per-exec child process: the local Unix socket attach/status/start API, the audit log, and the runtime status file. It no longer owns the process itself — see `procio`. |
+| `procio` | Running a process and owning its descriptors: PTY versus pipes, stdin close, signal mapping, and exit status. No sockets, no frames, no attach — which is what makes its traps testable with a real process and nothing else. |
 | `terminal` | Harness-terminal layer built on top of `execs`: image harness resolution, hook/file setup, and primary-terminal lifecycle. A terminal is an exec created in harness mode, tagged `harnessId`/`primary` in exec metadata; all runtime mechanics belong to `execs`. |
 | `shimruntime` | The platform half of an exec attach: Unix socket setup, the HTTP upgrade, the PTY, and the screen emulator behind repaint-on-attach. The stream itself — attachers, ordering, buffering, exit retention — is the root module's `execstream/host`, which this drives and implements `host.Replayer` for. |
 | `hooks` | Local Unix-socket collector and publisher protocol for coding-harness lifecycle hook payloads. |
@@ -120,14 +121,15 @@ images also write their image digest.
   wire format and its types live in the root module's `execstream/frame`, shared
   with the CLI, so the two ends of a stream cannot disagree about it. See
   [ADR 0008](../docs/adr/0008-attach-stream-packages.md).
-- A pipe exec's output pipes are created by the shim (`os.Pipe`), never by
+- A pipe exec's output pipes are created by `procio` (`os.Pipe`), never by
   `cmd.StdoutPipe`/`StderrPipe`. `cmd.Wait` closes the pipes it made as soon as
-  the process exits, and the shim waits in a goroutine alongside the readers, so
+  the process exits, and the owner waits in a goroutine alongside the readers, so
   those pipes race the readers and silently discard a fast command's entire
-  output. The shim also closes its copies of the write ends right after `Start`,
+  output. `procio` also closes its copies of the write ends right after `Start`,
   so the readers see EOF at exit.
-- Signal frames act on the exec's process group (`kill(-pgid)`), which is its own
-  session because every exec starts with `Setsid`. That also means the group is
+- Signal frames act on the exec's process group (`kill(-pgid)`) via
+  `procio.Process.Signal`, which is its own session because every exec starts
+  with `Setsid`. That also means the group is
   permanently *orphaned* — no member has a parent in the same session — and the
   kernel discards SIGTSTP, SIGTTIN, and SIGTTOU sent to an orphaned group. A
   `TSTP` frame therefore maps to **SIGSTOP**, which is never discarded; mapping
@@ -138,7 +140,7 @@ images also write their image digest.
   Ctrl-Z for the same orphan rule — `ssh host sleep 30` behaves identically.
 - Exit status uses the shell convention for signal deaths: `128+signum`, so an
   interrupted command reports 130 rather than Go's `ExitCode() == -1`, which
-  loses the signal and reads as a generic failure.
+  loses the signal and reads as a generic failure. `procio.Status` carries it.
 - An attacher joins the broadcast set before the `101` response is written, not
   after: a client that sees `101` may start the process immediately, and output
   broadcast before registration is lost. That ordering is now structural rather

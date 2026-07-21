@@ -4,8 +4,6 @@ package execs
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	osuser "os/user"
 	"strconv"
 	"strings"
@@ -103,58 +101,4 @@ func int64Value(value *int64) (int64, bool) {
 		return 0, false
 	}
 	return *value, true
-}
-
-func terminateProcessGroup(cmd *exec.Cmd) {
-	if cmd == nil || cmd.Process == nil {
-		return
-	}
-	_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
-}
-
-func signalProcess(cmd *exec.Cmd, name string) error {
-	if cmd == nil || cmd.Process == nil {
-		return nil
-	}
-	trimmed := strings.TrimSpace(strings.ToUpper(name))
-	trimmed = strings.TrimPrefix(trimmed, "SIG")
-	switch trimmed {
-	case "INT":
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGINT)
-	case "TERM":
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
-	case "KILL":
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-	case "HUP":
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGHUP)
-	case "QUIT":
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGQUIT)
-	case "TSTP":
-		// SIGSTOP, not SIGTSTP. Every exec is started with Setsid, so its process
-		// group is by definition orphaned — no member has a parent in the same
-		// session — and the kernel discards SIGTSTP, SIGTTIN, and SIGTTOU sent to
-		// an orphaned group. SIGTSTP here would silently do nothing; SIGSTOP is
-		// never discarded, so a suspend from the client always lands.
-		//
-		// This is only the client asking to stop a whole exec. Ctrl-Z typed into a
-		// TTY exec is a byte, and the remote line discipline delivers SIGTSTP to
-		// the foreground job — which is a child group of the shell, not orphaned,
-		// so it stops normally with its handler intact.
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGSTOP)
-	case "CONT":
-		return syscall.Kill(-cmd.Process.Pid, syscall.SIGCONT)
-	default:
-		return nil
-	}
-}
-
-// exitCodeFromState reports the exit status a shell would report. Go's
-// ExitCode returns -1 for a process killed by a signal, which loses which
-// signal it was and reads as a generic failure; the shell convention of
-// 128+signum keeps it, so an interrupted command exits 130 as it does locally.
-func exitCodeFromState(state *os.ProcessState) int64 {
-	if status, ok := state.Sys().(syscall.WaitStatus); ok && status.Signaled() {
-		return int64(128 + status.Signal())
-	}
-	return int64(state.ExitCode())
 }

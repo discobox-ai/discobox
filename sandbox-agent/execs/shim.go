@@ -9,15 +9,14 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/creack/pty"
 	"github.com/obot-platform/discobox/execstream/frame"
 	"github.com/obot-platform/discobox/execstream/host"
+	"github.com/obot-platform/discobox/sandbox-agent/procio"
 	"github.com/obot-platform/discobox/sandbox-agent/shimruntime"
 )
 
@@ -39,9 +38,7 @@ type ShimConfig struct {
 
 type shimRuntime struct {
 	cfg       ShimConfig
-	cmd       *exec.Cmd
-	tty       *os.File
-	stdin     io.WriteCloser
+	proc      *procio.Process
 	logger    *AsyncLogger
 	server    *http.Server
 	listener  net.Listener
@@ -52,7 +49,10 @@ type shimRuntime struct {
 	startMu   sync.Mutex
 	stream    *shimruntime.Runtime
 	mu        sync.Mutex
-	status    Exec
+	// inputClosed records that stdin has been closed, so a later write reports
+	// it rather than failing on a closed descriptor.
+	inputClosed bool
+	status      Exec
 }
 
 func RunShim(ctx context.Context, cfg ShimConfig) error {
@@ -124,80 +124,41 @@ func (r *shimRuntime) start(ctx context.Context) error {
 	return nil
 }
 
-func (r *shimRuntime) startPTY(cmd *exec.Cmd) error {
-	if r.stream.HasAttachers() {
-		resizeCtx, cancelResize := context.WithTimeout(context.Background(), 100*time.Millisecond)
-		r.stream.WaitForResize(resizeCtx)
-		cancelResize()
+// startProcess launches the command and wires its streams to the audit log and
+// the attach stream. Everything about owning the process — PTY versus pipes,
+// which descriptors the parent holds, signals, exit status — belongs to procio.
+func (r *shimRuntime) startProcess(opts procio.Options) error {
+	if opts.TTY {
+		// A client that is already attached may have sent its size; starting at
+		// the wrong one makes the program paint twice.
+		if r.stream.HasAttachers() {
+			resizeCtx, cancelResize := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			r.stream.WaitForResize(resizeCtx)
+			cancelResize()
+		}
+		opts.Winsize = r.stream.InitialWinsize(r.cfg.Rows, r.cfg.Cols)
 	}
-	winsize := r.stream.InitialWinsize(r.cfg.Rows, r.cfg.Cols)
-	tty, err := pty.StartWithSize(cmd, winsize)
+	proc, err := procio.Start(opts)
 	if err != nil {
 		return err
 	}
-	r.tty = tty
-	r.stdin = tty
-	// Track the screen in memory at the PTY's real size so a late attacher can be
-	// repainted with the current screen and recent scrollback, and so the
-	// program's terminal queries are answered at the PTY while no client is
-	// attached. Only TTY execs have a screen; plain (pipe) execs attach without
-	// a repaint. Output cannot race this: broadcasting starts with copyOutput
-	// below.
-	r.stream.EnableScreen(winsize.Rows, winsize.Cols, shimruntime.DefaultScrollbackLines, tty)
-	r.status.PID = int64(cmd.Process.Pid)
-	r.outputWG.Add(1)
-	go r.copyOutput(LogStreamStdout, tty)
-	return nil
-}
+	r.proc = proc
+	r.status.PID = proc.PID()
 
-func (r *shimRuntime) startPipes(cmd *exec.Cmd) error {
-	stdin, err := cmd.StdinPipe()
-	if err != nil {
-		return err
+	if tty := proc.TTY(); tty != nil {
+		// Track the screen in memory at the PTY's real size so a late attacher
+		// can be repainted with the current screen and recent scrollback, and so
+		// the program's terminal queries are answered at the PTY while no client
+		// is attached. Output cannot race this: broadcasting starts below.
+		r.stream.EnableScreen(opts.Winsize.Rows, opts.Winsize.Cols, shimruntime.DefaultScrollbackLines, tty)
+		r.outputWG.Add(1)
+		go r.copyOutput(LogStreamStdout, proc.Stdout())
+		return nil
 	}
-	// Own the output pipes instead of using cmd.StdoutPipe/StderrPipe. Wait closes
-	// those the moment the process exits — the os/exec docs call it incorrect to
-	// Wait while reads are outstanding — and r.wait runs concurrently with the
-	// readers below, so a fast command's output was raced away and lost entirely.
-	// Pipes we create are never touched by Wait, so the readers always drain to
-	// EOF.
-	stdout, stdoutIn, err := os.Pipe()
-	if err != nil {
-		return err
-	}
-	stderr, stderrIn, err := os.Pipe()
-	if err != nil {
-		closeAll(stdout, stdoutIn)
-		return err
-	}
-	cmd.Stdout = stdoutIn
-	cmd.Stderr = stderrIn
-	if err := cmd.Start(); err != nil {
-		closeAll(stdout, stdoutIn, stderr, stderrIn)
-		return err
-	}
-	// The child holds its own descriptors now; drop the shim's copies of the write
-	// ends so the readers see EOF when the process exits.
-	closeAll(stdoutIn, stderrIn)
-	r.stdin = stdin
-	r.status.PID = int64(cmd.Process.Pid)
 	r.outputWG.Add(2)
-	go r.copyPipe(LogStreamStdout, stdout)
-	go r.copyPipe(LogStreamStderr, stderr)
+	go r.copyOutput(LogStreamStdout, proc.Stdout())
+	go r.copyOutput(LogStreamStderr, proc.Stderr())
 	return nil
-}
-
-// copyPipe drains one of the shim-owned output pipes and closes it once the
-// process is done writing.
-func (r *shimRuntime) copyPipe(stream LogStream, pipe *os.File) {
-	defer pipe.Close()
-	r.copyOutput(stream, pipe)
-}
-
-func closeAll(files ...*os.File) {
-	for _, file := range files {
-		_ = file.Close()
-	}
 }
 
 func (r *shimRuntime) handler() http.Handler {
@@ -252,17 +213,13 @@ func (r *shimRuntime) startCommand() error {
 	defer r.startMu.Unlock()
 
 	r.mu.Lock()
-	if r.cmd != nil {
+	if r.proc != nil {
 		r.mu.Unlock()
 		return nil
 	}
 	r.mu.Unlock()
 
-	// The exec's lifetime is managed by the shim itself (stop/kill via the
-	// runtime API), not by a request context.
-	cmd := exec.CommandContext(context.Background(), r.cfg.Command[0], r.cfg.Command[1:]...) //nolint:gosec // command is caller-supplied for sandbox exec.
-	cmd.Dir = r.cfg.Workdir
-	cmd.Env = append(os.Environ(), "DISCOBOX_EXEC_ID="+r.cfg.ExecID)
+	env := append(os.Environ(), "DISCOBOX_EXEC_ID="+r.cfg.ExecID)
 	userEnv, err := userEnvDefaults(r.cfg.User)
 	if err != nil {
 		r.markStartFailed(err)
@@ -270,12 +227,12 @@ func (r *shimRuntime) startCommand() error {
 	}
 	for key, value := range userEnv {
 		if strings.TrimSpace(key) != "" {
-			cmd.Env = append(cmd.Env, key+"="+value)
+			env = append(env, key+"="+value)
 		}
 	}
 	for key, value := range r.cfg.Env {
 		if strings.TrimSpace(key) != "" {
-			cmd.Env = append(cmd.Env, key+"="+value)
+			env = append(env, key+"="+value)
 		}
 	}
 	sysProcAttr, err := agentSysProcAttr(r.cfg.User)
@@ -283,20 +240,19 @@ func (r *shimRuntime) startCommand() error {
 		r.markStartFailed(err)
 		return err
 	}
-	cmd.SysProcAttr = sysProcAttr
 
-	if r.cfg.TTY {
-		if err := r.startPTY(cmd); err != nil {
-			r.markStartFailed(err)
-			return err
-		}
-	} else if err := r.startPipes(cmd); err != nil {
+	if err := r.startProcess(procio.Options{
+		Command:     r.cfg.Command,
+		Dir:         r.cfg.Workdir,
+		Env:         env,
+		SysProcAttr: sysProcAttr,
+		TTY:         r.cfg.TTY,
+	}); err != nil {
 		r.markStartFailed(err)
 		return err
 	}
 	now := time.Now().UTC()
 	r.mu.Lock()
-	r.cmd = cmd
 	r.status.Status = StatusRunning
 	r.status.StartedAt = &now
 	r.mu.Unlock()
@@ -363,7 +319,7 @@ func (r *shimRuntime) handleAttachFrame(attach *host.Attacher, next frame.Frame)
 		}
 		r.stream.ApplyResize(resize)
 	case frame.Signal:
-		if err := signalProcess(r.cmd, string(next.Payload)); err != nil {
+		if err := r.proc.Signal(string(next.Payload)); err != nil {
 			_ = attach.WriteFrame(frame.Error, []byte(err.Error()))
 			attach.Close()
 			return
@@ -382,52 +338,48 @@ func (r *shimRuntime) writeInput(payload []byte) error {
 		return nil
 	}
 	r.mu.Lock()
-	stdin := r.stdin
+	proc, closed := r.proc, r.inputClosed
 	r.mu.Unlock()
-	if stdin == nil {
+	if proc == nil || closed {
 		return fmt.Errorf("exec stdin is closed")
 	}
-	if _, err := stdin.Write(payload); err != nil {
+	if _, err := proc.WriteInput(payload); err != nil {
 		return err
 	}
 	r.logger.Record(LogStreamInput, payload)
 	return nil
 }
 
+// closeInput ends the process's stdin so a command reading to EOF terminates.
+// procio makes it a no-op for a TTY exec, whose input side is the terminal.
 func (r *shimRuntime) closeInput() {
 	r.closeOnce.Do(func() {
 		r.mu.Lock()
-		if r.tty != nil {
-			r.mu.Unlock()
-			return
-		}
-		stdin := r.stdin
-		r.stdin = nil
+		proc := r.proc
+		r.inputClosed = proc != nil && proc.TTY() == nil
 		r.mu.Unlock()
-		if stdin != nil {
-			_ = stdin.Close()
+		if proc != nil {
+			proc.CloseInput()
 		}
 	})
 }
 
 func (r *shimRuntime) wait() {
-	if r.cmd == nil {
+	if r.proc == nil {
 		return
 	}
-	err := r.cmd.Wait()
+	exit := r.proc.Wait()
 	r.closeInput()
 	now := time.Now().UTC()
 	r.mu.Lock()
 	r.status.ExitedAt = &now
 	r.status.Status = StatusExited
-	if err != nil {
+	if exit.Err != nil {
 		r.status.Status = StatusFailed
-		r.status.Error = err.Error()
+		r.status.Error = exit.Err.Error()
 	}
-	if state := r.cmd.ProcessState; state != nil {
-		code := exitCodeFromState(state)
-		r.status.ExitCode = &code
-	}
+	code := exit.ExitCode
+	r.status.ExitCode = &code
 	status := r.status
 	attachers := r.stream.Attachers()
 	r.mu.Unlock()
@@ -464,8 +416,8 @@ func (r *shimRuntime) lingerThenFinish() {
 }
 
 func (r *shimRuntime) terminate() {
-	if r.cmd != nil {
-		terminateProcessGroup(r.cmd)
+	if r.proc != nil {
+		r.proc.Terminate()
 	}
 }
 
@@ -479,10 +431,9 @@ func (r *shimRuntime) close() {
 	if r.listener != nil {
 		_ = r.listener.Close()
 	}
-	if r.tty != nil {
-		_ = r.tty.Close()
+	if r.proc != nil {
+		r.proc.Close()
 	}
-	r.closeInput()
 	if r.logger != nil {
 		r.logger.Close()
 	}
