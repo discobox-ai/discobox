@@ -32,6 +32,30 @@ Advanced configuration and low-level resource commands are grouped beneath the
 visible `disco box` command: `sandbox`, `terminal`, `exec`, `provider`, `pool`,
 `job`, `harnesses`, and `hooks` are not root commands.
 
+`disco exec` is the exception: the root command is the everyday one-shot "run
+this in my sandbox" verb, while `box exec create` stays the raw, fully
+configurable form (workdir, env, user, detach, explicit `-i`/`-t`). Both drive
+the same exec create/attach/status sequence. The root form has no `-it`: stdin
+is always attached, and a PTY is requested only when stdin, stdout, and stderr
+are all terminals, so pipes and redirects behave like a local command. The attach
+session writes stdout frames to stdout and stderr frames to stderr, with no
+special case for the PTY: a TTY exec merges at the PTY and simply never sends a
+stderr frame, which the client neither detects nor needs to.
+
+## Choosing a Sandbox Interactively
+
+Commands that act on "the sandbox I am working in" take `--sandbox-id` and fall
+back to `selectSandbox` (`internal/cli/picker.go`), never to a guess:
+
+- Candidates are exactly what `disco ls` shows — `listProjectSandboxes` filtered
+  to the current project directory's origin — so the command and the listing can
+  never disagree.
+- One candidate is used, none and several are errors, and several with a
+  terminal on stdin and stderr open the inline Bubble Tea picker instead.
+- The picker prompts on stderr so the command's stdout stays a clean stream.
+- `pickOne` is resource-independent: callers supply `pickerItem`s and the
+  wording for the empty and ambiguous cases.
+
 ## Attach Stream Pattern
 
 Terminal and exec attach use the same framed stream protocol and should share

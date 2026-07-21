@@ -255,7 +255,12 @@ func TestRootCommandHelp(t *testing.T) {
 	if !bytes.Contains(out.Bytes(), []byte("Manage advanced Discobox configuration")) {
 		t.Fatalf("help output = %q, want box command description", out.String())
 	}
-	for _, unavailableAtRoot := range []string{"sandbox", "terminal", "exec", "provider", "job", "harnesses", "hooks", "server", "status"} {
+	// exec is the exception among the box children: the friendly root `exec`
+	// runs a command in a sandbox, while `box exec` keeps the raw subcommands.
+	if command, _, err := cmd.Find([]string{"exec"}); err != nil || command.Name() != "exec" {
+		t.Fatalf("find root exec: command=%v err=%v", command, err)
+	}
+	for _, unavailableAtRoot := range []string{"sandbox", "terminal", "provider", "job", "harnesses", "hooks", "server", "status"} {
 		command, _, err := cmd.Find([]string{unavailableAtRoot})
 		if err == nil && command.Name() == unavailableAtRoot {
 			t.Fatalf("root command still exposes %q", unavailableAtRoot)
