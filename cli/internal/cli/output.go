@@ -51,7 +51,7 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 	return tw.Flush()
 }
 
-func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox) error {
+func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, showFolder bool) error {
 	if a.quiet {
 		sandboxes = sortedByCreatedAt(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return sandbox.CreatedAt })
 		return writeResourceIDs(cmd.OutOrStdout(), sandboxes, func(sandbox apimodel.Sandbox) string { return sandbox.ID })
@@ -61,8 +61,23 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox) e
 	}
 	sandboxes = sortedByCreatedAt(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return sandbox.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tSTATE\tERROR\tUPDATED")
+	if showFolder {
+		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tERROR\tUPDATED\tFOLDER")
+	} else {
+		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tERROR\tUPDATED")
+	}
 	for _, sandbox := range sandboxes {
+		if showFolder {
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+				sandbox.ID,
+				sandbox.Config.Name,
+				sandboxDisplayState(sandbox),
+				truncateTableValue(sandboxMessage(sandbox), 80),
+				formatTime(sandbox.UpdatedAt),
+				sandboxFolder(sandbox),
+			)
+			continue
+		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
 			sandbox.ID,
 			sandbox.Config.Name,
@@ -72,6 +87,17 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox) e
 		)
 	}
 	return tw.Flush()
+}
+
+// sandboxFolder is the client-side project directory a sandbox was started
+// from, taken from its origin. It is empty for sandboxes created without an
+// origin (for example directly through the API).
+func sandboxFolder(sandbox apimodel.Sandbox) string {
+	origin, ok := sandbox.Origin.Get()
+	if !ok {
+		return "-"
+	}
+	return origin.ProjectPath
 }
 
 func sandboxMessage(sandbox apimodel.Sandbox) string {
@@ -415,7 +441,7 @@ func (a *App) writeHarnesses(cmd *cobra.Command, harnesses []apimodel.HarnessCon
 
 // formatConfigured renders whether a harness has completed its configure flow.
 // Only a configured harness can be run, so this is the column that explains why
-// `disco prompt -H <slug>` is refused. A failed attempt shows its reason.
+// `disco run -H <slug>` is refused. A failed attempt shows its reason.
 func formatConfigured(harness *apimodel.HarnessConfig) string {
 	if harness.Configured {
 		return "yes"

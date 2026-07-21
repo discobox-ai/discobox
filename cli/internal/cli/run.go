@@ -22,8 +22,8 @@ type runCommandOptions struct {
 func (a *App) newRunCommand() *cobra.Command {
 	var opts runCommandOptions
 	cmd := &cobra.Command{
-		Use:     "prompt [flags] [PROMPT...]",
-		Aliases: []string{"p"},
+		Use:     "run [flags] [PROMPT...]",
+		Aliases: []string{"r"},
 		Short:   "Launch prompt in new sandbox",
 		Long: `Launch a prompt in a new sandbox against the current directory.
 
@@ -31,14 +31,14 @@ The arguments are the prompt. Use -- when the prompt needs to be separated from
 command flags explicitly.
 
 Every sandbox has one default terminal: the configured harness, or a shell when
-no harness is configured. By default prompt waits for the sandbox to start and
+no harness is configured. By default run waits for the sandbox to start and
 attaches to that terminal, streaming it to your terminal (press Ctrl-P Ctrl-Q to
 detach). Pass -d to create the sandbox and print it without attaching.`,
-		Example: `  disco prompt fix the failing tests
-  disco prompt -e GITHUB_TOKEN -e MODE=test fix the failing tests
-  disco prompt -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> fix the failing tests
-  disco prompt -d fix the failing tests
-  disco prompt -- prompt starting with --flag-like text`,
+		Example: `  disco run fix the failing tests
+  disco run -e GITHUB_TOKEN -e MODE=test fix the failing tests
+  disco run -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> fix the failing tests
+  disco run -d fix the failing tests
+  disco run -- prompt starting with --flag-like text`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.prompt.Source = a.source

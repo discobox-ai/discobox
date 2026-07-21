@@ -49,7 +49,7 @@ func NewRootCommand() *cobra.Command {
 	}
 	cmd.PersistentFlags().StringVar(&app.serverURL, "server", envOrDefault("DISCOBOX_SERVER", localipc.DefaultEndpoint()), "Discobox API server endpoint")
 	cmd.PersistentFlags().StringVarP(&app.projectID, "project", "p", envOrDefault("DISCOBOX_PROJECT", defaultProjectAlias), "Project ID for this invocation; use default for the user's default project")
-	cmd.PersistentFlags().StringVarP(&app.source, "chdir", "C", ".", "Source directory or Git repository to act on, optionally with @REF; its Git repository root identifies the sandboxes ls lists and prompt creates")
+	cmd.PersistentFlags().StringVarP(&app.source, "chdir", "C", ".", "Source directory or Git repository to act on, optionally with @REF; its Git repository root identifies the sandboxes ls lists and run creates")
 	// Beta: the flag works but is undocumented until the source-selection UX is
 	// settled, so it stays out of help text and examples.
 	_ = cmd.PersistentFlags().MarkHidden("chdir")
@@ -59,14 +59,18 @@ func NewRootCommand() *cobra.Command {
 	cmd.PersistentFlags().BoolVar(&app.noStart, "no-start", false, "Do not start a local server when the endpoint is unavailable")
 	_ = cmd.RegisterFlagCompletionFunc("project", app.completeProjects)
 
-	cmd.AddCommand(app.newListCommand())
-	cmd.AddCommand(app.newBoxCommand())
 	cmd.AddCommand(app.newRunCommand())
+	cmd.AddCommand(app.newListCommand())
+	cmd.AddCommand(app.newConfigureCommand())
 	cmd.AddCommand(app.newSecretCommand())
 	cmd.AddCommand(app.newEventsCommand())
 	cmd.AddCommand(app.newTUICommand())
 	cmd.AddCommand(app.newCompletionCommand())
-	cmd.AddCommand(app.newServerCommand())
+	cmd.AddCommand(app.newBoxCommand())
+	// Cobra's usage template always lists a subcommand literally named "help",
+	// even when hidden. Give the help command another name so it stays out of the
+	// command list; the --help flag still works on every command.
+	cmd.SetHelpCommand(&cobra.Command{Use: "no-help", Hidden: true})
 	return cmd
 }
 

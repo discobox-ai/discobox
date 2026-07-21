@@ -15,5 +15,6 @@ func (a *App) newBoxCommand() *cobra.Command {
 	cmd.AddCommand(a.newJobCommand())
 	cmd.AddCommand(a.newHarnessCommand())
 	cmd.AddCommand(a.newHooksCommand())
+	cmd.AddCommand(a.newServerCommand())
 	return cmd
 }

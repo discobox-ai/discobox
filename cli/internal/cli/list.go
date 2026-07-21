@@ -17,6 +17,7 @@ import (
 // a repository only on the machine holding it, so it cannot answer "sandboxes I
 // started here" once the server is remote.
 func (a *App) newListCommand() *cobra.Command {
+	var all bool
 	cmd := &cobra.Command{
 		Use:     "ls",
 		Aliases: []string{"ps"},
@@ -25,9 +26,10 @@ func (a *App) newListCommand() *cobra.Command {
 
 The project directory is the Git repository root of the current directory, or
 the directory itself when it is not in a repository. Sandboxes started from
-another directory, or from another machine, are not listed; use
-"disco box sandbox ls" to list every sandbox in the project.`,
+another directory, or from another machine, are not listed; pass --all (or use
+"disco box sandbox ls") to list every sandbox in the project.`,
 		Example: `  disco ls
+  disco ls --all
   disco ls -o json`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -35,18 +37,19 @@ another directory, or from another machine, are not listed; use
 			if err != nil {
 				return err
 			}
-			originKey, err := sandboxcreate.OriginKey(cmd.Context(), a.source)
-			if err != nil {
-				return err
-			}
 			client, err := a.apiClient()
 			if err != nil {
 				return err
 			}
-			bodyRes, err := client.ListSandboxes(cmd.Context(), apiclientgen.ListSandboxesParams{
-				ProjectId: projectID,
-				OriginKey: apiclientgen.NewOptString(originKey),
-			})
+			params := apiclientgen.ListSandboxesParams{ProjectId: projectID}
+			if !all {
+				originKey, err := sandboxcreate.OriginKey(cmd.Context(), a.source)
+				if err != nil {
+					return err
+				}
+				params.OriginKey = apiclientgen.NewOptString(originKey)
+			}
+			bodyRes, err := client.ListSandboxes(cmd.Context(), params)
 			if err != nil {
 				return err
 			}
@@ -54,9 +57,10 @@ another directory, or from another machine, are not listed; use
 			if err != nil {
 				return err
 			}
-			return a.writeSandboxes(cmd, body.GetSandboxes())
+			return a.writeSandboxes(cmd, body.GetSandboxes(), all)
 		},
 	}
+	cmd.Flags().BoolVarP(&all, "all", "a", false, "List every sandbox in the project, regardless of the directory it was started from, and show a FOLDER column")
 	a.addQuietFlag(cmd)
 	return cmd
 }

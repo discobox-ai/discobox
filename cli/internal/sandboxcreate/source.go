@@ -26,7 +26,7 @@ const (
 	defaultRunSourceDir      = "/workspace/source"
 	defaultRunWorkingDir     = "/workspace/source"
 	defaultRemoteBranch      = "HEAD"
-	runSnapshotCommitMessage = "disco prompt workspace snapshot\n"
+	runSnapshotCommitMessage = "disco run workspace snapshot\n"
 )
 
 type resolvedRunSource struct {

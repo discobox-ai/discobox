@@ -125,7 +125,7 @@ func TestQuietListWritersPrintFullIDsOnly(t *testing.T) {
 		{
 			name: "sandboxes",
 			write: func(cmd *cobra.Command) error {
-				return app.writeSandboxes(cmd, []apimodel.Sandbox{{ID: "sandbox-full-id"}})
+				return app.writeSandboxes(cmd, []apimodel.Sandbox{{ID: "sandbox-full-id"}}, false)
 			},
 			want: "sandbox-full-id\n",
 		},
@@ -255,13 +255,13 @@ func TestRootCommandHelp(t *testing.T) {
 	if !bytes.Contains(out.Bytes(), []byte("Manage advanced Discobox configuration")) {
 		t.Fatalf("help output = %q, want box command description", out.String())
 	}
-	for _, unavailableAtRoot := range []string{"sandbox", "terminal", "exec", "provider", "job", "harnesses", "hooks", "status"} {
+	for _, unavailableAtRoot := range []string{"sandbox", "terminal", "exec", "provider", "job", "harnesses", "hooks", "server", "status"} {
 		command, _, err := cmd.Find([]string{unavailableAtRoot})
 		if err == nil && command.Name() == unavailableAtRoot {
 			t.Fatalf("root command still exposes %q", unavailableAtRoot)
 		}
 	}
-	for _, child := range []string{"sandbox", "terminal", "exec", "provider", "job", "harnesses", "hooks"} {
+	for _, child := range []string{"sandbox", "terminal", "exec", "provider", "job", "harnesses", "hooks", "server"} {
 		command, args, err := cmd.Find([]string{"box", child})
 		if err != nil || len(args) != 0 || command.Name() != child {
 			t.Fatalf("find box child %q: command=%v args=%v err=%v", child, command, args, err)
@@ -801,6 +801,45 @@ func TestHarnessCreateSendsFilesFlag(t *testing.T) {
 	}
 }
 
+func TestWriteSandboxesShowFolderColumn(t *testing.T) {
+	app := &App{output: "table"}
+	cmd := &cobra.Command{}
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+
+	sandboxes := []apimodel.Sandbox{
+		{
+			ID:        "sandbox-1",
+			Config:    apimodel.SandboxConfig{Name: "alpha"},
+			CreatedAt: time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC),
+			Origin:    apiclientgen.NewOptOrigin(apiclientgen.Origin{ProjectPath: "/home/darren/src/disco2"}),
+		},
+		{
+			ID:        "sandbox-2",
+			Config:    apimodel.SandboxConfig{Name: "beta"},
+			CreatedAt: time.Date(2026, 6, 17, 0, 0, 1, 0, time.UTC),
+		},
+	}
+
+	if err := app.writeSandboxes(cmd, sandboxes, true); err != nil {
+		t.Fatalf("writeSandboxes: %v", err)
+	}
+	output := out.String()
+	for _, want := range []string{"FOLDER", "/home/darren/src/disco2"} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("sandboxes output = %q, want %q", output, want)
+		}
+	}
+
+	out.Reset()
+	if err := app.writeSandboxes(cmd, sandboxes, false); err != nil {
+		t.Fatalf("writeSandboxes: %v", err)
+	}
+	if strings.Contains(out.String(), "FOLDER") {
+		t.Fatalf("sandboxes output = %q, did not want FOLDER column", out.String())
+	}
+}
+
 func TestWriteSandboxesTableIncludesErrorMessage(t *testing.T) {
 	app := &App{output: "table"}
 	cmd := &cobra.Command{}
@@ -820,7 +859,7 @@ func TestWriteSandboxesTableIncludesErrorMessage(t *testing.T) {
 			ErrorMessage:        apiclientgen.NewOptString("worker-agent request failed: git clone failed"),
 			Generation:          1,
 		},
-	}})
+	}}, false)
 	if err != nil {
 		t.Fatalf("writeSandboxes: %v", err)
 	}
@@ -1425,14 +1464,14 @@ func TestDebugTransportDoesNotAddExtraResponseBodyNewline(t *testing.T) {
 
 func TestRootCommandIncludesServerSubcommand(t *testing.T) {
 	cmd := NewRootCommand()
-	found, _, err := cmd.Find([]string{"server"})
+	found, _, err := cmd.Find([]string{"box", "server"})
 	if err != nil {
 		t.Fatalf("find server command: %v", err)
 	}
 	if found == nil || found.Name() != "server" {
 		t.Fatalf("server command = %v, want server", found)
 	}
-	found, _, err = cmd.Find([]string{"server", "shutdown"})
+	found, _, err = cmd.Find([]string{"box", "server", "shutdown"})
 	if err != nil {
 		t.Fatalf("find server shutdown command: %v", err)
 	}
@@ -1462,7 +1501,7 @@ func TestServerShutdownWaitCommandWaitsForServerToStop(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "server", "shutdown", "--wait"})
+	cmd.SetArgs([]string{"--server", server.URL, "box", "server", "shutdown", "--wait"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute server shutdown --wait: %v", err)
@@ -1490,7 +1529,7 @@ func TestServerShutdownFallsBackToDefaultHTTPWhenSocketMissing(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"server", "shutdown"})
+	cmd.SetArgs([]string{"box", "server", "shutdown"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute server shutdown fallback: %v", err)

@@ -76,7 +76,7 @@ func TestRunCommandCreatesSandbox(t *testing.T) {
 	cmd := NewRootCommand()
 	var out bytes.Buffer
 	cmd.SetOut(&out)
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "prompt", "-d", "-e", "EXPLICIT=value", "-e", "RUN_ENV_FROM_SHELL", "-C", repo + "@HEAD", "fix", "tests"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "-e", "EXPLICIT=value", "-e", "RUN_ENV_FROM_SHELL", "-C", repo + "@HEAD", "fix", "tests"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute run: %v", err)
@@ -140,7 +140,7 @@ func TestRunCommandDefaultsSourceToCurrentDirectory(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	cmd := NewRootCommand()
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "prompt", "-d", "fix", "tests"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "fix", "tests"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute run: %v", err)
@@ -178,7 +178,7 @@ func TestRunCommandStillAcceptsDashDashSeparator(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	cmd := NewRootCommand()
-	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "prompt", "-d", "-C", repo + "@HEAD", "--", "hello", "--flag-like", "prompt"})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-d", "-C", repo + "@HEAD", "--", "hello", "--flag-like", "prompt"})
 
 	if err := cmd.Execute(); err != nil {
 		t.Fatalf("execute run: %v", err)
