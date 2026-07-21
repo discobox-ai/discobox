@@ -19,10 +19,16 @@ One run of `configure` against this image proves the whole chain:
   grant) and file (`stub.json`), marks the harness configured, and deletes the
   sandbox
 
-Running configure a second time additionally proves the reconfigure path: the
-echoed previous configuration must now contain the secret **value** and the
-file from the first run, and afterwards exactly one `stub-token` secret must
-exist (reconfigure replaces the previous generation instead of leaking it).
+Running configure a second time additionally proves the reconfigure path. The
+echoed previous configuration must now list the `STUB_TOKEN` secret and the file
+from the first run, and must contain **no secret value** — the value is offered
+as `$PREV_STUB_TOKEN`, a sentinel the proxy swaps only while a live grant covers
+it. Afterwards exactly one `stub-token` secret must exist (reconfigure replaces
+the previous generation instead of leaking it).
+
+Set `STUB_CONFIGURE_KEEP=1` in the configure sandbox to exercise the other half
+of that path: the command returns `usePrevious` instead of a value, and the
+secret from the first run must survive with its ID, binding, and grant intact.
 
 ## Usage
 
