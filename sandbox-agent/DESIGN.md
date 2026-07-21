@@ -126,6 +126,11 @@ images also write their image digest.
 - Exit status uses the shell convention for signal deaths: `128+signum`, so an
   interrupted command reports 130 rather than Go's `ExitCode() == -1`, which
   loses the signal and reads as a generic failure.
+- An attacher joins the broadcast set before the `101` response is written, not
+  after: a client that sees `101` may start the process immediately, and output
+  broadcast before registration is lost. It registers in the buffering state, so
+  live frames cannot race the handshake bytes onto the wire; `flushBuffer`
+  releases them once the handshake (and any repaint snapshot) is out.
 - Terminal attach supports `?replay=true`, which repaints the current screen
   before live output so a client that connects after a program has been running
   sees its state, not just output produced from the attach onward. The repaint

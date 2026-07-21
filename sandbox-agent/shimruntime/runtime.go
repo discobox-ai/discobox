@@ -192,11 +192,13 @@ func (r *Runtime) HandleAttach(w http.ResponseWriter, repaintRequested bool) {
 	// would kill this long-lived attach stream mid-session; the attach owns the
 	// conn from here on, so clear them.
 	_ = conn.SetDeadline(time.Time{})
-	_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: " + r.protocol + "\r\n\r\n")
-	if err := rw.Flush(); err != nil {
-		return
-	}
-	attach := &Attacher{w: rw, done: make(chan struct{}), ready: make(chan struct{})}
+	// Register before announcing the upgrade. A client that sees 101 may start the
+	// process immediately, and anything the process wrote before this goroutine
+	// joined the broadcast set would be lost — for a fast command that is its
+	// entire output. The attacher starts buffering, so registering this early
+	// cannot race the handshake bytes onto the wire: live frames queue until
+	// flushBuffer below, after 101 is flushed.
+	attach := &Attacher{w: rw, done: make(chan struct{}), ready: make(chan struct{}), buffering: true}
 	var snapshot []byte
 	repaint := repaintRequested && r.hasScreen()
 	if repaint {
@@ -205,8 +207,14 @@ func (r *Runtime) HandleAttach(w http.ResponseWriter, repaintRequested bool) {
 		r.addAttacher(attach)
 	}
 	defer r.removeAttacher(attach)
+
+	_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: " + r.protocol + "\r\n\r\n")
+	if err := rw.Flush(); err != nil {
+		return
+	}
 	go r.readFrames(attach, rw)
-	if repaintRequested && r.hasTTY() {
+	replayTTY := repaintRequested && r.hasTTY()
+	if replayTTY {
 		// Hold the repaint until the client signals it is attached and reading
 		// (frame.Ready), so nothing is written during the upgrade handshake window
 		// where an intermediate proxy hop may drop buffered bytes. Fall back after
@@ -214,14 +222,17 @@ func (r *Runtime) HandleAttach(w http.ResponseWriter, repaintRequested bool) {
 		// repaint instead of hanging.
 		r.waitForReady(attach)
 		if repaint {
-			err := attach.writeSnapshot(snapshot)
-			if err == nil {
-				err = attach.flushBuffer()
-			}
-			if err != nil {
+			if err := attach.writeSnapshot(snapshot); err != nil {
 				attach.Close()
 			}
 		}
+	}
+	// Live streaming begins here for every attach: everything broadcast since
+	// registration goes out in order, behind the snapshot when there was one.
+	if err := attach.flushBuffer(); err != nil {
+		attach.Close()
+	}
+	if replayTTY {
 		// The program's own repaint is authoritative: jiggle the PTY size after
 		// the replay so the program redraws itself and any snapshot imperfection
 		// — or a missing snapshot after the screen was dropped — converges to
@@ -423,10 +434,11 @@ func (r *Runtime) snapshotAttachersLocked() []*Attacher {
 // attacher under one lock keeps the repaint and the buffered live output exactly
 // contiguous: every output chunk is either already in the snapshot or will be
 // buffered from registration onward. See Broadcast.
+// The attacher is already buffering when it arrives (HandleAttach constructs it
+// that way), so live output queues from registration onward.
 func (r *Runtime) addReplayAttacher(attach *Attacher) []byte {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	attach.buffering = true
 	r.attachers[attach] = struct{}{}
 	if r.screen == nil {
 		return nil
