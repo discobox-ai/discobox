@@ -177,11 +177,13 @@ func TestRunShimUsesResizeFrameBeforeStart(t *testing.T) {
 	}
 	// The child writes the size file and exits; wait for that (the shim lingers
 	// after exit), then cancel to end the linger.
+	// Wait for content, not just for the file: the shell's redirect creates it
+	// before stty writes, so an existence check reads an empty file under load.
 	var data []byte
 	deadline := time.Now().Add(5 * time.Second)
 	for {
 		var readErr error
-		if data, readErr = os.ReadFile(sizePath); readErr == nil {
+		if data, readErr = os.ReadFile(sizePath); readErr == nil && len(data) > 0 {
 			break
 		}
 		if time.Now().After(deadline) {
