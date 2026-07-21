@@ -20,7 +20,7 @@ runtime operations.
 | `execs` | The sandbox runtime primitive: exec lifecycle, runtime metadata, systemd unit abstraction, stdout/stderr or PTY logging, shim launch, status socket, and attach. Harness terminals are execs. |
 | `execs` (`shim.go`) | Per-exec child process that owns the PTY/pipes and local Unix socket attach/status/start API, used by both plain execs and terminals. |
 | `terminal` | Harness-terminal layer built on top of `execs`: image harness resolution, hook/file setup, and primary-terminal lifecycle. A terminal is an exec created in harness mode, tagged `harnessId`/`primary` in exec metadata; all runtime mechanics belong to `execs`. |
-| `shimruntime` | Shared local shim attach runtime for Unix socket setup, HTTP upgrade handling, framed stream attachers, broadcast, exit frames, and pending resize state. |
+| `shimruntime` | The platform half of an exec attach: Unix socket setup, the HTTP upgrade, the PTY, and the screen emulator behind repaint-on-attach. The stream itself — attachers, ordering, buffering, exit retention — is the root module's `execstream/host`, which this drives and implements `host.Replayer` for. |
 | `hooks` | Local Unix-socket collector and publisher protocol for coding-harness lifecycle hook payloads. |
 | `resources` | Opaque cgroup/procfs/systemd-style resource snapshot collection for exec runtimes. |
 | `store` | Sandbox-local SQLite/GORM audit log, observed terminal state snapshots, and retained resource blobs. |
@@ -97,9 +97,10 @@ images also write their image digest.
   and the prompt is not passed, since a shell would run it as a command. The
   launched exec is tagged `primary` in metadata by the sandbox-agent; that tag
   cannot be requested through the terminal create API.
-- There is one shim (`execs/shim.go`) and one framed attach mechanism. Keep Unix
-  socket setup, HTTP upgrade, attacher tracking, frame writes, output broadcast,
-  exit frame emission, and pending resize handling in `shimruntime`; keep
+- There is one shim (`execs/shim.go`) and one framed attach mechanism. Attacher
+  tracking, frame writes, output broadcast, exit frame emission, and pending
+  resize state belong to `execstream/host` in the root module; keep Unix socket
+  setup, the HTTP upgrade, and everything touching the PTY in `shimruntime`; keep
   process startup, status persistence, stream logging, and stdin-close behavior
   in `execs`. Before publishing terminal status or an exit frame, drain the
   PTY/pipes and flush the asynchronous log queue so status means all command
@@ -140,25 +141,28 @@ images also write their image digest.
   loses the signal and reads as a generic failure.
 - An attacher joins the broadcast set before the `101` response is written, not
   after: a client that sees `101` may start the process immediately, and output
-  broadcast before registration is lost. It registers in the buffering state, so
-  live frames cannot race the handshake bytes onto the wire; `flushBuffer`
-  releases them once the handshake (and any repaint snapshot) is out.
+  broadcast before registration is lost. That ordering is now structural rather
+  than a convention — `host.Attach` registers, then invokes
+  `AttachOptions.Ready`, which is where `HandleAttach` writes its `101`, so a
+  caller cannot reorder the two. The attacher registers buffering, so live
+  frames cannot race the handshake bytes onto the wire.
 - Terminal attach supports `?replay=true`, which repaints the current screen
   before live output so a client that connects after a program has been running
   sees its state, not just output produced from the attach onward. The repaint
-  is a snapshot of an in-memory terminal emulator (`shimruntime.screenBuffer`,
+  is a snapshot of an in-memory terminal emulator (`shimruntime.screenBuffer`, reached through `host.Replayer`,
   backed by `charmbracelet/x/vt`), not the raw transcript: the emulator is fed
   every output chunk in `Broadcast`, and a snapshot serializes the current
   screen, capped scrollback (`DefaultScrollbackLines`), the cursor position, and
   the input/rendering modes a TUI set before the client connected (mouse,
   bracketed paste, cursor keys, cursor visibility — tracked by scanning the
   output stream, since the emulator does not expose them). Only TTY execs have a
-  screen (`Runtime.EnableScreen`); plain execs attach without a repaint. The
+  screen: `Runtime.EnableScreen` installs the `Replayer` once the PTY exists, so a
+  pipe exec never waits on a repaint handshake it cannot satisfy. The
   disk log (`AsyncLogger`) is no longer used for attach — it backs only the
   `terminal logs` command (full forensic transcript).
-- Race-free snapshot: `shimruntime.Broadcast` feeds the emulator and snapshots
-  the attacher set under one lock, and `addReplayAttacher` captures the emulator
-  snapshot and registers the attacher under that same lock. Every output chunk
+- Race-free snapshot: `host.Stream.Broadcast` feeds the `Replayer` and snapshots
+  the attacher set under one lock, and registration captures the `Replayer`
+  snapshot under that same lock. Every output chunk
   therefore falls on exactly one side of the attach: already absorbed into the
   snapshot, or buffered as a live frame from registration onward and flushed
   after the snapshot — so nothing is lost or duplicated. The shim withholds the

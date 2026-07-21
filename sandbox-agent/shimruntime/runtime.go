@@ -1,3 +1,8 @@
+// Package shimruntime is the sandbox-agent's platform half of an exec attach
+// stream. The fan-out — attachers, ordering, buffering, the retained exit frame
+// — lives in the root module's execstream/host; what stays here is everything
+// that touches this machine: the PTY, the terminal emulator behind
+// repaint-on-attach, the Unix socket, and the HTTP upgrade.
 package shimruntime
 
 import (
@@ -16,23 +21,21 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/obot-platform/discobox/execstream/frame"
+	"github.com/obot-platform/discobox/execstream/host"
 )
 
+// Runtime owns the terminal side of one exec and delegates the stream to
+// host.Stream. It is also the stream's host.Replayer: repaint-on-attach is
+// backed by the screen emulator and the PTY, both of which are this machine's
+// business, not the protocol's.
 type Runtime struct {
-	protocol    string
-	done        <-chan struct{}
-	onFrame     func(*Attacher, frame.Frame)
-	mu          sync.Mutex
-	attachers   map[*Attacher]struct{}
-	resize      *frame.ResizePayload
-	resizeReady chan struct{}
-	resizeOnce  sync.Once
+	protocol string
+	stream   *host.Stream
+
+	mu sync.Mutex
 	// screen, when set (TTY execs), mirrors the live output in an in-memory
 	// terminal emulator so a late attacher can be repainted with the current
-	// screen state instead of only output produced after it connected. It is fed
-	// and snapshotted under mu, in lockstep with the attacher set, so a snapshot
-	// captured at an attacher's registration reflects exactly the output
-	// broadcast before it (see Broadcast and addReplayAttacher).
+	// screen state instead of only output produced after it connected.
 	screen *screenBuffer
 	// tty is the PTY master for TTY execs, set alongside the screen in
 	// EnableScreen and nil for pipe execs. It receives resizes, the emulator's
@@ -40,15 +43,20 @@ type Runtime struct {
 	// redraw jiggle. It outlives the screen: an emulator panic drops screen but
 	// keeps tty, so attach still forces a program redraw.
 	tty *os.File
-	// exitPayload holds the encoded exit frame once the process has exited, so a
-	// client that attaches after the exit still receives it (with the screen
-	// replay) rather than a bare disconnect. nil while the process runs.
-	exitPayload []byte
+}
+
+func New(protocol string, done <-chan struct{}, onFrame func(*host.Attacher, frame.Frame)) *Runtime {
+	r := &Runtime{protocol: protocol}
+	r.stream = host.New(host.Options{Done: done, OnFrame: onFrame})
+	return r
 }
 
 // EnableScreen turns on in-memory screen tracking for repaint-on-attach. It is
 // called once, after the PTY exists but before output is broadcast, for TTY
 // execs; plain (pipe) execs have no screen and attach without a repaint.
+//
+// Installing the replayer here rather than at New is what keeps a pipe exec
+// from waiting on a repaint handshake it will never satisfy.
 //
 // tty is the PTY master: it answers the program's terminal queries while no
 // client is attached (see pumpScreenResponses) and carries resizes and the
@@ -59,7 +67,62 @@ func (r *Runtime) EnableScreen(rows, cols uint16, scrollbackLines int, tty *os.F
 	r.screen = screen
 	r.tty = tty
 	r.mu.Unlock()
+	r.stream.SetReplayer(r)
 	go r.pumpScreenResponses(screen, tty)
+}
+
+// Observe feeds the screen emulator, implementing host.Replayer. It runs under
+// the stream lock, so it must not block — see pumpScreenResponses.
+func (r *Runtime) Observe(payload []byte) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.screen == nil {
+		return
+	}
+	r.runScreenLocked(func(screen *screenBuffer) { screen.write(payload) })
+}
+
+// Snapshot serializes the current screen for a repaint, implementing
+// host.Replayer. It returns nil once the emulator has been dropped after a
+// panic; the post-replay redraw still recovers the picture.
+func (r *Runtime) Snapshot() []byte {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.screen == nil {
+		return nil
+	}
+	var snapshot []byte
+	r.runScreenLocked(func(screen *screenBuffer) { snapshot = screen.snapshot() })
+	return snapshot
+}
+
+// AfterReplay forces the running program to repaint itself by shrinking the PTY
+// by one row and restoring it, which delivers SIGWINCH and makes a TUI redraw at
+// the (restored) real size. It implements host.Replayer.
+//
+// The replayed snapshot paints instantly but is only as faithful as the
+// emulator; the program's own redraw is the ground truth the client screen
+// converges to, and it is also what recovers a repaint whose snapshot was lost
+// to an emulator panic.
+func (r *Runtime) AfterReplay() {
+	r.mu.Lock()
+	tty := r.tty
+	r.mu.Unlock()
+	if tty == nil {
+		return
+	}
+	size, err := pty.GetsizeFull(tty)
+	if err != nil || size.Rows == 0 || size.Cols == 0 {
+		return
+	}
+	jiggle := *size
+	if jiggle.Rows > 1 {
+		jiggle.Rows--
+	} else {
+		jiggle.Rows++
+	}
+	_ = pty.Setsize(tty, &jiggle)
+	_ = pty.Setsize(tty, size)
 }
 
 // runScreenLocked runs fn against the screen buffer, dropping the screen if fn
@@ -80,10 +143,10 @@ func (r *Runtime) runScreenLocked(fn func(*screenBuffer)) {
 // pumpScreenResponses drains the terminal-query responses (DA1, DSR, DECRQM,
 // ...) that the screen emulator generates while absorbing output. The emulator
 // writes responses to an unbuffered internal pipe during screenBuffer.write —
-// which Broadcast calls holding r.mu — so an undrained pipe blocks Broadcast
-// and deadlocks the whole runtime. This pump must therefore never stall: the
-// reader goroutine below only reads the pipe and drops chunks when the
-// delivery loop falls behind, so it can never be the blocked end.
+// which Observe calls holding both the stream lock and r.mu — so an undrained
+// pipe blocks output and deadlocks the whole runtime. This pump must therefore
+// never stall: the reader goroutine below only reads the pipe and drops chunks
+// when the delivery loop falls behind, so it can never be the blocked end.
 //
 // Delivery emulates a real terminal for a program running headless: while no
 // client is attached the response is written to the PTY, so a TUI that blocks
@@ -92,7 +155,7 @@ func (r *Runtime) runScreenLocked(fn func(*screenBuffer)) {
 // answers it, so the emulator's answer is dropped to avoid double responses.
 //
 // The pump lives for the process lifetime: vt.Emulator.Close races with the
-// writes Broadcast issues, so the pipe is intentionally never closed.
+// writes Observe issues, so the pipe is intentionally never closed.
 func (r *Runtime) pumpScreenResponses(screen *screenBuffer, input io.Writer) {
 	responses := make(chan []byte, 16)
 	go func() {
@@ -120,41 +183,10 @@ func (r *Runtime) pumpScreenResponses(screen *screenBuffer, input io.Writer) {
 		}
 	}()
 	for chunk := range responses {
-		if input == nil || r.HasAttachers() {
+		if input == nil || r.stream.HasAttachers() {
 			continue
 		}
 		_, _ = input.Write(chunk)
-	}
-}
-
-type Attacher struct {
-	mu        sync.Mutex
-	w         *bufio.ReadWriter
-	done      chan struct{}
-	closeOnce sync.Once
-	// ready is closed when the client sends a frame.Ready, signaling that the
-	// attach tunnel is fully established and the client is reading output.
-	ready     chan struct{}
-	readyOnce sync.Once
-	// While buffering, live frames are queued instead of written so a replay can
-	// first drain history to the wire. flushBuffer replays the queue and clears
-	// the flag once history has been sent.
-	buffering bool
-	buffered  []bufferedFrame
-}
-
-type bufferedFrame struct {
-	typ     byte
-	payload []byte
-}
-
-func New(protocol string, done <-chan struct{}, onFrame func(*Attacher, frame.Frame)) *Runtime {
-	return &Runtime{
-		protocol:    protocol,
-		done:        done,
-		onFrame:     onFrame,
-		attachers:   map[*Attacher]struct{}{},
-		resizeReady: make(chan struct{}),
 	}
 }
 
@@ -176,180 +208,77 @@ func ListenUnix(ctx context.Context, socketPath string) (net.Listener, error) {
 	return ln, nil
 }
 
-// HandleAttach upgrades w to a framed stream and joins it to the broadcast set.
-// When the client requests a repaint and the exec has a screen, the attacher
-// starts buffering live output, the captured screen snapshot is streamed as the
-// repaint, then the buffered live frames are flushed and normal live streaming
-// resumes.
+// HandleAttach upgrades w to a framed stream and hands it to the stream.
+//
+// The 101 is written from the Ready callback, which host.Stream invokes only
+// after the attacher has joined the broadcast set: a client that sees the
+// upgrade may start the process immediately, and output broadcast before
+// registration would be lost.
 func (r *Runtime) HandleAttach(w http.ResponseWriter, repaintRequested bool) {
-	conn, rw, err := http.NewResponseController(w).Hijack()
+	netConn, rw, err := http.NewResponseController(w).Hijack()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	defer conn.Close()
+	defer netConn.Close()
 	// The http.Server's per-request read/write deadlines survive the hijack and
 	// would kill this long-lived attach stream mid-session; the attach owns the
 	// conn from here on, so clear them.
-	_ = conn.SetDeadline(time.Time{})
-	// Register before announcing the upgrade. A client that sees 101 may start the
-	// process immediately, and anything the process wrote before this goroutine
-	// joined the broadcast set would be lost — for a fast command that is its
-	// entire output. The attacher starts buffering, so registering this early
-	// cannot race the handshake bytes onto the wire: live frames queue until
-	// flushBuffer below, after 101 is flushed.
-	attach := &Attacher{w: rw, done: make(chan struct{}), ready: make(chan struct{}), buffering: true}
-	var snapshot []byte
-	repaint := repaintRequested && r.hasScreen()
-	if repaint {
-		snapshot = r.addReplayAttacher(attach)
-	} else {
-		r.addAttacher(attach)
-	}
-	defer r.removeAttacher(attach)
+	_ = netConn.SetDeadline(time.Time{})
 
-	_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: " + r.protocol + "\r\n\r\n")
-	if err := rw.Flush(); err != nil {
-		return
-	}
-	go r.readFrames(attach, rw)
-	replayTTY := repaintRequested && r.hasTTY()
-	if replayTTY {
-		// Hold the repaint until the client signals it is attached and reading
-		// (frame.Ready), so nothing is written during the upgrade handshake window
-		// where an intermediate proxy hop may drop buffered bytes. Fall back after
-		// a timeout so a client that never signals still gets a (best-effort)
-		// repaint instead of hanging.
-		r.waitForReady(attach)
-		if repaint {
-			if err := attach.writeSnapshot(snapshot); err != nil {
-				attach.Close()
-			}
-		}
-	}
-	// Live streaming begins here for every attach: everything broadcast since
-	// registration goes out in order, behind the snapshot when there was one.
-	if err := attach.flushBuffer(); err != nil {
-		attach.Close()
-	}
-	if replayTTY {
-		// The program's own repaint is authoritative: jiggle the PTY size after
-		// the replay so the program redraws itself and any snapshot imperfection
-		// — or a missing snapshot after the screen was dropped — converges to
-		// the program's real screen right after attach.
-		r.redrawAfterReplay()
-	}
-	// If the process already exited (a late attacher, e.g. one that connected just
-	// after a fast exit), deliver the retained exit frame after the replay so the
-	// client sees the final screen and the exit code, then close.
-	if payload, ok := r.exitFrame(); ok {
-		_ = attach.WriteFrame(frame.Exit, payload)
-		return
-	}
-	select {
-	case <-attach.done:
-	case <-r.done:
-	}
+	conn := &upgradeConn{rw: rw, conn: netConn}
+	_ = r.stream.Attach(context.Background(), conn, host.AttachOptions{
+		Replay: repaintRequested,
+		Ready: func() error {
+			_, _ = rw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: " + r.protocol + "\r\n\r\n")
+			return rw.Flush()
+		},
+	})
 }
 
-// MarkExited records the process's encoded exit frame so late attachers receive
-// it after the screen replay. Call it once the process has exited and its output
-// has fully drained.
-func (r *Runtime) MarkExited(payload []byte) {
-	r.mu.Lock()
-	r.exitPayload = payload
-	r.mu.Unlock()
+// upgradeConn is an execstream.Conn over a hijacked HTTP connection.
+type upgradeConn struct {
+	rw   *bufio.ReadWriter
+	conn net.Conn
+	mu   sync.Mutex
 }
 
-// exitFrame returns the retained exit payload, if the process has exited.
-func (r *Runtime) exitFrame() ([]byte, bool) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.exitPayload, r.exitPayload != nil
-}
+func (u *upgradeConn) ReadFrame() (frame.Frame, error) { return frame.Read(u.rw) }
 
-func (r *Runtime) hasScreen() bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.screen != nil
-}
-
-func (r *Runtime) hasTTY() bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.tty != nil
-}
-
-// redrawAfterReplay forces the running program to repaint itself by shrinking
-// the PTY by one row and restoring it, which delivers SIGWINCH and makes a TUI
-// redraw at the (restored) real size. The replayed snapshot paints instantly
-// but is only as faithful as the emulator; the program's redraw is the ground
-// truth the client screen converges to.
-func (r *Runtime) redrawAfterReplay() {
-	r.mu.Lock()
-	tty := r.tty
-	r.mu.Unlock()
-	if tty == nil {
-		return
+func (u *upgradeConn) WriteFrame(typ byte, payload []byte) error {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if err := frame.Write(u.rw, typ, payload); err != nil {
+		return err
 	}
-	size, err := pty.GetsizeFull(tty)
-	if err != nil || size.Rows == 0 || size.Cols == 0 {
-		return
-	}
-	jiggle := *size
-	if jiggle.Rows > 1 {
-		jiggle.Rows--
-	} else {
-		jiggle.Rows++
-	}
-	_ = pty.Setsize(tty, &jiggle)
-	_ = pty.Setsize(tty, size)
+	return u.rw.Flush()
 }
 
-func (r *Runtime) readFrames(attach *Attacher, rw *bufio.ReadWriter) {
-	for {
-		next, err := frame.Read(rw)
-		if err != nil {
-			if !errors.Is(err, io.EOF) && !errors.Is(err, os.ErrClosed) && !errors.Is(err, net.ErrClosed) {
-				_ = attach.WriteFrame(frame.Error, []byte(err.Error()))
-			}
-			attach.Close()
-			return
-		}
-		if next.Type == frame.Ready {
-			attach.markReady()
-			continue
-		}
-		if r.onFrame != nil {
-			r.onFrame(attach, next)
-		}
-	}
-}
+func (u *upgradeConn) Close() error { return u.conn.Close() }
 
-// replayReadyTimeout bounds how long the shim waits for a client's frame.Ready
-// before streaming replay history anyway. Clients on this codebase always send
-// it; the timeout only covers older or non-conforming clients.
-const replayReadyTimeout = 5 * time.Second
+// Broadcast delivers one chunk of process output to every attacher.
+func (r *Runtime) Broadcast(typ byte, payload []byte) { r.stream.Broadcast(typ, payload) }
 
-func (r *Runtime) waitForReady(attach *Attacher) {
-	timer := time.NewTimer(replayReadyTimeout)
-	defer timer.Stop()
-	select {
-	case <-attach.ready:
-	case <-attach.done:
-	case <-r.done:
-	case <-timer.C:
-	}
-}
+// MarkExited retains the encoded exit frame for clients that attach later.
+func (r *Runtime) MarkExited(payload []byte) { r.stream.MarkExited(payload) }
 
+// Attachers returns the current attacher set.
+func (r *Runtime) Attachers() []*host.Attacher { return r.stream.Attachers() }
+
+// HasAttachers reports whether any client is attached.
+func (r *Runtime) HasAttachers() bool { return r.stream.HasAttachers() }
+
+// WaitForResize blocks until a client has sent a size or ctx is done.
+func (r *Runtime) WaitForResize(ctx context.Context) { r.stream.WaitForResize(ctx) }
+
+// InitialWinsize is the size to start the PTY at: the size a client already
+// asked for, else the configured one, else a sane default.
 func (r *Runtime) InitialWinsize(rows, cols uint16) *pty.Winsize {
 	size := &pty.Winsize{Rows: rows, Cols: cols}
-	r.mu.Lock()
-	if r.resize != nil {
-		size.Rows = r.resize.Rows
-		size.Cols = r.resize.Cols
+	if pending, ok := r.stream.PendingResize(); ok {
+		size.Rows = pending.Rows
+		size.Cols = pending.Cols
 	}
-	r.mu.Unlock()
 	if size.Rows == 0 {
 		size.Rows = 24
 	}
@@ -359,174 +288,32 @@ func (r *Runtime) InitialWinsize(rows, cols uint16) *pty.Winsize {
 	return size
 }
 
+// ApplyResize records the requested size and applies it to the screen and PTY.
 func (r *Runtime) ApplyResize(resize frame.ResizePayload) {
+	r.stream.ApplyResize(resize)
 	r.mu.Lock()
-	r.resize = &resize
 	if r.screen != nil {
 		r.runScreenLocked(func(screen *screenBuffer) { screen.resize(resize.Rows, resize.Cols) })
 	}
 	tty := r.tty
 	r.mu.Unlock()
-	r.resizeOnce.Do(func() {
-		close(r.resizeReady)
-	})
 	if tty != nil {
 		_ = pty.Setsize(tty, &pty.Winsize{Rows: resize.Rows, Cols: resize.Cols})
 	}
 }
 
-func (r *Runtime) WaitForResize(ctx context.Context) {
-	r.mu.Lock()
-	ready := r.resize != nil
-	r.mu.Unlock()
-	if ready {
-		return
-	}
-	select {
-	case <-r.resizeReady:
-	case <-ctx.Done():
-	}
-}
-
-// Broadcast delivers one chunk of the process's output to every attacher as a
-// frame of typ, which is frame.Stdout or frame.Stderr. Only the screen-bearing
-// TTY path produces frame.Stdout through a PTY; pipe execs label each chunk with
-// the stream it came from.
-func (r *Runtime) Broadcast(typ byte, payload []byte) {
-	// Feed the screen and snapshot the attacher set under one lock so a
-	// concurrently registering repaint attacher falls cleanly on one side of this
-	// chunk: either the screen absorbs it before the attacher's snapshot is taken
-	// (delivered via the snapshot, not in the attacher set here) or the attacher
-	// is registered first (in the set below, delivered as a buffered live frame).
-	// The network writes stay outside the lock so a slow client cannot stall the
-	// PTY reader.
-	r.mu.Lock()
-	// Only the merged PTY stream is screen state. A pipe exec has no screen, so
-	// this never fires for stderr; the check keeps that true by construction.
-	if r.screen != nil && typ == frame.Stdout {
-		r.runScreenLocked(func(screen *screenBuffer) { screen.write(payload) })
-	}
-	attachers := r.snapshotAttachersLocked()
-	r.mu.Unlock()
-	for _, attach := range attachers {
-		if err := attach.WriteFrame(typ, payload); err != nil {
-			r.removeAttacher(attach)
-		}
-	}
-}
-
-func (r *Runtime) Attachers() []*Attacher {
+// hasScreen reports whether repaint-on-attach is still available.
+func (r *Runtime) hasScreen() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	return r.snapshotAttachersLocked()
+	return r.screen != nil
 }
 
-func (r *Runtime) snapshotAttachersLocked() []*Attacher {
-	attachers := make([]*Attacher, 0, len(r.attachers))
-	for attach := range r.attachers {
-		attachers = append(attachers, attach)
-	}
-	return attachers
-}
-
-// addReplayAttacher registers a buffering attacher and returns the screen
-// snapshot captured at that instant. Capturing the snapshot and registering the
-// attacher under one lock keeps the repaint and the buffered live output exactly
-// contiguous: every output chunk is either already in the snapshot or will be
-// buffered from registration onward. See Broadcast.
-// The attacher is already buffering when it arrives (HandleAttach constructs it
-// that way), so live output queues from registration onward.
-func (r *Runtime) addReplayAttacher(attach *Attacher) []byte {
+// hasTTY reports whether this exec has a PTY.
+func (r *Runtime) hasTTY() bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	r.attachers[attach] = struct{}{}
-	if r.screen == nil {
-		return nil
-	}
-	var snapshot []byte
-	r.runScreenLocked(func(screen *screenBuffer) { snapshot = screen.snapshot() })
-	return snapshot
-}
-
-func (r *Runtime) HasAttachers() bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return len(r.attachers) > 0
-}
-
-func (r *Runtime) addAttacher(attach *Attacher) {
-	r.mu.Lock()
-	r.attachers[attach] = struct{}{}
-	r.mu.Unlock()
-}
-
-func (r *Runtime) removeAttacher(attach *Attacher) {
-	r.mu.Lock()
-	delete(r.attachers, attach)
-	r.mu.Unlock()
-}
-
-func (a *Attacher) WriteFrame(typ byte, payload []byte) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if a.buffering {
-		a.buffered = append(a.buffered, bufferedFrame{typ: typ, payload: append([]byte(nil), payload...)})
-		return nil
-	}
-	return a.writeLocked(typ, payload)
-}
-
-func (a *Attacher) writeLocked(typ byte, payload []byte) error {
-	if err := frame.Write(a.w, typ, payload); err != nil {
-		a.Close()
-		return err
-	}
-	if err := a.w.Flush(); err != nil {
-		a.Close()
-		return err
-	}
-	return nil
-}
-
-// writeSnapshot writes the repaint snapshot straight to the wire as one output
-// frame, bypassing the live buffer. The attacher is still buffering while this
-// runs, so live frames queue behind the snapshot and the wire is written only
-// here. An empty snapshot writes nothing.
-func (a *Attacher) writeSnapshot(payload []byte) error {
-	if len(payload) == 0 {
-		return nil
-	}
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.writeLocked(frame.Stdout, payload)
-}
-
-// flushBuffer writes the buffered live frames in order and switches the attacher
-// to normal live streaming. The buffer holds exactly the output produced at and
-// after the attacher registered, so it continues seamlessly from the snapshot.
-func (a *Attacher) flushBuffer() error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	for _, f := range a.buffered {
-		if err := a.writeLocked(f.typ, f.payload); err != nil {
-			return err
-		}
-	}
-	a.buffered = nil
-	a.buffering = false
-	return nil
-}
-
-func (a *Attacher) Close() {
-	a.closeOnce.Do(func() {
-		close(a.done)
-	})
-}
-
-func (a *Attacher) markReady() {
-	a.readyOnce.Do(func() {
-		close(a.ready)
-	})
+	return r.tty != nil
 }
 
 func prepareSocketPath(path string) error {

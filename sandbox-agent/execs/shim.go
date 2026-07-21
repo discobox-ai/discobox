@@ -17,6 +17,7 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/obot-platform/discobox/execstream/frame"
+	"github.com/obot-platform/discobox/execstream/host"
 	"github.com/obot-platform/discobox/sandbox-agent/shimruntime"
 )
 
@@ -345,7 +346,7 @@ func attachFrameType(stream LogStream) byte {
 	return frame.Stdout
 }
 
-func (r *shimRuntime) handleAttachFrame(attach *shimruntime.Attacher, next frame.Frame) {
+func (r *shimRuntime) handleAttachFrame(attach *host.Attacher, next frame.Frame) {
 	switch next.Type {
 	case frame.Input:
 		if err := r.writeInput(next.Payload); err != nil {

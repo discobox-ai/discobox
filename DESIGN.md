@@ -96,8 +96,12 @@ flowchart TD
 
 - Root module: public API definitions, control-plane OpenAPI documents,
   generated API clients/scaffolds, cross-module sentinel errors, IDs, pool
-  boot metadata contracts, client-facing stream DTOs, and the exec attach wire
-  protocol (`execstream/frame`) spoken by the CLI and the sandbox-agent. See
+  boot metadata contracts, client-facing stream DTOs, and the exec attach
+  stream: the wire protocol (`execstream/frame`), the duplex `execstream.Conn`
+  seam, and the host role (`execstream/host`) that serves a process's output to
+  attached clients. The platform halves stay with their platform — the PTY and
+  screen emulator in `sandbox-agent`, terminal control in the CLI — so the
+  shared module never grows a terminal dependency. See
   [ADR 0008](docs/adr/0008-attach-stream-packages.md).
 - CLI module: `disco` command implementation; depends on root generated
   clients/contracts for normal user commands and talks to the control plane

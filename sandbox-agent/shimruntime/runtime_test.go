@@ -1,16 +1,17 @@
 package shimruntime
 
 import (
-	"bufio"
 	"bytes"
-	"io"
+	"context"
+	"net"
 	"os"
-	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/creack/pty"
 	"github.com/obot-platform/discobox/execstream/frame"
+	"github.com/obot-platform/discobox/execstream/host"
 )
 
 // screenPipe returns a pipe standing in for the PTY master: EnableScreen
@@ -48,11 +49,50 @@ func readWithTimeout(f *os.File, d time.Duration) []byte {
 	}
 }
 
-func testAttacher() *Attacher {
-	return &Attacher{
-		w:     bufio.NewReadWriter(bufio.NewReader(strings.NewReader("")), bufio.NewWriter(io.Discard)),
-		done:  make(chan struct{}),
-		ready: make(chan struct{}),
+// pipeConn is an execstream.Conn over an io pipe: enough transport to attach a
+// client to the runtime without HTTP or a socket.
+type pipeConn struct {
+	conn net.Conn
+	mu   sync.Mutex
+}
+
+func (c *pipeConn) ReadFrame() (frame.Frame, error) { return frame.Read(c.conn) }
+func (c *pipeConn) WriteFrame(typ byte, payload []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return frame.Write(c.conn, typ, payload)
+}
+func (c *pipeConn) Close() error { return c.conn.Close() }
+
+// attachPipe attaches a client and drains whatever the runtime sends it,
+// returning a func reporting the bytes received so far. Draining matters: an
+// attacher write blocks until the client reads.
+func attachPipe(t *testing.T, r *Runtime) func() []byte {
+	t.Helper()
+	server, client := net.Pipe()
+	t.Cleanup(func() { _ = server.Close(); _ = client.Close() })
+	go func() { _ = r.stream.Attach(context.Background(), &pipeConn{conn: server}, host.AttachOptions{}) }()
+
+	var mu sync.Mutex
+	var got []byte
+	go func() {
+		for {
+			f, err := frame.Read(client)
+			if err != nil {
+				return
+			}
+			mu.Lock()
+			got = append(got, f.Payload...)
+			mu.Unlock()
+		}
+	}()
+	for !r.HasAttachers() {
+		time.Sleep(time.Millisecond)
+	}
+	return func() []byte {
+		mu.Lock()
+		defer mu.Unlock()
+		return append([]byte(nil), got...)
 	}
 }
 
@@ -97,9 +137,7 @@ func TestScreenQueryResponsesDroppedWhileAttached(t *testing.T) {
 	input, tty := screenPipe(t)
 	r.EnableScreen(24, 80, DefaultScrollbackLines, tty)
 
-	attach := testAttacher()
-	r.addAttacher(attach)
-	defer r.removeAttacher(attach)
+	_ = attachPipe(t, r)
 
 	r.Broadcast(frame.Stdout, []byte("hello\x1b[c"))
 
@@ -129,17 +167,14 @@ func TestScreenPanicDropsScreenAndKeepsStreaming(t *testing.T) {
 		t.Fatal("tty must survive a dropped screen so redrawAfterReplay still works")
 	}
 
-	var out bytes.Buffer
-	attach := &Attacher{
-		w:     bufio.NewReadWriter(bufio.NewReader(strings.NewReader("")), bufio.NewWriter(&out)),
-		done:  make(chan struct{}),
-		ready: make(chan struct{}),
-	}
-	r.addAttacher(attach)
-	defer r.removeAttacher(attach)
+	received := attachPipe(t, r)
 	r.Broadcast(frame.Stdout, []byte("still alive"))
-	if !bytes.Contains(out.Bytes(), []byte("still alive")) {
-		t.Fatalf("live streaming broken after screen drop, wire = %q", out.Bytes())
+	deadline := time.Now().Add(2 * time.Second)
+	for !bytes.Contains(received(), []byte("still alive")) {
+		if time.Now().After(deadline) {
+			t.Fatalf("live streaming broken after screen drop, wire = %q", received())
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
@@ -160,7 +195,7 @@ func TestRedrawAfterReplayRestoresSize(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r.redrawAfterReplay()
+	r.AfterReplay()
 
 	size, err := pty.GetsizeFull(master)
 	if err != nil {
