@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +12,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/obot-platform/discobox/execstream/frame"
 
 	"golang.org/x/term"
 )
@@ -41,7 +42,7 @@ type framedAttachSession struct {
 }
 
 type attachFrameTransport interface {
-	ReadFrame() (terminalFrame, error)
+	ReadFrame() (frame.Frame, error)
 	WriteFrame(typ byte, payload []byte) error
 	Close() error
 }
@@ -51,14 +52,14 @@ type directAttachFrames struct {
 	mu   sync.Mutex
 }
 
-func (c *directAttachFrames) ReadFrame() (terminalFrame, error) {
-	return readTerminalFrame(c.conn)
+func (c *directAttachFrames) ReadFrame() (frame.Frame, error) {
+	return frame.Read(c.conn)
 }
 
 func (c *directAttachFrames) WriteFrame(typ byte, payload []byte) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return writeTerminalFrame(c.conn, typ, payload)
+	return frame.Write(c.conn, typ, payload)
 }
 
 func (c *directAttachFrames) Close() error { return c.conn.Close() }
@@ -83,7 +84,7 @@ func (s *framedAttachSession) run(ctx context.Context) error {
 	if s.signalReady {
 		// The output reader is running; tell the shim the tunnel is established so
 		// it can stream replay history without losing bytes to the handshake.
-		if err := s.writeFrame(attachFrameReady, nil); err != nil {
+		if err := s.writeFrame(frame.Ready, nil); err != nil {
 			return err
 		}
 	}
@@ -150,34 +151,34 @@ func (s *framedAttachSession) writeInitialResize() error {
 
 func (s *framedAttachSession) copyOutput() error {
 	for {
-		frame, err := s.frames.ReadFrame()
+		f, err := s.frames.ReadFrame()
 		if err != nil {
 			return err
 		}
-		switch frame.typ {
-		case attachFrameStdout:
-			if _, err := s.stdout.Write(frame.payload); err != nil {
+		switch f.Type {
+		case frame.Stdout:
+			if _, err := s.stdout.Write(f.Payload); err != nil {
 				return err
 			}
-		case attachFrameStderr:
-			if _, err := s.stderr.Write(frame.payload); err != nil {
+		case frame.Stderr:
+			if _, err := s.stderr.Write(f.Payload); err != nil {
 				return err
 			}
-		case attachFrameError:
+		case frame.Error:
 			if s.errorFrame != nil {
-				return s.errorFrame(frame.payload)
+				return s.errorFrame(f.Payload)
 			}
 			return nil
-		case attachFrameExit:
-			return attachExitErrorFromPayload(s.kind, frame.payload)
+		case frame.Exit:
+			return attachExitErrorFromPayload(s.kind, f.Payload)
 		default:
-			return fmt.Errorf("%s: unexpected frame type %d", s.action, frame.typ)
+			return fmt.Errorf("%s: unexpected frame type %d", s.action, f.Type)
 		}
 	}
 }
 
 func (s *framedAttachSession) closeInput() error {
-	return s.writeFrame(attachFrameCloseInput, nil)
+	return s.writeFrame(frame.CloseInput, nil)
 }
 
 func (s *framedAttachSession) watchResize(ctx context.Context, file *os.File) error {
@@ -225,7 +226,7 @@ func (s *framedAttachSession) proxySignals(ctx context.Context) error {
 			if !ok {
 				continue
 			}
-			if err := s.writeFrame(attachFrameSignal, []byte(name)); err != nil {
+			if err := s.writeFrame(frame.Signal, []byte(name)); err != nil {
 				return err
 			}
 		}
@@ -243,7 +244,7 @@ func (s *framedAttachSession) proxySignals(ctx context.Context) error {
 // remote may also have missed resizes while this process was stopped, so the
 // current size is re-sent.
 func (s *framedAttachSession) suspend() error {
-	if err := s.writeFrame(attachFrameSignal, []byte("TSTP")); err != nil {
+	if err := s.writeFrame(frame.Signal, []byte("TSTP")); err != nil {
 		return err
 	}
 	if s.rawFile != nil && s.rawState != nil {
@@ -255,7 +256,7 @@ func (s *framedAttachSession) suspend() error {
 		// the final restore in run leaves the terminal as the user handed it over.
 		_, _ = term.MakeRaw(int(s.rawFile.Fd()))
 	}
-	if err := s.writeFrame(attachFrameSignal, []byte("CONT")); err != nil {
+	if err := s.writeFrame(frame.Signal, []byte("CONT")); err != nil {
 		return err
 	}
 	if s.resize {
@@ -275,7 +276,7 @@ func (s *framedAttachSession) writeResize(cols, rows int) error {
 	if err != nil {
 		return err
 	}
-	return s.writeFrame(attachFrameResize, payload)
+	return s.writeFrame(frame.Resize, payload)
 }
 
 func (s *framedAttachSession) writeFrame(typ byte, payload []byte) error {
@@ -288,47 +289,6 @@ func terminalSize(file *os.File) (cols, rows int, ok bool) {
 	}
 	cols, rows, err := term.GetSize(int(file.Fd()))
 	return cols, rows, err == nil && cols > 0 && rows > 0
-}
-
-type terminalFrame struct {
-	typ     byte
-	payload []byte
-}
-
-func writeTerminalFrame(w io.Writer, typ byte, payload []byte) error {
-	if len(payload) > attachFrameMaxPayload {
-		return fmt.Errorf("frame payload too large: %d", len(payload))
-	}
-	var header [5]byte
-	header[0] = typ
-	size := uint32(len(payload)) // #nosec G115 -- payload length is bounded by attachFrameMaxPayload.
-	binary.BigEndian.PutUint32(header[1:], size)
-	if _, err := w.Write(header[:]); err != nil {
-		return err
-	}
-	if len(payload) == 0 {
-		return nil
-	}
-	_, err := w.Write(payload)
-	return err
-}
-
-func readTerminalFrame(r io.Reader) (terminalFrame, error) {
-	var header [5]byte
-	if _, err := io.ReadFull(r, header[:]); err != nil {
-		return terminalFrame{}, err
-	}
-	size := binary.BigEndian.Uint32(header[1:])
-	if size > attachFrameMaxPayload {
-		return terminalFrame{}, fmt.Errorf("frame payload too large: %d", size)
-	}
-	payload := make([]byte, int(size))
-	if size > 0 {
-		if _, err := io.ReadFull(r, payload); err != nil {
-			return terminalFrame{}, err
-		}
-	}
-	return terminalFrame{typ: header[0], payload: payload}, nil
 }
 
 func printAttachErrorFrame(stderr io.Writer) func([]byte) error {

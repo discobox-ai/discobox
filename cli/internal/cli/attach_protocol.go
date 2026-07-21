@@ -11,29 +11,6 @@ import (
 	"strings"
 )
 
-// Attach frame types, mirroring frame.* in the sandbox-agent. The stream frames
-// take the file descriptor numbers they carry — stdin 0, stdout 1, stderr 2 —
-// and control frames follow. stdout and stderr always arrive apart; a client
-// that wants them interleaved merges them itself. A TTY exec never sends
-// attachFrameStderr, because its streams were merged at the PTY before the shim
-// saw them, and no client should have to care which kind it attached to.
-const (
-	attachFrameInput      byte = 0
-	attachFrameStdout     byte = 1
-	attachFrameStderr     byte = 2
-	attachFrameResize     byte = 3
-	attachFrameSignal     byte = 4
-	attachFrameError      byte = 5
-	attachFrameExit       byte = 6
-	attachFrameCloseInput byte = 7
-	// attachFrameReady tells the shim the client is attached and reading, so it
-	// may start streaming replay history without risking loss in the upgrade
-	// handshake window. See frame.Ready in the sandbox-agent.
-	attachFrameReady byte = 8
-
-	attachFrameMaxPayload = 16 * 1024 * 1024
-)
-
 type exitCodeError struct {
 	code int
 }

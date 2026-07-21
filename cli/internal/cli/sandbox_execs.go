@@ -15,6 +15,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/obot-platform/discobox/execstream/frame"
+
 	"github.com/coder/websocket"
 	"github.com/spf13/cobra"
 
@@ -704,7 +706,7 @@ func copySandboxExecInput(ctx context.Context, s *framedAttachSession, interacti
 	for {
 		n, err := s.stdin.Read(buf)
 		if n > 0 {
-			if writeErr := s.writeFrame(attachFrameInput, buf[:n]); writeErr != nil {
+			if writeErr := s.writeFrame(frame.Input, buf[:n]); writeErr != nil {
 				return writeErr
 			}
 		}

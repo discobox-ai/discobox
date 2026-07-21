@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/obot-platform/discobox/execstream/frame"
 	"github.com/obot-platform/discobox/sandbox-agent/shimproxy"
-	"github.com/obot-platform/discobox/sandbox-agent/terminal/frame"
 )
 
 func TestRunShimSendsOutputBeforeExitFrame(t *testing.T) {

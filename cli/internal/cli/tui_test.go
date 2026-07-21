@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/obot-platform/discobox/execstream/frame"
+
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
 	"github.com/obot-platform/discobox/cli/internal/tui"
@@ -90,8 +92,8 @@ func TestFramedTerminalRead(t *testing.T) {
 	defer term.Close()
 
 	go func() {
-		_, _ = readTerminalFrame(server)
-		_ = writeTerminalFrame(server, attachFrameStdout, []byte("abc"))
+		_, _ = frame.Read(server)
+		_ = frame.Write(server, frame.Stdout, []byte("abc"))
 	}()
 
 	buf := make([]byte, 2)
@@ -117,20 +119,20 @@ func TestFramedTerminalWriteAndResize(t *testing.T) {
 		_ = term.Resize(80, 24)
 	}()
 
-	frame, err := readTerminalFrame(server)
-	if err != nil || frame.typ != attachFrameInput || string(frame.payload) != "xy" {
-		t.Fatalf("input frame = %+v, %v", frame, err)
+	f, err := frame.Read(server)
+	if err != nil || f.Type != frame.Input || string(f.Payload) != "xy" {
+		t.Fatalf("input frame = %+v, %v", f, err)
 	}
 
-	frame, err = readTerminalFrame(server)
-	if err != nil || frame.typ != attachFrameResize {
-		t.Fatalf("resize frame type = %d, %v", frame.typ, err)
+	f, err = frame.Read(server)
+	if err != nil || f.Type != frame.Resize {
+		t.Fatalf("resize frame type = %d, %v", f.Type, err)
 	}
 	var size struct {
 		Cols int `json:"cols"`
 		Rows int `json:"rows"`
 	}
-	if err := json.Unmarshal(frame.payload, &size); err != nil {
+	if err := json.Unmarshal(f.Payload, &size); err != nil {
 		t.Fatalf("resize payload: %v", err)
 	}
 	if size.Cols != 80 || size.Rows != 24 {
@@ -151,8 +153,8 @@ func TestFramedTerminalExit(t *testing.T) {
 		t.Fatalf("marshal exit payload: %v", err)
 	}
 	go func() {
-		_, _ = readTerminalFrame(server)
-		_ = writeTerminalFrame(server, attachFrameExit, payload)
+		_, _ = frame.Read(server)
+		_ = frame.Write(server, frame.Exit, payload)
 	}()
 
 	if _, err := term.Read(make([]byte, 8)); !errors.Is(err, io.EOF) {

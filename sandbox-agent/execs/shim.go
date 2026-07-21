@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/creack/pty"
+	"github.com/obot-platform/discobox/execstream/frame"
 	"github.com/obot-platform/discobox/sandbox-agent/shimruntime"
-	"github.com/obot-platform/discobox/sandbox-agent/terminal/frame"
 )
 
 type ShimConfig struct {

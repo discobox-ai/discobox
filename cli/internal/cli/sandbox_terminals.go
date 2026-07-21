@@ -13,6 +13,8 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/obot-platform/discobox/execstream/frame"
+
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
@@ -362,7 +364,7 @@ func copyTerminalInput(ctx context.Context, s *framedAttachSession) error {
 		if n > 0 {
 			payload, detach := filterDetachSequence(buf[:n], &pendingCtrlP)
 			if len(payload) > 0 {
-				if writeErr := s.writeFrame(attachFrameInput, payload); writeErr != nil {
+				if writeErr := s.writeFrame(frame.Input, payload); writeErr != nil {
 					return writeErr
 				}
 			}

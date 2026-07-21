@@ -61,6 +61,11 @@ back to `selectSandbox` (`internal/cli/picker.go`), never to a guess:
 Terminal and exec attach use the same framed stream protocol and should share
 the transport/session mechanics in `internal/cli/attach_session.go`.
 
+- The wire format is not defined here. Frame types and the codec live in the
+  root module's `execstream/frame`, shared with the sandbox-agent; this module
+  imports them. Never re-declare a frame constant locally — the compiler cannot
+  catch a mirror that has drifted, and a corrupted stream is the first symptom.
+  See [ADR 0008](../docs/adr/0008-attach-stream-packages.md).
 - Keep frame read/write, output frames, resize frames, signal forwarding,
   raw-terminal setup, close-input frames, and attach teardown in the shared
   framed attach session.

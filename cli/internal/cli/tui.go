@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/obot-platform/discobox/execstream/frame"
+
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
@@ -293,7 +295,7 @@ type framedTerminal struct {
 
 func (t *framedTerminal) Read(p []byte) (int, error) {
 	var readyErr error
-	t.ready.Do(func() { readyErr = t.frames.WriteFrame(attachFrameReady, nil) })
+	t.ready.Do(func() { readyErr = t.frames.WriteFrame(frame.Ready, nil) })
 	if readyErr != nil {
 		return 0, readyErr
 	}
@@ -303,30 +305,30 @@ func (t *framedTerminal) Read(p []byte) (int, error) {
 		return n, nil
 	}
 	for {
-		frame, err := t.frames.ReadFrame()
+		f, err := t.frames.ReadFrame()
 		if err != nil {
 			return 0, err
 		}
-		switch frame.typ {
+		switch f.Type {
 		// A pane is one visual stream, so stderr is shown inline with stdout the
 		// way a terminal shows it. (Terminals are TTY execs and never send it;
 		// this keeps a pane over a pipe exec from dropping the stream.)
-		case attachFrameStdout, attachFrameStderr:
-			if len(frame.payload) == 0 {
+		case frame.Stdout, frame.Stderr:
+			if len(f.Payload) == 0 {
 				continue
 			}
-			n := copy(p, frame.payload)
-			if n < len(frame.payload) {
-				t.readBuf = frame.payload[n:]
+			n := copy(p, f.Payload)
+			if n < len(f.Payload) {
+				t.readBuf = f.Payload[n:]
 			}
 			return n, nil
-		case attachFrameExit:
-			if err := attachExitErrorFromPayload("terminal", frame.payload); err != nil {
+		case frame.Exit:
+			if err := attachExitErrorFromPayload("terminal", f.Payload); err != nil {
 				return 0, err
 			}
 			return 0, io.EOF
-		case attachFrameError:
-			return 0, fmt.Errorf("terminal: %s", string(frame.payload))
+		case frame.Error:
+			return 0, fmt.Errorf("terminal: %s", string(f.Payload))
 		default:
 			// Ignore frames the embedded pane does not consume (e.g. ready).
 		}
@@ -336,7 +338,7 @@ func (t *framedTerminal) Read(p []byte) (int, error) {
 func (t *framedTerminal) Write(p []byte) (int, error) {
 	t.writeMu.Lock()
 	defer t.writeMu.Unlock()
-	if err := t.frames.WriteFrame(attachFrameInput, p); err != nil {
+	if err := t.frames.WriteFrame(frame.Input, p); err != nil {
 		return 0, err
 	}
 	return len(p), nil
@@ -355,7 +357,7 @@ func (t *framedTerminal) Resize(cols, rows int) error {
 	}
 	t.writeMu.Lock()
 	defer t.writeMu.Unlock()
-	return t.frames.WriteFrame(attachFrameResize, payload)
+	return t.frames.WriteFrame(frame.Resize, payload)
 }
 
 func (t *framedTerminal) Close() error {

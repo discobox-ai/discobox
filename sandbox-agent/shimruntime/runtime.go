@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/creack/pty"
-	"github.com/obot-platform/discobox/sandbox-agent/terminal/frame"
+	"github.com/obot-platform/discobox/execstream/frame"
 )
 
 type Runtime struct {

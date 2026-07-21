@@ -96,7 +96,9 @@ flowchart TD
 
 - Root module: public API definitions, control-plane OpenAPI documents,
   generated API clients/scaffolds, cross-module sentinel errors, IDs, pool
-  boot metadata contracts, and client-facing stream DTOs.
+  boot metadata contracts, client-facing stream DTOs, and the exec attach wire
+  protocol (`execstream/frame`) spoken by the CLI and the sandbox-agent. See
+  [ADR 0008](docs/adr/0008-attach-stream-packages.md).
 - CLI module: `disco` command implementation; depends on root generated
   clients/contracts for normal user commands and talks to the control plane
   through the Server REST API. Its `disco server` subcommand embeds the

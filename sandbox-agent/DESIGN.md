@@ -20,7 +20,6 @@ runtime operations.
 | `execs` | The sandbox runtime primitive: exec lifecycle, runtime metadata, systemd unit abstraction, stdout/stderr or PTY logging, shim launch, status socket, and attach. Harness terminals are execs. |
 | `execs` (`shim.go`) | Per-exec child process that owns the PTY/pipes and local Unix socket attach/status/start API, used by both plain execs and terminals. |
 | `terminal` | Harness-terminal layer built on top of `execs`: image harness resolution, hook/file setup, and primary-terminal lifecycle. A terminal is an exec created in harness mode, tagged `harnessId`/`primary` in exec metadata; all runtime mechanics belong to `execs`. |
-| `terminal/frame` | Docker-exec-style binary stream framing shared by exec attach endpoints. |
 | `shimruntime` | Shared local shim attach runtime for Unix socket setup, HTTP upgrade handling, framed stream attachers, broadcast, exit frames, and pending resize state. |
 | `hooks` | Local Unix-socket collector and publisher protocol for coding-harness lifecycle hook payloads. |
 | `resources` | Opaque cgroup/procfs/systemd-style resource snapshot collection for exec runtimes. |
@@ -116,7 +115,10 @@ images also write their image digest.
   the wire distinguishes that from a pipe exec that wrote nothing to stderr, and
   nothing should. Only `frame.Stdout` is screen state.
 - Frame types take the file descriptor numbers they carry — `Input` 0, `Stdout`
-  1, `Stderr` 2 — with control frames (`Resize` 3 … `Ready` 8) after them.
+  1, `Stderr` 2 — with control frames (`Resize` 3 … `Ready` 8) after them. The
+  wire format and its types live in the root module's `execstream/frame`, shared
+  with the CLI, so the two ends of a stream cannot disagree about it. See
+  [ADR 0008](../docs/adr/0008-attach-stream-packages.md).
 - A pipe exec's output pipes are created by the shim (`os.Pipe`), never by
   `cmd.StdoutPipe`/`StderrPipe`. `cmd.Wait` closes the pipes it made as soon as
   the process exits, and the shim waits in a goroutine alongside the readers, so

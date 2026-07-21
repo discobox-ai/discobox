@@ -6,6 +6,8 @@ import (
 	"io"
 	"sync"
 	"time"
+
+	"github.com/obot-platform/discobox/execstream/frame"
 )
 
 type attachConnectionState string
@@ -72,16 +74,16 @@ func attachReconnectBackoff(attempt int) time.Duration {
 	return delay
 }
 
-func (c *reconnectingAttachFrames) ReadFrame() (terminalFrame, error) {
+func (c *reconnectingAttachFrames) ReadFrame() (frame.Frame, error) {
 	var cause error
 	for {
 		conn, err := c.connection(cause)
 		if err != nil {
-			return terminalFrame{}, err
+			return frame.Frame{}, err
 		}
-		frame, err := readTerminalFrame(conn)
+		f, err := frame.Read(conn)
 		if err == nil {
-			return frame, nil
+			return f, nil
 		}
 		cause = err
 		c.invalidate(conn)
@@ -94,9 +96,9 @@ func (c *reconnectingAttachFrames) WriteFrame(typ byte, payload []byte) error {
 
 	c.mu.Lock()
 	switch typ {
-	case attachFrameReady:
+	case frame.Ready:
 		c.ready = true
-	case attachFrameResize:
+	case frame.Resize:
 		c.resize = append(c.resize[:0], payload...)
 	}
 	conn := c.conn
@@ -112,7 +114,7 @@ func (c *reconnectingAttachFrames) WriteFrame(typ byte, payload []byte) error {
 		// and replayed into the terminal after a reconnect.
 		return nil
 	}
-	if err := writeTerminalFrame(conn, typ, payload); err != nil {
+	if err := frame.Write(conn, typ, payload); err != nil {
 		c.invalidate(conn)
 		go func() { _ = c.reconnect(err) }()
 		return nil
@@ -218,12 +220,12 @@ func (c *reconnectingAttachFrames) restore(conn io.ReadWriteCloser) error {
 	ready := c.ready
 	c.mu.Unlock()
 	if len(resize) > 0 {
-		if err := writeTerminalFrame(conn, attachFrameResize, resize); err != nil {
+		if err := frame.Write(conn, frame.Resize, resize); err != nil {
 			return err
 		}
 	}
 	if ready {
-		return writeTerminalFrame(conn, attachFrameReady, nil)
+		return frame.Write(conn, frame.Ready, nil)
 	}
 	return nil
 }
