@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 	"time"
+
+	"github.com/obot-platform/discobox/pool-agent/proxyagent"
 )
 
 func quietLogger() *slog.Logger {
@@ -113,6 +115,46 @@ func TestReapUnknownPoolsReapsProxyOnlyLeftoverImmediately(t *testing.T) {
 	reapUnknownPools(dataRoot, proxyRoot, map[string]struct{}{}, 24*time.Hour, time.Now(), quietLogger())
 	if _, err := os.Stat(filepath.Join(proxyRoot, "pool_gone")); !os.IsNotExist(err) {
 		t.Fatalf("proxy-only leftover not reaped immediately: %v", err)
+	}
+}
+
+// The control plane hands each pool agent the authoritative pool set for one
+// project, so the roots that agent reaps must hold only that project's pools.
+// This exercises the real path helpers (relocated through a host-mount prefix)
+// rather than two unrelated temp dirs: a host-global proxy pools root would put
+// another project's live pool in scope and delete the proxy material out from
+// under its running sandboxes, breaking egress with no log line.
+func TestReapUnknownPoolsLeavesAnotherProjectsLivePoolAlone(t *testing.T) {
+	host := t.TempDir()
+	agentA := &DockerSandboxRuntime{projectID: "proj_a", poolID: "pool_a", hostMountPrefix: host}
+	agentB := &DockerSandboxRuntime{projectID: "proj_b", poolID: "pool_b", hostMountPrefix: host}
+
+	// Project B has a live pool with staged proxy material and a data subtree.
+	liveProxyB := agentB.workerHostPath(proxyagent.PoolSandboxMaterialRoot("proj_b", "pool_b"))
+	liveDataB := agentB.workerHostPath(agentB.sandboxesRoot())
+	for _, dir := range []string{liveProxyB, liveDataB} {
+		if err := os.MkdirAll(filepath.Join(dir, "sbx_live"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Project A's agent reaps, knowing only its own project's pools. It runs
+	// twice: any retention window has to expire without B being touched.
+	known := map[string]struct{}{"pool_a": {}}
+	now := time.Now()
+	for _, at := range []time.Time{now, now.Add(48 * time.Hour)} {
+		reapUnknownPools(
+			agentA.workerHostPath(agentA.poolsRoot()),
+			agentA.workerHostPath(proxyagent.PoolsRoot("proj_a")),
+			known, 24*time.Hour, at, quietLogger(),
+		)
+	}
+
+	if _, err := os.Stat(filepath.Join(liveProxyB, "sbx_live")); err != nil {
+		t.Fatalf("another project's live proxy material was reaped: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(liveDataB, "sbx_live")); err != nil {
+		t.Fatalf("another project's live sandbox data was reaped: %v", err)
 	}
 }
 

@@ -236,6 +236,10 @@ func (m *recordingPoolManager) ListPoolsForProviderInstance(context.Context, str
 	return []model.Pool{{ID: "pool-1", ProjectID: "project-1", ProviderInstanceID: "provider-1"}}, nil
 }
 
+func (m *recordingPoolManager) ListPools(context.Context, string) ([]model.Pool, error) {
+	return []model.Pool{{ID: "pool-1", ProjectID: "project-1", ProviderInstanceID: "provider-1"}}, nil
+}
+
 func (m *recordingPoolManager) SchedulablePoolForSandbox(context.Context, *model.Sandbox) (*model.Pool, error) {
 	return nil, nil
 }
