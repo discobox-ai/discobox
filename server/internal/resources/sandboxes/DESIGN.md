@@ -88,5 +88,11 @@ harness identity and project-configured non-secret file overlay; run, relaunch,
 config, and static file metadata stay inside the image.
 
 `harnessMode` is persisted sandbox intent. Normal/omitted `run` mode applies the
-harness secret requirement gate before scheduling. `config` mode skips that
-gate so the image-owned interactive command can collect required credentials.
+harness secret requirement gate before scheduling, binding each of the harness
+config's secrets to its declared env name. `config` mode skips that gate so the
+image-owned interactive command can collect required credentials, and instead
+binds the secrets a previous configure run created under
+`harness.ConfigurePreviousEnvPrefix` (`applyPreviousConfigureSecrets`) — the
+same sentinels, under `PREV_`-prefixed names so the harness CLI cannot quietly
+authenticate with the old credential. See
+`resources/harnessconfigs/DESIGN.md`.

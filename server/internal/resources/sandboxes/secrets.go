@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/obot-platform/discobox/harness"
 	"github.com/obot-platform/discobox/id"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/model"
@@ -125,6 +126,65 @@ func (s *Service) applyHarnessConfigSecrets(ctx context.Context, projectID strin
 			SandboxID: sandbox.ID,
 			SecretID:  secret.ID,
 			EnvName:   b.EnvName,
+			Sentinel:  sentinel,
+		})
+	}
+	return assignments, nil
+}
+
+// applyPreviousConfigureSecrets injects the secrets a previous configure run
+// created into a harnessMode=config sandbox, under
+// harness.ConfigurePreviousEnvPrefix + the bound env name. The configure command
+// uses them to verify and keep an existing credential instead of re-prompting.
+//
+// Only the flow's own secrets are offered: a secret the user bound by hand is
+// theirs, not the configure flow's to replay. The values are sentinels like any
+// other sandbox secret, so the credential itself stays in the control plane and
+// resolves only while a live grant covers it — a revoked credential simply fails
+// the configure command's verification. Required-secret enforcement stays off in
+// config mode: this flow is how those secrets come to exist.
+func (s *Service) applyPreviousConfigureSecrets(ctx context.Context, projectID string, sandbox *model.Sandbox, harnessConfigID string) ([]*model.SandboxSecret, error) {
+	config, err := s.store.GetHarnessConfig(ctx, projectID, harnessConfigID)
+	if err != nil {
+		return nil, mapAPIError(err, "harness config not found")
+	}
+	if len(config.ConfiguredSecretIDs) == 0 {
+		return nil, nil
+	}
+	configured := make(map[string]struct{}, len(config.ConfiguredSecretIDs))
+	for _, secretID := range config.ConfiguredSecretIDs {
+		configured[strings.TrimSpace(secretID)] = struct{}{}
+	}
+	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, projectID, harnessConfigID)
+	if err != nil {
+		return nil, err
+	}
+	if sandbox.Env == nil {
+		sandbox.Env = map[string]string{}
+	}
+	assignments := make([]*model.SandboxSecret, 0, len(bindings))
+	for _, b := range bindings {
+		if _, ok := configured[b.SecretID]; !ok {
+			continue
+		}
+		secret, err := s.store.GetSecret(ctx, projectID, b.SecretID)
+		if err != nil {
+			if errors.Is(err, store.ErrNotFound) {
+				continue // secret deleted out from under the binding; skip
+			}
+			return nil, err
+		}
+		sentinel, err := mintSentinel(s.secretFormat(ctx, secret))
+		if err != nil {
+			return nil, err
+		}
+		env := harness.ConfigurePreviousEnvPrefix + b.EnvName
+		sandbox.Env[env] = sentinel
+		assignments = append(assignments, &model.SandboxSecret{
+			ProjectID: projectID,
+			SandboxID: sandbox.ID,
+			SecretID:  secret.ID,
+			EnvName:   env,
 			Sentinel:  sentinel,
 		})
 	}

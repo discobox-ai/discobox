@@ -19,10 +19,27 @@ One run of `configure` against this image proves the whole chain:
   grant) and file (`stub.json`), marks the harness configured, and deletes the
   sandbox
 
-Running configure a second time additionally proves the reconfigure path: the
-echoed previous configuration must now contain the secret **value** and the
-file from the first run, and afterwards exactly one `stub-token` secret must
-exist (reconfigure replaces the previous generation instead of leaking it).
+Running configure a second time additionally proves the reconfigure path. The
+echoed previous configuration must now list the `STUB_TOKEN` secret and the file
+from the first run, and must contain **no secret value** — the value is offered
+as `$PREV_STUB_TOKEN`, a sentinel the proxy swaps only while a live grant covers
+it. Afterwards exactly one `stub-token` secret must exist (reconfigure replaces
+the previous generation instead of leaking it).
+
+Set `STUB_CONFIGURE_KEEP=1` in the configure sandbox to exercise the other half
+of that path: the command returns `usePrevious` instead of a value, and the
+secret from the first run must survive with its ID, binding, and grant intact.
+It only keeps when there is something to keep — claiming `usePrevious` on a
+first run is a commit error, and a real harness makes the same check before
+offering to keep a credential.
+
+`test/bats/harness_configure.bats` automates all of the above; run it with
+`go tool task test:docker:bats BATS_SUITE=test/bats/harness_configure.bats`.
+It sets the toggle through `image.json`'s `env` block in a derived image, which
+is how a sandbox process gets its environment: the sandbox-agent applies image
+env and the manifest's env when it starts the command. A Dockerfile `ENV` would
+not work — that belongs to the container, whose PID 1 is systemd, and systemd
+does not pass its own environment to the services it starts.
 
 ## Usage
 

@@ -69,32 +69,6 @@ func (s *Store) CreateSandboxProviderInstance(ctx context.Context, provider *mod
 	return write.Create(provider).Error
 }
 
-func (s *Store) RestoreSandboxProviderInstance(ctx context.Context, provider *model.SandboxProviderInstance) error {
-	write, err := s.getWrite(ctx)
-	if err != nil {
-		return err
-	}
-	result := write.Unscoped().
-		Model(&model.SandboxProviderInstance{}).
-		Where("project_id = ? AND id = ?", provider.ProjectID, provider.ID).
-		Updates(map[string]any{
-			"type":             provider.Type,
-			"name":             provider.Name,
-			"config":           provider.Config,
-			"encrypted_config": provider.EncryptedConfig,
-			"built_in":         provider.BuiltIn,
-			"disabled":         provider.Disabled,
-			"deleted_at":       nil,
-		})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
 func (s *Store) GetSandboxProviderInstance(ctx context.Context, projectID, providerID string) (*model.SandboxProviderInstance, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {

@@ -162,15 +162,14 @@ var (
 
 // User represents an authenticated user.
 type User struct {
-	ID        string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable user ID"`
-	Email     string         `gorm:"uniqueIndex;not null;type:text" json:"email" doc:"User email address" format:"email"`
-	Name      *string        `gorm:"type:text" json:"name,omitempty" doc:"Display name"`
-	AvatarURL *string        `gorm:"column:avatar_url;type:text" json:"avatarUrl,omitempty" doc:"Avatar image URL" format:"uri"`
-	Provider  string         `gorm:"not null;type:text;uniqueIndex:idx_user_provider_subject" json:"provider" doc:"Authentication provider"`
-	Subject   string         `gorm:"not null;type:text;uniqueIndex:idx_user_provider_subject" json:"subject" doc:"Provider subject identifier"`
-	CreatedAt time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	ID        string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable user ID"`
+	Email     string    `gorm:"uniqueIndex;not null;type:text" json:"email" doc:"User email address" format:"email"`
+	Name      *string   `gorm:"type:text" json:"name,omitempty" doc:"Display name"`
+	AvatarURL *string   `gorm:"column:avatar_url;type:text" json:"avatarUrl,omitempty" doc:"Avatar image URL" format:"uri"`
+	Provider  string    `gorm:"not null;type:text;uniqueIndex:idx_user_provider_subject" json:"provider" doc:"Authentication provider"`
+	Subject   string    `gorm:"not null;type:text;uniqueIndex:idx_user_provider_subject" json:"subject" doc:"Provider subject identifier"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 }
 
 func (User) TableName() string { return "users" }
@@ -188,16 +187,15 @@ func (u *User) BeforeCreate(_ *gorm.DB) error {
 
 // Project groups sandboxes and provider configuration.
 type Project struct {
-	ID                     string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable project ID"`
-	OwnerUserID            string         `gorm:"column:owner_user_id;not null;type:text;index" json:"ownerUserId" doc:"Owning user ID"`
-	Name                   string         `gorm:"not null;type:text" json:"name" doc:"Project display name" maxLength:"200"`
-	Slug                   string         `gorm:"uniqueIndex;not null;type:text" json:"slug" doc:"URL-safe project slug" pattern:"^[a-z0-9][a-z0-9-]*$"`
-	Default                bool           `gorm:"column:default_project;not null;default:false;index" json:"default" doc:"Whether this is the user's default project"`
-	DefaultPoolID          string         `gorm:"column:default_pool_id;type:text;default:''" json:"defaultPoolId,omitempty" doc:"Default pool ID for new sandboxes"`
-	DefaultHarnessConfigID string         `gorm:"column:default_harness_config_id;type:text;default:''" json:"defaultHarnessConfigId,omitempty" doc:"Default harness config ID"`
-	CreatedAt              time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt              time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-	DeletedAt              gorm.DeletedAt `gorm:"index" json:"-"`
+	ID                     string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable project ID"`
+	OwnerUserID            string    `gorm:"column:owner_user_id;not null;type:text;index" json:"ownerUserId" doc:"Owning user ID"`
+	Name                   string    `gorm:"not null;type:text" json:"name" doc:"Project display name" maxLength:"200"`
+	Slug                   string    `gorm:"uniqueIndex;not null;type:text" json:"slug" doc:"URL-safe project slug" pattern:"^[a-z0-9][a-z0-9-]*$"`
+	Default                bool      `gorm:"column:default_project;not null;default:false;index" json:"default" doc:"Whether this is the user's default project"`
+	DefaultPoolID          string    `gorm:"column:default_pool_id;type:text;default:''" json:"defaultPoolId,omitempty" doc:"Default pool ID for new sandboxes"`
+	DefaultHarnessConfigID string    `gorm:"column:default_harness_config_id;type:text;default:''" json:"defaultHarnessConfigId,omitempty" doc:"Default harness config ID"`
+	CreatedAt              time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt              time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Owner                    *User                     `gorm:"-" json:"owner,omitempty" doc:"Project owner"`
 	Pools                    []Pool                    `gorm:"foreignKey:ProjectID" json:"pools,omitempty" doc:"Project pools"`
@@ -222,12 +220,11 @@ func (p *Project) BeforeCreate(_ *gorm.DB) error {
 
 // ProjectMember grants a user access to a project.
 type ProjectMember struct {
-	ProjectID string         `gorm:"column:project_id;primaryKey;type:text" json:"projectId" doc:"Project ID"`
-	UserID    string         `gorm:"column:user_id;primaryKey;type:text" json:"userId" doc:"User ID"`
-	Role      string         `gorm:"not null;type:text;default:'member'" json:"role" doc:"Project role"`
-	CreatedAt time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	ProjectID string    `gorm:"column:project_id;primaryKey;type:text" json:"projectId" doc:"Project ID"`
+	UserID    string    `gorm:"column:user_id;primaryKey;type:text" json:"userId" doc:"User ID"`
+	Role      string    `gorm:"not null;type:text;default:'member'" json:"role" doc:"Project role"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 	User    *User    `gorm:"-" json:"-"`
@@ -330,14 +327,13 @@ func (a *HarnessConfig) BeforeCreate(_ *gorm.DB) error {
 // its bindings into SandboxSecret sentinels, so the harness receives the secret
 // values (subject to the usual grant/approval flow — a binding is not a grant).
 type HarnessConfigSecretBinding struct {
-	ID              string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable binding ID"`
-	ProjectID       string         `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	HarnessConfigID string         `gorm:"column:harness_config_id;not null;type:text;index;uniqueIndex:idx_harness_config_secret_env,priority:1" json:"harnessConfigId" doc:"Harness config the binding belongs to"`
-	EnvName         string         `gorm:"column:env_name;not null;type:text;uniqueIndex:idx_harness_config_secret_env,priority:2" json:"envName" doc:"Environment variable filled by the secret"`
-	SecretID        string         `gorm:"column:secret_id;not null;type:text;index" json:"secretId" doc:"Bound secret ID"`
-	CreatedAt       time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt       time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
+	ID              string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable binding ID"`
+	ProjectID       string    `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	HarnessConfigID string    `gorm:"column:harness_config_id;not null;type:text;index;uniqueIndex:idx_harness_config_secret_env,priority:1" json:"harnessConfigId" doc:"Harness config the binding belongs to"`
+	EnvName         string    `gorm:"column:env_name;not null;type:text;uniqueIndex:idx_harness_config_secret_env,priority:2" json:"envName" doc:"Environment variable filled by the secret"`
+	SecretID        string    `gorm:"column:secret_id;not null;type:text;index" json:"secretId" doc:"Bound secret ID"`
+	CreatedAt       time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt       time.Time `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 }
 
 func (HarnessConfigSecretBinding) TableName() string { return "harness_config_secret_bindings" }
@@ -494,12 +490,11 @@ type Pool struct {
 	Conditions            json.RawMessage `gorm:"column:conditions;type:text" json:"conditions,omitempty" doc:"Opaque agent-reported condition details for display"`
 	RuntimeState          json.RawMessage `gorm:"column:runtime_state;type:text" json:"-" doc:"Internal provider runtime state; may contain boot material and must not be serialized"`
 	ResourceLifecycle     `gorm:"embedded"`
-	RegisteredAt          *time.Time     `gorm:"column:registered_at" json:"registeredAt,omitempty" doc:"Registration timestamp" format:"date-time"`
-	LastSeenAt            *time.Time     `gorm:"column:last_seen_at;index" json:"lastSeenAt,omitempty" doc:"Last heartbeat timestamp" format:"date-time"`
-	RevokedAt             *time.Time     `gorm:"column:revoked_at;index" json:"revokedAt,omitempty" doc:"Revocation timestamp" format:"date-time"`
-	CreatedAt             time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt             time.Time      `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-	DeletedAt             gorm.DeletedAt `gorm:"index" json:"-"`
+	RegisteredAt          *time.Time `gorm:"column:registered_at" json:"registeredAt,omitempty" doc:"Registration timestamp" format:"date-time"`
+	LastSeenAt            *time.Time `gorm:"column:last_seen_at;index" json:"lastSeenAt,omitempty" doc:"Last heartbeat timestamp" format:"date-time"`
+	RevokedAt             *time.Time `gorm:"column:revoked_at;index" json:"revokedAt,omitempty" doc:"Revocation timestamp" format:"date-time"`
+	CreatedAt             time.Time  `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt             time.Time  `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project          *Project                 `gorm:"foreignKey:ProjectID" json:"-"`
 	ProviderInstance *SandboxProviderInstance `gorm:"foreignKey:ProviderInstanceID" json:"providerInstance,omitempty" doc:"Backing sandbox provider instance"`
@@ -574,7 +569,6 @@ type Sandbox struct {
 	LastActiveAt         *time.Time           `gorm:"column:last_active_at;index" json:"lastActiveAt,omitempty" doc:"Last observed activity timestamp" format:"date-time"`
 	CreatedAt            time.Time            `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt            time.Time            `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-	DeletedAt            gorm.DeletedAt       `gorm:"index" json:"-"`
 
 	Project       *Project       `gorm:"foreignKey:ProjectID" json:"-"`
 	CreatedBy     *User          `gorm:"-" json:"createdBy,omitempty" doc:"Creating user"`
@@ -626,7 +620,6 @@ type SandboxProviderInstance struct {
 	Disabled        bool            `gorm:"column:disabled;not null;default:false" json:"disabled" doc:"Whether this provider is disabled"`
 	CreatedAt       time.Time       `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt       time.Time       `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
-	DeletedAt       gorm.DeletedAt  `gorm:"index" json:"-"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 	Pools   []Pool   `gorm:"foreignKey:ProviderInstanceID" json:"pools,omitempty" doc:"Pools backed by this provider instance"`
@@ -702,19 +695,18 @@ const (
 
 // Secret is a project-scoped encrypted credential that can be requested by sandboxes.
 type Secret struct {
-	ID              string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable secret ID"`
-	ProjectID       string         `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_secret_project_type_host,priority:1" json:"projectId" doc:"Project ID"`
-	Name            string         `gorm:"column:name;not null;type:text" json:"name" doc:"Secret name"`
-	Type            string         `gorm:"column:type;not null;type:text;uniqueIndex:idx_secret_project_type_host,priority:2" json:"type" doc:"Secret type" enum:"git,ssh,bearer"`
-	Host            string         `gorm:"column:host;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:3" json:"host,omitempty" doc:"Optional host used to match requests"`
-	UniqueKey       string         `gorm:"column:unique_key;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:4" json:"-"`
-	Anonymous       bool           `gorm:"column:anonymous;not null;default:false;index" json:"anonymous,omitempty" doc:"Sandbox-managed secret created from an inline value; referenced only by ID"`
-	Format          string         `gorm:"column:format;not null;type:text;default:''" json:"format,omitempty" doc:"Generative format template describing the credential shape; used to mint sentinel placeholders"`
-	DefaultGrantTTL int64          `gorm:"column:default_grant_ttl_seconds;not null;default:3600" json:"defaultGrantTTLSeconds" doc:"Default grant duration in seconds"`
-	EncryptedValue  []byte         `gorm:"column:encrypted_value" json:"-"`
-	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
-	CreatedAt       time.Time      `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt       time.Time      `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	ID              string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable secret ID"`
+	ProjectID       string    `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_secret_project_type_host,priority:1" json:"projectId" doc:"Project ID"`
+	Name            string    `gorm:"column:name;not null;type:text" json:"name" doc:"Secret name"`
+	Type            string    `gorm:"column:type;not null;type:text;uniqueIndex:idx_secret_project_type_host,priority:2" json:"type" doc:"Secret type" enum:"git,ssh,bearer"`
+	Host            string    `gorm:"column:host;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:3" json:"host,omitempty" doc:"Optional host used to match requests"`
+	UniqueKey       string    `gorm:"column:unique_key;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:4" json:"-"`
+	Anonymous       bool      `gorm:"column:anonymous;not null;default:false;index" json:"anonymous,omitempty" doc:"Sandbox-managed secret created from an inline value; referenced only by ID"`
+	Format          string    `gorm:"column:format;not null;type:text;default:''" json:"format,omitempty" doc:"Generative format template describing the credential shape; used to mint sentinel placeholders"`
+	DefaultGrantTTL int64     `gorm:"column:default_grant_ttl_seconds;not null;default:3600" json:"defaultGrantTTLSeconds" doc:"Default grant duration in seconds"`
+	EncryptedValue  []byte    `gorm:"column:encrypted_value" json:"-"`
+	CreatedAt       time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt       time.Time `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }
@@ -754,18 +746,17 @@ type SecretValue struct {
 // (which approves it) or denying it. Authorization state — who approved, expiry —
 // lives on the grant, not here.
 type SecretRequest struct {
-	ID          string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable request ID"`
-	ProjectID   string         `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	RequestedBy string         `gorm:"column:requested_by;not null;type:text" json:"requestedBy" doc:"Principal ID of the requestor"`
-	SandboxID   string         `gorm:"column:sandbox_id;not null;type:text;default:'';index" json:"sandboxId,omitempty" doc:"Sandbox that owns the sentinel, for sandbox-originated requests"`
-	Type        string         `gorm:"column:type;not null;type:text" json:"type" doc:"Secret type requested" enum:"git,ssh,bearer"`
-	Host        string         `gorm:"column:host;not null;type:text;default:''" json:"host,omitempty" doc:"Host hint provided at request time"`
-	SecretID    string         `gorm:"column:secret_id;not null;type:text;default:''" json:"secretId,omitempty" doc:"Matched secret ID; set when approved"`
-	Status      string         `gorm:"column:status;not null;type:text;default:'pending'" json:"status" doc:"Request status" enum:"pending,approved,denied"`
-	GrantID     string         `gorm:"column:grant_id;not null;type:text;default:''" json:"grantId,omitempty" doc:"Grant that satisfied this request; set when approved"`
-	DeletedAt   gorm.DeletedAt `gorm:"index" json:"-"`
-	CreatedAt   time.Time      `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt   time.Time      `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	ID          string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable request ID"`
+	ProjectID   string    `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	RequestedBy string    `gorm:"column:requested_by;not null;type:text" json:"requestedBy" doc:"Principal ID of the requestor"`
+	SandboxID   string    `gorm:"column:sandbox_id;not null;type:text;default:'';index" json:"sandboxId,omitempty" doc:"Sandbox that owns the sentinel, for sandbox-originated requests"`
+	Type        string    `gorm:"column:type;not null;type:text" json:"type" doc:"Secret type requested" enum:"git,ssh,bearer"`
+	Host        string    `gorm:"column:host;not null;type:text;default:''" json:"host,omitempty" doc:"Host hint provided at request time"`
+	SecretID    string    `gorm:"column:secret_id;not null;type:text;default:''" json:"secretId,omitempty" doc:"Matched secret ID; set when approved"`
+	Status      string    `gorm:"column:status;not null;type:text;default:'pending'" json:"status" doc:"Request status" enum:"pending,approved,denied"`
+	GrantID     string    `gorm:"column:grant_id;not null;type:text;default:''" json:"grantId,omitempty" doc:"Grant that satisfied this request; set when approved"`
+	CreatedAt   time.Time `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt   time.Time `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }
@@ -793,18 +784,17 @@ func (r *SecretRequest) BeforeCreate(_ *gorm.DB) error {
 // unexpired grant whose scope key matches a resolving sandbox lets the proxy
 // return the decrypted value without a pending request.
 type SecretGrant struct {
-	ID        string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable grant ID"`
-	ProjectID string         `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	SecretID  string         `gorm:"column:secret_id;not null;type:text;index" json:"secretId" doc:"Granted secret ID"`
-	Scope     string         `gorm:"column:scope;not null;type:text" json:"scope" doc:"How widely the grant applies" enum:"sandbox,harnessConfig,project"`
-	ScopeKey  string         `gorm:"column:scope_key;not null;type:text;index" json:"scopeKey" doc:"Identifier the scope resolves against: sandbox ID, harness config ID, or project ID"`
-	Host      string         `gorm:"column:host;not null;type:text;default:''" json:"host,omitempty" doc:"Host the grant is limited to; empty matches any host"`
-	GrantedBy string         `gorm:"column:granted_by;not null;type:text;default:''" json:"grantedBy,omitempty" doc:"Principal ID that created the grant"`
-	GrantedAt time.Time      `gorm:"column:granted_at;autoCreateTime" json:"grantedAt" doc:"Creation timestamp" format:"date-time"`
-	ExpiresAt *time.Time     `gorm:"column:expires_at" json:"expiresAt,omitempty" doc:"Expiry time; empty never expires" format:"date-time"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
-	CreatedAt time.Time      `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt time.Time      `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	ID        string     `gorm:"primaryKey;type:text" json:"id" doc:"Stable grant ID"`
+	ProjectID string     `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	SecretID  string     `gorm:"column:secret_id;not null;type:text;index" json:"secretId" doc:"Granted secret ID"`
+	Scope     string     `gorm:"column:scope;not null;type:text" json:"scope" doc:"How widely the grant applies" enum:"sandbox,harnessConfig,project"`
+	ScopeKey  string     `gorm:"column:scope_key;not null;type:text;index" json:"scopeKey" doc:"Identifier the scope resolves against: sandbox ID, harness config ID, or project ID"`
+	Host      string     `gorm:"column:host;not null;type:text;default:''" json:"host,omitempty" doc:"Host the grant is limited to; empty matches any host"`
+	GrantedBy string     `gorm:"column:granted_by;not null;type:text;default:''" json:"grantedBy,omitempty" doc:"Principal ID that created the grant"`
+	GrantedAt time.Time  `gorm:"column:granted_at;autoCreateTime" json:"grantedAt" doc:"Creation timestamp" format:"date-time"`
+	ExpiresAt *time.Time `gorm:"column:expires_at" json:"expiresAt,omitempty" doc:"Expiry time; empty never expires" format:"date-time"`
+	CreatedAt time.Time  `json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt time.Time  `json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project *Project `gorm:"foreignKey:ProjectID" json:"-"`
 }
@@ -839,14 +829,13 @@ type SandboxSecretResolution struct {
 // proxy swaps it for the real value resolved from the referenced secret. The
 // sentinel is non-secret but is not exposed through the API.
 type SandboxSecret struct {
-	ID        string         `gorm:"primaryKey;type:text" json:"id" doc:"Stable assignment ID"`
-	ProjectID string         `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
-	SandboxID string         `gorm:"column:sandbox_id;not null;type:text;index;uniqueIndex:idx_sandbox_secret_env,priority:1" json:"sandboxId" doc:"Sandbox ID"`
-	SecretID  string         `gorm:"column:secret_id;not null;type:text;index" json:"secretId" doc:"Assigned secret ID"`
-	EnvName   string         `gorm:"column:env_name;not null;type:text;uniqueIndex:idx_sandbox_secret_env,priority:2" json:"envName" doc:"Environment variable name injected into the sandbox"`
-	Sentinel  string         `gorm:"column:sentinel;not null;type:text;uniqueIndex" json:"-"`
-	CreatedAt time.Time      `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	DeletedAt gorm.DeletedAt `gorm:"index" json:"-"`
+	ID        string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable assignment ID"`
+	ProjectID string    `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
+	SandboxID string    `gorm:"column:sandbox_id;not null;type:text;index;uniqueIndex:idx_sandbox_secret_env,priority:1" json:"sandboxId" doc:"Sandbox ID"`
+	SecretID  string    `gorm:"column:secret_id;not null;type:text;index" json:"secretId" doc:"Assigned secret ID"`
+	EnvName   string    `gorm:"column:env_name;not null;type:text;uniqueIndex:idx_sandbox_secret_env,priority:2" json:"envName" doc:"Environment variable name injected into the sandbox"`
+	Sentinel  string    `gorm:"column:sentinel;not null;type:text;uniqueIndex" json:"-"`
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 }
 
 func (SandboxSecret) TableName() string { return "sandbox_secrets" }

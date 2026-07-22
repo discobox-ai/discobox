@@ -1,6 +1,7 @@
 package harnessconfigs
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -23,7 +24,7 @@ func (s *stubInspector) Inspect(_ context.Context, image string) (imageMetadata,
 	return s.byImage[image], nil
 }
 
-func newTestStore(t *testing.T) *store.Store {
+func newTestStore(t *testing.T, opts ...store.Option) *store.Store {
 	t.Helper()
 	ctx := context.Background()
 	db, err := database.New(database.Config{DSN: ":memory:"})
@@ -39,24 +40,24 @@ func newTestStore(t *testing.T) *store.Store {
 	}).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}
-	return store.New(db.Write, db.Read)
+	return store.New(db.Write, db.Read, opts...)
 }
 
-// The previous configuration is seeded back in the same shape the configure
-// command writes, including secret values so it can validate them rather than
-// re-prompt — but only for secrets still holding a live grant to this harness
-// config. A revoked grant must drop the value out of the seed.
-func TestPreviousConfigurationOnlyIncludesGrantedSecrets(t *testing.T) {
+// The seed tells the configure command which secrets exist without handing it
+// any of them: values ride in as PREV_-prefixed sentinels instead. A value in
+// this file would be a plaintext credential sitting in the sandbox's filesystem.
+func TestPreviousConfigurationCarriesNoSecretValues(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
-	granted := &model.Secret{ProjectID: "project-1", Name: "granted", Type: model.SecretTypeBearer, Host: "granted.example.com", EncryptedValue: []byte(`{"token":"keep"}`)}
-	if err := st.CreateSecret(ctx, granted); err != nil {
-		t.Fatalf("create granted secret: %v", err)
+	mine := &model.Secret{ProjectID: "project-1", Name: "configured", Type: model.SecretTypeBearer, Host: "api.example.com", EncryptedValue: []byte(`{"token":"s3cr3t"}`)}
+	if err := st.CreateSecret(ctx, mine); err != nil {
+		t.Fatalf("create configured secret: %v", err)
 	}
-	revoked := &model.Secret{ProjectID: "project-1", Name: "revoked", Type: model.SecretTypeBearer, Host: "revoked.example.com", EncryptedValue: []byte(`{"token":"drop"}`)}
-	if err := st.CreateSecret(ctx, revoked); err != nil {
-		t.Fatalf("create revoked secret: %v", err)
+	// A secret the user bound by hand is not the configure flow's to replay.
+	theirs := &model.Secret{ProjectID: "project-1", Name: "hand-bound", Type: model.SecretTypeBearer, Host: "other.example.com", EncryptedValue: []byte(`{"token":"theirs"}`)}
+	if err := st.CreateSecret(ctx, theirs); err != nil {
+		t.Fatalf("create hand-bound secret: %v", err)
 	}
 
 	config := &model.HarnessConfig{
@@ -64,24 +65,17 @@ func TestPreviousConfigurationOnlyIncludesGrantedSecrets(t *testing.T) {
 		Image: "discobox-harness-codex:local", RunCommand: []string{"codex"},
 		Configured:          true,
 		ConfiguredFiles:     []model.HarnessConfigFile{{Path: "auth.json", Content: "prev"}},
-		ConfiguredSecretIDs: []string{granted.ID, revoked.ID},
+		ConfiguredSecretIDs: []string{mine.ID},
 	}
 	if err := st.CreateHarnessConfig(ctx, config); err != nil {
 		t.Fatalf("create config: %v", err)
 	}
-	for _, s := range []*model.Secret{granted, revoked} {
+	for env, s := range map[string]*model.Secret{"CONFIGURED_KEY": mine, "HAND_BOUND_KEY": theirs} {
 		if err := st.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
-			ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: "KEY_" + s.Name, SecretID: s.ID,
+			ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: env, SecretID: s.ID,
 		}); err != nil {
-			t.Fatalf("bind %s: %v", s.Name, err)
+			t.Fatalf("bind %s: %v", env, err)
 		}
-	}
-	// Only the first secret is granted to this harness config.
-	if err := st.CreateSecretGrant(ctx, &model.SecretGrant{
-		ProjectID: "project-1", SecretID: granted.ID,
-		Scope: model.SecretGrantScopeHarnessConfig, ScopeKey: config.ID, Host: granted.Host,
-	}); err != nil {
-		t.Fatalf("grant: %v", err)
 	}
 
 	svc := &Service{store: st, inspector: &stubInspector{}}
@@ -93,15 +87,135 @@ func TestPreviousConfigurationOnlyIncludesGrantedSecrets(t *testing.T) {
 	if len(out.Files) != 1 || out.Files[0].Content != "prev" {
 		t.Fatalf("files = %v, want the previous configured files", out.Files)
 	}
-	if len(out.Secrets) != 1 {
-		t.Fatalf("secrets = %#v, want only the granted secret", out.Secrets)
+	if len(out.Secrets) != 1 || out.Secrets[0].EnvName != "CONFIGURED_KEY" {
+		t.Fatalf("secrets = %#v, want only the configure-created secret", out.Secrets)
 	}
-	if out.Secrets[0].Name != "granted" || string(out.Secrets[0].Value) != `{"token":"keep"}` {
-		t.Fatalf("secret = %#v, want the granted secret with its value", out.Secrets[0])
+	if !out.Secrets[0].UsePrevious {
+		t.Fatalf("secret = %#v, want it marked as reusable", out.Secrets[0])
 	}
-	// The seed round-trips as the configure output shape.
-	if _, err := json.Marshal(out); err != nil {
+	seed, err := json.Marshal(out)
+	if err != nil {
 		t.Fatalf("marshal seed: %v", err)
+	}
+	// The strongest form of this check: no secret material anywhere in the bytes
+	// that get written into the sandbox.
+	for _, leaked := range []string{"s3cr3t", "theirs", "token"} {
+		if bytes.Contains(seed, []byte(leaked)) {
+			t.Fatalf("seed leaks secret material %q: %s", leaked, seed)
+		}
+	}
+}
+
+// A configure command that keeps the existing credential must keep the existing
+// secret row, binding, and grant — not create a valueless duplicate, and not let
+// the replacement sweep delete the credential it just said to keep.
+func TestApplyConfigureOutputKeepsPreviousSecret(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeBearer, UniqueKey: "old", EncryptedValue: []byte(`{"token":"old"}`)}
+	if err := st.CreateSecret(ctx, previous); err != nil {
+		t.Fatalf("create previous secret: %v", err)
+	}
+	config := &model.HarnessConfig{
+		ProjectID: "project-1", Slug: "claude-code", Name: "Claude Code",
+		Image: "img:1", RunCommand: []string{"claude"},
+		Configured: true, ConfiguredSecretIDs: []string{previous.ID},
+	}
+	if err := st.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create config: %v", err)
+	}
+	if err := st.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
+		ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: "ANTHROPIC_API_KEY", SecretID: previous.ID,
+	}); err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+
+	svc := &Service{store: st, inspector: &stubInspector{}}
+	out := &configureOutput{Secrets: []configureSecret{{
+		EnvName: "ANTHROPIC_API_KEY", Name: "Anthropic API key", Type: "bearer", UsePrevious: true,
+	}}}
+	if err := svc.applyConfigureOutput(ctx, config, "sandbox-1", out); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	if got := config.ConfiguredSecretIDs; len(got) != 1 || got[0] != previous.ID {
+		t.Fatalf("configured secrets = %v, want the kept secret %s", got, previous.ID)
+	}
+	if _, err := st.GetSecret(ctx, "project-1", previous.ID); err != nil {
+		t.Fatalf("kept secret was deleted by the replacement sweep: %v", err)
+	}
+}
+
+// Keeping a credential that was never configured is a broken output, not a
+// harness configured with nothing.
+func TestApplyConfigureOutputRejectsUnbackedReuse(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	config := &model.HarnessConfig{
+		ProjectID: "project-1", Slug: "claude-code", Name: "Claude Code",
+		Image: "img:1", RunCommand: []string{"claude"},
+	}
+	if err := st.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create config: %v", err)
+	}
+	svc := &Service{store: st, inspector: &stubInspector{}}
+	out := &configureOutput{Secrets: []configureSecret{{EnvName: "ANTHROPIC_API_KEY", UsePrevious: true}}}
+	if err := svc.applyConfigureOutput(ctx, config, "sandbox-1", out); err == nil {
+		t.Fatal("apply succeeded, want a rejection for reusing a secret that does not exist")
+	}
+}
+
+// A command that passes the PREV_ sentinel back as the value (X=$PREV_X) means
+// "keep this one". Storing the sentinel itself would configure the harness with
+// a placeholder that resolves to nothing.
+func TestApplyConfigureOutputTreatsSentinelPassthroughAsReuse(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeBearer, UniqueKey: "old", EncryptedValue: []byte(`{"token":"old"}`)}
+	if err := st.CreateSecret(ctx, previous); err != nil {
+		t.Fatalf("create previous secret: %v", err)
+	}
+	config := &model.HarnessConfig{
+		ProjectID: "project-1", Slug: "claude-code", Name: "Claude Code",
+		Image: "img:1", RunCommand: []string{"claude"},
+		Configured: true, ConfiguredSecretIDs: []string{previous.ID},
+	}
+	if err := st.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create config: %v", err)
+	}
+	const sentinel = "sentinel-value-for-previous-secret"
+	if err := st.CreateSandboxSecret(ctx, &model.SandboxSecret{
+		ProjectID: "project-1", SandboxID: "sandbox-1", SecretID: previous.ID,
+		EnvName: harness.ConfigurePreviousEnvPrefix + "ANTHROPIC_API_KEY", Sentinel: sentinel,
+	}); err != nil {
+		t.Fatalf("create sandbox secret: %v", err)
+	}
+
+	svc := &Service{store: st, inspector: &stubInspector{}}
+	out := &configureOutput{Secrets: []configureSecret{{
+		EnvName: "ANTHROPIC_API_KEY", Name: "Anthropic API key", Type: "bearer",
+		Value: []byte(`{"token":"` + sentinel + `"}`),
+	}}}
+	if err := svc.applyConfigureOutput(ctx, config, "sandbox-1", out); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	if got := config.ConfiguredSecretIDs; len(got) != 1 || got[0] != previous.ID {
+		t.Fatalf("configured secrets = %v, want the kept secret %s", got, previous.ID)
+	}
+	stored, err := st.GetSecret(ctx, "project-1", previous.ID)
+	if err != nil {
+		t.Fatalf("get kept secret: %v", err)
+	}
+	value, err := st.OpenSecretValue(ctx, stored)
+	if err != nil {
+		t.Fatalf("open kept secret: %v", err)
+	}
+	if value.Token != "old" {
+		t.Fatalf("token = %q, want the original credential rather than the sentinel", value.Token)
 	}
 }
 
@@ -307,7 +421,7 @@ func TestApplyConfigureOutputReplacesPreviousGeneration(t *testing.T) {
 	out := &configureOutput{Secrets: []configureSecret{{
 		EnvName: "TOKEN", Name: "new-token", Type: "bearer", Value: []byte(`{"token":"new"}`),
 	}}}
-	if err := svc.applyConfigureOutput(ctx, config, out); err != nil {
+	if err := svc.applyConfigureOutput(ctx, config, "sandbox-1", out); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 

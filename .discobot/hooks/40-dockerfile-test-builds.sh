@@ -17,7 +17,14 @@ cd "$workspace"
 
 changed_files="${DISCOBOT_CHANGED_FILES:-}"
 if [ -z "$changed_files" ]; then
-  changed_files=$(find . -name 'Dockerfile*' -type f -printf '%P\n')
+  # Only Dockerfiles this repository owns. A plain find also picks up ignored
+  # build output -- build/bats-core is a full upstream clone, and its
+  # .devcontainer/Dockerfile is not ours to build or keep building.
+  if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    changed_files=$(git ls-files -- 'Dockerfile*' '**/Dockerfile*')
+  else
+    changed_files=$(find . -name 'Dockerfile*' -type f -printf '%P\n')
+  fi
 fi
 
 sanitize_tag_part() {

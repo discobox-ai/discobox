@@ -25,13 +25,26 @@ const (
 	//
 	// ConfigurePreviousConfigPath is where the control plane seeds the previous
 	// configuration before re-running configure, so a configure command may
-	// pre-fill from it. It is informational input only: secrets are never set up
-	// from it automatically.
+	// pre-fill from it. It carries files and secret *metadata* only — never a
+	// secret value.
 	//
 	// Both are fixed points of the image contract rather than per-image settings —
 	// the configure commands hardcode them too.
 	ConfigureOutputPath         = "/run/discobox/harness-configure.json"
 	ConfigurePreviousConfigPath = "/run/discobox/harness-previous-config.json"
+
+	// ConfigurePreviousEnvPrefix prefixes the environment variable carrying a
+	// previously configured secret into the configure sandbox: a secret bound to
+	// ANTHROPIC_API_KEY is offered back as PREV_ANTHROPIC_API_KEY.
+	//
+	// The value is a sentinel, not the credential: the proxy swaps it for the real
+	// value on an outbound request only while a live grant covers it, so the
+	// configure command can exercise the old credential without ever holding it.
+	//
+	// The prefix is deliberate. Seeding the original variable name would let the
+	// harness CLI silently authenticate with the old credential, which would make
+	// the configure flow's choice ambiguous and its verification meaningless.
+	ConfigurePreviousEnvPrefix = "PREV_"
 )
 
 type Harness struct {

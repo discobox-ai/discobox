@@ -45,18 +45,25 @@ var errConfigureRunning = errors.New("the configure flow is still running")
 // configureOutput is the JSON a harness's configure command leaves at
 // harness.ConfigureOutputPath. The same shape is seeded back in as the previous
 // configuration (harness.ConfigurePreviousConfigPath) so a configure command can
-// parse its own prior output and pre-fill from it.
+// parse its own prior output and pre-fill from it — but the seed carries no
+// secret values, only the metadata saying which secrets exist. Their values are
+// offered as PREV_-prefixed sentinel env vars instead
+// (harness.ConfigurePreviousEnvPrefix).
 type configureOutput struct {
 	Secrets []configureSecret         `json:"secrets"`
 	Files   []model.HarnessConfigFile `json:"files"`
 }
 
 type configureSecret struct {
-	EnvName string          `json:"envName"`
-	Name    string          `json:"name"`
-	Type    string          `json:"type"`
-	Host    string          `json:"host,omitempty"`
-	Value   json.RawMessage `json:"value"`
+	EnvName string `json:"envName"`
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Host    string `json:"host,omitempty"`
+	// UsePrevious keeps the secret a previous configure run stored for this env
+	// name, leaving Value empty. It is how a configure command says "the existing
+	// credential is still good" without handling the credential at all.
+	UsePrevious bool            `json:"usePrevious,omitempty"`
+	Value       json.RawMessage `json:"value,omitempty"`
 }
 
 // SandboxRuntime is the slice of sandbox behavior the configure flow needs: it
@@ -142,9 +149,11 @@ func (s *Service) ConfigureHarnessConfig(ctx context.Context, projectID, configI
 // from. It must be called before attaching to the primary terminal, which is
 // what launches that command.
 //
-// Only secrets holding a live grant to this harness config are included: the
-// seed hands back what the harness is already authorized to hold, so it cannot
-// become a way to read secrets it has lost access to.
+// The seed names the secrets a previous run created but carries no value for
+// any of them, so it cannot be a way to read a secret. The values are offered
+// separately as PREV_-prefixed sentinels, which resolve only while a live grant
+// covers them — enforcement stays at use, in ResolveSandboxSecret, rather than
+// being repeated here. See ADR 0009.
 func (s *Service) AttachHarnessConfigConfigure(ctx context.Context, projectID, configID string) error {
 	if s.sandboxes == nil {
 		return errors.New("harness configure requires the sandbox runtime")
@@ -174,9 +183,10 @@ func (s *Service) AttachHarnessConfigConfigure(ctx context.Context, projectID, c
 }
 
 // previousConfiguration rebuilds the configure output that produced the harness's
-// current configuration, in the same shape the configure command writes. Secret
-// values are included so the command can validate them rather than re-prompt,
-// but only where a live grant to this harness config still authorizes it.
+// current configuration, in the same shape the configure command writes, minus
+// every secret value: it says which secrets exist, not what they are. The values
+// ride in as PREV_-prefixed sentinels (applyPreviousConfigureSecrets), so no
+// credential is ever written to a file inside the sandbox.
 func (s *Service) previousConfiguration(ctx context.Context, config *model.HarnessConfig) (*configureOutput, error) {
 	out := &configureOutput{Files: config.ConfiguredFiles, Secrets: []configureSecret{}}
 	if out.Files == nil {
@@ -203,21 +213,16 @@ func (s *Service) previousConfiguration(ctx context.Context, config *model.Harne
 			}
 			return nil, err
 		}
-		grant, err := s.store.FindLiveGrant(ctx, config.ProjectID, secret.ID, secret.Host,
-			[]store.GrantScope{{Scope: model.SecretGrantScopeHarnessConfig, ScopeKey: config.ID}})
-		if err != nil && !errors.Is(err, store.ErrNotFound) {
-			return nil, err
-		}
-		if grant == nil {
-			// Revoked or expired: leave it out and let the flow re-prompt.
-			continue
-		}
+		// Metadata only. Whether the credential is still usable is not decided
+		// here: its sentinel resolves through the proxy only while a live grant
+		// covers it, so a revoked credential fails the command's own verification
+		// rather than needing a second, divergent grant check on this path.
 		out.Secrets = append(out.Secrets, configureSecret{
-			EnvName: binding.EnvName,
-			Name:    secret.Name,
-			Type:    secret.Type,
-			Host:    secret.Host,
-			Value:   json.RawMessage(secret.EncryptedValue),
+			EnvName:     binding.EnvName,
+			Name:        secret.Name,
+			Type:        secret.Type,
+			Host:        secret.Host,
+			UsePrevious: true,
 		})
 	}
 	return out, nil
@@ -249,7 +254,7 @@ func (s *Service) CommitHarnessConfigConfigure(ctx context.Context, projectID, c
 		return nil, apperrors.NewStatusError(http.StatusConflict, configureErr.Error())
 	}
 	if configureErr == nil {
-		configureErr = s.applyConfigureOutput(ctx, config, out)
+		configureErr = s.applyConfigureOutput(ctx, config, sandboxID, out)
 	}
 
 	config.ConfigureSandboxID = ""
@@ -310,12 +315,24 @@ func (s *Service) collectConfigureOutput(ctx context.Context, projectID, sandbox
 
 // applyConfigureOutput records what the configure flow produced: its files land in
 // ConfiguredFiles, and each declared secret is created, bound, and granted to this
-// harness config, with the created IDs tracked so deconfigure removes exactly
+// harness config, with the resulting IDs tracked so deconfigure removes exactly
 // these. The grant is what makes the secret usable at run time — a binding alone
 // is not a grant.
-func (s *Service) applyConfigureOutput(ctx context.Context, config *model.HarnessConfig, out *configureOutput) error {
+//
+// A secret the command asked to keep (UsePrevious, or the PREV_ sentinel handed
+// straight back) is carried over as-is: the existing secret row, binding, and
+// grant survive, and nothing about the credential passes through this process.
+func (s *Service) applyConfigureOutput(ctx context.Context, config *model.HarnessConfig, sandboxID string, out *configureOutput) error {
 	if out == nil {
 		return nil
+	}
+	previousByEnv, err := s.previousSecretIDsByEnv(ctx, config)
+	if err != nil {
+		return err
+	}
+	sentinelSecretIDs, err := s.previousSentinels(ctx, config.ProjectID, sandboxID)
+	if err != nil {
+		return err
 	}
 	createdSecretIDs := make([]string, 0, len(out.Secrets))
 	for _, secret := range out.Secrets {
@@ -326,6 +343,33 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 		name := strings.TrimSpace(secret.Name)
 		if name == "" {
 			name = envName
+		}
+		// Keep the existing secret when the command said to, or when it handed a
+		// PREV_ sentinel back as the value — the sentinel is not a credential, and
+		// storing it would silently configure the harness with a dead one.
+		var keptID string
+		if secret.UsePrevious {
+			keptID = previousByEnv[envName]
+			if keptID == "" {
+				return fmt.Errorf("configure output reuses %q, but no previously configured secret is bound to it", envName)
+			}
+		} else {
+			keptID = matchPreviousSentinel(secret.Value, sentinelSecretIDs)
+		}
+		if keptID != "" {
+			createdSecretIDs = append(createdSecretIDs, keptID)
+			if err := s.store.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
+				ProjectID:       config.ProjectID,
+				HarnessConfigID: config.ID,
+				EnvName:         envName,
+				SecretID:        keptID,
+			}); err != nil {
+				return fmt.Errorf("bind kept secret %q: %w", envName, err)
+			}
+			continue
+		}
+		if len(bytes.TrimSpace(secret.Value)) == 0 {
+			return fmt.Errorf("configure output secret %q has no value and does not reuse a previous one", envName)
 		}
 		secretID, err := id.New(id.PrefixSecret)
 		if err != nil {
@@ -370,7 +414,8 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 	}
 	// Reconfiguring replaces the previous generation of configure-created
 	// secrets: their bindings were just overwritten above, so keeping the rows
-	// would leak one orphaned secret per reconfigure.
+	// would leak one orphaned secret per reconfigure. Secrets the command kept are
+	// in createdSecretIDs too, which is what spares them from this sweep.
 	replaced := map[string]struct{}{}
 	for _, secretID := range createdSecretIDs {
 		replaced[secretID] = struct{}{}
@@ -390,6 +435,68 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 	config.ConfiguredFiles = out.Files
 	config.ConfiguredSecretIDs = createdSecretIDs
 	return nil
+}
+
+// previousSecretIDsByEnv maps each env name the harness config currently binds to
+// a configure-created secret, for resolving an output that asks to keep one.
+func (s *Service) previousSecretIDsByEnv(ctx context.Context, config *model.HarnessConfig) (map[string]string, error) {
+	configured := make(map[string]struct{}, len(config.ConfiguredSecretIDs))
+	for _, secretID := range config.ConfiguredSecretIDs {
+		configured[strings.TrimSpace(secretID)] = struct{}{}
+	}
+	if len(configured) == 0 {
+		return nil, nil
+	}
+	bindings, err := s.store.ListHarnessConfigSecretBindings(ctx, config.ProjectID, config.ID)
+	if err != nil {
+		return nil, err
+	}
+	byEnv := make(map[string]string, len(bindings))
+	for _, binding := range bindings {
+		if _, ok := configured[binding.SecretID]; ok {
+			byEnv[binding.EnvName] = binding.SecretID
+		}
+	}
+	return byEnv, nil
+}
+
+// previousSentinels maps the configure sandbox's PREV_ sentinels to the secret
+// each stands for, so a command that passed one straight through (X=$PREV_X) is
+// understood as keeping that secret rather than storing a placeholder as one.
+func (s *Service) previousSentinels(ctx context.Context, projectID, sandboxID string) (map[string]string, error) {
+	assignments, err := s.store.ListSandboxSecrets(ctx, projectID, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	sentinels := make(map[string]string, len(assignments))
+	for _, assignment := range assignments {
+		if strings.HasPrefix(assignment.EnvName, harness.ConfigurePreviousEnvPrefix) {
+			sentinels[assignment.Sentinel] = assignment.SecretID
+		}
+	}
+	return sentinels, nil
+}
+
+// matchPreviousSentinel reports the secret a configure output value stands for
+// when any of its fields is one of the sandbox's PREV_ sentinels.
+func matchPreviousSentinel(value json.RawMessage, sentinels map[string]string) string {
+	if len(sentinels) == 0 || len(bytes.TrimSpace(value)) == 0 {
+		return ""
+	}
+	var fields map[string]any
+	if err := json.Unmarshal(value, &fields); err != nil {
+		return ""
+	}
+	for _, field := range fields {
+		text, ok := field.(string)
+		if !ok {
+			continue
+		}
+		if secretID, ok := sentinels[strings.TrimSpace(text)]; ok {
+			return secretID
+		}
+	}
+	return ""
 }
 
 // DeconfigureHarnessConfig removes exactly what the configure flow created — the

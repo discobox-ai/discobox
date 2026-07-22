@@ -68,11 +68,36 @@ sequenceDiagram
 
 `configure/attach` writes the previous configuration to
 `harness.ConfigurePreviousConfigPath` in the **same shape** the configure command
-writes its output, so the command can parse its own prior output and validate
-existing credentials rather than re-prompt. Secret values are included only where
-a live `harnessConfig`-scoped `SecretGrant` still authorizes it; revoked or
-expired grants drop out. Applying configure output mints that grant — a binding
-alone is not a grant, so without it the secret would not be usable at run time.
+writes its output, so the command can parse its own prior output rather than
+re-prompt from nothing. Only what this flow created is replayed —
+`ConfiguredFiles`, and bindings whose secret is in `ConfiguredSecretIDs`. A
+secret the user bound by hand is theirs, not the flow's to replay.
+
+**The seed carries no secret values.** It is metadata: env name, name, type,
+host, `usePrevious`. Values reach the configure sandbox the same way every other
+sandbox secret does — as sentinels in its environment, minted by
+`resources/sandboxes.applyPreviousConfigureSecrets` under
+`harness.ConfigurePreviousEnvPrefix`. Nothing on this path calls
+`OpenSecretValue`; no credential is ever serialized into the sandbox.
+
+That is also why there is **no grant check here**. The sentinel resolves through
+`ResolveSandboxSecret`, which requires a live grant covering the configure
+sandbox's harness config — one enforcement point, at use, instead of a second
+copy of the rule that could drift from it.
+
+A secret that no longer exists produces no `PREV_` variable at all: deleting it
+cascades its binding, and the seed walks bindings. The narrow case is a secret
+that still exists whose grant was explicitly revoked (`disco secret grant
+revoke`); configure-created grants set no expiry, so they do not lapse on their
+own. Then the sentinel does not resolve, the configure command's verification
+fails, and a pending `SecretRequest` is raised like any other unresolved
+sentinel.
+
+Applying output mints the grant for a newly collected secret — a binding alone is
+not a grant, so without it the secret would not be usable at run time. A secret
+returned with `usePrevious` (or as its own sentinel) keeps its existing row,
+binding, and grant, and stays out of the replacement sweep. See
+`harness/DESIGN.md` for the command-side contract.
 
 ## Deconfigure
 

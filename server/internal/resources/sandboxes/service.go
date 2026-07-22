@@ -227,16 +227,27 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 	// harnessMode "config" is exempt: the configure flow is how a harness's
 	// secrets are obtained in the first place, so requiring them to already exist
 	// would make an unconfigured harness impossible to configure.
-	if harnessConfigID != nil && strings.TrimSpace(*harnessConfigID) != "" && harnessMode != "config" {
-		inlineEnvs := make(map[string]struct{}, len(config.Secrets))
-		for _, in := range config.Secrets {
-			inlineEnvs[strings.TrimSpace(in.Env)] = struct{}{}
+	if harnessConfigID != nil && strings.TrimSpace(*harnessConfigID) != "" {
+		if harnessMode == "config" {
+			// Config mode instead offers the previous configuration's secrets back
+			// under PREV_-prefixed names, so the configure flow can verify and keep
+			// an existing credential without it ever being re-typed or re-read.
+			previousAssignments, err := s.applyPreviousConfigureSecrets(ctx, projectID, sandbox, strings.TrimSpace(*harnessConfigID))
+			if err != nil {
+				return nil, err
+			}
+			assignments = append(assignments, previousAssignments...)
+		} else {
+			inlineEnvs := make(map[string]struct{}, len(config.Secrets))
+			for _, in := range config.Secrets {
+				inlineEnvs[strings.TrimSpace(in.Env)] = struct{}{}
+			}
+			harnessAssignments, err := s.applyHarnessConfigSecrets(ctx, projectID, sandbox, strings.TrimSpace(*harnessConfigID), inlineEnvs)
+			if err != nil {
+				return nil, err
+			}
+			assignments = append(assignments, harnessAssignments...)
 		}
-		harnessAssignments, err := s.applyHarnessConfigSecrets(ctx, projectID, sandbox, strings.TrimSpace(*harnessConfigID), inlineEnvs)
-		if err != nil {
-			return nil, err
-		}
-		assignments = append(assignments, harnessAssignments...)
 	}
 	created, err := s.createSandboxIntent(ctx, sandbox)
 	if err != nil {

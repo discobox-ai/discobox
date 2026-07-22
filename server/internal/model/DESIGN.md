@@ -36,21 +36,23 @@ for creating persisted `HarnessConfig` instances.
 
 ## Deletes
 
-Mutable resource models use GORM's native soft-delete support by including a
-`gorm.DeletedAt` field tagged with `gorm:"index" json:"-"`. Normal GORM
-queries automatically exclude soft-deleted rows, while `Unscoped()` is reserved
-for explicit administrative, recovery, or purge paths.
+**Deletes are real. No model carries `gorm.DeletedAt`.** Deleting a row removes
+it, so "deleted" needs no qualifier: a query cannot forget to exclude tombstones,
+and a raw SQL or debug query sees the same state the application does.
 
-Do not add ad-hoc `deleted` booleans or nullable deletion timestamps for primary
-resources. Use `gorm.DeletedAt` so deletes flow through GORM's built-in
-`Delete` behavior and query scoping. Append-only/audit rows and operational
-state rows that intentionally rely on hard deletes, such as project events or
-server initialization state, should document that exception instead of adding
-soft-delete fields.
+Do not add `gorm.DeletedAt`, ad-hoc `deleted` booleans, or nullable deletion
+timestamps. A tombstone still occupies every unique index its table has, so it
+silently makes the deleted thing unrecreatable — deleting a secret would burn its
+`(project, type, host)` slot, deleting a pool its name, deleting a project its
+slug, deleting a user their email address. Recreating any of them fails with a
+constraint error rather than doing the obvious thing.
 
-`HarnessConfig` intentionally hard-deletes. Disabling a harness config is modeled as
-removing that project-scoped name so the same definition name can be enabled
-again without colliding with a hidden soft-deleted row.
+Deletion is recorded in the project event stream (`withResourceEvent`), so the
+audit trail does not depend on keeping the row. Nothing in the system offers
+undelete, and reviving a row is not a feature to add by leaving tombstones
+lying around: it is a restore path that should be explicit if it is ever wanted.
+
+See ADR 0010.
 
 ## Shared Lifecycle Shape
 
@@ -214,7 +216,7 @@ offline (created); it does not convert the pool to deleted.
 
 Pool delete is intent-based: `phase=deleting` until runtime cleanup succeeds.
 Only successful cleanup may set `phase=deleted`, revoke the pool, clear
-runtime state, and soft-delete the row.
+runtime state, and delete the row.
 
 Pool repair is not delete. Repair is an in-place recovery operation that
 replaces the runtime under the same pool identity and must preserve the pool

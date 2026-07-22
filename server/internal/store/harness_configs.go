@@ -105,13 +105,6 @@ func (s *Store) DeleteHarnessConfig(ctx context.Context, projectID, configID str
 		if liveRefs > 0 {
 			return nil, ErrInUse
 		}
-		// Soft-deleted sandboxes still hold the FK; clear it so leftover deleted
-		// sandboxes do not block deletion.
-		if err := tx.Unscoped().Model(&model.Sandbox{}).
-			Where("harness_config_id = ? AND deleted_at IS NOT NULL", configID).
-			Update("harness_config_id", nil).Error; err != nil {
-			return nil, err
-		}
 		if err := tx.Delete(config).Error; err != nil {
 			return nil, err
 		}

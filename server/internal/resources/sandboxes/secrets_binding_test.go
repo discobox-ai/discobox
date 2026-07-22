@@ -132,3 +132,68 @@ func TestApplyHarnessConfigSecretsOptionalUnboundIsAllowed(t *testing.T) {
 		t.Fatalf("assignments = %#v, want none", assignments)
 	}
 }
+
+// A configure sandbox is offered the previous configuration's secrets under
+// PREV_-prefixed names. The prefix is the point: seeding OPENAI_API_KEY itself
+// would let the harness CLI silently authenticate with the old credential, so
+// the configure flow could neither present a real choice nor verify what it
+// collected.
+func TestApplyPreviousConfigureSecretsPrefixesAndSentinelizes(t *testing.T) {
+	ctx := context.Background()
+	svc, st := newBindingFixture(t)
+	config := codexConfig(t, st)
+	configured := bearerSecret(t, st, "openai", "")
+	handBound := bearerSecret(t, st, "hand-bound", "other.example.com")
+	config.ConfiguredSecretIDs = []string{configured.ID}
+	if err := st.UpdateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("update config: %v", err)
+	}
+	for env, sec := range map[string]*model.Secret{"OPENAI_API_KEY": configured, "OTHER_KEY": handBound} {
+		if err := st.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
+			ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: env, SecretID: sec.ID,
+		}); err != nil {
+			t.Fatalf("bind %s: %v", env, err)
+		}
+	}
+
+	sandbox := &model.Sandbox{ID: "sb-1", ProjectID: "project-1"}
+	assignments, err := svc.applyPreviousConfigureSecrets(ctx, "project-1", sandbox, config.ID)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	// Only the configure flow's own secret is replayed; the hand-bound one is the
+	// user's, not the flow's.
+	if len(assignments) != 1 || assignments[0].SecretID != configured.ID {
+		t.Fatalf("assignments = %#v, want only the configure-created secret", assignments)
+	}
+	if assignments[0].EnvName != "PREV_OPENAI_API_KEY" {
+		t.Fatalf("env name = %q, want the PREV_ prefixed name", assignments[0].EnvName)
+	}
+	if _, ok := sandbox.Env["OPENAI_API_KEY"]; ok {
+		t.Fatal("the unprefixed variable was seeded; the harness would authenticate with the old credential")
+	}
+	sentinel := sandbox.Env["PREV_OPENAI_API_KEY"]
+	if sentinel == "" || sentinel == "sk-abc" {
+		t.Fatalf("env = %q, want a sentinel rather than the credential", sentinel)
+	}
+	if assignments[0].Sentinel != sentinel {
+		t.Fatalf("assignment sentinel %q != env sentinel %q", assignments[0].Sentinel, sentinel)
+	}
+}
+
+// An unconfigured harness has nothing to replay: a first-time configure sandbox
+// gets no PREV_ variables at all.
+func TestApplyPreviousConfigureSecretsSkipsUnconfiguredHarness(t *testing.T) {
+	ctx := context.Background()
+	svc, st := newBindingFixture(t)
+	config := codexConfig(t, st)
+
+	sandbox := &model.Sandbox{ID: "sb-1", ProjectID: "project-1"}
+	assignments, err := svc.applyPreviousConfigureSecrets(ctx, "project-1", sandbox, config.ID)
+	if err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if len(assignments) != 0 || len(sandbox.Env) != 0 {
+		t.Fatalf("assignments = %#v, env = %#v, want nothing replayed", assignments, sandbox.Env)
+	}
+}
