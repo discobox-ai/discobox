@@ -1,4 +1,17 @@
 #!/usr/bin/env bats
+#
+# Exercises the Docker provider through the CLI against a development stack that
+# is already running (`task dev`).
+#
+# This suite deliberately owns nothing but the resources it creates. It does not
+# start a server, and it does not build images: a server started here would take
+# the shared Unix socket away from the running one — a starting server asks the
+# incumbent to shut down — and rebuilding images would swap them under whatever
+# is already using them. It skips instead of failing when the stack is not up,
+# so a run without `task dev` is a no-op rather than a wrong answer.
+#
+# Cleanup is by recorded ID, never by label or image filter: matching containers
+# broadly would reap pools this suite did not create.
 
 setup_file() {
   export REPO_ROOT="$(cd "${BATS_TEST_FILENAME%/*}/../.." && pwd)"
@@ -7,124 +20,86 @@ setup_file() {
   command -v docker >/dev/null 2>&1 || skip "docker is required"
   docker info >/dev/null 2>&1 || skip "docker daemon is required"
 
-  export DISCOBOX_BATS_TMP="$BATS_SUITE_TMPDIR/discobox-docker"
-  export DISCOBOX_BATS_DATA_DIR="$DISCOBOX_BATS_TMP/data"
-  export DISCOBOX_BATS_CONFIG_DIR="$DISCOBOX_BATS_TMP/config"
-  export DISCOBOX_BATS_CACHE_DIR="$DISCOBOX_BATS_TMP/cache"
-  export DISCOBOX_BATS_STATE_DIR="$DISCOBOX_BATS_TMP/state"
-  export DISCOBOX_BATS_DB="$DISCOBOX_BATS_TMP/discobox.sqlite"
-  export DISCOBOX_BATS_SERVER_LOG="$DISCOBOX_BATS_TMP/server.log"
-  mkdir -p "$DISCOBOX_BATS_DATA_DIR" "$DISCOBOX_BATS_CONFIG_DIR" "$DISCOBOX_BATS_CACHE_DIR" "$DISCOBOX_BATS_STATE_DIR"
+  # The image watcher in `task dev` owns this tag.
+  docker image inspect discobox-pool-agent:local >/dev/null 2>&1 ||
+    skip "discobox-pool-agent:local is missing; run 'task dev' to build it"
 
-  export DISCOBOX_BATS_PORT="$(python3 - <<'PY'
-import socket
-s = socket.socket()
-s.bind(("127.0.0.1", 0))
-print(s.getsockname()[1])
-s.close()
-PY
-)"
-  export DISCOBOX_BATS_SERVER="http://127.0.0.1:$DISCOBOX_BATS_PORT"
+  # The pool container reaches the control plane over the host network, so the
+  # development server's HTTP port has to be up and reachable.
+  export DISCOBOX_BATS_PORT="${PORT:-18080}"
+  curl -fsS "http://127.0.0.1:$DISCOBOX_BATS_PORT/openapi.yaml" >/dev/null 2>&1 ||
+    skip "no development server on port $DISCOBOX_BATS_PORT; run 'task dev'"
 
-  (cd server && go build -o ../build/discobox-server ./cmd/discobox-server)
-  rm -f build/disco
-  (cd cli && go build -o ../build/disco ./cmd/disco)
-  (docker build -f pool-agent/Dockerfile -t discobox-pool-agent:local .)
+  # `task dev` hot-reloads the server, not the CLI; building it touches no
+  # shared state.
+  (cd cli && go build -o ../build/disco ./cmd/disco) || skip "cannot build the CLI"
 
-  PORT="$DISCOBOX_BATS_PORT" \
-  DATABASE_DSN="$DISCOBOX_BATS_DB" \
-  DISCOBOX_DATA_DIR="$DISCOBOX_BATS_DATA_DIR" \
-  DISCOBOX_CONFIG_DIR="$DISCOBOX_BATS_CONFIG_DIR" \
-  DISCOBOX_CACHE_DIR="$DISCOBOX_BATS_CACHE_DIR" \
-  DISCOBOX_STATE_DIR="$DISCOBOX_BATS_STATE_DIR" \
-  DISPATCHER_ENABLED=true \
-  DISPATCHER_POLL_INTERVAL=200ms \
-  DISPATCHER_IMMEDIATE_EXECUTION=true \
-    ./build/discobox-server >"$DISCOBOX_BATS_SERVER_LOG" 2>&1 &
-  export DISCOBOX_BATS_SERVER_PID="$!"
+  "$REPO_ROOT/build/disco" --output json box pool ls >/dev/null 2>&1 ||
+    skip "development server is not answering API requests"
 
-  for _ in {1..100}; do
-    if curl -fsS "$DISCOBOX_BATS_SERVER/openapi.yaml" >/dev/null 2>&1; then
-      return 0
-    fi
-    if ! kill -0 "$DISCOBOX_BATS_SERVER_PID" 2>/dev/null; then
-      cat "$DISCOBOX_BATS_SERVER_LOG" >&2 || true
-      return 1
-    fi
-    sleep 0.1
-  done
-
-  cat "$DISCOBOX_BATS_SERVER_LOG" >&2 || true
-  return 1
+  # Everything this suite creates carries this suffix, so anything a crash
+  # leaves behind is identifiable and traceable to one run.
+  export DISCOBOX_BATS_RUN="bats-$$"
+  export DISCOBOX_BATS_STATE="$BATS_SUITE_TMPDIR/created"
+  : >"$DISCOBOX_BATS_STATE"
 }
 
+# teardown_file removes what this suite created, most dependent first, and only
+# by the IDs it recorded.
 teardown_file() {
   cd "$REPO_ROOT"
-  if [ -n "${DISCOBOX_BATS_SERVER_PID:-}" ] && kill -0 "$DISCOBOX_BATS_SERVER_PID" 2>/dev/null; then
-    kill "$DISCOBOX_BATS_SERVER_PID" 2>/dev/null || true
-    wait "$DISCOBOX_BATS_SERVER_PID" 2>/dev/null || true
-  fi
+  [ -f "${DISCOBOX_BATS_STATE:-}" ] || return 0
+  local kind line id
+  for kind in sandbox pool provider; do
+    while read -r line; do
+      [ "${line%% *}" = "$kind" ] || continue
+      id="${line#* }"
+      cli box "$kind" delete "$id" >/dev/null 2>&1 </dev/null || true
+    done <"$DISCOBOX_BATS_STATE"
+  done
+}
 
-  docker rm -f $(docker ps -aq \
-    --filter "ancestor=discobox-pool-agent:local" \
-    --filter "label=discobox.provider_type=docker" \
-    --filter "label=discobox.project_id=prj_default") >/dev/null 2>&1 || true
+# record notes a resource for teardown as soon as it exists, so a failure
+# between creating it and the next assertion still cleans up.
+record() {
+  echo "$1 $2" >>"$DISCOBOX_BATS_STATE"
 }
 
 cli() {
-  "$REPO_ROOT/build/disco" --server "$DISCOBOX_BATS_SERVER" --project local --output json "$@"
+  "$REPO_ROOT/build/disco" --output json "$@"
 }
 
 json_get() {
   python3 -c 'import json,sys; print(json.load(sys.stdin).get(sys.argv[1], ""))' "$1"
 }
 
+# wait_for_pool_ready polls the API rather than the server's database: the
+# database belongs to the running stack, and neither its path nor its schema is
+# this suite's business.
 wait_for_pool_ready() {
-  local pool_id="$1"
-  if python3 - "$DISCOBOX_BATS_DB" "$pool_id" <<'PY'
-import sqlite3
-import sys
-import time
+  local pool_id="$1" deadline=$((SECONDS + 90)) pool_json="" ready schedulable
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    if pool_json="$(cli box pool get "$pool_id" 2>/dev/null)"; then
+      ready="$(printf '%s' "$pool_json" | json_get ready)"
+      schedulable="$(printf '%s' "$pool_json" | json_get schedulable)"
+      if [ "$ready" = "True" ] && [ "$schedulable" = "True" ]; then
+        return 0
+      fi
+    fi
+    sleep 1
+  done
 
-db, pool_id = sys.argv[1:]
-deadline = time.time() + 90
-last = None
-while time.time() < deadline:
-    con = sqlite3.connect(db)
-    con.row_factory = sqlite3.Row
-    rows = con.execute(
-        """
-        SELECT id, ready, schedulable, phase, last_operation_status
-        FROM pools
-        WHERE project_id = ? AND id = ?
-        """,
-        ("prj_default", pool_id),
-    ).fetchall()
-    con.close()
-    last = [dict(row) for row in rows]
-    if any(row["ready"] and row["schedulable"] for row in rows):
-        print(rows[0]["id"])
-        sys.exit(0)
-    time.sleep(1)
-print(f"pool did not become ready {pool_id}: {last}", file=sys.stderr)
-sys.exit(1)
-PY
-  then
-    return 0
-  fi
-  echo "server log:" >&2
-  tail -200 "$DISCOBOX_BATS_SERVER_LOG" >&2 || true
-  echo "docker pool containers:" >&2
-  docker ps -a \
-    --filter "label=discobox.pool_id=$pool_id" \
+  echo "pool did not become ready: $pool_id" >&2
+  printf '%s\n' "$pool_json" >&2
+  # Diagnostics stay scoped to the pool this suite created.
+  docker ps -a --filter "label=discobox.pool_id=$pool_id" \
     --format 'table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Names}}' >&2 || true
+  local container
   for container in $(docker ps -aq --filter "label=discobox.pool_id=$pool_id"); do
     echo "logs for $container:" >&2
-    docker logs "$container" >&2 || true
-    echo "systemctl status for $container:" >&2
-    docker exec "$container" systemctl --no-pager status discobox-pool-agent.service >&2 || true
+    docker logs --tail 100 "$container" >&2 || true
     echo "journal for $container:" >&2
-    docker exec "$container" journalctl --no-pager -u discobox-pool-agent.service >&2 || true
+    docker exec "$container" journalctl --no-pager -n 100 -u discobox-pool-agent.service >&2 || true
   done
   return 1
 }
@@ -157,27 +132,29 @@ print(json.dumps({
 PY
 )"
 
-  run cli box provider create --type docker --name bats-docker --config "$config"
+  run cli box provider create --type docker --name "$DISCOBOX_BATS_RUN-provider" --config "$config"
   [ "$status" -eq 0 ]
   provider_json="$output"
   provider_id="$(printf '%s' "$provider_json" | json_get id)"
   [ -n "$provider_id" ]
+  record provider "$provider_id"
   [ "$(printf '%s' "$provider_json" | json_get type)" = "docker" ]
 
-  run cli box pool create bats-docker-pool --provider "$provider_id"
+  run cli box pool create "$DISCOBOX_BATS_RUN-pool" --provider "$provider_id"
   [ "$status" -eq 0 ]
   pool_json="$output"
   pool_id="$(printf '%s' "$pool_json" | json_get id)"
   [ -n "$pool_id" ]
+  record pool "$pool_id"
 
-  pool_id="$(wait_for_pool_ready "$pool_id")"
-  [ -n "$pool_id" ]
+  wait_for_pool_ready "$pool_id"
 
-  run cli box sandbox create --name bats-docker-sandbox --pool "$pool_id" --wait --wait-timeout 90s
+  run cli box sandbox create --name "$DISCOBOX_BATS_RUN-sandbox" --pool "$pool_id" --wait --wait-timeout 90s
   [ "$status" -eq 0 ]
   sandbox_json="$output"
   sandbox_id="$(printf '%s' "$sandbox_json" | json_get id)"
   [ -n "$sandbox_id" ]
+  record sandbox "$sandbox_id"
   [ "$(printf '%s' "$sandbox_json" | json_get poolId)" = "$pool_id" ]
   [ "$(printf '%s' "$sandbox_json" | json_get phase)" = "running" ]
   [ "$(printf '%s' "$sandbox_json" | json_get lastOperationStatus)" = "success" ]
