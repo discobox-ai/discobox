@@ -83,9 +83,15 @@ sandbox secret does — as sentinels in its environment, minted by
 That is also why there is **no grant check here**. The sentinel resolves through
 `ResolveSandboxSecret`, which requires a live grant covering the configure
 sandbox's harness config — one enforcement point, at use, instead of a second
-copy of the rule that could drift from it. A revoked credential fails the
-configure command's verification, and an unbound one raises a `SecretRequest`
-like any other.
+copy of the rule that could drift from it.
+
+A secret that no longer exists produces no `PREV_` variable at all: deleting it
+cascades its binding, and the seed walks bindings. The narrow case is a secret
+that still exists whose grant was explicitly revoked (`disco secret grant
+revoke`); configure-created grants set no expiry, so they do not lapse on their
+own. Then the sentinel does not resolve, the configure command's verification
+fails, and a pending `SecretRequest` is raised like any other unresolved
+sentinel.
 
 Applying output mints the grant for a newly collected secret — a binding alone is
 not a grant, so without it the secret would not be usable at run time. A secret

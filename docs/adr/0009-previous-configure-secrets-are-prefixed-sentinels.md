@@ -166,11 +166,16 @@ merge semantics.
 - A configure output that reuses an env name with no previously configured
   secret bound to it, or that supplies neither a value nor `usePrevious`, is a
   commit error rather than a silent empty secret.
-- **A revoked credential prompts rather than fails outright.** An unresolvable
-  sentinel makes `ResolveSandboxSecret` open a pending secret request, so the
-  user sees an approval prompt for the old credential during configure. That is
-  consistent with every other sandbox secret, but it is a visible behavior in a
-  flow whose whole purpose is replacing that credential.
+- **An explicitly revoked grant prompts during configure.** A secret that no
+  longer exists produces no `PREV_` variable — deleting it cascades its binding,
+  and the seed walks bindings — so the ordinary cases are unaffected. The narrow
+  case is a secret that still exists whose grant was revoked by hand;
+  configure-created grants carry no expiry, so they never lapse on their own.
+  Its sentinel then fails to resolve, which fails the command's verification as
+  intended, but also opens a pending secret request, so an approval prompt for
+  the old credential appears inside the flow meant to replace it. Consistent
+  with every other unresolved sentinel, and reachable only by deliberate
+  revocation.
 - Configure commands must opt in: a command that ignores the seed and the
   `PREV_` variables still works, and simply re-prompts on every reconfigure. All
   three included harnesses opt in.
