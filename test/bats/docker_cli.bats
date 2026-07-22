@@ -134,7 +134,7 @@ host_gateway() {
 }
 
 @test "provider create help exposes docker dynamic flags" {
-  run cli provider create --help=docker
+  run cli box provider create --help=docker
   [ "$status" -eq 0 ]
   [[ "$output" == *"Create a Docker provider instance"* ]]
   [[ "$output" == *"--control-plane-url"* ]]
@@ -157,14 +157,14 @@ print(json.dumps({
 PY
 )"
 
-  run cli provider create --type docker --name bats-docker --config "$config"
+  run cli box provider create --type docker --name bats-docker --config "$config"
   [ "$status" -eq 0 ]
   provider_json="$output"
   provider_id="$(printf '%s' "$provider_json" | json_get id)"
   [ -n "$provider_id" ]
   [ "$(printf '%s' "$provider_json" | json_get type)" = "docker" ]
 
-  run cli pool create bats-docker-pool --provider "$provider_id"
+  run cli box pool create bats-docker-pool --provider "$provider_id"
   [ "$status" -eq 0 ]
   pool_json="$output"
   pool_id="$(printf '%s' "$pool_json" | json_get id)"
@@ -173,7 +173,7 @@ PY
   pool_id="$(wait_for_pool_ready "$pool_id")"
   [ -n "$pool_id" ]
 
-  run cli sandbox create --name bats-docker-sandbox --pool "$pool_id" --wait --wait-timeout 90s
+  run cli box sandbox create --name bats-docker-sandbox --pool "$pool_id" --wait --wait-timeout 90s
   [ "$status" -eq 0 ]
   sandbox_json="$output"
   sandbox_id="$(printf '%s' "$sandbox_json" | json_get id)"
