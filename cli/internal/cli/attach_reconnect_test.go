@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/obot-platform/discobox/execstream/frame"
 )
 
 func TestReconnectingAttachFramesResumesReads(t *testing.T) {
@@ -28,26 +30,26 @@ func TestReconnectingAttachFramesResumesReads(t *testing.T) {
 	frames.backoff = func(int) time.Duration { return 0 }
 	defer frames.Close()
 
-	result := make(chan terminalFrame, 1)
+	result := make(chan frame.Frame, 1)
 	errResult := make(chan error, 1)
 	go func() {
-		frame, err := frames.ReadFrame()
+		f, err := frames.ReadFrame()
 		if err != nil {
 			errResult <- err
 			return
 		}
-		result <- frame
+		result <- f
 	}()
 
 	_ = firstServer.Close()
-	go func() { _ = writeTerminalFrame(secondServer, attachFrameOutput, []byte("after reconnect")) }()
+	go func() { _ = frame.Write(secondServer, frame.Stdout, []byte("after reconnect")) }()
 
 	select {
 	case err := <-errResult:
 		t.Fatalf("ReadFrame: %v", err)
-	case frame := <-result:
-		if frame.typ != attachFrameOutput || string(frame.payload) != "after reconnect" {
-			t.Fatalf("frame = %#v, want output after reconnect", frame)
+	case f := <-result:
+		if f.Type != frame.Stdout || string(f.Payload) != "after reconnect" {
+			t.Fatalf("frame = %#v, want output after reconnect", f)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for reconnected output")
@@ -90,7 +92,7 @@ func TestReconnectingAttachFramesDropsInputWhileDisconnected(t *testing.T) {
 		t.Fatal("reconnect did not start")
 	}
 
-	if err := frames.WriteFrame(attachFrameInput, []byte("do not replay")); err != nil {
+	if err := frames.WriteFrame(frame.Input, []byte("do not replay")); err != nil {
 		t.Fatalf("WriteFrame while reconnecting: %v", err)
 	}
 	close(allowDial)
@@ -99,7 +101,7 @@ func TestReconnectingAttachFramesDropsInputWhileDisconnected(t *testing.T) {
 	if err := secondServer.SetReadDeadline(deadline); err != nil {
 		t.Fatalf("SetReadDeadline: %v", err)
 	}
-	if _, err := readTerminalFrame(secondServer); err == nil {
+	if _, err := frame.Read(secondServer); err == nil {
 		t.Fatal("disconnected input was replayed after reconnect")
 	}
 }
@@ -118,44 +120,44 @@ func TestReconnectingAttachFramesRestoresResizeAndReady(t *testing.T) {
 
 	initialRead := make(chan struct{})
 	go func() {
-		_, _ = readTerminalFrame(firstServer)
-		_, _ = readTerminalFrame(firstServer)
+		_, _ = frame.Read(firstServer)
+		_, _ = frame.Read(firstServer)
 		close(initialRead)
 	}()
 	resize := []byte(`{"cols":80,"rows":24}`)
-	if err := frames.WriteFrame(attachFrameResize, resize); err != nil {
+	if err := frames.WriteFrame(frame.Resize, resize); err != nil {
 		t.Fatalf("initial resize: %v", err)
 	}
-	if err := frames.WriteFrame(attachFrameReady, nil); err != nil {
+	if err := frames.WriteFrame(frame.Ready, nil); err != nil {
 		t.Fatalf("initial ready: %v", err)
 	}
 	<-initialRead
 
-	restored := make(chan []terminalFrame, 1)
+	restored := make(chan []frame.Frame, 1)
 	go func() {
-		got := make([]terminalFrame, 0, 2)
+		got := make([]frame.Frame, 0, 2)
 		for range 2 {
-			frame, _ := readTerminalFrame(secondServer)
+			frame, _ := frame.Read(secondServer)
 			got = append(got, frame)
 		}
 		restored <- got
-		_ = writeTerminalFrame(secondServer, attachFrameOutput, []byte("repainted"))
+		_ = frame.Write(secondServer, frame.Stdout, []byte("repainted"))
 	}()
 
 	_ = firstServer.Close()
-	frame, err := frames.ReadFrame()
+	f, err := frames.ReadFrame()
 	if err != nil {
 		t.Fatalf("ReadFrame: %v", err)
 	}
-	if string(frame.payload) != "repainted" {
-		t.Fatalf("output = %q, want repainted", frame.payload)
+	if string(f.Payload) != "repainted" {
+		t.Fatalf("output = %q, want repainted", f.Payload)
 	}
 	got := <-restored
-	if got[0].typ != attachFrameResize || string(got[0].payload) != string(resize) {
+	if got[0].Type != frame.Resize || string(got[0].Payload) != string(resize) {
 		t.Fatalf("first restored frame = %#v, want resize", got[0])
 	}
-	if got[1].typ != attachFrameReady {
-		t.Fatalf("second restored frame type = %d, want ready", got[1].typ)
+	if got[1].Type != frame.Ready {
+		t.Fatalf("second restored frame type = %d, want ready", got[1].Type)
 	}
 }
 

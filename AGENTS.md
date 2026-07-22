@@ -28,6 +28,14 @@
 - `orchestration`: nested Go module for durable jobs and desired-state orchestration helpers.
 - `DESIGN.md` / `REVIEW.md`: package-local design and review notes. Read the closest files in the current package and its parents before making design-sensitive changes.
 
+## Git Workflow
+
+Work directly on whatever branch is already checked out. If the session starts
+on `main`, commit to `main`; if it starts on a feature branch, keep committing
+to that branch.
+
+Do not create new branches or worktrees unless explicitly told to.
+
 ## Commands
 
 Use Taskfile targets through the Go tool-managed `task` binary:

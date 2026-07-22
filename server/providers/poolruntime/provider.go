@@ -124,10 +124,15 @@ func (p *Provider) ReconcilePool(ctx context.Context, manager sandbox.PoolManage
 	return armRegistrationTimeout(ctx, manager, pool)
 }
 
-// syncKnownPools sends the pool-agent the full set of pools this provider
-// instance owns, so it can reclaim any others it observes on a shared host.
+// syncKnownPools sends the pool-agent the full set of pools in this project, so
+// it can reclaim any others it observes on a shared host.
+//
+// The set is project-wide rather than provider-instance-wide because it is the
+// authority for a reaper that scans project-scoped host trees. Narrowing it to
+// this provider instance would make a sibling instance's live pools look like
+// orphans, and the reaper would delete their data and proxy material.
 func (p *Provider) syncKnownPools(ctx context.Context, manager sandbox.PoolManager, provider *model.SandboxProviderInstance, pool *model.Pool) error {
-	pools, err := manager.ListPoolsForProviderInstance(ctx, provider.ProjectID, provider.ID)
+	pools, err := manager.ListPools(ctx, provider.ProjectID)
 	if err != nil {
 		return err
 	}

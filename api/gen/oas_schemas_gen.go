@@ -7595,7 +7595,8 @@ func (*SandboxExecEventsResponse) listSandboxExecEventsRes() {}
 type SandboxExecLogEntry struct {
 	// Time this exec stream chunk was observed.
 	Timestamp time.Time `json:"timestamp"`
-	// Exec stream this chunk came from.
+	// Exec stream this chunk came from. A TTY exec merges its output at the PTY and reports it all as
+	// stdout.
 	Stream SandboxExecLogEntryStream `json:"stream"`
 	// Base64-encoded raw stream bytes.
 	Data []byte `json:"data"`
@@ -7631,12 +7632,12 @@ func (s *SandboxExecLogEntry) SetData(val []byte) {
 	s.Data = val
 }
 
-// Exec stream this chunk came from.
+// Exec stream this chunk came from. A TTY exec merges its output at the PTY and reports it all as
+// stdout.
 type SandboxExecLogEntryStream string
 
 const (
 	SandboxExecLogEntryStreamInput  SandboxExecLogEntryStream = "input"
-	SandboxExecLogEntryStreamOutput SandboxExecLogEntryStream = "output"
 	SandboxExecLogEntryStreamStdout SandboxExecLogEntryStream = "stdout"
 	SandboxExecLogEntryStreamStderr SandboxExecLogEntryStream = "stderr"
 )
@@ -7645,7 +7646,6 @@ const (
 func (SandboxExecLogEntryStream) AllValues() []SandboxExecLogEntryStream {
 	return []SandboxExecLogEntryStream{
 		SandboxExecLogEntryStreamInput,
-		SandboxExecLogEntryStreamOutput,
 		SandboxExecLogEntryStreamStdout,
 		SandboxExecLogEntryStreamStderr,
 	}
@@ -7655,8 +7655,6 @@ func (SandboxExecLogEntryStream) AllValues() []SandboxExecLogEntryStream {
 func (s SandboxExecLogEntryStream) MarshalText() ([]byte, error) {
 	switch s {
 	case SandboxExecLogEntryStreamInput:
-		return []byte(s), nil
-	case SandboxExecLogEntryStreamOutput:
 		return []byte(s), nil
 	case SandboxExecLogEntryStreamStdout:
 		return []byte(s), nil
@@ -7672,9 +7670,6 @@ func (s *SandboxExecLogEntryStream) UnmarshalText(data []byte) error {
 	switch SandboxExecLogEntryStream(data) {
 	case SandboxExecLogEntryStreamInput:
 		*s = SandboxExecLogEntryStreamInput
-		return nil
-	case SandboxExecLogEntryStreamOutput:
-		*s = SandboxExecLogEntryStreamOutput
 		return nil
 	case SandboxExecLogEntryStreamStdout:
 		*s = SandboxExecLogEntryStreamStdout

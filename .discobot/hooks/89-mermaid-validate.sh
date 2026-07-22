@@ -7,7 +7,6 @@
 
 set -euo pipefail
 
-# Browser detection lives in the check:mermaid task, so it applies whether the
-# validation runs from this hook or from the task directly. A caller that
-# exports PUPPETEER_EXECUTABLE_PATH still overrides it.
+# check:mermaid parses every diagram in-process with mermaid's own grammars, so
+# there is no browser to detect or launch.
 go tool task check:mermaid

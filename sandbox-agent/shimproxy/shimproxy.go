@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/obot-platform/discobox/sandbox-agent/terminal/frame"
+	"github.com/obot-platform/discobox/execstream/frame"
 
 	"github.com/coder/websocket"
 )
@@ -242,7 +242,7 @@ func (o *OneShot) drain(ctx context.Context) ([]byte, error) {
 			return out, err
 		}
 		switch f.Type {
-		case frame.Output, frame.Error:
+		case frame.Stdout, frame.Stderr, frame.Error:
 			out = append(out, f.Payload...)
 		case frame.Exit:
 			return out, nil

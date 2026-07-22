@@ -49,6 +49,13 @@ func (m *fakePoolManager) ListPoolsForProviderInstance(context.Context, string, 
 	return []model.Pool{*m.pool}, nil
 }
 
+func (m *fakePoolManager) ListPools(context.Context, string) ([]model.Pool, error) {
+	if m.pool == nil {
+		return nil, nil
+	}
+	return []model.Pool{*m.pool}, nil
+}
+
 func (m *fakePoolManager) SchedulablePoolForSandbox(context.Context, *model.Sandbox) (*model.Pool, error) {
 	if m.pool == nil || !m.schedulable {
 		return nil, apperrors.ErrNotFound

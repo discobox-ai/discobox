@@ -4,7 +4,6 @@ package execs
 
 import (
 	"fmt"
-	"os/exec"
 	"syscall"
 )
 
@@ -28,17 +27,4 @@ func userEnvDefaults(user *User) (map[string]string, error) {
 
 func UserEnvDefaults(user *User) (map[string]string, error) {
 	return userEnvDefaults(user)
-}
-
-func terminateProcessGroup(cmd *exec.Cmd) {
-	if cmd != nil && cmd.Process != nil {
-		_ = cmd.Process.Kill()
-	}
-}
-
-func signalProcess(cmd *exec.Cmd, _ string) error {
-	if cmd == nil || cmd.Process == nil {
-		return nil
-	}
-	return cmd.Process.Kill()
 }

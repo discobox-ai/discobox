@@ -195,7 +195,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	if err != nil {
 		return nil, err
 	}
-	proxyMaterial, err := proxyagent.EnsureSandboxMaterial(r.poolID, sandboxID, r.workerHostPath)
+	proxyMaterial, err := proxyagent.EnsureSandboxMaterial(r.projectID, r.poolID, sandboxID, r.workerHostPath)
 	if err != nil {
 		return nil, err
 	}
@@ -639,7 +639,7 @@ func (r *DockerSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID stri
 	if err := proxyagent.RemoveSandboxSentinels(r.workerHostPath, sandboxID); err != nil {
 		return err
 	}
-	return proxyagent.RemoveSandboxMaterial(r.poolID, sandboxID, r.workerHostPath)
+	return proxyagent.RemoveSandboxMaterial(r.projectID, r.poolID, sandboxID, r.workerHostPath)
 }
 
 const (
@@ -673,7 +673,7 @@ func (r *DockerSandboxRuntime) ReconcileProxyMaterial(ctx context.Context, minAg
 	if err != nil {
 		return err
 	}
-	return proxyagent.PruneOrphanedMaterial(r.poolID, live, r.workerHostPath, minAge)
+	return proxyagent.PruneOrphanedMaterial(r.projectID, r.poolID, live, r.workerHostPath, minAge)
 }
 
 func (r *DockerSandboxRuntime) liveSandboxIDs(ctx context.Context) ([]string, error) {
@@ -730,7 +730,7 @@ func (r *DockerSandboxRuntime) reconcileSandboxRemovals(ctx context.Context, log
 		logger.Warn("list sandbox containers", "error", err)
 		return
 	}
-	orphans, err := proxyagent.OrphanedSandboxIDs(r.poolID, live, r.workerHostPath, minAge)
+	orphans, err := proxyagent.OrphanedSandboxIDs(r.projectID, r.poolID, live, r.workerHostPath, minAge)
 	if err != nil {
 		logger.Warn("scan orphaned sandbox material", "error", err)
 	}
@@ -743,7 +743,7 @@ func (r *DockerSandboxRuntime) reconcileSandboxRemovals(ctx context.Context, log
 		if err := proxyagent.RemoveSandboxSentinels(r.workerHostPath, sandboxID); err != nil {
 			logger.Warn("remove sandbox proxy sentinels", "sandboxID", sandboxID, "error", err)
 		}
-		if err := proxyagent.RemoveSandboxMaterial(r.poolID, sandboxID, r.workerHostPath); err != nil {
+		if err := proxyagent.RemoveSandboxMaterial(r.projectID, r.poolID, sandboxID, r.workerHostPath); err != nil {
 			logger.Warn("remove sandbox proxy material", "sandboxID", sandboxID, "error", err)
 		}
 	}
@@ -806,7 +806,7 @@ func (r *DockerSandboxRuntime) SyncKnownPools(ctx context.Context, knownPoolIDs 
 
 	reapUnknownPools(
 		r.workerHostPath(r.poolsRoot()),
-		r.workerHostPath(proxyagent.PoolsRoot()),
+		r.workerHostPath(proxyagent.PoolsRoot(r.projectID)),
 		known, sandboxVolumeRetention, time.Now(), logger,
 	)
 	return nil

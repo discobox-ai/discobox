@@ -12,8 +12,13 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
+
+	"github.com/obot-platform/discobox/execstream/client"
+
+	"github.com/obot-platform/discobox/execstream/frame"
 
 	"github.com/coder/websocket"
 	"github.com/spf13/cobra"
@@ -178,7 +183,7 @@ func createSandboxExecBody(opts sandboxExecCreateOptions, command []string) (*ap
 	}
 	body.SetTty(apiclientgen.NewOptBool(opts.tty))
 	if opts.tty {
-		if cols, rows, ok := terminalSize(os.Stdin); ok {
+		if cols, rows, ok := client.NewOSConsole(os.Stdin).Size(); ok {
 			body.SetCols(apiclientgen.NewOptInt(cols))
 			body.SetRows(apiclientgen.NewOptInt(rows))
 		}
@@ -341,28 +346,29 @@ func (a *App) attachSandboxExec(ctx context.Context, projectID, sandboxID, execI
 	}
 	defer conn.Close()
 
-	session := &framedAttachSession{
-		frames:  &directAttachFrames{conn: conn},
-		stdin:   stdin,
-		stdout:  stdout,
-		stderr:  stderr,
-		kind:    "sandbox exec",
-		action:  "attach exec",
-		rawMode: interactive && tty,
-		resize:  tty,
-		copyInput: func(ctx context.Context, s *framedAttachSession) error {
+	session := client.New(client.Options{
+		Conn:    &directAttachFrames{conn: conn},
+		Stdin:   stdin,
+		Stdout:  stdout,
+		Stderr:  stderr,
+		Console: client.NewOSConsole(stdin),
+		Kind:    "sandbox exec",
+		Action:  "attach exec",
+		RawMode: interactive && tty,
+		Resize:  tty,
+		CopyInput: func(ctx context.Context, s *client.Session) error {
 			return copySandboxExecInput(ctx, s, interactive)
 		},
-	}
+	})
 	if tty {
-		if err := session.writeInitialResize(); err != nil {
+		if err := session.WriteInitialResize(); err != nil {
 			return err
 		}
 	}
 	if _, err := a.startSandboxExec(ctx, projectID, sandboxID, execID); err != nil {
 		return err
 	}
-	return session.run(ctx)
+	return session.Run(ctx)
 }
 
 // execAttachError checks the authoritative exec record after an attach cannot
@@ -463,7 +469,7 @@ func (a *App) sandboxExecAttachDone(ctx context.Context, projectID, sandboxID, e
 	switch exec.Status {
 	case apiclientgen.SandboxExecStatusExited:
 		if code, ok := exec.ExitCode.Get(); ok && code != 0 {
-			return true, exitCodeError{code: int(code)}
+			return true, client.ExitError{Code: int(code)}
 		}
 		return true, nil
 	case apiclientgen.SandboxExecStatusFailed, apiclientgen.SandboxExecStatusLost:
@@ -696,20 +702,21 @@ func (u sandboxExecUser) model() apimodel.SandboxUser {
 	return out
 }
 
-func copySandboxExecInput(ctx context.Context, s *framedAttachSession, interactive bool) error {
+func copySandboxExecInput(ctx context.Context, s *client.Session, interactive bool) error {
 	if !interactive {
-		return s.closeInput()
+		return s.CloseInput()
 	}
 	buf := make([]byte, 32*1024)
+	stdin := s.Stdin()
 	for {
-		n, err := s.stdin.Read(buf)
+		n, err := stdin.Read(buf)
 		if n > 0 {
-			if writeErr := s.writeFrame(attachFrameInput, buf[:n]); writeErr != nil {
+			if writeErr := s.WriteFrame(frame.Input, buf[:n]); writeErr != nil {
 				return writeErr
 			}
 		}
 		if errors.Is(err, io.EOF) {
-			return s.closeInput()
+			return s.CloseInput()
 		}
 		if err != nil {
 			return err
@@ -728,7 +735,7 @@ func (a *App) returnSandboxExecStatus(ctx context.Context, projectID, sandboxID,
 		return err
 	}
 	if code, ok := exec.ExitCode.Get(); ok && code != 0 {
-		return exitCodeError{code: int(code)}
+		return client.ExitError{Code: int(code)}
 	}
 	if exec.Status == apiclientgen.SandboxExecStatusFailed {
 		return fmt.Errorf("exec %s failed: %s", exec.ID, exec.Error.Or(""))
@@ -761,3 +768,20 @@ func writeSandboxExecLogs(stdout, stderr io.Writer, entries []apimodel.SandboxEx
 	}
 	return nil
 }
+
+// directAttachFrames is an execstream.Conn over a single websocket, for attaches
+// that do not reconnect.
+type directAttachFrames struct {
+	conn io.ReadWriteCloser
+	mu   sync.Mutex
+}
+
+func (c *directAttachFrames) ReadFrame() (frame.Frame, error) { return frame.Read(c.conn) }
+
+func (c *directAttachFrames) WriteFrame(typ byte, payload []byte) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return frame.Write(c.conn, typ, payload)
+}
+
+func (c *directAttachFrames) Close() error { return c.conn.Close() }

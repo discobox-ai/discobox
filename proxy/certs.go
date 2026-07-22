@@ -186,7 +186,15 @@ func ensureBundle(dir string, serverHosts []string, validity, renewBefore time.D
 	}
 
 	serverCert, serverKey := certPaths(dir, serverName)
-	if _, _, ok := loadUsableKeyPair(serverCert, serverKey, renewBefore); !ok {
+	_, serverLeaf, serverUsable := loadUsableKeyPair(serverCert, serverKey, renewBefore)
+	// A cert that is still in date but no longer covers every requested host is
+	// unusable: clients verify the name they dial, so reusing it fails every
+	// handshake. This is what makes renaming the proxy's DNS name safe on hosts
+	// whose material predates the rename.
+	if serverUsable && !certCoversHosts(serverLeaf, serverHosts) {
+		serverUsable = false
+	}
+	if !serverUsable {
 		if err := generateSignedCert(serverCert, serverKey, signedCertOptions{
 			CommonName: serverName,
 			Hosts:      serverHosts,
@@ -355,6 +363,21 @@ func loadUsableKeyPair(certPath, keyPath string, renewBefore time.Duration) (tls
 		return tls.Certificate{}, nil, false
 	}
 	return pair, leaf, true
+}
+
+// certCoversHosts reports whether leaf is valid for every requested host, so a
+// host list that has grown or been renamed forces reissue instead of serving a
+// certificate clients will reject.
+func certCoversHosts(leaf *x509.Certificate, hosts []string) bool {
+	if leaf == nil {
+		return false
+	}
+	for _, host := range hosts {
+		if leaf.VerifyHostname(host) != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // SignHost signs a short-lived MITM certificate for host using bundle's MITM CA.

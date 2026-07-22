@@ -230,8 +230,6 @@ func (s SandboxExecLogEntryStream) Validate() error {
 	switch s {
 	case "input":
 		return nil
-	case "output":
-		return nil
 	case "stdout":
 		return nil
 	case "stderr":

@@ -18,10 +18,10 @@ runtime operations.
 | `config` | Local boot/config file parsing, environment overrides, defaults, and validation. Owns `image.json` parsing, including the `volumes` declaration and `%HOME%`/`%UID%`/`%GID%` token resolution. |
 | `server` | HTTP router, generated OpenAPI handler adapter, PASETO auth middleware, and identity/scope validation. |
 | `execs` | The sandbox runtime primitive: exec lifecycle, runtime metadata, systemd unit abstraction, stdout/stderr or PTY logging, shim launch, status socket, and attach. Harness terminals are execs. |
-| `execs` (`shim.go`) | Per-exec child process that owns the PTY/pipes and local Unix socket attach/status/start API, used by both plain execs and terminals. |
+| `execs` (`shim.go`) | Per-exec child process: the local Unix socket attach/status/start API, the audit log, and the runtime status file. It no longer owns the process itself — see `procio`. |
+| `procio` | Running a process and owning its descriptors: PTY versus pipes, stdin close, signal mapping, and exit status. No sockets, no frames, no attach — which is what makes its traps testable with a real process and nothing else. |
 | `terminal` | Harness-terminal layer built on top of `execs`: image harness resolution, hook/file setup, and primary-terminal lifecycle. A terminal is an exec created in harness mode, tagged `harnessId`/`primary` in exec metadata; all runtime mechanics belong to `execs`. |
-| `terminal/frame` | Docker-exec-style binary stream framing shared by exec attach endpoints. |
-| `shimruntime` | Shared local shim attach runtime for Unix socket setup, HTTP upgrade handling, framed stream attachers, broadcast, exit frames, and pending resize state. |
+| `shimruntime` | The platform half of an exec attach: Unix socket setup, the HTTP upgrade, the PTY, and the screen emulator behind repaint-on-attach. The stream itself — attachers, ordering, buffering, exit retention — is the root module's `execstream/host`, which this drives and implements `host.Replayer` for. |
 | `hooks` | Local Unix-socket collector and publisher protocol for coding-harness lifecycle hook payloads. |
 | `resources` | Opaque cgroup/procfs/systemd-style resource snapshot collection for exec runtimes. |
 | `store` | Sandbox-local SQLite/GORM audit log, observed terminal state snapshots, and retained resource blobs. |
@@ -98,30 +98,73 @@ images also write their image digest.
   and the prompt is not passed, since a shell would run it as a command. The
   launched exec is tagged `primary` in metadata by the sandbox-agent; that tag
   cannot be requested through the terminal create API.
-- There is one shim (`execs/shim.go`) and one framed attach mechanism. Keep Unix
-  socket setup, HTTP upgrade, attacher tracking, frame writes, output broadcast,
-  exit frame emission, and pending resize handling in `shimruntime`; keep
+- There is one shim (`execs/shim.go`) and one framed attach mechanism. Attacher
+  tracking, frame writes, output broadcast, exit frame emission, and pending
+  resize state belong to `execstream/host` in the root module; keep Unix socket
+  setup, the HTTP upgrade, and everything touching the PTY in `shimruntime`; keep
   process startup, status persistence, stream logging, and stdin-close behavior
   in `execs`. Before publishing terminal status or an exit frame, drain the
   PTY/pipes and flush the asynchronous log queue so status means all command
   output is available. The exec shim serves both TTY (terminal, `exec -t`) and
   stdout/stderr-pipe (plain exec) modes.
+- stdout and stderr are separate frames, never merged by the shim: `frame.Stdout`
+  and `frame.Stderr` (and the matching `LogStream` values on the audit log), so a
+  client can route each the way a local command does — `disco exec cmd
+  2>/dev/null` drops only stderr. Merging is the client's to do and loses no
+  information; merging in the shim is irreversible. A TTY exec has nothing to
+  split, since the kernel merges both onto the PTY before the shim reads them, so
+  it emits `frame.Stdout` only and simply never uses `frame.Stderr`. Nothing on
+  the wire distinguishes that from a pipe exec that wrote nothing to stderr, and
+  nothing should. Only `frame.Stdout` is screen state.
+- Frame types take the file descriptor numbers they carry — `Input` 0, `Stdout`
+  1, `Stderr` 2 — with control frames (`Resize` 3 … `Ready` 8) after them. The
+  wire format and its types live in the root module's `execstream/frame`, shared
+  with the CLI, so the two ends of a stream cannot disagree about it. See
+  [ADR 0008](../docs/adr/0008-attach-stream-packages.md).
+- A pipe exec's output pipes are created by `procio` (`os.Pipe`), never by
+  `cmd.StdoutPipe`/`StderrPipe`. `cmd.Wait` closes the pipes it made as soon as
+  the process exits, and the owner waits in a goroutine alongside the readers, so
+  those pipes race the readers and silently discard a fast command's entire
+  output. `procio` also closes its copies of the write ends right after `Start`,
+  so the readers see EOF at exit.
+- Signal frames act on the exec's process group (`kill(-pgid)`) via
+  `procio.Process.Signal`, which is its own session because every exec starts
+  with `Setsid`. That also means the group is
+  permanently *orphaned* — no member has a parent in the same session — and the
+  kernel discards SIGTSTP, SIGTTIN, and SIGTTOU sent to an orphaned group. A
+  `TSTP` frame therefore maps to **SIGSTOP**, which is never discarded; mapping
+  it to SIGTSTP silently does nothing. Ctrl-Z typed into a TTY exec is unaffected
+  because it is a byte, not a frame: the remote line discipline signals the
+  foreground job, which is a child group of the shell and not orphaned. A command
+  that *is* the session leader (`disco exec -t sleep 30`) cannot be stopped by
+  Ctrl-Z for the same orphan rule — `ssh host sleep 30` behaves identically.
+- Exit status uses the shell convention for signal deaths: `128+signum`, so an
+  interrupted command reports 130 rather than Go's `ExitCode() == -1`, which
+  loses the signal and reads as a generic failure. `procio.Status` carries it.
+- An attacher joins the broadcast set before the `101` response is written, not
+  after: a client that sees `101` may start the process immediately, and output
+  broadcast before registration is lost. That ordering is now structural rather
+  than a convention — `host.Attach` registers, then invokes
+  `AttachOptions.Ready`, which is where `HandleAttach` writes its `101`, so a
+  caller cannot reorder the two. The attacher registers buffering, so live
+  frames cannot race the handshake bytes onto the wire.
 - Terminal attach supports `?replay=true`, which repaints the current screen
   before live output so a client that connects after a program has been running
   sees its state, not just output produced from the attach onward. The repaint
-  is a snapshot of an in-memory terminal emulator (`shimruntime.screenBuffer`,
+  is a snapshot of an in-memory terminal emulator (`shimruntime.screenBuffer`, reached through `host.Replayer`,
   backed by `charmbracelet/x/vt`), not the raw transcript: the emulator is fed
   every output chunk in `Broadcast`, and a snapshot serializes the current
   screen, capped scrollback (`DefaultScrollbackLines`), the cursor position, and
   the input/rendering modes a TUI set before the client connected (mouse,
   bracketed paste, cursor keys, cursor visibility — tracked by scanning the
   output stream, since the emulator does not expose them). Only TTY execs have a
-  screen (`Runtime.EnableScreen`); plain execs attach without a repaint. The
+  screen: `Runtime.EnableScreen` installs the `Replayer` once the PTY exists, so a
+  pipe exec never waits on a repaint handshake it cannot satisfy. The
   disk log (`AsyncLogger`) is no longer used for attach — it backs only the
   `terminal logs` command (full forensic transcript).
-- Race-free snapshot: `shimruntime.Broadcast` feeds the emulator and snapshots
-  the attacher set under one lock, and `addReplayAttacher` captures the emulator
-  snapshot and registers the attacher under that same lock. Every output chunk
+- Race-free snapshot: `host.Stream.Broadcast` feeds the `Replayer` and snapshots
+  the attacher set under one lock, and registration captures the `Replayer`
+  snapshot under that same lock. Every output chunk
   therefore falls on exactly one side of the attach: already absorbed into the
   snapshot, or buffered as a live frame from registration onward and flushed
   after the snapshot — so nothing is lost or duplicated. The shim withholds the

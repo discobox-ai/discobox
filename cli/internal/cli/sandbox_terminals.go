@@ -13,6 +13,10 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/obot-platform/discobox/execstream/client"
+
+	"github.com/obot-platform/discobox/execstream/frame"
+
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
@@ -246,7 +250,7 @@ func createTerminalExecBody(opts sandboxTerminalCreateOptions) (*apimodel.Create
 		body.SetEnv(apiclientgen.NewOptCreateSandboxExecRequestEnv(apiclientgen.CreateSandboxExecRequestEnv(env)))
 	}
 	body.SetTty(apiclientgen.NewOptBool(true))
-	if cols, rows, ok := terminalSize(os.Stdin); ok {
+	if cols, rows, ok := client.NewOSConsole(os.Stdin).Size(); ok {
 		body.SetCols(apiclientgen.NewOptInt(cols))
 		body.SetRows(apiclientgen.NewOptInt(rows))
 	}
@@ -322,47 +326,49 @@ func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, t
 	}
 	defer frames.Close()
 
-	session := &framedAttachSession{
-		frames:      frames,
-		stdin:       stdin,
-		stdout:      stdout,
-		stderr:      stderr,
-		kind:        "harness terminal",
-		action:      "attach terminal",
-		rawMode:     true,
-		resize:      true,
-		signalReady: true,
-		copyInput:   copyTerminalInput,
-		errorFrame:  printAttachErrorFrame(stderr),
-		otherErr: func(err error) (bool, error) {
-			if isAttachDone(err) {
+	session := client.New(client.Options{
+		Conn:        frames,
+		Stdin:       stdin,
+		Stdout:      stdout,
+		Stderr:      stderr,
+		Console:     client.NewOSConsole(stdin),
+		Kind:        "harness terminal",
+		Action:      "attach terminal",
+		RawMode:     true,
+		Resize:      true,
+		SignalReady: true,
+		CopyInput:   copyTerminalInput,
+		ErrorFrame:  printAttachErrorFrame(stderr),
+		OtherErr: func(err error) (bool, error) {
+			if client.IsDone(err) {
 				return true, nil
 			}
 			return false, err
 		},
-	}
-	if err := session.writeInitialResize(); err != nil {
+	})
+	if err := session.WriteInitialResize(); err != nil {
 		return err
 	}
 	if _, err := a.startSandboxExec(ctx, projectID, sandboxID, terminalID); err != nil {
 		return err
 	}
-	err = session.run(ctx)
+	err = session.Run(ctx)
 	if errors.Is(err, errTerminalDetached) {
 		return nil
 	}
 	return err
 }
 
-func copyTerminalInput(ctx context.Context, s *framedAttachSession) error {
+func copyTerminalInput(ctx context.Context, s *client.Session) error {
 	buf := make([]byte, 32*1024)
 	pendingCtrlP := false
+	stdin := s.Stdin()
 	for {
-		n, err := s.stdin.Read(buf)
+		n, err := stdin.Read(buf)
 		if n > 0 {
 			payload, detach := filterDetachSequence(buf[:n], &pendingCtrlP)
 			if len(payload) > 0 {
-				if writeErr := s.writeFrame(attachFrameInput, payload); writeErr != nil {
+				if writeErr := s.WriteFrame(frame.Input, payload); writeErr != nil {
 					return writeErr
 				}
 			}

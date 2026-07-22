@@ -14,6 +14,11 @@ import (
 type PoolManager interface {
 	GetPool(ctx context.Context, projectID, poolID string) (*model.Pool, error)
 	ListPoolsForProviderInstance(ctx context.Context, projectID, providerID string) ([]model.Pool, error)
+	// ListPools returns every pool in the project, across provider instances.
+	// pool-sync needs this wider set: a pool agent reaps by scanning
+	// project-scoped host trees, so anything narrower would report another
+	// provider instance's live pools as orphans.
+	ListPools(ctx context.Context, projectID string) ([]model.Pool, error)
 	// SchedulablePoolForSandbox gates placement: the sandbox's pool must be
 	// ready, schedulable, and fit the request within its reported capacity.
 	SchedulablePoolForSandbox(ctx context.Context, sandbox *model.Sandbox) (*model.Pool, error)

@@ -7,9 +7,20 @@ import (
 	"io"
 )
 
+// Frame types. The three stream frames take the file descriptor numbers they
+// carry — stdin 0, stdout 1, stderr 2 — so the wire reads like the process it
+// proxies; control frames follow.
+//
+// stdout and stderr are always distinct frames. A client that wants them
+// interleaved can merge them itself, which is the direction that loses no
+// information; the shim merging them first is irreversible. A TTY exec simply
+// never emits Stderr: the kernel already merged both onto the PTY, and there is
+// nothing for the client to tell apart. Nothing on the wire distinguishes "a
+// TTY exec" from "a pipe exec that wrote nothing to stderr", and nothing should.
 const (
-	Output     byte = 1
-	Input      byte = 2
+	Input      byte = 0
+	Stdout     byte = 1
+	Stderr     byte = 2
 	Resize     byte = 3
 	Signal     byte = 4
 	Error      byte = 5

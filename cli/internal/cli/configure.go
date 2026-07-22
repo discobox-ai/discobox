@@ -359,7 +359,7 @@ func (m *configureModel) footerLines() (message, actions string) {
 		return configureWarnStyle.Render(warning), configureHelpStyle.Render("Continue? y to disable · any other key to cancel")
 	}
 
-	actions = configureHelpStyle.Render("↑/↓ move · e enable/reconfigure · d disable · s set default · r refresh · q quit")
+	actions = configureHelpStyle.Render("↑/↓ move · e enable/reconfigure · d disable · s set default · r refresh · q/esc quit")
 	switch {
 	case m.status == "":
 		message = "" // reserved blank line, keeps the height constant

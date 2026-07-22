@@ -1,6 +1,8 @@
 package cli
 
 import (
+	"context"
+
 	"github.com/spf13/cobra"
 
 	apiclientgen "github.com/obot-platform/discobox/api/gen"
@@ -41,26 +43,38 @@ another directory, or from another machine, are not listed; pass --all (or use
 			if err != nil {
 				return err
 			}
-			params := apiclientgen.ListSandboxesParams{ProjectId: projectID}
-			if !all {
-				originKey, err := sandboxcreate.OriginKey(cmd.Context(), a.source)
-				if err != nil {
-					return err
-				}
-				params.OriginKey = apiclientgen.NewOptString(originKey)
-			}
-			bodyRes, err := client.ListSandboxes(cmd.Context(), params)
+			sandboxes, err := a.listProjectSandboxes(cmd.Context(), client, projectID, all)
 			if err != nil {
 				return err
 			}
-			body, err := expectResponse[apimodel.ListSandboxesBody](bodyRes)
-			if err != nil {
-				return err
-			}
-			return a.writeSandboxes(cmd, body.GetSandboxes(), all)
+			return a.writeSandboxes(cmd, sandboxes, all)
 		},
 	}
 	cmd.Flags().BoolVarP(&all, "all", "a", false, "List every sandbox in the project, regardless of the directory it was started from, and show a FOLDER column")
 	a.addQuietFlag(cmd)
 	return cmd
+}
+
+// listProjectSandboxes lists the project's sandboxes, filtered to the ones
+// started from the current project directory unless all is set. It is the
+// listing behind `disco ls`, shared with the commands that ask the user to pick
+// one of those sandboxes.
+func (a *App) listProjectSandboxes(ctx context.Context, client *apiclientgen.Client, projectID string, all bool) ([]apimodel.Sandbox, error) {
+	params := apiclientgen.ListSandboxesParams{ProjectId: projectID}
+	if !all {
+		originKey, err := sandboxcreate.OriginKey(ctx, a.source)
+		if err != nil {
+			return nil, err
+		}
+		params.OriginKey = apiclientgen.NewOptString(originKey)
+	}
+	bodyRes, err := client.ListSandboxes(ctx, params)
+	if err != nil {
+		return nil, err
+	}
+	body, err := expectResponse[apimodel.ListSandboxesBody](bodyRes)
+	if err != nil {
+		return nil, err
+	}
+	return body.GetSandboxes(), nil
 }

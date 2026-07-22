@@ -51,6 +51,10 @@ func (s *ControlPlane) ListPoolsForProviderInstance(ctx context.Context, project
 	return s.store.ListPoolsForProviderInstance(ctx, projectID, providerID)
 }
 
+func (s *ControlPlane) ListPools(ctx context.Context, projectID string) ([]model.Pool, error) {
+	return s.store.ListPools(ctx, projectID)
+}
+
 func (s *ControlPlane) SchedulablePoolForSandbox(ctx context.Context, sb *model.Sandbox) (*model.Pool, error) {
 	return s.store.SchedulablePoolForSandbox(ctx, sb)
 }

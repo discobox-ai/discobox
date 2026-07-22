@@ -53,16 +53,29 @@ only after the report succeeds.
 The runtime reaps its own dead sandboxes' persistent volume trees
 (`pools/{pool_id}/sandboxes/{sandbox_id}`) on the same backstop, keeping each for
 a 24h retention window after it is first seen dead (a tombstone starts the
-clock). All per-sandbox state is pool-scoped by path — sandbox volume trees and
-proxy material both live under `pools/{pool_id}/` — so pool agents sharing a
-host daemon never reap each other's data.
+clock). All per-sandbox state is project- and pool-scoped by path — sandbox
+volume trees live under `projects/{project_id}/pools/{pool_id}/` and proxy
+material under `proxy/projects/{project_id}/pools/{pool_id}/` — so agents
+sharing a host daemon never reap each other's data. Both trees carry the same
+scoping because a reaper's scan must not be wider than the authority it is
+given (see `pool-sync` below); the shared per-host CA material and client
+certificates stay outside them, keyed by globally unique sandbox ID.
 
 `pool-sync` (scope `pool:sync`) is how a shared host daemon reclaims *whole*
 orphaned pools, which no single pool agent can do alone (it dies with its pool).
 The control plane POSTs the authoritative set of known pool IDs; the agent reaps
-the agent-created footprint — sandbox containers and `pools/{X}` /
-`proxy/pools/{X}` subtrees — of any other pool it observes. It is a no-op where
-each pool has its own isolated daemon.
+the agent-created footprint — sandbox containers and the
+`projects/{project_id}/pools/{X}` / `proxy/projects/{project_id}/pools/{X}`
+subtrees — of any other pool it observes. It is a no-op where each pool has its
+own isolated daemon.
+
+The known set is every pool in the project, across provider instances, because
+it is the authority for a reaper that scans project-scoped trees: a set narrower
+than the tree reports live pools as orphans, and a tree wider than the set (a
+host-global one) puts other projects' live pools in reach. Keeping the two in
+step is also what makes the reaper's "no data subtree means this proxy material
+is a regenerable leftover, delete it now" shortcut sound — that inference only
+holds while both trees cover the same set of pools.
 
 ## Worker-Local HTTP Server
 

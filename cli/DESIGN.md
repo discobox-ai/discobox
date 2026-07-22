@@ -9,7 +9,7 @@ transport helpers where OpenAPI does not model the stream.
 | Package/path | Ownership |
 | --- | --- |
 | `cmd/disco` | Binary entrypoint. |
-| `internal/cli` | Cobra command tree, output formatting, local server auto-start, TUI API adapter, and stream attach clients. |
+| `internal/cli` | Cobra command tree, output formatting, local server auto-start, TUI API adapter, and the attach transports and policy layered on `execstream/client`. |
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. |
 | `internal/origin` | Resolves the client host and project directory a sandbox is created from. Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/tui` | Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. |
@@ -32,14 +32,50 @@ Advanced configuration and low-level resource commands are grouped beneath the
 visible `disco box` command: `sandbox`, `terminal`, `exec`, `provider`, `pool`,
 `job`, `harnesses`, and `hooks` are not root commands.
 
+`disco exec` is the exception: the root command is the everyday one-shot "run
+this in my sandbox" verb, while `box exec create` stays the raw, fully
+configurable form (workdir, env, user, detach, explicit `-i`/`-t`). Both drive
+the same exec create/attach/status sequence. The root form has no `-it`: stdin
+is always attached, and a PTY is requested only when stdin, stdout, and stderr
+are all terminals, so pipes and redirects behave like a local command. The attach
+session writes stdout frames to stdout and stderr frames to stderr, with no
+special case for the PTY: a TTY exec merges at the PTY and simply never sends a
+stderr frame, which the client neither detects nor needs to.
+
+## Choosing a Sandbox Interactively
+
+Commands that act on "the sandbox I am working in" take `--sandbox-id` and fall
+back to `selectSandbox` (`internal/cli/picker.go`), never to a guess:
+
+- Candidates are exactly what `disco ls` shows — `listProjectSandboxes` filtered
+  to the current project directory's origin — so the command and the listing can
+  never disagree.
+- One candidate is used, none and several are errors, and several with a
+  terminal on stdin and stderr open the inline Bubble Tea picker instead.
+- The picker prompts on stderr so the command's stdout stays a clean stream.
+- `pickOne` is resource-independent: callers supply `pickerItem`s and the
+  wording for the empty and ambiguous cases.
+
 ## Attach Stream Pattern
 
-Terminal and exec attach use the same framed stream protocol and should share
-the transport/session mechanics in `internal/cli/attach_session.go`.
+Terminal and exec attach use the same framed stream protocol and the same
+session, `execstream/client`.
 
+- The session is not defined here either. `execstream/client` owns the attach
+  session — output demux, resize tracking, signal forwarding, suspend — and
+  `execstream/frame` owns the wire format. This module supplies transports
+  (`directAttachFrames`, the reconnecting frames) and policy, and never
+  re-declares a frame constant: the compiler cannot catch a mirror that has
+  drifted, and a corrupted stream is the first symptom.
+  See [ADR 0008](../docs/adr/0008-attach-stream-packages.md).
+- Everything the session does to this machine goes through `client.Console`:
+  raw mode, terminal size, signal delivery, and stopping and resuming. The real
+  one is `client.OSConsole`; it is the seam that lets suspend ordering and the
+  signal set be tested without a PTY, including on platforms this repository
+  cannot run.
 - Keep frame read/write, output frames, resize frames, signal forwarding,
-  raw-terminal setup, close-input frames, and attach teardown in the shared
-  framed attach session.
+  raw-terminal setup, close-input frames, and attach teardown in that session,
+  never in a caller.
 - Keep resource-specific behavior in the resource file: terminal detach
   filtering belongs with terminal commands, and exec interactive/non-interactive
   stdin behavior belongs with exec commands.
@@ -61,6 +97,39 @@ the transport/session mechanics in `internal/cli/attach_session.go`.
 - Connection lifecycle notifications are transport events, not terminal output.
   CLI attach ignores them; the TUI adapter maps them into its `TerminalEvent`
   stream.
+
+## Signals and Job Control
+
+Keystrokes reach the remote job, never this process. Two mechanisms, chosen by
+whether the attach has a PTY — not by which command is running:
+
+- **Raw mode (any TTY attach: `run`, `box terminal attach`, `configure`,
+  `exec`/`box exec create` with a PTY).** `MakeRaw` turns off ISIG, so Ctrl-C,
+  Ctrl-Z, and Ctrl-\ are never signals here — they travel as the bytes 0x03,
+  0x1a, 0x1c and the *remote* line discipline signals the remote foreground job.
+  Nothing to forward, and the local CLI is never the target.
+- **No PTY (`disco exec` into a pipe or redirect).** The local terminal is still
+  cooked, so those keys raise real signals here. `proxySignals` catches them and
+  sends a Signal frame instead of acting on them.
+
+Ctrl-Z is handled, not merely forwarded: `Session.suspend` stops the remote job, hands
+the terminal back in its pre-attach mode, stops this process, and on resume
+takes the terminal back, sends CONT, and re-sends the window size (which may
+have changed while stopped). Forwarding alone would leave the user attached to a
+stopped job with no way to resume it; stopping alone would leave the remote
+running unattended.
+
+`OSConsole.Suspend` stops with **SIGSTOP**, not by resetting SIGTSTP's
+disposition and re-raising it. A Go process that has notified SIGTSTP keeps a handler installed,
+and the re-raised signal comes back to the handler instead of stopping — once
+per suspend under job control, and in a livelock without it. SIGSTOP cannot be
+caught and is never discarded for an orphaned process group. Only this process
+is stopped, not the group, so a script that shares its process group is not
+taken down with it.
+
+Exit status follows the shell convention: a signal-killed command exits 128+N
+(130 for Ctrl-C), decided by the sandbox-agent — see its `DESIGN.md` for why a
+suspend request maps to SIGSTOP there too.
 
 ## Origin and Source Delivery
 
