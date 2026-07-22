@@ -96,3 +96,40 @@ func clientSerial(t *testing.T, path string) string {
 	}
 	return cert.SerialNumber.String()
 }
+
+// A server certificate that predates a rename of the proxy's DNS name is still
+// in date but no longer covers the name clients dial, so preparation must
+// reissue it rather than reuse it.
+func TestPrepareCertificatesReissuesServerCertWhenHostsChange(t *testing.T) {
+	dir := t.TempDir()
+
+	if _, err := PrepareCertificates(PrepareOptions{
+		Dir:         dir,
+		ProxyURL:    "https://old-name:17080",
+		ServerHosts: []string{"old-name", "127.0.0.1", "localhost"},
+	}); err != nil {
+		t.Fatalf("first PrepareCertificates() error = %v", err)
+	}
+
+	prepared, err := PrepareCertificates(PrepareOptions{
+		Dir:         dir,
+		ProxyURL:    "https://new-name:17080",
+		ServerHosts: []string{"new-name", "127.0.0.1", "localhost"},
+	})
+	if err != nil {
+		t.Fatalf("second PrepareCertificates() error = %v", err)
+	}
+
+	leaf, err := parseLeaf(prepared.Bundle.ServerCert)
+	if err != nil {
+		t.Fatalf("parseLeaf() error = %v", err)
+	}
+	if err := leaf.VerifyHostname("new-name"); err != nil {
+		t.Fatalf("server certificate not reissued for the new host: %v", err)
+	}
+	// The CAs are the host's trust root and must survive the reissue, or every
+	// already-distributed client certificate stops verifying.
+	if err := leaf.VerifyHostname("localhost"); err != nil {
+		t.Fatalf("server certificate lost a retained host: %v", err)
+	}
+}
