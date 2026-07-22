@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/url"
 	"os"
@@ -160,6 +161,12 @@ func (f *Forwarder) forward(local net.Conn) {
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
+		// Log as well as trace: closing here surfaces to the sandbox process as
+		// a bare connection reset, so without a log line every proxy failure
+		// (expired or misnamed certificates, an unreachable pool) is invisible
+		// from inside the sandbox and from the pool's journal alike.
+		slog.Error("sandbox proxy bridge could not reach the pool proxy",
+			"worker", f.workerAddress, "error", err)
 		_ = local.Close()
 		return
 	}
