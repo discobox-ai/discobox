@@ -176,6 +176,6 @@ func (m *pickerModel) View() tea.View {
 		}
 		fmt.Fprintf(&b, "%s%s %s\n", cursor, line, pickerDetailStyle.Render(item.detail))
 	}
-	fmt.Fprintf(&b, "\n%s\n", pickerHelpStyle.Render("↑/↓ move · enter select · q cancel"))
+	fmt.Fprintf(&b, "\n%s\n", pickerHelpStyle.Render("↑/↓ move · enter select · q/esc cancel"))
 	return tea.NewView(b.String())
 }
