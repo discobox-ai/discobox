@@ -122,6 +122,56 @@ func TestUpdateEnvUpdatesAllImageReferencesWithoutDroppingUserValues(t *testing.
 	}
 }
 
+func TestHarnessSpecsThreadSandboxAgentBase(t *testing.T) {
+	specs, _ := loadDockerImageSpecs(t)
+	for _, spec := range specs {
+		switch spec.name {
+		case "sandbox-agent":
+			if spec.name != sandboxAgentSpecName {
+				t.Fatalf("sandbox-agent spec name = %q, want %q", spec.name, sandboxAgentSpecName)
+			}
+			if spec.sandboxBase {
+				t.Fatalf("%s should not mark itself as a sandbox-base consumer", spec.name)
+			}
+		case "harness-codex", "harness-claude-code", "harness-opencode":
+			if !spec.sandboxBase {
+				t.Fatalf("%s does not thread the sandbox-agent base image", spec.name)
+			}
+			hasArg := false
+			for _, arg := range spec.buildArgs {
+				if strings.HasPrefix(arg, "SANDBOX_AGENT_IMAGE=") {
+					hasArg = true
+				}
+			}
+			if !hasArg {
+				t.Fatalf("%s has no SANDBOX_AGENT_IMAGE build arg to rewrite", spec.name)
+			}
+		}
+	}
+}
+
+func TestSandboxAgentFirstOrdersBaseBeforeHarnesses(t *testing.T) {
+	in := []imageSpec{
+		{name: "harness-codex", sandboxBase: true},
+		{name: "sandbox-agent"},
+		{name: "harness-opencode", sandboxBase: true},
+	}
+	got := sandboxAgentFirst(in)
+	if got[0].name != sandboxAgentSpecName {
+		t.Fatalf("sandbox-agent not built first: %#v", got)
+	}
+	if len(got) != len(in) {
+		t.Fatalf("ordering dropped specs: got %d want %d", len(got), len(in))
+	}
+}
+
+func TestDevImageTag(t *testing.T) {
+	got := devImageTag("discobox-sandbox-agent:dev-", "sha256:0123456789abcdef0000")
+	if got != "discobox-sandbox-agent:dev-0123456789ab" {
+		t.Fatalf("devImageTag = %q", got)
+	}
+}
+
 func contains(values []string, want string) bool {
 	for _, value := range values {
 		if value == want {

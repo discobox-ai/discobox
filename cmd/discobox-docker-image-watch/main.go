@@ -19,6 +19,10 @@ import (
 
 const envFile = ".env"
 
+// sandboxAgentSpecName is the spec whose built image every harness layers on
+// top of via the SANDBOX_AGENT_IMAGE build arg.
+const sandboxAgentSpecName = "sandbox-agent"
+
 type imageSpec struct {
 	name         string
 	baseImage    string
@@ -29,6 +33,10 @@ type imageSpec struct {
 	buildArgs    []string
 	files        []string
 	metadataFile string
+	// sandboxBase marks specs that build FROM the sandbox-agent image. Their
+	// SANDBOX_AGENT_IMAGE build arg is rewritten to the sandbox-agent dev tag so
+	// they pin the exact hashed base rather than the mutable :local tag.
+	sandboxBase bool
 }
 
 type harnessImage struct {
@@ -213,6 +221,7 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 				"--build-arg", "SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local",
 				"--build-arg", "HARNESS_METADATA=", "-t", "discobox-harness-" + harnessImage.name + ":local", harnessDir},
 			metadataFile: filepath.Join(repoRoot, harnessDir, "image.json"),
+			sandboxBase:  true,
 			files:        sortedFiles(seen),
 		})
 	}
@@ -365,11 +374,27 @@ func buildChangedImages(ctx context.Context, repoRoot string, allSpecs, changedS
 	if changedSpecs == nil {
 		changedSpecs = allSpecs
 	}
+	// Harnesses build FROM the sandbox-agent image, so build sandbox-agent first
+	// and thread its content-hashed dev tag into their SANDBOX_AGENT_IMAGE build
+	// arg. A harness can change on its own while sandbox-agent is unchanged; in
+	// that case resolve the current sandbox-agent dev tag from its :local image.
+	ordered := sandboxAgentFirst(changedSpecs)
 	values := map[string]string{}
-	for _, spec := range changedSpecs {
-		image, imageID, err := buildImage(ctx, spec)
+	sandboxImage := ""
+	for _, spec := range ordered {
+		if spec.sandboxBase && sandboxImage == "" {
+			resolved, err := resolveSandboxAgentImage(ctx, repoRoot, allSpecs)
+			if err != nil {
+				return err
+			}
+			sandboxImage = resolved
+		}
+		image, imageID, err := buildImage(ctx, spec, sandboxImage)
 		if err != nil {
 			return err
+		}
+		if spec.name == sandboxAgentSpecName {
+			sandboxImage = image
 		}
 		if spec.envImageKey != "" {
 			values[spec.envImageKey] = image
@@ -381,7 +406,41 @@ func buildChangedImages(ctx context.Context, repoRoot string, allSpecs, changedS
 	return updateEnv(filepath.Join(repoRoot, envFile), values)
 }
 
-func buildImage(ctx context.Context, spec imageSpec) (string, string, error) {
+// sandboxAgentFirst returns specs ordered so sandbox-agent is built before any
+// harness that layers on top of it.
+func sandboxAgentFirst(specs []imageSpec) []imageSpec {
+	ordered := make([]imageSpec, 0, len(specs))
+	for _, spec := range specs {
+		if spec.name == sandboxAgentSpecName {
+			ordered = append(ordered, spec)
+		}
+	}
+	for _, spec := range specs {
+		if spec.name != sandboxAgentSpecName {
+			ordered = append(ordered, spec)
+		}
+	}
+	return ordered
+}
+
+// resolveSandboxAgentImage returns the current sandbox-agent dev tag by
+// inspecting its built :local image, for passes that rebuild a harness without
+// rebuilding sandbox-agent.
+func resolveSandboxAgentImage(ctx context.Context, repoRoot string, specs []imageSpec) (string, error) {
+	for _, spec := range specs {
+		if spec.name != sandboxAgentSpecName {
+			continue
+		}
+		imageID, err := commandOutput(ctx, repoRoot, "docker", "image", "inspect", "-f", "{{.Id}}", spec.baseImage)
+		if err != nil {
+			return "", fmt.Errorf("resolve %s base image: %w", spec.name, err)
+		}
+		return devImageTag(spec.devPrefix, strings.TrimSpace(imageID)), nil
+	}
+	return "", fmt.Errorf("no %s spec configured", sandboxAgentSpecName)
+}
+
+func buildImage(ctx context.Context, spec imageSpec, sandboxImage string) (string, string, error) {
 	buildArgs := append([]string{}, spec.buildArgs...)
 	if spec.metadataFile != "" {
 		metadata, err := harnessMetadata(spec.metadataFile)
@@ -391,6 +450,13 @@ func buildImage(ctx context.Context, spec imageSpec) (string, string, error) {
 		for i, arg := range buildArgs {
 			if strings.HasPrefix(arg, "HARNESS_METADATA=") {
 				buildArgs[i] = "HARNESS_METADATA=" + metadata
+			}
+		}
+	}
+	if spec.sandboxBase && sandboxImage != "" {
+		for i, arg := range buildArgs {
+			if strings.HasPrefix(arg, "SANDBOX_AGENT_IMAGE=") {
+				buildArgs[i] = "SANDBOX_AGENT_IMAGE=" + sandboxImage
 			}
 		}
 	}
@@ -406,16 +472,21 @@ func buildImage(ctx context.Context, spec imageSpec) (string, string, error) {
 		log.Printf("built %s as %s (%s)", spec.name, spec.baseImage, imageID)
 		return spec.baseImage, imageID, nil
 	}
-	shortID := strings.TrimPrefix(imageID, "sha256:")
-	if len(shortID) > 12 {
-		shortID = shortID[:12]
-	}
-	image := spec.devPrefix + shortID
+	image := devImageTag(spec.devPrefix, imageID)
 	if err := runCommand(ctx, spec.buildDir, "docker", "tag", spec.baseImage, image); err != nil {
 		return "", "", err
 	}
 	log.Printf("built %s as %s (%s)", spec.name, image, imageID)
 	return image, imageID, nil
+}
+
+// devImageTag derives the content-hashed dev tag from a docker image ID.
+func devImageTag(prefix, imageID string) string {
+	shortID := strings.TrimPrefix(imageID, "sha256:")
+	if len(shortID) > 12 {
+		shortID = shortID[:12]
+	}
+	return prefix + shortID
 }
 
 func runCommand(ctx context.Context, dir, name string, args ...string) error {
