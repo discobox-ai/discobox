@@ -230,3 +230,124 @@ func TestExpiredGrantRefetched(t *testing.T) {
 		t.Fatalf("resolver called %d times after expiry, want 2", calls)
 	}
 }
+
+// swapAuth applies the swapper to a request bearing sentinel and returns the
+// resulting Authorization header and whether a swap occurred.
+func swapAuth(t *testing.T, sw *Swapper, clientID, sentinel string) (string, bool) {
+	t.Helper()
+	req := newRequest(t, http.MethodGet, "https://api.example.com/")
+	req.Header.Set("Authorization", "Bearer "+sentinel)
+	res := sw.Apply(context.Background(), req, clientID)
+	return req.Header.Get("Authorization"), res.Swapped()
+}
+
+// waitFor polls cond until it holds or the deadline passes, for observing a
+// background refresh that completes asynchronously.
+func waitFor(t *testing.T, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatal("condition not met before timeout")
+}
+
+// Past the soft refresh interval but within the hard grant expiry, the cached
+// value is served immediately and a background refresh updates it.
+func TestSoftRefreshUpdatesValueInBackground(t *testing.T) {
+	base := time.Unix(1000, 0)
+	now := base
+	var calls atomic.Int64
+	resolver := &fakeResolver{fn: func(ResolveRequest) (ResolveResult, error) {
+		// First value differs from later refreshes so the update is observable.
+		v := "v2"
+		if calls.Add(1) == 1 {
+			v = "v1"
+		}
+		return ResolveResult{Value: v, ExpiresAt: base.Add(time.Hour)}, nil
+	}}
+	sw := New(resolver, Config{
+		Sentinels:       map[string][]string{"sandbox-1": {"SENTINEL"}},
+		RefreshInterval: 30 * time.Second,
+	})
+	sw.now = func() time.Time { return now }
+
+	if v, _ := swapAuth(t, sw, "sandbox-1", "SENTINEL"); v != "Bearer v1" {
+		t.Fatalf("primed swap = %q, want Bearer v1", v)
+	}
+	// Enter the soft window; the cached value is still served synchronously.
+	now = base.Add(31 * time.Second)
+	if v, _ := swapAuth(t, sw, "sandbox-1", "SENTINEL"); v != "Bearer v1" {
+		t.Fatalf("soft-window swap = %q, want cached Bearer v1", v)
+	}
+	// The background refresh eventually replaces the value.
+	waitFor(t, func() bool {
+		v, _ := swapAuth(t, sw, "sandbox-1", "SENTINEL")
+		return v == "Bearer v2"
+	})
+	if calls := resolver.calls.Load(); calls != 2 {
+		t.Fatalf("resolver called %d times, want 2 (prime + one refresh)", calls)
+	}
+}
+
+// A transient background-refresh failure keeps serving the cached value until
+// its hard expiry, preserving availability when the control plane is down.
+func TestSoftRefreshTransientFailureKeepsValue(t *testing.T) {
+	base := time.Unix(1000, 0)
+	now := base
+	var calls atomic.Int64
+	resolver := &fakeResolver{fn: func(ResolveRequest) (ResolveResult, error) {
+		if calls.Add(1) == 1 {
+			return ResolveResult{Value: "v1", ExpiresAt: base.Add(time.Hour)}, nil
+		}
+		return ResolveResult{}, context.DeadlineExceeded // transient
+	}}
+	sw := New(resolver, Config{
+		Sentinels:       map[string][]string{"sandbox-1": {"SENTINEL"}},
+		RefreshInterval: 30 * time.Second,
+	})
+	sw.now = func() time.Time { return now }
+
+	swapAuth(t, sw, "sandbox-1", "SENTINEL")
+	now = base.Add(31 * time.Second)
+	// Triggers a background refresh that fails transiently.
+	swapAuth(t, sw, "sandbox-1", "SENTINEL")
+	waitFor(t, func() bool { return calls.Load() >= 2 })
+
+	// The cached value is retained despite the failed refresh.
+	if v, swapped := swapAuth(t, sw, "sandbox-1", "SENTINEL"); !swapped || v != "Bearer v1" {
+		t.Fatalf("post-failure swap = %q swapped=%v, want Bearer v1 true", v, swapped)
+	}
+}
+
+// An authoritative denial during a background refresh invalidates the cached
+// value promptly rather than serving it until hard expiry.
+func TestSoftRefreshDeniedInvalidates(t *testing.T) {
+	base := time.Unix(1000, 0)
+	now := base
+	var calls atomic.Int64
+	resolver := &fakeResolver{fn: func(ResolveRequest) (ResolveResult, error) {
+		if calls.Add(1) == 1 {
+			return ResolveResult{Value: "v1", ExpiresAt: base.Add(time.Hour)}, nil
+		}
+		return ResolveResult{}, ErrDenied
+	}}
+	sw := New(resolver, Config{
+		Sentinels:       map[string][]string{"sandbox-1": {"SENTINEL"}},
+		RefreshInterval: 30 * time.Second,
+	})
+	sw.now = func() time.Time { return now }
+
+	swapAuth(t, sw, "sandbox-1", "SENTINEL")
+	now = base.Add(31 * time.Second)
+	swapAuth(t, sw, "sandbox-1", "SENTINEL") // triggers refresh that is denied
+
+	// After the denial the sentinel is left in place.
+	waitFor(t, func() bool {
+		v, swapped := swapAuth(t, sw, "sandbox-1", "SENTINEL")
+		return !swapped && v == "Bearer SENTINEL"
+	})
+}

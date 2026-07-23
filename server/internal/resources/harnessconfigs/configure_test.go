@@ -445,3 +445,67 @@ func TestApplyConfigureOutputReplacesPreviousGeneration(t *testing.T) {
 		t.Fatalf("grant = %v err = %v, want a live harnessConfig grant", grant, err)
 	}
 }
+
+// A reconfigure that returns a new value for an env name the harness already
+// binds updates the existing secret in place: the secret ID (and thus every
+// sandbox sentinel keyed on it) is stable, and the standing grant follows a
+// host change so the value keeps resolving.
+func TestApplyConfigureOutputUpdatesBoundSecretInPlace(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	previous := &model.Secret{ProjectID: "project-1", Name: "old-token", Type: model.SecretTypeBearer, Host: "old.example.com", UniqueKey: "old", EncryptedValue: []byte(`{"token":"old"}`)}
+	if err := st.CreateSecret(ctx, previous); err != nil {
+		t.Fatalf("create previous secret: %v", err)
+	}
+	config := &model.HarnessConfig{
+		ProjectID: "project-1", Slug: "codex", Name: "Codex",
+		Image: "img:1", RunCommand: []string{"codex"},
+		Configured: true, ConfiguredSecretIDs: []string{previous.ID},
+	}
+	if err := st.CreateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("create config: %v", err)
+	}
+	if err := st.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
+		ProjectID: "project-1", HarnessConfigID: config.ID, EnvName: "TOKEN", SecretID: previous.ID,
+	}); err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+	if err := st.CreateSecretGrant(ctx, &model.SecretGrant{
+		ProjectID: "project-1", SecretID: previous.ID,
+		Scope: model.SecretGrantScopeHarnessConfig, ScopeKey: config.ID, Host: "old.example.com",
+	}); err != nil {
+		t.Fatalf("grant: %v", err)
+	}
+
+	svc := &Service{store: st, inspector: &stubInspector{}}
+	out := &configureOutput{Secrets: []configureSecret{{
+		EnvName: "TOKEN", Name: "new-token", Type: "bearer", Host: "new.example.com", Value: []byte(`{"token":"new"}`),
+	}}}
+	if err := svc.applyConfigureOutput(ctx, config, "sandbox-1", out); err != nil {
+		t.Fatalf("apply: %v", err)
+	}
+
+	// Same ID, updated value and host — no new row.
+	if got := config.ConfiguredSecretIDs; len(got) != 1 || got[0] != previous.ID {
+		t.Fatalf("configured secrets = %v, want the same id %s updated in place", got, previous.ID)
+	}
+	updated, err := st.GetSecret(ctx, "project-1", previous.ID)
+	if err != nil {
+		t.Fatalf("get updated secret: %v", err)
+	}
+	if string(updated.EncryptedValue) != `{"token":"new"}` {
+		t.Fatalf("value = %q, want the new value", updated.EncryptedValue)
+	}
+	if updated.Host != "new.example.com" {
+		t.Fatalf("host = %q, want new.example.com", updated.Host)
+	}
+	// The grant must have followed the host, or the value stops resolving for it.
+	grant, err := st.FindLiveGrant(ctx, "project-1", previous.ID, "new.example.com", []store.GrantScope{{Scope: model.SecretGrantScopeHarnessConfig, ScopeKey: config.ID}})
+	if err != nil || grant == nil {
+		t.Fatalf("grant = %v err = %v, want a live grant for the new host", grant, err)
+	}
+	if grant.Host != "new.example.com" {
+		t.Fatalf("grant host = %q, want new.example.com", grant.Host)
+	}
+}

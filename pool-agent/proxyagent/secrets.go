@@ -173,8 +173,14 @@ func (r *secretResolver) Resolve(ctx context.Context, req proxy.SecretResolveReq
 		return proxy.SecretResolveResult{}, err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusInternalServerError {
+		// Control plane is up but erroring: treat as transient (not an
+		// authoritative denial) so a cached value keeps serving until its grant
+		// expires rather than being invalidated by a blip.
+		return proxy.SecretResolveResult{}, fmt.Errorf("resolve secret: control plane returned %d", resp.StatusCode)
+	}
 	if resp.StatusCode != http.StatusOK {
-		// Not found / forbidden / server error: leave the sentinel in place.
+		// Not found / forbidden: leave the sentinel in place.
 		return proxy.SecretResolveResult{}, proxy.ErrSecretResolveDenied
 	}
 	var out resolveResponseBody
@@ -229,7 +235,10 @@ func watchSecretsFile(ctx context.Context, server *proxy.Server, base proxy.Conf
 			return
 		}
 		cfg := base
-		cfg.Secrets = proxy.SecretsConfig{Clients: secretClientsFromDoc(doc)}
+		// Keep the swap tuning (TTLs, refresh interval, query scanning) from the
+		// startup config; only the sentinel client set changes per apply.
+		cfg.Secrets = base.Secrets
+		cfg.Secrets.Clients = secretClientsFromDoc(doc)
 		if err := server.ApplyConfig(cfg); err != nil {
 			if onError != nil {
 				onError(err)

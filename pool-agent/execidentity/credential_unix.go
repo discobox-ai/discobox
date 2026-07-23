@@ -1,3 +1,5 @@
+//go:build unix
+
 // Package execidentity builds the os/exec identity switch a subprocess needs
 // to run as a specific OS user, so its file ownership matches whichever
 // directory it operates on instead of inheriting the caller's own identity.

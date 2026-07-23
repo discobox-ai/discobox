@@ -29,10 +29,11 @@ type Config struct {
 // resolved on demand through an injected resolver; this config carries only the
 // non-secret sentinel strings and swap tuning.
 type SecretsConfig struct {
-	ScanQuery          bool
-	PositiveTTLSeconds int64
-	NegativeTTLSeconds int64
-	Clients            []SecretClient
+	ScanQuery              bool
+	PositiveTTLSeconds     int64
+	NegativeTTLSeconds     int64
+	RefreshIntervalSeconds int64
+	Clients                []SecretClient
 }
 
 // SecretClient binds a client (sandbox) ID to the sentinel strings whose values

@@ -371,6 +371,44 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 		if len(bytes.TrimSpace(secret.Value)) == 0 {
 			return fmt.Errorf("configure output secret %q has no value and does not reuse a previous one", envName)
 		}
+		// A new value for an env name this harness already binds updates that
+		// secret in place, so its ID — and every sandbox sentinel keyed on it —
+		// stays stable and running sandboxes resolve the new value without a new
+		// grant or sentinel. Only a genuinely new env name mints a new secret.
+		if existingID := previousByEnv[envName]; existingID != "" {
+			existing, err := s.store.GetSecret(ctx, config.ProjectID, existingID)
+			if err != nil {
+				return fmt.Errorf("load configured secret %q for update: %w", envName, err)
+			}
+			hostChanged := existing.Host != secret.Host
+			existing.Name = name
+			existing.Type = strings.TrimSpace(secret.Type)
+			existing.Host = secret.Host
+			existing.EncryptedValue = []byte(secret.Value)
+			if err := s.store.UpdateSecret(ctx, existing); err != nil {
+				return fmt.Errorf("update configured secret %q: %w", envName, err)
+			}
+			createdSecretIDs = append(createdSecretIDs, existing.ID)
+			// The binding already points here, but re-upsert so it stays
+			// authoritative even if its stored fields drifted.
+			if err := s.store.UpsertHarnessConfigSecretBinding(ctx, &model.HarnessConfigSecretBinding{
+				ProjectID:       config.ProjectID,
+				HarnessConfigID: config.ID,
+				EnvName:         envName,
+				SecretID:        existing.ID,
+			}); err != nil {
+				return fmt.Errorf("bind updated secret %q: %w", envName, err)
+			}
+			// A host change moves which requests the grant authorizes, so the
+			// standing grant's host must follow the secret's or the value stops
+			// resolving for the new host.
+			if hostChanged {
+				if err := s.updateConfiguredGrantHost(ctx, config, existing.ID, secret.Host); err != nil {
+					return fmt.Errorf("update grant host for %q: %w", envName, err)
+				}
+			}
+			continue
+		}
 		secretID, err := id.New(id.PrefixSecret)
 		if err != nil {
 			return err
@@ -434,6 +472,31 @@ func (s *Service) applyConfigureOutput(ctx context.Context, config *model.Harnes
 	}
 	config.ConfiguredFiles = out.Files
 	config.ConfiguredSecretIDs = createdSecretIDs
+	return nil
+}
+
+// updateConfiguredGrantHost points this harness config's standing grant(s) for a
+// secret at a new host, in place, when an update-in-place reconfigure moved the
+// secret's host. Only the harness-config-scoped grants this flow created are
+// touched.
+func (s *Service) updateConfiguredGrantHost(ctx context.Context, config *model.HarnessConfig, secretID, host string) error {
+	grants, err := s.store.ListSecretGrants(ctx, config.ProjectID, secretID)
+	if err != nil {
+		return err
+	}
+	for i := range grants {
+		grant := &grants[i]
+		if grant.Scope != model.SecretGrantScopeHarnessConfig || grant.ScopeKey != config.ID {
+			continue
+		}
+		if grant.Host == host {
+			continue
+		}
+		grant.Host = host
+		if err := s.store.UpdateSecretGrant(ctx, grant); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

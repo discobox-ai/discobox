@@ -26,6 +26,18 @@ func (s *Store) CreateSecretGrant(ctx context.Context, grant *model.SecretGrant)
 	return err
 }
 
+// UpdateSecretGrant saves changes to an existing grant in place, keeping its ID
+// so anything that references the grant stays valid.
+func (s *Store) UpdateSecretGrant(ctx context.Context, grant *model.SecretGrant) error {
+	_, err := withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.SecretGrant, error) {
+		if err := tx.Save(grant).Error; err != nil {
+			return nil, err
+		}
+		return grant, nil
+	})
+	return err
+}
+
 func (s *Store) GetSecretGrant(ctx context.Context, projectID, grantID string) (*model.SecretGrant, error) {
 	read, err := s.getRead(ctx)
 	if err != nil {

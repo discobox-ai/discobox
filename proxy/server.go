@@ -155,10 +155,11 @@ func buildSwapper(cfg Config, resolver secrets.Resolver) *secrets.Swapper {
 		sentinels[client.ClientID] = client.Sentinels
 	}
 	return secrets.New(resolver, secrets.Config{
-		Sentinels:   sentinels,
-		ScanQuery:   cfg.Secrets.ScanQuery,
-		PositiveTTL: time.Duration(cfg.Secrets.PositiveTTLSeconds) * time.Second,
-		NegativeTTL: time.Duration(cfg.Secrets.NegativeTTLSeconds) * time.Second,
+		Sentinels:       sentinels,
+		ScanQuery:       cfg.Secrets.ScanQuery,
+		PositiveTTL:     time.Duration(cfg.Secrets.PositiveTTLSeconds) * time.Second,
+		NegativeTTL:     time.Duration(cfg.Secrets.NegativeTTLSeconds) * time.Second,
+		RefreshInterval: time.Duration(cfg.Secrets.RefreshIntervalSeconds) * time.Second,
 	})
 }
 

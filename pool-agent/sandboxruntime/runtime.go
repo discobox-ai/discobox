@@ -1920,7 +1920,7 @@ func gitSourceMaterialized(target string) bool {
 // finalized, owned by the same sandbox user as the rest of the repository.
 func markGitSourceMaterialized(target string, uid, gid int) error {
 	path := gitMaterializedMarkerPath(target)
-	if err := os.WriteFile(path, nil, 0o644); err != nil {
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
 		return err
 	}
 	return os.Chown(path, uid, gid)

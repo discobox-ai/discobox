@@ -55,27 +55,47 @@ type Config struct {
 	PositiveTTL time.Duration
 	// NegativeTTL is how long a denial is cached before the proxy retries.
 	NegativeTTL time.Duration
+	// RefreshInterval is the soft TTL: a cached value older than this is
+	// refreshed in the background on its next use, while the cached value keeps
+	// serving requests until its hard expiry. This keeps values fresh without
+	// invalidation, yet a control-plane outage cannot stop a running sandbox
+	// from resolving until the grant actually expires. Zero uses a default.
+	RefreshInterval time.Duration
 }
 
-const defaultNegativeTTL = 10 * time.Second
+const (
+	defaultNegativeTTL     = 10 * time.Second
+	defaultRefreshInterval = 30 * time.Second
+	// refreshTimeout bounds a background refresh so a hung control plane cannot
+	// leak goroutines; the served value is unaffected while it runs.
+	refreshTimeout = 30 * time.Second
+)
 
 // Swapper detects sentinels in requests and substitutes resolved values.
 type Swapper struct {
-	resolver  Resolver
-	scanQuery bool
-	posTTL    time.Duration
-	negTTL    time.Duration
-	sentinels map[string][]string
+	resolver   Resolver
+	scanQuery  bool
+	posTTL     time.Duration
+	negTTL     time.Duration
+	refreshTTL time.Duration
+	sentinels  map[string][]string
 
-	mu    sync.Mutex
-	cache map[string]cacheEntry
-	now   func() time.Time
+	mu         sync.Mutex
+	cache      map[string]cacheEntry
+	refreshing map[string]struct{}
+	now        func() time.Time
 }
 
 type cacheEntry struct {
-	value     string
-	denied    bool
+	value  string
+	denied bool
+	// expiresAt is the hard bound: past it the entry is unusable and a request
+	// resolves synchronously.
 	expiresAt time.Time
+	// refreshAt is the soft bound: past it (but before expiresAt) the value is
+	// still served, and a background refresh is kicked off. Zero disables
+	// background refresh for the entry (denials, or no soft window).
+	refreshAt time.Time
 }
 
 // New creates a Swapper. A nil resolver produces a Swapper that never swaps.
@@ -96,14 +116,20 @@ func New(resolver Resolver, cfg Config) *Swapper {
 	if negTTL <= 0 {
 		negTTL = defaultNegativeTTL
 	}
+	refreshTTL := cfg.RefreshInterval
+	if refreshTTL <= 0 {
+		refreshTTL = defaultRefreshInterval
+	}
 	return &Swapper{
-		resolver:  resolver,
-		scanQuery: cfg.ScanQuery,
-		posTTL:    cfg.PositiveTTL,
-		negTTL:    negTTL,
-		sentinels: sentinels,
-		cache:     map[string]cacheEntry{},
-		now:       time.Now,
+		resolver:   resolver,
+		scanQuery:  cfg.ScanQuery,
+		posTTL:     cfg.PositiveTTL,
+		negTTL:     negTTL,
+		refreshTTL: refreshTTL,
+		sentinels:  sentinels,
+		cache:      map[string]cacheEntry{},
+		refreshing: map[string]struct{}{},
+		now:        time.Now,
 	}
 }
 
@@ -196,6 +222,12 @@ func (s *Swapper) resolve(ctx context.Context, clientID, sentinel, host string, 
 		if entry.denied {
 			return "", false
 		}
+		// Soft-expired but still within the hard bound: serve the cached value
+		// and refresh it in the background, so a control-plane outage cannot stop
+		// the running value from resolving before its grant truly expires.
+		if !entry.refreshAt.IsZero() && !now.Before(entry.refreshAt) {
+			s.triggerRefresh(clientID, sentinel, host, key)
+		}
 		return entry.value, true
 	}
 	s.mu.Unlock()
@@ -210,6 +242,17 @@ func (s *Swapper) resolve(ctx context.Context, clientID, sentinel, host string, 
 		return "", false
 	}
 
+	entry, cacheable := s.entryFor(result, now)
+	if cacheable {
+		s.store(key, entry)
+	}
+	return result.Value, true
+}
+
+// entryFor turns a resolver result into a cache entry, applying the positive TTL
+// cap for the hard bound and the refresh interval for the soft bound. cacheable
+// is false for a value that must be used once and not stored.
+func (s *Swapper) entryFor(result ResolveResult, now time.Time) (cacheEntry, bool) {
 	expiresAt := result.ExpiresAt
 	if s.posTTL > 0 {
 		if capped := now.Add(s.posTTL); expiresAt.IsZero() || capped.Before(expiresAt) {
@@ -217,16 +260,83 @@ func (s *Swapper) resolve(ctx context.Context, clientID, sentinel, host string, 
 		}
 	}
 	if expiresAt.IsZero() || !expiresAt.After(now) {
-		// Usable now, but not cacheable.
-		return result.Value, true
+		return cacheEntry{}, false
 	}
-	s.store(key, cacheEntry{value: result.Value, expiresAt: expiresAt})
-	return result.Value, true
+	refreshAt := now.Add(s.refreshTTL)
+	if !refreshAt.Before(expiresAt) {
+		// The entry hard-expires before the soft window opens: no background
+		// refresh, it will resolve synchronously once expired.
+		refreshAt = time.Time{}
+	}
+	return cacheEntry{value: result.Value, expiresAt: expiresAt, refreshAt: refreshAt}, true
+}
+
+// triggerRefresh refreshes a soft-expired entry in the background, deduplicated
+// per key. On success it replaces the entry; on an authoritative denial it
+// caches the denial; on a transient failure it keeps serving the cached value
+// and only pushes the soft bound forward so a sustained outage does not refetch
+// on every request.
+func (s *Swapper) triggerRefresh(clientID, sentinel, host, key string) {
+	s.mu.Lock()
+	if _, inflight := s.refreshing[key]; inflight {
+		s.mu.Unlock()
+		return
+	}
+	s.refreshing[key] = struct{}{}
+	s.mu.Unlock()
+
+	go func() {
+		defer func() {
+			s.mu.Lock()
+			delete(s.refreshing, key)
+			s.mu.Unlock()
+		}()
+		ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
+		defer cancel()
+		result, err := s.resolver.Resolve(ctx, ResolveRequest{ClientID: clientID, Sentinel: sentinel, Host: host})
+		now := s.now()
+		if err != nil {
+			if errors.Is(err, ErrDenied) {
+				// Control plane answered authoritatively: stop serving the value.
+				s.store(key, cacheEntry{denied: true, expiresAt: now.Add(s.negTTL)})
+				return
+			}
+			// Transient failure (control plane unreachable): keep the cached value
+			// until its hard expiry, backing the soft bound off by one interval.
+			s.deferRefresh(key, now.Add(s.refreshTTL))
+			return
+		}
+		entry, cacheable := s.entryFor(result, now)
+		if !cacheable {
+			s.evict(key)
+			return
+		}
+		s.store(key, entry)
+	}()
 }
 
 func (s *Swapper) store(key string, entry cacheEntry) {
 	s.mu.Lock()
 	s.cache[key] = entry
+	s.mu.Unlock()
+}
+
+// deferRefresh pushes a still-valid entry's soft bound forward after a failed
+// background refresh, leaving its value and hard expiry intact.
+func (s *Swapper) deferRefresh(key string, refreshAt time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	entry, ok := s.cache[key]
+	if !ok || entry.denied {
+		return
+	}
+	entry.refreshAt = refreshAt
+	s.cache[key] = entry
+}
+
+func (s *Swapper) evict(key string) {
+	s.mu.Lock()
+	delete(s.cache, key)
 	s.mu.Unlock()
 }
 
