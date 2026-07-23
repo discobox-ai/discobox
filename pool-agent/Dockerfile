@@ -9,8 +9,10 @@ WORKDIR /src
 COPY go.mod go.sum ./
 COPY api ./api
 COPY controlplane ./controlplane
+COPY harness ./harness
 COPY id ./id
 COPY proxy ./proxy
+COPY sandboxconfig ./sandboxconfig
 COPY gormdb ./gormdb
 COPY pool-agent/go.mod pool-agent/go.sum ./pool-agent/
 COPY pool-agent/cmd ./pool-agent/cmd

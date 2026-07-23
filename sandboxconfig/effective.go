@@ -95,8 +95,7 @@ func Effective(doc Document) (Config, Provenance) {
 		cfg.WorkingDirectorySubpath = doc.Project.WorkingDirectorySubpath
 	}
 
-	provenance := Provenance{Runtime: doc.Runtime, Image: doc.Image, Project: doc.Project}
-	return cfg, provenance
+	return cfg, Provenance(doc)
 }
 
 func overrideGrant(imageValue, projectValue []string) []string {
