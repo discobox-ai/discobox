@@ -14,15 +14,23 @@ import (
 )
 
 const (
-	// The worker mounts the four primary volumes at these fixed paths.
+	// The worker mounts these primary volumes at fixed paths.
 	dataMountPath    = "/.discobox/data"
 	cacheMountPath   = "/.discobox/cache"
 	configMountPath  = "/.discobox/config"
 	sourcesMountPath = "/.discobox/sources"
+	secretsMountPath = "/.discobox/secrets" //nolint:gosec // Filesystem path, not a credential.
 
 	// etcDiscobox is where the config volume is rebound so the running
 	// sandbox-agent and proxy find their material at the documented path.
 	etcDiscobox = "/etc/discobox"
+
+	// runSecrets is where the secrets volume is rebound so the running
+	// sandbox-agent finds it at the documented path. The rebind happens after
+	// systemd (PID 1) has already mounted its own tmpfs over /run — a Docker
+	// bind mounted directly at /run/discobox/secrets would otherwise be
+	// shadowed by that early-boot tmpfs mount.
+	runSecrets = "/run/discobox/secrets" //nolint:gosec // Filesystem path, not a credential.
 
 	// manifestName is the sandbox manifest file inside the config volume.
 	manifestName = "sandbox.json"

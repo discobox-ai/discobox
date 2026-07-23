@@ -12,6 +12,12 @@ components:
                 builtIn:
                     description: True for the included harnesses seeded by the server. Built-in configs track their image and cannot be deleted.
                     type: boolean
+                configCommand:
+                    description: Argv declared by the registered image for its interactive configuration command, when it has one.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 configureError:
                     description: Why the last configure attempt failed. Cleared when a configure starts or succeeds.
                     type: string
@@ -31,6 +37,12 @@ components:
                     description: Creation timestamp
                     format: date-time
                     type: string
+                env:
+                    additionalProperties:
+                        type: string
+                    description: Default environment variables declared by the registered image label.
+                    nullable: true
+                    type: object
                 files:
                     description: Non-secret files declared by the registered image label.
                     items:
@@ -78,6 +90,12 @@ components:
                     description: Last update timestamp
                     format: date-time
                     type: string
+                volumes:
+                    description: Declarative volumes declared by the registered image label.
+                    items:
+                        $ref: '#/components/schemas/HarnessVolume'
+                    nullable: true
+                    type: array
             required:
                 - id
                 - projectId
@@ -88,6 +106,32 @@ components:
                 - runCommand
                 - createdAt
                 - updatedAt
+            type: object
+        HarnessVolume:
+            additionalProperties: false
+            description: An image-declared path the sandbox-agent wires from a primary volume during boot.
+            properties:
+                path:
+                    description: Path to wire, may contain the %HOME% token.
+                    type: string
+                volume:
+                    description: Which primary volume backs this path.
+                    enum:
+                        - data
+                        - cache
+                    type: string
+                uid:
+                    description: Owner UID, as a decimal string or a %UID%/%GID% token.
+                    type: string
+                gid:
+                    description: Owner GID, as a decimal string or a %UID%/%GID% token.
+                    type: string
+                mode:
+                    description: Octal file mode string, e.g. "0755".
+                    type: string
+            required:
+                - path
+                - volume
             type: object
         HarnessConfigFile:
             additionalProperties: false

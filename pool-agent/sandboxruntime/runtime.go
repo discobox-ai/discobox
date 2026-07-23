@@ -52,11 +52,17 @@ const (
 	sandboxConfigMount  = "/.discobox/config"
 	sandboxSourcesMount = "/.discobox/sources"
 
-	// sandboxSecretsMount is bound directly (not through the config volume's
-	// rebind) because it is live-refreshed independently of sandbox.json — a
-	// resolved sentinel can change (rotation, grant approval, OAuth refresh)
-	// without touching the sandbox's static config (ADR 0012 §3).
-	sandboxSecretsMount      = "/run/discobox/secrets"
+	// sandboxSecretsMount is bound outside /run: systemd (PID 1 inside the
+	// sandbox) mounts a fresh tmpfs over /run early in boot, which would
+	// shadow a Docker bind mount placed directly at /run/discobox/secrets.
+	// sandbox-agent's boot process rebinds this onto /run/discobox/secrets
+	// after that tmpfs is up, the same way it already does for
+	// /.discobox/config -> /etc/discobox. It is a separate mount from the
+	// config volume (not nested under it) because it is live-refreshed
+	// independently of sandbox.json — a resolved sentinel can change
+	// (rotation, grant approval, OAuth refresh) without touching the
+	// sandbox's static config (ADR 0012 §3).
+	sandboxSecretsMount      = "/.discobox/secrets" //nolint:gosec // Filesystem path, not a credential.
 	sandboxLabelManaged      = "discobox.sandbox.managed"
 	sandboxLabelProject      = "discobox.project_id"
 	sandboxLabelPool         = "discobox.pool_id"

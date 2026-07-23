@@ -30,6 +30,7 @@ type HarnessConfigSecret = apigen.HarnessConfigSecret
 type HarnessConfigSecretBinding = apigen.HarnessConfigSecretBinding
 type HarnessHookLog = apigen.HarnessHookLog
 type HarnessHookLogsResponse = apigen.HarnessHookLogsResponse
+type HarnessVolume = apigen.HarnessVolume
 type Job = apigen.Job
 type ListHarnessConfigSecretBindingsBody = apigen.ListHarnessConfigSecretBindingsBody
 type ListHarnessConfigsBody = apigen.ListHarnessConfigsBody

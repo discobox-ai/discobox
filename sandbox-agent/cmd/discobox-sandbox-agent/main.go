@@ -48,6 +48,15 @@ func run(args []string) int {
 	if err := flags.Parse(args); err != nil {
 		return 2
 	}
+	// Rebind the secrets volume here, not in the PID-1 boot flow: systemd
+	// mounts its own tmpfs over /run during its own startup, which happens
+	// after boot exec's into it, so a bind placed during PID-1 provisioning
+	// would be shadowed. This process starts as a systemd-managed unit,
+	// ordered after that tmpfs is already up.
+	if err := boot.WireSecrets(); err != nil {
+		slog.Error("wire secrets volume", "error", err)
+		return 1
+	}
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		slog.Error("load config", "error", err)

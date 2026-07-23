@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/obot-platform/discobox/harness"
 	poolclient "github.com/obot-platform/discobox/pool-agent/api/gen"
 	poolapimodel "github.com/obot-platform/discobox/pool-agent/api/model"
 	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
@@ -265,6 +266,30 @@ func poolHarnessConfigFiles(files []model.HarnessConfigFile) poolclient.OptNilHa
 	return poolclient.NewOptNilHarnessConfigFileArray(out)
 }
 
+func poolHarnessVolumes(volumes []harness.Volume) []poolapimodel.HarnessVolume {
+	if len(volumes) == 0 {
+		return nil
+	}
+	out := make([]poolapimodel.HarnessVolume, 0, len(volumes))
+	for _, v := range volumes {
+		volume := poolapimodel.HarnessVolume{
+			Path:   v.Path,
+			Volume: poolclient.HarnessVolumeVolume(v.Volume),
+		}
+		if uid := string(v.UID); uid != "" {
+			volume.UID = poolclient.NewOptString(uid)
+		}
+		if gid := string(v.GID); gid != "" {
+			volume.Gid = poolclient.NewOptString(gid)
+		}
+		if v.Mode != "" {
+			volume.Mode = poolclient.NewOptString(v.Mode)
+		}
+		out = append(out, volume)
+	}
+	return out
+}
+
 func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) *poolapimodel.PoolSandboxCreateRequest {
 	out := &poolapimodel.PoolSandboxCreateRequest{SandboxId: sandboxID}
 	config := &out.Config
@@ -293,9 +318,28 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 		config.HarnessMode = poolclient.NewOptSandboxConfigHarnessMode(poolclient.SandboxConfigHarnessMode(opts.HarnessMode))
 	}
 	if opts.ResolvedHarnessConfig != nil {
+		rhc := opts.ResolvedHarnessConfig
 		resolved := poolapimodel.ResolvedHarnessConfig{
-			ID: opts.ResolvedHarnessConfig.ID, Name: opts.ResolvedHarnessConfig.Name,
-			Files: poolHarnessConfigFiles(opts.ResolvedHarnessConfig.Files),
+			ID: rhc.ID, Name: rhc.Name,
+			Files: poolHarnessConfigFiles(rhc.Files),
+		}
+		if rhc.Description != "" {
+			resolved.Description = poolclient.NewOptString(rhc.Description)
+		}
+		if len(rhc.RunCommand) > 0 {
+			resolved.RunCommand = poolclient.NewOptNilStringArray(rhc.RunCommand)
+		}
+		if len(rhc.RelaunchCommand) > 0 {
+			resolved.RelaunchCommand = poolclient.NewOptNilStringArray(rhc.RelaunchCommand)
+		}
+		if len(rhc.ConfigCommand) > 0 {
+			resolved.ConfigCommand = poolclient.NewOptNilStringArray(rhc.ConfigCommand)
+		}
+		if len(rhc.Env) > 0 {
+			resolved.Env = poolclient.NewOptNilResolvedHarnessConfigEnv(poolclient.ResolvedHarnessConfigEnv(rhc.Env))
+		}
+		if volumes := poolHarnessVolumes(rhc.Volumes); len(volumes) > 0 {
+			resolved.Volumes = poolclient.NewOptNilHarnessVolumeArray(volumes)
 		}
 		out.ResolvedHarnessConfig = poolclient.NewOptResolvedHarnessConfig(resolved)
 	}

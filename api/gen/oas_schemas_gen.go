@@ -1666,6 +1666,8 @@ type HarnessConfig struct {
 	// True for the included harnesses seeded by the server. Built-in configs track their image and
 	// cannot be deleted.
 	BuiltIn bool `json:"builtIn"`
+	// Argv declared by the registered image for its interactive configuration command, when it has one.
+	ConfigCommand OptNilStringArray `json:"configCommand"`
 	// Why the last configure attempt failed. Cleared when a configure starts or succeeds.
 	ConfigureError OptString `json:"configureError"`
 	// Sandbox running the configure flow, while one is in flight.
@@ -1678,6 +1680,8 @@ type HarnessConfig struct {
 	ConfiguredFiles OptNilHarnessConfigFileArray `json:"configuredFiles"`
 	// Creation timestamp.
 	CreatedAt time.Time `json:"createdAt"`
+	// Default environment variables declared by the registered image label.
+	Env OptNilHarnessConfigEnv `json:"env"`
 	// Non-secret files declared by the registered image label.
 	Files OptNilHarnessConfigFileArray `json:"files"`
 	// Stable harness config ID.
@@ -1701,6 +1705,8 @@ type HarnessConfig struct {
 	Slug string `json:"slug"`
 	// Last update timestamp.
 	UpdatedAt time.Time `json:"updatedAt"`
+	// Declarative volumes declared by the registered image label.
+	Volumes OptNilHarnessVolumeArray `json:"volumes"`
 }
 
 // GetSchema returns the value of Schema.
@@ -1711,6 +1717,11 @@ func (s *HarnessConfig) GetSchema() OptURI {
 // GetBuiltIn returns the value of BuiltIn.
 func (s *HarnessConfig) GetBuiltIn() bool {
 	return s.BuiltIn
+}
+
+// GetConfigCommand returns the value of ConfigCommand.
+func (s *HarnessConfig) GetConfigCommand() OptNilStringArray {
+	return s.ConfigCommand
 }
 
 // GetConfigureError returns the value of ConfigureError.
@@ -1736,6 +1747,11 @@ func (s *HarnessConfig) GetConfiguredFiles() OptNilHarnessConfigFileArray {
 // GetCreatedAt returns the value of CreatedAt.
 func (s *HarnessConfig) GetCreatedAt() time.Time {
 	return s.CreatedAt
+}
+
+// GetEnv returns the value of Env.
+func (s *HarnessConfig) GetEnv() OptNilHarnessConfigEnv {
+	return s.Env
 }
 
 // GetFiles returns the value of Files.
@@ -1793,6 +1809,11 @@ func (s *HarnessConfig) GetUpdatedAt() time.Time {
 	return s.UpdatedAt
 }
 
+// GetVolumes returns the value of Volumes.
+func (s *HarnessConfig) GetVolumes() OptNilHarnessVolumeArray {
+	return s.Volumes
+}
+
 // SetSchema sets the value of Schema.
 func (s *HarnessConfig) SetSchema(val OptURI) {
 	s.Schema = val
@@ -1801,6 +1822,11 @@ func (s *HarnessConfig) SetSchema(val OptURI) {
 // SetBuiltIn sets the value of BuiltIn.
 func (s *HarnessConfig) SetBuiltIn(val bool) {
 	s.BuiltIn = val
+}
+
+// SetConfigCommand sets the value of ConfigCommand.
+func (s *HarnessConfig) SetConfigCommand(val OptNilStringArray) {
+	s.ConfigCommand = val
 }
 
 // SetConfigureError sets the value of ConfigureError.
@@ -1826,6 +1852,11 @@ func (s *HarnessConfig) SetConfiguredFiles(val OptNilHarnessConfigFileArray) {
 // SetCreatedAt sets the value of CreatedAt.
 func (s *HarnessConfig) SetCreatedAt(val time.Time) {
 	s.CreatedAt = val
+}
+
+// SetEnv sets the value of Env.
+func (s *HarnessConfig) SetEnv(val OptNilHarnessConfigEnv) {
+	s.Env = val
 }
 
 // SetFiles sets the value of Files.
@@ -1883,11 +1914,28 @@ func (s *HarnessConfig) SetUpdatedAt(val time.Time) {
 	s.UpdatedAt = val
 }
 
+// SetVolumes sets the value of Volumes.
+func (s *HarnessConfig) SetVolumes(val OptNilHarnessVolumeArray) {
+	s.Volumes = val
+}
+
 func (*HarnessConfig) commitHarnessConfigConfigureRes() {}
 func (*HarnessConfig) createHarnessConfigRes()          {}
 func (*HarnessConfig) deconfigureHarnessConfigRes()     {}
 func (*HarnessConfig) getHarnessConfigRes()             {}
 func (*HarnessConfig) updateHarnessConfigRes()          {}
+
+// Default environment variables declared by the registered image label.
+type HarnessConfigEnv map[string]string
+
+func (s *HarnessConfigEnv) init() HarnessConfigEnv {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
+}
 
 // A file to write into a harness's home directory when the harness is installed.
 // Ref: #/components/schemas/HarnessConfigFile
@@ -2179,6 +2227,113 @@ func (s *HarnessHookLogsResponse) SetHooks(val []HarnessHookLog) {
 }
 
 func (*HarnessHookLogsResponse) listHarnessHooksRes() {}
+
+// An image-declared path the sandbox-agent wires from a primary volume during boot.
+// Ref: #/components/schemas/HarnessVolume
+type HarnessVolume struct {
+	// Path to wire, may contain the %HOME% token.
+	Path string `json:"path"`
+	// Which primary volume backs this path.
+	Volume HarnessVolumeVolume `json:"volume"`
+	// Owner UID, as a decimal string or a %UID%/%GID% token.
+	UID OptString `json:"uid"`
+	// Owner GID, as a decimal string or a %UID%/%GID% token.
+	Gid OptString `json:"gid"`
+	// Octal file mode string, e.g. "0755".
+	Mode OptString `json:"mode"`
+}
+
+// GetPath returns the value of Path.
+func (s *HarnessVolume) GetPath() string {
+	return s.Path
+}
+
+// GetVolume returns the value of Volume.
+func (s *HarnessVolume) GetVolume() HarnessVolumeVolume {
+	return s.Volume
+}
+
+// GetUID returns the value of UID.
+func (s *HarnessVolume) GetUID() OptString {
+	return s.UID
+}
+
+// GetGid returns the value of Gid.
+func (s *HarnessVolume) GetGid() OptString {
+	return s.Gid
+}
+
+// GetMode returns the value of Mode.
+func (s *HarnessVolume) GetMode() OptString {
+	return s.Mode
+}
+
+// SetPath sets the value of Path.
+func (s *HarnessVolume) SetPath(val string) {
+	s.Path = val
+}
+
+// SetVolume sets the value of Volume.
+func (s *HarnessVolume) SetVolume(val HarnessVolumeVolume) {
+	s.Volume = val
+}
+
+// SetUID sets the value of UID.
+func (s *HarnessVolume) SetUID(val OptString) {
+	s.UID = val
+}
+
+// SetGid sets the value of Gid.
+func (s *HarnessVolume) SetGid(val OptString) {
+	s.Gid = val
+}
+
+// SetMode sets the value of Mode.
+func (s *HarnessVolume) SetMode(val OptString) {
+	s.Mode = val
+}
+
+// Which primary volume backs this path.
+type HarnessVolumeVolume string
+
+const (
+	HarnessVolumeVolumeData  HarnessVolumeVolume = "data"
+	HarnessVolumeVolumeCache HarnessVolumeVolume = "cache"
+)
+
+// AllValues returns all HarnessVolumeVolume values.
+func (HarnessVolumeVolume) AllValues() []HarnessVolumeVolume {
+	return []HarnessVolumeVolume{
+		HarnessVolumeVolumeData,
+		HarnessVolumeVolumeCache,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s HarnessVolumeVolume) MarshalText() ([]byte, error) {
+	switch s {
+	case HarnessVolumeVolumeData:
+		return []byte(s), nil
+	case HarnessVolumeVolumeCache:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *HarnessVolumeVolume) UnmarshalText(data []byte) error {
+	switch HarnessVolumeVolume(data) {
+	case HarnessVolumeVolumeData:
+		*s = HarnessVolumeVolumeData
+		return nil
+	case HarnessVolumeVolumeCache:
+		*s = HarnessVolumeVolumeCache
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
 
 // Ref: #/components/schemas/Job
 type Job struct {
@@ -3673,6 +3828,69 @@ func (o OptNilHarnessConfigArray) Or(d []HarnessConfig) []HarnessConfig {
 	return d
 }
 
+// NewOptNilHarnessConfigEnv returns new OptNilHarnessConfigEnv with value set to v.
+func NewOptNilHarnessConfigEnv(v HarnessConfigEnv) OptNilHarnessConfigEnv {
+	return OptNilHarnessConfigEnv{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilHarnessConfigEnv is optional nullable HarnessConfigEnv.
+type OptNilHarnessConfigEnv struct {
+	Value HarnessConfigEnv
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilHarnessConfigEnv was set.
+func (o OptNilHarnessConfigEnv) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilHarnessConfigEnv) Reset() {
+	var v HarnessConfigEnv
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilHarnessConfigEnv) SetTo(v HarnessConfigEnv) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilHarnessConfigEnv) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilHarnessConfigEnv) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v HarnessConfigEnv
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilHarnessConfigEnv) Get() (v HarnessConfigEnv, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilHarnessConfigEnv) Or(d HarnessConfigEnv) HarnessConfigEnv {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptNilHarnessConfigFileArray returns new OptNilHarnessConfigFileArray with value set to v.
 func NewOptNilHarnessConfigFileArray(v []HarnessConfigFile) OptNilHarnessConfigFileArray {
 	return OptNilHarnessConfigFileArray{
@@ -3793,6 +4011,69 @@ func (o OptNilHarnessConfigSecretArray) Get() (v []HarnessConfigSecret, ok bool)
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilHarnessConfigSecretArray) Or(d []HarnessConfigSecret) []HarnessConfigSecret {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilHarnessVolumeArray returns new OptNilHarnessVolumeArray with value set to v.
+func NewOptNilHarnessVolumeArray(v []HarnessVolume) OptNilHarnessVolumeArray {
+	return OptNilHarnessVolumeArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilHarnessVolumeArray is optional nullable []HarnessVolume.
+type OptNilHarnessVolumeArray struct {
+	Value []HarnessVolume
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilHarnessVolumeArray was set.
+func (o OptNilHarnessVolumeArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilHarnessVolumeArray) Reset() {
+	var v []HarnessVolume
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilHarnessVolumeArray) SetTo(v []HarnessVolume) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilHarnessVolumeArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilHarnessVolumeArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []HarnessVolume
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilHarnessVolumeArray) Get() (v []HarnessVolume, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilHarnessVolumeArray) Or(d []HarnessVolume) []HarnessVolume {
 	if v, ok := o.Get(); ok {
 		return v
 	}

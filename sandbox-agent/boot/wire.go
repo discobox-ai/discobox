@@ -25,6 +25,29 @@ func (b *booter) wireConfig() error {
 	return recursiveBindMount(configMountPath, etcDiscobox, true)
 }
 
+// WireSecrets rebinds the secrets volume onto /run/discobox/secrets so the
+// running sandbox-agent finds the resolved-secrets file at its documented
+// path. Unlike the rest of this package, it is called from the long-running
+// sandbox-agent server process itself (cmd/discobox-sandbox-agent), not from
+// the PID-1 boot flow: systemd (PID 1) mounts its own tmpfs over /run during
+// its own startup, after the boot flow has already exec'd into it, so a bind
+// mount placed at /run/discobox/secrets during PID-1 provisioning — the way
+// wireConfig places one at /etc/discobox — would be silently shadowed. The
+// server process starts as a systemd-managed unit, ordered after that tmpfs
+// is already in place, so it is the first point at which this bind mount can
+// actually survive. The bind is read-only: nothing inside the container
+// writes this file, only pool-agent, from the host side.
+func WireSecrets() error {
+	if !dirExists(secretsMountPath) {
+		// No secrets volume (e.g. a bare `docker run ... bash` debug session).
+		return nil
+	}
+	if err := os.MkdirAll(runSecrets, 0o755); err != nil {
+		return err
+	}
+	return recursiveBindMount(secretsMountPath, runSecrets, true)
+}
+
 // wireVolumes wires every image-declared data/cache path from its backing
 // primary volume onto its target.
 func (b *booter) wireVolumes(volumes []harness.ResolvedVolume) error {
