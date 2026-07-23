@@ -6,9 +6,12 @@ import (
 	"net/http"
 	"testing"
 
+	apigen "github.com/obot-platform/discobox/api/gen"
+	apimodel "github.com/obot-platform/discobox/api/model"
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/resources/harnessconfigs"
+	"github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
@@ -158,5 +161,38 @@ func TestDeleteDefaultHarnessConfigClearsProjectDefault(t *testing.T) {
 	}
 	if _, err := st.GetHarnessConfig(ctx, project.ID, configID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("get deleted harness config = %v, want not found", err)
+	}
+}
+
+// UpdateHarnessConfig can replace the configure-flow file set independently of
+// the image-declared files, so users can hand-edit a configured file without a
+// full reconfigure.
+func TestUpdateHarnessConfigConfiguredFiles(t *testing.T) {
+	ctx := context.Background()
+	svc, st, configID := newBindingService(t)
+
+	config, err := st.GetHarnessConfig(ctx, "project-1", configID)
+	if err != nil {
+		t.Fatalf("get harness config: %v", err)
+	}
+	config.Files = []model.HarnessConfigFile{{Path: "settings.json", Content: "declared"}}
+	config.ConfiguredFiles = []model.HarnessConfigFile{{Path: ".claude.json", Content: "old", CreateOnly: true}}
+	if err := st.UpdateHarnessConfig(ctx, config); err != nil {
+		t.Fatalf("seed files: %v", err)
+	}
+
+	body := services.UpdateHarnessConfigBody{}
+	body.SetConfiguredFiles(apigen.NewOptNilHarnessConfigFileArray([]apimodel.HarnessConfigFile{
+		{Path: ".claude.json", Content: "edited", CreateOnly: apigen.NewOptBool(true)},
+	}))
+	updated, err := svc.UpdateHarnessConfig(ctx, "project-1", configID, body)
+	if err != nil {
+		t.Fatalf("update harness config: %v", err)
+	}
+	if len(updated.ConfiguredFiles) != 1 || updated.ConfiguredFiles[0].Content != "edited" || !updated.ConfiguredFiles[0].CreateOnly {
+		t.Fatalf("configured files = %+v, want the edited entry with createOnly kept", updated.ConfiguredFiles)
+	}
+	if len(updated.Files) != 1 || updated.Files[0].Content != "declared" {
+		t.Fatalf("declared files = %+v, want them untouched", updated.Files)
 	}
 }

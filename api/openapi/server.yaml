@@ -2603,6 +2603,12 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                configuredFiles:
+                    description: Configure-flow files to write into the harness's home directory, replacing the current set
+                    items:
+                        $ref: '#/components/schemas/HarnessConfigFile'
+                    nullable: true
+                    type: array
                 files:
                     description: Files to write into the harness's home directory when the harness is installed
                     items:

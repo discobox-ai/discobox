@@ -37,6 +37,7 @@ func (a *App) newHarnessCommand() *cobra.Command {
 	cmd.AddCommand(a.newHarnessConfigureCommand())
 	cmd.AddCommand(a.newHarnessDeconfigureCommand())
 	cmd.AddCommand(a.newHarnessUpdateCommand())
+	cmd.AddCommand(a.newHarnessEditCommand())
 	cmd.AddCommand(a.newHarnessSetDefaultCommand())
 	cmd.AddCommand(a.newHarnessUnsetDefaultCommand())
 	cmd.AddCommand(a.newHarnessDeleteCommand())
@@ -117,6 +118,32 @@ func (a *App) newHarnessSecretsUnbindCommand() *cobra.Command {
 		_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s unbound\n", args[1])
 		return err
 	}}
+}
+
+// harnessSecretAssignments returns a harness's env→secret bindings along with
+// the project's secrets by ID, so callers can show what is actually assigned
+// to each declared environment variable.
+func (a *App) harnessSecretAssignments(ctx context.Context, client *apiclientgen.Client, projectID, harnessID string) ([]apimodel.HarnessConfigSecretBinding, map[string]apimodel.Secret, error) {
+	bindings, err := a.listHarnessSecretBindings(ctx, client, projectID, harnessID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(bindings) == 0 {
+		return nil, nil, nil
+	}
+	res, err := client.ListSecrets(ctx, apiclientgen.ListSecretsParams{ProjectId: projectID})
+	if err != nil {
+		return nil, nil, err
+	}
+	body, err := expectResponse[apimodel.ListSecretsBody](res)
+	if err != nil {
+		return nil, nil, err
+	}
+	secretsByID := make(map[string]apimodel.Secret)
+	for _, secret := range body.GetSecrets() {
+		secretsByID[secret.ID] = secret
+	}
+	return bindings, secretsByID, nil
 }
 
 func (a *App) listHarnessSecretBindings(ctx context.Context, client *apiclientgen.Client, projectID, harnessID string) ([]apimodel.HarnessConfigSecretBinding, error) {

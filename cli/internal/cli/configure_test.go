@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -181,6 +182,119 @@ func TestConfigureModelFooterHeightIsStable(t *testing.T) {
 
 func lineCount(s string) int {
 	return strings.Count(s, "\n")
+}
+
+// 'v' prints the highlighted agent's config as a formatted card rather than raw
+// JSON: identity, state, commands, secrets with their assigned secret (ID and
+// type), and files including their contents.
+func TestConfigureModelViewConfig(t *testing.T) {
+	cfg := apimodel.HarnessConfig{
+		ID:         "hc_1",
+		Name:       "Claude",
+		Slug:       "claude",
+		Configured: true,
+		BuiltIn:    true,
+		Image:      apiclientgen.NewOptString("ghcr.io/example/claude:latest"),
+		RunCommand: []string{"claude", "--dangerously-skip-permissions"},
+		Secrets: apiclientgen.NewOptNilHarnessConfigSecretArray([]apimodel.HarnessConfigSecret{
+			{Name: "ANTHROPIC_API_KEY", Required: apiclientgen.NewOptBool(true), OneOfGroup: apiclientgen.NewOptString("auth")},
+			{Name: "CLAUDE_CODE_OAUTH_TOKEN", OneOfGroup: apiclientgen.NewOptString("auth")},
+		}),
+		ConfiguredFiles: apiclientgen.NewOptNilHarnessConfigFileArray([]apimodel.HarnessConfigFile{
+			{Path: ".claude.json", Content: `{"hasCompletedOnboarding":true}`, CreateOnly: apiclientgen.NewOptBool(true)},
+		}),
+		CreatedAt: time.Unix(1, 0),
+	}
+	bindings := []apimodel.HarnessConfigSecretBinding{
+		{EnvName: "ANTHROPIC_API_KEY", SecretId: "sec_1"},
+		{EnvName: "CUSTOM_TOKEN", SecretId: "sec_2"},
+	}
+	secretsByID := map[string]apimodel.Secret{
+		"sec_1": {ID: "sec_1", Name: "anthropic-api-key", Type: apiclientgen.SecretType("api_key")},
+	}
+	m := configureTestModel(cfg)
+	m.defaultID = "hc_1"
+
+	_, cmd := m.handleKey(tea.KeyPressMsg{Code: 'v', Text: "v"})
+	if cmd == nil {
+		t.Fatal("pressing v should return a print command")
+	}
+	if !m.busy {
+		t.Fatal("pressing v should mark the model busy while bindings load")
+	}
+
+	out := renderHarnessConfigDetail(cfg, true, bindings, secretsByID)
+	for _, want := range []string{
+		"Claude", "hc_1", "enabled", "default", "built-in",
+		"ghcr.io/example/claude:latest",
+		"claude --dangerously-skip-permissions",
+		// Declared and bound: shows the assigned secret's ID, type, and name.
+		"ANTHROPIC_API_KEY", "required", "one of auth", "sec_1", "api_key", "anthropic-api-key",
+		// Declared but unbound.
+		"CLAUDE_CODE_OAUTH_TOKEN", "not bound",
+		// Bound but not declared by the image; its secret is not in the project
+		// list, so only the ID shows.
+		"CUSTOM_TOKEN", "undeclared", "sec_2",
+		// Files print their contents, not just sizes.
+		".claude.json", "create-only", `{"hasCompletedOnboarding":true}`,
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("config detail missing %q:\n%s", want, out)
+		}
+	}
+	if json.Valid([]byte(out)) {
+		t.Fatalf("config detail should not be raw JSON:\n%s", out)
+	}
+}
+
+// 'f' opens the file picker for agents with files and reports an error for
+// agents without any; esc backs out without editing.
+func TestConfigureModelFilePick(t *testing.T) {
+	bare := apimodel.HarnessConfig{ID: "h1", Name: "codex", CreatedAt: time.Unix(1, 0)}
+	m := configureTestModel(bare)
+	m.handleKey(tea.KeyPressMsg{Code: 'f', Text: "f"})
+	if m.filePick != nil {
+		t.Fatal("f on an agent without files should not enter file-pick mode")
+	}
+	if !m.statusIsError {
+		t.Fatal("expected an explanatory error status for an agent without files")
+	}
+
+	withFiles := apimodel.HarnessConfig{
+		ID: "h2", Name: "claude", CreatedAt: time.Unix(1, 0),
+		ConfiguredFiles: apiclientgen.NewOptNilHarnessConfigFileArray([]apimodel.HarnessConfigFile{
+			{Path: ".claude.json", Content: "{}"},
+		}),
+		Files: apiclientgen.NewOptNilHarnessConfigFileArray([]apimodel.HarnessConfigFile{
+			{Path: "settings.json", Content: "{}"},
+		}),
+	}
+	m = configureTestModel(withFiles)
+	m.handleKey(tea.KeyPressMsg{Code: 'f', Text: "f"})
+	if m.filePick == nil {
+		t.Fatal("f should enter file-pick mode when the agent has files")
+	}
+	if len(m.filePick.files) != 2 || m.filePick.files[0].Path != ".claude.json" {
+		t.Fatalf("filePick files = %+v, want configured files first", m.filePick.files)
+	}
+	view := m.View().Content
+	if !strings.Contains(view, ".claude.json") || !strings.Contains(view, "settings.json") {
+		t.Fatalf("file-pick view should list the files:\n%s", view)
+	}
+
+	m.handleKey(tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.filePick != nil {
+		t.Fatal("esc should leave file-pick mode")
+	}
+
+	m.handleKey(tea.KeyPressMsg{Code: 'f', Text: "f"})
+	_, cmd := m.handleKey(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter in file-pick mode should return an edit command")
+	}
+	if m.filePick != nil {
+		t.Fatal("starting an edit should leave file-pick mode")
+	}
 }
 
 func TestConfigureDisplayNameFallback(t *testing.T) {

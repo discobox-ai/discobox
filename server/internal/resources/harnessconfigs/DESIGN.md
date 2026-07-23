@@ -136,7 +136,11 @@ long-lived token with nothing to refresh.
 produced, deliberately kept **separate** from the image-declared `Files`/`Secrets`
 baseline. Deconfigure deletes exactly those secrets and their bindings, clears
 those files, and sets `Configured=false` — leaving the baseline intact so the
-harness can simply be configured again.
+harness can simply be configured again. `UpdateHarnessConfig` can replace either
+file set (`files`, `configuredFiles`), which is how the CLI's file editing
+(`harnesses edit`, `disco configure` f) applies hand edits without a
+reconfigure; edited configured files remain owned by the configure lifecycle
+and are still cleared on deconfigure.
 
 Deconfigure is **refused for the project default** (409): the default must always
 point at a configured harness, or `run` with no explicit harness would resolve to

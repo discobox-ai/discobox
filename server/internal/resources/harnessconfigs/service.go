@@ -159,6 +159,9 @@ func (s *Service) UpdateHarnessConfig(ctx context.Context, projectID, configID s
 	if apiFiles, ok := input.Files.Get(); ok {
 		config.Files = services.HarnessConfigFilesToModel(apiFiles)
 	}
+	if apiFiles, ok := input.ConfiguredFiles.Get(); ok {
+		config.ConfiguredFiles = services.HarnessConfigFilesToModel(apiFiles)
+	}
 	if len(config.RunCommand) == 0 {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config run command is required when no definition is provided")
 	}

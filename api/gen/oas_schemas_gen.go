@@ -9535,6 +9535,8 @@ func (*StreamSandboxExecResourcesOK) streamSandboxExecResourcesRes() {}
 type UpdateHarnessConfigBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// Configure-flow files to write into the harness's home directory, replacing the current set.
+	ConfiguredFiles OptNilHarnessConfigFileArray `json:"configuredFiles"`
 	// Files to write into the harness's home directory when the harness is installed.
 	Files OptNilHarnessConfigFileArray `json:"files"`
 	// Harness config name.
@@ -9544,6 +9546,11 @@ type UpdateHarnessConfigBody struct {
 // GetSchema returns the value of Schema.
 func (s *UpdateHarnessConfigBody) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetConfiguredFiles returns the value of ConfiguredFiles.
+func (s *UpdateHarnessConfigBody) GetConfiguredFiles() OptNilHarnessConfigFileArray {
+	return s.ConfiguredFiles
 }
 
 // GetFiles returns the value of Files.
@@ -9559,6 +9566,11 @@ func (s *UpdateHarnessConfigBody) GetName() OptString {
 // SetSchema sets the value of Schema.
 func (s *UpdateHarnessConfigBody) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetConfiguredFiles sets the value of ConfiguredFiles.
+func (s *UpdateHarnessConfigBody) SetConfiguredFiles(val OptNilHarnessConfigFileArray) {
+	s.ConfiguredFiles = val
 }
 
 // SetFiles sets the value of Files.

@@ -16239,6 +16239,12 @@ func (s *UpdateHarnessConfigBody) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ConfiguredFiles.Set {
+			e.FieldStart("configuredFiles")
+			s.ConfiguredFiles.Encode(e)
+		}
+	}
+	{
 		if s.Files.Set {
 			e.FieldStart("files")
 			s.Files.Encode(e)
@@ -16252,10 +16258,11 @@ func (s *UpdateHarnessConfigBody) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfUpdateHarnessConfigBody = [3]string{
+var jsonFieldsNameOfUpdateHarnessConfigBody = [4]string{
 	0: "$schema",
-	1: "files",
-	2: "name",
+	1: "configuredFiles",
+	2: "files",
+	3: "name",
 }
 
 // Decode decodes UpdateHarnessConfigBody from json.
@@ -16275,6 +16282,16 @@ func (s *UpdateHarnessConfigBody) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
+			}
+		case "configuredFiles":
+			if err := func() error {
+				s.ConfiguredFiles.Reset()
+				if err := s.ConfiguredFiles.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"configuredFiles\"")
 			}
 		case "files":
 			if err := func() error {
