@@ -6,15 +6,20 @@ sandbox terminals.
 ## Image Contract
 
 - One sandbox image contains at most one harness. Its immutable identity,
-  run/relaunch commands, seed files, secret declarations, and optional config
-  command live in `/usr/share/discobox/image.json`.
-- The same non-secret harness object is published in the
-  `io.discobox.harness.v1` OCI image label for server-side registration.
+  run/relaunch commands, seed files, secret declarations, optional config
+  command, env defaults, and declarative volumes are published in the
+  `io.discobox.image.v1` OCI image label (`harness.ImageMetadata`) for
+  server-side registration. There is no baked-in file inside the image
+  carrying this data — `image.json` is the build-time authoring source the
+  label is compacted from (see `Taskfile.yml`'s `build:harness-image`), not a
+  runtime artifact.
 - Harness CLIs are installed at image build time. Runtime commands are never
   supplied by the server or pool-agent.
 - Each provider folder owns its `Dockerfile`, `image.json`, configure script,
   and other image-specific assets. Harness images extend the sandbox-agent base
-  selected by the `SANDBOX_AGENT_IMAGE` build argument.
+  selected by the `SANDBOX_AGENT_IMAGE` build argument, and must repeat any
+  base env/volumes they still need (the harness's own `image.json` is the
+  final image's sole metadata source; nothing merges with the base image's).
 - `harnessMode: config` selects the image-owned interactive config command;
   normal or omitted mode selects the image-owned run/relaunch commands.
 

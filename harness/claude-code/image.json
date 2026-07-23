@@ -7,6 +7,12 @@
     "PATH": "%HOME%/.npm-global/bin:%HOME%/.cargo/bin:%HOME%/.nix-profile/bin:%HOME%/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
     "PNPM_HOME": "/var/lib/discobox/pnpm"
   },
+  "volumes": [
+    { "path": "%HOME%", "volume": "data", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
+    { "path": "/var/lib/docker", "volume": "data", "uid": 0, "gid": 0, "mode": "0711" },
+    { "path": "/var/lib/discobox", "volume": "data", "uid": 0, "gid": 0, "mode": "0755" },
+    { "path": "/var/lib/discobox/pnpm", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" }
+  ],
   "harness": {
     "id": "claude-code",
     "name": "Claude Code",

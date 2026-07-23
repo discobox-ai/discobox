@@ -64,7 +64,7 @@ tasks:
       - >-
         docker build -f test/harness-stub/Dockerfile
         --build-arg SANDBOX_AGENT_IMAGE="$(grep -s '^DISCOBOX_DEFAULT_SANDBOX_IMAGE=' .env | cut -d= -f2- | grep . || echo discobox-sandbox-agent:local)"
-        --build-arg HARNESS_METADATA="$(jq -c .harness test/harness-stub/image.json)"
+        --build-arg HARNESS_METADATA="$(jq -c . test/harness-stub/image.json)"
         -t discobox-harness-stub:local test/harness-stub
 
   build:harness-images:
@@ -93,7 +93,7 @@ tasks:
       - >-
         docker build -f harness/{{.HARNESS_DIR}}/Dockerfile
         --build-arg "SANDBOX_AGENT_IMAGE={{.SANDBOX_AGENT_IMAGE}}"
-        --build-arg HARNESS_METADATA="$(jq -c .harness {{.IMAGE_CONFIG}})"
+        --build-arg HARNESS_METADATA="$(jq -c . {{.IMAGE_CONFIG}})"
         -t discobox-harness-{{.HARNESS}}:local harness/{{.HARNESS_DIR}}
 
   compile:

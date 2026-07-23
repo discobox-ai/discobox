@@ -235,23 +235,18 @@ func harnessImageEnvKey(harnessName string) string {
 	return "DISCOBOX_HARNESS_" + strings.ToUpper(strings.ReplaceAll(harnessName, "-", "_")) + "_IMAGE"
 }
 
+// harnessMetadata reads a harness's authoring-time image.json and compacts it
+// wholesale for the HARNESS_METADATA build-arg: the io.discobox.image.v1
+// label's payload is the full image.json shape (apiVersion, env, volumes,
+// harness), not just the harness sub-object.
 func harnessMetadata(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
-	var image struct {
-		Harness json.RawMessage `json:"harness"`
-	}
-	if err := json.Unmarshal(data, &image); err != nil {
-		return "", fmt.Errorf("read harness metadata from %s: %w", path, err)
-	}
-	if len(image.Harness) == 0 {
-		return "", fmt.Errorf("read harness metadata from %s: missing harness object", path)
-	}
 	compact := bytes.Buffer{}
-	if err := json.Compact(&compact, image.Harness); err != nil {
-		return "", err
+	if err := json.Compact(&compact, data); err != nil {
+		return "", fmt.Errorf("read harness metadata from %s: %w", path, err)
 	}
 	return compact.String(), nil
 }

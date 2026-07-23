@@ -55,10 +55,11 @@ type Harness struct {
 	Command []string
 }
 
-// Image describes the immutable harness behavior baked into one sandbox image.
-// The same value is stored in /usr/share/discobox/image.json and projected into
-// ImageLabel so the control plane can validate an image without downloading its
-// filesystem layers.
+// Image describes the immutable harness behavior baked into one sandbox
+// image. It is the harness sub-object of the ImageMetadata payload projected
+// into ImageLabel, so the control plane can validate an image without
+// downloading its filesystem layers. There is no separate baked-in file —
+// image.json is only the build-time authoring source for the label.
 type Image struct {
 	ID              string     `json:"id"`
 	Name            string     `json:"name"`

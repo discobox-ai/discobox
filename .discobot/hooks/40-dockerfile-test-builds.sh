@@ -77,7 +77,7 @@ build_dockerfile() {
         exit 1
       fi
       build_args+=(--build-arg "SANDBOX_AGENT_IMAGE=discobox-sandbox-agent:local")
-      build_args+=(--build-arg "HARNESS_METADATA=$(jq -c .harness "$context/image.json")")
+      build_args+=(--build-arg "HARNESS_METADATA=$(jq -c . "$context/image.json")")
       ;;
   esac
 
