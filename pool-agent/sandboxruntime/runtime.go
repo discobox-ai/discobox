@@ -566,7 +566,7 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey st
 				doc.Image.Files = documentFiles(files)
 			}
 			if env, ok := resolved.Env.Get(); ok {
-				doc.Image.Env = map[string]string(env)
+				doc.Image.Env = harness.ExpandEnvHomeTokens(map[string]string(env), user.homeDirectory)
 			}
 			if volumes, ok := resolved.Volumes.Get(); ok {
 				doc.Image.Volumes = documentVolumes(volumes)

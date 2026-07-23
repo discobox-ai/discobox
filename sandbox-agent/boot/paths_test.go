@@ -3,17 +3,17 @@ package boot
 import (
 	"testing"
 
-	"github.com/obot-platform/discobox/sandbox-agent/config"
+	"github.com/obot-platform/discobox/harness"
 )
 
 func TestVolumeDir(t *testing.T) {
-	if got := volumeDir(config.VolumeData, "/var/lib/docker"); got != "/.discobox/data/var/lib/docker" {
+	if got := volumeDir(harness.VolumeData, "/var/lib/docker"); got != "/.discobox/data/var/lib/docker" {
 		t.Fatalf("data volumeDir = %q", got)
 	}
-	if got := volumeDir(config.VolumeCache, "/var/lib/discobox/pnpm"); got != "/.discobox/cache/var/lib/discobox/pnpm" {
+	if got := volumeDir(harness.VolumeCache, "/var/lib/discobox/pnpm"); got != "/.discobox/cache/var/lib/discobox/pnpm" {
 		t.Fatalf("cache volumeDir = %q", got)
 	}
-	if got := volumeDir(config.VolumeData, "/home/dev/"); got != "/.discobox/data/home/dev" {
+	if got := volumeDir(harness.VolumeData, "/home/dev/"); got != "/.discobox/data/home/dev" {
 		t.Fatalf("trailing-slash volumeDir = %q", got)
 	}
 }
@@ -27,14 +27,14 @@ func TestOverlayDirs(t *testing.T) {
 
 func TestUseOverlay(t *testing.T) {
 	cases := []struct {
-		kind     config.VolumeKind
+		kind     harness.VolumeKind
 		nonEmpty bool
 		want     bool
 	}{
-		{config.VolumeData, true, true},
-		{config.VolumeData, false, false},
-		{config.VolumeCache, true, false}, // cache is never an overlay
-		{config.VolumeCache, false, false},
+		{harness.VolumeData, true, true},
+		{harness.VolumeData, false, false},
+		{harness.VolumeCache, true, false}, // cache is never an overlay
+		{harness.VolumeCache, false, false},
 	}
 	for _, c := range cases {
 		if got := useOverlay(c.kind, c.nonEmpty); got != c.want {
@@ -44,7 +44,7 @@ func TestUseOverlay(t *testing.T) {
 }
 
 func TestSortVolumesByDepth(t *testing.T) {
-	volumes := []config.ResolvedVolume{
+	volumes := []harness.ResolvedVolume{
 		{Path: "/var/lib/discobox/pnpm"},
 		{Path: "/var/lib/discobox"},
 		{Path: "/home/dev"},

@@ -11,16 +11,15 @@ import (
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
 )
 
-// newHarnesslessService builds a terminal service with no harnesses configured, so
-// harness resolution has nothing to select.
+// newHarnesslessService builds a terminal service with no resolved harness, so
+// harness resolution falls back to the shell.
 func newHarnesslessService(t *testing.T) *Service {
 	t.Helper()
 	dir := t.TempDir()
-	image := config.ImageConfig{Env: map[string]string{"PATH": "/usr/bin"}}
 	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
 		WorkingRoot: dir,
 		RuntimeDir:  filepath.Join(dir, "rt"),
-		ImageConfig: image,
+		Env:         map[string]string{"PATH": "/usr/bin"},
 		Units:       &fakeUnits{},
 	})
 	if err != nil {
@@ -30,7 +29,7 @@ func newHarnesslessService(t *testing.T) *Service {
 		Execs:       execManager,
 		WorkingRoot: dir,
 		RuntimeDir:  filepath.Join(dir, "rt"),
-		ImageConfig: image,
+		Env:         map[string]string{"PATH": "/usr/bin"},
 		Units:       &fakeUnits{},
 		Installer:   &noopInstaller{},
 	})
@@ -87,11 +86,11 @@ func newTestService(t *testing.T, installer Installer) (*Service, *fakeUnits) {
 	t.Helper()
 	dir := t.TempDir()
 	units := &fakeUnits{}
-	image := config.ImageConfig{Env: map[string]string{"PATH": "/usr/bin"}}
+	env := map[string]string{"PATH": "/usr/bin"}
 	execManager, err := execs.NewManagerWithConfig(execs.ManagerConfig{
 		WorkingRoot: dir,
 		RuntimeDir:  filepath.Join(dir, "rt"),
-		ImageConfig: image,
+		Env:         env,
 		Units:       units,
 	})
 	if err != nil {
@@ -101,8 +100,8 @@ func newTestService(t *testing.T, installer Installer) (*Service, *fakeUnits) {
 		Execs:       execManager,
 		WorkingRoot: dir,
 		RuntimeDir:  filepath.Join(dir, "rt"),
-		ImageConfig: image,
-		Harnesses:   []config.Harness{{ID: "codex", Command: []string{"codex"}, IsDefault: true}},
+		Env:         env,
+		Harness:     config.Harness{ID: "codex", Command: []string{"codex"}},
 		Units:       units,
 		Installer:   installer,
 	})
@@ -231,15 +230,5 @@ func TestPrimaryCreateRequest(t *testing.T) {
 	shell := primaryCreateRequest(config.Harness{ID: ShellHarnessID, Command: []string{"/bin/sh", "-l"}}, ShellHarnessID, []string{"p"}, false)
 	if len(shell.command) != 0 || len(shell.Args) != 0 {
 		t.Fatalf("shell = %#v", shell)
-	}
-}
-
-func TestMergeHarnessFilesOverlaysByPath(t *testing.T) {
-	merged := mergeHarnessFiles(
-		[]config.HarnessFile{{Path: "settings.json", Content: "default"}, {Path: "seed.json", Content: "seed"}},
-		[]config.HarnessFile{{Path: "settings.json", Content: "configured"}, {Path: "auth.json", Content: "public"}},
-	)
-	if len(merged) != 3 || merged[0].Content != "configured" || merged[1].Path != "seed.json" || merged[2].Path != "auth.json" {
-		t.Fatalf("merged files = %#v", merged)
 	}
 }

@@ -7,37 +7,28 @@ import (
 	"testing"
 )
 
-func TestLoadAppliesEnvironmentOverrides(t *testing.T) {
+func TestLoadReadsIdentityFromFileOnly(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sandbox.json")
 	if err := os.WriteFile(path, []byte(`{
 		"apiVersion": "discobox.dev/sandbox/v1",
 		"sandboxId": "sandbox-file",
-		"config": {
-			"name": "test",
-			"image": "image",
-			"cpuVcpus": 1,
-			"memoryBytes": 1024,
-			"storageBytes": 2048
-		},
 		"provider": {
-			"kind": "discobox-worker",
+			"kind": "discobox-pool",
 			"projectId": "project-file",
-			"poolId": "worker-file",
+			"poolId": "pool-file",
 			"publicKeys": {
-				"controlPlane": "file-key"
+				"controlPlane": "`+base64.StdEncoding.EncodeToString(make([]byte, 32))+`"
 			}
 		}
 	}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("DISCOBOX_PROJECT_ID", "project-env")
-	t.Setenv("DISCOBOX_CONTROL_PLANE_PUBLIC_KEY", base64.StdEncoding.EncodeToString(make([]byte, 32)))
 
 	cfg, err := Load(path)
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if cfg.Identity.ProjectID != "project-env" {
+	if cfg.Identity.ProjectID != "project-file" {
 		t.Fatalf("project id = %q", cfg.Identity.ProjectID)
 	}
 	if cfg.Identity.SandboxID != "sandbox-file" {
@@ -48,36 +39,30 @@ func TestLoadAppliesEnvironmentOverrides(t *testing.T) {
 	}
 }
 
-func TestLoadUsesSelectedHarnessOnlyAsImageOverlay(t *testing.T) {
+func TestLoadDecodesTheOneResolvedHarness(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sandbox.json")
 	if err := os.WriteFile(path, []byte(`{
 		"apiVersion": "discobox.dev/sandbox/v1",
 		"sandboxId": "sandbox-1",
-		"config": {
-			"name": "test",
-			"image": "image",
-			"cpuVcpus": 1,
-			"memoryBytes": 1024,
-			"storageBytes": 2048,
-			"harnessMode": "config",
-			"env": {
-				"BASE": "sandbox"
-			},
-			"prompt": ["fix", "the bug"]
-		},
 		"provider": {
-			"kind": "discobox-worker",
+			"kind": "discobox-pool",
 			"projectId": "project-1",
-			"poolId": "worker-1",
+			"poolId": "pool-1",
 			"publicKeys": {
 				"controlPlane": "`+base64.StdEncoding.EncodeToString(make([]byte, 32))+`"
 			}
 		},
-		"resolvedHarnessConfig": {
+		"harnessMode": "config",
+		"env": {
+			"BASE": "sandbox"
+		},
+		"prompt": ["fix", "the bug"],
+		"harness": {
 			"id": "claude",
 			"name": "Claude",
-			"files": [{"path": ".claude.json", "content": "{}"}]
-		}
+			"runCommand": ["claude"]
+		},
+		"files": [{"path": ".claude.json", "content": "{}"}]
 	}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -86,8 +71,8 @@ func TestLoadUsesSelectedHarnessOnlyAsImageOverlay(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if cfg.ResolvedHarnessConfig == nil || cfg.ResolvedHarnessConfig.ID != "claude" || len(cfg.ResolvedHarnessConfig.Files) != 1 {
-		t.Fatalf("resolved harness = %#v, want claude file overlay", cfg.ResolvedHarnessConfig)
+	if cfg.Harness.ID != "claude" || len(cfg.Harness.Files) != 1 {
+		t.Fatalf("harness = %#v, want claude with one file", cfg.Harness)
 	}
 	if cfg.HarnessMode != "config" {
 		t.Fatalf("harness mode = %q, want config", cfg.HarnessMode)
@@ -100,37 +85,27 @@ func TestLoadUsesSelectedHarnessOnlyAsImageOverlay(t *testing.T) {
 	}
 }
 
-func TestLoadDerivesExecDefaultsFromSandboxManifest(t *testing.T) {
+func TestLoadDerivesExecDefaultsFromEffectiveConfig(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "sandbox.json")
 	if err := os.WriteFile(path, []byte(`{
 		"apiVersion": "discobox.dev/sandbox/v1",
 		"sandboxId": "sandbox-1",
-		"config": {
-			"name": "test",
-			"image": "image",
-			"cpuVcpus": 1,
-			"memoryBytes": 1024,
-			"storageBytes": 2048,
-			"source": {
-				"kind": "git",
-				"destination": {
-					"workingDirectory": "/workspace/project"
-				}
-			},
-			"user": {
-				"name": "darren",
-				"uid": 1000,
-				"gid": 1001,
-				"homeDirectory": "/home/darren"
-			}
-		},
 		"provider": {
-			"kind": "discobox-worker",
+			"kind": "discobox-pool",
 			"projectId": "project-1",
-			"poolId": "worker-1",
+			"poolId": "pool-1",
 			"publicKeys": {
 				"controlPlane": "`+base64.StdEncoding.EncodeToString(make([]byte, 32))+`"
 			}
+		},
+		"sources": [
+			{"slug": "primary", "target": "/workspace/project"}
+		],
+		"user": {
+			"name": "darren",
+			"uid": 1000,
+			"gid": 1001,
+			"homeDirectory": "/home/darren"
 		}
 	}`), 0o644); err != nil {
 		t.Fatal(err)
@@ -146,12 +121,8 @@ func TestLoadDerivesExecDefaultsFromSandboxManifest(t *testing.T) {
 	if cfg.ExecDefaults.Username != "darren" || cfg.ExecDefaults.HomeDirectory != "/home/darren" || cfg.ExecDefaults.UID == nil || *cfg.ExecDefaults.UID != 1000 || cfg.ExecDefaults.GID == nil || *cfg.ExecDefaults.GID != 1001 {
 		t.Fatalf("exec default user = %#v", cfg.ExecDefaults)
 	}
-	source, ok := cfg.SandboxConfig["source"].(map[string]any)
-	if !ok {
-		t.Fatalf("sandbox config = %#v, want public source object", cfg.SandboxConfig)
-	}
-	destination, ok := source["destination"].(map[string]any)
-	if !ok || destination["workingDirectory"] != "/workspace/project" {
-		t.Fatalf("sandbox config source = %#v, want public lower-camel-case fields", source)
+	sources, ok := cfg.SandboxConfig["sources"].([]any)
+	if !ok || len(sources) != 1 {
+		t.Fatalf("sandbox config sources = %#v, want the raw sources array as template data", cfg.SandboxConfig["sources"])
 	}
 }

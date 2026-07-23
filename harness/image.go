@@ -158,26 +158,22 @@ func expandVolumeToken(value string, rt VolumeRuntime) string {
 	return replacer.Replace(value)
 }
 
-// ApplyImageEnvDefaults fills env with the image's default values for any key
-// not already set. Image env is a default, never an override.
-func ApplyImageEnvDefaults(env map[string]string, image map[string]string) map[string]string {
-	if env == nil {
-		env = map[string]string{}
+// ExpandEnvHomeTokens replaces the %HOME% token in every value of an
+// image-declared env map with the sandbox's resolved home directory. The
+// caller (pool-agent, before assembling ImageLayer.Env) is the only place
+// that knows the resolved user's home; precedence between image and runtime
+// env is sandboxconfig.Effective's job, not this package's.
+func ExpandEnvHomeTokens(env map[string]string, home string) map[string]string {
+	if len(env) == 0 {
+		return nil
 	}
-	for key, value := range image {
+	out := make(map[string]string, len(env))
+	for key, value := range env {
 		key = strings.TrimSpace(key)
 		if key == "" {
 			continue
 		}
-		if _, ok := env[key]; ok {
-			continue
-		}
-		env[key] = expandImageEnvValue(value, env)
+		out[key] = strings.ReplaceAll(value, "%HOME%", home)
 	}
-	return env
-}
-
-func expandImageEnvValue(value string, env map[string]string) string {
-	home := env["HOME"]
-	return strings.ReplaceAll(value, "%HOME%", home)
+	return out
 }

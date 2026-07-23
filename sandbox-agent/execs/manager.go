@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/id"
-	"github.com/obot-platform/discobox/sandbox-agent/config"
 	"github.com/obot-platform/discobox/sandbox-agent/shimproxy"
 )
 
@@ -122,21 +121,18 @@ type Manager struct {
 	runtimeDir     string
 	logDir         string
 	env            map[string]string
-	imageConfig    config.ImageConfig
 	units          UnitManager
 	audit          AuditRecorder
 }
 
 type ManagerConfig struct {
-	WorkingRoot     string
-	DefaultWorkdir  string
-	DefaultUser     *User
-	RuntimeDir      string
-	Env             map[string]string
-	ImageConfig     config.ImageConfig
-	ImageConfigPath string
-	Units           UnitManager
-	Audit           AuditRecorder
+	WorkingRoot    string
+	DefaultWorkdir string
+	DefaultUser    *User
+	RuntimeDir     string
+	Env            map[string]string
+	Units          UnitManager
+	Audit          AuditRecorder
 }
 
 func NewManager(workingRoot, runtimeDir string, units UnitManager, audit AuditRecorder) (*Manager, error) {
@@ -161,14 +157,6 @@ func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
 	if units == nil {
 		units = SystemdRunner{}
 	}
-	imageConfig := cfg.ImageConfig
-	if len(imageConfig.Env) == 0 {
-		var err error
-		imageConfig, err = config.LoadImage(cfg.ImageConfigPath)
-		if err != nil {
-			return nil, err
-		}
-	}
 	runtimeDir = filepath.Clean(runtimeDir)
 	return &Manager{
 		workingRoot:    filepath.Clean(workingRoot),
@@ -177,7 +165,6 @@ func NewManagerWithConfig(cfg ManagerConfig) (*Manager, error) {
 		runtimeDir:     runtimeDir,
 		logDir:         filepath.Join(runtimeDir, "logs"),
 		env:            cloneMap(cfg.Env),
-		imageConfig:    imageConfig,
 		units:          units,
 		audit:          cfg.Audit,
 	}, nil
@@ -200,9 +187,12 @@ func MergeEnv(base, override map[string]string) map[string]string {
 	return out
 }
 
-// EnvWithRuntimeDefaults fills TERM, USER/LOGNAME/HOME, and image env defaults
-// into env without overriding existing entries. Exported for the terminal layer.
-func EnvWithRuntimeDefaults(env map[string]string, user *User, imageConfig config.ImageConfig) map[string]string {
+// EnvWithRuntimeDefaults fills TERM and USER/LOGNAME/HOME into env without
+// overriding existing entries. Image env defaults are no longer applied here:
+// pool-agent's Effective() call already merges them into the sandbox's
+// effective Env (ADR 0012 §2), so env already carries them. Exported for the
+// terminal layer.
+func EnvWithRuntimeDefaults(env map[string]string, user *User) map[string]string {
 	if env == nil {
 		env = map[string]string{}
 	}
@@ -224,7 +214,7 @@ func EnvWithRuntimeDefaults(env map[string]string, user *User, imageConfig confi
 			}
 		}
 	}
-	return config.ApplyImageEnvDefaults(env, imageConfig)
+	return env
 }
 
 func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
@@ -236,7 +226,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 		return Exec{}, err
 	}
 	user := m.resolveUser(req)
-	env := EnvWithRuntimeDefaults(MergeEnv(m.env, req.Env), user, m.imageConfig)
+	env := EnvWithRuntimeDefaults(MergeEnv(m.env, req.Env), user)
 	id := strings.TrimSpace(req.ID)
 	if id == "" {
 		var err error

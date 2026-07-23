@@ -262,20 +262,19 @@ func TestAgentTerminalResourceStreamReplaysHistory(t *testing.T) {
 		RuntimeDir:  cfg.RuntimeDir,
 		Units:       runner,
 		Audit:       st,
-		ImageConfig: config.ImageConfig{Env: map[string]string{"PATH": "/usr/bin"}},
+		Env:         map[string]string{"PATH": "/usr/bin"},
 	})
 	if err != nil {
 		t.Fatalf("new exec manager: %v", err)
 	}
 	created, err := terminal.NewService(terminal.ServiceConfig{
-		Execs:                 execManager,
-		ResolvedHarnessConfig: cfg.ResolvedHarnessConfig,
-		Harnesses:             cfg.Harnesses,
-		WorkingRoot:           cfg.WorkingRoot,
-		RuntimeDir:            cfg.RuntimeDir,
-		ImageConfig:           config.ImageConfig{Env: map[string]string{"PATH": "/usr/bin"}},
-		Units:                 runner,
-		Installer:             cfg.Installer,
+		Execs:       execManager,
+		Harness:     cfg.Harness,
+		WorkingRoot: cfg.WorkingRoot,
+		RuntimeDir:  cfg.RuntimeDir,
+		Env:         map[string]string{"PATH": "/usr/bin"},
+		Units:       runner,
+		Installer:   cfg.Installer,
 	})
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
@@ -320,10 +319,10 @@ func testConfig(publicKey string) Config {
 		WorkingRoot:           "/workspace",
 		RuntimeDir:            runtimeDir,
 		DatabasePath:          filepath.Join(runtimeDir, "harness.db"),
-		Harnesses: []config.Harness{{
+		Harness: config.Harness{
 			ID:      "codex",
 			Command: []string{"codex"},
-		}},
+		},
 		ExecUnitManager:   &sandboxAgentFakeRunner{},
 		Installer:         sandboxAgentNoopInstaller{},
 		ExecAuditRecorder: sandboxAgentNoopAudit{},

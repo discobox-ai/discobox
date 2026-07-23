@@ -7,20 +7,39 @@ import (
 	"path/filepath"
 	"testing"
 
+	discoboxharness "github.com/obot-platform/discobox/harness"
 	"github.com/obot-platform/discobox/sandbox-agent/config"
 )
 
+// claudeImageHarness reads the Claude harness's authoring-time image.json
+// directly (the runtime carrier is the OCI label now, but the file itself is
+// still the build-time source of truth — see harness/DESIGN.md) and converts
+// its harness contract to config.Harness, the same shape sandbox.json decodes.
 func claudeImageHarness(t *testing.T) config.Harness {
 	t.Helper()
-	image, err := config.LoadImage(filepath.Join("..", "..", "harness", "claude-code", "image.json"))
+	data, err := os.ReadFile(filepath.Join("..", "..", "harness", "claude-code", "image.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	harness, ok, err := image.HarnessForMode("run")
-	if err != nil || !ok {
-		t.Fatalf("load Claude image harness: ok=%v err=%v", ok, err)
+	var metadata discoboxharness.ImageMetadata
+	if err := json.Unmarshal(data, &metadata); err != nil {
+		t.Fatal(err)
 	}
-	return harness
+	if metadata.Harness == nil {
+		t.Fatal("claude-code image.json has no harness contract")
+	}
+	files := make([]config.HarnessFile, 0, len(metadata.Harness.Files))
+	for _, file := range metadata.Harness.Files {
+		files = append(files, config.HarnessFile{
+			Path: file.Path, Content: file.Content, CreateOnly: file.CreateOnly, Template: file.Template,
+		})
+	}
+	return config.Harness{
+		ID:      metadata.Harness.ID,
+		Name:    metadata.Harness.Name,
+		Command: metadata.Harness.RunCommand,
+		Files:   files,
+	}
 }
 
 func TestFileInstallerRendersSandboxConfigTemplate(t *testing.T) {

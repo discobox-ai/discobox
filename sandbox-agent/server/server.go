@@ -40,8 +40,7 @@ type Config struct {
 	Prompt                []string
 	HarnessMode           string
 	Resources             config.ResourceConfig
-	ResolvedHarnessConfig *config.Harness
-	Harnesses             []config.Harness
+	Harness               config.Harness
 	SandboxConfig         map[string]any
 	Installer             terminal.Installer
 	ExecUnitManager       execs.UnitManager
@@ -67,8 +66,7 @@ func ConfigFromHarnessConfig(cfg config.Config) Config {
 		Prompt:                cfg.Prompt,
 		HarnessMode:           cfg.HarnessMode,
 		Resources:             cfg.Resources,
-		ResolvedHarnessConfig: cfg.ResolvedHarnessConfig,
-		Harnesses:             cfg.Harnesses,
+		Harness:               cfg.Harness,
 		SandboxConfig:         cfg.SandboxConfig,
 	}
 }
@@ -122,19 +120,18 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		return nil, nil, nil, nil, err
 	}
 	manager, err := terminal.NewService(terminal.ServiceConfig{
-		Execs:                 execManager,
-		ResolvedHarnessConfig: cfg.ResolvedHarnessConfig,
-		Harnesses:             cfg.Harnesses,
-		SandboxConfig:         cfg.SandboxConfig,
-		WorkingRoot:           cfg.WorkingRoot,
-		RuntimeDir:            cfg.RuntimeDir,
-		Env:                   cfg.Env,
-		ExecDefaults:          cfg.ExecDefaults,
-		Units:                 cfg.ExecUnitManager,
-		Installer:             cfg.Installer,
-		PrimaryState:          localStore,
-		HarnessMode:           cfg.HarnessMode,
-		Prompt:                cfg.Prompt,
+		Execs:         execManager,
+		Harness:       cfg.Harness,
+		SandboxConfig: cfg.SandboxConfig,
+		WorkingRoot:   cfg.WorkingRoot,
+		RuntimeDir:    cfg.RuntimeDir,
+		Env:           cfg.Env,
+		ExecDefaults:  cfg.ExecDefaults,
+		Units:         cfg.ExecUnitManager,
+		Installer:     cfg.Installer,
+		PrimaryState:  localStore,
+		HarnessMode:   cfg.HarnessMode,
+		Prompt:        cfg.Prompt,
 	})
 	if err != nil {
 		return nil, nil, nil, nil, err

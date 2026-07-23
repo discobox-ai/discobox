@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/obot-platform/discobox/sandbox-agent/config"
 )
 
 func TestManagerMergesConfigEnvWithRequestOverrides(t *testing.T) {
@@ -76,9 +74,9 @@ func TestManagerDefaultsExecFromSandboxConfig(t *testing.T) {
 			GID:           &gid,
 			HomeDirectory: "/home/darren",
 		},
-		RuntimeDir:  t.TempDir(),
-		ImageConfig: testImageConfig(),
-		Units:       runner,
+		RuntimeDir: t.TempDir(),
+		Env:        testEffectiveEnv(),
+		Units:      runner,
 	})
 	if err != nil {
 		t.Fatalf("new manager: %v", err)
@@ -128,8 +126,7 @@ func TestManagerPreservesExecNPMAndPathOverrides(t *testing.T) {
 			UID:           &uid,
 			HomeDirectory: "/home/darren",
 		},
-		RuntimeDir:  t.TempDir(),
-		ImageConfig: testImageConfig(),
+		RuntimeDir: t.TempDir(),
 		Env: map[string]string{
 			"NPM_CONFIG_PREFIX": "/custom/npm",
 			"PATH":              "/custom/bin",
@@ -154,11 +151,14 @@ func TestManagerPreservesExecNPMAndPathOverrides(t *testing.T) {
 	}
 }
 
-func testImageConfig() config.ImageConfig {
-	return config.ImageConfig{Env: map[string]string{
-		"NPM_CONFIG_PREFIX": "%HOME%/.npm-global",
-		"PATH":              "%HOME%/.npm-global/bin:%HOME%/.cargo/bin:%HOME%/.nix-profile/bin:%HOME%/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
-	}}
+// testEffectiveEnv mirrors what pool-agent's sandboxconfig.Effective call
+// already produces before sandbox-agent ever sees it: image env defaults
+// merged in with %HOME% expanded against the resolved sandbox user.
+func testEffectiveEnv() map[string]string {
+	return map[string]string{
+		"NPM_CONFIG_PREFIX": "/home/darren/.npm-global",
+		"PATH":              "/home/darren/.npm-global/bin:/home/darren/.cargo/bin:/home/darren/.nix-profile/bin:/home/darren/.local/bin:/nix/var/nix/profiles/default/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+	}
 }
 
 func TestManagerExecRequestOverridesDefaultUserAndWorkdir(t *testing.T) {

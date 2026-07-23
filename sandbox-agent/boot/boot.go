@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+
+	"github.com/obot-platform/discobox/sandboxconfig"
 )
 
 // Init is the container entrypoint run as PID 1. It resolves the sandbox user,
@@ -44,13 +46,21 @@ func (b *booter) provision(logger *slog.Logger, id identity) error {
 		return fmt.Errorf("ensure user: %w", err)
 	}
 	worker := dirExists(configMountPath)
+	var effective sandboxconfig.Config
 	if worker {
+		// Both volumes and sources come from this one pre-bind read now that
+		// image.json is gone (ADR 0012 §6) — previously this required two
+		// separate reads (image.json for volumes, the manifest for sources).
+		var err error
+		if effective, err = loadEffectiveConfig(); err != nil {
+			return fmt.Errorf("load sandbox config: %w", err)
+		}
 		if err := b.wireConfig(); err != nil {
 			return fmt.Errorf("wire config: %w", err)
 		}
-		volumes, err := loadImageVolumes(id)
+		volumes, err := loadResolvedVolumes(id, effective.Volumes)
 		if err != nil {
-			return fmt.Errorf("load image volumes: %w", err)
+			return fmt.Errorf("resolve volumes: %w", err)
 		}
 		if err := b.wireVolumes(volumes); err != nil {
 			return err
@@ -63,15 +73,11 @@ func (b *booter) provision(logger *slog.Logger, id identity) error {
 		return fmt.Errorf("seed home: %w", err)
 	}
 	if worker {
-		manifest, err := loadManifest()
-		if err != nil {
-			return fmt.Errorf("load manifest: %w", err)
-		}
-		if err := b.wireSources(manifest.Sources); err != nil {
+		if err := b.wireSources(effective.Sources); err != nil {
 			return err
 		}
-		if len(manifest.Sources) > 0 {
-			logger.Info("wired sandbox sources", "count", len(manifest.Sources))
+		if len(effective.Sources) > 0 {
+			logger.Info("wired sandbox sources", "count", len(effective.Sources))
 		}
 	}
 	return nil

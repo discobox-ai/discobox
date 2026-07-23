@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/obot-platform/discobox/sandbox-agent/config"
+	"github.com/obot-platform/discobox/harness"
 )
 
 const (
@@ -26,14 +26,11 @@ const (
 
 	// manifestName is the sandbox manifest file inside the config volume.
 	manifestName = "sandbox.json"
-
-	// imageConfigPath is the image-owned volume/harness declaration.
-	imageConfigPath = config.DefaultImageConfigPath
 )
 
 // backingMount returns the primary volume that backs a declared volume kind.
-func backingMount(kind config.VolumeKind) string {
-	if kind == config.VolumeCache {
+func backingMount(kind harness.VolumeKind) string {
+	if kind == harness.VolumeCache {
 		return cacheMountPath
 	}
 	return dataMountPath
@@ -41,7 +38,7 @@ func backingMount(kind config.VolumeKind) string {
 
 // volumeDir is the directory on the backing primary volume that stores a
 // declared path's contents: /.discobox/{data|cache}/<target>.
-func volumeDir(kind config.VolumeKind, target string) string {
+func volumeDir(kind harness.VolumeKind, target string) string {
 	return filepath.Join(backingMount(kind), strings.TrimPrefix(filepath.Clean(target), "/"))
 }
 
@@ -56,14 +53,14 @@ func overlayDirs(volDir string) (upper, work string) {
 // lower layer while persisting writes to the volume, but is only safe for
 // per-sandbox data volumes: a cache volume is shared across concurrently
 // running sandboxes, and overlayfs upper/work dirs cannot be shared (ADR 0007).
-func useOverlay(kind config.VolumeKind, targetNonEmpty bool) bool {
-	return kind == config.VolumeData && targetNonEmpty
+func useOverlay(kind harness.VolumeKind, targetNonEmpty bool) bool {
+	return kind == harness.VolumeData && targetNonEmpty
 }
 
 // sortVolumesByDepth orders volumes so that a parent path is always wired
 // before a nested child (e.g. /var/lib/discobox before /var/lib/discobox/pnpm),
 // so the child mounts onto the already-mounted parent rather than being shadowed.
-func sortVolumesByDepth(volumes []config.ResolvedVolume) {
+func sortVolumesByDepth(volumes []harness.ResolvedVolume) {
 	sort.SliceStable(volumes, func(i, j int) bool {
 		return pathDepth(volumes[i].Path) < pathDepth(volumes[j].Path)
 	})

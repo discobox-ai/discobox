@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -62,21 +61,22 @@ type ServiceConfig struct {
 	// Execs is the shared runtime primitive that backs both plain execs and
 	// terminals. The service creates terminal-mode execs on it and never owns a
 	// runtime of its own.
-	Execs                 *execs.Manager
-	ResolvedHarnessConfig *config.Harness
-	Harnesses             []config.Harness
-	SandboxConfig         map[string]any
-	WorkingRoot           string
-	RuntimeDir            string
-	Env                   map[string]string
-	ImageConfig           config.ImageConfig
-	ImageConfigPath       string
-	ExecDefaults          config.ExecDefaults
-	DefaultUser           *execs.User
-	Units                 execs.UnitManager
-	Installer             Installer
-	PrimaryState          PrimaryStateStore
-	HarnessMode           string
+	Execs *execs.Manager
+	// Harness is the sandbox's one fully-resolved harness (ADR 0012 §9): already
+	// merged from the image and project layers by pool-agent's Effective() call.
+	// A zero-value Harness (empty ID) means the sandbox has no harness at all,
+	// which resolves to the shell fallback.
+	Harness       config.Harness
+	SandboxConfig map[string]any
+	WorkingRoot   string
+	RuntimeDir    string
+	Env           map[string]string
+	ExecDefaults  config.ExecDefaults
+	DefaultUser   *execs.User
+	Units         execs.UnitManager
+	Installer     Installer
+	PrimaryState  PrimaryStateStore
+	HarnessMode   string
 	// Prompt is the sandbox's initial prompt, retained so the primary terminal
 	// can be relaunched on demand (it is ignored once the primary has launched
 	// once and relaunch uses the harness's relaunch command instead).
@@ -86,12 +86,8 @@ type ServiceConfig struct {
 // Service is the harness-terminal layer over execs.Manager.
 type Service struct {
 	execs          *execs.Manager
-	harnesses      map[string]config.Harness
-	resolvedID     string
-	defaultID      string
-	workingRoot    string
+	harness        config.Harness
 	env            map[string]string
-	imageConfig    config.ImageConfig
 	defaultUser    *execs.User
 	hookSocketPath string
 	installer      Installer
@@ -114,21 +110,12 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 	if cfg.Execs == nil {
 		return nil, errors.New("shared exec manager is required")
 	}
-	imageConfig := cfg.ImageConfig
-	if imageConfig.APIVersion == "" && len(imageConfig.Env) == 0 && imageConfig.Harness == nil {
-		var err error
-		if imageConfig, err = config.LoadImage(cfg.ImageConfigPath); err != nil {
-			return nil, err
-		}
-	}
 	defaultUser := terminalDefaultUser(cfg)
 
 	s := &Service{
 		execs:        cfg.Execs,
-		harnesses:    map[string]config.Harness{},
-		workingRoot:  filepath.Clean(cfg.WorkingRoot),
+		harness:      cloneHarness(cfg.Harness),
 		env:          cloneMap(cfg.Env),
-		imageConfig:  imageConfig,
 		defaultUser:  defaultUser,
 		installer:    cfg.Installer,
 		primaryState: cfg.PrimaryState,
@@ -147,44 +134,6 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 				SandboxConfig: cfg.SandboxConfig,
 			},
 		}}
-	}
-	if imageHarness, ok, err := imageConfig.HarnessForMode(s.harnessMode); err != nil {
-		return nil, err
-	} else if ok {
-		// An image contains exactly one harness. Commands are image-authoritative;
-		// the selected project config contributes only its stable identity and any
-		// non-secret files produced by config mode.
-		if cfg.ResolvedHarnessConfig != nil {
-			if id := strings.TrimSpace(cfg.ResolvedHarnessConfig.ID); id != "" {
-				imageHarness.ID = id
-			}
-			if name := strings.TrimSpace(cfg.ResolvedHarnessConfig.Name); name != "" {
-				imageHarness.Name = name
-			}
-			if cfg.ResolvedHarnessConfig.Files != nil {
-				imageHarness.Files = mergeHarnessFiles(imageHarness.Files, cfg.ResolvedHarnessConfig.Files)
-			}
-		}
-		cfg.Harnesses = []config.Harness{imageHarness}
-		cfg.ResolvedHarnessConfig = &imageHarness
-	}
-	for _, harness := range cfg.Harnesses {
-		if strings.TrimSpace(harness.ID) == "" {
-			continue
-		}
-		if _, exists := s.harnesses[harness.ID]; exists {
-			return nil, fmt.Errorf("duplicate harness %q", harness.ID)
-		}
-		s.harnesses[harness.ID] = cloneHarness(harness)
-		if s.defaultID == "" || harness.IsDefault {
-			s.defaultID = harness.ID
-		}
-	}
-	if cfg.ResolvedHarnessConfig != nil && strings.TrimSpace(cfg.ResolvedHarnessConfig.ID) != "" {
-		s.resolvedID = strings.TrimSpace(cfg.ResolvedHarnessConfig.ID)
-		if _, exists := s.harnesses[s.resolvedID]; !exists {
-			s.harnesses[s.resolvedID] = cloneHarness(*cfg.ResolvedHarnessConfig)
-		}
 	}
 	return s, nil
 }
@@ -217,7 +166,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	if err != nil {
 		return execs.Exec{}, err
 	}
-	harness, harnessID, err := s.resolveHarness(req.HarnessID, workdir)
+	harness, harnessID, err := s.resolveHarness(req.HarnessID)
 	if err != nil {
 		return execs.Exec{}, err
 	}
@@ -225,7 +174,7 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	if err != nil {
 		return execs.Exec{}, err
 	}
-	env := execs.EnvWithRuntimeDefaults(execs.MergeEnv(s.env, req.Env), s.defaultUser, s.imageConfig)
+	env := execs.EnvWithRuntimeDefaults(execs.MergeEnv(s.env, req.Env), s.defaultUser)
 	env["DISCOBOX_TERMINAL_ID"] = id
 	if s.hookSocketPath != "" {
 		env["DISCOBOX_HOOK_SOCKET"] = s.hookSocketPath
@@ -375,14 +324,11 @@ func (s *Service) EnsurePrimary(ctx context.Context, prompt []string) error {
 			return nil
 		}
 	}
-	workdir, err := s.execs.ResolveWorkdir("")
+	harness, harnessID, err := s.resolveHarness("")
 	if err != nil {
-		return err
-	}
-	harness, harnessID, err := s.resolveHarness("", workdir)
-	if err != nil {
-		// A genuine misconfiguration (e.g. a malformed local harness config). The
-		// absent-harness case is not an error: it resolves to the shell harness.
+		// A genuine misconfiguration (a requested harness that doesn't match the
+		// sandbox's resolved harness). The absent-harness case is not an error: it
+		// resolves to the shell harness.
 		return err
 	}
 	launched := false
@@ -426,41 +372,27 @@ func primaryCreateRequest(harness config.Harness, harnessID string, prompt []str
 	return req
 }
 
-// resolveHarness selects the harness for a terminal in precedence order: an explicit
-// request, then the sandbox's resolved harness, then a local repo harness config,
-// then the configured default, and finally the shell harness when the sandbox has
-// no harness at all.
-func (s *Service) resolveHarness(requested string, workdir string) (config.Harness, string, error) {
+// resolveHarness selects the harness for a terminal. The sandbox has exactly
+// one resolved harness (ADR 0012 §9, already merged by pool-agent's
+// Effective() call before boot) or none at all, in which case the shell
+// fallback is used. An explicit request must match the resolved harness (or
+// name the shell harness); there is nothing else left to resolve at boot.
+func (s *Service) resolveHarness(requested string) (config.Harness, string, error) {
 	requested = strings.TrimSpace(requested)
-	if requested != "" {
-		harness, ok := s.harnesses[requested]
-		if !ok {
+	if strings.TrimSpace(s.harness.ID) == "" {
+		if requested != "" && requested != ShellHarnessID {
 			return config.Harness{}, "", fmt.Errorf("harness %q is not configured", requested)
 		}
-		return harness, requested, nil
-	}
-	if s.resolvedID != "" {
-		if harness, ok := s.harnesses[s.resolvedID]; ok {
-			return harness, s.resolvedID, nil
-		}
-	}
-	if local, ok, err := s.localHarnessConfig(workdir); err != nil {
-		return config.Harness{}, "", err
-	} else if ok {
-		return local, local.ID, nil
-	}
-	if s.defaultID == "" {
 		return s.shellAgent(), ShellHarnessID, nil
 	}
-	harness, ok := s.harnesses[s.defaultID]
-	if !ok {
-		return config.Harness{}, "", fmt.Errorf("default harness %q is not configured", s.defaultID)
+	if requested != "" && requested != s.harness.ID {
+		return config.Harness{}, "", fmt.Errorf("harness %q is not configured", requested)
 	}
-	return harness, s.defaultID, nil
+	return s.harness, s.harness.ID, nil
 }
 
 // shellAgent builds the fallback shell harness: an interactive login shell taken
-// from the sandbox environment, falling back to what the image actually has.
+// from the sandbox environment.
 func (s *Service) shellAgent() config.Harness {
 	return config.Harness{
 		ID:      ShellHarnessID,
@@ -470,10 +402,8 @@ func (s *Service) shellAgent() config.Harness {
 }
 
 func (s *Service) shellPath() string {
-	for _, env := range []map[string]string{s.env, s.imageConfig.Env} {
-		if shell := strings.TrimSpace(env["SHELL"]); shell != "" {
-			return shell
-		}
+	if shell := strings.TrimSpace(s.env["SHELL"]); shell != "" {
+		return shell
 	}
 	for _, candidate := range []string{"/bin/bash", "/bin/sh"} {
 		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
@@ -481,136 +411,6 @@ func (s *Service) shellPath() string {
 		}
 	}
 	return "/bin/sh"
-}
-
-type localHarnessConfig struct {
-	Harness    string    `json:"harness,omitempty"`
-	ID         string    `json:"id,omitempty"`
-	Name       string    `json:"name,omitempty"`
-	Command    *[]string `json:"command,omitempty"`
-	RunCommand *[]string `json:"runCommand,omitempty"`
-}
-
-func (s *Service) localHarnessConfig(workdir string) (config.Harness, bool, error) {
-	repoRoot, ok := gitRoot(workdir, s.workingRoot)
-	if !ok {
-		return config.Harness{}, false, nil
-	}
-	path, ok := localHarnessConfigPath(repoRoot)
-	if !ok {
-		return config.Harness{}, false, nil
-	}
-	local, err := readLocalHarnessConfig(path)
-	if err != nil {
-		return config.Harness{}, false, err
-	}
-	selector := firstNonEmpty(local.Harness, local.ID, local.Name)
-	if selector == "" {
-		return config.Harness{}, false, fmt.Errorf("local harness config %s must set harness, id, or name", path)
-	}
-	harness, ok := s.matchHarness(selector)
-	if !ok {
-		harness = config.Harness{ID: selector, Name: selector}
-	}
-	harness = applyLocalHarnessConfig(harness, local)
-	if strings.TrimSpace(harness.ID) == "" {
-		return config.Harness{}, false, fmt.Errorf("local harness config %s resolved empty harness id", path)
-	}
-	if len(harness.Command) == 0 || strings.TrimSpace(harness.Command[0]) == "" {
-		return config.Harness{}, false, fmt.Errorf("local harness config %s resolved harness %q without command", path, harness.ID)
-	}
-	return harness, true, nil
-}
-
-func localHarnessConfigPath(repoRoot string) (string, bool) {
-	for _, name := range []string{"harness.json", "harness-config.json", "sandbox.json"} {
-		path := filepath.Join(repoRoot, ".discobox", name)
-		if info, err := os.Stat(path); err == nil && !info.IsDir() {
-			return path, true
-		}
-	}
-	return "", false
-}
-
-func readLocalHarnessConfig(path string) (localHarnessConfig, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return localHarnessConfig{}, err
-	}
-	var name string
-	if err := json.Unmarshal(data, &name); err == nil {
-		return localHarnessConfig{Harness: name}, nil
-	}
-	var out localHarnessConfig
-	if err := json.Unmarshal(data, &out); err != nil {
-		return localHarnessConfig{}, fmt.Errorf("parse local harness config %s: %w", path, err)
-	}
-	return out, nil
-}
-
-func (s *Service) matchHarness(selector string) (config.Harness, bool) {
-	selector = strings.TrimSpace(selector)
-	if harness, ok := s.harnesses[selector]; ok {
-		return cloneHarness(harness), true
-	}
-	for _, harness := range s.harnesses {
-		if strings.EqualFold(harness.Name, selector) {
-			return cloneHarness(harness), true
-		}
-	}
-	return config.Harness{}, false
-}
-
-func applyLocalHarnessConfig(harness config.Harness, local localHarnessConfig) config.Harness {
-	if strings.TrimSpace(local.ID) != "" {
-		harness.ID = strings.TrimSpace(local.ID)
-	}
-	if strings.TrimSpace(local.Name) != "" {
-		harness.Name = strings.TrimSpace(local.Name)
-	}
-	if local.Command != nil {
-		harness.Command = append([]string{}, (*local.Command)...)
-	}
-	if local.RunCommand != nil {
-		harness.Command = append([]string{}, (*local.RunCommand)...)
-	}
-	return harness
-}
-
-func gitRoot(workdir, workingRoot string) (string, bool) {
-	workdir = filepath.Clean(workdir)
-	if output, err := exec.CommandContext(context.Background(), "git", "-C", workdir, "rev-parse", "--show-toplevel").Output(); err == nil {
-		root := filepath.Clean(strings.TrimSpace(string(output)))
-		if insideRoot(root, workingRoot) {
-			return root, true
-		}
-	}
-	for dir := workdir; insideRoot(dir, workingRoot); dir = filepath.Dir(dir) {
-		if info, err := os.Stat(filepath.Join(dir, ".git")); err == nil && info.IsDir() {
-			return dir, true
-		}
-		if dir == filepath.Clean(workingRoot) || dir == filepath.Dir(dir) {
-			break
-		}
-	}
-	return "", false
-}
-
-func insideRoot(path, root string) bool {
-	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(path))
-	if err != nil {
-		return false
-	}
-	return rel == "." || (rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator)))
-}
-
-func firstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }
 
 // --- Installers ---
@@ -834,23 +634,6 @@ func cloneHarness(in config.Harness) config.Harness {
 	out.Command = append([]string{}, in.Command...)
 	out.RelaunchCommand = append([]string{}, in.RelaunchCommand...)
 	out.Files = append([]config.HarnessFile{}, in.Files...)
-	return out
-}
-
-func mergeHarnessFiles(base, overlay []config.HarnessFile) []config.HarnessFile {
-	out := append([]config.HarnessFile{}, base...)
-	positions := make(map[string]int, len(out))
-	for i, file := range out {
-		positions[file.Path] = i
-	}
-	for _, file := range overlay {
-		if i, ok := positions[file.Path]; ok {
-			out[i] = file
-			continue
-		}
-		positions[file.Path] = len(out)
-		out = append(out, file)
-	}
 	return out
 }
 

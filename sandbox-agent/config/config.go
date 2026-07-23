@@ -4,18 +4,21 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
-	"github.com/obot-platform/discobox/api/model"
+	"github.com/obot-platform/discobox/harness"
+	"github.com/obot-platform/discobox/sandboxconfig"
 )
 
 const (
-	DefaultPath               = "/etc/discobox/sandbox.json"
-	ControlPlanePublicKeyName = "controlPlane"
+	DefaultPath = "/etc/discobox/sandbox.json"
 )
 
+// Config is sandbox-agent's decode target for /etc/discobox/sandbox.json.
+// Pool-agent has already computed the sandbox's one effective configuration
+// via sandboxconfig.Effective before writing the file (ADR 0012 §8);
+// sandbox-agent reads it once, statically, and never merges anything itself.
 type Config struct {
 	Identity              Identity          `json:"identity"`
 	ControlPlanePublicKey string            `json:"controlPlanePublicKey"`
@@ -27,10 +30,12 @@ type Config struct {
 	Env                   map[string]string `json:"env,omitempty"`
 	Prompt                []string          `json:"prompt,omitempty"`
 	HarnessMode           string            `json:"harnessMode,omitempty"`
-	ResolvedHarnessConfig *Harness          `json:"resolvedHarnessConfig,omitempty"`
-	Harnesses             []Harness         `json:"harnesses"`
-	SandboxConfig         map[string]any    `json:"-"`
-	Resources             ResourceConfig    `json:"resources"`
+	// Harness is the sandbox's one resolved harness. A zero-value Harness
+	// (empty ID) means the sandbox has no harness configured.
+	Harness       Harness          `json:"harness"`
+	Volumes       []harness.Volume `json:"volumes,omitempty"`
+	SandboxConfig map[string]any   `json:"-"`
+	Resources     ResourceConfig   `json:"resources"`
 }
 
 type Identity struct {
@@ -47,13 +52,13 @@ type ExecDefaults struct {
 	HomeDirectory string `json:"homeDirectory,omitempty"`
 }
 
+// Harness is the sandbox's one effective, fully-resolved harness.
 type Harness struct {
 	ID              string        `json:"id"`
 	TypeID          string        `json:"-"`
 	Name            string        `json:"name"`
 	Command         []string      `json:"command"`
 	RelaunchCommand []string      `json:"relaunchCommand,omitempty"`
-	IsDefault       bool          `json:"isDefault,omitempty"`
 	Files           []HarnessFile `json:"files,omitempty"`
 }
 
@@ -73,17 +78,19 @@ type ResourceConfig struct {
 
 func Load(path string) (Config, error) {
 	if strings.TrimSpace(path) == "" {
-		path = getenv("DISCOBOX_SANDBOX_CONFIG", DefaultPath)
+		path = DefaultPath
 	}
 	var cfg Config
-	if data, err := os.ReadFile(path); err == nil {
-		if err := unmarshalManifest(data, &cfg); err != nil {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			return Config{}, fmt.Errorf("read sandbox config %s: %w", path, err)
+		}
+	} else {
+		if err := unmarshalConfig(data, &cfg); err != nil {
 			return Config{}, fmt.Errorf("parse sandbox config %s: %w", path, err)
 		}
-	} else if !os.IsNotExist(err) {
-		return Config{}, fmt.Errorf("read sandbox config %s: %w", path, err)
 	}
-	applyEnv(&cfg)
 	applyDefaults(&cfg)
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
@@ -91,89 +98,80 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
-func unmarshalManifest(data []byte, cfg *Config) error {
-	var manifest model.SandboxManifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
+func unmarshalConfig(data []byte, cfg *Config) error {
+	var effective sandboxconfig.Config
+	if err := json.Unmarshal(data, &effective); err != nil {
 		return err
 	}
-	if strings.TrimSpace(manifest.APIVersion) != model.SandboxManifestAPIVersion {
-		return fmt.Errorf("apiVersion = %q, want %q", manifest.APIVersion, model.SandboxManifestAPIVersion)
+	if strings.TrimSpace(effective.APIVersion) != sandboxconfig.APIVersion {
+		return fmt.Errorf("apiVersion = %q, want %q", effective.APIVersion, sandboxconfig.APIVersion)
 	}
-	var templateData struct {
-		Config map[string]any `json:"config"`
-	}
+	// The whole document also becomes the harness file template data (ADR
+	// 0012's Effective(Document) fields, decoded generically): harness image
+	// files marked "template": true render against it.
+	var templateData map[string]any
 	if err := json.Unmarshal(data, &templateData); err != nil {
-		return fmt.Errorf("decode public sandbox config template data: %w", err)
+		return fmt.Errorf("decode template data: %w", err)
 	}
-	*cfg = configFromManifest(manifest)
-	cfg.SandboxConfig = templateData.Config
+	*cfg = configFromEffective(effective)
+	cfg.SandboxConfig = templateData
 	return nil
 }
 
-func configFromManifest(manifest model.SandboxManifest) Config {
+func configFromEffective(effective sandboxconfig.Config) Config {
 	cfg := Config{
 		Identity: Identity{
-			SandboxID: manifest.SandboxID,
+			SandboxID: effective.SandboxID,
+			ProjectID: effective.Provider.ProjectID,
+			PoolID:    effective.Provider.PoolID,
 		},
+		ControlPlanePublicKey: publicKey(effective.Provider.PublicKeys),
+		ListenAddress:         effective.AgentRuntime.ListenAddress,
+		WorkingRoot:           effective.AgentRuntime.WorkingRoot,
+		RuntimeDir:            effective.AgentRuntime.RuntimeDir,
+		DatabasePath:          effective.AgentRuntime.DatabasePath,
+		Env:                   effective.Env,
+		Prompt:                cloneCommand(effective.Prompt),
+		HarnessMode:           effective.HarnessMode,
+		Volumes:               effective.Volumes,
 	}
-	if manifest.Provider != nil {
-		cfg.Identity.ProjectID = manifest.Provider.ProjectID
-		cfg.Identity.PoolID = manifest.Provider.PoolId
-		cfg.ControlPlanePublicKey = publicKey(manifest.Provider.PublicKeys)
-	}
-	if env, ok := manifest.Config.Env.Get(); ok {
-		cfg.Env = map[string]string(env)
-	}
-	cfg.Prompt = cloneCommand(manifest.Config.Prompt)
-	if mode, ok := manifest.Config.HarnessMode.Get(); ok {
-		cfg.HarnessMode = string(mode)
-	}
-	cfg.ExecDefaults = execDefaultsFromManifestConfig(manifest.Config)
-	if manifest.AgentRuntime != nil {
-		cfg.ListenAddress = manifest.AgentRuntime.ListenAddress
-		cfg.WorkingRoot = manifest.AgentRuntime.WorkingRoot
-		cfg.RuntimeDir = manifest.AgentRuntime.RuntimeDir
-		cfg.DatabasePath = manifest.AgentRuntime.DatabasePath
-		if manifest.AgentRuntime.ResourceCollection != nil {
-			if sampleInterval := strings.TrimSpace(manifest.AgentRuntime.ResourceCollection.SampleInterval); sampleInterval != "" {
-				if parsed, err := time.ParseDuration(sampleInterval); err == nil {
-					cfg.Resources.SampleInterval = parsed
-				}
-			}
-			cfg.Resources.RetentionCount = int(manifest.AgentRuntime.ResourceCollection.RetentionCount)
+	if sampleInterval := strings.TrimSpace(effective.AgentRuntime.ResourceSampleInterval); sampleInterval != "" {
+		if parsed, err := time.ParseDuration(sampleInterval); err == nil {
+			cfg.Resources.SampleInterval = parsed
 		}
 	}
-	if manifest.ResolvedHarnessConfig != nil {
-		resolved := agentFromResolvedManifest(*manifest.ResolvedHarnessConfig)
-		cfg.ResolvedHarnessConfig = &resolved
+	cfg.Resources.RetentionCount = effective.AgentRuntime.ResourceRetentionCount
+	cfg.ExecDefaults = execDefaultsFromEffective(effective)
+	if strings.TrimSpace(effective.Harness.ID) != "" {
+		cfg.Harness = Harness{
+			ID:              effective.Harness.ID,
+			TypeID:          effective.Harness.ID,
+			Name:            effective.Harness.Name,
+			Command:         cloneCommand(effective.Harness.RunCommand),
+			RelaunchCommand: cloneCommand(effective.Harness.RelaunchCommand),
+			Files:           harnessFilesFromEffective(effective.Files),
+		}
 	}
 	return cfg
 }
 
-func execDefaultsFromManifestConfig(config model.SandboxConfig) ExecDefaults {
+// execDefaultsFromEffective derives the default exec workdir and user from
+// the effective config: the workdir is the primary source's target (falling
+// back to the runtime working root), matching how pool-agent resolves the
+// sandbox user for the same mount.
+func execDefaultsFromEffective(effective sandboxconfig.Config) ExecDefaults {
 	var out ExecDefaults
-	if source, ok := config.Source.Get(); ok {
-		if destination, ok := source.Destination.Get(); ok {
-			out.Workdir = strings.TrimSpace(destination.WorkingDirectory.Or(""))
+	for _, source := range effective.Sources {
+		if source.Slug == "primary" {
+			out.Workdir = source.Target
+			break
 		}
 	}
-	if user, ok := config.User.Get(); ok {
-		out.Username = strings.TrimSpace(user.Name.Or(""))
-		out.HomeDirectory = strings.TrimSpace(user.HomeDirectory.Or(""))
-		if uid, ok := user.UID.Get(); ok {
-			out.UID = int64Ptr(uid)
-		}
-		if gid, ok := user.Gid.Get(); ok {
-			out.GID = int64Ptr(gid)
-		} else if user.UID.Set {
-			out.GID = int64Ptr(user.UID.Value)
-		}
-	}
+	out.Username = strings.TrimSpace(effective.User.Name)
+	out.HomeDirectory = strings.TrimSpace(effective.User.HomeDirectory)
+	out.UID = effective.User.UID
+	out.GID = effective.User.GID
 	return out
-}
-
-func int64Ptr(value int64) *int64 {
-	return &value
 }
 
 func publicKey(values map[string]string) string {
@@ -183,13 +181,9 @@ func publicKey(values map[string]string) string {
 	return strings.TrimSpace(values[ControlPlanePublicKeyName])
 }
 
-func agentFromResolvedManifest(in model.SandboxManifestResolvedHarnessConfig) Harness {
-	return Harness{
-		ID: in.ID, Name: in.Name, Files: harnessFilesFromManifest(in.Files),
-	}
-}
+const ControlPlanePublicKeyName = "controlPlane"
 
-func harnessFilesFromManifest(in []model.HarnessConfigFile) []HarnessFile {
+func harnessFilesFromEffective(in []sandboxconfig.File) []HarnessFile {
 	if len(in) == 0 {
 		return nil
 	}
@@ -198,8 +192,8 @@ func harnessFilesFromManifest(in []model.HarnessConfigFile) []HarnessFile {
 		out = append(out, HarnessFile{
 			Path:       file.Path,
 			Content:    file.Content,
-			CreateOnly: file.CreateOnly.Or(false),
-			Template:   file.Template.Or(false),
+			CreateOnly: file.CreateOnly,
+			Template:   file.Template,
 		})
 	}
 	return out
@@ -227,31 +221,10 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("unsupported harnessMode %q", c.HarnessMode)
 	}
-	for _, harness := range c.Harnesses {
-		if strings.TrimSpace(harness.ID) == "" {
-			return fmt.Errorf("harness id is required")
-		}
-		if len(harness.Command) == 0 || strings.TrimSpace(harness.Command[0]) == "" {
-			return fmt.Errorf("harness %q command is required", harness.ID)
-		}
+	if strings.TrimSpace(c.Harness.ID) != "" && (len(c.Harness.Command) == 0 || strings.TrimSpace(c.Harness.Command[0]) == "") {
+		return fmt.Errorf("harness %q command is required", c.Harness.ID)
 	}
 	return nil
-}
-
-func applyEnv(cfg *Config) {
-	cfg.Identity.ProjectID = getenv("DISCOBOX_PROJECT_ID", cfg.Identity.ProjectID)
-	cfg.Identity.SandboxID = getenv("DISCOBOX_SANDBOX_ID", cfg.Identity.SandboxID)
-	cfg.Identity.PoolID = getenv("DISCOBOX_POOL_ID", cfg.Identity.PoolID)
-	cfg.ControlPlanePublicKey = getenv("DISCOBOX_CONTROL_PLANE_PUBLIC_KEY", cfg.ControlPlanePublicKey)
-	cfg.ListenAddress = getenv("DISCOBOX_SANDBOX_AGENT_ADDR", cfg.ListenAddress)
-	cfg.WorkingRoot = getenv("DISCOBOX_WORKING_ROOT", cfg.WorkingRoot)
-	cfg.RuntimeDir = getenv("DISCOBOX_RUNTIME_DIR", cfg.RuntimeDir)
-	cfg.DatabasePath = getenv("DISCOBOX_DATABASE_PATH", cfg.DatabasePath)
-	if value := strings.TrimSpace(os.Getenv("DISCOBOX_RESOURCE_RETENTION_COUNT")); value != "" {
-		if parsed, err := strconv.Atoi(value); err == nil {
-			cfg.Resources.RetentionCount = parsed
-		}
-	}
 }
 
 func applyDefaults(cfg *Config) {
@@ -273,11 +246,4 @@ func applyDefaults(cfg *Config) {
 	if cfg.Resources.RetentionCount <= 0 {
 		cfg.Resources.RetentionCount = 300
 	}
-}
-
-func getenv(key, fallback string) string {
-	if value := strings.TrimSpace(os.Getenv(key)); value != "" {
-		return value
-	}
-	return fallback
 }

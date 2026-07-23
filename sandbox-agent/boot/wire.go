@@ -6,8 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/obot-platform/discobox/api/model"
-	"github.com/obot-platform/discobox/sandbox-agent/config"
+	"github.com/obot-platform/discobox/harness"
+	"github.com/obot-platform/discobox/sandboxconfig"
 )
 
 // wireConfig rebinds the config volume onto /etc/discobox so the running
@@ -27,7 +27,7 @@ func (b *booter) wireConfig() error {
 
 // wireVolumes wires every image-declared data/cache path from its backing
 // primary volume onto its target.
-func (b *booter) wireVolumes(volumes []config.ResolvedVolume) error {
+func (b *booter) wireVolumes(volumes []harness.ResolvedVolume) error {
 	sortVolumesByDepth(volumes)
 	for _, v := range volumes {
 		if err := b.wireVolume(v); err != nil {
@@ -37,7 +37,7 @@ func (b *booter) wireVolumes(volumes []config.ResolvedVolume) error {
 	return nil
 }
 
-func (b *booter) wireVolume(v config.ResolvedVolume) error {
+func (b *booter) wireVolume(v harness.ResolvedVolume) error {
 	dir := volumeDir(v.Kind, v.Path)
 	if err := os.MkdirAll(v.Path, 0o755); err != nil {
 		return err
@@ -67,7 +67,7 @@ func (b *booter) wireVolume(v config.ResolvedVolume) error {
 	return applyOwnership(v.Path, v)
 }
 
-func applyOwnership(target string, v config.ResolvedVolume) error {
+func applyOwnership(target string, v harness.ResolvedVolume) error {
 	if v.Mode != nil {
 		if err := os.Chmod(target, *v.Mode); err != nil {
 			return fmt.Errorf("chmod %s: %w", target, err)
@@ -90,7 +90,7 @@ func applyOwnership(target string, v config.ResolvedVolume) error {
 
 // wireSources bind-mounts each worker-materialized source from
 // /.discobox/sources/<slug> onto its manifest target as the sandbox user.
-func (b *booter) wireSources(sources []model.SandboxManifestSource) error {
+func (b *booter) wireSources(sources []sandboxconfig.Source) error {
 	for _, s := range sources {
 		src := filepath.Join(sourcesMountPath, s.Slug)
 		if _, err := os.Stat(src); err != nil {
@@ -106,36 +106,34 @@ func (b *booter) wireSources(sources []model.SandboxManifestSource) error {
 		if err := bindMount(src, s.Target, false); err != nil {
 			return fmt.Errorf("wire source %s: %w", s.Slug, err)
 		}
-		if err := os.Chown(s.Target, int(s.Uid), int(s.Gid)); err != nil {
+		if err := os.Chown(s.Target, int(s.UID), int(s.GID)); err != nil {
 			return fmt.Errorf("chown source %s: %w", s.Target, err)
 		}
 	}
 	return nil
 }
 
-// loadManifest reads the sandbox manifest from the config volume. It is read
-// from the /.discobox/config mount because /etc/discobox is not populated until
-// wireConfig runs.
-func loadManifest() (model.SandboxManifest, error) {
+// loadEffectiveConfig reads the sandbox's effective config from the config
+// volume. It is read from the /.discobox/config mount because /etc/discobox
+// is not populated until wireConfig runs. Both sources and volumes are
+// present in this one read (ADR 0012 §6) — there is no separate image-baked
+// file to read before the bind, unlike the old image.json.
+func loadEffectiveConfig() (sandboxconfig.Config, error) {
 	path := filepath.Join(configMountPath, manifestName)
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return model.SandboxManifest{}, nil
+			return sandboxconfig.Config{}, nil
 		}
-		return model.SandboxManifest{}, fmt.Errorf("read manifest %s: %w", path, err)
+		return sandboxconfig.Config{}, fmt.Errorf("read manifest %s: %w", path, err)
 	}
-	var manifest model.SandboxManifest
-	if err := json.Unmarshal(data, &manifest); err != nil {
-		return model.SandboxManifest{}, fmt.Errorf("parse manifest %s: %w", path, err)
+	var effective sandboxconfig.Config
+	if err := json.Unmarshal(data, &effective); err != nil {
+		return sandboxconfig.Config{}, fmt.Errorf("parse manifest %s: %w", path, err)
 	}
-	return manifest, nil
+	return effective, nil
 }
 
-func loadImageVolumes(id identity) ([]config.ResolvedVolume, error) {
-	image, err := config.LoadImage(imageConfigPath)
-	if err != nil {
-		return nil, err
-	}
-	return image.ResolveVolumes(config.VolumeRuntime{Home: id.home, UID: id.uid, GID: id.gid})
+func loadResolvedVolumes(id identity, volumes []harness.Volume) ([]harness.ResolvedVolume, error) {
+	return harness.ResolveVolumes(volumes, harness.VolumeRuntime{Home: id.home, UID: id.uid, GID: id.gid})
 }
