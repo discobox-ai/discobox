@@ -64,3 +64,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0009](0009-previous-configure-secrets-are-prefixed-sentinels.md) | Previous configure secrets are offered as prefixed sentinels | Proposed |
 | [0010](0010-deletes-are-hard-deletes.md) | Deletes are hard deletes | Proposed |
 | [0011](0011-oauth-secrets-refresh-server-side-on-resolve.md) | OAuth secrets refresh server-side, on resolve | Proposed |
+| [0012](0012-sandbox-config-is-three-attribute-owned-layers.md) | Sandbox config is three attribute-owned layers, merged by a shared library | Accepted |
