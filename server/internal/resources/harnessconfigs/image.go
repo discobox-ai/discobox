@@ -15,8 +15,8 @@ import (
 )
 
 type imageMetadata struct {
-	Digest  string
-	Harness harness.Image
+	Digest string
+	harness.ImageMetadata
 }
 
 type imageInspector interface {
@@ -81,31 +81,35 @@ func parseImageMetadata(digest string, labels map[string]string) (imageMetadata,
 	if raw == "" {
 		return imageMetadata{}, fmt.Errorf("image is missing required label %q", harness.ImageLabel)
 	}
-	var metadata harness.Image
+	var metadata harness.ImageMetadata
 	if err := json.Unmarshal([]byte(raw), &metadata); err != nil {
 		return imageMetadata{}, fmt.Errorf("parse %s label: %w", harness.ImageLabel, err)
 	}
-	if err := validateImageHarness(metadata); err != nil {
+	if err := validateImageMetadata(metadata); err != nil {
 		return imageMetadata{}, err
 	}
-	return imageMetadata{Digest: digest, Harness: metadata}, nil
+	return imageMetadata{Digest: digest, ImageMetadata: metadata}, nil
 }
 
-func validateImageHarness(metadata harness.Image) error {
-	if strings.TrimSpace(metadata.ID) == "" {
+func validateImageMetadata(metadata harness.ImageMetadata) error {
+	if metadata.Harness == nil {
+		return fmt.Errorf("%s label requires harness", harness.ImageLabel)
+	}
+	h := metadata.Harness
+	if strings.TrimSpace(h.ID) == "" {
 		return fmt.Errorf("%s label requires harness id", harness.ImageLabel)
 	}
-	if strings.TrimSpace(metadata.Name) == "" {
+	if strings.TrimSpace(h.Name) == "" {
 		return fmt.Errorf("%s label requires harness name", harness.ImageLabel)
 	}
-	if len(metadata.RunCommand) == 0 || strings.TrimSpace(metadata.RunCommand[0]) == "" {
+	if len(h.RunCommand) == 0 || strings.TrimSpace(h.RunCommand[0]) == "" {
 		return fmt.Errorf("%s label requires runCommand", harness.ImageLabel)
 	}
-	if metadata.Config != nil && (len(metadata.Config.Command) == 0 || strings.TrimSpace(metadata.Config.Command[0]) == "") {
+	if h.Config != nil && (len(h.Config.Command) == 0 || strings.TrimSpace(h.Config.Command[0]) == "") {
 		return fmt.Errorf("%s label config mode requires command", harness.ImageLabel)
 	}
 	seen := map[string]struct{}{}
-	for _, secret := range metadata.Secrets {
+	for _, secret := range h.Secrets {
 		name := strings.TrimSpace(secret.Name)
 		if !services.HarnessConfigEnvVarNamePattern.MatchString(name) {
 			return fmt.Errorf("%s label has invalid secret environment variable %q", harness.ImageLabel, secret.Name)
@@ -114,6 +118,16 @@ func validateImageHarness(metadata harness.Image) error {
 			return fmt.Errorf("%s label has duplicate secret %q", harness.ImageLabel, name)
 		}
 		seen[name] = struct{}{}
+	}
+	for idx, volume := range metadata.Volumes {
+		if strings.TrimSpace(volume.Path) == "" {
+			return fmt.Errorf("%s label volume[%d] requires path", harness.ImageLabel, idx)
+		}
+		switch volume.Volume {
+		case harness.VolumeData, harness.VolumeCache:
+		default:
+			return fmt.Errorf("%s label volume %q has unknown kind %q", harness.ImageLabel, volume.Path, volume.Volume)
+		}
 	}
 	return nil
 }

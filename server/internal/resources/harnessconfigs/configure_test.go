@@ -308,9 +308,9 @@ func TestSeedBuiltInsClobbersImageAndKeepsConfigured(t *testing.T) {
 	}
 
 	inspector := &stubInspector{byImage: map[string]imageMetadata{
-		newImage: {Digest: "sha256:new", Harness: harness.Image{
+		newImage: {Digest: "sha256:new", ImageMetadata: harness.ImageMetadata{Harness: &harness.Image{
 			ID: "codex", Name: "Codex", RunCommand: []string{"codex", "--new"},
-		}},
+		}}},
 	}}
 	svc := &Service{store: st, inspector: inspector, harnessImages: map[string]string{"codex": newImage}}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {

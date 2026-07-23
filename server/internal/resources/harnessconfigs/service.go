@@ -102,14 +102,16 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 		return nil, err
 	}
 
-	var runCommand, relaunchCommand []string
+	var runCommand, relaunchCommand, configCommand []string
 	var files []model.HarnessConfigFile
 	if apiFiles, ok := input.Files.Get(); ok {
 		files = services.HarnessConfigFilesToModel(apiFiles)
 	}
 	var secrets []model.HarnessConfigSecret
+	var env map[string]string
+	var volumes []harness.Volume
 	if inspected != nil {
-		runCommand, relaunchCommand, files, secrets = harnessMetadataFields(inspected.Harness)
+		runCommand, relaunchCommand, configCommand, files, secrets, env, volumes = harnessMetadataFields(inspected.ImageMetadata)
 	}
 	if len(runCommand) == 0 {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config run command is required")
@@ -123,8 +125,11 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 		ImageDigest:     imageDigest,
 		RunCommand:      runCommand,
 		RelaunchCommand: relaunchCommand,
+		ConfigCommand:   configCommand,
 		Files:           files,
 		Secrets:         secrets,
+		Env:             env,
+		Volumes:         volumes,
 	}
 	if err := s.store.CreateHarnessConfig(ctx, config); err != nil {
 		return nil, err
@@ -324,7 +329,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 				ProjectID: projectID, Slug: seed.Slug, Name: seed.Name,
 				BuiltIn: true, Configured: false, Image: image, ImageDigest: metadata.Digest,
 			}
-			config.RunCommand, config.RelaunchCommand, config.Files, config.Secrets = harnessMetadataFields(metadata.Harness)
+			config.RunCommand, config.RelaunchCommand, config.ConfigCommand, config.Files, config.Secrets, config.Env, config.Volumes = harnessMetadataFields(metadata.ImageMetadata)
 			if err := s.store.CreateHarnessConfig(ctx, config); err != nil {
 				return err
 			}
@@ -334,7 +339,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		}
 		existing.Image = image
 		existing.ImageDigest = metadata.Digest
-		existing.RunCommand, existing.RelaunchCommand, existing.Files, existing.Secrets = harnessMetadataFields(metadata.Harness)
+		existing.RunCommand, existing.RelaunchCommand, existing.ConfigCommand, existing.Files, existing.Secrets, existing.Env, existing.Volumes = harnessMetadataFields(metadata.ImageMetadata)
 		if err := s.store.UpdateHarnessConfig(ctx, existing); err != nil {
 			return err
 		}
@@ -346,9 +351,16 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 
 // harnessMetadataFields snapshots the mutable config fields declared by a
 // harness image's label metadata.
-func harnessMetadataFields(image harness.Image) (runCommand, relaunchCommand []string, files []model.HarnessConfigFile, secrets []model.HarnessConfigSecret) {
+func harnessMetadataFields(metadata harness.ImageMetadata) (runCommand, relaunchCommand, configCommand []string, files []model.HarnessConfigFile, secrets []model.HarnessConfigSecret, env map[string]string, volumes []harness.Volume) {
+	image := metadata.Harness
+	if image == nil {
+		return nil, nil, nil, nil, nil, nil, nil
+	}
 	runCommand = append([]string{}, image.RunCommand...)
 	relaunchCommand = append([]string{}, image.RelaunchCommand...)
+	if image.Config != nil {
+		configCommand = append([]string{}, image.Config.Command...)
+	}
 	files = make([]model.HarnessConfigFile, 0, len(image.Files))
 	for _, file := range image.Files {
 		files = append(files, model.HarnessConfigFile{Path: file.Path, Content: file.Content, CreateOnly: file.CreateOnly, Template: file.Template})
@@ -357,7 +369,14 @@ func harnessMetadataFields(image harness.Image) (runCommand, relaunchCommand []s
 	for _, secret := range image.Secrets {
 		secrets = append(secrets, model.HarnessConfigSecret{Name: secret.Name, Required: secret.Required, OneOfGroup: secret.OneOfGroup})
 	}
-	return runCommand, relaunchCommand, files, secrets
+	if len(metadata.Env) > 0 {
+		env = make(map[string]string, len(metadata.Env))
+		for k, v := range metadata.Env {
+			env[k] = v
+		}
+	}
+	volumes = append([]harness.Volume{}, metadata.Volumes...)
+	return runCommand, relaunchCommand, configCommand, files, secrets, env, volumes
 }
 
 func apiError(err error, notFoundMessage string) error {
