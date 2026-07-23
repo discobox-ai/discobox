@@ -11,9 +11,9 @@ import "github.com/obot-platform/discobox/harness"
 // from the registered harness image's OCI label, and Project is read once
 // from the resolved source repository at clone time.
 type Document struct {
-	Runtime RuntimeLayer
-	Image   ImageLayer
-	Project *ProjectLayer
+	Runtime RuntimeLayer  `json:"runtime"`
+	Image   ImageLayer    `json:"image"`
+	Project *ProjectLayer `json:"project,omitempty"`
 }
 
 // RuntimeLayer carries pool-agent/control-plane-owned sandbox identity,
@@ -21,101 +21,101 @@ type Document struct {
 // other layer may set it, except where explicitly noted as an override grant
 // on ImageLayer/ProjectLayer.
 type RuntimeLayer struct {
-	SandboxID    string
-	Image        string // resolved image reference (digest ref once ADR's follow-on lands)
-	Provider     Provider
-	AgentRuntime AgentRuntime
-	Resources    Resources
-	Sources      []Source
+	SandboxID    string       `json:"sandboxId"`
+	Image        string       `json:"image,omitempty"` // resolved image reference (digest ref once ADR's follow-on lands)
+	Provider     Provider     `json:"provider"`
+	AgentRuntime AgentRuntime `json:"agentRuntime"`
+	Resources    Resources    `json:"resources"`
+	Sources      []Source     `json:"sources,omitempty"`
 
-	Model               string
-	ModelReasoningLevel string
-	ModelServiceTier    string
-	Prompt              []string
-	User                User
-	Env                 map[string]string
+	Model               string            `json:"model,omitempty"`
+	ModelReasoningLevel string            `json:"modelReasoningLevel,omitempty"`
+	ModelServiceTier    string            `json:"modelServiceTier,omitempty"`
+	Prompt              []string          `json:"prompt,omitempty"`
+	User                User              `json:"user"`
+	Env                 map[string]string `json:"env,omitempty"`
 
 	// HarnessMode selects run vs config mode; it is a selection, not a
 	// capability grant, so it stays runtime-owned.
-	HarnessMode string
+	HarnessMode string `json:"harnessMode,omitempty"`
 
 	// Files overlays onto the image's declared files, by path.
-	Files []File
+	Files []File `json:"files,omitempty"`
 }
 
 // Provider is non-secret provider context for the sandbox runtime.
 type Provider struct {
-	Kind       string
-	ProjectID  string
-	PoolID     string
-	Endpoints  map[string]string
-	Metadata   map[string]string
-	PublicKeys map[string]string
+	Kind       string            `json:"kind"`
+	ProjectID  string            `json:"projectId,omitempty"`
+	PoolID     string            `json:"poolId,omitempty"`
+	Endpoints  map[string]string `json:"endpoints,omitempty"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
+	PublicKeys map[string]string `json:"publicKeys,omitempty"`
 }
 
 // AgentRuntime holds sandbox-agent daemon-local runtime settings.
 type AgentRuntime struct {
-	ListenAddress          string
-	WorkingRoot            string
-	RuntimeDir             string
-	DatabasePath           string
-	ResourceSampleInterval string
-	ResourceRetentionCount int
+	ListenAddress          string `json:"listenAddress"`
+	WorkingRoot            string `json:"workingRoot"`
+	RuntimeDir             string `json:"runtimeDir"`
+	DatabasePath           string `json:"databasePath"`
+	ResourceSampleInterval string `json:"resourceSampleInterval,omitempty"`
+	ResourceRetentionCount int    `json:"resourceRetentionCount,omitempty"`
 }
 
 // Resources is the sandbox's provider-normalized resource allocation — the
 // single representation superseding the SandboxResources/SandboxConfig
 // duplication in the pre-ADR manifest (docs/adr/0012 §5).
 type Resources struct {
-	CPUCores       float64
-	MemoryMB       int64
-	DiskMB         int64
-	TimeoutSeconds int64
+	CPUCores       float64 `json:"cpuCores"`
+	MemoryMB       int64   `json:"memoryMb"`
+	DiskMB         int64   `json:"diskMb"`
+	TimeoutSeconds int64   `json:"timeoutSeconds"`
 }
 
 // Source is a worker-materialized source the sandbox-agent bind-mounts from
 // /.discobox/sources/<slug> onto its in-sandbox target.
 type Source struct {
-	Slug   string
-	Target string
-	UID    int64
-	GID    int64
+	Slug   string `json:"slug"`
+	Target string `json:"target"`
+	UID    int64  `json:"uid,omitempty"`
+	GID    int64  `json:"gid,omitempty"`
 }
 
 // User is the resolved sandbox user identity.
 type User struct {
-	Name          string
-	UID           *int64
-	GID           *int64
-	HomeDirectory string
+	Name          string `json:"name,omitempty"`
+	UID           *int64 `json:"uid,omitempty"`
+	GID           *int64 `json:"gid,omitempty"`
+	HomeDirectory string `json:"homeDirectory,omitempty"`
 }
 
 // File is a file to write into the harness's home directory when the harness
 // is installed.
 type File struct {
-	Path       string
-	Content    string
-	CreateOnly bool
-	Template   bool
+	Path       string `json:"path"`
+	Content    string `json:"content"`
+	CreateOnly bool   `json:"createOnly,omitempty"`
+	Template   bool   `json:"template,omitempty"`
 }
 
 // ImageLayer carries the immutable harness contract and defaults baked into
 // one sandbox image, snapshotted from the registered image's OCI label.
 type ImageLayer struct {
-	HarnessID          string
-	HarnessName        string
-	HarnessDescription string
+	HarnessID          string `json:"harnessId,omitempty"`
+	HarnessName        string `json:"harnessName,omitempty"`
+	HarnessDescription string `json:"harnessDescription,omitempty"`
 
 	// RunCommand and RelaunchCommand are an override grant: the project layer
 	// may replace them wholesale.
-	RunCommand      []string
-	RelaunchCommand []string
+	RunCommand      []string `json:"runCommand,omitempty"`
+	RelaunchCommand []string `json:"relaunchCommand,omitempty"`
 	// ConfigCommand is image-owned only; no other layer may set it.
-	ConfigCommand []string
+	ConfigCommand []string `json:"configCommand,omitempty"`
 
-	Files   []File
-	Volumes []harness.Volume
-	Env     map[string]string
+	Files   []File            `json:"files,omitempty"`
+	Volumes []harness.Volume  `json:"volumes,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
 }
 
 // ProjectLayer is the resolved source repository's contribution, read once at
@@ -124,12 +124,12 @@ type ImageLayer struct {
 type ProjectLayer struct {
 	// RunCommand and RelaunchCommand are override-grant only: when non-empty
 	// they replace the image's value wholesale.
-	RunCommand      []string
-	RelaunchCommand []string
+	RunCommand      []string `json:"runCommand,omitempty"`
+	RelaunchCommand []string `json:"relaunchCommand,omitempty"`
 
-	WorkingDirectorySubpath string
+	WorkingDirectorySubpath string `json:"workingDirectorySubpath,omitempty"`
 
 	// FilesAdd appends new files by path; it never overrides an existing
 	// image- or runtime-declared path.
-	FilesAdd []File
+	FilesAdd []File `json:"filesAdd,omitempty"`
 }

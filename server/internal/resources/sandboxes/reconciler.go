@@ -545,7 +545,14 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	if sb.HarnessConfigID != nil && r.store != nil {
 		if cfg, err := r.store.GetHarnessConfig(ctx, sb.ProjectID, *sb.HarnessConfigID); err == nil {
 			opts.ResolvedHarnessConfig = &ResolvedHarnessConfig{
-				ID: cfg.ID, Name: cfg.Name, Files: cfg.Files,
+				ID:              cfg.ID,
+				Name:            cfg.Name,
+				RunCommand:      cfg.RunCommand,
+				RelaunchCommand: cfg.RelaunchCommand,
+				ConfigCommand:   cfg.ConfigCommand,
+				Files:           cfg.Files,
+				Env:             cfg.Env,
+				Volumes:         cfg.Volumes,
 			}
 		}
 	}

@@ -27,8 +27,8 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
-	apigen "github.com/obot-platform/discobox/api/gen"
-	apimodel "github.com/obot-platform/discobox/api/model"
+	"github.com/obot-platform/discobox/harness"
+	"github.com/obot-platform/discobox/sandboxconfig"
 
 	"github.com/obot-platform/discobox/pool-agent/execidentity"
 	"github.com/obot-platform/discobox/pool-agent/proxyagent"
@@ -207,7 +207,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		return nil, err
 	}
 	user := resolveSandboxUser(req)
-	mounts, err := r.prepareSandboxVolumes(ctx, sandboxID, req, user)
+	mounts, project, err := r.prepareSandboxVolumes(ctx, sandboxID, req, user)
 	if err != nil {
 		return nil, err
 	}
@@ -228,7 +228,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		Target:   filepath.Join(sandboxConfigMount, "proxy"),
 		ReadOnly: true,
 	})
-	if err := r.writeSandboxHarnessConfig(ctx, sandboxID, req, proxyMaterial.Env); err != nil {
+	if err := r.writeSandboxHarnessConfig(ctx, sandboxID, req, proxyMaterial.Env, project); err != nil {
 		return nil, err
 	}
 	baseEnv := mergeEnv(map[string]string(optSandboxConfigEnv(config.Env)), proxyMaterial.Env)
@@ -330,41 +330,72 @@ func (r *DockerSandboxRuntime) materializePushedSources(ctx context.Context, san
 // /var/lib/docker, sources targets); it only supplies the primary volumes. The
 // sandbox-agent wires everything else from the image's declarative volume list
 // and the manifest's source list (ADR 0007).
-func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest, user sandboxUserIdentity) ([]mount.Mount, error) {
+// prepareSandboxVolumes also returns the primary source's ProjectLayer
+// contribution (nil if the source has no .discobox/project.json), read once
+// here at clone time — never inside the running sandbox (ADR 0012 §7).
+func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest, user sandboxUserIdentity) ([]mount.Mount, *sandboxconfig.ProjectLayer, error) {
 	dataHostPath := r.sandboxDataRootPath(sandboxID)
 	if err := prepareOwnedDirectory(ctx, r.workerHostPath(dataHostPath), 0, 0); err != nil {
-		return nil, fmt.Errorf("prepare sandbox data volume: %w", err)
+		return nil, nil, fmt.Errorf("prepare sandbox data volume: %w", err)
 	}
 	cacheHostPath := r.poolCacheRoot()
 	if err := prepareOwnedDirectory(ctx, r.workerHostPath(cacheHostPath), 0, 0); err != nil {
-		return nil, fmt.Errorf("prepare pool cache volume: %w", err)
+		return nil, nil, fmt.Errorf("prepare pool cache volume: %w", err)
 	}
 	configHostPath := r.sandboxConfigRoot(sandboxID)
 	if err := prepareOwnedDirectory(ctx, r.workerHostPath(configHostPath), 0, 0); err != nil {
-		return nil, fmt.Errorf("prepare sandbox config volume: %w", err)
+		return nil, nil, fmt.Errorf("prepare sandbox config volume: %w", err)
 	}
 	sourcesHostPath := r.sandboxSourcesRoot(sandboxID)
 	if err := prepareOwnedDirectory(ctx, r.workerHostPath(sourcesHostPath), 0, 0); err != nil {
-		return nil, fmt.Errorf("prepare sandbox sources volume: %w", err)
+		return nil, nil, fmt.Errorf("prepare sandbox sources volume: %w", err)
 	}
-	for _, source := range sandboxSources(req) {
+	var project *sandboxconfig.ProjectLayer
+	_, hasPrimary := req.Config.Source.Get()
+	for i, source := range sandboxSources(req) {
 		sourcePoolPath := r.workerHostPath(r.sandboxSourcePath(sandboxID, source.slug))
 		if err := r.materializeGitSource(ctx, source.git, sourcePoolPath, user); err != nil {
-			return nil, fmt.Errorf("materialize source %q: %w", source.slug, err)
+			return nil, nil, fmt.Errorf("materialize source %q: %w", source.slug, err)
 		}
 		if err := prepareOwnedDirectory(ctx, sourcePoolPath, user.uid, user.gid); err != nil {
-			return nil, fmt.Errorf("set source ownership %q: %w", source.slug, err)
+			return nil, nil, fmt.Errorf("set source ownership %q: %w", source.slug, err)
+		}
+		// The primary source is always first when present (sandboxSources).
+		if i == 0 && hasPrimary {
+			layer, err := readProjectLayer(sourcePoolPath)
+			if err != nil {
+				return nil, nil, fmt.Errorf("read project layer %q: %w", source.slug, err)
+			}
+			project = layer
 		}
 	}
 	return []mount.Mount{
 		{Type: mount.TypeBind, Source: dataHostPath, Target: sandboxDataMount},
 		{Type: mount.TypeBind, Source: cacheHostPath, Target: sandboxCacheMount},
-		{Type: mount.TypeBind, Source: configHostPath, Target: sandboxConfigMount},
+		{Type: mount.TypeBind, Source: configHostPath, Target: sandboxConfigMount, ReadOnly: true},
 		{Type: mount.TypeBind, Source: sourcesHostPath, Target: sandboxSourcesMount},
-	}, nil
+	}, project, nil
 }
 
-func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string) error {
+// readProjectLayer reads .discobox/project.json from a materialized source's
+// root, if present. A missing file is not an error: the project layer is
+// optional (ADR 0012 §7).
+func readProjectLayer(sourceDir string) (*sandboxconfig.ProjectLayer, error) {
+	data, err := os.ReadFile(filepath.Join(sourceDir, ".discobox", "project.json"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var layer sandboxconfig.ProjectLayer
+	if err := json.Unmarshal(data, &layer); err != nil {
+		return nil, fmt.Errorf("parse .discobox/project.json: %w", err)
+	}
+	return &layer, nil
+}
+
+func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) error {
 	configDir := r.workerHostPath(r.sandboxConfigRoot(sandboxID))
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return err
@@ -375,8 +406,8 @@ func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sa
 	if err := os.MkdirAll(filepath.Join(configDir, "proxy"), 0o755); err != nil {
 		return err
 	}
-	cfg := buildSandboxManifest(r.projectID, sandboxID, r.poolID, r.controlPlanePublicKey, req, proxyEnv)
-	data, err := json.MarshalIndent(&cfg, "", "  ")
+	doc := buildSandboxDocument(r.projectID, sandboxID, r.poolID, r.controlPlanePublicKey, req, proxyEnv, project)
+	data, err := marshalSandboxDocument(doc)
 	if err != nil {
 		return err
 	}
@@ -385,6 +416,20 @@ func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sa
 		return err
 	}
 	return chownRecursive(ctx, configDir, 0, 0)
+}
+
+// sandboxDocumentFile is the on-disk sandbox.json shape (ADR 0012 §8): the
+// effective config's fields sit at the top level, with a diagnostic
+// _provenance sibling carrying the raw per-layer inputs. sandbox-agent
+// decodes the embedded Config fields and ignores _provenance entirely.
+type sandboxDocumentFile struct {
+	sandboxconfig.Config
+	Provenance sandboxconfig.Provenance `json:"_provenance"`
+}
+
+func marshalSandboxDocument(doc sandboxconfig.Document) ([]byte, error) {
+	cfg, provenance := sandboxconfig.Effective(doc)
+	return json.MarshalIndent(&sandboxDocumentFile{Config: cfg, Provenance: provenance}, "", "  ")
 }
 
 func writeSandboxManifest(path string, data []byte) error {
@@ -397,71 +442,105 @@ func writeSandboxManifest(path string, data []byte) error {
 	return os.Chmod(path, 0o644)
 }
 
-func manifestHarnessConfigFiles(files []workerapimodel.HarnessConfigFile) []apimodel.HarnessConfigFile {
+func documentFiles(files []workerapimodel.HarnessConfigFile) []sandboxconfig.File {
 	if len(files) == 0 {
 		return nil
 	}
-	out := make([]apimodel.HarnessConfigFile, 0, len(files))
+	out := make([]sandboxconfig.File, 0, len(files))
 	for _, file := range files {
-		out = append(out, apimodel.HarnessConfigFile{
+		out = append(out, sandboxconfig.File{
 			Path:       file.Path,
 			Content:    file.Content,
-			CreateOnly: publicOptBool(file.CreateOnly),
-			Template:   publicOptBool(file.Template),
+			CreateOnly: file.CreateOnly.Or(false),
+			Template:   file.Template.Or(false),
 		})
 	}
 	return out
 }
 
-func buildSandboxManifest(projectID, sandboxID, poolID, controlPlanePublicKey string, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string) apimodel.SandboxManifest {
-	manifest := apimodel.SandboxManifest{
-		APIVersion: apimodel.SandboxManifestAPIVersion,
-		SandboxID:  sandboxID,
-		Provider: &apimodel.SandboxManifestProvider{
-			Kind:      "discobox-pool",
-			ProjectID: projectID,
-			PublicKeys: map[string]string{
-				sandboxManifestPublicKey: controlPlanePublicKey,
+func documentVolumes(volumes []workerapimodel.HarnessVolume) []harness.Volume {
+	if len(volumes) == 0 {
+		return nil
+	}
+	out := make([]harness.Volume, 0, len(volumes))
+	for _, v := range volumes {
+		out = append(out, harness.Volume{
+			Path:   v.Path,
+			Volume: harness.VolumeKind(v.Volume),
+			UID:    harness.ScalarToken(optString(v.UID)),
+			GID:    harness.ScalarToken(optString(v.Gid)),
+			Mode:   optString(v.Mode),
+		})
+	}
+	return out
+}
+
+// buildSandboxDocument assembles the three attribute-owned layers (ADR 0012)
+// for one sandbox: RuntimeLayer from the create request, ImageLayer from the
+// harness config the control plane already resolved and snapshotted from the
+// image's OCI label, and the caller-supplied ProjectLayer (read once from the
+// resolved source repository at clone time; nil when the project supplies
+// nothing).
+func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey string, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) sandboxconfig.Document {
+	doc := sandboxconfig.Document{
+		Runtime: sandboxconfig.RuntimeLayer{
+			SandboxID: sandboxID,
+			Provider: sandboxconfig.Provider{
+				Kind:      "discobox-pool",
+				ProjectID: projectID,
+				PoolID:    poolID,
+				PublicKeys: map[string]string{
+					sandboxManifestPublicKey: controlPlanePublicKey,
+				},
 			},
-			PoolId: poolID,
-		},
-		AgentRuntime: &apimodel.SandboxManifestAgentRuntime{
-			ListenAddress: fmt.Sprintf(":%d", sandboxAgentPort),
-			WorkingRoot:   "/workspace",
-			RuntimeDir:    "/run/discobox/agent-terminals",
-			DatabasePath:  "/var/lib/discobox/sandbox-agent.db",
-			ResourceCollection: &apimodel.SandboxManifestResourceCollection{
-				SampleInterval: time.Second.String(),
-				RetentionCount: 300,
+			AgentRuntime: sandboxconfig.AgentRuntime{
+				ListenAddress:          fmt.Sprintf(":%d", sandboxAgentPort),
+				WorkingRoot:            "/workspace",
+				RuntimeDir:             "/run/discobox/agent-terminals",
+				DatabasePath:           "/var/lib/discobox/sandbox-agent.db",
+				ResourceSampleInterval: time.Second.String(),
+				ResourceRetentionCount: 300,
 			},
 		},
+		Project: project,
 	}
 	if req != nil {
-		manifest.Config = publicSandboxConfig(req.Config)
+		config := req.Config
+		doc.Runtime.Model = optString(config.Model)
+		doc.Runtime.ModelReasoningLevel = optString(config.ModelReasoningLevel)
+		doc.Runtime.ModelServiceTier = optString(config.ModelServiceTier)
+		doc.Runtime.Prompt = append([]string{}, config.Prompt...)
+		if mode, ok := config.HarnessMode.Get(); ok {
+			doc.Runtime.HarnessMode = string(mode)
+		}
+		if env, ok := config.Env.Get(); ok {
+			doc.Runtime.Env = map[string]string(env)
+		}
 		// The pool owns the effective sandbox user used for the home mount and
 		// container environment. Publish that fully resolved identity even when
 		// the request omitted or partially specified config.user, so the
 		// sandbox-agent installs harness files and launches commands against the
 		// same home directory.
 		user := resolveSandboxUser(req)
-		manifest.Config.User = apigen.NewOptSandboxUser(apigen.SandboxUser{
-			Name:          apigen.NewOptString(user.name),
-			UID:           apigen.NewOptInt64(int64(user.uid)),
-			Gid:           apigen.NewOptInt64(int64(user.gid)),
-			HomeDirectory: apigen.NewOptString(user.homeDirectory),
-		})
+		uid, gid := int64(user.uid), int64(user.gid)
+		doc.Runtime.User = sandboxconfig.User{
+			Name:          user.name,
+			UID:           &uid,
+			GID:           &gid,
+			HomeDirectory: user.homeDirectory,
+		}
 		// The sandbox-agent bind-mounts each worker-materialized source from
 		// /.discobox/sources/<slug> onto its target as this same user (ADR 0007).
 		for _, source := range sandboxSources(req) {
-			manifest.Sources = append(manifest.Sources, apimodel.SandboxManifestSource{
+			doc.Runtime.Sources = append(doc.Runtime.Sources, sandboxconfig.Source{
 				Slug:   source.slug,
 				Target: source.target,
-				Uid:    int64(user.uid),
-				Gid:    int64(user.gid),
+				UID:    uid,
+				GID:    gid,
 			})
 		}
 		if resources, ok := req.Resources.Get(); ok {
-			manifest.Resources = &apimodel.SandboxResources{
+			doc.Runtime.Resources = sandboxconfig.Resources{
 				CPUCores:       resources.CpuCores,
 				DiskMB:         resources.DiskMb,
 				MemoryMB:       resources.MemoryMb,
@@ -469,13 +548,29 @@ func buildSandboxManifest(projectID, sandboxID, poolID, controlPlanePublicKey st
 			}
 		}
 		if resolved, ok := req.ResolvedHarnessConfig.Get(); ok {
-			resolvedConfig := apimodel.SandboxManifestResolvedHarnessConfig{
-				ID: resolved.ID, Name: resolved.Name,
+			doc.Image = sandboxconfig.ImageLayer{
+				HarnessID:          resolved.ID,
+				HarnessName:        resolved.Name,
+				HarnessDescription: optString(resolved.Description),
+			}
+			if runCommand, ok := resolved.RunCommand.Get(); ok {
+				doc.Image.RunCommand = runCommand
+			}
+			if relaunchCommand, ok := resolved.RelaunchCommand.Get(); ok {
+				doc.Image.RelaunchCommand = relaunchCommand
+			}
+			if configCommand, ok := resolved.ConfigCommand.Get(); ok {
+				doc.Image.ConfigCommand = configCommand
 			}
 			if files, ok := resolved.Files.Get(); ok {
-				resolvedConfig.Files = manifestHarnessConfigFiles(files)
+				doc.Image.Files = documentFiles(files)
 			}
-			manifest.ResolvedHarnessConfig = &resolvedConfig
+			if env, ok := resolved.Env.Get(); ok {
+				doc.Image.Env = map[string]string(env)
+			}
+			if volumes, ok := resolved.Volumes.Get(); ok {
+				doc.Image.Volumes = documentVolumes(volumes)
+			}
 		}
 	}
 	// Inject the pool-proxy environment so sandbox-agent-spawned terminals and
@@ -483,127 +578,15 @@ func buildSandboxManifest(projectID, sandboxID, poolID, controlPlanePublicKey st
 	// MITM CA.
 	if len(proxyEnv) > 0 {
 		env := map[string]string{}
-		if existing, ok := manifest.Config.Env.Get(); ok {
-			for key, value := range existing {
-				env[key] = value
-			}
+		for key, value := range doc.Runtime.Env {
+			env[key] = value
 		}
 		for key, value := range proxyEnv {
 			env[key] = value
 		}
-		manifest.Config.Env = apigen.NewOptSandboxConfigEnv(apigen.SandboxConfigEnv(env))
+		doc.Runtime.Env = env
 	}
-	return manifest
-}
-
-func publicSandboxConfig(config workerapimodel.SandboxConfig) apimodel.SandboxConfig {
-	out := apimodel.SandboxConfig{
-		HarnessConfigId:     publicOptString(config.HarnessConfigId),
-		Model:               publicOptString(config.Model),
-		ModelReasoningLevel: publicOptString(config.ModelReasoningLevel),
-		ModelServiceTier:    publicOptString(config.ModelServiceTier),
-		Description:         publicOptString(config.Description),
-		Image:               optString(config.Image),
-		Name:                optString(config.Name),
-		Prompt:              config.Prompt,
-		CpuVcpus:            optFloat64(config.CpuVcpus),
-		MemoryBytes:         optInt64(config.MemoryBytes),
-		StorageBytes:        optInt64(config.StorageBytes),
-	}
-	if mode, ok := config.HarnessMode.Get(); ok {
-		out.HarnessMode = apigen.NewOptSandboxConfigHarnessMode(apigen.SandboxConfigHarnessMode(mode))
-	}
-	if env, ok := config.Env.Get(); ok {
-		out.Env = apigen.NewOptSandboxConfigEnv(apigen.SandboxConfigEnv(env))
-	}
-	if source, ok := config.Source.Get(); ok {
-		out.Source = apigen.NewOptGitSource(publicGitSource(source))
-	}
-	if refs, ok := config.SourceCodeReferences.Get(); ok {
-		outRefs := make(apigen.SandboxConfigSourceCodeReferences, len(refs))
-		for key, ref := range refs {
-			outRefs[key] = publicGitSource(ref)
-		}
-		out.SourceCodeReferences = apigen.NewOptSandboxConfigSourceCodeReferences(outRefs)
-	}
-	if user, ok := config.User.Get(); ok {
-		out.User = apigen.NewOptSandboxUser(publicSandboxUser(user))
-	}
-	return out
-}
-
-func publicGitSource(source workerapimodel.GitSource) apigen.GitSource {
-	out := apigen.GitSource{
-		Kind: apigen.GitSourceKind(source.Kind),
-	}
-	if checkout, ok := source.Checkout.Get(); ok {
-		out.Checkout = apigen.NewOptGitSourceCheckout(apigen.GitSourceCheckout{
-			Commit:  publicOptString(checkout.Commit),
-			RefName: publicOptString(checkout.RefName),
-			RefType: publicOptString(checkout.RefType),
-		})
-	}
-	if destination, ok := source.Destination.Get(); ok {
-		out.Destination = apigen.NewOptGitSourceDestination(apigen.GitSourceDestination{
-			Directory:        publicOptString(destination.Directory),
-			WorkingDirectory: publicOptString(destination.WorkingDirectory),
-		})
-	}
-	out.LocalDirectory = publicOptString(source.LocalDirectory)
-	out.Slug = publicOptString(source.Slug)
-	out.URL = publicOptURI(source.URL)
-	if workspace, ok := source.Workspace.Get(); ok {
-		out.Workspace = apigen.NewOptGitSourceWorkspace(apigen.GitSourceWorkspace{
-			BaseCommit:  publicOptString(workspace.BaseCommit),
-			Mode:        publicOptGitSourceWorkspaceMode(workspace.Mode),
-			SnapshotRef: publicOptString(workspace.SnapshotRef),
-		})
-	}
-	return out
-}
-
-func publicSandboxUser(user workerapimodel.SandboxUser) apigen.SandboxUser {
-	return apigen.SandboxUser{
-		Gid:           publicOptInt64(user.Gid),
-		HomeDirectory: publicOptString(user.HomeDirectory),
-		Name:          publicOptString(user.Name),
-		UID:           publicOptInt64(user.UID),
-	}
-}
-
-func publicOptString(opt workerclient.OptString) apigen.OptString {
-	if value, ok := opt.Get(); ok {
-		return apigen.NewOptString(value)
-	}
-	return apigen.OptString{}
-}
-
-func publicOptBool(opt workerclient.OptBool) apigen.OptBool {
-	if value, ok := opt.Get(); ok {
-		return apigen.NewOptBool(value)
-	}
-	return apigen.OptBool{}
-}
-
-func publicOptInt64(opt workerclient.OptInt64) apigen.OptInt64 {
-	if value, ok := opt.Get(); ok {
-		return apigen.NewOptInt64(value)
-	}
-	return apigen.OptInt64{}
-}
-
-func publicOptURI(opt workerclient.OptURI) apigen.OptURI {
-	if value, ok := opt.Get(); ok {
-		return apigen.NewOptURI(value)
-	}
-	return apigen.OptURI{}
-}
-
-func publicOptGitSourceWorkspaceMode(opt workerclient.OptGitSourceWorkspaceMode) apigen.OptGitSourceWorkspaceMode {
-	if value, ok := opt.Get(); ok {
-		return apigen.NewOptGitSourceWorkspaceMode(apigen.GitSourceWorkspaceMode(value))
-	}
-	return apigen.OptGitSourceWorkspaceMode{}
+	return doc
 }
 
 func prepareOwnedDirectory(ctx context.Context, dir string, uid, gid int) error {

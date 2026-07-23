@@ -5,6 +5,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/obot-platform/discobox/harness"
 	"github.com/obot-platform/discobox/server/internal/model"
 	"github.com/obot-platform/discobox/server/internal/transport"
 )
@@ -132,9 +133,15 @@ type UpdateOptions struct {
 // ResolvedHarnessConfig is the sandbox-local harness configuration captured
 // at sandbox create time.
 type ResolvedHarnessConfig struct {
-	ID    string
-	Name  string
-	Files []model.HarnessConfigFile
+	ID              string
+	Name            string
+	Description     string
+	RunCommand      []string
+	RelaunchCommand []string
+	ConfigCommand   []string
+	Files           []model.HarnessConfigFile
+	Env             map[string]string
+	Volumes         []harness.Volume
 }
 
 // PoolRuntimeReconciler reconciles provider-owned runtime state for a Pool:

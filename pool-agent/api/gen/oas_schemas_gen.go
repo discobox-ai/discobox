@@ -532,6 +532,107 @@ func (s *HarnessConfigFile) SetTemplate(val OptBool) {
 	s.Template = val
 }
 
+// An image-declared path the sandbox-agent wires from a primary volume during boot.
+// Ref: #/components/schemas/HarnessVolume
+type HarnessVolume struct {
+	Path   string              `json:"path"`
+	Volume HarnessVolumeVolume `json:"volume"`
+	UID    OptString           `json:"uid"`
+	Gid    OptString           `json:"gid"`
+	Mode   OptString           `json:"mode"`
+}
+
+// GetPath returns the value of Path.
+func (s *HarnessVolume) GetPath() string {
+	return s.Path
+}
+
+// GetVolume returns the value of Volume.
+func (s *HarnessVolume) GetVolume() HarnessVolumeVolume {
+	return s.Volume
+}
+
+// GetUID returns the value of UID.
+func (s *HarnessVolume) GetUID() OptString {
+	return s.UID
+}
+
+// GetGid returns the value of Gid.
+func (s *HarnessVolume) GetGid() OptString {
+	return s.Gid
+}
+
+// GetMode returns the value of Mode.
+func (s *HarnessVolume) GetMode() OptString {
+	return s.Mode
+}
+
+// SetPath sets the value of Path.
+func (s *HarnessVolume) SetPath(val string) {
+	s.Path = val
+}
+
+// SetVolume sets the value of Volume.
+func (s *HarnessVolume) SetVolume(val HarnessVolumeVolume) {
+	s.Volume = val
+}
+
+// SetUID sets the value of UID.
+func (s *HarnessVolume) SetUID(val OptString) {
+	s.UID = val
+}
+
+// SetGid sets the value of Gid.
+func (s *HarnessVolume) SetGid(val OptString) {
+	s.Gid = val
+}
+
+// SetMode sets the value of Mode.
+func (s *HarnessVolume) SetMode(val OptString) {
+	s.Mode = val
+}
+
+type HarnessVolumeVolume string
+
+const (
+	HarnessVolumeVolumeData  HarnessVolumeVolume = "data"
+	HarnessVolumeVolumeCache HarnessVolumeVolume = "cache"
+)
+
+// AllValues returns all HarnessVolumeVolume values.
+func (HarnessVolumeVolume) AllValues() []HarnessVolumeVolume {
+	return []HarnessVolumeVolume{
+		HarnessVolumeVolumeData,
+		HarnessVolumeVolumeCache,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s HarnessVolumeVolume) MarshalText() ([]byte, error) {
+	switch s {
+	case HarnessVolumeVolumeData:
+		return []byte(s), nil
+	case HarnessVolumeVolumeCache:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *HarnessVolumeVolume) UnmarshalText(data []byte) error {
+	switch HarnessVolumeVolume(data) {
+	case HarnessVolumeVolumeData:
+		*s = HarnessVolumeVolumeData
+		return nil
+	case HarnessVolumeVolumeCache:
+		*s = HarnessVolumeVolumeCache
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
 // NewNilDateTime returns new NilDateTime with value set to v.
 func NewNilDateTime(v time.Time) NilDateTime {
 	return NilDateTime{
@@ -1111,6 +1212,132 @@ func (o OptNilHarnessConfigFileArray) Get() (v []HarnessConfigFile, ok bool) {
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilHarnessConfigFileArray) Or(d []HarnessConfigFile) []HarnessConfigFile {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilHarnessVolumeArray returns new OptNilHarnessVolumeArray with value set to v.
+func NewOptNilHarnessVolumeArray(v []HarnessVolume) OptNilHarnessVolumeArray {
+	return OptNilHarnessVolumeArray{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilHarnessVolumeArray is optional nullable []HarnessVolume.
+type OptNilHarnessVolumeArray struct {
+	Value []HarnessVolume
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilHarnessVolumeArray was set.
+func (o OptNilHarnessVolumeArray) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilHarnessVolumeArray) Reset() {
+	var v []HarnessVolume
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilHarnessVolumeArray) SetTo(v []HarnessVolume) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilHarnessVolumeArray) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilHarnessVolumeArray) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v []HarnessVolume
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilHarnessVolumeArray) Get() (v []HarnessVolume, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilHarnessVolumeArray) Or(d []HarnessVolume) []HarnessVolume {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilResolvedHarnessConfigEnv returns new OptNilResolvedHarnessConfigEnv with value set to v.
+func NewOptNilResolvedHarnessConfigEnv(v ResolvedHarnessConfigEnv) OptNilResolvedHarnessConfigEnv {
+	return OptNilResolvedHarnessConfigEnv{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilResolvedHarnessConfigEnv is optional nullable ResolvedHarnessConfigEnv.
+type OptNilResolvedHarnessConfigEnv struct {
+	Value ResolvedHarnessConfigEnv
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilResolvedHarnessConfigEnv was set.
+func (o OptNilResolvedHarnessConfigEnv) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilResolvedHarnessConfigEnv) Reset() {
+	var v ResolvedHarnessConfigEnv
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilResolvedHarnessConfigEnv) SetTo(v ResolvedHarnessConfigEnv) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilResolvedHarnessConfigEnv) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilResolvedHarnessConfigEnv) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v ResolvedHarnessConfigEnv
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilResolvedHarnessConfigEnv) Get() (v ResolvedHarnessConfigEnv, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilResolvedHarnessConfigEnv) Or(d ResolvedHarnessConfigEnv) ResolvedHarnessConfigEnv {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -2184,9 +2411,15 @@ func (s *PoolSyncRequest) SetKnownPoolIds(val []string) {
 
 // Ref: #/components/schemas/ResolvedHarnessConfig
 type ResolvedHarnessConfig struct {
-	Files OptNilHarnessConfigFileArray `json:"files"`
-	ID    string                       `json:"id"`
-	Name  string                       `json:"name"`
+	Files           OptNilHarnessConfigFileArray   `json:"files"`
+	ID              string                         `json:"id"`
+	Name            string                         `json:"name"`
+	Description     OptString                      `json:"description"`
+	RunCommand      OptNilStringArray              `json:"runCommand"`
+	RelaunchCommand OptNilStringArray              `json:"relaunchCommand"`
+	ConfigCommand   OptNilStringArray              `json:"configCommand"`
+	Env             OptNilResolvedHarnessConfigEnv `json:"env"`
+	Volumes         OptNilHarnessVolumeArray       `json:"volumes"`
 }
 
 // GetFiles returns the value of Files.
@@ -2204,6 +2437,36 @@ func (s *ResolvedHarnessConfig) GetName() string {
 	return s.Name
 }
 
+// GetDescription returns the value of Description.
+func (s *ResolvedHarnessConfig) GetDescription() OptString {
+	return s.Description
+}
+
+// GetRunCommand returns the value of RunCommand.
+func (s *ResolvedHarnessConfig) GetRunCommand() OptNilStringArray {
+	return s.RunCommand
+}
+
+// GetRelaunchCommand returns the value of RelaunchCommand.
+func (s *ResolvedHarnessConfig) GetRelaunchCommand() OptNilStringArray {
+	return s.RelaunchCommand
+}
+
+// GetConfigCommand returns the value of ConfigCommand.
+func (s *ResolvedHarnessConfig) GetConfigCommand() OptNilStringArray {
+	return s.ConfigCommand
+}
+
+// GetEnv returns the value of Env.
+func (s *ResolvedHarnessConfig) GetEnv() OptNilResolvedHarnessConfigEnv {
+	return s.Env
+}
+
+// GetVolumes returns the value of Volumes.
+func (s *ResolvedHarnessConfig) GetVolumes() OptNilHarnessVolumeArray {
+	return s.Volumes
+}
+
 // SetFiles sets the value of Files.
 func (s *ResolvedHarnessConfig) SetFiles(val OptNilHarnessConfigFileArray) {
 	s.Files = val
@@ -2217,6 +2480,47 @@ func (s *ResolvedHarnessConfig) SetID(val string) {
 // SetName sets the value of Name.
 func (s *ResolvedHarnessConfig) SetName(val string) {
 	s.Name = val
+}
+
+// SetDescription sets the value of Description.
+func (s *ResolvedHarnessConfig) SetDescription(val OptString) {
+	s.Description = val
+}
+
+// SetRunCommand sets the value of RunCommand.
+func (s *ResolvedHarnessConfig) SetRunCommand(val OptNilStringArray) {
+	s.RunCommand = val
+}
+
+// SetRelaunchCommand sets the value of RelaunchCommand.
+func (s *ResolvedHarnessConfig) SetRelaunchCommand(val OptNilStringArray) {
+	s.RelaunchCommand = val
+}
+
+// SetConfigCommand sets the value of ConfigCommand.
+func (s *ResolvedHarnessConfig) SetConfigCommand(val OptNilStringArray) {
+	s.ConfigCommand = val
+}
+
+// SetEnv sets the value of Env.
+func (s *ResolvedHarnessConfig) SetEnv(val OptNilResolvedHarnessConfigEnv) {
+	s.Env = val
+}
+
+// SetVolumes sets the value of Volumes.
+func (s *ResolvedHarnessConfig) SetVolumes(val OptNilHarnessVolumeArray) {
+	s.Volumes = val
+}
+
+type ResolvedHarnessConfigEnv map[string]string
+
+func (s *ResolvedHarnessConfigEnv) init() ResolvedHarnessConfigEnv {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // Ref: #/components/schemas/SandboxConfig

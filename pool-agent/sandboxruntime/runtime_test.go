@@ -12,6 +12,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	workerclient "github.com/obot-platform/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/obot-platform/discobox/pool-agent/api/model"
+	"github.com/obot-platform/discobox/sandboxconfig"
 )
 
 func TestSandboxUserResolvesUIDGIDAndDefaults(t *testing.T) {
@@ -117,14 +118,10 @@ func TestNormalizeSandboxConfigPublishesPrimaryBindRoot(t *testing.T) {
 	if !ok || destination.Directory.Or("") != "/workspace" {
 		t.Fatalf("destination = %#v, want default primary bind root /workspace", destination)
 	}
-	manifest := buildSandboxManifest("project-1", "sandbox-1", "pool-1", "public-key", &workerapimodel.PoolSandboxCreateRequest{Config: config}, nil)
-	manifestSource, ok := manifest.Config.Source.Get()
-	if !ok {
-		t.Fatal("manifest lost normalized primary source")
-	}
-	manifestDestination, ok := manifestSource.Destination.Get()
-	if !ok || manifestDestination.Directory.Or("") != "/workspace" {
-		t.Fatalf("manifest destination = %#v, want runtime bind root /workspace", manifestDestination)
+	doc := buildSandboxDocument("project-1", "sandbox-1", "pool-1", "public-key", &workerapimodel.PoolSandboxCreateRequest{Config: config}, nil, nil)
+	cfg, _ := sandboxconfig.Effective(doc)
+	if len(cfg.Sources) != 1 || cfg.Sources[0].Target != "/workspace" {
+		t.Fatalf("effective sources = %#v, want runtime bind root /workspace", cfg.Sources)
 	}
 
 	destination.Directory = workerclient.NewOptString("workspace/../project")
@@ -280,7 +277,7 @@ func TestCompactLogTailTrimsBlankLinesAndJoins(t *testing.T) {
 	}
 }
 
-func TestBuildSandboxManifestIncludesSelectedHarnessIdentityAndFiles(t *testing.T) {
+func TestBuildSandboxDocumentIncludesSelectedHarnessIdentityAndFiles(t *testing.T) {
 	req := &workerapimodel.PoolSandboxCreateRequest{
 		Config: workerapimodel.SandboxConfig{
 			Env: workerclient.NewOptSandboxConfigEnv(workerclient.SandboxConfigEnv{
@@ -296,26 +293,25 @@ func TestBuildSandboxManifestIncludesSelectedHarnessIdentityAndFiles(t *testing.
 		}),
 	}
 
-	manifest := buildSandboxManifest("project-1", "sandbox-1", "pool-1", "public-key", req, nil)
-	if manifest.APIVersion != "discobox.dev/sandbox/v1" || manifest.SandboxID != "sandbox-1" {
-		t.Fatalf("manifest identity = %#v, want v1 sandbox-1", manifest)
+	doc := buildSandboxDocument("project-1", "sandbox-1", "pool-1", "public-key", req, nil, nil)
+	cfg, _ := sandboxconfig.Effective(doc)
+	if cfg.APIVersion != sandboxconfig.APIVersion || cfg.SandboxID != "sandbox-1" {
+		t.Fatalf("effective identity = %#v, want v1 sandbox-1", cfg)
 	}
-	if manifest.Provider == nil || manifest.Provider.Kind != "discobox-pool" || manifest.Provider.ProjectID != "project-1" || manifest.Provider.PoolId != "pool-1" {
-		t.Fatalf("provider = %#v, want pool provider identity", manifest.Provider)
+	if cfg.Provider.Kind != "discobox-pool" || cfg.Provider.ProjectID != "project-1" || cfg.Provider.PoolID != "pool-1" {
+		t.Fatalf("provider = %#v, want pool provider identity", cfg.Provider)
 	}
-	if manifest.Provider.PublicKeys["controlPlane"] != "public-key" {
-		t.Fatalf("public keys = %#v, want control plane key", manifest.Provider.PublicKeys)
+	if cfg.Provider.PublicKeys["controlPlane"] != "public-key" {
+		t.Fatalf("public keys = %#v, want control plane key", cfg.Provider.PublicKeys)
 	}
-	user, ok := manifest.Config.User.Get()
-	if !ok || user.Name.Or("") != "root" || user.UID.Or(-1) != 0 || user.Gid.Or(-1) != 0 || user.HomeDirectory.Or("") != "/home/root" {
-		t.Fatalf("manifest user = %#v, want resolved root identity at /home/root", user)
+	if cfg.User.Name != "root" || cfg.User.UID == nil || *cfg.User.UID != 0 || cfg.User.GID == nil || *cfg.User.GID != 0 || cfg.User.HomeDirectory != "/home/root" {
+		t.Fatalf("effective user = %#v, want resolved root identity at /home/root", cfg.User)
 	}
-	env, ok := manifest.Config.Env.Get()
-	if !ok || env["BASE"] != "sandbox" || env["OVERRIDE"] != "sandbox" {
-		t.Fatalf("env = %#v, want sandbox env in manifest config", env)
+	if cfg.Env["BASE"] != "sandbox" || cfg.Env["OVERRIDE"] != "sandbox" {
+		t.Fatalf("env = %#v, want sandbox env in effective config", cfg.Env)
 	}
-	if manifest.ResolvedHarnessConfig == nil || manifest.ResolvedHarnessConfig.ID != "claude" || len(manifest.ResolvedHarnessConfig.Files) != 1 {
-		t.Fatalf("resolved agent config = %#v, want claude", manifest.ResolvedHarnessConfig)
+	if cfg.Harness.ID != "claude" || len(cfg.Files) != 1 {
+		t.Fatalf("resolved harness = %#v, want claude with one file", cfg.Harness)
 	}
 }
 

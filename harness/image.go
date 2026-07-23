@@ -40,16 +40,16 @@ const (
 type Volume struct {
 	Path   string      `json:"path"`
 	Volume VolumeKind  `json:"volume"`
-	UID    scalarToken `json:"uid,omitempty"`
-	GID    scalarToken `json:"gid,omitempty"`
+	UID    ScalarToken `json:"uid,omitempty"`
+	GID    ScalarToken `json:"gid,omitempty"`
 	Mode   string      `json:"mode,omitempty"`
 }
 
-// scalarToken holds a JSON scalar that is either an integer literal or a token
+// ScalarToken holds a JSON scalar that is either an integer literal or a token
 // string. An empty value means the field was omitted.
-type scalarToken string
+type ScalarToken string
 
-func (s *scalarToken) UnmarshalJSON(b []byte) error {
+func (s *ScalarToken) UnmarshalJSON(b []byte) error {
 	b = bytes.TrimSpace(b)
 	if len(b) == 0 || string(b) == "null" {
 		*s = ""
@@ -60,14 +60,14 @@ func (s *scalarToken) UnmarshalJSON(b []byte) error {
 		if err := json.Unmarshal(b, &str); err != nil {
 			return err
 		}
-		*s = scalarToken(str)
+		*s = ScalarToken(str)
 		return nil
 	}
-	*s = scalarToken(string(b))
+	*s = ScalarToken(string(b))
 	return nil
 }
 
-func (s scalarToken) MarshalJSON() ([]byte, error) {
+func (s ScalarToken) MarshalJSON() ([]byte, error) {
 	return json.Marshal(string(s))
 }
 
@@ -131,7 +131,7 @@ func ResolveVolumes(volumes []Volume, rt VolumeRuntime) ([]ResolvedVolume, error
 	return out, nil
 }
 
-func resolveScalar(tok scalarToken, rt VolumeRuntime) (int, bool, error) {
+func resolveScalar(tok ScalarToken, rt VolumeRuntime) (int, bool, error) {
 	s := strings.TrimSpace(string(tok))
 	if s == "" {
 		return 0, false, nil

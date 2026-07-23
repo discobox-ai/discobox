@@ -12,6 +12,7 @@ type GitSourceCheckout = poolagentapi.GitSourceCheckout
 type GitSourceDestination = poolagentapi.GitSourceDestination
 type GitSourceWorkspace = poolagentapi.GitSourceWorkspace
 type HarnessConfigFile = poolagentapi.HarnessConfigFile
+type HarnessVolume = poolagentapi.HarnessVolume
 type PoolSandboxCreateRequest = poolagentapi.PoolSandboxCreateRequest
 type PoolSandboxInstance = poolagentapi.PoolSandboxInstance
 type PoolSandboxListResponse = poolagentapi.PoolSandboxListResponse

@@ -132,6 +132,27 @@ components:
                 snapshotRef:
                     type: string
             type: object
+        HarnessVolume:
+            additionalProperties: false
+            description: An image-declared path the sandbox-agent wires from a primary volume during boot.
+            properties:
+                path:
+                    type: string
+                volume:
+                    enum:
+                    - data
+                    - cache
+                    type: string
+                uid:
+                    type: string
+                gid:
+                    type: string
+                mode:
+                    type: string
+            required:
+            - path
+            - volume
+            type: object
         ResolvedHarnessConfig:
             additionalProperties: false
             properties:
@@ -144,6 +165,33 @@ components:
                     type: string
                 name:
                     type: string
+                description:
+                    type: string
+                runCommand:
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                relaunchCommand:
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                configCommand:
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
+                env:
+                    additionalProperties:
+                        type: string
+                    nullable: true
+                    type: object
+                volumes:
+                    items:
+                        "$ref": "#/components/schemas/HarnessVolume"
+                    nullable: true
+                    type: array
             required:
             - id
             - name
