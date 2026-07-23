@@ -16,8 +16,9 @@ const (
 	SocketEnv       = "DISCOBOX_HOOK_SOCKET"
 	ManagedFileMode = 0o644
 	// ImageLabel is the OCI image-config label containing the JSON-encoded,
-	// non-secret harness metadata used when a harness image is registered.
-	ImageLabel = "io.discobox.harness.v1"
+	// non-secret image metadata (env, volumes, and the harness contract) used
+	// when a harness image is registered.
+	ImageLabel = "io.discobox.image.v1"
 
 	// ConfigureOutputPath is where a harness's configure command writes the
 	// secrets and files it collected, for the control plane to read back before

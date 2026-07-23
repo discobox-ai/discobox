@@ -66,11 +66,10 @@ surface:
 - Sandbox-agent terminal routes are canonical in `api/openapi/server.yaml` and
   marked for sandbox-agent subset generation. `api/openapi/sandbox.yaml` is
   generated from that server contract and must not be edited directly.
-  Schema-only sandbox-agent contracts, such as `/etc/discobox/sandbox.json`,
-  live in `api/openapi/server.yaml` and use `x-sandbox-agent-component: true`
-  so the subset generator includes them in `api/openapi/sandbox.yaml` even when
-  no REST operation references them. `api/internal/genmanifestmodels` generates
-  stable Go model types for those schema-only contracts into `api/model`.
+- `/etc/discobox/sandbox.json` (the sandbox's effective runtime config) is
+  not a REST contract and is not OpenAPI-generated. It is the hand-written
+  `sandboxconfig` package — see `sandboxconfig/DESIGN.md` and
+  `docs/adr/0012-sandbox-config-is-three-attribute-owned-layers.md`.
 
 ## Target Module Boundaries
 

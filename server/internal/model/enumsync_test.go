@@ -62,7 +62,6 @@ var yamlOwnedEnums = map[string]string{
 	"SandboxCreateConfig.harnessMode":    "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction",
 	"SandboxExec.status":                 "exec lifecycle is owned by the sandbox-agent",
 	"SandboxExecLogEntry.stream":         "exec log streams are owned by the sandbox-agent",
-	"SandboxManifest.apiVersion":         "schema-only constant with no model counterpart",
 }
 
 func TestModelEnumTagsMatchOpenAPI(t *testing.T) {
