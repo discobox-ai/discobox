@@ -85,6 +85,9 @@ func (p *poolAgentClient) Update(ctx context.Context, ref sandbox.SandboxRef, st
 	req := &poolapimodel.PoolSandboxUpdateRequest{
 		Sentinels: poolclient.NewOptNilStringArray(opts.Sentinels),
 	}
+	if len(opts.SecretEnv) > 0 {
+		req.SecretEnv = poolclient.NewOptNilPoolSandboxUpdateRequestSecretEnv(poolclient.PoolSandboxUpdateRequestSecretEnv(opts.SecretEnv))
+	}
 	poolSandbox, err := client.PoolUpdateSandbox(ctx, req, poolclient.PoolUpdateSandboxParams{ProjectId: ref.ProjectID, PoolId: p.poolID, SandboxId: ref.SandboxID})
 	if err != nil {
 		return nil, state, mapPoolClientError(err)
@@ -273,6 +276,9 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 	}
 	if len(opts.Sentinels) > 0 {
 		out.Sentinels = poolclient.NewOptNilStringArray(opts.Sentinels)
+	}
+	if len(opts.SecretEnv) > 0 {
+		out.SecretEnv = poolclient.NewOptNilPoolSandboxCreateRequestSecretEnv(poolclient.PoolSandboxCreateRequestSecretEnv(opts.SecretEnv))
 	}
 	if opts.Name != "" {
 		config.Name = poolclient.NewOptString(opts.Name)

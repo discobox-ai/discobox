@@ -530,6 +530,10 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 		if assignments, err := r.store.ListSandboxSecrets(ctx, sb.ProjectID, sb.ID); err == nil {
 			for _, assignment := range assignments {
 				opts.Sentinels = append(opts.Sentinels, assignment.Sentinel)
+				if opts.SecretEnv == nil {
+					opts.SecretEnv = map[string]string{}
+				}
+				opts.SecretEnv[assignment.EnvName] = assignment.Sentinel
 			}
 		}
 	}

@@ -302,6 +302,12 @@ components:
                         type: string
                     nullable: true
                     type: array
+                secretEnv:
+                    description: Secret-bound environment variable name to sentinel placeholder value. Delivered to the sandbox through a channel separate from sandbox.json (docs/adr/0012 section 3), independently refreshed as secrets rotate.
+                    additionalProperties:
+                        type: string
+                    nullable: true
+                    type: object
             required:
             - sandboxId
             - config
@@ -396,6 +402,12 @@ components:
                         type: string
                     nullable: true
                     type: array
+                secretEnv:
+                    description: Replacement secret-bound environment variable name to sentinel placeholder map for a running sandbox.
+                    additionalProperties:
+                        type: string
+                    nullable: true
+                    type: object
             type: object
         PoolSandboxPort:
             additionalProperties: false

@@ -18,6 +18,7 @@ import (
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
 	harnesshooks "github.com/obot-platform/discobox/sandbox-agent/hooks"
 	"github.com/obot-platform/discobox/sandbox-agent/resources"
+	"github.com/obot-platform/discobox/sandbox-agent/secretswatch"
 	agentstore "github.com/obot-platform/discobox/sandbox-agent/store"
 	"github.com/obot-platform/discobox/sandbox-agent/terminal"
 )
@@ -47,6 +48,10 @@ type Config struct {
 	ExecAuditRecorder     execs.AuditRecorder
 	Store                 *agentstore.Store
 	ResourceCollector     resources.Collector
+	// SecretEnv returns the sandbox's current secret-bound env->sentinel map.
+	// Serve wires this to a live secretswatch.Watcher; callers that build a
+	// router directly (e.g. tests) may leave it nil.
+	SecretEnv func() map[string]string
 }
 
 func ConfigFromHarnessConfig(cfg config.Config) Config {
@@ -126,6 +131,7 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		WorkingRoot:   cfg.WorkingRoot,
 		RuntimeDir:    cfg.RuntimeDir,
 		Env:           cfg.Env,
+		SecretEnv:     cfg.SecretEnv,
 		ExecDefaults:  cfg.ExecDefaults,
 		Units:         cfg.ExecUnitManager,
 		Installer:     cfg.Installer,
@@ -212,6 +218,12 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	addr := cfg.ListenAddress
 	if addr == "" {
 		addr = ":3003"
+	}
+	if cfg.SecretEnv == nil {
+		watcher := secretswatch.Watch(ctx, "", func(err error) {
+			logger.Warn("sandbox agent secrets watch", "error", err)
+		})
+		cfg.SecretEnv = watcher.Env
 	}
 	router, manager, execManager, localStore, err := newRouterAndManager(cfg)
 	if err != nil {

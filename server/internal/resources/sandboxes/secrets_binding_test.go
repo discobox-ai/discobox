@@ -72,12 +72,12 @@ func TestApplyHarnessConfigSecretsMaterializesBinding(t *testing.T) {
 	if len(assignments) != 1 || assignments[0].EnvName != "OPENAI_API_KEY" || assignments[0].SecretID != sec.ID {
 		t.Fatalf("assignments = %#v", assignments)
 	}
-	sentinel := sandbox.Env["OPENAI_API_KEY"]
+	sentinel := assignments[0].Sentinel
 	if sentinel == "" || sentinel == "sk-abc" {
-		t.Fatalf("env = %q, want a non-empty sentinel that is not the raw value", sentinel)
+		t.Fatalf("sentinel = %q, want a non-empty sentinel that is not the raw value", sentinel)
 	}
-	if assignments[0].Sentinel != sentinel {
-		t.Fatalf("assignment sentinel %q != env sentinel %q", assignments[0].Sentinel, sentinel)
+	if sandbox.Env["OPENAI_API_KEY"] != "" {
+		t.Fatalf("sandbox.Env = %#v, secret sentinels must never ride in sandbox.Env (ADR 0012)", sandbox.Env)
 	}
 }
 
@@ -169,15 +169,12 @@ func TestApplyPreviousConfigureSecretsPrefixesAndSentinelizes(t *testing.T) {
 	if assignments[0].EnvName != "PREV_OPENAI_API_KEY" {
 		t.Fatalf("env name = %q, want the PREV_ prefixed name", assignments[0].EnvName)
 	}
-	if _, ok := sandbox.Env["OPENAI_API_KEY"]; ok {
-		t.Fatal("the unprefixed variable was seeded; the harness would authenticate with the old credential")
-	}
-	sentinel := sandbox.Env["PREV_OPENAI_API_KEY"]
+	sentinel := assignments[0].Sentinel
 	if sentinel == "" || sentinel == "sk-abc" {
-		t.Fatalf("env = %q, want a sentinel rather than the credential", sentinel)
+		t.Fatalf("sentinel = %q, want a sentinel rather than the credential", sentinel)
 	}
-	if assignments[0].Sentinel != sentinel {
-		t.Fatalf("assignment sentinel %q != env sentinel %q", assignments[0].Sentinel, sentinel)
+	if len(sandbox.Env) != 0 {
+		t.Fatalf("sandbox.Env = %#v, secret sentinels must never ride in sandbox.Env (ADR 0012)", sandbox.Env)
 	}
 }
 

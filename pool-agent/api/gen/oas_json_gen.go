@@ -1764,6 +1764,106 @@ func (s *OptNilHarnessVolumeArray) UnmarshalJSON(data []byte) error {
 	return s.Decode(d)
 }
 
+// Encode encodes PoolSandboxCreateRequestSecretEnv as json.
+func (o OptNilPoolSandboxCreateRequestSecretEnv) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes PoolSandboxCreateRequestSecretEnv from json.
+func (o *OptNilPoolSandboxCreateRequestSecretEnv) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilPoolSandboxCreateRequestSecretEnv to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v PoolSandboxCreateRequestSecretEnv
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	o.Value = make(PoolSandboxCreateRequestSecretEnv)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilPoolSandboxCreateRequestSecretEnv) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilPoolSandboxCreateRequestSecretEnv) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode encodes PoolSandboxUpdateRequestSecretEnv as json.
+func (o OptNilPoolSandboxUpdateRequestSecretEnv) Encode(e *jx.Encoder) {
+	if !o.Set {
+		return
+	}
+	if o.Null {
+		e.Null()
+		return
+	}
+	o.Value.Encode(e)
+}
+
+// Decode decodes PoolSandboxUpdateRequestSecretEnv from json.
+func (o *OptNilPoolSandboxUpdateRequestSecretEnv) Decode(d *jx.Decoder) error {
+	if o == nil {
+		return errors.New("invalid: unable to decode OptNilPoolSandboxUpdateRequestSecretEnv to nil")
+	}
+	if d.Next() == jx.Null {
+		if err := d.Null(); err != nil {
+			return err
+		}
+
+		var v PoolSandboxUpdateRequestSecretEnv
+		o.Value = v
+		o.Set = true
+		o.Null = true
+		return nil
+	}
+	o.Set = true
+	o.Null = false
+	o.Value = make(PoolSandboxUpdateRequestSecretEnv)
+	if err := o.Value.Decode(d); err != nil {
+		return err
+	}
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s OptNilPoolSandboxUpdateRequestSecretEnv) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *OptNilPoolSandboxUpdateRequestSecretEnv) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
 // Encode encodes ResolvedHarnessConfigEnv as json.
 func (o OptNilResolvedHarnessConfigEnv) Encode(e *jx.Encoder) {
 	if !o.Set {
@@ -2255,15 +2355,22 @@ func (s *PoolSandboxCreateRequest) encodeFields(e *jx.Encoder) {
 			s.Sentinels.Encode(e)
 		}
 	}
+	{
+		if s.SecretEnv.Set {
+			e.FieldStart("secretEnv")
+			s.SecretEnv.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfPoolSandboxCreateRequest = [6]string{
+var jsonFieldsNameOfPoolSandboxCreateRequest = [7]string{
 	0: "$schema",
 	1: "config",
 	2: "resolvedHarnessConfig",
 	3: "resources",
 	4: "sandboxId",
 	5: "sentinels",
+	6: "secretEnv",
 }
 
 // Decode decodes PoolSandboxCreateRequest from json.
@@ -2337,6 +2444,16 @@ func (s *PoolSandboxCreateRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"sentinels\"")
 			}
+		case "secretEnv":
+			if err := func() error {
+				s.SecretEnv.Reset()
+				if err := s.SecretEnv.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"secretEnv\"")
+			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -2389,6 +2506,62 @@ func (s *PoolSandboxCreateRequest) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *PoolSandboxCreateRequest) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s PoolSandboxCreateRequestSecretEnv) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s PoolSandboxCreateRequestSecretEnv) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes PoolSandboxCreateRequestSecretEnv from json.
+func (s *PoolSandboxCreateRequestSecretEnv) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolSandboxCreateRequestSecretEnv to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode PoolSandboxCreateRequestSecretEnv")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s PoolSandboxCreateRequestSecretEnv) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolSandboxCreateRequestSecretEnv) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }
@@ -3486,13 +3659,20 @@ func (s *PoolSandboxUpdateRequest) encodeFields(e *jx.Encoder) {
 			s.Sentinels.Encode(e)
 		}
 	}
+	{
+		if s.SecretEnv.Set {
+			e.FieldStart("secretEnv")
+			s.SecretEnv.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfPoolSandboxUpdateRequest = [4]string{
+var jsonFieldsNameOfPoolSandboxUpdateRequest = [5]string{
 	0: "$schema",
 	1: "config",
 	2: "resources",
 	3: "sentinels",
+	4: "secretEnv",
 }
 
 // Decode decodes PoolSandboxUpdateRequest from json.
@@ -3543,6 +3723,16 @@ func (s *PoolSandboxUpdateRequest) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"sentinels\"")
 			}
+		case "secretEnv":
+			if err := func() error {
+				s.SecretEnv.Reset()
+				if err := s.SecretEnv.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"secretEnv\"")
+			}
 		default:
 			return errors.Errorf("unexpected field %q", k)
 		}
@@ -3563,6 +3753,62 @@ func (s *PoolSandboxUpdateRequest) MarshalJSON() ([]byte, error) {
 
 // UnmarshalJSON implements stdjson.Unmarshaler.
 func (s *PoolSandboxUpdateRequest) UnmarshalJSON(data []byte) error {
+	d := jx.DecodeBytes(data)
+	return s.Decode(d)
+}
+
+// Encode implements json.Marshaler.
+func (s PoolSandboxUpdateRequestSecretEnv) Encode(e *jx.Encoder) {
+	e.ObjStart()
+	s.encodeFields(e)
+	e.ObjEnd()
+}
+
+// encodeFields implements json.Marshaler.
+func (s PoolSandboxUpdateRequestSecretEnv) encodeFields(e *jx.Encoder) {
+	for k, elem := range s {
+		e.FieldStart(k)
+
+		e.Str(elem)
+	}
+}
+
+// Decode decodes PoolSandboxUpdateRequestSecretEnv from json.
+func (s *PoolSandboxUpdateRequestSecretEnv) Decode(d *jx.Decoder) error {
+	if s == nil {
+		return errors.New("invalid: unable to decode PoolSandboxUpdateRequestSecretEnv to nil")
+	}
+	m := s.init()
+	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
+		var elem string
+		if err := func() error {
+			v, err := d.Str()
+			elem = string(v)
+			if err != nil {
+				return err
+			}
+			return nil
+		}(); err != nil {
+			return errors.Wrapf(err, "decode field %q", k)
+		}
+		m[string(k)] = elem
+		return nil
+	}); err != nil {
+		return errors.Wrap(err, "decode PoolSandboxUpdateRequestSecretEnv")
+	}
+
+	return nil
+}
+
+// MarshalJSON implements stdjson.Marshaler.
+func (s PoolSandboxUpdateRequestSecretEnv) MarshalJSON() ([]byte, error) {
+	e := jx.Encoder{}
+	s.Encode(&e)
+	return e.Bytes(), nil
+}
+
+// UnmarshalJSON implements stdjson.Unmarshaler.
+func (s *PoolSandboxUpdateRequestSecretEnv) UnmarshalJSON(data []byte) error {
 	d := jx.DecodeBytes(data)
 	return s.Decode(d)
 }

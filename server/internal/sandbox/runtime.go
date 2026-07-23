@@ -96,6 +96,14 @@ type CreateOptions struct {
 	// Sentinels are the placeholder secret values injected into the sandbox that
 	// the worker registers with the proxy for runtime swapping.
 	Sentinels []string
+	// SecretEnv maps each secret-bound environment variable name to its
+	// sentinel placeholder value. Unlike Env, these never ride in the static
+	// sandbox.json document (docs/adr/0012 §3) — the provider delivers them
+	// through a separate, independently-refreshed channel
+	// (/run/discobox/secrets/secrets.json) so a resolved sentinel value can
+	// change (rotation, grant approval, OAuth refresh) without touching the
+	// sandbox's static config.
+	SecretEnv map[string]string
 
 	Name                  string
 	Description           *string
@@ -128,6 +136,9 @@ type UpdateOptions struct {
 	// Sentinels replaces the placeholder secret set registered with the proxy for
 	// runtime swapping. It mirrors CreateOptions.Sentinels.
 	Sentinels []string
+	// SecretEnv replaces the sandbox's secret-bound env->sentinel map. It
+	// mirrors CreateOptions.SecretEnv.
+	SecretEnv map[string]string
 }
 
 // ResolvedHarnessConfig is the sandbox-local harness configuration captured

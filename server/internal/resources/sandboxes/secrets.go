@@ -23,14 +23,12 @@ const defaultSentinelFormat = "{alnum:48}"
 
 // prepareSandboxSecrets resolves each secret input to a project secret (creating
 // an anonymous secret for inline values), mints a sentinel placeholder from the
-// secret's format, injects it into the sandbox environment, and returns the
-// assignment rows to persist after the sandbox is created. It mutates sandbox.Env.
+// secret's format, and returns the assignment rows to persist after the sandbox
+// is created. The sentinel travels to the sandbox through the secrets channel
+// (SandboxSecret rows -> CreateOptions.SecretEnv), never through sandbox.Env.
 func (s *Service) prepareSandboxSecrets(ctx context.Context, projectID string, sandbox *model.Sandbox, inputs []services.SandboxSecretInput) ([]*model.SandboxSecret, error) {
 	if len(inputs) == 0 {
 		return nil, nil
-	}
-	if sandbox.Env == nil {
-		sandbox.Env = map[string]string{}
 	}
 	seen := map[string]struct{}{}
 	assignments := make([]*model.SandboxSecret, 0, len(inputs))
@@ -52,7 +50,6 @@ func (s *Service) prepareSandboxSecrets(ctx context.Context, projectID string, s
 		if err != nil {
 			return nil, err
 		}
-		sandbox.Env[env] = sentinel
 		assignments = append(assignments, &model.SandboxSecret{
 			ProjectID: projectID,
 			SandboxID: sandbox.ID,
@@ -65,10 +62,11 @@ func (s *Service) prepareSandboxSecrets(ctx context.Context, projectID string, s
 }
 
 // applyHarnessConfigSecrets materializes a harness config's secret bindings into
-// sandbox sentinels and enforces that every declared required secret is
+// sentinel assignments and enforces that every declared required secret is
 // satisfied. inlineEnvs are env vars already bound per-sandbox by the create
-// request; an inline secret wins over a binding for the same env. It mutates
-// sandbox.Env and returns the assignment rows to persist.
+// request; an inline secret wins over a binding for the same env. It returns
+// the assignment rows to persist; sentinels reach the sandbox through the
+// secrets channel, never sandbox.Env.
 func (s *Service) applyHarnessConfigSecrets(ctx context.Context, projectID string, sandbox *model.Sandbox, harnessConfigID string, inlineEnvs map[string]struct{}) ([]*model.SandboxSecret, error) {
 	config, err := s.store.GetHarnessConfig(ctx, projectID, harnessConfigID)
 	if err != nil {
@@ -81,9 +79,6 @@ func (s *Service) applyHarnessConfigSecrets(ctx context.Context, projectID strin
 	boundByEnv := make(map[string]struct{}, len(bindings))
 	for _, b := range bindings {
 		boundByEnv[b.EnvName] = struct{}{}
-	}
-	if sandbox.Env == nil {
-		sandbox.Env = map[string]string{}
 	}
 
 	// A required declared secret must be satisfied by an inline secret, an
@@ -120,7 +115,6 @@ func (s *Service) applyHarnessConfigSecrets(ctx context.Context, projectID strin
 		if err != nil {
 			return nil, err
 		}
-		sandbox.Env[b.EnvName] = sentinel
 		assignments = append(assignments, &model.SandboxSecret{
 			ProjectID: projectID,
 			SandboxID: sandbox.ID,
@@ -159,9 +153,6 @@ func (s *Service) applyPreviousConfigureSecrets(ctx context.Context, projectID s
 	if err != nil {
 		return nil, err
 	}
-	if sandbox.Env == nil {
-		sandbox.Env = map[string]string{}
-	}
 	assignments := make([]*model.SandboxSecret, 0, len(bindings))
 	for _, b := range bindings {
 		if _, ok := configured[b.SecretID]; !ok {
@@ -179,7 +170,6 @@ func (s *Service) applyPreviousConfigureSecrets(ctx context.Context, projectID s
 			return nil, err
 		}
 		env := harness.ConfigurePreviousEnvPrefix + b.EnvName
-		sandbox.Env[env] = sentinel
 		assignments = append(assignments, &model.SandboxSecret{
 			ProjectID: projectID,
 			SandboxID: sandbox.ID,
@@ -398,14 +388,16 @@ func (s *Service) pushSandboxSentinels(ctx context.Context, sandboxModel *model.
 		return err
 	}
 	sentinels := make([]string, 0, len(assignments))
+	secretEnv := make(map[string]string, len(assignments))
 	for _, assignment := range assignments {
 		sentinels = append(sentinels, assignment.Sentinel)
+		secretEnv[assignment.EnvName] = assignment.Sentinel
 	}
 	provider, err := s.sandboxProviders.ResolveForSandbox(ctx, sandboxModel)
 	if err != nil {
 		return err
 	}
-	if _, _, err := provider.Update(ctx, SandboxRef{ProjectID: sandboxModel.ProjectID, SandboxID: sandboxModel.ID}, sandboxModel.RuntimeState, UpdateOptions{Sentinels: sentinels}); err != nil {
+	if _, _, err := provider.Update(ctx, SandboxRef{ProjectID: sandboxModel.ProjectID, SandboxID: sandboxModel.ID}, sandboxModel.RuntimeState, UpdateOptions{Sentinels: sentinels, SecretEnv: secretEnv}); err != nil {
 		return err
 	}
 	return nil

@@ -47,10 +47,16 @@ const (
 	// The pool host provisions four host-backed roots and mounts them at these
 	// fixed container paths. The sandbox-agent (running as PID 1) wires
 	// everything else from these primary volumes; see ADR 0007.
-	sandboxDataMount         = "/.discobox/data"
-	sandboxCacheMount        = "/.discobox/cache"
-	sandboxConfigMount       = "/.discobox/config"
-	sandboxSourcesMount      = "/.discobox/sources"
+	sandboxDataMount    = "/.discobox/data"
+	sandboxCacheMount   = "/.discobox/cache"
+	sandboxConfigMount  = "/.discobox/config"
+	sandboxSourcesMount = "/.discobox/sources"
+
+	// sandboxSecretsMount is bound directly (not through the config volume's
+	// rebind) because it is live-refreshed independently of sandbox.json — a
+	// resolved sentinel can change (rotation, grant approval, OAuth refresh)
+	// without touching the sandbox's static config (ADR 0012 §3).
+	sandboxSecretsMount      = "/run/discobox/secrets"
 	sandboxLabelManaged      = "discobox.sandbox.managed"
 	sandboxLabelProject      = "discobox.project_id"
 	sandboxLabelPool         = "discobox.pool_id"
@@ -231,6 +237,11 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	if err := r.writeSandboxHarnessConfig(ctx, sandboxID, req, proxyMaterial.Env, project); err != nil {
 		return nil, err
 	}
+	if secretEnv, ok := req.SecretEnv.Get(); ok {
+		if err := r.writeSandboxSecrets(ctx, sandboxID, secretEnv); err != nil {
+			return nil, err
+		}
+	}
 	baseEnv := mergeEnv(map[string]string(optSandboxConfigEnv(config.Env)), proxyMaterial.Env)
 	name := sandboxContainerName(r.poolID, sandboxID)
 	cfg := &container.Config{
@@ -350,6 +361,10 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 	if err := prepareOwnedDirectory(ctx, r.workerHostPath(sourcesHostPath), 0, 0); err != nil {
 		return nil, nil, fmt.Errorf("prepare sandbox sources volume: %w", err)
 	}
+	secretsHostPath := r.sandboxSecretsRoot(sandboxID)
+	if err := prepareOwnedDirectory(ctx, r.workerHostPath(secretsHostPath), 0, 0); err != nil {
+		return nil, nil, fmt.Errorf("prepare sandbox secrets volume: %w", err)
+	}
 	var project *sandboxconfig.ProjectLayer
 	_, hasPrimary := req.Config.Source.Get()
 	for i, source := range sandboxSources(req) {
@@ -374,7 +389,33 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 		{Type: mount.TypeBind, Source: cacheHostPath, Target: sandboxCacheMount},
 		{Type: mount.TypeBind, Source: configHostPath, Target: sandboxConfigMount, ReadOnly: true},
 		{Type: mount.TypeBind, Source: sourcesHostPath, Target: sandboxSourcesMount},
+		{Type: mount.TypeBind, Source: secretsHostPath, Target: sandboxSecretsMount},
 	}, project, nil
+}
+
+// writeSandboxSecrets atomically writes the sandbox's secret-bound
+// envName->sentinel map to its secrets volume, root-owned and mode 0600 so
+// only sandbox-agent (running as root) can read it; the harness process
+// (unprivileged) never gets filesystem access, only the env sandbox-agent
+// injects at exec time (ADR 0012 §3).
+func (r *DockerSandboxRuntime) writeSandboxSecrets(ctx context.Context, sandboxID string, secretEnv map[string]string) error {
+	dir := r.workerHostPath(r.sandboxSecretsRoot(sandboxID))
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(secretEnv, "", "  ")
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(dir, "secrets.json")
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		return err
+	}
+	return chownRecursive(ctx, dir, 0, 0)
 }
 
 // readProjectLayer reads .discobox/project.json from a materialized source's
@@ -623,6 +664,13 @@ func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID stri
 				return nil, err
 			}
 		}
+		if secretEnv, ok := req.SecretEnv.Get(); ok {
+			// Refresh the sandbox-agent-side secrets file so newly bound secrets
+			// (or a rotated sentinel) resolve without a restart.
+			if err := r.writeSandboxSecrets(ctx, sandboxID, secretEnv); err != nil {
+				return nil, err
+			}
+		}
 	}
 	return r.GetSandbox(ctx, sandboxID)
 }
@@ -659,7 +707,7 @@ const (
 	// period, even when the Docker event stream remains healthy.
 	proxyMaterialBackstopInterval = time.Minute
 	// sandboxVolumeRetention is how long a dead sandbox's persistent volume tree
-	// (data/config/sources) is kept before reclamation, so its data survives an
+	// (data/config/sources/secrets) is kept before reclamation, so its data survives an
 	// accidental or transient removal and a same-day recreate.
 	sandboxVolumeRetention = 24 * time.Hour
 	// sandboxVolumeTombstone records, inside a sandbox's volume tree, when the
@@ -1406,7 +1454,7 @@ func sandboxContainerName(poolID, sandboxID string) string {
 
 // sandboxPoolRoot is the per-project, per-pool host root. The cache lives
 // directly under it (shared across the pool's sandboxes in this project);
-// each sandbox's data/config/sources live under sandboxes/<sandbox_id>.
+// each sandbox's data/config/sources/secrets live under sandboxes/<sandbox_id>.
 func (r *DockerSandboxRuntime) sandboxPoolRoot() string {
 	return filepath.Join(sandboxDataRoot, r.projectID, "pools", r.poolID)
 }
@@ -1450,6 +1498,10 @@ func (r *DockerSandboxRuntime) sandboxDataRootPath(sandboxID string) string {
 
 func (r *DockerSandboxRuntime) sandboxConfigRoot(sandboxID string) string {
 	return filepath.Join(r.sandboxRoot(sandboxID), "config")
+}
+
+func (r *DockerSandboxRuntime) sandboxSecretsRoot(sandboxID string) string {
+	return filepath.Join(r.sandboxRoot(sandboxID), "secrets")
 }
 
 func (r *DockerSandboxRuntime) sandboxSourcesRoot(sandboxID string) string {

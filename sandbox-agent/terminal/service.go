@@ -71,12 +71,16 @@ type ServiceConfig struct {
 	WorkingRoot   string
 	RuntimeDir    string
 	Env           map[string]string
-	ExecDefaults  config.ExecDefaults
-	DefaultUser   *execs.User
-	Units         execs.UnitManager
-	Installer     Installer
-	PrimaryState  PrimaryStateStore
-	HarnessMode   string
+	// SecretEnv returns the sandbox's current secret-bound
+	// envName->sentinel map, read live from the secrets file (ADR 0012 §3)
+	// rather than baked into Env. Called fresh at every exec. May be nil.
+	SecretEnv    func() map[string]string
+	ExecDefaults config.ExecDefaults
+	DefaultUser  *execs.User
+	Units        execs.UnitManager
+	Installer    Installer
+	PrimaryState PrimaryStateStore
+	HarnessMode  string
 	// Prompt is the sandbox's initial prompt, retained so the primary terminal
 	// can be relaunched on demand (it is ignored once the primary has launched
 	// once and relaunch uses the harness's relaunch command instead).
@@ -88,6 +92,7 @@ type Service struct {
 	execs          *execs.Manager
 	harness        config.Harness
 	env            map[string]string
+	secretEnv      func() map[string]string
 	defaultUser    *execs.User
 	hookSocketPath string
 	installer      Installer
@@ -116,6 +121,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		execs:        cfg.Execs,
 		harness:      cloneHarness(cfg.Harness),
 		env:          cloneMap(cfg.Env),
+		secretEnv:    cfg.SecretEnv,
 		defaultUser:  defaultUser,
 		installer:    cfg.Installer,
 		primaryState: cfg.PrimaryState,
@@ -174,7 +180,14 @@ func (s *Service) Create(ctx context.Context, req CreateRequest) (execs.Exec, er
 	if err != nil {
 		return execs.Exec{}, err
 	}
-	env := execs.EnvWithRuntimeDefaults(execs.MergeEnv(s.env, req.Env), s.defaultUser)
+	base := s.env
+	if s.secretEnv != nil {
+		// Read fresh at every exec: the secrets file is refreshed
+		// independently of sandbox.json (grant approval, rotation, OAuth
+		// refresh), so a stale in-memory copy would miss updates (ADR 0012 §3).
+		base = execs.MergeEnv(base, s.secretEnv())
+	}
+	env := execs.EnvWithRuntimeDefaults(execs.MergeEnv(base, req.Env), s.defaultUser)
 	env["DISCOBOX_TERMINAL_ID"] = id
 	if s.hookSocketPath != "" {
 		env["DISCOBOX_HOOK_SOCKET"] = s.hookSocketPath

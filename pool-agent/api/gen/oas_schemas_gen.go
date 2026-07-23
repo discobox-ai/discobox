@@ -1281,6 +1281,132 @@ func (o OptNilHarnessVolumeArray) Or(d []HarnessVolume) []HarnessVolume {
 	return d
 }
 
+// NewOptNilPoolSandboxCreateRequestSecretEnv returns new OptNilPoolSandboxCreateRequestSecretEnv with value set to v.
+func NewOptNilPoolSandboxCreateRequestSecretEnv(v PoolSandboxCreateRequestSecretEnv) OptNilPoolSandboxCreateRequestSecretEnv {
+	return OptNilPoolSandboxCreateRequestSecretEnv{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilPoolSandboxCreateRequestSecretEnv is optional nullable PoolSandboxCreateRequestSecretEnv.
+type OptNilPoolSandboxCreateRequestSecretEnv struct {
+	Value PoolSandboxCreateRequestSecretEnv
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilPoolSandboxCreateRequestSecretEnv was set.
+func (o OptNilPoolSandboxCreateRequestSecretEnv) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilPoolSandboxCreateRequestSecretEnv) Reset() {
+	var v PoolSandboxCreateRequestSecretEnv
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilPoolSandboxCreateRequestSecretEnv) SetTo(v PoolSandboxCreateRequestSecretEnv) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilPoolSandboxCreateRequestSecretEnv) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilPoolSandboxCreateRequestSecretEnv) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v PoolSandboxCreateRequestSecretEnv
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilPoolSandboxCreateRequestSecretEnv) Get() (v PoolSandboxCreateRequestSecretEnv, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilPoolSandboxCreateRequestSecretEnv) Or(d PoolSandboxCreateRequestSecretEnv) PoolSandboxCreateRequestSecretEnv {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilPoolSandboxUpdateRequestSecretEnv returns new OptNilPoolSandboxUpdateRequestSecretEnv with value set to v.
+func NewOptNilPoolSandboxUpdateRequestSecretEnv(v PoolSandboxUpdateRequestSecretEnv) OptNilPoolSandboxUpdateRequestSecretEnv {
+	return OptNilPoolSandboxUpdateRequestSecretEnv{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilPoolSandboxUpdateRequestSecretEnv is optional nullable PoolSandboxUpdateRequestSecretEnv.
+type OptNilPoolSandboxUpdateRequestSecretEnv struct {
+	Value PoolSandboxUpdateRequestSecretEnv
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilPoolSandboxUpdateRequestSecretEnv was set.
+func (o OptNilPoolSandboxUpdateRequestSecretEnv) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilPoolSandboxUpdateRequestSecretEnv) Reset() {
+	var v PoolSandboxUpdateRequestSecretEnv
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilPoolSandboxUpdateRequestSecretEnv) SetTo(v PoolSandboxUpdateRequestSecretEnv) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilPoolSandboxUpdateRequestSecretEnv) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilPoolSandboxUpdateRequestSecretEnv) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v PoolSandboxUpdateRequestSecretEnv
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilPoolSandboxUpdateRequestSecretEnv) Get() (v PoolSandboxUpdateRequestSecretEnv, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilPoolSandboxUpdateRequestSecretEnv) Or(d PoolSandboxUpdateRequestSecretEnv) PoolSandboxUpdateRequestSecretEnv {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptNilResolvedHarnessConfigEnv returns new OptNilResolvedHarnessConfigEnv with value set to v.
 func NewOptNilResolvedHarnessConfigEnv(v ResolvedHarnessConfigEnv) OptNilResolvedHarnessConfigEnv {
 	return OptNilResolvedHarnessConfigEnv{
@@ -1906,6 +2032,10 @@ type PoolSandboxCreateRequest struct {
 	// Sentinel placeholder values injected into this sandbox. The pool registers them with the proxy so
 	// their real secret values are swapped at runtime.
 	Sentinels OptNilStringArray `json:"sentinels"`
+	// Secret-bound environment variable name to sentinel placeholder value. Delivered to the sandbox
+	// through a channel separate from sandbox.json (docs/adr/0012 section 3), independently refreshed as
+	// secrets rotate.
+	SecretEnv OptNilPoolSandboxCreateRequestSecretEnv `json:"secretEnv"`
 }
 
 // GetSchema returns the value of Schema.
@@ -1938,6 +2068,11 @@ func (s *PoolSandboxCreateRequest) GetSentinels() OptNilStringArray {
 	return s.Sentinels
 }
 
+// GetSecretEnv returns the value of SecretEnv.
+func (s *PoolSandboxCreateRequest) GetSecretEnv() OptNilPoolSandboxCreateRequestSecretEnv {
+	return s.SecretEnv
+}
+
 // SetSchema sets the value of Schema.
 func (s *PoolSandboxCreateRequest) SetSchema(val OptURI) {
 	s.Schema = val
@@ -1966,6 +2101,25 @@ func (s *PoolSandboxCreateRequest) SetSandboxId(val string) {
 // SetSentinels sets the value of Sentinels.
 func (s *PoolSandboxCreateRequest) SetSentinels(val OptNilStringArray) {
 	s.Sentinels = val
+}
+
+// SetSecretEnv sets the value of SecretEnv.
+func (s *PoolSandboxCreateRequest) SetSecretEnv(val OptNilPoolSandboxCreateRequestSecretEnv) {
+	s.SecretEnv = val
+}
+
+// Secret-bound environment variable name to sentinel placeholder value. Delivered to the sandbox
+// through a channel separate from sandbox.json (docs/adr/0012 section 3), independently refreshed as
+// secrets rotate.
+type PoolSandboxCreateRequestSecretEnv map[string]string
+
+func (s *PoolSandboxCreateRequestSecretEnv) init() PoolSandboxCreateRequestSecretEnv {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // Ref: #/components/schemas/PoolSandboxInstance
@@ -2334,6 +2488,9 @@ type PoolSandboxUpdateRequest struct {
 	// Replacement sentinel placeholder set for a running sandbox. The pool re-registers them with the
 	// proxy so newly bound secrets resolve without a restart.
 	Sentinels OptNilStringArray `json:"sentinels"`
+	// Replacement secret-bound environment variable name to sentinel placeholder map for a running
+	// sandbox.
+	SecretEnv OptNilPoolSandboxUpdateRequestSecretEnv `json:"secretEnv"`
 }
 
 // GetSchema returns the value of Schema.
@@ -2356,6 +2513,11 @@ func (s *PoolSandboxUpdateRequest) GetSentinels() OptNilStringArray {
 	return s.Sentinels
 }
 
+// GetSecretEnv returns the value of SecretEnv.
+func (s *PoolSandboxUpdateRequest) GetSecretEnv() OptNilPoolSandboxUpdateRequestSecretEnv {
+	return s.SecretEnv
+}
+
 // SetSchema sets the value of Schema.
 func (s *PoolSandboxUpdateRequest) SetSchema(val OptURI) {
 	s.Schema = val
@@ -2374,6 +2536,24 @@ func (s *PoolSandboxUpdateRequest) SetResources(val OptPoolSandboxResources) {
 // SetSentinels sets the value of Sentinels.
 func (s *PoolSandboxUpdateRequest) SetSentinels(val OptNilStringArray) {
 	s.Sentinels = val
+}
+
+// SetSecretEnv sets the value of SecretEnv.
+func (s *PoolSandboxUpdateRequest) SetSecretEnv(val OptNilPoolSandboxUpdateRequestSecretEnv) {
+	s.SecretEnv = val
+}
+
+// Replacement secret-bound environment variable name to sentinel placeholder map for a running
+// sandbox.
+type PoolSandboxUpdateRequestSecretEnv map[string]string
+
+func (s *PoolSandboxUpdateRequestSecretEnv) init() PoolSandboxUpdateRequestSecretEnv {
+	m := *s
+	if m == nil {
+		m = map[string]string{}
+		*s = m
+	}
+	return m
 }
 
 // PoolSyncNoContent is response for PoolSync operation.
