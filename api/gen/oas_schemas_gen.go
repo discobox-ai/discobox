@@ -742,6 +742,7 @@ const (
 	CreateSecretBodyTypeGit    CreateSecretBodyType = "git"
 	CreateSecretBodyTypeSSH    CreateSecretBodyType = "ssh"
 	CreateSecretBodyTypeBearer CreateSecretBodyType = "bearer"
+	CreateSecretBodyTypeOAuth  CreateSecretBodyType = "oauth"
 )
 
 // AllValues returns all CreateSecretBodyType values.
@@ -750,6 +751,7 @@ func (CreateSecretBodyType) AllValues() []CreateSecretBodyType {
 		CreateSecretBodyTypeGit,
 		CreateSecretBodyTypeSSH,
 		CreateSecretBodyTypeBearer,
+		CreateSecretBodyTypeOAuth,
 	}
 }
 
@@ -761,6 +763,8 @@ func (s CreateSecretBodyType) MarshalText() ([]byte, error) {
 	case CreateSecretBodyTypeSSH:
 		return []byte(s), nil
 	case CreateSecretBodyTypeBearer:
+		return []byte(s), nil
+	case CreateSecretBodyTypeOAuth:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -778,6 +782,9 @@ func (s *CreateSecretBodyType) UnmarshalText(data []byte) error {
 		return nil
 	case CreateSecretBodyTypeBearer:
 		*s = CreateSecretBodyTypeBearer
+		return nil
+	case CreateSecretBodyTypeOAuth:
+		*s = CreateSecretBodyTypeOAuth
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -957,6 +964,7 @@ const (
 	CreateSecretRequestBodyTypeGit    CreateSecretRequestBodyType = "git"
 	CreateSecretRequestBodyTypeSSH    CreateSecretRequestBodyType = "ssh"
 	CreateSecretRequestBodyTypeBearer CreateSecretRequestBodyType = "bearer"
+	CreateSecretRequestBodyTypeOAuth  CreateSecretRequestBodyType = "oauth"
 )
 
 // AllValues returns all CreateSecretRequestBodyType values.
@@ -965,6 +973,7 @@ func (CreateSecretRequestBodyType) AllValues() []CreateSecretRequestBodyType {
 		CreateSecretRequestBodyTypeGit,
 		CreateSecretRequestBodyTypeSSH,
 		CreateSecretRequestBodyTypeBearer,
+		CreateSecretRequestBodyTypeOAuth,
 	}
 }
 
@@ -976,6 +985,8 @@ func (s CreateSecretRequestBodyType) MarshalText() ([]byte, error) {
 	case CreateSecretRequestBodyTypeSSH:
 		return []byte(s), nil
 	case CreateSecretRequestBodyTypeBearer:
+		return []byte(s), nil
+	case CreateSecretRequestBodyTypeOAuth:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -993,6 +1004,9 @@ func (s *CreateSecretRequestBodyType) UnmarshalText(data []byte) error {
 		return nil
 	case CreateSecretRequestBodyTypeBearer:
 		*s = CreateSecretRequestBodyTypeBearer
+		return nil
+	case CreateSecretRequestBodyTypeOAuth:
+		*s = CreateSecretRequestBodyTypeOAuth
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
@@ -9247,6 +9261,7 @@ const (
 	SecretRequestTypeGit    SecretRequestType = "git"
 	SecretRequestTypeSSH    SecretRequestType = "ssh"
 	SecretRequestTypeBearer SecretRequestType = "bearer"
+	SecretRequestTypeOAuth  SecretRequestType = "oauth"
 )
 
 // AllValues returns all SecretRequestType values.
@@ -9255,6 +9270,7 @@ func (SecretRequestType) AllValues() []SecretRequestType {
 		SecretRequestTypeGit,
 		SecretRequestTypeSSH,
 		SecretRequestTypeBearer,
+		SecretRequestTypeOAuth,
 	}
 }
 
@@ -9266,6 +9282,8 @@ func (s SecretRequestType) MarshalText() ([]byte, error) {
 	case SecretRequestTypeSSH:
 		return []byte(s), nil
 	case SecretRequestTypeBearer:
+		return []byte(s), nil
+	case SecretRequestTypeOAuth:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -9284,6 +9302,9 @@ func (s *SecretRequestType) UnmarshalText(data []byte) error {
 	case SecretRequestTypeBearer:
 		*s = SecretRequestTypeBearer
 		return nil
+	case SecretRequestTypeOAuth:
+		*s = SecretRequestTypeOAuth
+		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)
 	}
@@ -9296,6 +9317,7 @@ const (
 	SecretTypeGit    SecretType = "git"
 	SecretTypeSSH    SecretType = "ssh"
 	SecretTypeBearer SecretType = "bearer"
+	SecretTypeOAuth  SecretType = "oauth"
 )
 
 // AllValues returns all SecretType values.
@@ -9304,6 +9326,7 @@ func (SecretType) AllValues() []SecretType {
 		SecretTypeGit,
 		SecretTypeSSH,
 		SecretTypeBearer,
+		SecretTypeOAuth,
 	}
 }
 
@@ -9315,6 +9338,8 @@ func (s SecretType) MarshalText() ([]byte, error) {
 	case SecretTypeSSH:
 		return []byte(s), nil
 	case SecretTypeBearer:
+		return []byte(s), nil
+	case SecretTypeOAuth:
 		return []byte(s), nil
 	default:
 		return nil, errors.Errorf("invalid value: %q", s)
@@ -9332,6 +9357,9 @@ func (s *SecretType) UnmarshalText(data []byte) error {
 		return nil
 	case SecretTypeBearer:
 		*s = SecretTypeBearer
+		return nil
+	case SecretTypeOAuth:
+		*s = SecretTypeOAuth
 		return nil
 	default:
 		return errors.Errorf("invalid value: %q", data)

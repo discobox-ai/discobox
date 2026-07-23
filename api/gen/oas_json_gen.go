@@ -1730,6 +1730,8 @@ func (s *CreateSecretBodyType) Decode(d *jx.Decoder) error {
 		*s = CreateSecretBodyTypeSSH
 	case CreateSecretBodyTypeBearer:
 		*s = CreateSecretBodyTypeBearer
+	case CreateSecretBodyTypeOAuth:
+		*s = CreateSecretBodyTypeOAuth
 	default:
 		*s = CreateSecretBodyType(v)
 	}
@@ -2121,6 +2123,8 @@ func (s *CreateSecretRequestBodyType) Decode(d *jx.Decoder) error {
 		*s = CreateSecretRequestBodyTypeSSH
 	case CreateSecretRequestBodyTypeBearer:
 		*s = CreateSecretRequestBodyTypeBearer
+	case CreateSecretRequestBodyTypeOAuth:
+		*s = CreateSecretRequestBodyTypeOAuth
 	default:
 		*s = CreateSecretRequestBodyType(v)
 	}
@@ -15749,6 +15753,8 @@ func (s *SecretRequestType) Decode(d *jx.Decoder) error {
 		*s = SecretRequestTypeSSH
 	case SecretRequestTypeBearer:
 		*s = SecretRequestTypeBearer
+	case SecretRequestTypeOAuth:
+		*s = SecretRequestTypeOAuth
 	default:
 		*s = SecretRequestType(v)
 	}
@@ -15791,6 +15797,8 @@ func (s *SecretType) Decode(d *jx.Decoder) error {
 		*s = SecretTypeSSH
 	case SecretTypeBearer:
 		*s = SecretTypeBearer
+	case SecretTypeOAuth:
+		*s = SecretTypeOAuth
 	default:
 		*s = SecretType(v)
 	}

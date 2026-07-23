@@ -433,6 +433,8 @@ func (s CreateSecretBodyType) Validate() error {
 		return nil
 	case "bearer":
 		return nil
+	case "oauth":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -504,6 +506,8 @@ func (s CreateSecretRequestBodyType) Validate() error {
 	case "ssh":
 		return nil
 	case "bearer":
+		return nil
+	case "oauth":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
@@ -2851,6 +2855,8 @@ func (s SecretRequestType) Validate() error {
 		return nil
 	case "bearer":
 		return nil
+	case "oauth":
+		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
 	}
@@ -2863,6 +2869,8 @@ func (s SecretType) Validate() error {
 	case "ssh":
 		return nil
 	case "bearer":
+		return nil
+	case "oauth":
 		return nil
 	default:
 		return errors.Errorf("invalid value: %v", s)
