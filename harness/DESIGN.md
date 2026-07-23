@@ -104,13 +104,23 @@ public harness file.
 `claude-code/configure.sh` collects exactly one Anthropic credential and returns
 it as a secret:
 
-- The user picks an API key (`ANTHROPIC_API_KEY`), a web login
-  (`claude setup-token` → `CLAUDE_CODE_OAUTH_TOKEN`), or — when the seed lists a
-  secret whose `PREV_` variable is set — the existing credential, which is kept
-  with `usePrevious` and never handled by the script.
-- `claude setup-token` drives a browser login and needs a TTY, so it runs under
-  `script` and the token is scraped from the transcript, falling back to the
-  credentials file the login writes.
+- The user picks an API key (`ANTHROPIC_API_KEY`, a `bearer` secret), a Claude
+  subscription login (`CLAUDE_CODE_OAUTH_TOKEN`, an `oauth` secret), or — when
+  the seed lists a secret whose `PREV_` variable is set — the existing
+  credential, which is kept with `usePrevious` and never handled by the script.
+- The subscription path runs `claude /login` (equivalent to starting claude and
+  typing `/login`), which writes the rotating OAuth blob (access token +
+  **refresh token** + expiry) to `~/.claude/.credentials.json`. The script
+  returns that whole blob plus the fixed Anthropic `tokenUrl`/`clientId` as an
+  `oauth`-typed secret value, so the control plane can refresh the access token
+  as it expires (see `resources/harnessconfigs/DESIGN.md` → OAuth secrets). It
+  deliberately does **not** use `claude setup-token`: that mints a single
+  long-lived token with no refresh token, which cannot rotate.
+- The configure sandbox has no source, so the image's `.claude.json` template
+  trusts no directory. The script first merges `hasTrustDialogAccepted` for the
+  workspace into `~/.claude.json`, so `claude /login` (and the `claude -p`
+  verification) run without stopping at the trust dialog. This touches only
+  trust/onboarding, never a credential, and is not returned as a harness file.
 - Every path ends in a `claude -p` check with only the chosen variable in the
   environment (and the credentials file moved aside), so a credential that
   cannot actually talk to the API never reaches a `HarnessConfig`. A failed

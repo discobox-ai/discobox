@@ -32,8 +32,20 @@ func TestDefinitionConfigure(t *testing.T) {
 	if !strings.Contains(script, "usePrevious") {
 		t.Fatalf("configure script cannot report keeping the previous secret: %s", script)
 	}
-	if !strings.Contains(script, "claude setup-token") {
-		t.Fatalf("configure script offers no web login: %s", script)
+	// The subscription path signs in with /login and captures the rotating OAuth
+	// blob (refresh token included) as an oauth secret, not the non-rotating
+	// `claude setup-token`, so the control plane can refresh the access token.
+	if !strings.Contains(script, "/login") {
+		t.Fatalf("configure script offers no subscription login: %s", script)
+	}
+	if !strings.Contains(script, "refreshToken") || !strings.Contains(script, "'oauth'") {
+		t.Fatalf("configure script does not capture a rotating oauth credential: %s", script)
+	}
+	// The configure sandbox has no source, so the workspace is not trusted by the
+	// image template; the script must trust it itself or `claude /login` stops at
+	// the trust dialog.
+	if !strings.Contains(script, "hasTrustDialogAccepted") {
+		t.Fatalf("configure script does not pre-trust the workspace for login: %s", script)
 	}
 	if !strings.Contains(script, "CLAUDE_CODE_OAUTH_TOKEN") || !strings.Contains(script, "ANTHROPIC_API_KEY") {
 		t.Fatalf("configure script does not offer both auth secrets: %s", script)

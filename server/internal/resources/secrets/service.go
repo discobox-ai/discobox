@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+
 	apigen "github.com/obot-platform/discobox/api/gen"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/auth"
@@ -22,6 +24,9 @@ const defaultGrantTTLSeconds = 3600
 
 type Service struct {
 	store *store.Store
+	// oauthRefresh collapses concurrent resolves of the same OAuth secret onto a
+	// single upstream token refresh, so a rotating refresh token is spent once.
+	oauthRefresh singleflight.Group
 }
 
 func NewService(store *store.Store) *Service {
@@ -325,7 +330,18 @@ func (s *Service) ResolveSandboxSecret(ctx context.Context, poolID, sandboxID, s
 		if err != nil {
 			return nil, fmt.Errorf("decrypt secret: %w", err)
 		}
-		return &model.SandboxSecretResolution{Status: model.SecretRequestStatusApproved, Value: val, ExpiresAt: grant.ExpiresAt}, nil
+		expiresAt := grant.ExpiresAt
+		if secret.Type == model.SecretTypeOAuth {
+			// Refresh a near-expired access token before handing it out, and cap the
+			// cache lifetime the proxy honors by the token's own expiry so it
+			// re-resolves — and re-refreshes — as the token ages out.
+			val, err = s.ensureFreshOAuth(ctx, secret, val)
+			if err != nil {
+				return nil, err
+			}
+			expiresAt = oauthResolutionExpiry(grant.ExpiresAt, val)
+		}
+		return &model.SandboxSecretResolution{Status: model.SecretRequestStatusApproved, Value: val, ExpiresAt: expiresAt}, nil
 	}
 
 	// No grant: ensure exactly one pending request exists for this sandbox+secret+host.
@@ -481,7 +497,14 @@ func marshalSecretValue(val apigen.SecretValue) ([]byte, error) {
 }
 
 func validSecretType(t string) bool {
-	return t == model.SecretTypeGit || t == model.SecretTypeSSH || t == model.SecretTypeBearer
+	return t == model.SecretTypeGit || t == model.SecretTypeSSH ||
+		t == model.SecretTypeBearer || t == model.SecretTypeOAuth
+}
+
+// isGenerationConflict reports whether err is the store's optimistic-concurrency
+// signal, used by the OAuth refresh to detect that another writer rotated first.
+func isGenerationConflict(err error) bool {
+	return errors.Is(err, store.ErrGenerationConflict)
 }
 
 func apiError(err error, notFoundMessage string) error {

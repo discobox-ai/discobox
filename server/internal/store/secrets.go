@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"gorm.io/gorm"
 
@@ -105,6 +106,35 @@ func (s *Store) UpdateSecret(ctx context.Context, secret *model.Secret) error {
 	_, err = withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.Secret, error) {
 		if err := tx.Save(sealed).Error; err != nil {
 			return nil, err
+		}
+		return sealed, nil
+	})
+	if err != nil {
+		return err
+	}
+	*secret = *sealed
+	return nil
+}
+
+// UpdateSecretValueIfUnchanged replaces a secret's encrypted value only if its
+// row has not been updated since prevUpdatedAt. It is the atomic swap the OAuth
+// refresh relies on: a concurrent refresh in another process bumps updated_at,
+// so the loser sees zero rows affected (ErrGenerationConflict) and re-reads the
+// winner's freshly rotated credential instead of clobbering it with a stale one.
+func (s *Store) UpdateSecretValueIfUnchanged(ctx context.Context, secret *model.Secret, prevUpdatedAt time.Time) error {
+	sealed, err := s.sealSecretForWrite(ctx, secret)
+	if err != nil {
+		return err
+	}
+	_, err = withResourceEvent(ctx, s, model.EventActionUpdated, func(tx *gorm.DB) (*model.Secret, error) {
+		result := tx.Model(&model.Secret{}).
+			Where("project_id = ? AND id = ? AND updated_at = ?", sealed.ProjectID, sealed.ID, prevUpdatedAt).
+			Update("encrypted_value", sealed.EncryptedValue)
+		if result.Error != nil {
+			return nil, result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil, ErrGenerationConflict
 		}
 		return sealed, nil
 	})

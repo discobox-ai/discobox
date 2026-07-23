@@ -99,6 +99,37 @@ returned with `usePrevious` (or as its own sentinel) keeps its existing row,
 binding, and grant, and stays out of the replacement sweep. See
 `harness/DESIGN.md` for the command-side contract.
 
+## OAuth (rotating) secrets
+
+A configure command may return a secret of type `oauth` (the claude-code
+subscription login does). Its value carries the current access token in
+`SecretValue.Token` — so the proxy swap is byte-identical to a `bearer` — plus
+the refresh material (`refreshToken`, `tokenUrl`, `clientId`,
+`accessTokenExpiresAt`) that **never leaves the control plane**: the resolve
+handler emits `Token` alone.
+
+Refresh happens lazily inside `ResolveSandboxSecret` (`resources/secrets`), the
+one place that decrypts and hands out a value:
+
+- When the access token is within `oauthRefreshSkew` of expiry, the server
+  POSTs `grant_type=refresh_token` to `tokenUrl` and re-encrypts the rotated
+  pair before returning. The refresh token rotates on every use, so the server
+  is the **single writer**: a per-secret `singleflight` collapses concurrent
+  resolves onto one upstream refresh, and the persisted write is guarded by the
+  row's `updated_at` (`UpdateSecretValueIfUnchanged`) so a refresh in another
+  process cannot be clobbered.
+- The resolution's `ExpiresAt` is capped at `min(grant expiry, token expiry)`,
+  so the proxy's per-`(client, sentinel, host)` cache lapses at token expiry and
+  re-resolves — which is what triggers the next refresh. The **grant stays
+  persistent**: consent is "the harness is configured", not the 8-hour token
+  TTL, so tokens rotate silently without re-approval.
+- A failed refresh is not fatal while a token is still on hand: it is served and
+  a use-time `401` from upstream is left as the authority on liveness.
+
+This is why the OAuth path uses `/login` rather than `claude setup-token`: only
+`/login` yields a rotating refresh token; `setup-token` mints a single
+long-lived token with nothing to refresh.
+
 ## Deconfigure
 
 `ConfiguredFiles` and `ConfiguredSecretIDs` record what the configure flow

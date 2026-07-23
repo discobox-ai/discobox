@@ -680,6 +680,12 @@ const (
 	SecretTypeGit    = "git"
 	SecretTypeSSH    = "ssh"
 	SecretTypeBearer = "bearer"
+	// SecretTypeOAuth is a bearer credential that rotates: the current access
+	// token lives in SecretValue.Token (so the proxy swap is identical to a
+	// bearer), while the refresh token, token endpoint, client ID, and access
+	// token expiry ride alongside it and never leave the control plane. The
+	// server refreshes the access token on resolve when it is near expiry.
+	SecretTypeOAuth = "oauth"
 
 	SecretRequestStatusPending  = "pending"
 	SecretRequestStatusApproved = "approved"
@@ -698,7 +704,7 @@ type Secret struct {
 	ID              string    `gorm:"primaryKey;type:text" json:"id" doc:"Stable secret ID"`
 	ProjectID       string    `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_secret_project_type_host,priority:1" json:"projectId" doc:"Project ID"`
 	Name            string    `gorm:"column:name;not null;type:text" json:"name" doc:"Secret name"`
-	Type            string    `gorm:"column:type;not null;type:text;uniqueIndex:idx_secret_project_type_host,priority:2" json:"type" doc:"Secret type" enum:"git,ssh,bearer"`
+	Type            string    `gorm:"column:type;not null;type:text;uniqueIndex:idx_secret_project_type_host,priority:2" json:"type" doc:"Secret type" enum:"git,ssh,bearer,oauth"`
 	Host            string    `gorm:"column:host;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:3" json:"host,omitempty" doc:"Optional host used to match requests"`
 	UniqueKey       string    `gorm:"column:unique_key;not null;type:text;default:'';uniqueIndex:idx_secret_project_type_host,priority:4" json:"-"`
 	Anonymous       bool      `gorm:"column:anonymous;not null;default:false;index" json:"anonymous,omitempty" doc:"Sandbox-managed secret created from an inline value; referenced only by ID"`
@@ -739,6 +745,13 @@ type SecretValue struct {
 	Passphrase string `json:"passphrase,omitempty"`
 	// bearer
 	Token string `json:"token,omitempty"`
+	// oauth. Token above holds the current access token so the proxy swap is
+	// identical to a bearer; these fields are used only server-side to refresh it
+	// and are never emitted to the pool (the resolve handler sends Token alone).
+	RefreshToken         string `json:"refreshToken,omitempty"`
+	TokenURL             string `json:"tokenUrl,omitempty"`
+	ClientID             string `json:"clientId,omitempty"`
+	AccessTokenExpiresAt int64  `json:"accessTokenExpiresAt,omitempty"` // unix milliseconds; 0 means unknown
 }
 
 // SecretRequest records a runtime ask for a secret that has no covering grant.
@@ -750,7 +763,7 @@ type SecretRequest struct {
 	ProjectID   string    `gorm:"column:project_id;not null;type:text;index" json:"projectId" doc:"Project ID"`
 	RequestedBy string    `gorm:"column:requested_by;not null;type:text" json:"requestedBy" doc:"Principal ID of the requestor"`
 	SandboxID   string    `gorm:"column:sandbox_id;not null;type:text;default:'';index" json:"sandboxId,omitempty" doc:"Sandbox that owns the sentinel, for sandbox-originated requests"`
-	Type        string    `gorm:"column:type;not null;type:text" json:"type" doc:"Secret type requested" enum:"git,ssh,bearer"`
+	Type        string    `gorm:"column:type;not null;type:text" json:"type" doc:"Secret type requested" enum:"git,ssh,bearer,oauth"`
 	Host        string    `gorm:"column:host;not null;type:text;default:''" json:"host,omitempty" doc:"Host hint provided at request time"`
 	SecretID    string    `gorm:"column:secret_id;not null;type:text;default:''" json:"secretId,omitempty" doc:"Matched secret ID; set when approved"`
 	Status      string    `gorm:"column:status;not null;type:text;default:'pending'" json:"status" doc:"Request status" enum:"pending,approved,denied"`

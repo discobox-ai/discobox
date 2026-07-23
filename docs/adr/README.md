@@ -63,3 +63,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0008](0008-attach-stream-packages.md) | Attach stream is one protocol with two roles | Accepted |
 | [0009](0009-previous-configure-secrets-are-prefixed-sentinels.md) | Previous configure secrets are offered as prefixed sentinels | Proposed |
 | [0010](0010-deletes-are-hard-deletes.md) | Deletes are hard deletes | Proposed |
+| [0011](0011-oauth-secrets-refresh-server-side-on-resolve.md) | OAuth secrets refresh server-side, on resolve | Proposed |
