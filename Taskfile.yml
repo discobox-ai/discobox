@@ -148,6 +148,11 @@ tasks:
     cmds:
       - task: dev:docker-image-watch
 
+  secret-dump:
+    desc: "Dev tool: print a stored secret's cleartext value (usage: go tool task secret-dump -- <secret-id>)"
+    cmds:
+      - cd server && go run ./cmd/discobox-secret-dump {{.CLI_ARGS}}
+
   test:
     desc: Run root module tests
     cmds:
