@@ -32,12 +32,12 @@ func (s *sandboxService) sandboxGitHTTPHandler() http.Handler {
 			return
 		}
 
-		repoPath, err := s.runtime.GitRepositoryPath(r.Context(), chi.URLParam(r, "sandboxId"), repositoryID)
+		location, err := s.runtime.GitRepositoryPath(r.Context(), chi.URLParam(r, "sandboxId"), repositoryID)
 		if err != nil {
 			http.Error(w, err.Error(), statusCodeForGitError(err))
 			return
 		}
-		githttp.ServeBackend(w, r, repoPath, suffix)
+		githttp.ServeBackend(w, r, location.Path, suffix, location.UID, location.GID)
 	})
 }
 

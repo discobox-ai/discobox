@@ -336,12 +336,20 @@ func TestWriteSandboxManifestIsWorldReadable(t *testing.T) {
 	}
 }
 
+// currentUser returns the identity of the test process itself, for exercising
+// resolveSandboxUser-driven code paths without requiring the privilege a real
+// cross-user switch would need (setting Credential to any uid this process
+// doesn't already run as fails with EPERM unless the process is root).
+func currentUser() sandboxUserIdentity {
+	return sandboxUserIdentity{uid: os.Getuid(), gid: os.Getgid()}
+}
+
 func TestRunGitWithSafeDirectoriesUsesTemporaryGlobalConfig(t *testing.T) {
 	ctx := context.Background()
 	repo := t.TempDir()
 	git(t, repo, "init", "-b", "main")
 
-	if err := runGitWithSafeDirectories(ctx, "", []string{repo}, "config", "--global", "--get-all", "safe.directory"); err != nil {
+	if err := runGitWithSafeDirectories(ctx, "", -1, -1, []string{repo}, "config", "--global", "--get-all", "safe.directory"); err != nil {
 		t.Fatalf("run git with safe directories: %v", err)
 	}
 }
@@ -371,7 +379,7 @@ func TestCheckoutGitSourceChecksOutBranchAtPinnedCommit(t *testing.T) {
 			Commit:  workerclient.NewOptString(pinned),
 		}),
 	}
-	if err := checkoutGitSource(ctx, repo, source); err != nil {
+	if err := checkoutGitSource(ctx, repo, source, -1, -1); err != nil {
 		t.Fatalf("checkout git source: %v", err)
 	}
 	if branch := gitOutput(t, repo, "branch", "--show-current"); branch != "main" {
@@ -382,7 +390,7 @@ func TestCheckoutGitSourceChecksOutBranchAtPinnedCommit(t *testing.T) {
 	}
 	git(t, repo, "checkout", "main")
 	git(t, repo, "reset", "--hard", latest)
-	if err := checkoutGitSource(ctx, repo, source); err != nil {
+	if err := checkoutGitSource(ctx, repo, source, -1, -1); err != nil {
 		t.Fatalf("checkout git source again: %v", err)
 	}
 	if branch := gitOutput(t, repo, "branch", "--show-current"); branch != "main" {
@@ -440,7 +448,7 @@ func TestMaterializeGitSourceRestoresDirtySnapshotAsUnstagedChanges(t *testing.T
 	target := filepath.Join(t.TempDir(), "target")
 	runtime := &DockerSandboxRuntime{}
 	for attempt := 1; attempt <= 2; attempt++ {
-		if err := runtime.materializeGitSource(ctx, source, target); err != nil {
+		if err := runtime.materializeGitSource(ctx, source, target, currentUser()); err != nil {
 			t.Fatalf("materialize dirty git source attempt %d: %v", attempt, err)
 		}
 		if branch := gitOutput(t, target, "branch", "--show-current"); branch != "main" {
@@ -522,7 +530,7 @@ func TestMaterializeGitSourceWithPushDeliveryInitializesRepository(t *testing.T)
 
 	// Materializing twice must be safe: create is retried.
 	for attempt := 1; attempt <= 2; attempt++ {
-		if err := runtime.materializeGitSource(ctx, source, target); err != nil {
+		if err := runtime.materializeGitSource(ctx, source, target, currentUser()); err != nil {
 			t.Fatalf("materialize push source attempt %d: %v", attempt, err)
 		}
 		if _, err := os.Stat(filepath.Join(target, ".git")); err != nil {
@@ -550,7 +558,7 @@ func TestPushIntoInitializedSourceUpdatesWorkingTree(t *testing.T) {
 	}
 	target := filepath.Join(t.TempDir(), "target")
 	runtime := &DockerSandboxRuntime{}
-	if err := runtime.materializeGitSource(ctx, source, target); err != nil {
+	if err := runtime.materializeGitSource(ctx, source, target, currentUser()); err != nil {
 		t.Fatalf("materialize push source: %v", err)
 	}
 	// git http-backend serves the repository with these settings; apply them
@@ -591,7 +599,7 @@ func TestMaterializeGitSourceWithoutDeliveryOrCloneSourceFails(t *testing.T) {
 	runtime := &DockerSandboxRuntime{}
 	target := filepath.Join(t.TempDir(), "target")
 
-	err := runtime.materializeGitSource(ctx, workerapimodel.GitSource{Kind: workerclient.GitSourceKindGit}, target)
+	err := runtime.materializeGitSource(ctx, workerapimodel.GitSource{Kind: workerclient.GitSourceKindGit}, target, currentUser())
 	if err == nil {
 		t.Fatal("materialize source with no url, no localDirectory, and no push delivery: got nil error, want failure")
 	}
@@ -650,7 +658,7 @@ func TestMaterializeGitSourceWithPushDeliveryRestoresDirtyWorkspace(t *testing.T
 	runtime := &DockerSandboxRuntime{}
 
 	// Provision: an empty repository parked for the push.
-	if err := runtime.materializeGitSource(ctx, source, target); err != nil {
+	if err := runtime.materializeGitSource(ctx, source, target, currentUser()); err != nil {
 		t.Fatalf("materialize push source: %v", err)
 	}
 	git(t, target, "config", "receive.denyCurrentBranch", "updateInstead")
@@ -659,7 +667,7 @@ func TestMaterializeGitSourceWithPushDeliveryRestoresDirtyWorkspace(t *testing.T
 	git(t, client, "push", target, "main", "+"+snapshotRef+":"+snapshotRef)
 
 	// Resume: the same call now finishes the checkout and restores the workspace.
-	if err := runtime.materializeGitSource(ctx, source, target); err != nil {
+	if err := runtime.materializeGitSource(ctx, source, target, currentUser()); err != nil {
 		t.Fatalf("materialize after push: %v", err)
 	}
 
@@ -711,16 +719,22 @@ func TestMaterializePushedSourcesCompletesExistingSandbox(t *testing.T) {
 			RefType: workerclient.NewOptString("branch"),
 		}),
 	}
+	// The resolved sandbox user must be the test process's own identity: a real
+	// cross-user Credential switch requires root, which the test process isn't.
 	req := &workerapimodel.PoolSandboxCreateRequest{
 		SandboxId: sandboxID,
 		Config: workerapimodel.SandboxConfig{
 			Source: workerclient.NewOptGitSource(source),
+			User: workerclient.NewOptSandboxUser(workerapimodel.SandboxUser{
+				UID: workerclient.NewOptInt64(int64(os.Getuid())),
+				Gid: workerclient.NewOptInt64(int64(os.Getgid())),
+			}),
 		},
 	}
 	target := runtime.workerHostPath(runtime.sandboxSourcePath(sandboxID, "primary"))
 
 	// Provision parks an empty repository.
-	if err := runtime.materializeGitSource(ctx, source, target); err != nil {
+	if err := runtime.materializeGitSource(ctx, source, target, currentUser()); err != nil {
 		t.Fatalf("materialize push source: %v", err)
 	}
 	git(t, target, "config", "receive.denyCurrentBranch", "updateInstead")
@@ -783,5 +797,76 @@ func TestMaterializePushedSourcesLeavesCloneDeliveredSourcesAlone(t *testing.T) 
 	}
 	if _, err := os.Stat(filepath.Join(target, "scratch.txt")); err != nil {
 		t.Fatalf("a clone-delivered source was re-materialized and lost in-progress work: %v", err)
+	}
+}
+
+// A push-delivered source is only supposed to be finalized once, between the
+// client's push and the harness starting. A stray duplicate resume call must
+// not reset/clean a workspace the sandbox has been using since finalization.
+func TestMaterializePushedSourcesIsANoOpOnceFinalized(t *testing.T) {
+	ctx := context.Background()
+	const projectID = "project-1"
+	const sandboxID = "sandbox-1"
+
+	client := t.TempDir()
+	git(t, client, "init", "-b", "main")
+	git(t, client, "config", "user.email", "test@example.com")
+	git(t, client, "config", "user.name", "Test")
+	if err := os.WriteFile(filepath.Join(client, "README.md"), []byte("pushed\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	git(t, client, "add", "README.md")
+	git(t, client, "commit", "-m", "pushed")
+	pushed := gitOutput(t, client, "rev-parse", "HEAD")
+
+	runtime := &DockerSandboxRuntime{projectID: projectID, hostMountPrefix: t.TempDir()}
+	source := workerapimodel.GitSource{
+		Kind:     workerclient.GitSourceKindGit,
+		Delivery: workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush),
+		Slug:     workerclient.NewOptString("primary"),
+		Checkout: workerclient.NewOptGitSourceCheckout(workerapimodel.GitSourceCheckout{
+			Commit:  workerclient.NewOptString(pushed),
+			RefName: workerclient.NewOptString("main"),
+			RefType: workerclient.NewOptString("branch"),
+		}),
+	}
+	req := &workerapimodel.PoolSandboxCreateRequest{
+		SandboxId: sandboxID,
+		Config: workerapimodel.SandboxConfig{
+			Source: workerclient.NewOptGitSource(source),
+			User: workerclient.NewOptSandboxUser(workerapimodel.SandboxUser{
+				UID: workerclient.NewOptInt64(int64(os.Getuid())),
+				Gid: workerclient.NewOptInt64(int64(os.Getgid())),
+			}),
+		},
+	}
+	target := runtime.workerHostPath(runtime.sandboxSourcePath(sandboxID, "primary"))
+
+	// Provision parks an empty repository, then the client pushes.
+	if err := runtime.materializeGitSource(ctx, source, target, currentUser()); err != nil {
+		t.Fatalf("materialize push source: %v", err)
+	}
+	git(t, target, "config", "receive.denyCurrentBranch", "updateInstead")
+	git(t, client, "push", target, "main")
+
+	// The resume create finalizes the source.
+	if err := runtime.materializePushedSources(ctx, sandboxID, req); err != nil {
+		t.Fatalf("materialize pushed sources: %v", err)
+	}
+	if !gitSourceMaterialized(target) {
+		t.Fatal("push-delivered source was not marked materialized after finalizing")
+	}
+
+	// Work the sandbox has done since the harness started.
+	if err := os.WriteFile(filepath.Join(target, "scratch.txt"), []byte("in progress\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// A stray duplicate resume call must leave the now-live workspace alone.
+	if err := runtime.materializePushedSources(ctx, sandboxID, req); err != nil {
+		t.Fatalf("materialize pushed sources again: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(target, "scratch.txt")); err != nil {
+		t.Fatalf("a finalized push-delivered source was re-materialized and lost in-progress work: %v", err)
 	}
 }

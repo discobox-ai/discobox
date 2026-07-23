@@ -11,6 +11,8 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/obot-platform/discobox/pool-agent/execidentity"
 )
 
 func ParseRepositoryPath(path string) (repositoryID, suffix string, ok bool) {
@@ -43,7 +45,11 @@ func ValidRepositoryID(value string) bool {
 	return true
 }
 
-func ServeBackend(w http.ResponseWriter, r *http.Request, repoPath, suffix string) {
+// ServeBackend runs git http-backend against repoPath as the given uid/gid, so
+// its process ownership matches the worktree's owner and git's dubious-ownership
+// check (safe.directory) doesn't reject the request. A negative uid means "run
+// as the calling process" (used when there is no specific owner to impersonate).
+func ServeBackend(w http.ResponseWriter, r *http.Request, repoPath, suffix string, uid, gid int) {
 	//nolint:gosec // The executable and arguments are fixed; request data is passed through CGI env/stdin.
 	cmd := exec.CommandContext(r.Context(),
 		"git",
@@ -53,6 +59,7 @@ func ServeBackend(w http.ResponseWriter, r *http.Request, repoPath, suffix strin
 	)
 	cmd.Env = backendEnv(r, repoPath, suffix)
 	cmd.Stdin = r.Body
+	cmd.SysProcAttr = execidentity.SysProcAttr(uid, gid)
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)

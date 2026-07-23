@@ -15,6 +15,7 @@ import (
 	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -29,6 +30,7 @@ import (
 	apigen "github.com/obot-platform/discobox/api/gen"
 	apimodel "github.com/obot-platform/discobox/api/model"
 
+	"github.com/obot-platform/discobox/pool-agent/execidentity"
 	"github.com/obot-platform/discobox/pool-agent/proxyagent"
 
 	workerclient "github.com/obot-platform/discobox/pool-agent/api/gen"
@@ -76,6 +78,20 @@ type Sandbox struct {
 	Env       map[string]string
 }
 
+// GitRepositoryLocation is the on-host location of a sandbox's git repository,
+// together with the OS identity that owns it. The git CGI backend must run as
+// this identity, not as the pool-agent process's own identity, or it trips
+// git's dubious-ownership check against the sandbox user's checked-out worktree.
+type GitRepositoryLocation struct {
+	Path string
+	// UID and GID are the owning user. A negative value means the caller
+	// should not attempt to change identity — used by the in-memory runtime,
+	// whose repository paths are simply owned by whichever user is running
+	// the process (there is no sandbox container user to impersonate).
+	UID int
+	GID int
+}
+
 // AssignedPort describes a runtime-assigned port mapping.
 type AssignedPort struct {
 	ContainerPort int
@@ -110,7 +126,7 @@ type Runtime interface {
 	SyncKnownPools(ctx context.Context, knownPoolIDs []string) error
 	StartSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) (*Sandbox, error)
 	StopSandbox(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxOperationRequest) (*Sandbox, error)
-	GitRepositoryPath(ctx context.Context, sandboxID, repositoryID string) (string, error)
+	GitRepositoryPath(ctx context.Context, sandboxID, repositoryID string) (GitRepositoryLocation, error)
 	HTTPBaseURL(ctx context.Context, sandboxID string, port int) (*url.URL, error)
 }
 
@@ -287,18 +303,22 @@ func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, imageNa
 // clean a workspace the sandbox may have been using since.
 //
 // Materialization is idempotent, so a repeat create that has nothing new to
-// deliver is a no-op.
+// deliver is a no-op; once it has actually finished a source, a marker (see
+// gitSourceMaterialized) makes every later repeat a true no-op too, so a stray
+// duplicate resume call can't reset/clean a workspace the sandbox has been
+// using since.
 func (r *DockerSandboxRuntime) materializePushedSources(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest) error {
 	if req == nil {
 		return nil
 	}
 	normalizeSandboxConfig(&req.Config)
+	user := resolveSandboxUser(req)
 	for _, source := range sandboxSources(req) {
 		if !gitSourceAwaitsPush(source.git) {
 			continue
 		}
 		sourcePoolPath := r.workerHostPath(r.sandboxSourcePath(sandboxID, source.slug))
-		if err := r.materializeGitSource(ctx, source.git, sourcePoolPath); err != nil {
+		if err := r.materializeGitSource(ctx, source.git, sourcePoolPath, user); err != nil {
 			return fmt.Errorf("materialize pushed source %q: %w", source.slug, err)
 		}
 	}
@@ -329,7 +349,7 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 	}
 	for _, source := range sandboxSources(req) {
 		sourcePoolPath := r.workerHostPath(r.sandboxSourcePath(sandboxID, source.slug))
-		if err := r.materializeGitSource(ctx, source.git, sourcePoolPath); err != nil {
+		if err := r.materializeGitSource(ctx, source.git, sourcePoolPath, user); err != nil {
 			return nil, fmt.Errorf("materialize source %q: %w", source.slug, err)
 		}
 		if err := prepareOwnedDirectory(ctx, sourcePoolPath, user.uid, user.gid); err != nil {
@@ -1035,18 +1055,33 @@ func (r *DockerSandboxRuntime) StopSandbox(ctx context.Context, sandboxID string
 	return r.GetSandbox(ctx, sandboxID)
 }
 
-func (r *DockerSandboxRuntime) GitRepositoryPath(ctx context.Context, sandboxID, repositoryID string) (string, error) {
-	if _, err := r.GetSandbox(ctx, sandboxID); err != nil {
-		return "", err
+func (r *DockerSandboxRuntime) GitRepositoryPath(ctx context.Context, sandboxID, repositoryID string) (GitRepositoryLocation, error) {
+	sb, err := r.GetSandbox(ctx, sandboxID)
+	if err != nil {
+		return GitRepositoryLocation{}, err
 	}
 	repoPath := r.workerHostPath(r.sandboxSourcePath(sandboxID, repositoryID))
 	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err != nil {
 		if os.IsNotExist(err) {
-			return "", ErrNotFound
+			return GitRepositoryLocation{}, ErrNotFound
 		}
-		return "", err
+		return GitRepositoryLocation{}, err
 	}
-	return repoPath, nil
+	uid, gid := sandboxUserFromEnv(sb.Env)
+	return GitRepositoryLocation{Path: repoPath, UID: uid, GID: gid}, nil
+}
+
+// sandboxUserFromEnv recovers the sandbox's resolved user from the
+// DISCOBOX_USER_UID/DISCOBOX_USER_GID env vars envWithSandboxUser stamped onto
+// the container, defaulting to root (uid/gid 0) to match resolveSandboxUser.
+func sandboxUserFromEnv(env map[string]string) (uid, gid int) {
+	if parsed, err := strconv.Atoi(env["DISCOBOX_USER_UID"]); err == nil {
+		uid = parsed
+	}
+	if parsed, err := strconv.Atoi(env["DISCOBOX_USER_GID"]); err == nil {
+		gid = parsed
+	}
+	return uid, gid
 }
 
 func (r *DockerSandboxRuntime) HTTPBaseURL(ctx context.Context, sandboxID string, port int) (*url.URL, error) {
@@ -1349,17 +1384,17 @@ func (r *MemorySandboxRuntime) StopSandbox(_ context.Context, sandboxID string, 
 	return cloneSandbox(sb), nil
 }
 
-func (r *MemorySandboxRuntime) GitRepositoryPath(_ context.Context, sandboxID, repositoryID string) (string, error) {
+func (r *MemorySandboxRuntime) GitRepositoryPath(_ context.Context, sandboxID, repositoryID string) (GitRepositoryLocation, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.sandboxes[sandboxID] == nil {
-		return "", ErrNotFound
+		return GitRepositoryLocation{}, ErrNotFound
 	}
 	repositories := r.gitRepositories[sandboxID]
 	if repositories == nil || repositories[repositoryID] == "" {
-		return "", ErrNotFound
+		return GitRepositoryLocation{}, ErrNotFound
 	}
-	return repositories[repositoryID], nil
+	return GitRepositoryLocation{Path: repositories[repositoryID], UID: -1, GID: -1}, nil
 }
 
 func (r *MemorySandboxRuntime) HTTPBaseURL(context.Context, string, int) (*url.URL, error) {
@@ -1693,27 +1728,57 @@ func (r *DockerSandboxRuntime) workerHostPath(hostPath string) string {
 	return filepath.Join(r.hostMountPrefix, strings.TrimPrefix(hostPath, string(filepath.Separator)))
 }
 
-func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source workerapimodel.GitSource, target string) error {
+// materializeGitSource brings target to the state source describes, running
+// git as whichever identity actually owns target at each step.
+//
+// A push-delivered source's target is chowned to the sandbox user immediately
+// after initGitSource creates it (prepareSandboxVolumes / materializePushedSources),
+// so every operation below that point — reset, clean, checkout, workspace
+// restore — runs as that user (identity), not as this process's own identity,
+// or it trips the repository's dubious-ownership check against a directory it
+// no longer owns. A clone-delivered source's target is still owned by this
+// process at materialize time (prepareSandboxVolumes only chowns it after this
+// function returns), so those same operations run under the calling process's
+// own identity there, matching who actually created the clone.
+func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source workerapimodel.GitSource, target string, user sandboxUserIdentity) error {
+	identity := sandboxUserIdentity{uid: -1, gid: -1}
+	if gitSourceAwaitsPush(source) {
+		identity = user
+	}
 	if _, err := os.Stat(filepath.Join(target, ".git")); err == nil {
-		// A push-delivered repository with no commits is still waiting for the
-		// client. There is nothing to reset, clean, or check out yet, and every
-		// one of those fails against an unborn branch.
-		if gitSourceAwaitsPush(source) && !gitHasCommits(ctx, target) {
-			return nil
+		if gitSourceAwaitsPush(source) {
+			// Once the resumed create has finished a push-delivered source, a
+			// stray repeat must not touch it again: the sandbox may have been
+			// using the workspace since, and reset/clean would destroy that.
+			if gitSourceMaterialized(target) {
+				return nil
+			}
+			// A push-delivered repository with no commits is still waiting for
+			// the client. There is nothing to reset, clean, or check out yet,
+			// and every one of those fails against an unborn branch.
+			if !gitHasCommits(ctx, target, identity.uid, identity.gid) {
+				return nil
+			}
 		}
 		// A prior create attempt may have already restored a dirty workspace.
 		// Return the repository to a clean state before materializing the desired
 		// checkout again so this operation remains retry-safe.
-		if err := runGit(ctx, target, "reset", "--hard"); err != nil {
+		if err := runGit(ctx, target, identity.uid, identity.gid, "reset", "--hard"); err != nil {
 			return err
 		}
-		if err := runGit(ctx, target, "clean", "-fd"); err != nil {
+		if err := runGit(ctx, target, identity.uid, identity.gid, "clean", "-fd"); err != nil {
 			return err
 		}
-		if err := checkoutGitSource(ctx, target, source); err != nil {
+		if err := checkoutGitSource(ctx, target, source, identity.uid, identity.gid); err != nil {
 			return err
 		}
-		return r.restoreGitWorkspace(ctx, target, source)
+		if err := r.restoreGitWorkspace(ctx, target, source, identity.uid, identity.gid); err != nil {
+			return err
+		}
+		if gitSourceAwaitsPush(source) {
+			return markGitSourceMaterialized(target, user.uid, user.gid)
+		}
+		return nil
 	} else if !os.IsNotExist(err) {
 		return err
 	}
@@ -1736,16 +1801,16 @@ func (r *DockerSandboxRuntime) materializeGitSource(ctx context.Context, source 
 		}
 	}
 	args = append(args, cloneURL, target)
-	if err := runGitWithSafeDirectories(ctx, "", gitSafeDirectories(cloneURL, r.hostMountPrefix), args...); err != nil {
+	if err := runGitWithSafeDirectories(ctx, "", identity.uid, identity.gid, gitSafeDirectories(cloneURL, r.hostMountPrefix), args...); err != nil {
 		return err
 	}
-	if err := checkoutGitSource(ctx, target, source); err != nil {
+	if err := checkoutGitSource(ctx, target, source, identity.uid, identity.gid); err != nil {
 		return err
 	}
-	return r.restoreGitWorkspace(ctx, target, source)
+	return r.restoreGitWorkspace(ctx, target, source, identity.uid, identity.gid)
 }
 
-func (r *DockerSandboxRuntime) restoreGitWorkspace(ctx context.Context, repo string, source workerapimodel.GitSource) error {
+func (r *DockerSandboxRuntime) restoreGitWorkspace(ctx context.Context, repo string, source workerapimodel.GitSource, uid, gid int) error {
 	workspace, ok := source.Workspace.Get()
 	if !ok || workspace.Mode.Or(workerclient.GitSourceWorkspaceModeClean) != workerclient.GitSourceWorkspaceModeDirty {
 		return nil
@@ -1755,7 +1820,7 @@ func (r *DockerSandboxRuntime) restoreGitWorkspace(ctx context.Context, repo str
 	if baseCommit == "" || snapshotRef == "" {
 		return fmt.Errorf("dirty workspace requires baseCommit and snapshotRef")
 	}
-	if err := runGit(ctx, repo, "check-ref-format", snapshotRef); err != nil {
+	if err := runGit(ctx, repo, uid, gid, "check-ref-format", snapshotRef); err != nil {
 		return fmt.Errorf("invalid workspace snapshot ref %q: %w", snapshotRef, err)
 	}
 
@@ -1763,24 +1828,28 @@ func (r *DockerSandboxRuntime) restoreGitWorkspace(ctx context.Context, repo str
 	// snapshot ref in alongside the branch, so the objects are already here.
 	// Everything below is local and applies to both delivery modes.
 	if !gitSourceAwaitsPush(source) {
-		remoteURL, err := runGitOutput(ctx, repo, nil, "remote", "get-url", "origin")
+		remoteURL, err := runGitOutput(ctx, repo, uid, gid, nil, "remote", "get-url", "origin")
 		if err != nil {
 			return err
 		}
 		remoteURL = bytes.TrimSpace(remoteURL)
 		refspec := "+" + snapshotRef + ":" + snapshotRef
-		if err := runGitWithSafeDirectories(ctx, repo, gitSafeDirectories(string(remoteURL), r.hostMountPrefix), "fetch", "origin", refspec); err != nil {
+		// The fetch reads from origin, a possibly arbitrary and differently
+		// owned local path (materializeGitSource's clone case), so it always
+		// runs under the caller's own identity rather than uid/gid — the same
+		// identity that owns repo at this point in the clone-delivered path.
+		if err := runGitWithSafeDirectories(ctx, repo, -1, -1, gitSafeDirectories(string(remoteURL), r.hostMountPrefix), "fetch", "origin", refspec); err != nil {
 			return fmt.Errorf("fetch workspace snapshot %q: %w", snapshotRef, err)
 		}
-	} else if err := runGit(ctx, repo, "rev-parse", "--verify", "--quiet", snapshotRef+"^{commit}"); err != nil {
+	} else if err := runGit(ctx, repo, uid, gid, "rev-parse", "--verify", "--quiet", snapshotRef+"^{commit}"); err != nil {
 		return fmt.Errorf("workspace snapshot %q was not pushed to the sandbox", snapshotRef)
 	}
 
-	parent, err := runGitOutput(ctx, repo, nil, "rev-parse", "--verify", snapshotRef+"^")
+	parent, err := runGitOutput(ctx, repo, uid, gid, nil, "rev-parse", "--verify", snapshotRef+"^")
 	if err != nil {
 		return fmt.Errorf("resolve workspace snapshot parent: %w", err)
 	}
-	resolvedBase, err := runGitOutput(ctx, repo, nil, "rev-parse", "--verify", baseCommit+"^{commit}")
+	resolvedBase, err := runGitOutput(ctx, repo, uid, gid, nil, "rev-parse", "--verify", baseCommit+"^{commit}")
 	if err != nil {
 		return fmt.Errorf("resolve workspace base commit: %w", err)
 	}
@@ -1792,17 +1861,17 @@ func (r *DockerSandboxRuntime) restoreGitWorkspace(ctx context.Context, repo str
 	// base commit before applying the snapshot tree diff to the worktree only.
 	// This deliberately leaves both originally staged and unstaged changes
 	// unstaged in the sandbox.
-	if err := runGit(ctx, repo, "reset", "--hard", baseCommit); err != nil {
+	if err := runGit(ctx, repo, uid, gid, "reset", "--hard", baseCommit); err != nil {
 		return err
 	}
-	patch, err := runGitOutput(ctx, repo, nil, "diff", "--binary", "--full-index", baseCommit, snapshotRef, "--")
+	patch, err := runGitOutput(ctx, repo, uid, gid, nil, "diff", "--binary", "--full-index", baseCommit, snapshotRef, "--")
 	if err != nil {
 		return fmt.Errorf("create workspace snapshot patch: %w", err)
 	}
 	if len(patch) == 0 {
 		return nil
 	}
-	if _, err := runGitOutput(ctx, repo, patch, "apply", "--binary", "--whitespace=nowarn", "-"); err != nil {
+	if _, err := runGitOutput(ctx, repo, uid, gid, patch, "apply", "--binary", "--whitespace=nowarn", "-"); err != nil {
 		return fmt.Errorf("apply workspace snapshot: %w", err)
 	}
 	return nil
@@ -1830,6 +1899,33 @@ func gitSourceAwaitsPush(source workerapimodel.GitSource) bool {
 	return ok && string(delivery) == string(workerclient.GitSourceDeliveryPush)
 }
 
+// gitMaterializedMarkerName records, inside a push-delivered source's .git
+// directory, that materializeGitSource has already finished checking it out
+// and restoring its workspace once. It lives under .git rather than the
+// worktree so it never appears as an untracked file the sandbox user sees.
+const gitMaterializedMarkerName = "discobox-materialized"
+
+func gitMaterializedMarkerPath(target string) string {
+	return filepath.Join(target, ".git", gitMaterializedMarkerName)
+}
+
+// gitSourceMaterialized reports whether a push-delivered source has already
+// been finalized once, so a stray repeat create knows to leave it alone.
+func gitSourceMaterialized(target string) bool {
+	_, err := os.Stat(gitMaterializedMarkerPath(target))
+	return err == nil
+}
+
+// markGitSourceMaterialized records that a push-delivered source has been
+// finalized, owned by the same sandbox user as the rest of the repository.
+func markGitSourceMaterialized(target string, uid, gid int) error {
+	path := gitMaterializedMarkerPath(target)
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		return err
+	}
+	return os.Chown(path, uid, gid)
+}
+
 // initGitSource creates the empty repository a client pushes its source into.
 //
 // The repository must exist before git http-backend will serve it, so a source
@@ -1848,7 +1944,10 @@ func (r *DockerSandboxRuntime) initGitSource(ctx context.Context, source workera
 		args = append(args, "-b", branch)
 	}
 	args = append(args, target)
-	if err := runGit(ctx, "", args...); err != nil {
+	// target does not exist yet, so this always runs under the caller's own
+	// identity; prepareSandboxVolumes/materializePushedSources chown it to the
+	// sandbox user immediately after this returns.
+	if err := runGit(ctx, "", -1, -1, args...); err != nil {
 		return fmt.Errorf("initialize source repository for push: %w", err)
 	}
 	return nil
@@ -1856,8 +1955,8 @@ func (r *DockerSandboxRuntime) initGitSource(ctx context.Context, source workera
 
 // gitHasCommits reports whether repo has a resolvable HEAD. A repository that
 // was initialized for a push has none until the client delivers one.
-func gitHasCommits(ctx context.Context, repo string) bool {
-	return runGit(ctx, repo, "rev-parse", "--verify", "--quiet", "HEAD") == nil
+func gitHasCommits(ctx context.Context, repo string, uid, gid int) bool {
+	return runGit(ctx, repo, uid, gid, "rev-parse", "--verify", "--quiet", "HEAD") == nil
 }
 
 // gitSourceInitialBranch returns the branch the client is expected to push, or
@@ -1918,7 +2017,7 @@ func gitSafeDirectories(cloneURL, hostMountPrefix string) []string {
 	return dirs
 }
 
-func checkoutGitSource(ctx context.Context, repo string, source workerapimodel.GitSource) error {
+func checkoutGitSource(ctx context.Context, repo string, source workerapimodel.GitSource, uid, gid int) error {
 	checkout, ok := source.Checkout.Get()
 	if !ok {
 		return nil
@@ -1927,23 +2026,28 @@ func checkoutGitSource(ctx context.Context, repo string, source workerapimodel.G
 	refType := strings.ToLower(strings.TrimSpace(optString(checkout.RefType)))
 	if commit := strings.TrimSpace(optString(checkout.Commit)); commit != "" {
 		if refName != "" && refType == "branch" {
-			return runGit(ctx, repo, "checkout", "-B", refName, commit)
+			return runGit(ctx, repo, uid, gid, "checkout", "-B", refName, commit)
 		}
-		return runGit(ctx, repo, "checkout", "--detach", commit)
+		return runGit(ctx, repo, uid, gid, "checkout", "--detach", commit)
 	}
 	if refName != "" {
-		return runGit(ctx, repo, "checkout", refName)
+		return runGit(ctx, repo, uid, gid, "checkout", refName)
 	}
 	return nil
 }
 
-func runGit(ctx context.Context, dir string, args ...string) error {
-	return runGitWithEnv(ctx, dir, nil, args...)
+// runGit and its variants run git against dir as uid/gid, or as the calling
+// process's own identity when uid is negative. A repository's dubious-ownership
+// check trips whenever the running process's identity doesn't match the
+// directory's owner, so callers must pass whichever identity actually owns dir
+// (see materializeGitSource for how that identity is chosen per operation).
+func runGit(ctx context.Context, dir string, uid, gid int, args ...string) error {
+	return runGitWithEnv(ctx, dir, uid, gid, nil, args...)
 }
 
-func runGitWithSafeDirectories(ctx context.Context, dir string, safeDirectories []string, args ...string) error {
+func runGitWithSafeDirectories(ctx context.Context, dir string, uid, gid int, safeDirectories []string, args ...string) error {
 	if len(safeDirectories) == 0 {
-		return runGit(ctx, dir, args...)
+		return runGit(ctx, dir, uid, gid, args...)
 	}
 	config, err := os.CreateTemp("", "discobox-gitconfig-*")
 	if err != nil {
@@ -1963,19 +2067,19 @@ func runGitWithSafeDirectories(ctx context.Context, dir string, safeDirectories 
 	if err := config.Close(); err != nil {
 		return err
 	}
-	return runGitWithEnv(ctx, dir, []string{"GIT_CONFIG_GLOBAL=" + config.Name()}, args...)
+	return runGitWithEnv(ctx, dir, uid, gid, []string{"GIT_CONFIG_GLOBAL=" + config.Name()}, args...)
 }
 
-func runGitWithEnv(ctx context.Context, dir string, env []string, args ...string) error {
-	_, err := runGitOutputWithEnv(ctx, dir, nil, env, args...)
+func runGitWithEnv(ctx context.Context, dir string, uid, gid int, env []string, args ...string) error {
+	_, err := runGitOutputWithEnv(ctx, dir, uid, gid, nil, env, args...)
 	return err
 }
 
-func runGitOutput(ctx context.Context, dir string, stdin []byte, args ...string) ([]byte, error) {
-	return runGitOutputWithEnv(ctx, dir, stdin, nil, args...)
+func runGitOutput(ctx context.Context, dir string, uid, gid int, stdin []byte, args ...string) ([]byte, error) {
+	return runGitOutputWithEnv(ctx, dir, uid, gid, stdin, nil, args...)
 }
 
-func runGitOutputWithEnv(ctx context.Context, dir string, stdin []byte, env []string, args ...string) ([]byte, error) {
+func runGitOutputWithEnv(ctx context.Context, dir string, uid, gid int, stdin []byte, env []string, args ...string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	if dir != "" {
 		cmd.Dir = dir
@@ -1986,6 +2090,7 @@ func runGitOutputWithEnv(ctx context.Context, dir string, stdin []byte, env []st
 	if len(env) > 0 {
 		cmd.Env = append(os.Environ(), env...)
 	}
+	cmd.SysProcAttr = execidentity.SysProcAttr(uid, gid)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
