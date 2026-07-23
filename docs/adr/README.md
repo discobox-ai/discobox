@@ -66,3 +66,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0011](0011-oauth-secrets-refresh-server-side-on-resolve.md) | OAuth secrets refresh server-side, on resolve | Proposed |
 | [0012](0012-sandbox-config-is-three-attribute-owned-layers.md) | Sandbox config is three attribute-owned layers, merged by a shared library | Accepted |
 | [0013](0013-local-linux-pools-use-libkrun-microvms.md) | Local Linux pools use libkrun microVMs with VSOCK and passt | Accepted |
+| [0014](0014-disco-apply-pulls-sandbox-commits-via-cherry-pick.md) | `disco apply` pulls sandbox commits to the host via cherry-pick | Accepted |
