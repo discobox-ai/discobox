@@ -46,15 +46,17 @@ The pool-agent stops mounting home/docker/individual paths. It mounts exactly:
 
 | Mount in sandbox | Scope | Host backing |
 | --- | --- | --- |
-| `/.discobox/data` | per-sandbox, persistent | `projects/{project_id}/pools/{pool_id}/sandboxes/{sandbox_id}/data` |
-| `/.discobox/cache` | shared across the pool's sandboxes in this project | `projects/{project_id}/pools/{pool_id}/cache` |
-| `/.discobox/config` | per-sandbox | `projects/{project_id}/pools/{pool_id}/sandboxes/{sandbox_id}/config` |
-| `/.discobox/sources` | per-sandbox | `projects/{project_id}/pools/{pool_id}/sandboxes/{sandbox_id}/sources` |
+| `/.discobox/data` | per-sandbox, persistent | `/var/lib/discobox/projects/{project_id}/pools/{pool_id}/sandboxes/{sandbox_id}/data` |
+| `/.discobox/cache` | shared across the pool's sandboxes in this project | `/var/lib/discobox/cache/projects/{project_id}/pools/{pool_id}/cache` |
+| `/.discobox/config` | per-sandbox | `/var/lib/discobox/projects/{project_id}/pools/{pool_id}/sandboxes/{sandbox_id}/config` |
+| `/.discobox/sources` | per-sandbox | `/var/lib/discobox/projects/{project_id}/pools/{pool_id}/sandboxes/{sandbox_id}/sources` |
 
 The host layout gains a `pools/{pool_id}` level so the cache is
 pool-and-project scoped. `config` holds `sandbox.json` and the proxy material,
 exactly as `/etc/discobox` does today; `sources` holds git-materialized
-checkouts.
+checkouts. The cache uses its own top-level root so providers may mount
+disposable storage at `/var/lib/discobox/cache` without moving durable sandbox
+or proxy state.
 
 ### 2. The image declares volumes; `%HOME%`/`%UID%`/`%GID%` resolve at runtime
 
@@ -175,3 +177,6 @@ source reset touching the data volume tree.
   calls need no new capability.
 - The DB is disposable, so the host-layout change needs no migration; existing
   per-sandbox volume trees are abandoned, not upgraded.
+- Existing pool caches at
+  `/var/lib/discobox/projects/{project_id}/pools/{pool_id}/cache` are
+  disposable and are reclaimed rather than migrated.
