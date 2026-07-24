@@ -386,6 +386,16 @@ type Invoker interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/reconcile
 	ReconcileSandbox(ctx context.Context, params ReconcileSandboxParams) (ReconcileSandboxRes, error)
+	// RefreshHarnessConfigImage invokes refresh-harness-config-image operation.
+	//
+	// Re-inspect the harness config's image and re-snapshot its label metadata and digest.
+	// Registration snapshots the label once and nothing re-reads it, so a config pointing at a
+	// rebuilt tag keeps describing an image that no longer exists under it — and its sandboxes
+	// can never report an available upgrade. Built-in configs get this automatically on server
+	// start; user-registered ones need this call. Never flips configured.
+	//
+	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image
+	RefreshHarnessConfigImage(ctx context.Context, params RefreshHarnessConfigImageParams) (RefreshHarnessConfigImageRes, error)
 	// RegisterPool invokes register-pool operation.
 	//
 	// Register a bootstrapped pool agent.
@@ -506,6 +516,12 @@ type Invoker interface {
 	//
 	// PUT /projects/{projectId}/secrets/{secretId}
 	UpdateSecret(ctx context.Context, request *UpdateSecretBody, params UpdateSecretParams) (UpdateSecretRes, error)
+	// UpgradeSandbox invokes upgrade-sandbox operation.
+	//
+	// Upgrade a sandbox to its harness config's current image.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/upgrade
+	UpgradeSandbox(ctx context.Context, request *UpgradeSandboxBody, params UpgradeSandboxParams) (UpgradeSandboxRes, error)
 }
 
 // Client implements OAS client.
@@ -6710,6 +6726,122 @@ func (c *Client) sendReconcileSandbox(ctx context.Context, params ReconcileSandb
 	return result, nil
 }
 
+// RefreshHarnessConfigImage invokes refresh-harness-config-image operation.
+//
+// Re-inspect the harness config's image and re-snapshot its label metadata and digest.
+// Registration snapshots the label once and nothing re-reads it, so a config pointing at a
+// rebuilt tag keeps describing an image that no longer exists under it — and its sandboxes
+// can never report an available upgrade. Built-in configs get this automatically on server
+// start; user-registered ones need this call. Never flips configured.
+//
+// POST /projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image
+func (c *Client) RefreshHarnessConfigImage(ctx context.Context, params RefreshHarnessConfigImageParams) (RefreshHarnessConfigImageRes, error) {
+	res, err := c.sendRefreshHarnessConfigImage(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendRefreshHarnessConfigImage(ctx context.Context, params RefreshHarnessConfigImageParams) (res RefreshHarnessConfigImageRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("refresh-harness-config-image"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, RefreshHarnessConfigImageOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/harness-configs/"
+	{
+		// Encode "harnessConfigId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "harnessConfigId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.HarnessConfigId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/refresh-image"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeRefreshHarnessConfigImageResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // RegisterPool invokes register-pool operation.
 //
 // Register a bootstrapped pool agent.
@@ -8937,6 +9069,121 @@ func (c *Client) sendUpdateSecret(ctx context.Context, request *UpdateSecretBody
 
 	stage = "DecodeResponse"
 	result, err := decodeUpdateSecretResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// UpgradeSandbox invokes upgrade-sandbox operation.
+//
+// Upgrade a sandbox to its harness config's current image.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/upgrade
+func (c *Client) UpgradeSandbox(ctx context.Context, request *UpgradeSandboxBody, params UpgradeSandboxParams) (UpgradeSandboxRes, error) {
+	res, err := c.sendUpgradeSandbox(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendUpgradeSandbox(ctx context.Context, request *UpgradeSandboxBody, params UpgradeSandboxParams) (res UpgradeSandboxRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("upgrade-sandbox"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/projects/{projectId}/sandboxes/{sandboxId}/upgrade"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, UpgradeSandboxOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/upgrade"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeUpgradeSandboxRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeUpgradeSandboxResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

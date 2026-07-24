@@ -112,6 +112,12 @@ type SandboxRemovalRequest struct {
 	PoolID          string             `json:"-"`
 	PrivateKey      ed25519.PrivateKey `json:"-"`
 	SandboxID       string             `json:"sandboxId"`
+	// ContainerID is the runtime that was removed. The control plane ignores a
+	// report naming a container it no longer believes is serving the sandbox, so
+	// a report about an already-replaced container cannot countermand the
+	// operation that replaced it (ADR 0016 §8). Empty when the report comes from
+	// the level-triggered orphan sweep rather than a removal event.
+	ContainerID string `json:"containerId,omitempty"`
 }
 
 // RegisterResponse is returned by the control plane after pool registration.

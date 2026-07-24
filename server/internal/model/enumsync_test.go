@@ -63,6 +63,7 @@ var yamlOwnedEnums = map[string]string{
 	"SandboxExec.status":                 "exec lifecycle is owned by the sandbox-agent",
 	"SandboxExecLogEntry.stream":         "exec log streams are owned by the sandbox-agent",
 	"HarnessVolume.volume":               "value set is owned by harness.VolumeKind in the root module, not a server/internal/model enum tag",
+	"SandboxUpgrade.reason":              "derived at read time by services.SandboxUpgrade from the pin and the harness config; nothing on the model stores it",
 }
 
 func TestModelEnumTagsMatchOpenAPI(t *testing.T) {

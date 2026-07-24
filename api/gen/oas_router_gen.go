@@ -11,16 +11,16 @@ import (
 )
 
 var (
-	rn70AllowedHeaders = map[string]string{
+	rn71AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn75AllowedHeaders = map[string]string{
+	rn76AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn73AllowedHeaders = map[string]string{
+	rn74AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn91AllowedHeaders = map[string]string{
+	rn92AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn32AllowedHeaders = map[string]string{
@@ -65,13 +65,16 @@ var (
 	rn9AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn77AllowedHeaders = map[string]string{
+	rn78AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn84AllowedHeaders = map[string]string{
+	rn85AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn87AllowedHeaders = map[string]string{
+	rn88AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn93AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn38AllowedHeaders = map[string]string{
@@ -182,7 +185,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							default:
 								s.notAllowed(w, r, notAllowedParams{
 									allowedMethods: "POST",
-									allowedHeaders: rn70AllowedHeaders,
+									allowedHeaders: rn71AllowedHeaders,
 									acceptPost:     "application/json",
 									acceptPatch:    "",
 								})
@@ -236,7 +239,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 								default:
 									s.notAllowed(w, r, notAllowedParams{
 										allowedMethods: "POST",
-										allowedHeaders: rn75AllowedHeaders,
+										allowedHeaders: rn76AllowedHeaders,
 										acceptPost:     "application/json",
 										acceptPatch:    "",
 									})
@@ -275,7 +278,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "POST",
-											allowedHeaders: rn73AllowedHeaders,
+											allowedHeaders: rn74AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
 										})
@@ -302,7 +305,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "POST",
-											allowedHeaders: rn91AllowedHeaders,
+											allowedHeaders: rn92AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
 										})
@@ -1069,6 +1072,34 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 											}
 
+										case 'r': // Prefix: "refresh-image"
+
+											if l := len("refresh-image"); len(elem) >= l && elem[0:l] == "refresh-image" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch r.Method {
+												case "POST":
+													s.handleRefreshHarnessConfigImageRequest([2]string{
+														args[0],
+														args[1],
+													}, elemIsEscaped, w, r)
+												default:
+													s.notAllowed(w, r, notAllowedParams{
+														allowedMethods: "POST",
+														allowedHeaders: nil,
+														acceptPost:     "",
+														acceptPatch:    "",
+													})
+												}
+
+												return
+											}
+
 										case 's': // Prefix: "secret-bindings"
 
 											if l := len("secret-bindings"); len(elem) >= l && elem[0:l] == "secret-bindings" {
@@ -1747,7 +1778,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 														default:
 															s.notAllowed(w, r, notAllowedParams{
 																allowedMethods: "POST",
-																allowedHeaders: rn77AllowedHeaders,
+																allowedHeaders: rn78AllowedHeaders,
 																acceptPost:     "application/json",
 																acceptPatch:    "",
 															})
@@ -1789,7 +1820,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 														default:
 															s.notAllowed(w, r, notAllowedParams{
 																allowedMethods: "POST",
-																allowedHeaders: rn84AllowedHeaders,
+																allowedHeaders: rn85AllowedHeaders,
 																acceptPost:     "application/json",
 																acceptPatch:    "",
 															})
@@ -1817,7 +1848,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 														default:
 															s.notAllowed(w, r, notAllowedParams{
 																allowedMethods: "POST",
-																allowedHeaders: rn87AllowedHeaders,
+																allowedHeaders: rn88AllowedHeaders,
 																acceptPost:     "application/json",
 																acceptPatch:    "",
 															})
@@ -1826,6 +1857,34 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 														return
 													}
 
+												}
+
+											case 'u': // Prefix: "upgrade"
+
+												if l := len("upgrade"); len(elem) >= l && elem[0:l] == "upgrade" {
+													elem = elem[l:]
+												} else {
+													break
+												}
+
+												if len(elem) == 0 {
+													// Leaf node.
+													switch r.Method {
+													case "POST":
+														s.handleUpgradeSandboxRequest([2]string{
+															args[0],
+															args[1],
+														}, elemIsEscaped, w, r)
+													default:
+														s.notAllowed(w, r, notAllowedParams{
+															allowedMethods: "POST",
+															allowedHeaders: rn93AllowedHeaders,
+															acceptPost:     "application/json",
+															acceptPatch:    "",
+														})
+													}
+
+													return
 												}
 
 											}
@@ -3173,6 +3232,31 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 
 											}
 
+										case 'r': // Prefix: "refresh-image"
+
+											if l := len("refresh-image"); len(elem) >= l && elem[0:l] == "refresh-image" {
+												elem = elem[l:]
+											} else {
+												break
+											}
+
+											if len(elem) == 0 {
+												// Leaf node.
+												switch method {
+												case "POST":
+													r.name = RefreshHarnessConfigImageOperation
+													r.summary = "Re-snapshot a harness config from its image"
+													r.operationID = "refresh-harness-config-image"
+													r.operationGroup = ""
+													r.pathPattern = "/projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image"
+													r.args = args
+													r.count = 2
+													return r, true
+												default:
+													return
+												}
+											}
+
 										case 's': // Prefix: "secret-bindings"
 
 											if l := len("secret-bindings"); len(elem) >= l && elem[0:l] == "secret-bindings" {
@@ -3919,6 +4003,31 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 														}
 													}
 
+												}
+
+											case 'u': // Prefix: "upgrade"
+
+												if l := len("upgrade"); len(elem) >= l && elem[0:l] == "upgrade" {
+													elem = elem[l:]
+												} else {
+													break
+												}
+
+												if len(elem) == 0 {
+													// Leaf node.
+													switch method {
+													case "POST":
+														r.name = UpgradeSandboxOperation
+														r.summary = "Upgrade a sandbox to its harness config's current image"
+														r.operationID = "upgrade-sandbox"
+														r.operationGroup = ""
+														r.pathPattern = "/projects/{projectId}/sandboxes/{sandboxId}/upgrade"
+														r.args = args
+														r.count = 2
+														return r, true
+													default:
+														return
+													}
 												}
 
 											}

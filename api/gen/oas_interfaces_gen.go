@@ -221,6 +221,10 @@ type ReconcileSandboxRes interface {
 	reconcileSandboxRes()
 }
 
+type RefreshHarnessConfigImageRes interface {
+	refreshHarnessConfigImageRes()
+}
+
 type RegisterPoolRes interface {
 	registerPoolRes()
 }
@@ -299,4 +303,8 @@ type UpdateSandboxRes interface {
 
 type UpdateSecretRes interface {
 	updateSecretRes()
+}
+
+type UpgradeSandboxRes interface {
+	upgradeSandboxRes()
 }

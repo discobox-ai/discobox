@@ -26,6 +26,7 @@ type UpdateSandboxBody = apimodel.UpdateSandboxBody
 type StartSandboxBody = apimodel.StartSandboxBody
 type StopSandboxBody = apimodel.StopSandboxBody
 type RestartSandboxBody = apimodel.RestartSandboxBody
+type UpgradeSandboxBody = apimodel.UpgradeSandboxBody
 type SandboxProviderCatalogItem = apimodel.SandboxProviderCatalogItem
 type ProviderConfigField = apimodel.ProviderConfigField
 type ProviderStatus = apimodel.ProviderStatus
@@ -76,6 +77,9 @@ type HarnessConfigService interface {
 	// DeconfigureHarnessConfig removes the assets the configure flow created and
 	// marks the config unconfigured.
 	DeconfigureHarnessConfig(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error)
+	// RefreshHarnessConfigImage re-inspects the config's image and re-snapshots
+	// its label metadata and digest.
+	RefreshHarnessConfigImage(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error)
 
 	ListHarnessConfigSecretBindings(ctx context.Context, projectID, configID string) ([]model.HarnessConfigSecretBinding, error)
 	SetHarnessConfigSecretBinding(ctx context.Context, projectID, configID, envName, secretID string) (*model.HarnessConfigSecretBinding, error)
@@ -103,6 +107,9 @@ type SandboxService interface {
 	StartSandbox(ctx context.Context, projectID, sandboxID string, input StartSandboxBody) (*model.Sandbox, error)
 	StopSandbox(ctx context.Context, projectID, sandboxID string, input StopSandboxBody) (*model.Sandbox, error)
 	RestartSandbox(ctx context.Context, projectID, sandboxID string, input RestartSandboxBody) (*model.Sandbox, error)
+	// UpgradeSandbox re-pins the sandbox to its harness config's current image
+	// and recreates its container from it.
+	UpgradeSandbox(ctx context.Context, projectID, sandboxID string, input UpgradeSandboxBody) (*model.Sandbox, error)
 	CompleteSandboxSourcePush(ctx context.Context, projectID, sandboxID string, input CompleteSandboxSourcePushBody) (*model.Sandbox, error)
 	CompleteSandboxApply(ctx context.Context, projectID, sandboxID string, input CompleteSandboxApplyBody) (*model.Sandbox, error)
 	ReconcileSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)

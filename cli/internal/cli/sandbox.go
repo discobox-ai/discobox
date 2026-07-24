@@ -63,6 +63,7 @@ func (a *App) newSandboxCommand() *cobra.Command {
 	cmd.AddCommand(a.newSandboxStartCommand())
 	cmd.AddCommand(a.newSandboxStopCommand())
 	cmd.AddCommand(a.newSandboxRestartCommand())
+	cmd.AddCommand(a.newSandboxUpgradeCommand())
 	return cmd
 }
 
@@ -329,6 +330,35 @@ func (a *App) newSandboxRestartCommand() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "Force restart if supported")
 	return cmd
+}
+
+func (a *App) newSandboxUpgradeCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "upgrade SANDBOX_ID",
+		Short: "Upgrade a sandbox to its harness config's current image",
+		Long: "Rebuild the sandbox on the image its harness config resolves to now.\n\n" +
+			"The sandbox keeps its ID, its workspace and sources, its caches, and its\n" +
+			"secrets. Anything written elsewhere in the container's filesystem — packages\n" +
+			"installed by hand, files outside the workspace — is lost, and the running\n" +
+			"harness process is stopped.",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projectID, sandboxID, client, err := a.sandboxRequest(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			sandboxRes, err := client.UpgradeSandbox(cmd.Context(), &apimodel.UpgradeSandboxBody{}, apiclientgen.UpgradeSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
+			if err != nil {
+				return err
+			}
+			sandbox, err := expectResponse[apimodel.Sandbox](sandboxRes)
+			if err != nil {
+				return err
+			}
+			return a.writeSandbox(cmd, sandbox)
+		},
+	}
 }
 
 func (a *App) sandboxRequest(ctx context.Context, sandboxArg string) (projectID string, sandboxID string, client *apiclientgen.Client, err error) {

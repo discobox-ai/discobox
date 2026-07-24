@@ -445,6 +445,39 @@ func TestTerminalCreateFallsBackWhenStartResponseIsTruncated(t *testing.T) {
 	}
 }
 
+// "primary" is the sandbox-agent's virtual exec id: it must reach the agent
+// verbatim, without being matched against the exec listing as a short id, and
+// the agent's own rejection is what the user sees.
+func TestTerminalAttachPrimaryUsesVirtualExecID(t *testing.T) {
+	var attachPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/attach") {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		attachPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"error":"sandbox exec ex_1 has ended with exit code 0 and its session is no longer available to attach"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "box", "terminal", "--sandbox-id", "sandbox-1", "attach", "primary"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("execute terminal attach primary error = nil")
+	}
+	if want := "/api/projects/project-1/sandboxes/sandbox-1/execs/primary/attach"; attachPath != want {
+		t.Fatalf("attach path = %q, want %q", attachPath, want)
+	}
+	if got := err.Error(); !strings.Contains(got, "has ended with exit code 0") {
+		t.Fatalf("execute terminal attach primary error = %q", got)
+	}
+}
+
 func TestTerminalCreateTextPlainErrorIncludesBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/projects/project-1/sandboxes/sandbox-1/execs" {

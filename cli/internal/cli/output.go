@@ -62,26 +62,28 @@ func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, s
 	sandboxes = sortedByCreatedAt(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return sandbox.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	if showFolder {
-		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tERROR\tUPDATED\tFOLDER")
+		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tUPGRADE\tERROR\tUPDATED\tFOLDER")
 	} else {
-		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tERROR\tUPDATED")
+		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tUPGRADE\tERROR\tUPDATED")
 	}
 	for _, sandbox := range sandboxes {
 		if showFolder {
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
 				sandbox.ID,
 				sandbox.Config.Name,
 				sandboxDisplayState(sandbox),
+				sandboxUpgradeState(sandbox),
 				truncateTableValue(sandboxMessage(sandbox), 80),
 				formatTime(sandbox.UpdatedAt),
 				sandboxFolder(sandbox),
 			)
 			continue
 		}
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\n",
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%s\t%s\n",
 			sandbox.ID,
 			sandbox.Config.Name,
 			sandboxDisplayState(sandbox),
+			sandboxUpgradeState(sandbox),
 			truncateTableValue(sandboxMessage(sandbox), 80),
 			formatTime(sandbox.UpdatedAt),
 		)
@@ -112,6 +114,18 @@ func sandboxDisplayState(sandbox apimodel.Sandbox) string {
 		return string(state)
 	}
 	return "-"
+}
+
+// sandboxUpgradeState marks sandboxes running an older image than their harness
+// config now resolves to. "-" covers both up-to-date and unpinned sandboxes:
+// neither has anything to act on, and distinguishing them in a table column
+// would explain image pinning to everyone who runs ls.
+func sandboxUpgradeState(sandbox apimodel.Sandbox) string {
+	upgrade, ok := sandbox.Runtime.Upgrade.Get()
+	if !ok || !upgrade.Available {
+		return "-"
+	}
+	return "available"
 }
 
 func (a *App) writeProviderCatalog(cmd *cobra.Command, providers []apimodel.SandboxProviderCatalogItem) error {

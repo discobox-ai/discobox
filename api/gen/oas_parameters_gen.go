@@ -6705,6 +6705,131 @@ func decodeReconcileSandboxParams(args [2]string, argsEscaped bool, r *http.Requ
 	return params, nil
 }
 
+// RefreshHarnessConfigImageParams is parameters of refresh-harness-config-image operation.
+type RefreshHarnessConfigImageParams struct {
+	// Project ID.
+	ProjectId string
+	// Harness config ID.
+	HarnessConfigId string
+}
+
+func unpackRefreshHarnessConfigImageParams(packed middleware.Parameters) (params RefreshHarnessConfigImageParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "harnessConfigId",
+			In:   "path",
+		}
+		params.HarnessConfigId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeRefreshHarnessConfigImageParams(args [2]string, argsEscaped bool, r *http.Request) (params RefreshHarnessConfigImageParams, _ error) {
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: harnessConfigId.
+	if err := func() error {
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "harnessConfigId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.HarnessConfigId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "harnessConfigId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // ReportPoolSandboxRemovedParams is parameters of report-pool-sandbox-removed operation.
 type ReportPoolSandboxRemovedParams struct {
 	// Pool ID.
@@ -9048,6 +9173,131 @@ func decodeUpdateSecretParams(args [2]string, argsEscaped bool, r *http.Request)
 	}(); err != nil {
 		return params, &ogenerrors.DecodeParamError{
 			Name: "secretId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// UpgradeSandboxParams is parameters of upgrade-sandbox operation.
+type UpgradeSandboxParams struct {
+	// Project ID.
+	ProjectId string
+	// Sandbox ID.
+	SandboxId string
+}
+
+func unpackUpgradeSandboxParams(packed middleware.Parameters) (params UpgradeSandboxParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "sandboxId",
+			In:   "path",
+		}
+		params.SandboxId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeUpgradeSandboxParams(args [2]string, argsEscaped bool, r *http.Request) (params UpgradeSandboxParams, _ error) {
+	// Set default value for path: projectId.
+	{
+		val := string("default")
+		params.ProjectId = val
+	}
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: sandboxId.
+	if err := func() error {
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "sandboxId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.SandboxId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "sandboxId",
 			In:   "path",
 			Err:  err,
 		}

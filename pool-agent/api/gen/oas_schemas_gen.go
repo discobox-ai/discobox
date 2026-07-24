@@ -2716,15 +2716,18 @@ func (s *ResolvedHarnessConfigEnv) init() ResolvedHarnessConfigEnv {
 
 // Ref: #/components/schemas/SandboxConfig
 type SandboxConfig struct {
-	HarnessConfigId      OptString                            `json:"harnessConfigId"`
-	HarnessMode          OptSandboxConfigHarnessMode          `json:"harnessMode"`
-	Model                OptString                            `json:"model"`
-	ModelReasoningLevel  OptString                            `json:"modelReasoningLevel"`
-	ModelServiceTier     OptString                            `json:"modelServiceTier"`
-	CpuVcpus             OptFloat64                           `json:"cpuVcpus"`
-	Description          OptString                            `json:"description"`
-	Env                  OptSandboxConfigEnv                  `json:"env"`
-	Image                OptString                            `json:"image"`
+	HarnessConfigId     OptString                   `json:"harnessConfigId"`
+	HarnessMode         OptSandboxConfigHarnessMode `json:"harnessMode"`
+	Model               OptString                   `json:"model"`
+	ModelReasoningLevel OptString                   `json:"modelReasoningLevel"`
+	ModelServiceTier    OptString                   `json:"modelServiceTier"`
+	CpuVcpus            OptFloat64                  `json:"cpuVcpus"`
+	Description         OptString                   `json:"description"`
+	Env                 OptSandboxConfigEnv         `json:"env"`
+	Image               OptString                   `json:"image"`
+	// Config digest the image must resolve to. The runtime runs this image and replaces a container
+	// built from any other, so a moved tag never silently changes a running sandbox (ADR 0016).
+	ImageDigest          OptString                            `json:"imageDigest"`
 	MemoryBytes          OptInt64                             `json:"memoryBytes"`
 	Name                 OptString                            `json:"name"`
 	Prompt               []string                             `json:"prompt"`
@@ -2777,6 +2780,11 @@ func (s *SandboxConfig) GetEnv() OptSandboxConfigEnv {
 // GetImage returns the value of Image.
 func (s *SandboxConfig) GetImage() OptString {
 	return s.Image
+}
+
+// GetImageDigest returns the value of ImageDigest.
+func (s *SandboxConfig) GetImageDigest() OptString {
+	return s.ImageDigest
 }
 
 // GetMemoryBytes returns the value of MemoryBytes.
@@ -2857,6 +2865,11 @@ func (s *SandboxConfig) SetEnv(val OptSandboxConfigEnv) {
 // SetImage sets the value of Image.
 func (s *SandboxConfig) SetImage(val OptString) {
 	s.Image = val
+}
+
+// SetImageDigest sets the value of ImageDigest.
+func (s *SandboxConfig) SetImageDigest(val OptString) {
+	s.ImageDigest = val
 }
 
 // SetMemoryBytes sets the value of MemoryBytes.

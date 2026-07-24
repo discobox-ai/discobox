@@ -13,6 +13,11 @@ sandbox terminals.
   carrying this data — `image.json` is the build-time authoring source the
   label is compacted from (see `Taskfile.yml`'s `build:harness-image`), not a
   runtime artifact.
+- The label is snapshotted onto the harness config at registration and
+  re-snapshotted when the image's config digest changes — by `SeedBuiltIns` for
+  built-ins, by `RefreshHarnessConfigImage` for user-registered images. A
+  snapshot is a cache of a mutable tag's current contents, not a permanent
+  record (ADR 0016).
 - Harness CLIs are installed at image build time. Runtime commands are never
   supplied by the server or pool-agent.
 - Each provider folder owns its `Dockerfile`, `image.json`, configure script,

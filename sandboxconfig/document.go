@@ -21,8 +21,15 @@ type Document struct {
 // other layer may set it, except where explicitly noted as an override grant
 // on ImageLayer/ProjectLayer.
 type RuntimeLayer struct {
-	SandboxID    string       `json:"sandboxId"`
-	Image        string       `json:"image,omitempty"` // resolved image reference (digest ref once ADR's follow-on lands)
+	SandboxID string `json:"sandboxId"`
+	// Image is the identity of the image this sandbox actually runs — the
+	// resolved image ID the pool host launched, not the (mutable) reference it
+	// was asked for. Diagnostic: Effective drops it, so it reaches sandbox.json
+	// only under _provenance. That is deliberate — nothing inside the sandbox
+	// makes decisions from it, but "which image is this sandbox actually
+	// running" is the first question a version-skew investigation asks
+	// (ADR 0016).
+	Image        string       `json:"image,omitempty"`
 	Provider     Provider     `json:"provider"`
 	AgentRuntime AgentRuntime `json:"agentRuntime"`
 	Resources    Resources    `json:"resources"`

@@ -179,6 +179,48 @@ responses. Services own API validation and delegate lifecycle work to resource
 managers. Resource managers own intent changes, job submission, generation checks,
 and runtime operation progress. `internal/resources/jobs` owns dispatcher infrastructure.
 
+## Sandbox Image Pinning
+
+A sandbox pins the image it was built from as `Image` (what to pull) plus
+`ImageDigest` (which image that must turn out to be — a config digest, matching
+what a local Docker daemon reports as an image ID). The pin is written at create
+from the harness config's snapshot and changed only by an upgrade, so a rebuilt
+tag never moves a running sandbox.
+
+- **Desired side moves on its own.** `harnessconfigs.SeedBuiltIns` re-inspects
+  every built-in image on each server start and refreshes `ImageDigest` whenever
+  the reference *or* the digest changed. `RefreshHarnessConfigImage` is the same
+  operation for user-registered images, which have no automatic trigger.
+- **Availability is derived, never stored.** `services.SandboxUpgrade` compares
+  the sandbox's pin to its preloaded harness config on every read and projects
+  `runtime.upgrade`. Nothing caches it, so no write path can forget to
+  invalidate it.
+- **Upgrading is explicit, and is a re-pin plus a restart.** `UpgradeSandbox`
+  re-pins and bumps `RestartGeneration`; the pool host rebuilds the container
+  because its image no longer matches the pin. There is no upgrade operation and
+  no upgrade counter. A stopped sandbox re-pins itself on its way back up
+  (`repinToCurrentImage`) — a running one never moves without the action.
+- **Enforcement is on the pool host, not here.** The control plane sends the
+  pin; `pool-agent/sandboxruntime` resolves images and refuses to launch one
+  that does not match it. The server owns policy, the runtime owns identity.
+
+## Observation vs Intent
+
+An observation may set desired state, but only when it is provably about the
+runtime the control plane currently believes in, and only when nothing else is
+operating on that resource.
+
+`ReportSandboxRemoved` is the worked example. A container that dies unexpectedly
+becomes stop intent — a sandbox whose runtime is gone should stop trying rather
+than be silently rebuilt. But the report is ignored when an operation is in
+flight (the control plane is the one removing the container, e.g. an image
+upgrade) and when it names a container that is no longer the recorded runtime
+(a late report about an already-replaced container). Each guard covers the
+other's gap; together they are what keep a deliberate replacement from
+countermanding the operation that performed it.
+
+See ADR 0016.
+
 ## Package Map
 
 | Package/path | Ownership |

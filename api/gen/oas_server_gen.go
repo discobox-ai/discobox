@@ -367,6 +367,16 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/sandboxes/{sandboxId}/reconcile
 	ReconcileSandbox(ctx context.Context, params ReconcileSandboxParams) (ReconcileSandboxRes, error)
+	// RefreshHarnessConfigImage implements refresh-harness-config-image operation.
+	//
+	// Re-inspect the harness config's image and re-snapshot its label metadata and digest.
+	// Registration snapshots the label once and nothing re-reads it, so a config pointing at a
+	// rebuilt tag keeps describing an image that no longer exists under it — and its sandboxes
+	// can never report an available upgrade. Built-in configs get this automatically on server
+	// start; user-registered ones need this call. Never flips configured.
+	//
+	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image
+	RefreshHarnessConfigImage(ctx context.Context, params RefreshHarnessConfigImageParams) (RefreshHarnessConfigImageRes, error)
 	// RegisterPool implements register-pool operation.
 	//
 	// Register a bootstrapped pool agent.
@@ -487,6 +497,12 @@ type Handler interface {
 	//
 	// PUT /projects/{projectId}/secrets/{secretId}
 	UpdateSecret(ctx context.Context, req *UpdateSecretBody, params UpdateSecretParams) (UpdateSecretRes, error)
+	// UpgradeSandbox implements upgrade-sandbox operation.
+	//
+	// Upgrade a sandbox to its harness config's current image.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/upgrade
+	UpgradeSandbox(ctx context.Context, req *UpgradeSandboxBody, params UpgradeSandboxParams) (UpgradeSandboxRes, error)
 }
 
 // Server implements http server based on OpenAPI v3 specification and

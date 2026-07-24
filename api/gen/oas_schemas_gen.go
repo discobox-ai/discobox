@@ -1408,6 +1408,7 @@ func (*ErrorModelStatusCode) listSecretRequestsRes()               {}
 func (*ErrorModelStatusCode) listSecretsRes()                      {}
 func (*ErrorModelStatusCode) reconcilePoolRes()                    {}
 func (*ErrorModelStatusCode) reconcileSandboxRes()                 {}
+func (*ErrorModelStatusCode) refreshHarnessConfigImageRes()        {}
 func (*ErrorModelStatusCode) registerPoolRes()                     {}
 func (*ErrorModelStatusCode) reportPoolSandboxRemovedRes()         {}
 func (*ErrorModelStatusCode) resolveSandboxSecretRes()             {}
@@ -1426,6 +1427,7 @@ func (*ErrorModelStatusCode) updatePoolStatusRes()                 {}
 func (*ErrorModelStatusCode) updateSandboxProviderInstanceRes()    {}
 func (*ErrorModelStatusCode) updateSandboxRes()                    {}
 func (*ErrorModelStatusCode) updateSecretRes()                     {}
+func (*ErrorModelStatusCode) upgradeSandboxRes()                   {}
 
 // Ref: #/components/schemas/ErrorResponse
 type ErrorResponse struct {
@@ -2093,6 +2095,7 @@ func (*HarnessConfig) commitHarnessConfigConfigureRes() {}
 func (*HarnessConfig) createHarnessConfigRes()          {}
 func (*HarnessConfig) deconfigureHarnessConfigRes()     {}
 func (*HarnessConfig) getHarnessConfigRes()             {}
+func (*HarnessConfig) refreshHarnessConfigImageRes()    {}
 func (*HarnessConfig) updateHarnessConfigRes()          {}
 
 // Default environment variables declared by the registered image label.
@@ -5381,6 +5384,98 @@ func (o OptSandboxUpdateConfig) Or(d SandboxUpdateConfig) SandboxUpdateConfig {
 	return d
 }
 
+// NewOptSandboxUpgrade returns new OptSandboxUpgrade with value set to v.
+func NewOptSandboxUpgrade(v SandboxUpgrade) OptSandboxUpgrade {
+	return OptSandboxUpgrade{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxUpgrade is optional SandboxUpgrade.
+type OptSandboxUpgrade struct {
+	Value SandboxUpgrade
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxUpgrade was set.
+func (o OptSandboxUpgrade) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxUpgrade) Reset() {
+	var v SandboxUpgrade
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxUpgrade) SetTo(v SandboxUpgrade) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxUpgrade) Get() (v SandboxUpgrade, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxUpgrade) Or(d SandboxUpgrade) SandboxUpgrade {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptSandboxUpgradeReason returns new OptSandboxUpgradeReason with value set to v.
+func NewOptSandboxUpgradeReason(v SandboxUpgradeReason) OptSandboxUpgradeReason {
+	return OptSandboxUpgradeReason{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptSandboxUpgradeReason is optional SandboxUpgradeReason.
+type OptSandboxUpgradeReason struct {
+	Value SandboxUpgradeReason
+	Set   bool
+}
+
+// IsSet returns true if OptSandboxUpgradeReason was set.
+func (o OptSandboxUpgradeReason) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptSandboxUpgradeReason) Reset() {
+	var v SandboxUpgradeReason
+	o.Value = v
+	o.Set = false
+}
+
+// SetTo sets value to v.
+func (o *OptSandboxUpgradeReason) SetTo(v SandboxUpgradeReason) {
+	o.Set = true
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptSandboxUpgradeReason) Get() (v SandboxUpgradeReason, ok bool) {
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptSandboxUpgradeReason) Or(d SandboxUpgradeReason) SandboxUpgradeReason {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
 // NewOptSandboxUser returns new OptSandboxUser with value set to v.
 func NewOptSandboxUser(v SandboxUser) OptSandboxUser {
 	return OptSandboxUser{
@@ -6807,6 +6902,11 @@ func (*RegisterPoolResponseBody) registerPoolRes() {}
 type ReportPoolSandboxRemovedBody struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// Runtime identity that was removed. The control plane ignores the report when this is
+	// not the runtime it currently believes is serving the sandbox, which is what makes a
+	// report about an already-replaced container harmless. Empty means the report came from
+	// the level-triggered orphan sweep rather than a specific removal event.
+	ContainerId OptString `json:"containerId"`
 	// Sandbox whose pool-local runtime was removed outside control-plane reconciliation.
 	SandboxId string `json:"sandboxId"`
 }
@@ -6814,6 +6914,11 @@ type ReportPoolSandboxRemovedBody struct {
 // GetSchema returns the value of Schema.
 func (s *ReportPoolSandboxRemovedBody) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetContainerId returns the value of ContainerId.
+func (s *ReportPoolSandboxRemovedBody) GetContainerId() OptString {
+	return s.ContainerId
 }
 
 // GetSandboxId returns the value of SandboxId.
@@ -6824,6 +6929,11 @@ func (s *ReportPoolSandboxRemovedBody) GetSandboxId() string {
 // SetSchema sets the value of Schema.
 func (s *ReportPoolSandboxRemovedBody) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetContainerId sets the value of ContainerId.
+func (s *ReportPoolSandboxRemovedBody) SetContainerId(val OptString) {
+	s.ContainerId = val
 }
 
 // SetSandboxId sets the value of SandboxId.
@@ -7268,6 +7378,7 @@ func (*Sandbox) restartSandboxRes()            {}
 func (*Sandbox) startSandboxRes()              {}
 func (*Sandbox) stopSandboxRes()               {}
 func (*Sandbox) updateSandboxRes()             {}
+func (*Sandbox) upgradeSandboxRes()            {}
 
 // Ref: #/components/schemas/SandboxConfig
 type SandboxConfig struct {
@@ -7290,6 +7401,9 @@ type SandboxConfig struct {
 	Env OptSandboxConfigEnv `json:"env"`
 	// Sandbox base image.
 	Image string `json:"image"`
+	// Config digest of the image this sandbox is pinned to. Written at create and by an upgrade, never
+	// by a restart; the pool host refuses an image that does not match it (ADR 0016).
+	ImageDigest OptString `json:"imageDigest"`
 	// Requested memory capacity in bytes.
 	MemoryBytes int64 `json:"memoryBytes"`
 	// Sandbox name.
@@ -7349,6 +7463,11 @@ func (s *SandboxConfig) GetEnv() OptSandboxConfigEnv {
 // GetImage returns the value of Image.
 func (s *SandboxConfig) GetImage() string {
 	return s.Image
+}
+
+// GetImageDigest returns the value of ImageDigest.
+func (s *SandboxConfig) GetImageDigest() OptString {
+	return s.ImageDigest
 }
 
 // GetMemoryBytes returns the value of MemoryBytes.
@@ -7429,6 +7548,11 @@ func (s *SandboxConfig) SetEnv(val OptSandboxConfigEnv) {
 // SetImage sets the value of Image.
 func (s *SandboxConfig) SetImage(val string) {
 	s.Image = val
+}
+
+// SetImageDigest sets the value of ImageDigest.
+func (s *SandboxConfig) SetImageDigest(val OptString) {
+	s.ImageDigest = val
 }
 
 // SetMemoryBytes sets the value of MemoryBytes.
@@ -8643,7 +8767,8 @@ type SandboxRuntime struct {
 	// Last restart generation completed by reconciliation.
 	RestartedGeneration int64 `json:"restartedGeneration"`
 	// Human-readable status detail.
-	StatusMessage OptString `json:"statusMessage"`
+	StatusMessage OptString         `json:"statusMessage"`
+	Upgrade       OptSandboxUpgrade `json:"upgrade"`
 }
 
 // GetActiveOperation returns the value of ActiveOperation.
@@ -8711,6 +8836,11 @@ func (s *SandboxRuntime) GetStatusMessage() OptString {
 	return s.StatusMessage
 }
 
+// GetUpgrade returns the value of Upgrade.
+func (s *SandboxRuntime) GetUpgrade() OptSandboxUpgrade {
+	return s.Upgrade
+}
+
 // SetActiveOperation sets the value of ActiveOperation.
 func (s *SandboxRuntime) SetActiveOperation(val OptSandboxRuntimeActiveOperation) {
 	s.ActiveOperation = val
@@ -8774,6 +8904,11 @@ func (s *SandboxRuntime) SetRestartedGeneration(val int64) {
 // SetStatusMessage sets the value of StatusMessage.
 func (s *SandboxRuntime) SetStatusMessage(val OptString) {
 	s.StatusMessage = val
+}
+
+// SetUpgrade sets the value of Upgrade.
+func (s *SandboxRuntime) SetUpgrade(val OptSandboxUpgrade) {
+	s.Upgrade = val
 }
 
 // Current queued or running operation.
@@ -9188,6 +9323,122 @@ func (s *SandboxUpdateConfig) GetName() OptString {
 // SetName sets the value of Name.
 func (s *SandboxUpdateConfig) SetName(val OptString) {
 	s.Name = val
+}
+
+// Availability of a newer harness image for this sandbox. Derived at read time by
+// comparing the sandbox's pinned image digest to its harness config's current one;
+// it is never stored. Absent when the sandbox pins no digest (the default image, or
+// a sandbox created before pinning existed).
+// Ref: #/components/schemas/SandboxUpgrade
+type SandboxUpgrade struct {
+	// Whether the harness config now resolves to a different image than this sandbox is pinned to.
+	Available bool `json:"available"`
+	// Image reference this sandbox is running.
+	CurrentImage OptString `json:"currentImage"`
+	// Config digest this sandbox is pinned to. Not a manifest digest; it matches what a local Docker
+	// daemon reports as an image ID.
+	CurrentImageDigest OptString `json:"currentImageDigest"`
+	// Why an upgrade is available.
+	Reason OptSandboxUpgradeReason `json:"reason"`
+	// Image reference this sandbox's harness config resolves to now.
+	TargetImage OptString `json:"targetImage"`
+	// Config digest an upgrade would pin this sandbox to.
+	TargetImageDigest OptString `json:"targetImageDigest"`
+}
+
+// GetAvailable returns the value of Available.
+func (s *SandboxUpgrade) GetAvailable() bool {
+	return s.Available
+}
+
+// GetCurrentImage returns the value of CurrentImage.
+func (s *SandboxUpgrade) GetCurrentImage() OptString {
+	return s.CurrentImage
+}
+
+// GetCurrentImageDigest returns the value of CurrentImageDigest.
+func (s *SandboxUpgrade) GetCurrentImageDigest() OptString {
+	return s.CurrentImageDigest
+}
+
+// GetReason returns the value of Reason.
+func (s *SandboxUpgrade) GetReason() OptSandboxUpgradeReason {
+	return s.Reason
+}
+
+// GetTargetImage returns the value of TargetImage.
+func (s *SandboxUpgrade) GetTargetImage() OptString {
+	return s.TargetImage
+}
+
+// GetTargetImageDigest returns the value of TargetImageDigest.
+func (s *SandboxUpgrade) GetTargetImageDigest() OptString {
+	return s.TargetImageDigest
+}
+
+// SetAvailable sets the value of Available.
+func (s *SandboxUpgrade) SetAvailable(val bool) {
+	s.Available = val
+}
+
+// SetCurrentImage sets the value of CurrentImage.
+func (s *SandboxUpgrade) SetCurrentImage(val OptString) {
+	s.CurrentImage = val
+}
+
+// SetCurrentImageDigest sets the value of CurrentImageDigest.
+func (s *SandboxUpgrade) SetCurrentImageDigest(val OptString) {
+	s.CurrentImageDigest = val
+}
+
+// SetReason sets the value of Reason.
+func (s *SandboxUpgrade) SetReason(val OptSandboxUpgradeReason) {
+	s.Reason = val
+}
+
+// SetTargetImage sets the value of TargetImage.
+func (s *SandboxUpgrade) SetTargetImage(val OptString) {
+	s.TargetImage = val
+}
+
+// SetTargetImageDigest sets the value of TargetImageDigest.
+func (s *SandboxUpgrade) SetTargetImageDigest(val OptString) {
+	s.TargetImageDigest = val
+}
+
+// Why an upgrade is available.
+type SandboxUpgradeReason string
+
+const (
+	SandboxUpgradeReasonImageDigestChanged SandboxUpgradeReason = "imageDigestChanged"
+)
+
+// AllValues returns all SandboxUpgradeReason values.
+func (SandboxUpgradeReason) AllValues() []SandboxUpgradeReason {
+	return []SandboxUpgradeReason{
+		SandboxUpgradeReasonImageDigestChanged,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxUpgradeReason) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxUpgradeReasonImageDigestChanged:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxUpgradeReason) UnmarshalText(data []byte) error {
+	switch SandboxUpgradeReason(data) {
+	case SandboxUpgradeReasonImageDigestChanged:
+		*s = SandboxUpgradeReasonImageDigestChanged
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
 }
 
 // Ref: #/components/schemas/SandboxUser
@@ -10409,6 +10660,26 @@ func (s *UpdateSecretBody) SetName(val OptString) {
 // SetValue sets the value of Value.
 func (s *UpdateSecretBody) SetValue(val OptSecretValue) {
 	s.Value = val
+}
+
+// Upgrade takes no parameters. The target is whatever the sandbox's harness config
+// resolves to when the reconciler runs; accepting a client-observed digest would
+// turn a continuously-rebuilt dev image into a retry loop against a target that was
+// never wrong (ADR 0016).
+// Ref: #/components/schemas/UpgradeSandboxBody
+type UpgradeSandboxBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *UpgradeSandboxBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// SetSchema sets the value of Schema.
+func (s *UpgradeSandboxBody) SetSchema(val OptURI) {
+	s.Schema = val
 }
 
 // Ref: #/components/schemas/User

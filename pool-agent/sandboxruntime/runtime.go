@@ -197,15 +197,30 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		return nil, fmt.Errorf("sandbox ID is required")
 	}
 	if existing, err := r.GetSandbox(ctx, sandboxID); err == nil {
-		// The container already exists, but a push-delivered source is only
-		// materialized once the client has pushed, which necessarily happens
-		// after the container was created and parked. This create is that
-		// resume, so finish those sources rather than returning a sandbox whose
-		// workspace is still empty.
-		if err := r.materializePushedSources(ctx, sandboxID, req); err != nil {
+		drifted, err := r.containerImageDrifted(ctx, existing, req)
+		if err != nil {
 			return nil, err
 		}
-		return existing, nil
+		if !drifted {
+			// The container already exists, but a push-delivered source is only
+			// materialized once the client has pushed, which necessarily happens
+			// after the container was created and parked. This create is that
+			// resume, so finish those sources rather than returning a sandbox whose
+			// workspace is still empty.
+			if err := r.materializePushedSources(ctx, sandboxID, req); err != nil {
+				return nil, err
+			}
+			return existing, nil
+		}
+		// The control plane re-pinned this sandbox, which it only does for an
+		// upgrade (ADR 0016 §4, §5). Remove the container and fall through to
+		// build a new one; the sandbox's state lives in the pool-host binds
+		// prepared below, not in the container, so it survives.
+		slog.InfoContext(ctx, "replacing sandbox container for image upgrade",
+			"sandboxId", sandboxID, "imageDigest", strings.TrimSpace(optString(req.Config.ImageDigest)))
+		if _, err := r.client.ContainerRemove(ctx, existing.ID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
+			return nil, fmt.Errorf("remove sandbox container for upgrade: %w", err)
+		}
 	} else if !errors.Is(err, ErrNotFound) {
 		return nil, err
 	}
@@ -215,7 +230,8 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	if imageName == "" {
 		imageName = defaultSandboxImage
 	}
-	if err := r.ensureImageAvailable(ctx, imageName); err != nil {
+	imageName, err := r.resolveSandboxImage(ctx, imageName, strings.TrimSpace(optString(config.ImageDigest)))
+	if err != nil {
 		return nil, err
 	}
 	user := resolveSandboxUser(req)
@@ -240,7 +256,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		Target:   filepath.Join(sandboxConfigMount, "proxy"),
 		ReadOnly: true,
 	})
-	if err := r.writeSandboxHarnessConfig(ctx, sandboxID, req, proxyMaterial.Env, project); err != nil {
+	if err := r.writeSandboxHarnessConfig(ctx, sandboxID, imageName, req, proxyMaterial.Env, project); err != nil {
 		return nil, err
 	}
 	if secretEnv, ok := req.SecretEnv.Get(); ok {
@@ -292,6 +308,77 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 		return nil, err
 	}
 	return r.GetSandbox(ctx, sandboxID)
+}
+
+// resolveSandboxImage resolves what a sandbox must actually run and returns the
+// image ID to launch it from.
+//
+// The pinned digest is the identity; the reference is only a way to obtain it
+// (ADR 0016 §6). Launching the reference instead would let a rebuilt tag change
+// a sandbox underneath its user — and, because containerImageDrifted compares
+// against the pin, would make every such sandbox look drifted and be replaced
+// silently, performing an upgrade nobody asked for. An empty pin means unpinned:
+// resolve the reference and run whatever it names.
+func (r *DockerSandboxRuntime) resolveSandboxImage(ctx context.Context, imageName, pinnedDigest string) (string, error) {
+	if pinnedDigest != "" {
+		// A pinned image already on the host is authoritative, whatever the tag
+		// points at now.
+		if inspected, err := r.client.ImageInspect(ctx, pinnedDigest); err == nil {
+			return inspected.ID, nil
+		} else if !cerrdefs.IsNotFound(err) {
+			return "", err
+		}
+	}
+	if err := r.ensureImageAvailable(ctx, imageName); err != nil {
+		return "", err
+	}
+	inspected, err := r.client.ImageInspect(ctx, imageName)
+	if err != nil {
+		return "", fmt.Errorf("inspect image %q: %w", imageName, err)
+	}
+	if !imageMatchesPin(inspected.ID, pinnedDigest) {
+		return "", fmt.Errorf(
+			"sandbox is pinned to image %s but %q now resolves to %s, and the pinned image is not available on this pool; upgrade the sandbox to move it to the current image",
+			pinnedDigest, imageName, inspected.ID)
+	}
+	return inspected.ID, nil
+}
+
+// imageMatchesPin reports whether an image ID is the one a sandbox is pinned to.
+//
+// An empty pin matches anything: unpinned sandboxes (the default image, or
+// sandboxes created before pinning existed) run whatever their reference names.
+// This is the single comparison behind both enforcement points — refusing to
+// launch the wrong image, and replacing a container built from one — so the two
+// can never disagree about what "the pinned image" means.
+func imageMatchesPin(imageID, pinnedDigest string) bool {
+	pinned := strings.TrimSpace(pinnedDigest)
+	return pinned == "" || strings.TrimSpace(imageID) == pinned
+}
+
+// containerImageDrifted reports whether an existing sandbox container was built
+// from an image other than the one the request pins.
+//
+// Only the pin is compared. A request with no pin cannot drift: unpinned
+// sandboxes run whatever their reference names, and treating a moved tag as
+// drift here would replace containers the control plane never decided to
+// upgrade.
+func (r *DockerSandboxRuntime) containerImageDrifted(ctx context.Context, existing *Sandbox, req *workerapimodel.PoolSandboxCreateRequest) (bool, error) {
+	if req == nil {
+		return false, nil
+	}
+	pinned := strings.TrimSpace(optString(req.Config.ImageDigest))
+	if pinned == "" {
+		return false, nil
+	}
+	inspect, err := r.client.ContainerInspect(ctx, existing.ID, client.ContainerInspectOptions{})
+	if err != nil {
+		if cerrdefs.IsNotFound(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	return !imageMatchesPin(inspect.Container.Image, pinned), nil
 }
 
 func (r *DockerSandboxRuntime) ensureImageAvailable(ctx context.Context, imageName string) error {
@@ -442,7 +529,7 @@ func readProjectLayer(sourceDir string) (*sandboxconfig.ProjectLayer, error) {
 	return &layer, nil
 }
 
-func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) error {
+func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sandboxID, resolvedImage string, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) error {
 	configDir := r.workerHostPath(r.sandboxConfigRoot(sandboxID))
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return err
@@ -453,7 +540,7 @@ func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sa
 	if err := os.MkdirAll(filepath.Join(configDir, "proxy"), 0o755); err != nil {
 		return err
 	}
-	doc := buildSandboxDocument(r.projectID, sandboxID, r.poolID, r.controlPlanePublicKey, req, proxyEnv, project)
+	doc := buildSandboxDocument(r.projectID, sandboxID, r.poolID, r.controlPlanePublicKey, resolvedImage, req, proxyEnv, project)
 	data, err := marshalSandboxDocument(doc)
 	if err != nil {
 		return err
@@ -528,10 +615,11 @@ func documentVolumes(volumes []workerapimodel.HarnessVolume) []harness.Volume {
 // image's OCI label, and the caller-supplied ProjectLayer (read once from the
 // resolved source repository at clone time; nil when the project supplies
 // nothing).
-func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey string, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) sandboxconfig.Document {
+func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, resolvedImage string, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) sandboxconfig.Document {
 	doc := sandboxconfig.Document{
 		Runtime: sandboxconfig.RuntimeLayer{
 			SandboxID: sandboxID,
+			Image:     resolvedImage,
 			Provider: sandboxconfig.Provider{
 				Kind:      "discobox-pool",
 				ProjectID: projectID,
@@ -769,7 +857,7 @@ func (r *DockerSandboxRuntime) WatchProxyMaterial(ctx context.Context, logger *s
 
 // WatchSandboxRemovals watches Docker destroy events, reports the removed
 // sandbox to the control plane, and reclaims its pool-local proxy material.
-func (r *DockerSandboxRuntime) WatchSandboxRemovals(ctx context.Context, logger *slog.Logger, report func(context.Context, string) error) {
+func (r *DockerSandboxRuntime) WatchSandboxRemovals(ctx context.Context, logger *slog.Logger, report func(context.Context, string, string) error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -794,7 +882,7 @@ func (r *DockerSandboxRuntime) reconcileProxyMaterial(ctx context.Context, logge
 	}
 }
 
-func (r *DockerSandboxRuntime) reconcileSandboxRemovals(ctx context.Context, logger *slog.Logger, report func(context.Context, string) error, minAge time.Duration) {
+func (r *DockerSandboxRuntime) reconcileSandboxRemovals(ctx context.Context, logger *slog.Logger, report func(context.Context, string, string) error, minAge time.Duration) {
 	live, err := r.liveSandboxIDs(ctx)
 	if err != nil {
 		logger.Warn("list sandbox containers", "error", err)
@@ -806,7 +894,7 @@ func (r *DockerSandboxRuntime) reconcileSandboxRemovals(ctx context.Context, log
 	}
 	for _, sandboxID := range orphans {
 		if report != nil {
-			if err := r.reportSandboxRemoved(ctx, logger, report, sandboxID); err != nil {
+			if err := r.reportSandboxRemoved(ctx, logger, report, sandboxID, ""); err != nil {
 				return
 			}
 		}
@@ -996,9 +1084,9 @@ func writeSandboxTombstone(path string, at time.Time, logger *slog.Logger) {
 	}
 }
 
-func (r *DockerSandboxRuntime) reportSandboxRemoved(ctx context.Context, logger *slog.Logger, report func(context.Context, string) error, sandboxID string) error {
+func (r *DockerSandboxRuntime) reportSandboxRemoved(ctx context.Context, logger *slog.Logger, report func(context.Context, string, string) error, sandboxID, containerID string) error {
 	for sandboxID != "" && ctx.Err() == nil {
-		err := report(ctx, sandboxID)
+		err := report(ctx, sandboxID, containerID)
 		if err == nil {
 			return nil
 		}
@@ -1022,7 +1110,7 @@ func (r *DockerSandboxRuntime) reportSandboxRemoved(ctx context.Context, logger 
 // destroy that occurs in the window between opening the stream and the reconcile
 // completing. This closes the race where a container deleted just after a
 // startup reconcile would otherwise be missed until the next reconnect.
-func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, logger *slog.Logger, report func(context.Context, string) error) error {
+func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, logger *slog.Logger, report func(context.Context, string, string) error) error {
 	since := time.Now()
 	filters := client.Filters{}
 	filters = filters.Add("type", string(events.ContainerEventType))
@@ -1058,7 +1146,7 @@ func (r *DockerSandboxRuntime) watchProxyMaterialEvents(ctx context.Context, log
 		case message := <-result.Messages:
 			if report != nil {
 				sandboxID := strings.TrimSpace(message.Actor.Attributes[sandboxLabelSandbox])
-				if err := r.reportSandboxRemoved(ctx, logger, report, sandboxID); err != nil {
+				if err := r.reportSandboxRemoved(ctx, logger, report, sandboxID, strings.TrimSpace(message.Actor.ID)); err != nil {
 					return nil
 				}
 			}

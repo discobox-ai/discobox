@@ -518,7 +518,7 @@ type Pool struct {
 	Project          *Project                 `gorm:"foreignKey:ProjectID" json:"-"`
 	ProviderInstance *SandboxProviderInstance `gorm:"foreignKey:ProviderInstanceID" json:"providerInstance,omitempty" doc:"Backing sandbox provider instance"`
 	Sandboxes        []Sandbox                `gorm:"foreignKey:PoolID" json:"-"`
-	BootstrapTokens  []PoolBootstrapToken     `gorm:"foreignKey:PoolID" json:"-" doc:"Pool bootstrap tokens"`
+	BootstrapTokens  []PoolBootstrapToken     `gorm:"foreignKey:PoolID;constraint:fk_pool_bootstrap_tokens_pool,OnDelete:CASCADE" json:"-" doc:"Pool bootstrap tokens"`
 }
 
 func (Pool) TableName() string { return "pools" }

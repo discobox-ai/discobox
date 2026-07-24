@@ -296,6 +296,9 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 	if opts.Image.Name != "" {
 		config.Image = poolclient.NewOptString(opts.Image.Name)
 	}
+	if opts.Image.Digest != "" {
+		config.ImageDigest = poolclient.NewOptString(opts.Image.Digest)
+	}
 	if opts.Env != nil {
 		config.Env = poolclient.NewOptSandboxConfigEnv(poolclient.SandboxConfigEnv(opts.Env))
 	}

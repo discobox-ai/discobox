@@ -22,9 +22,6 @@ type StateEvent = contract.StateEvent
 type HTTPClientLease = transport.HTTPClientLease
 type PoolRuntimeReconciler = contract.PoolRuntimeReconciler
 type PoolManager = contract.PoolManager
-type ImageEvent = contract.ImageEvent
-type ImageStatus = contract.ImageStatus
-type ImageProvider = contract.ImageProvider
 type RemoveConfig = contract.RemoveConfig
 type RemoveOption = contract.RemoveOption
 
@@ -33,7 +30,6 @@ var ErrAlreadyExists = contract.ErrAlreadyExists
 var ErrNotRunning = contract.ErrNotRunning
 var ErrAlreadyRunning = contract.ErrAlreadyRunning
 var RemoveVolumes = contract.RemoveVolumes
-var ImageStatusFailed = contract.ImageStatusFailed
 var StatusCreated = contract.StatusCreated
 var NewHTTPClientLease = transport.NewHTTPClientLease
 var NewProviderManager = contract.NewProviderManager

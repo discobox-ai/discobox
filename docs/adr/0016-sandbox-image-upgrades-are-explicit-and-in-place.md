@@ -106,9 +106,20 @@ harness config's snapshot and thereafter **only** by an upgrade. Together they
 are the pin: `Image` is what to pull, `ImageDigest` is which image that must
 turn out to be.
 
-`sandbox.ImageRef` gains `Digest` alongside `Name`, and `ensureSandboxImage`
-stops treating the digest as an audit field. After resolving or pulling `Name`,
-it compares the resolved image's config digest to the pinned `Digest`:
+`sandbox.ImageRef` gains `Digest` alongside `Name`, and the pin travels with the
+create request to the component that actually resolves images.
+
+That component is pool-agent, not the control plane. This ADR was drafted
+expecting `ensureSandboxImage` to enforce the pin; implementation found that
+`ImageProvider` — the optional interface it type-asserts — has no
+implementations anywhere in the repo, so the assertion never succeeds and the
+whole function is unreachable. Sandbox images are resolved and pulled by
+`DockerSandboxRuntime.ensureImageAvailable` on the pool host. Enforcement goes
+where resolution happens; §6's container rule and this verification are one
+piece of code, in one place.
+
+When resolving the image for a sandbox, the runtime compares what it resolved to
+the pinned `Digest`:
 
 - **The pinned digest is present locally** — run it, whatever the tag now points
   at. A tag that moved forward is not an instruction; it is the condition §2
@@ -124,11 +135,17 @@ The pin this verification runs against is the pin *after* policy has been
 applied. A stopped sandbox re-pins on its way up (§5), so it verifies against
 its new pin and this check passes; it does not fight the auto-upgrade.
 
-This closes ADR 0012's follow-on. `RuntimeLayer.Image` becomes what 0012 assumed
-it already was — a reference that resolves to one known image — and the
-OCI-label snapshot taken at registration becomes trustworthy without
-re-inspection, because the digest that snapshot was taken from is the digest the
-run path verified.
+This closes ADR 0012's follow-on. The OCI-label snapshot taken at registration
+becomes trustworthy without re-inspection, because the digest that snapshot was
+taken from is the digest the run path verified.
+
+`RuntimeLayer.Image` — carrying 0012's marker comment "digest ref once ADR's
+follow-on lands", and until now never populated at all — is filled with the
+resolved image identity the pool host launched. `Effective` drops it, so it
+reaches `sandbox.json` only under `_provenance`, and that is where it belongs:
+nothing inside the sandbox decides anything from it, but "which image is this
+sandbox actually running" is the first question a skew investigation asks, and
+in the incident that motivated this ADR there was nowhere to look it up.
 
 A digest and not just a tag, because local rebuilds reuse tags: tag equality
 would report "up to date" for every `:local` sandbox in the fleet, which is the
@@ -163,19 +180,23 @@ Three other candidate triggers are explicitly out:
   recreate on it, and surfacing it per sandbox multiplies one fact by the
   sandbox count.
 
-### 4. Upgrading recreates in place, under the same sandbox ID
+### 4. Upgrading is a re-pin plus a restart, not an operation of its own
 
 `POST /projects/{projectId}/sandboxes/{sandboxId}/upgrade` re-pins the sandbox
-to its harness config's current `Image` and `ImageDigest`, bumps
-`UpgradeGeneration`, and returns `202` with the sandbox — the same shape as
-restart. The reconciler converges `UpgradeGeneration > UpgradedGeneration` by
-destroying the container and creating it from the new pin, then setting
-`UpgradedGeneration = UpgradeGeneration`.
+to its harness config's current `Image` and `ImageDigest`, then bumps
+`RestartGeneration`. It returns `202` with the sandbox.
 
-The sandbox ID, its terminal and exec history, its secrets, and all five
-pool-host volumes survive. **Writes made to the container's own filesystem,
-outside the declared volumes and sources, do not.** That is the trade-off the
-user opts into, and it must be stated at the point of opt-in, not just in docs.
+There is no upgrade operation, and no upgrade generation counter. The pool host
+already rebuilds any sandbox container whose image does not match the pin (§6),
+so changing the pin *is* the instruction; the restart is only what makes the
+runtime look. A dedicated operation would be a second way to say "converge this
+sandbox", with its own counter pair to keep in sync and its own reconciler
+branch to keep equivalent to the restart branch it duplicates.
+
+The sandbox ID, its history, and its pool-host volumes survive. **Writes made to
+the container's own filesystem, outside those volumes and the sources, do not** —
+including `/workspace` when no source backs it. That is the trade-off the user
+opts into, and it must be stated at the point of opt-in, not just in docs.
 
 Cloning to a new sandbox would preserve those writes, at the cost of doubling
 resource use and splitting one unit of work across two IDs with two histories.
@@ -220,12 +241,63 @@ No policy flag rides along in the request. The control plane only ever sends a
 changed digest when it has decided to upgrade, so the runtime rule can be
 unconditional and the policy stays in exactly one place.
 
+Replacing a container makes it vanish, and the pool watches for exactly that
+(`WatchSandboxRemovals`) to report runtime loss. That report must not be written
+as intent — see §8 — or the pool's own deliberate replacement countermands the
+upgrade that asked for it.
+
 ### 7. The harness config snapshot tracks digests
 
 `SeedBuiltIns` inspects the image and compares digest as well as reference,
 refreshing the snapshot when either moves. Harness configs registered from a
 user-supplied image get an equivalent refresh path; without one, `needsUpgrade`
 can never fire for them, and the whole mechanism is dead code outside built-ins.
+
+### 8. An observation may set intent, but only about the runtime we believe in
+
+When a sandbox's container dies unexpectedly, `ReportSandboxRemoved` writes stop
+intent. A sandbox whose runtime is gone should stop trying rather than be
+silently rebuilt underneath its user — the user asked for a sandbox, that
+sandbox is gone, and saying so beats resurrecting something they did not ask to
+have replaced.
+
+The original bug was never that policy. It was that the report could not tell
+whether it was describing an unexpected death or the control plane's own
+deliberate replacement: an upgrade removes the old container to build the new
+one, the removal is reported, stop intent bumps the generation, and the in-flight
+operation's generation-guarded write is superseded. The sandbox ended stopped
+with a correctly rebuilt container torn down under it.
+
+So the report is guarded twice, and the guards cover each other's gap:
+
+- **An operation is in flight** (`LastOperationStatus == running`) — the control
+  plane owns this sandbox's container right now, so a disappearance is expected.
+  Ignore it.
+- **The report names a container the control plane no longer believes in** — once
+  the operation completes, the recorded runtime is the new container, so a report
+  about the old one is stale *by identity*, not by timing. Ignore it.
+
+Only a report that passes both — a container we still believe is serving the
+sandbox, vanishing while nothing is operating on it — is a genuine loss.
+
+Identity is what makes this sound rather than a heuristic. The pool's runtime
+`Sandbox.ID` is the container ID and is already persisted in the sandbox's
+`RuntimeState`; the Docker `destroy` event already carries `Actor.ID`. The report
+just has to name what vanished. A grace period would have been a guess about how
+long a replacement takes — unbounded, since it includes an image pull — and a
+`desired = inspect` state would have bumped the generation exactly like `stopped`
+did, superseding the same operation while destroying the intent needed to resolve
+it.
+
+A crash mid-operation is not a hole: the dirty row is durable, single-node startup
+clears stale claims immediately, and a multi-node lease expires in 30s, so the
+reconcile resumes and converges. `RestartGeneration > RestartedGeneration`
+survives the crash in the row, which is precisely what the counters are for.
+
+Unknown identity answers "current": an empty container ID (the level-triggered
+orphan sweep, which reports a sandbox with no live container at all and is
+grace-delayed well past any replacement), a sandbox with no recorded runtime, or
+runtime state that will not decode. Only a decodable mismatch is stale.
 
 ## API shape
 
@@ -244,11 +316,10 @@ upgrade:
 `reason` is an enum from the start so the deferred triggers can be added without
 a breaking change to a boolean.
 
-Also added: `upgradeGeneration` / `upgradedGeneration` on the sandbox, mirroring
-`restartGeneration` / `restartedGeneration`; `upgrade` in the
-`SandboxRuntime.activeOperation` enum; `model.SandboxUpgradeOperation`;
-`ImageDigest` on `Sandbox`; and `Digest` on `sandbox.ImageRef`, which is a Go
-contract rather than an API schema but changes with them.
+Also added: `ImageDigest` on `Sandbox`, and `Digest` on `sandbox.ImageRef` —
+a Go contract rather than an API schema, but it changes with them. No new
+generation counters and no new `activeOperation` value: an upgrade reports as
+the restart it is.
 
 `currentImageDigest` and `targetImageDigest` are config digests, matching what
 `HarnessConfig.ImageDigest` already records and what a local daemon reports as
@@ -303,6 +374,14 @@ tags, so tag comparison reports "up to date" exactly when it matters most.
 - The worker API's sandbox create request grows an image digest field, since the
   pin has to reach the runtime that enforces it (§6). Control plane, pool-agent,
   and the generated worker API model change together.
+- `ImageProvider`, its `ImageInfo` / `ImageEvent` / `ImageStatus` /
+  `ImageProgress` types, and `ensureSandboxImage` are deleted. They form a
+  closed set referenced only by each other: no provider implements the
+  interface, so the reconciler's type assertion always fails and the pull path
+  it guards has never run. Leaving a dead capability that claims to manage
+  sandbox images next to a real one that does would misdirect the next reader,
+  which is precisely how the pin ended up specified in the wrong place. `ImageRef`
+  survives — it names the image in `CreateOptions` — and gains `Digest`.
 - A sandbox whose pinned image was garbage-collected off its pool host, with a
   tag that has since moved, now fails to start where it previously started
   something else. That is the intended trade, and the error names both digests

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -173,6 +174,10 @@ func (r *SandboxReconciler) start(ctx context.Context, sandbox *model.Sandbox, g
 		return nil
 	}
 
+	if sandbox.Phase == model.SandboxPhaseStopped {
+		r.repinToCurrentImage(ctx, sandbox)
+	}
+
 	status := "starting sandbox"
 	sandbox.MarkOperationRunning(&status)
 	if err := r.update(ctx, sandbox, generation); err != nil {
@@ -225,6 +230,37 @@ func (r *SandboxReconciler) restart(ctx context.Context, sandbox *model.Sandbox,
 	sandbox.ObservedGeneration = generation
 	sandbox.CompleteOperation(model.SandboxPhaseRunning, nil)
 	return r.update(ctx, sandbox, generation)
+}
+
+// repinToCurrentImage moves a stopped sandbox onto its harness config's current
+// image as it comes back up (ADR 0016 §5).
+//
+// A stopped sandbox has no session to interrupt and nothing running that a user
+// is relying on, and starting it is the moment its container is built. Building
+// it deliberately obsolete serves nobody, so the pin advances here — and only
+// here. A running sandbox never moves without the explicit upgrade action, which
+// is why this is reached from the stopped phase rather than from startSandbox,
+// where every reconcile of a running sandbox would pass through it.
+//
+// Best-effort by design: a harness config that cannot be read is not a reason to
+// refuse to start a sandbox that was going to start anyway on the image it
+// already has.
+func (r *SandboxReconciler) repinToCurrentImage(ctx context.Context, sb *model.Sandbox) {
+	if r.store == nil || sb.HarnessConfigID == nil || strings.TrimSpace(sb.ImageDigest) == "" || sb.HarnessMode == "config" {
+		return
+	}
+	config, err := r.store.GetHarnessConfig(ctx, sb.ProjectID, strings.TrimSpace(*sb.HarnessConfigID))
+	if err != nil {
+		return
+	}
+	image, digest := strings.TrimSpace(config.Image), strings.TrimSpace(config.ImageDigest)
+	if image == "" || digest == "" || digest == strings.TrimSpace(sb.ImageDigest) {
+		return
+	}
+	slog.InfoContext(ctx, "re-pinning stopped sandbox to its harness config's current image",
+		"sandboxId", sb.ID, "image", image,
+		"previousImageDigest", sb.ImageDigest, "imageDigest", digest)
+	sb.Image, sb.ImageDigest = image, digest
 }
 
 func (r *SandboxReconciler) stop(ctx context.Context, sandbox *model.Sandbox, generation int64) error {
@@ -351,9 +387,6 @@ func (r *SandboxReconciler) ensureSandboxCreated(ctx context.Context, sb *model.
 	if err := r.applyTrustKey(ctx, sb, &createOpts); err != nil {
 		return secretState, err
 	}
-	if err := ensureSandboxImage(ctx, provider, &createOpts); err != nil {
-		return secretState, err
-	}
 	runtimeSandbox, state, err := provider.Create(ctx, ref, secretState, createOpts)
 	if err != nil && !errors.Is(err, ErrAlreadyExists) {
 		return secretState, err
@@ -458,51 +491,6 @@ func sandboxRefFromSandbox(sb *model.Sandbox) SandboxRef {
 	}
 }
 
-func ensureSandboxImage(ctx context.Context, provider Provider, opts *CreateOptions) error {
-	imageProvider, ok := provider.(ImageProvider)
-	if !ok {
-		return nil
-	}
-	if opts.Image.Name == "" {
-		image, err := imageProvider.DefaultImage(ctx)
-		if err != nil {
-			return err
-		}
-		opts.Image = image
-	}
-	exists, err := imageProvider.ImageExists(ctx, opts.Image)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return nil
-	}
-	events, err := imageProvider.PullImage(ctx, opts.Image)
-	if err != nil {
-		return err
-	}
-	var lastErr string
-	for event := range events {
-		if event.Error != "" {
-			lastErr = event.Error
-		}
-		if event.Status == ImageStatusFailed {
-			if lastErr == "" {
-				lastErr = "image pull failed"
-			}
-			return errors.New(lastErr)
-		}
-	}
-	exists, err = imageProvider.ImageExists(ctx, opts.Image)
-	if err != nil {
-		return err
-	}
-	if !exists {
-		return errors.New("image pull completed but image is unavailable")
-	}
-	return nil
-}
-
 func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *model.Sandbox) CreateOptions {
 	opts := CreateOptions{
 		Labels: map[string]string{
@@ -510,7 +498,7 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 			"discobox.sandbox_id": sb.ID,
 		},
 	}
-	opts.Image = ImageRef{Name: sb.Image}
+	opts.Image = ImageRef{Name: sb.Image, Digest: sb.ImageDigest}
 	opts.PoolID = sb.PoolID
 	opts.Name = sb.Name
 	opts.Description = sb.Description
@@ -549,14 +537,15 @@ func (r *SandboxReconciler) createOptionsFromSandbox(ctx context.Context, sb *mo
 	if sb.HarnessConfigID != nil && r.store != nil {
 		if cfg, err := r.store.GetHarnessConfig(ctx, sb.ProjectID, *sb.HarnessConfigID); err == nil {
 			opts.ResolvedHarnessConfig = &ResolvedHarnessConfig{
-				ID:              cfg.ID,
-				Name:            cfg.Name,
-				RunCommand:      cfg.RunCommand,
-				RelaunchCommand: cfg.RelaunchCommand,
-				ConfigCommand:   cfg.ConfigCommand,
-				Files:           cfg.Files,
-				Env:             cfg.Env,
-				Volumes:         cfg.Volumes,
+				ID:               cfg.ID,
+				Name:             cfg.Name,
+				RunCommand:       cfg.RunCommand,
+				RelaunchCommand:  cfg.RelaunchCommand,
+				ConfigCommand:    cfg.ConfigCommand,
+				Files:            cfg.Files,
+				Env:              cfg.Env,
+				Volumes:          cfg.Volumes,
+				AdditionalGroups: cfg.AdditionalGroups,
 			}
 		}
 	}

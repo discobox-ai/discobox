@@ -171,6 +171,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		harnessMode = string(mode)
 	}
 	image := strings.TrimSpace(config.Image.Or(""))
+	imageDigest := ""
 	if harnessConfigID != nil && strings.TrimSpace(*harnessConfigID) != "" && harnessMode != "config" {
 		harnessConfig, err := s.store.GetHarnessConfig(ctx, projectID, strings.TrimSpace(*harnessConfigID))
 		if err != nil {
@@ -184,6 +185,11 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		}
 		if strings.TrimSpace(harnessConfig.Image) != "" {
 			image = strings.TrimSpace(harnessConfig.Image)
+			// Pin the identity, not just the reference. The tag is rebuilt in
+			// place by dev workflows, so it alone does not say which image this
+			// sandbox runs; the digest does, and the pool host enforces it
+			// (ADR 0016 §1).
+			imageDigest = strings.TrimSpace(harnessConfig.ImageDigest)
 		}
 	}
 	if image == "" {
@@ -204,6 +210,7 @@ func (s *Service) CreateSandbox(ctx context.Context, projectID string, input ser
 		ModelReasoningLevel:  services.OptStringPtr(config.ModelReasoningLevel),
 		Prompt:               config.Prompt,
 		Image:                image,
+		ImageDigest:          imageDigest,
 		Env:                  map[string]string(config.Env.Or(nil)),
 		Source:               source,
 		SourceRoot:           sourceRoot,
@@ -413,6 +420,94 @@ func (s *Service) RestartSandbox(ctx context.Context, projectID, sandboxID strin
 		return nil, mapAPIError(err, "sandbox not found")
 	}
 	return sandbox, nil
+}
+
+// UpgradeSandbox re-pins the sandbox to its harness config's current image and
+// restarts it (ADR 0016 §4).
+//
+// Upgrading is a re-pin plus a restart, not an operation of its own. The pool
+// host already rebuilds any sandbox container whose image does not match the
+// pin, so changing the pin is the entire instruction — the restart is just what
+// makes the runtime notice. A separate upgrade operation, with its own
+// generation counters, would be a second way to say "converge this sandbox".
+//
+// The sandbox ID, its history, and its pool-host volumes survive; anything
+// written to the container's own filesystem outside those volumes does not.
+// That cost buys nothing when the sandbox is already on the current image, so
+// an upgrade with no target is refused rather than performed as a recreate.
+//
+// The target is read here rather than supplied by the caller: the reconciler
+// re-reads it anyway when it runs, and an expected-digest parameter would turn
+// a continuously rebuilt dev image into a retry loop against a target that was
+// never wrong.
+func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID string, _ services.UpgradeSandboxBody) (*model.Sandbox, error) {
+	existing, err := s.store.GetSandbox(ctx, projectID, sandboxID)
+	if err != nil {
+		return nil, mapAPIError(err, "sandbox not found")
+	}
+	target, err := s.upgradeTarget(ctx, existing)
+	if err != nil {
+		return nil, err
+	}
+	if !target.Available {
+		// Distinguish "nothing newer" from "nothing to compare". A sandbox on the
+		// default image, or one whose harness config was deleted, has no pinned
+		// identity at all, and telling its owner it is running "its harness
+		// config's current image" asserts something that is not true of it.
+		if strings.TrimSpace(target.Digest) == "" {
+			return nil, apperrors.NewStatusError(http.StatusConflict,
+				"sandbox is not pinned to a harness image, so there is nothing to upgrade")
+		}
+		return nil, apperrors.NewStatusError(http.StatusConflict,
+			"sandbox is already running its harness config's current image")
+	}
+	sandbox, err := s.submitSandboxOperation(ctx, projectID, sandboxID, model.SandboxRestartOperation, func(sb *model.Sandbox) {
+		sb.Image = target.Image
+		sb.ImageDigest = target.Digest
+		sb.RestartGeneration++
+	})
+	if err != nil {
+		return nil, mapAPIError(err, "sandbox not found")
+	}
+	return sandbox, nil
+}
+
+// upgradeTarget reports what an upgrade would move the sandbox to.
+//
+// It is derived on every read rather than stored: a cached flag would have to
+// be invalidated by every path that writes a harness config — seeding,
+// registration, refresh, configure, deconfigure — and the first one that forgot
+// would leave a sandbox lying about its own state.
+func (s *Service) upgradeTarget(ctx context.Context, sb *model.Sandbox) (UpgradeTarget, error) {
+	target := UpgradeTarget{Image: sb.Image, Digest: sb.ImageDigest}
+	// An unpinned sandbox (default image, or created before pinning existed)
+	// has no identity to compare, and a config-mode sandbox is running the
+	// configure command against a deliberately fixed image.
+	if sb.HarnessConfigID == nil || strings.TrimSpace(sb.ImageDigest) == "" || sb.HarnessMode == "config" {
+		return target, nil
+	}
+	config, err := s.store.GetHarnessConfig(ctx, sb.ProjectID, strings.TrimSpace(*sb.HarnessConfigID))
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return target, nil
+		}
+		return UpgradeTarget{}, err
+	}
+	image, digest := strings.TrimSpace(config.Image), strings.TrimSpace(config.ImageDigest)
+	if image == "" || digest == "" {
+		return target, nil
+	}
+	target.Image, target.Digest = image, digest
+	target.Available = digest != strings.TrimSpace(sb.ImageDigest)
+	return target, nil
+}
+
+// UpgradeTarget is what an upgrade would pin the sandbox to, and whether that
+// differs from what it runs now.
+type UpgradeTarget struct {
+	Image     string
+	Digest    string
+	Available bool
 }
 
 // CompleteSandboxSourcePush reports that a client finished pushing into a

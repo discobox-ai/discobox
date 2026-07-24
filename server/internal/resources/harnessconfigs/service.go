@@ -110,26 +110,28 @@ func (s *Service) CreateHarnessConfig(ctx context.Context, projectID string, inp
 	var secrets []model.HarnessConfigSecret
 	var env map[string]string
 	var volumes []harness.Volume
+	var additionalGroups []string
 	if inspected != nil {
-		runCommand, relaunchCommand, configCommand, files, secrets, env, volumes = harnessMetadataFields(inspected.ImageMetadata)
+		runCommand, relaunchCommand, configCommand, files, secrets, env, volumes, additionalGroups = harnessMetadataFields(inspected.ImageMetadata)
 	}
 	if len(runCommand) == 0 {
 		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config run command is required")
 	}
 
 	config := &model.HarnessConfig{
-		ProjectID:       projectID,
-		Slug:            slug,
-		Name:            name,
-		Image:           image,
-		ImageDigest:     imageDigest,
-		RunCommand:      runCommand,
-		RelaunchCommand: relaunchCommand,
-		ConfigCommand:   configCommand,
-		Files:           files,
-		Secrets:         secrets,
-		Env:             env,
-		Volumes:         volumes,
+		ProjectID:        projectID,
+		Slug:             slug,
+		Name:             name,
+		Image:            image,
+		ImageDigest:      imageDigest,
+		RunCommand:       runCommand,
+		RelaunchCommand:  relaunchCommand,
+		ConfigCommand:    configCommand,
+		Files:            files,
+		Secrets:          secrets,
+		Env:              env,
+		Volumes:          volumes,
+		AdditionalGroups: additionalGroups,
 	}
 	if err := s.store.CreateHarnessConfig(ctx, config); err != nil {
 		return nil, err
@@ -173,6 +175,57 @@ func (s *Service) UpdateHarnessConfig(ctx context.Context, projectID, configID s
 	if err := s.store.UpdateHarnessConfig(ctx, config); err != nil {
 		return nil, err
 	}
+	stored, err := s.store.GetHarnessConfig(ctx, projectID, configID)
+	if err != nil {
+		return nil, err
+	}
+	return stored, nil
+}
+
+// RefreshHarnessConfigImage re-inspects the config's image and re-snapshots the
+// label metadata and digest onto it.
+//
+// Registration snapshots the label once and nothing re-reads it, which is
+// correct for an immutable reference but leaves a config pointing at a rebuilt
+// tag describing an image that no longer exists. Built-in configs get this for
+// free from SeedBuiltIns on every server start; a config registered from a
+// user-supplied image has no such trigger, and without one its ImageDigest can
+// never move — so no sandbox created from it could ever report an available
+// upgrade (ADR 0016 §7).
+//
+// Configured is never flipped: re-snapshotting the image's baseline leaves
+// whatever the configure flow produced intact, exactly as seeding does.
+func (s *Service) RefreshHarnessConfigImage(ctx context.Context, projectID, configID string) (*model.HarnessConfig, error) {
+	config, err := s.store.GetHarnessConfig(ctx, projectID, configID)
+	if err != nil {
+		return nil, apiError(err, "harness config not found")
+	}
+	if s.inspector == nil {
+		return nil, apperrors.NewStatusError(http.StatusServiceUnavailable, "image inspection is unavailable")
+	}
+	image := strings.TrimSpace(config.Image)
+	if image == "" {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config has no image to refresh")
+	}
+	metadata, err := s.inspector.Inspect(ctx, image)
+	if err != nil {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, err.Error())
+	}
+	runCommand, relaunchCommand, configCommand, files, secrets, env, volumes, additionalGroups := harnessMetadataFields(metadata.ImageMetadata)
+	if len(runCommand) == 0 {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "harness config run command is required")
+	}
+	previousDigest := config.ImageDigest
+	config.ImageDigest = metadata.Digest
+	config.RunCommand, config.RelaunchCommand, config.ConfigCommand = runCommand, relaunchCommand, configCommand
+	config.Files, config.Secrets, config.Env, config.Volumes = files, secrets, env, volumes
+	config.AdditionalGroups = additionalGroups
+	if err := s.store.UpdateHarnessConfig(ctx, config); err != nil {
+		return nil, err
+	}
+	slog.InfoContext(ctx, "refreshed harness config image",
+		"harnessConfigId", config.ID, "image", image,
+		"previousImageDigest", previousDigest, "imageDigest", metadata.Digest)
 	stored, err := s.store.GetHarnessConfig(ctx, projectID, configID)
 	if err != nil {
 		return nil, err
@@ -299,6 +352,13 @@ func (s *Service) DeleteHarnessConfigSecretBinding(ctx context.Context, projectI
 // new image is clobbered in here along with a fresh snapshot of its label
 // metadata.
 //
+// The image is inspected on every pass, even when the reference is unchanged.
+// A reference is not an identity: `:local` and other stable dev tags are
+// rebuilt in place, so comparing references alone would leave ImageDigest
+// pinned to a build that no longer exists under that tag. Sandbox upgrade
+// detection compares digests (ADR 0016 §7), so a digest that never moves
+// reports every sandbox as current forever.
+//
 // Seeding never flips Configured — a re-imaged harness keeps whatever the
 // configure flow produced. Best-effort per harness: one whose image cannot be
 // inspected is logged and skipped so an unavailable image never blocks startup.
@@ -315,13 +375,13 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
-		if existing != nil && existing.Image == image {
-			continue
-		}
 		metadata, inspectErr := s.inspector.Inspect(ctx, image)
 		if inspectErr != nil {
 			slog.WarnContext(ctx, "skip built-in harness seed; image unavailable",
 				"slug", seed.Slug, "image", image, "error", inspectErr)
+			continue
+		}
+		if existing != nil && existing.Image == image && existing.ImageDigest == metadata.Digest {
 			continue
 		}
 		if existing == nil {
@@ -329,7 +389,7 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 				ProjectID: projectID, Slug: seed.Slug, Name: seed.Name,
 				BuiltIn: true, Configured: false, Image: image, ImageDigest: metadata.Digest,
 			}
-			config.RunCommand, config.RelaunchCommand, config.ConfigCommand, config.Files, config.Secrets, config.Env, config.Volumes = harnessMetadataFields(metadata.ImageMetadata)
+			config.RunCommand, config.RelaunchCommand, config.ConfigCommand, config.Files, config.Secrets, config.Env, config.Volumes, config.AdditionalGroups = harnessMetadataFields(metadata.ImageMetadata)
 			if err := s.store.CreateHarnessConfig(ctx, config); err != nil {
 				return err
 			}
@@ -337,24 +397,26 @@ func (s *Service) SeedBuiltIns(ctx context.Context, projectID string) error {
 				"harnessConfigId", config.ID, "slug", seed.Slug, "image", image)
 			continue
 		}
+		previousDigest := existing.ImageDigest
 		existing.Image = image
 		existing.ImageDigest = metadata.Digest
-		existing.RunCommand, existing.RelaunchCommand, existing.ConfigCommand, existing.Files, existing.Secrets, existing.Env, existing.Volumes = harnessMetadataFields(metadata.ImageMetadata)
+		existing.RunCommand, existing.RelaunchCommand, existing.ConfigCommand, existing.Files, existing.Secrets, existing.Env, existing.Volumes, existing.AdditionalGroups = harnessMetadataFields(metadata.ImageMetadata)
 		if err := s.store.UpdateHarnessConfig(ctx, existing); err != nil {
 			return err
 		}
 		slog.InfoContext(ctx, "updated built-in harness config image",
-			"harnessConfigId", existing.ID, "slug", seed.Slug, "image", image)
+			"harnessConfigId", existing.ID, "slug", seed.Slug, "image", image,
+			"previousImageDigest", previousDigest, "imageDigest", metadata.Digest)
 	}
 	return nil
 }
 
 // harnessMetadataFields snapshots the mutable config fields declared by a
 // harness image's label metadata.
-func harnessMetadataFields(metadata harness.ImageMetadata) (runCommand, relaunchCommand, configCommand []string, files []model.HarnessConfigFile, secrets []model.HarnessConfigSecret, env map[string]string, volumes []harness.Volume) {
+func harnessMetadataFields(metadata harness.ImageMetadata) (runCommand, relaunchCommand, configCommand []string, files []model.HarnessConfigFile, secrets []model.HarnessConfigSecret, env map[string]string, volumes []harness.Volume, additionalGroups []string) {
 	image := metadata.Harness
 	if image == nil {
-		return nil, nil, nil, nil, nil, nil, nil
+		return nil, nil, nil, nil, nil, nil, nil, nil
 	}
 	runCommand = append([]string{}, image.RunCommand...)
 	relaunchCommand = append([]string{}, image.RelaunchCommand...)
@@ -376,7 +438,8 @@ func harnessMetadataFields(metadata harness.ImageMetadata) (runCommand, relaunch
 		}
 	}
 	volumes = append([]harness.Volume{}, metadata.Volumes...)
-	return runCommand, relaunchCommand, configCommand, files, secrets, env, volumes
+	additionalGroups = append([]string{}, metadata.AdditionalGroups...)
+	return runCommand, relaunchCommand, configCommand, files, secrets, env, volumes, additionalGroups
 }
 
 func apiError(err error, notFoundMessage string) error {

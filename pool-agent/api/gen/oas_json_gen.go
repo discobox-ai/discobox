@@ -4308,6 +4308,12 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.ImageDigest.Set {
+			e.FieldStart("imageDigest")
+			s.ImageDigest.Encode(e)
+		}
+	}
+	{
 		if s.MemoryBytes.Set {
 			e.FieldStart("memoryBytes")
 			s.MemoryBytes.Encode(e)
@@ -4355,7 +4361,7 @@ func (s *SandboxConfig) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxConfig = [16]string{
+var jsonFieldsNameOfSandboxConfig = [17]string{
 	0:  "harnessConfigId",
 	1:  "harnessMode",
 	2:  "model",
@@ -4365,13 +4371,14 @@ var jsonFieldsNameOfSandboxConfig = [16]string{
 	6:  "description",
 	7:  "env",
 	8:  "image",
-	9:  "memoryBytes",
-	10: "name",
-	11: "prompt",
-	12: "source",
-	13: "sourceCodeReferences",
-	14: "storageBytes",
-	15: "user",
+	9:  "imageDigest",
+	10: "memoryBytes",
+	11: "name",
+	12: "prompt",
+	13: "source",
+	14: "sourceCodeReferences",
+	15: "storageBytes",
+	16: "user",
 }
 
 // Decode decodes SandboxConfig from json.
@@ -4471,6 +4478,16 @@ func (s *SandboxConfig) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"image\"")
+			}
+		case "imageDigest":
+			if err := func() error {
+				s.ImageDigest.Reset()
+				if err := s.ImageDigest.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"imageDigest\"")
 			}
 		case "memoryBytes":
 			if err := func() error {

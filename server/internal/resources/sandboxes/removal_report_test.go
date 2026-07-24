@@ -2,6 +2,7 @@ package sandboxes
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/obot-platform/discobox/server/internal/database"
@@ -10,7 +11,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/store"
 )
 
-func TestReportSandboxRemovedRecordsStoppedIntent(t *testing.T) {
+func TestReportSandboxRemovedStopsOnlyTheCurrentRuntime(t *testing.T) {
 	ctx := context.Background()
 	db, err := database.New(database.Config{DSN: ":memory:"})
 	if err != nil {
@@ -50,28 +51,93 @@ func TestReportSandboxRemovedRecordsStoppedIntent(t *testing.T) {
 	}
 	service := NewService(appStore, nil, "user-1", engine)
 
-	if err := service.ReportSandboxRemoved(ctx, pool.ID, sandbox.ID); err != nil {
-		t.Fatalf("report sandbox removed: %v", err)
+	// The control plane believes container-a is serving this sandbox.
+	sandbox.RuntimeState = []byte(`{"ID":"container-a"}`)
+	if err := appStore.UpdateSandbox(ctx, sandbox); err != nil {
+		t.Fatalf("record runtime state: %v", err)
 	}
-	updated, err := appStore.GetSandbox(ctx, project.ID, sandbox.ID)
+
+	// A report naming a container we have already replaced is stale: it is what an
+	// image upgrade's own removal looks like arriving late, and acting on it would
+	// stop a sandbox that is running fine on its new container (ADR 0016 §8).
+	if err := service.ReportSandboxRemoved(ctx, pool.ID, sandbox.ID, "container-gone"); err != nil {
+		t.Fatalf("stale report: %v", err)
+	}
+	stale, err := appStore.GetSandbox(ctx, project.ID, sandbox.ID)
 	if err != nil {
 		t.Fatalf("get sandbox: %v", err)
 	}
-	if updated.DesiredState != model.SandboxDesiredStateStopped || updated.Phase != model.SandboxPhaseStopping || updated.Generation != 4 {
-		t.Fatalf("sandbox desired/phase/generation = %q/%q/%d, want stopped/stopping/4", updated.DesiredState, updated.Phase, updated.Generation)
-	}
-	if updated.LastOperationStatus != model.SandboxOperationStatusPending {
-		t.Fatalf("operation status = %q, want pending", updated.LastOperationStatus)
+	if stale.DesiredState != model.SandboxDesiredStateRunning || stale.Generation != 3 {
+		t.Fatalf("stale report changed state: desired=%q generation=%d", stale.DesiredState, stale.Generation)
 	}
 
-	if err := service.ReportSandboxRemoved(ctx, pool.ID, sandbox.ID); err != nil {
+	// A report arriving while an operation owns the container is expected, not a
+	// loss — the operation is the thing removing it.
+	inFlight, err := appStore.GetSandbox(ctx, project.ID, sandbox.ID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	status := "restarting sandbox"
+	inFlight.MarkOperationRunning(&status)
+	if err := appStore.UpdateSandbox(ctx, inFlight); err != nil {
+		t.Fatalf("mark operation running: %v", err)
+	}
+	if err := service.ReportSandboxRemoved(ctx, pool.ID, sandbox.ID, "container-a"); err != nil {
+		t.Fatalf("in-flight report: %v", err)
+	}
+	during, err := appStore.GetSandbox(ctx, project.ID, sandbox.ID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	if during.DesiredState != model.SandboxDesiredStateRunning {
+		t.Fatalf("in-flight report changed intent to %q", during.DesiredState)
+	}
+
+	// At steady state, losing the container we believe in is a genuine loss, and
+	// the sandbox should stop trying rather than be silently resurrected.
+	settled, err := appStore.GetSandbox(ctx, project.ID, sandbox.ID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	settled.CompleteOperation(model.SandboxPhaseRunning, nil)
+	if err := appStore.UpdateSandbox(ctx, settled); err != nil {
+		t.Fatalf("complete operation: %v", err)
+	}
+	before := settled.Generation
+	if err := service.ReportSandboxRemoved(ctx, pool.ID, sandbox.ID, "container-a"); err != nil {
+		t.Fatalf("genuine report: %v", err)
+	}
+	stopped, err := appStore.GetSandbox(ctx, project.ID, sandbox.ID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	if stopped.DesiredState != model.SandboxDesiredStateStopped || stopped.Generation != before+1 {
+		t.Fatalf("desired/generation = %q/%d, want stopped/%d", stopped.DesiredState, stopped.Generation, before+1)
+	}
+	if !slices.ContainsFunc(mustListDirty(ctx, t, engine), func(d reconcile.DirtyResource) bool {
+		return d.ResourceID == SandboxDirtyID(project.ID, sandbox.ID)
+	}) {
+		t.Fatal("want the sandbox marked for reconcile")
+	}
+
+	// Already stopped: nothing more to say.
+	if err := service.ReportSandboxRemoved(ctx, pool.ID, sandbox.ID, "container-a"); err != nil {
 		t.Fatalf("duplicate report: %v", err)
 	}
 	duplicate, err := appStore.GetSandbox(ctx, project.ID, sandbox.ID)
 	if err != nil {
 		t.Fatalf("get sandbox after duplicate: %v", err)
 	}
-	if duplicate.Generation != 4 {
-		t.Fatalf("generation after duplicate = %d, want 4", duplicate.Generation)
+	if duplicate.Generation != stopped.Generation {
+		t.Fatalf("generation after duplicate = %d, want %d", duplicate.Generation, stopped.Generation)
 	}
+}
+
+func mustListDirty(ctx context.Context, t *testing.T, engine *reconcile.Engine) []reconcile.DirtyResource {
+	t.Helper()
+	dirty, err := engine.ListDirty(ctx, SandboxResourceType)
+	if err != nil {
+		t.Fatalf("list dirty: %v", err)
+	}
+	return dirty
 }

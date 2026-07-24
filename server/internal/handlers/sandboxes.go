@@ -106,6 +106,18 @@ func (h *Handler) RestartSandbox(ctx context.Context, req *apimodel.RestartSandb
 	return &body, nil
 }
 
+func (h *Handler) UpgradeSandbox(ctx context.Context, req *apimodel.UpgradeSandboxBody, params serverapi.UpgradeSandboxParams) (serverapi.UpgradeSandboxRes, error) {
+	sandbox, err := h.services.Sandboxes.UpgradeSandbox(ctx, params.ProjectId, params.SandboxId, *req)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.SandboxToAPI(sandbox)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
 func (h *Handler) CompleteSandboxSourcePush(ctx context.Context, req *apimodel.CompleteSandboxSourcePushBody, params serverapi.CompleteSandboxSourcePushParams) (serverapi.CompleteSandboxSourcePushRes, error) {
 	sandbox, err := h.services.Sandboxes.CompleteSandboxSourcePush(ctx, params.ProjectId, params.SandboxId, *req)
 	if err != nil {

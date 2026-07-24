@@ -122,6 +122,9 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 		"name":         sandbox.Name,
 		"storageBytes": sandbox.StorageBytes,
 	}
+	if sandbox.ImageDigest != "" {
+		config["imageDigest"] = sandbox.ImageDigest
+	}
 	if sandbox.HarnessConfigID != nil {
 		config["harnessConfigId"] = *sandbox.HarnessConfigID
 	}
@@ -180,6 +183,9 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 	if len(sandbox.AppliedCommits) > 0 {
 		runtime["appliedCommits"] = sandbox.AppliedCommits
 	}
+	if upgrade := SandboxUpgrade(sandbox); upgrade != nil {
+		runtime["upgrade"] = upgrade
+	}
 	fields := map[string]any{
 		"id":              sandbox.ID,
 		"projectId":       sandbox.ProjectID,
@@ -205,6 +211,40 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 		fields["harnessConfig"] = sandbox.HarnessConfig
 	}
 	return Convert[serverapi.Sandbox](fields)
+}
+
+// SandboxUpgrade reports whether the sandbox's harness config now resolves to a
+// different image than the sandbox is pinned to (ADR 0016 §2).
+//
+// Derived on every read from the preloaded harness config, never stored: a
+// cached flag would have to be invalidated by every path that writes a harness
+// config, and the first one that forgot would leave a sandbox misreporting its
+// own state. Returns nil when there is nothing to compare — an unpinned
+// sandbox, a sandbox with no harness config, or a config-mode sandbox, which
+// runs a deliberately fixed image.
+func SandboxUpgrade(sandbox *model.Sandbox) map[string]any {
+	if sandbox == nil || strings.TrimSpace(sandbox.ImageDigest) == "" || sandbox.HarnessMode == "config" {
+		return nil
+	}
+	config := sandbox.HarnessConfig
+	if config == nil {
+		return nil
+	}
+	target, targetDigest := strings.TrimSpace(config.Image), strings.TrimSpace(config.ImageDigest)
+	if target == "" || targetDigest == "" {
+		return nil
+	}
+	upgrade := map[string]any{
+		"available":          targetDigest != strings.TrimSpace(sandbox.ImageDigest),
+		"currentImage":       sandbox.Image,
+		"currentImageDigest": sandbox.ImageDigest,
+		"targetImage":        target,
+		"targetImageDigest":  targetDigest,
+	}
+	if upgrade["available"] == true {
+		upgrade["reason"] = "imageDigestChanged"
+	}
+	return upgrade
 }
 
 // SandboxDisplayState consolidates reconciliation intent and observation into

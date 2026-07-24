@@ -242,6 +242,10 @@ func (s *routerTestServices) RestartSandbox(_ context.Context, projectID, sandbo
 	return s.beginSandboxOperation(projectID, sandboxID, model.SandboxRestartOperation)
 }
 
+func (s *routerTestServices) UpgradeSandbox(_ context.Context, projectID, sandboxID string, _ services.UpgradeSandboxBody) (*model.Sandbox, error) {
+	return s.beginSandboxOperation(projectID, sandboxID, model.SandboxRestartOperation)
+}
+
 func (s *routerTestServices) CompleteSandboxSourcePush(_ context.Context, projectID, sandboxID string, _ services.CompleteSandboxSourcePushBody) (*model.Sandbox, error) {
 	return s.beginSandboxOperation(projectID, sandboxID, model.SandboxStartOperation)
 }
@@ -381,6 +385,19 @@ func (s *routerTestServices) DeconfigureHarnessConfig(_ context.Context, project
 	}
 	config.Configured = false
 	s.harnessConfigs[configID] = config
+	return &config, nil
+}
+
+func (s *routerTestServices) RefreshHarnessConfigImage(_ context.Context, projectID, configID string) (*model.HarnessConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if projectID != s.project.ID {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "project not found")
+	}
+	config, ok := s.harnessConfigs[configID]
+	if !ok {
+		return nil, apperrors.NewStatusError(http.StatusNotFound, "harness config not found")
+	}
 	return &config, nil
 }
 

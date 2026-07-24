@@ -118,7 +118,7 @@ func TestNormalizeSandboxConfigPublishesPrimaryBindRoot(t *testing.T) {
 	if !ok || destination.Directory.Or("") != "/workspace" {
 		t.Fatalf("destination = %#v, want default primary bind root /workspace", destination)
 	}
-	doc := buildSandboxDocument("project-1", "sandbox-1", "pool-1", "public-key", &workerapimodel.PoolSandboxCreateRequest{Config: config}, nil, nil)
+	doc := buildSandboxDocument("project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", &workerapimodel.PoolSandboxCreateRequest{Config: config}, nil, nil)
 	cfg, _ := sandboxconfig.Effective(doc)
 	if len(cfg.Sources) != 1 || cfg.Sources[0].Target != "/workspace" {
 		t.Fatalf("effective sources = %#v, want runtime bind root /workspace", cfg.Sources)
@@ -293,7 +293,7 @@ func TestBuildSandboxDocumentIncludesSelectedHarnessIdentityAndFiles(t *testing.
 		}),
 	}
 
-	doc := buildSandboxDocument("project-1", "sandbox-1", "pool-1", "public-key", req, nil, nil)
+	doc := buildSandboxDocument("project-1", "sandbox-1", "pool-1", "public-key", "sha256:image", req, nil, nil)
 	cfg, _ := sandboxconfig.Effective(doc)
 	if cfg.APIVersion != sandboxconfig.APIVersion || cfg.SandboxID != "sandbox-1" {
 		t.Fatalf("effective identity = %#v, want v1 sandbox-1", cfg)
@@ -864,5 +864,41 @@ func TestMaterializePushedSourcesIsANoOpOnceFinalized(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(target, "scratch.txt")); err != nil {
 		t.Fatalf("a finalized push-delivered source was re-materialized and lost in-progress work: %v", err)
+	}
+}
+
+// The pin is the identity a sandbox runs, and the same comparison decides both
+// whether to launch an image and whether an existing container must be replaced
+// (ADR 0016 §6).
+func TestImageMatchesPin(t *testing.T) {
+	const pinned = "sha256:aaa"
+	if !imageMatchesPin(pinned, pinned) {
+		t.Fatal("the pinned image must match its own pin")
+	}
+	if imageMatchesPin("sha256:bbb", pinned) {
+		t.Fatal("a rebuilt image under the same tag must not match the pin")
+	}
+	// An unpinned sandbox runs whatever its reference names; treating that as a
+	// mismatch would replace containers no one asked to upgrade.
+	if !imageMatchesPin("sha256:bbb", "") {
+		t.Fatal("an empty pin must match any image")
+	}
+	if !imageMatchesPin("  sha256:aaa  ", "  sha256:aaa  ") {
+		t.Fatal("surrounding whitespace must not defeat the comparison")
+	}
+}
+
+// The image a sandbox actually ran is the first thing a version-skew
+// investigation needs, and it is recorded as the resolved identity rather than
+// the mutable reference it was asked for (ADR 0016).
+func TestSandboxDocumentRecordsResolvedImageIdentity(t *testing.T) {
+	req := &workerapimodel.PoolSandboxCreateRequest{SandboxId: "sandbox-1"}
+	doc := buildSandboxDocument("project-1", "sandbox-1", "pool-1", "public-key", "sha256:resolved", req, nil, nil)
+	if doc.Runtime.Image != "sha256:resolved" {
+		t.Fatalf("runtime image = %q, want the resolved image identity", doc.Runtime.Image)
+	}
+	_, provenance := sandboxconfig.Effective(doc)
+	if provenance.Runtime.Image != "sha256:resolved" {
+		t.Fatalf("provenance image = %q, want the resolved image identity", provenance.Runtime.Image)
 	}
 }

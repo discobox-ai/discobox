@@ -18,7 +18,7 @@ import (
 // SandboxRemovalReporter records agent-observed sandbox runtime loss as
 // lifecycle intent owned by the sandbox control plane.
 type SandboxRemovalReporter interface {
-	ReportSandboxRemoved(context.Context, string, string) error
+	ReportSandboxRemoved(ctx context.Context, poolID, sandboxID, containerID string) error
 }
 
 // SetSandboxRemovalReporter wires the sandbox service dependency for
@@ -78,7 +78,7 @@ func (s *Service) ReportPoolSandboxRemoved(ctx context.Context, poolID string, i
 	if s.sandboxReporter == nil {
 		return errors.New("sandbox removal reporter is required")
 	}
-	if err := s.sandboxReporter.ReportSandboxRemoved(ctx, poolID, sandboxID); err != nil {
+	if err := s.sandboxReporter.ReportSandboxRemoved(ctx, poolID, sandboxID, strings.TrimSpace(input.ContainerId.Or(""))); err != nil {
 		return mapAPIError(err, "sandbox not found")
 	}
 	return nil

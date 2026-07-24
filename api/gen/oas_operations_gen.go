@@ -61,6 +61,7 @@ const (
 	ListSecretsOperation                      OperationName = "ListSecrets"
 	ReconcilePoolOperation                    OperationName = "ReconcilePool"
 	ReconcileSandboxOperation                 OperationName = "ReconcileSandbox"
+	RefreshHarnessConfigImageOperation        OperationName = "RefreshHarnessConfigImage"
 	RegisterPoolOperation                     OperationName = "RegisterPool"
 	ReportPoolSandboxRemovedOperation         OperationName = "ReportPoolSandboxRemoved"
 	ResolveSandboxSecretOperation             OperationName = "ResolveSandboxSecret"
@@ -81,4 +82,5 @@ const (
 	UpdateSandboxOperation                    OperationName = "UpdateSandbox"
 	UpdateSandboxProviderInstanceOperation    OperationName = "UpdateSandboxProviderInstance"
 	UpdateSecretOperation                     OperationName = "UpdateSecret"
+	UpgradeSandboxOperation                   OperationName = "UpgradeSandbox"
 )

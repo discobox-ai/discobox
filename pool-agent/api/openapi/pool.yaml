@@ -228,6 +228,9 @@ components:
                     type: object
                 image:
                     type: string
+                imageDigest:
+                    description: Config digest the image must resolve to. The runtime runs this image and replaces a container built from any other, so a moved tag never silently changes a running sandbox (ADR 0016).
+                    type: string
                 memoryBytes:
                     format: int64
                     type: integer

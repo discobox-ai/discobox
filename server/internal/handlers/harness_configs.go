@@ -59,6 +59,18 @@ func (h *Handler) DeconfigureHarnessConfig(ctx context.Context, params serverapi
 	return &body, nil
 }
 
+func (h *Handler) RefreshHarnessConfigImage(ctx context.Context, params serverapi.RefreshHarnessConfigImageParams) (serverapi.RefreshHarnessConfigImageRes, error) {
+	config, err := h.services.HarnessConfigs.RefreshHarnessConfigImage(ctx, params.ProjectId, params.HarnessConfigId)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[apimodel.HarnessConfig](config)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
 func (h *Handler) ListHarnessConfigs(ctx context.Context, params serverapi.ListHarnessConfigsParams) (serverapi.ListHarnessConfigsRes, error) {
 	configs, err := h.services.HarnessConfigs.ListHarnessConfigs(ctx, params.ProjectId)
 	if err != nil {

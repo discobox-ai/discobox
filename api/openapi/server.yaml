@@ -1610,6 +1610,21 @@ components:
                 - data
                 - createdAt
             type: object
+        UpgradeSandboxBody:
+            additionalProperties: false
+            description: |-
+                Upgrade takes no parameters. The target is whatever the sandbox's harness config
+                resolves to when the reconciler runs; accepting a client-observed digest would
+                turn a continuously-rebuilt dev image into a retry loop against a target that was
+                never wrong (ADR 0016).
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/UpgradeSandboxBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+            type: object
         RestartSandboxBody:
             additionalProperties: false
             properties:
@@ -1658,6 +1673,9 @@ components:
                     type: object
                 image:
                     description: Sandbox base image
+                    type: string
+                imageDigest:
+                    description: Config digest of the image this sandbox is pinned to. Written at create and by an upgrade, never by a restart; the pool host refuses an image that does not match it (ADR 0016).
                     type: string
                 memoryBytes:
                     description: Requested memory capacity in bytes
@@ -1836,6 +1854,37 @@ components:
             required:
                 - status
             type: object
+        SandboxUpgrade:
+            additionalProperties: false
+            description: |-
+                Availability of a newer harness image for this sandbox. Derived at read time by
+                comparing the sandbox's pinned image digest to its harness config's current one;
+                it is never stored. Absent when the sandbox pins no digest (the default image, or
+                a sandbox created before pinning existed).
+            properties:
+                available:
+                    description: Whether the harness config now resolves to a different image than this sandbox is pinned to
+                    type: boolean
+                currentImage:
+                    description: Image reference this sandbox is running
+                    type: string
+                currentImageDigest:
+                    description: Config digest this sandbox is pinned to. Not a manifest digest; it matches what a local Docker daemon reports as an image ID.
+                    type: string
+                reason:
+                    description: Why an upgrade is available
+                    enum:
+                        - imageDigestChanged
+                    type: string
+                targetImage:
+                    description: Image reference this sandbox's harness config resolves to now
+                    type: string
+                targetImageDigest:
+                    description: Config digest an upgrade would pin this sandbox to
+                    type: string
+            required:
+                - available
+            type: object
         SandboxRuntime:
             additionalProperties: false
             properties:
@@ -1921,6 +1970,8 @@ components:
                 statusMessage:
                     description: Human-readable status detail
                     type: string
+                upgrade:
+                    "$ref": "#/components/schemas/SandboxUpgrade"
             required:
                 - desiredState
                 - phase
@@ -2660,6 +2711,13 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                containerId:
+                    description: |-
+                        Runtime identity that was removed. The control plane ignores the report when this is
+                        not the runtime it currently believes is serving the sandbox, which is what makes a
+                        report about an already-replaced container harmless. Empty means the report came from
+                        the level-triggered orphan sweep rather than a specific removal event.
+                    type: string
                 sandboxId:
                     description: Sandbox whose pool-local runtime was removed outside control-plane reconciliation
                     type: string
@@ -3307,6 +3365,47 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Undo a harness config's configure flow
+            tags:
+                - Harness Configs
+    /projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image:
+        post:
+            description: |-
+                Re-inspect the harness config's image and re-snapshot its label metadata and digest.
+                Registration snapshots the label once and nothing re-reads it, so a config pointing at a
+                rebuilt tag keeps describing an image that no longer exists under it — and its sandboxes
+                can never report an available upgrade. Built-in configs get this automatically on server
+                start; user-registered ones need this call. Never flips configured.
+            operationId: refresh-harness-config-image
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Harness config ID
+                  in: path
+                  name: harnessConfigId
+                  required: true
+                  schema:
+                    description: Harness config ID
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/HarnessConfig'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Re-snapshot a harness config from its image
             tags:
                 - Harness Configs
     /projects/{projectId}/harness-configs/{harnessConfigId}/default:
@@ -4278,6 +4377,47 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Restart a sandbox
+            tags:
+                - Sandboxes
+    /projects/{projectId}/sandboxes/{sandboxId}/upgrade:
+        post:
+            operationId: upgrade-sandbox
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Sandbox ID
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    description: Sandbox ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/UpgradeSandboxBody'
+                required: true
+            responses:
+                202:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Sandbox'
+                    description: Accepted
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Upgrade a sandbox to its harness config's current image
             tags:
                 - Sandboxes
     /projects/{projectId}/sandboxes/{sandboxId}/reconcile:

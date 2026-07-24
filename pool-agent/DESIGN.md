@@ -170,6 +170,33 @@ flowchart LR
 - Sentinel secret swapping is not yet wired: the proxy runs with a nil resolver,
   so it records and forwards traffic but does not substitute secrets.
 
+## Sandbox Image Identity
+
+`sandboxruntime` resolves and pulls sandbox images, so it is where a sandbox's
+image pin is enforced (ADR 0016). The create request carries `image` (what to
+pull) and `imageDigest` (the config digest it must resolve to).
+
+- `resolveSandboxImage` returns the **image ID to launch**, preferring a pinned
+  image already on the host over whatever the tag names now. Launching the
+  reference instead would let a rebuilt tag change a sandbox underneath its
+  user. If the pin is absent and the reference now resolves to something else,
+  it fails naming both digests rather than starting the wrong image.
+- `containerImageDrifted` replaces an existing container built from a different
+  image. Only a pinned request can drift: the control plane changes the digest
+  only when it has decided to upgrade, so this rule needs no policy flag.
+- `imageMatchesPin` is the single comparison behind both, so they cannot
+  disagree about what the pinned image is. An empty pin matches anything.
+
+Replacing a container makes it vanish, which `WatchSandboxRemovals` reports to
+the control plane. The report names the container that was removed
+(`Actor.ID`), which is what lets the control plane recognise a report about an
+already-replaced container as stale and ignore it (ADR 0016 §8). This module
+therefore needs no suppression and no in-flight bookkeeping of its own — it
+reports what it saw, and identity does the rest.
+
+Policy lives in the control plane; this module only enforces the identity it is
+handed.
+
 ## Boundary Rules
 
 - Keep pool boot metadata in the root `poolagent` package; providers should

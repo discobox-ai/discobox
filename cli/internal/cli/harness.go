@@ -36,6 +36,7 @@ func (a *App) newHarnessCommand() *cobra.Command {
 	cmd.AddCommand(a.newHarnessCreateCommand())
 	cmd.AddCommand(a.newHarnessConfigureCommand())
 	cmd.AddCommand(a.newHarnessDeconfigureCommand())
+	cmd.AddCommand(a.newHarnessRefreshImageCommand())
 	cmd.AddCommand(a.newHarnessUpdateCommand())
 	cmd.AddCommand(a.newHarnessEditCommand())
 	cmd.AddCommand(a.newHarnessSetDefaultCommand())
@@ -345,6 +346,39 @@ func (a *App) newHarnessDeconfigureCommand() *cobra.Command {
 				return err
 			}
 			res, err := client.DeconfigureHarnessConfig(cmd.Context(), apiclientgen.DeconfigureHarnessConfigParams{
+				ProjectId: projectID, HarnessConfigId: harnessID,
+			})
+			if err != nil {
+				return err
+			}
+			harness, err := expectResponse[apimodel.HarnessConfig](res)
+			if err != nil {
+				return err
+			}
+			return a.writeHarness(cmd, harness)
+		},
+	}
+}
+
+func (a *App) newHarnessRefreshImageCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:   "refresh-image HARNESS",
+		Short: "Re-snapshot a harness from its image",
+		Long: "Re-inspect the harness's image and re-snapshot its run command, files, secrets,\n" +
+			"environment, volumes, and digest.\n\n" +
+			"Registration reads the image's label once, so a harness pointing at a rebuilt\n" +
+			"tag keeps describing an image that no longer exists under it — and its sandboxes\n" +
+			"never report an available upgrade. Built-in harnesses refresh themselves on\n" +
+			"server start; harnesses registered from your own image need this. Configured\n" +
+			"harnesses stay configured.",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: a.completeHarnessConfigs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			projectID, harnessID, client, err := a.harnessRequest(cmd.Context(), args[0])
+			if err != nil {
+				return err
+			}
+			res, err := client.RefreshHarnessConfigImage(cmd.Context(), apiclientgen.RefreshHarnessConfigImageParams{
 				ProjectId: projectID, HarnessConfigId: harnessID,
 			})
 			if err != nil {

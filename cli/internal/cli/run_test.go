@@ -250,3 +250,50 @@ func TestCreateRunSandboxBodySecrets(t *testing.T) {
 		t.Fatalf("GITHUB_TOKEN = %#v, want secret reference", got)
 	}
 }
+
+// run must attach the sandbox-agent's virtual primary id, not the concrete id
+// it polled for: attaching a concrete id addresses one session, so a primary
+// that ended before or during the attach would fail instead of being relaunched.
+func TestRunCommandAttachesVirtualPrimaryTerminal(t *testing.T) {
+	repo := newRunSourceTestRepo(t)
+	const sandboxID = "sbx_9qk5n25t2hh2rv00"
+	var attachPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/projects/project-1/sandboxes":
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = w.Write([]byte(runTestSandboxJSON(sandboxID, "pending")))
+		case r.Method == http.MethodGet && r.URL.Path == "/projects/project-1/sandboxes/"+sandboxID:
+			_, _ = w.Write([]byte(runTestSandboxJSON(sandboxID, "running")))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/projects/project-1/sandboxes/"+sandboxID+"/execs":
+			_, _ = w.Write([]byte(`{"execs":[{"id":"ex_primaryterminal000","harnessId":"codex","primary":true,"status":"running","command":["codex"],"workdir":"/workspace","tty":true,"createdAt":"2026-01-01T00:00:00Z"}]}`))
+		case strings.HasSuffix(r.URL.Path, "/attach"):
+			attachPath = r.URL.Path
+			w.WriteHeader(http.StatusConflict)
+			_, _ = w.Write([]byte(`{"error":"session is no longer available to attach"}`))
+		default:
+			t.Errorf("unexpected request %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "run", "-C", repo + "@HEAD", "fix", "tests"})
+
+	err := cmd.Execute()
+	t.Logf("run err = %v", err)
+	if err == nil {
+		t.Fatal("execute run error = nil, want the rejected attach")
+	}
+	if want := "/api/projects/project-1/sandboxes/" + sandboxID + "/execs/primary/attach"; attachPath != want {
+		t.Fatalf("attach path = %q, want %q", attachPath, want)
+	}
+}
+
+func runTestSandboxJSON(sandboxID, phase string) string {
+	return `{"id":"` + sandboxID + `","projectId":"project-1","createdByUserId":"user-1","config":{"name":"run-test","image":"","cpuVcpus":0,"memoryBytes":0,"storageBytes":0},"runtime":{"phase":"` + phase + `","desiredState":"running","lastOperationStatus":"success","generation":1,"observedGeneration":1,"restartGeneration":0,"restartedGeneration":0},"createdAt":"2026-06-17T00:00:00Z","updatedAt":"2026-06-17T00:00:01Z"}`
+}

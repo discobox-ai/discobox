@@ -1,64 +1,21 @@
 package sandbox
 
-import (
-	"context"
-	"time"
-)
-
-// ImageRef names a sandbox base image.
+// ImageRef pins the image a sandbox runs.
+//
+// Name is what to pull; Digest is which image that must turn out to be. The
+// pair travels to the pool host, which resolves images and enforces the pin
+// (ADR 0016 §1, §6). Digest is a config digest — the same value a local Docker
+// daemon reports as an image ID, and what HarnessConfig.ImageDigest records —
+// not a manifest digest, which never-pushed local builds do not have.
+//
+// An empty Digest means unpinned: sandboxes on the default image, and sandboxes
+// created before pinning existed. Those run whatever Name resolves to.
 type ImageRef struct {
-	Name string `json:"name"`
+	Name   string `json:"name"`
+	Digest string `json:"digest,omitempty"`
 }
 
 const DefaultSandboxImageName = "discobox-sandbox-agent:local"
-
-// ImageStatus describes provider image availability.
-type ImageStatus string
-
-const (
-	ImageStatusUnknown   ImageStatus = "unknown"
-	ImageStatusMissing   ImageStatus = "missing"
-	ImageStatusPulling   ImageStatus = "pulling"
-	ImageStatusAvailable ImageStatus = "available"
-	ImageStatusFailed    ImageStatus = "failed"
-)
-
-// ImageProgress describes a point-in-time image pull progress update.
-type ImageProgress struct {
-	Message      string   `json:"message,omitempty"`
-	CurrentBytes int64    `json:"currentBytes,omitempty"`
-	TotalBytes   int64    `json:"totalBytes,omitempty"`
-	Percent      *float64 `json:"percent,omitempty"`
-}
-
-// ImageInfo describes provider knowledge about an image.
-type ImageInfo struct {
-	Ref       ImageRef       `json:"ref"`
-	ID        string         `json:"id,omitempty"`
-	Status    ImageStatus    `json:"status"`
-	Progress  *ImageProgress `json:"progress,omitempty"`
-	Error     string         `json:"error,omitempty"`
-	UpdatedAt time.Time      `json:"updatedAt"`
-}
-
-// ImageEvent reports a long-running image operation update.
-type ImageEvent struct {
-	Ref      ImageRef       `json:"ref"`
-	Status   ImageStatus    `json:"status"`
-	Progress *ImageProgress `json:"progress,omitempty"`
-	Error    string         `json:"error,omitempty"`
-	Time     time.Time      `json:"time"`
-}
-
-// ImageProvider is the user-facing image-management capability expected from
-// production providers. Implementations may pull locally, inside a project VM,
-// or through a remote backend.
-type ImageProvider interface {
-	DefaultImage(ctx context.Context) (ImageRef, error)
-	ImageExists(ctx context.Context, ref ImageRef) (bool, error)
-	GetImage(ctx context.Context, ref ImageRef) (*ImageInfo, error)
-	PullImage(ctx context.Context, ref ImageRef) (<-chan ImageEvent, error)
-}
 
 // ProviderConfigField describes one provider instance configuration field.
 type ProviderConfigField struct {

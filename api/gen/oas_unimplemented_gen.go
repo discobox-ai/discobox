@@ -537,6 +537,19 @@ func (UnimplementedHandler) ReconcileSandbox(ctx context.Context, params Reconci
 	return r, ht.ErrNotImplemented
 }
 
+// RefreshHarnessConfigImage implements refresh-harness-config-image operation.
+//
+// Re-inspect the harness config's image and re-snapshot its label metadata and digest.
+// Registration snapshots the label once and nothing re-reads it, so a config pointing at a
+// rebuilt tag keeps describing an image that no longer exists under it — and its sandboxes
+// can never report an available upgrade. Built-in configs get this automatically on server
+// start; user-registered ones need this call. Never flips configured.
+//
+// POST /projects/{projectId}/harness-configs/{harnessConfigId}/refresh-image
+func (UnimplementedHandler) RefreshHarnessConfigImage(ctx context.Context, params RefreshHarnessConfigImageParams) (r RefreshHarnessConfigImageRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // RegisterPool implements register-pool operation.
 //
 // Register a bootstrapped pool agent.
@@ -714,5 +727,14 @@ func (UnimplementedHandler) UpdateSandboxProviderInstance(ctx context.Context, r
 //
 // PUT /projects/{projectId}/secrets/{secretId}
 func (UnimplementedHandler) UpdateSecret(ctx context.Context, req *UpdateSecretBody, params UpdateSecretParams) (r UpdateSecretRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// UpgradeSandbox implements upgrade-sandbox operation.
+//
+// Upgrade a sandbox to its harness config's current image.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/upgrade
+func (UnimplementedHandler) UpgradeSandbox(ctx context.Context, req *UpgradeSandboxBody, params UpgradeSandboxParams) (r UpgradeSandboxRes, _ error) {
 	return r, ht.ErrNotImplemented
 }

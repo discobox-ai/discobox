@@ -333,28 +333,76 @@ func TestSeedBuiltInsClobbersImageAndKeepsConfigured(t *testing.T) {
 	}
 }
 
-// Seeding is idempotent: an unchanged image is not re-inspected or rewritten.
-func TestSeedBuiltInsSkipsUnchangedImage(t *testing.T) {
+// A stable tag is rebuilt in place, so seeding re-inspects on every pass and
+// compares digests. Skipping the inspect when the reference matched — the
+// previous behavior — left ImageDigest pinned to a build that no longer existed
+// under that tag, which would report every sandbox as current forever
+// (ADR 0016 §7).
+func TestSeedBuiltInsRefreshesDigestForUnchangedImageReference(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 
 	const image = "discobox-harness-codex:dev-current"
 	if err := st.CreateHarnessConfig(ctx, &model.HarnessConfig{
 		ProjectID: "project-1", Slug: "codex", Name: "Codex", BuiltIn: true,
-		Image: image, RunCommand: []string{"codex"},
+		Image: image, ImageDigest: "sha256:old", RunCommand: []string{"codex"},
 	}); err != nil {
 		t.Fatalf("create config: %v", err)
 	}
 
-	inspector := &stubInspector{}
+	rebuilt := imageMetadata{Digest: "sha256:rebuilt", ImageMetadata: harness.ImageMetadata{
+		Harness: &harness.Image{ID: "codex", Name: "Codex", RunCommand: []string{"codex", "--rebuilt"}},
+	}}
+	inspector := &stubInspector{byImage: map[string]imageMetadata{image: rebuilt}}
 	svc := &Service{store: st, inspector: inspector, harnessImages: map[string]string{"codex": image}}
 	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	for _, called := range inspector.calls {
-		if called == image {
-			t.Fatalf("re-inspected unchanged image %q", image)
-		}
+
+	got, err := st.GetHarnessConfigBySlug(ctx, "project-1", "codex")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if got.ImageDigest != "sha256:rebuilt" {
+		t.Fatalf("imageDigest = %q, want the rebuilt digest under the same tag", got.ImageDigest)
+	}
+	if len(got.RunCommand) != 2 || got.RunCommand[1] != "--rebuilt" {
+		t.Fatalf("runCommand = %v, want re-snapshotted from the rebuilt label", got.RunCommand)
+	}
+}
+
+// Seeding still writes nothing when neither the reference nor the digest moved.
+func TestSeedBuiltInsSkipsWriteForUnchangedDigest(t *testing.T) {
+	ctx := context.Background()
+	st := newTestStore(t)
+
+	const image = "discobox-harness-codex:dev-current"
+	if err := st.CreateHarnessConfig(ctx, &model.HarnessConfig{
+		ProjectID: "project-1", Slug: "codex", Name: "Codex", BuiltIn: true,
+		Image: image, ImageDigest: "sha256:same", RunCommand: []string{"codex"},
+	}); err != nil {
+		t.Fatalf("create config: %v", err)
+	}
+	before, err := st.GetHarnessConfigBySlug(ctx, "project-1", "codex")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+
+	unchanged := imageMetadata{Digest: "sha256:same", ImageMetadata: harness.ImageMetadata{
+		Harness: &harness.Image{ID: "codex", Name: "Codex", RunCommand: []string{"codex", "--clobbered"}},
+	}}
+	inspector := &stubInspector{byImage: map[string]imageMetadata{image: unchanged}}
+	svc := &Service{store: st, inspector: inspector, harnessImages: map[string]string{"codex": image}}
+	if err := svc.SeedBuiltIns(ctx, "project-1"); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	got, err := st.GetHarnessConfigBySlug(ctx, "project-1", "codex")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if !got.UpdatedAt.Equal(before.UpdatedAt) || len(got.RunCommand) != 1 {
+		t.Fatalf("config rewritten (runCommand = %v); an unchanged digest must not write", got.RunCommand)
 	}
 }
 

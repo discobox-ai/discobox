@@ -145,7 +145,7 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 	if reporter != nil && registration == nil {
 		return errors.New("pool registration is required for sandbox removal reporting")
 	}
-	go runtime.WatchSandboxRemovals(ctx, logger, func(reportCtx context.Context, sandboxID string) error {
+	go runtime.WatchSandboxRemovals(ctx, logger, func(reportCtx context.Context, sandboxID, containerID string) error {
 		if reporter == nil {
 			return nil
 		}
@@ -155,6 +155,7 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 			PoolID:          bootstrap.PoolID,
 			PrivateKey:      registration.PrivateKey,
 			SandboxID:       sandboxID,
+			ContainerID:     containerID,
 		})
 	})
 	return ServeWithRuntime(ctx, logger, bootstrap, registration, runtime)
