@@ -67,6 +67,22 @@ const (
 	// processes use as their HTTP/HTTPS/ALL proxy.
 	SandboxForwarderListen = "127.0.0.1:17008"
 
+	// NestedDockerBridgeGateway is the fixed gateway address of the sandbox's
+	// nested Docker default bridge network (its daemon.json pins "bip" to
+	// this /16). A container on that bridge cannot reach
+	// SandboxForwarderListen, which is loopback-only from the sandbox's own
+	// point of view, so it gets a second forwarder instance bound here
+	// instead. See ADR 0015.
+	NestedDockerBridgeGateway = "172.30.0.1"
+
+	// NestedForwarderListen is the second sandbox-local forwarder address,
+	// reachable only from containers on the sandbox's nested Docker default
+	// bridge network. sandbox-agent's NRI plugin substitutes this for the
+	// URL-valued proxy env vars (HTTP_PROXY, HTTPS_PROXY, ALL_PROXY) when
+	// injecting trust into a nested container; file-path-valued vars pass
+	// through unchanged. See ADR 0015.
+	NestedForwarderListen = NestedDockerBridgeGateway + ":17008"
+
 	// UnitEnvironmentFile is read by the proxy systemd unit. The pool agent
 	// process writes it so the unit, which runs with a clean systemd
 	// environment, sees the same host-mount prefix.
