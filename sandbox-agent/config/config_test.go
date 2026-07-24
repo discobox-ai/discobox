@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/obot-platform/discobox/sandboxconfig"
 )
 
 func TestLoadReadsIdentityFromFileOnly(t *testing.T) {
@@ -60,7 +62,8 @@ func TestLoadDecodesTheOneResolvedHarness(t *testing.T) {
 		"harness": {
 			"id": "claude",
 			"name": "Claude",
-			"runCommand": ["claude"]
+			"runCommand": ["claude"],
+			"configCommand": ["configure-claude"]
 		},
 		"files": [{"path": ".claude.json", "content": "{}"}]
 	}`), 0o644); err != nil {
@@ -77,11 +80,39 @@ func TestLoadDecodesTheOneResolvedHarness(t *testing.T) {
 	if cfg.HarnessMode != "config" {
 		t.Fatalf("harness mode = %q, want config", cfg.HarnessMode)
 	}
+	if len(cfg.Harness.Command) != 1 || cfg.Harness.Command[0] != "configure-claude" {
+		t.Fatalf("harness command = %#v, want config command", cfg.Harness.Command)
+	}
 	if cfg.Env["BASE"] != "sandbox" {
 		t.Fatalf("env = %#v, want sandbox config env", cfg.Env)
 	}
 	if len(cfg.Prompt) != 2 || cfg.Prompt[0] != "fix" || cfg.Prompt[1] != "the bug" {
 		t.Fatalf("prompt = %#v, want [fix, the bug]", cfg.Prompt)
+	}
+}
+
+func TestConfigFromEffectiveSelectsHarnessCommandForMode(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		mode string
+		want string
+	}{
+		{name: "run", mode: "run", want: "run-harness"},
+		{name: "config", mode: "config", want: "configure-harness"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := configFromEffective(sandboxconfig.Config{
+				HarnessMode: test.mode,
+				Harness: sandboxconfig.Harness{
+					ID:            "test",
+					RunCommand:    []string{"run-harness"},
+					ConfigCommand: []string{"configure-harness"},
+				},
+			})
+			if len(cfg.Harness.Command) != 1 || cfg.Harness.Command[0] != test.want {
+				t.Fatalf("harness command = %#v, want %q", cfg.Harness.Command, test.want)
+			}
+		})
 	}
 }
 

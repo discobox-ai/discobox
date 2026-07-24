@@ -119,6 +119,10 @@ func unmarshalConfig(data []byte, cfg *Config) error {
 }
 
 func configFromEffective(effective sandboxconfig.Config) Config {
+	harnessCommand := effective.Harness.RunCommand
+	if effective.HarnessMode == "config" {
+		harnessCommand = effective.Harness.ConfigCommand
+	}
 	cfg := Config{
 		Identity: Identity{
 			SandboxID: effective.SandboxID,
@@ -147,7 +151,7 @@ func configFromEffective(effective sandboxconfig.Config) Config {
 			ID:              effective.Harness.ID,
 			TypeID:          effective.Harness.ID,
 			Name:            effective.Harness.Name,
-			Command:         cloneCommand(effective.Harness.RunCommand),
+			Command:         cloneCommand(harnessCommand),
 			RelaunchCommand: cloneCommand(effective.Harness.RelaunchCommand),
 			Files:           harnessFilesFromEffective(effective.Files),
 		}
