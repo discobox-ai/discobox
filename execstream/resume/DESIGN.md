@@ -2,8 +2,8 @@
 
 `resume` owns one logical exec attach across replaceable physical connections.
 It retains positioned client actions until the host acknowledges applying them,
-restores idempotent state after reconnect, and emits connection and timing
-events separately from terminal bytes.
+restores idempotent state after reconnect, emits connection and timing events
+separately from terminal bytes, and exposes an opt-in per-action profiling hook.
 
 ## Timing Events
 
@@ -69,6 +69,33 @@ returns.
 Defaults are a two-second heartbeat interval, a two-second heartbeat timeout,
 and a 250 ms slow threshold. They are defaults, not a UI policy. A consumer
 should retain the actual `RoundTrip` and may apply a different threshold.
+
+## Action Observer
+
+`WithObserver` attaches a profiling hook to the context a `Conn` is created
+from. `TimingEvent` reports only the completed acknowledgement round-trip;
+`ActionEvent` annotates each locally observable phase of a positioned action, so
+a slow round-trip can be attributed to a layer instead of merely measured.
+
+| Phase | Meaning |
+| --- | --- |
+| `ActionAccepted` | The action was assigned a position and retained. |
+| `ActionPhysicalWrite` | The write to the current physical connection returned; `Duration` is that call. |
+| `ActionRetransmitted` | The action was re-sent on a replacement connection after reconnect. |
+| `ActionAcknowledged` | The host reported applying it. Match `Position` against the accept event for the apply round-trip. |
+
+- Opt-in and independent of `Options.Timing`. With neither configured, normal
+  terminal input pays no clock, allocation, or export cost per keystroke.
+- A diagnostic annotation point, not wire protocol. Frames, positions, and
+  acknowledgement behavior are identical whether or not an observer is
+  installed.
+- Callbacks run synchronously on the stream read or write goroutine and never
+  while the connection lock is held. The same promptness and no-reentry rules as
+  `TimingOptions.Observe` apply.
+- Prefer this over a span per keystroke. `test/performance/terminal-latency`
+  uses it to get exact monotonic phase timestamps with no exporter; an
+  OpenTelemetry adapter can aggregate the same events into histograms without
+  changing any attach implementation.
 
 ## Interpreting Connection Status
 
