@@ -37,16 +37,22 @@ func TestEnsureSandboxMaterialStagesClientOnly(t *testing.T) {
 	if got := material.Env["HTTP_PROXY"]; got != "http://"+SandboxForwarderListen {
 		t.Fatalf("HTTP_PROXY = %q, want %q", got, "http://"+SandboxForwarderListen)
 	}
-	// Node.js/Claude Code trust the MITM CA directly; Python/openssl trust the
-	// system bundle that the boot-time trust step augments.
-	if got := material.Env["NODE_EXTRA_CA_CERTS"]; got != filepath.Join(SandboxProxyMount, "mitm-ca.crt") {
-		t.Fatalf("NODE_EXTRA_CA_CERTS = %q, want mounted MITM CA path", got)
+	// Node.js/Claude Code, Python/requests, and pip all bundle their own root
+	// store, so each points at the system bundle the boot-time trust step
+	// augments — not the raw MITM CA file, so a nested Docker container gets
+	// the identical value working once its NRI plugin mounts the same bundle
+	// at the same path (docs/adr/0015).
+	if got := material.Env["NODE_EXTRA_CA_CERTS"]; got != SystemCABundle {
+		t.Fatalf("NODE_EXTRA_CA_CERTS = %q, want system CA bundle", got)
 	}
 	if got := material.Env["SSL_CERT_FILE"]; got != SystemCABundle {
 		t.Fatalf("SSL_CERT_FILE = %q, want system CA bundle", got)
 	}
 	if got := material.Env["REQUESTS_CA_BUNDLE"]; got != SystemCABundle {
 		t.Fatalf("REQUESTS_CA_BUNDLE = %q, want system CA bundle", got)
+	}
+	if got := material.Env["PIP_CERT"]; got != SystemCABundle {
+		t.Fatalf("PIP_CERT = %q, want system CA bundle", got)
 	}
 }
 

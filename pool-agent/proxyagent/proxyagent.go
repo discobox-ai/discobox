@@ -455,7 +455,6 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string, hostDirFor HostP
 		return nil, fmt.Errorf("write bridge config: %w", err)
 	}
 
-	mitmCA := filepath.Join(SandboxProxyMount, "mitm-ca.crt")
 	proxyURL := "http://" + SandboxForwarderListen
 	env := map[string]string{
 		"HTTP_PROXY":  proxyURL,
@@ -466,19 +465,24 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string, hostDirFor HostP
 		"all_proxy":   proxyURL,
 		"NO_PROXY":    "127.0.0.1,localhost,::1",
 		"no_proxy":    "127.0.0.1,localhost,::1",
-		// Node.js (and Claude Code, which runs on Node) ship their own root
-		// store, so point them at the MITM CA explicitly. NODE_EXTRA_CA_CERTS
-		// appends the MITM CA to Node's built-in roots.
-		"NODE_EXTRA_CA_CERTS": mitmCA,
-		// Python's ssl module and requests/certifi also bundle their own roots.
-		// Point them at the system bundle, which the boot-time trust step
-		// augments with the MITM CA alongside the real public roots so both
-		// intercepted and directly-reached (NO_PROXY) TLS validate.
-		"SSL_CERT_FILE":      SystemCABundle,
-		"REQUESTS_CA_BUNDLE": SystemCABundle,
+		// Node.js (and Claude Code, which runs on Node), Python's ssl module
+		// and requests/certifi, and pip all bundle their own root store and
+		// ignore the system bundle, so each needs pointing at it explicitly.
+		// It is the system bundle (not just the raw MITM CA) in every case, so
+		// the same value also validates directly-reached (NO_PROXY) TLS, not
+		// just MITM-intercepted TLS. See docs/adr/0015: sandbox-agent's NRI
+		// plugin mounts the identical bundle at SystemCABundle inside a
+		// nested Docker container too, so this value is reusable there
+		// unchanged once named in ProxyEnvs.
+		"NODE_EXTRA_CA_CERTS": SystemCABundle,
+		"SSL_CERT_FILE":       SystemCABundle,
+		"REQUESTS_CA_BUNDLE":  SystemCABundle,
+		"PIP_CERT":            SystemCABundle,
 	}
 	// curl, git, wget, and the OpenSSL CLI read the system bundle directly, so
-	// the boot-time update-ca-certificates step covers them without env vars.
+	// the boot-time update-ca-certificates step covers them without env vars
+	// — and so does sandbox-agent's NRI plugin mounting the same bundle path
+	// into a nested container.
 	return &SandboxMaterial{MountSource: mountSource, Env: env}, nil
 }
 

@@ -54,31 +54,44 @@ through the same containerd instance instead of BuildKit's separate OCI
 worker + overlayfs path. One containerd instance, one interception point,
 covers both build and run.
 
-### 2. The `proxy` package's `ClientMaterial.EnvironmentVars` map is the one place that names proxy-trust env vars
+### 2. `pool-agent/proxyagent.EnsureSandboxMaterial`'s env map is the one place that names proxy-trust env vars
 
-`proxy/certs.go`'s `EnsureClientCertificate` already builds
-`ClientMaterial.EnvironmentVars` — today `HTTP_PROXY`, `HTTPS_PROXY`,
-`ALL_PROXY`, `NO_PROXY`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE` — as the single,
-pool-agent-owned statement of what a sandbox client needs set to trust the
-proxy. This map already flows into `sandboxconfig.Document.Runtime.Env` today
-(`pool-agent/sandboxruntime/runtime.go`'s `buildSandboxDocument`), just
+`EnsureSandboxMaterial` already builds the env map every sandbox receives —
+today `HTTP_PROXY`/`HTTPS_PROXY`/`ALL_PROXY`/`NO_PROXY` (plus lowercase
+variants), `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS`, and
+`PIP_CERT` — as the single, pool-agent-owned statement of what a sandbox
+client needs set to trust the proxy. This map already flows into
+`sandboxconfig.Document.Runtime.Env` today (via `proxyMaterial.Env` into
+`pool-agent/sandboxruntime/runtime.go`'s `buildSandboxDocument`), just
 indistinguishably from every other env var a sandbox happens to carry.
 
-This ADR extends that one map, not the NRI plugin, when a new tool or runtime
-needs a different override variable (`NODE_EXTRA_CA_CERTS`, `PIP_CERT`,
-`CURL_CA_BUNDLE`, `GIT_SSL_CAINFO`, ...). The NRI plugin never hardcodes env
-var names; it only republishes whichever names the `proxy` package declared.
+Note this is *not* `proxy.ClientMaterial.EnvironmentVars` (`proxy/certs.go`):
+that field exists but nothing in the codebase reads it — it predates this ADR
+and was never wired to anything. `EnsureSandboxMaterial` builds its own map
+instead because its values must be in-sandbox paths (`SystemCABundle` =
+`/etc/ssl/certs/ca-certificates.crt`, the sandbox's own trust-store path after
+the boot-time `update-ca-certificates` step), not the pool-host paths
+`ClientMaterial.EnvironmentVars` carries. Every value here already resolves to
+the sandbox's own system CA bundle rather than the raw MITM CA file, which is
+exactly what makes it reusable unchanged inside a nested Docker container:
+decision 5's NRI plugin mounts the identical bundle at the identical
+`SystemCABundle` path inside the container too.
+
+This ADR extends `EnsureSandboxMaterial`'s map, not the NRI plugin, when a new
+tool or runtime needs a different override variable. The NRI plugin never
+hardcodes env var names; it only republishes whichever names `ProxyEnvs`
+(decision 3) lists.
 
 ### 3. `sandboxconfig.RuntimeLayer` gains `ProxyEnvs []string` naming which `Env` keys are proxy-trust vars
 
 `RuntimeLayer.Env` keeps carrying the actual values (unchanged: sandbox boot
 already applies `Env` to the sandbox's real process environment). A new
 runtime-owned field, `ProxyEnvs []string` (`json:"proxyEnvs,omitempty"`),
-carries just the *names* — the keys of `ClientMaterial.EnvironmentVars` that
-`buildSandboxDocument` merged into `Env` for this sandbox. This is the
-consolidation point: adding a new proxy-trust env var means adding one entry
-to the `proxy` package's map, and it automatically shows up in `ProxyEnvs` for
-every consumer — no second list to keep in sync.
+carries just the *names* — the keys of `EnsureSandboxMaterial`'s env map
+(decision 2) that `buildSandboxDocument` merged into `Env` for this sandbox.
+This is the consolidation point: adding a new proxy-trust env var means
+adding one entry there, and it automatically shows up in `ProxyEnvs` for every
+consumer — no second list to keep in sync.
 
 At boot, sandbox-agent computes the name→value subset of `Env` that
 `ProxyEnvs` names and writes it as one file,
@@ -264,9 +277,10 @@ Instead:
 - `proxy/bridge.Forwarder` gains a systemd-activation entry point alongside
   its existing `ListenAndServe`, and the sandbox's `daemon.json` gains a fixed
   `bip`, both net-new surface `proxy`/`sandbox-agent` did not previously own.
-- Adding a new proxy-trust env var is a one-line change to `proxy/certs.go`;
-  it requires no NRI plugin code change and no `sandboxconfig` schema change,
-  since `ProxyEnvs` is derived from that map's keys.
+- Adding a new proxy-trust env var is a one-line change to
+  `EnsureSandboxMaterial`'s env map; it requires no NRI plugin code change and
+  no `sandboxconfig` schema change, since `ProxyEnvs` is derived from that
+  map's keys.
 - Adding a new bundle format (e.g. an NSS database) is scoped to
   `discobox-trust-ca.service`'s boot-time prep plus a new marker-file probe in
   the NRI plugin; the plugin's mount logic still never generates a format
