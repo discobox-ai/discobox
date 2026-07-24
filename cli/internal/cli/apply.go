@@ -114,15 +114,23 @@ func (a *App) runApply(cmd *cobra.Command, sandboxArg, onlySlug string, dirOverr
 	}
 
 	out := cmd.OutOrStdout()
-	var failures int
+	var failures []string
 	for _, s := range sources {
 		if err := a.applyOneSource(ctx, out, client, projectID, sandboxID, sandbox, host, s, dirOverrides); err != nil {
-			failures++
-			fmt.Fprintf(out, "source %s: %v\n", s.slug, err)
+			failures = append(failures, fmt.Sprintf("source %s: %v", s.slug, err))
 		}
 	}
-	if failures > 0 {
-		return fmt.Errorf("%d of %d sources did not apply; see above", failures, len(sources))
+	// Errors are reported in one block after every source has been processed,
+	// not inline as each one fails: an inline error is easy to lose in
+	// scrollback behind whatever the remaining sources print afterward. The
+	// block is the last thing printed, and is unmistakably an error rather
+	// than routine progress.
+	if len(failures) > 0 {
+		fmt.Fprintf(out, "\nERROR: %d of %d sources did not apply:\n", len(failures), len(sources))
+		for _, failure := range failures {
+			fmt.Fprintf(out, "  %s\n", failure)
+		}
+		return fmt.Errorf("%d of %d sources did not apply", len(failures), len(sources))
 	}
 	return nil
 }
@@ -203,8 +211,7 @@ func (a *App) applyOneSource(ctx context.Context, out io.Writer, client *apiclie
 			return fmt.Errorf("check sandbox working tree: %w", err)
 		}
 		if dirty {
-			fmt.Fprintf(out, "source %s: sandbox has uncommitted changes, skipping:\n%s\n", entry.slug, status)
-			return nil
+			return fmt.Errorf("sandbox has uncommitted changes, not applying until they're committed:\n%s", status)
 		}
 	}
 
