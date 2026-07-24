@@ -124,6 +124,11 @@ type ImageLayer struct {
 	Files   []File            `json:"files,omitempty"`
 	Volumes []harness.Volume  `json:"volumes,omitempty"`
 	Env     map[string]string `json:"env,omitempty"`
+	// AdditionalGroups names OS groups (already present in the image, e.g.
+	// "docker") the sandbox user is added to at boot, alongside its own
+	// primary group. Image-owned only, like Volumes: no other layer grants
+	// system-level access on the image's behalf.
+	AdditionalGroups []string `json:"additionalGroups,omitempty"`
 }
 
 // ProjectLayer is the resolved source repository's contribution, read once at
