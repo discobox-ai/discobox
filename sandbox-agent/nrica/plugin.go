@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/containerd/nri/pkg/api"
+	"github.com/obot-platform/discobox/sandboxconfig"
 )
 
 // DefaultCABundleDir is where sandbox boot (discobox-trust-ca.service)
@@ -53,34 +54,49 @@ type Plugin struct {
 	bundles []bundleMount
 }
 
-// New loads the proxy-trust env vars sandbox-agent staged at proxyEnvPath
-// (see sandbox-agent/config.WriteProxyEnv) and returns a ready-to-run Plugin
-// that mounts bundles staged under caBundleDir. A missing proxy env file
+// New reads sandboxJSONPath (the sandbox's own /etc/discobox/sandbox.json)
+// and returns a ready-to-run Plugin that mounts bundles staged under
+// caBundleDir. sandbox.json is read directly, not a value sandbox-agent
+// derives and stages separately: /etc/discobox is a read-only mount, sandbox
+// boot never rewrites it after pool-agent writes it once, and (unlike an
+// earlier version of this plugin) its Env no longer carries anything more
+// sensitive than the proxy-trust vars this plugin already needs — so there is
+// no separate, narrower file worth maintaining. A missing or unreadable file
 // means no MITM proxy is configured; the plugin still runs, it just injects
-// no env (mounts are unconditional either way, and individually skipped when
-// their source file isn't staged).
-func New(logger *slog.Logger, proxyEnvPath, caBundleDir string) (*Plugin, error) {
+// no env (mounts are unconditional either way).
+func New(logger *slog.Logger, sandboxJSONPath, caBundleDir string) (*Plugin, error) {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	env, err := loadProxyEnv(proxyEnvPath)
+	env, err := loadProxyEnv(sandboxJSONPath)
 	if err != nil {
 		return nil, err
 	}
 	return &Plugin{logger: logger, proxEnv: env, bundles: bundleMountsIn(caBundleDir)}, nil
 }
 
-func loadProxyEnv(path string) (map[string]string, error) {
-	data, err := os.ReadFile(path)
+// loadProxyEnv reads sandbox.json and returns the subset of its Env that
+// Runtime.ProxyEnvs (docs/adr/0015 decision 3) names.
+func loadProxyEnv(sandboxJSONPath string) (map[string]string, error) {
+	data, err := os.ReadFile(sandboxJSONPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("read proxy env %s: %w", path, err)
+		return nil, fmt.Errorf("read sandbox config %s: %w", sandboxJSONPath, err)
 	}
-	var env map[string]string
-	if err := json.Unmarshal(data, &env); err != nil {
-		return nil, fmt.Errorf("parse proxy env %s: %w", path, err)
+	var cfg sandboxconfig.Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse sandbox config %s: %w", sandboxJSONPath, err)
+	}
+	if len(cfg.ProxyEnvs) == 0 {
+		return nil, nil
+	}
+	env := make(map[string]string, len(cfg.ProxyEnvs))
+	for _, name := range cfg.ProxyEnvs {
+		if value, ok := cfg.Env[name]; ok {
+			env[name] = value
+		}
 	}
 	return env, nil
 }

@@ -8,17 +8,26 @@ import (
 	"testing"
 
 	"github.com/containerd/nri/pkg/api"
+	"github.com/obot-platform/discobox/sandboxconfig"
 )
 
-func writeProxyEnvFile(t *testing.T, env map[string]string) string {
+func writeSandboxJSON(t *testing.T, env map[string]string) string {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "proxy-env.json")
-	data, err := json.Marshal(env)
+	names := make([]string, 0, len(env))
+	for name := range env {
+		names = append(names, name)
+	}
+	cfg := sandboxconfig.Config{
+		Env:       env,
+		ProxyEnvs: names,
+	}
+	path := filepath.Join(t.TempDir(), "sandbox.json")
+	data, err := json.Marshal(cfg)
 	if err != nil {
-		t.Fatalf("marshal proxy env: %v", err)
+		t.Fatalf("marshal sandbox config: %v", err)
 	}
 	if err := os.WriteFile(path, data, 0o600); err != nil {
-		t.Fatalf("write proxy env: %v", err)
+		t.Fatalf("write sandbox config: %v", err)
 	}
 	return path
 }
@@ -36,11 +45,11 @@ func TestCreateContainerMountsAndEnv(t *testing.T) {
 	writeBundle(t, dir, "alpine.pem")
 	// rhel.pem intentionally not staged, to exercise the "not staged" skip.
 
-	envPath := writeProxyEnvFile(t, map[string]string{
+	sandboxJSON := writeSandboxJSON(t, map[string]string{
 		"HTTP_PROXY":    "http://172.30.0.1:17008",
 		"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt",
 	})
-	plugin, err := New(nil, envPath, dir)
+	plugin, err := New(nil, sandboxJSON, dir)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -86,13 +95,13 @@ func TestCreateContainerMountsAndEnv(t *testing.T) {
 	}
 }
 
-func TestNewNoProxyEnvFile(t *testing.T) {
+func TestNewNoSandboxJSON(t *testing.T) {
 	dir := t.TempDir()
 	plugin, err := New(nil, filepath.Join(dir, "missing.json"), dir)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	if len(plugin.proxEnv) != 0 {
-		t.Errorf("expected no proxy env when file is missing, got %v", plugin.proxEnv)
+		t.Errorf("expected no proxy env when sandbox.json is missing, got %v", plugin.proxEnv)
 	}
 }

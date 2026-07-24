@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -14,11 +13,6 @@ import (
 
 const (
 	DefaultPath = "/etc/discobox/sandbox.json"
-
-	// ProxyEnvFile is where WriteProxyEnv stages the proxy-trust env subset
-	// (Config.ProxyEnv) for sandbox-agent's NRI plugin to read when injecting
-	// trust into a nested Docker container's spec. See docs/adr/0015.
-	ProxyEnvFile = "/etc/discobox/proxy/proxy-env.json"
 )
 
 // Config is sandbox-agent's decode target for /etc/discobox/sandbox.json.
@@ -34,15 +28,8 @@ type Config struct {
 	RuntimeDir            string            `json:"runtimeDir"`
 	DatabasePath          string            `json:"databasePath"`
 	Env                   map[string]string `json:"env,omitempty"`
-	// ProxyEnv is the subset of Env that carries proxy-trust material
-	// (proxy.ClientMaterial.EnvironmentVars), keyed by name. sandbox-agent
-	// writes it to ProxyEnvFile for the NRI plugin to read (docs/adr/0015);
-	// it is computed here, rather than read back from Env by the plugin
-	// itself, because a nested container's NRI-injected process environment
-	// is not this process's environment.
-	ProxyEnv    map[string]string `json:"-"`
-	Prompt      []string          `json:"prompt,omitempty"`
-	HarnessMode string            `json:"harnessMode,omitempty"`
+	Prompt                []string          `json:"prompt,omitempty"`
+	HarnessMode           string            `json:"harnessMode,omitempty"`
 	// Harness is the sandbox's one resolved harness. A zero-value Harness
 	// (empty ID) means the sandbox has no harness configured.
 	Harness       Harness          `json:"harness"`
@@ -111,23 +98,6 @@ func Load(path string) (Config, error) {
 	return cfg, nil
 }
 
-// WriteProxyEnv stages ProxyEnv to ProxyEnvFile for sandbox-agent's NRI
-// plugin. It is a no-op when there is nothing to write (no MITM proxy
-// configured), matching discobox-trust-ca.service's own gating.
-func WriteProxyEnv(cfg Config) error {
-	if len(cfg.ProxyEnv) == 0 {
-		return nil
-	}
-	data, err := json.Marshal(cfg.ProxyEnv)
-	if err != nil {
-		return fmt.Errorf("marshal proxy env: %w", err)
-	}
-	if err := os.MkdirAll(filepath.Dir(ProxyEnvFile), 0o755); err != nil {
-		return fmt.Errorf("create proxy env dir: %w", err)
-	}
-	return os.WriteFile(ProxyEnvFile, data, 0o600)
-}
-
 func unmarshalConfig(data []byte, cfg *Config) error {
 	var effective sandboxconfig.Config
 	if err := json.Unmarshal(data, &effective); err != nil {
@@ -161,7 +131,6 @@ func configFromEffective(effective sandboxconfig.Config) Config {
 		RuntimeDir:            effective.AgentRuntime.RuntimeDir,
 		DatabasePath:          effective.AgentRuntime.DatabasePath,
 		Env:                   effective.Env,
-		ProxyEnv:              proxyEnvSubset(effective.Env, effective.ProxyEnvs),
 		Prompt:                cloneCommand(effective.Prompt),
 		HarnessMode:           effective.HarnessMode,
 		Volumes:               effective.Volumes,
@@ -235,21 +204,6 @@ func cloneCommand(command []string) []string {
 		return nil
 	}
 	return append([]string{}, command...)
-}
-
-// proxyEnvSubset picks the proxy-trust entries named by names out of env,
-// silently skipping a name env doesn't have.
-func proxyEnvSubset(env map[string]string, names []string) map[string]string {
-	if len(names) == 0 {
-		return nil
-	}
-	subset := make(map[string]string, len(names))
-	for _, name := range names {
-		if value, ok := env[name]; ok {
-			subset[name] = value
-		}
-	}
-	return subset
 }
 
 func (c Config) Validate() error {

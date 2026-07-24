@@ -26,7 +26,7 @@ func main() {
 	defer stopSignals()
 
 	logger := slog.Default()
-	plugin, err := nrica.New(logger, config.ProxyEnvFile, nrica.DefaultCABundleDir)
+	plugin, err := nrica.New(logger, config.DefaultPath, nrica.DefaultCABundleDir)
 	if err != nil {
 		logger.Error("load nri plugin", "error", err)
 		os.Exit(1)

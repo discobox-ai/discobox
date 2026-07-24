@@ -93,14 +93,23 @@ This is the consolidation point: adding a new proxy-trust env var means
 adding one entry there, and it automatically shows up in `ProxyEnvs` for every
 consumer — no second list to keep in sync.
 
-At boot, sandbox-agent computes the name→value subset of `Env` that
-`ProxyEnvs` names and writes it as one file,
-`/etc/discobox/proxy/proxy-env.json`, for the NRI plugin to read. This carries
-values, not just names: `discobox-nri-ca.service` is a separate systemd unit
-and does not inherit `discobox-sandbox-agent`'s process environment, so "read
-the value back from the plugin's own environment" has nothing to read from —
-once the plugin needs the values delivered explicitly anyway, there is no
-reason to split names and values across two files.
+The NRI plugin reads `/etc/discobox/sandbox.json` directly and filters `Env`
+by `ProxyEnvs` itself, rather than sandbox-agent deriving and staging a
+separate file. Two earlier, more defensive designs were rejected:
+
+- **Read the value back from the plugin's own environment.** Doesn't work:
+  `discobox-nri-ca.service` is a separate systemd unit and does not inherit
+  `discobox-sandbox-agent`'s process environment.
+- **A narrower, sandbox-agent-written `proxy-env.json`.** The original
+  rationale was least-privilege: `sandbox.json`'s `Env` used to carry secret
+  sentinel values (docs/adr/0009) alongside proxy-trust vars, so handing the
+  NRI plugin the whole manifest — which also mounts things into containers a
+  sandbox user fully controls — was broader exposure than necessary. `Env` no
+  longer carries sentinels, and `/etc/discobox` is a read-only mount that
+  sandbox boot never rewrites after pool-agent writes it once, so there is no
+  narrower, safer file left to justify maintaining a second write path and a
+  boot-ordering dependency (`proxy-env.json` only existed once
+  `discobox-sandbox-agent.service` had actually run) for no remaining benefit.
 
 ### 4. `discobox-trust-ca.service` also prepares non-Debian bundle formats, once, at boot — not per-container
 
@@ -161,8 +170,8 @@ plugin implements `CreateContainer`:
   act on, and an unused mount costs nothing.
 - **Environment variables** are appended to `Spec.Process.Env` only (never
   written to any file, never reflected into the built image's config): every
-  name/value pair in the sandbox's `proxy-env.json` (decision 3), read fresh
-  by the plugin at each `CreateContainer` call.
+  name/value pair `sandbox.json`'s `Env`/`ProxyEnvs` (decision 3) name, read
+  fresh from `/etc/discobox/sandbox.json` at each `CreateContainer` call.
 - **No override.** If the container spec already sets one of these mounts or
   env vars, the plugin leaves it alone — an explicit user choice wins over the
   transparent default.
