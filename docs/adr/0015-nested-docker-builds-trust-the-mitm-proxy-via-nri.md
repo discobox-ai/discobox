@@ -93,23 +93,34 @@ reason to split names and values across two files.
 
 Today this unit only updates the Debian PEM bundle
 (`proxy.SystemCABundle`). Extend it (or add a sibling unit in the same
-boot sequence) to also produce, once per sandbox boot, whatever additional
-trust-material formats a container's rootfs might expect, staged under a
-fixed `/etc/discobox/proxy/ca-bundles/` directory:
+boot sequence) to also produce, once per sandbox boot, the same PEM bytes
+staged under the path conventions of other PEM-based distros (Alpine's
+`/etc/ssl/cert.pem`; RHEL-family's `/etc/pki/tls/certs/ca-bundle.crt`) — no
+new format, just additional destination copies of one source file, under a
+fixed `/etc/discobox/proxy/ca-bundles/` directory.
 
-- The same PEM bytes, staged under the path conventions of other PEM-based
-  distros (Alpine's `/etc/ssl/cert.pem`; RHEL-family's
-  `/etc/pki/tls/certs/ca-bundle.crt`) — no new format, just additional
-  destination copies of one source file.
-- A Java `cacerts` keystore, generated via `keytool -importcert` when a JDK
-  toolchain is present on the sandbox, for containers that run a JVM.
-- Further formats (an NSS `cert9.db`, for example) are explicitly not
-  designed here — this ADR does not know the full set a real workload will
-  need. `discobox-trust-ca.service` becomes the single place new formats get
-  added as gaps are found, so the NRI plugin never generates a format itself
-  at container-creation time; it only picks from what boot already prepared.
+Non-PEM formats (a Java `cacerts` keystore, an NSS `cert9.db`) are explicitly
+deferred, not designed here — see decision 5 for why a per-container plugin
+cannot locate where they'd even need to go.
 
-### 5. An NRI plugin injects mounts and env into every container spec at creation time, best-effort per container
+### 5. An NRI plugin blind-mounts every known bundle path and injects env into every container spec at creation time
+
+`containerd/nri/pkg/api`'s `Container`/`PodSandbox` messages (what
+`CreateContainer` receives) carry no rootfs or bundle-path field at all —
+only OCI-spec-shaped data (env, the mounts already configured, labels/annotations,
+Linux namespaces/resources). An NRI plugin has no way to read a file from
+inside the target image to detect its distro or runtime before the container
+starts; "probe marker files" is not something this protocol supports.
+
+The plugin therefore cannot detect anything about the target image. It
+compensates by mounting unconditionally rather than selectively: bind-mounting
+onto a path is a no-op when the image never reads that path, and OCI runtimes
+create a missing mount-point directory for a bind mount, so mounting all of
+decision 4's destination paths (Debian, Alpine, RHEL) into every container
+costs nothing when they go unused. This is also why Java `cacerts` is deferred
+in decision 4 rather than attempted here: unlike the fixed OS trust-store
+paths, its location depends on a per-image `JAVA_HOME` the plugin has no way
+to look up.
 
 Enable NRI in the sandbox's `/etc/containerd/config.toml`
 (`[plugins."io.containerd.nri.v1.nri"] disable = false`) and ship a new binary
@@ -131,13 +142,10 @@ plugin implements `CreateContainer`:
   `update-ca-certificates` (or any trust-store rebuild command) inside the
   target container — that would mutate a real rootfs file that *would* get
   diffed into the layer.
-- **Distro/runtime detection is best-effort, at `CreateContainer` time.** NRI
-  hands the plugin the container's rootfs path before the process execs, so
-  the plugin probes cheap marker files (`/etc/debian_version`,
-  `/etc/alpine-release`, `/etc/redhat-release`, a `java`/`keytool` binary or
-  `/usr/lib/jvm` directory) to decide which of the boot-prepared bundles to
-  mount, and where. A detection miss just means that one destination doesn't
-  get a mount — it must never fail or block container creation.
+- **All destinations, every time, no detection.** The plugin mounts every one
+  of decision 4's bundle paths (Debian, Alpine, RHEL) into every container
+  unconditionally, per decision 5's reasoning — there is no distro signal to
+  act on, and an unused mount costs nothing.
 - **Environment variables** are appended to `Spec.Process.Env` only (never
   written to any file, never reflected into the built image's config): every
   name/value pair in the sandbox's `proxy-env.json` (decision 3), read fresh
