@@ -137,12 +137,23 @@ func EnsureClientCertificate(bundle *CertificateBundle, clientID, proxyURL, noPr
 		}
 	}
 	env := map[string]string{
-		"HTTP_PROXY":         proxyURL,
-		"HTTPS_PROXY":        proxyURL,
-		"ALL_PROXY":          proxyURL,
-		"NO_PROXY":           noProxy,
-		"SSL_CERT_FILE":      bundle.MITMCAPath,
-		"REQUESTS_CA_BUNDLE": bundle.MITMCAPath,
+		// URL-valued: identify the sandbox-local forwarder a client should
+		// dial. sandbox-agent substitutes these specifically when injecting
+		// trust into a nested Docker container, since a nested container
+		// cannot reach the sandbox's loopback (see proxy.NestedForwarderListen).
+		"HTTP_PROXY":  proxyURL,
+		"HTTPS_PROXY": proxyURL,
+		"ALL_PROXY":   proxyURL,
+		"NO_PROXY":    noProxy,
+		// File-path-valued: name the MITM CA bundle. These pass through
+		// unchanged into a nested container, since sandbox-agent's NRI plugin
+		// mounts the bundle at the identical path inside and outside it.
+		"SSL_CERT_FILE":       bundle.MITMCAPath,
+		"REQUESTS_CA_BUNDLE":  bundle.MITMCAPath,
+		"NODE_EXTRA_CA_CERTS": bundle.MITMCAPath,
+		"PIP_CERT":            bundle.MITMCAPath,
+		"CURL_CA_BUNDLE":      bundle.MITMCAPath,
+		"GIT_SSL_CAINFO":      bundle.MITMCAPath,
 	}
 	return ClientMaterial{
 		ClientID:        clientID,

@@ -8,6 +8,7 @@ require (
 	aidanwoods.dev/go-paseto v1.6.0
 	github.com/charmbracelet/x/vt v0.0.0-20260713092006-0d683c34c74b
 	github.com/coder/websocket v1.8.14
+	github.com/coreos/go-systemd/v22 v22.3.2
 	github.com/creack/pty v1.1.24
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-chi/chi/v5 v5.3.0

@@ -35,6 +35,14 @@ type RuntimeLayer struct {
 	User                User              `json:"user"`
 	Env                 map[string]string `json:"env,omitempty"`
 
+	// ProxyEnvs names the subset of Env's keys that carry proxy-trust
+	// material (proxy.ClientMaterial.EnvironmentVars) rather than ordinary
+	// environment. It is the one list sandbox-agent's NRI plugin reads to
+	// know which env vars to republish into a nested Docker container's spec
+	// (see docs/adr/0015-nested-docker-builds-trust-the-mitm-proxy-via-nri.md);
+	// the plugin never hardcodes env var names itself.
+	ProxyEnvs []string `json:"proxyEnvs,omitempty"`
+
 	// HarnessMode selects run vs config mode; it is a selection, not a
 	// capability grant, so it stays runtime-owned.
 	HarnessMode string `json:"harnessMode,omitempty"`

@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/coreos/go-systemd/v22/activation"
 	"github.com/obot-platform/discobox/proxy/bridge"
 	"github.com/obot-platform/discobox/sandbox-agent/boot"
 	"github.com/obot-platform/discobox/sandbox-agent/config"
@@ -151,8 +152,22 @@ func runProxyBridge(args []string) int {
 		slog.Error("create proxy bridge", "error", err)
 		return 1
 	}
+	// A systemd .socket unit pre-binds the nested-Docker-bridge-facing
+	// instance (see discobox-proxy-bridge-docker.socket, ADR 0015) so it can
+	// FreeBind an address before docker0 exists; when systemd passed a
+	// listener this way, serve on it instead of dialing our own.
+	activationListeners, err := activation.Listeners()
+	if err != nil {
+		slog.Error("read systemd activation listeners", "error", err)
+		return 1
+	}
 	errCh := make(chan error, 1)
 	go func() {
+		if len(activationListeners) > 0 {
+			slog.Info("sandbox proxy bridge serving on activation socket", "addr", activationListeners[0].Addr(), "worker", cfg.WorkerProxyURL)
+			errCh <- forwarder.Serve(activationListeners[0])
+			return
+		}
 		slog.Info("sandbox proxy bridge serving", "addr", cfg.ListenAddress, "worker", cfg.WorkerProxyURL)
 		errCh <- forwarder.ListenAndServe()
 	}()

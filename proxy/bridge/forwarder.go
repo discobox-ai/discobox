@@ -96,6 +96,14 @@ func (f *Forwarder) ListenAndServe() error {
 	if err != nil {
 		return err
 	}
+	return f.Serve(listener)
+}
+
+// Serve runs the forwarder's accept loop on an already-open listener, such as
+// one systemd passed via socket activation (see
+// github.com/coreos/go-systemd/v22/activation). ListenAndServe is Serve over a
+// listener this Forwarder dials itself.
+func (f *Forwarder) Serve(listener net.Listener) error {
 	f.listener = listener
 	for {
 		conn, err := listener.Accept()
