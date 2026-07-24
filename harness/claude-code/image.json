@@ -10,9 +10,11 @@
   "volumes": [
     { "path": "%HOME%", "volume": "data", "uid": "%UID%", "gid": "%GID%", "mode": "0755" },
     { "path": "/var/lib/docker", "volume": "data", "uid": 0, "gid": 0, "mode": "0711" },
+    { "path": "/var/lib/containerd", "volume": "data", "uid": 0, "gid": 0, "mode": "0711" },
     { "path": "/var/lib/discobox", "volume": "data", "uid": 0, "gid": 0, "mode": "0755" },
     { "path": "/var/lib/discobox/pnpm", "volume": "cache", "uid": "%UID%", "gid": "%GID%", "mode": "0755" }
   ],
+  "additionalGroups": ["docker"],
   "harness": {
     "id": "claude-code",
     "name": "Claude Code",
