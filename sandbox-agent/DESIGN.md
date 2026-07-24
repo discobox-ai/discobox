@@ -175,6 +175,12 @@ images also write their image digest.
   its tunnel is wired up. `frame.Ready` proves the tunnel is established end to
   end; a bounded timeout still repaints (best effort) for clients that never
   send it.
+- Reconnecting terminal clients establish an opaque logical session through
+  `execstream/resume`. Input, signal, and close-input actions are positioned and
+  acknowledged only after the shim applies them. The host retains the highest
+  applied position for the process lifetime, so retransmission after a lost
+  acknowledgement is deduplicated rather than applied twice. Ready remains
+  connection-local and resize remains coalesced idempotent state.
 - Terminal-query answering: the screen emulator responds to queries in the
   output stream (DA1, DSR, DECRQM, ...) by writing answers to an unbuffered
   internal pipe. `Runtime.pumpScreenResponses` must always drain that pipe —

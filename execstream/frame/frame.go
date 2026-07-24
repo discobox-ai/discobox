@@ -32,6 +32,15 @@ const (
 	// written into the upgrade-handshake window, where an intermediate proxy hop
 	// can drop bytes buffered before its tunnel is wired up.
 	Ready byte = 8
+	// Session opens or resumes one logical client session over a physical attach
+	// connection. SessionOK reports the highest action position the host applied.
+	// Action carries a positioned Input, Signal, or CloseInput frame, and Ack
+	// cumulatively acknowledges applied actions. Together these frames let a
+	// client reconnect and retransmit without losing or duplicating process input.
+	Session   byte = 9
+	SessionOK byte = 10
+	Action    byte = 11
+	Ack       byte = 12
 )
 
 const maxPayload = 16 * 1024 * 1024
@@ -59,14 +68,29 @@ func Write(w io.Writer, typ byte, payload []byte) error {
 	var header [5]byte
 	header[0] = typ
 	binary.BigEndian.PutUint32(header[1:], uint32(len(payload)))
-	if _, err := w.Write(header[:]); err != nil {
+	if err := writeFull(w, header[:]); err != nil {
 		return err
 	}
 	if len(payload) == 0 {
 		return nil
 	}
-	_, err := w.Write(payload)
-	return err
+	return writeFull(w, payload)
+}
+
+func writeFull(w io.Writer, payload []byte) error {
+	for len(payload) > 0 {
+		n, err := w.Write(payload)
+		if n > 0 {
+			payload = payload[n:]
+		}
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
+	}
+	return nil
 }
 
 func Read(r io.Reader) (Frame, error) {

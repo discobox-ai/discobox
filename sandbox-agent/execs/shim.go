@@ -15,7 +15,6 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/execstream/frame"
-	"github.com/obot-platform/discobox/execstream/host"
 	"github.com/obot-platform/discobox/sandbox-agent/procio"
 	"github.com/obot-platform/discobox/sandbox-agent/shimruntime"
 )
@@ -302,34 +301,30 @@ func attachFrameType(stream LogStream) byte {
 	return frame.Stdout
 }
 
-func (r *shimRuntime) handleAttachFrame(attach *host.Attacher, next frame.Frame) {
+func (r *shimRuntime) handleAttachFrame(next frame.Frame) error {
 	switch next.Type {
 	case frame.Input:
-		if err := r.writeInput(next.Payload); err != nil {
-			_ = attach.WriteFrame(frame.Error, []byte(err.Error()))
-			attach.Close()
-			return
-		}
+		return r.writeInput(next.Payload)
 	case frame.Resize:
 		resize, err := frame.DecodeResize(next.Payload)
 		if err != nil {
-			_ = attach.WriteFrame(frame.Error, []byte(err.Error()))
-			attach.Close()
-			return
+			return err
 		}
 		r.stream.ApplyResize(resize)
+		return nil
 	case frame.Signal:
-		if err := r.proc.Signal(string(next.Payload)); err != nil {
-			_ = attach.WriteFrame(frame.Error, []byte(err.Error()))
-			attach.Close()
-			return
+		r.mu.Lock()
+		proc := r.proc
+		r.mu.Unlock()
+		if proc == nil {
+			return fmt.Errorf("exec has not started")
 		}
+		return proc.Signal(string(next.Payload))
 	case frame.CloseInput:
 		r.closeInput()
+		return nil
 	default:
-		_ = attach.WriteFrame(frame.Error, []byte("unknown frame type"))
-		attach.Close()
-		return
+		return fmt.Errorf("unknown frame type %d", next.Type)
 	}
 }
 

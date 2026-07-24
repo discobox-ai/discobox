@@ -14,6 +14,7 @@ import (
 	"github.com/obot-platform/discobox/execstream/client"
 
 	"github.com/obot-platform/discobox/execstream/frame"
+	"github.com/obot-platform/discobox/execstream/resume"
 
 	"github.com/spf13/cobra"
 
@@ -249,12 +250,12 @@ const primaryExecID = "primary"
 // creates a new exec, and a session that ended is revived on attach.
 func (d *apiDataSource) OpenTerminal(ctx context.Context, sandboxID string, cols, rows int) (tui.Terminal, error) {
 	events := make(chan tui.TerminalEvent, 4)
-	frames, err := d.app.openReconnectingSandboxExecAttach(ctx, d.projectID, sandboxID, primaryExecID, true, func(event attachConnectionEvent) {
+	frames, err := d.app.openReconnectingSandboxExecAttach(ctx, d.projectID, sandboxID, primaryExecID, true, func(event resume.Event) {
 		var state tui.TerminalConnectionState
 		switch event.State {
-		case attachConnectionReconnecting:
+		case resume.ConnectionReconnecting:
 			state = tui.TerminalReconnecting
-		case attachConnectionReconnected:
+		case resume.ConnectionReconnected:
 			state = tui.TerminalReconnected
 		default:
 			return

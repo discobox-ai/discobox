@@ -16,9 +16,10 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/obot-platform/discobox/execstream"
 	"github.com/obot-platform/discobox/execstream/client"
-
 	"github.com/obot-platform/discobox/execstream/frame"
+	"github.com/obot-platform/discobox/execstream/resume"
 
 	"github.com/coder/websocket"
 	"github.com/spf13/cobra"
@@ -444,10 +445,14 @@ func (a *App) openReconnectingSandboxExecAttach(
 	ctx context.Context,
 	projectID, sandboxID, execID string,
 	replay bool,
-	event func(attachConnectionEvent),
-) (*reconnectingAttachFrames, error) {
-	dial := func(ctx context.Context) (io.ReadWriteCloser, error) {
-		return a.openSandboxExecAttach(ctx, projectID, sandboxID, execID, replay)
+	event func(resume.Event),
+) (*resume.Conn, error) {
+	dial := func(ctx context.Context) (execstream.Conn, error) {
+		conn, err := a.openSandboxExecAttach(ctx, projectID, sandboxID, execID, replay)
+		if err != nil {
+			return nil, err
+		}
+		return &directAttachFrames{conn: conn}, nil
 	}
 	conn, err := dial(ctx)
 	if err != nil {
@@ -456,7 +461,11 @@ func (a *App) openReconnectingSandboxExecAttach(
 	done := func(ctx context.Context) (bool, error) {
 		return a.sandboxExecAttachDone(ctx, projectID, sandboxID, execID)
 	}
-	return newReconnectingAttachFrames(ctx, conn, dial, done, event), nil
+	return resume.New(ctx, conn, resume.Options{
+		Dial:  dial,
+		Done:  done,
+		Event: event,
+	})
 }
 
 func (a *App) sandboxExecAttachDone(ctx context.Context, projectID, sandboxID, execID string) (bool, error) {
@@ -496,14 +505,18 @@ const attachPingTimeout = 10 * time.Second
 // is canceled, returning an error when a ping goes unanswered for
 // attachPingTimeout. Pongs are processed by the attach session's read loop.
 func pingAttachWebSocket(ctx context.Context, conn *websocket.Conn) error {
-	ticker := time.NewTicker(attachPingInterval)
+	return pingAttachWebSocketWithIntervals(ctx, conn, attachPingInterval, attachPingTimeout)
+}
+
+func pingAttachWebSocketWithIntervals(ctx context.Context, conn *websocket.Conn, interval, timeout time.Duration) error {
+	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			pingCtx, cancel := context.WithTimeout(ctx, attachPingTimeout)
+			pingCtx, cancel := context.WithTimeout(ctx, timeout)
 			err := conn.Ping(pingCtx)
 			cancel()
 			if err != nil {

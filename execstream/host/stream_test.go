@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/execstream/frame"
+	"github.com/obot-platform/discobox/execstream/resume"
 )
 
 // pipeConn is an execstream.Conn over an io pipe, which is all the transport
@@ -256,10 +257,11 @@ func TestReadFramesRoutesControlFramesAndConsumesReady(t *testing.T) {
 	defer close(done)
 	var mu sync.Mutex
 	var seen []byte
-	s := New(Options{Done: done, OnFrame: func(_ *Attacher, f frame.Frame) {
+	s := New(Options{Done: done, OnFrame: func(f frame.Frame) error {
 		mu.Lock()
 		defer mu.Unlock()
 		seen = append(seen, f.Type)
+		return nil
 	}})
 	conn, client := newPipe(t)
 	go func() { _ = s.Attach(context.Background(), conn, AttachOptions{}) }()
@@ -287,6 +289,71 @@ func TestReadFramesRoutesControlFramesAndConsumesReady(t *testing.T) {
 	mu.Unlock()
 	if !bytes.Equal(got, []byte{frame.Input, frame.Signal}) {
 		t.Fatalf("routed frames = %v, want input and signal only (ready is consumed)", got)
+	}
+}
+
+func TestReadFramesDeduplicatesResumedActions(t *testing.T) {
+	done := make(chan struct{})
+	defer close(done)
+	var mu sync.Mutex
+	var input []byte
+	s := New(Options{Done: done, OnFrame: func(next frame.Frame) error {
+		if next.Type == frame.Input {
+			mu.Lock()
+			input = append(input, next.Payload...)
+			mu.Unlock()
+		}
+		return nil
+	}})
+
+	token := bytes.Repeat([]byte{0x55}, 32)
+	sessionPayload, err := resume.EncodeSession(token, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	actionPayload, err := resume.EncodeAction(1, frame.Input, []byte("once"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for attempt := 0; attempt < 2; attempt++ {
+		conn, client := newPipe(t)
+		go func() { _ = s.Attach(context.Background(), conn, AttachOptions{}) }()
+		if err := frame.Write(client, frame.Session, sessionPayload); err != nil {
+			t.Fatal(err)
+		}
+		established, err := frame.Read(client)
+		if err != nil {
+			t.Fatal(err)
+		}
+		position, err := resume.DecodePosition(established.Payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if position != uint64(attempt) {
+			t.Fatalf("attempt %d host position = %d, want %d", attempt, position, attempt)
+		}
+		if err := frame.Write(client, frame.Action, actionPayload); err != nil {
+			t.Fatal(err)
+		}
+		ack, err := frame.Read(client)
+		if err != nil {
+			t.Fatal(err)
+		}
+		position, err = resume.DecodePosition(ack.Payload)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if position != 1 {
+			t.Fatalf("attempt %d ack = %d, want 1", attempt, position)
+		}
+		_ = client.Close()
+	}
+	mu.Lock()
+	got := string(input)
+	mu.Unlock()
+	if got != "once" {
+		t.Fatalf("applied input = %q, want exactly one copy", got)
 	}
 }
 

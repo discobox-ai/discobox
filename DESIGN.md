@@ -97,9 +97,10 @@ flowchart TD
   generated API clients/scaffolds, cross-module sentinel errors, IDs, pool
   boot metadata contracts, client-facing stream DTOs, and the exec attach
   stream: the wire protocol (`execstream/frame`), the duplex `execstream.Conn`
-  seam, and both roles: `execstream/host` serves a process's output to attached
-  clients, and `execstream/client` attaches a caller's stdio to a remote
-  process. The platform halves stay with their platform — the PTY and
+  seam, resumable positioned delivery (`execstream/resume`), and both roles:
+  `execstream/host` serves a process's output to attached clients, and
+  `execstream/client` attaches a caller's stdio to a remote process. The
+  platform halves stay with their platform — the PTY and
   screen emulator in `sandbox-agent`, terminal control in the CLI — so the
   shared module never grows a terminal dependency. See
   [ADR 0008](docs/adr/0008-attach-stream-packages.md).

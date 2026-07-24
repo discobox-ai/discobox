@@ -45,7 +45,7 @@ type Runtime struct {
 	tty *os.File
 }
 
-func New(protocol string, done <-chan struct{}, onFrame func(*host.Attacher, frame.Frame)) *Runtime {
+func New(protocol string, done <-chan struct{}, onFrame func(frame.Frame) error) *Runtime {
 	r := &Runtime{protocol: protocol}
 	r.stream = host.New(host.Options{Done: done, OnFrame: onFrame})
 	return r

@@ -89,13 +89,18 @@ session, `execstream/client`.
   an option or callback to the shared session when the behavior is protocol
   plumbing; add resource-specific code only when the semantics differ.
 - Harness-terminal attaches use the shared reconnecting framed transport in
-  `internal/cli`. It retries websocket failures with capped exponential
+  `execstream/resume`. It retries websocket failures with capped exponential
   backoff, restores resize/readiness state so the sandbox shim repaints the
   terminal, and stops retrying once the authoritative exec record is terminal.
-- Never queue input while an attach is disconnected. Input, signals, and other
-  transient writes are dropped; the latest resize is retained and restored on
-  the next connection. This prevents buffered keystrokes from being delivered
-  unexpectedly after recovery.
+- Resumable actions (input, signals, and close-input) carry monotonically
+  increasing positions. The client retains a bounded window until the shim
+  acknowledges applying them; reconnect resends the unacknowledged suffix and
+  the shim deduplicates it by logical-session token. A full window backpressures
+  stdin instead of silently dropping accepted input. Resize is idempotent state,
+  so only its latest value is retained and restored.
+- Plain exec attaches remain direct and fail on disconnect. Resuming a pipe exec
+  requires byte-exact output positions as well as input resumption; a terminal
+  screen repaint is not an acceptable substitute for a piped stdout stream.
 - Connection lifecycle notifications are transport events, not terminal output.
   CLI attach ignores them; the TUI adapter maps them into its `TerminalEvent`
   stream.

@@ -11,6 +11,7 @@ package host
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"os"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/obot-platform/discobox/execstream"
 	"github.com/obot-platform/discobox/execstream/frame"
+	"github.com/obot-platform/discobox/execstream/resume"
 )
 
 // Replayer reproduces what a client that attaches mid-stream should see before
@@ -50,16 +52,17 @@ type Options struct {
 	Done <-chan struct{}
 	// Replay, when set, enables repaint-on-attach for clients that ask for it.
 	Replay Replayer
-	// OnFrame receives the control frames a client sends — input, resize,
-	// signal, close-input. Ready is consumed by this package and never reaches
-	// it.
-	OnFrame func(*Attacher, frame.Frame)
+	// OnFrame applies the control frames a client sends — input, resize, signal,
+	// close-input. Ready and resumable-transport frames are consumed by this
+	// package and never reach it.
+	OnFrame func(frame.Frame) error
 }
 
 // Stream is the fan-out for one process.
 type Stream struct {
 	done    <-chan struct{}
-	onFrame func(*Attacher, frame.Frame)
+	onFrame func(frame.Frame) error
+	resumes *resume.Server
 
 	mu        sync.Mutex
 	attachers map[*Attacher]struct{}
@@ -98,6 +101,7 @@ func New(opts Options) *Stream {
 		done:        opts.Done,
 		replay:      opts.Replay,
 		onFrame:     opts.OnFrame,
+		resumes:     resume.NewServer(),
 		attachers:   map[*Attacher]struct{}{},
 		resizeReady: make(chan struct{}),
 	}
@@ -291,6 +295,12 @@ func (s *Stream) WaitForResize(ctx context.Context) {
 }
 
 func (s *Stream) readFrames(attach *Attacher) {
+	var receiver *resume.Receiver
+	defer func() {
+		if receiver != nil {
+			receiver.Close()
+		}
+	}()
 	for {
 		next, err := attach.conn.ReadFrame()
 		if err != nil {
@@ -300,14 +310,69 @@ func (s *Stream) readFrames(attach *Attacher) {
 			attach.Close()
 			return
 		}
-		if next.Type == frame.Ready {
+		switch next.Type {
+		case frame.Session:
+			if receiver != nil {
+				s.failAttach(attach, fmt.Errorf("%w: session already established", resume.ErrProtocol))
+				return
+			}
+			var position uint64
+			receiver, position, err = s.resumes.Accept(next.Payload)
+			if err != nil {
+				s.failAttach(attach, err)
+				return
+			}
+			if err := attach.writeControlFrame(frame.SessionOK, resume.EncodePosition(position)); err != nil {
+				attach.Close()
+				return
+			}
+			continue
+		case frame.Action:
+			if receiver == nil {
+				s.failAttach(attach, fmt.Errorf("%w: action arrived before session", resume.ErrProtocol))
+				return
+			}
+			position, err := receiver.Apply(next.Payload, s.applyFrame)
+			if err != nil {
+				s.failAttach(attach, err)
+				return
+			}
+			if err := attach.writeControlFrame(frame.Ack, resume.EncodePosition(position)); err != nil {
+				attach.Close()
+				return
+			}
+			continue
+		case frame.Ready:
 			attach.markReady()
 			continue
+		case frame.SessionOK, frame.Ack:
+			s.failAttach(attach, fmt.Errorf("%w: unexpected client frame type %d", resume.ErrProtocol, next.Type))
+			return
 		}
-		if s.onFrame != nil {
-			s.onFrame(attach, next)
+		// A physical attach that never establishes a resumable session remains a
+		// valid direct attach. This is an intentional protocol capability for
+		// one-shot and fail-fast execs, not a compatibility path.
+		if receiver != nil && resume.IsActionType(next.Type) {
+			s.failAttach(attach, fmt.Errorf("%w: resumable action type %d was not positioned", resume.ErrProtocol, next.Type))
+			return
+		}
+		if err := s.applyFrame(next); err != nil {
+			s.failAttach(attach, err)
+			return
 		}
 	}
+}
+
+func (s *Stream) applyFrame(next frame.Frame) error {
+	if s.onFrame == nil {
+		return nil
+	}
+	return s.onFrame(next)
+}
+
+func (s *Stream) failAttach(attach *Attacher, err error) {
+	_ = attach.writeControlFrame(frame.Error, []byte(err.Error()))
+	attach.Close()
 }
 
 // ReadyTimeout bounds how long a replay attach waits for the client's
@@ -355,6 +420,15 @@ func (a *Attacher) WriteFrame(typ byte, payload []byte) error {
 		a.buffered = append(a.buffered, bufferedFrame{typ: typ, payload: append([]byte(nil), payload...)})
 		return nil
 	}
+	return a.writeLocked(typ, payload)
+}
+
+// writeControlFrame bypasses replay buffering for transport acknowledgements
+// and protocol errors. A resumable client must receive SessionOK before it can
+// send Ready, which is what releases the replay buffer.
+func (a *Attacher) writeControlFrame(typ byte, payload []byte) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	return a.writeLocked(typ, payload)
 }
 
