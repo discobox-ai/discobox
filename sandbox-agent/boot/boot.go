@@ -55,6 +55,9 @@ func (b *booter) provision(logger *slog.Logger, id identity) error {
 		if effective, err = loadEffectiveConfig(); err != nil {
 			return fmt.Errorf("load sandbox config: %w", err)
 		}
+		if err := b.ensureAdditionalGroups(id, effective.AdditionalGroups); err != nil {
+			return fmt.Errorf("ensure additional groups: %w", err)
+		}
 		if err := b.wireConfig(); err != nil {
 			return fmt.Errorf("wire config: %w", err)
 		}

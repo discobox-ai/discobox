@@ -95,6 +95,36 @@ func (b *booter) ensureAccount(id identity, groupName string) error {
 	return b.run("useradd", "--uid", strconv.Itoa(id.uid), "--gid", groupName, "--home-dir", id.home, "--shell", "/bin/bash", id.name)
 }
 
+// ensureAdditionalGroups adds the sandbox user to supplementary OS groups the
+// image declared (e.g. "docker"), alongside its own primary group. It runs
+// after the account exists, once the image's declared groups are known from
+// sandbox.json — unlike group/account creation, this can't happen any earlier
+// in provision. A group the image names but the base OS doesn't have (e.g. a
+// harness Dockerfile forgetting to install the package that creates it) is
+// skipped rather than failing sandbox boot over a foreseeable image mistake.
+// Root already has every access these groups would grant, so it has none of
+// this to do.
+func (b *booter) ensureAdditionalGroups(id identity, groups []string) error {
+	if id.uid == 0 || len(groups) == 0 {
+		return nil
+	}
+	present := make([]string, 0, len(groups))
+	for _, group := range groups {
+		group = strings.TrimSpace(group)
+		if group == "" {
+			continue
+		}
+		if _, ok := b.lookup("getent", "group", group); !ok {
+			continue
+		}
+		present = append(present, group)
+	}
+	if len(present) == 0 {
+		return nil
+	}
+	return b.run("usermod", "--append", "--groups", strings.Join(present, ","), id.name)
+}
+
 func (b *booter) writeSudoers(name string) error {
 	if err := os.MkdirAll("/etc/sudoers.d", 0o750); err != nil {
 		return err
