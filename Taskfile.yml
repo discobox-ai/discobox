@@ -67,6 +67,15 @@ tasks:
         --build-arg HARNESS_METADATA="$(jq -c . test/harness-stub/image.json)"
         -t discobox-harness-stub:local test/harness-stub
 
+  build:terminal-latency-image:
+    desc: Build the deterministic test-only terminal latency harness image
+    cmds:
+      - >-
+        docker build -f test/performance/terminal-latency/image/Dockerfile
+        --build-arg SANDBOX_AGENT_IMAGE="$(grep -s '^DISCOBOX_DEFAULT_SANDBOX_IMAGE=' .env | cut -d= -f2- | grep . || echo discobox-sandbox-agent:local)"
+        --build-arg HARNESS_METADATA="$(jq -c . test/performance/terminal-latency/image/image.json)"
+        -t discobox-terminal-latency:local test/performance/terminal-latency/image
+
   build:harness-images:
     desc: Build the sandbox base and one local image for each included harness
     cmds:
@@ -179,6 +188,11 @@ tasks:
           fi
           build/bats/bin/bats {{.BATS_SUITE}}
         fi
+
+  perf:terminal:
+    desc: Measure run/direct-attach terminal latency under output load against task dev
+    cmds:
+      - test/performance/terminal-latency/run.sh
 
   test:all:
     desc: Run root and nested module tests

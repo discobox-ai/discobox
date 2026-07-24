@@ -1,0 +1,13 @@
+{
+  "apiVersion": "discobox.dev/image/v1",
+  "harness": {
+    "id": "terminal-latency",
+    "name": "Terminal Latency",
+    "description": "Test-only harness that returns a sequence-tagged response for terminal latency measurements.",
+    "runCommand": ["/usr/local/libexec/discobox/terminal-latency-probe"],
+    "relaunchCommand": ["/usr/local/libexec/discobox/terminal-latency-probe"],
+    "config": {
+      "command": ["/usr/local/libexec/discobox/configure-terminal-latency"]
+    }
+  }
+}
