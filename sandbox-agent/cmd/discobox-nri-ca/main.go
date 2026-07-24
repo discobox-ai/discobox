@@ -33,7 +33,14 @@ func main() {
 	}
 
 	for ctx.Err() == nil {
-		nriStub, err := stub.New(plugin, stub.WithPluginName("discobox-ca"))
+		// NRI requires a 2-digit plugin index alongside the name for external
+		// plugins (those that dial in, rather than being launched by
+		// containerd from its plugin directory, where the index would come
+		// from the filename). There is only ever one instance of this
+		// plugin, so any fixed 2-digit value works; ensureIdentity falls
+		// back to parsing os.Args[0] as "NN-name" when idx is left unset,
+		// which this binary's name does not match.
+		nriStub, err := stub.New(plugin, stub.WithPluginName("discobox-ca"), stub.WithPluginIdx("00"))
 		if err != nil {
 			logger.Error("create nri stub", "error", err)
 			os.Exit(1)
