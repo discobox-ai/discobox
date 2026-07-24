@@ -30,14 +30,15 @@ and how to reach that daemon and the pool-agent API.
 flowchart TD
     pool["poolruntime.Provider\nimplements sandbox.Provider\nplacement gate · pool-agent API (docker-free)"]
     engine["dockerworker.Engine\nthe one poolruntime.RuntimeProvider\npool-agent container, networks, volumes, drift"]
-    driver["dockerworker.Driver\npure VM CRUD + two connection leases"]
+    driver["dockerworker.Driver\nVM lifecycle + two connection leases"]
     local["docker.LocalDriver\nVM CRUD no-op · host socket ·\npublished loopback agent port"]
     do["digitalocean.Driver\ndroplet CRUD by pool tag ·\ndocker over SSH · agent at public IP"]
     execd["execvm.Driver\ndelegates every op to an external\ncommand (shell-script backends)"]
+    libkrun["libkrun.Driver\nlibkrun process · persistent disks ·\nUnix/VSOCK connection leases"]
     future["(later) k8s / ec2 / apple / windows\nsame shape; pool runs as a pod on k8s"]
 
     pool --> engine --> driver
-    driver --> local & do & execd & future
+    driver --> local & do & execd & libkrun & future
 ```
 
 `server/providers/poolruntime.Provider` is the registered `sandbox.Provider`
@@ -62,19 +63,45 @@ limits nest inside it. It obtains Docker access exclusively through the driver.
 `dockerworker.Driver` is the backend seam sized for "add EC2 without reading
 the engine":
 
-- `EnsureVM` / `DeleteVM` / `InspectVM`: idempotent VM CRUD keyed by pool ID.
-  The local driver resolves every pool to the host and CRUD is a no-op.
+- `EnsureVM` / `StopVM` / `DeleteVM` / `InspectVM`: idempotent VM lifecycle
+  keyed by pool ID. `StopVM` preserves driver-owned persistent state for
+  repair; `DeleteVM` removes it after pool deletion is authorized. The local
+  Docker driver resolves every pool to the host and lifecycle is a no-op.
 - `AcquireDockerClient`: a Docker API client lease for the daemon hosting the
   pool's containers — the host socket locally, the in-VM daemon over SSH for
-  DigitalOcean, vsock later. `NewDockerClientForDialer` adapts any `net.Conn`
+  DigitalOcean, or VSOCK terminated at a private Unix socket for local libkrun
+  VMs. `NewDockerClientForDialer` adapts any `net.Conn`
   dialer; `dockerworker/sshdocker` is the shared pure-Go SSH-to-docker-socket
   dialer for cloud VM drivers and for `ssh://` endpoints from the exec driver.
-- `AcquireWorkerAgentClient`: an HTTP lease reaching the pool-agent API — the
+- `AcquirePoolAgentClient`: an HTTP lease reaching the pool-agent API — the
   container's published loopback port locally, `http://<public-ip>:<agent
-  port>` for cloud VMs.
+  port>` for cloud VMs, or VSOCK terminated at a private Unix socket for local
+  libkrun VMs.
 
 The engine owns Docker readiness waiting after `EnsureVM` (ping with a
 deadline), so drivers never implement boot polling.
+
+## Development Image Convergence
+
+The development image watcher publishes a versioned manifest of
+content-addressed pool, sandbox-base, and harness images. When its explicit
+environment flag is enabled, server composition gives one shared
+`dockerworker.DevelopmentImageSynchronizer` to every engine.
+
+After `EnsureVM` and Docker readiness, both `EnsurePool` and `RepairPool`
+converge that manifest before reconciling the pool-agent container. The
+synchronizer inspects the destination daemon by reference and image ID, retags
+an already-present ID without transferring it, and otherwise streams one
+compressed multi-image archive from the developer's Docker daemon into the
+driver-provided Docker client. Calls for the same daemon ID and manifest
+coalesce. Destination inspection is the durable truth; no synchronized-host
+state is persisted.
+
+This is engine behavior, not a driver capability. Local Docker therefore
+usually performs no transfer, while libkrun, DigitalOcean, and exec drivers
+receive the same images over their existing VSOCK, SSH, or configured Docker
+transport. Synchronization failures fail pool reconciliation rather than
+allowing a host with incomplete development images to become ready.
 
 Pool runtime lifecycle is not the same as pool row deletion. The engine
 replaces the pool-agent container (and a VM driver may replace the VM) for an

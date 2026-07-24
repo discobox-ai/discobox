@@ -54,7 +54,7 @@ build_dockerfile() {
   fi
 
   case "$dockerfile" in
-    Dockerfile*|*/pool-agent/Dockerfile|pool-agent/Dockerfile|*/sandbox-agent/Dockerfile|sandbox-agent/Dockerfile)
+    Dockerfile*|*/pool-agent/Dockerfile|pool-agent/Dockerfile|*/sandbox-agent/Dockerfile|sandbox-agent/Dockerfile|*/providers/libkrun/image/Dockerfile|server/providers/libkrun/image/Dockerfile|*/providers/libkrun/kernel/Dockerfile|server/providers/libkrun/kernel/Dockerfile)
       context="."
       ;;
     *)

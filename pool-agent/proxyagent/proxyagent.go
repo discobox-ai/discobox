@@ -14,9 +14,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	guestvsock "github.com/obot-platform/discobox/pool-agent/vsock"
 	"github.com/obot-platform/discobox/proxy"
 )
 
@@ -130,11 +132,14 @@ func SandboxNetworkName(poolID string) string {
 // WriteUnitEnvironment writes the environment file consumed by the proxy
 // systemd unit. It is written to the pool container's own /etc, which is
 // shared with the child systemd namespace.
-func WriteUnitEnvironment(prefix string) error {
+func WriteUnitEnvironment(prefix string, controlPlaneVSOCKPort uint32) error {
 	if err := os.MkdirAll(filepath.Dir(UnitEnvironmentFile), 0o755); err != nil {
 		return err
 	}
 	content := envHostMountPrefix + "=" + strings.TrimSpace(prefix) + "\n"
+	if controlPlaneVSOCKPort > 0 {
+		content += guestvsock.EnvControlPlanePort + "=" + strconv.FormatUint(uint64(controlPlaneVSOCKPort), 10) + "\n"
+	}
 	return os.WriteFile(UnitEnvironmentFile, []byte(content), 0o600)
 }
 

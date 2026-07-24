@@ -15,9 +15,12 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/obot-platform/discobox/devimage"
 )
 
 const envFile = ".env"
+const developmentImageManifestFile = ".tmp/discobox-dev-images.json"
 
 // sandboxAgentSpecName is the spec whose built image every harness layers on
 // top of via the SANDBOX_AGENT_IMAGE build arg.
@@ -398,7 +401,36 @@ func buildChangedImages(ctx context.Context, repoRoot string, allSpecs, changedS
 			values[spec.envDigestKey] = imageID
 		}
 	}
+	manifest, err := developmentImageManifest(ctx, repoRoot, allSpecs)
+	if err != nil {
+		return err
+	}
+	manifestPath := filepath.Join(repoRoot, developmentImageManifestFile)
+	if err := devimage.WriteAtomic(manifestPath, manifest); err != nil {
+		return fmt.Errorf("write development image manifest: %w", err)
+	}
+	values[devimage.SyncEnv] = "true"
+	values[devimage.ManifestEnv] = manifestPath
 	return updateEnv(filepath.Join(repoRoot, envFile), values)
+}
+
+func developmentImageManifest(ctx context.Context, repoRoot string, specs []imageSpec) (devimage.Manifest, error) {
+	images := make([]devimage.Image, 0, len(specs))
+	for _, spec := range specs {
+		if spec.envImageKey == "" {
+			continue
+		}
+		imageID, err := commandOutput(ctx, repoRoot, "docker", "image", "inspect", "-f", "{{.Id}}", spec.baseImage)
+		if err != nil {
+			return devimage.Manifest{}, fmt.Errorf("inspect development image %s: %w", spec.baseImage, err)
+		}
+		imageID = strings.TrimSpace(imageID)
+		images = append(images, devimage.Image{
+			Reference: devImageTag(spec.devPrefix, imageID),
+			ID:        imageID,
+		})
+	}
+	return devimage.NewManifest(images)
 }
 
 // sandboxAgentFirst returns specs ordered so sandbox-agent is built before any

@@ -55,7 +55,7 @@ func TestEnqueueProviderPoolsMarksEveryProviderPoolDirty(t *testing.T) {
 	createProviderWithPool(ctx, t, appStore, "provider-2", "pool-3")
 
 	engine := newStartedTestReconcileEngine(ctx, t, db)
-	svc := New(appStore, engine, JobManagerOptions{})
+	svc := New(appStore, engine, Options{})
 	if err := svc.enqueueProviderPools(ctx, "project-1", "provider-1"); err != nil {
 		t.Fatalf("enqueue provider pools: %v", err)
 	}
@@ -85,7 +85,7 @@ func TestEnsureExistingSandboxProviderInstancesSchedulesPoolReconcile(t *testing
 	createProviderWithPool(ctx, t, appStore, "provider-1", "pool-1")
 
 	engine := newStartedTestReconcileEngine(ctx, t, db)
-	svc := New(appStore, engine, JobManagerOptions{})
+	svc := New(appStore, engine, Options{})
 	if err := svc.EnsureExistingSandboxProviderInstances(ctx); err != nil {
 		t.Fatalf("ensure existing providers: %v", err)
 	}

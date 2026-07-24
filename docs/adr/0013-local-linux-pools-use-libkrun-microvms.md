@@ -116,10 +116,10 @@ The flake provides:
 - a package containing `discobox-krun` and its runtime closure;
 - libkrun from the newest pinned stable 1.x release, rather than the
   incompatible, pre-stable 2.0 development branch;
-- the matching `libkrunfw` guest kernel payload;
+- libkrun's matching `libkrunfw` runtime dependency;
 - passt; and
-- a development shell and image-builder package with Docker/BuildKit,
-  `e2fsprogs`, and QCOW2 conversion tools.
+- a development shell plus lightweight root-image and kernel-builder commands
+  with Docker/BuildKit, `e2fsprogs`, and QCOW2 conversion tools.
 
 nixpkgs builds libkrun's optional block and network backends only when enabled.
 The flake must therefore use the equivalent of:
@@ -133,7 +133,8 @@ pkgs.libkrun.override {
 
 The selected package is checked for both features during the launcher build or
 startup. Updating libkrun, libkrunfw, or passt is one reviewed flake-lock
-change.
+change. The Discobox kernel is not compiled by a Nix derivation; the flake's
+kernel-builder command delegates that heavyweight, cached build to Docker.
 
 ### 3. passt provides outbound-only IP networking
 
@@ -143,15 +144,22 @@ run as the same unprivileged user as `discobox-server`. No network interface or
 network namespace is created on the host.
 
 Inbound TCP and UDP forwarding is explicitly disabled, even where that is
-passt's default. Host loopback and gateway mappings are disabled as well. The
-guest receives DHCP/DNS configuration and may initiate outbound TCP, UDP, and
-ICMP traffic, but no guest listener is reachable from the host or LAN through
-its IP network.
+passt's default. Host loopback and gateway mappings are disabled as well.
+Every passt process is an isolated network edge, so every guest uses the same
+private IPv4 address, gateway, and DNS-forward address without host routing
+collisions. A guest oneshot service configures that fixed interface and route;
+the immutable resolver file points at the private DNS-forward address. The
+launcher reads the host's first IPv4 nameserver and passes it explicitly as
+passt's forwarding target. The guest may initiate outbound TCP and UDP
+traffic, but no guest listener is reachable from the host or LAN through its
+IP network.
 
 Using virtio-net preserves normal guest packet networking. Docker bridges,
 container network namespaces, embedded DNS, nftables, and the internal network
 that forces sandboxes through `discobox-pool-proxy` continue to operate inside
-the VM.
+the VM. ICMP echo is best-effort because unprivileged passt requires the
+host's ping socket policy to permit it; Discobox does not modify that
+host-global sysctl.
 
 All Discobox host/guest control traffic uses VSOCK, never this IP path.
 Internal guest and sandbox-container listeners may still exist, but passt does
@@ -194,12 +202,23 @@ passt port forward.
 
 ### 5. The guest has one immutable and two writable disks
 
-The versioned guest root artifact is a QCOW2 disk image containing an ext4
-filesystem produced from a Dockerfile rootfs. The image build exports the
-Dockerfile result, populates the filesystem, and converts it to QCOW2 without
-installing a QEMU VMM in the runtime closure. libkrun attaches it with an
-explicit QCOW2 format and a read-only flag. The compatible guest kernel and
-init payload come from the flake-pinned `libkrunfw`.
+The versioned guest artifact set contains a QCOW2 root disk and an external
+ELF `vmlinux`. The root image contains an ext4 filesystem produced from a
+Dockerfile rootfs. Its build exports the Dockerfile result, populates the
+filesystem, and converts it to QCOW2 without installing a QEMU VMM in the
+runtime closure. libkrun attaches it with an explicit QCOW2 format and a
+read-only flag.
+
+The kernel is also built with Docker, separately from the root filesystem.
+Its build starts from pinned libkrunfw sources and their patched Linux version,
+then enables the built-in networking facilities required by Docker:
+namespaces, veth, bridge, overlayfs, nftables/NAT, x_tables compatibility, and
+the common Docker network link types. Source URLs and checksums are part of
+the Dockerfile. The launcher loads the resulting ELF kernel through
+`krun_set_kernel`; it does not rely on the compact default libkrunfw kernel.
+This is necessary because the default kernel omits x_tables compatibility,
+while Docker's `iptables-nft` frontend still uses those target interfaces for
+bridge MASQUERADE rules.
 
 Every pool also has two independent writable, partitionless ext4 disk images:
 
@@ -322,8 +341,8 @@ retained data subtree is gone can be removed immediately.
 - Replacing a failed VM reuses its data disk and may reuse or recreate its
   cache disk. Deleting the pool deletes both writable disk images only after
   normal pool deletion has established that no sandbox remains assigned.
-- The Dockerfile-to-QCOW2 root build and its flake-pinned libkrunfw payload
-  must be tested and versioned as one compatible artifact set.
+- The Docker-built QCOW2 root and Docker-built external kernel must be tested
+  and versioned as one compatible artifact set.
 - The stable libkrun 1.x ABI is isolated behind the launcher protocol. A
   future move to libkrun 2.x changes that helper rather than the server's VM
   driver contract.

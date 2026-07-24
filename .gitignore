@@ -12,6 +12,7 @@ build-errors.log
 .claude/worktrees/
 
 /node_modules/
+**/target/
 
 # Devenv
 .devenv*

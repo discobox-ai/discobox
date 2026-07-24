@@ -124,6 +124,41 @@ func TestEnsureVMReturnsExistingDroplet(t *testing.T) {
 	}
 }
 
+func TestEnsureVMStartsStoppedDroplet(t *testing.T) {
+	status := "off"
+	action := ""
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/droplets":
+			current := activeDroplet(7, "203.0.113.5")
+			current.Status = status
+			encodeJSON(t, w, dropletsResponse{Droplets: []droplet{current}})
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/droplets/7/actions":
+			var req dropletActionRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode action request: %v", err)
+			}
+			action = req.Type
+			status = "active"
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+	driver := newTestDriver(t, handler, nil)
+
+	info, err := driver.EnsureVM(context.Background(), "pool-1", dockerworker.VMSpec{})
+	if err != nil {
+		t.Fatalf("ensure vm: %v", err)
+	}
+	if action != "power_on" {
+		t.Fatalf("action = %q, want power_on", action)
+	}
+	if info.ID != "7" || info.Status != sandbox.StatusRunning || info.Address != "203.0.113.5" {
+		t.Fatalf("vm info = %#v", info)
+	}
+}
+
 func TestInspectVMReportsNotFound(t *testing.T) {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		encodeJSON(t, w, dropletsResponse{})
@@ -132,6 +167,69 @@ func TestInspectVMReportsNotFound(t *testing.T) {
 
 	if _, err := driver.InspectVM(context.Background(), "pool-1"); !errors.Is(err, sandbox.ErrNotFound) {
 		t.Fatalf("inspect err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestStopVMShutsDownDropletWithoutDeletingIt(t *testing.T) {
+	status := "active"
+	action := ""
+	deleteCalls := 0
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/droplets":
+			current := activeDroplet(7, "203.0.113.5")
+			current.Status = status
+			encodeJSON(t, w, dropletsResponse{Droplets: []droplet{current}})
+		case r.Method == http.MethodPost && r.URL.Path == "/v2/droplets/7/actions":
+			var req dropletActionRequest
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				t.Fatalf("decode action request: %v", err)
+			}
+			action = req.Type
+			status = "off"
+			w.WriteHeader(http.StatusCreated)
+		case r.Method == http.MethodDelete:
+			deleteCalls++
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+	driver := newTestDriver(t, handler, nil)
+
+	if err := driver.StopVM(context.Background(), "pool-1"); err != nil {
+		t.Fatalf("stop vm: %v", err)
+	}
+	if action != "shutdown" {
+		t.Fatalf("action = %q, want shutdown", action)
+	}
+	if deleteCalls != 0 {
+		t.Fatalf("delete calls = %d, want 0", deleteCalls)
+	}
+}
+
+func TestStopVMSucceedsWhenDropletIsAlreadyOff(t *testing.T) {
+	actionCalls := 0
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v2/droplets":
+			current := activeDroplet(7, "203.0.113.5")
+			current.Status = "off"
+			encodeJSON(t, w, dropletsResponse{Droplets: []droplet{current}})
+		case r.Method == http.MethodPost:
+			actionCalls++
+			w.WriteHeader(http.StatusCreated)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	})
+	driver := newTestDriver(t, handler, nil)
+
+	if err := driver.StopVM(context.Background(), "pool-1"); err != nil {
+		t.Fatalf("stop vm: %v", err)
+	}
+	if actionCalls != 0 {
+		t.Fatalf("action calls = %d, want 0", actionCalls)
 	}
 }
 

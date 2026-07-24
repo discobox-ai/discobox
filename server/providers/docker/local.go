@@ -80,6 +80,10 @@ func (d *LocalDriver) EnsureVM(context.Context, string, dockerworker.VMSpec) (*d
 	return d.hostVM(), nil
 }
 
+func (d *LocalDriver) StopVM(context.Context, string) error {
+	return nil
+}
+
 func (d *LocalDriver) DeleteVM(context.Context, string) error {
 	return nil
 }

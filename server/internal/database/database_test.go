@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/obot-platform/discobox/gormdb"
 	"github.com/obot-platform/discobox/server/internal/database"
@@ -59,6 +60,62 @@ func TestMigrateMigratesSingleSchema(t *testing.T) {
 	}
 	if db.Write.Migrator().HasTable("organizations") {
 		t.Fatalf("schema unexpectedly has organizations table")
+	}
+}
+
+func TestMigrateRenamesLocalVMProvidersToLibkrun(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+
+	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project", Slug: "project"}
+	if err := db.Write.Create(project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	provider := &model.SandboxProviderInstance{
+		ID:        "provider-1",
+		ProjectID: project.ID,
+		Type:      "local-vm",
+		Name:      "Existing libkrun provider",
+	}
+	if err := db.Write.Create(provider).Error; err != nil {
+		t.Fatalf("create legacy provider: %v", err)
+	}
+	pool := &model.Pool{ID: "pool-1", ProjectID: project.ID, Name: "pool", ProviderInstanceID: provider.ID}
+	if err := db.Write.Create(pool).Error; err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("upgrade migrate: %v", err)
+	}
+
+	var got model.SandboxProviderInstance
+	if err := db.Write.First(&got, "id = ?", provider.ID).Error; err != nil {
+		t.Fatalf("read migrated provider: %v", err)
+	}
+	if got.Type != "libkrun" {
+		t.Fatalf("provider type = %q, want libkrun", got.Type)
+	}
+	var gotPool model.Pool
+	if err := db.Write.First(&gotPool, "id = ?", pool.ID).Error; err != nil {
+		t.Fatalf("read preserved pool: %v", err)
+	}
+	if gotPool.ProviderInstanceID != provider.ID {
+		t.Fatalf("pool provider = %q, want %s", gotPool.ProviderInstanceID, provider.ID)
 	}
 }
 
@@ -149,6 +206,92 @@ func TestMigrateDropsJobQueueArtifactsWithForeignKeys(t *testing.T) {
 		t.Fatalf("foreign_keys pragma = %d, want 1", fk)
 	}
 }
+
+func TestMigrateReplacesLegacyPoolBootstrapTokenConstraint(t *testing.T) {
+	ctx := context.Background()
+	db, err := database.New(database.Config{
+		Driver: gormdb.DriverSQLite,
+		DSN:    "sqlite3://" + filepath.Join(t.TempDir(), "discobox.db"),
+	})
+	if err != nil {
+		t.Fatalf("open database: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("close database: %v", err)
+		}
+	})
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("initial migrate: %v", err)
+	}
+
+	migrator := db.Write.Migrator()
+	if err := migrator.DropConstraint("pool_bootstrap_tokens", "fk_pool_bootstrap_tokens_pool"); err != nil {
+		t.Fatalf("remove current cascade constraint: %v", err)
+	}
+	if err := migrator.CreateConstraint(&legacyPoolConstraint{}, "BootstrapTokens"); err != nil {
+		t.Fatalf("install legacy restrictive constraint: %v", err)
+	}
+	if !migrator.HasConstraint("pool_bootstrap_tokens", "fk_pools_bootstrap_tokens") {
+		t.Fatal("legacy restrictive constraint was not installed")
+	}
+
+	project := &model.Project{ID: "project-1", OwnerUserID: "user-1", Name: "Project", Slug: "project"}
+	if err := db.Write.Create(project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	provider := &model.SandboxProviderInstance{ID: "provider-1", ProjectID: project.ID, Type: "docker", Name: "Docker"}
+	if err := db.Write.Create(provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	pool := &model.Pool{ID: "pool-1", ProjectID: project.ID, Name: "pool", ProviderInstanceID: provider.ID}
+	if err := db.Write.Create(pool).Error; err != nil {
+		t.Fatalf("create pool: %v", err)
+	}
+	token := &model.PoolBootstrapToken{
+		ID:        "token-1",
+		PoolID:    pool.ID,
+		TokenHash: []byte("token-hash"),
+		ExpiresAt: time.Now().Add(time.Hour),
+	}
+	if err := db.Write.Create(token).Error; err != nil {
+		t.Fatalf("create bootstrap token: %v", err)
+	}
+
+	if err := db.Migrate(ctx); err != nil {
+		t.Fatalf("upgrade migrate: %v", err)
+	}
+	if migrator.HasConstraint("pool_bootstrap_tokens", "fk_pools_bootstrap_tokens") {
+		t.Fatal("legacy restrictive constraint remains after migration")
+	}
+	if !migrator.HasConstraint("pool_bootstrap_tokens", "fk_pool_bootstrap_tokens_pool") {
+		t.Fatal("cascade constraint is missing after migration")
+	}
+
+	var tokenCount int64
+	if err := db.Write.Model(&model.PoolBootstrapToken{}).Where("pool_id = ?", pool.ID).Count(&tokenCount).Error; err != nil {
+		t.Fatalf("count preserved bootstrap tokens: %v", err)
+	}
+	if tokenCount != 1 {
+		t.Fatalf("bootstrap token count after migration = %d, want 1", tokenCount)
+	}
+	if err := db.Write.Delete(pool).Error; err != nil {
+		t.Fatalf("delete pool with bootstrap token: %v", err)
+	}
+	if err := db.Write.Model(&model.PoolBootstrapToken{}).Where("pool_id = ?", pool.ID).Count(&tokenCount).Error; err != nil {
+		t.Fatalf("count cascaded bootstrap tokens: %v", err)
+	}
+	if tokenCount != 0 {
+		t.Fatalf("bootstrap token count after pool delete = %d, want 0", tokenCount)
+	}
+}
+
+type legacyPoolConstraint struct {
+	ID              string                     `gorm:"column:id;primaryKey"`
+	BootstrapTokens []model.PoolBootstrapToken `gorm:"foreignKey:PoolID;constraint:fk_pools_bootstrap_tokens"`
+}
+
+func (legacyPoolConstraint) TableName() string { return "pools" }
 
 func fileExists(path string) bool {
 	matches, err := filepath.Glob(path)

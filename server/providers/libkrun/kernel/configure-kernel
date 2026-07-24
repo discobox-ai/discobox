@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+kernel_dir=$1
+config="$kernel_dir/.config"
+scripts_config="$kernel_dir/scripts/config"
+
+# libkrunfw intentionally ships a compact nftables-only kernel. Docker's
+# iptables-nft frontend still probes and uses x_tables extensions, so build
+# those facilities in rather than relying on unavailable kernel modules.
+"$scripts_config" --file "$config" \
+    --enable NETFILTER_XTABLES \
+    --enable NFT_COMPAT \
+    --enable NETFILTER_XT_MARK \
+    --enable NETFILTER_XT_CONNMARK \
+    --enable NETFILTER_XT_NAT \
+    --enable NETFILTER_XT_TARGET_CHECKSUM \
+    --enable NETFILTER_XT_TARGET_CT \
+    --enable NETFILTER_XT_TARGET_LOG \
+    --enable NETFILTER_XT_TARGET_MASQUERADE \
+    --enable NETFILTER_XT_TARGET_REDIRECT \
+    --enable NETFILTER_XT_TARGET_TCPMSS \
+    --enable NETFILTER_XT_MATCH_ADDRTYPE \
+    --enable NETFILTER_XT_MATCH_COMMENT \
+    --enable NETFILTER_XT_MATCH_CONNTRACK \
+    --enable NETFILTER_XT_MATCH_MARK \
+    --enable NETFILTER_XT_MATCH_MULTIPORT \
+    --enable NETFILTER_XT_MATCH_PHYSDEV \
+    --enable NETFILTER_XT_MATCH_STATE \
+    --enable NETFILTER_XT_MATCH_TCPMSS \
+    --enable IP_NF_IPTABLES \
+    --enable IP_NF_FILTER \
+    --enable IP_NF_NAT \
+    --enable IP_NF_MANGLE \
+    --enable IP_NF_RAW \
+    --enable IP6_NF_IPTABLES \
+    --enable IP6_NF_FILTER \
+    --enable IP6_NF_NAT \
+    --enable IP6_NF_MANGLE \
+    --enable IP6_NF_RAW \
+    --enable MACVLAN \
+    --enable IPVLAN \
+    --enable VXLAN \
+    --enable VLAN_8021Q
+
+make -C "$kernel_dir" olddefconfig
+
+for required in \
+    CONFIG_NETFILTER_XTABLES=y \
+    CONFIG_NFT_COMPAT=y \
+    CONFIG_NETFILTER_XT_TARGET_MASQUERADE=y \
+    CONFIG_IP_NF_IPTABLES=y \
+    CONFIG_IP6_NF_IPTABLES=y \
+    CONFIG_BRIDGE=y \
+    CONFIG_VETH=y \
+    CONFIG_OVERLAY_FS=y \
+    CONFIG_MACVLAN=y \
+    CONFIG_IPVLAN=y \
+    CONFIG_VXLAN=y; do
+    grep -qx "$required" "$config" || {
+        echo "required kernel setting missing after olddefconfig: $required" >&2
+        exit 1
+    }
+done

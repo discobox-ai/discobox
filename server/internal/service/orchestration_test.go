@@ -310,7 +310,7 @@ func TestCreateSandboxRequiresResolvedPool(t *testing.T) {
 
 	appStore := store.New(db.Write, db.Read)
 	engine := newTestReconcileEngine(t, db.Write)
-	svc := service.New(appStore, engine, service.JobManagerOptions{})
+	svc := service.New(appStore, engine, service.Options{})
 	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation())
 	if err != nil {
 		t.Fatalf("initialize defaults: %v", err)
@@ -357,7 +357,7 @@ func TestSandboxIntentIsReconciledByJobQueue(t *testing.T) {
 	broker := events.NewBroker()
 	appStore := store.New(db.Write, db.Read, store.WithPublisher(broker))
 	engine := newTestReconcileEngine(t, db.Write)
-	svc := service.New(appStore, engine, service.JobManagerOptions{}, broker)
+	svc := service.New(appStore, engine, service.Options{}, broker)
 
 	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation())
 	if err != nil {
@@ -447,7 +447,7 @@ func newSandboxTestService(t *testing.T, notify func()) (*service.Service, *sand
 	}
 	_ = notifyContext
 	engine := newTestReconcileEngine(t, db.Write)
-	svc := service.New(appStore, engine, service.JobManagerOptions{}, broker)
+	svc := service.New(appStore, engine, service.Options{}, broker)
 	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation())
 	if err != nil {
 		t.Fatalf("initialize defaults: %v", err)

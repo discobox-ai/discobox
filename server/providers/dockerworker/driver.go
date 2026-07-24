@@ -21,8 +21,8 @@ import (
 //
 // Implementations target local Docker (the host is the "VM"), cloud VMs such
 // as DigitalOcean or EC2, or local hypervisors. Adding a backend means
-// implementing VM CRUD plus the two connection methods; the engine handles
-// everything Docker.
+// implementing VM lifecycle plus the two connection methods; the engine
+// handles everything Docker.
 type Driver interface {
 	Close() error
 
@@ -30,6 +30,10 @@ type Driver interface {
 	// driver is a no-op that resolves every worker to the host. Instance
 	// sizing, region, and image come from driver configuration, not the spec.
 	EnsureVM(ctx context.Context, poolID string, spec VMSpec) (*VMInfo, error)
+	// StopVM stops the worker's VM while preserving any driver-owned persistent
+	// state needed by a later EnsureVM. Drivers without separately attached
+	// state may implement this by deleting the replaceable VM instance.
+	StopVM(ctx context.Context, poolID string) error
 	// DeleteVM removes the worker's VM and its local resources. It must
 	// succeed when the VM is already gone.
 	DeleteVM(ctx context.Context, poolID string) error
@@ -98,6 +102,7 @@ func NewDockerClientForDialer(dial func(ctx context.Context, network, addr strin
 	return client.New(
 		client.WithHTTPClient(&http.Client{Transport: &http.Transport{}}),
 		client.WithHost("unix:///var/run/docker.sock"),
+		client.WithScheme("http"),
 		client.WithDialContext(dial),
 	)
 }

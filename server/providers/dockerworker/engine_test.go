@@ -11,6 +11,7 @@ import (
 	"github.com/moby/moby/api/types/mount"
 
 	poolagent "github.com/obot-platform/discobox/pool-agent"
+	guestvsock "github.com/obot-platform/discobox/pool-agent/vsock"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/transport"
@@ -22,6 +23,7 @@ func (nopDriver) Close() error { return nil }
 func (nopDriver) EnsureVM(context.Context, string, VMSpec) (*VMInfo, error) {
 	return &VMInfo{ID: "local", Status: sandbox.StatusRunning}, nil
 }
+func (nopDriver) StopVM(context.Context, string) error   { return nil }
 func (nopDriver) DeleteVM(context.Context, string) error { return nil }
 func (nopDriver) InspectVM(context.Context, string) (*VMInfo, error) {
 	return &VMInfo{ID: "local", Status: sandbox.StatusRunning}, nil
@@ -31,6 +33,33 @@ func (nopDriver) AcquireDockerClient(context.Context, string) (*DockerClientLeas
 }
 func (nopDriver) AcquirePoolAgentClient(context.Context, string) (*transport.HTTPClientLease, error) {
 	return nil, errors.New("no worker agent in unit tests")
+}
+
+type lifecycleDriver struct {
+	nopDriver
+	status       sandbox.Status
+	stopCalls    int
+	deleteCalls  int
+	ensureCalled bool
+}
+
+func (d *lifecycleDriver) InspectVM(context.Context, string) (*VMInfo, error) {
+	return &VMInfo{ID: "local", Status: d.status}, nil
+}
+
+func (d *lifecycleDriver) StopVM(context.Context, string) error {
+	d.stopCalls++
+	return nil
+}
+
+func (d *lifecycleDriver) DeleteVM(context.Context, string) error {
+	d.deleteCalls++
+	return nil
+}
+
+func (d *lifecycleDriver) EnsureVM(context.Context, string, VMSpec) (*VMInfo, error) {
+	d.ensureCalled = true
+	return &VMInfo{ID: "local", Status: sandbox.StatusRunning}, nil
 }
 
 func newTestEngine(t *testing.T, cfg Config) *Engine {
@@ -43,6 +72,35 @@ func newTestEngine(t *testing.T, cfg Config) *Engine {
 		t.Fatalf("new engine: %v", err)
 	}
 	return engine
+}
+
+func TestRepairStopsUnhealthyVMWithoutDeletingPersistentState(t *testing.T) {
+	driver := &lifecycleDriver{status: sandbox.StatusStopped}
+	engine, err := New(Config{Image: "worker-image"}, driver)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err = engine.RepairPool(
+		ctx,
+		nil,
+		&model.SandboxProviderInstance{ID: "provider-1"},
+		&model.Pool{ID: "pool-1", ProjectID: "project-1"},
+		nil,
+		"",
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("RepairPool error = %v, want canceled after VM lifecycle", err)
+	}
+	if driver.stopCalls != 1 || driver.deleteCalls != 0 || !driver.ensureCalled {
+		t.Fatalf(
+			"lifecycle calls = stop:%d delete:%d ensure:%v, want stop:1 delete:0 ensure:true",
+			driver.stopCalls,
+			driver.deleteCalls,
+			driver.ensureCalled,
+		)
+	}
 }
 
 func TestNewDefaults(t *testing.T) {
@@ -79,6 +137,24 @@ func TestNewHonorsPrivilegedOverride(t *testing.T) {
 	}
 }
 
+func TestNewRequiresCompleteVSOCKTransport(t *testing.T) {
+	for _, cfg := range []Config{
+		{Image: "worker-image", AgentVSOCKPort: 3002},
+		{Image: "worker-image", ControlPlaneVSOCKPort: 3001},
+	} {
+		if _, err := New(cfg, nopDriver{}); err == nil {
+			t.Fatalf("New(%#v) succeeded with incomplete VSOCK transport", cfg)
+		}
+	}
+	if _, err := New(Config{
+		Image:                 "worker-image",
+		AgentVSOCKPort:        3002,
+		ControlPlaneVSOCKPort: 3001,
+	}, nopDriver{}); err != nil {
+		t.Fatalf("New with complete VSOCK transport: %v", err)
+	}
+}
+
 func TestBootEnvRendersBootstrapContract(t *testing.T) {
 	env := BootEnv(poolagent.Bootstrap{
 		ControlPlaneURL: "http://control.example",
@@ -105,6 +181,23 @@ func TestBootEnvRendersBootstrapContract(t *testing.T) {
 	}
 	if len(env) != len(want) {
 		t.Fatalf("env = %#v, want no empty values", env)
+	}
+}
+
+func TestBootEnvRendersVSOCKContract(t *testing.T) {
+	env := BootEnv(poolagent.Bootstrap{
+		PoolID:                "pool-1",
+		AgentVSOCKPort:        3002,
+		ControlPlaneVSOCKPort: 3001,
+	})
+	if env[poolagent.EnvAgentVSOCKPort] != "3002" {
+		t.Fatalf("agent VSOCK env = %q", env[poolagent.EnvAgentVSOCKPort])
+	}
+	if env[guestvsock.EnvControlPlanePort] != "3001" {
+		t.Fatalf("control plane VSOCK env = %q", env[guestvsock.EnvControlPlanePort])
+	}
+	if _, ok := env[poolagent.EnvAgentPort]; ok {
+		t.Fatalf("VSOCK bootstrap unexpectedly contains TCP agent port: %#v", env)
 	}
 }
 
@@ -175,6 +268,19 @@ func TestContainerMountsBindHostSandboxRoot(t *testing.T) {
 	m := findMount(mounts, workerHostSandboxRoot, "/host/var/lib/discobox/projects")
 	if m == nil || m.BindOptions == nil || !m.BindOptions.CreateMountpoint {
 		t.Fatalf("mounts = %#v, worker host sandbox root should create mountpoint", mounts)
+	}
+}
+
+func TestContainerMountsBindHostCacheRoot(t *testing.T) {
+	engine := newTestEngine(t, Config{})
+	mounts := engine.containerMounts("worker-1", "project-1")
+
+	if !hasMountWithReadOnly(mounts, workerHostCacheRoot, "/host/var/lib/discobox/cache", false) {
+		t.Fatalf("mounts = %#v, missing worker host cache root bind mount", mounts)
+	}
+	m := findMount(mounts, workerHostCacheRoot, "/host/var/lib/discobox/cache")
+	if m == nil || m.BindOptions == nil || !m.BindOptions.CreateMountpoint {
+		t.Fatalf("mounts = %#v, worker host cache root should create mountpoint", mounts)
 	}
 }
 

@@ -126,7 +126,8 @@ flowchart TD
   generated pool-local sandbox operations API server adapter; depends on root
   pool boot contracts and OpenAPI contracts.
 - Root module: local Docker development image watcher for pool-agent and
-  sandbox-agent images.
+  sandbox-agent images, plus the versioned development-image manifest contract
+  shared with the server.
 - Sandbox-agent module: in-sandbox agent REST API runtime environment and harness
   implementation; depends on root contracts and generated API types.
 
@@ -142,6 +143,7 @@ Root module package map:
 | [`api/gen`](api/gen) | Generated client/server API scaffold from `api/openapi/server.yaml`, plus handwritten client helpers for transports OpenAPI generation cannot own. |
 | [`api/sandboxgen`](api/sandboxgen) | Generated client/server API scaffold from generated `api/openapi/sandbox.yaml`, the sandbox-agent subset of the server contract. |
 | [`api/model`](api/model) | Generated stable aliases for server REST API schema types. |
+| [`devimage`](devimage) | Versioned watcher/server contract for content-addressed development Docker image sets and their opt-in environment keys. |
 | [`harness`](harness) | Harness hook registration drivers for sandbox terminals. |
 | [`id`](id) | Shared identifier helpers. |
 | [`internal/hostid`](internal/hostid) | This machine's generated, persisted Discobox identity. Shared because a CLI and a control plane on one machine must resolve the same value: that agreement is how the server knows a request came from its own filesystem. |

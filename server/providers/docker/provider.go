@@ -59,13 +59,13 @@ func Validate(data json.RawMessage) error {
 	return err
 }
 
-func FactoryWithPoolManager(poolManager poolruntime.PoolManager) sandbox.ProviderFactory {
+func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
-		return newFromInstance(ctx, instance, poolManager)
+		return newFromInstance(ctx, instance, poolManager, imageSync)
 	}
 }
 
-func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager) (sandbox.Provider, error) {
+func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer) (sandbox.Provider, error) {
 	cfg, err := Decode(instance.Config)
 	if err != nil {
 		return nil, err
@@ -74,7 +74,9 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 	if err != nil {
 		return nil, err
 	}
-	engine, err := dockerworker.New(engineConfig(cfg), driver)
+	engineCfg := engineConfig(cfg)
+	engineCfg.DevelopmentImageSync = imageSync
+	engine, err := dockerworker.New(engineCfg, driver)
 	if err != nil {
 		_ = driver.Close()
 		return nil, err

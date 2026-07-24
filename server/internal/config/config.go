@@ -13,6 +13,7 @@ import (
 	"github.com/adrg/xdg"
 
 	"github.com/obot-platform/discobox/controlplane"
+	"github.com/obot-platform/discobox/devimage"
 	"github.com/obot-platform/discobox/gormdb"
 	"github.com/obot-platform/discobox/internal/hostid"
 	"github.com/obot-platform/discobox/localipc"
@@ -60,6 +61,9 @@ type Config struct {
 	// definition ID. Dev builds populate this from DISCOBOX_HARNESS_<ID>_IMAGE
 	// so freshly tagged harness images flow through on server restart.
 	HarnessImages map[string]string
+	// DevelopmentImages is the watcher-built image set to converge onto each
+	// Docker daemon before it hosts development pools.
+	DevelopmentImages []devimage.Image
 
 	// OpenTelemetry metrics settings.
 	OTelMetricsEnabled       bool
@@ -93,6 +97,21 @@ func Load() (*Config, error) {
 	cfg.SandboxReconcileJobConcurrency = getEnvInt("SANDBOX_RECONCILE_JOB_CONCURRENCY", 4)
 	cfg.DefaultSandboxImage = getEnv("DISCOBOX_DEFAULT_SANDBOX_IMAGE", sandbox.DefaultSandboxImageName)
 	cfg.HarnessImages = harnessdefs.ImageOverridesFromEnv(os.Getenv)
+	developmentImageSync, err := getEnvBool(devimage.SyncEnv, false)
+	if err != nil {
+		return nil, err
+	}
+	if developmentImageSync {
+		manifestPath := getEnv(devimage.ManifestEnv, "")
+		if manifestPath == "" {
+			return nil, fmt.Errorf("%s is required when %s is enabled", devimage.ManifestEnv, devimage.SyncEnv)
+		}
+		manifest, err := devimage.Read(manifestPath)
+		if err != nil {
+			return nil, err
+		}
+		cfg.DevelopmentImages = manifest.Images
+	}
 	cfg.OTelMetricsEnabled = strings.EqualFold(getEnv("OTEL_METRICS_EXPORTER", "none"), "otlp")
 	cfg.OTelMetricExportInterval = getEnvMillisecondsDuration("OTEL_METRIC_EXPORT_INTERVAL", time.Second)
 
@@ -205,6 +224,18 @@ func getEnvInt(key string, defaultValue int) int {
 		return defaultValue
 	}
 	return parsed
+}
+
+func getEnvBool(key string, defaultValue bool) (bool, error) {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return defaultValue, nil
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%s must be a boolean: %w", key, err)
+	}
+	return parsed, nil
 }
 
 func getEnvDuration(key string, defaultValue time.Duration) time.Duration {

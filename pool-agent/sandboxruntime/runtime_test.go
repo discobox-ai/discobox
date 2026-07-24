@@ -226,6 +226,16 @@ func TestDockerSandboxRuntimePoolHostPathPreservesHostPathWithoutPrefix(t *testi
 	}
 }
 
+func TestDockerSandboxRuntimePoolCacheUsesIndependentRoot(t *testing.T) {
+	runtime := &DockerSandboxRuntime{projectID: "proj_a", poolID: "pool_a"}
+
+	got := runtime.poolCacheRoot()
+	want := "/var/lib/discobox/cache/projects/proj_a/pools/pool_a/cache"
+	if got != want {
+		t.Fatalf("pool cache root = %q, want %q", got, want)
+	}
+}
+
 func TestSandboxAgentTerminalStateErrorStopsOnExitedSandbox(t *testing.T) {
 	err := sandboxAgentTerminalStateError(&Sandbox{
 		SandboxID: "sandbox-1",

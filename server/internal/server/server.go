@@ -77,6 +77,7 @@ func Run(ctx context.Context) error {
 		DefaultSandboxImage:            cfg.DefaultSandboxImage,
 		HostID:                         cfg.HostID,
 		HarnessImages:                  cfg.HarnessImages,
+		DevelopmentImages:              cfg.DevelopmentImages,
 	})
 	if err != nil {
 		return fmt.Errorf("initialize app: %w", err)

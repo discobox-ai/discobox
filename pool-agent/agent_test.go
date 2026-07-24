@@ -25,6 +25,7 @@ import (
 	"github.com/obot-platform/discobox/pool-agent/poolauth"
 	"github.com/obot-platform/discobox/pool-agent/sandboxruntime"
 	poolagentserver "github.com/obot-platform/discobox/pool-agent/server"
+	guestvsock "github.com/obot-platform/discobox/pool-agent/vsock"
 )
 
 func TestRunRegistersPoolWithGeneratedPublicKey(t *testing.T) {
@@ -71,6 +72,42 @@ func TestFromEnvReadsHostMountPrefix(t *testing.T) {
 
 	if bootstrap.HostMountPrefix != "/host" {
 		t.Fatalf("host mount prefix = %q, want /host", bootstrap.HostMountPrefix)
+	}
+}
+
+func TestFromEnvReadsVSOCKPorts(t *testing.T) {
+	t.Setenv(poolagent.EnvAgentVSOCKPort, "3002")
+	t.Setenv(guestvsock.EnvControlPlanePort, "3001")
+
+	bootstrap := poolagent.FromEnv()
+
+	if bootstrap.AgentVSOCKPort != 3002 || bootstrap.ControlPlaneVSOCKPort != 3001 {
+		t.Fatalf(
+			"VSOCK ports = agent:%d control:%d, want agent:3002 control:3001",
+			bootstrap.AgentVSOCKPort,
+			bootstrap.ControlPlaneVSOCKPort,
+		)
+	}
+}
+
+func TestBootstrapRejectsPrivilegedVSOCKPorts(t *testing.T) {
+	base := poolagent.Bootstrap{
+		ControlPlaneURL: "http://control.example",
+		ProjectID:       "project-1",
+		PoolID:          "pool-1",
+		Token:           "token-1",
+	}
+	for name, mutate := range map[string]func(*poolagent.Bootstrap){
+		"agent":   func(bootstrap *poolagent.Bootstrap) { bootstrap.AgentVSOCKPort = 1 },
+		"control": func(bootstrap *poolagent.Bootstrap) { bootstrap.ControlPlaneVSOCKPort = 1 },
+	} {
+		t.Run(name, func(t *testing.T) {
+			bootstrap := base
+			mutate(&bootstrap)
+			if err := bootstrap.Validate(); err == nil {
+				t.Fatal("Validate succeeded with a privileged VSOCK port")
+			}
+		})
 	}
 }
 

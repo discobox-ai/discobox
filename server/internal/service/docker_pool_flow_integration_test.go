@@ -65,7 +65,7 @@ func TestDockerProviderPoolCreateFlowE2E(t *testing.T) {
 	broker := events.NewBroker()
 	appStore := store.New(db.Write, db.Read, store.WithPublisher(broker))
 	engine := newTestReconcileEngine(t, db.Write)
-	svc := service.New(appStore, engine, service.JobManagerOptions{}, broker)
+	svc := service.New(appStore, engine, service.Options{}, broker)
 	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID)
 	if err != nil {
 		t.Fatalf("initialize defaults: %v", err)

@@ -1,0 +1,41 @@
+#!/bin/sh
+set -eu
+
+wait_for_block_device() {
+    device=$1
+    attempts=0
+    while [ ! -b "$device" ]; do
+        attempts=$((attempts + 1))
+        if [ "$attempts" -ge 300 ]; then
+            echo "timed out waiting for $device" >&2
+            exit 1
+        fi
+        sleep 0.1
+    done
+}
+
+wait_for_block_device /dev/vdb
+wait_for_block_device /dev/vdc
+
+if ! mountpoint -q /var/lib/discobox; then
+    mount -t ext4 -o rw /dev/vdb /var/lib/discobox
+fi
+
+install -d -m 0755 \
+    /var/lib/discobox/cache \
+    /var/lib/discobox/docker \
+    /var/lib/discobox/containerd \
+    /var/lib/discobox/projects \
+    /var/lib/discobox/proxy
+
+if ! mountpoint -q /var/lib/discobox/cache; then
+    mount -t ext4 -o rw /dev/vdc /var/lib/discobox/cache
+fi
+
+if ! mountpoint -q /var/lib/docker; then
+    mount --bind /var/lib/discobox/docker /var/lib/docker
+fi
+
+if ! mountpoint -q /var/lib/containerd; then
+    mount --bind /var/lib/discobox/containerd /var/lib/containerd
+fi

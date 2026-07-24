@@ -22,6 +22,7 @@ import (
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
 	providerregistry "github.com/obot-platform/discobox/server/providers"
+	"github.com/obot-platform/discobox/server/providers/dockerworker"
 )
 
 const (
@@ -39,27 +40,30 @@ type Service struct {
 	services.ProjectEventService
 	services.SecretService
 
-	store             *store.Store
-	engine            *reconcile.Engine
-	jobManagerOptions JobManagerOptions
-	jobs              *resourcejobs.Service
-	providerService   *providers.Service
-	poolControlPlane  *pools.ControlPlane
-	harnessConfigs    *harnessconfigs.Service
+	store            *store.Store
+	engine           *reconcile.Engine
+	options          Options
+	jobs             *resourcejobs.Service
+	providerService  *providers.Service
+	poolControlPlane *pools.ControlPlane
+	harnessConfigs   *harnessconfigs.Service
 }
 
-type JobManagerOptions struct {
+type Options struct {
 	SandboxReconcileJobConcurrency int
+	DevelopmentImageSync           *dockerworker.DevelopmentImageSynchronizer
 }
 
-func New(store *store.Store, engine *reconcile.Engine, jobManagerOptions JobManagerOptions, broker ...*eventbroker.Broker) *Service {
+func New(store *store.Store, engine *reconcile.Engine, options Options, broker ...*eventbroker.Broker) *Service {
 	var b *eventbroker.Broker
 	if len(broker) > 0 {
 		b = broker[0]
 	}
 	manager := sandbox.NewProviderManager()
 	poolControlPlane := pools.NewControlPlane(store, engine)
-	providerregistry.RegisterBuiltInSandboxProviderFactories(manager, poolControlPlane)
+	providerregistry.RegisterBuiltInSandboxProviderFactories(manager, poolControlPlane, providerregistry.FactoryOptions{
+		DevelopmentImageSync: options.DevelopmentImageSync,
+	})
 	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, engine, poolControlPlane)
 	providerService := providers.NewService(store, sandboxService, poolControlPlane)
 	poolService := pools.NewService(store, poolControlPlane)
@@ -83,11 +87,11 @@ func New(store *store.Store, engine *reconcile.Engine, jobManagerOptions JobMana
 		jobs:            jobsService,
 		providerService: providerService,
 
-		store:             store,
-		engine:            engine,
-		jobManagerOptions: jobManagerOptions,
-		poolControlPlane:  poolControlPlane,
-		harnessConfigs:    harnessConfigService,
+		store:            store,
+		engine:           engine,
+		options:          options,
+		poolControlPlane: poolControlPlane,
+		harnessConfigs:   harnessConfigService,
 	}
 }
 
@@ -142,7 +146,7 @@ func (s *Service) Stop(ctx context.Context) error {
 }
 
 func (s *Service) registerReconcilers() error {
-	concurrency := s.jobManagerOptions.SandboxReconcileJobConcurrency
+	concurrency := s.options.SandboxReconcileJobConcurrency
 	sandboxOptions := []reconcile.RegisterOption(nil)
 	if concurrency > 0 {
 		sandboxOptions = append(sandboxOptions, reconcile.WithConcurrency(concurrency))

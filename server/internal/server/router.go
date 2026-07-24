@@ -3,10 +3,12 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/obot-platform/discobox/devimage"
 	"github.com/obot-platform/discobox/server/internal/auth"
 	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
@@ -19,6 +21,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/service"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/obot-platform/discobox/server/providers/dockerworker"
 	"gorm.io/gorm"
 )
 
@@ -45,6 +48,9 @@ type AppOptions struct {
 	// HarnessImages overrides built-in harness definition images, keyed by
 	// definition ID (dev builds inject freshly tagged images this way).
 	HarnessImages map[string]string
+	// DevelopmentImages is the watcher-built image set synchronized to every
+	// Docker daemon used by a pool provider.
+	DevelopmentImages []devimage.Image
 }
 
 // DefaultAppOptions returns the production defaults for the app.
@@ -99,8 +105,13 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	if err != nil {
 		return nil, err
 	}
-	appServices := service.New(appStore, reconcileEngine, service.JobManagerOptions{
+	developmentImageSync, err := dockerworker.NewDevelopmentImageSynchronizer(opts.DevelopmentImages)
+	if err != nil {
+		return nil, fmt.Errorf("configure development image synchronization: %w", err)
+	}
+	appServices := service.New(appStore, reconcileEngine, service.Options{
 		SandboxReconcileJobConcurrency: opts.SandboxReconcileJobConcurrency,
+		DevelopmentImageSync:           developmentImageSync,
 	}, broker)
 	appServices.SetDefaultSandboxImage(opts.DefaultSandboxImage)
 	appServices.SetHostID(opts.HostID)

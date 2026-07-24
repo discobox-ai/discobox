@@ -17,6 +17,7 @@
 //	ensure-vm        JSON {"id":"...","status":"created|running|stopped|failed","address":"..."}
 //	                 Idempotent create/start of the worker's VM.
 //	inspect-vm       Same JSON. Exit code 3 when no VM exists for the worker.
+//	stop-vm          No output. Stop the VM but preserve persistent state.
 //	delete-vm        No output. Must succeed when the VM is already gone.
 //	docker-endpoint  One line: how to reach the VM's Docker daemon:
 //	                 unix:///path, tcp://host:port, or ssh://[user@]host[:port]
@@ -48,6 +49,7 @@ import (
 const (
 	opEnsureVM       = "ensure-vm"
 	opInspectVM      = "inspect-vm"
+	opStopVM         = "stop-vm"
 	opDeleteVM       = "delete-vm"
 	opDockerEndpoint = "docker-endpoint"
 	opAgentEndpoint  = "harness-endpoint"
@@ -117,6 +119,11 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 
 func (d *Driver) DeleteVM(ctx context.Context, poolID string) error {
 	_, err := d.run(ctx, opDeleteVM, poolID)
+	return err
+}
+
+func (d *Driver) StopVM(ctx context.Context, poolID string) error {
+	_, err := d.run(ctx, opStopVM, poolID)
 	return err
 }
 

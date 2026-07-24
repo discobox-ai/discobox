@@ -83,6 +83,16 @@ exit 1
 	}
 }
 
+func TestStopVMSucceeds(t *testing.T) {
+	driver := newScriptDriver(t, `
+[ "$op" = "stop-vm" ] && exit 0
+exit 1
+`)
+	if err := driver.StopVM(context.Background(), "worker-1"); err != nil {
+		t.Fatalf("stop vm: %v", err)
+	}
+}
+
 func TestRunSurfacesStderrOnFailure(t *testing.T) {
 	driver := newScriptDriver(t, `
 echo "droplet quota exceeded" >&2

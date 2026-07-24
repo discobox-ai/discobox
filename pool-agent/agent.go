@@ -3,7 +3,10 @@ package poolagent
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"runtime"
 	"strconv"
@@ -15,6 +18,7 @@ import (
 	"github.com/obot-platform/discobox/pool-agent/sandboxruntime"
 	poolserver "github.com/obot-platform/discobox/pool-agent/server"
 	agentsystemd "github.com/obot-platform/discobox/pool-agent/systemd"
+	guestvsock "github.com/obot-platform/discobox/pool-agent/vsock"
 )
 
 // RunProxy runs the pool-scoped proxy server. It is the entrypoint for the
@@ -33,7 +37,7 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	// proxy certificate bundle before booting systemd so the proxy unit and
 	// per-sandbox client certificates share a consistent CA without racing on
 	// first-time generation.
-	if err := proxyagent.WriteUnitEnvironment(bootstrap.HostMountPrefix); err != nil {
+	if err := proxyagent.WriteUnitEnvironment(bootstrap.HostMountPrefix, bootstrap.ControlPlaneVSOCKPort); err != nil {
 		return err
 	}
 	if _, err := proxyagent.PrepareBundle(proxyagent.Resolver(bootstrap.HostMountPrefix)); err != nil {
@@ -47,13 +51,17 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	defer stopReaper()
 	defer agentsystemd.Stop(systemd)
 
-	registration, err := Run(ctx, Config{Bootstrap: bootstrap})
+	controlPlaneHTTPClient := http.DefaultClient
+	if bootstrap.ControlPlaneVSOCKPort > 0 {
+		controlPlaneHTTPClient = guestvsock.HTTPClient(bootstrap.ControlPlaneVSOCKPort, 0)
+	}
+	client := NewHTTPClient(bootstrap.ControlPlaneURL, WithHTTPClient(controlPlaneHTTPClient))
+	registration, err := Run(ctx, Config{Bootstrap: bootstrap, Client: client})
 	if err != nil {
 		return err
 	}
 	logger.Info("pool registered", "poolID", bootstrap.PoolID)
 
-	client := NewHTTPClient(bootstrap.ControlPlaneURL)
 	conditions := map[string]any{
 		"agent": map[string]any{
 			"version": "dev",
@@ -61,16 +69,19 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 		},
 	}
 	if err := client.UpdatePoolStatus(ctx, StatusRequest{
-		ControlPlaneURL:       bootstrap.ControlPlaneURL,
-		ProjectID:             bootstrap.ProjectID,
-		PoolID:                bootstrap.PoolID,
-		PrivateKey:            registration.PrivateKey,
-		Ready:                 true,
-		Schedulable:           true,
-		Degraded:              false,
-		AvailableCPUVCPUs:     availableCPUVCPUs(),
-		AvailableMemoryBytes:  availableMemoryBytes(),
-		AvailableStorageBytes: availableStorageBytes("/"),
+		ControlPlaneURL:      bootstrap.ControlPlaneURL,
+		ProjectID:            bootstrap.ProjectID,
+		PoolID:               bootstrap.PoolID,
+		PrivateKey:           registration.PrivateKey,
+		Ready:                true,
+		Schedulable:          true,
+		Degraded:             false,
+		AvailableCPUVCPUs:    availableCPUVCPUs(),
+		AvailableMemoryBytes: availableMemoryBytes(),
+		// Stat the bind-mounted projects directory itself. Its parent beneath
+		// /host belongs to the pool container's root filesystem and would
+		// report the wrong backing filesystem.
+		AvailableStorageBytes: availableStorageBytes(proxyagent.Resolver(bootstrap.HostMountPrefix)("/var/lib/discobox/projects")),
 		Conditions:            conditions,
 	}); err != nil {
 		return err
@@ -163,6 +174,15 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 
 // ServeWithRuntime starts the pool-agent HTTP server with an explicit sandbox runtime.
 func ServeWithRuntime(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, runtime sandboxruntime.Runtime) error {
+	var listener net.Listener
+	if bootstrap.AgentVSOCKPort > 0 {
+		var err error
+		listener, err = guestvsock.Listen(bootstrap.AgentVSOCKPort)
+		if err != nil {
+			return fmt.Errorf("listen on pool-agent VSOCK port %d: %w", bootstrap.AgentVSOCKPort, err)
+		}
+		defer listener.Close()
+	}
 	return poolserver.Serve(ctx, logger, poolserver.Config{
 		Identity: poolserver.Identity{
 			ProjectID: bootstrap.ProjectID,
@@ -172,6 +192,7 @@ func ServeWithRuntime(ctx context.Context, logger *slog.Logger, bootstrap Bootst
 		Runtime:               runtime,
 		ControlPlanePublicKey: bootstrap.ControlPlaneKey,
 		Port:                  bootstrap.AgentPort,
+		Listener:              listener,
 	})
 }
 

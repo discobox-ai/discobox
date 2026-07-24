@@ -1,0 +1,13 @@
+[Unit]
+Description=Configure Discobox passt networking
+After=systemd-tmpfiles-setup-dev.service
+Before=network.target docker.service
+Wants=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/discobox-configure-network
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

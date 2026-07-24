@@ -13,6 +13,7 @@ import (
 
 	"github.com/obot-platform/discobox/controlplane"
 	"github.com/obot-platform/discobox/pool-agent/poolauth"
+	"github.com/obot-platform/discobox/pool-agent/vsock"
 )
 
 const (
@@ -22,6 +23,7 @@ const (
 	EnvBootstrapToken  = "DISCOBOX_POOL_BOOTSTRAP_TOKEN" //nolint:gosec // Environment variable name, not a credential value.
 	EnvControlPlaneKey = "DISCOBOX_CONTROL_PLANE_PUBLIC_KEY"
 	EnvAgentPort       = "DISCOBOX_AGENT_PORT"
+	EnvAgentVSOCKPort  = "DISCOBOX_AGENT_VSOCK_PORT"
 	EnvHostMountPrefix = "DISCOBOX_POOL_HOST_MOUNT_PREFIX"
 )
 
@@ -33,6 +35,12 @@ type Bootstrap struct {
 	Token           string `json:"token,omitempty"`
 	ControlPlaneKey string `json:"controlPlanePublicKey,omitempty"`
 	AgentPort       int    `json:"agentPort,omitempty"`
+	// ControlPlaneVSOCKPort makes outbound control-plane HTTP dial host CID 2
+	// over AF_VSOCK instead of the URL's IP transport.
+	ControlPlaneVSOCKPort uint32 `json:"controlPlaneVsockPort,omitempty"`
+	// AgentVSOCKPort makes the pool-agent HTTP server listen on AF_VSOCK
+	// instead of TCP.
+	AgentVSOCKPort  uint32 `json:"agentVsockPort,omitempty"`
 	HostMountPrefix string `json:"hostMountPrefix,omitempty"`
 }
 
@@ -55,6 +63,12 @@ func (b Bootstrap) Validate() error {
 	}
 	if strings.TrimSpace(b.Token) == "" {
 		return errors.New("pool bootstrap token is required")
+	}
+	if b.ControlPlaneVSOCKPort > 0 && b.ControlPlaneVSOCKPort < 1024 {
+		return errors.New("control plane VSOCK port must be at least 1024")
+	}
+	if b.AgentVSOCKPort > 0 && b.AgentVSOCKPort < 1024 {
+		return errors.New("agent VSOCK port must be at least 1024")
 	}
 	return nil
 }
@@ -177,14 +191,18 @@ func Run(ctx context.Context, cfg Config) (*Registration, error) {
 // FromEnv builds Bootstrap from environment variables.
 func FromEnv() Bootstrap {
 	agentPort, _ := strconv.Atoi(strings.TrimSpace(os.Getenv(EnvAgentPort)))
+	agentVSOCKPort, _ := strconv.ParseUint(strings.TrimSpace(os.Getenv(EnvAgentVSOCKPort)), 10, 32)
+	controlPlaneVSOCKPort, _ := strconv.ParseUint(strings.TrimSpace(os.Getenv(vsock.EnvControlPlanePort)), 10, 32)
 	return Bootstrap{
-		ControlPlaneURL: controlPlaneURLFromEnv(),
-		ProjectID:       strings.TrimSpace(os.Getenv(EnvProjectID)),
-		PoolID:          strings.TrimSpace(os.Getenv(EnvPoolID)),
-		Token:           strings.TrimSpace(os.Getenv(EnvBootstrapToken)),
-		ControlPlaneKey: strings.TrimSpace(os.Getenv(EnvControlPlaneKey)),
-		AgentPort:       agentPort,
-		HostMountPrefix: strings.TrimSpace(os.Getenv(EnvHostMountPrefix)),
+		ControlPlaneURL:       controlPlaneURLFromEnv(),
+		ProjectID:             strings.TrimSpace(os.Getenv(EnvProjectID)),
+		PoolID:                strings.TrimSpace(os.Getenv(EnvPoolID)),
+		Token:                 strings.TrimSpace(os.Getenv(EnvBootstrapToken)),
+		ControlPlaneKey:       strings.TrimSpace(os.Getenv(EnvControlPlaneKey)),
+		AgentPort:             agentPort,
+		ControlPlaneVSOCKPort: uint32(controlPlaneVSOCKPort),
+		AgentVSOCKPort:        uint32(agentVSOCKPort),
+		HostMountPrefix:       strings.TrimSpace(os.Getenv(EnvHostMountPrefix)),
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	poolagent "github.com/obot-platform/discobox/pool-agent"
+	guestvsock "github.com/obot-platform/discobox/pool-agent/vsock"
 )
 
 // BootEnv renders the pool-agent bootstrap contract as container environment
@@ -20,6 +21,12 @@ func BootEnv(bootstrap poolagent.Bootstrap) map[string]string {
 	}
 	if bootstrap.AgentPort > 0 {
 		env[poolagent.EnvAgentPort] = strconv.Itoa(bootstrap.AgentPort)
+	}
+	if bootstrap.AgentVSOCKPort > 0 {
+		env[poolagent.EnvAgentVSOCKPort] = strconv.FormatUint(uint64(bootstrap.AgentVSOCKPort), 10)
+	}
+	if bootstrap.ControlPlaneVSOCKPort > 0 {
+		env[guestvsock.EnvControlPlanePort] = strconv.FormatUint(uint64(bootstrap.ControlPlaneVSOCKPort), 10)
 	}
 	if bootstrap.HostMountPrefix != "" {
 		env[poolagent.EnvHostMountPrefix] = bootstrap.HostMountPrefix

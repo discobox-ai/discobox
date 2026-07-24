@@ -16,8 +16,10 @@ from the future in-sandbox `sandbox-agent` API.
 | `api/gen` | Generated pool-local sandbox operations client/server scaffold. |
 | `api/model` | Generated stable aliases for pool-local sandbox operation schema types. |
 | `cmd/discobox-pool-agent` | Pool agent binary entrypoint. |
+| `cmd/discobox-vsock-guest` | Local-VM guest services: VSOCK-to-Docker byte splice and orderly shutdown endpoint. |
 | `.` | Root `poolagent` Go package: boot contract, registration flow, status reporting, and high-level command orchestration. |
 | `server` | Pool-local HTTP server, health/metadata endpoints, and generated sandbox API route/auth adapter. |
+| `vsock` | Guest AF_VSOCK listener and host-CID HTTP transport primitives. |
 | `sandboxruntime` | Local sandbox runtime implementations used by the pool host server. Provisions the four primary volumes (`/.discobox/{data,cache,config,sources}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. In-sandbox path wiring is delegated to the sandbox-agent init flow (ADR 0007). |
 | `proxyagent` | Worker-scoped proxy wiring: certificate bundle preparation, the `proxy` subcommand entrypoint, and per-sandbox client material staging. |
 | `systemd` | Linux/systemd namespace startup and child reaping helpers, with non-Linux stubs. |
@@ -92,6 +94,11 @@ drivers may rewrite that URL to localhost, a Unix socket, container networking,
 private VM networking, or a temporary tunnel. The Docker driver does not need to
 serve HTTPS when the rewritten endpoint is localhost-only.
 
+The local libkrun provider injects an AF_VSOCK listener, so the pool agent opens
+no TCP listener in that VM. Outbound registration, status, removal reporting,
+and proxy secret resolution use an HTTP transport that dials host CID 2. HTTP
+routes and authentication are identical across TCP and VSOCK transports.
+
 The pool agent must reject requests whose `{project_id}` or `{pool_id}` do
 not match its bootstrap identity. It must also reject sandbox operation requests
 without a short-lived PASETO v4.public bearer token signed by the control-plane
@@ -142,8 +149,10 @@ flowchart LR
   `/.discobox/{data,cache,config,sources}`; it no longer decides in-sandbox paths
   (home, `/var/lib/docker`, source targets). `data`, `config`, and `sources` are
   per-sandbox; `cache` is shared across the pool's sandboxes in this project. The
-  host layout is
-  `/var/lib/discobox/projects/{project}/pools/{pool}/{cache,sandboxes/{sandbox}/{data,config,sources}}`.
+  durable host layout is
+  `/var/lib/discobox/projects/{project}/pools/{pool}/sandboxes/{sandbox}/{data,config,sources}`;
+  disposable shared cache lives independently at
+  `/var/lib/discobox/cache/projects/{project}/pools/{pool}/cache`.
   The sandbox-agent wires everything else from the image's declarative volume
   list and the manifest source list. See ADR 0007.
 - Normalize provider-owned source destination defaults before both mounting

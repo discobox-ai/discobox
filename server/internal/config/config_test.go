@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/controlplane"
+	"github.com/obot-platform/discobox/devimage"
 	"github.com/obot-platform/discobox/gormdb"
 	"github.com/obot-platform/discobox/localipc"
 )
@@ -137,6 +138,46 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	}
 }
 
+func TestLoadDevelopmentImageManifest(t *testing.T) {
+	clearConfigEnv(t)
+	path := filepath.Join(t.TempDir(), "dev-images.json")
+	manifest, err := devimage.NewManifest([]devimage.Image{
+		{Reference: "discobox-pool-agent:dev-test", ID: "sha256:test"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := devimage.WriteAtomic(path, manifest); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv(devimage.SyncEnv, "true")
+	t.Setenv(devimage.ManifestEnv, path)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cfg.DevelopmentImages, manifest.Images) {
+		t.Fatalf("DevelopmentImages = %#v, want %#v", cfg.DevelopmentImages, manifest.Images)
+	}
+}
+
+func TestLoadDevelopmentImageSyncRequiresManifest(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv(devimage.SyncEnv, "true")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() succeeded without a development image manifest")
+	}
+}
+
+func TestLoadDevelopmentImageSyncRejectsInvalidBoolean(t *testing.T) {
+	clearConfigEnv(t)
+	t.Setenv(devimage.SyncEnv, "sometimes")
+	if _, err := Load(); err == nil {
+		t.Fatal("Load() succeeded with an invalid development image sync flag")
+	}
+}
+
 func TestLoadServerEndpointAddsDefaultHTTP(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("DISCOBOX_SERVER_LISTEN", "unix:///tmp/discobox/server.sock")
@@ -256,6 +297,8 @@ func clearConfigEnv(t *testing.T) {
 		"DISPATCHER_POLL_INTERVAL",
 		"SANDBOX_RECONCILE_JOB_CONCURRENCY",
 		"DISCOBOX_DEFAULT_SANDBOX_IMAGE",
+		devimage.SyncEnv,
+		devimage.ManifestEnv,
 		"DISCOBOX_ENCRYPTION_KEY",
 		"OTEL_METRICS_EXPORTER",
 		"OTEL_METRIC_EXPORT_INTERVAL",

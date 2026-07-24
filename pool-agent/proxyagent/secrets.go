@@ -8,11 +8,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 
+	guestvsock "github.com/obot-platform/discobox/pool-agent/vsock"
 	"github.com/obot-platform/discobox/proxy"
 )
 
@@ -133,9 +136,13 @@ func newSecretResolver(hostDirFor HostPathResolver) *secretResolver {
 	if hostDirFor == nil {
 		hostDirFor = func(p string) string { return p }
 	}
+	client := &http.Client{Timeout: resolveHTTPTimeout}
+	if port, _ := strconv.ParseUint(strings.TrimSpace(os.Getenv(guestvsock.EnvControlPlanePort)), 10, 32); port > 0 {
+		client = guestvsock.HTTPClient(uint32(port), resolveHTTPTimeout)
+	}
 	return &secretResolver{
 		contextPath: hostDirFor(ResolveContextFile),
-		client:      &http.Client{Timeout: resolveHTTPTimeout},
+		client:      client,
 	}
 }
 

@@ -71,9 +71,10 @@ func TestReapDeadSandboxVolumesKeepsLiveAndClearsTombstone(t *testing.T) {
 
 func TestReapUnknownPoolsRetainsThenReapsData(t *testing.T) {
 	dataRoot := t.TempDir()
+	cacheRoot := t.TempDir()
 	proxyRoot := t.TempDir()
-	// A known pool and an orphan pool, each with data + proxy subtrees.
-	for _, root := range []string{dataRoot, proxyRoot} {
+	// A known pool and an orphan pool, each with data + cache + proxy subtrees.
+	for _, root := range []string{dataRoot, cacheRoot, proxyRoot} {
 		for _, pool := range []string{"pool_known", "pool_orphan"} {
 			if err := os.MkdirAll(filepath.Join(root, pool, "sandboxes"), 0o755); err != nil {
 				t.Fatal(err)
@@ -85,20 +86,23 @@ func TestReapUnknownPoolsRetainsThenReapsData(t *testing.T) {
 	now := time.Now()
 
 	// First pass: orphan is tombstoned, nothing deleted.
-	reapUnknownPools(dataRoot, proxyRoot, known, retention, now, quietLogger())
+	reapUnknownPools(dataRoot, cacheRoot, proxyRoot, known, retention, now, quietLogger())
 	for _, pool := range []string{"pool_known", "pool_orphan"} {
 		if _, err := os.Stat(filepath.Join(dataRoot, pool)); err != nil {
 			t.Fatalf("%s data removed too early: %v", pool, err)
 		}
 	}
 
-	// Past retention: only the orphan's data AND proxy subtrees are reaped.
-	reapUnknownPools(dataRoot, proxyRoot, known, retention, now.Add(retention+time.Minute), quietLogger())
+	// Past retention: only the orphan's data, cache, and proxy subtrees are reaped.
+	reapUnknownPools(dataRoot, cacheRoot, proxyRoot, known, retention, now.Add(retention+time.Minute), quietLogger())
 	if _, err := os.Stat(filepath.Join(dataRoot, "pool_orphan")); !os.IsNotExist(err) {
 		t.Fatalf("orphan pool data not reaped: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(proxyRoot, "pool_orphan")); !os.IsNotExist(err) {
 		t.Fatalf("orphan pool proxy not reaped: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cacheRoot, "pool_orphan")); !os.IsNotExist(err) {
+		t.Fatalf("orphan pool cache not reaped: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(dataRoot, "pool_known")); err != nil {
 		t.Fatalf("known pool must survive: %v", err)
@@ -107,14 +111,21 @@ func TestReapUnknownPoolsRetainsThenReapsData(t *testing.T) {
 
 func TestReapUnknownPoolsReapsProxyOnlyLeftoverImmediately(t *testing.T) {
 	dataRoot := t.TempDir()
+	cacheRoot := t.TempDir()
 	proxyRoot := t.TempDir()
 	// Proxy material lingering with no data subtree (regenerable) is reaped now.
 	if err := os.MkdirAll(filepath.Join(proxyRoot, "pool_gone", "sandboxes"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	reapUnknownPools(dataRoot, proxyRoot, map[string]struct{}{}, 24*time.Hour, time.Now(), quietLogger())
+	if err := os.MkdirAll(filepath.Join(cacheRoot, "pool_gone", "cache"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	reapUnknownPools(dataRoot, cacheRoot, proxyRoot, map[string]struct{}{}, 24*time.Hour, time.Now(), quietLogger())
 	if _, err := os.Stat(filepath.Join(proxyRoot, "pool_gone")); !os.IsNotExist(err) {
 		t.Fatalf("proxy-only leftover not reaped immediately: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cacheRoot, "pool_gone")); !os.IsNotExist(err) {
+		t.Fatalf("cache-only leftover not reaped immediately: %v", err)
 	}
 }
 
@@ -145,6 +156,7 @@ func TestReapUnknownPoolsLeavesAnotherProjectsLivePoolAlone(t *testing.T) {
 	for _, at := range []time.Time{now, now.Add(48 * time.Hour)} {
 		reapUnknownPools(
 			agentA.workerHostPath(agentA.poolsRoot()),
+			agentA.workerHostPath(agentA.cachePoolsRoot()),
 			agentA.workerHostPath(proxyagent.PoolsRoot("proj_a")),
 			known, 24*time.Hour, at, quietLogger(),
 		)

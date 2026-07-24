@@ -3,6 +3,7 @@ package database
 
 import (
 	"context"
+	"fmt"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -55,7 +56,45 @@ func (db *DB) Migrate(ctx context.Context) error {
 	if err := write.AutoMigrate(model.AllModels()...); err != nil {
 		return err
 	}
+	if err := migrateLibkrunProviderType(write); err != nil {
+		return err
+	}
+	if err := dropLegacyPoolBootstrapTokenConstraint(write); err != nil {
+		return err
+	}
 	return dropJobQueueArtifacts(write)
+}
+
+const (
+	legacyLibkrunProviderType = "local-vm"
+	libkrunProviderType       = "libkrun"
+
+	legacyPoolBootForeignKey  = "fk_pools_bootstrap_tokens"
+	poolBootCascadeForeignKey = "fk_pool_bootstrap_tokens_pool"
+)
+
+// migrateLibkrunProviderType preserves provider and pool identities while
+// replacing the pre-release local-vm backend name with its implementation name.
+func migrateLibkrunProviderType(db *gorm.DB) error {
+	return db.Model(&model.SandboxProviderInstance{}).
+		Where("type = ?", legacyLibkrunProviderType).
+		Update("type", libkrunProviderType).Error
+}
+
+// dropLegacyPoolBootstrapTokenConstraint completes the upgrade from the
+// original restrictive pool-token foreign key. AutoMigrate creates the newly
+// named cascading constraint first; only then is it safe to remove the old
+// constraint. Using GORM's migrator keeps the same migration valid for SQLite
+// and PostgreSQL.
+func dropLegacyPoolBootstrapTokenConstraint(db *gorm.DB) error {
+	migrator := db.Migrator()
+	if !migrator.HasConstraint("pool_bootstrap_tokens", legacyPoolBootForeignKey) {
+		return nil
+	}
+	if !migrator.HasConstraint("pool_bootstrap_tokens", poolBootCascadeForeignKey) {
+		return fmt.Errorf("pool bootstrap token cascade constraint %q is missing", poolBootCascadeForeignKey)
+	}
+	return migrator.DropConstraint("pool_bootstrap_tokens", legacyPoolBootForeignKey)
 }
 
 // dropJobQueueArtifacts removes the retired job-queue schema: the job and

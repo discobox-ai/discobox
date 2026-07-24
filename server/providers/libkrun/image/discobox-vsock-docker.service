@@ -1,0 +1,13 @@
+[Unit]
+Description=Expose the Docker Unix socket over VSOCK
+Requires=discobox-storage.service docker.socket
+After=discobox-storage.service docker.socket
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/discobox-vsock-guest docker-proxy --port 3004 --socket /var/run/docker.sock
+Restart=on-failure
+RestartSec=1s
+
+[Install]
+WantedBy=multi-user.target

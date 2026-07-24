@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/transport"
@@ -29,6 +30,14 @@ packages:
 runcmd:
   - [ systemctl, enable, --now, docker ]
 `
+
+const (
+	dropletStatusPollInterval = time.Second
+	gracefulShutdownTimeout   = 30 * time.Second
+	dropletPowerActionTimeout = 2 * time.Minute
+)
+
+var errDropletStatusTimeout = errors.New("timed out waiting for droplet status")
 
 // DriverConfig configures a DigitalOcean Droplet driver.
 type DriverConfig struct {
@@ -116,6 +125,15 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 		return nil, err
 	}
 	if existing != nil {
+		if vmInfoFromDroplet(*existing).Status == sandbox.StatusStopped {
+			if err := d.doDropletAction(ctx, existing.ID, "power_on"); err != nil {
+				return nil, err
+			}
+			existing, err = d.waitForDropletStatus(ctx, poolID, sandbox.StatusRunning, dropletPowerActionTimeout)
+			if err != nil {
+				return nil, err
+			}
+		}
 		return vmInfoFromDroplet(*existing), nil
 	}
 	req := createDropletRequest{
@@ -136,6 +154,35 @@ func (d *Driver) EnsureVM(ctx context.Context, poolID string, spec dockerworker.
 		return nil, err
 	}
 	return vmInfoFromDroplet(out.Droplet), nil
+}
+
+// StopVM powers off the Droplet while preserving its root disk. It first asks
+// the guest to shut down cleanly, then uses a hard power-off if the guest does
+// not stop within the grace period.
+func (d *Driver) StopVM(ctx context.Context, poolID string) error {
+	droplet, err := d.findPoolDroplet(ctx, poolID)
+	if err != nil {
+		if errors.Is(err, sandbox.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	if vmInfoFromDroplet(*droplet).Status == sandbox.StatusStopped {
+		return nil
+	}
+	if err := d.doDropletAction(ctx, droplet.ID, "shutdown"); err != nil {
+		return err
+	}
+	if _, err := d.waitForDropletStatus(ctx, poolID, sandbox.StatusStopped, gracefulShutdownTimeout); err == nil {
+		return nil
+	} else if !errors.Is(err, errDropletStatusTimeout) {
+		return err
+	}
+	if err := d.doDropletAction(ctx, droplet.ID, "power_off"); err != nil {
+		return err
+	}
+	_, err = d.waitForDropletStatus(ctx, poolID, sandbox.StatusStopped, dropletPowerActionTimeout)
+	return err
 }
 
 func (d *Driver) DeleteVM(ctx context.Context, poolID string) error {
@@ -201,6 +248,32 @@ func (d *Driver) findPoolDroplet(ctx context.Context, poolID string) (*droplet, 
 		return nil, sandbox.ErrNotFound
 	}
 	return &out.Droplets[0], nil
+}
+
+func (d *Driver) doDropletAction(ctx context.Context, dropletID int64, actionType string) error {
+	path := "/v2/droplets/" + url.PathEscape(strconv.FormatInt(dropletID, 10)) + "/actions"
+	return d.do(ctx, http.MethodPost, path, dropletActionRequest{Type: actionType}, nil)
+}
+
+func (d *Driver) waitForDropletStatus(ctx context.Context, poolID string, status sandbox.Status, timeout time.Duration) (*droplet, error) {
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	for {
+		droplet, err := d.findPoolDroplet(ctx, poolID)
+		if err != nil {
+			return nil, err
+		}
+		if vmInfoFromDroplet(*droplet).Status == status {
+			return droplet, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-timer.C:
+			return nil, fmt.Errorf("%w: pool %s to become %s", errDropletStatusTimeout, poolID, status)
+		case <-time.After(dropletStatusPollInterval):
+		}
+	}
 }
 
 func (d *Driver) do(ctx context.Context, method, path string, in, out any) error {
@@ -317,6 +390,10 @@ type createDropletRequest struct {
 	Tags       []string `json:"tags,omitempty"`
 	UserData   string   `json:"user_data,omitempty"`
 	VPCUUID    string   `json:"vpc_uuid,omitempty"`
+}
+
+type dropletActionRequest struct {
+	Type string `json:"type"`
 }
 
 type dropletResponse struct {

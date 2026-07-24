@@ -2,7 +2,9 @@ package store_test
 
 import (
 	"context"
+	"crypto/sha256"
 	"testing"
+	"time"
 
 	"github.com/obot-platform/discobox/server/internal/model"
 )
@@ -40,11 +42,26 @@ func TestDeletedSecretFreesItsUniqueSlot(t *testing.T) {
 
 func TestDeletedPoolFreesItsName(t *testing.T) {
 	ctx := context.Background()
-	s, _ := newTestStoreWithDB(t, nil)
+	s, db := newTestStoreWithDB(t, nil)
 	createTestPool(t, s, "project-1", "pool-1")
 
+	tokenHash := sha256.Sum256([]byte("pool-bootstrap-token"))
+	if err := s.CreatePoolBootstrapToken(ctx, &model.PoolBootstrapToken{
+		PoolID:    "pool-1",
+		TokenHash: tokenHash[:],
+		ExpiresAt: time.Now().Add(time.Hour),
+	}); err != nil {
+		t.Fatalf("create pool bootstrap token: %v", err)
+	}
 	if err := s.DeletePool(ctx, "project-1", "pool-1"); err != nil {
 		t.Fatalf("delete pool: %v", err)
+	}
+	var tokenCount int64
+	if err := db.Write.Model(&model.PoolBootstrapToken{}).Where("pool_id = ?", "pool-1").Count(&tokenCount).Error; err != nil {
+		t.Fatalf("count pool bootstrap tokens: %v", err)
+	}
+	if tokenCount != 0 {
+		t.Fatalf("pool bootstrap token count = %d after pool delete, want 0", tokenCount)
 	}
 	// Same project, same name: unique on (project_id, name).
 	if err := s.CreatePool(ctx, &model.Pool{ID: "pool-2", ProjectID: "project-1", Name: "pool-1", ProviderInstanceID: "prov-pool-1"}); err != nil {

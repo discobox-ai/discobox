@@ -43,6 +43,7 @@ const (
 	sandboxAgentReadyTimeout = 30 * time.Second
 	sandboxAgentPollInterval = 100 * time.Millisecond
 	sandboxDataRoot          = "/var/lib/discobox/projects"
+	sandboxCacheRoot         = "/var/lib/discobox/cache/projects"
 
 	// The pool host provisions four host-backed roots and mounts them at these
 	// fixed container paths. The sandbox-agent (running as PID 1) wires
@@ -964,17 +965,19 @@ func (r *DockerSandboxRuntime) SyncKnownPools(ctx context.Context, knownPoolIDs 
 
 	reapUnknownPools(
 		r.workerHostPath(r.poolsRoot()),
+		r.workerHostPath(r.cachePoolsRoot()),
 		r.workerHostPath(proxyagent.PoolsRoot(r.projectID)),
 		known, sandboxVolumeRetention, time.Now(), logger,
 	)
 	return nil
 }
 
-// reapUnknownPools reclaims the data and proxy subtrees of pools not in the
+// reapUnknownPools reclaims the data, cache, and proxy subtrees of pools not in the
 // known set. Data subtrees hold persistent sandbox data, so they get the same
-// tombstone-based retention as the sandbox reaper; proxy material is
-// regenerable, so a proxy subtree with no surviving data is reaped at once.
-func reapUnknownPools(dataPoolsRoot, proxyPoolsRoot string, known map[string]struct{}, retention time.Duration, now time.Time, logger *slog.Logger) {
+// tombstone-based retention as the sandbox reaper; cache and proxy material
+// are regenerable, so their subtrees are reaped once no retained data subtree
+// remains.
+func reapUnknownPools(dataPoolsRoot, cachePoolsRoot, proxyPoolsRoot string, known map[string]struct{}, retention time.Duration, now time.Time, logger *slog.Logger) {
 	for _, poolID := range unknownPoolDirs(dataPoolsRoot, known, logger) {
 		dir := filepath.Join(dataPoolsRoot, poolID)
 		tombstone := filepath.Join(dir, sandboxVolumeTombstone)
@@ -990,15 +993,19 @@ func reapUnknownPools(dataPoolsRoot, proxyPoolsRoot string, known map[string]str
 			logger.Warn("reap orphan pool data", "poolID", poolID, "error", err)
 			continue
 		}
+		_ = os.RemoveAll(filepath.Join(cachePoolsRoot, poolID))
 		_ = os.RemoveAll(filepath.Join(proxyPoolsRoot, poolID))
 		logger.Info("reaped orphan pool", "poolID", poolID, "deadFor", now.Sub(diedAt).Truncate(time.Minute).String())
 	}
-	// Proxy leftovers whose data subtree is already gone are regenerable: reap now.
-	for _, poolID := range unknownPoolDirs(proxyPoolsRoot, known, logger) {
-		if _, err := os.Stat(filepath.Join(dataPoolsRoot, poolID)); err == nil {
-			continue // its retention is tracked on the data side above
+	// Cache and proxy leftovers whose data subtree is already gone are
+	// regenerable: reap them immediately.
+	for _, root := range []string{cachePoolsRoot, proxyPoolsRoot} {
+		for _, poolID := range unknownPoolDirs(root, known, logger) {
+			if _, err := os.Stat(filepath.Join(dataPoolsRoot, poolID)); err == nil {
+				continue // its retention is tracked on the data side above
+			}
+			_ = os.RemoveAll(filepath.Join(root, poolID))
 		}
-		_ = os.RemoveAll(filepath.Join(proxyPoolsRoot, poolID))
 	}
 }
 
@@ -1559,18 +1566,18 @@ func sandboxContainerName(poolID, sandboxID string) string {
 	return strings.Trim(name, "-_.")
 }
 
-// sandboxPoolRoot is the per-project, per-pool host root. The cache lives
-// directly under it (shared across the pool's sandboxes in this project);
-// each sandbox's data/config/sources/secrets live under sandboxes/<sandbox_id>.
+// sandboxPoolRoot is the durable per-project, per-pool host root. Each
+// sandbox's data/config/sources/secrets live under sandboxes/<sandbox_id>.
 func (r *DockerSandboxRuntime) sandboxPoolRoot() string {
 	return filepath.Join(sandboxDataRoot, r.projectID, "pools", r.poolID)
 }
 
 // poolCacheRoot is the shared cache directory for every sandbox this pool runs
-// in this project (ADR 0007). It is mounted at /.discobox/cache and the image
-// declares which paths back onto it.
+// in this project (ADRs 0007 and 0013). Its independent top-level root lets a
+// provider mount disposable storage at /var/lib/discobox/cache without moving
+// durable sandbox state.
 func (r *DockerSandboxRuntime) poolCacheRoot() string {
-	return filepath.Join(r.sandboxPoolRoot(), "cache")
+	return filepath.Join(r.cachePoolsRoot(), r.poolID, "cache")
 }
 
 // sandboxesRoot is the parent of every sandbox's per-sandbox volume tree for
@@ -1584,6 +1591,10 @@ func (r *DockerSandboxRuntime) sandboxesRoot() string {
 // shared host. The pool-sync reaper enumerates it to find orphaned pools.
 func (r *DockerSandboxRuntime) poolsRoot() string {
 	return filepath.Join(sandboxDataRoot, r.projectID, "pools")
+}
+
+func (r *DockerSandboxRuntime) cachePoolsRoot() string {
+	return filepath.Join(sandboxCacheRoot, r.projectID, "pools")
 }
 
 // projectFilters matches every managed sandbox container for this project

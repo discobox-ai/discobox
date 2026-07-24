@@ -216,7 +216,10 @@ offline (created); it does not convert the pool to deleted.
 
 Pool delete is intent-based: `phase=deleting` until runtime cleanup succeeds.
 Only successful cleanup may set `phase=deleted`, revoke the pool, clear
-runtime state, and delete the row.
+runtime state, and delete the row. `Pool.BootstrapTokens` declares
+`OnDelete:CASCADE` in the GORM relationship because registration credentials
+have no identity without their pool; deleting the pool must remove live and
+spent bootstrap-token rows in the same database operation.
 
 Pool repair is not delete. Repair is an in-place recovery operation that
 replaces the runtime under the same pool identity and must preserve the pool

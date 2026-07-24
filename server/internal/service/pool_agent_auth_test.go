@@ -106,7 +106,7 @@ func newPoolAgentTestService(t *testing.T) (*service.Service, *store.Store, *dat
 	}
 	broker := events.NewBroker()
 	appStore := store.New(db.Write, db.Read, store.WithPublisher(broker))
-	svc := service.New(appStore, nil, service.JobManagerOptions{}, broker)
+	svc := service.New(appStore, nil, service.Options{}, broker)
 	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID)
 	if err != nil {
 		t.Fatalf("init defaults: %v", err)

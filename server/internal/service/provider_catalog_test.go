@@ -258,7 +258,7 @@ func newProviderCatalogTestStore(t *testing.T) (*store.Store, string) {
 		t.Fatalf("migrate db: %v", err)
 	}
 	appStore := store.New(db.Write, db.Read)
-	svc := service.New(appStore, nil, service.JobManagerOptions{})
+	svc := service.New(appStore, nil, service.Options{})
 	project, err := svc.InitializeDefaults(ctx, service.DefaultUserID, service.WithoutDefaultProviderInstallation())
 	if err != nil {
 		t.Fatalf("initialize defaults: %v", err)
@@ -318,7 +318,7 @@ func TestCreateSandboxProviderInstanceAllowsMissingName(t *testing.T) {
 func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
 	ctx := context.Background()
 	appStore, projectID := newProviderCatalogTestStore(t)
-	svc := service.New(appStore, nil, service.JobManagerOptions{})
+	svc := service.New(appStore, nil, service.Options{})
 
 	if _, err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
@@ -415,7 +415,7 @@ func TestInitializeDefaultsRepairsEmptyBuiltInDockerProviderConfig(t *testing.T)
 
 	ctx := context.Background()
 	appStore, projectID := newProviderCatalogTestStore(t)
-	svc := service.New(appStore, nil, service.JobManagerOptions{})
+	svc := service.New(appStore, nil, service.Options{})
 
 	if _, err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)
@@ -462,7 +462,7 @@ func TestInitializeDefaultsDoesNotPersistBuiltInDockerProviderImageFromEnv(t *te
 
 	ctx := context.Background()
 	appStore, projectID := newProviderCatalogTestStore(t)
-	svc := service.New(appStore, nil, service.JobManagerOptions{})
+	svc := service.New(appStore, nil, service.Options{})
 
 	if _, err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
 		t.Fatalf("initialize defaults: %v", err)

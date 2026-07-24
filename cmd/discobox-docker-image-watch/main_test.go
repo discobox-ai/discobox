@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/obot-platform/discobox/devimage"
 )
 
 func loadDockerImageSpecs(t *testing.T) ([]imageSpec, string) {
@@ -103,6 +105,8 @@ func TestUpdateEnvUpdatesAllImageReferencesWithoutDroppingUserValues(t *testing.
 		"DISCOBOX_HARNESS_CODEX_IMAGE":          "discobox-harness-codex:dev-codex",
 		"DISCOBOX_HARNESS_CLAUDE_CODE_IMAGE":    "discobox-harness-claude-code:dev-claude",
 		"DISCOBOX_HARNESS_OPENCODE_IMAGE":       "discobox-harness-opencode:dev-opencode",
+		devimage.SyncEnv:                        "true",
+		devimage.ManifestEnv:                    "/tmp/discobox-dev-images.json",
 	}
 	if err := updateEnv(path, values); err != nil {
 		t.Fatal(err)

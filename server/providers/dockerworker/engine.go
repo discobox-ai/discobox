@@ -36,7 +36,8 @@ const (
 	dockerSocketPath          = "/var/run/docker.sock"
 	hostMountTargetRoot       = "/host"
 	workerHostSandboxRoot     = "/var/lib/discobox/projects"
-	workerConfigLayoutVersion = 4
+	workerHostCacheRoot       = "/var/lib/discobox/cache"
+	workerConfigLayoutVersion = 5
 	// workerHostProxyRoot mirrors proxyagent.Root. The worker writes per-sandbox
 	// proxy material here through the host-mount prefix; it must reach the host so
 	// the daemon can bind-mount that material into sandbox containers.
@@ -70,6 +71,12 @@ type Config struct {
 	// false the port is published on a loopback-only ephemeral port, for the
 	// local driver.
 	PublicAgentPort bool
+	// AgentVSOCKPort makes the pool-agent listen on AF_VSOCK instead of TCP.
+	// In this mode the engine creates no exposed port or Docker port binding.
+	AgentVSOCKPort uint32
+	// ControlPlaneVSOCKPort makes every pool-agent initiated control-plane
+	// request dial host CID 2 over AF_VSOCK.
+	ControlPlaneVSOCKPort uint32
 	// Systemd runs the image with systemd as PID 1.
 	Systemd bool
 	// Privileged overrides the privileged flag; defaults to the systemd value.
@@ -90,6 +97,9 @@ type Config struct {
 	// DockerReadyTimeout bounds how long EnsureWorker waits for a freshly
 	// launched VM's Docker daemon to become reachable.
 	DockerReadyTimeout time.Duration
+	// DevelopmentImageSync converges watcher-built images onto each destination
+	// Docker daemon before the pool-agent container is reconciled.
+	DevelopmentImageSync *DevelopmentImageSynchronizer `json:"-"`
 }
 
 // Engine runs pool-agent containers over Driver-provided Docker access. It
@@ -108,7 +118,12 @@ func New(cfg Config, driver Driver) (*Engine, error) {
 	if strings.TrimSpace(cfg.Image) == "" {
 		return nil, errors.New("dockerworker image is required")
 	}
-	if cfg.AgentPort == 0 {
+	if cfg.AgentVSOCKPort > 0 || cfg.ControlPlaneVSOCKPort > 0 {
+		if cfg.AgentVSOCKPort < 1024 || cfg.ControlPlaneVSOCKPort < 1024 {
+			return nil, errors.New("both agent and control-plane VSOCK ports must be at least 1024")
+		}
+	}
+	if cfg.AgentVSOCKPort == 0 && cfg.AgentPort == 0 {
 		cfg.AgentPort = defaultAgentPort
 	}
 	if cfg.DockerSocket = cleanAbsPath(cfg.DockerSocket); cfg.DockerSocket == "" {
@@ -168,6 +183,9 @@ func (e *Engine) EnsurePool(ctx context.Context, _ *model.Project, provider *mod
 		return err
 	}
 	defer lease.Release()
+	if err := e.cfg.DevelopmentImageSync.Ensure(ctx, lease.Client); err != nil {
+		return err
+	}
 	inst, recreated, err := e.ensurePoolContainer(ctx, lease.Client, provider, pool, mint, false)
 	if err != nil {
 		return err
@@ -183,7 +201,7 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 		return err
 	}
 	if vmInfo == nil || vmInfo.Status != sandbox.StatusRunning {
-		if err := e.driver.DeleteVM(ctx, pool.ID); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
+		if err := e.driver.StopVM(ctx, pool.ID); err != nil && !errors.Is(err, sandbox.ErrNotFound) {
 			return err
 		}
 	}
@@ -196,6 +214,9 @@ func (e *Engine) RepairPool(ctx context.Context, _ *model.Project, provider *mod
 		return err
 	}
 	defer lease.Release()
+	if err := e.cfg.DevelopmentImageSync.Ensure(ctx, lease.Client); err != nil {
+		return err
+	}
 	inst, _, err := e.ensurePoolContainer(ctx, lease.Client, provider, pool, mint, true)
 	if err != nil {
 		return err
@@ -340,7 +361,11 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	bootstrap.ControlPlaneURL = firstNonEmpty(bootstrap.ControlPlaneURL, e.cfg.ControlPlaneURL)
 	bootstrap.ProjectID = firstNonEmpty(bootstrap.ProjectID, pool.ProjectID)
 	bootstrap.PoolID = firstNonEmpty(bootstrap.PoolID, pool.ID)
-	if bootstrap.AgentPort == 0 {
+	if e.cfg.AgentVSOCKPort > 0 {
+		bootstrap.AgentPort = 0
+		bootstrap.AgentVSOCKPort = e.cfg.AgentVSOCKPort
+		bootstrap.ControlPlaneVSOCKPort = e.cfg.ControlPlaneVSOCKPort
+	} else if bootstrap.AgentPort == 0 {
 		bootstrap.AgentPort = e.cfg.AgentPort
 	}
 	// The worker manages sandbox containers through the bound Docker socket, so
@@ -348,21 +373,30 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	// host-mount prefix.
 	bootstrap.HostMountPrefix = hostMountTargetRoot
 
-	exposedPort, ok := agentNetworkPort(e.cfg.AgentPort)
-	if !ok {
-		return nil, fmt.Errorf("invalid harness port %d", e.cfg.AgentPort)
-	}
 	config := &container.Config{
-		Image:        e.cfg.Image,
-		Labels:       labels,
-		Env:          envList(BootEnv(bootstrap)),
-		Cmd:          e.cfg.Command,
-		ExposedPorts: network.PortSet{exposedPort: struct{}{}},
+		Image:  e.cfg.Image,
+		Labels: labels,
+		Env:    envList(BootEnv(bootstrap)),
+		Cmd:    e.cfg.Command,
 	}
 	hostConfig := &container.HostConfig{
-		Privileged:   e.privileged(),
-		PortBindings: network.PortMap{exposedPort: []network.PortBinding{e.agentPortBinding()}},
-		ExtraHosts:   append([]string(nil), e.cfg.ExtraHosts...),
+		Privileged: e.privileged(),
+		ExtraHosts: append([]string(nil), e.cfg.ExtraHosts...),
+	}
+	waitForHealth := true
+	if e.cfg.AgentVSOCKPort > 0 {
+		// The image's TCP curl healthcheck cannot probe a VSOCK-only listener.
+		// Container state plus the control plane's normal agent registration is
+		// the readiness signal for this transport.
+		config.Healthcheck = &container.HealthConfig{Test: []string{"NONE"}}
+		waitForHealth = false
+	} else {
+		exposedPort, ok := agentNetworkPort(e.cfg.AgentPort)
+		if !ok {
+			return nil, fmt.Errorf("invalid harness port %d", e.cfg.AgentPort)
+		}
+		config.ExposedPorts = network.PortSet{exposedPort: struct{}{}}
+		hostConfig.PortBindings = network.PortMap{exposedPort: []network.PortBinding{e.agentPortBinding()}}
 	}
 	// The pool envelope is the worker container limit: per-sandbox limits nest
 	// inside it, so overcommit falls out of the runtime hierarchy rather than
@@ -412,7 +446,7 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	if _, err := cli.ContainerStart(ctx, created.ID, client.ContainerStartOptions{}); err != nil {
 		return nil, err
 	}
-	return e.waitContainerReady(ctx, cli, created.ID, true)
+	return e.waitContainerReady(ctx, cli, created.ID, waitForHealth)
 }
 
 func (e *Engine) agentPortBinding() network.PortBinding {
@@ -541,6 +575,14 @@ func (e *Engine) containerMounts(poolID, projectID string) []mount.Mount {
 			Type:        mount.TypeBind,
 			Source:      workerHostProxyRoot,
 			Target:      hostMountTarget(workerHostProxyRoot),
+			BindOptions: &mount.BindOptions{CreateMountpoint: true},
+		})
+	}
+	if !hasHostMountSource(e.cfg.HostMounts, workerHostCacheRoot) {
+		mounts = append(mounts, mount.Mount{
+			Type:        mount.TypeBind,
+			Source:      workerHostCacheRoot,
+			Target:      hostMountTarget(workerHostCacheRoot),
 			BindOptions: &mount.BindOptions{CreateMountpoint: true},
 		})
 	}

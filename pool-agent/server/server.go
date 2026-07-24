@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -28,6 +29,9 @@ type Config struct {
 	Runtime               sandboxruntime.Runtime
 	ControlPlanePublicKey string
 	Port                  int
+	// Listener overrides the TCP listener. Local libkrun pools inject an
+	// AF_VSOCK listener so the agent opens no IP port.
+	Listener net.Listener
 }
 
 func NewRouter(cfg Config) (*chi.Mux, error) {
@@ -95,6 +99,11 @@ func Serve(ctx context.Context, logger *slog.Logger, cfg Config) error {
 	}
 	errCh := make(chan error, 1)
 	go func() {
+		if cfg.Listener != nil {
+			logger.Info("pool agent serving", "addr", cfg.Listener.Addr())
+			errCh <- httpServer.Serve(cfg.Listener)
+			return
+		}
 		logger.Info("pool agent serving", "addr", httpServer.Addr)
 		errCh <- httpServer.ListenAndServe()
 	}()
