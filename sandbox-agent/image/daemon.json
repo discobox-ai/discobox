@@ -1,0 +1,6 @@
+{
+  "features": {
+    "containerd-snapshotter": true
+  },
+  "bip": "172.30.0.1/16"
+}

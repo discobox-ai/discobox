@@ -1,0 +1,17 @@
+[Unit]
+Description=Discobox Sandbox Proxy Bridge (nested Docker bridge-facing)
+Documentation=https://github.com/obot-platform/discobox
+
+[Socket]
+# The fixed gateway address of the sandbox's nested Docker default bridge
+# (see daemon.json's "bip" and proxyagent.NestedForwarderListen). FreeBind
+# lets this pre-bind before docker0 exists — dockerd hasn't necessarily
+# started yet, since containerd/docker.service are on-demand in this image.
+# By the time any nested container could actually dial this address, dockerd
+# has already created docker0 with this exact IP, so there is no ordering
+# race despite binding before it exists. See docs/adr/0015 decision 7.
+ListenStream=172.30.0.1:17008
+FreeBind=yes
+
+[Install]
+WantedBy=sockets.target

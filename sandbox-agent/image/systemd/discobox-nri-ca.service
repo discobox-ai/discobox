@@ -1,0 +1,20 @@
+[Unit]
+Description=Discobox NRI CA Trust Plugin
+Documentation=https://github.com/obot-platform/discobox
+After=containerd.service
+ConditionPathExists=/etc/discobox/proxy/mitm-ca.crt
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/discobox-nri-ca
+StandardOutput=journal+console
+StandardError=journal+console
+Restart=on-failure
+RestartSec=2s
+KillMode=mixed
+
+# Not enabled at boot (no [Install]/WantedBy=): containerd.service's own
+# drop-in (containerd.service.d/nri-ca.conf) Upholds= this unit, so it only
+# ever runs while containerd is running — which itself only starts once
+# nested Docker is first touched, via docker.socket's lazy activation. See
+# docs/adr/0015 decision 6.

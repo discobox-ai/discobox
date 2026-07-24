@@ -16,6 +16,15 @@ RemainAfterExit=yes
 PrivateTmp=yes
 ExecStart=/usr/bin/install -D -m 0644 /etc/discobox/proxy/mitm-ca.crt /usr/local/share/ca-certificates/discobox-mitm-ca.crt
 ExecStart=/usr/sbin/update-ca-certificates
+# Stage the same augmented bundle under the trust-store path convention of
+# other distro families, for sandbox-agent's NRI plugin (docs/adr/0015) to
+# bind-mount into nested Docker containers built from a non-Debian base. This
+# process never runs update-ca-certificates inside a container itself — that
+# would land in the container's committed layer — it only mounts these
+# pre-staged, already-updated files read-only.
+ExecStart=/usr/bin/install -D -m 0644 /etc/ssl/certs/ca-certificates.crt /etc/discobox/proxy/ca-bundles/debian.pem
+ExecStart=/usr/bin/install -D -m 0644 /etc/ssl/certs/ca-certificates.crt /etc/discobox/proxy/ca-bundles/alpine.pem
+ExecStart=/usr/bin/install -D -m 0644 /etc/ssl/certs/ca-certificates.crt /etc/discobox/proxy/ca-bundles/rhel.pem
 
 [Install]
 WantedBy=sysinit.target

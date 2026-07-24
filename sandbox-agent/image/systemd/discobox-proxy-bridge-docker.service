@@ -1,0 +1,14 @@
+[Unit]
+Description=Discobox Sandbox Proxy Bridge (nested Docker bridge-facing)
+Documentation=https://github.com/obot-platform/discobox
+Requires=discobox-proxy-bridge-docker.socket
+ConditionPathExists=/etc/discobox/proxy/bridge-docker.json
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/discobox-sandbox-agent proxy-bridge --config /etc/discobox/proxy/bridge-docker.json
+StandardOutput=journal+console
+StandardError=journal+console
+Restart=on-failure
+RestartSec=2s
+KillMode=mixed

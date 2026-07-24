@@ -22,7 +22,8 @@ COPY sandbox-agent ./sandbox-agent
 
 RUN --mount=type=cache,target=/go/pkg/mod,sharing=locked \
     --mount=type=cache,target=/root/.cache/go-build,sharing=locked \
-    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-sandbox-agent ./cmd/discobox-sandbox-agent
+    CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-sandbox-agent ./cmd/discobox-sandbox-agent \
+    && CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go -C sandbox-agent build -trimpath -ldflags="-s -w" -o /out/discobox-nri-ca ./cmd/discobox-nri-ca
 
 FROM debian:bookworm AS sandbox-base
 
@@ -162,6 +163,12 @@ COPY sandbox-agent/image/profile.d/sandbox-dev-tools.sh /etc/profile.d/sandbox-d
 COPY sandbox-agent/image/systemd/discobox-sandbox-agent.service /etc/systemd/system/discobox-sandbox-agent.service
 COPY sandbox-agent/image/systemd/discobox-proxy-bridge.service /etc/systemd/system/discobox-proxy-bridge.service
 COPY sandbox-agent/image/systemd/discobox-trust-ca.service /etc/systemd/system/discobox-trust-ca.service
+COPY sandbox-agent/image/systemd/discobox-nri-ca.service /etc/systemd/system/discobox-nri-ca.service
+COPY sandbox-agent/image/systemd/containerd.service.d/nri-ca.conf /etc/systemd/system/containerd.service.d/nri-ca.conf
+COPY sandbox-agent/image/systemd/discobox-proxy-bridge-docker.socket /etc/systemd/system/discobox-proxy-bridge-docker.socket
+COPY sandbox-agent/image/systemd/discobox-proxy-bridge-docker.service /etc/systemd/system/discobox-proxy-bridge-docker.service
+COPY sandbox-agent/image/daemon.json /etc/docker/daemon.json
+COPY sandbox-agent/image/containerd-config.toml /etc/containerd/config.toml
 COPY sandbox-agent/image/systemd/journald-console.conf /etc/systemd/journald.conf.d/discobox-console.conf
 COPY sandbox-agent/image/systemd/x11-display.socket /etc/systemd/system/x11-display.socket
 COPY sandbox-agent/image/systemd/x11-display.service /etc/systemd/system/x11-display.service
@@ -175,14 +182,17 @@ COPY sandbox-agent/image/systemd/openbox@.service /etc/systemd/system/openbox@.s
 COPY sandbox-agent/image/xorg-dummy.conf /etc/X11/xorg-dummy.conf
 COPY sandbox-agent/image/discobox-vnc-websockify /usr/local/bin/discobox-vnc-websockify
 COPY --from=sandbox-agent-builder /out/discobox-sandbox-agent /usr/local/bin/discobox-sandbox-agent
+COPY --from=sandbox-agent-builder /out/discobox-nri-ca /usr/local/bin/discobox-nri-ca
 
 RUN chmod 0755 /usr/local/bin/discobox-sandbox-agent \
+    && chmod 0755 /usr/local/bin/discobox-nri-ca \
     && chmod 0755 /usr/local/bin/discobox-vnc-websockify \
     && ln -sf /usr/local/bin/discobox-sandbox-agent /usr/local/bin/discobox-hook-publish \
     && mkdir -p /etc/discobox /run/discobox/agent-terminals /var/lib/docker /var/lib/discobox /workspace \
     && systemctl enable \
         discobox-sandbox-agent.service \
         discobox-proxy-bridge.service \
+        discobox-proxy-bridge-docker.socket \
         discobox-trust-ca.service \
         x11-display.socket \
         x11vnc.socket \
