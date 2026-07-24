@@ -15,14 +15,20 @@ import (
 const ImageAPIVersion = "discobox.dev/image/v1"
 
 // ImageMetadata is the full non-secret payload a harness image declares: env
-// defaults, declarative volumes, and the harness contract. It is the sole
-// carrier of image-owned data, projected into ImageLabel; there is no
-// separate baked-in file for it.
+// defaults, declarative volumes, supplementary OS groups the sandbox user
+// needs, and the harness contract. It is the sole carrier of image-owned
+// data, projected into ImageLabel; there is no separate baked-in file for it.
 type ImageMetadata struct {
 	APIVersion string            `json:"apiVersion"`
 	Env        map[string]string `json:"env,omitempty"`
 	Volumes    []Volume          `json:"volumes,omitempty"`
-	Harness    *Image            `json:"harness,omitempty"`
+	// AdditionalGroups names OS groups (already present in the image, e.g.
+	// "docker" from the docker-ce package) the sandbox user is added to at
+	// boot, alongside its own primary group. An image needs this when a
+	// tool it ships (like the Docker CLI) checks group membership rather
+	// than relying solely on the sudo access every sandbox user already has.
+	AdditionalGroups []string `json:"additionalGroups,omitempty"`
+	Harness          *Image   `json:"harness,omitempty"`
 }
 
 // VolumeKind selects which primary volume backs a declared path.

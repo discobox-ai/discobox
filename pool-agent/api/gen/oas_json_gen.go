@@ -3997,9 +3997,15 @@ func (s *ResolvedHarnessConfig) encodeFields(e *jx.Encoder) {
 			s.Volumes.Encode(e)
 		}
 	}
+	{
+		if s.AdditionalGroups.Set {
+			e.FieldStart("additionalGroups")
+			s.AdditionalGroups.Encode(e)
+		}
+	}
 }
 
-var jsonFieldsNameOfResolvedHarnessConfig = [9]string{
+var jsonFieldsNameOfResolvedHarnessConfig = [10]string{
 	0: "files",
 	1: "id",
 	2: "name",
@@ -4009,6 +4015,7 @@ var jsonFieldsNameOfResolvedHarnessConfig = [9]string{
 	6: "configCommand",
 	7: "env",
 	8: "volumes",
+	9: "additionalGroups",
 }
 
 // Decode decodes ResolvedHarnessConfig from json.
@@ -4113,6 +4120,16 @@ func (s *ResolvedHarnessConfig) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"volumes\"")
+			}
+		case "additionalGroups":
+			if err := func() error {
+				s.AdditionalGroups.Reset()
+				if err := s.AdditionalGroups.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"additionalGroups\"")
 			}
 		default:
 			return errors.Errorf("unexpected field %q", k)

@@ -9,6 +9,12 @@ components:
                     format: uri
                     readOnly: true
                     type: string
+                additionalGroups:
+                    description: Supplementary OS groups (already present in the image, e.g. "docker") the sandbox user is added to at boot, declared by the registered image label.
+                    items:
+                        type: string
+                    nullable: true
+                    type: array
                 builtIn:
                     description: True for the included harnesses seeded by the server. Built-in configs track their image and cannot be deleted.
                     type: boolean

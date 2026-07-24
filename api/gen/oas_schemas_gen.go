@@ -1820,6 +1820,9 @@ func (s *GitSourceWorkspaceMode) UnmarshalText(data []byte) error {
 type HarnessConfig struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
+	// Supplementary OS groups (already present in the image, e.g. "docker") the sandbox user is added to
+	// at boot, declared by the registered image label.
+	AdditionalGroups OptNilStringArray `json:"additionalGroups"`
 	// True for the included harnesses seeded by the server. Built-in configs track their image and
 	// cannot be deleted.
 	BuiltIn bool `json:"builtIn"`
@@ -1869,6 +1872,11 @@ type HarnessConfig struct {
 // GetSchema returns the value of Schema.
 func (s *HarnessConfig) GetSchema() OptURI {
 	return s.Schema
+}
+
+// GetAdditionalGroups returns the value of AdditionalGroups.
+func (s *HarnessConfig) GetAdditionalGroups() OptNilStringArray {
+	return s.AdditionalGroups
 }
 
 // GetBuiltIn returns the value of BuiltIn.
@@ -1974,6 +1982,11 @@ func (s *HarnessConfig) GetVolumes() OptNilHarnessVolumeArray {
 // SetSchema sets the value of Schema.
 func (s *HarnessConfig) SetSchema(val OptURI) {
 	s.Schema = val
+}
+
+// SetAdditionalGroups sets the value of AdditionalGroups.
+func (s *HarnessConfig) SetAdditionalGroups(val OptNilStringArray) {
+	s.AdditionalGroups = val
 }
 
 // SetBuiltIn sets the value of BuiltIn.

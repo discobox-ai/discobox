@@ -2591,15 +2591,16 @@ func (s *PoolSyncRequest) SetKnownPoolIds(val []string) {
 
 // Ref: #/components/schemas/ResolvedHarnessConfig
 type ResolvedHarnessConfig struct {
-	Files           OptNilHarnessConfigFileArray   `json:"files"`
-	ID              string                         `json:"id"`
-	Name            string                         `json:"name"`
-	Description     OptString                      `json:"description"`
-	RunCommand      OptNilStringArray              `json:"runCommand"`
-	RelaunchCommand OptNilStringArray              `json:"relaunchCommand"`
-	ConfigCommand   OptNilStringArray              `json:"configCommand"`
-	Env             OptNilResolvedHarnessConfigEnv `json:"env"`
-	Volumes         OptNilHarnessVolumeArray       `json:"volumes"`
+	Files            OptNilHarnessConfigFileArray   `json:"files"`
+	ID               string                         `json:"id"`
+	Name             string                         `json:"name"`
+	Description      OptString                      `json:"description"`
+	RunCommand       OptNilStringArray              `json:"runCommand"`
+	RelaunchCommand  OptNilStringArray              `json:"relaunchCommand"`
+	ConfigCommand    OptNilStringArray              `json:"configCommand"`
+	Env              OptNilResolvedHarnessConfigEnv `json:"env"`
+	Volumes          OptNilHarnessVolumeArray       `json:"volumes"`
+	AdditionalGroups OptNilStringArray              `json:"additionalGroups"`
 }
 
 // GetFiles returns the value of Files.
@@ -2647,6 +2648,11 @@ func (s *ResolvedHarnessConfig) GetVolumes() OptNilHarnessVolumeArray {
 	return s.Volumes
 }
 
+// GetAdditionalGroups returns the value of AdditionalGroups.
+func (s *ResolvedHarnessConfig) GetAdditionalGroups() OptNilStringArray {
+	return s.AdditionalGroups
+}
+
 // SetFiles sets the value of Files.
 func (s *ResolvedHarnessConfig) SetFiles(val OptNilHarnessConfigFileArray) {
 	s.Files = val
@@ -2690,6 +2696,11 @@ func (s *ResolvedHarnessConfig) SetEnv(val OptNilResolvedHarnessConfigEnv) {
 // SetVolumes sets the value of Volumes.
 func (s *ResolvedHarnessConfig) SetVolumes(val OptNilHarnessVolumeArray) {
 	s.Volumes = val
+}
+
+// SetAdditionalGroups sets the value of AdditionalGroups.
+func (s *ResolvedHarnessConfig) SetAdditionalGroups(val OptNilStringArray) {
+	s.AdditionalGroups = val
 }
 
 type ResolvedHarnessConfigEnv map[string]string
