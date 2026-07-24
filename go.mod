@@ -351,6 +351,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.6.0 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
+	github.com/tetratelabs/wazero v1.11.0 // indirect
 	github.com/tursodatabase/turso-go-platform-libs v0.6.1 // indirect
 	github.com/yosida95/uritemplate/v3 v3.0.2 // indirect
 	golang.org/x/telemetry v0.0.0-20260625142307-59b4966ccb57 // indirect
