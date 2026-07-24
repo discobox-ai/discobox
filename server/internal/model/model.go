@@ -275,21 +275,22 @@ type ProjectUserKey = SandboxAccessIssuerKey
 // configure flow completes successfully; Deconfigure reverses that by removing
 // the assets the flow created.
 type HarnessConfig struct {
-	ID              string                `gorm:"primaryKey;type:text" json:"id" doc:"Stable harness config ID"`
-	ProjectID       string                `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_harness_config_project_name,priority:1" json:"projectId" doc:"Project ID"`
-	Slug            string                `gorm:"column:slug;not null;type:text;default:'';index" json:"slug" doc:"Stable, URL-safe identifier used to select the harness config (e.g. codex). Unique within the project." pattern:"^[a-z0-9][a-z0-9-]*$"`
-	BuiltIn         bool                  `gorm:"column:built_in;not null;default:false" json:"builtIn" doc:"True for the included harnesses seeded by the server. Built-in configs track their image and cannot be deleted."`
-	Configured      bool                  `gorm:"column:configured;not null;default:false" json:"configured" doc:"True once the configure flow completed successfully. Only configured harnesses can be selected to run."`
-	Name            string                `gorm:"column:name;not null;type:text;uniqueIndex:idx_harness_config_project_name,priority:2" json:"name" doc:"Harness config name" maxLength:"200"`
-	Image           string                `gorm:"column:image;not null;type:text;default:''" json:"image" doc:"Harness-specific sandbox image"`
-	ImageDigest     string                `gorm:"column:image_digest;not null;type:text;default:''" json:"imageDigest,omitempty" doc:"Content digest observed when the harness image was registered"`
-	RunCommand      []string              `gorm:"column:run_command;type:text;serializer:json" json:"runCommand,omitempty" doc:"Run argv snapshotted from the registered image label."`
-	RelaunchCommand []string              `gorm:"column:relaunch_command;type:text;serializer:json" json:"relaunchCommand,omitempty" doc:"Relaunch argv snapshotted from the registered image label."`
-	ConfigCommand   []string              `gorm:"column:config_command;type:text;serializer:json" json:"configCommand,omitempty" doc:"Config-mode argv snapshotted from the registered image label."`
-	Files           []HarnessConfigFile   `gorm:"column:files;type:text;serializer:json" json:"files,omitempty" doc:"Non-secret files declared by the image label. Baseline only; the configure flow's files live in ConfiguredFiles."`
-	Secrets         []HarnessConfigSecret `gorm:"column:secrets;type:text;serializer:json" json:"secrets,omitempty" doc:"Environment-variable secret declarations snapshotted from the image label."`
-	Env             map[string]string     `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Default environment variables snapshotted from the image label."`
-	Volumes         []harness.Volume      `gorm:"column:volumes;type:text;serializer:json" json:"volumes,omitempty" doc:"Declarative volumes snapshotted from the image label."`
+	ID               string                `gorm:"primaryKey;type:text" json:"id" doc:"Stable harness config ID"`
+	ProjectID        string                `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_harness_config_project_name,priority:1" json:"projectId" doc:"Project ID"`
+	Slug             string                `gorm:"column:slug;not null;type:text;default:'';index" json:"slug" doc:"Stable, URL-safe identifier used to select the harness config (e.g. codex). Unique within the project." pattern:"^[a-z0-9][a-z0-9-]*$"`
+	BuiltIn          bool                  `gorm:"column:built_in;not null;default:false" json:"builtIn" doc:"True for the included harnesses seeded by the server. Built-in configs track their image and cannot be deleted."`
+	Configured       bool                  `gorm:"column:configured;not null;default:false" json:"configured" doc:"True once the configure flow completed successfully. Only configured harnesses can be selected to run."`
+	Name             string                `gorm:"column:name;not null;type:text;uniqueIndex:idx_harness_config_project_name,priority:2" json:"name" doc:"Harness config name" maxLength:"200"`
+	Image            string                `gorm:"column:image;not null;type:text;default:''" json:"image" doc:"Harness-specific sandbox image"`
+	ImageDigest      string                `gorm:"column:image_digest;not null;type:text;default:''" json:"imageDigest,omitempty" doc:"Content digest observed when the harness image was registered"`
+	RunCommand       []string              `gorm:"column:run_command;type:text;serializer:json" json:"runCommand,omitempty" doc:"Run argv snapshotted from the registered image label."`
+	RelaunchCommand  []string              `gorm:"column:relaunch_command;type:text;serializer:json" json:"relaunchCommand,omitempty" doc:"Relaunch argv snapshotted from the registered image label."`
+	ConfigCommand    []string              `gorm:"column:config_command;type:text;serializer:json" json:"configCommand,omitempty" doc:"Config-mode argv snapshotted from the registered image label."`
+	Files            []HarnessConfigFile   `gorm:"column:files;type:text;serializer:json" json:"files,omitempty" doc:"Non-secret files declared by the image label. Baseline only; the configure flow's files live in ConfiguredFiles."`
+	Secrets          []HarnessConfigSecret `gorm:"column:secrets;type:text;serializer:json" json:"secrets,omitempty" doc:"Environment-variable secret declarations snapshotted from the image label."`
+	Env              map[string]string     `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Default environment variables snapshotted from the image label."`
+	Volumes          []harness.Volume      `gorm:"column:volumes;type:text;serializer:json" json:"volumes,omitempty" doc:"Declarative volumes snapshotted from the image label."`
+	AdditionalGroups []string              `gorm:"column:additional_groups;type:text;serializer:json" json:"additionalGroups,omitempty" doc:"Supplementary OS groups snapshotted from the image label."`
 	// ConfiguredFiles and ConfiguredSecretIDs record what the configure flow
 	// produced, kept separate from the image-declared baseline so Deconfigure can
 	// remove exactly what it created and leave the baseline intact.
@@ -568,6 +569,7 @@ type Sandbox struct {
 	ModelReasoningLevel  *string               `gorm:"column:model_reasoning_level;type:text" json:"modelReasoningLevel,omitempty" doc:"Model reasoning level the harness should use"`
 	Prompt               []string              `gorm:"column:prompt;type:text;serializer:json" json:"prompt,omitempty" doc:"Prompt the harness should run, passed as argv to preserve the caller's exact tokens"`
 	Image                string                `gorm:"column:image;type:text" json:"image,omitempty" doc:"Sandbox base image"`
+	ImageDigest          string                `gorm:"column:image_digest;not null;type:text;default:''" json:"imageDigest,omitempty" doc:"Config digest of the image this sandbox is pinned to. Written at create and by an upgrade, never by a restart; the pool host rebuilds any container that does not match it (ADR 0016)."`
 	Env                  map[string]string     `gorm:"column:env;type:text;serializer:json" json:"env,omitempty" doc:"Environment variables available to sandbox-agent terminals and execs by default"`
 	Source               *GitSource            `gorm:"column:source;type:text;serializer:json" json:"source,omitempty" doc:"Primary Git source to materialize in the sandbox"`
 	SourceRoot           *string               `gorm:"column:source_root;type:text;index" json:"sourceRoot,omitempty" doc:"Normalized repository identity of the primary source: local repository root path, or remote URL. Derived from Source; used to list the sandboxes belonging to a repository."`
