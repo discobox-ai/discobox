@@ -313,7 +313,7 @@ func (a *App) runHarnessConfigure(ctx context.Context, client *apiclientgen.Clie
 	// Attaching the virtual primary exec is what launches the configure command,
 	// so there is no terminal to wait for first.
 	fmt.Fprintf(stderr, "Attaching to configure terminal (answer any prompts)\n")
-	if err := a.attachSandboxTerminal(ctx, projectID, sandbox.ID, primaryExecID, stdin, stdout, stderr); err != nil {
+	if err := a.attachSandboxTerminal(ctx, projectID, sandbox.ID, primaryExecID, execAttachOptions{}, stdin, stdout, stderr); err != nil {
 		return nil, fmt.Errorf("attach configure terminal: %w", err)
 	}
 

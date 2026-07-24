@@ -106,6 +106,17 @@ session, `execstream/client`.
 - Connection lifecycle notifications are transport events, not terminal output.
   CLI attach ignores them; the TUI adapter maps them into its `TerminalEvent`
   stream.
+- Resumable attaches can subscribe to timing events without parsing terminal
+  output. A websocket heartbeat measures the physical proxy path to the
+  sandbox-agent; an action-acknowledgement sample measures from client
+  acceptance until the exec host applied the positioned input at the PTY
+  boundary. These are separate sources because a healthy websocket alone does
+  not prove the shim is applying input promptly. Terminal output remains opaque:
+  a low delivery RTT can exonerate the attach path, but the client cannot
+  reliably correlate an arbitrary output frame to one keystroke or claim that
+  the application echoed it. Follow the status interpretation and hysteresis
+  policy in [`execstream/resume/DESIGN.md`](../execstream/resume/DESIGN.md)
+  when exposing these events in a CLI or TUI.
 
 ## Signals and Job Control
 

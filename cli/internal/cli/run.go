@@ -96,7 +96,7 @@ func (a *App) attachRunSandbox(cmd *cobra.Command, client *apiclientgen.Client, 
 	// Replay the primary terminal's saved history first: the sandbox-agent
 	// launches and drives it before run connects, so replay shows the session
 	// from the start rather than only output produced after the attach.
-	return a.attachSandboxTerminal(ctx, projectID, sandbox.ID, terminal.ID, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+	return a.attachSandboxTerminal(ctx, projectID, sandbox.ID, terminal.ID, execAttachOptions{}, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 // waitForPrimaryTerminal polls the sandbox terminals until the primary

@@ -348,7 +348,7 @@ func (a *App) attachSandboxExec(ctx context.Context, projectID, sandboxID, execI
 	defer conn.Close()
 
 	session := client.New(client.Options{
-		Conn:    &directAttachFrames{conn: conn},
+		Conn:    conn,
 		Stdin:   stdin,
 		Stdout:  stdout,
 		Stderr:  stderr,
@@ -395,7 +395,7 @@ func (a *App) execAttachError(ctx context.Context, projectID, sandboxID, execID 
 	}
 }
 
-func (a *App) openSandboxExecAttach(ctx context.Context, projectID, sandboxID, execID string, replay bool) (io.ReadWriteCloser, error) {
+func (a *App) openSandboxExecAttach(ctx context.Context, projectID, sandboxID, execID string, replay bool) (execstream.Conn, error) {
 	baseURL, httpClient, err := a.httpClient()
 	if err != nil {
 		return nil, err
@@ -431,6 +431,10 @@ func (a *App) openSandboxExecAttach(ctx context.Context, projectID, sandboxID, e
 		return nil, fmt.Errorf("attach exec: %w", err)
 	}
 	netConn := websocket.NetConn(ctx, conn, websocket.MessageBinary)
+	frames := &websocketAttachFrames{
+		directAttachFrames: &directAttachFrames{conn: netConn},
+		socket:             conn,
+	}
 	go func() {
 		if err := pingAttachWebSocket(ctx, conn); err != nil {
 			// The server side is gone; close the conn so the attach session's
@@ -438,21 +442,31 @@ func (a *App) openSandboxExecAttach(ctx context.Context, projectID, sandboxID, e
 			_ = netConn.Close()
 		}
 	}()
-	return netConn, nil
+	return frames, nil
+}
+
+// execAttachOptions tunes a reconnecting attach.
+type execAttachOptions struct {
+	// replay repaints the session's current screen on connect.
+	replay bool
+	// event receives transport lifecycle changes.
+	event func(resume.Event)
+	// timing receives transport heartbeat and positioned-action RTT samples from
+	// the shared resumable stream.
+	timing resume.TimingOptions
 }
 
 func (a *App) openReconnectingSandboxExecAttach(
 	ctx context.Context,
 	projectID, sandboxID, execID string,
-	replay bool,
-	event func(resume.Event),
+	opts execAttachOptions,
 ) (*resume.Conn, error) {
 	dial := func(ctx context.Context) (execstream.Conn, error) {
-		conn, err := a.openSandboxExecAttach(ctx, projectID, sandboxID, execID, replay)
+		conn, err := a.openSandboxExecAttach(ctx, projectID, sandboxID, execID, opts.replay)
 		if err != nil {
 			return nil, err
 		}
-		return &directAttachFrames{conn: conn}, nil
+		return conn, nil
 	}
 	conn, err := dial(ctx)
 	if err != nil {
@@ -462,9 +476,10 @@ func (a *App) openReconnectingSandboxExecAttach(
 		return a.sandboxExecAttachDone(ctx, projectID, sandboxID, execID)
 	}
 	return resume.New(ctx, conn, resume.Options{
-		Dial:  dial,
-		Done:  done,
-		Event: event,
+		Dial:   dial,
+		Done:   done,
+		Event:  opts.event,
+		Timing: opts.timing,
 	})
 }
 
@@ -798,3 +813,15 @@ func (c *directAttachFrames) WriteFrame(typ byte, payload []byte) error {
 }
 
 func (c *directAttachFrames) Close() error { return c.conn.Close() }
+
+// websocketAttachFrames adds the websocket's native control ping/pong to the
+// framed stream. The resumable library consumes this optional capability for
+// timing events without putting diagnostic bytes into the terminal protocol.
+type websocketAttachFrames struct {
+	*directAttachFrames
+	socket *websocket.Conn
+}
+
+func (c *websocketAttachFrames) Probe(ctx context.Context) error {
+	return c.socket.Ping(ctx)
+}

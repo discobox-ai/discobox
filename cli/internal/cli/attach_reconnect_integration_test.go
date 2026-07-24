@@ -87,9 +87,14 @@ func TestOpenReconnectingSandboxExecAttachPreservesInputAcrossWebSocketReplaceme
 	defer cancel()
 	app := &App{serverURL: server.URL, noStart: true}
 	events := make(chan resume.Event, 4)
-	conn, err := app.openReconnectingSandboxExecAttach(ctx, "project-1", "sandbox-1", "exec-1", true, func(event resume.Event) {
+	timings := make(chan resume.TimingEvent, 16)
+	conn, err := app.openReconnectingSandboxExecAttach(ctx, "project-1", "sandbox-1", "exec-1", execAttachOptions{replay: true, event: func(event resume.Event) {
 		events <- event
-	})
+	}, timing: resume.TimingOptions{
+		Observe:           func(event resume.TimingEvent) { timings <- event },
+		HeartbeatInterval: 10 * time.Millisecond,
+		HeartbeatTimeout:  time.Second,
+	}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,6 +169,29 @@ func TestOpenReconnectingSandboxExecAttachPreservesInputAcrossWebSocketReplaceme
 	default:
 	}
 
+	// Keep the websocket reader active while Ping waits for its Pong. Real
+	// attach sessions continuously read output; this extra read recreates that
+	// steady state after readResult consumed the first output frame.
+	heartbeatReadDone := make(chan error, 1)
+	go func() {
+		_, err := conn.ReadFrame()
+		heartbeatReadDone <- err
+	}()
+	var gotHeartbeat, gotInputAcknowledgement bool
+	timingDeadline := time.After(time.Second)
+	for !gotHeartbeat || !gotInputAcknowledgement {
+		select {
+		case event := <-timings:
+			switch event.Source {
+			case resume.TimingHeartbeat:
+				gotHeartbeat = event.Err == nil && event.RoundTrip > 0
+			case resume.TimingActionAcknowledgement:
+				gotInputAcknowledgement = event.Input() && event.RoundTrip > 0
+			}
+		case <-timingDeadline:
+			t.Fatalf("timing events: heartbeat=%t input acknowledgement=%t", gotHeartbeat, gotInputAcknowledgement)
+		}
+	}
 }
 
 func TestAttachWebSocketKeepaliveClosesUnresponsivePeerAndUnblocksRead(t *testing.T) {

@@ -99,8 +99,13 @@ flowchart TD
   stream: the wire protocol (`execstream/frame`), the duplex `execstream.Conn`
   seam, resumable positioned delivery (`execstream/resume`), and both roles:
   `execstream/host` serves a process's output to attached clients, and
-  `execstream/client` attaches a caller's stdio to a remote process. The
-  platform halves stay with their platform — the PTY and
+  `execstream/client` attaches a caller's stdio to a remote process.
+  `execstream.Prober` is the optional physical-transport timing capability;
+  `resume` combines its heartbeat RTT with positioned-action acknowledgement
+  RTT and emits transport-neutral timing events for frontends. See
+  [`execstream/resume/DESIGN.md`](execstream/resume/DESIGN.md) for the consumer
+  contract and status interpretation. The platform halves stay with their
+  platform — the PTY and
   screen emulator in `sandbox-agent`, terminal control in the CLI — so the
   shared module never grows a terminal dependency. See
   [ADR 0008](docs/adr/0008-attach-stream-packages.md).

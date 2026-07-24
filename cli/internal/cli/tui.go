@@ -250,7 +250,7 @@ const primaryExecID = "primary"
 // creates a new exec, and a session that ended is revived on attach.
 func (d *apiDataSource) OpenTerminal(ctx context.Context, sandboxID string, cols, rows int) (tui.Terminal, error) {
 	events := make(chan tui.TerminalEvent, 4)
-	frames, err := d.app.openReconnectingSandboxExecAttach(ctx, d.projectID, sandboxID, primaryExecID, true, func(event resume.Event) {
+	frames, err := d.app.openReconnectingSandboxExecAttach(ctx, d.projectID, sandboxID, primaryExecID, execAttachOptions{replay: true, event: func(event resume.Event) {
 		var state tui.TerminalConnectionState
 		switch event.State {
 		case resume.ConnectionReconnecting:
@@ -264,7 +264,7 @@ func (d *apiDataSource) OpenTerminal(ctx context.Context, sandboxID string, cols
 		case events <- tui.TerminalEvent{State: state}:
 		default:
 		}
-	})
+	}})
 	if err != nil {
 		return nil, err
 	}
@@ -282,7 +282,7 @@ func (d *apiDataSource) OpenTerminal(ctx context.Context, sandboxID string, cols
 // agent resumes a stopped session on attach.
 func (d *apiDataSource) AttachTerminal(ctx context.Context, sandboxID string, stdin io.Reader, stdout, stderr io.Writer) error {
 	fmt.Fprintln(stderr, "Attaching to the sandbox terminal (Ctrl-P Ctrl-Q to detach)")
-	return d.app.attachSandboxTerminal(ctx, d.projectID, sandboxID, primaryExecID, stdin, stdout, stderr)
+	return d.app.attachSandboxTerminal(ctx, d.projectID, sandboxID, primaryExecID, execAttachOptions{}, stdin, stdout, stderr)
 }
 
 // framedTerminal presents the framed attach connection as an io.ReadWriteCloser

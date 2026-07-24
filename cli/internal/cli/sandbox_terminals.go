@@ -110,7 +110,7 @@ func (a *App) newSandboxTerminalCreateCommand(sandboxID *string) *cobra.Command 
 				return err
 			}
 			if opts.attach {
-				return a.attachSandboxTerminal(cmd.Context(), projectID, resolvedSandboxID, terminal.ID, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+				return a.attachSandboxTerminal(cmd.Context(), projectID, resolvedSandboxID, terminal.ID, execAttachOptions{}, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 			}
 			started, err := a.startSandboxExec(cmd.Context(), projectID, resolvedSandboxID, terminal.ID)
 			if err != nil {
@@ -142,7 +142,7 @@ func (a *App) newSandboxTerminalAttachCommand(sandboxID *string) *cobra.Command 
 			if err != nil {
 				return err
 			}
-			return a.attachSandboxTerminal(cmd.Context(), projectID, resolvedSandboxID, terminalID, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+			return a.attachSandboxTerminal(cmd.Context(), projectID, resolvedSandboxID, terminalID, execAttachOptions{}, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 		},
 	}
 }
@@ -319,8 +319,9 @@ func (a *App) writeSandboxTerminals(cmd *cobra.Command, terminals []apimodel.San
 
 // attachSandboxTerminal attaches to a terminal exec over the exec websocket with
 // scrollback replay and Ctrl-P Ctrl-Q detach handling.
-func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, terminalID string, stdin io.Reader, stdout, stderr io.Writer) error {
-	frames, err := a.openReconnectingSandboxExecAttach(ctx, projectID, sandboxID, terminalID, true, nil)
+func (a *App) attachSandboxTerminal(ctx context.Context, projectID, sandboxID, terminalID string, opts execAttachOptions, stdin io.Reader, stdout, stderr io.Writer) error {
+	opts.replay = true
+	frames, err := a.openReconnectingSandboxExecAttach(ctx, projectID, sandboxID, terminalID, opts)
 	if err != nil {
 		return a.execAttachError(ctx, projectID, sandboxID, terminalID, err)
 	}

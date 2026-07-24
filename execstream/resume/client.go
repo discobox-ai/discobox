@@ -36,6 +36,9 @@ type Options struct {
 	// Event receives transport lifecycle changes. They are deliberately separate
 	// from terminal output.
 	Event func(Event)
+	// Timing enables transport-heartbeat and positioned-action RTT events. It is
+	// disabled when Timing.Observe is nil.
+	Timing TimingOptions
 	// MaxPendingBytes bounds unacknowledged action payload retained client-side.
 	// Zero uses DefaultMaxPendingBytes.
 	MaxPendingBytes int
@@ -46,9 +49,11 @@ type Options struct {
 const DefaultMaxPendingBytes = 256 * 1024
 
 type pendingAction struct {
-	position uint64
-	wire     []byte
-	size     int
+	position   uint64
+	typ        byte
+	wire       []byte
+	size       int
+	acceptedAt time.Time
 }
 
 // Conn is one logical resumable execstream connection. It decorates replaceable
@@ -59,6 +64,7 @@ type Conn struct {
 	dial   func(context.Context) (execstream.Conn, error)
 	done   func(context.Context) (bool, error)
 	event  func(Event)
+	timing timingConfig
 	token  []byte
 
 	mu              sync.Mutex
@@ -84,6 +90,10 @@ func New(ctx context.Context, initial execstream.Conn, opts Options) (*Conn, err
 	if initial == nil {
 		return nil, errors.New("initial exec stream connection is required")
 	}
+	timing, err := resolveTimingOptions(opts.Timing)
+	if err != nil {
+		return nil, err
+	}
 	token := make([]byte, tokenSize)
 	if _, err := rand.Read(token); err != nil {
 		return nil, fmt.Errorf("generate exec stream session token: %w", err)
@@ -103,6 +113,7 @@ func New(ctx context.Context, initial execstream.Conn, opts Options) (*Conn, err
 		dial:            opts.Dial,
 		done:            opts.Done,
 		event:           opts.Event,
+		timing:          timing,
 		token:           token,
 		maxPendingBytes: maxPendingBytes,
 		changed:         make(chan struct{}),
@@ -114,7 +125,7 @@ func New(ctx context.Context, initial execstream.Conn, opts Options) (*Conn, err
 		_ = c.closeTransports()
 	}()
 	c.writeMu.Lock()
-	err := c.establishLocked(initial)
+	err = c.establishLocked(initial)
 	c.writeMu.Unlock()
 	if err != nil {
 		contextErr := c.ctx.Err()
@@ -124,6 +135,9 @@ func New(ctx context.Context, initial execstream.Conn, opts Options) (*Conn, err
 			return nil, contextErr
 		}
 		return nil, err
+	}
+	if c.timing.observe != nil {
+		go c.observeHeartbeats()
 	}
 	return c, nil
 }
@@ -228,8 +242,15 @@ func (c *Conn) writeAction(typ byte, payload []byte) error {
 			c.writeMu.Unlock()
 			return err
 		}
+		acceptedAt := c.timingNow()
 		c.nextPosition = position
-		c.pending = append(c.pending, pendingAction{position: position, wire: wire, size: size})
+		c.pending = append(c.pending, pendingAction{
+			position:   position,
+			typ:        typ,
+			wire:       wire,
+			size:       size,
+			acceptedAt: acceptedAt,
+		})
 		c.pendingBytes += size
 		conn := c.conn
 		c.mu.Unlock()
@@ -434,16 +455,21 @@ func (c *Conn) popIncoming() (frame.Frame, bool) {
 
 func (c *Conn) acknowledge(position uint64) error {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	if position < c.lastAck {
+		c.mu.Unlock()
 		return nil
 	}
 	if position > c.nextPosition {
+		c.mu.Unlock()
 		return fmt.Errorf("%w: host acknowledged position %d beyond sent position %d", ErrRejected, position, c.nextPosition)
 	}
 	c.lastAck = position
 	remove := 0
+	var acknowledged []pendingAction
 	for remove < len(c.pending) && c.pending[remove].position <= position {
+		if c.timing.observe != nil {
+			acknowledged = append(acknowledged, c.pending[remove])
+		}
 		c.pendingBytes -= c.pending[remove].size
 		remove++
 	}
@@ -452,7 +478,80 @@ func (c *Conn) acknowledge(position uint64) error {
 		c.pending = c.pending[:len(c.pending)-remove]
 		c.notifyLocked()
 	}
+	pendingBytes := c.pendingBytes
+	c.mu.Unlock()
+	acknowledgedAt := c.timingNow()
+	for _, action := range acknowledged {
+		c.emitTiming(TimingEvent{
+			At:           acknowledgedAt,
+			Source:       TimingActionAcknowledgement,
+			RoundTrip:    acknowledgedAt.Sub(action.acceptedAt),
+			Position:     action.position,
+			ActionType:   action.typ,
+			PayloadBytes: action.size - actionHeaderLen,
+			PendingBytes: pendingBytes,
+		})
+	}
 	return nil
+}
+
+func (c *Conn) timingNow() time.Time {
+	if c.timing.observe == nil {
+		return time.Time{}
+	}
+	return time.Now()
+}
+
+func (c *Conn) emitTiming(event TimingEvent) {
+	if c.timing.observe == nil {
+		return
+	}
+	event.Slow = event.Err != nil || event.RoundTrip >= c.timing.slowAfter
+	c.timing.observe(event)
+}
+
+func (c *Conn) observeHeartbeats() {
+	ticker := time.NewTicker(c.timing.heartbeatInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-ticker.C:
+		}
+
+		c.mu.Lock()
+		conn := c.conn
+		c.mu.Unlock()
+		prober, ok := conn.(execstream.Prober)
+		if !ok {
+			continue
+		}
+
+		started := time.Now()
+		probeCtx, cancel := context.WithTimeout(c.ctx, c.timing.heartbeatTimeout)
+		err := prober.Probe(probeCtx)
+		cancel()
+		finished := time.Now()
+		if c.ctx.Err() != nil {
+			return
+		}
+
+		// A late result from the physical connection that was replaced while its
+		// probe was in flight says nothing about the current attach.
+		c.mu.Lock()
+		current := c.conn == conn
+		c.mu.Unlock()
+		if !current {
+			continue
+		}
+		c.emitTiming(TimingEvent{
+			At:        finished,
+			Source:    TimingHeartbeat,
+			RoundTrip: finished.Sub(started),
+			Err:       err,
+		})
+	}
 }
 
 func (c *Conn) waitForSpace(size int) error {
