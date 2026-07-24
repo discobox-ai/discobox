@@ -25,6 +25,7 @@ type Config struct {
 	User                User     `json:"user"`
 
 	Env         map[string]string `json:"env,omitempty"`
+	ProxyEnvs   []string          `json:"proxyEnvs,omitempty"`
 	HarnessMode string            `json:"harnessMode,omitempty"`
 
 	Files                   []File           `json:"files,omitempty"`
@@ -89,6 +90,7 @@ func Effective(doc Document) (Config, Provenance) {
 	}
 
 	cfg.Env = mergeEnv(doc.Image.Env, doc.Runtime.Env)
+	cfg.ProxyEnvs = cloneStrings(doc.Runtime.ProxyEnvs)
 	cfg.Files = mergeFiles(doc.Image.Files, doc.Runtime.Files, doc.Project)
 
 	if doc.Project != nil {

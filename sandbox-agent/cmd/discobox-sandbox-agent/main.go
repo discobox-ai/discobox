@@ -63,6 +63,10 @@ func run(args []string) int {
 		slog.Error("load config", "error", err)
 		return 1
 	}
+	if err := config.WriteProxyEnv(cfg); err != nil {
+		slog.Error("write proxy env", "error", err)
+		return 1
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := server.Serve(ctx, slog.Default(), server.ConfigFromHarnessConfig(cfg)); err != nil && !errors.Is(err, context.Canceled) {
