@@ -416,6 +416,50 @@ func TestManagerReconcilesDurableRecordWithoutRuntimeFile(t *testing.T) {
 	}
 }
 
+// Attaching an exec whose command ended and whose shim is gone must fail fast
+// with ErrSessionGone rather than burning the dial timeout and reporting a bare
+// socket ENOENT, which says nothing about what happened to the command.
+func TestManagerAttachEndedExecWithoutShim(t *testing.T) {
+	manager, err := NewManagerWithConfig(ManagerConfig{
+		WorkingRoot: "/workspace",
+		RuntimeDir:  t.TempDir(),
+		Units:       &fakeUnitManager{},
+		Audit:       newRecordingAudit(),
+	})
+	if err != nil {
+		t.Fatalf("new manager: %v", err)
+	}
+	created, err := manager.Create(context.Background(), CreateRequest{Command: []string{"codex"}})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	exited := created
+	exited.Status = StatusExited
+	code := int64(0)
+	exited.ExitCode = &code
+	if err := writeRuntime(created.RuntimePath, exited); err != nil {
+		t.Fatalf("write runtime: %v", err)
+	}
+
+	err = manager.Attach(context.Background(), nil, nil, created.ID, true)
+	if !errors.Is(err, ErrSessionGone) {
+		t.Fatalf("attach ended exec err = %v, want ErrSessionGone", err)
+	}
+	if _, err := manager.ConnectOneShot(context.Background(), created.ID); !errors.Is(err, ErrSessionGone) {
+		t.Fatalf("one-shot attach ended exec err = %v, want ErrSessionGone", err)
+	}
+
+	// A live shim socket still means replayable output, so the attach proceeds.
+	socket, err := os.Create(exited.SocketPath)
+	if err != nil {
+		t.Fatalf("create socket: %v", err)
+	}
+	_ = socket.Close()
+	if err := checkAttachable(exited); err != nil {
+		t.Fatalf("attach with shim socket present err = %v, want nil", err)
+	}
+}
+
 func (m *fakeUnitManager) Status(context.Context, string) (UnitStatus, error) {
 	return UnitStatus{}, errors.New("not found")
 }

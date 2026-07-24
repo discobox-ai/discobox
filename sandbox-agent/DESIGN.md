@@ -86,7 +86,12 @@ plus each harness folder's Dockerfile, `image.json`, and configure script.
 Harness-specific changes rebuild only that harness image; shared changes rebuild
 the base and all affected harness images. Every successful build writes its
 content-addressed development image reference to `.env`; pool and sandbox base
-images also write their image digest.
+images also write their image digest. The watcher atomically writes the complete
+reference-to-image-ID set as `.tmp/discobox-dev-images.json` and enables
+development image synchronization in `.env`. On restart the server converges
+that manifest onto every Docker daemon before reconciling its pool-agent
+container, so local-VM, cloud, exec, and host-Docker providers use the same
+development images without a registry.
 
 - Every sandbox has a default terminal: on sandbox start the harness always
   launches exactly one primary terminal (`terminal.Service.EnsurePrimary`), so
@@ -99,6 +104,16 @@ images also write their image digest.
   and the prompt is not passed, since a shell would run it as a command. The
   launched exec is tagged `primary` in metadata by the sandbox-agent; that tag
   cannot be requested through the terminal create API.
+- `"primary"` (`terminal.PrimaryExecID`) is a virtual exec id accepted anywhere
+  the exec API takes one. It always names the sandbox's current primary
+  terminal; attach and start resolve it through `terminal.ResolvePrimary`, which
+  relaunches a stopped primary, while reads (get, logs, events, delete) resolve
+  it read-only so a client's done-check observes a real exit instead of
+  triggering a resume. A real exec id never relaunches: an id names one session,
+  and once the shim behind it is gone the attach fails with `execs.ErrSessionGone`
+  → `409`, whose message reports the exit status and points at `"primary"` when
+  the dead exec was the primary terminal. The control plane proxies exec ids
+  opaquely, so clients just send this value.
 - There is one shim (`execs/shim.go`) and one framed attach mechanism. Attacher
   tracking, frame writes, output broadcast, exit frame emission, and pending
   resize state belong to `execstream/host` in the root module; keep Unix socket

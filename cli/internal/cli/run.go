@@ -93,10 +93,14 @@ func (a *App) attachRunSandbox(cmd *cobra.Command, client *apiclientgen.Client, 
 		return err
 	}
 	fmt.Fprintf(stderr, "Attaching to terminal %s (Ctrl-P Ctrl-Q to detach)\n", terminal.ID)
-	// Replay the primary terminal's saved history first: the sandbox-agent
-	// launches and drives it before run connects, so replay shows the session
-	// from the start rather than only output produced after the attach.
-	return a.attachSandboxTerminal(ctx, projectID, sandbox.ID, terminal.ID, execAttachOptions{}, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
+	// Attach the virtual primary id rather than the id just polled for: the
+	// sandbox-agent resolves it to whichever exec is currently primary and
+	// relaunches a stopped one, so a primary that ended between the wait and the
+	// attach is resumed instead of failing on a dead session. Replay is on, so the
+	// sandbox-agent's own driving of the terminal before run connects is shown
+	// from the start rather than only output produced after the attach. If the
+	// sandbox itself stops, the attach ends — run does not restart the sandbox.
+	return a.attachSandboxTerminal(ctx, projectID, sandbox.ID, primaryExecID, execAttachOptions{}, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
 // waitForPrimaryTerminal polls the sandbox terminals until the primary

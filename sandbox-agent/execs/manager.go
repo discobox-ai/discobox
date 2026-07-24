@@ -424,6 +424,9 @@ func (m *Manager) Attach(ctx context.Context, w http.ResponseWriter, r *http.Req
 	if !ok {
 		return ErrNotFound
 	}
+	if err := checkAttachable(exec); err != nil {
+		return err
+	}
 	_ = m.recordEvent(ctx, id, "exec.attach.opened", "exec attach opened", map[string]any{"unit": exec.Unit})
 	defer func() {
 		_ = m.recordEvent(context.Background(), id, "exec.attach.closed", "exec attach closed", map[string]any{"unit": exec.Unit})
@@ -442,6 +445,9 @@ func (m *Manager) ConnectOneShot(ctx context.Context, id string) (*shimproxy.One
 	if !ok {
 		return nil, ErrNotFound
 	}
+	if err := checkAttachable(exec); err != nil {
+		return nil, err
+	}
 	oneShot, err := shimproxy.ConnectOneShot(ctx, exec.SocketPath, "discobox-sandbox-exec")
 	if err != nil {
 		return nil, err
@@ -451,6 +457,30 @@ func (m *Manager) ConnectOneShot(ctx context.Context, id string) (*shimproxy.One
 }
 
 var ErrNotFound = errors.New("sandbox exec not found")
+
+// ErrSessionGone reports an attach to an exec that has ended and whose shim is
+// no longer listening, so there is neither a live command to talk to nor
+// buffered output to replay. It is distinct from ErrNotFound: the exec record
+// exists, it is just unattachable, and callers render it as a terminal
+// condition rather than a transient failure to retry.
+var ErrSessionGone = errors.New("sandbox exec session is gone")
+
+// checkAttachable rejects an attach that cannot possibly connect. The shim
+// outlives its command so late attachers can replay output, so a finished exec
+// is still attachable while its socket is there; once the socket is gone the
+// dial would only burn its retry timeout and surface a bare ENOENT.
+func checkAttachable(exec Exec) error {
+	switch exec.Status {
+	case StatusExited, StatusFailed, StatusLost:
+	default:
+		// A created-but-unstarted exec has no socket yet; the dial waits for it.
+		return nil
+	}
+	if _, err := os.Stat(exec.SocketPath); err == nil {
+		return nil
+	}
+	return ErrSessionGone
+}
 
 // WaitForExit polls an exec until it reaches a terminal status (exited or
 // failed) or the timeout elapses. It is used to run ephemeral execs, such as

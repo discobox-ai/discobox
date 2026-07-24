@@ -213,7 +213,10 @@ func (a *App) listTerminalCompletions(ctx context.Context, _ *apiclientgen.Clien
 	if err != nil {
 		return nil, err
 	}
-	completions := make([]string, 0, len(terminals))
+	// The virtual primary id is offered alongside the real terminals: it is the
+	// only selector that relaunches a stopped primary terminal.
+	completions := make([]string, 0, len(terminals)+1)
+	completions = append(completions, completionItem(primaryExecID, "the sandbox's primary terminal, relaunched if stopped"))
 	for _, terminal := range terminals {
 		completions = append(completions, completionItem(terminal.ID, completionDescription(terminal.HarnessId.Or(""), string(terminal.Status))))
 	}

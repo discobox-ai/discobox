@@ -237,13 +237,6 @@ func (d *apiDataSource) DeleteSandbox(ctx context.Context, id string) error {
 	return expectNoContent[apiclientgen.DeleteSandboxAccepted](res)
 }
 
-// primaryExecID is the virtual exec id that resolves, on the sandbox-agent, to
-// the sandbox's current primary (default) terminal and relaunches it with the
-// harness's relaunch command when it has stopped. It must match
-// terminal.PrimaryExecID in the sandbox-agent; the control plane proxies exec
-// ids opaquely, so the client just uses this value in place of a real id.
-const primaryExecID = "primary"
-
 // OpenTerminal attaches to the sandbox's default (primary) terminal. It targets
 // the virtual "primary" exec id, so the sandbox-agent resolves the current
 // primary and relaunches (resumes) it when it has stopped — the client never

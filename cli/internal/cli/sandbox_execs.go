@@ -280,10 +280,23 @@ func parseOptionalInt64(value, name string) (*int64, error) {
 	return &parsed, nil
 }
 
+// primaryExecID is the virtual exec id that resolves, on the sandbox-agent, to
+// the sandbox's current primary (default) terminal and relaunches it with the
+// harness's relaunch command when it has stopped. It must match
+// terminal.PrimaryExecID in the sandbox-agent; the control plane proxies exec
+// ids opaquely, so the client just uses this value in place of a real id.
+const primaryExecID = "primary"
+
 func (a *App) resolveSandboxExecID(ctx context.Context, projectID, sandboxID, value string) (string, error) {
 	id, err := parseIDArg(value, "exec ID")
 	if err != nil || !isResolvableShortID(id) {
 		return id, err
+	}
+	// The virtual primary id is resolved by the sandbox-agent, not here: it names
+	// whichever exec is the current primary terminal, and attaching it relaunches
+	// a stopped one. Matching it against the exec listing would only fail.
+	if id == primaryExecID {
+		return id, nil
 	}
 	execs, err := a.listSandboxExecs(ctx, projectID, sandboxID)
 	if err != nil {
@@ -372,10 +385,49 @@ func (a *App) attachSandboxExec(ctx context.Context, projectID, sandboxID, execI
 	return session.Run(ctx)
 }
 
+// attachRejectedError is an attach the sandbox-agent refused with an HTTP
+// status. It carries the agent's own explanation, which for a terminal
+// condition (an ended session, a missing exec) is more useful than anything the
+// client can infer, so it is reported as-is.
+type attachRejectedError struct {
+	status     int
+	statusText string
+	message    string
+}
+
+func (e attachRejectedError) Error() string {
+	if e.message == "" {
+		return "attach exec: " + e.statusText
+	}
+	return "attach exec: " + e.message
+}
+
+// explained reports whether the agent gave a definitive reason, so the client
+// does not append its own guess at what went wrong.
+func (e attachRejectedError) explained() bool {
+	return e.message != "" && (e.status == http.StatusConflict || e.status == http.StatusNotFound)
+}
+
+// attachErrorMessage unwraps the agent's JSON error envelope, falling back to
+// the raw body for a response that is not one.
+func attachErrorMessage(body []byte) string {
+	var envelope struct {
+		Error string `json:"error"`
+	}
+	if err := json.Unmarshal(body, &envelope); err == nil && strings.TrimSpace(envelope.Error) != "" {
+		return strings.TrimSpace(envelope.Error)
+	}
+	return strings.TrimSpace(string(body))
+}
+
 // execAttachError checks the authoritative exec record after an attach cannot
 // be opened. A missing shim socket commonly means the command already exited;
 // reporting only the transport error hides the command's actual result.
 func (a *App) execAttachError(ctx context.Context, projectID, sandboxID, execID string, attachErr error) error {
+	var rejected attachRejectedError
+	if errors.As(attachErr, &rejected) && rejected.explained() {
+		return attachErr
+	}
 	exec, err := a.getSandboxExec(ctx, projectID, sandboxID, execID)
 	if err != nil {
 		return attachErr
@@ -423,10 +475,7 @@ func (a *App) openSandboxExecAttach(ctx context.Context, projectID, sandboxID, e
 		if resp != nil && resp.Body != nil {
 			defer resp.Body.Close()
 			body, _ := io.ReadAll(io.LimitReader(resp.Body, 64*1024))
-			if len(body) > 0 {
-				return nil, fmt.Errorf("attach exec: %s: %s", resp.Status, strings.TrimSpace(string(body)))
-			}
-			return nil, fmt.Errorf("attach exec: %s", resp.Status)
+			return nil, attachRejectedError{status: resp.StatusCode, statusText: resp.Status, message: attachErrorMessage(body)}
 		}
 		return nil, fmt.Errorf("attach exec: %w", err)
 	}
@@ -483,11 +532,22 @@ func (a *App) openReconnectingSandboxExecAttach(
 	})
 }
 
+// sandboxExecAttachDone decides whether a broken attach should reconnect or end.
+// The question it answers is whether the command itself finished or the runtime
+// disappeared underneath it: a recorded exit is the command's own result and
+// ends the session, while a lost unit is an ungraceful disappearance that the
+// attach can recover from.
 func (a *App) sandboxExecAttachDone(ctx context.Context, projectID, sandboxID, execID string) (bool, error) {
 	exec, err := a.getSandboxExec(ctx, projectID, sandboxID, execID)
 	if err != nil {
-		// A control-plane read failure does not prove that the terminal ended. Keep
-		// retrying the websocket until the status can be checked authoritatively.
+		// The exec read failed. A stopped or stopping sandbox took the terminal with
+		// it, so end the attach instead of reconnecting forever; we never start the
+		// sandbox back up here (a future `disco attach` will own autostart). Any
+		// other failure does not prove the terminal ended — a transient control-plane
+		// blip — so keep retrying the websocket.
+		if done, stopErr := a.sandboxStoppedAttachDone(ctx, projectID, sandboxID); done {
+			return true, stopErr
+		}
 		return false, err
 	}
 	switch exec.Status {
@@ -496,16 +556,73 @@ func (a *App) sandboxExecAttachDone(ctx context.Context, projectID, sandboxID, e
 			return true, client.ExitError{Code: int(code)}
 		}
 		return true, nil
-	case apiclientgen.SandboxExecStatusFailed, apiclientgen.SandboxExecStatusLost:
-		message := strings.TrimSpace(exec.Error.Or(""))
-		if message == "" {
-			message = fmt.Sprintf("terminal is %s", exec.Status)
+	case apiclientgen.SandboxExecStatusLost:
+		// The unit vanished without the shim recording an exit — a killed or
+		// restarted container, not a command that ended. Reconnecting relaunches it,
+		// but only through the virtual primary id: a concrete exec id names one
+		// session, and nothing will ever revive it.
+		if execID == primaryExecID {
+			return false, nil
 		}
-		return true, errors.New(message)
+		return true, execAttachStatusError(exec)
+	case apiclientgen.SandboxExecStatusFailed:
+		// The launch itself failed, so retrying would fail identically.
+		return true, execAttachStatusError(exec)
 	default:
 		return false, nil
 	}
 }
+
+// sandboxStoppedAttachDone reports whether the sandbox itself has stopped (or is
+// stopping or failed), which ends an attach: the terminal cannot outlive its
+// sandbox, and reconnecting would loop against a runtime that is gone. A read
+// that cannot establish this returns not-done, leaving the failure retriable.
+func (a *App) sandboxStoppedAttachDone(ctx context.Context, projectID, sandboxID string) (bool, error) {
+	sandbox, ok := a.sandboxSnapshot(ctx, projectID, sandboxID)
+	if !ok {
+		return false, nil
+	}
+	switch sandbox.Runtime.Phase {
+	case sandboxPhaseStopped, sandboxPhaseStopping:
+		return true, fmt.Errorf("sandbox %s is %s; detaching terminal", sandboxID, sandbox.Runtime.Phase)
+	case sandboxPhaseFailed:
+		return true, fmt.Errorf("sandbox failed: %s", sandboxFailureReason(sandbox))
+	default:
+		return false, nil
+	}
+}
+
+// sandboxSnapshot fetches the sandbox once, returning ok=false when its state
+// cannot be read. Callers that only act on a definitive state treat an
+// unreadable sandbox as "unknown" rather than any particular phase.
+func (a *App) sandboxSnapshot(ctx context.Context, projectID, sandboxID string) (*apimodel.Sandbox, bool) {
+	client, err := a.apiClient()
+	if err != nil {
+		return nil, false
+	}
+	res, err := client.GetSandbox(ctx, apiclientgen.GetSandboxParams{ProjectId: projectID, SandboxId: sandboxID})
+	if err != nil {
+		return nil, false
+	}
+	sandbox, err := expectResponse[apimodel.Sandbox](res)
+	if err != nil {
+		return nil, false
+	}
+	return sandbox, true
+}
+
+func execAttachStatusError(exec *apimodel.SandboxExec) error {
+	if message := strings.TrimSpace(exec.Error.Or("")); message != "" {
+		return errors.New(message)
+	}
+	return fmt.Errorf("terminal is %s", exec.Status)
+}
+
+const (
+	sandboxPhaseStopped  = "stopped"
+	sandboxPhaseStopping = "stopping"
+	sandboxPhaseFailed   = "failed"
+)
 
 // attachPingInterval paces websocket keepalive pings on an exec attach. The
 // pings keep an idle attach alive across NATs and proxies and detect a dead

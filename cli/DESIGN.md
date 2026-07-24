@@ -13,8 +13,6 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. |
 | `internal/origin` | Resolves the client host and project directory a sandbox is created from. Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/tui` | Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. |
-| `internal/gitapply` | Pure Git plumbing for `disco apply`: merge-base computation and scratch-worktree cherry-pick/fast-forward, no API or App dependency. |
-| `internal/sandboxapply` | Fetches a source's sandbox repository over the git-repositories proxy for `disco apply`, reusing `sandboxcreate`'s URL/auth construction for read. |
 
 ## UI Dependency Direction
 
@@ -86,7 +84,15 @@ session, `execstream/client`.
 - If the attach websocket cannot be opened, fetch the exec once more and report
   terminal status, exit code, and runtime error when it already exited. A gone
   shim socket commonly means the command finished before attach, so the
-  transport error alone is not the useful failure.
+  transport error alone is not the useful failure. When the sandbox-agent
+  rejected the attach with a definitive status (`404`, `409`) its own message is
+  reported verbatim instead: it knows why, and the client's inference would only
+  repeat or contradict it.
+- `primary` (`primaryExecID`) is accepted wherever a terminal/exec ID is: it is
+  the sandbox-agent's virtual id for the current primary terminal, so it must
+  bypass short-ID resolution and reach the agent unchanged. It is the only
+  selector that relaunches a stopped primary terminal — attaching a real ID
+  addresses one session and fails once that session has ended.
 - Do not fork a second terminal/exec attach loop for a new stream feature. Add
   an option or callback to the shared session when the behavior is protocol
   plumbing; add resource-specific code only when the semantics differ.
@@ -94,6 +100,19 @@ session, `execstream/client`.
   `execstream/resume`. It retries websocket failures with capped exponential
   backoff, restores resize/readiness state so the sandbox shim repaints the
   terminal, and stops retrying once the authoritative exec record is terminal.
+- The reconnect decision (`sandboxExecAttachDone`, consulted before every redial)
+  asks whether the command finished or the runtime disappeared underneath it. A
+  recorded `exited` is the command's own result — Ctrl-D, the harness finishing —
+  and ends the attach with its exit code; `failed` never started, so retrying is
+  pointless. `lost` is an ungraceful disappearance (unit gone, no exit recorded):
+  reconnect, because the redial's attach relaunches — but only for the virtual
+  primary id, since nothing can ever revive a concrete one.
+- A terminal cannot outlive its sandbox. When the exec read fails and the
+  sandbox is `stopping`, `stopped`, or `failed`, the attach ends rather than
+  reconnecting forever — the stop is observable, so the client acts on it instead
+  of looping against a runtime that is gone. No attach restarts the sandbox;
+  sandbox autostart will be a future `disco attach` behavior, and until then the
+  client never starts a sandbox to keep an attach alive.
 - Resumable actions (input, signals, and close-input) carry monotonically
   increasing positions. The client retains a bounded window until the shim
   acknowledges applying them; reconnect resends the unacknowledged suffix and
@@ -177,38 +196,6 @@ The push goes through the control plane's Git proxy, never directly to the
 sandbox, which sits on a network the client cannot reach.
 
 See [ADR 0001](../docs/adr/0001-sandbox-origin-and-remote-source-push.md).
-
-## Applying Sandbox Commits to a Host (`disco apply`)
-
-`disco apply` (ADR 0014, `internal/cli/apply.go`) is the reverse of source
-delivery above: it pulls a sandbox's committed source changes back onto the
-host working tree they started from, via fetch + cherry-pick, never merge.
-
-1. **Resolve sources.** Every source on the sandbox — primary plus
-   `SourceCodeReferences` — is applied by default; `--source` narrows to one
-   slug. A source is only auto-resolvable to a host directory when
-   `Origin.HostID` matches this host and the source records a
-   `LocalDirectory`; otherwise `--dir slug=path` is required.
-2. **Check for uncommitted sandbox changes.** `git status --porcelain` runs
-   inside the sandbox over the exec API — the one place fetch can't see,
-   since fetch only sees committed history. A dirty source is skipped, not
-   applied partially.
-3. **Fetch** (`internal/sandboxapply.FetchSource`) reuses
-   `sandboxcreate.SandboxGitRepositoryURL`/`GitAuthArgs` — the exact URL and
-   bearer-token construction source delivery uses to push, just for read —
-   landing the sandbox's current tip at
-   `refs/discobox/apply/<sandbox-id>/<slug>` in the host repo.
-4. **Land** (`internal/gitapply.Attempt`) cherry-picks the fetched range in a
-   disposable linked worktree, never against the host's real checked-out
-   branch. A clean result is fast-forwarded into the host branch; a conflict
-   aborts and removes the scratch worktree, leaving the host repository
-   untouched, and prints the `git cherry-pick` command to reproduce and
-   resolve it directly. `CompleteSandboxApply` is only called after a real
-   fast-forward landed — never speculatively — so the server's
-   `AppliedCommits` record is always either "all of it, provably" or "none of
-   it."
-
-See [ADR 0014](../docs/adr/0014-disco-apply-pulls-sandbox-commits-via-cherry-pick.md).
 
 ## Harness Configure Step
 

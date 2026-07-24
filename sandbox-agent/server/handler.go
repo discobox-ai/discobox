@@ -90,9 +90,34 @@ func (h *handler) attachExecHTTP(w http.ResponseWriter, r *http.Request, execID 
 			writeJSON(w, http.StatusNotFound, sandboxapi.ErrorResponse{Error: "sandbox exec not found"})
 			return
 		}
+		if errors.Is(err, execs.ErrSessionGone) {
+			writeJSON(w, http.StatusConflict, sandboxapi.ErrorResponse{Error: h.sessionGoneMessage(execID)})
+			return
+		}
 		writeJSON(w, http.StatusInternalServerError, sandboxapi.ErrorResponse{Error: err.Error()})
 		return
 	}
+}
+
+// sessionGoneMessage explains an attach to an exec whose session has ended, and
+// points at the recovery: the primary terminal is relaunchable through the
+// virtual "primary" exec id, while any other exec has to be recreated.
+func (h *handler) sessionGoneMessage(execID string) string {
+	message := "sandbox exec " + execID + " has ended"
+	exec, ok := h.execs.Get(execID)
+	if ok {
+		if exec.ExitCode != nil {
+			message += fmt.Sprintf(" with exit code %d", *exec.ExitCode)
+		}
+		if detail := strings.TrimSpace(exec.Error); detail != "" {
+			message += " (" + detail + ")"
+		}
+	}
+	message += " and its session is no longer available to attach"
+	if ok && terminal.IsPrimary(exec) {
+		return message + `; attach exec id "` + terminal.PrimaryExecID + `" to relaunch the sandbox's primary terminal`
+	}
+	return message + "; create a new exec to run it again"
 }
 
 // oneShotExecHTTP runs a prepared exec to completion in a single request: the
@@ -123,6 +148,10 @@ func (h *handler) oneShotExecHTTP(w http.ResponseWriter, r *http.Request, execID
 	if err != nil {
 		if errors.Is(err, execs.ErrNotFound) {
 			writeJSON(w, http.StatusNotFound, sandboxapi.ErrorResponse{Error: "sandbox exec not found"})
+			return
+		}
+		if errors.Is(err, execs.ErrSessionGone) {
+			writeJSON(w, http.StatusConflict, sandboxapi.ErrorResponse{Error: h.sessionGoneMessage(execID)})
 			return
 		}
 		writeJSON(w, http.StatusInternalServerError, sandboxapi.ErrorResponse{Error: err.Error()})
@@ -159,6 +188,15 @@ func writeExecResolveError(w http.ResponseWriter, err error) {
 		return
 	}
 	writeJSON(w, http.StatusInternalServerError, sandboxapi.ErrorResponse{Error: err.Error()})
+}
+
+// execResolveStatusError is the generated-handler counterpart of
+// writeExecResolveError.
+func execResolveStatusError(err error) error {
+	if errors.Is(err, execs.ErrNotFound) {
+		return statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
+	}
+	return statusError{status: http.StatusInternalServerError, message: err.Error()}
 }
 
 func (h *handler) startExecHTTP(w http.ResponseWriter, r *http.Request, execID string) {
@@ -225,7 +263,11 @@ func (h *handler) CreateSandboxExec(ctx context.Context, req *sandboxapi.CreateS
 }
 
 func (h *handler) DeleteSandboxExec(ctx context.Context, params sandboxapi.DeleteSandboxExecParams) error {
-	if err := h.execs.Delete(ctx, params.ExecId); err != nil {
+	execID, err := h.resolveExecIDReadOnly(params.ExecId)
+	if err != nil {
+		return statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
+	}
+	if err := h.execs.Delete(ctx, execID); err != nil {
 		if errors.Is(err, execs.ErrNotFound) {
 			return statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
 		}
@@ -248,7 +290,11 @@ func (h *handler) GetSandboxExec(_ context.Context, params sandboxapi.GetSandbox
 }
 
 func (h *handler) StartSandboxExec(ctx context.Context, params sandboxapi.StartSandboxExecParams) (*sandboxapi.SandboxExec, error) {
-	exec, err := h.execs.Start(ctx, params.ExecId)
+	execID, err := h.resolveExecID(ctx, params.ExecId)
+	if err != nil {
+		return nil, execResolveStatusError(err)
+	}
+	exec, err := h.execs.Start(ctx, execID)
 	if err != nil {
 		if errors.Is(err, execs.ErrNotFound) {
 			return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
@@ -271,7 +317,11 @@ func (h *handler) ListSandboxExecs(context.Context, sandboxapi.ListSandboxExecsP
 }
 
 func (h *handler) ListSandboxExecLogs(ctx context.Context, params sandboxapi.ListSandboxExecLogsParams) (*sandboxapi.SandboxExecLogsResponse, error) {
-	entries, err := h.execs.Logs(ctx, params.ExecId)
+	execID, err := h.resolveExecIDReadOnly(params.ExecId)
+	if err != nil {
+		return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
+	}
+	entries, err := h.execs.Logs(ctx, execID)
 	if err != nil {
 		if errors.Is(err, execs.ErrNotFound) {
 			return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
@@ -286,10 +336,14 @@ func (h *handler) ListSandboxExecLogs(ctx context.Context, params sandboxapi.Lis
 }
 
 func (h *handler) ListSandboxExecEvents(ctx context.Context, params sandboxapi.ListSandboxExecEventsParams) (*sandboxapi.SandboxExecEventsResponse, error) {
-	if _, ok := h.execs.Get(params.ExecId); !ok {
+	execID, err := h.resolveExecIDReadOnly(params.ExecId)
+	if err != nil {
 		return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
 	}
-	events, err := h.listEvents(ctx, params.ExecId, params.Limit.Or(100))
+	if _, ok := h.execs.Get(execID); !ok {
+		return nil, statusError{status: http.StatusNotFound, message: "sandbox exec not found"}
+	}
+	events, err := h.listEvents(ctx, execID, params.Limit.Or(100))
 	if err != nil {
 		return nil, statusError{status: http.StatusInternalServerError, message: err.Error()}
 	}

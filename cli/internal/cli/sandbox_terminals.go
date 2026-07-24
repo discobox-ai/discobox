@@ -129,8 +129,14 @@ func (a *App) newSandboxTerminalCreateCommand(sandboxID *string) *cobra.Command 
 
 func (a *App) newSandboxTerminalAttachCommand(sandboxID *string) *cobra.Command {
 	return &cobra.Command{
-		Use:               "attach TERMINAL_ID",
-		Short:             "Attach to a sandbox agent terminal",
+		Use:   "attach TERMINAL_ID",
+		Short: "Attach to a sandbox agent terminal",
+		Long: `Attach to a sandbox agent terminal.
+
+Pass "primary" instead of a terminal ID to attach the sandbox's primary
+terminal, relaunching it with the harness's relaunch command when it has
+stopped. Attaching a terminal by ID never relaunches it: an ID names one
+session, and once that session has ended there is nothing to attach to.`,
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: a.completeTerminals(sandboxID),
 		RunE: func(cmd *cobra.Command, args []string) error {
