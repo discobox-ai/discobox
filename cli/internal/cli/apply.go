@@ -22,14 +22,17 @@ import (
 // committed source changes into the host repository they started from, via
 // fetch + cherry-pick, never merge.
 func (a *App) newApplyCommand() *cobra.Command {
-	var sandboxID string
 	var sourceSlug string
 	var dirOverrides []string
 	cmd := &cobra.Command{
-		Use:   "apply [flags]",
+		Use:   "apply [SANDBOX_ID] [flags]",
 		Short: "Apply a sandbox's committed source changes onto a host working tree",
 		Long: `Fetch a sandbox's source commits and cherry-pick them onto the host working
 tree they started from, per docs/adr/0014.
+
+Without SANDBOX_ID the sandbox is taken from the ones "disco ls" shows for the
+current project directory: the only one when there is one, otherwise you are
+asked to pick.
 
 Every source on the sandbox is applied by default (the primary source plus any
 secondary ones); --source narrows to one, named by its slug.
@@ -42,17 +45,20 @@ Uncommitted changes in the sandbox are never applied: only what has been
 committed there. If cherry-picking a source's commits does not apply cleanly,
 nothing about the host repository changes; the commands to reproduce and
 resolve it manually are printed instead.`,
-		Args: cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, _ []string) error {
+		Args:              cobra.MaximumNArgs(1),
+		ValidArgsFunction: a.completeSandboxes,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var sandboxArg string
+			if len(args) > 0 {
+				sandboxArg = args[0]
+			}
 			overrides, err := parseDirOverrides(dirOverrides)
 			if err != nil {
 				return err
 			}
-			return a.runApply(cmd, sandboxID, sourceSlug, overrides)
+			return a.runApply(cmd, sandboxArg, sourceSlug, overrides)
 		},
 	}
-	cmd.Flags().StringVar(&sandboxID, "sandbox-id", "", "Sandbox to apply from; when omitted, the sandbox started from this directory, or a prompt to pick one")
-	_ = cmd.RegisterFlagCompletionFunc("sandbox-id", a.completeSandboxes)
 	cmd.Flags().StringVar(&sourceSlug, "source", "", "Apply only the source with this slug, instead of every source on the sandbox")
 	cmd.Flags().StringArrayVar(&dirOverrides, "dir", nil, "Host directory to apply a source into, as slug=path; required for a source with no known local directory on this host")
 	return cmd

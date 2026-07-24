@@ -46,8 +46,10 @@ stderr frame, which the client neither detects nor needs to.
 
 ## Choosing a Sandbox Interactively
 
-Commands that act on "the sandbox I am working in" take `--sandbox-id` and fall
-back to `selectSandbox` (`internal/cli/picker.go`), never to a guess:
+Commands that act on "the sandbox I am working in" take a sandbox identifier —
+as `--sandbox-id` (`exec`) or an optional positional `SANDBOX_ID` (`apply`,
+`box get`) — and fall back to `selectSandbox` (`internal/cli/picker.go`) when
+it's omitted, never to a guess:
 
 - Candidates are exactly what `disco ls` shows — `listProjectSandboxes` filtered
   to the current project directory's origin — so the command and the listing can
