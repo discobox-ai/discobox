@@ -80,9 +80,14 @@ consolidation point: adding a new proxy-trust env var means adding one entry
 to the `proxy` package's map, and it automatically shows up in `ProxyEnvs` for
 every consumer — no second list to keep in sync.
 
-At boot, alongside applying `Env` to the sandbox's real environment,
-sandbox-agent writes the `ProxyEnvs` name list to a small well-known file
-(e.g. `/etc/discobox/proxy/proxy-env-names.json`) for the NRI plugin to read.
+At boot, sandbox-agent computes the name→value subset of `Env` that
+`ProxyEnvs` names and writes it as one file,
+`/etc/discobox/proxy/proxy-env.json`, for the NRI plugin to read. This carries
+values, not just names: `discobox-nri-ca.service` is a separate systemd unit
+and does not inherit `discobox-sandbox-agent`'s process environment, so "read
+the value back from the plugin's own environment" has nothing to read from —
+once the plugin needs the values delivered explicitly anyway, there is no
+reason to split names and values across two files.
 
 ### 4. `discobox-trust-ca.service` also prepares non-Debian bundle formats, once, at boot — not per-container
 
@@ -135,9 +140,8 @@ plugin implements `CreateContainer`:
   get a mount — it must never fail or block container creation.
 - **Environment variables** are appended to `Spec.Process.Env` only (never
   written to any file, never reflected into the built image's config): every
-  name listed in the sandbox's `proxy-env-names.json` (decision 3), with the
-  value read from the plugin's own process environment (which sandbox boot
-  already populated from `Env`).
+  name/value pair in the sandbox's `proxy-env.json` (decision 3), read fresh
+  by the plugin at each `CreateContainer` call.
 - **No override.** If the container spec already sets one of these mounts or
   env vars, the plugin leaves it alone — an explicit user choice wins over the
   transparent default.
