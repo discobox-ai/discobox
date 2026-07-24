@@ -21,7 +21,7 @@ func TestEnsureSandboxMaterialStagesClientOnly(t *testing.T) {
 	}
 
 	dir := resolver(material.MountSource)
-	for _, name := range []string{"mtls-ca.crt", "mitm-ca.crt", "client.crt", "client.key", "bridge.json"} {
+	for _, name := range []string{"mtls-ca.crt", "mitm-ca.crt", "client.crt", "client.key", "bridge.json", "bridge-docker.json"} {
 		if _, err := os.Stat(filepath.Join(dir, name)); err != nil {
 			t.Fatalf("expected staged file %q: %v", name, err)
 		}

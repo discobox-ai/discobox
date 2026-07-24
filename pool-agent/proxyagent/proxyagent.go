@@ -455,6 +455,28 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string, hostDirFor HostP
 		return nil, fmt.Errorf("write bridge config: %w", err)
 	}
 
+	// A second forwarder instance, socket-activated on the sandbox's fixed
+	// nested-Docker bridge gateway (discobox-proxy-bridge-docker.socket),
+	// reachable from containers a nested dockerd creates — SandboxForwarderListen
+	// is loopback-only from the sandbox's own point of view, so a nested
+	// container can't reach it. ListenAddress is set for clarity/fallback
+	// only; the unit's socket activation supplies the actual bound listener.
+	// See docs/adr/0015 decision 7.
+	dockerBridge := bridgeConfig{
+		ListenAddress:  NestedForwarderListen,
+		PoolProxyURL:   PoolProxyURL,
+		MTLSCAPath:     filepath.Join(SandboxProxyMount, "mtls-ca.crt"),
+		ClientCertPath: filepath.Join(SandboxProxyMount, "client.crt"),
+		ClientKeyPath:  filepath.Join(SandboxProxyMount, "client.key"),
+	}
+	dockerBridgeJSON, err := json.MarshalIndent(&dockerBridge, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	if err := os.WriteFile(filepath.Join(writeDir, "bridge-docker.json"), dockerBridgeJSON, 0o600); err != nil {
+		return nil, fmt.Errorf("write nested-docker bridge config: %w", err)
+	}
+
 	proxyURL := "http://" + SandboxForwarderListen
 	env := map[string]string{
 		"HTTP_PROXY":  proxyURL,
