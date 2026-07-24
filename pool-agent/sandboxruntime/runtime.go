@@ -618,6 +618,9 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey st
 			if volumes, ok := resolved.Volumes.Get(); ok {
 				doc.Image.Volumes = documentVolumes(volumes)
 			}
+			if groups, ok := resolved.AdditionalGroups.Get(); ok {
+				doc.Image.AdditionalGroups = groups
+			}
 		}
 	}
 	// Inject the pool-proxy environment so sandbox-agent-spawned terminals and
