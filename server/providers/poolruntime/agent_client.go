@@ -341,6 +341,9 @@ func poolCreateRequestFromOptions(sandboxID string, opts sandbox.CreateOptions) 
 		if volumes := poolHarnessVolumes(rhc.Volumes); len(volumes) > 0 {
 			resolved.Volumes = poolclient.NewOptNilHarnessVolumeArray(volumes)
 		}
+		if len(rhc.AdditionalGroups) > 0 {
+			resolved.AdditionalGroups = poolclient.NewOptNilStringArray(rhc.AdditionalGroups)
+		}
 		out.ResolvedHarnessConfig = poolclient.NewOptResolvedHarnessConfig(resolved)
 	}
 	if opts.Model != nil {
