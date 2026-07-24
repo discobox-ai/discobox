@@ -59,13 +59,14 @@ type pendingAction struct {
 // Conn is one logical resumable execstream connection. It decorates replaceable
 // physical connections while preserving the ordinary execstream.Conn contract.
 type Conn struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	dial   func(context.Context) (execstream.Conn, error)
-	done   func(context.Context) (bool, error)
-	event  func(Event)
-	timing timingConfig
-	token  []byte
+	ctx      context.Context
+	cancel   context.CancelFunc
+	dial     func(context.Context) (execstream.Conn, error)
+	done     func(context.Context) (bool, error)
+	event    func(Event)
+	observer Observer
+	timing   timingConfig
+	token    []byte
 
 	mu              sync.Mutex
 	conn            execstream.Conn
@@ -113,6 +114,7 @@ func New(ctx context.Context, initial execstream.Conn, opts Options) (*Conn, err
 		dial:            opts.Dial,
 		done:            opts.Done,
 		event:           opts.Event,
+		observer:        observerFromContext(ctx),
 		timing:          timing,
 		token:           token,
 		maxPendingBytes: maxPendingBytes,
@@ -252,15 +254,35 @@ func (c *Conn) writeAction(typ byte, payload []byte) error {
 			acceptedAt: acceptedAt,
 		})
 		c.pendingBytes += size
+		pendingBytes := c.pendingBytes
 		conn := c.conn
 		c.mu.Unlock()
+		c.observeAction(ActionEvent{
+			At:           c.observerNow(),
+			Phase:        ActionAccepted,
+			Position:     position,
+			Type:         typ,
+			PayloadBytes: len(payload),
+			PendingBytes: pendingBytes,
+		})
 
 		if conn == nil {
 			c.writeMu.Unlock()
 			go func() { _ = c.reconnect(nil) }()
 			return nil
 		}
+		started := c.observerNow()
 		err = conn.WriteFrame(frame.Action, wire)
+		c.observeAction(ActionEvent{
+			At:           c.observerNow(),
+			Phase:        ActionPhysicalWrite,
+			Position:     position,
+			Type:         typ,
+			PayloadBytes: len(payload),
+			PendingBytes: pendingBytes,
+			Duration:     c.observerSince(started),
+			Err:          err,
+		})
 		if err != nil {
 			c.invalidate(conn)
 			go func() { _ = c.reconnect(err) }()
@@ -377,7 +399,23 @@ func (c *Conn) establishLocked(conn execstream.Conn) error {
 	ready := c.ready
 	c.mu.Unlock()
 	for _, action := range pending {
-		if err := conn.WriteFrame(frame.Action, action.wire); err != nil {
+		started := c.observerNow()
+		err := conn.WriteFrame(frame.Action, action.wire)
+		pendingBytes := 0
+		if c.observer != nil {
+			pendingBytes = c.currentPendingBytes()
+		}
+		c.observeAction(ActionEvent{
+			At:           c.observerNow(),
+			Phase:        ActionRetransmitted,
+			Position:     action.position,
+			Type:         action.typ,
+			PayloadBytes: action.size - actionHeaderLen,
+			PendingBytes: pendingBytes,
+			Duration:     c.observerSince(started),
+			Err:          err,
+		})
+		if err != nil {
 			return err
 		}
 		if err := c.awaitAck(conn, action.position); err != nil {
@@ -465,9 +503,10 @@ func (c *Conn) acknowledge(position uint64) error {
 	}
 	c.lastAck = position
 	remove := 0
+	observeAcknowledgement := c.observer != nil || c.timing.observe != nil
 	var acknowledged []pendingAction
 	for remove < len(c.pending) && c.pending[remove].position <= position {
-		if c.timing.observe != nil {
+		if observeAcknowledgement {
 			acknowledged = append(acknowledged, c.pending[remove])
 		}
 		c.pendingBytes -= c.pending[remove].size
@@ -481,18 +520,51 @@ func (c *Conn) acknowledge(position uint64) error {
 	pendingBytes := c.pendingBytes
 	c.mu.Unlock()
 	acknowledgedAt := c.timingNow()
+	if acknowledgedAt.IsZero() && c.observer != nil {
+		acknowledgedAt = time.Now()
+	}
 	for _, action := range acknowledged {
-		c.emitTiming(TimingEvent{
+		c.observeAction(ActionEvent{
 			At:           acknowledgedAt,
-			Source:       TimingActionAcknowledgement,
-			RoundTrip:    acknowledgedAt.Sub(action.acceptedAt),
+			Phase:        ActionAcknowledged,
 			Position:     action.position,
-			ActionType:   action.typ,
+			Type:         action.typ,
 			PayloadBytes: action.size - actionHeaderLen,
 			PendingBytes: pendingBytes,
 		})
+		if !action.acceptedAt.IsZero() {
+			c.emitTiming(TimingEvent{
+				At:           acknowledgedAt,
+				Source:       TimingActionAcknowledgement,
+				RoundTrip:    acknowledgedAt.Sub(action.acceptedAt),
+				Position:     action.position,
+				ActionType:   action.typ,
+				PayloadBytes: action.size - actionHeaderLen,
+				PendingBytes: pendingBytes,
+			})
+		}
 	}
 	return nil
+}
+
+func (c *Conn) observeAction(event ActionEvent) {
+	if c.observer != nil {
+		c.observer.ObserveAction(event)
+	}
+}
+
+func (c *Conn) observerNow() time.Time {
+	if c.observer == nil {
+		return time.Time{}
+	}
+	return time.Now()
+}
+
+func (c *Conn) observerSince(started time.Time) time.Duration {
+	if started.IsZero() {
+		return 0
+	}
+	return time.Since(started)
 }
 
 func (c *Conn) timingNow() time.Time {
@@ -552,6 +624,12 @@ func (c *Conn) observeHeartbeats() {
 			Err:       err,
 		})
 	}
+}
+
+func (c *Conn) currentPendingBytes() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.pendingBytes
 }
 
 func (c *Conn) waitForSpace(size int) error {
