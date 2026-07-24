@@ -19,6 +19,10 @@ const (
 	ScopeTerminalWrite = "terminal:write"
 	ScopeExecRead      = "exec:read"
 	ScopeExecWrite     = "exec:write"
+	// ScopeStatusRead authorizes only the sandbox-agent status route. Tokens
+	// carrying it are minted server-side with this scope hardcoded, never
+	// derived from a caller's request (see server's MintSandboxAgentStatusTokens).
+	ScopeStatusRead = "status:read"
 )
 
 type signedTokenClaimsContextKey struct{}
@@ -164,6 +168,11 @@ func routeIdentity(path string) (string, string, bool) {
 }
 
 func requiredRequestScope(r *http.Request) string {
+	// The status route reports git/session/connection telemetry and nothing
+	// else, so it is gated on its own narrow scope rather than exec:read.
+	if r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/status") {
+		return ScopeStatusRead
+	}
 	// Harness hooks are read-only audit data tied to execs (harness terminals).
 	if strings.Contains(r.URL.Path, "/harness-hooks") {
 		if r.Method == http.MethodGet {

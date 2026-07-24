@@ -17,7 +17,7 @@ from the future in-sandbox `sandbox-agent` API.
 | `api/model` | Generated stable aliases for pool-local sandbox operation schema types. |
 | `cmd/discobox-pool-agent` | Pool agent binary entrypoint. |
 | `cmd/discobox-vsock-guest` | Local-VM guest services: VSOCK-to-Docker byte splice and orderly shutdown endpoint. |
-| `.` | Root `poolagent` Go package: boot contract, registration flow, status reporting, and high-level command orchestration. |
+| `.` | Root `poolagent` Go package: boot contract, registration flow, status reporting, the standing sandbox-agent status poller (`statuspoll.go`, ADR 0030), and high-level command orchestration. |
 | `server` | Pool-local HTTP server, health/metadata endpoints, and generated sandbox API route/auth adapter. |
 | `vsock` | Guest AF_VSOCK listener and host-CID HTTP transport primitives. |
 | `sandboxruntime` | Local sandbox runtime implementations used by the pool host server. Provisions the five primary volumes (`/.discobox/{data,cache,config,sources,secrets}`) and mounts them into every sandbox; `cache` is the pool-local directory shared across the pool's sandboxes. Also binds each clone-delivered local source's real origin directory, read-only, onto `/.discobox/origins/<slug>` (ADR 0026). In-sandbox path wiring for the primary volumes is delegated to the sandbox-agent init flow (ADR 0007). |
@@ -120,6 +120,21 @@ sharing a host daemon never reap each other's data. Both trees carry the same
 scoping because a reaper's scan must not be wider than the authority it is
 given (see `pool-sync` below); the shared per-host CA material and client
 certificates stay outside them, keyed by globally unique sandbox ID.
+
+A standing poller (`startSandboxAgentStatusPoller`, `statuspoll.go`) checks
+every currently-running hosted sandbox's sandbox-agent status endpoint (git
+status, harness session state, active connections) on a 15s interval and
+pushes a batch of what it collected to the control plane
+(`/api/pools/{pool_id}/sandbox-agent-status`). One unreachable or erroring
+sandbox is skipped, never blocking or failing the rest of the tick, and a poll
+or push failure never affects sandbox lifecycle. The bearer token for each
+sandbox-agent call is a short-lived, `status:read`-only token the control
+plane mints on request (`/api/pools/{pool_id}/sandbox-agent-status-tokens`)
+and the poller caches per sandbox, refreshing before expiry — pool-agent holds
+no key sandbox-agent trusts on its own, so this indirection is what lets the
+poll loop reach sandbox-agent's authenticated status route without discobox-
+server ever originating a request into a sandbox itself. See
+[ADR 0030](../docs/adr/0030-pool-agent-polls-and-pushes-sandbox-agent-status.md).
 
 `pool-sync` (scope `pool:sync`) is how a shared host daemon reclaims *whole*
 orphaned pools, which no single pool agent can do alone (it dies with its pool).

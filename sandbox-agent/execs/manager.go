@@ -58,6 +58,10 @@ type Exec struct {
 	Metadata       map[string]string `json:"metadata,omitempty"`
 	SocketPath     string            `json:"socketPath,omitempty"`
 	RuntimePath    string            `json:"runtimePath,omitempty"`
+	// AttacherCount is the number of clients currently attached to this exec's
+	// stream, reported live by the shim on every /status query (see
+	// shimRuntime.handleStatus) rather than tracked as persisted state.
+	AttacherCount int `json:"attacherCount,omitempty"`
 }
 
 type CreateRequest struct {
@@ -707,6 +711,15 @@ func (m *Manager) manifestGroups() []string {
 	return append([]string(nil), m.defaultUser.AdditionalGroups...)
 }
 
+// DefaultUser returns the sandbox's resolved default user — the identity
+// execs and terminals run as when a CreateRequest doesn't specify its own.
+// Callers outside this package that need to act as the same identity (e.g.
+// sandbox-agent's status endpoint reading sources that identity owns) should
+// use this instead of re-deriving it from raw config.
+func (m *Manager) DefaultUser() *User {
+	return m.defaultUser.Clone()
+}
+
 func (m *Manager) runtimePath(id string) string {
 	return filepath.Join(m.runtimeDir, safeName(id)+".json")
 }
@@ -862,6 +875,7 @@ func mergeExecStatus(base, status Exec) Exec {
 	if status.ExitedAt != nil {
 		base.ExitedAt = status.ExitedAt
 	}
+	base.AttacherCount = status.AttacherCount
 	return base
 }
 

@@ -607,8 +607,15 @@ type Sandbox struct {
 	StateReportedAt *time.Time `gorm:"column:state_reported_at" json:"stateReportedAt,omitempty" doc:"When the hosting pool agent last reported this sandbox's state" format:"date-time"`
 	StateReportBoot string     `gorm:"column:state_report_boot;not null;type:text;default:''" json:"-" doc:"Boot ID of the pool agent that produced the recorded state report"`
 	StateReportSeq  int64      `gorm:"column:state_report_seq;not null;default:0" json:"-" doc:"Sequence number of the recorded state report within its reporting agent's boot"`
-	CreatedAt       time.Time  `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
-	UpdatedAt       time.Time  `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
+	// AgentStatus and AgentStatusObservedAt are the sandbox-agent-computed git
+	// status, harness session state, and connection counts pushed periodically
+	// by the hosting pool-agent (ADR 0030) — a distinct channel from
+	// StateReportedAt above, which is pool-agent's own observed container power
+	// state (ADR 0017 §10).
+	AgentStatus           json.RawMessage `gorm:"column:agent_status;type:text" json:"agentStatus,omitempty" doc:"Latest sandbox-agent-reported git/session/connection status, pushed periodically by the hosting pool-agent (ADR 0030)"`
+	AgentStatusObservedAt *time.Time      `gorm:"column:agent_status_observed_at" json:"agentStatusObservedAt,omitempty" doc:"When AgentStatus was observed by sandbox-agent" format:"date-time"`
+	CreatedAt             time.Time       `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
+	UpdatedAt             time.Time       `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`
 
 	Project       *Project       `gorm:"foreignKey:ProjectID" json:"-"`
 	CreatedBy     *User          `gorm:"-" json:"createdBy,omitempty" doc:"Creating user"`

@@ -79,9 +79,11 @@ func bearerToken(authorization string) string {
 }
 
 var poolRuntimeActions = map[string]struct{}{
-	"sandbox-states":         {},
-	"status":                 {},
-	"resolve-sandbox-secret": {},
+	"sandbox-states":              {},
+	"status":                      {},
+	"resolve-sandbox-secret":      {},
+	"sandbox-agent-status-tokens": {},
+	"sandbox-agent-status":        {},
 }
 
 func isPoolRuntimePath(path string) bool {

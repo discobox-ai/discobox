@@ -350,6 +350,15 @@ func (UnimplementedHandler) GetSandbox(ctx context.Context, params GetSandboxPar
 	return r, ht.ErrNotImplemented
 }
 
+// GetSandboxAgentStatus implements get-sandbox-agent-status operation.
+//
+// Get sandbox-agent-reported status (git status, harness session state, active connections).
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/status
+func (UnimplementedHandler) GetSandboxAgentStatus(ctx context.Context, params GetSandboxAgentStatusParams) (r GetSandboxAgentStatusRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetSandboxExec implements get-sandbox-exec operation.
 //
 // Get an exec runtime in a sandbox.
@@ -539,6 +548,15 @@ func (UnimplementedHandler) ListSecrets(ctx context.Context, params ListSecretsP
 	return r, ht.ErrNotImplemented
 }
 
+// MintSandboxAgentStatusTokens implements mint-sandbox-agent-status-tokens operation.
+//
+// Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts.
+//
+// POST /api/pools/{poolId}/sandbox-agent-status-tokens
+func (UnimplementedHandler) MintSandboxAgentStatusTokens(ctx context.Context, req *MintSandboxAgentStatusTokensBody, params MintSandboxAgentStatusTokensParams) (r MintSandboxAgentStatusTokensRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // PurgeSandbox implements purge-sandbox operation.
 //
 // Destroy the sandbox and its data. Unlike every other existence change this is synchronous - the
@@ -598,6 +616,15 @@ func (UnimplementedHandler) RegisterPool(ctx context.Context, req *RegisterPoolB
 //
 // POST /api/pools/{poolId}/sandbox-states
 func (UnimplementedHandler) ReportPoolSandboxStates(ctx context.Context, req *ReportPoolSandboxStatesBody, params ReportPoolSandboxStatesParams) (r ReportPoolSandboxStatesRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
+// ReportSandboxAgentStatus implements report-sandbox-agent-status operation.
+//
+// Report polled sandbox-agent status for one or more hosted sandboxes.
+//
+// POST /api/pools/{poolId}/sandbox-agent-status
+func (UnimplementedHandler) ReportSandboxAgentStatus(ctx context.Context, req *ReportSandboxAgentStatusBody, params ReportSandboxAgentStatusParams) (r ReportSandboxAgentStatusRes, _ error) {
 	return r, ht.ErrNotImplemented
 }
 

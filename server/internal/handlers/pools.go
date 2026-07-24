@@ -131,3 +131,22 @@ func (h *Handler) ReportPoolSandboxStates(ctx context.Context, req *apimodel.Rep
 	}
 	return &serverapi.ReportPoolSandboxStatesNoContent{}, nil
 }
+
+func (h *Handler) ReportSandboxAgentStatus(ctx context.Context, req *apimodel.ReportSandboxAgentStatusBody, params serverapi.ReportSandboxAgentStatusParams) (serverapi.ReportSandboxAgentStatusRes, error) {
+	if err := h.services.Pools.ReportSandboxAgentStatus(ctx, params.PoolId, *req); err != nil {
+		return apiError(err), nil
+	}
+	return &serverapi.ReportSandboxAgentStatusNoContent{}, nil
+}
+
+func (h *Handler) MintSandboxAgentStatusTokens(ctx context.Context, req *apimodel.MintSandboxAgentStatusTokensBody, params serverapi.MintSandboxAgentStatusTokensParams) (serverapi.MintSandboxAgentStatusTokensRes, error) {
+	resp, err := h.services.Pools.MintSandboxAgentStatusTokens(ctx, params.PoolId, *req)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.Convert[apimodel.MintSandboxAgentStatusTokensResponseBody](resp)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}

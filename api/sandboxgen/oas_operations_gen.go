@@ -10,6 +10,7 @@ const (
 	AttachSandboxExecOnceOperation          OperationName = "AttachSandboxExecOnce"
 	CreateSandboxExecOperation              OperationName = "CreateSandboxExec"
 	DeleteSandboxExecOperation              OperationName = "DeleteSandboxExec"
+	GetSandboxAgentStatusOperation          OperationName = "GetSandboxAgentStatus"
 	GetSandboxExecOperation                 OperationName = "GetSandboxExec"
 	GetSandboxExecResourcesOperation        OperationName = "GetSandboxExecResources"
 	ListHarnessHooksOperation               OperationName = "ListHarnessHooks"

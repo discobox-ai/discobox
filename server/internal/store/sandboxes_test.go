@@ -3,8 +3,10 @@ package store_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/obot-platform/discobox/internal/originkey"
 	"github.com/obot-platform/discobox/server/internal/database"
@@ -312,6 +314,93 @@ func TestSandboxSecretStateEncryptedAtRest(t *testing.T) {
 	}
 	if !bytes.Equal(updatedRow.SecretState, sealed) {
 		t.Fatalf("sealed secret state changed on metadata-only update")
+	}
+}
+
+func TestUpdateSandboxAgentStatusRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
+	sandbox := &model.Sandbox{
+		ID: "sandbox-status", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "status",
+	}
+	if err := s.CreateSandbox(ctx, sandbox); err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+
+	observedAt := time.Now().UTC().Truncate(time.Second)
+	payload := json.RawMessage(`{"sessions":[{"state":"running"}]}`)
+	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, payload, observedAt); err != nil {
+		t.Fatalf("update agent status: %v", err)
+	}
+
+	got, err := s.GetSandbox(ctx, "project-1", sandbox.ID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	if string(got.AgentStatus) != string(payload) {
+		t.Fatalf("agentStatus = %s, want %s", got.AgentStatus, payload)
+	}
+	if got.AgentStatusObservedAt == nil || !got.AgentStatusObservedAt.Equal(observedAt) {
+		t.Fatalf("agentStatusObservedAt = %v, want %v", got.AgentStatusObservedAt, observedAt)
+	}
+	// The generation-guarded desired-state contract is untouched by this write.
+	if got.Generation != sandbox.Generation {
+		t.Fatalf("generation = %d, want unchanged %d", got.Generation, sandbox.Generation)
+	}
+}
+
+func TestUpdateSandboxAgentStatusUnknownSandboxReturnsNotFound(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
+	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", "does-not-exist", json.RawMessage(`{}`), time.Now().UTC()); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("update agent status for unknown sandbox = %v, want ErrNotFound", err)
+	}
+}
+
+// TestUpdateSandboxAgentStatusComposesWithConcurrentFieldUpdates confirms the
+// narrow status write and a plain UpdateSandbox call (each starting from its
+// own fresh read, as any correct concurrent caller must) do not clobber each
+// other's columns — the risk a whole-row Save from a *stale* read would
+// otherwise create.
+func TestUpdateSandboxAgentStatusComposesWithConcurrentFieldUpdates(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	createTestPool(t, s, "project-1", "pool-1")
+	sandbox := &model.Sandbox{
+		ID: "sandbox-status", ProjectID: "project-1", PoolID: "pool-1", CreatedByUserID: "user-1", Name: "status",
+	}
+	if err := s.CreateSandbox(ctx, sandbox); err != nil {
+		t.Fatalf("create sandbox: %v", err)
+	}
+
+	observedAt := time.Now().UTC().Truncate(time.Second)
+	if err := s.UpdateSandboxAgentStatus(ctx, "project-1", sandbox.ID, json.RawMessage(`{"sessions":[]}`), observedAt); err != nil {
+		t.Fatalf("update agent status: %v", err)
+	}
+
+	// A fresh read (as a correct reconciler would take) picks up the agent
+	// status just written, so saving it back after an unrelated field change
+	// must not lose it.
+	fresh, err := s.GetSandbox(ctx, "project-1", sandbox.ID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	fresh.Name = "renamed"
+	if err := s.UpdateSandbox(ctx, fresh); err != nil {
+		t.Fatalf("update sandbox name: %v", err)
+	}
+
+	got, err := s.GetSandbox(ctx, "project-1", sandbox.ID)
+	if err != nil {
+		t.Fatalf("get sandbox: %v", err)
+	}
+	if got.Name != "renamed" {
+		t.Fatalf("name = %q, want renamed", got.Name)
+	}
+	if got.AgentStatusObservedAt == nil || !got.AgentStatusObservedAt.Equal(observedAt) {
+		t.Fatalf("agentStatusObservedAt = %v, want %v (must survive a concurrent field update from a fresh read)", got.AgentStatusObservedAt, observedAt)
 	}
 }
 

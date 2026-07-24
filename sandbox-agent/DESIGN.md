@@ -28,6 +28,7 @@ runtime operations.
 | `nestedbridge` | Discovers the nested Docker daemon's bridge address and publishes it under `/run` for the bridge-facing proxy forwarder and the runc wrapper. Also enumerates this sandbox's own directly-connected IPv4 networks (`LocalSubnets`), the resolution target for `sandboxconfig.LocalSubnetsToken`. |
 | `proxyenv` | Renders `sandbox.json`'s proxy-trust env (`Env`/`ProxyEnvs`) as a systemd `EnvironmentFile`, for `docker.service` — started by socket activation, not spawned by sandbox-agent, so it inherits no container env and cannot be reached by any per-container injection. Resolves `sandboxconfig.LocalSubnetsToken` against `nestedbridge.LocalSubnets()`, the same substitution `runcca.proxyEnv` applies for nested containers. Run at boot by `discobox-render-proxy-env.service`, ordered before `docker.service`, writing to `/run/discobox/proxy/proxy.env` (not `/etc/discobox`, which is pool-agent's read-only mount). |
 | `dockercache` | The sandbox's `docker` CLI wrapper (`cmd/discobox-docker`): installed as `docker` ahead of the real CLI on PATH, it gives `docker build` a BuildKit local cache on the pool-shared cache volume so a build in one sandbox is reused by the others. Only build commands are rewritten; everything else is exec'd straight through. |
+| `agentstatus` | Computes the status a pool agent polls (ADR 0030): per-source git status via bounded `git status` shelling, and per-terminal harness session state via the root module's `harness.SessionStateDeriver` capability (full state machine for claude-code; generic exec-liveness fallback otherwise). Computed fresh on every call, never cached. |
 | `resources` | Opaque cgroup/procfs/systemd-style resource snapshot collection for exec runtimes. |
 | `store` | Sandbox-local SQLite/GORM audit log, observed terminal state snapshots, retained resource blobs, and compressed exec/terminal transcript chunks (see ADR 0028). |
 | `Dockerfile` | Debian-based base sandbox runtime image with Docker, development tools, Chromium, socket-activated desktop access, code-server, and Nix tooling. Harness image builds live in their owning `harness/<type>` folders. |
@@ -84,6 +85,10 @@ runtime operations.
   lifecycle events, latest observed runtime state, and retained opaque resource
   samples, but REST runtime state should be derived from runtime/systemd/shim
   observations instead of an in-memory cache.
+- The status endpoint (`GET .../status`, `status:read` scope) is answered
+  fresh on every request from the authenticated caller — pool-agent's standing
+  poll loop, per ADR 0030. It is never cached and sandbox-agent never pushes
+  it anywhere on its own initiative, consistent with the boundary rule above.
 - A terminal is one primitive: an exec created in harness mode. The `terminal`
   layer resolves the image harness (or the `shell` fallback harness — a login
   shell — when the image has no harness), applies image/project files and hooks,

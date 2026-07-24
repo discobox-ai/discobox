@@ -133,6 +133,10 @@ type GetProjectRes interface {
 	getProjectRes()
 }
 
+type GetSandboxAgentStatusRes interface {
+	getSandboxAgentStatusRes()
+}
+
 type GetSandboxExecRes interface {
 	getSandboxExecRes()
 }
@@ -221,6 +225,10 @@ type ListSecretsRes interface {
 	listSecretsRes()
 }
 
+type MintSandboxAgentStatusTokensRes interface {
+	mintSandboxAgentStatusTokensRes()
+}
+
 type PurgeSandboxRes interface {
 	purgeSandboxRes()
 }
@@ -243,6 +251,10 @@ type RegisterPoolRes interface {
 
 type ReportPoolSandboxStatesRes interface {
 	reportPoolSandboxStatesRes()
+}
+
+type ReportSandboxAgentStatusRes interface {
+	reportSandboxAgentStatusRes()
 }
 
 type ResolveSandboxSecretRes interface {

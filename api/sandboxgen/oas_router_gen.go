@@ -457,6 +457,34 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							return
 						}
 
+					case 's': // Prefix: "status"
+
+						if l := len("status"); len(elem) >= l && elem[0:l] == "status" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch r.Method {
+							case "GET":
+								s.handleGetSandboxAgentStatusRequest([2]string{
+									args[0],
+									args[1],
+								}, elemIsEscaped, w, r)
+							default:
+								s.notAllowed(w, r, notAllowedParams{
+									allowedMethods: "GET",
+									allowedHeaders: nil,
+									acceptPost:     "",
+									acceptPatch:    "",
+								})
+							}
+
+							return
+						}
+
 					}
 
 				}
@@ -912,6 +940,31 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 								r.operationID = "list-harness-hooks"
 								r.operationGroup = ""
 								r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks"
+								r.args = args
+								r.count = 2
+								return r, true
+							default:
+								return
+							}
+						}
+
+					case 's': // Prefix: "status"
+
+						if l := len("status"); len(elem) >= l && elem[0:l] == "status" {
+							elem = elem[l:]
+						} else {
+							break
+						}
+
+						if len(elem) == 0 {
+							// Leaf node.
+							switch method {
+							case "GET":
+								r.name = GetSandboxAgentStatusOperation
+								r.summary = "Get sandbox-agent-reported status (git status, harness session state, active connections)."
+								r.operationID = "get-sandbox-agent-status"
+								r.operationGroup = ""
+								r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/status"
 								r.args = args
 								r.count = 2
 								return r, true

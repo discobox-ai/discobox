@@ -41,8 +41,11 @@ import (
 )
 
 const (
-	defaultSandboxImage      = "alpine:3.20"
-	sandboxAgentPort         = 3003
+	defaultSandboxImage = "alpine:3.20"
+	// SandboxAgentPort is exported so pool-agent's standing status-poll loop
+	// (a package-external caller) can reach a sandbox-agent's HTTP API via
+	// HTTPBaseURL without duplicating this value.
+	SandboxAgentPort         = 3003
 	sandboxAgentReadyTimeout = 30 * time.Second
 	sandboxAgentPollInterval = 100 * time.Millisecond
 
@@ -774,7 +777,7 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey, r
 				},
 			},
 			AgentRuntime: sandboxconfig.AgentRuntime{
-				ListenAddress:          fmt.Sprintf(":%d", sandboxAgentPort),
+				ListenAddress:          fmt.Sprintf(":%d", SandboxAgentPort),
 				WorkingRoot:            "/workspace",
 				RuntimeDir:             "/run/discobox/agent-terminals",
 				DatabasePath:           "/var/lib/discobox/sandbox-agent.db",
@@ -1372,7 +1375,7 @@ func (r *DockerSandboxRuntime) waitForSandboxAgent(ctx context.Context, sandboxI
 			if err := sandboxAgentTerminalStateError(sb); err != nil {
 				return err
 			}
-			base, err := r.HTTPBaseURL(ctx, sandboxID, sandboxAgentPort)
+			base, err := r.HTTPBaseURL(ctx, sandboxID, SandboxAgentPort)
 			if err == nil {
 				healthURL := *base
 				healthURL.Path = "/healthz"

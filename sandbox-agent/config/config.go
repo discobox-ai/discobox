@@ -32,10 +32,11 @@ type Config struct {
 	HarnessMode           string            `json:"harnessMode,omitempty"`
 	// Harness is the sandbox's one resolved harness. A zero-value Harness
 	// (empty ID) means the sandbox has no harness configured.
-	Harness       Harness          `json:"harness"`
-	Volumes       []harness.Volume `json:"volumes,omitempty"`
-	SandboxConfig map[string]any   `json:"-"`
-	Resources     ResourceConfig   `json:"resources"`
+	Harness       Harness                `json:"harness"`
+	Volumes       []harness.Volume       `json:"volumes,omitempty"`
+	Sources       []sandboxconfig.Source `json:"sources,omitempty"`
+	SandboxConfig map[string]any         `json:"-"`
+	Resources     ResourceConfig         `json:"resources"`
 }
 
 type Identity struct {
@@ -145,6 +146,7 @@ func configFromEffective(effective sandboxconfig.Config) Config {
 		Prompt:                cloneCommand(effective.Prompt),
 		HarnessMode:           effective.HarnessMode,
 		Volumes:               effective.Volumes,
+		Sources:               effective.Sources,
 	}
 	if sampleInterval := strings.TrimSpace(effective.AgentRuntime.ResourceSampleInterval); sampleInterval != "" {
 		if parsed, err := time.ParseDuration(sampleInterval); err == nil {

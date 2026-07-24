@@ -488,6 +488,107 @@ components:
             required:
                 - hooks
             type: object
+        SandboxAgentGitSourceStatus:
+            additionalProperties: false
+            properties:
+                slug:
+                    type: string
+                target:
+                    type: string
+                clean:
+                    type: boolean
+                branch:
+                    type: string
+                headCommit:
+                    type: string
+                ahead:
+                    format: int64
+                    type: integer
+                behind:
+                    format: int64
+                    type: integer
+                porcelain:
+                    description: Bounded git status --porcelain=v2 output for this source.
+                    type: string
+                truncated:
+                    description: Whether porcelain output was truncated to the capture limit.
+                    type: boolean
+                error:
+                    description: Non-fatal error observing this source (e.g. missing directory, not a git repository).
+                    type: string
+                observedAt:
+                    format: date-time
+                    type: string
+            required:
+                - slug
+                - target
+                - clean
+                - observedAt
+            type: object
+        SandboxAgentSessionStatus:
+            additionalProperties: false
+            properties:
+                terminalId:
+                    type: string
+                harnessId:
+                    type: string
+                primary:
+                    type: boolean
+                name:
+                    description: Session display name, usually the sandbox's initial prompt.
+                    type: string
+                state:
+                    description: Derived harness session state.
+                    enum:
+                        - running
+                        - idle
+                        - needs_input
+                        - exited
+                        - failed
+                        - unknown
+                    type: string
+                lastEvent:
+                    description: Most recent harness lifecycle hook event name, when known.
+                    type: string
+                lastEventAt:
+                    format: date-time
+                    type: string
+                startedAt:
+                    format: date-time
+                    type: string
+                attacherCount:
+                    description: Number of clients currently attached to this terminal.
+                    format: int64
+                    type: integer
+                execStatus:
+                    description: Underlying exec process status.
+                    type: string
+            required:
+                - terminalId
+                - primary
+                - state
+                - attacherCount
+                - execStatus
+            type: object
+        SandboxAgentStatusResponse:
+            additionalProperties: false
+            properties:
+                sources:
+                    items:
+                        $ref: '#/components/schemas/SandboxAgentGitSourceStatus'
+                    type: array
+                sessions:
+                    items:
+                        $ref: '#/components/schemas/SandboxAgentSessionStatus'
+                    type: array
+                observedAt:
+                    format: date-time
+                    type: string
+            required:
+                - sources
+                - sessions
+                - observedAt
+            type: object
         SandboxExec:
             additionalProperties: false
             properties:
@@ -1897,6 +1998,15 @@ components:
         SandboxRuntime:
             additionalProperties: false
             properties:
+                agentStatus:
+                    additionalProperties: true
+                    description: Latest sandbox-agent-reported git/session/connection status, pushed periodically by the hosting pool-agent
+                    nullable: true
+                    type: object
+                agentStatusObservedAt:
+                    description: When agentStatus was observed by sandbox-agent
+                    format: date-time
+                    type: string
                 appliedCommits:
                     description: History of successful disco apply runs that landed this sandbox's commits on a host, most recent last. Client-reported; append-only.
                     items:
@@ -2771,6 +2881,90 @@ components:
                 - sandboxId
                 - state
             type: object
+        SandboxAgentStatusEntry:
+            additionalProperties: false
+            properties:
+                sandboxId:
+                    type: string
+                status:
+                    additionalProperties: true
+                    description: Opaque sandbox-agent status payload (see SandboxAgentStatusResponse), relayed unmodified by pool-agent.
+                    type: object
+                observedAt:
+                    format: date-time
+                    type: string
+            required:
+                - sandboxId
+                - status
+                - observedAt
+            type: object
+        ReportSandboxAgentStatusBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/ReportSandboxAgentStatusBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                sandboxes:
+                    description: Status reports for sandboxes this pool agent successfully polled this tick. Sandboxes that failed to poll are omitted, not reported as stale.
+                    items:
+                        $ref: '#/components/schemas/SandboxAgentStatusEntry'
+                    type: array
+            required:
+                - sandboxes
+            type: object
+        MintSandboxAgentStatusTokensBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/MintSandboxAgentStatusTokensBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                sandboxIds:
+                    description: Sandbox IDs this pool agent currently hosts and wants a status-read token for
+                    items:
+                        type: string
+                    type: array
+            required:
+                - sandboxIds
+            type: object
+        SandboxAgentStatusToken:
+            additionalProperties: false
+            properties:
+                expiresAt:
+                    description: When this token expires
+                    format: date-time
+                    type: string
+                sandboxId:
+                    type: string
+                token:
+                    description: Bearer token scoped to status:read only, for calling this sandbox's status endpoint
+                    type: string
+            required:
+                - sandboxId
+                - token
+                - expiresAt
+            type: object
+        MintSandboxAgentStatusTokensResponseBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/MintSandboxAgentStatusTokensResponseBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                tokens:
+                    items:
+                        $ref: '#/components/schemas/SandboxAgentStatusToken'
+                    type: array
+            required:
+                - tokens
+            type: object
         User:
             additionalProperties: false
             properties:
@@ -3002,6 +3196,80 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Report observed sandbox states from the pool agent
+            tags:
+                - Pools
+    /api/pools/{poolId}/sandbox-agent-status:
+        post:
+            operationId: report-sandbox-agent-status
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Bearer pool agent assertion signed with the registered pool agent private key
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer pool agent assertion signed with the registered pool agent private key
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/ReportSandboxAgentStatusBody'
+                required: true
+            responses:
+                204:
+                    description: Status batch accepted (entries for sandboxes this pool does not host are silently skipped)
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Report polled sandbox-agent status for one or more hosted sandboxes
+            tags:
+                - Pools
+    /api/pools/{poolId}/sandbox-agent-status-tokens:
+        post:
+            operationId: mint-sandbox-agent-status-tokens
+            parameters:
+                - description: Pool ID
+                  in: path
+                  name: poolId
+                  required: true
+                  schema:
+                    description: Pool ID
+                    type: string
+                - description: Bearer pool agent assertion signed with the registered pool agent private key
+                  in: header
+                  name: Authorization
+                  schema:
+                    description: Bearer pool agent assertion signed with the registered pool agent private key
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/MintSandboxAgentStatusTokensBody'
+                required: true
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/MintSandboxAgentStatusTokensResponseBody'
+                    description: OK
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts
             tags:
                 - Pools
     /api/pools/{poolId}/resolve-sandbox-secret:
@@ -4803,6 +5071,39 @@ paths:
             summary: List recent sandbox harness hook payload logs.
             tags:
                 - Harness Hooks
+            x-sandbox-agent: true
+    /api/projects/{projectId}/sandboxes/{sandboxId}/status:
+        get:
+            operationId: get-sandbox-agent-status
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                200:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxAgentStatusResponse'
+                    description: Sandbox-agent-reported git, harness session, and connection status.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Get sandbox-agent-reported status (git status, harness session state, active connections).
+            tags:
+                - Sandbox Status
             x-sandbox-agent: true
     /api/projects/{projectId}/sandboxes/{sandboxId}/execs:
         get:

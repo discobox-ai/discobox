@@ -82,3 +82,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0027](0027-harness-terminals-run-as-a-shells-typed-in-job.md) | Harness terminals run as a shell's typed-in job, not as the exec's own process | Accepted |
 | [0028](0028-exec-log-transcripts-persist-as-compressed-sqlite-rows.md) | Exec/terminal transcripts persist as compressed sqlite rows, not tmpfs jsonl files | Accepted |
 | [0029](0029-sandboxes-have-no-per-sandbox-resource-requests.md) | Sandboxes have no per-sandbox resource requests | Accepted |
+| [0030](0030-pool-agent-polls-and-pushes-sandbox-agent-status.md) | Pool-agent polls sandbox-agent status and pushes it to the control plane | Accepted |

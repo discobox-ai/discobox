@@ -249,6 +249,12 @@ func Serve(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, regist
 				States:          states,
 			})
 		})
+		// reporter's concrete client (HTTPClient in production) also implements
+		// SandboxAgentStatusClient; test doubles that only implement
+		// SandboxStateClient simply skip starting the poller.
+		if statusClient, ok := reporter.(SandboxAgentStatusClient); ok {
+			startSandboxAgentStatusPoller(ctx, logger, bootstrap, registration, runtime, statusClient)
+		}
 	}
 	go runtime.WatchProxyMaterial(ctx, logger)
 	return ServeWithRuntime(ctx, logger, bootstrap, registration, runtime)

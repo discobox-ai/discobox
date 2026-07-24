@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -114,6 +115,13 @@ type SandboxStateClient interface {
 	ReportSandboxStates(ctx context.Context, req SandboxStateRequest) error
 }
 
+// SandboxAgentStatusClient mints scoped sandbox-agent tokens and pushes
+// polled sandbox-agent status batches to the control plane (ADR 0017).
+type SandboxAgentStatusClient interface {
+	MintSandboxAgentStatusTokens(ctx context.Context, req MintSandboxAgentStatusTokensRequest) (*MintSandboxAgentStatusTokensResponse, error)
+	ReportSandboxAgentStatus(ctx context.Context, req SandboxAgentStatusReportRequest) error
+}
+
 // RegisterRequest is sent by the pool after generating its keypair.
 type RegisterRequest struct {
 	ControlPlaneURL string `json:"-"`
@@ -165,6 +173,51 @@ type SandboxStateRequest struct {
 	// no longer has a container.
 	Complete bool           `json:"complete"`
 	States   []SandboxState `json:"states"`
+}
+
+// MintSandboxAgentStatusTokensRequest asks the control plane for short-lived,
+// status:read-only sandbox-agent tokens for the sandboxes this pool hosts.
+// It carries no scope: the control plane always mints status:read only,
+// regardless of what is requested.
+type MintSandboxAgentStatusTokensRequest struct {
+	ControlPlaneURL string             `json:"-"`
+	ProjectID       string             `json:"-"`
+	PoolID          string             `json:"-"`
+	PrivateKey      ed25519.PrivateKey `json:"-"`
+	SandboxIDs      []string           `json:"sandboxIds"`
+}
+
+// SandboxAgentStatusToken is one minted, status:read-only sandbox-agent
+// token.
+type SandboxAgentStatusToken struct {
+	SandboxID string    `json:"sandboxId"`
+	Token     string    `json:"token"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+// MintSandboxAgentStatusTokensResponse is the control plane's response to a
+// token mint request.
+type MintSandboxAgentStatusTokensResponse struct {
+	Tokens []SandboxAgentStatusToken `json:"tokens"`
+}
+
+// SandboxAgentStatusEntry is one sandbox's polled status, relayed to the
+// control plane opaquely (pool-agent never parses Status).
+type SandboxAgentStatusEntry struct {
+	SandboxID  string          `json:"sandboxId"`
+	Status     json.RawMessage `json:"status"`
+	ObservedAt time.Time       `json:"observedAt"`
+}
+
+// SandboxAgentStatusReportRequest pushes this tick's successfully polled
+// sandbox-agent status batch to the control plane. Sandboxes that failed to
+// poll this tick are omitted, not reported as stale.
+type SandboxAgentStatusReportRequest struct {
+	ControlPlaneURL string                    `json:"-"`
+	ProjectID       string                    `json:"-"`
+	PoolID          string                    `json:"-"`
+	PrivateKey      ed25519.PrivateKey        `json:"-"`
+	Sandboxes       []SandboxAgentStatusEntry `json:"sandboxes"`
 }
 
 // RegisterResponse is returned by the control plane after pool registration.

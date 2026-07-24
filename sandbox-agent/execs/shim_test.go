@@ -610,6 +610,92 @@ func TestRunShimStartupCommandGetsRealJobControl(t *testing.T) {
 	}
 }
 
+// TestRunShimReportsAttacherCount confirms /status reports the live attacher
+// count (not a stale snapshot), since sandbox-agent's status endpoint relies
+// on this to report active terminal/exec connections.
+func TestRunShimReportsAttacherCount(t *testing.T) {
+	dir := t.TempDir()
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	socketPath := filepath.Join(dir, "shim.sock")
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- RunShim(ctx, ShimConfig{
+			ExecID:      "exec_test",
+			Command:     []string{"sh", "-c", "sleep 0.3"},
+			Workdir:     dir,
+			SocketPath:  socketPath,
+			RuntimePath: filepath.Join(dir, "runtime.json"),
+			Logs:        newFakeLogSink(),
+		})
+	}()
+
+	status, err := waitForStatus(ctx, socketPath)
+	if err != nil {
+		t.Fatalf("status before attach: %v", err)
+	}
+	if status.AttacherCount != 0 {
+		t.Fatalf("AttacherCount before attach = %d, want 0", status.AttacherCount)
+	}
+
+	conn, err := shimproxy.Dial(ctx, socketPath, 5*time.Second)
+	if err != nil {
+		t.Fatalf("dial shim: %v", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "http://unix/attach", nil)
+	if err != nil {
+		t.Fatalf("new attach request: %v", err)
+	}
+	req.Header.Set("Connection", "Upgrade")
+	req.Header.Set("Upgrade", "discobox-sandbox-exec")
+	if err := req.Write(conn); err != nil {
+		t.Fatalf("write attach request: %v", err)
+	}
+	reader := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(reader, req)
+	if err != nil {
+		t.Fatalf("read attach response: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("attach status = %s", resp.Status)
+	}
+	if _, err := shimproxy.StartJSON[Exec](ctx, socketPath); err != nil {
+		t.Fatalf("start shim: %v", err)
+	}
+
+	if err := waitForAttacherCount(ctx, socketPath, 1); err != nil {
+		t.Fatalf("attacher count did not reach 1 after attach: %v", err)
+	}
+
+	// Read until the exit frame rather than force-killing the command via
+	// cancel: the exit frame is only sent after the shim's wait() has fully
+	// drained output and closed the log, so waiting for it (as the other
+	// RunShim tests do) avoids racing that async cleanup against this test's
+	// TempDir removal.
+	for {
+		next, err := frame.Read(reader)
+		if err != nil {
+			t.Fatalf("read frame: %v", err)
+		}
+		if next.Type == frame.Exit {
+			break
+		}
+	}
+
+	conn.Close()
+
+	if err := waitForAttacherCount(ctx, socketPath, 0); err != nil {
+		t.Fatalf("attacher count did not return to 0 after detach: %v", err)
+	}
+
+	cancel()
+	if err := <-errCh; err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("run shim: %v", err)
+	}
+}
+
 // findChildPID scans /proc for a running process whose parent pid is parent
 // and whose comm matches name.
 func findChildPID(parent int, name string) (int, bool) {
@@ -644,6 +730,36 @@ func findChildPID(parent int, name string) (int, bool) {
 		}
 	}
 	return 0, false
+}
+
+func waitForStatus(ctx context.Context, socketPath string) (Exec, error) {
+	deadline := time.Now().Add(5 * time.Second)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		status, err := shimproxy.StatusJSON[Exec](ctx, socketPath)
+		if err == nil {
+			return status, nil
+		}
+		lastErr = err
+		time.Sleep(25 * time.Millisecond)
+	}
+	return Exec{}, lastErr
+}
+
+func waitForAttacherCount(ctx context.Context, socketPath string, want int) error {
+	deadline := time.Now().Add(5 * time.Second)
+	var got int
+	for time.Now().Before(deadline) {
+		status, err := shimproxy.StatusJSON[Exec](ctx, socketPath)
+		if err == nil {
+			got = status.AttacherCount
+			if got == want {
+				return nil
+			}
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+	return fmt.Errorf("attacher count = %d, want %d", got, want)
 }
 
 // waitForProcessState polls /proc until the process reaches want ("S" running

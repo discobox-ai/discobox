@@ -59,6 +59,15 @@ func (UnimplementedHandler) DeleteSandboxExec(ctx context.Context, params Delete
 	return ht.ErrNotImplemented
 }
 
+// GetSandboxAgentStatus implements get-sandbox-agent-status operation.
+//
+// Get sandbox-agent-reported status (git status, harness session state, active connections).
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/status
+func (UnimplementedHandler) GetSandboxAgentStatus(ctx context.Context, params GetSandboxAgentStatusParams) (r *SandboxAgentStatusResponse, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // GetSandboxExec implements get-sandbox-exec operation.
 //
 // Get an exec runtime in a sandbox.

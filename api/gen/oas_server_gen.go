@@ -243,6 +243,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/sandboxes/{sandboxId}
 	GetSandbox(ctx context.Context, params GetSandboxParams) (GetSandboxRes, error)
+	// GetSandboxAgentStatus implements get-sandbox-agent-status operation.
+	//
+	// Get sandbox-agent-reported status (git status, harness session state, active connections).
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/status
+	GetSandboxAgentStatus(ctx context.Context, params GetSandboxAgentStatusParams) (GetSandboxAgentStatusRes, error)
 	// GetSandboxExec implements get-sandbox-exec operation.
 	//
 	// Get an exec runtime in a sandbox.
@@ -369,6 +375,12 @@ type Handler interface {
 	//
 	// GET /projects/{projectId}/secrets
 	ListSecrets(ctx context.Context, params ListSecretsParams) (ListSecretsRes, error)
+	// MintSandboxAgentStatusTokens implements mint-sandbox-agent-status-tokens operation.
+	//
+	// Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts.
+	//
+	// POST /api/pools/{poolId}/sandbox-agent-status-tokens
+	MintSandboxAgentStatusTokens(ctx context.Context, req *MintSandboxAgentStatusTokensBody, params MintSandboxAgentStatusTokensParams) (MintSandboxAgentStatusTokensRes, error)
 	// PurgeSandbox implements purge-sandbox operation.
 	//
 	// Destroy the sandbox and its data. Unlike every other existence change this is synchronous - the
@@ -413,6 +425,12 @@ type Handler interface {
 	//
 	// POST /api/pools/{poolId}/sandbox-states
 	ReportPoolSandboxStates(ctx context.Context, req *ReportPoolSandboxStatesBody, params ReportPoolSandboxStatesParams) (ReportPoolSandboxStatesRes, error)
+	// ReportSandboxAgentStatus implements report-sandbox-agent-status operation.
+	//
+	// Report polled sandbox-agent status for one or more hosted sandboxes.
+	//
+	// POST /api/pools/{poolId}/sandbox-agent-status
+	ReportSandboxAgentStatus(ctx context.Context, req *ReportSandboxAgentStatusBody, params ReportSandboxAgentStatusParams) (ReportSandboxAgentStatusRes, error)
 	// ResolveSandboxSecret implements resolve-sandbox-secret operation.
 	//
 	// Resolve a sandbox sentinel secret.

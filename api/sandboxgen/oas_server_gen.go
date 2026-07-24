@@ -42,6 +42,12 @@ type Handler interface {
 	//
 	// DELETE /api/projects/{projectId}/sandboxes/{sandboxId}/execs/{execId}
 	DeleteSandboxExec(ctx context.Context, params DeleteSandboxExecParams) error
+	// GetSandboxAgentStatus implements get-sandbox-agent-status operation.
+	//
+	// Get sandbox-agent-reported status (git status, harness session state, active connections).
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/status
+	GetSandboxAgentStatus(ctx context.Context, params GetSandboxAgentStatusParams) (*SandboxAgentStatusResponse, error)
 	// GetSandboxExec implements get-sandbox-exec operation.
 	//
 	// Get an exec runtime in a sandbox.

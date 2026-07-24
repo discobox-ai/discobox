@@ -1529,12 +1529,14 @@ func (*ErrorModelStatusCode) listSandboxesRes()                    {}
 func (*ErrorModelStatusCode) listSecretGrantsRes()                 {}
 func (*ErrorModelStatusCode) listSecretRequestsRes()               {}
 func (*ErrorModelStatusCode) listSecretsRes()                      {}
+func (*ErrorModelStatusCode) mintSandboxAgentStatusTokensRes()     {}
 func (*ErrorModelStatusCode) purgeSandboxRes()                     {}
 func (*ErrorModelStatusCode) reconcilePoolRes()                    {}
 func (*ErrorModelStatusCode) reconcileSandboxRes()                 {}
 func (*ErrorModelStatusCode) refreshHarnessConfigImageRes()        {}
 func (*ErrorModelStatusCode) registerPoolRes()                     {}
 func (*ErrorModelStatusCode) reportPoolSandboxStatesRes()          {}
+func (*ErrorModelStatusCode) reportSandboxAgentStatusRes()         {}
 func (*ErrorModelStatusCode) resolveSandboxSecretRes()             {}
 func (*ErrorModelStatusCode) restartSandboxRes()                   {}
 func (*ErrorModelStatusCode) revokeSecretGrantRes()                {}
@@ -1602,6 +1604,7 @@ func (*ErrorResponseStatusCode) attachSandboxExecOnceRes()          {}
 func (*ErrorResponseStatusCode) attachSandboxExecRes()              {}
 func (*ErrorResponseStatusCode) createSandboxExecRes()              {}
 func (*ErrorResponseStatusCode) deleteSandboxExecRes()              {}
+func (*ErrorResponseStatusCode) getSandboxAgentStatusRes()          {}
 func (*ErrorResponseStatusCode) getSandboxExecRes()                 {}
 func (*ErrorResponseStatusCode) getSandboxExecResourcesRes()        {}
 func (*ErrorResponseStatusCode) listHarnessHooksRes()               {}
@@ -3266,6 +3269,63 @@ func (s *ListSecretsBody) SetSecrets(val []Secret) {
 
 func (*ListSecretsBody) listSecretsRes() {}
 
+// Ref: #/components/schemas/MintSandboxAgentStatusTokensBody
+type MintSandboxAgentStatusTokensBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Sandbox IDs this pool agent currently hosts and wants a status-read token for.
+	SandboxIds []string `json:"sandboxIds"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *MintSandboxAgentStatusTokensBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSandboxIds returns the value of SandboxIds.
+func (s *MintSandboxAgentStatusTokensBody) GetSandboxIds() []string {
+	return s.SandboxIds
+}
+
+// SetSchema sets the value of Schema.
+func (s *MintSandboxAgentStatusTokensBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSandboxIds sets the value of SandboxIds.
+func (s *MintSandboxAgentStatusTokensBody) SetSandboxIds(val []string) {
+	s.SandboxIds = val
+}
+
+// Ref: #/components/schemas/MintSandboxAgentStatusTokensResponseBody
+type MintSandboxAgentStatusTokensResponseBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI                    `json:"$schema"`
+	Tokens []SandboxAgentStatusToken `json:"tokens"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *MintSandboxAgentStatusTokensResponseBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetTokens returns the value of Tokens.
+func (s *MintSandboxAgentStatusTokensResponseBody) GetTokens() []SandboxAgentStatusToken {
+	return s.Tokens
+}
+
+// SetSchema sets the value of Schema.
+func (s *MintSandboxAgentStatusTokensResponseBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetTokens sets the value of Tokens.
+func (s *MintSandboxAgentStatusTokensResponseBody) SetTokens(val []SandboxAgentStatusToken) {
+	s.Tokens = val
+}
+
+func (*MintSandboxAgentStatusTokensResponseBody) mintSandboxAgentStatusTokensRes() {}
+
 // NewOptApproveSecretRequestBodyScope returns new OptApproveSecretRequestBodyScope with value set to v.
 func NewOptApproveSecretRequestBodyScope(v ApproveSecretRequestBodyScope) OptApproveSecretRequestBodyScope {
 	return OptApproveSecretRequestBodyScope{
@@ -4815,6 +4875,69 @@ func (o OptNilSandboxProviderInstanceArray) Get() (v []SandboxProviderInstance, 
 
 // Or returns value if set, or given parameter if does not.
 func (o OptNilSandboxProviderInstanceArray) Or(d []SandboxProviderInstance) []SandboxProviderInstance {
+	if v, ok := o.Get(); ok {
+		return v
+	}
+	return d
+}
+
+// NewOptNilSandboxRuntimeAgentStatus returns new OptNilSandboxRuntimeAgentStatus with value set to v.
+func NewOptNilSandboxRuntimeAgentStatus(v SandboxRuntimeAgentStatus) OptNilSandboxRuntimeAgentStatus {
+	return OptNilSandboxRuntimeAgentStatus{
+		Value: v,
+		Set:   true,
+	}
+}
+
+// OptNilSandboxRuntimeAgentStatus is optional nullable SandboxRuntimeAgentStatus.
+type OptNilSandboxRuntimeAgentStatus struct {
+	Value SandboxRuntimeAgentStatus
+	Set   bool
+	Null  bool
+}
+
+// IsSet returns true if OptNilSandboxRuntimeAgentStatus was set.
+func (o OptNilSandboxRuntimeAgentStatus) IsSet() bool { return o.Set }
+
+// Reset unsets value.
+func (o *OptNilSandboxRuntimeAgentStatus) Reset() {
+	var v SandboxRuntimeAgentStatus
+	o.Value = v
+	o.Set = false
+	o.Null = false
+}
+
+// SetTo sets value to v.
+func (o *OptNilSandboxRuntimeAgentStatus) SetTo(v SandboxRuntimeAgentStatus) {
+	o.Set = true
+	o.Null = false
+	o.Value = v
+}
+
+// IsNull returns true if value is Null.
+func (o OptNilSandboxRuntimeAgentStatus) IsNull() bool { return o.Null }
+
+// SetToNull sets value to null.
+func (o *OptNilSandboxRuntimeAgentStatus) SetToNull() {
+	o.Set = true
+	o.Null = true
+	var v SandboxRuntimeAgentStatus
+	o.Value = v
+}
+
+// Get returns value and boolean that denotes whether value was set.
+func (o OptNilSandboxRuntimeAgentStatus) Get() (v SandboxRuntimeAgentStatus, ok bool) {
+	if o.Null {
+		return v, false
+	}
+	if !o.Set {
+		return v, false
+	}
+	return o.Value, true
+}
+
+// Or returns value if set, or given parameter if does not.
+func (o OptNilSandboxRuntimeAgentStatus) Or(d SandboxRuntimeAgentStatus) SandboxRuntimeAgentStatus {
 	if v, ok := o.Get(); ok {
 		return v
 	}
@@ -7032,6 +7155,40 @@ type ReportPoolSandboxStatesNoContent struct{}
 
 func (*ReportPoolSandboxStatesNoContent) reportPoolSandboxStatesRes() {}
 
+// Ref: #/components/schemas/ReportSandboxAgentStatusBody
+type ReportSandboxAgentStatusBody struct {
+	// A URL to the JSON Schema for this object.
+	Schema OptURI `json:"$schema"`
+	// Status reports for sandboxes this pool agent successfully polled this tick. Sandboxes that failed
+	// to poll are omitted, not reported as stale.
+	Sandboxes []SandboxAgentStatusEntry `json:"sandboxes"`
+}
+
+// GetSchema returns the value of Schema.
+func (s *ReportSandboxAgentStatusBody) GetSchema() OptURI {
+	return s.Schema
+}
+
+// GetSandboxes returns the value of Sandboxes.
+func (s *ReportSandboxAgentStatusBody) GetSandboxes() []SandboxAgentStatusEntry {
+	return s.Sandboxes
+}
+
+// SetSchema sets the value of Schema.
+func (s *ReportSandboxAgentStatusBody) SetSchema(val OptURI) {
+	s.Schema = val
+}
+
+// SetSandboxes sets the value of Sandboxes.
+func (s *ReportSandboxAgentStatusBody) SetSandboxes(val []SandboxAgentStatusEntry) {
+	s.Sandboxes = val
+}
+
+// ReportSandboxAgentStatusNoContent is response for ReportSandboxAgentStatus operation.
+type ReportSandboxAgentStatusNoContent struct{}
+
+func (*ReportSandboxAgentStatusNoContent) reportSandboxAgentStatusRes() {}
+
 // Worker request to resolve a sentinel placeholder observed by the proxy to its real secret value
 // for a destination host.
 // Ref: #/components/schemas/ResolveSandboxSecretBody
@@ -7465,6 +7622,453 @@ func (*Sandbox) startSandboxRes()              {}
 func (*Sandbox) stopSandboxRes()               {}
 func (*Sandbox) updateSandboxRes()             {}
 func (*Sandbox) upgradeSandboxRes()            {}
+
+// Ref: #/components/schemas/SandboxAgentGitSourceStatus
+type SandboxAgentGitSourceStatus struct {
+	Slug       string    `json:"slug"`
+	Target     string    `json:"target"`
+	Clean      bool      `json:"clean"`
+	Branch     OptString `json:"branch"`
+	HeadCommit OptString `json:"headCommit"`
+	Ahead      OptInt64  `json:"ahead"`
+	Behind     OptInt64  `json:"behind"`
+	// Bounded git status --porcelain=v2 output for this source.
+	Porcelain OptString `json:"porcelain"`
+	// Whether porcelain output was truncated to the capture limit.
+	Truncated OptBool `json:"truncated"`
+	// Non-fatal error observing this source (e.g. missing directory, not a git repository).
+	Error      OptString `json:"error"`
+	ObservedAt time.Time `json:"observedAt"`
+}
+
+// GetSlug returns the value of Slug.
+func (s *SandboxAgentGitSourceStatus) GetSlug() string {
+	return s.Slug
+}
+
+// GetTarget returns the value of Target.
+func (s *SandboxAgentGitSourceStatus) GetTarget() string {
+	return s.Target
+}
+
+// GetClean returns the value of Clean.
+func (s *SandboxAgentGitSourceStatus) GetClean() bool {
+	return s.Clean
+}
+
+// GetBranch returns the value of Branch.
+func (s *SandboxAgentGitSourceStatus) GetBranch() OptString {
+	return s.Branch
+}
+
+// GetHeadCommit returns the value of HeadCommit.
+func (s *SandboxAgentGitSourceStatus) GetHeadCommit() OptString {
+	return s.HeadCommit
+}
+
+// GetAhead returns the value of Ahead.
+func (s *SandboxAgentGitSourceStatus) GetAhead() OptInt64 {
+	return s.Ahead
+}
+
+// GetBehind returns the value of Behind.
+func (s *SandboxAgentGitSourceStatus) GetBehind() OptInt64 {
+	return s.Behind
+}
+
+// GetPorcelain returns the value of Porcelain.
+func (s *SandboxAgentGitSourceStatus) GetPorcelain() OptString {
+	return s.Porcelain
+}
+
+// GetTruncated returns the value of Truncated.
+func (s *SandboxAgentGitSourceStatus) GetTruncated() OptBool {
+	return s.Truncated
+}
+
+// GetError returns the value of Error.
+func (s *SandboxAgentGitSourceStatus) GetError() OptString {
+	return s.Error
+}
+
+// GetObservedAt returns the value of ObservedAt.
+func (s *SandboxAgentGitSourceStatus) GetObservedAt() time.Time {
+	return s.ObservedAt
+}
+
+// SetSlug sets the value of Slug.
+func (s *SandboxAgentGitSourceStatus) SetSlug(val string) {
+	s.Slug = val
+}
+
+// SetTarget sets the value of Target.
+func (s *SandboxAgentGitSourceStatus) SetTarget(val string) {
+	s.Target = val
+}
+
+// SetClean sets the value of Clean.
+func (s *SandboxAgentGitSourceStatus) SetClean(val bool) {
+	s.Clean = val
+}
+
+// SetBranch sets the value of Branch.
+func (s *SandboxAgentGitSourceStatus) SetBranch(val OptString) {
+	s.Branch = val
+}
+
+// SetHeadCommit sets the value of HeadCommit.
+func (s *SandboxAgentGitSourceStatus) SetHeadCommit(val OptString) {
+	s.HeadCommit = val
+}
+
+// SetAhead sets the value of Ahead.
+func (s *SandboxAgentGitSourceStatus) SetAhead(val OptInt64) {
+	s.Ahead = val
+}
+
+// SetBehind sets the value of Behind.
+func (s *SandboxAgentGitSourceStatus) SetBehind(val OptInt64) {
+	s.Behind = val
+}
+
+// SetPorcelain sets the value of Porcelain.
+func (s *SandboxAgentGitSourceStatus) SetPorcelain(val OptString) {
+	s.Porcelain = val
+}
+
+// SetTruncated sets the value of Truncated.
+func (s *SandboxAgentGitSourceStatus) SetTruncated(val OptBool) {
+	s.Truncated = val
+}
+
+// SetError sets the value of Error.
+func (s *SandboxAgentGitSourceStatus) SetError(val OptString) {
+	s.Error = val
+}
+
+// SetObservedAt sets the value of ObservedAt.
+func (s *SandboxAgentGitSourceStatus) SetObservedAt(val time.Time) {
+	s.ObservedAt = val
+}
+
+// Ref: #/components/schemas/SandboxAgentSessionStatus
+type SandboxAgentSessionStatus struct {
+	TerminalId string    `json:"terminalId"`
+	HarnessId  OptString `json:"harnessId"`
+	Primary    bool      `json:"primary"`
+	// Session display name, usually the sandbox's initial prompt.
+	Name OptString `json:"name"`
+	// Derived harness session state.
+	State SandboxAgentSessionStatusState `json:"state"`
+	// Most recent harness lifecycle hook event name, when known.
+	LastEvent   OptString   `json:"lastEvent"`
+	LastEventAt OptDateTime `json:"lastEventAt"`
+	StartedAt   OptDateTime `json:"startedAt"`
+	// Number of clients currently attached to this terminal.
+	AttacherCount int64 `json:"attacherCount"`
+	// Underlying exec process status.
+	ExecStatus string `json:"execStatus"`
+}
+
+// GetTerminalId returns the value of TerminalId.
+func (s *SandboxAgentSessionStatus) GetTerminalId() string {
+	return s.TerminalId
+}
+
+// GetHarnessId returns the value of HarnessId.
+func (s *SandboxAgentSessionStatus) GetHarnessId() OptString {
+	return s.HarnessId
+}
+
+// GetPrimary returns the value of Primary.
+func (s *SandboxAgentSessionStatus) GetPrimary() bool {
+	return s.Primary
+}
+
+// GetName returns the value of Name.
+func (s *SandboxAgentSessionStatus) GetName() OptString {
+	return s.Name
+}
+
+// GetState returns the value of State.
+func (s *SandboxAgentSessionStatus) GetState() SandboxAgentSessionStatusState {
+	return s.State
+}
+
+// GetLastEvent returns the value of LastEvent.
+func (s *SandboxAgentSessionStatus) GetLastEvent() OptString {
+	return s.LastEvent
+}
+
+// GetLastEventAt returns the value of LastEventAt.
+func (s *SandboxAgentSessionStatus) GetLastEventAt() OptDateTime {
+	return s.LastEventAt
+}
+
+// GetStartedAt returns the value of StartedAt.
+func (s *SandboxAgentSessionStatus) GetStartedAt() OptDateTime {
+	return s.StartedAt
+}
+
+// GetAttacherCount returns the value of AttacherCount.
+func (s *SandboxAgentSessionStatus) GetAttacherCount() int64 {
+	return s.AttacherCount
+}
+
+// GetExecStatus returns the value of ExecStatus.
+func (s *SandboxAgentSessionStatus) GetExecStatus() string {
+	return s.ExecStatus
+}
+
+// SetTerminalId sets the value of TerminalId.
+func (s *SandboxAgentSessionStatus) SetTerminalId(val string) {
+	s.TerminalId = val
+}
+
+// SetHarnessId sets the value of HarnessId.
+func (s *SandboxAgentSessionStatus) SetHarnessId(val OptString) {
+	s.HarnessId = val
+}
+
+// SetPrimary sets the value of Primary.
+func (s *SandboxAgentSessionStatus) SetPrimary(val bool) {
+	s.Primary = val
+}
+
+// SetName sets the value of Name.
+func (s *SandboxAgentSessionStatus) SetName(val OptString) {
+	s.Name = val
+}
+
+// SetState sets the value of State.
+func (s *SandboxAgentSessionStatus) SetState(val SandboxAgentSessionStatusState) {
+	s.State = val
+}
+
+// SetLastEvent sets the value of LastEvent.
+func (s *SandboxAgentSessionStatus) SetLastEvent(val OptString) {
+	s.LastEvent = val
+}
+
+// SetLastEventAt sets the value of LastEventAt.
+func (s *SandboxAgentSessionStatus) SetLastEventAt(val OptDateTime) {
+	s.LastEventAt = val
+}
+
+// SetStartedAt sets the value of StartedAt.
+func (s *SandboxAgentSessionStatus) SetStartedAt(val OptDateTime) {
+	s.StartedAt = val
+}
+
+// SetAttacherCount sets the value of AttacherCount.
+func (s *SandboxAgentSessionStatus) SetAttacherCount(val int64) {
+	s.AttacherCount = val
+}
+
+// SetExecStatus sets the value of ExecStatus.
+func (s *SandboxAgentSessionStatus) SetExecStatus(val string) {
+	s.ExecStatus = val
+}
+
+// Derived harness session state.
+type SandboxAgentSessionStatusState string
+
+const (
+	SandboxAgentSessionStatusStateRunning    SandboxAgentSessionStatusState = "running"
+	SandboxAgentSessionStatusStateIdle       SandboxAgentSessionStatusState = "idle"
+	SandboxAgentSessionStatusStateNeedsInput SandboxAgentSessionStatusState = "needs_input"
+	SandboxAgentSessionStatusStateExited     SandboxAgentSessionStatusState = "exited"
+	SandboxAgentSessionStatusStateFailed     SandboxAgentSessionStatusState = "failed"
+	SandboxAgentSessionStatusStateUnknown    SandboxAgentSessionStatusState = "unknown"
+)
+
+// AllValues returns all SandboxAgentSessionStatusState values.
+func (SandboxAgentSessionStatusState) AllValues() []SandboxAgentSessionStatusState {
+	return []SandboxAgentSessionStatusState{
+		SandboxAgentSessionStatusStateRunning,
+		SandboxAgentSessionStatusStateIdle,
+		SandboxAgentSessionStatusStateNeedsInput,
+		SandboxAgentSessionStatusStateExited,
+		SandboxAgentSessionStatusStateFailed,
+		SandboxAgentSessionStatusStateUnknown,
+	}
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (s SandboxAgentSessionStatusState) MarshalText() ([]byte, error) {
+	switch s {
+	case SandboxAgentSessionStatusStateRunning:
+		return []byte(s), nil
+	case SandboxAgentSessionStatusStateIdle:
+		return []byte(s), nil
+	case SandboxAgentSessionStatusStateNeedsInput:
+		return []byte(s), nil
+	case SandboxAgentSessionStatusStateExited:
+		return []byte(s), nil
+	case SandboxAgentSessionStatusStateFailed:
+		return []byte(s), nil
+	case SandboxAgentSessionStatusStateUnknown:
+		return []byte(s), nil
+	default:
+		return nil, errors.Errorf("invalid value: %q", s)
+	}
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (s *SandboxAgentSessionStatusState) UnmarshalText(data []byte) error {
+	switch SandboxAgentSessionStatusState(data) {
+	case SandboxAgentSessionStatusStateRunning:
+		*s = SandboxAgentSessionStatusStateRunning
+		return nil
+	case SandboxAgentSessionStatusStateIdle:
+		*s = SandboxAgentSessionStatusStateIdle
+		return nil
+	case SandboxAgentSessionStatusStateNeedsInput:
+		*s = SandboxAgentSessionStatusStateNeedsInput
+		return nil
+	case SandboxAgentSessionStatusStateExited:
+		*s = SandboxAgentSessionStatusStateExited
+		return nil
+	case SandboxAgentSessionStatusStateFailed:
+		*s = SandboxAgentSessionStatusStateFailed
+		return nil
+	case SandboxAgentSessionStatusStateUnknown:
+		*s = SandboxAgentSessionStatusStateUnknown
+		return nil
+	default:
+		return errors.Errorf("invalid value: %q", data)
+	}
+}
+
+// Ref: #/components/schemas/SandboxAgentStatusEntry
+type SandboxAgentStatusEntry struct {
+	SandboxId string `json:"sandboxId"`
+	// Opaque sandbox-agent status payload (see SandboxAgentStatusResponse), relayed unmodified by
+	// pool-agent.
+	Status     SandboxAgentStatusEntryStatus `json:"status"`
+	ObservedAt time.Time                     `json:"observedAt"`
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *SandboxAgentStatusEntry) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetStatus returns the value of Status.
+func (s *SandboxAgentStatusEntry) GetStatus() SandboxAgentStatusEntryStatus {
+	return s.Status
+}
+
+// GetObservedAt returns the value of ObservedAt.
+func (s *SandboxAgentStatusEntry) GetObservedAt() time.Time {
+	return s.ObservedAt
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *SandboxAgentStatusEntry) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetStatus sets the value of Status.
+func (s *SandboxAgentStatusEntry) SetStatus(val SandboxAgentStatusEntryStatus) {
+	s.Status = val
+}
+
+// SetObservedAt sets the value of ObservedAt.
+func (s *SandboxAgentStatusEntry) SetObservedAt(val time.Time) {
+	s.ObservedAt = val
+}
+
+// Opaque sandbox-agent status payload (see SandboxAgentStatusResponse), relayed unmodified by
+// pool-agent.
+type SandboxAgentStatusEntryStatus map[string]jx.Raw
+
+func (s *SandboxAgentStatusEntryStatus) init() SandboxAgentStatusEntryStatus {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
+}
+
+// Ref: #/components/schemas/SandboxAgentStatusResponse
+type SandboxAgentStatusResponse struct {
+	Sources    []SandboxAgentGitSourceStatus `json:"sources"`
+	Sessions   []SandboxAgentSessionStatus   `json:"sessions"`
+	ObservedAt time.Time                     `json:"observedAt"`
+}
+
+// GetSources returns the value of Sources.
+func (s *SandboxAgentStatusResponse) GetSources() []SandboxAgentGitSourceStatus {
+	return s.Sources
+}
+
+// GetSessions returns the value of Sessions.
+func (s *SandboxAgentStatusResponse) GetSessions() []SandboxAgentSessionStatus {
+	return s.Sessions
+}
+
+// GetObservedAt returns the value of ObservedAt.
+func (s *SandboxAgentStatusResponse) GetObservedAt() time.Time {
+	return s.ObservedAt
+}
+
+// SetSources sets the value of Sources.
+func (s *SandboxAgentStatusResponse) SetSources(val []SandboxAgentGitSourceStatus) {
+	s.Sources = val
+}
+
+// SetSessions sets the value of Sessions.
+func (s *SandboxAgentStatusResponse) SetSessions(val []SandboxAgentSessionStatus) {
+	s.Sessions = val
+}
+
+// SetObservedAt sets the value of ObservedAt.
+func (s *SandboxAgentStatusResponse) SetObservedAt(val time.Time) {
+	s.ObservedAt = val
+}
+
+func (*SandboxAgentStatusResponse) getSandboxAgentStatusRes() {}
+
+// Ref: #/components/schemas/SandboxAgentStatusToken
+type SandboxAgentStatusToken struct {
+	// When this token expires.
+	ExpiresAt time.Time `json:"expiresAt"`
+	SandboxId string    `json:"sandboxId"`
+	// Bearer token scoped to status:read only, for calling this sandbox's status endpoint.
+	Token string `json:"token"`
+}
+
+// GetExpiresAt returns the value of ExpiresAt.
+func (s *SandboxAgentStatusToken) GetExpiresAt() time.Time {
+	return s.ExpiresAt
+}
+
+// GetSandboxId returns the value of SandboxId.
+func (s *SandboxAgentStatusToken) GetSandboxId() string {
+	return s.SandboxId
+}
+
+// GetToken returns the value of Token.
+func (s *SandboxAgentStatusToken) GetToken() string {
+	return s.Token
+}
+
+// SetExpiresAt sets the value of ExpiresAt.
+func (s *SandboxAgentStatusToken) SetExpiresAt(val time.Time) {
+	s.ExpiresAt = val
+}
+
+// SetSandboxId sets the value of SandboxId.
+func (s *SandboxAgentStatusToken) SetSandboxId(val string) {
+	s.SandboxId = val
+}
+
+// SetToken sets the value of Token.
+func (s *SandboxAgentStatusToken) SetToken(val string) {
+	s.Token = val
+}
 
 // Ref: #/components/schemas/SandboxConfig
 type SandboxConfig struct {
@@ -8734,6 +9338,11 @@ func (*SandboxProviderInstance) updateSandboxProviderInstanceRes() {}
 
 // Ref: #/components/schemas/SandboxRuntime
 type SandboxRuntime struct {
+	// Latest sandbox-agent-reported git/session/connection status, pushed periodically by the hosting
+	// pool-agent.
+	AgentStatus OptNilSandboxRuntimeAgentStatus `json:"agentStatus"`
+	// When agentStatus was observed by sandbox-agent.
+	AgentStatusObservedAt OptDateTime `json:"agentStatusObservedAt"`
 	// History of successful disco apply runs that landed this sandbox's commits on a host, most recent
 	// last. Client-reported; append-only.
 	AppliedCommits OptNilAppliedSourceCommitArray `json:"appliedCommits"`
@@ -8763,6 +9372,16 @@ type SandboxRuntime struct {
 	// is old is a state nobody has confirmed recently.
 	StateReportedAt OptDateTime       `json:"stateReportedAt"`
 	Upgrade         OptSandboxUpgrade `json:"upgrade"`
+}
+
+// GetAgentStatus returns the value of AgentStatus.
+func (s *SandboxRuntime) GetAgentStatus() OptNilSandboxRuntimeAgentStatus {
+	return s.AgentStatus
+}
+
+// GetAgentStatusObservedAt returns the value of AgentStatusObservedAt.
+func (s *SandboxRuntime) GetAgentStatusObservedAt() OptDateTime {
+	return s.AgentStatusObservedAt
 }
 
 // GetAppliedCommits returns the value of AppliedCommits.
@@ -8820,6 +9439,16 @@ func (s *SandboxRuntime) GetUpgrade() OptSandboxUpgrade {
 	return s.Upgrade
 }
 
+// SetAgentStatus sets the value of AgentStatus.
+func (s *SandboxRuntime) SetAgentStatus(val OptNilSandboxRuntimeAgentStatus) {
+	s.AgentStatus = val
+}
+
+// SetAgentStatusObservedAt sets the value of AgentStatusObservedAt.
+func (s *SandboxRuntime) SetAgentStatusObservedAt(val OptDateTime) {
+	s.AgentStatusObservedAt = val
+}
+
 // SetAppliedCommits sets the value of AppliedCommits.
 func (s *SandboxRuntime) SetAppliedCommits(val OptNilAppliedSourceCommitArray) {
 	s.AppliedCommits = val
@@ -8873,6 +9502,19 @@ func (s *SandboxRuntime) SetStateReportedAt(val OptDateTime) {
 // SetUpgrade sets the value of Upgrade.
 func (s *SandboxRuntime) SetUpgrade(val OptSandboxUpgrade) {
 	s.Upgrade = val
+}
+
+// Latest sandbox-agent-reported git/session/connection status, pushed periodically by the hosting
+// pool-agent.
+type SandboxRuntimeAgentStatus map[string]jx.Raw
+
+func (s *SandboxRuntimeAgentStatus) init() SandboxRuntimeAgentStatus {
+	m := *s
+	if m == nil {
+		m = map[string]jx.Raw{}
+		*s = m
+	}
+	return m
 }
 
 // Requested existence. Power state is not requested: whether a sandbox is running is

@@ -40,6 +40,10 @@ type RegisterPoolBody = apimodel.RegisterPoolBody
 type RegisterPoolResponseBody = apimodel.RegisterPoolResponseBody
 type UpdatePoolStatusBody = apimodel.UpdatePoolStatusBody
 type ReportPoolSandboxStatesBody = apimodel.ReportPoolSandboxStatesBody
+type MintSandboxAgentStatusTokensBody = apimodel.MintSandboxAgentStatusTokensBody
+type MintSandboxAgentStatusTokensResponseBody = apimodel.MintSandboxAgentStatusTokensResponseBody
+type SandboxAgentStatusToken = apimodel.SandboxAgentStatusToken
+type ReportSandboxAgentStatusBody = apimodel.ReportSandboxAgentStatusBody
 type OptBool = serverapi.OptBool
 type OptString = serverapi.OptString
 type OptURI = serverapi.OptURI
@@ -141,7 +145,7 @@ type SandboxProviderInstanceService interface {
 
 // PoolService manages project-scoped pools: the user-visible sharing boundary
 // sandboxes are scheduled into, each its own runtime host. It also carries the
-// pool agent surface: registration, heartbeats, and sandbox-removal reports.
+// pool agent surface: registration, heartbeats, and sandbox-state reports.
 type PoolService interface {
 	ListPools(ctx context.Context, projectID string) ([]model.Pool, error)
 	CreatePool(ctx context.Context, projectID string, input CreatePoolBody) (*model.Pool, error)
@@ -155,6 +159,8 @@ type PoolService interface {
 	RegisterPool(ctx context.Context, input RegisterPoolBody) (*RegisterPoolResponseBody, error)
 	UpdatePoolStatus(ctx context.Context, poolID string, input UpdatePoolStatusBody) (*model.Pool, error)
 	ReportPoolSandboxStates(ctx context.Context, poolID string, input ReportPoolSandboxStatesBody) error
+	MintSandboxAgentStatusTokens(ctx context.Context, poolID string, input MintSandboxAgentStatusTokensBody) (*MintSandboxAgentStatusTokensResponseBody, error)
+	ReportSandboxAgentStatus(ctx context.Context, poolID string, input ReportSandboxAgentStatusBody) error
 }
 
 // JobService provides project-scoped durable job visibility.

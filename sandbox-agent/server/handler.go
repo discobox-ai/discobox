@@ -13,10 +13,12 @@ import (
 
 	"github.com/go-faster/jx"
 	sandboxapi "github.com/obot-platform/discobox/api/sandboxgen"
+	"github.com/obot-platform/discobox/sandbox-agent/agentstatus"
 	"github.com/obot-platform/discobox/sandbox-agent/execs"
 	"github.com/obot-platform/discobox/sandbox-agent/resources"
 	"github.com/obot-platform/discobox/sandbox-agent/store"
 	"github.com/obot-platform/discobox/sandbox-agent/terminal"
+	"github.com/obot-platform/discobox/sandboxconfig"
 )
 
 type handler struct {
@@ -27,6 +29,9 @@ type handler struct {
 	resourceCollector resources.Collector
 	resourceInterval  time.Duration
 	resourceRetention int
+	sources           []sandboxconfig.Source
+	harnessTypeID     string
+	prompt            []string
 }
 
 type terminalStore interface {
@@ -410,6 +415,93 @@ func (h *handler) ListHarnessHooks(ctx context.Context, params sandboxapi.ListHa
 		response.Hooks = append(response.Hooks, harnessHookLog(record))
 	}
 	return &response, nil
+}
+
+// GetSandboxAgentStatus computes git/session/connection status fresh on every
+// call: sandbox-agent never caches or pushes this on its own initiative, it
+// only ever answers inbound authenticated requests (see ADR 0017).
+func (h *handler) GetSandboxAgentStatus(ctx context.Context, _ sandboxapi.GetSandboxAgentStatusParams) (*sandboxapi.SandboxAgentStatusResponse, error) {
+	observedAt := time.Now().UTC()
+	sources := agentstatus.ComputeGitStatus(ctx, h.sources)
+	var terminals []execs.Exec
+	if h.terminals != nil {
+		terminals = h.terminals.List()
+	}
+	var hooks agentstatus.HookLister
+	if h.store != nil {
+		hooks = h.store
+	}
+	sessions := agentstatus.ComputeSessionStatus(ctx, terminals, h.harnessTypeID, h.prompt, hooks)
+
+	response := sandboxapi.SandboxAgentStatusResponse{
+		ObservedAt: observedAt,
+		Sources:    make([]sandboxapi.SandboxAgentGitSourceStatus, 0, len(sources)),
+		Sessions:   make([]sandboxapi.SandboxAgentSessionStatus, 0, len(sessions)),
+	}
+	for _, source := range sources {
+		response.Sources = append(response.Sources, sandboxAgentGitSourceStatus(source))
+	}
+	for _, session := range sessions {
+		response.Sessions = append(response.Sessions, sandboxAgentSessionStatus(session))
+	}
+	return &response, nil
+}
+
+func sandboxAgentGitSourceStatus(in agentstatus.GitSourceStatus) sandboxapi.SandboxAgentGitSourceStatus {
+	out := sandboxapi.SandboxAgentGitSourceStatus{
+		Slug:       in.Slug,
+		Target:     in.Target,
+		Clean:      in.Clean,
+		ObservedAt: in.ObservedAt,
+	}
+	if in.Branch != "" {
+		out.Branch = sandboxapi.NewOptString(in.Branch)
+	}
+	if in.HeadCommit != "" {
+		out.HeadCommit = sandboxapi.NewOptString(in.HeadCommit)
+	}
+	if in.Ahead != 0 {
+		out.Ahead = sandboxapi.NewOptInt64(int64(in.Ahead))
+	}
+	if in.Behind != 0 {
+		out.Behind = sandboxapi.NewOptInt64(int64(in.Behind))
+	}
+	if in.Porcelain != "" {
+		out.Porcelain = sandboxapi.NewOptString(in.Porcelain)
+	}
+	if in.Truncated {
+		out.Truncated = sandboxapi.NewOptBool(true)
+	}
+	if in.Error != "" {
+		out.Error = sandboxapi.NewOptString(in.Error)
+	}
+	return out
+}
+
+func sandboxAgentSessionStatus(in agentstatus.SessionStatus) sandboxapi.SandboxAgentSessionStatus {
+	out := sandboxapi.SandboxAgentSessionStatus{
+		TerminalId:    in.TerminalID,
+		Primary:       in.Primary,
+		State:         sandboxapi.SandboxAgentSessionStatusState(in.State),
+		AttacherCount: int64(in.AttacherCount),
+		ExecStatus:    in.ExecStatus,
+	}
+	if in.HarnessID != "" {
+		out.HarnessId = sandboxapi.NewOptString(in.HarnessID)
+	}
+	if in.Name != "" {
+		out.Name = sandboxapi.NewOptString(in.Name)
+	}
+	if in.LastEvent != "" {
+		out.LastEvent = sandboxapi.NewOptString(in.LastEvent)
+	}
+	if in.LastEventAt != nil {
+		out.LastEventAt = sandboxapi.NewOptDateTime(*in.LastEventAt)
+	}
+	if in.StartedAt != nil {
+		out.StartedAt = sandboxapi.NewOptDateTime(*in.StartedAt)
+	}
+	return out
 }
 
 func (h *handler) NewError(_ context.Context, err error) *sandboxapi.ErrorResponseStatusCode {

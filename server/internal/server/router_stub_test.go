@@ -793,6 +793,14 @@ func (s *routerTestServices) ReportPoolSandboxStates(context.Context, string, se
 	return nil
 }
 
+func (s *routerTestServices) MintSandboxAgentStatusTokens(context.Context, string, services.MintSandboxAgentStatusTokensBody) (*services.MintSandboxAgentStatusTokensResponseBody, error) {
+	return &services.MintSandboxAgentStatusTokensResponseBody{}, nil
+}
+
+func (s *routerTestServices) ReportSandboxAgentStatus(context.Context, string, services.ReportSandboxAgentStatusBody) error {
+	return nil
+}
+
 // instructSandbox stands in for forwarding a power instruction to the pool
 // agent. It writes no state, because the real one does not: what became of the
 // instruction arrives later on the agent's reporting channel (ADR 0017 §9).

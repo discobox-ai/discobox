@@ -136,6 +136,107 @@ components:
                 - source
                 - data
             type: object
+        SandboxAgentGitSourceStatus:
+            additionalProperties: false
+            properties:
+                ahead:
+                    format: int64
+                    type: integer
+                behind:
+                    format: int64
+                    type: integer
+                branch:
+                    type: string
+                clean:
+                    type: boolean
+                error:
+                    description: Non-fatal error observing this source (e.g. missing directory, not a git repository).
+                    type: string
+                headCommit:
+                    type: string
+                observedAt:
+                    format: date-time
+                    type: string
+                porcelain:
+                    description: Bounded git status --porcelain=v2 output for this source.
+                    type: string
+                slug:
+                    type: string
+                target:
+                    type: string
+                truncated:
+                    description: Whether porcelain output was truncated to the capture limit.
+                    type: boolean
+            required:
+                - slug
+                - target
+                - clean
+                - observedAt
+            type: object
+        SandboxAgentSessionStatus:
+            additionalProperties: false
+            properties:
+                attacherCount:
+                    description: Number of clients currently attached to this terminal.
+                    format: int64
+                    type: integer
+                execStatus:
+                    description: Underlying exec process status.
+                    type: string
+                harnessId:
+                    type: string
+                lastEvent:
+                    description: Most recent harness lifecycle hook event name, when known.
+                    type: string
+                lastEventAt:
+                    format: date-time
+                    type: string
+                name:
+                    description: Session display name, usually the sandbox's initial prompt.
+                    type: string
+                primary:
+                    type: boolean
+                startedAt:
+                    format: date-time
+                    type: string
+                state:
+                    description: Derived harness session state.
+                    enum:
+                        - running
+                        - idle
+                        - needs_input
+                        - exited
+                        - failed
+                        - unknown
+                    type: string
+                terminalId:
+                    type: string
+            required:
+                - terminalId
+                - primary
+                - state
+                - attacherCount
+                - execStatus
+            type: object
+        SandboxAgentStatusResponse:
+            additionalProperties: false
+            properties:
+                observedAt:
+                    format: date-time
+                    type: string
+                sessions:
+                    items:
+                        $ref: '#/components/schemas/SandboxAgentSessionStatus'
+                    type: array
+                sources:
+                    items:
+                        $ref: '#/components/schemas/SandboxAgentGitSourceStatus'
+                    type: array
+            required:
+                - sources
+                - sessions
+                - observedAt
+            type: object
         SandboxExec:
             additionalProperties: false
             properties:
@@ -874,6 +975,38 @@ paths:
             summary: List recent sandbox harness hook payload logs.
             tags:
                 - Harness Hooks
+    /api/projects/{projectId}/sandboxes/{sandboxId}/status:
+        get:
+            operationId: get-sandbox-agent-status
+            parameters:
+                - description: Project that owns the sandbox.
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    type: string
+                - description: Sandbox resource ID.
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    type: string
+            responses:
+                "200":
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/SandboxAgentStatusResponse'
+                    description: Sandbox-agent-reported git, harness session, and connection status.
+                default:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorResponse'
+                    description: Error response.
+            summary: Get sandbox-agent-reported status (git status, harness session state, active connections).
+            tags:
+                - Sandbox Status
 servers:
     - description: Provider-delegated sandbox endpoint
       url: http://sandbox.local

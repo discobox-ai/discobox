@@ -183,6 +183,10 @@ func (r *shimRuntime) handleStatus(w http.ResponseWriter, _ *http.Request) {
 	r.mu.Lock()
 	status := r.status
 	r.mu.Unlock()
+	// Computed live rather than tracked in r.status: attach/detach happens on
+	// the stream directly and does not otherwise touch this shim's status
+	// snapshot, so a query-time count is simpler and always current.
+	status.AttacherCount = len(r.stream.Attachers())
 	writeJSON(w, status)
 }
 

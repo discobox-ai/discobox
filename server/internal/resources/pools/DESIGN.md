@@ -33,8 +33,20 @@ flowchart LR
   reconciler removes the runtime, then deletes the row. The seeded pool is
   not otherwise special — after first install it is an ordinary pool.
 - `agent_service.go` — the pool agent surface: bootstrap-token registration
-  (`RegisterPool`), heartbeats (`UpdatePoolStatus`), and sandbox-removal
-  reports, each verifying the authenticated **pool principal**.
+  (`RegisterPool`), heartbeats (`UpdatePoolStatus`), sandbox-state reports
+  (`ReportPoolSandboxStates`, ADR 0017 §10), and (ADR 0030)
+  `MintSandboxAgentStatusTokens`/`ReportSandboxAgentStatus` for
+  the pool's standing sandbox-agent status poller — each verifying the
+  authenticated **pool principal**, and each additionally checking that any
+  sandbox ID named belongs to that pool before acting on it.
+  `MintSandboxAgentStatusTokens` always mints the hardcoded `status:read`
+  scope via `ControlPlane.CreateSandboxAgentToken`, never a caller-supplied
+  one, so this endpoint can never be used to obtain a broader sandbox-agent
+  token. `ReportSandboxAgentStatus` writes only the two new agent-status
+  columns via `store.UpdateSandboxAgentStatus` (`UpdateColumns`, not
+  `UpdateSandbox`/`WithGeneration` — this telemetry is outside the
+  desired/observed generation contract and a whole-row save would risk
+  clobbering concurrent desired-state writes).
 - `controlplane.go` — trusted operations implementing `sandbox.PoolManager`:
   reads for drivers, bootstrap/agent token minting, the schedulable-pool
   placement gate, dirty marks (`SchedulePoolReconciliation`/`...At`), and

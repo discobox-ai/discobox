@@ -65,6 +65,7 @@ var yamlOwnedEnums = map[string]string{
 	"SandboxConfig.harnessMode":       "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction",
 	"SandboxCreateConfig.harnessMode": "model.Sandbox.HarnessMode is untagged text; run/config is a contract-level restriction",
 	"SandboxExec.status":              "exec lifecycle is owned by the sandbox-agent",
+	"SandboxAgentSessionStatus.state": "harness session state is computed and owned by sandbox-agent; the server stores AgentStatus as opaque JSON",
 	"SandboxExecLogEntry.stream":      "exec log streams are owned by the sandbox-agent",
 	"HarnessVolume.volume":            "value set is owned by harness.VolumeKind in the root module, not a server/internal/model enum tag",
 	"SandboxUpgrade.reason":           "derived at read time by services.SandboxUpgrade from the pin and the harness config; nothing on the model stores it",

@@ -205,6 +205,12 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 	if upgrade := SandboxUpgrade(sandbox); upgrade != nil {
 		runtime["upgrade"] = upgrade
 	}
+	if len(sandbox.AgentStatus) > 0 {
+		runtime["agentStatus"] = sandbox.AgentStatus
+	}
+	if sandbox.AgentStatusObservedAt != nil {
+		runtime["agentStatusObservedAt"] = *sandbox.AgentStatusObservedAt
+	}
 	fields := map[string]any{
 		"id":              sandbox.ID,
 		"projectId":       sandbox.ProjectID,

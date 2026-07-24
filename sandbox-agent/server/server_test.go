@@ -72,6 +72,77 @@ func TestListHarnessHooksRejectsWriteOnlyScope(t *testing.T) {
 	}
 }
 
+func TestGetSandboxAgentStatusRequiresStatusReadScope(t *testing.T) {
+	publicKey, signToken := sandboxAgentTestSigner(t)
+	router, err := NewRouter(testConfig(publicKey))
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/status", nil)
+	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeStatusRead))
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("GET status status = %d, body = %s", resp.Code, resp.Body.String())
+	}
+	var body struct {
+		Sources    []any  `json:"sources"`
+		Sessions   []any  `json:"sessions"`
+		ObservedAt string `json:"observedAt"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v, body = %s", err, resp.Body.String())
+	}
+	if body.Sources == nil || len(body.Sources) != 0 {
+		t.Fatalf("sources = %v, want an empty array (no sources configured)", body.Sources)
+	}
+	if body.ObservedAt == "" {
+		t.Fatal("observedAt is empty")
+	}
+}
+
+// TestGetSandboxAgentStatusRejectsBroaderScopeAlone confirms the status route
+// is gated on its own scope rather than piggybacking on exec:read — a token
+// scoped only for execs must not be able to read status.
+func TestGetSandboxAgentStatusRejectsBroaderScopeAlone(t *testing.T) {
+	publicKey, signToken := sandboxAgentTestSigner(t)
+	router, err := NewRouter(testConfig(publicKey))
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/status", nil)
+	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeExecRead, ScopeTerminalRead))
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("GET status status = %d, want forbidden; body = %s", resp.Code, resp.Body.String())
+	}
+}
+
+// TestGetSandboxAgentStatusStatusReadScopeCannotReadExecs confirms the scope
+// ceiling holds the other direction too: a status:read-only token must not
+// unlock exec routes.
+func TestGetSandboxAgentStatusStatusReadScopeCannotReadExecs(t *testing.T) {
+	publicKey, signToken := sandboxAgentTestSigner(t)
+	router, err := NewRouter(testConfig(publicKey))
+	if err != nil {
+		t.Fatalf("new router: %v", err)
+	}
+
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/projects/project-1/sandboxes/sandbox-1/execs", nil)
+	req.Header.Set("Authorization", "Bearer "+signToken("project-1", "sandbox-1", "worker-1", ScopeStatusRead))
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusForbidden {
+		t.Fatalf("GET execs status = %d, want forbidden; body = %s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestListSandboxExecsRequiresExecReadScope(t *testing.T) {
 	publicKey, signToken := sandboxAgentTestSigner(t)
 	router, err := NewRouter(testConfig(publicKey))

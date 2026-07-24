@@ -3839,6 +3839,126 @@ func decodeGetSandboxParams(args [2]string, argsEscaped bool, r *http.Request) (
 	return params, nil
 }
 
+// GetSandboxAgentStatusParams is parameters of get-sandbox-agent-status operation.
+type GetSandboxAgentStatusParams struct {
+	// Project that owns the sandbox.
+	ProjectId string
+	// Sandbox resource ID.
+	SandboxId string
+}
+
+func unpackGetSandboxAgentStatusParams(packed middleware.Parameters) (params GetSandboxAgentStatusParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "projectId",
+			In:   "path",
+		}
+		params.ProjectId = packed[key].(string)
+	}
+	{
+		key := middleware.ParameterKey{
+			Name: "sandboxId",
+			In:   "path",
+		}
+		params.SandboxId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeGetSandboxAgentStatusParams(args [2]string, argsEscaped bool, r *http.Request) (params GetSandboxAgentStatusParams, _ error) {
+	// Decode path: projectId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "projectId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.ProjectId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "projectId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	// Decode path: sandboxId.
+	if err := func() error {
+		param := args[1]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[1])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "sandboxId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.SandboxId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "sandboxId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // GetSandboxExecParams is parameters of get-sandbox-exec operation.
 type GetSandboxExecParams struct {
 	// Project that owns the sandbox.
@@ -6526,6 +6646,72 @@ func decodeListSecretsParams(args [1]string, argsEscaped bool, r *http.Request) 
 	return params, nil
 }
 
+// MintSandboxAgentStatusTokensParams is parameters of mint-sandbox-agent-status-tokens operation.
+type MintSandboxAgentStatusTokensParams struct {
+	// Pool ID.
+	PoolId string
+}
+
+func unpackMintSandboxAgentStatusTokensParams(packed middleware.Parameters) (params MintSandboxAgentStatusTokensParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "poolId",
+			In:   "path",
+		}
+		params.PoolId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeMintSandboxAgentStatusTokensParams(args [1]string, argsEscaped bool, r *http.Request) (params MintSandboxAgentStatusTokensParams, _ error) {
+	// Decode path: poolId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "poolId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.PoolId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "poolId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
 // PurgeSandboxParams is parameters of purge-sandbox operation.
 type PurgeSandboxParams struct {
 	// Project ID.
@@ -7044,6 +7230,72 @@ func unpackReportPoolSandboxStatesParams(packed middleware.Parameters) (params R
 }
 
 func decodeReportPoolSandboxStatesParams(args [1]string, argsEscaped bool, r *http.Request) (params ReportPoolSandboxStatesParams, _ error) {
+	// Decode path: poolId.
+	if err := func() error {
+		param := args[0]
+		if argsEscaped {
+			unescaped, err := url.PathUnescape(args[0])
+			if err != nil {
+				return errors.Wrap(err, "unescape path")
+			}
+			param = unescaped
+		}
+		if len(param) > 0 {
+			d := uri.NewPathDecoder(uri.PathDecoderConfig{
+				Param:   "poolId",
+				Value:   param,
+				Style:   uri.PathStyleSimple,
+				Explode: false,
+			})
+
+			if err := func() error {
+				val, err := d.DecodeValue()
+				if err != nil {
+					return err
+				}
+
+				c, err := conv.ToString(val)
+				if err != nil {
+					return err
+				}
+
+				params.PoolId = c
+				return nil
+			}(); err != nil {
+				return err
+			}
+		} else {
+			return validate.ErrFieldRequired
+		}
+		return nil
+	}(); err != nil {
+		return params, &ogenerrors.DecodeParamError{
+			Name: "poolId",
+			In:   "path",
+			Err:  err,
+		}
+	}
+	return params, nil
+}
+
+// ReportSandboxAgentStatusParams is parameters of report-sandbox-agent-status operation.
+type ReportSandboxAgentStatusParams struct {
+	// Pool ID.
+	PoolId string
+}
+
+func unpackReportSandboxAgentStatusParams(packed middleware.Parameters) (params ReportSandboxAgentStatusParams) {
+	{
+		key := middleware.ParameterKey{
+			Name: "poolId",
+			In:   "path",
+		}
+		params.PoolId = packed[key].(string)
+	}
+	return params
+}
+
+func decodeReportSandboxAgentStatusParams(args [1]string, argsEscaped bool, r *http.Request) (params ReportSandboxAgentStatusParams, _ error) {
 	// Decode path: poolId.
 	if err := func() error {
 		param := args[0]

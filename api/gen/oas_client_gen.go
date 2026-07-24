@@ -262,6 +262,12 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/sandboxes/{sandboxId}
 	GetSandbox(ctx context.Context, params GetSandboxParams) (GetSandboxRes, error)
+	// GetSandboxAgentStatus invokes get-sandbox-agent-status operation.
+	//
+	// Get sandbox-agent-reported status (git status, harness session state, active connections).
+	//
+	// GET /api/projects/{projectId}/sandboxes/{sandboxId}/status
+	GetSandboxAgentStatus(ctx context.Context, params GetSandboxAgentStatusParams) (GetSandboxAgentStatusRes, error)
 	// GetSandboxExec invokes get-sandbox-exec operation.
 	//
 	// Get an exec runtime in a sandbox.
@@ -388,6 +394,12 @@ type Invoker interface {
 	//
 	// GET /projects/{projectId}/secrets
 	ListSecrets(ctx context.Context, params ListSecretsParams) (ListSecretsRes, error)
+	// MintSandboxAgentStatusTokens invokes mint-sandbox-agent-status-tokens operation.
+	//
+	// Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts.
+	//
+	// POST /api/pools/{poolId}/sandbox-agent-status-tokens
+	MintSandboxAgentStatusTokens(ctx context.Context, request *MintSandboxAgentStatusTokensBody, params MintSandboxAgentStatusTokensParams) (MintSandboxAgentStatusTokensRes, error)
 	// PurgeSandbox invokes purge-sandbox operation.
 	//
 	// Destroy the sandbox and its data. Unlike every other existence change this is synchronous - the
@@ -432,6 +444,12 @@ type Invoker interface {
 	//
 	// POST /api/pools/{poolId}/sandbox-states
 	ReportPoolSandboxStates(ctx context.Context, request *ReportPoolSandboxStatesBody, params ReportPoolSandboxStatesParams) (ReportPoolSandboxStatesRes, error)
+	// ReportSandboxAgentStatus invokes report-sandbox-agent-status operation.
+	//
+	// Report polled sandbox-agent status for one or more hosted sandboxes.
+	//
+	// POST /api/pools/{poolId}/sandbox-agent-status
+	ReportSandboxAgentStatus(ctx context.Context, request *ReportSandboxAgentStatusBody, params ReportSandboxAgentStatusParams) (ReportSandboxAgentStatusRes, error)
 	// ResolveSandboxSecret invokes resolve-sandbox-secret operation.
 	//
 	// Resolve a sandbox sentinel secret.
@@ -4341,6 +4359,118 @@ func (c *Client) sendGetSandbox(ctx context.Context, params GetSandboxParams) (r
 	return result, nil
 }
 
+// GetSandboxAgentStatus invokes get-sandbox-agent-status operation.
+//
+// Get sandbox-agent-reported status (git status, harness session state, active connections).
+//
+// GET /api/projects/{projectId}/sandboxes/{sandboxId}/status
+func (c *Client) GetSandboxAgentStatus(ctx context.Context, params GetSandboxAgentStatusParams) (GetSandboxAgentStatusRes, error) {
+	res, err := c.sendGetSandboxAgentStatus(ctx, params)
+	return res, err
+}
+
+func (c *Client) sendGetSandboxAgentStatus(ctx context.Context, params GetSandboxAgentStatusParams) (res GetSandboxAgentStatusRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("get-sandbox-agent-status"),
+		semconv.HTTPRequestMethodKey.String("GET"),
+		semconv.URLTemplateKey.String("/api/projects/{projectId}/sandboxes/{sandboxId}/status"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, GetSandboxAgentStatusOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [5]string
+	pathParts[0] = "/api/projects/"
+	{
+		// Encode "projectId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "projectId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.ProjectId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandboxes/"
+	{
+		// Encode "sandboxId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "sandboxId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.SandboxId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[3] = encoded
+	}
+	pathParts[4] = "/status"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "GET", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeGetSandboxAgentStatusResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // GetSandboxExec invokes get-sandbox-exec operation.
 //
 // Get an exec runtime in a sandbox.
@@ -6716,6 +6846,102 @@ func (c *Client) sendListSecrets(ctx context.Context, params ListSecretsParams) 
 	return result, nil
 }
 
+// MintSandboxAgentStatusTokens invokes mint-sandbox-agent-status-tokens operation.
+//
+// Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts.
+//
+// POST /api/pools/{poolId}/sandbox-agent-status-tokens
+func (c *Client) MintSandboxAgentStatusTokens(ctx context.Context, request *MintSandboxAgentStatusTokensBody, params MintSandboxAgentStatusTokensParams) (MintSandboxAgentStatusTokensRes, error) {
+	res, err := c.sendMintSandboxAgentStatusTokens(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendMintSandboxAgentStatusTokens(ctx context.Context, request *MintSandboxAgentStatusTokensBody, params MintSandboxAgentStatusTokensParams) (res MintSandboxAgentStatusTokensRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("mint-sandbox-agent-status-tokens"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-agent-status-tokens"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, MintSandboxAgentStatusTokensOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandbox-agent-status-tokens"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeMintSandboxAgentStatusTokensRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeMintSandboxAgentStatusTokensResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
 // PurgeSandbox invokes purge-sandbox operation.
 //
 // Destroy the sandbox and its data. Unlike every other existence change this is synchronous - the
@@ -7338,6 +7564,102 @@ func (c *Client) sendReportPoolSandboxStates(ctx context.Context, request *Repor
 
 	stage = "DecodeResponse"
 	result, err := decodeReportPoolSandboxStatesResponse(resp)
+	if err != nil {
+		return res, errors.Wrap(err, "decode response")
+	}
+
+	return result, nil
+}
+
+// ReportSandboxAgentStatus invokes report-sandbox-agent-status operation.
+//
+// Report polled sandbox-agent status for one or more hosted sandboxes.
+//
+// POST /api/pools/{poolId}/sandbox-agent-status
+func (c *Client) ReportSandboxAgentStatus(ctx context.Context, request *ReportSandboxAgentStatusBody, params ReportSandboxAgentStatusParams) (ReportSandboxAgentStatusRes, error) {
+	res, err := c.sendReportSandboxAgentStatus(ctx, request, params)
+	return res, err
+}
+
+func (c *Client) sendReportSandboxAgentStatus(ctx context.Context, request *ReportSandboxAgentStatusBody, params ReportSandboxAgentStatusParams) (res ReportSandboxAgentStatusRes, err error) {
+	otelAttrs := []attribute.KeyValue{
+		otelogen.OperationID("report-sandbox-agent-status"),
+		semconv.HTTPRequestMethodKey.String("POST"),
+		semconv.URLTemplateKey.String("/api/pools/{poolId}/sandbox-agent-status"),
+	}
+	otelAttrs = append(otelAttrs, c.cfg.Attributes...)
+
+	// Run stopwatch.
+	startTime := time.Now()
+	defer func() {
+		// Use floating point division here for higher precision (instead of Millisecond method).
+		elapsedDuration := time.Since(startTime)
+		c.duration.Record(ctx, float64(elapsedDuration)/float64(time.Millisecond), metric.WithAttributes(otelAttrs...))
+	}()
+
+	// Increment request counter.
+	c.requests.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+
+	// Start a span for this request.
+	ctx, span := c.cfg.Tracer.Start(ctx, ReportSandboxAgentStatusOperation,
+		trace.WithAttributes(otelAttrs...),
+		clientSpanKind,
+	)
+	// Track stage for error reporting.
+	var stage string
+	defer func() {
+		if err != nil {
+			span.RecordError(err)
+			span.SetStatus(codes.Error, stage)
+			c.errors.Add(ctx, 1, metric.WithAttributes(otelAttrs...))
+		}
+		span.End()
+	}()
+
+	stage = "BuildURL"
+	u := uri.Clone(c.requestURL(ctx))
+	var pathParts [3]string
+	pathParts[0] = "/api/pools/"
+	{
+		// Encode "poolId" parameter.
+		e := uri.NewPathEncoder(uri.PathEncoderConfig{
+			Param:   "poolId",
+			Style:   uri.PathStyleSimple,
+			Explode: false,
+		})
+		if err := func() error {
+			return e.EncodeValue(conv.StringToString(params.PoolId))
+		}(); err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		encoded, err := e.Result()
+		if err != nil {
+			return res, errors.Wrap(err, "encode path")
+		}
+		pathParts[1] = encoded
+	}
+	pathParts[2] = "/sandbox-agent-status"
+	uri.AddPathParts(u, pathParts[:]...)
+
+	stage = "EncodeRequest"
+	r, err := ht.NewRequest(ctx, "POST", u)
+	if err != nil {
+		return res, errors.Wrap(err, "create request")
+	}
+	if err := encodeReportSandboxAgentStatusRequest(request, r); err != nil {
+		return res, errors.Wrap(err, "encode request")
+	}
+
+	stage = "SendRequest"
+	resp, err := c.cfg.Client.Do(r)
+	if err != nil {
+		return res, errors.Wrap(err, "do request")
+	}
+	body := resp.Body
+	defer body.Close()
+
+	stage = "DecodeResponse"
+	result, err := decodeReportSandboxAgentStatusResponse(resp)
 	if err != nil {
 		return res, errors.Wrap(err, "decode response")
 	}

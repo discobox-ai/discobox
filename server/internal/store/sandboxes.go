@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -261,6 +262,36 @@ func (s *Store) UpdateSandbox(ctx context.Context, sandbox *model.Sandbox, optio
 		return sandbox, nil
 	})
 	return err
+}
+
+// UpdateSandboxAgentStatus writes only the two agent-status columns, pushed
+// periodically by the hosting pool-agent (ADR 0030). It deliberately does not
+// go through UpdateSandbox/WithGeneration: this is telemetry, not part of the
+// desired/observed generation contract, so gating it on generation would make
+// a benign polling write spuriously fail against unrelated concurrent
+// desired-state reconciliation, and a whole-row Save from a stale in-memory
+// struct would risk clobbering a column written concurrently by that same
+// reconciliation. It also does not publish a project event: unlike a
+// lifecycle change, a routine status refresh on every running sandbox every
+// poll interval is not something the UI event stream needs to fan out.
+func (s *Store) UpdateSandboxAgentStatus(ctx context.Context, projectID, sandboxID string, status json.RawMessage, observedAt time.Time) error {
+	write, err := s.getWrite(ctx)
+	if err != nil {
+		return err
+	}
+	result := write.WithContext(ctx).Model(&model.Sandbox{}).
+		Where("project_id = ? AND id = ?", projectID, sandboxID).
+		UpdateColumns(map[string]any{
+			"agent_status":             status,
+			"agent_status_observed_at": observedAt,
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 func (s *Store) DeleteSandbox(ctx context.Context, projectID, sandboxID string, options ...SandboxGetOption) error {

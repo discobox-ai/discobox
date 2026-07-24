@@ -21,6 +21,7 @@ import (
 	"github.com/obot-platform/discobox/sandbox-agent/secretswatch"
 	agentstore "github.com/obot-platform/discobox/sandbox-agent/store"
 	"github.com/obot-platform/discobox/sandbox-agent/terminal"
+	"github.com/obot-platform/discobox/sandboxconfig"
 )
 
 type Identity struct {
@@ -42,6 +43,7 @@ type Config struct {
 	HarnessMode           string
 	Resources             config.ResourceConfig
 	Harness               config.Harness
+	Sources               []sandboxconfig.Source
 	SandboxConfig         map[string]any
 	Installer             terminal.Installer
 	ExecUnitManager       execs.UnitManager
@@ -72,6 +74,7 @@ func ConfigFromHarnessConfig(cfg config.Config) Config {
 		HarnessMode:           cfg.HarnessMode,
 		Resources:             cfg.Resources,
 		Harness:               cfg.Harness,
+		Sources:               cfg.Sources,
 		SandboxConfig:         cfg.SandboxConfig,
 	}
 }
@@ -153,6 +156,9 @@ func newRouterAndManager(cfg Config) (*chi.Mux, *terminal.Service, *execs.Manage
 		resourceCollector: cfg.ResourceCollector,
 		resourceInterval:  cfg.Resources.SampleInterval,
 		resourceRetention: cfg.Resources.RetentionCount,
+		sources:           cfg.Sources,
+		harnessTypeID:     cfg.Harness.TypeID,
+		prompt:            cfg.Prompt,
 	}
 	generated, err := sandboxapi.NewServer(handler)
 	if err != nil {

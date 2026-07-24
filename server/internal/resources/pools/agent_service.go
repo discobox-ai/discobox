@@ -3,14 +3,17 @@ package pools
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/obot-platform/discobox/pool-agent/poolauth"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/auth"
+	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
 	"github.com/obot-platform/discobox/server/internal/model"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
@@ -73,6 +76,97 @@ func (s *Service) UpdatePoolStatus(ctx context.Context, poolID string, input ser
 		return nil, mapAPIError(err, "pool not found")
 	}
 	return pool, nil
+}
+
+// MintSandboxAgentStatusTokens mints short-lived, status:read-only
+// sandbox-agent tokens for the sandboxes a pool agent requests, so its
+// standing status-poll loop can call each sandbox-agent's status endpoint
+// without discobox-server ever originating a call into a sandbox itself.
+//
+// The minted scope is always exactly ScopeStatusRead, a Go literal never
+// derived from the request: there is no code path here, buggy or malicious,
+// by which this endpoint can mint anything broader.
+func (s *Service) MintSandboxAgentStatusTokens(ctx context.Context, poolID string, input services.MintSandboxAgentStatusTokensBody) (*services.MintSandboxAgentStatusTokensResponseBody, error) {
+	poolID = strings.TrimSpace(poolID)
+	if poolID == "" {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest, "poolId is required")
+	}
+	principal, ok := auth.PrincipalFromContext(ctx)
+	if !ok || principal.Type != auth.PrincipalTypePool || principal.PoolID != poolID {
+		return nil, apperrors.NewStatusError(http.StatusForbidden, "pool agent is not authorized to mint sandbox-agent status tokens")
+	}
+	pool, err := s.store.GetPoolByID(ctx, poolID)
+	if err != nil {
+		return nil, mapAPIError(err, "pool not found")
+	}
+	tokens := make([]services.SandboxAgentStatusToken, 0, len(input.SandboxIds))
+	for _, sandboxID := range input.SandboxIds {
+		sandboxID = strings.TrimSpace(sandboxID)
+		if sandboxID == "" {
+			continue
+		}
+		sandboxModel, err := s.store.GetSandbox(ctx, pool.ProjectID, sandboxID)
+		if err != nil || strings.TrimSpace(sandboxModel.PoolID) != poolID {
+			// Skip sandboxes this pool doesn't host rather than failing the whole
+			// batch: a pool cannot obtain a token for a sandbox it does not own.
+			continue
+		}
+		token, err := s.pools.CreateSandboxAgentToken(ctx, poolagentauth.TokenClaims{
+			ProjectID: pool.ProjectID,
+			PoolID:    poolID,
+			SandboxID: sandboxID,
+			Scopes:    []string{poolagentauth.ScopeStatusRead},
+		})
+		if err != nil {
+			return nil, err
+		}
+		tokens = append(tokens, services.SandboxAgentStatusToken{
+			SandboxId: sandboxID,
+			Token:     token,
+			ExpiresAt: time.Now().UTC().Add(poolagentauth.TokenTTL),
+		})
+	}
+	return &services.MintSandboxAgentStatusTokensResponseBody{Tokens: tokens}, nil
+}
+
+// ReportSandboxAgentStatus records pool-agent-polled sandbox status (git
+// status, harness session state, active connections — see ADR 0030, a
+// distinct channel from ReportPoolSandboxStates below, which is pool-agent's
+// own observed container power state, ADR 0017 §10). Entries
+// naming a sandbox this pool does not host are skipped rather than failing
+// the whole batch: a pool cannot write status onto a sandbox it doesn't own,
+// but one bad entry must not block every other sandbox's update in the tick.
+func (s *Service) ReportSandboxAgentStatus(ctx context.Context, poolID string, input services.ReportSandboxAgentStatusBody) error {
+	poolID = strings.TrimSpace(poolID)
+	if poolID == "" {
+		return apperrors.NewStatusError(http.StatusBadRequest, "poolId is required")
+	}
+	principal, ok := auth.PrincipalFromContext(ctx)
+	if !ok || principal.Type != auth.PrincipalTypePool || principal.PoolID != poolID {
+		return apperrors.NewStatusError(http.StatusForbidden, "pool agent is not authorized to report sandbox agent status")
+	}
+	pool, err := s.store.GetPoolByID(ctx, poolID)
+	if err != nil {
+		return mapAPIError(err, "pool not found")
+	}
+	for _, entry := range input.Sandboxes {
+		sandboxID := strings.TrimSpace(entry.SandboxId)
+		if sandboxID == "" {
+			continue
+		}
+		sandboxModel, err := s.store.GetSandbox(ctx, pool.ProjectID, sandboxID)
+		if err != nil || strings.TrimSpace(sandboxModel.PoolID) != poolID {
+			continue
+		}
+		status, err := json.Marshal(entry.Status)
+		if err != nil {
+			continue
+		}
+		if err := s.store.UpdateSandboxAgentStatus(ctx, pool.ProjectID, sandboxID, status, entry.ObservedAt); err != nil && !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+	}
+	return nil
 }
 
 // ReportPoolSandboxStates records a batch of sandbox state observations from

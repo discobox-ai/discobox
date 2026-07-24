@@ -11,16 +11,22 @@ import (
 )
 
 var (
-	rn72AllowedHeaders = map[string]string{
+	rn76AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn77AllowedHeaders = map[string]string{
+	rn81AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn75AllowedHeaders = map[string]string{
+	rn79AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn95AllowedHeaders = map[string]string{
+	rn71AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn78AllowedHeaders = map[string]string{
+		"POST": "Content-Type",
+	}
+	rn99AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn33AllowedHeaders = map[string]string{
@@ -71,16 +77,16 @@ var (
 	rn9AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn79AllowedHeaders = map[string]string{
+	rn83AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn87AllowedHeaders = map[string]string{
+	rn91AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn90AllowedHeaders = map[string]string{
+	rn94AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
-	rn97AllowedHeaders = map[string]string{
+	rn101AllowedHeaders = map[string]string{
 		"POST": "Content-Type",
 	}
 	rn39AllowedHeaders = map[string]string{
@@ -191,7 +197,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							default:
 								s.notAllowed(w, r, notAllowedParams{
 									allowedMethods: "POST",
-									allowedHeaders: rn72AllowedHeaders,
+									allowedHeaders: rn76AllowedHeaders,
 									acceptPost:     "application/json",
 									acceptPatch:    "",
 								})
@@ -245,7 +251,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 								default:
 									s.notAllowed(w, r, notAllowedParams{
 										allowedMethods: "POST",
-										allowedHeaders: rn77AllowedHeaders,
+										allowedHeaders: rn81AllowedHeaders,
 										acceptPost:     "application/json",
 										acceptPatch:    "",
 									})
@@ -266,31 +272,100 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 								break
 							}
 							switch elem[0] {
-							case 'a': // Prefix: "andbox-states"
+							case 'a': // Prefix: "andbox-"
 
-								if l := len("andbox-states"); len(elem) >= l && elem[0:l] == "andbox-states" {
+								if l := len("andbox-"); len(elem) >= l && elem[0:l] == "andbox-" {
 									elem = elem[l:]
 								} else {
 									break
 								}
 
 								if len(elem) == 0 {
-									// Leaf node.
-									switch r.Method {
-									case "POST":
-										s.handleReportPoolSandboxStatesRequest([1]string{
-											args[0],
-										}, elemIsEscaped, w, r)
-									default:
-										s.notAllowed(w, r, notAllowedParams{
-											allowedMethods: "POST",
-											allowedHeaders: rn75AllowedHeaders,
-											acceptPost:     "application/json",
-											acceptPatch:    "",
-										})
+									break
+								}
+								switch elem[0] {
+								case 'a': // Prefix: "agent-status"
+
+									if l := len("agent-status"); len(elem) >= l && elem[0:l] == "agent-status" {
+										elem = elem[l:]
+									} else {
+										break
 									}
 
-									return
+									if len(elem) == 0 {
+										switch r.Method {
+										case "POST":
+											s.handleReportSandboxAgentStatusRequest([1]string{
+												args[0],
+											}, elemIsEscaped, w, r)
+										default:
+											s.notAllowed(w, r, notAllowedParams{
+												allowedMethods: "POST",
+												allowedHeaders: rn79AllowedHeaders,
+												acceptPost:     "application/json",
+												acceptPatch:    "",
+											})
+										}
+
+										return
+									}
+									switch elem[0] {
+									case '-': // Prefix: "-tokens"
+
+										if l := len("-tokens"); len(elem) >= l && elem[0:l] == "-tokens" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											// Leaf node.
+											switch r.Method {
+											case "POST":
+												s.handleMintSandboxAgentStatusTokensRequest([1]string{
+													args[0],
+												}, elemIsEscaped, w, r)
+											default:
+												s.notAllowed(w, r, notAllowedParams{
+													allowedMethods: "POST",
+													allowedHeaders: rn71AllowedHeaders,
+													acceptPost:     "application/json",
+													acceptPatch:    "",
+												})
+											}
+
+											return
+										}
+
+									}
+
+								case 's': // Prefix: "states"
+
+									if l := len("states"); len(elem) >= l && elem[0:l] == "states" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										// Leaf node.
+										switch r.Method {
+										case "POST":
+											s.handleReportPoolSandboxStatesRequest([1]string{
+												args[0],
+											}, elemIsEscaped, w, r)
+										default:
+											s.notAllowed(w, r, notAllowedParams{
+												allowedMethods: "POST",
+												allowedHeaders: rn78AllowedHeaders,
+												acceptPost:     "application/json",
+												acceptPatch:    "",
+											})
+										}
+
+										return
+									}
+
 								}
 
 							case 't': // Prefix: "tatus"
@@ -311,7 +386,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									default:
 										s.notAllowed(w, r, notAllowedParams{
 											allowedMethods: "POST",
-											allowedHeaders: rn95AllowedHeaders,
+											allowedHeaders: rn99AllowedHeaders,
 											acceptPost:     "application/json",
 											acceptPatch:    "",
 										})
@@ -710,6 +785,34 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 									switch r.Method {
 									case "GET":
 										s.handleListHarnessHooksRequest([2]string{
+											args[0],
+											args[1],
+										}, elemIsEscaped, w, r)
+									default:
+										s.notAllowed(w, r, notAllowedParams{
+											allowedMethods: "GET",
+											allowedHeaders: nil,
+											acceptPost:     "",
+											acceptPatch:    "",
+										})
+									}
+
+									return
+								}
+
+							case 's': // Prefix: "status"
+
+								if l := len("status"); len(elem) >= l && elem[0:l] == "status" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch r.Method {
+									case "GET":
+										s.handleGetSandboxAgentStatusRequest([2]string{
 											args[0],
 											args[1],
 										}, elemIsEscaped, w, r)
@@ -1849,7 +1952,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 														default:
 															s.notAllowed(w, r, notAllowedParams{
 																allowedMethods: "POST",
-																allowedHeaders: rn79AllowedHeaders,
+																allowedHeaders: rn83AllowedHeaders,
 																acceptPost:     "application/json",
 																acceptPatch:    "",
 															})
@@ -1891,7 +1994,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 														default:
 															s.notAllowed(w, r, notAllowedParams{
 																allowedMethods: "POST",
-																allowedHeaders: rn87AllowedHeaders,
+																allowedHeaders: rn91AllowedHeaders,
 																acceptPost:     "application/json",
 																acceptPatch:    "",
 															})
@@ -1919,7 +2022,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 														default:
 															s.notAllowed(w, r, notAllowedParams{
 																allowedMethods: "POST",
-																allowedHeaders: rn90AllowedHeaders,
+																allowedHeaders: rn94AllowedHeaders,
 																acceptPost:     "application/json",
 																acceptPatch:    "",
 															})
@@ -1989,7 +2092,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 														default:
 															s.notAllowed(w, r, notAllowedParams{
 																allowedMethods: "POST",
-																allowedHeaders: rn97AllowedHeaders,
+																allowedHeaders: rn101AllowedHeaders,
 																acceptPost:     "application/json",
 																acceptPatch:    "",
 															})
@@ -2570,29 +2673,94 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 								break
 							}
 							switch elem[0] {
-							case 'a': // Prefix: "andbox-states"
+							case 'a': // Prefix: "andbox-"
 
-								if l := len("andbox-states"); len(elem) >= l && elem[0:l] == "andbox-states" {
+								if l := len("andbox-"); len(elem) >= l && elem[0:l] == "andbox-" {
 									elem = elem[l:]
 								} else {
 									break
 								}
 
 								if len(elem) == 0 {
-									// Leaf node.
-									switch method {
-									case "POST":
-										r.name = ReportPoolSandboxStatesOperation
-										r.summary = "Report observed sandbox states from the pool agent"
-										r.operationID = "report-pool-sandbox-states"
-										r.operationGroup = ""
-										r.pathPattern = "/api/pools/{poolId}/sandbox-states"
-										r.args = args
-										r.count = 1
-										return r, true
-									default:
-										return
+									break
+								}
+								switch elem[0] {
+								case 'a': // Prefix: "agent-status"
+
+									if l := len("agent-status"); len(elem) >= l && elem[0:l] == "agent-status" {
+										elem = elem[l:]
+									} else {
+										break
 									}
+
+									if len(elem) == 0 {
+										switch method {
+										case "POST":
+											r.name = ReportSandboxAgentStatusOperation
+											r.summary = "Report polled sandbox-agent status for one or more hosted sandboxes"
+											r.operationID = "report-sandbox-agent-status"
+											r.operationGroup = ""
+											r.pathPattern = "/api/pools/{poolId}/sandbox-agent-status"
+											r.args = args
+											r.count = 1
+											return r, true
+										default:
+											return
+										}
+									}
+									switch elem[0] {
+									case '-': // Prefix: "-tokens"
+
+										if l := len("-tokens"); len(elem) >= l && elem[0:l] == "-tokens" {
+											elem = elem[l:]
+										} else {
+											break
+										}
+
+										if len(elem) == 0 {
+											// Leaf node.
+											switch method {
+											case "POST":
+												r.name = MintSandboxAgentStatusTokensOperation
+												r.summary = "Mint short-lived, status-read-only sandbox-agent tokens for sandboxes this pool hosts"
+												r.operationID = "mint-sandbox-agent-status-tokens"
+												r.operationGroup = ""
+												r.pathPattern = "/api/pools/{poolId}/sandbox-agent-status-tokens"
+												r.args = args
+												r.count = 1
+												return r, true
+											default:
+												return
+											}
+										}
+
+									}
+
+								case 's': // Prefix: "states"
+
+									if l := len("states"); len(elem) >= l && elem[0:l] == "states" {
+										elem = elem[l:]
+									} else {
+										break
+									}
+
+									if len(elem) == 0 {
+										// Leaf node.
+										switch method {
+										case "POST":
+											r.name = ReportPoolSandboxStatesOperation
+											r.summary = "Report observed sandbox states from the pool agent"
+											r.operationID = "report-pool-sandbox-states"
+											r.operationGroup = ""
+											r.pathPattern = "/api/pools/{poolId}/sandbox-states"
+											r.args = args
+											r.count = 1
+											return r, true
+										default:
+											return
+										}
+									}
+
 								}
 
 							case 't': // Prefix: "tatus"
@@ -2989,6 +3157,31 @@ func (s *Server) FindPath(method string, u *url.URL) (r Route, _ bool) {
 										r.operationID = "list-harness-hooks"
 										r.operationGroup = ""
 										r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/harness-hooks"
+										r.args = args
+										r.count = 2
+										return r, true
+									default:
+										return
+									}
+								}
+
+							case 's': // Prefix: "status"
+
+								if l := len("status"); len(elem) >= l && elem[0:l] == "status" {
+									elem = elem[l:]
+								} else {
+									break
+								}
+
+								if len(elem) == 0 {
+									// Leaf node.
+									switch method {
+									case "GET":
+										r.name = GetSandboxAgentStatusOperation
+										r.summary = "Get sandbox-agent-reported status (git status, harness session state, active connections)."
+										r.operationID = "get-sandbox-agent-status"
+										r.operationGroup = ""
+										r.pathPattern = "/api/projects/{projectId}/sandboxes/{sandboxId}/status"
 										r.args = args
 										r.count = 2
 										return r, true
