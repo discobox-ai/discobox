@@ -65,7 +65,8 @@ flowchart LR
   screen-style prefix: `Ctrl-A` then `d`. The `Terminal` event stream reports
   reconnecting/reconnected transitions separately from PTY bytes; the screen
   forwards those transitions to the root footer status line while the shared
-  CLI transport performs recovery and drops input received while disconnected.
+  resumable transport retains a bounded, acknowledged input window across the
+  replacement connection.
 - `newSessionScreen` — the create-a-sandbox form: harness dropdown, path dropdown
   (cwd plus existing sandbox sources), and a prompt `textinput` focused by
   default. Enter in the prompt submits `CreateSession` (empty prompt is valid),
