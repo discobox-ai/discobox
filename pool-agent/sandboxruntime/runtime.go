@@ -632,6 +632,16 @@ func buildSandboxDocument(projectID, sandboxID, poolID, controlPlanePublicKey st
 			env[key] = value
 		}
 		doc.Runtime.Env = env
+		// ProxyEnvs names which of the keys just merged into Env are
+		// proxy-trust vars, so sandbox-agent's NRI plugin knows which names
+		// to republish into a nested Docker container without hardcoding
+		// them itself. See docs/adr/0015.
+		proxyEnvNames := make([]string, 0, len(proxyEnv))
+		for key := range proxyEnv {
+			proxyEnvNames = append(proxyEnvNames, key)
+		}
+		sort.Strings(proxyEnvNames)
+		doc.Runtime.ProxyEnvs = proxyEnvNames
 	}
 	return doc
 }
