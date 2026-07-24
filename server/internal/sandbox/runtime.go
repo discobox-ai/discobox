@@ -144,15 +144,16 @@ type UpdateOptions struct {
 // ResolvedHarnessConfig is the sandbox-local harness configuration captured
 // at sandbox create time.
 type ResolvedHarnessConfig struct {
-	ID              string
-	Name            string
-	Description     string
-	RunCommand      []string
-	RelaunchCommand []string
-	ConfigCommand   []string
-	Files           []model.HarnessConfigFile
-	Env             map[string]string
-	Volumes         []harness.Volume
+	ID               string
+	Name             string
+	Description      string
+	RunCommand       []string
+	RelaunchCommand  []string
+	ConfigCommand    []string
+	Files            []model.HarnessConfigFile
+	Env              map[string]string
+	Volumes          []harness.Volume
+	AdditionalGroups []string
 }
 
 // PoolRuntimeReconciler reconciles provider-owned runtime state for a Pool:
