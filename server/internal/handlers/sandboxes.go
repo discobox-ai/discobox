@@ -118,6 +118,18 @@ func (h *Handler) CompleteSandboxSourcePush(ctx context.Context, req *apimodel.C
 	return &body, nil
 }
 
+func (h *Handler) CompleteSandboxApply(ctx context.Context, req *apimodel.CompleteSandboxApplyBody, params serverapi.CompleteSandboxApplyParams) (serverapi.CompleteSandboxApplyRes, error) {
+	sandbox, err := h.services.Sandboxes.CompleteSandboxApply(ctx, params.ProjectId, params.SandboxId, *req)
+	if err != nil {
+		return apiError(err), nil
+	}
+	body, err := services.SandboxToAPI(sandbox)
+	if err != nil {
+		return nil, err
+	}
+	return &body, nil
+}
+
 func (h *Handler) AssignSandboxHarnessSecrets(ctx context.Context, req *apimodel.AssignSandboxHarnessSecretsBody, params serverapi.AssignSandboxHarnessSecretsParams) (serverapi.AssignSandboxHarnessSecretsRes, error) {
 	secrets, err := h.services.Sandboxes.AssignSandboxHarnessSecrets(ctx, params.ProjectId, params.SandboxId, req.HarnessConfigId)
 	if err != nil {

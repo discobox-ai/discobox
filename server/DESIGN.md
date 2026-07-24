@@ -108,6 +108,37 @@ Worker-observed sandbox container loss is reported at
 `/api/workers/{workerId}/sandbox-removed` under the same worker-principal rule;
 the sandbox ID is runtime evidence, not user authorization input.
 
+## Applying Sandbox Commits to a Host (`disco apply`)
+
+`disco apply` (ADR 0014) pulls a sandbox's committed source changes onto the
+host working tree they started from. It fetches over the same
+git-repositories proxy documented above, now used for read as well as write:
+`ScopeSandboxRead` already permitted fetch, so no new proxy surface was
+needed, only allowing the phase the fetch (and the original create-time push)
+actually happen in — see below.
+
+- **`CompleteSandboxApply`** is a plain generated OpenAPI operation, not a
+  hand-wired proxy: the client reports a completed apply after it has already
+  landed the commits locally (cherry-pick + fast-forward happen entirely on
+  the client), and the server only records the result. It never verifies the
+  reported commits against the sandbox's actual Git state, matching
+  `CompleteSandboxSourcePush`'s same tradeoff.
+- The record is `Sandbox.AppliedCommits`, an append-only list
+  (`model.AppliedSourceCommit`: slug, sandbox-side commit, resulting host-side
+  commit, host ID, host path, timestamp), surfaced at `runtime.appliedCommits`.
+  It carries no lifecycle intent, so it persists through
+  `sandboxes.updateSandboxMetadata` rather than `submitSandboxOperation`:
+  nothing about desired or observed runtime state changes, so there is
+  nothing for the reconcile engine to act on.
+- `AcquireSandboxHTTPClient` takes an explicit `allowedPhases` per caller
+  instead of hardcoding `phase == running`. The sandbox git-repositories
+  proxy is the only caller that passes `SandboxPhasesRunningOrAwaitingSource`:
+  a push-delivered source is received precisely while the sandbox is
+  `awaiting_source` (ADR 0001), so requiring `running` there made that push —
+  and therefore the whole local-source create path — impossible to complete.
+  Every other proxy (terminals, sandbox HTTP, harness configure) keeps
+  `SandboxPhasesRunning`.
+
 ## Runtime Observability
 
 `internal/server` owns optional process-level OpenTelemetry metrics startup as

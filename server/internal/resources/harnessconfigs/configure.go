@@ -75,7 +75,7 @@ type configureSecret struct {
 type SandboxRuntime interface {
 	CreateSandbox(ctx context.Context, projectID string, input services.CreateSandboxBody) (*model.Sandbox, error)
 	DeleteSandbox(ctx context.Context, projectID, sandboxID string) error
-	AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error)
+	AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes, allowedPhases []string) (*services.HTTPClientLease, *model.Sandbox, error)
 }
 
 // Dirtier schedules reconciliation.
@@ -650,7 +650,7 @@ func (s *Service) Reconcile(ctx context.Context, configID string) error {
 // caller's credentials.
 func (s *Service) sandboxAgentClient(ctx context.Context, projectID, sandboxID string) (*oneShotRunner, func(), error) {
 	lease, sandboxModel, err := s.sandboxes.AcquireSandboxHTTPClient(ctx, projectID, sandboxID,
-		[]string{poolagentauth.ScopeExecRead, poolagentauth.ScopeExecWrite})
+		[]string{poolagentauth.ScopeExecRead, poolagentauth.ScopeExecWrite}, services.SandboxPhasesRunning)
 	if err != nil {
 		return nil, nil, err
 	}

@@ -290,6 +290,45 @@ components:
             required:
                 - image
             type: object
+        CompleteSandboxApplyBody:
+            additionalProperties: false
+            properties:
+                $schema:
+                    description: A URL to the JSON Schema for this object.
+                    example: https://example.com/schemas/CompleteSandboxApplyBody.json
+                    format: uri
+                    readOnly: true
+                    type: string
+                commit:
+                    description: Full 40-character SHA-1 of the newest sandbox-side commit that was cherry-picked in this apply.
+                    maxLength: 40
+                    minLength: 40
+                    pattern: ^[0-9a-f]{40}$
+                    type: string
+                hostCommit:
+                    description: Full 40-character SHA-1 of the resulting host-side commit after the fast-forward. A new object distinct from commit, since cherry-picking onto a different parent always produces a new SHA.
+                    maxLength: 40
+                    minLength: 40
+                    pattern: ^[0-9a-f]{40}$
+                    type: string
+                hostId:
+                    description: Stable host identity of the client that performed the apply.
+                    type: string
+                hostPath:
+                    description: Absolute path on that host the commits were applied into.
+                    type: string
+                slug:
+                    description: Slug of the GitSource these commits were applied from.
+                    maxLength: 63
+                    pattern: ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$
+                    type: string
+            required:
+                - slug
+                - commit
+                - hostCommit
+                - hostId
+                - hostPath
+            type: object
         CompleteSandboxSourcePushBody:
             additionalProperties: false
             properties:
@@ -769,6 +808,45 @@ components:
                 snapshotRef:
                     description: Discobox-owned hidden Git ref containing dirty workspace snapshot data
                     type: string
+            type: object
+        AppliedSourceCommit:
+            additionalProperties: false
+            description: Records one successful disco apply of a source's commits into a host working tree. Client-declared provenance, like Origin, since the server cannot observe host-side Git state.
+            properties:
+                appliedAt:
+                    description: When this apply was recorded
+                    format: date-time
+                    type: string
+                commit:
+                    description: Newest sandbox-side commit SHA that was cherry-picked
+                    maxLength: 40
+                    minLength: 40
+                    pattern: ^[0-9a-f]{40}$
+                    type: string
+                hostCommit:
+                    description: Resulting host-side commit SHA. A new object distinct from commit, since cherry-picking onto a different parent always produces a new SHA.
+                    maxLength: 40
+                    minLength: 40
+                    pattern: ^[0-9a-f]{40}$
+                    type: string
+                hostId:
+                    description: Stable host identity of the client that performed the apply
+                    type: string
+                hostPath:
+                    description: Absolute path on that host the commits were applied into
+                    type: string
+                slug:
+                    description: Slug of the GitSource these commits were applied from
+                    maxLength: 63
+                    pattern: ^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$
+                    type: string
+            required:
+                - slug
+                - commit
+                - hostCommit
+                - hostId
+                - hostPath
+                - appliedAt
             type: object
         ListHarnessConfigsBody:
             additionalProperties: false
@@ -1764,6 +1842,12 @@ components:
                         - restart
                         - delete
                     type: string
+                appliedCommits:
+                    description: History of successful disco apply runs that landed this sandbox's commits on a host, most recent last. Client-reported; append-only.
+                    items:
+                        $ref: '#/components/schemas/AppliedSourceCommit'
+                    nullable: true
+                    type: array
                 desiredState:
                     description: Requested steady state for reconciliation
                     enum:
@@ -4063,6 +4147,48 @@ paths:
                                 $ref: '#/components/schemas/ErrorModel'
                     description: Error
             summary: Assign a harness config's bound secrets to a running sandbox and return their sentinel env
+            tags:
+                - Sandboxes
+    /projects/{projectId}/sandboxes/{sandboxId}/complete-apply:
+        post:
+            operationId: complete-sandbox-apply
+            description: Record that the client successfully applied a source's sandbox commits onto a host working tree (ADR 0014). Called once per source, only after the client's fast-forward has actually landed the commits; appends to the sandbox's applied-commits history.
+            parameters:
+                - description: Project ID
+                  in: path
+                  name: projectId
+                  required: true
+                  schema:
+                    default: default
+                    description: Project ID
+                    type: string
+                - description: Sandbox ID
+                  in: path
+                  name: sandboxId
+                  required: true
+                  schema:
+                    description: Sandbox ID
+                    type: string
+            requestBody:
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/CompleteSandboxApplyBody'
+                required: true
+            responses:
+                202:
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Sandbox'
+                    description: Accepted
+                default:
+                    content:
+                        application/problem+json:
+                            schema:
+                                $ref: '#/components/schemas/ErrorModel'
+                    description: Error
+            summary: Record a completed disco apply
             tags:
                 - Sandboxes
     /projects/{projectId}/sandboxes/{sandboxId}/complete-source-push:

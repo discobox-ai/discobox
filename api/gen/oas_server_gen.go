@@ -61,6 +61,14 @@ type Handler interface {
 	//
 	// POST /projects/{projectId}/harness-configs/{harnessConfigId}/configure/commit
 	CommitHarnessConfigConfigure(ctx context.Context, params CommitHarnessConfigConfigureParams) (CommitHarnessConfigConfigureRes, error)
+	// CompleteSandboxApply implements complete-sandbox-apply operation.
+	//
+	// Record that the client successfully applied a source's sandbox commits onto a host working tree
+	// (ADR 0014). Called once per source, only after the client's fast-forward has actually landed the
+	// commits; appends to the sandbox's applied-commits history.
+	//
+	// POST /projects/{projectId}/sandboxes/{sandboxId}/complete-apply
+	CompleteSandboxApply(ctx context.Context, req *CompleteSandboxApplyBody, params CompleteSandboxApplyParams) (CompleteSandboxApplyRes, error)
 	// CompleteSandboxSourcePush implements complete-sandbox-source-push operation.
 	//
 	// Report that the client finished pushing a push-delivered source into the sandbox's Git repository,

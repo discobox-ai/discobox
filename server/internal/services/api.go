@@ -20,6 +20,7 @@ type UpdateHarnessConfigBody = apimodel.UpdateHarnessConfigBody
 type UpdateSecretBody = apimodel.UpdateSecretBody
 type CreateSandboxBody = apimodel.CreateSandboxBody
 type CompleteSandboxSourcePushBody = apimodel.CompleteSandboxSourcePushBody
+type CompleteSandboxApplyBody = apimodel.CompleteSandboxApplyBody
 type SandboxSecretInput = apimodel.SandboxSecretInput
 type UpdateSandboxBody = apimodel.UpdateSandboxBody
 type StartSandboxBody = apimodel.StartSandboxBody
@@ -81,6 +82,17 @@ type HarnessConfigService interface {
 	DeleteHarnessConfigSecretBinding(ctx context.Context, projectID, configID, envName string) error
 }
 
+// Phase sets accepted by AcquireSandboxHTTPClient. Most sandbox-agent proxies
+// (terminals, http, execs) only make sense once the sandbox is fully running.
+// The sandbox git-repositories proxy is the exception: a push-delivered
+// source is received precisely while the sandbox is awaiting_source (ADR
+// 0001), so it must accept that phase too, or the delivery it exists for can
+// never happen.
+var (
+	SandboxPhasesRunning                 = []string{model.SandboxPhaseRunning}
+	SandboxPhasesRunningOrAwaitingSource = []string{model.SandboxPhaseRunning, model.SandboxPhaseAwaitingSource}
+)
+
 // SandboxService manages sandboxes within a project.
 type SandboxService interface {
 	ListSandboxes(ctx context.Context, projectID, sourceRoot, originKey string) ([]model.Sandbox, error)
@@ -92,8 +104,9 @@ type SandboxService interface {
 	StopSandbox(ctx context.Context, projectID, sandboxID string, input StopSandboxBody) (*model.Sandbox, error)
 	RestartSandbox(ctx context.Context, projectID, sandboxID string, input RestartSandboxBody) (*model.Sandbox, error)
 	CompleteSandboxSourcePush(ctx context.Context, projectID, sandboxID string, input CompleteSandboxSourcePushBody) (*model.Sandbox, error)
+	CompleteSandboxApply(ctx context.Context, projectID, sandboxID string, input CompleteSandboxApplyBody) (*model.Sandbox, error)
 	ReconcileSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error)
-	AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*HTTPClientLease, *model.Sandbox, error)
+	AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes, allowedPhases []string) (*HTTPClientLease, *model.Sandbox, error)
 	AssignSandboxHarnessSecrets(ctx context.Context, projectID, sandboxID, harnessConfigID string) (map[string]string, error)
 }
 

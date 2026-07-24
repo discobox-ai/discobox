@@ -62,6 +62,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(app.newRunCommand())
 	cmd.AddCommand(app.newListCommand())
 	cmd.AddCommand(app.newExecCommand())
+	cmd.AddCommand(app.newApplyCommand())
 	cmd.AddCommand(app.newConfigureCommand())
 	cmd.AddCommand(app.newSecretCommand())
 	cmd.AddCommand(app.newEventsCommand())

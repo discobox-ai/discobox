@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -311,7 +312,7 @@ func (s *Service) GetSandbox(ctx context.Context, projectID, sandboxID string) (
 	return sandbox, nil
 }
 
-func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
+func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandboxID string, scopes, allowedPhases []string) (*services.HTTPClientLease, *model.Sandbox, error) {
 	if err := authorizeRequestedScopes(ctx, scopes); err != nil {
 		return nil, nil, err
 	}
@@ -319,8 +320,11 @@ func (s *Service) AcquireSandboxHTTPClient(ctx context.Context, projectID, sandb
 	if err != nil {
 		return nil, nil, mapAPIError(err, "sandbox not found")
 	}
-	if sandboxModel.Phase != model.SandboxPhaseRunning {
-		return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("sandbox is not running: phase=%s", sandboxModel.Phase))
+	if len(allowedPhases) == 0 {
+		allowedPhases = services.SandboxPhasesRunning
+	}
+	if !slices.Contains(allowedPhases, sandboxModel.Phase) {
+		return nil, sandboxModel, apperrors.NewStatusError(http.StatusConflict, fmt.Sprintf("sandbox is not ready: phase=%s, want one of %v", sandboxModel.Phase, allowedPhases))
 	}
 	pool, err := s.store.GetPool(ctx, projectID, sandboxModel.PoolID)
 	if err != nil {
@@ -463,6 +467,70 @@ func (s *Service) CompleteSandboxSourcePush(ctx context.Context, projectID, sand
 		return nil, mapAPIError(err, "sandbox not found")
 	}
 	return sandbox, nil
+}
+
+// CompleteSandboxApply records a successful `disco apply` (ADR 0014): the
+// client cherry-picked a source's sandbox commits into a scratch worktree and
+// fast-forwarded them onto a host working tree, and reports the result here.
+// Called once per source, per apply run, only after the fast-forward has
+// already landed the commits — this is a record of something that already
+// happened, not a request to do anything.
+//
+// Like CompleteSandboxSourcePush, this does not verify the reported commits
+// against the sandbox's actual Git state: that would mean a round trip to
+// the pool agent for a bookkeeping call whose real work already succeeded on
+// the client's side. It also carries no lifecycle intent — the sandbox's
+// desired or observed runtime state does not change — so it persists via
+// updateSandboxMetadata rather than submitSandboxOperation.
+func (s *Service) CompleteSandboxApply(ctx context.Context, projectID, sandboxID string, input services.CompleteSandboxApplyBody) (*model.Sandbox, error) {
+	existing, err := s.store.GetSandbox(ctx, projectID, sandboxID)
+	if err != nil {
+		return nil, mapAPIError(err, "sandbox not found")
+	}
+	slug := strings.TrimSpace(input.Slug)
+	if slug == "" || !sandboxHasSourceSlug(existing, slug) {
+		return nil, apperrors.NewStatusError(http.StatusConflict,
+			fmt.Sprintf("sandbox has no source with slug %q", slug))
+	}
+	commit := strings.ToLower(strings.TrimSpace(input.Commit))
+	hostCommit := strings.ToLower(strings.TrimSpace(input.HostCommit))
+	hostID := strings.TrimSpace(input.HostId)
+	hostPath := strings.TrimSpace(input.HostPath)
+	if commit == "" || hostCommit == "" || hostID == "" || hostPath == "" {
+		return nil, apperrors.NewStatusError(http.StatusBadRequest,
+			"commit, hostCommit, hostId, and hostPath are all required")
+	}
+	entry := model.AppliedSourceCommit{
+		Slug:       slug,
+		Commit:     commit,
+		HostCommit: hostCommit,
+		HostID:     hostID,
+		HostPath:   hostPath,
+		AppliedAt:  time.Now().UTC(),
+	}
+	sandbox, err := s.updateSandboxMetadata(ctx, projectID, sandboxID, func(sb *model.Sandbox) {
+		sb.AppliedCommits = append(sb.AppliedCommits, entry)
+	})
+	if err != nil {
+		return nil, mapAPIError(err, "sandbox not found")
+	}
+	return sandbox, nil
+}
+
+// sandboxHasSourceSlug reports whether slug names the sandbox's primary
+// source or one of its secondary sources. GitSource.Slug is always populated
+// by DefaultGitSourceSlugs at create, so every source has one to match
+// against.
+func sandboxHasSourceSlug(sandbox *model.Sandbox, slug string) bool {
+	if sandbox.Source != nil && sandbox.Source.Slug != nil && *sandbox.Source.Slug == slug {
+		return true
+	}
+	for _, source := range sandbox.SourceCodeReferences {
+		if source.Slug != nil && *source.Slug == slug {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) ReconcileSandbox(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error) {

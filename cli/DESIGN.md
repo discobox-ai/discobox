@@ -13,6 +13,8 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. |
 | `internal/origin` | Resolves the client host and project directory a sandbox is created from. Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/tui` | Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. |
+| `internal/gitapply` | Pure Git plumbing for `disco apply`: merge-base computation and scratch-worktree cherry-pick/fast-forward, no API or App dependency. |
+| `internal/sandboxapply` | Fetches a source's sandbox repository over the git-repositories proxy for `disco apply`, reusing `sandboxcreate`'s URL/auth construction for read. |
 
 ## UI Dependency Direction
 
@@ -157,6 +159,38 @@ The push goes through the control plane's Git proxy, never directly to the
 sandbox, which sits on a network the client cannot reach.
 
 See [ADR 0001](../docs/adr/0001-sandbox-origin-and-remote-source-push.md).
+
+## Applying Sandbox Commits to a Host (`disco apply`)
+
+`disco apply` (ADR 0014, `internal/cli/apply.go`) is the reverse of source
+delivery above: it pulls a sandbox's committed source changes back onto the
+host working tree they started from, via fetch + cherry-pick, never merge.
+
+1. **Resolve sources.** Every source on the sandbox — primary plus
+   `SourceCodeReferences` — is applied by default; `--source` narrows to one
+   slug. A source is only auto-resolvable to a host directory when
+   `Origin.HostID` matches this host and the source records a
+   `LocalDirectory`; otherwise `--dir slug=path` is required.
+2. **Check for uncommitted sandbox changes.** `git status --porcelain` runs
+   inside the sandbox over the exec API — the one place fetch can't see,
+   since fetch only sees committed history. A dirty source is skipped, not
+   applied partially.
+3. **Fetch** (`internal/sandboxapply.FetchSource`) reuses
+   `sandboxcreate.SandboxGitRepositoryURL`/`GitAuthArgs` — the exact URL and
+   bearer-token construction source delivery uses to push, just for read —
+   landing the sandbox's current tip at
+   `refs/discobox/apply/<sandbox-id>/<slug>` in the host repo.
+4. **Land** (`internal/gitapply.Attempt`) cherry-picks the fetched range in a
+   disposable linked worktree, never against the host's real checked-out
+   branch. A clean result is fast-forwarded into the host branch; a conflict
+   aborts and removes the scratch worktree, leaving the host repository
+   untouched, and prints the `git cherry-pick` command to reproduce and
+   resolve it directly. `CompleteSandboxApply` is only called after a real
+   fast-forward landed — never speculatively — so the server's
+   `AppliedCommits` record is always either "all of it, provably" or "none of
+   it."
+
+See [ADR 0014](../docs/adr/0014-disco-apply-pulls-sandbox-commits-via-cherry-pick.md).
 
 ## Harness Configure Step
 

@@ -188,7 +188,7 @@ func (s *routerTestServices) GetSandbox(_ context.Context, projectID, sandboxID 
 	return &sandbox, nil
 }
 
-func (s *routerTestServices) AcquireSandboxHTTPClient(_ context.Context, projectID, sandboxID string, scopes []string) (*services.HTTPClientLease, *model.Sandbox, error) {
+func (s *routerTestServices) AcquireSandboxHTTPClient(_ context.Context, projectID, sandboxID string, scopes, _ []string) (*services.HTTPClientLease, *model.Sandbox, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -244,6 +244,17 @@ func (s *routerTestServices) RestartSandbox(_ context.Context, projectID, sandbo
 
 func (s *routerTestServices) CompleteSandboxSourcePush(_ context.Context, projectID, sandboxID string, _ services.CompleteSandboxSourcePushBody) (*model.Sandbox, error) {
 	return s.beginSandboxOperation(projectID, sandboxID, model.SandboxStartOperation)
+}
+
+func (s *routerTestServices) CompleteSandboxApply(_ context.Context, projectID, sandboxID string, _ services.CompleteSandboxApplyBody) (*model.Sandbox, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sandbox, err := s.getSandbox(projectID, sandboxID)
+	if err != nil {
+		return nil, err
+	}
+	return &sandbox, nil
 }
 
 func (s *routerTestServices) ReconcileSandbox(_ context.Context, projectID, sandboxID string) (*model.Sandbox, error) {

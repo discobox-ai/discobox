@@ -59,6 +59,27 @@ func (s *Service) submitSandboxOperation(ctx context.Context, projectID, sandbox
 	return s.store.GetSandbox(ctx, projectID, sandboxID)
 }
 
+// updateSandboxMetadata persists a mutation to an existing sandbox that
+// carries no lifecycle intent — client-reported bookkeeping only, such as
+// CompleteSandboxApply's applied-commit record. Unlike submitSandboxOperation
+// it does not bump the generation, record an operation, or mark the sandbox
+// dirty for reconciliation: nothing about desired or observed runtime state
+// changed, so there is nothing for the reconcile engine to act on.
+func (s *Service) updateSandboxMetadata(ctx context.Context, projectID, sandboxID string, mutate func(*model.Sandbox)) (*model.Sandbox, error) {
+	if err := s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
+		sandbox, err := txStore.GetSandbox(ctx, projectID, sandboxID)
+		if err != nil {
+			return err
+		}
+		previousGeneration := sandbox.Generation
+		mutate(sandbox)
+		return txStore.UpdateSandbox(ctx, sandbox, store.WithGeneration(previousGeneration))
+	}); err != nil {
+		return nil, err
+	}
+	return s.store.GetSandbox(ctx, projectID, sandboxID)
+}
+
 // scheduleSandboxReconcile marks the sandbox dirty (drift-driven reconcile, no
 // intent change).
 func (s *Service) scheduleSandboxReconcile(ctx context.Context, projectID, sandboxID string) (*model.Sandbox, error) {

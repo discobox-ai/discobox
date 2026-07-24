@@ -68,7 +68,7 @@ func DeliverSource(ctx context.Context, client sourceDeliveryClient, projectID s
 	if err != nil {
 		return err
 	}
-	repoURL, err := sandboxGitRepositoryURL(serverURL, projectID, sandbox.ID, source)
+	repoURL, err := SandboxGitRepositoryURL(serverURL, projectID, sandbox.ID, source)
 	if err != nil {
 		return err
 	}
@@ -120,10 +120,10 @@ func localSourceRoot(ctx context.Context, sourceArg string) (string, error) {
 	return gitutil.Root(ctx, source)
 }
 
-// sandboxGitRepositoryURL is the control plane's proxy to the sandbox's
+// SandboxGitRepositoryURL is the control plane's proxy to the sandbox's
 // repository. The push goes through the server rather than to the sandbox: the
 // sandbox sits on a private network the client cannot reach.
-func sandboxGitRepositoryURL(serverURL, projectID, sandboxID string, source apimodel.GitSource) (string, error) {
+func SandboxGitRepositoryURL(serverURL, projectID, sandboxID string, source apimodel.GitSource) (string, error) {
 	base := strings.TrimRight(strings.TrimSpace(serverURL), "/")
 	parsed, err := url.Parse(base)
 	if err != nil {
@@ -191,7 +191,7 @@ func pushSource(ctx context.Context, repoRoot, repoURL, token, commit, branch, s
 	}
 	args := []string{"push", repoURL}
 	args = append(args, refspecs...)
-	if _, err := gitutil.Output(ctx, repoRoot, nil, nil, gitPushAuthArgs(token, args)...); err != nil {
+	if _, err := gitutil.Output(ctx, repoRoot, nil, nil, GitAuthArgs(token, args)...); err != nil {
 		return fmt.Errorf("push source to sandbox: %w", err)
 	}
 	return nil
@@ -202,11 +202,11 @@ func pushSource(ctx context.Context, repoRoot, repoURL, token, commit, branch, s
 // out the commit itself; this only gives the push somewhere to land.
 const detachedPushBranch = "discobox-source"
 
-// gitPushAuthArgs carries the caller's bearer token on the request. It is
+// GitAuthArgs carries the caller's bearer token on the request. It is
 // passed as a git config override rather than embedded in the URL, which would
 // put the token in the repository's remote configuration and in process
 // listings.
-func gitPushAuthArgs(token string, args []string) []string {
+func GitAuthArgs(token string, args []string) []string {
 	token = strings.TrimSpace(token)
 	if token == "" {
 		return args

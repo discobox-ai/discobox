@@ -5,8 +5,10 @@ package model
 
 import apigen "github.com/obot-platform/discobox/api/gen"
 
+type AppliedSourceCommit = apigen.AppliedSourceCommit
 type ApproveSecretRequestBody = apigen.ApproveSecretRequestBody
 type AssignSandboxHarnessSecretsBody = apigen.AssignSandboxHarnessSecretsBody
+type CompleteSandboxApplyBody = apigen.CompleteSandboxApplyBody
 type CompleteSandboxSourcePushBody = apigen.CompleteSandboxSourcePushBody
 type CreateHarnessConfigBody = apigen.CreateHarnessConfigBody
 type CreatePoolBody = apigen.CreatePoolBody

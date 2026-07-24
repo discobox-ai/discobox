@@ -177,6 +177,9 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 	if sandbox.StatusMessage != nil {
 		runtime["statusMessage"] = *sandbox.StatusMessage
 	}
+	if len(sandbox.AppliedCommits) > 0 {
+		runtime["appliedCommits"] = sandbox.AppliedCommits
+	}
 	fields := map[string]any{
 		"id":              sandbox.ID,
 		"projectId":       sandbox.ProjectID,

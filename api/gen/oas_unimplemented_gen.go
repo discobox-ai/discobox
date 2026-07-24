@@ -84,6 +84,17 @@ func (UnimplementedHandler) CommitHarnessConfigConfigure(ctx context.Context, pa
 	return r, ht.ErrNotImplemented
 }
 
+// CompleteSandboxApply implements complete-sandbox-apply operation.
+//
+// Record that the client successfully applied a source's sandbox commits onto a host working tree
+// (ADR 0014). Called once per source, only after the client's fast-forward has actually landed the
+// commits; appends to the sandbox's applied-commits history.
+//
+// POST /projects/{projectId}/sandboxes/{sandboxId}/complete-apply
+func (UnimplementedHandler) CompleteSandboxApply(ctx context.Context, req *CompleteSandboxApplyBody, params CompleteSandboxApplyParams) (r CompleteSandboxApplyRes, _ error) {
+	return r, ht.ErrNotImplemented
+}
+
 // CompleteSandboxSourcePush implements complete-sandbox-source-push operation.
 //
 // Report that the client finished pushing a push-delivered source into the sandbox's Git repository,
