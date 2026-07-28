@@ -39,14 +39,21 @@ func Listen(port uint32) (net.Listener, error) {
 // arguments are intentionally ignored so it can be installed directly as an
 // HTTP Transport DialContext.
 func DialHostContext(port uint32) func(context.Context, string, string) (net.Conn, error) {
+	return DialContextCID(HostCID, port)
+}
+
+// DialContextCID dials a fixed VSOCK context ID and port. The network and
+// address arguments are intentionally ignored so it can be installed directly
+// as an HTTP Transport DialContext.
+func DialContextCID(cid, port uint32) func(context.Context, string, string) (net.Conn, error) {
 	return func(ctx context.Context, _, _ string) (net.Conn, error) {
 		if port < 1024 {
-			return nil, fmt.Errorf("host vsock port %d must be at least 1024", port)
+			return nil, fmt.Errorf("vsock port %d must be at least 1024", port)
 		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		conn, err := mdvsock.Dial(HostCID, port, nil)
+		conn, err := mdvsock.Dial(cid, port, nil)
 		if err != nil {
 			return nil, err
 		}
