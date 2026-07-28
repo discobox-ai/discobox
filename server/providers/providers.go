@@ -2,6 +2,7 @@ package providers
 
 import (
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
+	"github.com/obot-platform/discobox/server/internal/transport/carrierhub"
 	"github.com/obot-platform/discobox/server/providers/digitalocean"
 	"github.com/obot-platform/discobox/server/providers/docker"
 	"github.com/obot-platform/discobox/server/providers/dockerworker"
@@ -12,6 +13,10 @@ import (
 
 type FactoryOptions struct {
 	DevelopmentImageSync *dockerworker.DevelopmentImageSynchronizer
+	// ControlPlaneStreams receives connections that a pool guest opens toward
+	// the control plane. Only backends whose transport cannot be dialed inward
+	// use it; the server serves its ordinary handler over whatever arrives.
+	ControlPlaneStreams *carrierhub.Hub
 }
 
 func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, poolManager poolruntime.PoolManager, options FactoryOptions) {
@@ -30,4 +35,5 @@ func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, p
 	manager.RegisterProviderDefinition(libkrun.ProviderType, libkrun.Definition())
 	manager.RegisterFactory(libkrun.ProviderType, libkrun.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync))
 	manager.RegisterProviderConfigValidator(libkrun.ProviderType, libkrun.Validate)
+	registerPlatformProviderFactories(manager, poolManager, options)
 }

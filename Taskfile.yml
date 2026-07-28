@@ -18,6 +18,9 @@ tasks:
   build:
     desc: Build binaries and all local Docker images
     cmds:
+      # The guest relay is embedded into the server binary, so it must be
+      # cross-compiled before the server is linked.
+      - task: build:cp-relay
       - task: build:server
       - task: build:cli
       - task: build:hooks
@@ -41,6 +44,19 @@ tasks:
     cmds:
       - mkdir -p build
       - cd hooks && go build -o ../{{.HOOKS_BINARY}} {{.HOOKS_MAIN}}
+
+  build:cp-relay:
+    desc: Cross-compile the guest control-plane relay embedded in the Windows server
+    vars:
+      RELAY_OUT: server/providers/wslc/relay/artifacts/discobox-cp-relay.linux-amd64.gz
+    cmds:
+      # The relay runs inside a pool guest, which has no Go toolchain, so it is
+      # cross-compiled here and embedded in the server binary. Stripped and
+      # gzipped it costs about 1 MB. The artifact is gitignored; without it the
+      # server still builds and only the wslc provider refuses to start.
+      - cd pool-agent && GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o ../build/discobox-cp-relay ./cmd/discobox-cp-relay
+      - gzip -9 -c build/discobox-cp-relay > {{.RELAY_OUT}}
+      - 'echo "embedded guest relay is $(wc -c < {{.RELAY_OUT}}) bytes compressed"'
 
   build:pool-agent-image:
     desc: Build the systemd Docker pool image
@@ -193,6 +209,42 @@ tasks:
     desc: Measure run/direct-attach terminal latency under output load against task dev
     cmds:
       - test/performance/terminal-latency/run.sh
+
+  test:e2e:wslc:
+    desc: "Run the wslc (Windows) provider e2e tests. Requires: Windows with WSL Containers"
+    cmds:
+      # These boot a real wslc VM, so they are gated off by default. The gate is
+      # recorded here rather than only in the test file, so the suite stays
+      # runnable by name instead of being forgotten.
+      - cd server && DISCOBOX_WSLC_E2E=1 go test ./providers/wslc -count=1 -v
+
+  test:e2e:docker:
+    desc: "Run the pool runtime e2e tests against a local Docker daemon. Requires: dockerd"
+    cmds:
+      - cd server && DISCOBOX_E2E=1 go test ./providers/poolruntime -count=1 -v
+
+  test:e2e:libkrun:
+    desc: "Run the libkrun provider e2e tests. Requires: Linux/KVM plus the five DISCOBOX_LIBKRUN_E2E_* variables"
+    cmds:
+      # Unlike the other suites this one needs artifacts the repository does not
+      # build, so it fails loudly listing what is missing rather than skipping
+      # silently and looking like a pass.
+      - |
+        missing=""
+        for v in DISCOBOX_LIBKRUN_E2E_LAUNCHER DISCOBOX_LIBKRUN_E2E_KERNEL DISCOBOX_LIBKRUN_E2E_ROOT_IMAGE DISCOBOX_LIBKRUN_E2E_POOL_IMAGE DISCOBOX_LIBKRUN_E2E_DOCKER; do
+          eval "value=\${$v:-}"
+          if [ -z "$value" ]; then missing="$missing $v"; fi
+        done
+        if [ -n "$missing" ]; then
+          echo "libkrun e2e needs:$missing" >&2
+          exit 1
+        fi
+        cd server && go test ./providers/libkrun -count=1 -v
+
+  test:e2e:terminal-latency:
+    desc: "Run the terminal latency e2e test. Requires: a running `task dev` server"
+    cmds:
+      - cd cli && DISCOBOX_TERMINAL_LATENCY_E2E=1 go test ./internal/cli -run TerminalLatency -count=1 -v
 
   test:all:
     desc: Run root and nested module tests
