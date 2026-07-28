@@ -431,16 +431,7 @@ func TestHTTPProxyCapturesFullBodies(t *testing.T) {
 		t.Fatalf("response status/body = %d %q", resp.StatusCode, gotResponse)
 	}
 
-	closeServer()
-
-	pools, err := gormdb.Open(gormdb.Config{DSN: dbPath})
-	if err != nil {
-		t.Fatalf("open audit db: %v", err)
-	}
-	var exchange audit.HTTPExchange
-	if err := pools.Read.Where("client_id = ? AND method = ?", "sandbox-1", http.MethodPost).First(&exchange).Error; err != nil {
-		t.Fatalf("read audit exchange: %v", err)
-	}
+	exchange := waitForHTTPExchange(t, dbPath, "client_id = ? AND method = ?", "sandbox-1", http.MethodPost)
 	if exchange.RequestBodyBytes != int64(len(requestBody)) || exchange.ResponseBodyBytes != int64(len(responseBody)) {
 		t.Fatalf("body bytes request=%d response=%d", exchange.RequestBodyBytes, exchange.ResponseBodyBytes)
 	}
@@ -654,16 +645,7 @@ func TestHTTPProxyUpgradeAudit(t *testing.T) {
 		t.Fatalf("upgrade response = %q", got)
 	}
 	_ = conn.Close()
-	closeServer()
-
-	pools, err := gormdb.Open(gormdb.Config{DSN: dbPath})
-	if err != nil {
-		t.Fatalf("open audit db: %v", err)
-	}
-	var exchange audit.HTTPExchange
-	if err := pools.Read.Where("client_id = ? AND upgrade = ?", "sandbox-1", true).First(&exchange).Error; err != nil {
-		t.Fatalf("read upgrade audit: %v", err)
-	}
+	exchange := waitForHTTPExchange(t, dbPath, "client_id = ? AND upgrade = ?", "sandbox-1", true)
 	if exchange.UpgradeType != "websocket" {
 		t.Fatalf("UpgradeType = %q", exchange.UpgradeType)
 	}
@@ -808,6 +790,34 @@ func waitForLocalForwarderAddr(t *testing.T, forwarder *bridge.Forwarder) net.Ad
 	}
 	t.Fatal("timed out waiting for local forwarder address")
 	return nil
+}
+
+func waitForHTTPExchange(t *testing.T, dsn, query string, args ...any) audit.HTTPExchange {
+	t.Helper()
+	pools, err := gormdb.Open(gormdb.Config{DSN: dsn})
+	if err != nil {
+		t.Fatalf("open audit db: %v", err)
+	}
+	defer func() {
+		if err := pools.Close(); err != nil {
+			t.Errorf("close audit db: %v", err)
+		}
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		var exchange audit.HTTPExchange
+		result := pools.Read.Where(query, args...).Limit(1).Find(&exchange)
+		if result.Error != nil {
+			t.Fatalf("read audit exchange: %v", result.Error)
+		}
+		if result.RowsAffected > 0 {
+			return exchange
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("timed out waiting for audit exchange")
+	return audit.HTTPExchange{}
 }
 
 func closeProxyServer(t *testing.T, server *Server, errCh <-chan error) func() {
