@@ -20,6 +20,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/database"
 	"github.com/obot-platform/discobox/server/internal/secrets"
 	"github.com/obot-platform/discobox/server/internal/service"
+	"github.com/obot-platform/discobox/server/internal/transport/carrierhub"
 )
 
 // Run loads configuration, initializes storage and services, and starts the HTTP server.
@@ -69,7 +70,13 @@ func Run(ctx context.Context) error {
 		}
 	}
 
+	// Guest-initiated control-plane connections are served by the same handler
+	// as every other request; only the way the connection arrived differs.
+	controlPlaneStreams := carrierhub.New()
+	defer func() { _ = controlPlaneStreams.Close() }()
+
 	router, err := NewApp(ctx, db.Write, db.Read, AppOptions{
+		ControlPlaneStreams:            controlPlaneStreams,
 		UserID:                         service.DefaultUserID,
 		SecretSealer:                   sealer,
 		DispatcherPollInterval:         cfg.DispatcherPollInterval,
@@ -88,6 +95,9 @@ func Run(ctx context.Context) error {
 		return fmt.Errorf("listen: %w", err)
 	}
 	defer cleanupListeners(listeners)
+	// The hub has no address to log: every connection on it was opened by a
+	// pool guest through its own transport.
+	listeners = append(listeners, serverListener{Listener: controlPlaneStreams, display: "pool control-plane streams"})
 	for _, listener := range listeners {
 		log.Printf("listening on %s", listener.display)
 		log.Printf("openapi spec available at %s/openapi.yaml", listener.display)

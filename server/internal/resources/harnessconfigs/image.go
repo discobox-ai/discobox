@@ -10,6 +10,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/name"
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	dockerclient "github.com/moby/moby/client"
+	"github.com/obot-platform/discobox/devimage"
 	"github.com/obot-platform/discobox/harness"
 	services "github.com/obot-platform/discobox/server/internal/services"
 )
@@ -130,4 +131,50 @@ func validateImageMetadata(metadata harness.ImageMetadata) error {
 		}
 	}
 	return nil
+}
+
+// harnessMetadataBuildArg is the build argument each harness Dockerfile turns
+// into the harness.ImageLabel label. Keep the two in sync.
+const harnessMetadataBuildArg = "HARNESS_METADATA"
+
+// devImageInspector resolves harness metadata from the development image
+// manifest before falling back to a daemon or registry lookup.
+//
+// In build-mode the host has no Docker daemon and the dev image has never been
+// pushed, so neither fallback can see it: the image exists only as a build
+// description until some pool's daemon builds it. The manifest already carries
+// the metadata verbatim, as the build argument that becomes the label, so
+// seeding reads it from there and no longer depends on the image existing yet.
+type devImageInspector struct {
+	metadataByReference map[string]string
+	fallback            imageInspector
+}
+
+// newDevImageInspector wraps fallback with the build-mode manifest entries in
+// images. It returns fallback unchanged when no entry carries harness metadata,
+// so copy-mode and production keep the original behavior exactly.
+func newDevImageInspector(images []devimage.Image, fallback imageInspector) imageInspector {
+	metadata := map[string]string{}
+	for _, image := range images {
+		if image.Build == nil {
+			continue
+		}
+		if raw := strings.TrimSpace(image.Build.Args[harnessMetadataBuildArg]); raw != "" {
+			metadata[strings.TrimSpace(image.Reference)] = raw
+		}
+	}
+	if len(metadata) == 0 {
+		return fallback
+	}
+	return devImageInspector{metadataByReference: metadata, fallback: fallback}
+}
+
+func (d devImageInspector) Inspect(ctx context.Context, imageRef string) (imageMetadata, error) {
+	raw, ok := d.metadataByReference[strings.TrimSpace(imageRef)]
+	if !ok {
+		return d.fallback.Inspect(ctx, imageRef)
+	}
+	// A build-mode reference is content-addressed over that image's inputs, so
+	// it is its own freshness key; there is no digest until it is built.
+	return parseImageMetadata(imageRef, map[string]string{harness.ImageLabel: raw})
 }

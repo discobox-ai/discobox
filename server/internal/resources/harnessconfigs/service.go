@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/obot-platform/discobox/devimage"
 	"github.com/obot-platform/discobox/harness"
 	"github.com/obot-platform/discobox/server/internal/apperrors"
 	"github.com/obot-platform/discobox/server/internal/harnessdefs"
@@ -27,6 +28,14 @@ type Service struct {
 
 func NewService(store *store.Store) *Service {
 	return &Service{store: store, inspector: defaultImageInspector{}}
+}
+
+// SetDevelopmentImages lets seeding resolve harness metadata from the
+// development image manifest. In build-mode the images do not exist anywhere
+// until a pool builds them, so without this every built-in harness is skipped
+// at startup and the project has no harness to run.
+func (s *Service) SetDevelopmentImages(images []devimage.Image) {
+	s.inspector = newDevImageInspector(images, s.inspector)
 }
 
 // SetHarnessImages installs per-harness image overrides (built-in slug → image).

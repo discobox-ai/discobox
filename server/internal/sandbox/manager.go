@@ -20,7 +20,7 @@ func PlatformDefaultProvider() string {
 		return "vz"
 	}
 	if runtime.GOOS == "windows" {
-		return "hcs"
+		return "wslc"
 	}
 	return "docker"
 }

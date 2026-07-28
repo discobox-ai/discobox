@@ -19,6 +19,16 @@ const (
 	testDatabaseReadDSN = "postgres://user:pass@localhost/discobox_read"
 )
 
+// defaultListenFor is what an unconfigured server listens on for this platform:
+// local IPC always, plus HTTP only where a pool agent dials over IP.
+func defaultListenFor(port int) []string {
+	endpoints := []string{localipc.DefaultEndpoint()}
+	if defaultHTTPListener() {
+		endpoints = append(endpoints, controlplane.DefaultListenEndpoint(port))
+	}
+	return endpoints
+}
+
 func TestLoadDefaults(t *testing.T) {
 	clearConfigEnv(t)
 
@@ -30,8 +40,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Port != controlplane.DefaultPort {
 		t.Fatalf("Port = %d, want %d", cfg.Port, controlplane.DefaultPort)
 	}
-	if !reflect.DeepEqual(cfg.Listen, []string{localipc.DefaultEndpoint(), controlplane.DefaultListenEndpoint(controlplane.DefaultPort)}) {
-		t.Fatalf("Listen = %#v, want default IPC and HTTP endpoints", cfg.Listen)
+	if !reflect.DeepEqual(cfg.Listen, defaultListenFor(controlplane.DefaultPort)) {
+		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, defaultListenFor(controlplane.DefaultPort))
 	}
 	if cfg.AutoShutdownTimeout != 0 {
 		t.Fatalf("AutoShutdownTimeout = %s, want 0", cfg.AutoShutdownTimeout)
@@ -91,8 +101,8 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	if cfg.Port != 9090 {
 		t.Fatalf("Port = %d, want 9090", cfg.Port)
 	}
-	if !reflect.DeepEqual(cfg.Listen, []string{localipc.DefaultEndpoint(), controlplane.DefaultListenEndpoint(9090)}) {
-		t.Fatalf("Listen = %#v, want default IPC and PORT-derived HTTP endpoint", cfg.Listen)
+	if !reflect.DeepEqual(cfg.Listen, defaultListenFor(9090)) {
+		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, defaultListenFor(9090))
 	}
 	if cfg.AutoShutdownTimeout != 5*time.Minute {
 		t.Fatalf("AutoShutdownTimeout = %s, want 5m", cfg.AutoShutdownTimeout)
@@ -178,7 +188,10 @@ func TestLoadDevelopmentImageSyncRejectsInvalidBoolean(t *testing.T) {
 	}
 }
 
-func TestLoadServerEndpointAddsDefaultHTTP(t *testing.T) {
+// Naming the endpoints explicitly yields exactly those. An implied TCP listener
+// would be one the operator never asked for, which on Windows also costs a
+// firewall prompt; configuring HTTP remains possible, it is just not automatic.
+func TestLoadServerEndpointDoesNotImplyHTTP(t *testing.T) {
 	clearConfigEnv(t)
 	t.Setenv("DISCOBOX_SERVER_LISTEN", "unix:///tmp/discobox/server.sock")
 
@@ -187,7 +200,7 @@ func TestLoadServerEndpointAddsDefaultHTTP(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	want := []string{"unix:///tmp/discobox/server.sock", controlplane.DefaultListenEndpoint(controlplane.DefaultPort)}
+	want := []string{"unix:///tmp/discobox/server.sock"}
 	if !reflect.DeepEqual(cfg.Listen, want) {
 		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, want)
 	}
@@ -232,7 +245,12 @@ func TestLoadServerClientEndpointDoesNotOverrideListen(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	want := []string{localipc.DefaultEndpoint(), controlplane.DefaultListenEndpoint(controlplane.DefaultPort)}
+	// With nothing configured the platform decides whether a TCP listener is
+	// implied; Windows opens none because nothing there needs one.
+	want := []string{localipc.DefaultEndpoint()}
+	if defaultHTTPListener() {
+		want = append(want, controlplane.DefaultListenEndpoint(controlplane.DefaultPort))
+	}
 	if !reflect.DeepEqual(cfg.Listen, want) {
 		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, want)
 	}

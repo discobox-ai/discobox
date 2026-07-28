@@ -6,6 +6,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/obot-platform/discobox/devimage"
 	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
 	eventbroker "github.com/obot-platform/discobox/server/internal/events"
@@ -21,6 +22,7 @@ import (
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/obot-platform/discobox/server/internal/transport/carrierhub"
 	providerregistry "github.com/obot-platform/discobox/server/providers"
 	"github.com/obot-platform/discobox/server/providers/dockerworker"
 )
@@ -52,6 +54,13 @@ type Service struct {
 type Options struct {
 	SandboxReconcileJobConcurrency int
 	DevelopmentImageSync           *dockerworker.DevelopmentImageSynchronizer
+	// DevelopmentImages is the watcher-built image set. Harness seeding reads
+	// build-mode metadata from it, since those images exist only as build
+	// descriptions until a pool's daemon builds them.
+	DevelopmentImages []devimage.Image
+	// ControlPlaneStreams carries guest-initiated control-plane connections for
+	// backends that cannot be dialed inward.
+	ControlPlaneStreams *carrierhub.Hub
 }
 
 func New(store *store.Store, engine *reconcile.Engine, options Options, broker ...*eventbroker.Broker) *Service {
@@ -63,6 +72,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options, broker .
 	poolControlPlane := pools.NewControlPlane(store, engine)
 	providerregistry.RegisterBuiltInSandboxProviderFactories(manager, poolControlPlane, providerregistry.FactoryOptions{
 		DevelopmentImageSync: options.DevelopmentImageSync,
+		ControlPlaneStreams:  options.ControlPlaneStreams,
 	})
 	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, engine, poolControlPlane)
 	providerService := providers.NewService(store, sandboxService, poolControlPlane)
@@ -70,6 +80,7 @@ func New(store *store.Store, engine *reconcile.Engine, options Options, broker .
 	poolService.SetSandboxRemovalReporter(sandboxService)
 	jobsService := resourcejobs.NewService(store, engine)
 	harnessConfigService := harnessconfigs.NewService(store)
+	harnessConfigService.SetDevelopmentImages(options.DevelopmentImages)
 	// The configure flow runs an ephemeral sandbox and watches it through the
 	// reconcile engine, so it needs both.
 	harnessConfigService.SetSandboxRuntime(sandboxService)

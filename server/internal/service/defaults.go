@@ -234,9 +234,10 @@ func defaultSandboxProviderForOS(projectID, providerID string) *model.SandboxPro
 		provider.Name = "macOS"
 		provider.Disabled = true
 	case "windows":
-		provider.Type = "windows"
+		// Every field of the wslc config has a default (see its Definition), so
+		// the built-in instance carries no configuration of its own.
+		provider.Type = "wslc"
 		provider.Name = "Windows"
-		provider.Disabled = true
 	default:
 		provider.Type = "unsupported"
 		provider.Name = runtime.GOOS

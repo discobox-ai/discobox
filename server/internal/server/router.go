@@ -21,6 +21,7 @@ import (
 	"github.com/obot-platform/discobox/server/internal/service"
 	services "github.com/obot-platform/discobox/server/internal/services"
 	"github.com/obot-platform/discobox/server/internal/store"
+	"github.com/obot-platform/discobox/server/internal/transport/carrierhub"
 	"github.com/obot-platform/discobox/server/providers/dockerworker"
 	"gorm.io/gorm"
 )
@@ -51,6 +52,12 @@ type AppOptions struct {
 	// DevelopmentImages is the watcher-built image set synchronized to every
 	// Docker daemon used by a pool provider.
 	DevelopmentImages []devimage.Image
+
+	// ControlPlaneStreams receives control-plane connections opened by pool
+	// guests whose transport cannot be dialed inward. The caller owns it because
+	// it must also be served (see Serve); when nil such backends still start but
+	// their agents cannot register.
+	ControlPlaneStreams *carrierhub.Hub
 }
 
 // DefaultAppOptions returns the production defaults for the app.
@@ -109,9 +116,16 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 	if err != nil {
 		return nil, fmt.Errorf("configure development image synchronization: %w", err)
 	}
+	// Pool backends that cannot be dialed inward hand their guest-initiated
+	// control-plane connections to this hub; Serve treats it as one more
+	// listener for the ordinary handler, so routing and authentication are
+	// unchanged.
+	controlPlaneStreams := opts.ControlPlaneStreams
 	appServices := service.New(appStore, reconcileEngine, service.Options{
 		SandboxReconcileJobConcurrency: opts.SandboxReconcileJobConcurrency,
 		DevelopmentImageSync:           developmentImageSync,
+		DevelopmentImages:              opts.DevelopmentImages,
+		ControlPlaneStreams:            controlPlaneStreams,
 	}, broker)
 	appServices.SetDefaultSandboxImage(opts.DefaultSandboxImage)
 	appServices.SetHostID(opts.HostID)

@@ -11,6 +11,7 @@ COPY api ./api
 COPY controlplane ./controlplane
 COPY harness ./harness
 COPY id ./id
+COPY layout ./layout
 COPY proxy ./proxy
 COPY sandboxconfig ./sandboxconfig
 COPY gormdb ./gormdb

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -167,11 +168,41 @@ func defaultDatabaseDSN(dataDir string) string {
 }
 
 func listenEndpoints(port int) []string {
-	endpoints := splitListenEndpoints(getEnv("DISCOBOX_SERVER_LISTEN", ""))
-	return requireLocalAndHTTPListenEndpoints(endpoints, port)
+	configured := splitListenEndpoints(getEnv("DISCOBOX_SERVER_LISTEN", ""))
+	// Only default the HTTP listener in when the operator named nothing and the
+	// platform actually wants one.
+	addDefaultHTTP := len(configured) == 0 && defaultHTTPListener()
+	return requireLocalAndHTTPListenEndpoints(configured, port, addDefaultHTTP)
 }
 
-func requireLocalAndHTTPListenEndpoints(endpoints []string, port int) []string {
+// defaultHTTPListener reports whether the server opens a TCP listener when the
+// operator has not asked for one.
+//
+// On Windows it does not: every TCP listener costs a firewall prompt, and the
+// Windows backend reaches the control plane over its guest relay's socket, so
+// nothing needs one. A Windows operator who does want HTTP — to run the Docker
+// provider, whose agent dials host.docker.internal:<port> — names it in
+// DISCOBOX_SERVER_LISTEN and gets exactly that.
+//
+// Elsewhere the Docker provider is the common case, so the listener stays on.
+func defaultHTTPListener() bool {
+	return runtime.GOOS != "windows"
+}
+
+// requireLocalAndHTTPListenEndpoints fills in the endpoints the server needs
+// but the operator did not name.
+//
+// The local IPC endpoint is always added: it is how the CLI reaches the server,
+// and losing it silently would leave a running server no one can talk to.
+//
+// The HTTP endpoint is added only when addDefaultHTTP says so. It exists so
+// pool agents that reach the control plane over IP — the Docker provider's
+// host.docker.internal:<port> — have somewhere to connect; backends whose
+// agents use another transport need no TCP listener at all, since libkrun dials
+// over VSOCK and wslc over its guest relay's socket. An operator who names
+// their endpoints explicitly gets exactly those and nothing more, so configuring
+// HTTP remains possible everywhere — it is simply not implied.
+func requireLocalAndHTTPListenEndpoints(endpoints []string, port int, addDefaultHTTP bool) []string {
 	hasLocal := false
 	hasHTTP := false
 	for _, endpoint := range endpoints {
@@ -189,7 +220,7 @@ func requireLocalAndHTTPListenEndpoints(endpoints []string, port int) []string {
 	if !hasLocal {
 		endpoints = append([]string{localipc.DefaultEndpoint()}, endpoints...)
 	}
-	if !hasHTTP {
+	if !hasHTTP && addDefaultHTTP {
 		endpoints = append(endpoints, controlplane.DefaultListenEndpoint(port))
 	}
 	return endpoints
