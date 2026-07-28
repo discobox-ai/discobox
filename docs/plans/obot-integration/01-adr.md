@@ -50,6 +50,13 @@ like the user's machine, all their agents share it, and starting another one is
 not rejected because the sum of requests exceeds the envelope. Contention is
 handled by pool QoS, not admission.
 
+There is a further piece of evidence that the current gate is closer to an
+accident than a policy: the agent-reported `Available*` figures it compares
+against are measured from the **host** (`runtime.NumCPU()`, `/proc/meminfo`),
+not from the pool's cgroup. So today's admission check admits against numbers
+that ignore the very envelope the runtime enforces. Whatever is decided, the
+existing behavior should not be defended as an intentional design.
+
 The genuine question is whether this becomes managed-only behavior or the model
 for all pools. Branching leaves two scheduling semantics in one system, which is
 a real cost. The overcommit rationale arguably applies to ordinary pools too —
@@ -99,6 +106,3 @@ rejected. WI-06 implements whatever this concludes.
   `Accepted`.
 - `docs/adr/README.md` is updated if it maintains an index.
 - `go tool task check-hooks` passes.
-</content>
-</invoke>
-<parameter name="description">Write WI-01 ADR brief

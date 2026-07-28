@@ -94,6 +94,3 @@ rules there bind this work directly:
   credential, and stream authentication.
 - `server/internal/auth/DESIGN.md` reflects the new pipeline.
 - `go tool task check-hooks` passes.
-</content>
-</invoke>
-<parameter name="description">Write WI-02 service auth brief

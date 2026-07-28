@@ -95,6 +95,3 @@ A four-hop plumb-through, plus one storage decision:
   `TestEffective_FilesOverlayByPath` specifies.
 - Migration upgrades an existing database in place.
 - `go tool task check-hooks` passes.
-</content>
-</invoke>
-<parameter name="description">Write WI-05 per-sandbox files brief

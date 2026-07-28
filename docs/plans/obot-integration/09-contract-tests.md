@@ -104,6 +104,3 @@ Secrets:
 - A deliberately introduced idempotency regression in the managed `PUT` path
   fails the suite.
 - `go tool task check-hooks` passes.
-</content>
-</invoke>
-<parameter name="description">Write WI-09 contract tests brief

@@ -126,6 +126,3 @@ it materializes.
 - Repeated `PUT` and repeated `DELETE` are provably idempotent under test.
 - Migrations upgrade an existing database in place.
 - `go tool task check-hooks` passes.
-</content>
-</invoke>
-<parameter name="description">Write WI-03 managed resources brief

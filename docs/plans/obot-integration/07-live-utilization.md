@@ -111,6 +111,3 @@ client lease to a pool's agent, used today by `server/providers/poolruntime/agen
   churn.
 - `pool-agent/DESIGN.md` and the server pool `DESIGN.md` describe the read path.
 - `go tool task check-hooks` passes.
-</content>
-</invoke>
-<parameter name="description">Write WI-07 utilization brief

@@ -30,6 +30,3 @@ managed layer exists. Item 03 is what turns them into an Obot integration.
 
 `00-CONTEXT.md` lists the files that more than one item touches — chiefly
 `api/openapi/server.yaml` and `server/internal/model/model.go`. Rebase often.
-</content>
-</invoke>
-<parameter name="description">Write plans README index

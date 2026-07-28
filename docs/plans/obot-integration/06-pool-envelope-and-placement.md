@@ -45,10 +45,45 @@ by the reconciler on failure paths (`resources/pools/reconciler.go:224,253`).
 Overloading it for administrative suspension would let the next heartbeat
 silently clear the administrator's intent.
 
-**The envelope exists but its enforcement is unclear.** `Pool.CPUVCPUs`,
-`MemoryBytes`, `StorageBytes` (`model.go:496-498`) are documented as the total
-capacity the pool's sandboxes may overcommit, with zero meaning "sized by the
-host". Verify what the pool host actually enforces today.
+**The envelope is enforced only partly, and one third of it is inert.**
+`Pool.CPUVCPUs`, `MemoryBytes`, `StorageBytes` (`model.go:496-498`) are
+documented as the total capacity the pool's sandboxes may overcommit, with zero
+meaning "sized by the host". In practice the Docker pool host applies
+`pool.CPUVCPUs` -> `NanoCPUs` and `pool.MemoryBytes` -> `Memory`
+(`server/providers/dockerworker/engine.go:401-411`), and **`pool.StorageBytes`
+is read by nothing outside CLI display** — it is accepted, persisted, shown, and
+never enforced. Do not leave it looking implemented; either enforce it or
+document it as unenforced.
+
+**Changing a pool's envelope today force-recreates the pool host container.**
+The envelope is compared via a container *label*, so any capacity change
+destroys and recreates the host rather than updating it — an outage, not the
+"applies immediately, increases contention" behavior this item wants. The fix
+is to compare against the live `HostConfig` and apply changes with
+`ContainerUpdate`. Note this changes pool host lifecycle behavior for *every*
+pool, not just managed ones, so confirm the blast radius with the engineer
+before building it.
+
+**The placement gate fires only on sandbox create.**
+`SchedulablePoolForSandbox` is reached solely from `poolruntime.Provider.Create`.
+`Start` and `Restart` perform no pool check at all — they talk straight to the
+agent. So suspension cannot be enforced in the store gate alone; it needs
+service-layer enforcement at the start/restart entrypoints too.
+
+**A failed placement is terminal, with no wake-up path.** The sandbox reconciler
+calls the non-retryable `FailOperation`, and `ScanDirty` explicitly excludes
+terminal failures. Nothing marks sandboxes dirty when a pool becomes healthy
+again. "Clearing suspension resumes sandboxes" therefore needs real re-drive
+intent, not just a dirty mark.
+
+**`Schedulable` is rewritten on every heartbeat** (`store/pools.go:257`) and by
+`RegisterPool` (`store/pools.go:219`), as well as by the reconciler's failure
+paths. This is confirmed, not suspected: it cannot carry administrator intent,
+and a separate `Suspended` column is the right call.
+
+The findings above came out of an aborted implementation run. They are
+observations about existing behavior, not decisions — verify before relying on
+them.
 
 Relevant accepted ADRs: `0003-promote-pool-to-a-first-class-primitive.md`,
 `0006-pool-is-the-runtime-host.md`,
@@ -109,6 +144,3 @@ Relevant accepted ADRs: `0003-promote-pool-to-a-first-class-primitive.md`,
 - The envelope is enforced at the runtime boundary.
 - Pool `DESIGN.md` files describe the new placement semantics.
 - `go tool task check-hooks` passes.
-</content>
-</invoke>
-<parameter name="description">Write WI-06 pool brief

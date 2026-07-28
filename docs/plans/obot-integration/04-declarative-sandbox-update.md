@@ -51,6 +51,12 @@ model, prompt, environment, or image cannot be applied to an existing sandbox.
    **not updatable at all**. Write this classification down in
    `server/internal/resources/sandboxes/DESIGN.md` — it is the durable output of
    this item, more than the code is.
+
+   One classification is already settled, from an aborted earlier run:
+   **`prompt` is not updatable**, in the same class as `source`. It is the
+   session's argv, consumed once at harness start, so re-declaring it does not
+   converge an existing session — it starts a new one. Do not classify it as
+   restart-mutable; document the reasoning alongside it.
 3. Implement in-place and restart-requiring changes through the existing
    generation reconciler and the pool-agent update call.
 4. Implement replacement: when an immutable field changes, the concrete sandbox
@@ -95,6 +101,3 @@ model, prompt, environment, or image cannot be applied to an existing sandbox.
 - Restart and upgrade semantics, and ADR-0016's image-digest pinning, are
   unchanged.
 - `go tool task check-hooks` passes.
-</content>
-</invoke>
-<parameter name="description">Write WI-04 declarative update brief

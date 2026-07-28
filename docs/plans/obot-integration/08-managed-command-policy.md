@@ -101,6 +101,3 @@ enqueue hints, and upstream re-reads before believing anything.
 - Duplicate, delayed, and out-of-order events remain harmless.
 - The relevant `DESIGN.md` files record the policy.
 - `go tool task check-hooks` passes.
-</content>
-</invoke>
-<parameter name="description">Write WI-08 command policy brief

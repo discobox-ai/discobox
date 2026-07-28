@@ -99,6 +99,15 @@ Each item should add its new schemas as a self-contained block rather than
 interleaving edits into existing schemas where avoidable, and re-run
 `go tool task generate` after every rebase.
 
+**Do not run several of these items concurrently in one working tree.** This was
+tried and abandoned. Splitting the OpenAPI documents by region is not enough,
+because the *generated* output (`api/gen/**`, `pool-agent/api/gen/**`) is a
+single shared artifact: every `go tool task generate` regenerates from whatever
+state the contract is in at that moment, so each item sweeps in the others'
+half-finished schema changes and the compile errors compound across all of them.
+There is no disjoint partition available. Run one item at a time in a given
+tree, or give each item its own worktree so it has its own generated output.
+
 ## Suggested parallel tracks
 
 | Track | Items | Blocked by |
@@ -122,6 +131,3 @@ integration.
 - Obot-side work of any kind. This repository implements the Discobox half only.
 - Push-delivered Git sources for managed sandboxes. Those need an interactive
   client to complete the source push, so the managed contract rejects them.
-</content>
-</invoke>
-<parameter name="description">Write shared context file
