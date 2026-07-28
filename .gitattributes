@@ -1,0 +1,36 @@
+# Every text file is stored and checked out with LF, on every platform.
+#
+# Git already normalizes this repository's content to LF, but a Windows
+# checkout with core.autocrlf=true rewrites the working tree to CRLF, which
+# breaks two things:
+#
+#   - gofmt reports every file as unformatted, so `task check` fails on
+#     changes that are in fact correctly formatted;
+#   - shell scripts, Dockerfiles, and systemd units are copied or embedded into
+#     Linux guests, where a CR at the end of each line is part of the command
+#     and fails at runtime. The wslc provider's bridge entrypoint is embedded
+#     with go:embed and executed by /bin/sh inside the guest, so a CRLF
+#     checkout would break it with no local symptom.
+#
+# eol=lf (rather than plain text=auto) is what overrides core.autocrlf, so this
+# holds regardless of a developer's global Git configuration.
+* text=auto eol=lf
+
+# Binary artifacts: never normalized, never diffed as text. Content detection
+# already covers these, but VM and container images are large enough that an
+# accidental text conversion would be both silent and destructive.
+*.qcow2 binary
+*.img    binary
+*.raw    binary
+*.vhd    binary
+*.vhdx   binary
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.pdf    binary
+*.gz     binary
+*.zip    binary
+*.tar    binary
+*.wasm   binary
