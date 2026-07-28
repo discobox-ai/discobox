@@ -83,7 +83,7 @@ func activateSessionManager() (sessionManager, error) {
 }
 
 type comSessionManager struct {
-	ptr uintptr
+	ptr unsafe.Pointer
 }
 
 func (m *comSessionManager) Release() { comRelease(m.ptr) }
@@ -130,7 +130,7 @@ func (m *comSessionManager) CreateSession(opts Options) (wslcSession, error) {
 		NetworkingMode:       networkingModeNAT,
 	}
 
-	var sessionPtr uintptr
+	var sessionPtr unsafe.Pointer
 	hr := vtblCall(m.ptr, slotSessionManagerCreateSession,
 		uintptr(unsafe.Pointer(&settings)),
 		uintptr(sessionFlagNone),
@@ -146,7 +146,7 @@ func (m *comSessionManager) CreateSession(opts Options) (wslcSession, error) {
 }
 
 type comSession struct {
-	ptr uintptr
+	ptr unsafe.Pointer
 }
 
 func (s *comSession) Release() { comRelease(s.ptr) }
@@ -212,7 +212,7 @@ func (s *comSession) CreateRootNamespaceProcess(executable string, argv []string
 		Flags:       flags,
 	}
 
-	var processPtr uintptr
+	var processPtr unsafe.Pointer
 	var errNo int32
 	hr := vtblCall(s.ptr, slotSessionCreateRootNamespaceProcess,
 		uintptr(unsafe.Pointer(exePtr)),
@@ -282,7 +282,7 @@ func (s *comSession) CreateVolume(v VolumeOptions) error {
 }
 
 type comProcess struct {
-	ptr uintptr
+	ptr unsafe.Pointer
 }
 
 func (p *comProcess) Release() { comRelease(p.ptr) }

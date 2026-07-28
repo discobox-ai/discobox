@@ -156,8 +156,8 @@ func initCOM() error {
 	return nil
 }
 
-func coCreateInstance(clsid, iid *GUID, clsctx uint32) (uintptr, error) {
-	var ppv uintptr
+func coCreateInstance(clsid, iid *GUID, clsctx uint32) (unsafe.Pointer, error) {
+	var ppv unsafe.Pointer
 	r, _, _ := procCoCreateInstance.Call(
 		uintptr(unsafe.Pointer(clsid)),
 		0,
@@ -165,7 +165,7 @@ func coCreateInstance(clsid, iid *GUID, clsctx uint32) (uintptr, error) {
 		uintptr(unsafe.Pointer(iid)),
 		uintptr(unsafe.Pointer(&ppv)))
 	if err := hrErr(r); err != nil {
-		return 0, err
+		return nil, err
 	}
 	return ppv, nil
 }
@@ -177,24 +177,22 @@ func coCreateInstance(clsid, iid *GUID, clsctx uint32) (uintptr, error) {
 // so no per-method trampoline is needed - just the right slot index and
 // argument list.
 //
-// `go vet` flags the two unsafe.Pointer conversions below ("possible misuse
-// of unsafe.Pointer") because they're derived from uintptr arithmetic rather
-// than a direct Go pointer expression. That's expected here, not a bug: obj
-// is a COM object address owned by the COM runtime, not Go's GC, so Go's
-// usual moving-GC pointer-safety rules don't apply to it - this is the same
-// pattern production Go COM/Win32 interop code uses for vtable dispatch.
-func vtblCall(obj uintptr, slot int, args ...uintptr) uintptr {
-	vtbl := *(*uintptr)(unsafe.Pointer(obj))                                          //nolint:govet // see comment above
-	fn := *(*uintptr)(unsafe.Pointer(vtbl + uintptr(slot)*unsafe.Sizeof(uintptr(0)))) //nolint:govet // see comment above
+// obj remains an unsafe.Pointer for its whole lifetime so vtable addressing
+// never converts an integer back into a pointer. COM owns both obj and its
+// vtable; unsafe.Add expresses the slot offset without hiding that ownership
+// from Go's pointer analysis.
+func vtblCall(obj unsafe.Pointer, slot int, args ...uintptr) uintptr {
+	vtbl := *(*unsafe.Pointer)(obj)
+	fn := *(*uintptr)(unsafe.Add(vtbl, uintptr(slot)*unsafe.Sizeof(uintptr(0))))
 	full := make([]uintptr, 0, len(args)+1)
-	full = append(full, obj)
+	full = append(full, uintptr(obj))
 	full = append(full, args...)
 	r, _, _ := syscall.SyscallN(fn, full...)
 	return r
 }
 
-func comRelease(obj uintptr) {
-	if obj != 0 {
+func comRelease(obj unsafe.Pointer) {
+	if obj != nil {
 		vtblCall(obj, 2) // IUnknown::Release
 	}
 }
