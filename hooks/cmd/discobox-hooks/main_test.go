@@ -665,6 +665,58 @@ func TestLiveEventTableRowUsesAbsoluteTimestamp(t *testing.T) {
 	}
 }
 
+func TestEventMessageAppendsErrorDetail(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		event client.Event
+		want  string
+	}{
+		{
+			name: "appends error detail",
+			event: client.Event{
+				Message: "watch snapshot persist failed",
+				Details: map[string]any{"files": 3, "error": "write checkpoint: disk full"},
+			},
+			want: "watch snapshot persist failed: write checkpoint: disk full",
+		},
+		{
+			name: "collapses multiline error",
+			event: client.Event{
+				Message: "language server failed",
+				Details: map[string]any{"error": "exit status 1\nmissing binary"},
+			},
+			want: "language server failed: exit status 1 missing binary",
+		},
+		{
+			name: "keeps message when error already included",
+			event: client.Event{
+				Message: "language server file update failed: modified main.go: boom",
+				Details: map[string]any{"error": "boom"},
+			},
+			want: "language server file update failed: modified main.go: boom",
+		},
+		{
+			name: "keeps message when error detail is empty",
+			event: client.Event{
+				Message: "hook run finished",
+				Details: map[string]any{"error": "", "exit_code": 0},
+			},
+			want: "hook run finished",
+		},
+		{
+			name:  "no details",
+			event: client.Event{Message: "hook enqueued from file changes"},
+			want:  "hook enqueued from file changes",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := eventMessage(tc.event); got != tc.want {
+				t.Fatalf("eventMessage = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestWriteEventsJSONUsesJSONL(t *testing.T) {
 	a := &app{opts: cliOptions{output: "json"}}
 	cmd, out := testOutputCommand()

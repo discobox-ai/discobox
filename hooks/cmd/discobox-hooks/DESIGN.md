@@ -68,7 +68,9 @@ Initial command surface:
 - `snapshots`: list workspace snapshots through the daemon API.
 - `queue`: list queued hook work through the daemon API.
 - `events [-f|--follow] [all|hook-id]`: list audit events or follow the daemon's
-  SSE event stream; follow mode supports all events or one hook filter.
+  SSE event stream; follow mode supports all events or one hook filter. The
+  table MESSAGE column appends the event's `error` detail so failure rows carry
+  their cause without switching to JSON output.
 - `events --list-types`: print every known audit event type and its description
   without contacting the daemon.
 - `install-pre-commit`: install Git pre-commit integration when implemented.
