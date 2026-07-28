@@ -131,18 +131,18 @@ func TestReapUnknownPoolsReapsProxyOnlyLeftoverImmediately(t *testing.T) {
 
 // The control plane hands each pool agent the authoritative pool set for one
 // project, so the roots that agent reaps must hold only that project's pools.
-// This exercises the real path helpers (relocated through a host-mount prefix)
-// rather than two unrelated temp dirs: a host-global proxy pools root would put
-// another project's live pool in scope and delete the proxy material out from
-// under its running sandboxes, breaking egress with no log line.
+// This exercises the real path helpers (relocated under the test state root)
+// rather than two unrelated temp dirs: a project-global proxy pools root would
+// put another project's live pool in scope and delete the proxy material out
+// from under its running sandboxes, breaking egress with no log line.
 func TestReapUnknownPoolsLeavesAnotherProjectsLivePoolAlone(t *testing.T) {
-	host := t.TempDir()
-	agentA := &DockerSandboxRuntime{projectID: "proj_a", poolID: "pool_a", hostMountPrefix: host}
-	agentB := &DockerSandboxRuntime{projectID: "proj_b", poolID: "pool_b", hostMountPrefix: host}
+	withTestRoot(t)
+	agentA := &DockerSandboxRuntime{projectID: "proj_a", poolID: "pool_a"}
+	agentB := &DockerSandboxRuntime{projectID: "proj_b", poolID: "pool_b"}
 
 	// Project B has a live pool with staged proxy material and a data subtree.
-	liveProxyB := agentB.workerHostPath(proxyagent.PoolSandboxMaterialRoot("proj_b", "pool_b"))
-	liveDataB := agentB.workerHostPath(agentB.sandboxesRoot())
+	liveProxyB := resolve(proxyagent.PoolSandboxMaterialRoot("proj_b", "pool_b"))
+	liveDataB := agentB.sandboxesRoot()
 	for _, dir := range []string{liveProxyB, liveDataB} {
 		if err := os.MkdirAll(filepath.Join(dir, "sbx_live"), 0o755); err != nil {
 			t.Fatal(err)
@@ -155,9 +155,9 @@ func TestReapUnknownPoolsLeavesAnotherProjectsLivePoolAlone(t *testing.T) {
 	now := time.Now()
 	for _, at := range []time.Time{now, now.Add(48 * time.Hour)} {
 		reapUnknownPools(
-			agentA.workerHostPath(agentA.poolsRoot()),
-			agentA.workerHostPath(agentA.cachePoolsRoot()),
-			agentA.workerHostPath(proxyagent.PoolsRoot("proj_a")),
+			agentA.poolsRoot(),
+			agentA.cachePoolsRoot(),
+			resolve(proxyagent.PoolsRoot("proj_a")),
 			known, 24*time.Hour, at, quietLogger(),
 		)
 	}

@@ -8,28 +8,18 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
 
-	guestvsock "github.com/obot-platform/discobox/pool-agent/vsock"
+	"github.com/obot-platform/discobox/layout"
+	"github.com/obot-platform/discobox/pool-agent/endpoint"
 	"github.com/obot-platform/discobox/proxy"
 )
 
 const (
-	// SecretsFile holds the per-sandbox sentinel sets the proxy watches. The
-	// pool-agent process writes it; the proxy unit polls and applies it. It
-	// contains only non-secret sentinel placeholders.
-	SecretsFile = Root + "/secrets.json"
-
-	// ResolveContextFile holds the control-plane URL, pool ID, and the scoped
-	// resolve token the proxy unit uses to fetch real secret values. The
-	// pool-agent process writes and refreshes it.
-	ResolveContextFile = Root + "/resolve-context.json"
-
 	secretsPollInterval = 2 * time.Second
 	// secretsBackstopInterval re-applies the file periodically in case an
 	// fsnotify event is dropped; the watcher handles the immediate path.
@@ -55,11 +45,8 @@ var secretsFileMu sync.Mutex
 
 // UpsertSandboxSentinels registers a sandbox's sentinel set with the proxy by
 // updating SecretsFile. Passing an empty set removes the sandbox entry.
-func UpsertSandboxSentinels(hostDirFor HostPathResolver, sandboxID string, sentinels []string) error {
-	if hostDirFor == nil {
-		hostDirFor = func(p string) string { return p }
-	}
-	path := hostDirFor(SecretsFile)
+func UpsertSandboxSentinels(projectID, poolID string, sandboxID string, sentinels []string) error {
+	path := layout.ProxySecretsFile(projectID, poolID)
 	secretsFileMu.Lock()
 	defer secretsFileMu.Unlock()
 	doc, err := readSecretsDoc(path)
@@ -78,16 +65,13 @@ func UpsertSandboxSentinels(hostDirFor HostPathResolver, sandboxID string, senti
 }
 
 // RemoveSandboxSentinels drops a sandbox's sentinel set from SecretsFile.
-func RemoveSandboxSentinels(hostDirFor HostPathResolver, sandboxID string) error {
-	return UpsertSandboxSentinels(hostDirFor, sandboxID, nil)
+func RemoveSandboxSentinels(projectID, poolID string, sandboxID string) error {
+	return UpsertSandboxSentinels(projectID, poolID, sandboxID, nil)
 }
 
 // WriteResolveContext writes the resolve credential the proxy unit reads.
-func WriteResolveContext(hostDirFor HostPathResolver, controlPlaneURL, poolID, token string) error {
-	if hostDirFor == nil {
-		hostDirFor = func(p string) string { return p }
-	}
-	return writeJSONAtomic(hostDirFor(ResolveContextFile), resolveContext{
+func WriteResolveContext(projectID, poolID string, controlPlaneURL, token string) error {
+	return writeJSONAtomic(layout.ProxyResolveContextFile(projectID, poolID), resolveContext{
 		ControlPlaneURL: controlPlaneURL,
 		PoolID:          poolID,
 		Token:           token,
@@ -95,7 +79,7 @@ func WriteResolveContext(hostDirFor HostPathResolver, controlPlaneURL, poolID, t
 }
 
 func readSecretsDoc(path string) (secretsDoc, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(resolve(path))
 	if err != nil {
 		if os.IsNotExist(err) {
 			return secretsDoc{Clients: map[string][]string{}}, nil
@@ -110,6 +94,9 @@ func readSecretsDoc(path string) (secretsDoc, error) {
 }
 
 func writeJSONAtomic(path string, value any) error {
+	// Resolve once: every operation below must act on the same location, and
+	// resolving each argument separately would rename across roots.
+	path = resolve(path)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
@@ -132,16 +119,17 @@ type secretResolver struct {
 	client      *http.Client
 }
 
-func newSecretResolver(hostDirFor HostPathResolver) *secretResolver {
-	if hostDirFor == nil {
-		hostDirFor = func(p string) string { return p }
-	}
+func newSecretResolver(projectID, poolID string) *secretResolver {
+	// Same URL, same transport resolution as the agent itself; the proxy unit
+	// inherits it from the unit environment file.
 	client := &http.Client{Timeout: resolveHTTPTimeout}
-	if port, _ := strconv.ParseUint(strings.TrimSpace(os.Getenv(guestvsock.EnvControlPlanePort)), 10, 32); port > 0 {
-		client = guestvsock.HTTPClient(uint32(port), resolveHTTPTimeout)
+	if url := strings.TrimSpace(os.Getenv(envControlPlaneURL)); url != "" {
+		if _, resolved, err := endpoint.HTTPClient(url, resolveHTTPTimeout); err == nil {
+			client = resolved
+		}
 	}
 	return &secretResolver{
-		contextPath: hostDirFor(ResolveContextFile),
+		contextPath: layout.ProxyResolveContextFile(projectID, poolID),
 		client:      client,
 	}
 }
@@ -205,7 +193,7 @@ func (r *secretResolver) Resolve(ctx context.Context, req proxy.SecretResolveReq
 }
 
 func (r *secretResolver) readContext() (resolveContext, error) {
-	data, err := os.ReadFile(r.contextPath)
+	data, err := os.ReadFile(resolve(r.contextPath))
 	if err != nil {
 		return resolveContext{}, err
 	}
@@ -224,7 +212,7 @@ func (r *secretResolver) readContext() (resolveContext, error) {
 func watchSecretsFile(ctx context.Context, server *proxy.Server, base proxy.Config, path string, onError func(error)) {
 	var lastMod time.Time
 	apply := func() {
-		info, err := os.Stat(path)
+		info, err := os.Stat(resolve(path))
 		if err != nil {
 			if !os.IsNotExist(err) && onError != nil {
 				onError(err)

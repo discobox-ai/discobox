@@ -25,7 +25,6 @@ import (
 	"github.com/obot-platform/discobox/pool-agent/poolauth"
 	"github.com/obot-platform/discobox/pool-agent/sandboxruntime"
 	poolagentserver "github.com/obot-platform/discobox/pool-agent/server"
-	guestvsock "github.com/obot-platform/discobox/pool-agent/vsock"
 )
 
 func TestRunRegistersPoolWithGeneratedPublicKey(t *testing.T) {
@@ -75,22 +74,21 @@ func TestFromEnvReadsHostMountPrefix(t *testing.T) {
 	}
 }
 
-func TestFromEnvReadsVSOCKPorts(t *testing.T) {
-	t.Setenv(poolagent.EnvAgentVSOCKPort, "3002")
-	t.Setenv(guestvsock.EnvControlPlanePort, "3001")
+func TestFromEnvReadsTransportURLs(t *testing.T) {
+	t.Setenv(poolagent.EnvControlPlaneURL, "vsock://2:3001")
+	t.Setenv(poolagent.EnvAgentListenURL, "vsock://:3002")
 
 	bootstrap := poolagent.FromEnv()
 
-	if bootstrap.AgentVSOCKPort != 3002 || bootstrap.ControlPlaneVSOCKPort != 3001 {
-		t.Fatalf(
-			"VSOCK ports = agent:%d control:%d, want agent:3002 control:3001",
-			bootstrap.AgentVSOCKPort,
-			bootstrap.ControlPlaneVSOCKPort,
-		)
+	if bootstrap.ControlPlaneURL != "vsock://2:3001" || bootstrap.AgentListenURL != "vsock://:3002" {
+		t.Fatalf("transport URLs = control:%q agent:%q, want vsock://2:3001 and vsock://:3002",
+			bootstrap.ControlPlaneURL, bootstrap.AgentListenURL)
 	}
 }
 
-func TestBootstrapRejectsPrivilegedVSOCKPorts(t *testing.T) {
+// The transport now lives in the URL, so an unusable transport must be rejected
+// by the same validation that checks the rest of the bootstrap contract.
+func TestBootstrapRejectsUnusableTransportURLs(t *testing.T) {
 	base := poolagent.Bootstrap{
 		ControlPlaneURL: "http://control.example",
 		ProjectID:       "project-1",
@@ -98,16 +96,33 @@ func TestBootstrapRejectsPrivilegedVSOCKPorts(t *testing.T) {
 		Token:           "token-1",
 	}
 	for name, mutate := range map[string]func(*poolagent.Bootstrap){
-		"agent":   func(bootstrap *poolagent.Bootstrap) { bootstrap.AgentVSOCKPort = 1 },
-		"control": func(bootstrap *poolagent.Bootstrap) { bootstrap.ControlPlaneVSOCKPort = 1 },
+		"unknown control plane scheme": func(b *poolagent.Bootstrap) { b.ControlPlaneURL = "ftp://nope" },
+		"privileged vsock port":        func(b *poolagent.Bootstrap) { b.ControlPlaneURL = "vsock://2:1" },
+		"unknown agent listen scheme":  func(b *poolagent.Bootstrap) { b.AgentListenURL = "ftp://nope" },
+		"agent listen without port":    func(b *poolagent.Bootstrap) { b.AgentListenURL = "vsock://2" },
 	} {
 		t.Run(name, func(t *testing.T) {
 			bootstrap := base
 			mutate(&bootstrap)
 			if err := bootstrap.Validate(); err == nil {
-				t.Fatal("Validate succeeded with a privileged VSOCK port")
+				t.Fatal("Validate accepted an unusable transport URL")
 			}
 		})
+	}
+}
+
+// A VSOCK control plane URL must still satisfy validation, since that is what
+// libkrun renders.
+func TestBootstrapAcceptsVSOCKTransportURLs(t *testing.T) {
+	bootstrap := poolagent.Bootstrap{
+		ControlPlaneURL: "vsock://2:3001",
+		AgentListenURL:  "vsock://:3002",
+		ProjectID:       "project-1",
+		PoolID:          "pool-1",
+		Token:           "token-1",
+	}
+	if err := bootstrap.Validate(); err != nil {
+		t.Fatalf("Validate rejected VSOCK transport URLs: %v", err)
 	}
 }
 

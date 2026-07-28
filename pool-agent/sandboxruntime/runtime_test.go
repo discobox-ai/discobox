@@ -10,6 +10,8 @@ import (
 	"testing"
 
 	"github.com/moby/moby/api/types/container"
+
+	"github.com/obot-platform/discobox/layout"
 	workerclient "github.com/obot-platform/discobox/pool-agent/api/gen"
 	workerapimodel "github.com/obot-platform/discobox/pool-agent/api/model"
 	"github.com/obot-platform/discobox/sandboxconfig"
@@ -207,22 +209,27 @@ func TestGitSafeDirectoriesIgnoresRemoteAndRelativeURLs(t *testing.T) {
 	}
 }
 
-func TestDockerSandboxRuntimePoolHostPathUsesHostMountPrefix(t *testing.T) {
-	runtime := &DockerSandboxRuntime{hostMountPrefix: "/host"}
+// Discobox state is addressed by its container path everywhere; only the mount
+// source handed to the daemon is translated, and only when a driver relocated
+// the state root.
+func TestDockerSandboxRuntimeDaemonPathTranslatesOnlyRelocatedState(t *testing.T) {
+	const containerPath = "/var/lib/discobox/projects/prj_default/sandboxes/sandbox-1/volumes/home"
 
-	got := runtime.workerHostPath("/var/lib/discobox/projects/prj_default/sandboxes/sandbox-1/volumes/home")
-	want := "/host/var/lib/discobox/projects/prj_default/sandboxes/sandbox-1/volumes/home"
-	if got != want {
-		t.Fatalf("pool host path = %q, want %q", got, want)
+	same := &DockerSandboxRuntime{hostState: layout.NewHostMapping("")}
+	if got := same.daemonPath(containerPath); got != containerPath {
+		t.Fatalf("daemon path = %q, want the container path unchanged", got)
 	}
-}
 
-func TestDockerSandboxRuntimePoolHostPathPreservesHostPathWithoutPrefix(t *testing.T) {
-	runtime := &DockerSandboxRuntime{}
+	relocated := &DockerSandboxRuntime{hostState: layout.NewHostMapping("/var/lib/docker/discobox")}
+	want := "/var/lib/docker/discobox/projects/prj_default/sandboxes/sandbox-1/volumes/home"
+	if got := relocated.daemonPath(containerPath); got != want {
+		t.Fatalf("daemon path = %q, want %q", got, want)
+	}
 
-	got := runtime.workerHostPath("/var/lib/discobox/projects/prj_default")
-	if got != "/var/lib/discobox/projects/prj_default" {
-		t.Fatalf("pool host path = %q, want host path", got)
+	// A path the user brought in is already a daemon path; it must not be
+	// rewritten just because the state root moved.
+	if got := relocated.daemonPath("/home/dev/src"); got != "/home/dev/src" {
+		t.Fatalf("daemon path = %q, want foreign paths passed through", got)
 	}
 }
 
@@ -713,8 +720,9 @@ func TestMaterializePushedSourcesCompletesExistingSandbox(t *testing.T) {
 	git(t, client, "commit", "-m", "pushed")
 	pushed := gitOutput(t, client, "rev-parse", "HEAD")
 
-	// hostMountPrefix relocates the sandbox volume tree under a writable root.
-	runtime := &DockerSandboxRuntime{projectID: projectID, hostMountPrefix: t.TempDir()}
+	// The state tree is relocated under a writable root for this test.
+	withTestRoot(t)
+	runtime := &DockerSandboxRuntime{projectID: projectID}
 	source := workerapimodel.GitSource{
 		Kind:     workerclient.GitSourceKindGit,
 		Delivery: workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush),
@@ -737,7 +745,7 @@ func TestMaterializePushedSourcesCompletesExistingSandbox(t *testing.T) {
 			}),
 		},
 	}
-	target := runtime.workerHostPath(runtime.sandboxSourcePath(sandboxID, "primary"))
+	target := runtime.sandboxSourcePath(sandboxID, "primary")
 
 	// Provision parks an empty repository.
 	if err := runtime.materializeGitSource(ctx, source, target, currentUser()); err != nil {
@@ -769,8 +777,9 @@ func TestMaterializePushedSourcesLeavesCloneDeliveredSourcesAlone(t *testing.T) 
 	const projectID = "project-1"
 	const sandboxID = "sandbox-1"
 
-	runtime := &DockerSandboxRuntime{projectID: projectID, hostMountPrefix: t.TempDir()}
-	target := runtime.workerHostPath(runtime.sandboxSourcePath(sandboxID, "primary"))
+	withTestRoot(t)
+	runtime := &DockerSandboxRuntime{projectID: projectID}
+	target := runtime.sandboxSourcePath(sandboxID, "primary")
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -825,7 +834,8 @@ func TestMaterializePushedSourcesIsANoOpOnceFinalized(t *testing.T) {
 	git(t, client, "commit", "-m", "pushed")
 	pushed := gitOutput(t, client, "rev-parse", "HEAD")
 
-	runtime := &DockerSandboxRuntime{projectID: projectID, hostMountPrefix: t.TempDir()}
+	withTestRoot(t)
+	runtime := &DockerSandboxRuntime{projectID: projectID}
 	source := workerapimodel.GitSource{
 		Kind:     workerclient.GitSourceKindGit,
 		Delivery: workerclient.NewOptGitSourceDelivery(workerclient.GitSourceDeliveryPush),
@@ -846,7 +856,7 @@ func TestMaterializePushedSourcesIsANoOpOnceFinalized(t *testing.T) {
 			}),
 		},
 	}
-	target := runtime.workerHostPath(runtime.sandboxSourcePath(sandboxID, "primary"))
+	target := runtime.sandboxSourcePath(sandboxID, "primary")
 
 	// Provision parks an empty repository, then the client pushes.
 	if err := runtime.materializeGitSource(ctx, source, target, currentUser()); err != nil {

@@ -1,5 +1,5 @@
 // Package proxyagent wires the pool-scoped proxy component into the pool
-// agent. It owns the shared on-disk locations for proxy certificate material,
+// agent. It owns the per-pool on-disk locations for proxy certificate material,
 // runs the proxy server (as a systemd unit inside the pool container), and
 // prepares the per-sandbox client material that is distributed into sandbox
 // containers.
@@ -14,11 +14,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
-	guestvsock "github.com/obot-platform/discobox/pool-agent/vsock"
+	"github.com/obot-platform/discobox/layout"
 	"github.com/obot-platform/discobox/proxy"
 )
 
@@ -32,16 +31,14 @@ const (
 	// here to avoid importing the root pool-agent package (which imports this
 	// one).
 	envHostMountPrefix = "DISCOBOX_POOL_HOST_MOUNT_PREFIX"
-
-	// Root holds all proxy runtime state on the pool filesystem. It lives
-	// under the pool's /var/lib/discobox volume so both the pool agent
-	// process and the proxy systemd unit observe the same files.
-	Root = "/var/lib/discobox/proxy"
-
-	// CertDir holds the proxy CA bundle and pool server certificate. It is a
-	// single per-host trust root; client certificates are issued under
-	// CertDir/clients/<sandboxID> keyed by the globally unique sandbox ID.
-	CertDir = Root + "/certs"
+	// envControlPlaneURL mirrors poolagent.EnvControlPlaneURL, duplicated for
+	// the same reason.
+	envControlPlaneURL = "DISCOBOX_CONTROL_PLANE_URL"
+	// envProjectID and envPoolID tell the proxy unit which pool it serves. It
+	// runs with a clean systemd environment, and every path it writes is scoped
+	// to that pool, so without these it cannot address its own state.
+	envProjectID = "DISCOBOX_PROJECT_ID"
+	envPoolID    = "DISCOBOX_POOL_ID"
 
 	// ListenAddress is where the pool proxy accepts mTLS connections. It binds
 	// all interfaces so sandbox containers can reach it through the Docker host
@@ -87,7 +84,8 @@ const (
 
 	// UnitEnvironmentFile is read by the proxy systemd unit. The pool agent
 	// process writes it so the unit, which runs with a clean systemd
-	// environment, sees the same host-mount prefix.
+	// environment, learns which pool it serves and how to reach the control
+	// plane.
 	UnitEnvironmentFile = "/etc/discobox/proxy.env"
 )
 
@@ -102,13 +100,13 @@ const (
 // the reaper would delete the proxy material out from under running sandboxes.
 // This mirrors the per-project scoping of the sandbox data root.
 func PoolsRoot(projectID string) string {
-	return Root + "/projects/" + projectID + "/pools"
+	return layout.ProxyProjectPools(projectID)
 }
 
 // PoolProxyRoot is one pool's entire proxy subtree (material for all its
 // sandboxes). Reaping it removes that pool's proxy footprint in one shot.
 func PoolProxyRoot(projectID, poolID string) string {
-	return PoolsRoot(projectID) + "/" + poolID
+	return layout.ProxyPool(projectID, poolID)
 }
 
 // PoolSandboxMaterialRoot is the per-pool root under which each sandbox's
@@ -117,7 +115,7 @@ func PoolProxyRoot(projectID, poolID string) string {
 // ever sees — and reaps — its own sandboxes' material, never another pool's
 // live material.
 func PoolSandboxMaterialRoot(projectID, poolID string) string {
-	return PoolProxyRoot(projectID, poolID) + "/sandboxes"
+	return layout.ProxyPoolSandboxes(projectID, poolID)
 }
 
 // SandboxNetworkName is the per-pool internal Docker network that carries
@@ -132,53 +130,36 @@ func SandboxNetworkName(poolID string) string {
 // WriteUnitEnvironment writes the environment file consumed by the proxy
 // systemd unit. It is written to the pool container's own /etc, which is
 // shared with the child systemd namespace.
-func WriteUnitEnvironment(prefix string, controlPlaneVSOCKPort uint32) error {
-	if err := os.MkdirAll(filepath.Dir(UnitEnvironmentFile), 0o755); err != nil {
+func WriteUnitEnvironment(prefix, controlPlaneURL, projectID, poolID string) error {
+	if err := os.MkdirAll(resolve(filepath.Dir(UnitEnvironmentFile)), 0o755); err != nil {
 		return err
 	}
+	return os.WriteFile(resolve(UnitEnvironmentFile),
+		[]byte(unitEnvironment(prefix, controlPlaneURL, projectID, poolID)), 0o600)
+}
+
+// unitEnvironment renders the proxy unit's environment. It is separate from the
+// write so its contents can be asserted without touching the container's /etc.
+func unitEnvironment(prefix, controlPlaneURL, projectID, poolID string) string {
 	content := envHostMountPrefix + "=" + strings.TrimSpace(prefix) + "\n"
-	if controlPlaneVSOCKPort > 0 {
-		content += guestvsock.EnvControlPlanePort + "=" + strconv.FormatUint(uint64(controlPlaneVSOCKPort), 10) + "\n"
+	// The proxy unit resolves the same control-plane URL the agent uses, so both
+	// reach the control plane over whatever transport its scheme names.
+	if url := strings.TrimSpace(controlPlaneURL); url != "" {
+		content += envControlPlaneURL + "=" + url + "\n"
 	}
-	return os.WriteFile(UnitEnvironmentFile, []byte(content), 0o600)
-}
-
-// HostPathResolver translates a pool container path into the path the calling
-// process can read and write. It accounts for the host-mount prefix used when a
-// pool shares the host Docker socket.
-type HostPathResolver func(string) string
-
-// ResolverFromEnv builds a HostPathResolver from the pool host-mount prefix
-// environment variable. The proxy systemd unit uses this because it does not
-// receive the runtime's resolver directly.
-func ResolverFromEnv() HostPathResolver {
-	return Resolver(strings.TrimSpace(os.Getenv(envHostMountPrefix)))
-}
-
-// Resolver builds a HostPathResolver for an explicit host-mount prefix.
-func Resolver(prefix string) HostPathResolver {
-	prefix = strings.TrimRight(strings.TrimSpace(prefix), "/")
-	return func(p string) string {
-		if prefix == "" || p == "" {
-			return p
-		}
-		if p == prefix || strings.HasPrefix(p, prefix+"/") {
-			return p
-		}
-		return filepath.Join(prefix, strings.TrimPrefix(p, "/"))
-	}
+	// The unit runs with a clean systemd environment, and every path it writes
+	// is scoped to this pool, so without these it cannot address its own state.
+	content += envProjectID + "=" + strings.TrimSpace(projectID) + "\n"
+	content += envPoolID + "=" + strings.TrimSpace(poolID) + "\n"
+	return content
 }
 
 // PrepareBundle creates or reuses the proxy CA bundle and pool server
 // certificate. It is idempotent and safe to call from both the pool agent
-// startup path and the proxy systemd unit. hostDirFor may be nil for an
-// identity mapping.
-func PrepareBundle(hostDirFor HostPathResolver) (*proxy.CertificateBundle, error) {
-	if hostDirFor == nil {
-		hostDirFor = func(p string) string { return p }
-	}
+// startup path and the proxy systemd unit.
+func PrepareBundle(projectID, poolID string) (*proxy.CertificateBundle, error) {
 	prepared, err := proxy.PrepareCertificates(proxy.PrepareOptions{
-		Dir:         hostDirFor(CertDir),
+		Dir:         resolve(layout.ProxyCerts(projectID, poolID)),
 		ProxyURL:    PoolProxyURL,
 		ServerHosts: []string{ServerName, "127.0.0.1", "localhost"},
 	})
@@ -194,28 +175,35 @@ func RunProxy(ctx context.Context, logger *slog.Logger) error {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	hostDirFor := ResolverFromEnv()
-	bundle, err := PrepareBundle(hostDirFor)
+	projectID := strings.TrimSpace(os.Getenv(envProjectID))
+	poolID := strings.TrimSpace(os.Getenv(envPoolID))
+	if projectID == "" || poolID == "" {
+		return fmt.Errorf("proxy unit environment names no pool (%s/%s)", envProjectID, envPoolID)
+	}
+	bundle, err := PrepareBundle(projectID, poolID)
 	if err != nil {
 		return fmt.Errorf("prepare proxy certificates: %w", err)
 	}
 	cfg := proxy.DefaultConfig()
 	cfg.ListenAddress = ListenAddress
 	cfg.PublicURL = PoolProxyURL
-	cfg.CertDir = hostDirFor(CertDir)
-	cfg.DatabaseDSN = hostDirFor(filepath.Join(Root, "audit.db"))
-	cfg.Cache.Dir = hostDirFor(filepath.Join(Root, "cache"))
-	cfg.Recording.StreamDir = hostDirFor(filepath.Join(Root, "streams"))
-	cfg.Recording.BodyDir = hostDirFor(filepath.Join(Root, "bodies"))
+	cfg.CertDir = resolve(layout.ProxyCerts(projectID, poolID))
+	// Everything below records this pool's own traffic, so it is pool-scoped:
+	// pools from different projects can share one Docker daemon, and a shared
+	// audit database would interleave their request histories.
+	cfg.DatabaseDSN = resolve(layout.ProxyAuditDB(projectID, poolID))
+	cfg.Cache.Dir = resolve(layout.ProxyCache(projectID, poolID))
+	cfg.Recording.StreamDir = resolve(layout.ProxyStreams(projectID, poolID))
+	cfg.Recording.BodyDir = resolve(layout.ProxyBodies(projectID, poolID))
 
 	// The resolver fetches real secret values from the control plane using the
-	// scoped token the pool-agent process writes to ResolveContextFile.
-	resolver := newSecretResolver(hostDirFor)
+	// scoped token the pool-agent process writes for this pool.
+	resolver := newSecretResolver(projectID, poolID)
 	server, err := proxy.NewServer(ctx, cfg, bundle, resolver)
 	if err != nil {
 		return fmt.Errorf("create proxy server: %w", err)
 	}
-	go watchSecretsFile(ctx, server, cfg, hostDirFor(SecretsFile), func(err error) {
+	go watchSecretsFile(ctx, server, cfg, resolve(layout.ProxySecretsFile(projectID, poolID)), func(err error) {
 		logger.Warn("apply proxy sentinel config", "error", err)
 	})
 	errCh := make(chan error, 1)
@@ -282,22 +270,19 @@ func validateMaterialScope(projectID, poolID, sandboxID string) error {
 
 // RemoveSandboxMaterial deletes the staged proxy material and client certificate
 // for sandboxID. It is idempotent: absent directories are not an error.
-func RemoveSandboxMaterial(projectID, poolID, sandboxID string, hostDirFor HostPathResolver) error {
+func RemoveSandboxMaterial(projectID, poolID, sandboxID string) error {
 	if err := validateMaterialScope(projectID, poolID, sandboxID); err != nil {
 		return err
 	}
-	if hostDirFor == nil {
-		hostDirFor = func(p string) string { return p }
-	}
 	var errs []error
-	materialDir := hostDirFor(filepath.Join(PoolSandboxMaterialRoot(projectID, poolID), sandboxID))
-	if err := os.RemoveAll(materialDir); err != nil {
+	materialDir := filepath.Join(PoolSandboxMaterialRoot(projectID, poolID), sandboxID)
+	if err := os.RemoveAll(resolve(materialDir)); err != nil {
 		errs = append(errs, fmt.Errorf("remove sandbox proxy material: %w", err))
 	}
 	// The client certificate is keyed by the globally unique sandbox ID, so
 	// removing it by ID never touches another pool's material.
-	clientCertDir := hostDirFor(filepath.Join(CertDir, "clients", sandboxID))
-	if err := os.RemoveAll(clientCertDir); err != nil {
+	clientCertDir := filepath.Join(layout.ProxyCerts(projectID, poolID), "clients", sandboxID)
+	if err := os.RemoveAll(resolve(clientCertDir)); err != nil {
 		errs = append(errs, fmt.Errorf("remove sandbox proxy client certificate: %w", err))
 	}
 	return errors.Join(errs...)
@@ -312,17 +297,17 @@ func RemoveSandboxMaterial(projectID, poolID, sandboxID string, hostDirFor HostP
 // minAge protects material that was just staged for an in-flight CreateSandbox:
 // an orphan is only removed when its youngest on-disk file predates minAge. Pass
 // 0 to prune regardless of age.
-func PruneOrphanedMaterial(projectID, poolID string, liveSandboxIDs []string, hostDirFor HostPathResolver, minAge time.Duration) error {
-	orphans, scanErr := OrphanedSandboxIDs(projectID, poolID, liveSandboxIDs, hostDirFor, minAge)
+func PruneOrphanedMaterial(projectID, poolID string, liveSandboxIDs []string, minAge time.Duration) error {
+	orphans, scanErr := OrphanedSandboxIDs(projectID, poolID, liveSandboxIDs, minAge)
 	var errs []error
 	if scanErr != nil {
 		errs = append(errs, scanErr)
 	}
 	for _, id := range orphans {
-		if err := RemoveSandboxMaterial(projectID, poolID, id, hostDirFor); err != nil {
+		if err := RemoveSandboxMaterial(projectID, poolID, id); err != nil {
 			errs = append(errs, err)
 		}
-		if err := RemoveSandboxSentinels(hostDirFor, id); err != nil {
+		if err := RemoveSandboxSentinels(projectID, poolID, id); err != nil {
 			errs = append(errs, err)
 		}
 	}
@@ -333,10 +318,7 @@ func PruneOrphanedMaterial(projectID, poolID string, liveSandboxIDs []string, ho
 // but no live container. The material is the level-triggered record used to
 // recover removals whose Docker destroy event was missed while the pool was
 // down.
-func OrphanedSandboxIDs(projectID, poolID string, liveSandboxIDs []string, hostDirFor HostPathResolver, minAge time.Duration) ([]string, error) {
-	if hostDirFor == nil {
-		hostDirFor = func(p string) string { return p }
-	}
+func OrphanedSandboxIDs(projectID, poolID string, liveSandboxIDs []string, minAge time.Duration) ([]string, error) {
 	live := make(map[string]struct{}, len(liveSandboxIDs))
 	for _, id := range liveSandboxIDs {
 		live[id] = struct{}{}
@@ -352,7 +334,7 @@ func OrphanedSandboxIDs(projectID, poolID string, liveSandboxIDs []string, hostD
 	// the shared cert/sentinel entries are reclaimed by ID when their material
 	// orphan is pruned.
 	base := PoolSandboxMaterialRoot(projectID, poolID)
-	entries, err := os.ReadDir(hostDirFor(base))
+	entries, err := os.ReadDir(resolve(base))
 	if err != nil {
 		if !os.IsNotExist(err) {
 			errs = append(errs, fmt.Errorf("scan %s: %w", base, err))
@@ -379,7 +361,7 @@ func OrphanedSandboxIDs(projectID, poolID string, liveSandboxIDs []string, hostD
 		// CreateSandbox. Only staged directories carry a grace window; a
 		// sentinel-only leftover (its material already gone) is always eligible.
 		if minAge > 0 {
-			if modTime, hasDir := materialModTime(projectID, poolID, id, hostDirFor); hasDir && modTime.After(cutoff) {
+			if modTime, hasDir := materialModTime(projectID, poolID, id); hasDir && modTime.After(cutoff) {
 				continue
 			}
 		}
@@ -391,8 +373,8 @@ func OrphanedSandboxIDs(projectID, poolID string, liveSandboxIDs []string, hostD
 
 // materialModTime returns the modification time of a sandbox's staged material
 // directory, used to protect material still being staged for an in-flight create.
-func materialModTime(projectID, poolID, id string, hostDirFor HostPathResolver) (time.Time, bool) {
-	info, err := os.Stat(hostDirFor(filepath.Join(PoolSandboxMaterialRoot(projectID, poolID), id)))
+func materialModTime(projectID, poolID, id string) (time.Time, bool) {
+	info, err := os.Stat(resolve(filepath.Join(PoolSandboxMaterialRoot(projectID, poolID), id)))
 	if err != nil {
 		return time.Time{}, false
 	}
@@ -401,17 +383,14 @@ func materialModTime(projectID, poolID, id string, hostDirFor HostPathResolver) 
 
 // EnsureSandboxMaterial issues (or reuses) a client certificate for sandboxID
 // and stages the certificate material and bridge config into a per-sandbox
-// directory. hostDirFor maps a pool container path into the path the pool
+// directory. Paths are the container's own, which is also where the pool
 // agent process can actually write to; the returned MountSource is the
 // un-resolved path handed to the container runtime as the bind-mount source.
-func EnsureSandboxMaterial(projectID, poolID, sandboxID string, hostDirFor HostPathResolver) (*SandboxMaterial, error) {
+func EnsureSandboxMaterial(projectID, poolID, sandboxID string) (*SandboxMaterial, error) {
 	if err := validateMaterialScope(projectID, poolID, sandboxID); err != nil {
 		return nil, err
 	}
-	if hostDirFor == nil {
-		hostDirFor = func(p string) string { return p }
-	}
-	bundle, err := PrepareBundle(hostDirFor)
+	bundle, err := PrepareBundle(projectID, poolID)
 	if err != nil {
 		return nil, err
 	}
@@ -421,14 +400,14 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string, hostDirFor HostP
 	}
 
 	mountSource := filepath.Join(PoolSandboxMaterialRoot(projectID, poolID), sandboxID)
-	writeDir := hostDirFor(mountSource)
-	if err := os.MkdirAll(writeDir, 0o755); err != nil {
+	writeDir := mountSource
+	if err := os.MkdirAll(resolve(writeDir), 0o755); err != nil {
 		return nil, fmt.Errorf("create sandbox proxy material dir: %w", err)
 	}
 
 	// Copy only the public CAs and this sandbox's client keypair. Never expose
 	// the CA private keys or other sandboxes' material. bundle paths are already
-	// resolved because PrepareBundle ran with hostDirFor.
+	// resolved because PrepareBundle already created the bundle.
 	files := []struct {
 		name string
 		src  string
@@ -456,7 +435,7 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string, hostDirFor HostP
 	if err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(writeDir, "bridge.json"), bridgeJSON, 0o600); err != nil {
+	if err := os.WriteFile(resolve(filepath.Join(writeDir, "bridge.json")), bridgeJSON, 0o600); err != nil {
 		return nil, fmt.Errorf("write bridge config: %w", err)
 	}
 
@@ -478,7 +457,7 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string, hostDirFor HostP
 	if err != nil {
 		return nil, err
 	}
-	if err := os.WriteFile(filepath.Join(writeDir, "bridge-docker.json"), dockerBridgeJSON, 0o600); err != nil {
+	if err := os.WriteFile(resolve(filepath.Join(writeDir, "bridge-docker.json")), dockerBridgeJSON, 0o600); err != nil {
 		return nil, fmt.Errorf("write nested-docker bridge config: %w", err)
 	}
 
@@ -518,12 +497,12 @@ func EnsureSandboxMaterial(projectID, poolID, sandboxID string, hostDirFor HostP
 // certificates are intentionally world-readable so non-root sandbox tools can
 // trust the MITM CA.
 func copyFile(dst, src string, mode os.FileMode) error {
-	data, err := os.ReadFile(src)
+	data, err := os.ReadFile(resolve(src))
 	if err != nil {
 		return fmt.Errorf("read %s: %w", src, err)
 	}
 	//nolint:gosec // dst is under a validated per-sandbox dir; public CAs are 0644 by design.
-	if err := os.WriteFile(dst, data, mode); err != nil {
+	if err := os.WriteFile(resolve(dst), data, mode); err != nil {
 		return fmt.Errorf("write %s: %w", dst, err)
 	}
 	return nil

@@ -8,12 +8,11 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"github.com/obot-platform/discobox/controlplane"
+	"github.com/obot-platform/discobox/pool-agent/endpoint"
 	"github.com/obot-platform/discobox/pool-agent/poolauth"
-	"github.com/obot-platform/discobox/pool-agent/vsock"
 )
 
 const (
@@ -22,26 +21,39 @@ const (
 	EnvPoolID          = "DISCOBOX_POOL_ID"
 	EnvBootstrapToken  = "DISCOBOX_POOL_BOOTSTRAP_TOKEN" //nolint:gosec // Environment variable name, not a credential value.
 	EnvControlPlaneKey = "DISCOBOX_CONTROL_PLANE_PUBLIC_KEY"
-	EnvAgentPort       = "DISCOBOX_AGENT_PORT"
-	EnvAgentVSOCKPort  = "DISCOBOX_AGENT_VSOCK_PORT"
+	// EnvAgentListenURL is the transport URL the pool-agent HTTP server binds.
+	// The scheme selects the transport, so a backend that terminates the agent
+	// API on VSOCK or a Unix socket needs no separate port variable.
+	EnvAgentListenURL  = "DISCOBOX_AGENT_LISTEN_URL"
 	EnvHostMountPrefix = "DISCOBOX_POOL_HOST_MOUNT_PREFIX"
+	// EnvHostStateRoot is where the Docker daemon sees layout.ContainerRoot. It
+	// is empty when the daemon sees the same path the container does; a backend
+	// sets it when it must place state elsewhere, as wslc does to reach the only
+	// disk it persists.
+	EnvHostStateRoot = "DISCOBOX_POOL_HOST_STATE_ROOT"
 )
 
 // Bootstrap is the VM boot contract used by the control plane and pool agent.
+//
+// Both directions are addressed by a single URL each, and the scheme alone
+// decides the transport (see pool-agent/endpoint). A backend is therefore
+// expressed entirely in the URLs it renders — http:// for a pool that shares the
+// host network, vsock://2:3001 for a libkrun microVM, unix:///... for a guest
+// whose helper terminates the socket — with no transport-specific field here.
 type Bootstrap struct {
+	// ControlPlaneURL is where the agent reaches the control plane.
 	ControlPlaneURL string `json:"controlPlaneUrl,omitempty"`
 	ProjectID       string `json:"projectId,omitempty"`
 	PoolID          string `json:"poolId,omitempty"`
 	Token           string `json:"token,omitempty"`
 	ControlPlaneKey string `json:"controlPlanePublicKey,omitempty"`
-	AgentPort       int    `json:"agentPort,omitempty"`
-	// ControlPlaneVSOCKPort makes outbound control-plane HTTP dial host CID 2
-	// over AF_VSOCK instead of the URL's IP transport.
-	ControlPlaneVSOCKPort uint32 `json:"controlPlaneVsockPort,omitempty"`
-	// AgentVSOCKPort makes the pool-agent HTTP server listen on AF_VSOCK
-	// instead of TCP.
-	AgentVSOCKPort  uint32 `json:"agentVsockPort,omitempty"`
+	// AgentListenURL is where the agent's own HTTP server binds.
+	AgentListenURL  string `json:"agentListenUrl,omitempty"`
 	HostMountPrefix string `json:"hostMountPrefix,omitempty"`
+	// HostStateRoot is where the pool's Docker daemon sees layout.ContainerRoot.
+	// Empty means no relocation. Only paths handed to the daemon are translated;
+	// everything the agent reads and writes stays in container terms.
+	HostStateRoot string `json:"hostStateRoot,omitempty"`
 }
 
 // MintBootstrap produces the registration credentials for a pool runtime.
@@ -64,11 +76,15 @@ func (b Bootstrap) Validate() error {
 	if strings.TrimSpace(b.Token) == "" {
 		return errors.New("pool bootstrap token is required")
 	}
-	if b.ControlPlaneVSOCKPort > 0 && b.ControlPlaneVSOCKPort < 1024 {
-		return errors.New("control plane VSOCK port must be at least 1024")
+	// Validating here means an unreachable transport is rejected at boot with a
+	// clear message, rather than at the first request.
+	if _, err := endpoint.Parse(b.ControlPlaneURL); err != nil {
+		return fmt.Errorf("control plane URL: %w", err)
 	}
-	if b.AgentVSOCKPort > 0 && b.AgentVSOCKPort < 1024 {
-		return errors.New("agent VSOCK port must be at least 1024")
+	if listen := strings.TrimSpace(b.AgentListenURL); listen != "" {
+		if _, err := endpoint.Parse(listen); err != nil {
+			return fmt.Errorf("agent listen URL: %w", err)
+		}
 	}
 	return nil
 }
@@ -190,19 +206,15 @@ func Run(ctx context.Context, cfg Config) (*Registration, error) {
 
 // FromEnv builds Bootstrap from environment variables.
 func FromEnv() Bootstrap {
-	agentPort, _ := strconv.Atoi(strings.TrimSpace(os.Getenv(EnvAgentPort)))
-	agentVSOCKPort, _ := strconv.ParseUint(strings.TrimSpace(os.Getenv(EnvAgentVSOCKPort)), 10, 32)
-	controlPlaneVSOCKPort, _ := strconv.ParseUint(strings.TrimSpace(os.Getenv(vsock.EnvControlPlanePort)), 10, 32)
 	return Bootstrap{
-		ControlPlaneURL:       controlPlaneURLFromEnv(),
-		ProjectID:             strings.TrimSpace(os.Getenv(EnvProjectID)),
-		PoolID:                strings.TrimSpace(os.Getenv(EnvPoolID)),
-		Token:                 strings.TrimSpace(os.Getenv(EnvBootstrapToken)),
-		ControlPlaneKey:       strings.TrimSpace(os.Getenv(EnvControlPlaneKey)),
-		AgentPort:             agentPort,
-		ControlPlaneVSOCKPort: uint32(controlPlaneVSOCKPort),
-		AgentVSOCKPort:        uint32(agentVSOCKPort),
-		HostMountPrefix:       strings.TrimSpace(os.Getenv(EnvHostMountPrefix)),
+		ControlPlaneURL: controlPlaneURLFromEnv(),
+		ProjectID:       strings.TrimSpace(os.Getenv(EnvProjectID)),
+		PoolID:          strings.TrimSpace(os.Getenv(EnvPoolID)),
+		Token:           strings.TrimSpace(os.Getenv(EnvBootstrapToken)),
+		ControlPlaneKey: strings.TrimSpace(os.Getenv(EnvControlPlaneKey)),
+		AgentListenURL:  strings.TrimSpace(os.Getenv(EnvAgentListenURL)),
+		HostMountPrefix: strings.TrimSpace(os.Getenv(EnvHostMountPrefix)),
+		HostStateRoot:   strings.TrimSpace(os.Getenv(EnvHostStateRoot)),
 	}
 }
 

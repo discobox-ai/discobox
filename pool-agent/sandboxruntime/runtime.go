@@ -28,6 +28,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/obot-platform/discobox/harness"
+	"github.com/obot-platform/discobox/layout"
 	"github.com/obot-platform/discobox/sandboxconfig"
 
 	"github.com/obot-platform/discobox/pool-agent/execidentity"
@@ -42,8 +43,6 @@ const (
 	sandboxAgentPort         = 3003
 	sandboxAgentReadyTimeout = 30 * time.Second
 	sandboxAgentPollInterval = 100 * time.Millisecond
-	sandboxDataRoot          = "/var/lib/discobox/projects"
-	sandboxCacheRoot         = "/var/lib/discobox/cache/projects"
 
 	// The pool host provisions four host-backed roots and mounts them at these
 	// fixed container paths. The sandbox-agent (running as PID 1) wires
@@ -150,6 +149,9 @@ type DockerSandboxRuntime struct {
 	poolID                string
 	controlPlanePublicKey string
 	hostMountPrefix       string
+	// hostState translates a container path into the daemon's view of it. It is
+	// applied only where a path is handed to the daemon.
+	hostState layout.HostMapping
 }
 
 type DockerSandboxRuntimeConfig struct {
@@ -157,6 +159,9 @@ type DockerSandboxRuntimeConfig struct {
 	PoolID                string
 	ControlPlanePublicKey string
 	HostMountPrefix       string
+	// HostStateRoot is where this pool's Docker daemon sees
+	// layout.ContainerRoot. Empty means no relocation.
+	HostStateRoot string
 }
 
 func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRuntime, error) {
@@ -170,6 +175,7 @@ func NewDockerSandboxRuntime(cfg DockerSandboxRuntimeConfig) (*DockerSandboxRunt
 		poolID:                cfg.PoolID,
 		controlPlanePublicKey: cfg.ControlPlanePublicKey,
 		hostMountPrefix:       cleanAbsPath(cfg.HostMountPrefix),
+		hostState:             layout.NewHostMapping(cfg.HostStateRoot),
 	}, nil
 }
 
@@ -240,12 +246,12 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	if err != nil {
 		return nil, err
 	}
-	proxyMaterial, err := proxyagent.EnsureSandboxMaterial(r.projectID, r.poolID, sandboxID, r.workerHostPath)
+	proxyMaterial, err := proxyagent.EnsureSandboxMaterial(r.projectID, r.poolID, sandboxID)
 	if err != nil {
 		return nil, err
 	}
 	sentinels, _ := req.Sentinels.Get()
-	if err := proxyagent.UpsertSandboxSentinels(r.workerHostPath, sandboxID, sentinels); err != nil {
+	if err := proxyagent.UpsertSandboxSentinels(r.projectID, r.poolID, sandboxID, sentinels); err != nil {
 		return nil, err
 	}
 	// Nest the proxy material inside the config volume at /.discobox/config/proxy
@@ -253,7 +259,7 @@ func (r *DockerSandboxRuntime) CreateSandbox(ctx context.Context, req *workerapi
 	// volume onto /etc/discobox; the in-sandbox path stays proxyagent.SandboxProxyMount.
 	mounts = append(mounts, mount.Mount{
 		Type:     mount.TypeBind,
-		Source:   proxyMaterial.MountSource,
+		Source:   r.daemonPath(proxyMaterial.MountSource),
 		Target:   filepath.Join(sandboxConfigMount, "proxy"),
 		ReadOnly: true,
 	})
@@ -422,7 +428,7 @@ func (r *DockerSandboxRuntime) materializePushedSources(ctx context.Context, san
 		if !gitSourceAwaitsPush(source.git) {
 			continue
 		}
-		sourcePoolPath := r.workerHostPath(r.sandboxSourcePath(sandboxID, source.slug))
+		sourcePoolPath := r.sandboxSourcePath(sandboxID, source.slug)
 		if err := r.materializeGitSource(ctx, source.git, sourcePoolPath, user); err != nil {
 			return fmt.Errorf("materialize pushed source %q: %w", source.slug, err)
 		}
@@ -440,29 +446,29 @@ func (r *DockerSandboxRuntime) materializePushedSources(ctx context.Context, san
 // here at clone time — never inside the running sandbox (ADR 0012 §7).
 func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandboxID string, req *workerapimodel.PoolSandboxCreateRequest, user sandboxUserIdentity) ([]mount.Mount, *sandboxconfig.ProjectLayer, error) {
 	dataHostPath := r.sandboxDataRootPath(sandboxID)
-	if err := prepareOwnedDirectory(ctx, r.workerHostPath(dataHostPath), 0, 0); err != nil {
+	if err := prepareOwnedDirectory(ctx, dataHostPath, 0, 0); err != nil {
 		return nil, nil, fmt.Errorf("prepare sandbox data volume: %w", err)
 	}
 	cacheHostPath := r.poolCacheRoot()
-	if err := prepareOwnedDirectory(ctx, r.workerHostPath(cacheHostPath), 0, 0); err != nil {
+	if err := prepareOwnedDirectory(ctx, cacheHostPath, 0, 0); err != nil {
 		return nil, nil, fmt.Errorf("prepare pool cache volume: %w", err)
 	}
 	configHostPath := r.sandboxConfigRoot(sandboxID)
-	if err := prepareOwnedDirectory(ctx, r.workerHostPath(configHostPath), 0, 0); err != nil {
+	if err := prepareOwnedDirectory(ctx, configHostPath, 0, 0); err != nil {
 		return nil, nil, fmt.Errorf("prepare sandbox config volume: %w", err)
 	}
 	sourcesHostPath := r.sandboxSourcesRoot(sandboxID)
-	if err := prepareOwnedDirectory(ctx, r.workerHostPath(sourcesHostPath), 0, 0); err != nil {
+	if err := prepareOwnedDirectory(ctx, sourcesHostPath, 0, 0); err != nil {
 		return nil, nil, fmt.Errorf("prepare sandbox sources volume: %w", err)
 	}
 	secretsHostPath := r.sandboxSecretsRoot(sandboxID)
-	if err := prepareOwnedDirectory(ctx, r.workerHostPath(secretsHostPath), 0, 0); err != nil {
+	if err := prepareOwnedDirectory(ctx, secretsHostPath, 0, 0); err != nil {
 		return nil, nil, fmt.Errorf("prepare sandbox secrets volume: %w", err)
 	}
 	var project *sandboxconfig.ProjectLayer
 	_, hasPrimary := req.Config.Source.Get()
 	for i, source := range sandboxSources(req) {
-		sourcePoolPath := r.workerHostPath(r.sandboxSourcePath(sandboxID, source.slug))
+		sourcePoolPath := r.sandboxSourcePath(sandboxID, source.slug)
 		if err := r.materializeGitSource(ctx, source.git, sourcePoolPath, user); err != nil {
 			return nil, nil, fmt.Errorf("materialize source %q: %w", source.slug, err)
 		}
@@ -478,12 +484,15 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 			project = layer
 		}
 	}
+	// These sources are resolved by the Docker daemon, so they are the only
+	// place a container path has to become a daemon path. A local source bind
+	// is already a daemon path and passes through untouched.
 	return []mount.Mount{
-		{Type: mount.TypeBind, Source: dataHostPath, Target: sandboxDataMount},
-		{Type: mount.TypeBind, Source: cacheHostPath, Target: sandboxCacheMount},
-		{Type: mount.TypeBind, Source: configHostPath, Target: sandboxConfigMount, ReadOnly: true},
-		{Type: mount.TypeBind, Source: sourcesHostPath, Target: sandboxSourcesMount},
-		{Type: mount.TypeBind, Source: secretsHostPath, Target: sandboxSecretsMount},
+		{Type: mount.TypeBind, Source: r.daemonPath(dataHostPath), Target: sandboxDataMount},
+		{Type: mount.TypeBind, Source: r.daemonPath(cacheHostPath), Target: sandboxCacheMount},
+		{Type: mount.TypeBind, Source: r.daemonPath(configHostPath), Target: sandboxConfigMount, ReadOnly: true},
+		{Type: mount.TypeBind, Source: r.daemonPath(sourcesHostPath), Target: sandboxSourcesMount},
+		{Type: mount.TypeBind, Source: r.daemonPath(secretsHostPath), Target: sandboxSecretsMount},
 	}, project, nil
 }
 
@@ -493,7 +502,7 @@ func (r *DockerSandboxRuntime) prepareSandboxVolumes(ctx context.Context, sandbo
 // (unprivileged) never gets filesystem access, only the env sandbox-agent
 // injects at exec time (ADR 0012 §3).
 func (r *DockerSandboxRuntime) writeSandboxSecrets(ctx context.Context, sandboxID string, secretEnv map[string]string) error {
-	dir := r.workerHostPath(r.sandboxSecretsRoot(sandboxID))
+	dir := r.sandboxSecretsRoot(sandboxID)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return err
 	}
@@ -531,7 +540,7 @@ func readProjectLayer(sourceDir string) (*sandboxconfig.ProjectLayer, error) {
 }
 
 func (r *DockerSandboxRuntime) writeSandboxHarnessConfig(ctx context.Context, sandboxID, resolvedImage string, req *workerapimodel.PoolSandboxCreateRequest, proxyEnv map[string]string, project *sandboxconfig.ProjectLayer) error {
-	configDir := r.workerHostPath(r.sandboxConfigRoot(sandboxID))
+	configDir := r.sandboxConfigRoot(sandboxID)
 	if err := os.MkdirAll(configDir, 0o755); err != nil {
 		return err
 	}
@@ -768,7 +777,7 @@ func (r *DockerSandboxRuntime) UpdateSandbox(ctx context.Context, sandboxID stri
 		if sentinels, ok := req.Sentinels.Get(); ok {
 			// Re-register the sandbox's sentinel set with the proxy so newly bound
 			// secrets resolve without a restart.
-			if err := proxyagent.UpsertSandboxSentinels(r.workerHostPath, sandboxID, sentinels); err != nil {
+			if err := proxyagent.UpsertSandboxSentinels(r.projectID, r.poolID, sandboxID, sentinels); err != nil {
 				return nil, err
 			}
 		}
@@ -795,10 +804,10 @@ func (r *DockerSandboxRuntime) DeleteSandbox(ctx context.Context, sandboxID stri
 	}
 	// Clean up proxy material even if the container was already gone, so a
 	// repeated delete still reclaims the client certificate and staged files.
-	if err := proxyagent.RemoveSandboxSentinels(r.workerHostPath, sandboxID); err != nil {
+	if err := proxyagent.RemoveSandboxSentinels(r.projectID, r.poolID, sandboxID); err != nil {
 		return err
 	}
-	return proxyagent.RemoveSandboxMaterial(r.projectID, r.poolID, sandboxID, r.workerHostPath)
+	return proxyagent.RemoveSandboxMaterial(r.projectID, r.poolID, sandboxID)
 }
 
 const (
@@ -832,7 +841,7 @@ func (r *DockerSandboxRuntime) ReconcileProxyMaterial(ctx context.Context, minAg
 	if err != nil {
 		return err
 	}
-	return proxyagent.PruneOrphanedMaterial(r.projectID, r.poolID, live, r.workerHostPath, minAge)
+	return proxyagent.PruneOrphanedMaterial(r.projectID, r.poolID, live, minAge)
 }
 
 func (r *DockerSandboxRuntime) liveSandboxIDs(ctx context.Context) ([]string, error) {
@@ -889,7 +898,7 @@ func (r *DockerSandboxRuntime) reconcileSandboxRemovals(ctx context.Context, log
 		logger.Warn("list sandbox containers", "error", err)
 		return
 	}
-	orphans, err := proxyagent.OrphanedSandboxIDs(r.projectID, r.poolID, live, r.workerHostPath, minAge)
+	orphans, err := proxyagent.OrphanedSandboxIDs(r.projectID, r.poolID, live, minAge)
 	if err != nil {
 		logger.Warn("scan orphaned sandbox material", "error", err)
 	}
@@ -899,10 +908,10 @@ func (r *DockerSandboxRuntime) reconcileSandboxRemovals(ctx context.Context, log
 				return
 			}
 		}
-		if err := proxyagent.RemoveSandboxSentinels(r.workerHostPath, sandboxID); err != nil {
+		if err := proxyagent.RemoveSandboxSentinels(r.projectID, r.poolID, sandboxID); err != nil {
 			logger.Warn("remove sandbox proxy sentinels", "sandboxID", sandboxID, "error", err)
 		}
-		if err := proxyagent.RemoveSandboxMaterial(r.projectID, r.poolID, sandboxID, r.workerHostPath); err != nil {
+		if err := proxyagent.RemoveSandboxMaterial(r.projectID, r.poolID, sandboxID); err != nil {
 			logger.Warn("remove sandbox proxy material", "sandboxID", sandboxID, "error", err)
 		}
 	}
@@ -927,7 +936,7 @@ func (r *DockerSandboxRuntime) reconcileSandboxVolumes(ctx context.Context, logg
 	for _, id := range live {
 		liveSet[id] = struct{}{}
 	}
-	reapDeadSandboxVolumes(r.workerHostPath(r.sandboxesRoot()), liveSet, retention, time.Now(), logger)
+	reapDeadSandboxVolumes(r.sandboxesRoot(), liveSet, retention, time.Now(), logger)
 }
 
 // SyncKnownPools reaps whole orphaned pools on this shared host daemon: any pool
@@ -964,9 +973,9 @@ func (r *DockerSandboxRuntime) SyncKnownPools(ctx context.Context, knownPoolIDs 
 	}
 
 	reapUnknownPools(
-		r.workerHostPath(r.poolsRoot()),
-		r.workerHostPath(r.cachePoolsRoot()),
-		r.workerHostPath(proxyagent.PoolsRoot(r.projectID)),
+		r.poolsRoot(),
+		r.cachePoolsRoot(),
+		proxyagent.PoolsRoot(r.projectID),
 		known, sandboxVolumeRetention, time.Now(), logger,
 	)
 	return nil
@@ -1205,7 +1214,7 @@ func (r *DockerSandboxRuntime) GitRepositoryPath(ctx context.Context, sandboxID,
 	if err != nil {
 		return GitRepositoryLocation{}, err
 	}
-	repoPath := r.workerHostPath(r.sandboxSourcePath(sandboxID, repositoryID))
+	repoPath := r.sandboxSourcePath(sandboxID, repositoryID)
 	if _, err := os.Stat(filepath.Join(repoPath, ".git")); err != nil {
 		if os.IsNotExist(err) {
 			return GitRepositoryLocation{}, ErrNotFound
@@ -1566,35 +1575,29 @@ func sandboxContainerName(poolID, sandboxID string) string {
 	return strings.Trim(name, "-_.")
 }
 
-// sandboxPoolRoot is the durable per-project, per-pool host root. Each
-// sandbox's data/config/sources/secrets live under sandboxes/<sandbox_id>.
-func (r *DockerSandboxRuntime) sandboxPoolRoot() string {
-	return filepath.Join(sandboxDataRoot, r.projectID, "pools", r.poolID)
-}
-
 // poolCacheRoot is the shared cache directory for every sandbox this pool runs
 // in this project (ADRs 0007 and 0013). Its independent top-level root lets a
 // provider mount disposable storage at /var/lib/discobox/cache without moving
 // durable sandbox state.
 func (r *DockerSandboxRuntime) poolCacheRoot() string {
-	return filepath.Join(r.cachePoolsRoot(), r.poolID, "cache")
+	return resolve(layout.PoolCache(r.projectID, r.poolID))
 }
 
 // sandboxesRoot is the parent of every sandbox's per-sandbox volume tree for
 // this pool. The volume reaper scans only under here, which is why it can never
 // touch another pool's data.
 func (r *DockerSandboxRuntime) sandboxesRoot() string {
-	return filepath.Join(r.sandboxPoolRoot(), "sandboxes")
+	return resolve(layout.PoolSandboxes(r.projectID, r.poolID))
 }
 
 // poolsRoot is the parent of every pool's data subtree for this project on the
 // shared host. The pool-sync reaper enumerates it to find orphaned pools.
 func (r *DockerSandboxRuntime) poolsRoot() string {
-	return filepath.Join(sandboxDataRoot, r.projectID, "pools")
+	return resolve(layout.ProjectPools(r.projectID))
 }
 
 func (r *DockerSandboxRuntime) cachePoolsRoot() string {
-	return filepath.Join(sandboxCacheRoot, r.projectID, "pools")
+	return resolve(layout.ProjectCachePools(r.projectID))
 }
 
 // projectFilters matches every managed sandbox container for this project
@@ -1606,24 +1609,20 @@ func (r *DockerSandboxRuntime) projectFilters() client.Filters {
 	return args
 }
 
-func (r *DockerSandboxRuntime) sandboxRoot(sandboxID string) string {
-	return filepath.Join(r.sandboxesRoot(), sandboxID)
-}
-
 func (r *DockerSandboxRuntime) sandboxDataRootPath(sandboxID string) string {
-	return filepath.Join(r.sandboxRoot(sandboxID), "data")
+	return resolve(layout.SandboxData(r.projectID, r.poolID, sandboxID))
 }
 
 func (r *DockerSandboxRuntime) sandboxConfigRoot(sandboxID string) string {
-	return filepath.Join(r.sandboxRoot(sandboxID), "config")
+	return resolve(layout.SandboxConfig(r.projectID, r.poolID, sandboxID))
 }
 
 func (r *DockerSandboxRuntime) sandboxSecretsRoot(sandboxID string) string {
-	return filepath.Join(r.sandboxRoot(sandboxID), "secrets")
+	return resolve(layout.SandboxSecrets(r.projectID, r.poolID, sandboxID))
 }
 
 func (r *DockerSandboxRuntime) sandboxSourcesRoot(sandboxID string) string {
-	return filepath.Join(r.sandboxRoot(sandboxID), "sources")
+	return resolve(layout.SandboxSources(r.projectID, r.poolID, sandboxID))
 }
 
 func (r *DockerSandboxRuntime) sandboxSourcePath(sandboxID, slug string) string {
@@ -1867,18 +1866,11 @@ func cleanAbsPath(value string) string {
 	return string(filepath.Separator) + filepath.Join(parts...)
 }
 
-func (r *DockerSandboxRuntime) workerHostPath(hostPath string) string {
-	hostPath = cleanAbsPath(hostPath)
-	if hostPath == "" {
-		return ""
-	}
-	if r.hostMountPrefix == "" {
-		return hostPath
-	}
-	if hostPath == r.hostMountPrefix || strings.HasPrefix(hostPath, r.hostMountPrefix+string(filepath.Separator)) {
-		return hostPath
-	}
-	return filepath.Join(r.hostMountPrefix, strings.TrimPrefix(hostPath, string(filepath.Separator)))
+// daemonPath converts a container path into the path this pool's Docker daemon
+// sees. Every mount source handed to the daemon goes through it; nothing else
+// needs to, because container paths are invariant.
+func (r *DockerSandboxRuntime) daemonPath(containerPath string) string {
+	return r.hostState.HostPath(containerPath)
 }
 
 // materializeGitSource brings target to the state source describes, running
