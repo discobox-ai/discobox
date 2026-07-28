@@ -3,6 +3,7 @@ package hostid
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -65,9 +66,16 @@ func TestGetPersistsToConfigFile(t *testing.T) {
 	}
 	// The identity is not a secret, but it is per-user state and should not be
 	// world-readable in a shared home.
-	if perm := info.Mode().Perm(); perm != 0o600 {
-		t.Fatalf("host ID file mode = %o, want 600", perm)
+	// Windows has no POSIX permission bits: the perm argument to os.WriteFile
+	// maps only to the read-only attribute, so Perm() reads back 0666 whatever
+	// was asked for. The property here is a POSIX one, carried on Windows by
+	// the ACL inherited from the parent directory, which this cannot express.
+	if runtime.GOOS != "windows" {
+		if perm := info.Mode().Perm(); perm != 0o600 {
+			t.Fatalf("host ID file mode = %o, want 600", perm)
+		}
 	}
+
 }
 
 func TestGetEnvOverrideWinsAndDoesNotPersist(t *testing.T) {

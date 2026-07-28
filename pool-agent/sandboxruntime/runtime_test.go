@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -138,6 +139,7 @@ func TestNormalizeSandboxConfigPublishesPrimaryBindRoot(t *testing.T) {
 }
 
 func TestGitSourceCloneURLPrefixesAbsoluteLocalDirectoryWithHostMountPrefix(t *testing.T) {
+	requirePOSIXHost(t)
 	source := workerapimodel.GitSource{
 		Kind:           workerclient.GitSourceKindGit,
 		LocalDirectory: workerclient.NewOptString("/home/darren/project"),
@@ -180,6 +182,7 @@ func TestGitSourceCloneURLPreservesLocalDirectoryWithoutHostMountPrefix(t *testi
 }
 
 func TestGitSafeDirectoriesTrustsHostMountPrefixAndChildren(t *testing.T) {
+	requirePOSIXHost(t)
 	dirs := gitSafeDirectories("/host/home/darren/src/disco2", "/host")
 	want := []string{
 		"/host",
@@ -191,6 +194,7 @@ func TestGitSafeDirectoriesTrustsHostMountPrefixAndChildren(t *testing.T) {
 }
 
 func TestGitSafeDirectoriesTrustsWorktreeAndDotGitWithoutHostMountPrefix(t *testing.T) {
+	requirePOSIXHost(t)
 	dirs := gitSafeDirectories("/home/darren/src/disco2", "")
 	want := []string{
 		"/home/darren/src/disco2",
@@ -344,8 +348,14 @@ func TestWriteSandboxManifestIsWorldReadable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, want := info.Mode().Perm(), os.FileMode(0o644); got != want {
-		t.Fatalf("sandbox manifest mode = %04o, want %04o", got, want)
+	// Windows has no POSIX permission bits: the perm argument maps only to the
+	// read-only attribute, so Perm() reads back 0666 whatever was asked for.
+	// The property here -- that a sandbox can read the manifest the agent wrote
+	// -- is a POSIX one and cannot be expressed on Windows.
+	if runtime.GOOS != "windows" {
+		if got, want := info.Mode().Perm(), os.FileMode(0o644); got != want {
+			t.Fatalf("sandbox manifest mode = %04o, want %04o", got, want)
+		}
 	}
 }
 
@@ -358,6 +368,7 @@ func currentUser() sandboxUserIdentity {
 }
 
 func TestRunGitWithSafeDirectoriesUsesTemporaryGlobalConfig(t *testing.T) {
+	requirePOSIXHost(t)
 	ctx := context.Background()
 	repo := t.TempDir()
 	git(t, repo, "init", "-b", "main")
@@ -415,6 +426,7 @@ func TestCheckoutGitSourceChecksOutBranchAtPinnedCommit(t *testing.T) {
 }
 
 func TestMaterializeGitSourceRestoresDirtySnapshotAsUnstagedChanges(t *testing.T) {
+	requirePOSIXHost(t)
 	ctx := context.Background()
 	sourceRepo := t.TempDir()
 	git(t, sourceRepo, "init", "-b", "main")
@@ -560,6 +572,7 @@ func TestMaterializeGitSourceWithPushDeliveryInitializesRepository(t *testing.T)
 // The end state the push path depends on: a client pushing into the initialized
 // repository lands its commit *and* its files in the sandbox's working tree.
 func TestPushIntoInitializedSourceUpdatesWorkingTree(t *testing.T) {
+	requirePOSIXHost(t)
 	ctx := context.Background()
 	source := workerapimodel.GitSource{
 		Kind:     workerclient.GitSourceKindGit,
@@ -626,6 +639,7 @@ func TestMaterializeGitSourceWithoutDeliveryOrCloneSourceFails(t *testing.T) {
 // on the push path would silently bring the sandbox up clean at the base commit
 // and lose the client's edits.
 func TestMaterializeGitSourceWithPushDeliveryRestoresDirtyWorkspace(t *testing.T) {
+	requirePOSIXHost(t)
 	ctx := context.Background()
 
 	// The client's repository: a base commit plus uncommitted edits captured as
@@ -705,6 +719,7 @@ func TestMaterializeGitSourceWithPushDeliveryRestoresDirtyWorkspace(t *testing.T
 // sandbox must therefore finish the source, not short-circuit on the existing
 // container and leave the workspace empty.
 func TestMaterializePushedSourcesCompletesExistingSandbox(t *testing.T) {
+	requirePOSIXHost(t)
 	ctx := context.Background()
 	const projectID = "project-1"
 	const sandboxID = "sandbox-1"
@@ -773,6 +788,7 @@ func TestMaterializePushedSourcesCompletesExistingSandbox(t *testing.T) {
 // A clone-delivered source was fully materialized at create. Re-running it on a
 // repeat create would reset and clean a workspace the sandbox has been using.
 func TestMaterializePushedSourcesLeavesCloneDeliveredSourcesAlone(t *testing.T) {
+	requirePOSIXHost(t)
 	ctx := context.Background()
 	const projectID = "project-1"
 	const sandboxID = "sandbox-1"
@@ -819,6 +835,7 @@ func TestMaterializePushedSourcesLeavesCloneDeliveredSourcesAlone(t *testing.T) 
 // client's push and the harness starting. A stray duplicate resume call must
 // not reset/clean a workspace the sandbox has been using since finalization.
 func TestMaterializePushedSourcesIsANoOpOnceFinalized(t *testing.T) {
+	requirePOSIXHost(t)
 	ctx := context.Background()
 	const projectID = "project-1"
 	const sandboxID = "sandbox-1"

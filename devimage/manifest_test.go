@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 )
 
@@ -34,9 +35,16 @@ func TestManifestRoundTripIsCanonical(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if info.Mode().Perm() != 0o644 {
-		t.Fatalf("manifest mode = %o, want 644", info.Mode().Perm())
+	// Windows has no POSIX permission bits: the perm argument to os.WriteFile
+	// maps only to the read-only attribute, so Perm() reads back 0666 whatever
+	// was asked for. The property here is a POSIX one, carried on Windows by
+	// the ACL inherited from the parent directory, which this cannot express.
+	if runtime.GOOS != "windows" {
+		if info.Mode().Perm() != 0o644 {
+			t.Fatalf("manifest mode = %o, want 644", info.Mode().Perm())
+		}
 	}
+
 }
 
 func TestManifestRejectsDuplicateReference(t *testing.T) {

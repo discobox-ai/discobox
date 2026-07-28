@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"testing"
 
 	"github.com/obot-platform/discobox/harness"
@@ -186,6 +187,13 @@ func assertMode(t *testing.T, path string, want os.FileMode) {
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatalf("stat %s: %v", path, err)
+	}
+	// Windows has no POSIX permission bits: the perm argument to os.WriteFile
+	// maps only to the read-only attribute, so Perm() reads back 0666 whatever
+	// was asked for. The property here is a POSIX one, carried on Windows by
+	// the ACL inherited from the parent directory, which this cannot express.
+	if runtime.GOOS == "windows" {
+		return
 	}
 	if got := info.Mode().Perm(); got != want {
 		t.Fatalf("mode %s = %o, want %o", path, got, want)

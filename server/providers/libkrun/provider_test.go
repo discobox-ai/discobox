@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -21,6 +22,7 @@ func TestProviderIdentity(t *testing.T) {
 }
 
 func TestNewDriverDefersKVMValidationToLauncher(t *testing.T) {
+	requireLinuxHost(t)
 	root := filepath.Join(t.TempDir(), "root.qcow2")
 	kernel := filepath.Join(t.TempDir(), "vmlinux")
 	for _, path := range []string{root, kernel} {
@@ -84,6 +86,7 @@ func TestValidateRequiresAbsoluteRootImage(t *testing.T) {
 }
 
 func TestValidateRequiresAbsoluteKernelImage(t *testing.T) {
+	requireLinuxHost(t)
 	if err := Validate(json.RawMessage(`{"rootImage":"/images/root.qcow2"}`)); err == nil || !strings.Contains(err.Error(), "kernelImage") {
 		t.Fatalf("validate error = %v, want kernelImage requirement", err)
 	}
@@ -93,6 +96,7 @@ func TestValidateRequiresAbsoluteKernelImage(t *testing.T) {
 }
 
 func TestValidateAcceptsUnixControlPlaneSocket(t *testing.T) {
+	requireLinuxHost(t)
 	root := filepath.Join(t.TempDir(), "root.qcow2")
 	kernel := filepath.Join(t.TempDir(), "vmlinux")
 	data, err := json.Marshal(Config{
@@ -160,5 +164,17 @@ func TestValidatePoolIDRejectsPaths(t *testing.T) {
 	}
 	if err := validatePoolID("pool_9ade63td40g87ddm"); err != nil {
 		t.Fatalf("valid pool ID rejected: %v", err)
+	}
+}
+
+// requireLinuxHost skips a test whose subject is Linux-only. The libkrun driver
+// refuses to initialize anywhere but x86-64 Linux, and its configuration is
+// validated as POSIX absolute paths -- "/images/root.qcow2" is not absolute to
+// a Windows filepath, and a Windows path cannot be spelled inside a unix:// URL
+// at all. There is nothing to assert about this provider off Linux.
+func requireLinuxHost(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		t.Skip("libkrun is x86-64 Linux only")
 	}
 }

@@ -54,6 +54,7 @@ func TestRecorderPersistsHTTPEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
+	defer pools.Close()
 	var exchange HTTPExchange
 	if err := pools.Read.First(&exchange).Error; err != nil {
 		t.Fatalf("read exchange: %v", err)
@@ -113,6 +114,7 @@ func TestRecorderPersistsSOCKSEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
+	defer pools.Close()
 	var connect SOCKSConnect
 	if err := pools.Read.First(&connect).Error; err != nil {
 		t.Fatalf("read socks connect: %v", err)
@@ -141,7 +143,16 @@ func TestRecorderListsAuditRows(t *testing.T) {
 		t.Fatalf("Close() error = %v", err)
 	}
 
-	httpRows, err := recorder.ListHTTP(context.Background(), QueryOptions{ClientID: "sandbox-1", Host: "api.example.com", Limit: 10})
+	// Close released the recorder's database handle, so read through a fresh
+	// one. That is also how the rows are read in practice: the proxy writes
+	// them, and the control endpoint serves them from a live recorder.
+	reader, err := Open(context.Background(), dsn, 8, true)
+	if err != nil {
+		t.Fatalf("reopen recorder: %v", err)
+	}
+	defer reader.Close()
+
+	httpRows, err := reader.ListHTTP(context.Background(), QueryOptions{ClientID: "sandbox-1", Host: "api.example.com", Limit: 10})
 	if err != nil {
 		t.Fatalf("ListHTTP() error = %v", err)
 	}
@@ -149,7 +160,7 @@ func TestRecorderListsAuditRows(t *testing.T) {
 		t.Fatalf("HTTP rows = %#v", httpRows)
 	}
 
-	socksRows, err := recorder.ListSOCKS(context.Background(), QueryOptions{Host: "api.example.com", Limit: 1})
+	socksRows, err := reader.ListSOCKS(context.Background(), QueryOptions{Host: "api.example.com", Limit: 1})
 	if err != nil {
 		t.Fatalf("ListSOCKS() error = %v", err)
 	}

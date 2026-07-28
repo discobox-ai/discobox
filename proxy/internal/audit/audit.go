@@ -156,6 +156,11 @@ type Recorder struct {
 	streamWg        sync.WaitGroup
 	dropped         atomic.Uint64
 	closed          atomic.Bool
+	// pools owns the database handle db borrows. Close releases it: without
+	// that the connection outlives the recorder, which on Linux merely leaks
+	// and on Windows makes the database file undeletable for the life of the
+	// process.
+	pools *gormdb.Pools
 }
 
 // QueryOptions filters audit reads. Limit defaults to 100 and is capped at 1000.
@@ -211,11 +216,13 @@ func Open(ctx context.Context, dsn string, queueSize int, enabled bool) (*Record
 		return nil, err
 	}
 	if err := pools.Write.WithContext(ctx).AutoMigrate(&HTTPExchange{}, &SOCKSConnect{}); err != nil {
+		_ = pools.Close()
 		return nil, err
 	}
 	r := &Recorder{
 		enabled: true,
 		db:      pools.Write,
+		pools:   pools,
 		ch:      make(chan any, queueSize),
 		done:    make(chan struct{}),
 	}
@@ -347,6 +354,9 @@ func (r *Recorder) Close() error {
 	r.enqueueMu.Unlock()
 	r.wg.Wait()
 	r.streamWg.Wait()
+	if r.pools != nil {
+		return r.pools.Close()
+	}
 	return nil
 }
 

@@ -22,6 +22,16 @@ func testEngine(t *testing.T) (*Engine, *gorm.DB) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	// Registered after t.TempDir's own cleanup and before start's engine stop,
+	// so cleanup runs in the only order that works: stop the workers, release
+	// the handle, then remove the directory. Linux unlinks a file that is still
+	// open, so a leaked handle is invisible there; Windows refuses, and it
+	// surfaces as a cleanup failure rather than as the leak it is.
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
 	e, err := New(db, Options{
 		SingleNode:   true,
 		PollInterval: 20 * time.Millisecond,
@@ -239,6 +249,11 @@ func TestScannerBackstop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		if sqlDB, err := db.DB(); err == nil {
+			_ = sqlDB.Close()
+		}
+	})
 	e, err := New(db, Options{
 		SingleNode:   true,
 		PollInterval: 20 * time.Millisecond,

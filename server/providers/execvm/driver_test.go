@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -15,6 +16,15 @@ import (
 // writeScript materializes a shell script implementing the driver protocol.
 func writeScript(t *testing.T, body string) string {
 	t.Helper()
+	// The exec driver protocol is a program the operator supplies; these tests
+	// implement it as a shell script, which needs a /bin/sh to run. Windows has
+	// none and cannot execute a .sh, so the script fails before the driver
+	// under test is reached. The driver itself is platform-neutral -- it only
+	// runs a command -- so this skips where the fixture cannot run, not where
+	// the code cannot.
+	if runtime.GOOS == "windows" {
+		t.Skip("requires a POSIX host: the driver fixture is a shell script")
+	}
 	path := filepath.Join(t.TempDir(), "driver.sh")
 	script := "#!/bin/sh\nop=\"$1\"\nworker=\"$2\"\n" + body
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {

@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -329,6 +330,13 @@ func TestPoolSandboxHandlersValidateIdentityAndOperateOnRuntime(t *testing.T) {
 }
 
 func TestPoolSandboxGitRepositoryRouteServesCheckedOutRepository(t *testing.T) {
+	// git on Windows applies its own line-ending translation, so content
+	// pushed with a bare newline is checked out with a carriage return and the
+	// comparison below measures git's configuration rather than the route's
+	// behavior. The pool agent only ever runs inside a Linux container.
+	if runtime.GOOS == "windows" {
+		t.Skip("requires a POSIX host: git line-ending translation")
+	}
 	ctx := context.Background()
 	runtime := poolagent.NewMemorySandboxRuntime()
 	if _, err := runtime.CreateSandbox(ctx, &workerapimodel.PoolSandboxCreateRequest{

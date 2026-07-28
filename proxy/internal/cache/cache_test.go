@@ -65,9 +65,13 @@ func TestCacheEvictsLeastRecentlyUsed(t *testing.T) {
 	if _, err := c.Get(c.Matcher().GenerateKey(req1)); err == nil {
 		t.Fatal("expected first entry to be evicted")
 	}
-	if _, err := c.Get(c.Matcher().GenerateKey(req2)); err != nil {
+	surviving, err := c.Get(c.Matcher().GenerateKey(req2))
+	if err != nil {
 		t.Fatalf("expected second entry to remain: %v", err)
 	}
+	// A hit hands back an open file. Leaving it open keeps a handle on a file
+	// inside t.TempDir(), which Windows will not let the cleanup delete.
+	surviving.Body.Close()
 }
 
 func TestCacheLoadsExistingIndex(t *testing.T) {
