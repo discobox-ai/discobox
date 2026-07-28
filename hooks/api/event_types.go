@@ -162,6 +162,8 @@ func KnownEventTypes() []EventTypeInfo {
 		}},
 		{Type: "watch.snapshot.persist.failed", Description: "The daemon failed to persist the watcher snapshot checkpoint.", Details: []EventDetailInfo{
 			{Name: "files", Description: "number of watcher snapshot entries", Required: true},
+			{Name: "paths", Description: "number of changed paths in the attempted checkpoint update", Required: true},
+			{Name: "full", Description: "whether the whole snapshot was rewritten instead of the changed paths", Required: true},
 			{Name: "error", Description: "checkpoint persistence error", Required: true},
 		}},
 		{Type: "workspace.snapshot.created", Description: "A workspace snapshot patch was created for a run.", Details: []EventDetailInfo{

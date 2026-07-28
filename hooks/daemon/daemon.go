@@ -102,6 +102,10 @@ type runtimeState struct {
 	mu              sync.Mutex
 	pendingBatch    []watcher.Change
 	pendingSnapshot map[string]watcher.Entry
+	// checkpointStale marks the persisted watcher checkpoint as out of sync with
+	// the watcher's in-memory snapshot, which makes the next persist rewrite the
+	// whole snapshot instead of applying a diff on top of stale rows.
+	checkpointStale bool
 	lastActivity    time.Time
 	snapshotPending bool
 	snapshotRunning bool
@@ -248,6 +252,12 @@ func (r *runtimeState) run(parent context.Context) (err error) {
 	if initialSnapshot == nil {
 		initialChanges := initialWorkingTreeChanges(r.ctx, r.cfg.RepoRoot)
 		if len(initialChanges) > 0 {
+			// The checkpoint holds no rows yet, so the flush that records these
+			// changes has to write the whole snapshot rather than a diff. The
+			// snapshot is deliberately not persisted before the flush: a crash in
+			// between would lose the working-tree changes observed while the
+			// daemon was down.
+			r.checkpointStale = true
 			r.addBatch(initialChanges, w.Snapshot())
 		} else if err := r.store.ReplaceWatchedSnapshot(r.ctx, w.Snapshot()); err != nil {
 			_ = w.Close()
@@ -430,9 +440,7 @@ func (r *runtimeState) watchLoop(w *watcher.Watcher) {
 			if len(batch.Changes) > 0 {
 				r.addBatch(batch.Changes, batch.Snapshot)
 			} else if batch.Snapshot != nil {
-				if err := r.store.ReplaceWatchedSnapshot(r.ctx, batch.Snapshot); err != nil {
-					_ = r.recordEvent("watch.snapshot.persist.failed", "", "", "watch snapshot persist failed", map[string]any{"files": len(batch.Snapshot), "error": err.Error()})
-				}
+				r.persistWatchedCheckpoint(batch.Snapshot, nil)
 			}
 		case <-w.Errors():
 		}
@@ -695,38 +703,58 @@ func (r *runtimeState) hasBatch() bool {
 }
 func (r *runtimeState) flushBatch() {
 	r.mu.Lock()
-	changes := append([]watcher.Change(nil), r.pendingBatch...)
+	// watched keeps every path the watcher reported. The checkpoint mirrors the
+	// watcher's snapshot, which tracks git-ignored files too, so it advances on
+	// the full set while hooks only ever see the filtered subset below.
+	watched := append([]watcher.Change(nil), r.pendingBatch...)
 	snapshot := cloneWatcherSnapshot(r.pendingSnapshot)
 	r.pendingBatch = nil
 	r.pendingSnapshot = nil
 	r.mu.Unlock()
-	if len(changes) == 0 {
-		r.persistWatchedSnapshot(snapshot)
+	if len(watched) == 0 {
+		r.persistWatchedCheckpoint(snapshot, nil)
 		return
 	}
-	changes = r.filterIgnoredChanges(changes)
+	changes := r.filterIgnoredChanges(watched)
 	if len(changes) == 0 {
-		r.persistWatchedSnapshot(snapshot)
+		r.persistWatchedCheckpoint(snapshot, watched)
 		return
 	}
+	if !r.processChanges(changes) {
+		// The batch was not durably recorded, so its paths must stay out of the
+		// checkpoint. A later batch's diff would not carry them, so force the
+		// next persist to rewrite the whole snapshot instead.
+		r.markCheckpointStale()
+		return
+	}
+	r.persistWatchedCheckpoint(snapshot, watched)
+	r.signalDrain()
+	r.touch()
+}
+
+// processChanges records a change batch durably and enqueues the hook work it
+// matches, reporting whether the batch completed. Failures are recorded as
+// audit events; the caller must not advance the watcher checkpoint past a batch
+// that did not complete.
+func (r *runtimeState) processChanges(changes []watcher.Change) bool {
 	if batchTouchesHookConfig(changes) {
 		if err := r.reloadDiscovery(r.ctx); err != nil {
 			_ = r.recordEvent("discovery.reload.failed", "", "", "hook discovery reload failed", map[string]any{"repo_root": r.cfg.RepoRoot, "error": err.Error()})
-			return
+			return false
 		}
 	}
 	r.handleLSPChanges(changes)
 	observed, err := r.recordObservedChanges(r.ctx, changes)
 	if err != nil {
 		_ = r.recordEvent("file.change.record.failed", "", "", "file change record failed", map[string]any{"changes": len(changes), "changed_files": store.ChangedFilesFromWatcher(changes), "error": err.Error()})
-		return
+		return false
 	}
 	r.requestSnapshot()
 	changeIDsByKey := observedChangeIDsByKey(observed)
 	disc := r.currentDiscovery()
 	res, err := matcher.Match(r.cfg.RepoRoot, disc.Hooks, changes, disc.GlobalIgnore, daemonMatcherOptions)
 	if err != nil {
-		return
+		return false
 	}
 	for _, m := range res.Matches {
 		if m.Hook.IsLSP() {
@@ -737,22 +765,58 @@ func (r *runtimeState) flushBatch() {
 		changeIDs := changeIDsForWatcherChanges(m.Changes, changeIDsByKey)
 		if err := r.store.EnqueueWithChangeIDs(r.ctx, ids, changedFiles, changeIDs); err != nil {
 			_ = r.recordEvent("hook.enqueue.failed", m.HookID, "", "hook enqueue failed", map[string]any{"error": err.Error(), "changes": len(m.Changes), "changed_files": changedFiles, "change_ids": changeIDs})
-			return
+			return false
 		}
 		_ = r.recordEvent("hook.enqueued", m.HookID, "", "hook enqueued from file changes", map[string]any{"changes": len(m.Changes), "changed_files": changedFiles, "change_ids": changeIDs})
 	}
-	r.persistWatchedSnapshot(snapshot)
-	r.signalDrain()
-	r.touch()
+	return true
 }
 
-func (r *runtimeState) persistWatchedSnapshot(snapshot map[string]watcher.Entry) {
+// persistWatchedCheckpoint advances the persisted watcher checkpoint by the
+// paths that changes touched, so the write scales with the diff instead of the
+// repository. A failed write leaves the checkpoint out of sync with snapshot,
+// so the next call rewrites the whole snapshot to resynchronize.
+func (r *runtimeState) persistWatchedCheckpoint(snapshot map[string]watcher.Entry, changes []watcher.Change) {
 	if snapshot == nil {
 		return
 	}
-	if err := r.store.ReplaceWatchedSnapshot(r.ctx, snapshot); err != nil {
-		_ = r.recordEvent("watch.snapshot.persist.failed", "", "", "watch snapshot persist failed", map[string]any{"files": len(snapshot), "error": err.Error()})
+	r.mu.Lock()
+	stale := r.checkpointStale
+	r.mu.Unlock()
+
+	paths := changedPaths(changes)
+	if !stale && len(paths) == 0 {
+		return
 	}
+
+	var err error
+	if stale {
+		err = r.store.ReplaceWatchedSnapshot(r.ctx, snapshot)
+	} else {
+		err = r.store.UpdateWatchedPaths(r.ctx, snapshot, paths)
+	}
+
+	r.mu.Lock()
+	r.checkpointStale = err != nil
+	r.mu.Unlock()
+
+	if err != nil {
+		_ = r.recordEvent("watch.snapshot.persist.failed", "", "", "watch snapshot persist failed", map[string]any{"files": len(snapshot), "paths": len(paths), "full": stale, "error": err.Error()})
+	}
+}
+
+func (r *runtimeState) markCheckpointStale() {
+	r.mu.Lock()
+	r.checkpointStale = true
+	r.mu.Unlock()
+}
+
+func changedPaths(changes []watcher.Change) []string {
+	paths := make([]string, 0, len(changes))
+	for _, change := range changes {
+		paths = append(paths, change.Path)
+	}
+	return paths
 }
 
 func cloneWatcherSnapshot(in map[string]watcher.Entry) map[string]watcher.Entry {

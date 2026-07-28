@@ -135,9 +135,19 @@ recorded and matching hooks have been enqueued.
 On later restarts, the daemon seeds the watcher with the persisted snapshot so
 the first resync can detect created, modified, and deleted files that changed
 while the daemon was stopped. For watcher batches that contain changes, the
-daemon replaces the checkpoint with the batch's new full snapshot only after
-observed changes and queued hook work are durable. Batches with no semantic
-changes may update the checkpoint immediately.
+daemon advances the checkpoint only after observed changes and queued hook work
+are durable. Batches with no semantic changes may update the checkpoint
+immediately.
+
+Checkpoint writes are diffs, not rewrites: each batch upserts the paths it
+reported and deletes the ones that vanished, so write cost tracks the change
+batch rather than repository size. The diff covers every path the watcher
+reported, including git-ignored ones, because the checkpoint mirrors the
+watcher's snapshot rather than the hook-visible subset. A diff applied to a
+checkpoint that is already out of sync would silently persist that drift, so a
+failed write marks the checkpoint stale and the next persist rewrites the whole
+snapshot. A cold start with initial worktree changes is the same case: nothing
+is persisted yet, so that first write is a full snapshot.
 
 ## Workspace Snapshot Scheduling
 

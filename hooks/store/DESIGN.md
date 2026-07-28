@@ -42,6 +42,20 @@ lowercase ULID strings from the root `id` package; only natural keys such as
 `hook_id` and fixed daemon state keys should be primary keys without generated
 IDs.
 
+Insert row sets whose size scales with the repository — watcher snapshots,
+observed changes, diagnostics — through `createInBatches`. GORM binds one host
+parameter per column per row, and SQLite rejects any statement above
+`sqliteMaxVariables`, so a single `Create` on such a slice fails outright once
+the repository grows past a few thousand entries. Chunk sizes come from
+`sqliteVariableBudget`, which keeps headroom for the parameters a statement
+binds outside its per-row values.
+
+The watcher checkpoint has two writers with different costs.
+`ReplaceWatchedSnapshot` rewrites the whole table and is only for seeding or
+resynchronizing; steady-state persistence uses `UpdateWatchedPaths`, which
+resolves each changed path against the caller's snapshot and writes only that
+diff.
+
 ## Core Models
 
 Suggested tables:

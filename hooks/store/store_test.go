@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"sort"
@@ -110,6 +111,150 @@ func TestWatchedSnapshotRoundTripAndReplace(t *testing.T) {
 	}
 	if got := snapshot["other.txt"]; got.Path != "other.txt" || got.Size != 1 {
 		t.Fatalf("unexpected replaced snapshot: %#v", got)
+	}
+}
+
+func TestUpdateWatchedPathsAppliesDiff(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(ctx, t)
+	modTime := time.Unix(123, 456).UTC()
+
+	if err := s.ReplaceWatchedSnapshot(ctx, map[string]watcher.Entry{
+		"keep.txt":   {Path: "keep.txt", Size: 1, Mode: 0o644, ModTime: modTime},
+		"edit.txt":   {Path: "edit.txt", Size: 2, Mode: 0o644, ModTime: modTime},
+		"remove.txt": {Path: "remove.txt", Size: 3, Mode: 0o644, ModTime: modTime},
+	}); err != nil {
+		t.Fatalf("seed snapshot: %v", err)
+	}
+
+	// The snapshot is the post-change state: edit.txt grew, remove.txt is gone,
+	// and add.txt appeared. keep.txt is untouched and must not be rewritten.
+	next := map[string]watcher.Entry{
+		"keep.txt": {Path: "keep.txt", Size: 1, Mode: 0o644, ModTime: modTime},
+		"edit.txt": {Path: "edit.txt", Size: 20, Mode: 0o600, ModTime: modTime.Add(time.Minute)},
+		"add.txt":  {Path: "add.txt", Size: 4, Mode: 0o644, ModTime: modTime},
+	}
+	if err := s.UpdateWatchedPaths(ctx, next, []string{"edit.txt", "remove.txt", "add.txt"}); err != nil {
+		t.Fatalf("update watched paths: %v", err)
+	}
+
+	snapshot, err := s.LoadWatchedSnapshot(ctx)
+	if err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	if len(snapshot) != 3 {
+		t.Fatalf("expected 3 entries after diff, got %#v", snapshot)
+	}
+	if _, ok := snapshot["remove.txt"]; ok {
+		t.Fatalf("deleted path still present: %#v", snapshot)
+	}
+	if got := snapshot["edit.txt"]; got.Size != 20 || got.Mode != 0o600 || !got.ModTime.Equal(modTime.Add(time.Minute)) {
+		t.Fatalf("modified path not upserted: %#v", got)
+	}
+	if got := snapshot["add.txt"]; got.Size != 4 {
+		t.Fatalf("created path not inserted: %#v", got)
+	}
+	if got := snapshot["keep.txt"]; got.Size != 1 || !got.ModTime.Equal(modTime) {
+		t.Fatalf("untouched path was altered: %#v", got)
+	}
+}
+
+// A diff whose changed paths exceed the SQLite host-parameter ceiling must be
+// chunked on both the delete and the upsert side.
+func TestUpdateWatchedPathsExceedingSQLVariableLimit(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(ctx, t)
+	modTime := time.Unix(123, 456).UTC()
+
+	const files = 12000
+	seed := make(map[string]watcher.Entry, files)
+	for i := range files {
+		path := fmt.Sprintf("dir/file-%d.txt", i)
+		seed[path] = watcher.Entry{Path: path, Size: int64(i), Mode: 0o644, ModTime: modTime}
+	}
+	if err := s.ReplaceWatchedSnapshot(ctx, seed); err != nil {
+		t.Fatalf("seed snapshot: %v", err)
+	}
+
+	// Delete the first half and rewrite the second half in one diff.
+	next := make(map[string]watcher.Entry, files/2)
+	paths := make([]string, 0, files)
+	for i := range files {
+		path := fmt.Sprintf("dir/file-%d.txt", i)
+		paths = append(paths, path)
+		if i >= files/2 {
+			next[path] = watcher.Entry{Path: path, Size: int64(i) * 2, Mode: 0o644, ModTime: modTime}
+		}
+	}
+	if err := s.UpdateWatchedPaths(ctx, next, paths); err != nil {
+		t.Fatalf("update watched paths: %v", err)
+	}
+
+	snapshot, err := s.LoadWatchedSnapshot(ctx)
+	if err != nil {
+		t.Fatalf("load snapshot: %v", err)
+	}
+	if len(snapshot) != files/2 {
+		t.Fatalf("expected %d entries after diff, got %d", files/2, len(snapshot))
+	}
+	if got := snapshot["dir/file-11999.txt"]; got.Size != 23998 {
+		t.Fatalf("upserted entry not updated: %#v", got)
+	}
+	if _, ok := snapshot["dir/file-0.txt"]; ok {
+		t.Fatalf("deleted entry still present")
+	}
+}
+
+// Large repositories produce watcher snapshots with more entries than SQLite
+// allows host parameters in one statement, so the insert must be chunked.
+func TestWatchedSnapshotExceedingSQLVariableLimit(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(ctx, t)
+	modTime := time.Unix(123, 456).UTC()
+
+	const files = 20000
+	snapshot := make(map[string]watcher.Entry, files)
+	for i := range files {
+		path := fmt.Sprintf("dir/file-%d.txt", i)
+		snapshot[path] = watcher.Entry{Path: path, Size: int64(i), Mode: 0o644, ModTime: modTime}
+	}
+	if err := s.ReplaceWatchedSnapshot(ctx, snapshot); err != nil {
+		t.Fatalf("replace large snapshot: %v", err)
+	}
+	loaded, err := s.LoadWatchedSnapshot(ctx)
+	if err != nil {
+		t.Fatalf("load large snapshot: %v", err)
+	}
+	if len(loaded) != files {
+		t.Fatalf("expected %d snapshot entries, got %d", files, len(loaded))
+	}
+	if got := loaded["dir/file-19999.txt"]; got.Size != 19999 {
+		t.Fatalf("unexpected last snapshot entry: %#v", got)
+	}
+}
+
+// Observed changes are inserted in one call per batch and must stay under the
+// same SQLite host-parameter ceiling, with generated IDs returned for each row.
+func TestRecordObservedChangesExceedingSQLVariableLimit(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(ctx, t)
+
+	const count = 20000
+	changes := make([]ObservedFileChange, 0, count)
+	for i := range count {
+		changes = append(changes, ObservedFileChange{Path: fmt.Sprintf("dir/file-%d.txt", i), Kind: watcher.Modified})
+	}
+	recorded, err := s.RecordObservedChanges(ctx, changes)
+	if err != nil {
+		t.Fatalf("record observed changes: %v", err)
+	}
+	if len(recorded) != count {
+		t.Fatalf("expected %d recorded changes, got %d", count, len(recorded))
+	}
+	for _, change := range recorded {
+		if change.ID == "" {
+			t.Fatalf("recorded change missing id: %#v", change)
+		}
 	}
 }
 
@@ -786,7 +931,7 @@ func TestListEventsAfterCursorAscending(t *testing.T) {
 		t.Fatalf("record second event: %v", err)
 	}
 	time.Sleep(time.Millisecond)
-	if _, err := s.RecordEvent(ctx, Event{Type: "watch.snapshot.persist.failed", Details: map[string]any{"files": 3, "error": "boom"}}); err != nil {
+	if _, err := s.RecordEvent(ctx, Event{Type: "watch.snapshot.persist.failed", Details: map[string]any{"files": 3, "paths": 1, "full": false, "error": "boom"}}); err != nil {
 		t.Fatalf("record third event: %v", err)
 	}
 
