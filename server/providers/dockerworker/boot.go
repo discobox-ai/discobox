@@ -1,16 +1,17 @@
 package dockerworker
 
 import (
-	"strconv"
 	"strings"
 
 	poolagent "github.com/obot-platform/discobox/pool-agent"
-	guestvsock "github.com/obot-platform/discobox/pool-agent/vsock"
 )
 
 // BootEnv renders the pool-agent bootstrap contract as container environment
 // variables so the in-container worker agent can register itself with the
 // control plane after start.
+//
+// Both directions are a single URL: the scheme carries the transport, so adding
+// a backend never adds a variable here.
 func BootEnv(bootstrap poolagent.Bootstrap) map[string]string {
 	env := map[string]string{
 		poolagent.EnvControlPlaneURL: bootstrap.ControlPlaneURL,
@@ -18,18 +19,9 @@ func BootEnv(bootstrap poolagent.Bootstrap) map[string]string {
 		poolagent.EnvPoolID:          bootstrap.PoolID,
 		poolagent.EnvBootstrapToken:  bootstrap.Token,
 		poolagent.EnvControlPlaneKey: bootstrap.ControlPlaneKey,
-	}
-	if bootstrap.AgentPort > 0 {
-		env[poolagent.EnvAgentPort] = strconv.Itoa(bootstrap.AgentPort)
-	}
-	if bootstrap.AgentVSOCKPort > 0 {
-		env[poolagent.EnvAgentVSOCKPort] = strconv.FormatUint(uint64(bootstrap.AgentVSOCKPort), 10)
-	}
-	if bootstrap.ControlPlaneVSOCKPort > 0 {
-		env[guestvsock.EnvControlPlanePort] = strconv.FormatUint(uint64(bootstrap.ControlPlaneVSOCKPort), 10)
-	}
-	if bootstrap.HostMountPrefix != "" {
-		env[poolagent.EnvHostMountPrefix] = bootstrap.HostMountPrefix
+		poolagent.EnvAgentListenURL:  bootstrap.AgentListenURL,
+		poolagent.EnvHostMountPrefix: bootstrap.HostMountPrefix,
+		poolagent.EnvHostStateRoot:   bootstrap.HostStateRoot,
 	}
 	for key, value := range env {
 		if strings.TrimSpace(value) == "" {

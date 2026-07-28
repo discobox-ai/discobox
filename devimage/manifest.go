@@ -25,9 +25,34 @@ const (
 
 // Image identifies one watcher-built image by the reference used by Discobox
 // and the immutable Docker image configuration ID expected at that reference.
+//
+// In copy-mode (the default) ID is required: the image is built on a source
+// Docker daemon and copied to each destination, and ID content-addresses it. In
+// build-mode Build is set instead: the host has no Docker daemon to build on
+// (Windows/macOS), so each destination builds the image itself from Build, and
+// a unique per-build Reference (e.g. a dev-<timestamp> tag) is the freshness
+// key, making ID unnecessary.
 type Image struct {
-	Reference string `json:"reference"`
-	ID        string `json:"id"`
+	Reference string     `json:"reference"`
+	ID        string     `json:"id,omitempty"`
+	Build     *BuildSpec `json:"build,omitempty"`
+}
+
+// BuildSpec describes how to build a development image on the destination
+// Docker daemon (via BuildKit) instead of copying it from a source daemon.
+type BuildSpec struct {
+	// Dockerfile is the path to the Dockerfile, relative to Context.
+	Dockerfile string `json:"dockerfile"`
+	// Context is the absolute build-context root on the host.
+	Context string `json:"context"`
+	// Args are --build-arg values. Cross-image dependencies are expressed by
+	// setting an arg value to another manifest image's Reference (for example a
+	// harness image's SANDBOX_AGENT_IMAGE), which orders the builds.
+	Args map[string]string `json:"args,omitempty"`
+	// Target optionally selects a build stage.
+	Target string `json:"target,omitempty"`
+	// Platform is the target platform, for example "linux/amd64".
+	Platform string `json:"platform,omitempty"`
 }
 
 // Manifest is the complete watcher-built image set to converge onto a Docker
@@ -69,11 +94,20 @@ func (m Manifest) Validate() error {
 		if strings.TrimSpace(image.Reference) == "" {
 			return fmt.Errorf("development image manifest image %d has no reference", i)
 		}
-		if strings.TrimSpace(image.ID) == "" {
-			return fmt.Errorf("development image manifest image %q has no ID", image.Reference)
-		}
-		if !strings.HasPrefix(image.ID, "sha256:") {
-			return fmt.Errorf("development image manifest image %q has invalid ID %q", image.Reference, image.ID)
+		if image.Build != nil {
+			if strings.TrimSpace(image.Build.Context) == "" {
+				return fmt.Errorf("development image manifest image %q build has no context", image.Reference)
+			}
+			if strings.TrimSpace(image.Build.Dockerfile) == "" {
+				return fmt.Errorf("development image manifest image %q build has no dockerfile", image.Reference)
+			}
+		} else {
+			if strings.TrimSpace(image.ID) == "" {
+				return fmt.Errorf("development image manifest image %q has no ID", image.Reference)
+			}
+			if !strings.HasPrefix(image.ID, "sha256:") {
+				return fmt.Errorf("development image manifest image %q has invalid ID %q", image.Reference, image.ID)
+			}
 		}
 		if _, ok := seen[image.Reference]; ok {
 			return fmt.Errorf("development image manifest repeats reference %q", image.Reference)

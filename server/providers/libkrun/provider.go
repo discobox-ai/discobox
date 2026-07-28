@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"github.com/obot-platform/discobox/localipc"
+	"github.com/obot-platform/discobox/pool-agent/endpoint"
+	guestvsock "github.com/obot-platform/discobox/pool-agent/vsock"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/providers/dockerworker"
@@ -118,13 +120,15 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 		return nil, err
 	}
 	engine, err := dockerworker.New(dockerworker.Config{
-		ControlPlaneURL:       localipc.LogicalHTTPBaseURL,
-		Image:                 dockerworker.EffectivePoolImage(cfg.WorkerImage),
-		AgentVSOCKPort:        agentVSOCKPort,
-		ControlPlaneVSOCKPort: controlPlaneVSOCKPort,
-		Systemd:               true,
-		Labels:                map[string]string{labelProviderType: ProviderType},
-		DevelopmentImageSync:  imageSync,
+		// Both directions are VSOCK for a libkrun microVM: the guest dials host
+		// CID 2 for the control plane, and the agent listens on its own VSOCK
+		// port. The schemes are the whole configuration.
+		ControlPlaneURL:      endpoint.VSOCKURL(guestvsock.HostCID, controlPlaneVSOCKPort),
+		AgentListenURL:       endpoint.VSOCKListenURL(agentVSOCKPort),
+		Image:                dockerworker.EffectivePoolImage(cfg.WorkerImage),
+		Systemd:              true,
+		Labels:               map[string]string{labelProviderType: ProviderType},
+		DevelopmentImageSync: imageSync,
 	}, driver)
 	if err != nil {
 		_ = driver.Close()

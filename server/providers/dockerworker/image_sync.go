@@ -89,7 +89,23 @@ func (s *DevelopmentImageSynchronizer) Ensure(ctx context.Context, destination *
 
 func (s *DevelopmentImageSynchronizer) ensure(ctx context.Context, daemonID string, destination *client.Client) error {
 	missing := make([]devimage.Image, 0, len(s.images))
+	missingBuilds := make([]devimage.Image, 0, len(s.images))
 	for _, image := range s.images {
+		if image.Build != nil {
+			// Build-mode references are unique per development build, so the
+			// reference existing on the destination is itself proof of
+			// freshness; there is no source daemon to compare an ID against.
+			_, err := destination.ImageInspect(ctx, image.Reference)
+			switch {
+			case err == nil:
+				continue
+			case !cerrdefs.IsNotFound(err):
+				return fmt.Errorf("inspect development image %s on Docker daemon %s: %w", image.Reference, daemonID, err)
+			}
+			missingBuilds = append(missingBuilds, image)
+			continue
+		}
+
 		inspect, err := destination.ImageInspect(ctx, image.Reference)
 		switch {
 		case err == nil && inspect.ID == image.ID:
@@ -110,10 +126,19 @@ func (s *DevelopmentImageSynchronizer) ensure(ctx context.Context, daemonID stri
 			missing = append(missing, image)
 		}
 	}
+
+	if len(missingBuilds) > 0 {
+		if err := buildImages(ctx, destination, daemonID, missingBuilds); err != nil {
+			return err
+		}
+	}
 	if len(missing) == 0 {
 		return nil
 	}
 
+	// Only copy-mode images reach here, so the source daemon is opened only when
+	// one is actually needed. A build-mode-only manifest never touches it, which
+	// is what lets a host without Docker (Windows, macOS) converge images.
 	source, err := s.source()
 	if err != nil {
 		return fmt.Errorf("open development image source Docker daemon: %w", err)

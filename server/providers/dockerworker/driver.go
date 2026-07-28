@@ -99,10 +99,14 @@ func (l *DockerClientLease) Release() {
 // the given dialer, for drivers that reach the in-VM daemon through a tunnel
 // such as SSH or vsock. The logical host stays the in-VM Unix socket.
 func NewDockerClientForDialer(dial func(ctx context.Context, network, addr string) (net.Conn, error)) (*client.Client, error) {
+	// Deliberately no WithHTTPClient: the client must build its own base
+	// transport so DialHijack — used to reach the daemon's embedded BuildKit at
+	// /grpc (development image build-mode) and to attach/exec — dials through
+	// this dialer. WithDialContext injects it. Passing a pre-built http.Client
+	// leaves the client's baseTransport unset, and DialHijack then falls back to
+	// net.Dial("unix", "/var/run/docker.sock"), which cannot reach a VM daemon.
 	return client.New(
-		client.WithHTTPClient(&http.Client{Transport: &http.Transport{}}),
 		client.WithHost("unix:///var/run/docker.sock"),
-		client.WithScheme("http"),
 		client.WithDialContext(dial),
 	)
 }

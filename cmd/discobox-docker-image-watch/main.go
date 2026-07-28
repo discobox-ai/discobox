@@ -36,6 +36,11 @@ type imageSpec struct {
 	buildArgs    []string
 	files        []string
 	metadataFile string
+	// contextDir and dockerfile describe the same build as buildArgs, but
+	// declaratively, for build-mode: the server builds these on the destination
+	// Docker daemon, so there is no docker CLI invocation to derive them from.
+	contextDir string
+	dockerfile string
 	// sandboxBase marks specs that build FROM the sandbox-agent image. Their
 	// SANDBOX_AGENT_IMAGE build arg is rewritten to the sandbox-agent dev tag so
 	// they pin the exact hashed base rather than the mutable :local tag.
@@ -134,7 +139,7 @@ func findRepoRoot() (string, error) {
 
 func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error) {
 	workerRoot := filepath.Join(repoRoot, "pool-agent")
-	workerFiles, err := workerAgentFiles(ctx, workerRoot)
+	workerFiles, err := goModuleFiles(ctx, workerRoot, repoRoot, "./cmd/discobox-pool-agent")
 	if err != nil {
 		return nil, err
 	}
@@ -155,16 +160,24 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 	}
 	sandboxRoot := filepath.Join(repoRoot, "sandbox-agent")
 	sandboxSeen := map[string]struct{}{}
+	// The whole tree, so non-Go assets (image scripts, unit files) count too.
 	if err := addTree(sandboxRoot, sandboxSeen); err != nil {
 		return nil, err
+	}
+	// Both binaries the Dockerfile builds, so every root-module package it
+	// copies into the build context is watched without naming any of them.
+	sandboxFiles, err := goModuleFiles(ctx, sandboxRoot, repoRoot,
+		"./cmd/discobox-sandbox-agent", "./cmd/discobox-nri-ca")
+	if err != nil {
+		return nil, err
+	}
+	for _, file := range sandboxFiles {
+		sandboxSeen[file] = struct{}{}
 	}
 	for _, rel := range []string{
 		".dockerignore",
 		"go.mod",
 		"go.sum",
-		"api/sandboxgen",
-		"gormdb",
-		"harness",
 	} {
 		path := filepath.Join(repoRoot, rel)
 		if info, err := os.Stat(path); err == nil && info.IsDir() {
@@ -191,6 +204,8 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 			envDigestKey: "DISCOBOX_DOCKER_POOL_IMAGE_DIGEST",
 			buildDir:     repoRoot,
 			buildArgs:    []string{"build", "-f", "pool-agent/Dockerfile", "-t", "discobox-pool-agent:local", "."},
+			contextDir:   repoRoot,
+			dockerfile:   "pool-agent/Dockerfile",
 			files:        sortedFiles(workerSeen),
 		},
 		{
@@ -201,6 +216,8 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 			envDigestKey: "DISCOBOX_DEFAULT_SANDBOX_IMAGE_DIGEST",
 			buildDir:     repoRoot,
 			buildArgs:    []string{"build", "-f", "sandbox-agent/Dockerfile", "-t", "discobox-sandbox-agent:local", "."},
+			contextDir:   repoRoot,
+			dockerfile:   "sandbox-agent/Dockerfile",
 			files:        sortedFiles(commonSandboxSeen),
 		},
 	}
@@ -225,7 +242,11 @@ func dockerImageSpecs(ctx context.Context, repoRoot string) ([]imageSpec, error)
 				"--build-arg", "HARNESS_METADATA=", "-t", "discobox-harness-" + harnessImage.name + ":local", harnessDir},
 			metadataFile: filepath.Join(repoRoot, harnessDir, "image.json"),
 			sandboxBase:  true,
-			files:        sortedFiles(seen),
+			// The harness build context is the harness directory itself, so its
+			// Dockerfile is at the context root.
+			contextDir: filepath.Join(repoRoot, harnessDir),
+			dockerfile: "Dockerfile",
+			files:      sortedFiles(seen),
 		})
 	}
 	return specs, nil
@@ -262,18 +283,32 @@ func copyFiles(in map[string]struct{}) map[string]struct{} {
 	return out
 }
 
-func workerAgentFiles(ctx context.Context, root string) ([]string, error) {
-	cmd := exec.CommandContext(ctx, "go", "list", "-deps", "-f", "{{if not .Standard}}{{.Dir}}{{end}}", "./cmd/discobox-pool-agent")
-	cmd.Dir = root
+// goModuleFiles lists every Go source file the named packages are built from.
+//
+// The dependency scope is the whole repository, not just the module being
+// built: these binaries import root-module packages (layout, proxy,
+// sandboxconfig, ...) that their Dockerfiles copy into the build context, and a
+// change to one of those changes the image just as surely as a change inside
+// the module. Scoping the scan to the module directory would leave the
+// content-addressed image reference unchanged after such an edit, so the stale
+// image would never be rebuilt.
+//
+// Deriving the set from `go list -deps` rather than a hand-written list is the
+// point: a newly added import is picked up automatically, where a hand-written
+// list silently goes stale exactly when it matters.
+func goModuleFiles(ctx context.Context, moduleRoot, repoRoot string, packages ...string) ([]string, error) {
+	args := append([]string{"list", "-deps", "-f", "{{if not .Standard}}{{.Dir}}{{end}}"}, packages...)
+	cmd := exec.CommandContext(ctx, "go", args...)
+	cmd.Dir = moduleRoot
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("go list pool-agent deps: %w", err)
+		return nil, fmt.Errorf("go list deps in %s: %w", moduleRoot, err)
 	}
 	seen := map[string]struct{}{}
 	scanner := bufio.NewScanner(bytes.NewReader(out))
 	for scanner.Scan() {
 		dir := strings.TrimSpace(scanner.Text())
-		if dir == "" || !inside(root, dir) {
+		if dir == "" || !inside(repoRoot, dir) {
 			continue
 		}
 		if err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
@@ -369,6 +404,12 @@ func changed(a, b map[string]fileState) bool {
 }
 
 func buildChangedImages(ctx context.Context, repoRoot string, allSpecs, changedSpecs []imageSpec) error {
+	if buildModeEnabled() {
+		// Nothing is built here: the host has no Docker daemon to build on, so
+		// the manifest describes the builds and each destination daemon runs
+		// them. Stamping is cheap, so it always covers every spec.
+		return stampBuildModeImages(repoRoot, allSpecs)
+	}
 	if changedSpecs == nil {
 		changedSpecs = allSpecs
 	}

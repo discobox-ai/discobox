@@ -10,8 +10,8 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 
+	"github.com/obot-platform/discobox/layout"
 	poolagent "github.com/obot-platform/discobox/pool-agent"
-	guestvsock "github.com/obot-platform/discobox/pool-agent/vsock"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/internal/transport"
@@ -137,21 +137,40 @@ func TestNewHonorsPrivilegedOverride(t *testing.T) {
 	}
 }
 
-func TestNewRequiresCompleteVSOCKTransport(t *testing.T) {
+// The engine validates the transport URLs it will hand the agent, so a
+// misconfigured backend fails at construction rather than at pool boot.
+func TestNewRejectsUnusableTransportURLs(t *testing.T) {
 	for _, cfg := range []Config{
-		{Image: "worker-image", AgentVSOCKPort: 3002},
-		{Image: "worker-image", ControlPlaneVSOCKPort: 3001},
+		{Image: "worker-image", AgentListenURL: "ftp://nope"},
+		{Image: "worker-image", AgentListenURL: "vsock://2"},
+		{Image: "worker-image", ControlPlaneURL: "ftp://nope"},
 	} {
 		if _, err := New(cfg, nopDriver{}); err == nil {
-			t.Fatalf("New(%#v) succeeded with incomplete VSOCK transport", cfg)
+			t.Fatalf("New(%#v) succeeded with an unusable transport URL", cfg)
 		}
 	}
+}
+
+// A VSOCK-only pool is now expressed purely as URLs.
+func TestNewAcceptsVSOCKTransportURLs(t *testing.T) {
 	if _, err := New(Config{
-		Image:                 "worker-image",
-		AgentVSOCKPort:        3002,
-		ControlPlaneVSOCKPort: 3001,
+		Image:           "worker-image",
+		AgentListenURL:  "vsock://:3002",
+		ControlPlaneURL: "vsock://2:3001",
 	}, nopDriver{}); err != nil {
-		t.Fatalf("New with complete VSOCK transport: %v", err)
+		t.Fatalf("New with VSOCK transport URLs: %v", err)
+	}
+}
+
+// With no listen URL configured the engine defaults to TCP on the agent port,
+// so existing Docker pools keep their published port unchanged.
+func TestNewDefaultsAgentListenToTCP(t *testing.T) {
+	engine, err := New(Config{Image: "worker-image", AgentPort: 3002}, nopDriver{})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	if got, want := engine.cfg.AgentListenURL, "http://0.0.0.0:3002"; got != want {
+		t.Fatalf("default agent listen URL = %q, want %q", got, want)
 	}
 }
 
@@ -162,7 +181,7 @@ func TestBootEnvRendersBootstrapContract(t *testing.T) {
 		PoolID:          "pool-1",
 		Token:           "token-1",
 		ControlPlaneKey: "key-1",
-		AgentPort:       3002,
+		AgentListenURL:  "http://0.0.0.0:3002",
 		HostMountPrefix: "/host",
 	})
 	want := map[string]string{
@@ -171,7 +190,7 @@ func TestBootEnvRendersBootstrapContract(t *testing.T) {
 		poolagent.EnvPoolID:          "pool-1",
 		poolagent.EnvBootstrapToken:  "token-1",
 		poolagent.EnvControlPlaneKey: "key-1",
-		poolagent.EnvAgentPort:       "3002",
+		poolagent.EnvAgentListenURL:  "http://0.0.0.0:3002",
 		poolagent.EnvHostMountPrefix: "/host",
 	}
 	for key, value := range want {
@@ -184,20 +203,19 @@ func TestBootEnvRendersBootstrapContract(t *testing.T) {
 	}
 }
 
-func TestBootEnvRendersVSOCKContract(t *testing.T) {
+// A VSOCK pool renders the same two variables as any other backend; the scheme
+// is the only difference.
+func TestBootEnvRendersVSOCKTransportAsURLs(t *testing.T) {
 	env := BootEnv(poolagent.Bootstrap{
-		PoolID:                "pool-1",
-		AgentVSOCKPort:        3002,
-		ControlPlaneVSOCKPort: 3001,
+		PoolID:          "pool-1",
+		ControlPlaneURL: "vsock://2:3001",
+		AgentListenURL:  "vsock://:3002",
 	})
-	if env[poolagent.EnvAgentVSOCKPort] != "3002" {
-		t.Fatalf("agent VSOCK env = %q", env[poolagent.EnvAgentVSOCKPort])
+	if env[poolagent.EnvAgentListenURL] != "vsock://:3002" {
+		t.Fatalf("agent listen env = %q", env[poolagent.EnvAgentListenURL])
 	}
-	if env[guestvsock.EnvControlPlanePort] != "3001" {
-		t.Fatalf("control plane VSOCK env = %q", env[guestvsock.EnvControlPlanePort])
-	}
-	if _, ok := env[poolagent.EnvAgentPort]; ok {
-		t.Fatalf("VSOCK bootstrap unexpectedly contains TCP agent port: %#v", env)
+	if env[poolagent.EnvControlPlaneURL] != "vsock://2:3001" {
+		t.Fatalf("control plane env = %q", env[poolagent.EnvControlPlaneURL])
 	}
 }
 
@@ -206,8 +224,8 @@ func TestBootEnvOmitsEmptyValues(t *testing.T) {
 	if _, ok := env[poolagent.EnvControlPlaneURL]; ok {
 		t.Fatalf("env = %#v, want no empty control plane URL", env)
 	}
-	if _, ok := env[poolagent.EnvAgentPort]; ok {
-		t.Fatalf("env = %#v, want no zero harness port", env)
+	if _, ok := env[poolagent.EnvAgentListenURL]; ok {
+		t.Fatalf("env = %#v, want no empty agent listen URL", env)
 	}
 }
 
@@ -236,7 +254,7 @@ func TestContainerLabelsIdentifyPool(t *testing.T) {
 
 func TestContainerMountsBindDockerSocket(t *testing.T) {
 	engine := newTestEngine(t, Config{DockerSocket: "/custom/docker.sock"})
-	mounts := engine.containerMounts("worker-1", "project-1")
+	mounts := engine.containerMounts("worker-1")
 
 	if !hasMountWithReadOnly(mounts, "/custom/docker.sock", dockerSocketPath, false) {
 		t.Fatalf("mounts = %#v, missing Docker socket bind mount", mounts)
@@ -248,7 +266,7 @@ func TestContainerMountsBindConfiguredHostMounts(t *testing.T) {
 		{Source: "/home", ReadOnly: true},
 		{Source: "/Users", ReadOnly: true},
 	}})
-	mounts := engine.containerMounts("worker-1", "project-1")
+	mounts := engine.containerMounts("worker-1")
 
 	if !hasMountWithReadOnly(mounts, "/home", "/host/home", true) {
 		t.Fatalf("mounts = %#v, missing readonly /home host mount", mounts)
@@ -258,29 +276,34 @@ func TestContainerMountsBindConfiguredHostMounts(t *testing.T) {
 	}
 }
 
-func TestContainerMountsBindHostSandboxRoot(t *testing.T) {
+// Every state tree is bound at the very path the container addresses it by, so
+// code inside the pool never has to know where the host keeps it.
+func TestContainerMountsBindEveryStateTreeAtItsContainerPath(t *testing.T) {
 	engine := newTestEngine(t, Config{})
-	mounts := engine.containerMounts("worker-1", "project-1")
+	mounts := engine.containerMounts("worker-1")
 
-	if !hasMountWithReadOnly(mounts, workerHostSandboxRoot, "/host/var/lib/discobox/projects", false) {
-		t.Fatalf("mounts = %#v, missing worker host sandbox root bind mount", mounts)
-	}
-	m := findMount(mounts, workerHostSandboxRoot, "/host/var/lib/discobox/projects")
-	if m == nil || m.BindOptions == nil || !m.BindOptions.CreateMountpoint {
-		t.Fatalf("mounts = %#v, worker host sandbox root should create mountpoint", mounts)
+	for _, tree := range layout.MountRoots() {
+		if !hasMountWithReadOnly(mounts, tree, tree, false) {
+			t.Fatalf("mounts = %#v, missing bind mount for state tree %q", mounts, tree)
+		}
+		m := findMount(mounts, tree, tree)
+		if m == nil || m.BindOptions == nil || !m.BindOptions.CreateMountpoint {
+			t.Fatalf("mounts = %#v, state tree %q should create its mountpoint", mounts, tree)
+		}
 	}
 }
 
-func TestContainerMountsBindHostCacheRoot(t *testing.T) {
-	engine := newTestEngine(t, Config{})
-	mounts := engine.containerMounts("worker-1", "project-1")
+// A driver whose daemon keeps state somewhere else relocates only the host
+// side; the container path is unchanged.
+func TestContainerMountsRelocateOnlyTheHostSideOfStateTrees(t *testing.T) {
+	engine := newTestEngine(t, Config{HostStateRoot: "/var/lib/docker/discobox"})
+	mounts := engine.containerMounts("worker-1")
 
-	if !hasMountWithReadOnly(mounts, workerHostCacheRoot, "/host/var/lib/discobox/cache", false) {
-		t.Fatalf("mounts = %#v, missing worker host cache root bind mount", mounts)
-	}
-	m := findMount(mounts, workerHostCacheRoot, "/host/var/lib/discobox/cache")
-	if m == nil || m.BindOptions == nil || !m.BindOptions.CreateMountpoint {
-		t.Fatalf("mounts = %#v, worker host cache root should create mountpoint", mounts)
+	for _, tree := range layout.MountRoots() {
+		host := "/var/lib/docker/discobox" + strings.TrimPrefix(tree, layout.ContainerRoot)
+		if !hasMountWithReadOnly(mounts, host, tree, false) {
+			t.Fatalf("mounts = %#v, state tree %q should bind from %q", mounts, tree, host)
+		}
 	}
 }
 
@@ -289,7 +312,7 @@ func TestConfiguredDockerSocketIsSeparateFromHostMountTargeting(t *testing.T) {
 		DockerSocket: "/run/user/1000/docker.sock",
 		HostMounts:   []HostMount{{Source: dockerSocketPath}},
 	})
-	mounts := engine.containerMounts("worker-1", "project-1")
+	mounts := engine.containerMounts("worker-1")
 
 	if !hasMountWithReadOnly(mounts, "/run/user/1000/docker.sock", dockerSocketPath, false) {
 		t.Fatalf("mounts = %#v, missing configured Docker socket bind", mounts)
@@ -301,13 +324,18 @@ func TestConfiguredDockerSocketIsSeparateFromHostMountTargeting(t *testing.T) {
 
 func TestSystemdContainerMountsScopeVolumes(t *testing.T) {
 	engine := newTestEngine(t, Config{Systemd: true})
-	mounts := engine.containerMounts("worker:one", "project:one")
+	mounts := engine.containerMounts("worker:one")
 
 	if !hasVolumeMount(mounts, "discobox-pool-worker-one-docker", "/var/lib/docker") {
 		t.Fatalf("mounts = %#v, missing pool-scoped Docker volume", mounts)
 	}
-	if !hasVolumeMount(mounts, "discobox-project-project-one-discobox", "/var/lib/discobox") {
-		t.Fatalf("mounts = %#v, missing project-scoped Discobox volume", mounts)
+	// The nested daemon's own storage stays a named volume: it is the pool's
+	// scratch image store, and Docker's own graph driver needs a real Linux
+	// filesystem underneath it. Discobox state does not — it is bound.
+	for _, m := range mounts {
+		if m.Type == mount.TypeVolume && strings.HasPrefix(m.Target, layout.ContainerRoot) {
+			t.Fatalf("mounts = %#v, Discobox state must be bound, not a named volume", mounts)
+		}
 	}
 }
 
@@ -332,7 +360,7 @@ func TestHostMountJSONAcceptsDockerStyleStrings(t *testing.T) {
 		t.Fatalf("decode host mounts: %v", err)
 	}
 	engine := newTestEngine(t, Config{HostMounts: mounts})
-	containerMounts := engine.containerMounts("worker-1", "project-1")
+	containerMounts := engine.containerMounts("worker-1")
 
 	if !hasMountWithReadOnly(containerMounts, "/home", "/host/home", true) {
 		t.Fatalf("mounts = %#v, missing readonly /home mount", containerMounts)

@@ -1,12 +1,14 @@
 package dockerworker
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/netip"
 	"regexp"
 	"sort"
@@ -15,12 +17,15 @@ import (
 	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
+	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 
+	"github.com/obot-platform/discobox/layout"
 	poolagent "github.com/obot-platform/discobox/pool-agent"
+	"github.com/obot-platform/discobox/pool-agent/endpoint"
 	"github.com/obot-platform/discobox/pool-agent/proxyagent"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
@@ -28,6 +33,10 @@ import (
 )
 
 const (
+	// containerLogTailLines and containerLogLimit bound the diagnostic output
+	// attached to a failed container: only the tail explains a startup failure.
+	containerLogTailLines     = 100
+	containerLogLimit         = 16 << 10
 	defaultAgentPort          = 3002
 	defaultDockerReadyWait    = 3 * time.Minute
 	dockerReadyPollDelay      = 2 * time.Second
@@ -35,13 +44,7 @@ const (
 	healthPollDelay           = 500 * time.Millisecond
 	dockerSocketPath          = "/var/run/docker.sock"
 	hostMountTargetRoot       = "/host"
-	workerHostSandboxRoot     = "/var/lib/discobox/projects"
-	workerHostCacheRoot       = "/var/lib/discobox/cache"
 	workerConfigLayoutVersion = 5
-	// workerHostProxyRoot mirrors proxyagent.Root. The worker writes per-sandbox
-	// proxy material here through the host-mount prefix; it must reach the host so
-	// the daemon can bind-mount that material into sandbox containers.
-	workerHostProxyRoot = "/var/lib/discobox/proxy"
 
 	LabelManaged            = "discobox.vm.managed"
 	LabelProjectID          = "discobox.project_id"
@@ -71,12 +74,15 @@ type Config struct {
 	// false the port is published on a loopback-only ephemeral port, for the
 	// local driver.
 	PublicAgentPort bool
-	// AgentVSOCKPort makes the pool-agent listen on AF_VSOCK instead of TCP.
-	// In this mode the engine creates no exposed port or Docker port binding.
-	AgentVSOCKPort uint32
-	// ControlPlaneVSOCKPort makes every pool-agent initiated control-plane
-	// request dial host CID 2 over AF_VSOCK.
-	ControlPlaneVSOCKPort uint32
+	// AgentListenURL is the transport URL the pool-agent binds inside the
+	// container. It defaults to TCP on AgentPort. When its scheme is not an IP
+	// transport — vsock:// for a libkrun microVM, unix:// for a guest whose
+	// helper terminates the socket — the engine creates no exposed port and no
+	// Docker port binding, because there is no TCP port to publish.
+	//
+	// The control plane's own address needs no companion field: ControlPlaneURL
+	// carries its transport in the scheme.
+	AgentListenURL string
 	// Systemd runs the image with systemd as PID 1.
 	Systemd bool
 	// Privileged overrides the privileged flag; defaults to the systemd value.
@@ -88,6 +94,32 @@ type Config struct {
 	// DockerSocket is the Docker socket path bound into the worker container
 	// so the worker agent can manage sandbox containers.
 	DockerSocket string
+	// RelaySocketDir is a directory on the filesystem of the Docker daemon
+	// hosting this pool — for a VM backend that is the guest, not the machine
+	// running the control plane — bound into the worker container at the same
+	// path. A backend whose control-plane transport is terminated by a relay
+	// beside the daemon puts that relay's socket here, so the agent reaches it
+	// with an ordinary unix:// URL.
+	//
+	// Both ends therefore live inside the same guest and the mount is a plain
+	// same-kernel bind, which a Unix socket requires: a socket cannot be shared
+	// over the 9p/virtiofs mount that crosses the VM boundary. Only regular
+	// files (the relay binary itself) travel that way.
+	//
+	// It is bound at the same path rather than under the host-mount root
+	// because the agent only dials it; there is no daemon-side path to
+	// translate. Empty for backends whose agent dials the control plane
+	// directly.
+	RelaySocketDir string
+	// HostStateRoot is where this pool's Docker daemon sees
+	// layout.ContainerRoot. Empty means the daemon sees the same paths the
+	// container does, which is the case for every backend whose guest keeps
+	// state at the conventional location. A backend sets it when it must place
+	// state elsewhere — wslc puts it on the only disk it persists.
+	//
+	// It changes only which paths the agent hands the daemon. Container-side
+	// paths are invariant; see the layout package.
+	HostStateRoot string
 	// HostMounts are additional host paths bound under the host-mount root.
 	HostMounts []HostMount
 	// ExtraHosts adds /etc/hosts entries, such as the Docker host gateway.
@@ -118,13 +150,22 @@ func New(cfg Config, driver Driver) (*Engine, error) {
 	if strings.TrimSpace(cfg.Image) == "" {
 		return nil, errors.New("dockerworker image is required")
 	}
-	if cfg.AgentVSOCKPort > 0 || cfg.ControlPlaneVSOCKPort > 0 {
-		if cfg.AgentVSOCKPort < 1024 || cfg.ControlPlaneVSOCKPort < 1024 {
-			return nil, errors.New("both agent and control-plane VSOCK ports must be at least 1024")
+	// The listen URL is the single description of where the agent binds. When a
+	// backend does not supply one, the agent listens on TCP so the container's
+	// published port keeps working exactly as before.
+	if strings.TrimSpace(cfg.AgentListenURL) == "" {
+		if cfg.AgentPort == 0 {
+			cfg.AgentPort = defaultAgentPort
 		}
+		cfg.AgentListenURL = endpoint.TCPListenURL(cfg.AgentPort)
 	}
-	if cfg.AgentVSOCKPort == 0 && cfg.AgentPort == 0 {
-		cfg.AgentPort = defaultAgentPort
+	if _, err := endpoint.Parse(cfg.AgentListenURL); err != nil {
+		return nil, fmt.Errorf("dockerworker agent listen URL: %w", err)
+	}
+	if strings.TrimSpace(cfg.ControlPlaneURL) != "" {
+		if _, err := endpoint.Parse(cfg.ControlPlaneURL); err != nil {
+			return nil, fmt.Errorf("dockerworker control plane URL: %w", err)
+		}
 	}
 	if cfg.DockerSocket = cleanAbsPath(cfg.DockerSocket); cfg.DockerSocket == "" {
 		cfg.DockerSocket = dockerSocketPath
@@ -361,17 +402,15 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	bootstrap.ControlPlaneURL = firstNonEmpty(bootstrap.ControlPlaneURL, e.cfg.ControlPlaneURL)
 	bootstrap.ProjectID = firstNonEmpty(bootstrap.ProjectID, pool.ProjectID)
 	bootstrap.PoolID = firstNonEmpty(bootstrap.PoolID, pool.ID)
-	if e.cfg.AgentVSOCKPort > 0 {
-		bootstrap.AgentPort = 0
-		bootstrap.AgentVSOCKPort = e.cfg.AgentVSOCKPort
-		bootstrap.ControlPlaneVSOCKPort = e.cfg.ControlPlaneVSOCKPort
-	} else if bootstrap.AgentPort == 0 {
-		bootstrap.AgentPort = e.cfg.AgentPort
-	}
-	// The worker manages sandbox containers through the bound Docker socket, so
-	// host paths it hands to the daemon must be translated through the
-	// host-mount prefix.
+	bootstrap.AgentListenURL = firstNonEmpty(bootstrap.AgentListenURL, e.cfg.AgentListenURL)
+	// The host-mount root now namespaces only *foreign* paths — the extra host
+	// mounts an operator configures, and a developer's own source directory.
+	// Discobox's own state is bind-mounted at the path the container already
+	// reads, so none of it is translated. An arbitrary host path cannot be
+	// mounted at its own location without risking collision with the container's
+	// filesystem, which is why this prefix survives for those.
 	bootstrap.HostMountPrefix = hostMountTargetRoot
+	bootstrap.HostStateRoot = e.cfg.HostStateRoot
 
 	config := &container.Config{
 		Image:  e.cfg.Image,
@@ -383,20 +422,25 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 		Privileged: e.privileged(),
 		ExtraHosts: append([]string(nil), e.cfg.ExtraHosts...),
 	}
+	// Only an IP listener has a port Docker can publish or curl can probe.
+	listen, err := endpoint.Parse(e.cfg.AgentListenURL)
+	if err != nil {
+		return nil, fmt.Errorf("agent listen URL: %w", err)
+	}
 	waitForHealth := true
-	if e.cfg.AgentVSOCKPort > 0 {
-		// The image's TCP curl healthcheck cannot probe a VSOCK-only listener.
-		// Container state plus the control plane's normal agent registration is
-		// the readiness signal for this transport.
-		config.Healthcheck = &container.HealthConfig{Test: []string{"NONE"}}
-		waitForHealth = false
-	} else {
+	if listen.IsIP() {
 		exposedPort, ok := agentNetworkPort(e.cfg.AgentPort)
 		if !ok {
 			return nil, fmt.Errorf("invalid harness port %d", e.cfg.AgentPort)
 		}
 		config.ExposedPorts = network.PortSet{exposedPort: struct{}{}}
 		hostConfig.PortBindings = network.PortMap{exposedPort: []network.PortBinding{e.agentPortBinding()}}
+	} else {
+		// The image's TCP curl healthcheck cannot probe a listener that is not
+		// on TCP. Container state plus the control plane's normal agent
+		// registration is the readiness signal for those transports.
+		config.Healthcheck = &container.HealthConfig{Test: []string{"NONE"}}
+		waitForHealth = false
 	}
 	// The pool envelope is the worker container limit: per-sandbox limits nest
 	// inside it, so overcommit falls out of the runtime hierarchy rather than
@@ -419,7 +463,7 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 		// 255 before it can even log.
 		hostConfig.CgroupnsMode = container.CgroupnsMode("private")
 	}
-	hostConfig.Mounts = e.containerMounts(pool.ID, pool.ProjectID)
+	hostConfig.Mounts = e.containerMounts(pool.ID)
 	if e.cfg.Systemd {
 		hostConfig.Tmpfs = map[string]string{"/run": "rw,noexec,nosuid,size=64m", "/run/lock": "rw,noexec,nosuid,size=64m", "/tmp": "rw,size=64m"}
 	}
@@ -560,29 +604,29 @@ func shouldRemoveExistingContainer(existing container.InspectResponse, desiredIm
 	return false
 }
 
-func (e *Engine) containerMounts(poolID, projectID string) []mount.Mount {
+func (e *Engine) containerMounts(poolID string) []mount.Mount {
 	mounts := []mount.Mount{{Type: mount.TypeBind, Source: e.cfg.DockerSocket, Target: dockerSocketPath}}
-	if !hasHostMountSource(e.cfg.HostMounts, workerHostSandboxRoot) {
-		mounts = append(mounts, mount.Mount{
-			Type:        mount.TypeBind,
-			Source:      workerHostSandboxRoot,
-			Target:      hostMountTarget(workerHostSandboxRoot),
-			BindOptions: &mount.BindOptions{CreateMountpoint: true},
-		})
+	// Bound at the same path rather than under the host-mount root, like the
+	// Docker socket above: the agent only dials it, so there is no host path to
+	// translate. The backend's guest-side relay owns the socket in this
+	// directory; backends without one leave the field empty.
+	if dir := cleanAbsPath(e.cfg.RelaySocketDir); dir != "" {
+		mounts = append(mounts, mount.Mount{Type: mount.TypeBind, Source: dir, Target: dir})
 	}
-	if !hasHostMountSource(e.cfg.HostMounts, workerHostProxyRoot) {
+	// The state trees come from the shared layout package, so the engine, the
+	// agent, and the proxy cannot drift on where anything lives.
+	hostState := layout.NewHostMapping(e.cfg.HostStateRoot)
+	for _, tree := range layout.MountRoots() {
+		if hasHostMountSource(e.cfg.HostMounts, tree) {
+			continue
+		}
 		mounts = append(mounts, mount.Mount{
-			Type:        mount.TypeBind,
-			Source:      workerHostProxyRoot,
-			Target:      hostMountTarget(workerHostProxyRoot),
-			BindOptions: &mount.BindOptions{CreateMountpoint: true},
-		})
-	}
-	if !hasHostMountSource(e.cfg.HostMounts, workerHostCacheRoot) {
-		mounts = append(mounts, mount.Mount{
-			Type:        mount.TypeBind,
-			Source:      workerHostCacheRoot,
-			Target:      hostMountTarget(workerHostCacheRoot),
+			Type: mount.TypeBind,
+			// The source is where the daemon keeps the tree; the target is the
+			// container's invariant view of it. They differ only when a backend
+			// relocates its state root.
+			Source:      hostState.HostPath(tree),
+			Target:      tree,
 			BindOptions: &mount.BindOptions{CreateMountpoint: true},
 		})
 	}
@@ -599,9 +643,11 @@ func (e *Engine) containerMounts(poolID, projectID string) []mount.Mount {
 		// namespace Docker mounts a writable cgroup2 hierarchy for the container,
 		// which systemd requires. The host bind mount would shadow it with the
 		// read-only host cgroup root.
+		// Only the nested daemon's own storage is a named volume. Discobox state
+		// is bind-mounted above, at the same path the container reads, so no
+		// path translation is needed anywhere inside the pool.
 		mounts = append(mounts,
 			mount.Mount{Type: mount.TypeVolume, Source: poolScopedVolumeName(poolID, "docker"), Target: "/var/lib/docker"},
-			mount.Mount{Type: mount.TypeVolume, Source: projectScopedVolumeName(projectID, "discobox"), Target: "/var/lib/discobox"},
 		)
 	}
 	return mounts
@@ -615,6 +661,12 @@ func (e *Engine) waitContainerReady(ctx context.Context, cli *client.Client, id 
 			return nil, mapDockerNotFound(err)
 		}
 		err = containerReadyError(inspect.Container)
+		if err != nil && inspect.Container.State != nil && !inspect.Container.State.Running {
+			// A pool-agent container that exits reports only its status, which
+			// says nothing about why. Its own output is the only explanation
+			// available, and it is gone once the container is replaced.
+			err = fmt.Errorf("%w%s", err, containerLogSuffix(ctx, cli, id))
+		}
 		if err == nil {
 			if !wait || containerHasHealth(inspect.Container) || time.Now().After(noHealthDeadline) {
 				return &inspect.Container, nil
@@ -769,4 +821,31 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+// containerLogSuffix returns the tail of a container's output, formatted for
+// appending to an error. It is best effort: a diagnostic must never replace the
+// failure it is explaining.
+func containerLogSuffix(ctx context.Context, cli *client.Client, id string) string {
+	logs, err := cli.ContainerLogs(ctx, id, client.ContainerLogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Tail:       strconv.Itoa(containerLogTailLines),
+	})
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = logs.Close() }()
+
+	var buf bytes.Buffer
+	// Container output is stream-multiplexed unless the container has a TTY;
+	// demultiplexing keeps the frame headers out of the message.
+	if _, err := stdcopy.StdCopy(&buf, &buf, io.LimitReader(logs, containerLogLimit)); err != nil && buf.Len() == 0 {
+		return ""
+	}
+	output := strings.TrimSpace(buf.String())
+	if output == "" {
+		return ""
+	}
+	return "\ncontainer output:\n" + output
 }

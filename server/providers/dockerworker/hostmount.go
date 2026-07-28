@@ -4,10 +4,18 @@ import (
 	"encoding/json"
 	"sort"
 	"strings"
+
+	"github.com/obot-platform/discobox/layout"
 )
 
-// HostMount describes a host path mounted into pool-agent containers under
-// the host-mount target root.
+// HostMount describes an additional host path mounted into pool-agent
+// containers under the host-mount target root.
+//
+// These are foreign paths — an operator's extra mounts, or a developer's own
+// source directory. They are namespaced under that root because an arbitrary
+// host path cannot safely be mounted at its own location inside the container.
+// Discobox's own state is not one of these: it is bind-mounted at the path the
+// container already reads. See the layout package.
 type HostMount struct {
 	Source   string `json:"source,omitempty"`
 	ReadOnly bool   `json:"readOnly,omitempty"`
@@ -49,6 +57,19 @@ func parseHostMount(value string) HostMount {
 		}
 	}
 	return HostMount{Source: value, ReadOnly: readOnly}
+}
+
+// RequiredHostDirs are the directories the engine bind-mounts into every
+// pool-agent container. Docker's mount API does not create a missing bind
+// source, so a driver whose guest does not already have them must create them
+// before the container starts.
+//
+// Backends with a purpose-built guest image (libkrun) create these in the image.
+// A backend running a stock guest (wslc) has to make them itself, and the
+// failure is otherwise an opaque "bind source path does not exist" at container
+// create, long after the driver has finished.
+func RequiredHostDirs() []string {
+	return layout.MountRoots()
 }
 
 // NormalizeHostMounts cleans, deduplicates, and sorts host mounts.
