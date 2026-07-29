@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -26,6 +27,34 @@ import (
 	"gorm.io/gorm/clause"
 	"gorm.io/gorm/logger"
 )
+
+// sqliteMaxVariables is SQLite's compiled-in ceiling on host parameters in a
+// single statement. GORM binds one parameter per column per row, so any insert
+// whose row count scales with repository size must be chunked; otherwise SQLite
+// rejects the whole statement with "too many SQL variables".
+const sqliteMaxVariables = 32766
+
+// sqliteVariableBudget is the per-statement parameter budget for chunked
+// statements. It sits below sqliteMaxVariables because a statement binds
+// parameters outside its per-row values — an upsert, for example, adds an
+// assignment for the auto-updated timestamp column — and sizing chunks to the
+// exact ceiling overflows by those few.
+const sqliteVariableBudget = sqliteMaxVariables - 64
+
+// createInBatches inserts rows in chunks sized from the model's column count so
+// no single statement exceeds sqliteVariableBudget. Generated primary keys are
+// written back into rows, matching plain Create.
+func createInBatches[T any](db *gorm.DB, rows []T) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	stmt := &gorm.Statement{DB: db}
+	if err := stmt.Parse(&rows); err != nil {
+		return err
+	}
+	columns := max(len(stmt.Schema.DBNames), 1)
+	return db.CreateInBatches(&rows, max(sqliteVariableBudget/columns, 1)).Error
+}
 
 // ObservedFileChange is returned by observed-change APIs with kind restored to
 // the watcher enum used by the daemon.
@@ -805,7 +834,7 @@ func (s *Store) RecordObservedChanges(ctx context.Context, changes []ObservedFil
 	if len(rows) == 0 {
 		return nil, nil
 	}
-	if err := s.write.WithContext(ctx).Create(&rows).Error; err != nil {
+	if err := createInBatches(s.write.WithContext(ctx), rows); err != nil {
 		return nil, err
 	}
 	out := make([]ObservedFileChange, 0, len(rows))
@@ -1103,10 +1132,8 @@ func (s *Store) ReplaceDiagnosticsForURI(ctx context.Context, hookID, uri, path 
 				UpdatedAt: now,
 			})
 		}
-		if len(rows) > 0 {
-			if err := tx.Create(&rows).Error; err != nil {
-				return err
-			}
+		if err := createInBatches(tx, rows); err != nil {
+			return err
 		}
 		return setLSPStatusFromDiagnosticsTx(tx, hookID, now)
 	})
@@ -1338,6 +1365,46 @@ func (s *Store) LoadWatchedSnapshot(ctx context.Context) (map[string]watcher.Ent
 	return out, nil
 }
 
+// UpdateWatchedPaths applies one watcher diff to the persisted checkpoint.
+// Each path takes its new state from snapshot: paths still present are upserted
+// and paths missing from snapshot are deleted, so the written rows scale with
+// the diff instead of the repository. The checkpoint must already hold the rest
+// of the snapshot; seed a fresh table with ReplaceWatchedSnapshot first.
+func (s *Store) UpdateWatchedPaths(ctx context.Context, snapshot map[string]watcher.Entry, paths []string) error {
+	now := time.Now().UTC()
+	upserts := make([]models.WatchedFile, 0, len(paths))
+	deletes := make([]string, 0, len(paths))
+	seen := make(map[string]struct{}, len(paths))
+	for _, path := range paths {
+		path = filepath.ToSlash(path)
+		if path == "" || path == "." {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		entry, ok := snapshot[path]
+		if !ok {
+			deletes = append(deletes, path)
+			continue
+		}
+		upserts = append(upserts, watchedFileRow(path, entry, now))
+	}
+	if len(upserts) == 0 && len(deletes) == 0 {
+		return nil
+	}
+	return s.write.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for chunk := range slices.Chunk(deletes, sqliteVariableBudget) {
+			if err := tx.Where("path IN ?", chunk).Delete(&models.WatchedFile{}).Error; err != nil {
+				return err
+			}
+		}
+		upsert := tx.Clauses(clause.OnConflict{Columns: []clause.Column{{Name: "path"}}, UpdateAll: true})
+		return createInBatches(upsert, upserts)
+	})
+}
+
 // ReplaceWatchedSnapshot atomically replaces the persisted watcher snapshot.
 func (s *Store) ReplaceWatchedSnapshot(ctx context.Context, snapshot map[string]watcher.Entry) error {
 	now := time.Now().UTC()
@@ -1354,10 +1421,14 @@ func (s *Store) ReplaceWatchedSnapshot(ctx context.Context, snapshot map[string]
 			if path == "" || path == "." {
 				continue
 			}
-			rows = append(rows, models.WatchedFile{Path: path, IsDir: entry.IsDir, Size: entry.Size, Mode: uint32(entry.Mode), ModTime: entry.ModTime, UpdatedAt: now})
+			rows = append(rows, watchedFileRow(path, entry, now))
 		}
-		return tx.Create(&rows).Error
+		return createInBatches(tx, rows)
 	})
+}
+
+func watchedFileRow(path string, entry watcher.Entry, now time.Time) models.WatchedFile {
+	return models.WatchedFile{Path: path, IsDir: entry.IsDir, Size: entry.Size, Mode: uint32(entry.Mode), ModTime: entry.ModTime, UpdatedAt: now}
 }
 
 func ChangedFilesFromWatcher(changes []watcher.Change) []models.ChangedFile {

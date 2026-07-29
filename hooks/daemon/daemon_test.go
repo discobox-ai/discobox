@@ -705,6 +705,160 @@ func TestFlushBatchPersistsWatchedSnapshotAfterDurableProcessing(t *testing.T) {
 	}
 }
 
+// newCheckpointRuntime builds a runtime whose checkpoint already holds legacy.txt,
+// a path outside the batch. A diff-based persist must leave it alone; a full
+// snapshot rewrite drops it.
+func newCheckpointRuntime(ctx context.Context, t *testing.T) (*runtimeState, *hookstore.Store, map[string]watcher.Entry) {
+	t.Helper()
+	repo := t.TempDir()
+	gitTestCommand(t, repo, "init")
+	gitTestCommand(t, repo, "config", "user.email", "test@example.com")
+	gitTestCommand(t, repo, "config", "user.name", "Test User")
+	if err := os.WriteFile(filepath.Join(repo, "app.go"), []byte("package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	st, err := hookstore.Open(ctx, hookstore.Options{Path: filepath.Join(t.TempDir(), "hooks.db")})
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	modTime := time.Now().UTC()
+	if err := st.ReplaceWatchedSnapshot(ctx, map[string]watcher.Entry{
+		"app.go":      {Path: "app.go", Size: 1, ModTime: modTime},
+		"legacy.txt":  {Path: "legacy.txt", Size: 2, ModTime: modTime},
+		"removed.txt": {Path: "removed.txt", Size: 3, ModTime: modTime},
+	}); err != nil {
+		t.Fatalf("seed checkpoint: %v", err)
+	}
+
+	// removed.txt is gone from the watcher's snapshot and reported as deleted;
+	// legacy.txt is absent from the snapshot but was never reported.
+	snapshot := map[string]watcher.Entry{
+		"app.go": {Path: "app.go", Size: 13, ModTime: modTime.Add(time.Minute)},
+	}
+	r := &runtimeState{
+		cfg:         Config{RepoRoot: repo},
+		store:       st,
+		discovery:   &parser.Discovery{},
+		ctx:         ctx,
+		drainSignal: make(chan struct{}, 1),
+	}
+	r.addBatch([]watcher.Change{
+		{Path: "app.go", Kind: watcher.Modified},
+		{Path: "removed.txt", Kind: watcher.Deleted},
+	}, snapshot)
+	return r, st, snapshot
+}
+
+func TestFlushBatchPersistsOnlyChangedCheckpointPaths(t *testing.T) {
+	ctx := context.Background()
+	r, st, _ := newCheckpointRuntime(ctx, t)
+
+	r.flushBatch()
+
+	after, err := st.LoadWatchedSnapshot(ctx)
+	if err != nil {
+		t.Fatalf("load checkpoint: %v", err)
+	}
+	if got := after["app.go"]; got.Size != 13 {
+		t.Fatalf("changed path not updated: %#v", after)
+	}
+	if _, ok := after["removed.txt"]; ok {
+		t.Fatalf("deleted path still in checkpoint: %#v", after)
+	}
+	if _, ok := after["legacy.txt"]; !ok {
+		t.Fatalf("checkpoint was rewritten in full instead of by diff: %#v", after)
+	}
+	if r.checkpointStale {
+		t.Fatal("checkpoint marked stale after a successful write")
+	}
+}
+
+func TestFlushBatchRewritesStaleCheckpointInFull(t *testing.T) {
+	ctx := context.Background()
+	r, st, snapshot := newCheckpointRuntime(ctx, t)
+	r.checkpointStale = true
+
+	r.flushBatch()
+
+	after, err := st.LoadWatchedSnapshot(ctx)
+	if err != nil {
+		t.Fatalf("load checkpoint: %v", err)
+	}
+	if len(after) != len(snapshot) {
+		t.Fatalf("stale checkpoint was not rewritten in full: %#v", after)
+	}
+	if _, ok := after["legacy.txt"]; ok {
+		t.Fatalf("full rewrite kept a path outside the snapshot: %#v", after)
+	}
+	if r.checkpointStale {
+		t.Fatal("checkpoint still stale after a successful rewrite")
+	}
+}
+
+// A batch that never became durable is not in the checkpoint and will not be in
+// any later diff either, so it has to force a full rewrite rather than be
+// silently skipped.
+func TestFlushBatchMarksCheckpointStaleWhenBatchIsNotRecorded(t *testing.T) {
+	ctx := context.Background()
+	r, st, _ := newCheckpointRuntime(ctx, t)
+	if err := st.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+
+	r.flushBatch()
+
+	if !r.checkpointStale {
+		t.Fatal("unrecorded batch did not mark the checkpoint stale")
+	}
+}
+
+// A failed diff leaves the checkpoint missing that diff forever, so the next
+// persist has to rewrite the whole snapshot rather than apply another diff.
+func TestPersistWatchedCheckpointRecoversFromFailedWrite(t *testing.T) {
+	ctx := context.Background()
+	r, st, snapshot := newCheckpointRuntime(ctx, t)
+	changes := []watcher.Change{{Path: "app.go", Kind: watcher.Modified}}
+	if err := st.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+
+	r.persistWatchedCheckpoint(snapshot, changes)
+	if !r.checkpointStale {
+		t.Fatal("failed checkpoint write did not mark the checkpoint stale")
+	}
+
+	recovered, err := hookstore.Open(ctx, hookstore.Options{Path: filepath.Join(t.TempDir(), "hooks.db")})
+	if err != nil {
+		t.Fatalf("open replacement store: %v", err)
+	}
+	defer recovered.Close()
+	if err := recovered.ReplaceWatchedSnapshot(ctx, map[string]watcher.Entry{
+		"legacy.txt": {Path: "legacy.txt", Size: 2},
+	}); err != nil {
+		t.Fatalf("seed replacement checkpoint: %v", err)
+	}
+	r.store = recovered
+
+	r.persistWatchedCheckpoint(snapshot, changes)
+
+	if r.checkpointStale {
+		t.Fatal("checkpoint still stale after a successful rewrite")
+	}
+	after, err := recovered.LoadWatchedSnapshot(ctx)
+	if err != nil {
+		t.Fatalf("load checkpoint: %v", err)
+	}
+	if _, ok := after["legacy.txt"]; ok {
+		t.Fatalf("recovery applied a diff instead of rewriting the snapshot: %#v", after)
+	}
+	if got := after["app.go"]; got.Size != 13 {
+		t.Fatalf("recovery did not write the current snapshot: %#v", after)
+	}
+}
+
 func TestFlushBatchQueuesWhenGitIgnoreFailsOpen(t *testing.T) {
 	ctx := context.Background()
 	repo := t.TempDir()
@@ -855,7 +1009,7 @@ func TestCaptureWorkspaceSnapshotSkipsUnchangedOmittedOnlySnapshot(t *testing.T)
 		t.Fatalf("open store: %v", err)
 	}
 	defer st.Close()
-	r := &runtimeState{cfg: Config{RepoRoot: repo}, store: st, ctx: ctx}
+	r := &runtimeState{cfg: Config{RepoRoot: repo, TempDir: filepath.Join(t.TempDir(), "session-tmp")}, store: st, ctx: ctx}
 
 	first, err := r.captureWorkspaceSnapshot(ctx)
 	if err != nil {
@@ -898,7 +1052,7 @@ func TestCaptureWorkspaceSnapshotRenamedFileRemovesOldPath(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	defer st.Close()
-	r := &runtimeState{cfg: Config{RepoRoot: repo}, store: st, ctx: ctx}
+	r := &runtimeState{cfg: Config{RepoRoot: repo, TempDir: filepath.Join(t.TempDir(), "session-tmp")}, store: st, ctx: ctx}
 
 	snapshot, err := r.captureWorkspaceSnapshot(ctx)
 	if err != nil {

@@ -1855,7 +1855,24 @@ func writeJSONLine(w io.Writer, value any) error {
 }
 
 func writeEventTableRow(w io.Writer, event client.Event, formatTime func(time.Time) string) {
-	fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", event.ID, formatTime(event.CreatedAt), event.Type, event.HookID, formatRunID(event.RunID), event.Message)
+	fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n", event.ID, formatTime(event.CreatedAt), event.Type, event.HookID, formatRunID(event.RunID), eventMessage(event))
+}
+
+// eventMessage renders the MESSAGE column. Failure events keep their cause in
+// the "error" detail, so append it here to make a table row self-explanatory
+// instead of forcing a second lookup in JSON output.
+func eventMessage(event client.Event) string {
+	message := oneLine(event.Message)
+	detail, _ := event.Details["error"].(string)
+	detail = oneLine(detail)
+	switch {
+	case detail == "" || strings.Contains(message, detail):
+		return message
+	case message == "":
+		return detail
+	default:
+		return message + ": " + detail
+	}
 }
 
 func formatEventTime(value time.Time) string {
