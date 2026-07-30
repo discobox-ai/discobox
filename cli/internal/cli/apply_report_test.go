@@ -146,3 +146,60 @@ func TestStatusLinesKeepPorcelainPrefixes(t *testing.T) {
 		}
 	}
 }
+
+// A blocked source has to name both ways out, and spell the re-run for this
+// exact source so neither has to be reassembled by hand.
+func TestDirtyNextStepsOfferBothCommitAndAllowDirty(t *testing.T) {
+	steps := dirtyNextSteps("sbx_23x11jnw03w11nf2", "primary", "/work/disco2", nil)
+	if len(steps) != 2 {
+		t.Fatalf("got %d next steps, want 2: %+v", len(steps), steps)
+	}
+	if want := "disco exec --sandbox-id sbx_23x11jnw03w11nf2 -- git -C /work/disco2 commit -a -m MESSAGE"; steps[0].Commands[0] != want {
+		t.Fatalf("commit command = %q, want %q", steps[0].Commands[0], want)
+	}
+	if want := "disco apply sbx_23x11jnw03w11nf2 --source primary"; steps[0].Commands[1] != want {
+		t.Fatalf("re-run command = %q, want %q", steps[0].Commands[1], want)
+	}
+	if want := "disco apply sbx_23x11jnw03w11nf2 --source primary --allow-dirty"; steps[1].Commands[0] != want {
+		t.Fatalf("allow-dirty command = %q, want %q", steps[1].Commands[0], want)
+	}
+}
+
+// A source applied through --dir has no default local directory, so a re-run
+// that dropped the override would fail the same way every time.
+func TestDirtyNextStepsCarryDirOverride(t *testing.T) {
+	steps := dirtyNextSteps("sbx_1", "web", "/work/web", map[string]string{"web": "/home/ada/src/web"})
+	for _, step := range steps {
+		for _, command := range step.Commands {
+			if strings.HasPrefix(command, "disco apply") && !strings.Contains(command, "--dir web=/home/ada/src/web") {
+				t.Fatalf("re-run dropped the --dir override: %q", command)
+			}
+		}
+	}
+}
+
+func TestNextStepsPrintDescriptionThenCommands(t *testing.T) {
+	var buf bytes.Buffer
+	applyPrinter{out: &buf, on: true}.nextSteps(dirtyNextSteps("sbx_1", "primary", "/work", nil))
+	out := buf.String()
+	for _, want := range []string{
+		"    commit them in the sandbox, then apply again:",
+		"      disco apply sbx_1 --source primary\n",
+		"    or apply only what is already committed, leaving them in the sandbox:",
+		"      disco apply sbx_1 --source primary --allow-dirty\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("output missing %q:\n%s", want, out)
+		}
+	}
+}
+
+// Porcelain entries and commands are data, never format strings: a path with a
+// percent verb in it must survive verbatim.
+func TestDetailLinesDoNotInterpretFormatVerbs(t *testing.T) {
+	var buf bytes.Buffer
+	applyPrinter{out: &buf, on: true}.detailLines([]string{"?? weird%s%dname.txt"})
+	if !strings.Contains(buf.String(), "?? weird%s%dname.txt") {
+		t.Fatalf("line was reformatted: %q", buf.String())
+	}
+}

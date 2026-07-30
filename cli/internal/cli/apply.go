@@ -23,6 +23,7 @@ import (
 func (a *App) newApplyCommand() *cobra.Command {
 	var sourceSlug string
 	var dirOverrides []string
+	var allowDirty bool
 	cmd := &cobra.Command{
 		Use:   "apply [SANDBOX_ID] [flags]",
 		Short: "Apply a sandbox's committed source changes onto a local working tree",
@@ -45,9 +46,14 @@ created on a different machine, or a remote-cloned source) needs an explicit
 --dir slug=path.
 
 Uncommitted changes in the sandbox are never applied: only what has been
-committed there. If cherry-picking a source's commits does not apply cleanly,
-nothing about the local repository changes; the commands to reproduce and
-resolve it manually are printed instead.
+committed there. A source whose sandbox working tree is dirty is reported and
+skipped, so nothing lands from a half-finished state by accident.
+--allow-dirty applies that source's committed commits anyway and leaves the
+uncommitted ones where they are.
+
+If cherry-picking a source's commits does not apply cleanly, nothing about the
+local repository changes; the commands to reproduce and resolve it manually are
+printed instead.
 
 Every source reports both repositories, the base commit the range is taken
 from and why, each commit being applied, and the local commit each one
@@ -64,11 +70,12 @@ became. Use -o json for the same report as a machine-readable object, and
 			if err != nil {
 				return err
 			}
-			return a.runApply(cmd, sandboxArg, sourceSlug, overrides)
+			return a.runApply(cmd, sandboxArg, sourceSlug, overrides, allowDirty)
 		},
 	}
 	cmd.Flags().StringVar(&sourceSlug, "source", "", "Apply only the source with this slug, instead of every source on the sandbox")
 	cmd.Flags().StringArrayVar(&dirOverrides, "dir", nil, "Local directory to apply a source into, as slug=path; required for a source with no known local directory on this machine")
+	cmd.Flags().BoolVar(&allowDirty, "allow-dirty", false, "Apply a source's committed commits even when the sandbox has uncommitted changes; they stay in the sandbox either way")
 	return cmd
 }
 
@@ -85,7 +92,7 @@ func parseDirOverrides(values []string) (map[string]string, error) {
 	return out, nil
 }
 
-func (a *App) runApply(cmd *cobra.Command, sandboxArg, onlySlug string, dirOverrides map[string]string) error {
+func (a *App) runApply(cmd *cobra.Command, sandboxArg, onlySlug string, dirOverrides map[string]string, allowDirty bool) error {
 	ctx := cmd.Context()
 	projectID, sandboxID, client, err := a.selectSandbox(cmd, sandboxArg)
 	if err != nil {
@@ -141,7 +148,7 @@ func (a *App) runApply(cmd *cobra.Command, sandboxArg, onlySlug string, dirOverr
 	report := applyReport{SandboxID: sandboxID, SandboxName: sandbox.Config.Name}
 	printer.sandboxHeader(report, len(sources))
 	for _, s := range sources {
-		report.Sources = append(report.Sources, a.applyOneSource(ctx, printer, client, projectID, sandboxID, sandbox, host, gitServerURL, s, dirOverrides))
+		report.Sources = append(report.Sources, a.applyOneSource(ctx, printer, client, projectID, sandboxID, sandbox, host, gitServerURL, s, dirOverrides, allowDirty))
 	}
 	printer.summary(report)
 	if a.output == "json" {
@@ -241,7 +248,7 @@ func lastAppliedCommit(sandbox *apimodel.Sandbox, slug string) string {
 // the way. It never returns an error: every outcome, failure included, is a
 // status on the returned report, so the caller renders them all the same way
 // and no failure loses the context the run had already established.
-func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *apiclientgen.Client, projectID, sandboxID string, sandbox *apimodel.Sandbox, hostID, gitServerURL string, entry applySourceEntry, dirOverrides map[string]string) applySourceReport {
+func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *apiclientgen.Client, projectID, sandboxID string, sandbox *apimodel.Sandbox, hostID, gitServerURL string, entry applySourceEntry, dirOverrides map[string]string, allowDirty bool) applySourceReport {
 	report := applySourceReport{Slug: entry.slug, Status: applyStatusError}
 	fail := func(format string, args ...any) applySourceReport {
 		report.Status = applyStatusError
@@ -278,23 +285,28 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 		if err != nil {
 			return fail("check sandbox working tree: %v", err)
 		}
-		if dirty {
+		switch {
+		case dirty && !allowDirty:
 			report.Status = applyStatusBlocked
 			report.UncommittedChanges = statusLines(status)
-			report.NextSteps = []string{
-				fmt.Sprintf("disco exec --sandbox-id %s -- git -C %s commit -a -m MESSAGE", sandboxID, report.SandboxDir),
-				fmt.Sprintf("disco apply %s --source %s", sandboxID, entry.slug),
-			}
+			report.NextSteps = dirtyNextSteps(sandboxID, entry.slug, report.SandboxDir, dirOverrides)
 			printer.step("BLOCKED: the sandbox has %d uncommitted %s; only committed work is applied",
 				len(report.UncommittedChanges), pluralize("change", len(report.UncommittedChanges)))
-			for _, line := range report.UncommittedChanges {
-				printer.detail("%s", line)
-			}
-			printer.step("commit them in the sandbox, then apply again:")
+			printer.detailLines(report.UncommittedChanges)
 			printer.nextSteps(report.NextSteps)
 			return report
+		case dirty:
+			// --allow-dirty. The uncommitted work is still listed: it stays in
+			// the sandbox, and the whole point of the flag is that the user
+			// chose to leave it there rather than not knowing about it.
+			report.UncommittedChanges = statusLines(status)
+			report.DirtyIgnored = true
+			printer.step("--allow-dirty: applying anyway; %d uncommitted %s stay in the sandbox and are not applied",
+				len(report.UncommittedChanges), pluralize("change", len(report.UncommittedChanges)))
+			printer.detailLines(report.UncommittedChanges)
+		default:
+			printer.detail("clean, nothing uncommitted")
 		}
-		printer.detail("clean, nothing uncommitted")
 	}
 
 	printer.step("fetching the sandbox's commits into %s", report.SandboxRef)
@@ -343,12 +355,12 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 		// The fetch above already landed the ref locally in repoRoot, so no
 		// further "git fetch" is needed here — only the cherry-pick that
 		// actually reproduces the conflict.
-		report.NextSteps = []string{
-			fmt.Sprintf("git -C %s cherry-pick %s..%s", repoRoot, shortSHA(report.Base), report.SandboxRef),
-		}
+		report.NextSteps = []applyNextStep{{
+			Description: fmt.Sprintf("reproduce and resolve it in %s directly", repoRoot),
+			Commands:    []string{fmt.Sprintf("git -C %s cherry-pick %s..%s", repoRoot, shortSHA(report.Base), report.SandboxRef)},
+		}}
 		printer.step("CONFLICT: %s%s did not apply cleanly", shortSHA(report.ConflictCommit), quoteSubject(commitSubject(report.Commits, report.ConflictCommit)))
 		printer.step("nothing in %s changed; local %s is still at %s", repoRoot, applyTarget(report), shortSHA(report.HostBase))
-		printer.step("reproduce and resolve it there directly:")
 		printer.nextSteps(report.NextSteps)
 		return report
 	}
@@ -393,6 +405,30 @@ func commitSubject(commits []applyCommit, sha string) string {
 		}
 	}
 	return ""
+}
+
+// dirtyNextSteps is the two ways out of a dirty sandbox working tree: commit
+// the work there and apply it too, or apply only what is already committed and
+// leave the rest. Both re-runs are spelled out for this exact source, --dir
+// override included, so neither has to be reassembled by hand.
+func dirtyNextSteps(sandboxID, slug, sandboxDir string, dirOverrides map[string]string) []applyNextStep {
+	rerun := fmt.Sprintf("disco apply %s --source %s", sandboxID, slug)
+	if dir, ok := dirOverrides[slug]; ok {
+		rerun += fmt.Sprintf(" --dir %s=%s", slug, dir)
+	}
+	return []applyNextStep{
+		{
+			Description: "commit them in the sandbox, then apply again",
+			Commands: []string{
+				fmt.Sprintf("disco exec --sandbox-id %s -- git -C %s commit -a -m MESSAGE", sandboxID, sandboxDir),
+				rerun,
+			},
+		},
+		{
+			Description: "or apply only what is already committed, leaving them in the sandbox",
+			Commands:    []string{rerun + " --allow-dirty"},
+		},
+	}
 }
 
 // statusLines splits `git status --porcelain` output into its entries, keeping

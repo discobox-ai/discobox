@@ -250,8 +250,15 @@ identifiers and JSON keys keep ADR 0014's `Host*` vocabulary.
   `applyOneSource` returns a report instead of an error, so a failed source
   keeps the context the run had already established rather than collapsing to
   one error line. The command's returned error is only the closing verdict.
-- Failure statuses carry `nextSteps`: literal commands that resolve them,
-  runnable by a human or an agent as printed.
+- Failure statuses carry `nextSteps`: described sets of literal commands that
+  resolve them, runnable by a human or an agent as printed. More than one step
+  means alternatives, not a sequence — a dirty sandbox offers both committing
+  the work there and `--allow-dirty` — and each re-run is spelled out for that
+  source, `--dir` override included.
+- `--allow-dirty` applies a source whose sandbox working tree is dirty. The
+  status check still runs and its entries are still reported (with
+  `dirtyIgnored`): the flag means the user chose to leave that work in the
+  sandbox, not that nobody needs to know it is there.
 - `--debug` additionally echoes every git command as it runs, via
   `gitutil.WithTracer`, on stderr so it never interleaves into the report.
   `gitutil` redacts credentials in traced arguments centrally, so no new git

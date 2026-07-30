@@ -80,13 +80,25 @@ type applySourceReport struct {
 	// carrying the host commit it became once applied.
 	Commits []applyCommit `json:"commits,omitempty"`
 
-	// Set on the failure statuses.
-	ConflictCommit     string   `json:"conflictCommit,omitempty"`
+	// ConflictCommit is set when Status is conflict.
+	ConflictCommit string `json:"conflictCommit,omitempty"`
+	// UncommittedChanges is the sandbox working tree's `git status --porcelain`
+	// entries, set whenever it was dirty — whether that blocked the source or
+	// was applied over with --allow-dirty.
 	UncommittedChanges []string `json:"uncommittedChanges,omitempty"`
-	// NextSteps are literal commands that resolve the failure, ready to run
-	// by a human or an agent.
-	NextSteps []string `json:"nextSteps,omitempty"`
-	Error     string   `json:"error,omitempty"`
+	// DirtyIgnored records that --allow-dirty applied this source over those
+	// uncommitted changes, which is why a dirty sandbox did not block it.
+	DirtyIgnored bool `json:"dirtyIgnored,omitempty"`
+	// NextSteps are the ways out of a failure, each a described set of literal
+	// commands ready to run by a human or an agent. More than one step means
+	// alternatives, not a sequence.
+	NextSteps []applyNextStep `json:"nextSteps,omitempty"`
+	Error     string          `json:"error,omitempty"`
+}
+
+type applyNextStep struct {
+	Description string   `json:"description"`
+	Commands    []string `json:"commands"`
 }
 
 type applyCommit struct {
@@ -194,12 +206,18 @@ func (p applyPrinter) appliedList(commits []applyCommit) {
 	}
 }
 
-func (p applyPrinter) nextSteps(steps []string) {
-	if len(steps) == 0 {
-		return
-	}
+func (p applyPrinter) nextSteps(steps []applyNextStep) {
 	for _, step := range steps {
-		p.detail("%s", step)
+		p.step("%s:", step.Description)
+		p.detailLines(step.Commands)
+	}
+}
+
+// detailLines prints already-formatted lines — porcelain status entries,
+// commands — without treating their contents as a format string.
+func (p applyPrinter) detailLines(lines []string) {
+	for _, line := range lines {
+		p.detail("%s", line)
 	}
 }
 
