@@ -19,14 +19,10 @@ const (
 	testDatabaseReadDSN = "postgres://user:pass@localhost/discobox_read"
 )
 
-// defaultListenFor is what an unconfigured server listens on for this platform:
-// local IPC always, plus HTTP only where a pool agent dials over IP.
-func defaultListenFor(port int) []string {
-	endpoints := []string{localipc.DefaultEndpoint()}
-	if defaultHTTPListener() {
-		endpoints = append(endpoints, controlplane.DefaultListenEndpoint(port))
-	}
-	return endpoints
+// defaultListen is what an unconfigured server listens on: local IPC and
+// nothing else. HTTP is opt-in on every platform.
+func defaultListen() []string {
+	return []string{localipc.DefaultEndpoint()}
 }
 
 func TestLoadDefaults(t *testing.T) {
@@ -40,8 +36,8 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.Port != controlplane.DefaultPort {
 		t.Fatalf("Port = %d, want %d", cfg.Port, controlplane.DefaultPort)
 	}
-	if !reflect.DeepEqual(cfg.Listen, defaultListenFor(controlplane.DefaultPort)) {
-		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, defaultListenFor(controlplane.DefaultPort))
+	if !reflect.DeepEqual(cfg.Listen, defaultListen()) {
+		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, defaultListen())
 	}
 	if cfg.AutoShutdownTimeout != 0 {
 		t.Fatalf("AutoShutdownTimeout = %s, want 0", cfg.AutoShutdownTimeout)
@@ -101,8 +97,10 @@ func TestLoadEnvironmentOverrides(t *testing.T) {
 	if cfg.Port != 9090 {
 		t.Fatalf("Port = %d, want 9090", cfg.Port)
 	}
-	if !reflect.DeepEqual(cfg.Listen, defaultListenFor(9090)) {
-		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, defaultListenFor(9090))
+	// PORT no longer implies a listener: it is only the port an explicitly
+	// configured HTTP endpoint defaults to.
+	if !reflect.DeepEqual(cfg.Listen, defaultListen()) {
+		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, defaultListen())
 	}
 	if cfg.AutoShutdownTimeout != 5*time.Minute {
 		t.Fatalf("AutoShutdownTimeout = %s, want 5m", cfg.AutoShutdownTimeout)
@@ -245,12 +243,8 @@ func TestLoadServerClientEndpointDoesNotOverrideListen(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	// With nothing configured the platform decides whether a TCP listener is
-	// implied; Windows opens none because nothing there needs one.
-	want := []string{localipc.DefaultEndpoint()}
-	if defaultHTTPListener() {
-		want = append(want, controlplane.DefaultListenEndpoint(controlplane.DefaultPort))
-	}
+	// DISCOBOX_SERVER is where the client dials, not what the server binds.
+	want := defaultListen()
 	if !reflect.DeepEqual(cfg.Listen, want) {
 		t.Fatalf("Listen = %#v, want %#v", cfg.Listen, want)
 	}

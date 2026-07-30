@@ -219,7 +219,13 @@ func (d *apiDataSource) CreateSession(ctx context.Context, req tui.NewSessionReq
 		return tui.Sandbox{}, err
 	}
 	// A server that cannot reach this directory waits for us to push it.
-	if err := sandboxcreate.DeliverSource(ctx, d.client, d.projectID, sandbox, opts.Source, d.app.serverURL, d.app.token); err != nil {
+	gitServerURL, releaseGitServerURL, err := d.app.gitServerURL(ctx)
+	if err != nil {
+		return tui.Sandbox{}, err
+	}
+	err = sandboxcreate.DeliverSource(ctx, d.client, d.projectID, sandbox, opts.Source, gitServerURL, d.app.token)
+	releaseGitServerURL()
+	if err != nil {
 		return tui.Sandbox{}, err
 	}
 	return toTUISandbox(*sandbox), nil

@@ -59,7 +59,13 @@ detach). Pass -d to create the sandbox and print it without attaching.`,
 				return err
 			}
 			// A server that cannot reach this directory waits for us to push it.
-			if err := sandboxcreate.DeliverSource(cmd.Context(), client, projectID, sandbox, parsedOpts.Source, a.serverURL, a.token); err != nil {
+			gitServerURL, releaseGitServerURL, err := a.gitServerURL(cmd.Context())
+			if err != nil {
+				return err
+			}
+			err = sandboxcreate.DeliverSource(cmd.Context(), client, projectID, sandbox, parsedOpts.Source, gitServerURL, a.token)
+			releaseGitServerURL()
+			if err != nil {
 				return err
 			}
 			if opts.detach {

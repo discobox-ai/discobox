@@ -17,6 +17,9 @@ type FactoryOptions struct {
 	// the control plane. Only backends whose transport cannot be dialed inward
 	// use it; the server serves its ordinary handler over whatever arrives.
 	ControlPlaneStreams *carrierhub.Hub
+	// ListenEndpoints are the endpoints the control plane listens on. A backend
+	// whose agent dials inward picks its address from them.
+	ListenEndpoints []string
 }
 
 func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, poolManager poolruntime.PoolManager, options FactoryOptions) {
@@ -27,7 +30,7 @@ func RegisterBuiltInSandboxProviderFactories(manager *sandbox.ProviderManager, p
 	manager.RegisterFactory(digitalocean.ProviderType, digitalocean.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync))
 	manager.RegisterProviderConfigValidator(digitalocean.ProviderType, digitalocean.Validate)
 	manager.RegisterProviderDefinition(docker.ProviderType, docker.Definition())
-	manager.RegisterFactory(docker.ProviderType, docker.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync))
+	manager.RegisterFactory(docker.ProviderType, docker.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync, options.ListenEndpoints))
 	manager.RegisterProviderConfigValidator(docker.ProviderType, docker.Validate)
 	manager.RegisterProviderDefinition(execvm.ProviderType, execvm.Definition())
 	manager.RegisterFactory(execvm.ProviderType, execvm.FactoryWithPoolManager(poolManager, options.DevelopmentImageSync))

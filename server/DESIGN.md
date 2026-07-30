@@ -139,6 +139,21 @@ actually happen in — see below.
   Every other proxy (terminals, sandbox HTTP, harness configure) keeps
   `SandboxPhasesRunning`.
 
+## Listen Endpoints
+
+The server binds local IPC — `unix://` or `npipe://` — and nothing else unless
+`DISCOBOX_SERVER_LISTEN` names more. A TCP listener is a machine-wide surface
+(and on Windows a firewall prompt) that is opted into, never implied; `PORT`
+only supplies the default port for an HTTP endpoint that was asked for.
+
+Nothing in the system requires HTTP. Pool backends reach the control plane over
+whatever transport their guest can dial — see
+[providers](providers/DESIGN.md#control-plane-reachability) — and the CLI dials
+the local socket directly, bridging it to a loopback HTTP address only for the
+git subprocesses that cannot speak anything else (see [cli](../cli/DESIGN.md)).
+`cfg.Listen` is threaded to the provider factories so a backend picks a
+transport this server actually answers on rather than assuming one exists.
+
 ## Runtime Observability
 
 `internal/server` owns optional process-level OpenTelemetry metrics startup as

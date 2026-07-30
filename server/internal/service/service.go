@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/obot-platform/discobox/devimage"
+	"github.com/obot-platform/discobox/localipc"
 	poolagentauth "github.com/obot-platform/discobox/server/internal/auth/poolagent"
 	sandboxauth "github.com/obot-platform/discobox/server/internal/auth/sandbox"
 	eventbroker "github.com/obot-platform/discobox/server/internal/events"
@@ -61,6 +62,11 @@ type Options struct {
 	// ControlPlaneStreams carries guest-initiated control-plane connections for
 	// backends that cannot be dialed inward.
 	ControlPlaneStreams *carrierhub.Hub
+	// ListenEndpoints are the endpoints the server listens on; providers that
+	// dial the control plane inward derive their address from them. Empty means
+	// the local IPC endpoint an unconfigured server binds, which is the same
+	// rule config applies.
+	ListenEndpoints []string
 }
 
 func New(store *store.Store, engine *reconcile.Engine, options Options, broker ...*eventbroker.Broker) *Service {
@@ -68,11 +74,15 @@ func New(store *store.Store, engine *reconcile.Engine, options Options, broker .
 	if len(broker) > 0 {
 		b = broker[0]
 	}
+	if len(options.ListenEndpoints) == 0 {
+		options.ListenEndpoints = []string{localipc.DefaultEndpoint()}
+	}
 	manager := sandbox.NewProviderManager()
 	poolControlPlane := pools.NewControlPlane(store, engine)
 	providerregistry.RegisterBuiltInSandboxProviderFactories(manager, poolControlPlane, providerregistry.FactoryOptions{
 		DevelopmentImageSync: options.DevelopmentImageSync,
 		ControlPlaneStreams:  options.ControlPlaneStreams,
+		ListenEndpoints:      options.ListenEndpoints,
 	})
 	sandboxService := sandboxes.NewService(store, manager, DefaultUserID, engine, poolControlPlane)
 	providerService := providers.NewService(store, sandboxService, poolControlPlane)

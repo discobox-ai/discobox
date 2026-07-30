@@ -1,8 +1,6 @@
 package config
 
 import (
-	"runtime"
-	"strings"
 	"testing"
 
 	"github.com/obot-platform/discobox/localipc"
@@ -22,22 +20,13 @@ func hasScheme(t *testing.T, endpoints []string, scheme string) bool {
 	return false
 }
 
-// Where the Docker provider is the common case, an unconfigured server still
-// opens the HTTP listener its pool agents dial.
-func TestDefaultListenAddsHTTPWhenThePlatformWantsIt(t *testing.T) {
-	endpoints := requireLocalAndHTTPListenEndpoints(nil, 18080, true)
+// An unconfigured server is local-only on every platform: a TCP port is a
+// machine-wide surface nothing needs by default.
+func TestDefaultListenIsLocalOnly(t *testing.T) {
+	endpoints := requireLocalListenEndpoint(nil)
 	if !hasScheme(t, endpoints, "npipe") && !hasScheme(t, endpoints, "unix") {
 		t.Fatalf("endpoints = %v, want a local IPC listener", endpoints)
 	}
-	if !hasScheme(t, endpoints, "http") {
-		t.Fatalf("endpoints = %v, want an HTTP listener", endpoints)
-	}
-}
-
-// On Windows nothing needs a TCP listener and one costs a firewall prompt, so an
-// unconfigured server opens none.
-func TestDefaultListenOmitsHTTPWhenThePlatformDoesNotWantIt(t *testing.T) {
-	endpoints := requireLocalAndHTTPListenEndpoints(nil, 18080, false)
 	if hasScheme(t, endpoints, "http") {
 		t.Fatalf("endpoints = %v, want no HTTP listener by default", endpoints)
 	}
@@ -46,32 +35,24 @@ func TestDefaultListenOmitsHTTPWhenThePlatformDoesNotWantIt(t *testing.T) {
 	}
 }
 
-// The platform default must match this build, so the Windows server really does
-// come up without a TCP listener.
-func TestDefaultHTTPListenerFollowsPlatform(t *testing.T) {
-	if got, want := defaultHTTPListener(), runtime.GOOS != "windows"; got != want {
-		t.Fatalf("defaultHTTPListener() = %v on %s, want %v", got, runtime.GOOS, want)
-	}
-}
-
-// Configuring HTTP stays possible everywhere; it is only no longer implied.
-func TestExplicitHTTPIsHonoredEvenWhenNotDefaulted(t *testing.T) {
-	endpoints := requireLocalAndHTTPListenEndpoints(
-		[]string{`npipe:////./pipe/discobox`, "http://0.0.0.0:18080"}, 18080, false)
+// Configuring HTTP stays possible; it is only never implied.
+func TestExplicitHTTPIsHonored(t *testing.T) {
+	endpoints := requireLocalListenEndpoint([]string{`npipe:////./pipe/discobox`, "http://0.0.0.0:18080"})
 	if !hasScheme(t, endpoints, "http") {
 		t.Fatalf("endpoints = %v, want the explicitly configured HTTP listener", endpoints)
 	}
 	if !hasScheme(t, endpoints, "npipe") {
 		t.Fatalf("endpoints = %v, want the configured npipe listener", endpoints)
 	}
+	if len(endpoints) != 2 {
+		t.Fatalf("endpoints = %v, want exactly the configured endpoints", endpoints)
+	}
 }
 
 // Naming the endpoints explicitly must not add a TCP listener the operator did
-// not ask for. On Windows that listener costs a firewall prompt, and a wslc or
-// libkrun pool never needs it: those agents reach the control plane over the
-// guest relay socket and VSOCK.
+// not ask for.
 func TestExplicitLocalOnlyListenAddsNoHTTP(t *testing.T) {
-	endpoints := requireLocalAndHTTPListenEndpoints([]string{`npipe:////./pipe/discobox`}, 18080, false)
+	endpoints := requireLocalListenEndpoint([]string{`npipe:////./pipe/discobox`})
 	if hasScheme(t, endpoints, "http") {
 		t.Fatalf("endpoints = %v, want no HTTP listener when configured explicitly", endpoints)
 	}
@@ -84,16 +65,14 @@ func TestExplicitLocalOnlyListenAddsNoHTTP(t *testing.T) {
 // when the operator names only an HTTP endpoint. Losing it would leave a running
 // server the CLI cannot reach.
 func TestExplicitHTTPOnlyStillGetsLocalIPC(t *testing.T) {
-	endpoints := requireLocalAndHTTPListenEndpoints([]string{"http://127.0.0.1:9000"}, 18080, false)
+	endpoints := requireLocalListenEndpoint([]string{"http://127.0.0.1:9000"})
 	if !hasScheme(t, endpoints, "npipe") && !hasScheme(t, endpoints, "unix") {
 		t.Fatalf("endpoints = %v, want the local IPC listener retained", endpoints)
 	}
 	if !hasScheme(t, endpoints, "http") {
 		t.Fatalf("endpoints = %v, want the configured HTTP listener kept", endpoints)
 	}
-	for _, endpoint := range endpoints {
-		if strings.Contains(endpoint, "18080") {
-			t.Fatalf("endpoints = %v, want no extra default HTTP listener", endpoints)
-		}
+	if len(endpoints) != 2 {
+		t.Fatalf("endpoints = %v, want the local listener plus the configured one", endpoints)
 	}
 }

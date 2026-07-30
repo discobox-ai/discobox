@@ -210,6 +210,20 @@ sandbox, which sits on a network the client cannot reach.
 
 See [ADR 0001](../docs/adr/0001-sandbox-origin-and-remote-source-push.md).
 
+## Git Transport to the Server
+
+`git` is a subprocess that only understands URLs, so it cannot use the CLI's
+local-IPC transport. `App.gitServerURL` bridges the gap: for a `unix://` or
+`npipe://` endpoint it starts `localipc.StartLoopbackProxy`, a loopback HTTP
+listener that reverse-proxies onto the same server the API client uses, and
+returns that address for the duration of the command. An `http(s)` endpoint is
+already addressable and is returned unchanged.
+
+Everything that shells out to git shares it — `sandboxcreate.DeliverSource`
+(push at create) and `sandboxapply.FetchSource` (fetch at apply) — so the local
+socket, which is the default endpoint, is not a server only half the CLI can
+reach.
+
 ## Harness Configure Step
 
 `disco box harnesses configure` (`internal/cli/harness.go`) drives a harness's

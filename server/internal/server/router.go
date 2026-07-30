@@ -58,6 +58,12 @@ type AppOptions struct {
 	// it must also be served (see Serve); when nil such backends still start but
 	// their agents cannot register.
 	ControlPlaneStreams *carrierhub.Hub
+
+	// ListenEndpoints are the endpoints this server is listening on, in
+	// config.Config.Listen form. A pool backend that dials the control plane
+	// inward derives its address from them, so it offers the agent a transport
+	// the server actually answers on rather than assuming one.
+	ListenEndpoints []string
 }
 
 // DefaultAppOptions returns the production defaults for the app.
@@ -126,6 +132,7 @@ func NewApp(ctx context.Context, writeDB, readDB *gorm.DB, options ...AppOptions
 		DevelopmentImageSync:           developmentImageSync,
 		DevelopmentImages:              opts.DevelopmentImages,
 		ControlPlaneStreams:            controlPlaneStreams,
+		ListenEndpoints:                opts.ListenEndpoints,
 	}, broker)
 	appServices.SetDefaultSandboxImage(opts.DefaultSandboxImage)
 	appServices.SetHostID(opts.HostID)

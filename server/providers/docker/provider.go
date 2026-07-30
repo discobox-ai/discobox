@@ -7,11 +7,15 @@ package docker
 import (
 	"context"
 	"encoding/json"
-	"os"
+	"fmt"
+	"net"
+	"net/url"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/obot-platform/discobox/controlplane"
+	"github.com/obot-platform/discobox/localipc"
 	"github.com/obot-platform/discobox/server/internal/model"
 	sandbox "github.com/obot-platform/discobox/server/internal/sandbox"
 	"github.com/obot-platform/discobox/server/providers/dockerworker"
@@ -59,13 +63,13 @@ func Validate(data json.RawMessage) error {
 	return err
 }
 
-func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer) sandbox.ProviderFactory {
+func FactoryWithPoolManager(poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, listenEndpoints []string) sandbox.ProviderFactory {
 	return func(ctx context.Context, instance *model.SandboxProviderInstance) (sandbox.Provider, error) {
-		return newFromInstance(ctx, instance, poolManager, imageSync)
+		return newFromInstance(ctx, instance, poolManager, imageSync, listenEndpoints)
 	}
 }
 
-func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer) (sandbox.Provider, error) {
+func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstance, poolManager poolruntime.PoolManager, imageSync *dockerworker.DevelopmentImageSynchronizer, listenEndpoints []string) (sandbox.Provider, error) {
 	cfg, err := Decode(instance.Config)
 	if err != nil {
 		return nil, err
@@ -74,7 +78,11 @@ func newFromInstance(ctx context.Context, instance *model.SandboxProviderInstanc
 	if err != nil {
 		return nil, err
 	}
-	engineCfg := engineConfig(cfg)
+	engineCfg, err := engineConfig(cfg, listenEndpoints, driver.DaemonHost())
+	if err != nil {
+		_ = driver.Close()
+		return nil, err
+	}
 	engineCfg.DevelopmentImageSync = imageSync
 	engine, err := dockerworker.New(engineCfg, driver)
 	if err != nil {
@@ -114,19 +122,11 @@ func localSourceBindSupported(daemonHost string) bool {
 }
 
 // engineConfig maps the docker provider configuration to the shared engine
-// configuration, applying local-Docker defaults such as the host-gateway
-// control plane URL.
-func engineConfig(cfg Config) dockerworker.Config {
-	controlPlaneURL := strings.TrimSpace(cfg.ControlPlaneURL)
-	var extraHosts []string
-	if controlPlaneURL == "" {
-		controlPlaneURL = defaultDockerControlPlaneURL()
-		if controlPlaneURLUsesHostGateway(controlPlaneURL) {
-			extraHosts = []string{dockerHostGateway + ":host-gateway"}
-		}
-	}
-	return dockerworker.Config{
-		ControlPlaneURL: controlPlaneURL,
+// configuration, deriving how the pool agent reaches the control plane when the
+// instance does not name it.
+func engineConfig(cfg Config, listenEndpoints []string, daemonHost string) (dockerworker.Config, error) {
+	engineCfg := dockerworker.Config{
+		ControlPlaneURL: strings.TrimSpace(cfg.ControlPlaneURL),
 		Image:           dockerworker.EffectivePoolImage(cfg.Image),
 		Network:         cfg.Network,
 		AgentPort:       effectiveAgentPort(cfg.AgentPort),
@@ -136,9 +136,90 @@ func engineConfig(cfg Config) dockerworker.Config {
 		Command:         cfg.Command.Values(),
 		DockerSocket:    cfg.DockerSocket,
 		HostMounts:      cfg.HostMounts,
-		ExtraHosts:      extraHosts,
 		Labels:          map[string]string{labelProviderType: ProviderType},
 	}
+	if engineCfg.ControlPlaneURL == "" {
+		reach, err := resolveControlPlaneReach(listenEndpoints, daemonHost)
+		if err != nil {
+			return dockerworker.Config{}, err
+		}
+		engineCfg.ControlPlaneURL = reach.url
+		engineCfg.RelaySocketDir = reach.socketDir
+	}
+	if controlPlaneURLUsesHostGateway(engineCfg.ControlPlaneURL) {
+		engineCfg.ExtraHosts = []string{dockerHostGateway + ":host-gateway"}
+	}
+	return engineCfg, nil
+}
+
+// controlPlaneReach is how a pool container addresses the control plane: the
+// URL the agent dials, plus the directory the engine must bind for a socket
+// transport to exist inside the container at all.
+type controlPlaneReach struct {
+	url       string
+	socketDir string
+}
+
+// resolveControlPlaneReach picks the transport from what this server is actually
+// listening on, rather than assuming a TCP port exists.
+//
+// The local socket comes first when the daemon is on this machine: the socket
+// is always listening, it is reachable by a plain bind mount, and preferring it
+// is what lets the server default to opening no TCP port at all. A remote
+// daemon cannot see the socket, so only an HTTP listener can serve it — and
+// when none does, that is a configuration error worth naming here rather than a
+// pool that starts and never registers.
+func resolveControlPlaneReach(listenEndpoints []string, daemonHost string) (controlPlaneReach, error) {
+	var httpEndpoint string
+	for _, endpoint := range listenEndpoints {
+		parsed, err := localipc.Parse(endpoint)
+		if err != nil {
+			continue
+		}
+		switch parsed.Scheme {
+		case "unix":
+			// npipe is deliberately absent: a Windows named pipe is not a
+			// filesystem object a Linux container can bind, and the Windows
+			// backend is wslc, which brings its own relay.
+			if localSourceBindSupported(daemonHost) {
+				return controlPlaneReach{
+					url:       "unix://" + parsed.Value,
+					socketDir: filepath.Dir(parsed.Value),
+				}, nil
+			}
+		case "http":
+			if httpEndpoint == "" {
+				httpEndpoint = parsed.Value
+			}
+		}
+	}
+	if httpEndpoint != "" {
+		return controlPlaneReach{url: hostGatewayURL(httpEndpoint)}, nil
+	}
+	return controlPlaneReach{}, fmt.Errorf(
+		"pool containers on Docker daemon %q cannot reach this control plane: it listens on %s, none of which they can dial. "+
+			"Set the provider's controlPlaneUrl, or add an HTTP endpoint to DISCOBOX_SERVER_LISTEN",
+		daemonHost, strings.Join(listenEndpoints, ", "))
+}
+
+// hostGatewayURL rewrites an HTTP listen address into one a container resolves,
+// keeping its port. A wildcard or loopback bind means nothing inside a
+// container, which reaches the host through the gateway alias instead.
+func hostGatewayURL(endpoint string) string {
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return endpoint
+	}
+	port := parsed.Port()
+	if port == "" {
+		port = strconv.Itoa(controlplane.DefaultPort)
+	}
+	host := parsed.Hostname()
+	switch host {
+	case "", "0.0.0.0", "::", "127.0.0.1", "localhost", "[::1]", "::1":
+		host = dockerHostGateway
+	}
+	return "http://" + net.JoinHostPort(host, port)
 }
 
 func effectiveAgentPort(agentPort int) int {
@@ -153,14 +234,6 @@ func (c Config) systemdValue() bool {
 		return true
 	}
 	return *c.Systemd
-}
-
-func defaultDockerControlPlaneURL() string {
-	port := strings.TrimSpace(os.Getenv("PORT"))
-	if port == "" {
-		port = strconv.Itoa(controlplane.DefaultPort)
-	}
-	return "http://" + dockerHostGateway + ":" + port
 }
 
 func controlPlaneURLUsesHostGateway(value string) bool {

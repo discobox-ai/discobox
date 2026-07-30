@@ -35,23 +35,84 @@ func TestDefinitionIncludesSystemdConfig(t *testing.T) {
 	}
 }
 
-func TestEngineConfigDerivesControlPlaneURLWithHostGateway(t *testing.T) {
-	t.Setenv("PORT", "9090")
-	cfg := engineConfig(Config{})
+const (
+	testLocalDaemon  = "unix:///var/run/docker.sock"
+	testRemoteDaemon = "tcp://docker.example:2376"
+	testUnixListen   = "unix:///run/user/1000/discobox/server.sock"
+	testHTTPListen   = "http://0.0.0.0:9090"
+)
+
+func engineConfigFor(t *testing.T, cfg Config, listen []string, daemonHost string) dockerworker.Config {
+	t.Helper()
+	engineCfg, err := engineConfig(cfg, listen, daemonHost)
+	if err != nil {
+		t.Fatalf("engineConfig() error = %v", err)
+	}
+	return engineCfg
+}
+
+// A local daemon reaches the control plane over the socket it is already
+// listening on, so no HTTP listener is needed for a Docker pool to register.
+func TestEngineConfigUsesControlPlaneSocketForLocalDaemon(t *testing.T) {
+	cfg := engineConfigFor(t, Config{}, []string{testUnixListen}, testLocalDaemon)
+
+	if cfg.ControlPlaneURL != "unix:///run/user/1000/discobox/server.sock" {
+		t.Fatalf("control plane url = %q, want the control plane socket", cfg.ControlPlaneURL)
+	}
+	if cfg.RelaySocketDir != "/run/user/1000/discobox" {
+		t.Fatalf("relay socket dir = %q, want the socket's directory bound into the pool", cfg.RelaySocketDir)
+	}
+	if len(cfg.ExtraHosts) != 0 {
+		t.Fatalf("extra hosts = %#v, want none for a socket transport", cfg.ExtraHosts)
+	}
+}
+
+// The socket is preferred even when HTTP is also listening: it is the direct
+// path and needs no gateway alias.
+func TestEngineConfigPrefersSocketOverHTTPForLocalDaemon(t *testing.T) {
+	cfg := engineConfigFor(t, Config{}, []string{testUnixListen, testHTTPListen}, testLocalDaemon)
+
+	if !strings.HasPrefix(cfg.ControlPlaneURL, "unix://") {
+		t.Fatalf("control plane url = %q, want the socket transport", cfg.ControlPlaneURL)
+	}
+}
+
+// A remote daemon cannot see the socket, so it takes the HTTP listener, mapped
+// to the address a container resolves.
+func TestEngineConfigUsesHTTPListenerForRemoteDaemon(t *testing.T) {
+	cfg := engineConfigFor(t, Config{}, []string{testUnixListen, testHTTPListen}, testRemoteDaemon)
 
 	if cfg.ControlPlaneURL != "http://host.docker.internal:9090" {
 		t.Fatalf("control plane url = %q", cfg.ControlPlaneURL)
+	}
+	if cfg.RelaySocketDir != "" {
+		t.Fatalf("relay socket dir = %q, want none for an HTTP transport", cfg.RelaySocketDir)
 	}
 	if len(cfg.ExtraHosts) != 1 || cfg.ExtraHosts[0] != "host.docker.internal:host-gateway" {
 		t.Fatalf("extra hosts = %#v, want host gateway mapping", cfg.ExtraHosts)
 	}
 }
 
+// A pool that could never register is a configuration error worth naming, not a
+// silently broken pool.
+func TestEngineConfigFailsWhenNoEndpointIsReachable(t *testing.T) {
+	_, err := engineConfig(Config{}, []string{testUnixListen}, testRemoteDaemon)
+	if err == nil {
+		t.Fatal("engineConfig() succeeded with no endpoint the daemon can reach")
+	}
+	if !strings.Contains(err.Error(), "DISCOBOX_SERVER_LISTEN") {
+		t.Fatalf("error = %v, want it to name how to configure a reachable endpoint", err)
+	}
+}
+
 func TestEngineConfigPreservesConfiguredControlPlaneURL(t *testing.T) {
-	cfg := engineConfig(Config{ControlPlaneURL: "http://control.example"})
+	cfg := engineConfigFor(t, Config{ControlPlaneURL: "http://control.example"}, []string{testUnixListen}, testLocalDaemon)
 
 	if cfg.ControlPlaneURL != "http://control.example" {
 		t.Fatalf("control plane url = %q", cfg.ControlPlaneURL)
+	}
+	if cfg.RelaySocketDir != "" {
+		t.Fatalf("relay socket dir = %q, want none for a configured URL", cfg.RelaySocketDir)
 	}
 	if len(cfg.ExtraHosts) != 0 {
 		t.Fatalf("extra hosts = %#v, want none for configured URL", cfg.ExtraHosts)
@@ -59,19 +120,19 @@ func TestEngineConfigPreservesConfiguredControlPlaneURL(t *testing.T) {
 }
 
 func TestEngineConfigDefaultsSystemdOn(t *testing.T) {
-	cfg := engineConfig(Config{})
+	cfg := engineConfigFor(t, Config{}, []string{testUnixListen}, testLocalDaemon)
 	if !cfg.Systemd {
 		t.Fatalf("systemd = false, want default true")
 	}
 	off := false
-	cfg = engineConfig(Config{Systemd: &off})
+	cfg = engineConfigFor(t, Config{Systemd: &off}, []string{testUnixListen}, testLocalDaemon)
 	if cfg.Systemd {
 		t.Fatalf("systemd = true, want configured false")
 	}
 }
 
 func TestEngineConfigDoesNotPublishAgentPortPublicly(t *testing.T) {
-	cfg := engineConfig(Config{})
+	cfg := engineConfigFor(t, Config{}, []string{testUnixListen}, testLocalDaemon)
 	if cfg.PublicAgentPort {
 		t.Fatalf("public harness port = true, want loopback publishing for local workers")
 	}
@@ -122,7 +183,7 @@ func TestProviderConfigFieldsAffectWorkerConfigRevision(t *testing.T) {
 
 func configRevisionFor(t *testing.T, cfg Config) string {
 	t.Helper()
-	engine, err := dockerworker.New(engineConfig(cfg), &LocalDriver{})
+	engine, err := dockerworker.New(engineConfigFor(t, cfg, []string{testUnixListen}, testLocalDaemon), &LocalDriver{})
 	if err != nil {
 		t.Fatalf("new engine: %v", err)
 	}

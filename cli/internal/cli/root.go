@@ -153,6 +153,24 @@ func (a *App) httpClientWithAutoStart(autoStart bool) (string, *http.Client, err
 	}, nil
 }
 
+// gitServerURL is the base URL git commands address the server through, along
+// with the func that releases it.
+//
+// git only speaks URLs, so a unix socket or named pipe endpoint has to be
+// bridged: the returned URL is a loopback proxy onto the same local server the
+// API client uses. An http(s) endpoint is already addressable and is returned
+// as-is, with nothing to release.
+func (a *App) gitServerURL(ctx context.Context) (string, func(), error) {
+	if !isLocalEndpoint(a.serverURL) {
+		return a.serverURL, func() {}, nil
+	}
+	proxy, err := localipc.StartLoopbackProxy(ctx, a.serverURL)
+	if err != nil {
+		return "", nil, err
+	}
+	return proxy.BaseURL(), func() { _ = proxy.Close() }, nil
+}
+
 func isLocalEndpoint(endpoint string) bool {
 	endpoint = strings.TrimSpace(strings.ToLower(endpoint))
 	return strings.HasPrefix(endpoint, "unix://") || strings.HasPrefix(endpoint, "npipe://")
@@ -171,13 +189,14 @@ func (a *App) ensureLocalServer(ctx context.Context) error {
 	})
 }
 
+// localServerEnv configures the server this CLI launches for itself. It listens
+// on the endpoint the CLI is about to dial and nothing else: an autolaunched
+// server is this user's, and opening a TCP port on their machine is not
+// something running `disco` should imply. An operator who needs HTTP names it
+// in DISCOBOX_SERVER_LISTEN and runs the server themselves.
 func localServerEnv(endpoint string) []string {
-	port := strings.TrimSpace(os.Getenv("PORT"))
-	if port == "" {
-		port = fmt.Sprint(controlplane.DefaultPort)
-	}
 	env := []string{
-		"DISCOBOX_SERVER_LISTEN=" + strings.Join([]string{endpoint, "http://0.0.0.0:" + port}, ","),
+		"DISCOBOX_SERVER_LISTEN=" + endpoint,
 		"DISCOBOX_SERVER=" + endpoint,
 		"DISCOBOX_SERVER_IDLE_TIMEOUT=5m",
 	}

@@ -1584,7 +1584,7 @@ func TestLocalServerEnvIncludesSupportedServerConfig(t *testing.T) {
 	env := localServerEnv("unix:///tmp/discobox/server.sock")
 	joined := "\n" + strings.Join(env, "\n") + "\n"
 	for _, want := range []string{
-		"\nDISCOBOX_SERVER_LISTEN=unix:///tmp/discobox/server.sock,http://0.0.0.0:18080\n",
+		"\nDISCOBOX_SERVER_LISTEN=unix:///tmp/discobox/server.sock\n",
 		"\nDISCOBOX_SERVER=unix:///tmp/discobox/server.sock\n",
 		"\nDISCOBOX_SERVER_IDLE_TIMEOUT=5m\n",
 		"\nDISCOBOX_DATA_DIR=/tmp/discobox-data\n",
@@ -1595,6 +1595,11 @@ func TestLocalServerEnvIncludesSupportedServerConfig(t *testing.T) {
 	}
 	if strings.Contains(joined, "\nDISCOBOX_TOKEN=client-token\n") {
 		t.Fatalf("localServerEnv() included client token")
+	}
+	// A server the CLI launches for itself opens no TCP port on the user's
+	// machine; HTTP is something an operator asks for explicitly.
+	if strings.Contains(joined, "http://") {
+		t.Fatalf("localServerEnv() configured an HTTP listener in %q", joined)
 	}
 }
 

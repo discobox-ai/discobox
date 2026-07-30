@@ -85,6 +85,7 @@ func Run(ctx context.Context) error {
 		HostID:                         cfg.HostID,
 		HarnessImages:                  cfg.HarnessImages,
 		DevelopmentImages:              cfg.DevelopmentImages,
+		ListenEndpoints:                cfg.Listen,
 	})
 	if err != nil {
 		return fmt.Errorf("initialize app: %w", err)

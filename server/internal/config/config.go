@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -76,7 +75,7 @@ func Load() (*Config, error) {
 	cfg := &Config{}
 
 	cfg.Port = getEnvInt("PORT", controlplane.DefaultPort)
-	cfg.Listen = listenEndpoints(cfg.Port)
+	cfg.Listen = listenEndpoints()
 	cfg.AutoShutdownTimeout = getEnvDuration("DISCOBOX_SERVER_IDLE_TIMEOUT", 0)
 
 	cfg.DataDir = getEnv("DISCOBOX_DATA_DIR", filepath.Join(xdg.DataHome, appName))
@@ -167,63 +166,33 @@ func defaultDatabaseDSN(dataDir string) string {
 	return "sqlite3://" + filepath.Join(dataDir, "discobox.db")
 }
 
-func listenEndpoints(port int) []string {
-	configured := splitListenEndpoints(getEnv("DISCOBOX_SERVER_LISTEN", ""))
-	// Only default the HTTP listener in when the operator named nothing and the
-	// platform actually wants one.
-	addDefaultHTTP := len(configured) == 0 && defaultHTTPListener()
-	return requireLocalAndHTTPListenEndpoints(configured, port, addDefaultHTTP)
+func listenEndpoints() []string {
+	return requireLocalListenEndpoint(splitListenEndpoints(getEnv("DISCOBOX_SERVER_LISTEN", "")))
 }
 
-// defaultHTTPListener reports whether the server opens a TCP listener when the
-// operator has not asked for one.
+// requireLocalListenEndpoint adds the local IPC endpoint the server always
+// needs but the operator may not have named. It is how the CLI reaches the
+// server, and losing it silently would leave a running server no one can talk
+// to.
 //
-// On Windows it does not: every TCP listener costs a firewall prompt, and the
-// Windows backend reaches the control plane over its guest relay's socket, so
-// nothing needs one. A Windows operator who does want HTTP — to run the Docker
-// provider, whose agent dials host.docker.internal:<port> — names it in
-// DISCOBOX_SERVER_LISTEN and gets exactly that.
-//
-// Elsewhere the Docker provider is the common case, so the listener stays on.
-func defaultHTTPListener() bool {
-	return runtime.GOOS != "windows"
-}
-
-// requireLocalAndHTTPListenEndpoints fills in the endpoints the server needs
-// but the operator did not name.
-//
-// The local IPC endpoint is always added: it is how the CLI reaches the server,
-// and losing it silently would leave a running server no one can talk to.
-//
-// The HTTP endpoint is added only when addDefaultHTTP says so. It exists so
-// pool agents that reach the control plane over IP — the Docker provider's
-// host.docker.internal:<port> — have somewhere to connect; backends whose
-// agents use another transport need no TCP listener at all, since libkrun dials
-// over VSOCK and wslc over its guest relay's socket. An operator who names
-// their endpoints explicitly gets exactly those and nothing more, so configuring
-// HTTP remains possible everywhere — it is simply not implied.
-func requireLocalAndHTTPListenEndpoints(endpoints []string, port int, addDefaultHTTP bool) []string {
-	hasLocal := false
-	hasHTTP := false
+// Nothing else is implied. The server opens no TCP listener unless
+// DISCOBOX_SERVER_LISTEN names one: a TCP port is a machine-wide surface — and
+// on Windows a firewall prompt — that most deployments never need. No pool
+// backend requires it either. libkrun dials over VSOCK, wslc over its guest
+// relay's socket, and the Docker provider binds this socket into its pool
+// containers whenever its daemon is local. HTTP is for the cases that genuinely
+// reach the control plane over IP: a remote Docker daemon, or a cloud backend.
+func requireLocalListenEndpoint(endpoints []string) []string {
 	for _, endpoint := range endpoints {
 		parsed, err := localipc.Parse(endpoint)
 		if err != nil {
 			continue
 		}
-		switch parsed.Scheme {
-		case "unix", "npipe":
-			hasLocal = true
-		case "http":
-			hasHTTP = true
+		if parsed.Scheme == "unix" || parsed.Scheme == "npipe" {
+			return endpoints
 		}
 	}
-	if !hasLocal {
-		endpoints = append([]string{localipc.DefaultEndpoint()}, endpoints...)
-	}
-	if !hasHTTP && addDefaultHTTP {
-		endpoints = append(endpoints, controlplane.DefaultListenEndpoint(port))
-	}
-	return endpoints
+	return append([]string{localipc.DefaultEndpoint()}, endpoints...)
 }
 
 func splitListenEndpoints(value string) []string {

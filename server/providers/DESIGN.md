@@ -193,6 +193,26 @@ operations after intent has already been accepted and stored. The canonical
 contract is `pool-agent/api/openapi/pool.yaml`; operation endpoints are
 synchronous from the pool's perspective.
 
+## Control Plane Reachability
+
+A pool agent dials the control plane; the control plane does not dial it. The
+transport comes from what the server is actually listening on, because HTTP is
+opt-in (see [server](../DESIGN.md#listen-endpoints)):
+
+| Backend | Agent reaches the control plane by |
+| --- | --- |
+| `libkrun` | VSOCK to the host CID |
+| `wslc` | `unix://` socket served by the in-guest relay |
+| `docker`, local daemon | `unix://` the control plane's own socket, bind-mounted into the pool container at the same path (`Config.RelaySocketDir`) |
+| `docker`, remote daemon | the configured HTTP listener, rewritten to the container-resolvable host-gateway address |
+| `digitalocean`, `execvm` | explicit `controlPlaneUrl`, required at config time |
+
+The Docker provider prefers the socket whenever its daemon is local, which is
+what lets a default install open no TCP port at all. A remote daemon cannot see
+that socket, so it needs an HTTP listener; when none is configured, provider
+instantiation fails with that as the message rather than producing a pool that
+starts and never registers.
+
 ## Pool Boot Metadata
 
 Bootstrap identity — control plane URL, project/pool identity, bootstrap

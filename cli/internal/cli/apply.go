@@ -113,10 +113,16 @@ func (a *App) runApply(cmd *cobra.Command, sandboxArg, onlySlug string, dirOverr
 		return err
 	}
 
+	gitServerURL, releaseGitServerURL, err := a.gitServerURL(ctx)
+	if err != nil {
+		return err
+	}
+	defer releaseGitServerURL()
+
 	out := cmd.OutOrStdout()
 	var failures []string
 	for _, s := range sources {
-		if err := a.applyOneSource(ctx, out, client, projectID, sandboxID, sandbox, host, s, dirOverrides); err != nil {
+		if err := a.applyOneSource(ctx, out, client, projectID, sandboxID, sandbox, host, gitServerURL, s, dirOverrides); err != nil {
 			failures = append(failures, fmt.Sprintf("source %s: %v", s.slug, err))
 		}
 	}
@@ -204,7 +210,7 @@ func lastAppliedCommit(sandbox *apimodel.Sandbox, slug string) string {
 	return latest
 }
 
-func (a *App) applyOneSource(ctx context.Context, out io.Writer, client *apiclientgen.Client, projectID, sandboxID string, sandbox *apimodel.Sandbox, hostID string, entry applySourceEntry, dirOverrides map[string]string) error {
+func (a *App) applyOneSource(ctx context.Context, out io.Writer, client *apiclientgen.Client, projectID, sandboxID string, sandbox *apimodel.Sandbox, hostID, gitServerURL string, entry applySourceEntry, dirOverrides map[string]string) error {
 	hostDir, err := resolveApplyHostDir(sandbox, hostID, entry, dirOverrides)
 	if err != nil {
 		return err
@@ -232,7 +238,7 @@ func (a *App) applyOneSource(ctx context.Context, out io.Writer, client *apiclie
 		}
 	}
 
-	tip, err := sandboxapply.FetchSource(ctx, repoRoot, a.serverURL, projectID, sandboxID, a.token, entry.source)
+	tip, err := sandboxapply.FetchSource(ctx, repoRoot, gitServerURL, projectID, sandboxID, a.token, entry.source)
 	if err != nil {
 		return err
 	}

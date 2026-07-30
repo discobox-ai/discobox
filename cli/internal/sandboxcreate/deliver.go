@@ -130,9 +130,10 @@ func SandboxGitRepositoryURL(serverURL, projectID, sandboxID string, source apim
 		return "", fmt.Errorf("parse server URL %q: %w", serverURL, err)
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		// A local server binds the source instead of asking for a push, so a
-		// non-HTTP endpoint here means the two disagree about reachability.
-		return "", fmt.Errorf("cannot push a source to server endpoint %q: an HTTP endpoint is required", serverURL)
+		// git only speaks URLs, so callers bridge a unix socket or named pipe
+		// endpoint to a loopback HTTP address before they get here. Reaching
+		// this means a caller passed the raw endpoint instead.
+		return "", fmt.Errorf("cannot reach the sandbox repository at server endpoint %q: an HTTP endpoint is required", serverURL)
 	}
 	slug := strings.TrimSpace(source.Slug.Or(""))
 	if slug == "" {
