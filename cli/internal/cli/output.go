@@ -52,14 +52,13 @@ func (a *App) writeSandbox(cmd *cobra.Command, sandbox *apimodel.Sandbox) error 
 }
 
 func (a *App) writeSandboxes(cmd *cobra.Command, sandboxes []apimodel.Sandbox, showFolder bool) error {
+	sandboxes = sortedByRecency(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return recencyTime(sandbox.UpdatedAt, sandbox.CreatedAt) })
 	if a.quiet {
-		sandboxes = sortedByCreatedAt(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return sandbox.CreatedAt })
 		return writeResourceIDs(cmd.OutOrStdout(), sandboxes, func(sandbox apimodel.Sandbox) string { return sandbox.ID })
 	}
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"sandboxes": sandboxes})
 	}
-	sandboxes = sortedByCreatedAt(sandboxes, func(sandbox apimodel.Sandbox) time.Time { return sandbox.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	if showFolder {
 		fmt.Fprintln(tw, "ID\tNAME\tSTATE\tUPGRADE\tERROR\tUPDATED\tFOLDER")
@@ -162,14 +161,15 @@ func (a *App) writeProvider(cmd *cobra.Command, provider *apimodel.SandboxProvid
 }
 
 func (a *App) writeProviders(cmd *cobra.Command, providers []apimodel.SandboxProviderInstance) error {
+	providers = sortedByRecency(providers, func(provider apimodel.SandboxProviderInstance) time.Time {
+		return recencyTime(provider.UpdatedAt, provider.CreatedAt)
+	})
 	if a.quiet {
-		providers = sortedByCreatedAt(providers, func(provider apimodel.SandboxProviderInstance) time.Time { return provider.CreatedAt })
 		return writeResourceIDs(cmd.OutOrStdout(), providers, func(provider apimodel.SandboxProviderInstance) string { return provider.ID })
 	}
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"providers": providers})
 	}
-	providers = sortedByCreatedAt(providers, func(provider apimodel.SandboxProviderInstance) time.Time { return provider.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tDISABLED\tUPDATED")
 	for _, provider := range providers {
@@ -211,8 +211,8 @@ func (a *App) writePool(cmd *cobra.Command, pool *apimodel.Pool) error {
 }
 
 func (a *App) writePools(cmd *cobra.Command, pools []apimodel.Pool, defaultPoolID ...string) error {
+	pools = sortedByRecency(pools, func(pool apimodel.Pool) time.Time { return recencyTime(pool.UpdatedAt, pool.CreatedAt) })
 	if a.quiet {
-		pools = sortedByCreatedAt(pools, func(pool apimodel.Pool) time.Time { return pool.CreatedAt })
 		return writeResourceIDs(cmd.OutOrStdout(), pools, func(pool apimodel.Pool) string { return pool.ID })
 	}
 	if a.output == "json" {
@@ -222,7 +222,6 @@ func (a *App) writePools(cmd *cobra.Command, pools []apimodel.Pool, defaultPoolI
 	if len(defaultPoolID) > 0 {
 		defaultID = defaultPoolID[0]
 	}
-	pools = sortedByCreatedAt(pools, func(pool apimodel.Pool) time.Time { return pool.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tPROVIDER\tDEFAULT\tPHASE\tREADY\tCPU\tMEMORY\tSTORAGE\tUPDATED\tMESSAGE")
 	for _, pool := range pools {
@@ -297,14 +296,13 @@ func (a *App) writeSecret(cmd *cobra.Command, secret *apimodel.Secret) error {
 }
 
 func (a *App) writeSecrets(cmd *cobra.Command, secrets []apimodel.Secret) error {
+	secrets = sortedByRecency(secrets, func(secret apimodel.Secret) time.Time { return recencyTime(secret.UpdatedAt, secret.CreatedAt) })
 	if a.quiet {
-		secrets = sortedByCreatedAt(secrets, func(secret apimodel.Secret) time.Time { return secret.CreatedAt })
 		return writeResourceIDs(cmd.OutOrStdout(), secrets, func(secret apimodel.Secret) string { return secret.ID })
 	}
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"secrets": secrets})
 	}
-	secrets = sortedByCreatedAt(secrets, func(secret apimodel.Secret) time.Time { return secret.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tNAME\tTYPE\tHOST\tGRANT TTL\tUPDATED")
 	for _, secret := range secrets {
@@ -340,6 +338,7 @@ func (a *App) writeSecretGrant(cmd *cobra.Command, grant *apimodel.SecretGrant) 
 }
 
 func (a *App) writeSecretGrants(cmd *cobra.Command, grants []apimodel.SecretGrant) error {
+	grants = sortedByRecency(grants, func(grant apimodel.SecretGrant) time.Time { return recencyTime(grant.UpdatedAt, grant.CreatedAt) })
 	if a.quiet {
 		return writeResourceIDs(cmd.OutOrStdout(), grants, func(grant apimodel.SecretGrant) string { return grant.ID })
 	}
@@ -394,14 +393,15 @@ func (a *App) writeSecretRequest(cmd *cobra.Command, request *apimodel.SecretReq
 }
 
 func (a *App) writeSecretRequests(cmd *cobra.Command, requests []apimodel.SecretRequest) error {
+	requests = sortedByRecency(requests, func(request apimodel.SecretRequest) time.Time {
+		return recencyTime(request.UpdatedAt, request.CreatedAt)
+	})
 	if a.quiet {
-		requests = sortedByCreatedAt(requests, func(request apimodel.SecretRequest) time.Time { return request.CreatedAt })
 		return writeResourceIDs(cmd.OutOrStdout(), requests, func(request apimodel.SecretRequest) string { return request.ID })
 	}
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"secretRequests": requests})
 	}
-	requests = sortedByCreatedAt(requests, func(request apimodel.SecretRequest) time.Time { return request.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tTYPE\tHOST\tSTATUS\tSECRET\tSANDBOX\tREQUESTED BY\tUPDATED")
 	for _, request := range requests {
@@ -433,8 +433,10 @@ func (a *App) writeHarness(cmd *cobra.Command, harness *apimodel.HarnessConfig) 
 }
 
 func (a *App) writeHarnesses(cmd *cobra.Command, harnesses []apimodel.HarnessConfig, defaultHarnessConfigID ...string) error {
+	harnesses = sortedByRecency(harnesses, func(harness apimodel.HarnessConfig) time.Time {
+		return recencyTime(harness.UpdatedAt, harness.CreatedAt)
+	})
 	if a.quiet {
-		harnesses = sortedByCreatedAt(harnesses, func(harness apimodel.HarnessConfig) time.Time { return harness.CreatedAt })
 		return writeResourceIDs(cmd.OutOrStdout(), harnesses, func(harness apimodel.HarnessConfig) string { return harness.ID })
 	}
 	if a.output == "json" {
@@ -444,7 +446,6 @@ func (a *App) writeHarnesses(cmd *cobra.Command, harnesses []apimodel.HarnessCon
 	if len(defaultHarnessConfigID) > 0 {
 		defaultID = defaultHarnessConfigID[0]
 	}
-	harnesses = sortedByCreatedAt(harnesses, func(harness apimodel.HarnessConfig) time.Time { return harness.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tSLUG\tNAME\tCONFIGURED\tDEFAULT\tRUN COMMAND\tUPDATED")
 	for _, harness := range harnesses {
@@ -536,14 +537,13 @@ func formatDefaultMarker(isDefault bool) string {
 }
 
 func (a *App) writeJobs(cmd *cobra.Command, jobs []apimodel.Job) error {
+	jobs = sortedByRecency(jobs, func(job apimodel.Job) time.Time { return recencyTime(job.UpdatedAt, job.CreatedAt) })
 	if a.quiet {
-		jobs = sortedByCreatedAt(jobs, func(job apimodel.Job) time.Time { return job.CreatedAt })
 		return writeResourceIDs(cmd.OutOrStdout(), jobs, func(job apimodel.Job) string { return job.ID })
 	}
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"jobs": jobs})
 	}
-	jobs = sortedByCreatedAt(jobs, func(job apimodel.Job) time.Time { return job.CreatedAt })
 	now := time.Now()
 	rows := make([][]string, 0, len(jobs))
 	errors := make([]string, 0, len(jobs))
@@ -580,23 +580,26 @@ func (a *App) writeJobs(cmd *cobra.Command, jobs []apimodel.Job) error {
 	return tw.Flush()
 }
 
-func sortedByCreatedAt[T any](values []T, createdAt func(T) time.Time) []T {
+// sortedByRecency orders a listing most-recently-touched first, the default for
+// every CLI listing. recency reports the time a value was last touched; use
+// recencyTime to fall back to the creation time for resources that do not track
+// an update time.
+func sortedByRecency[T any](values []T, recency func(T) time.Time) []T {
 	out := append([]T(nil), values...)
 	sort.SliceStable(out, func(i, j int) bool {
-		return createdAt(out[i]).Before(createdAt(out[j]))
+		return recency(out[i]).After(recency(out[j]))
 	})
 	return out
 }
 
-func newestByCreatedAt[T any](values []T, createdAt func(T) time.Time, limit int) []T {
-	out := append([]T(nil), values...)
-	sort.SliceStable(out, func(i, j int) bool {
-		return createdAt(out[i]).After(createdAt(out[j]))
-	})
-	if limit >= 0 && len(out) > limit {
-		return out[:limit]
+// recencyTime is the time a resource was last touched: its update time, or its
+// creation time when the resource has no update time (either unset or not
+// tracked at all).
+func recencyTime(updatedAt, createdAt time.Time) time.Time {
+	if updatedAt.IsZero() {
+		return createdAt
 	}
-	return out
+	return updatedAt
 }
 
 func (a *App) writeJob(cmd *cobra.Command, job *apimodel.Job) error {

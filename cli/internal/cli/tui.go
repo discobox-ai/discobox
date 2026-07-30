@@ -171,7 +171,7 @@ func (d *apiDataSource) PathOptions(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	sandboxes := newestByCreatedAt(body.GetSandboxes(), func(s apimodel.Sandbox) time.Time { return s.CreatedAt }, -1)
+	sandboxes := sortedByRecency(body.GetSandboxes(), func(s apimodel.Sandbox) time.Time { return recencyTime(s.UpdatedAt, s.CreatedAt) })
 	seen := map[string]struct{}{}
 	var paths []string
 	for _, sb := range sandboxes {

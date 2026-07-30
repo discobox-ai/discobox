@@ -55,11 +55,12 @@ func (a *App) selectSandbox(cmd *cobra.Command, sandboxArg string) (projectID st
 func sandboxPickerItems(sandboxes []apimodel.Sandbox) []pickerItem {
 	items := make([]pickerItem, 0, len(sandboxes))
 	for _, sandbox := range sandboxes {
+		updatedAt := recencyTime(sandbox.UpdatedAt, sandbox.CreatedAt)
 		items = append(items, pickerItem{
 			id:        sandbox.ID,
 			title:     sandbox.Config.Name,
-			detail:    fmt.Sprintf("%s · %s", sandboxDisplayState(sandbox), formatTime(sandbox.UpdatedAt)),
-			updatedAt: sandbox.UpdatedAt,
+			detail:    fmt.Sprintf("%s · %s", sandboxDisplayState(sandbox), formatTime(updatedAt)),
+			updatedAt: updatedAt,
 		})
 	}
 	return items

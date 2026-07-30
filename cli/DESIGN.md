@@ -58,6 +58,19 @@ directory. With a full `--sandbox-id` the whole command is create + attach +
 start + status, so a one-shot `disco t git status` costs no round trip it does
 not need.
 
+## Listing Order
+
+Every listing the CLI renders — tables, `-q` ID lists, shell completions, the
+picker, and the TUI — is ordered most recently touched first by
+`sortedByRecency` (`internal/cli/output.go`). "Touched" is `recencyTime`: the
+resource's update time, or its creation time when the resource has no update
+time, either unset or not tracked at all (`SandboxExec`). The whole CLI answers
+"what have I been working on" with one order, so a listing and the picker built
+from it can never disagree.
+
+The sort happens before the output-mode branch, so `-o json` is ordered the same
+as the table: the order is the CLI's answer, not a table-rendering detail.
+
 ## Choosing a Sandbox Interactively
 
 Commands that act on "the sandbox I am working in" take a sandbox identifier —

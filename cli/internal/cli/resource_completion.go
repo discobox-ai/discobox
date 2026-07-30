@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -121,8 +122,9 @@ func (a *App) listSandboxCompletions(ctx context.Context, client *apiclientgen.C
 	if err != nil {
 		return nil, err
 	}
-	completions := make([]string, 0, len(body.GetSandboxes()))
-	for _, sandbox := range body.GetSandboxes() {
+	sandboxes := sortedByRecency(body.GetSandboxes(), func(sandbox apimodel.Sandbox) time.Time { return recencyTime(sandbox.UpdatedAt, sandbox.CreatedAt) })
+	completions := make([]string, 0, len(sandboxes))
+	for _, sandbox := range sandboxes {
 		completions = append(completions, completionItem(sandbox.ID, completionDescription(sandbox.Config.Name, string(sandbox.Runtime.Phase))))
 	}
 	return completions, nil
@@ -137,8 +139,11 @@ func (a *App) listProviderCompletions(ctx context.Context, client *apiclientgen.
 	if err != nil {
 		return nil, err
 	}
-	completions := make([]string, 0, len(body.GetProviders()))
-	for _, provider := range body.GetProviders() {
+	providers := sortedByRecency(body.GetProviders(), func(provider apimodel.SandboxProviderInstance) time.Time {
+		return recencyTime(provider.UpdatedAt, provider.CreatedAt)
+	})
+	completions := make([]string, 0, len(providers))
+	for _, provider := range providers {
 		completions = append(completions, completionItem(provider.ID, completionDescription(provider.Name, provider.Type)))
 	}
 	return completions, nil
@@ -153,8 +158,9 @@ func (a *App) listPoolCompletions(ctx context.Context, client *apiclientgen.Clie
 	if err != nil {
 		return nil, err
 	}
-	completions := make([]string, 0, len(body.GetPools()))
-	for _, pool := range body.GetPools() {
+	pools := sortedByRecency(body.GetPools(), func(pool apimodel.Pool) time.Time { return recencyTime(pool.UpdatedAt, pool.CreatedAt) })
+	completions := make([]string, 0, len(pools))
+	for _, pool := range pools {
 		completions = append(completions, completionItem(pool.ID, completionDescription(pool.Name, pool.ProviderInstanceId)))
 	}
 	return completions, nil
@@ -169,8 +175,11 @@ func (a *App) listHarnessConfigCompletions(ctx context.Context, client *apiclien
 	if err != nil {
 		return nil, err
 	}
-	completions := make([]string, 0, len(body.GetHarnessConfigs()))
-	for _, harness := range body.GetHarnessConfigs() {
+	harnesses := sortedByRecency(body.GetHarnessConfigs(), func(harness apimodel.HarnessConfig) time.Time {
+		return recencyTime(harness.UpdatedAt, harness.CreatedAt)
+	})
+	completions := make([]string, 0, len(harnesses))
+	for _, harness := range harnesses {
 		completions = append(completions, completionItem(harness.ID, completionDescription(harness.Name, strings.Join(harness.RunCommand, " "))))
 	}
 	return completions, nil
@@ -185,8 +194,11 @@ func (a *App) listHarnessConfigNameCompletions(ctx context.Context, client *apic
 	if err != nil {
 		return nil, err
 	}
-	completions := make([]string, 0, len(body.GetHarnessConfigs()))
-	for _, harness := range body.GetHarnessConfigs() {
+	harnesses := sortedByRecency(body.GetHarnessConfigs(), func(harness apimodel.HarnessConfig) time.Time {
+		return recencyTime(harness.UpdatedAt, harness.CreatedAt)
+	})
+	completions := make([]string, 0, len(harnesses))
+	for _, harness := range harnesses {
 		completions = append(completions, completionItem(harness.Name, completionDescription(harness.ID, strings.Join(harness.RunCommand, " "))))
 	}
 	return completions, nil
@@ -201,8 +213,9 @@ func (a *App) listJobCompletions(ctx context.Context, client *apiclientgen.Clien
 	if err != nil {
 		return nil, err
 	}
-	completions := make([]string, 0, len(body.GetJobs()))
-	for _, job := range body.GetJobs() {
+	jobs := sortedByRecency(body.GetJobs(), func(job apimodel.Job) time.Time { return recencyTime(job.UpdatedAt, job.CreatedAt) })
+	completions := make([]string, 0, len(jobs))
+	for _, job := range jobs {
 		completions = append(completions, completionItem(job.ID, completionDescription(job.Type, string(job.Status))))
 	}
 	return completions, nil
@@ -215,6 +228,7 @@ func (a *App) listTerminalCompletions(ctx context.Context, _ *apiclientgen.Clien
 	}
 	// The virtual primary id is offered alongside the real terminals: it is the
 	// only selector that relaunches a stopped primary terminal.
+	terminals = sortedByRecency(terminals, func(terminal apimodel.SandboxExec) time.Time { return terminal.CreatedAt })
 	completions := make([]string, 0, len(terminals)+1)
 	completions = append(completions, completionItem(primaryExecID, "the sandbox's primary terminal, relaunched if stopped"))
 	for _, terminal := range terminals {
@@ -228,6 +242,7 @@ func (a *App) listExecCompletions(ctx context.Context, _ *apiclientgen.Client, p
 	if err != nil {
 		return nil, err
 	}
+	execs = sortedByRecency(execs, func(exec apimodel.SandboxExec) time.Time { return exec.CreatedAt })
 	completions := make([]string, 0, len(execs))
 	for _, exec := range execs {
 		completions = append(completions, completionItem(exec.ID, completionDescription(strings.Join(exec.Command, " "), string(exec.Status))))

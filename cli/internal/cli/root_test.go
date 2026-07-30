@@ -970,47 +970,50 @@ func TestJobsParentQuietCommandPrintsFullIDsOnly(t *testing.T) {
 	}
 }
 
-func TestJobsTableSortsByCreatedAtAscending(t *testing.T) {
+// TestJobsTableSortsByRecencyDescending covers the default listing order shared
+// by every CLI listing: most recently updated first, falling back to the
+// creation time for records with no update time.
+func TestJobsTableSortsByRecencyDescending(t *testing.T) {
 	app := &App{output: "table"}
 	cmd := &cobra.Command{}
 	var out bytes.Buffer
 	cmd.SetOut(&out)
 
-	newerID := "job_9qk5n25t2hh2rv00"
-	olderID := "job_hqnk550g3821ck00"
+	// Created last, but updated longest ago, so it sorts last.
+	staleID := "job_9qk5n25t2hh2rv00"
+	// Never updated, so its creation time orders it.
+	createdOnlyID := "job_hqnk550g3821ck00"
+	freshID := "job_rt3m5n8p1c42vk00"
+	job := func(id, resource string, createdAt, updatedAt time.Time) apimodel.Job {
+		return apimodel.Job{
+			ID:           id,
+			Type:         "worker.reconcile",
+			Status:       apiclientgen.JobStatusCompleted,
+			Attempts:     1,
+			MaxAttempts:  3,
+			ResourceType: "worker",
+			ResourceId:   resource,
+			CreatedAt:    createdAt,
+			UpdatedAt:    updatedAt,
+		}
+	}
 	jobs := []apimodel.Job{
-		{
-			ID:           newerID,
-			Type:         "worker.reconcile",
-			Status:       apiclientgen.JobStatusCompleted,
-			Attempts:     1,
-			MaxAttempts:  3,
-			ResourceType: "worker",
-			ResourceId:   "worker-newer",
-			CreatedAt:    time.Date(2026, 6, 17, 1, 0, 0, 0, time.UTC),
-		},
-		{
-			ID:           olderID,
-			Type:         "worker.reconcile",
-			Status:       apiclientgen.JobStatusCompleted,
-			Attempts:     1,
-			MaxAttempts:  3,
-			ResourceType: "worker",
-			ResourceId:   "worker-older",
-			CreatedAt:    time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC),
-		},
+		job(staleID, "worker-stale", time.Date(2026, 6, 17, 3, 0, 0, 0, time.UTC), time.Date(2026, 6, 17, 4, 0, 0, 0, time.UTC)),
+		job(createdOnlyID, "worker-created-only", time.Date(2026, 6, 17, 6, 0, 0, 0, time.UTC), time.Time{}),
+		job(freshID, "worker-fresh", time.Date(2026, 6, 17, 0, 0, 0, 0, time.UTC), time.Date(2026, 6, 17, 8, 0, 0, 0, time.UTC)),
 	}
 
 	if err := app.writeJobs(cmd, jobs); err != nil {
 		t.Fatalf("writeJobs: %v", err)
 	}
 	output := out.String()
-	olderIndex := strings.Index(output, olderID)
-	newerIndex := strings.Index(output, newerID)
-	if olderIndex < 0 || newerIndex < 0 || olderIndex > newerIndex {
-		t.Fatalf("jobs output = %q, want older job before newer job", output)
+	freshIndex := strings.Index(output, freshID)
+	createdOnlyIndex := strings.Index(output, createdOnlyID)
+	staleIndex := strings.Index(output, staleID)
+	if freshIndex < 0 || createdOnlyIndex < 0 || staleIndex < 0 || freshIndex >= createdOnlyIndex || createdOnlyIndex >= staleIndex {
+		t.Fatalf("jobs output = %q, want most recently updated first", output)
 	}
-	if jobs[0].ID != newerID {
+	if jobs[0].ID != staleID {
 		t.Fatalf("writeJobs mutated input order: %#v", jobs)
 	}
 }

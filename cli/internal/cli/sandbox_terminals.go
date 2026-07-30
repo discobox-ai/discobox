@@ -290,14 +290,13 @@ func (a *App) writeSandboxTerminal(cmd *cobra.Command, terminal *apimodel.Sandbo
 }
 
 func (a *App) writeSandboxTerminals(cmd *cobra.Command, terminals []apimodel.SandboxExec) error {
+	terminals = sortedByRecency(terminals, func(t apimodel.SandboxExec) time.Time { return t.CreatedAt })
 	if a.quiet {
-		terminals = sortedByCreatedAt(terminals, func(t apimodel.SandboxExec) time.Time { return t.CreatedAt })
 		return writeResourceIDs(cmd.OutOrStdout(), terminals, func(t apimodel.SandboxExec) string { return t.ID })
 	}
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"terminals": terminals})
 	}
-	terminals = sortedByCreatedAt(terminals, func(t apimodel.SandboxExec) time.Time { return t.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tAGENT\tSTATUS\tPID\tEXIT\tWORKDIR\tCOMMAND\tCREATED")
 	for _, terminal := range terminals {

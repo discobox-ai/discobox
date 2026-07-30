@@ -320,14 +320,13 @@ func (a *App) writeSandboxExec(cmd *cobra.Command, exec *apimodel.SandboxExec) e
 }
 
 func (a *App) writeSandboxExecs(cmd *cobra.Command, execs []apimodel.SandboxExec) error {
+	execs = sortedByRecency(execs, func(exec apimodel.SandboxExec) time.Time { return exec.CreatedAt })
 	if a.quiet {
-		execs = sortedByCreatedAt(execs, func(exec apimodel.SandboxExec) time.Time { return exec.CreatedAt })
 		return writeResourceIDs(cmd.OutOrStdout(), execs, func(exec apimodel.SandboxExec) string { return exec.ID })
 	}
 	if a.output == "json" {
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"execs": execs})
 	}
-	execs = sortedByCreatedAt(execs, func(exec apimodel.SandboxExec) time.Time { return exec.CreatedAt })
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 	fmt.Fprintln(tw, "ID\tSTATUS\tPID\tEXIT\tTTY\tWORKDIR\tCOMMAND\tCREATED")
 	for _, exec := range execs {
