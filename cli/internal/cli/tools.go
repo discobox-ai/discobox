@@ -14,68 +14,63 @@ import (
 // inside a sandbox against one of its sources, with the tool's own arguments
 // passed through untouched.
 func (a *App) newToolsCommand() *cobra.Command {
+	var sandboxID string
 	cmd := &cobra.Command{
 		Use:     "tools",
 		Aliases: []string{"tool", "t"},
 		Short:   "Run a development tool inside a sandbox",
-		Long: `Run a development tool inside a sandbox, in the working tree of one of its
-sources.
+		Long: `Run a development tool inside a sandbox.
 
 Without --sandbox-id the sandbox is taken from the ones "disco ls" shows for the
 current project directory: the only one when there is one, otherwise you are
-asked to pick. Without --source the tool runs in the sandbox's default working
-directory, which is its primary source.`,
+asked to pick. Where in the sandbox a tool runs is the tool's own business; git
+takes --source.`,
 	}
-	cmd.AddCommand(a.newToolsGitCommand())
+	// Which sandbox to run in is the one thing every tool has in common, so it
+	// is asked once here and inherited. Everything else, including where in the
+	// sandbox the tool runs, belongs to the subcommand that means it.
+	cmd.PersistentFlags().StringVar(&sandboxID, "sandbox-id", "", "Sandbox to run in; when omitted, the sandbox started from this directory, or a prompt to pick one")
+	_ = cmd.RegisterFlagCompletionFunc("sandbox-id", a.completeSandboxes)
+
+	cmd.AddCommand(a.newToolsGitCommand(&sandboxID))
 	return cmd
 }
 
-// toolsOptions is the sandbox and source selection every tools subcommand
-// shares. The flags live on each subcommand so they can be parsed before the
-// tool's own arguments, which are passed through untouched.
-type toolsOptions struct {
-	sandboxID string
-	source    string
-}
-
-func (o *toolsOptions) addFlags(a *App, cmd *cobra.Command) {
-	cmd.Flags().StringVar(&o.sandboxID, "sandbox-id", "", "Sandbox to run in; when omitted, the sandbox started from this directory, or a prompt to pick one")
-	_ = cmd.RegisterFlagCompletionFunc("sandbox-id", a.completeSandboxes)
-	cmd.Flags().StringVarP(&o.source, "source", "s", "", "Source to run in, named by its slug; defaults to the sandbox's primary source")
-}
-
-func (a *App) newToolsGitCommand() *cobra.Command {
-	var opts toolsOptions
+func (a *App) newToolsGitCommand(sandboxID *string) *cobra.Command {
+	var source string
 	cmd := &cobra.Command{
 		Use:   "git [flags] [--] ARG [ARG...]",
 		Short: "Run git in a sandbox source's working tree",
 		Long: `Run git inside a sandbox, in the working tree of one of its sources.
 
-Every argument is passed to git as is; only this command's own flags, given
-before the git arguments, are consumed here. Use -- when a git argument would
-otherwise be read as one of them.`,
+Without --source git runs in the sandbox's default working directory, which is
+its primary source.
+
+Every argument is passed to git as is; only the flags before the git arguments
+are consumed here. Use -- when a git argument would otherwise be read as one of
+them.`,
 		Example: `  disco tools git status
   disco tools git -s docs log --oneline -5
   disco tools git --sandbox-id sbx_01hq diff
   disco tools git -- --version`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return a.runToolInSource(cmd, opts, append([]string{"git"}, args...))
+			return a.runToolInSource(cmd, *sandboxID, source, append([]string{"git"}, args...))
 		},
 	}
 	// Stop parsing flags at the first positional argument so everything from
 	// there on belongs to git: `disco tools git log -s` sends -s to git, while
 	// `disco tools git -s docs log` still selects the source here.
 	cmd.Flags().SetInterspersed(false)
-	opts.addFlags(a, cmd)
+	cmd.Flags().StringVarP(&source, "source", "s", "", "Source to run in, named by its slug; defaults to the sandbox's primary source")
 	return cmd
 }
 
 // runToolInSource runs command inside the sandbox, in the working tree of the
 // selected source, streamed to this terminal exactly like `disco exec`.
-func (a *App) runToolInSource(cmd *cobra.Command, opts toolsOptions, command []string) error {
+func (a *App) runToolInSource(cmd *cobra.Command, sandboxArg, sourceSlug string, command []string) error {
 	ctx := cmd.Context()
-	projectID, sandboxID, client, err := a.selectSandbox(cmd, opts.sandboxID)
+	projectID, sandboxID, client, err := a.selectSandbox(cmd, sandboxArg)
 	if err != nil {
 		return err
 	}
@@ -85,8 +80,8 @@ func (a *App) runToolInSource(cmd *cobra.Command, opts toolsOptions, command []s
 	// --source is the only thing that has to look one up, so the common
 	// `disco t git status` is create + attach and nothing else.
 	workdir := ""
-	if opts.source != "" {
-		workdir, err = a.toolSourceWorkdir(ctx, client, projectID, sandboxID, opts.source)
+	if sourceSlug != "" {
+		workdir, err = a.toolSourceWorkdir(ctx, client, projectID, sandboxID, sourceSlug)
 		if err != nil {
 			return err
 		}
