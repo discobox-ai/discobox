@@ -3,6 +3,7 @@ module github.com/obot-platform/discobox/cli
 go 1.26.0
 
 require (
+	github.com/alecthomas/chroma/v2 v2.24.1
 	github.com/coder/websocket v1.8.14
 	github.com/go-faster/jx v1.2.0
 	github.com/obot-platform/discobox v0.0.0
@@ -53,7 +54,7 @@ require (
 	github.com/adrg/xdg v0.5.3 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/charmbracelet/colorprofile v0.4.3 // indirect
+	github.com/charmbracelet/colorprofile v0.4.3
 	github.com/charmbracelet/ultraviolet v0.0.0-20260703014108-f5a850f9c2b7
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/charmbracelet/x/exp/ordered v0.1.0 // indirect

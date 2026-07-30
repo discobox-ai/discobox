@@ -709,6 +709,91 @@ type sandboxExecUser struct {
 	HomeDirectory *string `json:"homeDirectory"`
 }
 
+// sandboxCommandOutput runs command inside the sandbox and returns everything
+// it wrote once it exits, rather than streaming it.
+//
+// This is for the callers that have to read the output before they can act on
+// it — `disco apply`'s dirty-tree check, `disco diff`'s rendered view — where
+// an attach would hand them bytes they can only buffer themselves. An exit code
+// of -1 means the exec ended without recording one.
+func (a *App) sandboxCommandOutput(ctx context.Context, projectID, sandboxID, workdir string, command []string) (stdout, stderr string, exitCode int, err error) {
+	body := &apimodel.CreateSandboxExecRequest{}
+	body.SetCommand(append([]string{}, command...))
+	body.SetWorkdir(optString(workdir))
+	exec, err := a.createSandboxExec(ctx, projectID, sandboxID, body)
+	if err != nil {
+		return "", "", -1, err
+	}
+	if _, err := a.startSandboxExec(ctx, projectID, sandboxID, exec.ID); err != nil {
+		return "", "", -1, err
+	}
+	final, err := a.waitSandboxExecExit(ctx, projectID, sandboxID, exec.ID)
+	if err != nil {
+		return "", "", -1, err
+	}
+	stdout, stderr, err = a.sandboxExecOutput(ctx, projectID, sandboxID, exec.ID)
+	if err != nil {
+		return "", "", -1, err
+	}
+	exitCode = -1
+	if code, ok := final.ExitCode.Get(); ok {
+		exitCode = int(code)
+	}
+	return stdout, stderr, exitCode, nil
+}
+
+// waitSandboxExecExitPollInterval paces polling an exec's status. The commands
+// that are captured rather than attached are short ones, so a short interval
+// keeps their callers responsive without hammering the API.
+const waitSandboxExecExitPollInterval = 150 * time.Millisecond
+
+func (a *App) waitSandboxExecExit(ctx context.Context, projectID, sandboxID, execID string) (apimodel.SandboxExec, error) {
+	for {
+		exec, err := a.getSandboxExec(ctx, projectID, sandboxID, execID)
+		if err != nil {
+			return apimodel.SandboxExec{}, err
+		}
+		switch exec.Status {
+		case apiclientgen.SandboxExecStatusExited, apiclientgen.SandboxExecStatusFailed, apiclientgen.SandboxExecStatusLost:
+			return *exec, nil
+		}
+		select {
+		case <-ctx.Done():
+			return apimodel.SandboxExec{}, ctx.Err()
+		case <-time.After(waitSandboxExecExitPollInterval):
+		}
+	}
+}
+
+// sandboxExecOutput replays an exited exec's recorded output, keeping the two
+// streams apart: a caller that parses stdout must not have git's progress and
+// warnings mixed into it.
+func (a *App) sandboxExecOutput(ctx context.Context, projectID, sandboxID, execID string) (stdout, stderr string, err error) {
+	client, err := a.apiClient()
+	if err != nil {
+		return "", "", err
+	}
+	res, err := client.ListSandboxExecLogs(ctx, apiclientgen.ListSandboxExecLogsParams{ProjectId: projectID, SandboxId: sandboxID, ExecId: execID})
+	if err != nil {
+		return "", "", err
+	}
+	body, err := expectResponse[apimodel.SandboxExecLogsResponse](res)
+	if err != nil {
+		return "", "", err
+	}
+	var out, errOut strings.Builder
+	for _, entry := range body.GetEntries() {
+		switch entry.Stream {
+		case apiclientgen.SandboxExecLogEntryStreamStderr:
+			errOut.Write(entry.Data)
+		case apiclientgen.SandboxExecLogEntryStreamInput:
+		default:
+			out.Write(entry.Data)
+		}
+	}
+	return out.String(), errOut.String(), nil
+}
+
 func (a *App) createSandboxExec(ctx context.Context, projectID, sandboxID string, body *apimodel.CreateSandboxExecRequest) (apimodel.SandboxExec, error) {
 	var response sandboxExecRecordResponse
 	if err := a.execJSON(ctx, http.MethodPost, projectID, sandboxID, "", body, &response); err != nil {

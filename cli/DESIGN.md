@@ -13,6 +13,7 @@ transport helpers where OpenAPI does not model the stream.
 | `internal/sandboxcreate` | UI-independent client-side sandbox request preparation and creation, including prompt options, source resolution, workspace snapshots, environment/secrets, local user identity, and source push delivery. |
 | `internal/origin` | Resolves the client host and project directory a sandbox is created from. Host identity itself is shared, in the root module's `internal/hostid`. |
 | `internal/tui` | Bubble Tea presentation and interaction state, expressed against its own `DataSource` interface. |
+| `internal/diffrender` | Unified-diff parsing and terminal layout, with no knowledge of sandboxes or the API. |
 
 ## UI Dependency Direction
 
@@ -280,6 +281,88 @@ Everything that shells out to git shares it — `sandboxcreate.DeliverSource`
 (push at create) and `sandboxapply.FetchSource` (fetch at apply) — so the local
 socket, which is the default endpoint, is not a server only half the CLI can
 reach.
+
+## Diff
+
+`disco diff` (`internal/cli/diff.go`) answers "what has this sandbox changed?"
+It selects a sandbox exactly like `apply` — optional positional `SANDBOX_ID`,
+otherwise `selectSandbox` — and shares `selectSources` with it, so `--source`
+names the same thing in both.
+
+- The base is `checkout.commit`, so `disco diff` means what
+  `git diff <that commit>` means inside the sandbox. It is displaced only by
+  the merge base with `refs/remotes/origin/<checkout.refName>`, and only when
+  that merge base is a strict descendant of `checkout.commit` — so it excludes
+  commits the sandbox pulled rather than wrote, is a no-op when nothing was
+  integrated, and never moves the base backwards after an upstream rewrite. `--base` overrides both, and takes the
+  keyword `snapshot` for the dirty-workspace ref.
+- Resolution happens **inside the sandbox**, from its own refs
+  (`internal/cli/diff_base.go`), and the chosen base and its reason are
+  reported with every diff. See
+  [ADR 0018](../docs/adr/0018-disco-diff-resolves-its-base-inside-the-sandbox.md)
+  for why it is not computed locally the way `apply`'s is, and why the
+  dirty-workspace snapshot is not the default: excluding work the user handed
+  the sandbox makes the command answer "nothing changed" about a workspace
+  full of changes.
+- The right-hand side is the sandbox's whole working state written into a
+  scratch index (`GIT_INDEX_FILE`, seeded from the real index for its stat
+  cache) as a tree object, so the diff is tree against tree. Comparing against
+  the working tree instead cannot see files git was never told about, and
+  against a base that *does* contain them reports them as deletions. The
+  repository's own index is never touched — no `git add` into it, not even an
+  intent-to-add — so diffing cannot disturb the work going on in the sandbox.
+- The diff runs *inside* the sandbox, not by fetching to this machine. That is
+  what lets it show uncommitted work, which `apply`'s fetch cannot see, and it
+  needs no local repository at all.
+- The whole thing is one `sh -c` script per source, with every word shell-quoted
+  in Go (`shellCommand`), which is what lets a user-supplied pathspec through
+  safely.
+- A source that cannot be diffed is reported and the rest still run; the
+  command's error is the closing verdict, as in `apply`.
+
+### Flags
+
+The flags are `git diff`'s own, in git's spelling, for the subset that still
+means something here. The ones that choose *what* to compare are deliberately
+absent: the right-hand side is always the sandbox's working tree, and the left
+is the base above, which `--base` is the one way to override. Pathspecs come after `--`, so the optional
+`SANDBOX_ID` positional stays unambiguous (`cmd.ArgsLenAtDash`).
+
+Flags that select one of git's own output formats (`--stat`, `--numstat`,
+`--name-only`, …) are passed straight through *and* switch off rendering: what
+they ask for is git's output, so rendering it would be answering a different
+question.
+
+### Two Output Paths
+
+| | when | how |
+| --- | --- | --- |
+| Rendered | stdout is a terminal and no raw-output flag | capture, parse, lay out |
+| Passed through | redirected, `--patch`, or a git output format | stream the exec |
+
+- Rendered output is a document, so its per-source headings go to stdout with
+  it. Passed-through output is a patch, so nothing but the patch reaches stdout
+  and the headings go to stderr — `disco diff > sandbox.patch` stays a patch
+  file `git apply` accepts.
+- The rendered path is the only one that buys the whole diff up front
+  (`sandboxCommandOutput`): layout cannot start until the text is complete. The
+  passed-through path streams via the normal exec attach, which is what a piped
+  patch or a very large diff wants, and which gets a PTY — and therefore git's
+  own color — only when all three streams are terminals.
+- Resolving the base is its own exec, ahead of the diff, so the base and its
+  reason can be reported rather than inferred from the output.
+- `--color=auto|always|never` is git's, and only decides color. Rendering is
+  decided by the terminal and the flags above, never by `--color`.
+
+Rendering itself lives in `internal/diffrender`, not here: it is a unified-diff
+parser plus a layout — including syntax highlighting of the code inside the
+diff — with no knowledge of sandboxes, and `internal/tui` may want it later. See
+that package for the layout and highlighting rules.
+
+The diff algorithm is never ours. git computes every diff, inside the sandbox,
+so `-w`, `-M`, and `-U` behave exactly as they do in a shell and the output
+stays a patch `git apply` accepts. The only comparison this repository performs
+is the intra-line emphasis in `diffrender`, over two already-paired lines.
 
 ## Apply Output
 
