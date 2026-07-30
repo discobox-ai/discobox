@@ -25,15 +25,7 @@ func resolveShortID(value, name string, ids []string) (string, error) {
 	if !isResolvableShortID(id) {
 		return id, nil
 	}
-	var matches []string
-	for _, candidate := range ids {
-		if candidate == id {
-			return candidate, nil
-		}
-		if strings.HasPrefix(candidate, id) {
-			matches = append(matches, candidate)
-		}
-	}
+	matches := idpkg.ResolveShort(id, ids)
 	switch len(matches) {
 	case 0:
 		return "", fmt.Errorf("no %s matches short ID %q", name, id)

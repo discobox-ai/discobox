@@ -87,3 +87,32 @@ func RandomPart(id string) string {
 	}
 	return id
 }
+
+// ResolveShort returns the candidates a short ID selects. An exact match wins
+// outright. Otherwise a short ID matches a prefix of the full ID ("sbx_dfzx")
+// or, when nothing matches that way, a prefix of the random part alone
+// ("dfzx"), so the distinctive tail is usable without retyping the resource
+// prefix. Callers decide what zero or multiple matches mean.
+func ResolveShort(short string, candidates []string) []string {
+	short = strings.TrimSpace(short)
+	if short == "" {
+		return nil
+	}
+	var full, random []string
+	for _, candidate := range candidates {
+		if candidate == short {
+			return []string{candidate}
+		}
+		if strings.HasPrefix(candidate, short) {
+			full = append(full, candidate)
+			continue
+		}
+		if IsGenerated(candidate) && strings.HasPrefix(RandomPart(candidate), short) {
+			random = append(random, candidate)
+		}
+	}
+	if len(full) > 0 {
+		return full
+	}
+	return random
+}

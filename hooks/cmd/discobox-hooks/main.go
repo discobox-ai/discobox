@@ -1330,11 +1330,15 @@ func selectedSnapshot(ctx context.Context, c *client.Client, args []string) (cli
 	if strings.EqualFold(id, "latest") {
 		id = latestSnapshot(snapshots).ID
 	}
-	matches := make([]client.WorkspaceSnapshot, 0, 1)
+	byID := make(map[string]client.WorkspaceSnapshot, len(snapshots))
+	ids := make([]string, 0, len(snapshots))
 	for _, snapshot := range snapshots {
-		if snapshot.ID == id || (!idpkg.IsGenerated(id) && strings.HasPrefix(snapshot.ID, id)) {
-			matches = append(matches, snapshot)
-		}
+		byID[snapshot.ID] = snapshot
+		ids = append(ids, snapshot.ID)
+	}
+	matches := make([]client.WorkspaceSnapshot, 0, 1)
+	for _, matchID := range idpkg.ResolveShort(id, ids) {
+		matches = append(matches, byID[matchID])
 	}
 	if len(matches) == 0 {
 		return client.WorkspaceSnapshot{}, fmt.Errorf("workspace snapshot %q not found", id)
