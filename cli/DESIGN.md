@@ -309,6 +309,17 @@ identifiers and JSON keys keep ADR 0014's `Host*` vocabulary.
   means alternatives, not a sequence — a dirty sandbox offers both committing
   the work there and `--allow-dirty` — and each re-run is spelled out for that
   source, `--dir` override included.
+- A source applies only into the directory the sandbox actually came from:
+  `resolveApplyHostDir` requires the sandbox's `Origin.HostId` to be this
+  machine's `hostid`, the source to have recorded a `LocalDirectory`, and that
+  directory to still exist. Each failure says which of those it was — another
+  machine, a remote-cloned source, a moved checkout — because "pass --dir" is
+  only actionable once you know why. `--dir` is the escape hatch and
+  deliberately skips the check, so the report records how the directory was
+  chosen (`hostPathOrigin`) and prints it under "chosen by".
+- A merge base that does not exist means the target repository shares no
+  history with the sandbox — almost always a `--dir` pointed at the wrong
+  repository — and is reported as that rather than as a git error.
 - `--allow-dirty` applies a source whose sandbox working tree is dirty. The
   status check still runs and its entries are still reported (with
   `dirtyIgnored`): the flag means the user chose to leave that work in the

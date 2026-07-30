@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -106,21 +108,9 @@ func (a *App) runApply(cmd *cobra.Command, sandboxArg, onlySlug string, dirOverr
 	if err != nil {
 		return err
 	}
-	sources := applySources(sandbox)
-	if onlySlug != "" {
-		filtered := sources[:0]
-		for _, s := range sources {
-			if s.slug == onlySlug {
-				filtered = append(filtered, s)
-			}
-		}
-		if len(filtered) == 0 {
-			return fmt.Errorf("sandbox has no source with slug %q", onlySlug)
-		}
-		sources = filtered
-	}
-	if len(sources) == 0 {
-		return fmt.Errorf("sandbox has no sources to apply")
+	sources, err := selectSources(sandbox, onlySlug)
+	if err != nil {
+		return err
 	}
 
 	host, err := hostid.Get()
@@ -206,6 +196,29 @@ func applySources(sandbox *apimodel.Sandbox) []applySourceEntry {
 	return out
 }
 
+// selectSources is the set of sources a command acts on: every source on the
+// sandbox, or only the one named by slug. Shared by the commands that work
+// per-source (apply, diff) so "--source" means the same thing in each.
+func selectSources(sandbox *apimodel.Sandbox, onlySlug string) ([]applySourceEntry, error) {
+	sources := applySources(sandbox)
+	if onlySlug != "" {
+		filtered := sources[:0]
+		for _, s := range sources {
+			if s.slug == onlySlug {
+				filtered = append(filtered, s)
+			}
+		}
+		if len(filtered) == 0 {
+			return nil, fmt.Errorf("sandbox has no source with slug %q", onlySlug)
+		}
+		sources = filtered
+	}
+	if len(sources) == 0 {
+		return nil, fmt.Errorf("sandbox has no sources")
+	}
+	return sources, nil
+}
+
 // sourceWorkdir is the directory a source's working tree lives at inside the
 // sandbox: its explicit working directory, or the directory it was placed in.
 // Empty means the sandbox never told us where the source landed.
@@ -257,11 +270,12 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 		return report
 	}
 
-	hostDir, err := resolveApplyHostDir(sandbox, hostID, entry, dirOverrides)
+	hostDir, dirOrigin, err := resolveApplyHostDir(sandbox, hostID, entry, dirOverrides)
 	if err != nil {
 		printer.bareSourceHeader(entry.slug)
 		return fail("%v", err)
 	}
+	report.HostPathOrigin = dirOrigin
 	repoRoot, err := gitutil.Root(ctx, hostDir)
 	if err != nil {
 		printer.bareSourceHeader(entry.slug)
@@ -322,7 +336,11 @@ func (a *App) applyOneSource(ctx context.Context, printer applyPrinter, client *
 		report.BaseOrigin = baseOriginMergeBase
 		report.Base, err = gitapply.MergeBase(ctx, repoRoot, tip)
 		if err != nil {
-			return fail("%v", err)
+			// The overwhelmingly likely cause is that repoRoot is not the
+			// repository this source came from — unrelated histories share no
+			// commit — which is worth saying outright, since --dir is how a
+			// caller points at the wrong one in the first place.
+			return fail("the sandbox's history has no commit in common with %s, so there is nothing to apply onto; is that the repository source %q came from? (%v)", repoRoot, entry.slug, err)
 		}
 	}
 	printer.step("base %s (%s)", shortSHA(report.Base), formatBaseOrigin(report.BaseOrigin))
@@ -444,19 +462,53 @@ func statusLines(status string) []string {
 }
 
 // resolveApplyHostDir picks the local directory a source applies into: an
-// explicit --dir override, or the source's own LocalDirectory when this host
-// is the one the sandbox was created from. Anything else has no local
-// directory this command can trust.
-func resolveApplyHostDir(sandbox *apimodel.Sandbox, hostID string, entry applySourceEntry, dirOverrides map[string]string) (string, error) {
+// explicit --dir override, or the source's own LocalDirectory when this
+// machine is the one the sandbox was created from.
+//
+// Applying into a directory the sandbox did not come from would cherry-pick
+// one repository's commits onto another, so the identity check is the gate:
+// the sandbox's origin host must be this host, that source must have recorded
+// where it came from, and that directory must still be there. Each of those
+// fails for a different reason and says which, because "pass --dir" is only
+// actionable once you know whether the sandbox is from another machine, was
+// cloned from a remote, or simply moved.
+func resolveApplyHostDir(sandbox *apimodel.Sandbox, hostID string, entry applySourceEntry, dirOverrides map[string]string) (string, hostDirOrigin, error) {
 	if dir, ok := dirOverrides[entry.slug]; ok {
-		return dir, nil
+		return dir, hostDirFromOverride, nil
 	}
+	needDir := fmt.Sprintf("pass --dir %s=PATH", entry.slug)
+
 	origin, hasOrigin := sandbox.Origin.Get()
-	local, hasLocal := entry.source.LocalDirectory.Get()
-	if hasOrigin && hasLocal && origin.HostId == hostID && strings.TrimSpace(local) != "" {
-		return local, nil
+	if !hasOrigin {
+		return "", "", fmt.Errorf("the sandbox has no recorded origin, so nothing says which directory it came from; %s", needDir)
 	}
-	return "", fmt.Errorf("no known local directory on this machine; pass --dir %s=PATH", entry.slug)
+	if origin.HostId != hostID {
+		return "", "", fmt.Errorf("the sandbox was created on a different machine (origin host %s%s, this machine is %s); %s",
+			origin.HostId, formatOriginHostname(origin), hostID, needDir)
+	}
+
+	local := strings.TrimSpace(entry.source.LocalDirectory.Or(""))
+	if local == "" {
+		return "", "", fmt.Errorf("source %q has no local directory recorded — it was cloned from a remote rather than pushed from a checkout here; %s", entry.slug, needDir)
+	}
+	info, err := os.Stat(local)
+	if err != nil {
+		return "", "", fmt.Errorf("the directory source %q came from, %s, is not readable on this machine (%w); %s", entry.slug, local, err, needDir)
+	}
+	if !info.IsDir() {
+		return "", "", fmt.Errorf("the path source %q came from, %s, is no longer a directory; %s", entry.slug, local, needDir)
+	}
+	return local, hostDirFromSandboxOrigin, nil
+}
+
+// formatOriginHostname adds the origin machine's display hostname when the
+// sandbox recorded one. The host ID alone identifies the machine but tells
+// nobody which machine it was.
+func formatOriginHostname(origin apimodel.Origin) string {
+	if hostname := strings.TrimSpace(origin.Hostname.Or("")); hostname != "" {
+		return " " + strconv.Quote(hostname)
+	}
+	return ""
 }
 
 // sandboxSourceDirty reports whether a source's working tree inside the
@@ -464,74 +516,14 @@ func resolveApplyHostDir(sandbox *apimodel.Sandbox, hostID string, entry applySo
 // API. Fetching a source's commits only sees committed history (ADR 0014
 // §3): this is the one thing that requires exec instead.
 func (a *App) sandboxSourceDirty(ctx context.Context, projectID, sandboxID, workdir string) (bool, string, error) {
-	body := &apimodel.CreateSandboxExecRequest{}
-	body.SetCommand([]string{"git", "status", "--porcelain"})
-	body.SetWorkdir(optString(workdir))
-	exec, err := a.createSandboxExec(ctx, projectID, sandboxID, body)
+	stdout, stderr, code, err := a.sandboxCommandOutput(ctx, projectID, sandboxID, workdir, []string{"git", "status", "--porcelain"})
 	if err != nil {
 		return false, "", err
 	}
-	if _, err := a.startSandboxExec(ctx, projectID, sandboxID, exec.ID); err != nil {
-		return false, "", err
-	}
-	final, err := a.waitSandboxExecExit(ctx, projectID, sandboxID, exec.ID)
-	if err != nil {
-		return false, "", err
-	}
-	stdout, err := a.sandboxExecStdout(ctx, projectID, sandboxID, exec.ID)
-	if err != nil {
-		return false, "", err
-	}
-	if code, ok := final.ExitCode.Get(); !ok || code != 0 {
-		return false, "", fmt.Errorf("git status: %s", strings.TrimSpace(stdout))
+	if code != 0 {
+		return false, "", fmt.Errorf("git status: %s", strings.TrimSpace(stderr+stdout))
 	}
 	return strings.TrimSpace(stdout) != "", stdout, nil
-}
-
-// waitSandboxExecExitPollInterval paces polling an exec's status. git status
-// on a source's working tree is near-instant, so a short interval keeps
-// disco apply responsive without hammering the API.
-const waitSandboxExecExitPollInterval = 150 * time.Millisecond
-
-func (a *App) waitSandboxExecExit(ctx context.Context, projectID, sandboxID, execID string) (apimodel.SandboxExec, error) {
-	for {
-		exec, err := a.getSandboxExec(ctx, projectID, sandboxID, execID)
-		if err != nil {
-			return apimodel.SandboxExec{}, err
-		}
-		switch exec.Status {
-		case apiclientgen.SandboxExecStatusExited, apiclientgen.SandboxExecStatusFailed, apiclientgen.SandboxExecStatusLost:
-			return *exec, nil
-		}
-		select {
-		case <-ctx.Done():
-			return apimodel.SandboxExec{}, ctx.Err()
-		case <-time.After(waitSandboxExecExitPollInterval):
-		}
-	}
-}
-
-func (a *App) sandboxExecStdout(ctx context.Context, projectID, sandboxID, execID string) (string, error) {
-	client, err := a.apiClient()
-	if err != nil {
-		return "", err
-	}
-	res, err := client.ListSandboxExecLogs(ctx, apiclientgen.ListSandboxExecLogsParams{ProjectId: projectID, SandboxId: sandboxID, ExecId: execID})
-	if err != nil {
-		return "", err
-	}
-	body, err := expectResponse[apimodel.SandboxExecLogsResponse](res)
-	if err != nil {
-		return "", err
-	}
-	var out strings.Builder
-	for _, entry := range body.GetEntries() {
-		if entry.Stream == apiclientgen.SandboxExecLogEntryStreamInput {
-			continue
-		}
-		out.Write(entry.Data)
-	}
-	return out.String(), nil
 }
 
 func shortSHA(commit string) string {

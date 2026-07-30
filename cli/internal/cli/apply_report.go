@@ -44,6 +44,20 @@ const (
 	baseOriginMergeBase baseOrigin = "merge-base"
 )
 
+// hostDirOrigin says how the local directory a source applies into was chosen.
+// Applying onto the wrong repository is the one mistake this command cannot
+// undo for the user, so the choice is reported rather than assumed.
+type hostDirOrigin string
+
+const (
+	// hostDirFromOverride: named explicitly with --dir, and the sandbox's own
+	// origin was not consulted.
+	hostDirFromOverride hostDirOrigin = "dir-override"
+	// hostDirFromSandboxOrigin: the sandbox was created on this machine, from
+	// this directory, and that directory is still there.
+	hostDirFromSandboxOrigin hostDirOrigin = "sandbox-origin"
+)
+
 // applyReport is the full result of one `disco apply` invocation: what was
 // looked at, what was decided, and what changed. It is the JSON payload of
 // `disco apply -o json` and the model the text output renders from, so the two
@@ -60,8 +74,10 @@ type applySourceReport struct {
 
 	// Host side: this machine, the repository disco was run from. Printed as
 	// "local", which is what a user calls it.
-	HostPath   string `json:"hostPath,omitempty"`
-	HostBranch string `json:"hostBranch,omitempty"`
+	HostPath string `json:"hostPath,omitempty"`
+	// HostPathOrigin is how that directory was chosen.
+	HostPathOrigin hostDirOrigin `json:"hostPathOrigin,omitempty"`
+	HostBranch     string        `json:"hostBranch,omitempty"`
 	// HostBase is the host commit the branch was on before this apply, and
 	// still is unless Status is applied.
 	HostBase string `json:"hostBase,omitempty"`
@@ -182,6 +198,7 @@ func (p applyPrinter) bareSourceHeader(slug string) {
 func (p applyPrinter) sourceHeader(report applySourceReport) {
 	p.bareSourceHeader(report.Slug)
 	p.step("local repo    %s%s", report.HostPath, formatBranchAt(report.HostBranch, report.HostBase))
+	p.step("chosen by     %s", formatHostDirOrigin(report))
 	if report.SandboxDir != "" {
 		p.step("sandbox repo  %s", report.SandboxDir)
 	}
@@ -239,6 +256,18 @@ func (p applyPrinter) summary(report applyReport) {
 	}
 	p.linef("")
 	p.linef("%d %s: %s", len(report.Sources), pluralize("source", len(report.Sources)), strings.Join(parts, ", "))
+}
+
+// formatHostDirOrigin states which check put the apply in this directory, so
+// "why is it touching this repository" never has to be inferred.
+func formatHostDirOrigin(report applySourceReport) string {
+	switch report.HostPathOrigin {
+	case hostDirFromOverride:
+		return fmt.Sprintf("--dir %s=%s (the sandbox's own origin was not consulted)", report.Slug, report.HostPath)
+	case hostDirFromSandboxOrigin:
+		return "the sandbox's origin: it was created on this machine, from this directory"
+	}
+	return string(report.HostPathOrigin)
 }
 
 func formatBranchAt(branch, commit string) string {
