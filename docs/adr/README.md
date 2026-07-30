@@ -69,3 +69,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0014](0014-disco-apply-pulls-sandbox-commits-via-cherry-pick.md) | `disco apply` pulls sandbox commits to the host via cherry-pick | Accepted |
 | [0015](0015-nested-docker-builds-trust-the-mitm-proxy-via-nri.md) | Nested Docker builds and containers trust the MITM proxy via an NRI plugin | Accepted |
 | [0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md) | Sandbox image upgrades are explicit, in-place, and digest-driven | Accepted |
+| [0017](0017-resource-state-is-desired-and-observed-with-no-operations.md) | Orchestration is generation convergence; a resource has state and desired state | Accepted |
