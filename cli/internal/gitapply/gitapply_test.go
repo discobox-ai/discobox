@@ -78,6 +78,11 @@ func TestAttemptLandsCleanRangeAndFastForwards(t *testing.T) {
 	if result.HostTip == "" {
 		t.Fatal("landed result has no HostTip")
 	}
+	// HostBase is what the caller reports the branch moved from, so it has to
+	// be the pre-apply tip, not the post-apply one.
+	if result.HostBase != base {
+		t.Fatalf("HostBase = %s, want the pre-apply host tip %s", result.HostBase, base)
+	}
 	headNow := run(t, host, "rev-parse", "HEAD")
 	if headNow != result.HostTip {
 		t.Fatalf("host HEAD = %s, want fast-forwarded to %s", headNow, result.HostTip)
@@ -119,6 +124,11 @@ func TestAttemptConflictLeavesHostUntouched(t *testing.T) {
 	}
 	if result.ConflictCommit != tip {
 		t.Fatalf("conflictCommit = %s, want %s", result.ConflictCommit, tip)
+	}
+	// A conflict still reports where the host branch stands, since that is
+	// what the caller tells the user is unchanged.
+	if result.HostBase != hostHead {
+		t.Fatalf("HostBase = %s, want %s", result.HostBase, hostHead)
 	}
 	headNow := run(t, host, "rev-parse", "HEAD")
 	if headNow != hostHead {

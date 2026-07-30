@@ -22,6 +22,10 @@ import (
 
 // Result is the outcome of an Attempt.
 type Result struct {
+	// HostBase is the commit repoRoot's branch was on before the attempt.
+	// Always set: on a conflict it is where the branch still is, and on a
+	// clean landing it is the "from" half of the range the apply added.
+	HostBase string
 	// Landed is true when the commits were fast-forwarded into repoRoot.
 	Landed bool
 	// HostTip is the resulting host-side commit SHA, set when Landed.
@@ -75,7 +79,7 @@ func Attempt(ctx context.Context, repoRoot, base, tipRef string) (Result, error)
 	if _, err := gitutil.Output(ctx, scratch, nil, nil, "cherry-pick", rangeSpec); err != nil {
 		conflict, _ := gitutil.Output(ctx, scratch, nil, nil, "rev-parse", "CHERRY_PICK_HEAD")
 		_, _ = gitutil.Output(ctx, scratch, nil, nil, "cherry-pick", "--abort")
-		return Result{ConflictCommit: strings.TrimSpace(conflict)}, nil
+		return Result{HostBase: head, ConflictCommit: strings.TrimSpace(conflict)}, nil
 	}
 
 	scratchTip, err := gitutil.Output(ctx, scratch, nil, nil, "rev-parse", "HEAD")
@@ -89,5 +93,5 @@ func Attempt(ctx context.Context, repoRoot, base, tipRef string) (Result, error)
 		return Result{}, fmt.Errorf("fast-forward host branch onto the applied commits: %w", err)
 	}
 
-	return Result{Landed: true, HostTip: scratchTip}, nil
+	return Result{HostBase: head, Landed: true, HostTip: scratchTip}, nil
 }

@@ -9,11 +9,97 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 )
 
 type StatusChange struct {
 	Path    string
 	Deleted bool
+}
+
+// Tracer observes every git command this package runs, so a caller that wants
+// to show its work — `disco apply --debug` — can print the real commands
+// instead of a paraphrase. Args are already redacted (see redactArg).
+type Tracer func(dir string, args []string)
+
+type tracerKey struct{}
+
+// WithTracer returns a context whose git commands are reported to tracer.
+func WithTracer(ctx context.Context, tracer Tracer) context.Context {
+	if tracer == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, tracerKey{}, tracer)
+}
+
+func trace(ctx context.Context, dir string, args []string) {
+	tracer, _ := ctx.Value(tracerKey{}).(Tracer)
+	if tracer == nil {
+		return
+	}
+	redacted := make([]string, len(args))
+	for i, arg := range args {
+		redacted[i] = redactArg(arg)
+	}
+	tracer(dir, redacted)
+}
+
+// redactArg strips credentials out of a traced argument. Fetch and push against
+// the sandbox git proxy carry a bearer token in an http.extraHeader config
+// argument, and remote URLs can carry userinfo; neither belongs in output a
+// user may paste into a bug report. Redacting here rather than at each call
+// site means no new git command can leak by forgetting to.
+func redactArg(arg string) string {
+	if strings.HasPrefix(arg, "http.extraHeader=") {
+		name, _, ok := strings.Cut(strings.TrimPrefix(arg, "http.extraHeader="), ":")
+		if !ok {
+			return "http.extraHeader=[REDACTED]"
+		}
+		return "http.extraHeader=" + name + ": [REDACTED]"
+	}
+	if scheme, rest, ok := strings.Cut(arg, "://"); ok && strings.Contains(rest, "@") {
+		userinfo, host, _ := strings.Cut(rest, "@")
+		if name, _, hasPassword := strings.Cut(userinfo, ":"); hasPassword {
+			return scheme + "://" + name + ":[REDACTED]@" + host
+		}
+	}
+	return arg
+}
+
+// Commit is one commit as reported by Log.
+type Commit struct {
+	SHA     string    `json:"sha"`
+	Subject string    `json:"subject"`
+	Author  string    `json:"author"`
+	Date    time.Time `json:"date"`
+}
+
+// Log lists the commits in revRange (any `git log` range, e.g. "base..tip"),
+// oldest first — the order they would be replayed in.
+func Log(ctx context.Context, repoRoot, revRange string) ([]Commit, error) {
+	// %x1f/%x1e separate fields and records: subjects and author names contain
+	// anything, including tabs and newlines, so neither can be the delimiter.
+	out, err := Output(ctx, repoRoot, nil, nil, "log", "--reverse", "--format=%H%x1f%an%x1f%aI%x1f%s%x1e", revRange)
+	if err != nil {
+		return nil, fmt.Errorf("list commits in %s: %w", revRange, err)
+	}
+	var commits []Commit
+	for _, record := range strings.Split(out, "\x1e") {
+		record = strings.TrimLeft(record, "\r\n")
+		if strings.TrimSpace(record) == "" {
+			continue
+		}
+		fields := strings.Split(record, "\x1f")
+		if len(fields) != 4 {
+			continue
+		}
+		commit := Commit{SHA: fields[0], Author: fields[1], Subject: fields[3]}
+		if at, err := time.Parse(time.RFC3339, fields[2]); err == nil {
+			commit.Date = at
+		}
+		commits = append(commits, commit)
+	}
+	return commits, nil
 }
 
 type WorkspaceTree struct {
@@ -24,6 +110,7 @@ type WorkspaceTree struct {
 }
 
 func Output(ctx context.Context, dir string, stdin []byte, extraEnv map[string]string, args ...string) (string, error) {
+	trace(ctx, dir, args)
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	if stdin != nil {

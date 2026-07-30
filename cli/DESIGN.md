@@ -224,6 +224,36 @@ Everything that shells out to git shares it — `sandboxcreate.DeliverSource`
 socket, which is the default endpoint, is not a server only half the CLI can
 reach.
 
+## Apply Output
+
+`disco apply` (`internal/cli/apply.go`) performs git operations on the user's
+own repository, so its output is an account of those operations rather than a
+verdict. Every source reports the local repository and branch it lands on, the
+sandbox repository and fetch ref it comes from, the base commit and *why* that
+commit is the base (a prior recorded apply, or the merge base), each commit in
+the range with author and date, and — once landed — the local commit each
+sandbox commit became.
+
+In printed text the two sides are **local** (this machine's repository) and
+**sandbox**, never "host": the code and the API use "host" for machine identity
+too (`internal/hostid`, `Origin.HostId`), and a reader of the output has no way
+to tell the two senses apart. This is a wording rule for what users see —
+identifiers and JSON keys keep ADR 0014's `Host*` vocabulary.
+
+- `internal/cli/apply_report.go` owns the shape (`applyReport`) and its
+  rendering (`applyPrinter`). Text output renders from the same struct that
+  `-o json` emits, so the two can never describe different things.
+- Every outcome is an `applyStatus` on the report, including failure:
+  `applyOneSource` returns a report instead of an error, so a failed source
+  keeps the context the run had already established rather than collapsing to
+  one error line. The command's returned error is only the closing verdict.
+- Failure statuses carry `nextSteps`: literal commands that resolve them,
+  runnable by a human or an agent as printed.
+- `--debug` additionally echoes every git command as it runs, via
+  `gitutil.WithTracer`, on stderr so it never interleaves into the report.
+  `gitutil` redacts credentials in traced arguments centrally, so no new git
+  call site can leak a token by forgetting to.
+
 ## Harness Configure Step
 
 `disco box harnesses configure` (`internal/cli/harness.go`) drives a harness's
