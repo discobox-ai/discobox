@@ -73,6 +73,23 @@ it's omitted, never to a guess:
 - The picker prompts on stderr so the command's stdout stays a clean stream.
 - `pickOne` is resource-independent: callers supply `pickerItem`s and the
   wording for the empty and ambiguous cases.
+- Typing in the picker fuzzy-filters and re-ranks the list (`internal/cli/fuzzy.go`):
+  a subsequence match over each item's title, ID, and detail, scored to favour
+  contiguous, word-start, and early matches, with title weighted over ID over
+  detail. Matched runes are highlighted; the list scrolls in a 20-row window.
+  Because every printable key extends the query, navigation is arrows/`ctrl+p`
+  /`ctrl+n` only, and `esc` clears a non-empty query before it cancels.
+- Ordering with no query is the last sandbox picked for this project (marked
+  `last used`), then most recently updated; the tie-break between equally scored
+  matches is most recently updated. Typing hands ranking entirely to the query:
+  the remembered pick gets no standing edge once the user says what they want.
+- The last pick per `recentKey` is remembered in
+  `$XDG_STATE_HOME/discobox/cli/recent-selections.json` (`internal/cli/recent.go`),
+  keyed `sandbox:<projectID>` because the candidate list is per project. It is
+  derived convenience state, not configuration, so it lives under state, is
+  written atomically, is trimmed to the most recent entries, and every read and
+  write is best-effort — a missing, unwritable, or corrupt file only costs the
+  ordering, never the command.
 
 ## Attach Stream Pattern
 
