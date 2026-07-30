@@ -14,6 +14,10 @@ func (a *App) newExecCommand() *cobra.Command {
 		Short: "Run a command in a sandbox",
 		Long: `Run a command in a sandbox and stream it to this terminal.
 
+Without a command this starts the sandbox user's login shell. Which shell that
+is is resolved inside the sandbox from that user's passwd entry, so it is the
+sandbox's shell, not this machine's.
+
 Without --sandbox-id the sandbox is taken from the ones "disco ls" shows for the
 current project directory: the only one when there is one, otherwise you are
 asked to pick.
@@ -21,10 +25,11 @@ asked to pick.
 Stdin is always attached, and a PTY is allocated only when this terminal is one,
 so piping and redirecting behave like a local command. Signals are forwarded to
 the remote process, and exec exits with its exit code.`,
-		Example: `  disco exec go test ./...
+		Example: `  disco exec
+  disco exec go test ./...
   disco exec --sandbox-id sbx_01hq bash
   disco exec -- ls -la`,
-		Args: cobra.MinimumNArgs(1),
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			projectID, resolvedSandboxID, _, err := a.selectSandbox(cmd, sandboxID)
 			if err != nil {
@@ -34,7 +39,9 @@ the remote process, and exec exits with its exit code.`,
 			// allocating one for a pipe would echo input back and dress output in
 			// escape sequences the consumer never asked for.
 			tty := isTerminalStream(cmd.InOrStdin()) && isTerminalStream(cmd.OutOrStdout()) && isTerminalStream(cmd.ErrOrStderr())
-			body, err := createSandboxExecBody(sandboxExecCreateOptions{interactive: true, tty: tty}, args)
+			// No command means the sandbox user's shell. Only the sandbox can say
+			// which shell that is, so the request asks for one rather than naming it.
+			body, err := createSandboxExecBody(sandboxExecCreateOptions{interactive: true, tty: tty, shell: len(args) == 0}, args)
 			if err != nil {
 				return err
 			}

@@ -225,7 +225,14 @@ func (h *handler) CreateSandboxExec(ctx context.Context, req *sandboxapi.CreateS
 		req = &sandboxapi.CreateSandboxExecRequest{}
 	}
 	harnessID := strings.TrimSpace(req.HarnessId.Or(""))
-	if harnessID != "" || len(req.Command) == 0 {
+	shell := req.Shell.Or(false)
+	if shell && (harnessID != "" || len(req.Command) > 0) {
+		return nil, statusError{status: http.StatusBadRequest, message: "shell is mutually exclusive with command and harnessId"}
+	}
+	// A shell exec is a plain exec whose command the sandbox resolves, not a
+	// harness terminal: an empty command only means "run the harness" when the
+	// caller did not ask for a shell.
+	if !shell && (harnessID != "" || len(req.Command) == 0) {
 		created, err := h.terminals.Create(ctx, terminal.CreateRequest{
 			HarnessID: harnessID,
 			Args:      append([]string{}, req.Args...),
@@ -245,6 +252,7 @@ func (h *handler) CreateSandboxExec(ctx context.Context, req *sandboxapi.CreateS
 	}
 	created, err := h.execs.Create(ctx, execs.CreateRequest{
 		Command:  append([]string{}, req.Command...),
+		Shell:    shell,
 		Workdir:  req.Workdir.Or(""),
 		Env:      stringMap(req.Env.Or(nil)),
 		User:     execUserFromAPI(req.User),

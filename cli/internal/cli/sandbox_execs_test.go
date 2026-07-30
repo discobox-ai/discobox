@@ -34,6 +34,24 @@ func TestCreateSandboxExecBodyParsesNumericUserObject(t *testing.T) {
 	}
 }
 
+func TestCreateSandboxExecBodyRequestsShellWithoutNamingIt(t *testing.T) {
+	body, err := createSandboxExecBody(sandboxExecCreateOptions{shell: true}, nil)
+	if err != nil {
+		t.Fatalf("create body: %v", err)
+	}
+	if !body.Shell.Or(false) {
+		t.Fatal("shell was not requested")
+	}
+	// The sandbox resolves the shell, so the client must not send a command.
+	if len(body.Command) != 0 {
+		t.Fatalf("command = %v, want none", body.Command)
+	}
+
+	if _, err := createSandboxExecBody(sandboxExecCreateOptions{shell: true}, []string{"ls"}); err == nil {
+		t.Fatal("a command combined with --shell was accepted")
+	}
+}
+
 func TestCreateSandboxExecBodyUIDGIDFlagsPopulateUserObject(t *testing.T) {
 	body, err := createSandboxExecBody(sandboxExecCreateOptions{
 		uid: "2000",

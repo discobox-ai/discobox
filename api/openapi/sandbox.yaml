@@ -3,7 +3,7 @@ components:
     schemas:
         CreateSandboxExecRequest:
             additionalProperties: false
-            description: Create an exec. Provide command for a plain exec, or harnessId (with optional args) to run a harness in terminal mode.
+            description: Create an exec. Provide command for a plain exec, shell to run the run user's login shell, or harnessId (with optional args) to run a harness in terminal mode.
             properties:
                 args:
                     description: Additional command arguments appended to the resolved harness command in terminal mode.
@@ -16,7 +16,7 @@ components:
                     minimum: 1
                     type: integer
                 command:
-                    description: Command argv to execute in the sandbox. Mutually exclusive with harnessId.
+                    description: Command argv to execute in the sandbox. Mutually exclusive with harnessId and shell.
                     items:
                         type: string
                     type: array
@@ -26,7 +26,7 @@ components:
                     description: Additional environment variables for the exec process.
                     type: object
                 harnessId:
-                    description: Harness CLI to start in terminal mode. Defaults to the sandbox configured harness when omitted. Mutually exclusive with command.
+                    description: Harness CLI to start in terminal mode. Defaults to the sandbox configured harness when omitted. Mutually exclusive with command and shell.
                     type: string
                 metadata:
                     additionalProperties:
@@ -38,6 +38,9 @@ components:
                     maximum: 65535
                     minimum: 1
                     type: integer
+                shell:
+                    description: Run the run user's login shell instead of a command. The sandbox resolves which shell that is from the user's passwd entry. Mutually exclusive with command and harnessId.
+                    type: boolean
                 tty:
                     description: Allocate a PTY for the exec process.
                     type: boolean

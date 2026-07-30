@@ -37,6 +37,7 @@ type sandboxExecCreateOptions struct {
 	tty         bool
 	interactive bool
 	detach      bool
+	shell       bool
 }
 
 func (a *App) newSandboxExecCommand() *cobra.Command {
@@ -59,8 +60,11 @@ func (a *App) newSandboxExecCreateCommand(sandboxID *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create [flags] [--] COMMAND [ARG...]",
 		Short: "Create a sandbox exec",
-		Args:  cobra.MinimumNArgs(1),
+		Args:  cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 && !opts.shell {
+				return fmt.Errorf("a command is required unless --shell is set")
+			}
 			projectID, resolvedSandboxID, _, err := a.sandboxExecRequest(cmd.Context(), *sandboxID)
 			if err != nil {
 				return err
@@ -91,6 +95,7 @@ func (a *App) newSandboxExecCreateCommand(sandboxID *string) *cobra.Command {
 	cmd.Flags().StringVar(&opts.user, "user", "", "User name or UID[:GID] to run as inside the sandbox")
 	cmd.Flags().StringVar(&opts.uid, "uid", "", "User ID to run as inside the sandbox")
 	cmd.Flags().StringVar(&opts.gid, "gid", "", "Group ID to run as inside the sandbox")
+	cmd.Flags().BoolVar(&opts.shell, "shell", false, "Run the sandbox user's login shell instead of a command; the sandbox resolves which shell that is")
 	cmd.Flags().BoolVarP(&opts.tty, "tty", "t", false, "Allocate a PTY")
 	cmd.Flags().BoolVarP(&opts.interactive, "interactive", "i", false, "Accepted for docker exec -it compatibility")
 	cmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "Start the exec and print its record without streaming logs")
@@ -166,7 +171,16 @@ func (a *App) sandboxExecRequest(ctx context.Context, sandboxArg string) (string
 
 func createSandboxExecBody(opts sandboxExecCreateOptions, command []string) (*apimodel.CreateSandboxExecRequest, error) {
 	body := &apimodel.CreateSandboxExecRequest{}
-	body.SetCommand(append([]string{}, command...))
+	// Which shell to run is the sandbox's answer, not this machine's: the local
+	// $SHELL says nothing about the run user inside the sandbox.
+	if opts.shell {
+		if len(command) > 0 {
+			return nil, fmt.Errorf("a command cannot be combined with --shell")
+		}
+		body.SetShell(apiclientgen.NewOptBool(true))
+	} else {
+		body.SetCommand(append([]string{}, command...))
+	}
 	body.SetWorkdir(optString(opts.workdir))
 	env, err := keyValueMapFromShell(opts.env)
 	if err != nil {

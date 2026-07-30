@@ -69,25 +69,28 @@ func (s *AttachSandboxExecSwitchingProtocols) SetUpgrade(val OptString) {
 	s.Upgrade = val
 }
 
-// Create an exec. Provide command for a plain exec, or harnessId (with optional args) to run a
-// harness in terminal mode.
+// Create an exec. Provide command for a plain exec, shell to run the run user's login shell, or
+// harnessId (with optional args) to run a harness in terminal mode.
 // Ref: #/components/schemas/CreateSandboxExecRequest
 type CreateSandboxExecRequest struct {
 	// Additional command arguments appended to the resolved harness command in terminal mode.
 	Args []string `json:"args"`
 	// Initial PTY columns when a PTY is allocated.
 	Cols OptInt `json:"cols"`
-	// Command argv to execute in the sandbox. Mutually exclusive with harnessId.
+	// Command argv to execute in the sandbox. Mutually exclusive with harnessId and shell.
 	Command []string `json:"command"`
 	// Additional environment variables for the exec process.
 	Env OptCreateSandboxExecRequestEnv `json:"env"`
 	// Harness CLI to start in terminal mode. Defaults to the sandbox configured harness when omitted.
-	// Mutually exclusive with command.
+	// Mutually exclusive with command and shell.
 	HarnessId OptString `json:"harnessId"`
 	// Caller-supplied metadata to associate with the exec.
 	Metadata OptCreateSandboxExecRequestMetadata `json:"metadata"`
 	// Initial PTY rows when a PTY is allocated.
 	Rows OptInt `json:"rows"`
+	// Run the run user's login shell instead of a command. The sandbox resolves which shell that is from
+	// the user's passwd entry. Mutually exclusive with command and harnessId.
+	Shell OptBool `json:"shell"`
 	// Allocate a PTY for the exec process.
 	Tty OptBool `json:"tty"`
 	// User identity used to run the exec process.
@@ -129,6 +132,11 @@ func (s *CreateSandboxExecRequest) GetMetadata() OptCreateSandboxExecRequestMeta
 // GetRows returns the value of Rows.
 func (s *CreateSandboxExecRequest) GetRows() OptInt {
 	return s.Rows
+}
+
+// GetShell returns the value of Shell.
+func (s *CreateSandboxExecRequest) GetShell() OptBool {
+	return s.Shell
 }
 
 // GetTty returns the value of Tty.
@@ -179,6 +187,11 @@ func (s *CreateSandboxExecRequest) SetMetadata(val OptCreateSandboxExecRequestMe
 // SetRows sets the value of Rows.
 func (s *CreateSandboxExecRequest) SetRows(val OptInt) {
 	s.Rows = val
+}
+
+// SetShell sets the value of Shell.
+func (s *CreateSandboxExecRequest) SetShell(val OptBool) {
+	s.Shell = val
 }
 
 // SetTty sets the value of Tty.

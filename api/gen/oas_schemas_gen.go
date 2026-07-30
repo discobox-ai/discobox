@@ -596,14 +596,17 @@ func (s *CreateSandboxBody) SetPoolId(val OptString) {
 	s.PoolId = val
 }
 
-// Create an exec. Provide command for a plain exec, or harnessId (with optional args) to run a
-// harness in terminal mode.
+// Create an exec. Provide command for a plain exec, shell to run the run user's login shell, or
+// harnessId (with optional args) to run a harness in terminal mode.
 // Ref: #/components/schemas/CreateSandboxExecRequest
 type CreateSandboxExecRequest struct {
-	// Command argv to execute in the sandbox. Mutually exclusive with harnessId.
+	// Command argv to execute in the sandbox. Mutually exclusive with harnessId and shell.
 	Command []string `json:"command"`
+	// Run the run user's login shell instead of a command. The sandbox resolves which shell that is from
+	// the user's passwd entry. Mutually exclusive with command and harnessId.
+	Shell OptBool `json:"shell"`
 	// Harness CLI to start in terminal mode. Defaults to the sandbox configured harness when omitted.
-	// Mutually exclusive with command.
+	// Mutually exclusive with command and shell.
 	HarnessId OptString `json:"harnessId"`
 	// Additional command arguments appended to the resolved harness command in terminal mode.
 	Args []string `json:"args"`
@@ -626,6 +629,11 @@ type CreateSandboxExecRequest struct {
 // GetCommand returns the value of Command.
 func (s *CreateSandboxExecRequest) GetCommand() []string {
 	return s.Command
+}
+
+// GetShell returns the value of Shell.
+func (s *CreateSandboxExecRequest) GetShell() OptBool {
+	return s.Shell
 }
 
 // GetHarnessId returns the value of HarnessId.
@@ -676,6 +684,11 @@ func (s *CreateSandboxExecRequest) GetMetadata() OptCreateSandboxExecRequestMeta
 // SetCommand sets the value of Command.
 func (s *CreateSandboxExecRequest) SetCommand(val []string) {
 	s.Command = val
+}
+
+// SetShell sets the value of Shell.
+func (s *CreateSandboxExecRequest) SetShell(val OptBool) {
+	s.Shell = val
 }
 
 // SetHarnessId sets the value of HarnessId.

@@ -73,6 +73,12 @@ func (s *CreateSandboxExecRequest) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
+		if s.Shell.Set {
+			e.FieldStart("shell")
+			s.Shell.Encode(e)
+		}
+	}
+	{
 		if s.Tty.Set {
 			e.FieldStart("tty")
 			s.Tty.Encode(e)
@@ -92,17 +98,18 @@ func (s *CreateSandboxExecRequest) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfCreateSandboxExecRequest = [10]string{
-	0: "args",
-	1: "cols",
-	2: "command",
-	3: "env",
-	4: "harnessId",
-	5: "metadata",
-	6: "rows",
-	7: "tty",
-	8: "user",
-	9: "workdir",
+var jsonFieldsNameOfCreateSandboxExecRequest = [11]string{
+	0:  "args",
+	1:  "cols",
+	2:  "command",
+	3:  "env",
+	4:  "harnessId",
+	5:  "metadata",
+	6:  "rows",
+	7:  "shell",
+	8:  "tty",
+	9:  "user",
+	10: "workdir",
 }
 
 // Decode decodes CreateSandboxExecRequest from json.
@@ -200,6 +207,16 @@ func (s *CreateSandboxExecRequest) Decode(d *jx.Decoder) error {
 				return nil
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"rows\"")
+			}
+		case "shell":
+			if err := func() error {
+				s.Shell.Reset()
+				if err := s.Shell.Decode(d); err != nil {
+					return err
+				}
+				return nil
+			}(); err != nil {
+				return errors.Wrap(err, "decode field \"shell\"")
 			}
 		case "tty":
 			if err := func() error {

@@ -114,6 +114,17 @@ development images without a registry.
   → `409`, whose message reports the exit status and points at `"primary"` when
   the dead exec was the primary terminal. The control plane proxies exec ids
   opaquely, so clients just send this value.
+- Which shell a user has is sandbox knowledge, so an exec request asks for one
+  (`shell: true`) instead of naming it. `execs.ResolveShell` answers from the run
+  user's passwd entry — the current process user when the exec inherits the
+  agent's identity — falling back to `$SHELL` from the exec environment and then
+  a `/bin/bash`, `/bin/sh` probe when the entry is missing (a bare UID) or names
+  a login-refusing shell. `execs.ShellCommand` wraps it as a login shell argv,
+  and the `shell` fallback harness uses the same call, so a shell terminal and a
+  `shell: true` exec can never resolve differently. The resolved argv is what the
+  exec record reports, so a shell exec is self-describing after the fact.
+  `shell` is mutually exclusive with `command` and `harnessId`: an empty command
+  still means "run the harness" for every caller that did not ask for a shell.
 - There is one shim (`execs/shim.go`) and one framed attach mechanism. Attacher
   tracking, frame writes, output broadcast, exit frame emission, and pending
   resize state belong to `execstream/host` in the root module; keep Unix socket

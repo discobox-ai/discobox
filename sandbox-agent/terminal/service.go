@@ -396,7 +396,11 @@ func (s *Service) resolveHarness(requested string) (config.Harness, string, erro
 		if requested != "" && requested != ShellHarnessID {
 			return config.Harness{}, "", fmt.Errorf("harness %q is not configured", requested)
 		}
-		return s.shellAgent(), ShellHarnessID, nil
+		harness, err := s.shellAgent()
+		if err != nil {
+			return config.Harness{}, "", err
+		}
+		return harness, ShellHarnessID, nil
 	}
 	if requested != "" && requested != s.harness.ID {
 		return config.Harness{}, "", fmt.Errorf("harness %q is not configured", requested)
@@ -404,26 +408,19 @@ func (s *Service) resolveHarness(requested string) (config.Harness, string, erro
 	return s.harness, s.harness.ID, nil
 }
 
-// shellAgent builds the fallback shell harness: an interactive login shell taken
-// from the sandbox environment.
-func (s *Service) shellAgent() config.Harness {
+// shellAgent builds the fallback shell harness: the terminal user's interactive
+// login shell, resolved by `execs` so a shell terminal and a `shell: true` exec
+// land on the same shell.
+func (s *Service) shellAgent() (config.Harness, error) {
+	command, err := execs.ShellCommand(s.defaultUser, s.env)
+	if err != nil {
+		return config.Harness{}, err
+	}
 	return config.Harness{
 		ID:      ShellHarnessID,
 		Name:    "Shell",
-		Command: []string{s.shellPath(), "-l"},
-	}
-}
-
-func (s *Service) shellPath() string {
-	if shell := strings.TrimSpace(s.env["SHELL"]); shell != "" {
-		return shell
-	}
-	for _, candidate := range []string{"/bin/bash", "/bin/sh"} {
-		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-			return candidate
-		}
-	}
-	return "/bin/sh"
+		Command: command,
+	}, nil
 }
 
 // --- Installers ---

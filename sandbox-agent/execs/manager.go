@@ -52,8 +52,12 @@ type CreateRequest struct {
 	// lets a caller (such as the terminal layer) correlate the exec with state
 	// it prepared before creation, e.g. env baked into the systemd unit. When
 	// empty a fresh ID is generated.
-	ID       string
-	Command  []string
+	ID      string
+	Command []string
+	// Shell runs the run user's login shell instead of Command, resolved in the
+	// sandbox because only the sandbox knows what that user's shell is. It is
+	// mutually exclusive with Command.
+	Shell    bool
 	Workdir  string
 	Env      map[string]string
 	User     *User
@@ -218,15 +222,18 @@ func EnvWithRuntimeDefaults(env map[string]string, user *User) map[string]string
 }
 
 func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
-	if len(req.Command) == 0 || strings.TrimSpace(req.Command[0]) == "" {
-		return Exec{}, errors.New("exec command is required")
-	}
 	workdir, err := m.resolveWorkdir(req.Workdir)
 	if err != nil {
 		return Exec{}, err
 	}
 	user := m.resolveUser(req)
 	env := EnvWithRuntimeDefaults(MergeEnv(m.env, req.Env), user)
+	// The shell is resolved against the run user and env the exec will actually
+	// have, so it is the shell of the identity the process runs as.
+	command, err := resolveCommand(req, user, env)
+	if err != nil {
+		return Exec{}, err
+	}
 	id := strings.TrimSpace(req.ID)
 	if id == "" {
 		var err error
@@ -241,7 +248,7 @@ func (m *Manager) Create(ctx context.Context, req CreateRequest) (Exec, error) {
 	exec := Exec{
 		ID:          id,
 		Status:      StatusStarting,
-		Command:     append([]string{}, req.Command...),
+		Command:     command,
 		Workdir:     workdir,
 		Env:         cloneMap(env),
 		User:        cloneUser(user),
@@ -527,6 +534,23 @@ func (m *Manager) resolveWorkdir(requested string) (string, error) {
 		requested = filepath.Join(m.workingRoot, requested)
 	}
 	return filepath.Clean(requested), nil
+}
+
+// resolveCommand yields the argv the exec runs: the requested command, or the
+// run user's login shell when the request asks for a shell rather than naming
+// one. The resolved argv is what the exec record reports, so a shell exec is
+// self-describing after the fact.
+func resolveCommand(req CreateRequest, user *User, env map[string]string) ([]string, error) {
+	if req.Shell {
+		if len(req.Command) > 0 {
+			return nil, errors.New("exec shell and command are mutually exclusive")
+		}
+		return ShellCommand(user, env)
+	}
+	if len(req.Command) == 0 || strings.TrimSpace(req.Command[0]) == "" {
+		return nil, errors.New("exec command is required")
+	}
+	return append([]string{}, req.Command...), nil
 }
 
 func (m *Manager) resolveUser(req CreateRequest) *User {

@@ -42,6 +42,12 @@ session writes stdout frames to stdout and stderr frames to stderr, with no
 special case for the PTY: a TTY exec merges at the PTY and simply never sends a
 stderr frame, which the client neither detects nor needs to.
 
+`disco exec` with no command runs the sandbox user's login shell. The CLI never
+names that shell: it sets `shell: true` on the exec create request and the
+sandbox resolves the run user's shell from its own passwd database, because the
+local `$SHELL` describes this machine and says nothing about the identity the
+exec runs as. `box exec create --shell` is the same request in raw form.
+
 `disco tools` groups the everyday development tools run inside a sandbox against
 one of its sources — `tools git` today. Which sandbox to run in is the one thing
 every tool has in common, so `--sandbox-id` is a persistent flag on `tools`
