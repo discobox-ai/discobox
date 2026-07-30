@@ -42,6 +42,19 @@ session writes stdout frames to stdout and stderr frames to stderr, with no
 special case for the PTY: a TTY exec merges at the PTY and simply never sends a
 stderr frame, which the client neither detects nor needs to.
 
+`disco tools` groups the everyday development tools run inside a sandbox against
+one of its sources — `tools git` today. Each subcommand selects the sandbox
+(`--sandbox-id`) and then drives the same exec create/attach/status sequence as
+`disco exec`. Flag parsing stops at the first positional argument
+(`SetInterspersed(false)`), so everything from there on reaches the tool verbatim.
+
+The default path sends no workdir and fetches no sandbox record: an exec with no
+workdir already lands in the sandbox-agent's default exec directory, which is the
+primary source's. Only `--source`/`-s` has to `GetSandbox` to turn a slug into a
+directory. With a full `--sandbox-id` the whole command is create + attach +
+start + status, so a one-shot `disco t git status` costs no round trip it does
+not need.
+
 ## Choosing a Sandbox Interactively
 
 Commands that act on "the sandbox I am working in" take a sandbox identifier —

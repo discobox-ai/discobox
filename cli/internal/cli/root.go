@@ -63,6 +63,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(app.newListCommand())
 	cmd.AddCommand(app.newExecCommand())
 	cmd.AddCommand(app.newApplyCommand())
+	cmd.AddCommand(app.newToolsCommand())
 	cmd.AddCommand(app.newConfigureCommand())
 	cmd.AddCommand(app.newSecretCommand())
 	cmd.AddCommand(app.newEventsCommand())
@@ -384,6 +385,13 @@ func (t debugTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	fmt.Fprintf(out, "< %s\n", resp.Status)
+	// A 101 hands the connection itself back as resp.Body, and the websocket
+	// client takes it over by asserting io.ReadWriteCloser. Wrapping it fails
+	// that assertion — every attach under --debug dies with "101 Switching
+	// Protocols" — and would dump binary frames into the log besides.
+	if resp.StatusCode == http.StatusSwitchingProtocols {
+		return resp, nil
+	}
 	if resp.Body != nil && resp.Body != http.NoBody {
 		fmt.Fprintln(out, "< body:")
 		resp.Body = &debugBody{out: out, base: resp.Body}

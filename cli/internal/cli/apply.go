@@ -166,6 +166,23 @@ func applySources(sandbox *apimodel.Sandbox) []applySourceEntry {
 	return out
 }
 
+// sourceWorkdir is the directory a source's working tree lives at inside the
+// sandbox: its explicit working directory, or the directory it was placed in.
+// Empty means the sandbox never told us where the source landed.
+func sourceWorkdir(source apimodel.GitSource) string {
+	dest, ok := source.Destination.Get()
+	if !ok {
+		return ""
+	}
+	if wd, ok := dest.WorkingDirectory.Get(); ok {
+		return wd
+	}
+	if dir, ok := dest.Directory.Get(); ok {
+		return dir
+	}
+	return ""
+}
+
 // lastAppliedCommit returns the sandbox-side commit named by the most recent
 // AppliedSourceCommit for slug, narrowing what a repeat apply needs to send
 // per ADR 0014 §2.
