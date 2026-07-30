@@ -198,8 +198,16 @@ tag never moves a running sandbox.
 - **Upgrading is explicit, and is a re-pin plus a restart.** `UpgradeSandbox`
   re-pins and bumps `RestartGeneration`; the pool host rebuilds the container
   because its image no longer matches the pin. There is no upgrade operation and
-  no upgrade counter. A stopped sandbox re-pins itself on its way back up
-  (`repinToCurrentImage`) — a running one never moves without the action.
+  no upgrade counter. A sandbox that is not live re-pins itself on its way up
+  (`repinToCurrentImage`, guarded by `sandboxIsLive`) — running and
+  awaiting-source sandboxes never move without the action. Failed is included on
+  purpose: an unpullable image is the likeliest reason a start failed, so
+  excluding it would wedge the sandbox on a dead reference.
+- **An unpinned sandbox is re-pin eligible, not excluded.** Sandboxes created
+  before pinning, or while the harness config's digest was unknown, carry an
+  empty `ImageDigest`. They re-pin on start and report an upgrade; only a
+  missing harness config, a config declaring no image, or harness mode `config`
+  opts a sandbox out.
 - **Enforcement is on the pool host, not here.** The control plane sends the
   pin; `pool-agent/sandboxruntime` resolves images and refuses to launch one
   that does not match it. The server owns policy, the runtime owns identity.

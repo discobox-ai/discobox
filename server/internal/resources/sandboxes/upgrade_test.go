@@ -87,18 +87,31 @@ func TestUpgradeTargetIsUnavailableWhenDigestsMatch(t *testing.T) {
 	}
 }
 
-// An unpinned sandbox has no identity to compare. Reporting an upgrade for it
-// would offer to move a sandbox onto an image nobody can say it is not already
-// running.
-func TestUpgradeTargetIgnoresUnpinnedAndConfigModeSandboxes(t *testing.T) {
+// An unpinned sandbox under an image-bearing harness config — created before
+// pinning existed, or while the config's digest was unknown — is the strongest
+// candidate for adopting the config's current image: its tag may no longer
+// exist anywhere, and upgrade is its only way out.
+func TestUpgradeTargetOffersConfigImageToUnpinnedSandboxes(t *testing.T) {
 	ctx := context.Background()
 	svc, st := newBindingFixture(t)
 	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
 
-	unpinned := pinnedSandbox(t, st, config.ID, "discobox-harness-codex:local", "")
-	if target, err := svc.upgradeTarget(ctx, unpinned); err != nil || target.Available {
-		t.Fatalf("unpinned target = %+v, %v; want unavailable", target, err)
+	unpinned := pinnedSandbox(t, st, config.ID, "discobox-harness-codex:stale", "")
+	target, err := svc.upgradeTarget(ctx, unpinned)
+	if err != nil {
+		t.Fatalf("upgradeTarget: %v", err)
 	}
+	if !target.Available || target.Image != "discobox-harness-codex:local" || target.Digest != "sha256:new" {
+		t.Fatalf("unpinned target = %+v, want available with the config's image and digest", target)
+	}
+}
+
+// A config-mode sandbox runs the configure command against a deliberately fixed
+// image, and a sandbox with no harness config has no image to move to.
+func TestUpgradeTargetIgnoresConfigModeAndHarnesslessSandboxes(t *testing.T) {
+	ctx := context.Background()
+	svc, st := newBindingFixture(t)
+	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
 
 	configMode := pinnedSandbox(t, st, config.ID, "discobox-harness-codex:local", "sha256:old")
 	configMode.HarnessMode = "config"
@@ -109,6 +122,35 @@ func TestUpgradeTargetIgnoresUnpinnedAndConfigModeSandboxes(t *testing.T) {
 	harnessless := pinnedSandbox(t, st, "", "discobox-harness-codex:local", "sha256:old")
 	if target, err := svc.upgradeTarget(ctx, harnessless); err != nil || target.Available {
 		t.Fatalf("harnessless target = %+v, %v; want unavailable", target, err)
+	}
+}
+
+// A start re-pins from every phase that is about to build a container, and from
+// no phase that already has one a user is using. Failed is the case that
+// matters: a start that failed on an unpullable image must not retry that same
+// reference forever.
+func TestRepinOnStartFollowsLiveness(t *testing.T) {
+	ctx := context.Background()
+	_, st := newBindingFixture(t)
+	config := imagedConfig(t, st, "discobox-harness-codex:local", "sha256:new")
+	reconciler := NewSandboxReconciler(st)
+
+	for _, phase := range []string{model.SandboxPhaseFailed, model.SandboxPhaseStopped, model.SandboxPhasePending} {
+		sb := pinnedSandbox(t, st, config.ID, "discobox-harness-codex:gone", "sha256:old")
+		sb.Phase = phase
+		if sandboxIsLive(sb.Phase) {
+			t.Fatalf("phase %q reported live; want re-pin eligible", phase)
+		}
+		reconciler.repinToCurrentImage(ctx, sb)
+		if sb.Image != "discobox-harness-codex:local" || sb.ImageDigest != "sha256:new" {
+			t.Fatalf("phase %q: image = %q/%q, want the config's current image", phase, sb.Image, sb.ImageDigest)
+		}
+	}
+
+	for _, phase := range []string{model.SandboxPhaseRunning, model.SandboxPhaseAwaitingSource} {
+		if !sandboxIsLive(phase) {
+			t.Fatalf("phase %q reported not live; a live sandbox must not re-pin without an upgrade", phase)
+		}
 	}
 }
 

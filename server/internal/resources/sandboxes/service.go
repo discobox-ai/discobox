@@ -450,13 +450,14 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 		return nil, err
 	}
 	if !target.Available {
-		// Distinguish "nothing newer" from "nothing to compare". A sandbox on the
-		// default image, or one whose harness config was deleted, has no pinned
-		// identity at all, and telling its owner it is running "its harness
-		// config's current image" asserts something that is not true of it.
+		// Distinguish "nothing newer" from "nothing to move to". A sandbox on the
+		// default image, or one whose harness config was deleted or declares no
+		// image, has no harness image to upgrade to, and telling its owner it is
+		// running "its harness config's current image" asserts something that is
+		// not true of it.
 		if strings.TrimSpace(target.Digest) == "" {
 			return nil, apperrors.NewStatusError(http.StatusConflict,
-				"sandbox is not pinned to a harness image, so there is nothing to upgrade")
+				"sandbox has no harness image to upgrade to")
 		}
 		return nil, apperrors.NewStatusError(http.StatusConflict,
 			"sandbox is already running its harness config's current image")
@@ -480,10 +481,13 @@ func (s *Service) UpgradeSandbox(ctx context.Context, projectID, sandboxID strin
 // would leave a sandbox lying about its own state.
 func (s *Service) upgradeTarget(ctx context.Context, sb *model.Sandbox) (UpgradeTarget, error) {
 	target := UpgradeTarget{Image: sb.Image, Digest: sb.ImageDigest}
-	// An unpinned sandbox (default image, or created before pinning existed)
-	// has no identity to compare, and a config-mode sandbox is running the
-	// configure command against a deliberately fixed image.
-	if sb.HarnessConfigID == nil || strings.TrimSpace(sb.ImageDigest) == "" || sb.HarnessMode == "config" {
+	// A sandbox with no harness config has no image to move to, and a
+	// config-mode sandbox is running the configure command against a
+	// deliberately fixed image. An unpinned sandbox under an image-bearing
+	// harness config is still eligible: created before pinning existed, or
+	// while the config's digest was unknown, it is the strongest candidate for
+	// adopting the config's current image, not an exclusion case.
+	if sb.HarnessConfigID == nil || sb.HarnessMode == "config" {
 		return target, nil
 	}
 	config, err := s.store.GetHarnessConfig(ctx, sb.ProjectID, strings.TrimSpace(*sb.HarnessConfigID))

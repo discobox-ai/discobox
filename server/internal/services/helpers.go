@@ -219,11 +219,13 @@ func SandboxToAPI(sandbox *model.Sandbox) (serverapi.Sandbox, error) {
 // Derived on every read from the preloaded harness config, never stored: a
 // cached flag would have to be invalidated by every path that writes a harness
 // config, and the first one that forgot would leave a sandbox misreporting its
-// own state. Returns nil when there is nothing to compare — an unpinned
-// sandbox, a sandbox with no harness config, or a config-mode sandbox, which
-// runs a deliberately fixed image.
+// own state. Returns nil when there is no image to move to — a sandbox with no
+// harness config (or one whose config declares no image), or a config-mode
+// sandbox, which runs a deliberately fixed image. An unpinned sandbox under an
+// image-bearing config does report an upgrade: its tag may no longer resolve
+// anywhere, and adopting the config's current image is its only way forward.
 func SandboxUpgrade(sandbox *model.Sandbox) map[string]any {
-	if sandbox == nil || strings.TrimSpace(sandbox.ImageDigest) == "" || sandbox.HarnessMode == "config" {
+	if sandbox == nil || sandbox.HarnessMode == "config" {
 		return nil
 	}
 	config := sandbox.HarnessConfig

@@ -174,7 +174,7 @@ func (r *SandboxReconciler) start(ctx context.Context, sandbox *model.Sandbox, g
 		return nil
 	}
 
-	if sandbox.Phase == model.SandboxPhaseStopped {
+	if !sandboxIsLive(sandbox.Phase) {
 		r.repinToCurrentImage(ctx, sandbox)
 	}
 
@@ -232,21 +232,38 @@ func (r *SandboxReconciler) restart(ctx context.Context, sandbox *model.Sandbox,
 	return r.update(ctx, sandbox, generation)
 }
 
-// repinToCurrentImage moves a stopped sandbox onto its harness config's current
-// image as it comes back up (ADR 0016 §5).
+// sandboxIsLive reports whether a sandbox has a container a user is currently
+// relying on, and so must not be re-pinned underneath them.
 //
-// A stopped sandbox has no session to interrupt and nothing running that a user
-// is relying on, and starting it is the moment its container is built. Building
-// it deliberately obsolete serves nobody, so the pin advances here — and only
-// here. A running sandbox never moves without the explicit upgrade action, which
-// is why this is reached from the stopped phase rather than from startSandbox,
-// where every reconcile of a running sandbox would pass through it.
+// Running is the obvious case. Awaiting-source is the subtle one: it is parked
+// mid-create waiting for the client's push, and replacing its container in the
+// middle of that hands the push a different sandbox than the one it started
+// against. Every other phase reaching a start — stopped, failed, or a create
+// that never got there — is about to have its container built.
+func sandboxIsLive(phase string) bool {
+	return phase == model.SandboxPhaseRunning || phase == model.SandboxPhaseAwaitingSource
+}
+
+// repinToCurrentImage moves a sandbox onto its harness config's current image as
+// it comes up (ADR 0016 §5).
+//
+// A sandbox that is not live has no session to interrupt and nothing running
+// that a user is relying on, and starting it is the moment its container is
+// built. Building it deliberately obsolete serves nobody, so the pin advances
+// here — and only here. A live sandbox never moves without the explicit upgrade
+// action, which is why this is guarded by sandboxIsLive rather than reached from
+// startSandbox, where every reconcile of a running sandbox would pass through it.
+//
+// Failed is deliberately included: the single most likely reason a start failed
+// is an image that can no longer be pulled, and excluding it would wedge exactly
+// the sandboxes that re-pinning exists to rescue into retrying a dead reference
+// forever.
 //
 // Best-effort by design: a harness config that cannot be read is not a reason to
 // refuse to start a sandbox that was going to start anyway on the image it
 // already has.
 func (r *SandboxReconciler) repinToCurrentImage(ctx context.Context, sb *model.Sandbox) {
-	if r.store == nil || sb.HarnessConfigID == nil || strings.TrimSpace(sb.ImageDigest) == "" || sb.HarnessMode == "config" {
+	if r.store == nil || sb.HarnessConfigID == nil || sb.HarnessMode == "config" {
 		return
 	}
 	config, err := r.store.GetHarnessConfig(ctx, sb.ProjectID, strings.TrimSpace(*sb.HarnessConfigID))
