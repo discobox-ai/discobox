@@ -16,7 +16,7 @@ func TestResolveRunSourceCleanLocalBranch(t *testing.T) {
 	git := runSourceTestGit(t, repo)
 	baseCommit := strings.TrimSpace(git("rev-parse", "HEAD"))
 
-	source, err := resolveRunSource(context.Background(), repo)
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -46,7 +46,7 @@ func TestResolveRunSourceDirtyLocalCreatesHiddenSnapshotRef(t *testing.T) {
 	}
 	statusBefore := git("status", "--porcelain=v1", "--untracked-files=all")
 
-	source, err := resolveRunSource(context.Background(), repo)
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -66,6 +66,125 @@ func TestResolveRunSourceDirtyLocalCreatesHiddenSnapshotRef(t *testing.T) {
 	}
 }
 
+func TestResolveRunSourceIncludeDirtyNeverKeepsDirtyWorkspaceOutOfTheSandbox(t *testing.T) {
+	repo := newRunSourceTestRepo(t)
+	git := runSourceTestGit(t, repo)
+	baseCommit := strings.TrimSpace(git("rev-parse", "HEAD"))
+	if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("dirty\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyNever})
+	if err != nil {
+		t.Fatalf("resolveRunSource: %v", err)
+	}
+	if source.Checkout.Commit != baseCommit || source.Checkout.RefName != "feature-foo" {
+		t.Fatalf("checkout = %#v, want current branch at base commit", source.Checkout)
+	}
+	if source.Workspace.Mode != runWorkspaceModeClean || source.Workspace.SnapshotRef != "" {
+		t.Fatalf("workspace = %#v, want clean without snapshot", source.Workspace)
+	}
+	// The dirty answer is "no", so nothing about the repo may change: no
+	// snapshot commit means no snapshot ref either.
+	if refs := strings.TrimSpace(git("for-each-ref", "--format=%(refname)", runSnapshotRefPrefix)); refs != "" {
+		t.Fatalf("snapshot refs = %q, want none", refs)
+	}
+}
+
+func TestResolveRunSourceIncludeDirtyAutoAsksAndHonorsTheAnswer(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		include  bool
+		wantMode string
+	}{
+		{name: "declined", include: false, wantMode: runWorkspaceModeClean},
+		{name: "accepted", include: true, wantMode: runWorkspaceModeDirty},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := newRunSourceTestRepo(t)
+			if err := os.WriteFile(filepath.Join(repo, "tracked.txt"), []byte("dirty\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(repo, "new.txt"), []byte("new\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			var asked []DirtyWorkspace
+			source, err := resolveRunSource(context.Background(), repo, runSourceOptions{
+				IncludeDirty: IncludeDirtyAuto,
+				Confirm: func(_ context.Context, workspace DirtyWorkspace) (bool, error) {
+					asked = append(asked, workspace)
+					return tc.include, nil
+				},
+			})
+			if err != nil {
+				t.Fatalf("resolveRunSource: %v", err)
+			}
+			if len(asked) != 1 {
+				t.Fatalf("confirm called %d times, want once", len(asked))
+			}
+			if asked[0].RepoRoot != repo || len(asked[0].Changes) != 2 {
+				t.Fatalf("confirmed workspace = %#v, want %s with both changed paths", asked[0], repo)
+			}
+			if source.Workspace.Mode != tc.wantMode {
+				t.Fatalf("workspace = %#v, want mode %s", source.Workspace, tc.wantMode)
+			}
+		})
+	}
+}
+
+func TestResolveRunSourceIncludeDirtyAutoDoesNotAskWhenWorkspaceIsClean(t *testing.T) {
+	repo := newRunSourceTestRepo(t)
+
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{
+		IncludeDirty: IncludeDirtyAuto,
+		Confirm: func(context.Context, DirtyWorkspace) (bool, error) {
+			t.Fatal("confirm called for a clean workspace")
+			return false, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("resolveRunSource: %v", err)
+	}
+	if source.Workspace.Mode != runWorkspaceModeClean {
+		t.Fatalf("workspace = %#v, want clean", source.Workspace)
+	}
+}
+
+func TestResolveRunSourceIncludeDirtyAlwaysRejectsSourcesWithoutAWorkingTree(t *testing.T) {
+	repo := newRunSourceTestRepo(t)
+
+	if _, err := resolveRunSource(context.Background(), repo+"@feature-foo", runSourceOptions{IncludeDirty: IncludeDirtyAlways}); err == nil {
+		t.Fatal("explicit ref with --include-dirty=true: want error, got none")
+	}
+	remoteURL := "file://" + filepath.ToSlash(repo)
+	if _, err := resolveRunSource(context.Background(), remoteURL, runSourceOptions{IncludeDirty: IncludeDirtyAlways}); err == nil {
+		t.Fatal("remote source with --include-dirty=true: want error, got none")
+	}
+}
+
+func TestIncludeDirtySetNormalizesAndRejects(t *testing.T) {
+	for value, want := range map[string]IncludeDirty{
+		"":      IncludeDirtyAuto,
+		"AUTO":  IncludeDirtyAuto,
+		"true":  IncludeDirtyAlways,
+		" yes ": IncludeDirtyAlways,
+		"false": IncludeDirtyNever,
+		"n":     IncludeDirtyNever,
+	} {
+		var mode IncludeDirty
+		if err := mode.Set(value); err != nil {
+			t.Fatalf("Set(%q): %v", value, err)
+		}
+		if mode != want {
+			t.Fatalf("Set(%q) = %q, want %q", value, mode, want)
+		}
+	}
+	var mode IncludeDirty
+	if err := mode.Set("maybe"); err == nil {
+		t.Fatal("Set(\"maybe\"): want error, got none")
+	}
+}
+
 func TestResolveRunSourceLocalSubdirectoryUsesRepoRootDestinationAndSubdirWorkingDirectory(t *testing.T) {
 	repo := newRunSourceTestRepo(t)
 	subdir := filepath.Join(repo, "nested", "work")
@@ -74,7 +193,7 @@ func TestResolveRunSourceLocalSubdirectoryUsesRepoRootDestinationAndSubdirWorkin
 	}
 	t.Chdir(subdir)
 
-	source, err := resolveRunSource(context.Background(), ".")
+	source, err := resolveRunSource(context.Background(), ".", runSourceOptions{IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -94,7 +213,7 @@ func TestResolveRunSourceLocalSubdirectoryOutsideCurrentWorkingDirectoryKeepsSub
 	}
 	t.Chdir(t.TempDir())
 
-	source, err := resolveRunSource(context.Background(), subdir)
+	source, err := resolveRunSource(context.Background(), subdir, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -107,7 +226,7 @@ func TestResolveRunSourceLocalRepoRootOutsideCurrentWorkingDirectoryUsesRepoRoot
 	repo := newRunSourceTestRepo(t)
 	t.Chdir(t.TempDir())
 
-	source, err := resolveRunSource(context.Background(), repo)
+	source, err := resolveRunSource(context.Background(), repo, runSourceOptions{IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -165,7 +284,7 @@ func TestResolveRunSourceExplicitHEADIgnoresDirtyWorkspace(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	source, err := resolveRunSource(context.Background(), repo+"@HEAD")
+	source, err := resolveRunSource(context.Background(), repo+"@HEAD", runSourceOptions{IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}
@@ -183,7 +302,7 @@ func TestResolveRunSourceRemoteBranchPinsCommitAndKeepsBranchName(t *testing.T) 
 	commit := strings.TrimSpace(git("rev-parse", "HEAD"))
 	remoteURL := "file://" + filepath.ToSlash(repo)
 
-	source, err := resolveRunSource(context.Background(), remoteURL+"@feature-foo")
+	source, err := resolveRunSource(context.Background(), remoteURL+"@feature-foo", runSourceOptions{IncludeDirty: IncludeDirtyAuto})
 	if err != nil {
 		t.Fatalf("resolveRunSource: %v", err)
 	}

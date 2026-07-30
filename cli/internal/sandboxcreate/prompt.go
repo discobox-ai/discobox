@@ -22,6 +22,13 @@ type PromptOptions struct {
 	Env     []string
 	Secret  []string
 	Harness string
+	// IncludeDirty decides what happens to uncommitted work in a local source.
+	// The zero value is "auto": ask through ConfirmIncludeDirty when there is
+	// one, and otherwise include it.
+	IncludeDirty IncludeDirty
+	// ConfirmIncludeDirty answers the "auto" question for the frontend. Leave it
+	// nil when the frontend cannot ask.
+	ConfirmIncludeDirty ConfirmIncludeDirtyFunc
 }
 
 // ParsePromptOptions adds positional prompt arguments and normalizes the source.
@@ -40,6 +47,12 @@ func normalizePromptOptions(opts PromptOptions) (PromptOptions, error) {
 			opts.Source = source
 			opts.Ref = ref
 		}
+	}
+	if opts.IncludeDirty == "" {
+		opts.IncludeDirty = IncludeDirtyAuto
+	}
+	if err := opts.IncludeDirty.Set(string(opts.IncludeDirty)); err != nil {
+		return PromptOptions{}, fmt.Errorf("--include-dirty: %w", err)
 	}
 	return opts, nil
 }
@@ -80,7 +93,10 @@ func BuildPromptSandboxBody(ctx context.Context, opts PromptOptions) (*apimodel.
 	if opts.Ref != "" {
 		sourceArg += "@" + opts.Ref
 	}
-	source, err := resolveRunSource(ctx, sourceArg)
+	source, err := resolveRunSource(ctx, sourceArg, runSourceOptions{
+		IncludeDirty: opts.IncludeDirty,
+		Confirm:      opts.ConfirmIncludeDirty,
+	})
 	if err != nil {
 		return nil, err
 	}

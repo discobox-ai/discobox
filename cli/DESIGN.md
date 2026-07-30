@@ -243,6 +243,24 @@ sandbox, which sits on a network the client cannot reach.
 
 See [ADR 0001](../docs/adr/0001-sandbox-origin-and-remote-source-push.md).
 
+## Uncommitted Work at Create
+
+A dirty local workspace becomes a snapshot commit on top of the checked-out
+commit, kept under `refs/discobox/run/`, and reaches the sandbox as uncommitted
+changes on that same commit. `disco run --include-dirty` decides whether that
+happens:
+
+- `auto` (default) asks, and only when the workspace is actually dirty. The
+  question is the standard picker, with "start from the last commit" leading, so
+  the default answer is the one that carries nothing extra into the sandbox.
+- `true` / `false` answer ahead of time; bare `--include-dirty` means `true`.
+- Frontends express the question through `sandboxcreate.ConfirmIncludeDirtyFunc`
+  rather than prompting themselves. A nil func means there is nobody to ask —
+  no terminal, or the TUI, which owns the screen — and the work is included:
+  dropping a user's edits silently is worse than carrying them.
+- `true` is rejected for a remote URL or an explicit `@REF`, because a snapshot
+  only ever sits on top of HEAD of a local working tree.
+
 ## Git Transport to the Server
 
 `git` is a subprocess that only understands URLs, so it cannot use the CLI's

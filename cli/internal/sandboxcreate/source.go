@@ -29,6 +29,61 @@ const (
 	runSnapshotCommitMessage = "disco run workspace snapshot\n"
 )
 
+// IncludeDirty decides whether uncommitted local work is carried into the
+// sandbox as a workspace snapshot. It implements pflag.Value so frontends can
+// bind it directly to a --include-dirty flag.
+type IncludeDirty string
+
+const (
+	// IncludeDirtyAuto asks the user when the local workspace is dirty.
+	IncludeDirtyAuto IncludeDirty = "auto"
+	// IncludeDirtyAlways always snapshots a dirty local workspace.
+	IncludeDirtyAlways IncludeDirty = "true"
+	// IncludeDirtyNever starts from the checked-out commit and leaves
+	// uncommitted work behind.
+	IncludeDirtyNever IncludeDirty = "false"
+)
+
+func (m *IncludeDirty) String() string { return string(*m) }
+
+func (m *IncludeDirty) Type() string { return "true|false|auto" }
+
+func (m *IncludeDirty) Set(value string) error {
+	switch IncludeDirty(strings.ToLower(strings.TrimSpace(value))) {
+	case "":
+		*m = IncludeDirtyAuto
+	case IncludeDirtyAuto:
+		*m = IncludeDirtyAuto
+	case IncludeDirtyAlways, "yes", "y", "1":
+		*m = IncludeDirtyAlways
+	case IncludeDirtyNever, "no", "n", "0":
+		*m = IncludeDirtyNever
+	default:
+		return fmt.Errorf("invalid value %q: want true, false, or auto", value)
+	}
+	return nil
+}
+
+// DirtyWorkspace describes the uncommitted work found in a local source repo,
+// so a frontend can show it while asking whether to include it.
+type DirtyWorkspace struct {
+	RepoRoot   string
+	BaseCommit string
+	Changes    []gitutil.StatusChange
+}
+
+// ConfirmIncludeDirtyFunc asks the user whether to carry a dirty workspace into
+// the sandbox. A nil func means nobody can be asked, and the uncommitted work is
+// included rather than silently dropped.
+type ConfirmIncludeDirtyFunc func(context.Context, DirtyWorkspace) (bool, error)
+
+// runSourceOptions carries the caller's dirty-workspace policy into source
+// resolution.
+type runSourceOptions struct {
+	IncludeDirty IncludeDirty
+	Confirm      ConfirmIncludeDirtyFunc
+}
+
 type resolvedRunSource struct {
 	Kind           string
 	URL            string
@@ -56,15 +111,18 @@ type resolvedRunSourceDestination struct {
 	WorkingDirectory string
 }
 
-func resolveRunSource(ctx context.Context, sourceArg string) (resolvedRunSource, error) {
+func resolveRunSource(ctx context.Context, sourceArg string, opts runSourceOptions) (resolvedRunSource, error) {
 	source, ref, explicitRef := splitRunSourceRef(sourceArg)
 	if strings.TrimSpace(source) == "" {
 		return resolvedRunSource{}, fmt.Errorf("source directory or Git repository is required")
 	}
 	if isRemoteGitSource(source) {
+		if opts.IncludeDirty == IncludeDirtyAlways {
+			return resolvedRunSource{}, fmt.Errorf("--include-dirty=true needs a local source: a remote repository has no working tree")
+		}
 		return resolveRemoteRunSource(ctx, source, ref, explicitRef)
 	}
-	return resolveLocalRunSource(ctx, source, ref, explicitRef)
+	return resolveLocalRunSource(ctx, source, ref, explicitRef, opts)
 }
 
 // ResolveOrigin resolves the origin of a CLI invocation acting on sourceArg:
@@ -129,7 +187,7 @@ func (s resolvedRunSource) apiGitSource() (*apimodel.GitSource, error) {
 	return source, nil
 }
 
-func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef bool) (resolvedRunSource, error) {
+func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef bool, opts runSourceOptions) (resolvedRunSource, error) {
 	absSource, err := filepath.Abs(source)
 	if err != nil {
 		return resolvedRunSource{}, fmt.Errorf("resolve source directory: %w", err)
@@ -156,6 +214,11 @@ func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef 
 		Destination: destination,
 	}
 	if explicitRef {
+		// A snapshot is only ever built on top of HEAD, so an explicit ref and
+		// uncommitted work are mutually exclusive rather than silently ignored.
+		if opts.IncludeDirty == IncludeDirtyAlways {
+			return resolvedRunSource{}, fmt.Errorf("--include-dirty=true cannot be combined with an explicit ref (%s@%s): uncommitted changes only apply on top of the checked-out commit", source, ref)
+		}
 		commit, err := gitutil.ResolveCommit(ctx, repoRoot, ref)
 		if err != nil {
 			return resolvedRunSource{}, err
@@ -168,12 +231,22 @@ func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef 
 		return resolvedRunSource{}, err
 	}
 	resolved.Checkout = localRunCheckout(ctx, repoRoot, "", baseCommit)
+	if opts.IncludeDirty == IncludeDirtyNever {
+		return resolved, nil
+	}
 	workspaceTree, cleanup, err := gitutil.CurrentWorkspaceTree(ctx, repoRoot)
 	if err != nil {
 		return resolvedRunSource{}, err
 	}
 	defer cleanup()
 	if !workspaceTree.Dirty {
+		return resolved, nil
+	}
+	include, err := includeDirtyWorkspace(ctx, repoRoot, workspaceTree.BaseCommit, opts)
+	if err != nil {
+		return resolvedRunSource{}, err
+	}
+	if !include {
 		return resolved, nil
 	}
 	snapshotID, err := id.New(id.PrefixSnapshot)
@@ -194,6 +267,21 @@ func resolveLocalRunSource(ctx context.Context, source, ref string, explicitRef 
 		BaseCommit:  workspaceTree.BaseCommit,
 	}
 	return resolved, nil
+}
+
+// includeDirtyWorkspace decides whether the dirty workspace at repoRoot becomes
+// a snapshot. Only "auto" asks, and only when there is someone to ask: with no
+// confirmation func the uncommitted work is included, because dropping a user's
+// edits is the more surprising of the two answers.
+func includeDirtyWorkspace(ctx context.Context, repoRoot, baseCommit string, opts runSourceOptions) (bool, error) {
+	if opts.IncludeDirty != IncludeDirtyAuto || opts.Confirm == nil {
+		return true, nil
+	}
+	changes, err := gitutil.StatusChanges(ctx, repoRoot)
+	if err != nil {
+		return false, err
+	}
+	return opts.Confirm(ctx, DirtyWorkspace{RepoRoot: repoRoot, BaseCommit: baseCommit, Changes: changes})
 }
 
 func resolveRemoteRunSource(ctx context.Context, source, ref string, explicitRef bool) (resolvedRunSource, error) {

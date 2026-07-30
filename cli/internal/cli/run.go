@@ -33,8 +33,14 @@ command flags explicitly.
 Every sandbox has one default terminal: the configured harness, or a shell when
 no harness is configured. By default run waits for the sandbox to start and
 attaches to that terminal, streaming it to your terminal (press Ctrl-P Ctrl-Q to
-detach). Pass -d to create the sandbox and print it without attaching.`,
+detach). Pass -d to create the sandbox and print it without attaching.
+
+Uncommitted changes in the source directory are carried into the sandbox as a
+snapshot on top of the checked-out commit. By default run asks before doing that
+when there is a terminal to ask on; --include-dirty=true|false answers ahead of
+time.`,
 		Example: `  disco run fix the failing tests
+  disco run --include-dirty=false fix the failing tests
   disco run -e GITHUB_TOKEN -e MODE=test fix the failing tests
   disco run -s OPENAI_API_KEY=sk-... -s GITHUB_TOKEN=<sec_123> fix the failing tests
   disco run -d fix the failing tests
@@ -42,6 +48,7 @@ detach). Pass -d to create the sandbox and print it without attaching.`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.prompt.Source = a.source
+			opts.prompt.ConfirmIncludeDirty = confirmIncludeDirty(cmd)
 			parsedOpts, err := sandboxcreate.ParsePromptOptions(opts.prompt, args)
 			if err != nil {
 				return err
@@ -78,7 +85,58 @@ detach). Pass -d to create the sandbox and print it without attaching.`,
 	cmd.Flags().StringArrayVarP(&opts.prompt.Secret, "secret", "s", nil, "Secret injected as a sentinel placeholder resolved by the proxy at runtime, as KEY=VALUE (inline value) or KEY=<SECRET_ID> (reference an existing secret); repeat for multiple secrets")
 	cmd.Flags().StringVarP(&opts.prompt.Harness, "harness", "H", "", "Harness config to run, by slug (e.g. codex), name, or ID; defaults to the project default")
 	cmd.Flags().BoolVarP(&opts.detach, "detach", "d", false, "Create the sandbox and print it without attaching to its terminal")
+	cmd.Flags().Var(&opts.prompt.IncludeDirty, "include-dirty", "Carry uncommitted changes in the local source into the sandbox: true, false, or auto (ask when the workspace is dirty and this is a terminal)")
+	cmd.Flags().Lookup("include-dirty").NoOptDefVal = string(sandboxcreate.IncludeDirtyAlways)
 	return cmd
+}
+
+// confirmIncludeDirty asks whether uncommitted local work should be carried
+// into the sandbox. It is only ever called for --include-dirty=auto against a
+// dirty workspace. Without a terminal there is nobody to ask, so the work is
+// included: that is what run has always done, and dropping edits silently is
+// worse than carrying them.
+func confirmIncludeDirty(cmd *cobra.Command) sandboxcreate.ConfirmIncludeDirtyFunc {
+	return func(_ context.Context, workspace sandboxcreate.DirtyWorkspace) (bool, error) {
+		if !isTerminalStream(cmd.InOrStdin()) || !isTerminalStream(cmd.ErrOrStderr()) {
+			return true, nil
+		}
+		// Excluding leads, so the default answer is the one that changes nothing
+		// about what the sandbox sees: the committed history.
+		choice, err := pickOne(cmd, dirtyWorkspacePrompt(workspace), []pickerItem{
+			{
+				id:     "exclude",
+				title:  "Start from the last commit",
+				detail: "Leave the uncommitted changes here",
+			},
+			{
+				id:     "include",
+				title:  "Include uncommitted changes",
+				detail: "Start the sandbox from a snapshot of the working tree",
+			},
+		}, pickerOptions{
+			empty:     "no choice to make",
+			ambiguous: "pass --include-dirty=true or --include-dirty=false",
+		})
+		if err != nil {
+			return false, err
+		}
+		return choice == "include", nil
+	}
+}
+
+// dirtyWorkspacePrompt names what the choice is about: how many paths differ
+// from the checked-out commit, and enough of them to recognize the change.
+func dirtyWorkspacePrompt(workspace sandboxcreate.DirtyWorkspace) string {
+	const shown = 3
+	paths := make([]string, 0, len(workspace.Changes))
+	for _, change := range workspace.Changes {
+		paths = append(paths, change.Path)
+	}
+	summary := strings.Join(paths[:min(shown, len(paths))], ", ")
+	if len(paths) > shown {
+		summary = fmt.Sprintf("%s and %d more", summary, len(paths)-shown)
+	}
+	return fmt.Sprintf("%s has %d uncommitted %s (%s)", workspace.RepoRoot, len(paths), pluralize("change", len(paths)), summary)
 }
 
 // attachRunSandbox waits for the freshly created sandbox to start and for its
