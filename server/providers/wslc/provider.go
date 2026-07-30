@@ -138,7 +138,6 @@ func engineConfig(cfg Config, imageSync *dockerworker.DevelopmentImageSynchroniz
 		// the guest is a private VM whose only inbound path is the relay
 		// session itself.
 		PublicAgentPort:      true,
-		Systemd:              true,
 		Labels:               map[string]string{labelProviderType: ProviderType},
 		DevelopmentImageSync: imageSync,
 	}

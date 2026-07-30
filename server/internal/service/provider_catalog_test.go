@@ -330,8 +330,8 @@ func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
 	if len(providers) != 1 {
 		t.Fatalf("providers len = %d, want 1", len(providers))
 	}
-	if !id.IsGenerated(providers[0].ID) || !providers[0].BuiltIn {
-		t.Fatalf("provider = %#v, want generated built-in id", providers[0])
+	if !id.IsGenerated(providers[0].ID) {
+		t.Fatalf("provider = %#v, want generated id", providers[0])
 	}
 	defaultProviderID := providers[0].ID
 	if runtime.GOOS == "linux" {
@@ -353,8 +353,8 @@ func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
 		t.Fatalf("pools len = %d, want 1", len(pools))
 	}
 	pool := pools[0]
-	if !pool.BuiltIn || pool.ProviderInstanceID != defaultProviderID || !id.IsGenerated(pool.ID) {
-		t.Fatalf("default pool = %#v, want generated built-in pool on the default provider", pool)
+	if pool.ProviderInstanceID != defaultProviderID || !id.IsGenerated(pool.ID) {
+		t.Fatalf("default pool = %#v, want generated pool on the default provider", pool)
 	}
 	project, err := appStore.GetProject(ctx, projectID)
 	if err != nil {
@@ -408,7 +408,10 @@ func TestInitializeDefaultsInstallsDefaultProviderOnce(t *testing.T) {
 	}
 }
 
-func TestInitializeDefaultsRepairsEmptyBuiltInDockerProviderConfig(t *testing.T) {
+// Seeding happens once; afterward the provider instance belongs to the user.
+// The server must never rewrite its config on a later boot, not even to restore
+// a key the user removed.
+func TestInitializeDefaultsLeavesEditedDefaultProviderConfigAlone(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("default docker provider is installed on linux")
 	}
@@ -425,19 +428,22 @@ func TestInitializeDefaultsRepairsEmptyBuiltInDockerProviderConfig(t *testing.T)
 	if err != nil {
 		t.Fatalf("get default provider: %v", err)
 	}
-	provider.Config = nil
+	edited := []byte(`{"agentPort":3999}`)
+	provider.Config = edited
 	if err := appStore.UpdateSandboxProviderInstance(ctx, provider); err != nil {
-		t.Fatalf("clear default provider config: %v", err)
+		t.Fatalf("edit default provider config: %v", err)
 	}
 
 	if _, err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
-		t.Fatalf("initialize defaults after config clear: %v", err)
+		t.Fatalf("initialize defaults after config edit: %v", err)
 	}
 	provider, err = appStore.GetSandboxProviderInstance(ctx, projectID, providerID)
 	if err != nil {
-		t.Fatalf("get repaired default provider: %v", err)
+		t.Fatalf("get default provider after re-init: %v", err)
 	}
-	assertDefaultDockerProviderConfig(t, provider.Config, "")
+	if string(provider.Config) != string(edited) {
+		t.Fatalf("config = %s, want the user's edit %s preserved", provider.Config, edited)
+	}
 }
 
 // defaultProviderID returns the ID of the (single) provider instance seeded
@@ -454,7 +460,7 @@ func defaultProviderID(ctx context.Context, t *testing.T, appStore *store.Store,
 	return providers[0].ID
 }
 
-func TestInitializeDefaultsDoesNotPersistBuiltInDockerProviderImageFromEnv(t *testing.T) {
+func TestInitializeDefaultsDoesNotPersistDefaultDockerProviderImageFromEnv(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("default docker provider is installed on linux")
 	}
@@ -471,32 +477,6 @@ func TestInitializeDefaultsDoesNotPersistBuiltInDockerProviderImageFromEnv(t *te
 	provider, err := appStore.GetSandboxProviderInstance(ctx, projectID, providerID)
 	if err != nil {
 		t.Fatalf("get default provider: %v", err)
-	}
-	assertDefaultDockerProviderConfig(t, provider.Config, "")
-
-	provider.Config = []byte(`{"image":"ghcr.io/obot-platform/discobox-systemd:latest","agentPort":3002,"systemd":true,"minWorkers":1,"minHealthyWorkers":1}`)
-	if err := appStore.UpdateSandboxProviderInstance(ctx, provider); err != nil {
-		t.Fatalf("reset default provider config: %v", err)
-	}
-	if _, err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
-		t.Fatalf("initialize defaults after static image reset: %v", err)
-	}
-	provider, err = appStore.GetSandboxProviderInstance(ctx, projectID, providerID)
-	if err != nil {
-		t.Fatalf("get repaired default provider: %v", err)
-	}
-	assertDefaultDockerProviderConfig(t, provider.Config, "")
-
-	provider.Config = []byte(`{"image":"discobox-worker-agent:dev-old","agentPort":3002,"systemd":true,"minWorkers":1,"minHealthyWorkers":1}`)
-	if err := appStore.UpdateSandboxProviderInstance(ctx, provider); err != nil {
-		t.Fatalf("reset default provider config to legacy dev image: %v", err)
-	}
-	if _, err := svc.InitializeDefaults(ctx, service.DefaultUserID); err != nil {
-		t.Fatalf("initialize defaults after legacy dev image reset: %v", err)
-	}
-	provider, err = appStore.GetSandboxProviderInstance(ctx, projectID, providerID)
-	if err != nil {
-		t.Fatalf("get repaired default provider: %v", err)
 	}
 	assertDefaultDockerProviderConfig(t, provider.Config, "")
 }
@@ -520,7 +500,6 @@ func assertDefaultDockerProviderConfig(t *testing.T, data []byte, expectedImage 
 	var cfg struct {
 		Image            string   `json:"image"`
 		AgentPort        int      `json:"agentPort"`
-		Systemd          bool     `json:"systemd"`
 		BindDockerSocket string   `json:"bindDockerSocket"`
 		HostMounts       []string `json:"hostMounts"`
 	}
@@ -532,9 +511,6 @@ func assertDefaultDockerProviderConfig(t *testing.T, data []byte, expectedImage 
 	}
 	if cfg.AgentPort != providerdocker.DefaultAgentPort() {
 		t.Fatalf("config agentPort = %d, want %d", cfg.AgentPort, providerdocker.DefaultAgentPort())
-	}
-	if !cfg.Systemd {
-		t.Fatalf("provider config = %+v, want systemd", cfg)
 	}
 	if cfg.BindDockerSocket != "/var/run/docker.sock" {
 		t.Fatalf("bindDockerSocket = %q, want /var/run/docker.sock", cfg.BindDockerSocket)

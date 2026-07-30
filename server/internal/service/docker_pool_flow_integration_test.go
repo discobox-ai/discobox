@@ -84,7 +84,7 @@ func TestDockerProviderPoolCreateFlowE2E(t *testing.T) {
 	providerConfig, err := json.Marshal(map[string]any{
 		"controlPlaneUrl": "http://127.0.0.1:1",
 		"image":           image,
-		"systemd":         false,
+		"privileged":      false,
 		"command":         []string{"sleep", "300"},
 	})
 	if err != nil {

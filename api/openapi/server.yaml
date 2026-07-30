@@ -1057,9 +1057,6 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                builtIn:
-                    description: True for the default pool seeded by the server; built-in pools cannot be deleted
-                    type: boolean
                 cpuVcpus:
                     description: Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host.
                     format: double
@@ -1192,7 +1189,6 @@ components:
                 - projectId
                 - name
                 - providerInstanceId
-                - builtIn
                 - cpuVcpus
                 - memoryBytes
                 - storageBytes
@@ -2058,12 +2054,6 @@ components:
         SandboxProviderCatalogItem:
             additionalProperties: false
             properties:
-                available:
-                    description: Whether provider is available
-                    type: boolean
-                builtIn:
-                    description: Whether provider is built in
-                    type: boolean
                 capabilities:
                     $ref: '#/components/schemas/ProviderStatus'
                     description: Provider capabilities/status
@@ -2088,8 +2078,6 @@ components:
             required:
                 - id
                 - name
-                - available
-                - builtIn
                 - capabilities
             type: object
         SandboxProviderInstance:
@@ -2101,9 +2089,6 @@ components:
                     format: uri
                     readOnly: true
                     type: string
-                builtIn:
-                    description: Whether this provider is built in
-                    type: boolean
                 config:
                     description: Non-secret provider configuration
                 createdAt:
@@ -2141,7 +2126,6 @@ components:
                 - projectId
                 - type
                 - name
-                - builtIn
                 - disabled
                 - createdAt
                 - updatedAt

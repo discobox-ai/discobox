@@ -183,7 +183,6 @@ func TestLibkrunEndToEnd(t *testing.T) {
 		ControlPlaneURL:    endpoint.VSOCKURL(guestvsock.HostCID, controlPlaneVSOCKPort),
 		AgentListenURL:     endpoint.VSOCKListenURL(agentVSOCKPort),
 		Image:              poolImage,
-		Systemd:            true,
 		DockerReadyTimeout: 90 * time.Second,
 	}, driver)
 	if err != nil {

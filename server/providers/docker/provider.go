@@ -43,7 +43,6 @@ type Config struct {
 	Image           string                   `json:"image,omitempty"`
 	Network         string                   `json:"network,omitempty"`
 	AgentPort       int                      `json:"agentPort,omitempty"`
-	Systemd         *bool                    `json:"systemd,omitempty"`
 	Privileged      *bool                    `json:"privileged,omitempty"`
 	CgroupNSMode    string                   `json:"cgroupNsMode,omitempty"`
 	Command         poolruntime.StringList   `json:"command,omitempty"`
@@ -130,7 +129,6 @@ func engineConfig(cfg Config, listenEndpoints []string, daemonHost string) (dock
 		Image:           dockerworker.EffectivePoolImage(cfg.Image),
 		Network:         cfg.Network,
 		AgentPort:       effectiveAgentPort(cfg.AgentPort),
-		Systemd:         cfg.systemdValue(),
 		Privileged:      cfg.Privileged,
 		CgroupNSMode:    cfg.CgroupNSMode,
 		Command:         cfg.Command.Values(),
@@ -229,13 +227,6 @@ func effectiveAgentPort(agentPort int) int {
 	return agentPort
 }
 
-func (c Config) systemdValue() bool {
-	if c.Systemd == nil {
-		return true
-	}
-	return *c.Systemd
-}
-
 func controlPlaneURLUsesHostGateway(value string) bool {
 	return strings.Contains(value, "://"+dockerHostGateway) || strings.HasPrefix(value, dockerHostGateway+":")
 }
@@ -253,13 +244,12 @@ func Definition() sandbox.ProviderDefinition {
 	return sandbox.ProviderDefinition{
 		Name:        "Docker",
 		Icon:        "docker",
-		Description: "Runs VM-style workers as Docker containers, optionally with systemd as PID 1.",
+		Description: "Runs VM-style workers as Docker containers with systemd as PID 1.",
 		ConfigFields: []sandbox.ProviderConfigField{
 			{Key: "controlPlaneUrl", Label: "Control Plane URL", Type: "string", Placeholder: controlplane.DefaultURL(dockerHostGateway, controlplane.DefaultPort), Advanced: true},
 			{Key: "host", Label: "Docker Host", Type: "string", Advanced: true},
 			{Key: "image", Label: "Image", Type: "string", Placeholder: dockerworker.DefaultPoolImage},
 			{Key: "network", Label: "Docker Network", Type: "string", Advanced: true},
-			{Key: "systemd", Label: "Run systemd", Type: "boolean", Advanced: true},
 			{Key: "privileged", Label: "Privileged", Type: "boolean", Advanced: true},
 			{Key: "cgroupNsMode", Label: "Cgroup Namespace", Type: "string", Advanced: true},
 			{Key: "command", Label: "Command", Type: "string", Advanced: true},

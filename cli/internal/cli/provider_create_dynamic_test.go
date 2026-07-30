@@ -47,10 +47,8 @@ func TestProviderCreateHelpProviderLoadsDynamicFields(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"providers": []map[string]any{{
-			"id":        "example",
-			"name":      "Example",
-			"available": true,
-			"builtIn":   true,
+			"id":   "example",
+			"name": "Example",
 			"capabilities": map[string]any{
 				"available": true,
 				"details":   map[string]any{},
@@ -117,10 +115,8 @@ func TestProviderUpdateHelpProviderLoadsDynamicFields(t *testing.T) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{"providers": []map[string]any{{
-			"id":        "example",
-			"name":      "Example",
-			"available": true,
-			"builtIn":   true,
+			"id":   "example",
+			"name": "Example",
 			"capabilities": map[string]any{
 				"available": true,
 				"details":   map[string]any{},
@@ -267,17 +263,14 @@ func TestProviderUpdateCommandSendsDynamicConfig(t *testing.T) {
 				"name":      "local",
 				"type":      "example",
 				"config":    map[string]any{"controlPlaneUrl": "http://old", "poolSize": 1, "other": "kept"},
-				"builtIn":   false,
 				"disabled":  false,
 				"createdAt": now,
 				"updatedAt": now,
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/providers/catalog":
 			_ = json.NewEncoder(w).Encode(map[string]any{"providers": []map[string]any{{
-				"id":        "example",
-				"name":      "Example",
-				"available": true,
-				"builtIn":   true,
+				"id":   "example",
+				"name": "Example",
 				"capabilities": map[string]any{
 					"available": true,
 					"details":   map[string]any{},
@@ -297,7 +290,6 @@ func TestProviderUpdateCommandSendsDynamicConfig(t *testing.T) {
 				"name":      patched["name"],
 				"type":      "example",
 				"config":    patched["config"],
-				"builtIn":   false,
 				"disabled":  false,
 				"createdAt": now,
 				"updatedAt": now,
@@ -333,10 +325,8 @@ func TestProviderCreateCommandSendsDynamicConfig(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/providers/catalog":
 			_ = json.NewEncoder(w).Encode(map[string]any{"providers": []map[string]any{{
-				"id":        "example",
-				"name":      "Example",
-				"available": true,
-				"builtIn":   true,
+				"id":   "example",
+				"name": "Example",
 				"capabilities": map[string]any{
 					"available": true,
 					"details":   map[string]any{},
@@ -357,7 +347,6 @@ func TestProviderCreateCommandSendsDynamicConfig(t *testing.T) {
 				"name":      "local",
 				"type":      "example",
 				"config":    posted["config"],
-				"builtIn":   false,
 				"disabled":  false,
 				"createdAt": now,
 				"updatedAt": now,
@@ -392,10 +381,8 @@ func TestProviderCreateCommandConsumesDebugGlobalFlag(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/providers/catalog":
 			_ = json.NewEncoder(w).Encode(map[string]any{"providers": []map[string]any{{
-				"id":        "example",
-				"name":      "Example",
-				"available": true,
-				"builtIn":   true,
+				"id":   "example",
+				"name": "Example",
 				"capabilities": map[string]any{
 					"available": true,
 					"details":   map[string]any{},
@@ -410,7 +397,6 @@ func TestProviderCreateCommandConsumesDebugGlobalFlag(t *testing.T) {
 				"name":      "local",
 				"type":      "example",
 				"config":    map[string]any{},
-				"builtIn":   false,
 				"disabled":  false,
 				"createdAt": now,
 				"updatedAt": now,

@@ -111,18 +111,10 @@ func TestNewDefaults(t *testing.T) {
 	if engine.cfg.DockerSocket != dockerSocketPath {
 		t.Fatalf("dockerSocket = %q", engine.cfg.DockerSocket)
 	}
-	if engine.privileged() {
-		t.Fatalf("privileged default = true, want false when systemd is false")
-	}
-	if len(engine.cfg.Command) != 0 {
-		t.Fatalf("command = %#v, want empty without systemd", engine.cfg.Command)
-	}
-}
-
-func TestNewSystemdDefaults(t *testing.T) {
-	engine := newTestEngine(t, Config{Systemd: true})
+	// The worker always runs systemd as PID 1, so it is privileged and runs the
+	// pool agent unless the caller overrides either.
 	if !engine.privileged() {
-		t.Fatalf("privileged = false, want true for systemd")
+		t.Fatalf("privileged default = false, want true")
 	}
 	if len(engine.cfg.Command) != 1 || engine.cfg.Command[0] != "/usr/local/bin/discobox-pool-agent" {
 		t.Fatalf("command = %#v", engine.cfg.Command)
@@ -131,7 +123,7 @@ func TestNewSystemdDefaults(t *testing.T) {
 
 func TestNewHonorsPrivilegedOverride(t *testing.T) {
 	privileged := false
-	engine := newTestEngine(t, Config{Systemd: true, Privileged: &privileged})
+	engine := newTestEngine(t, Config{Privileged: &privileged})
 	if engine.privileged() {
 		t.Fatalf("privileged override ignored")
 	}
@@ -322,8 +314,8 @@ func TestConfiguredDockerSocketIsSeparateFromHostMountTargeting(t *testing.T) {
 	}
 }
 
-func TestSystemdContainerMountsScopeVolumes(t *testing.T) {
-	engine := newTestEngine(t, Config{Systemd: true})
+func TestContainerMountsScopeVolumes(t *testing.T) {
+	engine := newTestEngine(t, Config{})
 	mounts := engine.containerMounts("worker:one")
 
 	if !hasVolumeMount(mounts, "discobox-pool-worker-one-docker", "/var/lib/docker") {

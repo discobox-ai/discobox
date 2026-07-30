@@ -6,7 +6,6 @@ import (
 	"errors"
 	"os"
 	"runtime"
-	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -95,39 +94,20 @@ func (s *Service) InitializeDefaults(ctx context.Context, userID string, options
 	return project, nil
 }
 
-// defaultProviderInstalledState is the server_state payload recorded the one
-// time the built-in provider (and its default pool) are created, so restarts
-// never recreate them. Deleting either is a normal, permanent user action.
-type defaultProviderInstalledState struct {
-	ProviderInstanceID string `json:"providerInstanceId"`
-}
-
-func parseDefaultProviderInstalledState(raw json.RawMessage) (defaultProviderInstalledState, error) {
-	var state defaultProviderInstalledState
-	err := json.Unmarshal(raw, &state)
-	return state, err
-}
-
+// ensureDefaultSandboxProviderInstalled seeds the default sandbox provider and
+// its pool exactly once, gated on a server_state row rather than on the records
+// themselves. After seeding they are ordinary user-owned records: editing or
+// deleting either is a normal, permanent action the server never undoes.
 func (s *Service) ensureDefaultSandboxProviderInstalled(ctx context.Context, projectID string) error {
-	if state, err := s.store.GetServerState(ctx, defaultProviderInstalledStateKey); err == nil {
-		info, err := parseDefaultProviderInstalledState(state.Value)
-		if err != nil {
-			return err
-		}
-		defaultProvider := defaultSandboxProviderForOS(projectID, info.ProviderInstanceID)
-		return s.ensureDefaultSandboxProviderConfig(ctx, defaultProvider)
+	if _, err := s.store.GetServerState(ctx, defaultProviderInstalledStateKey); err == nil {
+		return nil
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return err
 	}
 
 	return s.store.Transaction(ctx, func(txStore *store.Store, _ *gorm.DB) error {
-		if state, err := txStore.GetServerState(ctx, defaultProviderInstalledStateKey); err == nil {
-			info, err := parseDefaultProviderInstalledState(state.Value)
-			if err != nil {
-				return err
-			}
-			defaultProvider := defaultSandboxProviderForOS(projectID, info.ProviderInstanceID)
-			return ensureDefaultSandboxProviderConfig(ctx, txStore, defaultProvider)
+		if _, err := txStore.GetServerState(ctx, defaultProviderInstalledStateKey); err == nil {
+			return nil
 		} else if !errors.Is(err, store.ErrNotFound) {
 			return err
 		}
@@ -170,7 +150,6 @@ func ensureDefaultPool(ctx context.Context, appStore *store.Store, defaultProvid
 		ProjectID:          defaultProvider.ProjectID,
 		Name:               "Default",
 		ProviderInstanceID: defaultProvider.ID,
-		BuiltIn:            true,
 	}
 	if err := appStore.CreatePool(ctx, pool); err != nil {
 		return err
@@ -183,46 +162,10 @@ func ensureDefaultPool(ctx context.Context, appStore *store.Store, defaultProvid
 	return appStore.UpsertProject(ctx, project)
 }
 
-func (s *Service) ensureDefaultSandboxProviderConfig(ctx context.Context, defaultProvider *model.SandboxProviderInstance) error {
-	return ensureDefaultSandboxProviderConfig(ctx, s.store, defaultProvider)
-}
-
-func ensureDefaultSandboxProviderConfig(ctx context.Context, appStore *store.Store, defaultProvider *model.SandboxProviderInstance) error {
-	if defaultProvider == nil || len(defaultProvider.Config) == 0 {
-		return nil
-	}
-	provider, err := appStore.GetSandboxProviderInstance(ctx, defaultProvider.ProjectID, defaultProvider.ID)
-	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
-			return nil
-		}
-		return err
-	}
-	if !provider.BuiltIn {
-		return nil
-	}
-	config := defaultProvider.Config
-	if len(provider.Config) > 0 {
-		config = provider.Config
-		if shouldUpdateDefaultProviderConfig(provider.Config, defaultProvider.Config) {
-			config = mergeDefaultProviderConfig(provider.Config, defaultProvider.Config)
-		}
-	}
-	if provider.Type == "docker" {
-		config = removeLegacyDefaultDockerProviderImage(config)
-	}
-	if string(config) == string(provider.Config) {
-		return nil
-	}
-	provider.Config = config
-	return appStore.UpdateSandboxProviderInstance(ctx, provider)
-}
-
 func defaultSandboxProviderForOS(projectID, providerID string) *model.SandboxProviderInstance {
 	provider := &model.SandboxProviderInstance{
 		ID:        providerID,
 		ProjectID: projectID,
-		BuiltIn:   true,
 	}
 	switch runtime.GOOS {
 	case "linux":
@@ -247,11 +190,9 @@ func defaultSandboxProviderForOS(projectID, providerID string) *model.SandboxPro
 }
 
 func defaultDockerProviderConfig() json.RawMessage {
-	systemd := true
 	config := map[string]any{
 		"bindDockerSocket": "/var/run/docker.sock",
 		"agentPort":        providerdocker.DefaultAgentPort(),
-		"systemd":          systemd,
 	}
 	if hostMounts := defaultDockerHostMounts(); len(hostMounts) > 0 {
 		config["hostMounts"] = hostMounts
@@ -274,66 +215,4 @@ func defaultDockerHostMounts() []providerdocker.HostMount {
 		mounts = append(mounts, providerdocker.HostMount{Source: candidate, ReadOnly: true})
 	}
 	return mounts
-}
-
-func shouldUpdateDefaultProviderConfig(current, defaults json.RawMessage) bool {
-	var currentValue, defaultValue map[string]any
-	if err := json.Unmarshal(current, &currentValue); err != nil {
-		return false
-	}
-	if err := json.Unmarshal(defaults, &defaultValue); err != nil {
-		return false
-	}
-	for key := range defaultValue {
-		_, ok := currentValue[key]
-		if !ok {
-			return true
-		}
-	}
-	return false
-}
-
-func mergeDefaultProviderConfig(current, defaults json.RawMessage) json.RawMessage {
-	var currentValue, defaultValue map[string]any
-	if err := json.Unmarshal(current, &currentValue); err != nil {
-		return current
-	}
-	if err := json.Unmarshal(defaults, &defaultValue); err != nil {
-		return current
-	}
-	for key, defaultField := range defaultValue {
-		_, ok := currentValue[key]
-		if !ok {
-			currentValue[key] = defaultField
-		}
-	}
-	data, err := json.Marshal(currentValue)
-	if err != nil {
-		return current
-	}
-	return data
-}
-
-func removeLegacyDefaultDockerProviderImage(config json.RawMessage) json.RawMessage {
-	var value map[string]any
-	if err := json.Unmarshal(config, &value); err != nil {
-		return config
-	}
-	image, _ := value["image"].(string)
-	if !legacyDefaultDockerProviderImage(image) {
-		return config
-	}
-	delete(value, "image")
-	data, err := json.Marshal(value)
-	if err != nil {
-		return config
-	}
-	return data
-}
-
-func legacyDefaultDockerProviderImage(image string) bool {
-	image = strings.TrimSpace(image)
-	return image == providerdocker.DefaultImage() ||
-		image == "discobox-worker-agent:local" ||
-		strings.HasPrefix(image, "discobox-worker-agent:dev-")
 }

@@ -136,9 +136,9 @@ func (a *App) writeProviderCatalog(cmd *cobra.Command, providers []apimodel.Sand
 		return writeJSON(cmd.OutOrStdout(), map[string]any{"providers": providers})
 	}
 	tw := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "ID\tNAME\tAVAILABLE\tBUILT-IN\tDESCRIPTION")
+	fmt.Fprintln(tw, "ID\tNAME\tDESCRIPTION")
 	for _, provider := range providers {
-		fmt.Fprintf(tw, "%s\t%s\t%t\t%t\t%s\n", provider.ID, provider.Name, provider.Available, provider.BuiltIn, provider.Description.Or(""))
+		fmt.Fprintf(tw, "%s\t%s\t%s\n", provider.ID, provider.Name, provider.Description.Or(""))
 	}
 	return tw.Flush()
 }

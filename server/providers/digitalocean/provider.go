@@ -123,7 +123,6 @@ func engineConfig(cfg Config) dockerworker.Config {
 		Image:           dockerworker.EffectivePoolImage(cfg.WorkerImage),
 		AgentPort:       effectiveAgentPort(cfg.AgentPort),
 		PublicAgentPort: true,
-		Systemd:         true,
 		Labels:          map[string]string{labelProviderType: ProviderType},
 	}
 }

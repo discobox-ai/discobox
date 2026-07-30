@@ -83,9 +83,8 @@ type Config struct {
 	// The control plane's own address needs no companion field: ControlPlaneURL
 	// carries its transport in the scheme.
 	AgentListenURL string
-	// Systemd runs the image with systemd as PID 1.
-	Systemd bool
-	// Privileged overrides the privileged flag; defaults to the systemd value.
+	// Privileged overrides the privileged flag, which defaults to true because
+	// the worker runs systemd as PID 1.
 	Privileged *bool
 	// CgroupNSMode overrides the container cgroup namespace mode.
 	CgroupNSMode string
@@ -170,7 +169,7 @@ func New(cfg Config, driver Driver) (*Engine, error) {
 	if cfg.DockerSocket = cleanAbsPath(cfg.DockerSocket); cfg.DockerSocket == "" {
 		cfg.DockerSocket = dockerSocketPath
 	}
-	if len(cfg.Command) == 0 && cfg.Systemd {
+	if len(cfg.Command) == 0 {
 		cfg.Command = []string{"/usr/local/bin/discobox-pool-agent"}
 	}
 	cfg.CgroupNSMode = strings.TrimSpace(cfg.CgroupNSMode)
@@ -196,7 +195,7 @@ func (e *Engine) privileged() bool {
 	if e.cfg.Privileged != nil {
 		return *e.cfg.Privileged
 	}
-	return e.cfg.Systemd
+	return true
 }
 
 // configRevision hashes every setting that shapes the worker container so
@@ -455,7 +454,7 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 	}
 	if e.cfg.CgroupNSMode != "" {
 		hostConfig.CgroupnsMode = container.CgroupnsMode(e.cfg.CgroupNSMode)
-	} else if e.cfg.Systemd {
+	} else {
 		// systemd (PID 1 in the worker) must create its own cgroup subtree. A
 		// private cgroup namespace makes Docker mount a writable cgroup2 hierarchy
 		// delegated to the container; bind-mounting the host /sys/fs/cgroup instead
@@ -464,9 +463,7 @@ func (e *Engine) createPoolContainer(ctx context.Context, cli *client.Client, po
 		hostConfig.CgroupnsMode = container.CgroupnsMode("private")
 	}
 	hostConfig.Mounts = e.containerMounts(pool.ID)
-	if e.cfg.Systemd {
-		hostConfig.Tmpfs = map[string]string{"/run": "rw,noexec,nosuid,size=64m", "/run/lock": "rw,noexec,nosuid,size=64m", "/tmp": "rw,size=64m"}
-	}
+	hostConfig.Tmpfs = map[string]string{"/run": "rw,noexec,nosuid,size=64m", "/run/lock": "rw,noexec,nosuid,size=64m", "/tmp": "rw,size=64m"}
 	networkConfig := &network.NetworkingConfig{}
 	if e.cfg.Network != "" {
 		networkConfig.EndpointsConfig = map[string]*network.EndpointSettings{e.cfg.Network: {}}
@@ -638,18 +635,16 @@ func (e *Engine) containerMounts(poolID string) []mount.Mount {
 			ReadOnly: hostMount.ReadOnly,
 		})
 	}
-	if e.cfg.Systemd {
-		// Do not bind-mount the host /sys/fs/cgroup here: with a private cgroup
-		// namespace Docker mounts a writable cgroup2 hierarchy for the container,
-		// which systemd requires. The host bind mount would shadow it with the
-		// read-only host cgroup root.
-		// Only the nested daemon's own storage is a named volume. Discobox state
-		// is bind-mounted above, at the same path the container reads, so no
-		// path translation is needed anywhere inside the pool.
-		mounts = append(mounts,
-			mount.Mount{Type: mount.TypeVolume, Source: poolScopedVolumeName(poolID, "docker"), Target: "/var/lib/docker"},
-		)
-	}
+	// Do not bind-mount the host /sys/fs/cgroup here: with a private cgroup
+	// namespace Docker mounts a writable cgroup2 hierarchy for the container,
+	// which systemd requires. The host bind mount would shadow it with the
+	// read-only host cgroup root.
+	// Only the nested daemon's own storage is a named volume. Discobox state
+	// is bind-mounted above, at the same path the container reads, so no
+	// path translation is needed anywhere inside the pool.
+	mounts = append(mounts,
+		mount.Mount{Type: mount.TypeVolume, Source: poolScopedVolumeName(poolID, "docker"), Target: "/var/lib/docker"},
+	)
 	return mounts
 }
 

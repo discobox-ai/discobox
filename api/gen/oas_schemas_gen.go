@@ -5765,8 +5765,6 @@ func (s *Origin) SetUser(val OptString) {
 type Pool struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// True for the default pool seeded by the server; built-in pools cannot be deleted.
-	BuiltIn bool `json:"builtIn"`
 	// Total CPU capacity of the pool envelope in vCPUs. Zero sizes the envelope by the host.
 	CpuVcpus float64 `json:"cpuVcpus"`
 	// Creation timestamp.
@@ -5835,11 +5833,6 @@ type Pool struct {
 // GetSchema returns the value of Schema.
 func (s *Pool) GetSchema() OptURI {
 	return s.Schema
-}
-
-// GetBuiltIn returns the value of BuiltIn.
-func (s *Pool) GetBuiltIn() bool {
-	return s.BuiltIn
 }
 
 // GetCpuVcpus returns the value of CpuVcpus.
@@ -6000,11 +5993,6 @@ func (s *Pool) GetUpdatedAt() time.Time {
 // SetSchema sets the value of Schema.
 func (s *Pool) SetSchema(val OptURI) {
 	s.Schema = val
-}
-
-// SetBuiltIn sets the value of BuiltIn.
-func (s *Pool) SetBuiltIn(val bool) {
-	s.BuiltIn = val
 }
 
 // SetCpuVcpus sets the value of CpuVcpus.
@@ -8500,10 +8488,6 @@ func (s *SandboxHarnessSecretsResponseSecrets) init() SandboxHarnessSecretsRespo
 
 // Ref: #/components/schemas/SandboxProviderCatalogItem
 type SandboxProviderCatalogItem struct {
-	// Whether provider is available.
-	Available bool `json:"available"`
-	// Whether provider is built in.
-	BuiltIn bool `json:"builtIn"`
 	// Provider capabilities/status.
 	Capabilities ProviderStatus `json:"capabilities"`
 	// Provider config fields.
@@ -8516,16 +8500,6 @@ type SandboxProviderCatalogItem struct {
 	ID string `json:"id"`
 	// Provider display name.
 	Name string `json:"name"`
-}
-
-// GetAvailable returns the value of Available.
-func (s *SandboxProviderCatalogItem) GetAvailable() bool {
-	return s.Available
-}
-
-// GetBuiltIn returns the value of BuiltIn.
-func (s *SandboxProviderCatalogItem) GetBuiltIn() bool {
-	return s.BuiltIn
 }
 
 // GetCapabilities returns the value of Capabilities.
@@ -8556,16 +8530,6 @@ func (s *SandboxProviderCatalogItem) GetID() string {
 // GetName returns the value of Name.
 func (s *SandboxProviderCatalogItem) GetName() string {
 	return s.Name
-}
-
-// SetAvailable sets the value of Available.
-func (s *SandboxProviderCatalogItem) SetAvailable(val bool) {
-	s.Available = val
-}
-
-// SetBuiltIn sets the value of BuiltIn.
-func (s *SandboxProviderCatalogItem) SetBuiltIn(val bool) {
-	s.BuiltIn = val
 }
 
 // SetCapabilities sets the value of Capabilities.
@@ -8602,8 +8566,6 @@ func (s *SandboxProviderCatalogItem) SetName(val string) {
 type SandboxProviderInstance struct {
 	// A URL to the JSON Schema for this object.
 	Schema OptURI `json:"$schema"`
-	// Whether this provider is built in.
-	BuiltIn bool `json:"builtIn"`
 	// Non-secret provider configuration.
 	Config jx.Raw `json:"config"`
 	// Creation timestamp.
@@ -8627,11 +8589,6 @@ type SandboxProviderInstance struct {
 // GetSchema returns the value of Schema.
 func (s *SandboxProviderInstance) GetSchema() OptURI {
 	return s.Schema
-}
-
-// GetBuiltIn returns the value of BuiltIn.
-func (s *SandboxProviderInstance) GetBuiltIn() bool {
-	return s.BuiltIn
 }
 
 // GetConfig returns the value of Config.
@@ -8682,11 +8639,6 @@ func (s *SandboxProviderInstance) GetUpdatedAt() time.Time {
 // SetSchema sets the value of Schema.
 func (s *SandboxProviderInstance) SetSchema(val OptURI) {
 	s.Schema = val
-}
-
-// SetBuiltIn sets the value of BuiltIn.
-func (s *SandboxProviderInstance) SetBuiltIn(val bool) {
-	s.BuiltIn = val
 }
 
 // SetConfig sets the value of Config.

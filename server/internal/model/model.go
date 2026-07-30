@@ -489,7 +489,6 @@ type Pool struct {
 	ProjectID          string `gorm:"column:project_id;not null;type:text;index;uniqueIndex:idx_pool_project_name,priority:1" json:"projectId" doc:"Project ID"`
 	Name               string `gorm:"column:name;not null;type:text;uniqueIndex:idx_pool_project_name,priority:2" json:"name" doc:"Pool display name" maxLength:"200"`
 	ProviderInstanceID string `gorm:"column:provider_instance_id;not null;type:text;index" json:"providerInstanceId" doc:"Backing sandbox provider instance ID. Immutable after create."`
-	BuiltIn            bool   `gorm:"column:built_in;not null;default:false" json:"builtIn" doc:"True for the default pool seeded by the server; built-in pools cannot be deleted"`
 	// Envelope: total capacity available to the pool. Sandbox resource requests
 	// are scheduled against the envelope and may overcommit it. Zero means the
 	// envelope is sized by the pool's host.
@@ -637,7 +636,6 @@ type SandboxProviderInstance struct {
 	Name            string          `gorm:"column:name;not null;type:text" json:"name" doc:"Provider display name" maxLength:"200"`
 	Config          json.RawMessage `gorm:"column:config;type:text" json:"config,omitempty" doc:"Non-secret provider configuration"`
 	EncryptedConfig []byte          `gorm:"column:encrypted_config" json:"-"`
-	BuiltIn         bool            `gorm:"column:built_in;not null;default:false" json:"builtIn" doc:"Whether this provider is built in"`
 	Disabled        bool            `gorm:"column:disabled;not null;default:false" json:"disabled" doc:"Whether this provider is disabled"`
 	CreatedAt       time.Time       `gorm:"autoCreateTime" json:"createdAt" doc:"Creation timestamp" format:"date-time"`
 	UpdatedAt       time.Time       `gorm:"autoUpdateTime" json:"updatedAt" doc:"Last update timestamp" format:"date-time"`

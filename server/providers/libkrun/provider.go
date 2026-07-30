@@ -126,7 +126,6 @@ func newFromInstance(_ context.Context, instance *model.SandboxProviderInstance,
 		ControlPlaneURL:      endpoint.VSOCKURL(guestvsock.HostCID, controlPlaneVSOCKPort),
 		AgentListenURL:       endpoint.VSOCKListenURL(agentVSOCKPort),
 		Image:                dockerworker.EffectivePoolImage(cfg.WorkerImage),
-		Systemd:              true,
 		Labels:               map[string]string{labelProviderType: ProviderType},
 		DevelopmentImageSync: imageSync,
 	}, driver)

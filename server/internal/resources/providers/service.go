@@ -54,8 +54,6 @@ func providerCatalogItemToService(item SandboxProviderCatalogItem) services.Sand
 	out := services.SandboxProviderCatalogItem{
 		ID:           item.ID,
 		Name:         item.Name,
-		Available:    item.Available,
-		BuiltIn:      item.BuiltIn,
 		Capabilities: providerStatusToService(item.Capabilities),
 	}
 	if item.Icon != "" {

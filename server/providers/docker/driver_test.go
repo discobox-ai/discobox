@@ -8,7 +8,7 @@ import (
 	"github.com/obot-platform/discobox/server/providers/dockerworker"
 )
 
-func TestDefinitionIncludesSystemdConfig(t *testing.T) {
+func TestDefinitionIncludesWorkerConfig(t *testing.T) {
 	def := Definition()
 	if def.Name != "Docker" {
 		t.Fatalf("name = %q", def.Name)
@@ -22,7 +22,7 @@ func TestDefinitionIncludesSystemdConfig(t *testing.T) {
 			controlPlaneAdvanced = field.Advanced
 		}
 	}
-	for _, key := range []string{"controlPlaneUrl", "image", "systemd", "privileged"} {
+	for _, key := range []string{"controlPlaneUrl", "image", "privileged"} {
 		if !keys[key] {
 			t.Fatalf("definition missing config key %q", key)
 		}
@@ -119,18 +119,6 @@ func TestEngineConfigPreservesConfiguredControlPlaneURL(t *testing.T) {
 	}
 }
 
-func TestEngineConfigDefaultsSystemdOn(t *testing.T) {
-	cfg := engineConfigFor(t, Config{}, []string{testUnixListen}, testLocalDaemon)
-	if !cfg.Systemd {
-		t.Fatalf("systemd = false, want default true")
-	}
-	off := false
-	cfg = engineConfigFor(t, Config{Systemd: &off}, []string{testUnixListen}, testLocalDaemon)
-	if cfg.Systemd {
-		t.Fatalf("systemd = true, want configured false")
-	}
-}
-
 func TestEngineConfigDoesNotPublishAgentPortPublicly(t *testing.T) {
 	cfg := engineConfigFor(t, Config{}, []string{testUnixListen}, testLocalDaemon)
 	if cfg.PublicAgentPort {
@@ -156,7 +144,6 @@ func TestProviderConfigFieldsAffectWorkerConfigRevision(t *testing.T) {
 		"image":            func(cfg *Config) { cfg.Image = "other-worker-image" },
 		"network":          func(cfg *Config) { cfg.Network = "discobox-net" },
 		"agentPort":        func(cfg *Config) { cfg.AgentPort = 3902 },
-		"systemd":          func(cfg *Config) { cfg.Systemd = &falseValue },
 		"privileged":       func(cfg *Config) { cfg.Privileged = &falseValue },
 		"cgroupNsMode":     func(cfg *Config) { cfg.CgroupNSMode = "host" },
 		"command":          func(cfg *Config) { cfg.Command = []string{"/bin/discobox-worker-agent", "--debug"} },

@@ -29,8 +29,9 @@ flowchart LR
   touches `ProviderInstanceID` (immutable) and re-schedules the reconcile so
   envelope changes converge. Delete requires the pool to be empty of
   sandboxes (assignment is immutable, so there is nothing to drain to),
-  refuses built-in pools, and submits delete intent; the reconciler removes
-  the runtime, then deletes the row.
+  refuses the project's default pool, and submits delete intent; the
+  reconciler removes the runtime, then deletes the row. The seeded pool is
+  not otherwise special — after first install it is an ordinary pool.
 - `agent_service.go` — the pool agent surface: bootstrap-token registration
   (`RegisterPool`), heartbeats (`UpdatePoolStatus`), and sandbox-removal
   reports, each verifying the authenticated **pool principal**.

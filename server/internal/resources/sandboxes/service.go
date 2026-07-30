@@ -89,8 +89,6 @@ type SandboxProviderCatalogItem struct {
 	Name         string
 	Icon         string
 	Description  string
-	Available    bool
-	BuiltIn      bool
 	Capabilities ProviderStatus
 	ConfigFields []ProviderConfigField
 }
@@ -703,7 +701,6 @@ func (s *Service) ListSandboxProviderCatalog() []SandboxProviderCatalogItem {
 	definitions := s.sandboxProviders.ListProviderDefinitions()
 	out := make([]SandboxProviderCatalogItem, 0, len(definitions))
 	for id, definition := range definitions {
-		status, registered := statuses[id]
 		name := definition.Name
 		if name == "" {
 			name = id
@@ -717,9 +714,7 @@ func (s *Service) ListSandboxProviderCatalog() []SandboxProviderCatalogItem {
 			Name:         name,
 			Icon:         definition.Icon,
 			Description:  description,
-			Available:    !registered || status.Available,
-			BuiltIn:      registered,
-			Capabilities: status,
+			Capabilities: statuses[id],
 			ConfigFields: definition.ConfigFields,
 		})
 	}

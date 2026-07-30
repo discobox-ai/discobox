@@ -555,7 +555,7 @@ func (s *routerTestServices) DeleteHarnessConfigSecretBinding(_ context.Context,
 }
 
 func (s *routerTestServices) ListSandboxProviderCatalogItems(context.Context) ([]services.SandboxProviderCatalogItem, error) {
-	return []services.SandboxProviderCatalogItem{{ID: "digitalocean", Name: "DigitalOcean", Available: true, BuiltIn: true}}, nil
+	return []services.SandboxProviderCatalogItem{{ID: "digitalocean", Name: "DigitalOcean"}}, nil
 }
 
 func (s *routerTestServices) ListSandboxProviderInstances(_ context.Context, projectID string) ([]model.SandboxProviderInstance, error) {

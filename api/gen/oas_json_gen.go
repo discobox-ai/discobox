@@ -8970,10 +8970,6 @@ func (s *Pool) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("builtIn")
-		e.Bool(s.BuiltIn)
-	}
-	{
 		e.FieldStart("cpuVcpus")
 		e.Float64(s.CpuVcpus)
 	}
@@ -9121,40 +9117,39 @@ func (s *Pool) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfPool = [33]string{
+var jsonFieldsNameOfPool = [32]string{
 	0:  "$schema",
-	1:  "builtIn",
-	2:  "cpuVcpus",
-	3:  "createdAt",
-	4:  "id",
-	5:  "memoryBytes",
-	6:  "name",
-	7:  "projectId",
-	8:  "providerInstance",
-	9:  "providerInstanceId",
-	10: "storageBytes",
-	11: "ready",
-	12: "schedulable",
-	13: "degraded",
-	14: "availableCpuVcpus",
-	15: "availableMemoryBytes",
-	16: "availableStorageBytes",
-	17: "conditions",
-	18: "desiredState",
-	19: "phase",
-	20: "activeOperation",
-	21: "lastOperationStatus",
-	22: "generation",
-	23: "observedGeneration",
-	24: "statusMessage",
-	25: "errorMessage",
-	26: "phaseChangedAt",
-	27: "keyType",
-	28: "publicKey",
-	29: "registeredAt",
-	30: "lastSeenAt",
-	31: "revokedAt",
-	32: "updatedAt",
+	1:  "cpuVcpus",
+	2:  "createdAt",
+	3:  "id",
+	4:  "memoryBytes",
+	5:  "name",
+	6:  "projectId",
+	7:  "providerInstance",
+	8:  "providerInstanceId",
+	9:  "storageBytes",
+	10: "ready",
+	11: "schedulable",
+	12: "degraded",
+	13: "availableCpuVcpus",
+	14: "availableMemoryBytes",
+	15: "availableStorageBytes",
+	16: "conditions",
+	17: "desiredState",
+	18: "phase",
+	19: "activeOperation",
+	20: "lastOperationStatus",
+	21: "generation",
+	22: "observedGeneration",
+	23: "statusMessage",
+	24: "errorMessage",
+	25: "phaseChangedAt",
+	26: "keyType",
+	27: "publicKey",
+	28: "registeredAt",
+	29: "lastSeenAt",
+	30: "revokedAt",
+	31: "updatedAt",
 }
 
 // Decode decodes Pool from json.
@@ -9162,7 +9157,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 	if s == nil {
 		return errors.New("invalid: unable to decode Pool to nil")
 	}
-	var requiredBitSet [5]uint8
+	var requiredBitSet [4]uint8
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
@@ -9176,20 +9171,8 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
 			}
-		case "builtIn":
-			requiredBitSet[0] |= 1 << 1
-			if err := func() error {
-				v, err := d.Bool()
-				s.BuiltIn = bool(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"builtIn\"")
-			}
 		case "cpuVcpus":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 1
 			if err := func() error {
 				v, err := d.Float64()
 				s.CpuVcpus = float64(v)
@@ -9201,7 +9184,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"cpuVcpus\"")
 			}
 		case "createdAt":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -9213,7 +9196,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"createdAt\"")
 			}
 		case "id":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -9225,7 +9208,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"id\"")
 			}
 		case "memoryBytes":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Int64()
 				s.MemoryBytes = int64(v)
@@ -9237,7 +9220,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"memoryBytes\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -9249,7 +9232,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "projectId":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -9271,7 +9254,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"providerInstance\"")
 			}
 		case "providerInstanceId":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.ProviderInstanceId = string(v)
@@ -9283,7 +9266,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"providerInstanceId\"")
 			}
 		case "storageBytes":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := d.Int64()
 				s.StorageBytes = int64(v)
@@ -9295,7 +9278,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"storageBytes\"")
 			}
 		case "ready":
-			requiredBitSet[1] |= 1 << 3
+			requiredBitSet[1] |= 1 << 2
 			if err := func() error {
 				v, err := d.Bool()
 				s.Ready = bool(v)
@@ -9307,7 +9290,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"ready\"")
 			}
 		case "schedulable":
-			requiredBitSet[1] |= 1 << 4
+			requiredBitSet[1] |= 1 << 3
 			if err := func() error {
 				v, err := d.Bool()
 				s.Schedulable = bool(v)
@@ -9319,7 +9302,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"schedulable\"")
 			}
 		case "degraded":
-			requiredBitSet[1] |= 1 << 5
+			requiredBitSet[1] |= 1 << 4
 			if err := func() error {
 				v, err := d.Bool()
 				s.Degraded = bool(v)
@@ -9331,7 +9314,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"degraded\"")
 			}
 		case "availableCpuVcpus":
-			requiredBitSet[1] |= 1 << 6
+			requiredBitSet[1] |= 1 << 5
 			if err := func() error {
 				v, err := d.Float64()
 				s.AvailableCpuVcpus = float64(v)
@@ -9343,7 +9326,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"availableCpuVcpus\"")
 			}
 		case "availableMemoryBytes":
-			requiredBitSet[1] |= 1 << 7
+			requiredBitSet[1] |= 1 << 6
 			if err := func() error {
 				v, err := d.Int64()
 				s.AvailableMemoryBytes = int64(v)
@@ -9355,7 +9338,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"availableMemoryBytes\"")
 			}
 		case "availableStorageBytes":
-			requiredBitSet[2] |= 1 << 0
+			requiredBitSet[1] |= 1 << 7
 			if err := func() error {
 				v, err := d.Int64()
 				s.AvailableStorageBytes = int64(v)
@@ -9378,7 +9361,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"conditions\"")
 			}
 		case "desiredState":
-			requiredBitSet[2] |= 1 << 2
+			requiredBitSet[2] |= 1 << 1
 			if err := func() error {
 				if err := s.DesiredState.Decode(d); err != nil {
 					return err
@@ -9388,7 +9371,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"desiredState\"")
 			}
 		case "phase":
-			requiredBitSet[2] |= 1 << 3
+			requiredBitSet[2] |= 1 << 2
 			if err := func() error {
 				if err := s.Phase.Decode(d); err != nil {
 					return err
@@ -9408,7 +9391,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"activeOperation\"")
 			}
 		case "lastOperationStatus":
-			requiredBitSet[2] |= 1 << 5
+			requiredBitSet[2] |= 1 << 4
 			if err := func() error {
 				if err := s.LastOperationStatus.Decode(d); err != nil {
 					return err
@@ -9418,7 +9401,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"lastOperationStatus\"")
 			}
 		case "generation":
-			requiredBitSet[2] |= 1 << 6
+			requiredBitSet[2] |= 1 << 5
 			if err := func() error {
 				v, err := d.Int64()
 				s.Generation = int64(v)
@@ -9430,7 +9413,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"generation\"")
 			}
 		case "observedGeneration":
-			requiredBitSet[2] |= 1 << 7
+			requiredBitSet[2] |= 1 << 6
 			if err := func() error {
 				v, err := d.Int64()
 				s.ObservedGeneration = int64(v)
@@ -9522,7 +9505,7 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"revokedAt\"")
 			}
 		case "updatedAt":
-			requiredBitSet[4] |= 1 << 0
+			requiredBitSet[3] |= 1 << 7
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -9542,12 +9525,11 @@ func (s *Pool) Decode(d *jx.Decoder) error {
 	}
 	// Validate required fields.
 	var failures []validate.FieldError
-	for i, mask := range [5]uint8{
-		0b11111110,
-		0b11111110,
-		0b11101101,
-		0b00000000,
-		0b00000001,
+	for i, mask := range [4]uint8{
+		0b01111110,
+		0b11111111,
+		0b01110110,
+		0b10000000,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -14470,14 +14452,6 @@ func (s *SandboxProviderCatalogItem) Encode(e *jx.Encoder) {
 // encodeFields encodes fields.
 func (s *SandboxProviderCatalogItem) encodeFields(e *jx.Encoder) {
 	{
-		e.FieldStart("available")
-		e.Bool(s.Available)
-	}
-	{
-		e.FieldStart("builtIn")
-		e.Bool(s.BuiltIn)
-	}
-	{
 		e.FieldStart("capabilities")
 		s.Capabilities.Encode(e)
 	}
@@ -14509,15 +14483,13 @@ func (s *SandboxProviderCatalogItem) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxProviderCatalogItem = [8]string{
-	0: "available",
-	1: "builtIn",
-	2: "capabilities",
-	3: "configFields",
-	4: "description",
-	5: "icon",
-	6: "id",
-	7: "name",
+var jsonFieldsNameOfSandboxProviderCatalogItem = [6]string{
+	0: "capabilities",
+	1: "configFields",
+	2: "description",
+	3: "icon",
+	4: "id",
+	5: "name",
 }
 
 // Decode decodes SandboxProviderCatalogItem from json.
@@ -14529,32 +14501,8 @@ func (s *SandboxProviderCatalogItem) Decode(d *jx.Decoder) error {
 
 	if err := d.ObjBytes(func(d *jx.Decoder, k []byte) error {
 		switch string(k) {
-		case "available":
-			requiredBitSet[0] |= 1 << 0
-			if err := func() error {
-				v, err := d.Bool()
-				s.Available = bool(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"available\"")
-			}
-		case "builtIn":
-			requiredBitSet[0] |= 1 << 1
-			if err := func() error {
-				v, err := d.Bool()
-				s.BuiltIn = bool(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"builtIn\"")
-			}
 		case "capabilities":
-			requiredBitSet[0] |= 1 << 2
+			requiredBitSet[0] |= 1 << 0
 			if err := func() error {
 				if err := s.Capabilities.Decode(d); err != nil {
 					return err
@@ -14594,7 +14542,7 @@ func (s *SandboxProviderCatalogItem) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"icon\"")
 			}
 		case "id":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -14606,7 +14554,7 @@ func (s *SandboxProviderCatalogItem) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"id\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -14627,7 +14575,7 @@ func (s *SandboxProviderCatalogItem) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [1]uint8{
-		0b11000111,
+		0b00110001,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.
@@ -14689,10 +14637,6 @@ func (s *SandboxProviderInstance) encodeFields(e *jx.Encoder) {
 		}
 	}
 	{
-		e.FieldStart("builtIn")
-		e.Bool(s.BuiltIn)
-	}
-	{
 		if len(s.Config) != 0 {
 			e.FieldStart("config")
 			e.Raw(s.Config)
@@ -14734,18 +14678,17 @@ func (s *SandboxProviderInstance) encodeFields(e *jx.Encoder) {
 	}
 }
 
-var jsonFieldsNameOfSandboxProviderInstance = [11]string{
-	0:  "$schema",
-	1:  "builtIn",
-	2:  "config",
-	3:  "createdAt",
-	4:  "disabled",
-	5:  "id",
-	6:  "name",
-	7:  "projectId",
-	8:  "pools",
-	9:  "type",
-	10: "updatedAt",
+var jsonFieldsNameOfSandboxProviderInstance = [10]string{
+	0: "$schema",
+	1: "config",
+	2: "createdAt",
+	3: "disabled",
+	4: "id",
+	5: "name",
+	6: "projectId",
+	7: "pools",
+	8: "type",
+	9: "updatedAt",
 }
 
 // Decode decodes SandboxProviderInstance from json.
@@ -14767,18 +14710,6 @@ func (s *SandboxProviderInstance) Decode(d *jx.Decoder) error {
 			}(); err != nil {
 				return errors.Wrap(err, "decode field \"$schema\"")
 			}
-		case "builtIn":
-			requiredBitSet[0] |= 1 << 1
-			if err := func() error {
-				v, err := d.Bool()
-				s.BuiltIn = bool(v)
-				if err != nil {
-					return err
-				}
-				return nil
-			}(); err != nil {
-				return errors.Wrap(err, "decode field \"builtIn\"")
-			}
 		case "config":
 			if err := func() error {
 				v, err := d.RawAppend(nil)
@@ -14791,7 +14722,7 @@ func (s *SandboxProviderInstance) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"config\"")
 			}
 		case "createdAt":
-			requiredBitSet[0] |= 1 << 3
+			requiredBitSet[0] |= 1 << 2
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.CreatedAt = v
@@ -14803,7 +14734,7 @@ func (s *SandboxProviderInstance) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"createdAt\"")
 			}
 		case "disabled":
-			requiredBitSet[0] |= 1 << 4
+			requiredBitSet[0] |= 1 << 3
 			if err := func() error {
 				v, err := d.Bool()
 				s.Disabled = bool(v)
@@ -14815,7 +14746,7 @@ func (s *SandboxProviderInstance) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"disabled\"")
 			}
 		case "id":
-			requiredBitSet[0] |= 1 << 5
+			requiredBitSet[0] |= 1 << 4
 			if err := func() error {
 				v, err := d.Str()
 				s.ID = string(v)
@@ -14827,7 +14758,7 @@ func (s *SandboxProviderInstance) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"id\"")
 			}
 		case "name":
-			requiredBitSet[0] |= 1 << 6
+			requiredBitSet[0] |= 1 << 5
 			if err := func() error {
 				v, err := d.Str()
 				s.Name = string(v)
@@ -14839,7 +14770,7 @@ func (s *SandboxProviderInstance) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"name\"")
 			}
 		case "projectId":
-			requiredBitSet[0] |= 1 << 7
+			requiredBitSet[0] |= 1 << 6
 			if err := func() error {
 				v, err := d.Str()
 				s.ProjectId = string(v)
@@ -14861,7 +14792,7 @@ func (s *SandboxProviderInstance) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"pools\"")
 			}
 		case "type":
-			requiredBitSet[1] |= 1 << 1
+			requiredBitSet[1] |= 1 << 0
 			if err := func() error {
 				v, err := d.Str()
 				s.Type = string(v)
@@ -14873,7 +14804,7 @@ func (s *SandboxProviderInstance) Decode(d *jx.Decoder) error {
 				return errors.Wrap(err, "decode field \"type\"")
 			}
 		case "updatedAt":
-			requiredBitSet[1] |= 1 << 2
+			requiredBitSet[1] |= 1 << 1
 			if err := func() error {
 				v, err := json.DecodeDateTime(d)
 				s.UpdatedAt = v
@@ -14894,8 +14825,8 @@ func (s *SandboxProviderInstance) Decode(d *jx.Decoder) error {
 	// Validate required fields.
 	var failures []validate.FieldError
 	for i, mask := range [2]uint8{
-		0b11111010,
-		0b00000110,
+		0b01111100,
+		0b00000011,
 	} {
 		if result := (requiredBitSet[i] & mask) ^ mask; result != 0 {
 			// Mask only required fields and check equality to mask using XOR.

@@ -117,7 +117,7 @@ func TestDockerIntegrationWorkerLifecycle(t *testing.T) {
 	assertContainerAbsent(ctx, t, repairedState.ContainerID)
 }
 
-func TestDockerIntegrationSystemdWorker(t *testing.T) {
+func TestDockerIntegrationWorker(t *testing.T) {
 	if os.Getenv(dockerIntegrationEnv) != "1" {
 		t.Skipf("set %s=1 to run Docker integration tests", dockerIntegrationEnv)
 	}
@@ -136,7 +136,6 @@ func TestDockerIntegrationSystemdWorker(t *testing.T) {
 	engine, err := dockerworker.New(dockerworker.Config{
 		ControlPlaneURL: "http://control.example",
 		Image:           image,
-		Systemd:         true,
 		CgroupNSMode:    "host",
 		Command:         []string{"/sbin/init"},
 	}, driver)
