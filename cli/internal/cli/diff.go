@@ -44,8 +44,15 @@ type diffOptions struct {
 	diffFilter        string
 
 	// base overrides the commit the diff is measured from.
-	base  string
-	color string
+	base string
+	// applyPreview measures from where apply would start instead, answering
+	// what applying this sandbox would land here.
+	applyPreview bool
+	noPager      bool
+	// dirOverrides names the local directory a source compares against, for
+	// --base local; the same slug=path form apply uses.
+	dirOverrides []string
+	color        string
 }
 
 // rawGitOutput reports whether the user asked for one of git's own output
@@ -119,16 +126,29 @@ merge base with the branch it was cloned at is used instead, so commits it
 fetched rather than wrote are left out. Every diff says which commit it used
 and why.
 
-Use --base to measure from any other commit. --base snapshot names the
-workspace snapshot a sandbox created from a dirty local tree started with,
-which answers the narrower question of what the sandbox changed on top of what
-it was handed.
+Use --base to measure from any other commit, and two keywords for the states
+that are not commits you could name:
+
+  --base local     this machine's working tree, uncommitted changes included,
+                   so the diff is everything that differs between the two
+                   checkouts. Unlike every other mode this one needs the
+                   source's local repository on this machine, and takes --dir
+                   slug=path when the sandbox does not know where that is.
+  --base snapshot  the workspace snapshot a sandbox created from a dirty local
+                   tree started with, which answers the narrower question of
+                   what the sandbox changed on top of what it was handed.
+
+--apply-preview answers a different question again: what "disco apply" would
+land on the local branch, measured from where apply would start and with the
+sandbox's uncommitted work included. Like --base local it needs the source's
+local repository on this machine.
 
 At a terminal the diff is rendered to be read — file headings, line numbers,
-and the changed part of each line highlighted. Redirected, it is a plain
-unified patch that "git apply" accepts. --patch is that patch at a terminal
-too, and --stat and the other git output formats are git's own output,
-unrendered.
+and the changed part of each line highlighted — and paged, like git's own diff.
+The pager is DISCOBOX_PAGER, GIT_PAGER, PAGER, or less, and --no-pager prints
+straight to stdout. Redirected, it is a plain unified patch that "git apply"
+accepts, never paged. --patch is that patch at a terminal too, and --stat and
+the other git output formats are git's own output, unrendered.
 
 Most of "git diff"'s flags mean the same thing here and are passed through.
 The ones that choose what to compare are not: the right-hand side is always
@@ -136,6 +156,8 @@ the sandbox's working tree, and the left is the base described above.`,
 		Example: `  disco diff
   disco diff --stat
   disco diff sbx_01hq -- cli/ server/
+  disco diff --base local
+  disco diff --apply-preview
   disco diff --source docs > docs.patch`,
 		Args: func(cmd *cobra.Command, args []string) error {
 			if before := positionalsBeforeDash(cmd, args); before > 1 {
@@ -179,7 +201,10 @@ the sandbox's working tree, and the left is the base described above.`,
 	flags.BoolVarP(&opts.findRenames, "find-renames", "M", false, "Detect renames")
 	flags.BoolVar(&opts.findCopies, "find-copies", false, "Detect copies as well as renames")
 	flags.StringVar(&opts.diffFilter, "diff-filter", "", "Only show files with these change types, as git's A/C/D/M/R/T letters")
-	flags.StringVar(&opts.base, "base", "", "Commit to diff against, instead of the one the source was cloned at; \"snapshot\" names the dirty-workspace snapshot the sandbox started with")
+	flags.StringVar(&opts.base, "base", "", "Commit to diff against, instead of the one the source was cloned at; \"local\" names this machine's working tree and \"snapshot\" the dirty-workspace snapshot the sandbox started with")
+	flags.BoolVar(&opts.noPager, "no-pager", false, "Print straight to stdout instead of paging, even at a terminal")
+	flags.BoolVar(&opts.applyPreview, "apply-preview", false, "Show what applying this sandbox would land on the local branch: measured from where apply would start, with the sandbox's uncommitted work included")
+	flags.StringArrayVar(&opts.dirOverrides, "dir", nil, "Local directory a source compares against for --apply-preview and --base local, as slug=path; required for a source with no known local directory on this machine")
 	flags.StringVar(&opts.color, "color", "auto", "When to colorize: auto, always, or never")
 	return cmd
 }
@@ -212,30 +237,82 @@ func (a *App) runDiff(cmd *cobra.Command, sandboxArg, onlySlug string, opts diff
 		return err
 	}
 
-	out, stderr := cmd.OutOrStdout(), cmd.ErrOrStderr()
-	gitArgs := opts.gitArgs(cmd.Flags().Changed("unified"))
-	// The rendered view needs the whole diff before it can lay any of it out,
-	// so it is the one that buys the text instead of streaming it. Git's own
-	// formats stream, which is what a piped patch or a very large diff wants.
-	render := !opts.rawGitOutput() && isTerminalStream(out)
-	// A rendered diff is a document, not a patch, so its headings belong with
-	// it on stdout. A passed-through diff is a patch, and nothing but the patch
-	// may reach stdout.
-	headings := stderr
-	if render {
-		headings = out
+	if opts.applyPreview && opts.base != "" {
+		return fmt.Errorf("--apply-preview chooses the base itself; --base cannot also be given")
+	}
+	dirOverrides, err := parseDirOverrides(opts.dirOverrides)
+	if err != nil {
+		return err
 	}
 
+	stderr := cmd.ErrOrStderr()
+	// Everything that depends on the terminal is decided against the real
+	// stdout, before the pager replaces it: once output goes down a pipe there
+	// is no width to measure and no terminal to ask about its background.
+	view := newDiffView(cmd, opts)
+	gitArgs := opts.gitArgs(cmd.Flags().Changed("unified"))
+	// git colors its own output only when writing to a terminal, and under a
+	// pager it is writing to a pipe. Ask for color explicitly, exactly as git
+	// does for itself. The rendered view never wants this: it colors the patch
+	// itself, and escape codes in the text would corrupt the parse.
+	if view.paging && view.color && !view.render {
+		gitArgs = append(gitArgs, "--color=always")
+	}
+
+	closePager, err := view.startPager(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := closePager(); err != nil {
+			fmt.Fprintf(stderr, "pager: %v\n", err)
+		}
+	}()
+	headings := view.headings(stderr)
+
+	// Quitting the pager closes the pipe under us, so every write from that
+	// point on fails with EPIPE. That is a reader who has seen enough, not a
+	// command that went wrong: it ends the run without a failure and without
+	// starting the next source, whose output nothing would read either.
 	var failures []string
+	fail := func(slug string, err error) bool {
+		if isBrokenPipe(err) {
+			return true
+		}
+		fmt.Fprintf(stderr, "source %s: %v\n", slug, err)
+		failures = append(failures, slug)
+		return false
+	}
+
 	for i, entry := range sources {
-		if i > 0 && render {
+		if i > 0 && view.render {
 			fmt.Fprintln(headings)
 		}
 		workdir := sourceWorkdir(entry.source)
+
+		// These are the modes whose two sides start out on different machines,
+		// so they produce the patch here rather than in the sandbox.
+		if opts.applyPreview || opts.base == diffBaseLocalKeyword {
+			patch, base, err := a.localSideDiff(ctx, projectID, sandboxID, sandbox, entry, dirOverrides, opts, gitArgs, pathspecs)
+			if err != nil {
+				if fail(entry.slug, err) {
+					break
+				}
+				continue
+			}
+			fmt.Fprintf(headings, "source %s (%s) diffed from %s — %s\n\n",
+				entry.slug, diffSourceLocation(entry.source), shortSHA(base.Commit), base.describe(""))
+			if err := view.writePatch(patch, base.describe("")); err != nil && fail(entry.slug, err) {
+				break
+			}
+			continue
+		}
+
 		base, upstreamRef, err := a.resolveDiffBase(ctx, projectID, sandboxID, workdir, entry.source, opts.base)
 		if err != nil {
-			fmt.Fprintf(stderr, "source %s: %v\n", entry.slug, err)
-			failures = append(failures, entry.slug)
+			if fail(entry.slug, err) {
+				break
+			}
 			continue
 		}
 		// The base is always named, for one source as much as for several: a
@@ -246,14 +323,13 @@ func (a *App) runDiff(cmd *cobra.Command, sandboxArg, onlySlug string, opts diff
 
 		command := sandboxDiffCommand(base.Commit, gitArgs, pathspecs)
 		var runErr error
-		if render {
-			runErr = a.renderSandboxDiff(ctx, cmd, projectID, sandboxID, workdir, command, opts, base.Commit)
+		if view.render {
+			runErr = a.renderSandboxDiff(ctx, view, projectID, sandboxID, workdir, command, base.Commit)
 		} else {
-			runErr = a.streamSandboxDiff(ctx, cmd, projectID, sandboxID, workdir, command)
+			runErr = a.streamSandboxDiff(ctx, cmd, view, projectID, sandboxID, workdir, command)
 		}
-		if runErr != nil {
-			fmt.Fprintf(stderr, "source %s: %v\n", entry.slug, runErr)
-			failures = append(failures, entry.slug)
+		if runErr != nil && fail(entry.slug, runErr) {
+			break
 		}
 	}
 	if len(failures) > 0 {
@@ -262,14 +338,106 @@ func (a *App) runDiff(cmd *cobra.Command, sandboxArg, onlySlug string, opts diff
 	return nil
 }
 
+// diffView is every decision that depends on the terminal, made once, against
+// the real stdout — before the pager replaces it. Measuring width or asking the
+// terminal for its background once output goes down a pipe answers about the
+// pipe, not the screen.
+type diffView struct {
+	// out is where output goes: the pager's input once one is running.
+	out io.Writer
+	// terminal is the real stdout, which is what the pager writes to.
+	terminal io.Writer
+	opts     diffOptions
+	render   bool
+	paging   bool
+	color    bool
+	dark     bool
+	width    int
+}
+
+func newDiffView(cmd *cobra.Command, opts diffOptions) *diffView {
+	out := cmd.OutOrStdout()
+	view := &diffView{
+		out:      out,
+		terminal: out,
+		opts:     opts,
+		// The rendered view needs the whole diff before it can lay any of it
+		// out, so it is the one that buys the text instead of streaming it.
+		// Git's own formats stream, which is what a piped patch or a very large
+		// diff wants.
+		render: !opts.rawGitOutput() && isTerminalStream(out),
+		paging: !opts.noPager && isTerminalStream(out),
+		color:  diffColorEnabled(opts.color, out),
+		width:  terminalWidth(out),
+	}
+	// Asking the terminal for its background is a round trip, so it is only
+	// worth making when something is actually going to be colored.
+	if view.render && view.color {
+		view.dark = hasDarkTerminalBackground(cmd)
+	}
+	return view
+}
+
+func (v *diffView) startPager(ctx context.Context) (func() error, error) {
+	out, done := startPager(ctx, v.terminal, v.paging)
+	v.out = out
+	return done, nil
+}
+
+// headings sends the per-source headings wherever they cannot corrupt the
+// output: with a rendered diff they are part of the document, but a
+// passed-through diff is a patch, and nothing but the patch may reach stdout.
+func (v *diffView) headings(stderr io.Writer) io.Writer {
+	if v.render {
+		return v.out
+	}
+	return stderr
+}
+
+// writePatch emits patch text through whichever view is in effect.
+func (v *diffView) writePatch(patch, baseDescription string) error {
+	if !v.render {
+		_, err := io.WriteString(v.out, patch)
+		return err
+	}
+	files := diffrender.Parse(patch)
+	if len(files) == 0 {
+		fmt.Fprintf(v.out, "no differences from %s\n", baseDescription)
+		return nil
+	}
+	return diffrender.Render(v.writer(), files, diffrender.Options{
+		Width: v.width,
+		Color: v.color,
+		Dark:  v.dark,
+	})
+}
+
+// writer wraps the output so styling degrades to what the terminal can actually
+// show: the profile writer downsamples 256-color styling for a 16-color
+// terminal and strips it for a dumb one, so the renderer never has to ask.
+func (v *diffView) writer() io.Writer {
+	if !v.color {
+		return v.out
+	}
+	// The profile is detected from the real terminal, not from the pager pipe,
+	// which would report no color at all.
+	writer := colorprofile.NewWriter(v.terminal, os.Environ())
+	if writer.Profile <= colorprofile.NoTTY {
+		writer.Profile = colorprofile.ANSI256
+	}
+	writer.Forward = v.out
+	return writer
+}
+
 // streamSandboxDiff runs the diff and passes git's bytes straight through, the
 // same way `disco exec` does: nothing here has to understand the output, and a
 // diff of any size costs no memory.
-func (a *App) streamSandboxDiff(ctx context.Context, cmd *cobra.Command, projectID, sandboxID, workdir string, command []string) error {
+func (a *App) streamSandboxDiff(ctx context.Context, cmd *cobra.Command, view *diffView, projectID, sandboxID, workdir string, command []string) error {
 	// A PTY is only asked for when this really is a terminal on all three
 	// streams, so a redirected diff stays a plain patch; when there is one, git
-	// colors its own output.
-	tty := isTerminalStream(cmd.InOrStdin()) && isTerminalStream(cmd.OutOrStdout()) && isTerminalStream(cmd.ErrOrStderr())
+	// colors its own output. Under a pager stdout is a pipe and there is no PTY
+	// to ask for — git is told to color explicitly instead.
+	tty := !view.paging && isTerminalStream(cmd.InOrStdin()) && isTerminalStream(cmd.OutOrStdout()) && isTerminalStream(cmd.ErrOrStderr())
 	body, err := createSandboxExecBody(sandboxExecCreateOptions{interactive: true, tty: tty, workdir: workdir}, command)
 	if err != nil {
 		return err
@@ -278,7 +446,7 @@ func (a *App) streamSandboxDiff(ctx context.Context, cmd *cobra.Command, project
 	if err != nil {
 		return err
 	}
-	if err := a.attachSandboxExec(ctx, projectID, sandboxID, exec.ID, true, tty, cmd.InOrStdin(), cmd.OutOrStdout(), cmd.ErrOrStderr()); err != nil {
+	if err := a.attachSandboxExec(ctx, projectID, sandboxID, exec.ID, true, tty, cmd.InOrStdin(), view.out, cmd.ErrOrStderr()); err != nil {
 		return err
 	}
 	// git has already said why on stderr, so the exit status is the whole
@@ -287,7 +455,7 @@ func (a *App) streamSandboxDiff(ctx context.Context, cmd *cobra.Command, project
 }
 
 // renderSandboxDiff runs the diff, then lays the patch out for reading.
-func (a *App) renderSandboxDiff(ctx context.Context, cmd *cobra.Command, projectID, sandboxID, workdir string, command []string, opts diffOptions, base string) error {
+func (a *App) renderSandboxDiff(ctx context.Context, view *diffView, projectID, sandboxID, workdir string, command []string, base string) error {
 	patch, errOutput, code, err := a.sandboxCommandOutput(ctx, projectID, sandboxID, workdir, command)
 	if err != nil {
 		return err
@@ -300,31 +468,9 @@ func (a *App) renderSandboxDiff(ctx context.Context, cmd *cobra.Command, project
 		return fmt.Errorf("git diff exited %d: %s", code, message)
 	}
 	if strings.TrimSpace(errOutput) != "" {
-		fmt.Fprint(cmd.ErrOrStderr(), errOutput)
+		fmt.Fprint(os.Stderr, errOutput)
 	}
-
-	files := diffrender.Parse(patch)
-	if len(files) == 0 {
-		fmt.Fprintf(cmd.OutOrStdout(), "no changes since %s\n", shortSHA(base))
-		return nil
-	}
-	out := cmd.OutOrStdout()
-	color := diffColorEnabled(opts.color, out)
-	if color {
-		// The profile writer downsamples 256-color styling for a 16-color
-		// terminal and strips it for a dumb one, so the renderer never has to
-		// ask what the terminal can do.
-		writer := colorprofile.NewWriter(out, os.Environ())
-		if opts.color == "always" && writer.Profile <= colorprofile.NoTTY {
-			writer.Profile = colorprofile.ANSI256
-		}
-		out = writer
-	}
-	return diffrender.Render(out, files, diffrender.Options{
-		Width: terminalWidth(cmd.OutOrStdout()),
-		Color: color,
-		Dark:  hasDarkTerminalBackground(cmd),
-	})
+	return view.writePatch(patch, shortSHA(base))
 }
 
 // diffColorEnabled resolves git's own --color=auto|always|never against the
@@ -401,7 +547,13 @@ func sandboxDiffCommand(base string, gitArgs, pathspecs []string) []string {
 	for _, pathspec := range pathspecs {
 		diff += " " + shellQuote(pathspec)
 	}
-	script := `
+	return []string{"sh", "-c", sandboxWorkingTreeScript + diff + "\n"}
+}
+
+// sandboxWorkingTreeScript leaves the sandbox's entire working state in $tree
+// as a tree object. Shared by the commands that need it — the diff itself, and
+// the commit `--base local` fetches — so the two cannot drift.
+const sandboxWorkingTreeScript = `
 index=$(mktemp) || exit 1
 trap 'rm -f "$index"' EXIT
 # mktemp leaves an empty file, and git rejects an empty index outright rather
@@ -413,10 +565,7 @@ rm -f "$index"
 cp "$(git rev-parse --git-dir)/index" "$index" 2>/dev/null || :
 GIT_INDEX_FILE="$index" git add -A || exit $?
 tree=$(GIT_INDEX_FILE="$index" git write-tree) || exit $?
-` + diff + `
 `
-	return []string{"sh", "-c", script}
-}
 
 // shellCommand renders argv as a shell command line, quoting every word so
 // nothing in it can be read as syntax.

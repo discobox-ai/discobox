@@ -33,18 +33,34 @@ func FetchSource(ctx context.Context, repoRoot, serverURL, projectID, sandboxID,
 	if !ok || slug == "" {
 		return "", fmt.Errorf("source has no slug to address its repository")
 	}
-	repoURL, err := sandboxcreate.SandboxGitRepositoryURL(serverURL, projectID, sandboxID, source)
-	if err != nil {
-		return "", err
-	}
 	ref := FetchRef(sandboxID, slug)
-	args := sandboxcreate.GitAuthArgs(token, []string{"fetch", repoURL, "+HEAD:" + ref})
-	if _, err := gitutil.Output(ctx, repoRoot, nil, nil, args...); err != nil {
-		return "", fmt.Errorf("fetch source %q from sandbox: %w", slug, err)
+	if err := Fetch(ctx, repoRoot, serverURL, projectID, sandboxID, token, source, "+HEAD:"+ref); err != nil {
+		return "", err
 	}
 	tip, err := gitutil.ResolveCommit(ctx, repoRoot, ref)
 	if err != nil {
 		return "", fmt.Errorf("resolve fetched tip for source %q: %w", slug, err)
 	}
 	return tip, nil
+}
+
+// Fetch brings refspec from a source's sandbox repository into repoRoot.
+//
+// The proxy is a transparent reverse proxy over the sandbox's own git HTTP
+// endpoint, and everything that is not receive-pack is served under
+// ScopeSandboxRead, so upload-pack advertises every ref the sandbox has. Any
+// ref the sandbox creates is therefore fetchable with no new server capability
+// — which is what lets `disco diff --base local` bring the sandbox's working
+// state to this machine.
+func Fetch(ctx context.Context, repoRoot, serverURL, projectID, sandboxID, token string, source apimodel.GitSource, refspec string) error {
+	slug := source.Slug.Or("")
+	repoURL, err := sandboxcreate.SandboxGitRepositoryURL(serverURL, projectID, sandboxID, source)
+	if err != nil {
+		return err
+	}
+	args := sandboxcreate.GitAuthArgs(token, []string{"fetch", repoURL, refspec})
+	if _, err := gitutil.Output(ctx, repoRoot, nil, nil, args...); err != nil {
+		return fmt.Errorf("fetch source %q from sandbox: %w", slug, err)
+	}
+	return nil
 }

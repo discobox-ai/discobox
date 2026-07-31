@@ -351,6 +351,63 @@ question.
   own color — only when all three streams are terminals.
 - Resolving the base is its own exec, ahead of the diff, so the base and its
   reason can be reported rather than inferred from the output.
+- `diffView` makes every terminal-dependent decision once — render or stream,
+  width, color, background, pager — against the **real** stdout, before the
+  pager replaces it. Measuring width or querying the background once output
+  goes down a pipe answers about the pipe, not the screen. The color profile is
+  likewise detected from the terminal and only then forwarded to the pager.
+
+### Paging
+
+At a terminal the output is paged, following git: `DISCOBOX_PAGER`, `GIT_PAGER`,
+`PAGER`, then `less`, with `LESS=FRX` and `LV=-c` supplied only when the user
+has not set them. `R` is not optional — without it a rendered diff arrives as
+literal escape codes. A pager of `cat` means "do not page", and `--no-pager`
+says the same on the command line. Nothing redirected is ever paged, which is
+what keeps `disco diff > x.patch` and the tests writing straight through.
+
+Quitting the pager closes the pipe, so every write after that fails with
+`EPIPE`. That is a reader who has seen enough, not a failure: it ends the run
+without an error, without a nonzero exit, and without starting the next source
+whose output nothing would read either. No signal is involved — Go re-raises
+SIGPIPE only for writes to fd 1 and 2, and the pager's stdin is neither, so the
+deferred close still runs and the pager exits cleanly instead of being orphaned.
+A redirected `disco diff | head` is not paged, writes to fd 1, and dies on
+SIGPIPE like any other Unix tool, which is the behavior to keep.
+
+Under a pager the streamed path asks for no PTY — stdout is a pipe — so git
+would emit no color of its own; it is passed `--color=always` explicitly
+instead, exactly as git does for itself. The rendered path never gets that flag:
+it colors the patch itself, and escape codes in the text would corrupt the
+parse.
+
+### Comparing Against This Machine
+
+`--base local` and `--apply-preview` are the two modes whose sides start out on
+different machines (`internal/cli/diff_local.go`). Two working trees cannot be
+diffed where they sit and only committed objects travel, so the sandbox's
+working state is written as a tree, wrapped in a commit under
+`refs/discobox/diff/<sandbox>/<slug>` with `HEAD` as its parent — which keeps
+the fetch incremental — and fetched through the same proxy `apply` uses. This
+machine's side is built by `gitutil.CurrentWorkspaceTree`. Neither index is
+touched on either end.
+
+They differ only in the left-hand side, which is why they live in `diff` rather
+than in `apply`: every other flag — the git ones, the pathspecs, the rendered
+view, the pager — is unaffected by that choice.
+
+- `--base local` compares against this machine's working tree, so your own
+  uncommitted work counts as a difference.
+- `--apply-preview` compares against **where `apply` would start** — the last
+  recorded `AppliedSourceCommit` for the source, else `gitapply.MergeBase` with
+  local `HEAD`, both resolved here because that is where `apply` resolves them.
+  It answers "what would applying this land here?", and excludes your own local
+  work entirely. It is exclusive with `--base`, which it chooses itself.
+
+Both need the source's local repository, resolved by `apply`'s own
+`resolveApplyHostDir` and overridable with `--dir slug=path`. That precondition
+is exactly what ADR 0018 keeps out of the default base, which is why these are
+opt-in.
 - `--color=auto|always|never` is git's, and only decides color. Rendering is
   decided by the terminal and the flags above, never by `--color`.
 

@@ -18,9 +18,11 @@ type diffBase struct {
 
 // Base origins, in the order diffBaseCommand prefers them.
 const (
-	diffBaseOverride  = "override"
-	diffBaseMergeBase = "merge-base"
-	diffBaseCheckout  = "checkout"
+	diffBaseOverride    = "override"
+	diffBaseMergeBase   = "merge-base"
+	diffBaseCheckout    = "checkout"
+	diffBaseLastApplied = "last-applied"
+	diffBaseLocalTree   = "local-tree"
 )
 
 // diffBaseSnapshotKeyword is the value --base takes to mean the workspace
@@ -34,7 +36,14 @@ func (b diffBase) describe(upstreamRef string) string {
 	case diffBaseOverride:
 		return "--base"
 	case diffBaseMergeBase:
+		if upstreamRef == "" {
+			return "the merge base with this machine's HEAD, which is where apply would start"
+		}
 		return "merge base with " + shortUpstreamRef(upstreamRef)
+	case diffBaseLastApplied:
+		return "the last apply recorded for this source, which is where apply would resume"
+	case diffBaseLocalTree:
+		return "your local working tree"
 	default:
 		return "the commit the sandbox cloned"
 	}
