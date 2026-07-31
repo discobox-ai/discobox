@@ -119,7 +119,13 @@ boot sequence) to also produce, once per sandbox boot, the same PEM bytes
 staged under the path conventions of other PEM-based distros (Alpine's
 `/etc/ssl/cert.pem`; RHEL-family's `/etc/pki/tls/certs/ca-bundle.crt`) — no
 new format, just additional destination copies of one source file, under a
-fixed `/etc/discobox/proxy/ca-bundles/` directory.
+fixed `/run/discobox/proxy/ca-bundles/` directory.
+
+That directory is under `/run`, not beside the CA it derives from in
+`/etc/discobox/proxy`, because that path is pool-agent's read-only bind mount of
+the sandbox's proxy material (see decision 3) and nothing can be staged into it.
+`/run` is also the honest lifetime: these bundles are rebuilt from the sandbox's
+own trust store on every boot and must never outlive it.
 
 Non-PEM formats (a Java `cacerts` keystore, an NSS `cert9.db`) are explicitly
 deferred, not designed here — see decision 5 for why a per-container plugin

@@ -22,9 +22,16 @@ ExecStart=/usr/sbin/update-ca-certificates
 # process never runs update-ca-certificates inside a container itself — that
 # would land in the container's committed layer — it only mounts these
 # pre-staged, already-updated files read-only.
-ExecStart=/usr/bin/install -D -m 0644 /etc/ssl/certs/ca-certificates.crt /etc/discobox/proxy/ca-bundles/debian.pem
-ExecStart=/usr/bin/install -D -m 0644 /etc/ssl/certs/ca-certificates.crt /etc/discobox/proxy/ca-bundles/alpine.pem
-ExecStart=/usr/bin/install -D -m 0644 /etc/ssl/certs/ca-certificates.crt /etc/discobox/proxy/ca-bundles/rhel.pem
+#
+# They land under /run rather than beside the CA in /etc/discobox/proxy because
+# that path is pool-agent's read-only bind mount of the sandbox's proxy config;
+# staging into it fails with EROFS. /run is the sandbox's writable runtime tree
+# (the same one discobox-sandbox-agent.service stages into) and is tmpfs, which
+# matches these files' lifetime — they are derived from the CA bundle this unit
+# just rebuilt and are meant to be regenerated every boot, never persisted.
+ExecStart=/usr/bin/install -D -m 0644 /etc/ssl/certs/ca-certificates.crt /run/discobox/proxy/ca-bundles/debian.pem
+ExecStart=/usr/bin/install -D -m 0644 /etc/ssl/certs/ca-certificates.crt /run/discobox/proxy/ca-bundles/alpine.pem
+ExecStart=/usr/bin/install -D -m 0644 /etc/ssl/certs/ca-certificates.crt /run/discobox/proxy/ca-bundles/rhel.pem
 
 [Install]
 WantedBy=sysinit.target

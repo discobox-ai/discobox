@@ -25,8 +25,10 @@ import (
 
 // DefaultCABundleDir is where sandbox boot (discobox-trust-ca.service)
 // stages already-updated CA bundles for this plugin to mount, one file per
-// destination path convention.
-const DefaultCABundleDir = "/etc/discobox/proxy/ca-bundles"
+// destination path convention. It sits under /run rather than beside the CA in
+// /etc/discobox/proxy, which is a read-only bind mount nothing can be staged
+// into; see docs/adr/0015 decision 4.
+const DefaultCABundleDir = "/run/discobox/proxy/ca-bundles"
 
 // bundleMount pairs a bundle file staged under a CA bundle directory with
 // the path convention of the distro family that reads it.
