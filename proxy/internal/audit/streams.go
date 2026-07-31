@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	defaultUpgradeStreamQueueSize = 256
+	defaultUpgradeStreamQueueSize = 1024
 	UpgradeStreamFormatRawFrames  = "discobox-upgrade-stream-v1"
 
 	streamFrameTypeData    = 1

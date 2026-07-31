@@ -209,7 +209,7 @@ func Open(ctx context.Context, dsn string, queueSize int, enabled bool) (*Record
 		return &Recorder{enabled: false}, nil
 	}
 	if queueSize <= 0 {
-		queueSize = 1024
+		queueSize = 16384
 	}
 	pools, err := gormdb.Open(gormdb.Config{DSN: dsn})
 	if err != nil {

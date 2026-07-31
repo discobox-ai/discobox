@@ -61,6 +61,12 @@ type CacheConfig struct {
 }
 
 // RecordingConfig controls audit persistence.
+//
+// Both queues are bounded and drop rather than block, so their depth is the
+// burst the proxy can absorb before the audit log develops holes. QueueSize
+// buffers small metadata rows shared by the whole proxy and is sized
+// generously. StreamQueueSize is per upgraded stream and buffers raw payload
+// chunks, so its depth multiplies by both chunk size and concurrent streams.
 type RecordingConfig struct {
 	Enabled         bool
 	QueueSize       int
@@ -116,10 +122,10 @@ func DefaultConfig() Config {
 		},
 		Recording: RecordingConfig{
 			Enabled:         true,
-			QueueSize:       1024,
+			QueueSize:       16384,
 			MaxHeaderBytes:  64 * 1024,
 			StreamDir:       "./proxy-streams",
-			StreamQueueSize: 256,
+			StreamQueueSize: 1024,
 			BodyDir:         "./proxy-bodies",
 		},
 	}
