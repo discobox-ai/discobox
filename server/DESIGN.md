@@ -154,6 +154,30 @@ git subprocesses that cannot speak anything else (see [cli](../cli/DESIGN.md)).
 `cfg.Listen` is threaded to the provider factories so a backend picks a
 transport this server actually answers on rather than assuming one exists.
 
+## Single Server Per Data Directory
+
+One server runs against a data directory at a time, enforced by an exclusive
+advisory lock on `<data dir>/server.lock` taken before the database is opened.
+The lock is scoped to the data directory, not the listen endpoint, because the
+database is what two servers corrupt each other over — duplicates reconcile the
+same pools against each other and thrash their runtimes. An endpoint-scoped lock
+would miss a second server started with a different `DISCOBOX_SERVER_LISTEN`.
+
+Binding proves nothing about who else is running: `localipc.Listen` unlinks a
+unix socket path before binding, so the second server rebinds the path and both
+keep serving — the incumbent keeps a listener on an orphaned inode, and because
+`/shutdown` is addressed by path, nothing can ever ask it to leave again. The
+lock replaces the `EADDRINUSE` reclaim in `listenWithReclaim`, which only ever
+fired for TCP endpoints and is dead code for the default unix-only listen set.
+
+A starting server asks the incumbent to shut down, then waits for the lock,
+re-requesting and logging the holder on every pass. It never displaces a running
+server and never gives up: an incumbent that will not leave is visible in the log
+rather than silently duplicated. The lock is advisory and file-based so the
+kernel releases it on process death, including `SIGKILL` — a crashed server
+cannot strand a lock. `Run` takes it first so its deferred release runs last,
+after the listener cleanup has removed the socket the next server will bind.
+
 ## Runtime Observability
 
 `internal/server` owns optional process-level OpenTelemetry metrics startup as

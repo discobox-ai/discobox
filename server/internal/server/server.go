@@ -32,10 +32,15 @@ func Run(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	// Best-effort: ask any server currently holding our endpoints to shut down.
-	// This is our only chance to reach it over the unix socket before listenAll
-	// rebinds that path; the remaining reclaim happens in listenAll.
-	shutdownExistingLocalServer(ctx, cfg.Listen)
+	// Wait until we are the only server on this data directory, asking any
+	// incumbent to shut down. This is deferred first so it releases last: the
+	// listener cleanup below must have removed the socket before the next
+	// server takes the lock and binds it.
+	releaseSingleton, err := acquireSingleton(ctx, cfg.DataDir, cfg.Listen)
+	if err != nil {
+		return err
+	}
+	defer releaseSingleton()
 	shutdownTelemetry, err := initTelemetry(ctx, TelemetryOptions{
 		MetricsEnabled:       cfg.OTelMetricsEnabled,
 		MetricExportInterval: cfg.OTelMetricExportInterval,
