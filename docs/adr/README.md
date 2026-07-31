@@ -71,3 +71,4 @@ Nygard-style ADRs (see adr.github.io) combined with current-state design docs:
 | [0016](0016-sandbox-image-upgrades-are-explicit-and-in-place.md) | Sandbox image upgrades are explicit, in-place, and digest-driven | Accepted |
 | [0017](0017-resource-state-is-desired-and-observed-with-no-operations.md) | Orchestration is generation convergence; a resource has state and desired state | Accepted |
 | [0018](0018-disco-diff-resolves-its-base-inside-the-sandbox.md) | `disco diff` resolves its base inside the sandbox | Accepted |
+| [0019](0019-one-server-per-data-directory-enforced-by-a-file-lock.md) | One server per data directory, enforced by an advisory file lock | Proposed |
