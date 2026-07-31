@@ -47,8 +47,9 @@ func TestFileInstallerRendersSandboxConfigTemplate(t *testing.T) {
 	installer := FileInstaller{
 		HomeDirectory: home,
 		SandboxConfig: map[string]any{
-			"source": map[string]any{
-				"destination": map[string]any{"directory": `/workspace/project"quoted`},
+			"sources": []any{
+				map[string]any{"slug": "primary", "target": `/workspace/project"quoted`},
+				map[string]any{"slug": "extra", "target": "/workspace/extra"},
 			},
 		},
 	}
@@ -71,6 +72,9 @@ func TestFileInstallerRendersSandboxConfigTemplate(t *testing.T) {
 	}
 	if !state.Projects[`/workspace/project"quoted`].Trusted {
 		t.Fatalf("projects = %#v, want safely encoded trusted project", state.Projects)
+	}
+	if len(state.Projects) != 1 {
+		t.Fatalf("projects = %#v, want only the primary source trusted", state.Projects)
 	}
 }
 

@@ -31,7 +31,7 @@
         "path": ".claude.json",
         "createOnly": true,
         "template": true,
-        "content": "{\n  \"hasCompletedOnboarding\": true\n  {{- with .source }},\n  \"projects\": {\n    {{ .destination.directory | json }}: {\n      \"hasTrustDialogAccepted\": true\n    }\n  }\n  {{- end }}\n}"
+        "content": "{\n  \"hasCompletedOnboarding\": true\n  {{- range .sources }}{{- if eq .slug \"primary\" }},\n  \"projects\": {\n    {{ .target | json }}: {\n      \"hasTrustDialogAccepted\": true\n    }\n  }\n  {{- end }}{{- end }}\n}"
       },
       {
         "path": ".claude/settings.json",
