@@ -101,6 +101,15 @@ func backendEnv(r *http.Request, repoPath, suffix string) []string {
 	if contentType := r.Header.Get("Content-Type"); contentType != "" {
 		env = append(env, "CONTENT_TYPE="+contentType)
 	}
+	// git compresses an upload-pack request once negotiation grows past a round
+	// or two, and http-backend only inflates the body when CGI tells it the
+	// request is encoded. Without this the backend reads gzip bytes as pkt-line,
+	// answers nothing, and the client reports "the remote end hung up
+	// unexpectedly" — a fetch that fails only once the negotiation is large
+	// enough, which is why small ones have always worked.
+	if encoding := r.Header.Get("Content-Encoding"); encoding != "" {
+		env = append(env, "HTTP_CONTENT_ENCODING="+encoding)
+	}
 	if r.ContentLength >= 0 {
 		env = append(env, "CONTENT_LENGTH="+strconv.FormatInt(r.ContentLength, 10))
 	}
