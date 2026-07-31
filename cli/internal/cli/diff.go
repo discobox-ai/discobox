@@ -430,7 +430,7 @@ func (v *diffView) writer() io.Writer {
 }
 
 // streamSandboxDiff runs the diff and passes git's bytes straight through, the
-// same way `disco exec` does: nothing here has to understand the output, and a
+// same way `disco shell` does: nothing here has to understand the output, and a
 // diff of any size costs no memory.
 func (a *App) streamSandboxDiff(ctx context.Context, cmd *cobra.Command, view *diffView, projectID, sandboxID, workdir string, command []string) error {
 	// A PTY is only asked for when this really is a terminal on all three

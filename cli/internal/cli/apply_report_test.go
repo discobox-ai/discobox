@@ -154,7 +154,7 @@ func TestDirtyNextStepsOfferBothCommitAndAllowDirty(t *testing.T) {
 	if len(steps) != 2 {
 		t.Fatalf("got %d next steps, want 2: %+v", len(steps), steps)
 	}
-	if want := "disco exec --sandbox-id sbx_23x11jnw03w11nf2 -- git -C /work/disco2 commit -a -m MESSAGE"; steps[0].Commands[0] != want {
+	if want := "disco shell sbx_23x11jnw03w11nf2 -- git -C /work/disco2 commit -a -m MESSAGE"; steps[0].Commands[0] != want {
 		t.Fatalf("commit command = %q, want %q", steps[0].Commands[0], want)
 	}
 	if want := "disco apply sbx_23x11jnw03w11nf2 --source primary"; steps[0].Commands[1] != want {

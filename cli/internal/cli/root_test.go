@@ -255,17 +255,17 @@ func TestRootCommandHelp(t *testing.T) {
 	if !bytes.Contains(out.Bytes(), []byte("Manage advanced Discobox configuration")) {
 		t.Fatalf("help output = %q, want box command description", out.String())
 	}
-	// exec is the exception among the box children: the friendly root `exec`
+	// shell is the exception among the box children: the friendly root `shell`
 	// runs a command in a sandbox, while `box exec` keeps the raw subcommands.
-	if command, _, err := cmd.Find([]string{"exec"}); err != nil || command.Name() != "exec" {
-		t.Fatalf("find root exec: command=%v err=%v", command, err)
+	if command, _, err := cmd.Find([]string{"shell"}); err != nil || command.Name() != "shell" {
+		t.Fatalf("find root shell: command=%v err=%v", command, err)
 	}
 	// status is a root command of its own: `git status` for the sandbox's
 	// working trees, alongside diff and apply.
 	if command, _, err := cmd.Find([]string{"status"}); err != nil || command.Name() != "status" {
 		t.Fatalf("find root status: command=%v err=%v", command, err)
 	}
-	for _, unavailableAtRoot := range []string{"sandbox", "terminal", "provider", "job", "harnesses", "hooks", "server"} {
+	for _, unavailableAtRoot := range []string{"sandbox", "terminal", "exec", "provider", "job", "harnesses", "hooks", "server"} {
 		command, _, err := cmd.Find([]string{unavailableAtRoot})
 		if err == nil && command.Name() == unavailableAtRoot {
 			t.Fatalf("root command still exposes %q", unavailableAtRoot)

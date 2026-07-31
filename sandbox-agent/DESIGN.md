@@ -136,7 +136,7 @@ development images without a registry.
   stdout/stderr-pipe (plain exec) modes.
 - stdout and stderr are separate frames, never merged by the shim: `frame.Stdout`
   and `frame.Stderr` (and the matching `LogStream` values on the audit log), so a
-  client can route each the way a local command does — `disco exec cmd
+  client can route each the way a local command does — `disco shell cmd
   2>/dev/null` drops only stderr. Merging is the client's to do and loses no
   information; merging in the shim is irreversible. A TTY exec has nothing to
   split, since the kernel merges both onto the PTY before the shim reads them, so
@@ -163,7 +163,7 @@ development images without a registry.
   it to SIGTSTP silently does nothing. Ctrl-Z typed into a TTY exec is unaffected
   because it is a byte, not a frame: the remote line discipline signals the
   foreground job, which is a child group of the shell and not orphaned. A command
-  that *is* the session leader (`disco exec -t sleep 30`) cannot be stopped by
+  that *is* the session leader (`disco shell -t sleep 30`) cannot be stopped by
   Ctrl-Z for the same orphan rule — `ssh host sleep 30` behaves identically.
 - Exit status uses the shell convention for signal deaths: `128+signum`, so an
   interrupted command reports 130 rather than Go's `ExitCode() == -1`, which

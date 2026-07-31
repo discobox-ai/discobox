@@ -67,7 +67,7 @@ them.`,
 }
 
 // runToolInSource runs command inside the sandbox, in the working tree of the
-// selected source, streamed to this terminal exactly like `disco exec`.
+// selected source, streamed to this terminal exactly like `disco shell`.
 func (a *App) runToolInSource(cmd *cobra.Command, sandboxArg, sourceSlug string, command []string) error {
 	ctx := cmd.Context()
 	projectID, sandboxID, client, err := a.selectSandbox(cmd, sandboxArg)

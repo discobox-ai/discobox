@@ -33,7 +33,7 @@ Advanced configuration and low-level resource commands are grouped beneath the
 visible `disco box` command: `sandbox`, `terminal`, `exec`, `provider`, `pool`,
 `job`, `harnesses`, and `hooks` are not root commands.
 
-`disco exec` is the exception: the root command is the everyday one-shot "run
+`disco shell` is the exception: the root command is the everyday one-shot "run
 this in my sandbox" verb, while `box exec create` stays the raw, fully
 configurable form (workdir, env, user, detach, explicit `-i`/`-t`). Both drive
 the same exec create/attach/status sequence. The root form has no `-it`: stdin
@@ -43,11 +43,32 @@ session writes stdout frames to stdout and stderr frames to stderr, with no
 special case for the PTY: a TTY exec merges at the PTY and simply never sends a
 stderr frame, which the client neither detects nor needs to.
 
-`disco exec` with no command runs the sandbox user's login shell. The CLI never
-names that shell: it sets `shell: true` on the exec create request and the
-sandbox resolves the run user's shell from its own passwd database, because the
-local `$SHELL` describes this machine and says nothing about the identity the
-exec runs as. `box exec create --shell` is the same request in raw form.
+`disco shell [SANDBOX_ID] [CMD...]` (`internal/cli/shell.go`) takes the sandbox
+and the command as one positional list rather than a `--sandbox-id` flag, since
+which sandbox to run in is picked as often by ID as left to the picker. Cobra
+sees one flat `[]string` and cannot tell SANDBOX_ID from CMD apart, so
+`resolveShellTarget` decides: `args[0]` is tried against the sandboxes
+`disco ls` shows for the current project directory (`matchSandboxArg`) —
+
+- A full generated ID (`id.IsGenerated`) is trusted outright: a resource prefix
+  plus 16 random characters cannot collide with a real command word by
+  accident.
+- A short ID is matched against that candidate list exactly like an explicit
+  SANDBOX_ID argument elsewhere. Zero matches is not an error — it just means
+  `args[0]` was never a sandbox reference — but more than one is reported as
+  ambiguous, since its shape said it was meant as an ID.
+
+A match consumes `args[0]` as SANDBOX_ID and leaves the rest as CMD. No
+match — including no arguments at all — means every argument is CMD, and the
+sandbox falls back to the same picker `disco apply`/`disco diff` use when
+SANDBOX_ID is omitted.
+
+`disco shell` with no command runs the sandbox user's login shell. The CLI
+never names that shell: it sets `shell: true` on the exec create request and
+the sandbox resolves the run user's shell from its own passwd database,
+because the local `$SHELL` describes this machine and says nothing about the
+identity the exec runs as. `box exec create --shell` is the same request in
+raw form.
 
 `disco tools` groups the everyday development tools run inside a sandbox against
 one of its sources — `tools git` today. Which sandbox to run in is the one thing
@@ -55,7 +76,7 @@ every tool has in common, so `--sandbox-id` is a persistent flag on `tools`
 itself and every subcommand inherits it. Everything else, including where in the
 sandbox the tool runs (`git`'s `--source`/`-s`), belongs to the subcommand that
 means it. Each then drives the same exec create/attach/status sequence as
-`disco exec`. Flag parsing stops at the first positional argument
+`disco shell`. Flag parsing stops at the first positional argument
 (`SetInterspersed(false)`), so everything from there on reaches the tool verbatim.
 
 The default path sends no workdir and fetches no sandbox record: an exec with no
@@ -81,10 +102,11 @@ as the table: the order is the CLI's answer, not a table-rendering detail.
 ## Choosing a Sandbox Interactively
 
 Commands that act on "the sandbox I am working in" take a sandbox identifier —
-as `--sandbox-id` (`exec`) or an optional positional `SANDBOX_ID` (`status`,
-`diff`, `apply`, `attach`, `box get`) — and fall back to `selectSandbox`
-(`internal/cli/picker.go`) when
-it's omitted, never to a guess:
+as `--sandbox-id` (`box exec`, `box terminal`), an optional positional
+`SANDBOX_ID` (`status`, `diff`, `apply`, `attach`, `box get`), or a leading
+positional argument shared with the command itself (`shell`, resolved by
+`resolveShellTarget` rather than `selectSandbox`) — and fall back to
+`selectSandbox` (`internal/cli/picker.go`) when it's omitted, never to a guess:
 
 - Candidates are exactly what `disco ls` shows — `listProjectSandboxes` filtered
   to the current project directory's origin — so the command and the listing can
@@ -199,11 +221,11 @@ Keystrokes reach the remote job, never this process. Two mechanisms, chosen by
 whether the attach has a PTY — not by which command is running:
 
 - **Raw mode (any TTY attach: `run`, `box terminal attach`, `configure`,
-  `exec`/`box exec create` with a PTY).** `MakeRaw` turns off ISIG, so Ctrl-C,
+  `shell`/`box exec create` with a PTY).** `MakeRaw` turns off ISIG, so Ctrl-C,
   Ctrl-Z, and Ctrl-\ are never signals here — they travel as the bytes 0x03,
   0x1a, 0x1c and the *remote* line discipline signals the remote foreground job.
   Nothing to forward, and the local CLI is never the target.
-- **No PTY (`disco exec` into a pipe or redirect).** The local terminal is still
+- **No PTY (`disco shell` into a pipe or redirect).** The local terminal is still
   cooked, so those keys raise real signals here. `proxySignals` catches them and
   sends a Signal frame instead of acting on them.
 

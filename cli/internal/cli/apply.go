@@ -438,7 +438,7 @@ func dirtyNextSteps(sandboxID, slug, sandboxDir string, dirOverrides map[string]
 		{
 			Description: "commit them in the sandbox, then apply again",
 			Commands: []string{
-				fmt.Sprintf("disco exec --sandbox-id %s -- git -C %s commit -a -m MESSAGE", sandboxID, sandboxDir),
+				fmt.Sprintf("disco shell %s -- git -C %s commit -a -m MESSAGE", sandboxID, sandboxDir),
 				rerun,
 			},
 		},
