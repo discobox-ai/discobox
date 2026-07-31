@@ -82,7 +82,8 @@ as the table: the order is the CLI's answer, not a table-rendering detail.
 
 Commands that act on "the sandbox I am working in" take a sandbox identifier —
 as `--sandbox-id` (`exec`) or an optional positional `SANDBOX_ID` (`status`,
-`diff`, `apply`, `box get`) — and fall back to `selectSandbox` (`internal/cli/picker.go`) when
+`diff`, `apply`, `attach`, `box get`) — and fall back to `selectSandbox`
+(`internal/cli/picker.go`) when
 it's omitted, never to a guess:
 
 - Candidates are exactly what `disco ls` shows — `listProjectSandboxes` filtered
@@ -164,8 +165,10 @@ session, `execstream/client`.
   sandbox is `stopping`, `stopped`, or `failed`, the attach ends rather than
   reconnecting forever — the stop is observable, so the client acts on it instead
   of looping against a runtime that is gone. No attach restarts the sandbox;
-  sandbox autostart will be a future `disco attach` behavior, and until then the
-  client never starts a sandbox to keep an attach alive.
+  `disco attach` (`internal/cli/attach.go`) is deliberately a thin wrapper over
+  `attachSandboxTerminal` with the virtual primary id and nothing else — sandbox
+  autostart is a possible future addition to it, and until then the client never
+  starts a sandbox to keep an attach alive.
 - Resumable actions (input, signals, and close-input) carry monotonically
   increasing positions. The client retains a bounded window until the shim
   acknowledges applying them; reconnect resends the unacknowledged suffix and

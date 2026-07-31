@@ -483,6 +483,39 @@ func TestTerminalAttachPrimaryUsesVirtualExecID(t *testing.T) {
 	}
 }
 
+// `disco attach` is the root-command shortcut for `box terminal attach
+// primary --sandbox-id`: it must reach the same virtual primary exec, with no
+// other behavior in between.
+func TestAttachUsesVirtualPrimaryExecID(t *testing.T) {
+	var attachPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasSuffix(r.URL.Path, "/attach") {
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		attachPath = r.URL.Path
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"error":"sandbox exec ex_1 has ended with exit code 0 and its session is no longer available to attach"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	cmd := NewRootCommand()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"--server", server.URL, "--project", "project-1", "attach", "sandbox-1"})
+
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("execute attach error = nil")
+	}
+	if want := "/api/projects/project-1/sandboxes/sandbox-1/execs/primary/attach"; attachPath != want {
+		t.Fatalf("attach path = %q, want %q", attachPath, want)
+	}
+	if got := err.Error(); !strings.Contains(got, "has ended with exit code 0") {
+		t.Fatalf("execute attach error = %q", got)
+	}
+}
+
 func TestTerminalCreateTextPlainErrorIncludesBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/api/projects/project-1/sandboxes/sandbox-1/execs" {
