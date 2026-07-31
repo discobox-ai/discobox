@@ -69,31 +69,9 @@ func RunAgent(ctx context.Context, logger *slog.Logger) error {
 	}
 	logger.Info("pool registered", "poolID", bootstrap.PoolID)
 
-	conditions := map[string]any{
-		"agent": map[string]any{
-			"version": "dev",
-			"status":  "ready",
-		},
-	}
-	if err := client.UpdatePoolStatus(ctx, StatusRequest{
-		ControlPlaneURL:      bootstrap.ControlPlaneURL,
-		ProjectID:            bootstrap.ProjectID,
-		PoolID:               bootstrap.PoolID,
-		PrivateKey:           registration.PrivateKey,
-		Ready:                true,
-		Schedulable:          true,
-		Degraded:             false,
-		AvailableCPUVCPUs:    availableCPUVCPUs(),
-		AvailableMemoryBytes: availableMemoryBytes(),
-		// Stat this project's own data tree. Its parent belongs to the pool
-		// container's root filesystem and would report the wrong backing
-		// filesystem.
-		AvailableStorageBytes: availableStorageBytes(layout.ProjectData(bootstrap.ProjectID)),
-		Conditions:            conditions,
-	}); err != nil {
+	if err := startStatusReporter(ctx, logger, bootstrap, registration, client, statusReportInterval); err != nil {
 		return err
 	}
-	logger.Info("pool marked ready", "poolID", bootstrap.PoolID)
 
 	startResolveTokenRefresher(ctx, logger, bootstrap, registration)
 
@@ -104,6 +82,84 @@ const (
 	resolveTokenTTL     = 30 * time.Minute
 	resolveTokenRefresh = 20 * time.Minute
 )
+
+const (
+	// statusReportInterval paces the pool's status heartbeat.
+	statusReportInterval = 30 * time.Second
+	// statusReportTimeout bounds one report. The control-plane client is built
+	// without a timeout, so an unbounded report against a wedged control plane
+	// would stall every later beat and silently strand the pool.
+	statusReportTimeout = 15 * time.Second
+)
+
+// startStatusReporter reports this pool's scheduling status and capacity to the
+// control plane: once synchronously, so a pool that cannot mark itself ready
+// fails its boot loudly, then on statusReportInterval for as long as the agent
+// runs.
+//
+// The repeat is not merely a liveness signal. Ready/Schedulable are
+// agent-reported fields that the control plane clears on its own whenever a
+// reconcile fails (see the server's pool reconciler), and nothing there ever
+// sets them back. A pool that reported ready only at boot therefore stayed
+// unschedulable until its agent restarted, with every sandbox route under it
+// answering 409. Re-reporting makes readiness self-healing, and keeps the
+// pool's last-seen timestamp fresh enough to distinguish a live pool from an
+// agent that died.
+//
+// Capacity is measured per report rather than captured at boot, so the
+// control plane schedules against current free space rather than whatever was
+// free when the pool started.
+func startStatusReporter(ctx context.Context, logger *slog.Logger, bootstrap Bootstrap, registration *Registration, client StatusClient, interval time.Duration) error {
+	conditions := map[string]any{
+		"agent": map[string]any{
+			"version": "dev",
+			"status":  "ready",
+		},
+	}
+	report := func(ctx context.Context) error {
+		ctx, cancel := context.WithTimeout(ctx, statusReportTimeout)
+		defer cancel()
+		return client.UpdatePoolStatus(ctx, StatusRequest{
+			ControlPlaneURL:      bootstrap.ControlPlaneURL,
+			ProjectID:            bootstrap.ProjectID,
+			PoolID:               bootstrap.PoolID,
+			PrivateKey:           registration.PrivateKey,
+			Ready:                true,
+			Schedulable:          true,
+			Degraded:             false,
+			AvailableCPUVCPUs:    availableCPUVCPUs(),
+			AvailableMemoryBytes: availableMemoryBytes(),
+			// Stat this project's own data tree. Its parent belongs to the pool
+			// container's root filesystem and would report the wrong backing
+			// filesystem.
+			AvailableStorageBytes: availableStorageBytes(layout.ProjectData(bootstrap.ProjectID)),
+			Conditions:            conditions,
+		})
+	}
+	if err := report(ctx); err != nil {
+		return err
+	}
+	logger.Info("pool marked ready", "poolID", bootstrap.PoolID)
+
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				// A failed beat is transient by assumption: the next tick
+				// re-reports, and that retry is exactly what recovers a pool
+				// whose readiness was cleared while the control plane was down.
+				if err := report(ctx); err != nil && ctx.Err() == nil {
+					logger.Warn("report pool status", "poolID", bootstrap.PoolID, "error", err)
+				}
+			}
+		}
+	}()
+	return nil
+}
 
 // startResolveTokenRefresher mints the scoped secret:resolve token the proxy
 // unit uses and writes it, with the control-plane URL, to this pool's own
